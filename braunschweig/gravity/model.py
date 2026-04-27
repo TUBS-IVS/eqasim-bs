@@ -1,37 +1,167 @@
-"""
-Gravity model wrapper for Braunschweig that calibrates the Bavaria-style
-Gemeinde-level OD against the empirical Kreis-level flows from the BA
-Pendleratlas.
+"""Gravity model for Braunschweig - base + Kreis-level calibration.
 
-Rationale
----------
-``bavaria.gravity.model`` synthesises a full Gemeinde×Gemeinde commute
-probability matrix from population, workplace counts and distances.  It
-uses parameters estimated from Île-de-France, so the magnitudes are
-plausible but not directly calibrated to the ZGB region.
+This module is the merged successor of:
+- ``bavaria/gravity/model.py`` (Origin: eqasim-bavaria @ b20fbe6) - the
+  Gemeinde x Gemeinde gravity model with IDF-derived parameters.
+- ``braunschweig/gravity/model.py`` - the BA Pendleratlas IPF calibration
+  layer that scales the Gemeinde flows so Kreis aggregates match observed
+  SvB-Pendlerstroeme.
 
-The BA Pendleratlas gives us **observed** SvB-Pendlerströme at Kreis
-level for 2025.  This stage applies a straightforward Iterative
-Proportional Fitting (IPF) step that scales the Gemeinde-level gravity
-flows so that, once re-aggregated to Kreis pairs, they match the
-observed BA flow totals — while preserving the spatial heterogeneity
-inside each Kreis that only the gravity model can provide.
+Phase 2.11 of the eqasim-bs refactor merged both into a single module so
+the BS pipeline no longer delegates through ``bavaria.gravity.model``. The
+behaviour is unchanged.
 
-Output has the same schema as ``bavaria.gravity.model``:
+Output schema is identical to ``bavaria.gravity.model``::
+
     origin_id          str   commune_id (8-digit AGS)
     destination_id     str
     weight             float row-normalised P(destination | origin)
 
-Returned as ``(df_work_od, df_education_od)`` tuple.  Education uses the
-uncalibrated gravity result (no equivalent observed data), same as
-Bavaria's behaviour.
+Returned as ``(df_work_od, df_education_od)`` tuple. Education uses the
+uncalibrated gravity result (no equivalent observed data).
 """
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 
+
+# --- Inherited from eqasim-bavaria -----------------------------------------
+# Gemeinde x Gemeinde gravity model with IDF-derived defaults.
+
+# Defaults: -0.09 came from IDF, value -2.0 has been calibrated.
+DEFAULT_SLOPE = -0.2
+DEFAULT_CONSTANT = -2.4
+DEFAULT_DIAGONAL = 1.0
+
+
+def evaluate_gravity(population, employees, friction):
+    """Iterative balancing of a doubly-constrained gravity model."""
+    production = np.ones((len(population),))
+    attraction = np.ones((len(population),))
+    flow = np.ones((len(population), len(population)))
+    converged = False
+
+    for iteration in range(int(1e6)):
+        previous_production = np.copy(production)
+        previous_attraction = np.copy(attraction)
+        previous_flow = np.copy(flow)
+
+        for k in range(len(population)):
+            production[k] = population[k] / np.sum(attraction * friction[k, :])
+
+        for k in range(len(population)):
+            attraction[k] = employees[k] / np.sum(production * friction[:, k])
+
+        flow = np.copy(friction)
+        for i in range(len(population)):
+            flow[i, :] *= production[i]
+        for j in range(len(population)):
+            flow[:, j] *= attraction[j]
+
+        production_delta = np.abs(production - previous_production)
+        attraction_delta = np.abs(attraction - previous_attraction)
+        flow_delta = np.abs(flow - previous_flow)
+
+        print(
+            "Gravity iteration", iteration,
+            "prod. max. delta:", np.max(production_delta),
+            "attr. max. delta:", np.max(attraction_delta),
+            "flow max. delta:", np.max(flow_delta),
+        )
+
+        if (np.max(production_delta) < 1e-3
+                and np.max(attraction_delta) < 1e-3
+                and np.max(flow_delta) < 1e-3):
+            converged = True
+            break
+
+    assert converged
+    return flow
+
+
+def _execute_gravity_base(context):
+    """Run the bavaria-style Gemeinde x Gemeinde gravity model.
+
+    Returns ``(df_work_od, df_education_od)`` of row-normalised
+    conditional probabilities.
+    """
+    df_distances = context.stage("eqasim_common.gravity.distance_matrix")
+    df_population = context.stage("braunschweig.ipf.attributed")
+    df_employees = context.stage("bavaria.data.census.employees")
+
+    df_population = df_population.rename(columns={
+        "commune_id": "origin_id",
+        "weight": "population",
+    })[["origin_id", "population"]]
+
+    df_employees = df_employees.rename(columns={
+        "commune_id": "destination_id",
+        "weight": "employees",
+    })[["destination_id", "employees"]]
+
+    df_population = df_population.groupby("origin_id")["population"].sum().reset_index()
+
+    municipalities = set(df_population["origin_id"])
+    municipalities |= set(df_employees["destination_id"])
+    municipalities |= set(df_distances["origin_id"])
+    municipalities |= set(df_distances["destination_id"])
+    municipalities = sorted(list(municipalities))
+
+    df_population = df_population.set_index("origin_id").reindex(municipalities).fillna(0.0)
+    df_employees = df_employees.set_index("destination_id").reindex(municipalities).fillna(0.0)
+    df_distances = df_distances.set_index(["origin_id", "destination_id"]).reindex(
+        pd.MultiIndex.from_product([municipalities, municipalities])
+    )
+
+    distances = df_distances["distance_km"].values.reshape((len(municipalities), len(municipalities)))
+
+    population = df_population["population"]
+    employees = df_employees["employees"]
+
+    observations = min(np.sum(population), np.sum(employees))
+    population *= observations / np.sum(population)
+    employees *= observations / np.sum(employees)
+
+    slope = context.config("gravity_slope")
+    constant = context.config("gravity_constant")
+    diagonal = context.config("gravity_diagonal")
+
+    friction = np.exp(slope * distances + constant) + np.eye(len(municipalities)) * diagonal
+    flow = evaluate_gravity(population, employees, friction)
+
+    df_matrix = pd.DataFrame({
+        "weight": flow.reshape((-1,)),
+    }, index=pd.MultiIndex.from_product(
+        [municipalities, municipalities],
+        names=["origin_id", "destination_id"],
+    )).reset_index()
+
+    df_total = (df_matrix[["origin_id", "weight"]]
+                .groupby("origin_id").sum()
+                .reset_index()
+                .rename({"weight": "total"}, axis=1))
+    df_matrix = pd.merge(df_matrix, df_total, on="origin_id")
+
+    f_missing_total = df_matrix["total"] == 0.0
+    df_matrix.loc[
+        f_missing_total & (df_matrix["origin_id"] == df_matrix["destination_id"]),
+        "weight",
+    ] = 1.0
+    df_matrix.loc[f_missing_total, "total"] = 1.0
+
+    df_matrix["weight"] = df_matrix["weight"] / df_matrix["total"]
+    df_matrix = df_matrix[["origin_id", "destination_id", "weight"]]
+
+    return df_matrix, df_matrix
+
+
+# --- Braunschweig-specific -------------------------------------------------
+# BA-Pendleratlas calibration: IPF the Gemeinde-level OD so Kreis aggregates
+# match observed SvB flows; inject ZGB -> external Kreis outbound rows.
 
 # IPF convergence parameters for the Kreis-level calibration step.
 MAX_IPF_ITERATIONS = 20
@@ -39,8 +169,12 @@ IPF_TOLERANCE = 1e-3
 
 
 def configure(context):
-    context.stage("bavaria.gravity.model")
+    context.stage("eqasim_common.gravity.distance_matrix")
     context.stage("braunschweig.ipf.attributed")
+    context.stage("bavaria.data.census.employees")
+    context.config("gravity_slope", DEFAULT_SLOPE)
+    context.config("gravity_constant", DEFAULT_CONSTANT)
+    context.config("gravity_diagonal", DEFAULT_DIAGONAL)
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")
@@ -55,23 +189,7 @@ def _gemeinde_to_kreis(series: pd.Series) -> pd.Series:
 def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
                             df_employment: pd.DataFrame,
                             scope: list[str]) -> pd.DataFrame:
-    """Inject intra-Kreis SvB flows (``K -> K``) into the Pendler frame.
-
-    The BA Pendleratlas publishes only inter-Kreis flows, but for the
-    gravity calibration we need intra-Kreis totals too — without them,
-    the Gemeinde-pair cells where origin and destination share a Kreis
-    fall into the un-calibrated ``df_rest`` bucket and retain their
-    population-unit magnitudes, which completely overwhelms the
-    SvB-calibrated inter-Kreis cells and collapses the external-commute
-    share to a few percent instead of the BA-reported ~28 %.
-
-    We reconstruct intra-Kreis flow as
-
-        intra(K) = SvB_Wohnort(K) - sum_{E != K} BA_flow(K -> E)
-
-    using ``braunschweig.data.census.employment`` (SvB am Wohnort) as
-    the ground truth for the residents-with-job total.
-    """
+    """Inject intra-Kreis SvB flows (``K -> K``) into the Pendler frame."""
     wohnort = (df_employment.groupby("departement_id")["weight"]
                             .sum()
                             .rename("svb_wohnort")
@@ -106,26 +224,11 @@ def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
 def _calibrate(df_od: pd.DataFrame,
                df_population: pd.DataFrame,
                df_pendler: pd.DataFrame) -> pd.DataFrame:
-    """IPF-scale Gemeinde-level OD so that Kreis aggregates match BA Pendler.
-
-    ``df_od`` has columns ``origin_id, destination_id, weight`` where
-    weight is already row-normalised (conditional probabilities).  We
-    temporarily convert it into absolute flows using ``df_population``
-    and scale cells by a Kreis-level factor until Kreis row/column totals
-    converge to the observed BA values.  Rows/columns not covered by BA
-    data keep their original magnitude.
-
-    Returns a frame with an **absolute** ``flow`` column (SvB units for
-    calibrated cells, origin-population units for uncovered cells).
-    The downstream concatenation step renormalises into probabilities.
-    """
-    # Attach Kreis identifiers.
+    """IPF-scale Gemeinde-level OD so Kreis aggregates match BA Pendler."""
     df = df_od.copy()
     df["orig_kreis"] = _gemeinde_to_kreis(df["origin_id"])
     df["dest_kreis"] = _gemeinde_to_kreis(df["destination_id"])
 
-    # Lift conditional probabilities to absolute person-flows by
-    # multiplying by the working-age population of the origin Gemeinde.
     pop = (
         df_population.groupby("commune_id")["weight"].sum()
                      .rename("pop")
@@ -136,7 +239,6 @@ def _calibrate(df_od: pd.DataFrame,
     df["pop"] = df["pop"].fillna(0.0)
     df["flow"] = df["weight"] * df["pop"]
 
-    # Observed Kreis-pair flows.
     obs = (
         df_pendler.rename(columns={
             "orig_ars": "orig_kreis",
@@ -147,7 +249,6 @@ def _calibrate(df_od: pd.DataFrame,
         .reset_index()
     )
 
-    # Current gravity Kreis-pair flows.
     def kreis_flows(frame):
         return (
             frame.groupby(["orig_kreis", "dest_kreis"])["flow"].sum()
@@ -155,7 +256,6 @@ def _calibrate(df_od: pd.DataFrame,
                  .reset_index()
         )
 
-    # Only scale cells whose (orig_kreis, dest_kreis) is observed.
     scope_pairs = obs[["orig_kreis", "dest_kreis"]].drop_duplicates()
     df_scope = df.merge(scope_pairs, on=["orig_kreis", "dest_kreis"], how="inner")
     df_rest = df.merge(scope_pairs, on=["orig_kreis", "dest_kreis"],
@@ -163,11 +263,9 @@ def _calibrate(df_od: pd.DataFrame,
     df_rest = df_rest[df_rest["_merge"] == "left_only"].drop(columns=["_merge"])
 
     if len(df_scope) == 0:
-        # No Kreis pair in gravity matches BA scope — nothing to calibrate.
         print("[braunschweig.gravity.model] no scope overlap; returning raw gravity")
         return df_od
 
-    # IPF loop: alternately match row sums and column sums per Kreis pair.
     for it in range(MAX_IPF_ITERATIONS):
         cur = kreis_flows(df_scope)
         merged = cur.merge(obs, on=["orig_kreis", "dest_kreis"], how="inner")
@@ -191,12 +289,7 @@ def _calibrate(df_od: pd.DataFrame,
     else:
         print(f"[braunschweig.gravity.model] IPF stopped at {MAX_IPF_ITERATIONS} iter (delta={max_delta:.4g})")
 
-    # Combine calibrated + untouched cells.
     df_out = pd.concat([df_scope, df_rest], ignore_index=True)
-
-    # Return absolute flows; row-normalisation happens later, once the
-    # external outbound edges have been concatenated so all cells live
-    # on the same scale (SvB units).
     return df_out[["origin_id", "destination_id", "flow"]]
 
 
@@ -205,31 +298,13 @@ def _append_outbound_flows(df_od: pd.DataFrame,
                            df_pendler: pd.DataFrame,
                            df_external: pd.DataFrame,
                            scope: list[str]) -> pd.DataFrame:
-    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``.
-
-    The gravity matrix only connects ZGB-8 Gemeinden among themselves, so
-    we inject the BA Pendler outbound flows (ZGB → external Kreis) into
-    the OD explicitly. For every ZGB-8 origin Gemeinde G in Kreis K we
-    emit one row per external Kreis E with absolute SvB flow
-
-        flow(G → EXT_E) = pop(G) / pop(K) × BA_flow(K → E)
-
-    so the Kreis-level outbound totals match BA while the distribution
-    across Gemeinden inside each ZGB Kreis is proportional to the
-    working-age population. ``df_external["ars5"]`` filters the Pendler
-    outbound list to the actually-materialised external workplaces.
-
-    ``df_od`` is expected to carry the **absolute SvB flow** column
-    produced by ``_calibrate``. After concatenating the external rows
-    we renormalise per origin to probabilities.
-    """
+    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``."""
     ext_ars = set(df_external["ars5"].astype(str))
     df_out_pendler = df_pendler[
         df_pendler["orig_ars"].isin(scope)
         & df_pendler["dest_ars"].isin(ext_ars)
     ].copy()
 
-    # Gemeinde-level population weights per origin Kreis.
     pop = (
         df_population.groupby("commune_id")["weight"].sum()
                      .rename("pop").reset_index()
@@ -258,9 +333,6 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
         df_all = pd.concat([df_od, df_inj], ignore_index=True)
 
-    # Renormalise per origin into P(destination | origin). Origins with
-    # zero total flow (e.g. uncovered rest-of-Germany cells) fall back
-    # to a self-loop to keep downstream sampling deterministic.
     totals = df_all.groupby("origin_id")["flow"].sum().rename("total").reset_index()
     df_all = df_all.merge(totals, on="origin_id", how="left")
     f_missing = df_all["total"] <= 0.0
@@ -278,20 +350,16 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 
 def execute(context):
-    df_work_od, df_education_od = context.stage("bavaria.gravity.model")
+    df_work_od, df_education_od = _execute_gravity_base(context)
     df_population = context.stage("braunschweig.ipf.attributed")
     df_pendler = context.stage("braunschweig.data.census.pendler")
     df_employment = context.stage("braunschweig.data.census.employment")
     df_external = context.stage("braunschweig.data.external_workplaces")
 
-    # Pre-filter Pendler to pairs where at least one side is inside the
-    # configured scope — cross-Germany flows are irrelevant for our
-    # synthetic population.
     scope = [str(p) for p in context.config("bavaria.political_prefix")]
     mask = df_pendler["orig_ars"].isin(scope) | df_pendler["dest_ars"].isin(scope)
     df_pendler = df_pendler[mask].copy()
 
-    # Add intra-Kreis SvB rows so the IPF can calibrate K->K cells too.
     df_pendler = _synthesise_intra_kreis(df_pendler, df_employment, scope)
 
     print(
@@ -304,5 +372,4 @@ def execute(context):
         df_work_calibrated, df_population, df_pendler, df_external, scope,
     )
 
-    # Education: leave uncalibrated (no empirical dataset available).
     return df_work_extended, df_education_od
