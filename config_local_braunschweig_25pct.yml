@@ -127,7 +127,7 @@ aliases:
   synthesis.population.spatial.home.zones: bavaria.homes
   synthesis.locations.home.locations: braunschweig.locations.home
   synthesis.locations.education: eqasim_common.locations.education
-  synthesis.locations.secondary: bavaria.locations.secondary
+  synthesis.locations.secondary: braunschweig.locations.secondary
   # Phase 2 (TASK-CS01, 2026-04-26): replace eqasim's RDA secondary-location
   # solver with the chainsolvers carla solver (default distance-based
   # scoring). Comment this alias out to revert to the legacy

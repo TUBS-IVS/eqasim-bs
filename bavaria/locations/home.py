@@ -1,18 +1,15 @@
-import numpy as np
-import pandas as pd
+"""Deprecation shim - merged into :mod:`braunschweig.locations.home`."""
 
-"""
-Yield home location candidates for Germany.
-"""
+from __future__ import annotations
 
-def configure(context):
-    context.stage("bavaria.data.buildings")
+import warnings
 
-def execute(context):
-    # Load data
-    df = context.stage("bavaria.data.buildings")
-    df = df.rename(columns = { "building_id": "home_location_id" })
+from braunschweig.locations.home import *  # noqa: F401,F403
+from braunschweig.locations.home import configure, execute  # noqa: F401
 
-    return df[[
-        "home_location_id", "weight", "commune_id", "iris_id", "geometry",
-    ]]
+warnings.warn(
+    "bavaria.locations.home has been merged into braunschweig.locations.home; "
+    "update aliases.",
+    DeprecationWarning,
+    stacklevel=2,
+)

@@ -118,7 +118,7 @@ aliases:
   synthesis.population.spatial.home.zones: bavaria.homes
   synthesis.locations.home.locations: braunschweig.locations.home
   synthesis.locations.education: eqasim_common.locations.education
-  synthesis.locations.secondary: bavaria.locations.secondary
+  synthesis.locations.secondary: braunschweig.locations.secondary
   # Work-locations: Bavaria ALKIS/OSM pool for ZGB-8 + one synthetic
   # workplace per external Kreis derived from BA Pendler outbound.
   # Required so ~28% of ZGB commuters can reach workplaces outside the

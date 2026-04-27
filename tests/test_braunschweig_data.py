@@ -739,7 +739,7 @@ class TestDensityWeightedHome:
         from braunschweig.locations import home as bs_home
 
         df_buildings, _ = self._build_inputs()
-        monkeypatch.setattr(bs_home.delegate, "execute",
+        monkeypatch.setattr(bs_home, "_execute_base",
                             lambda ctx: df_buildings.copy())
         ctx = StubContext(config={
             "braunschweig.home_density_weighting": False,
@@ -751,7 +751,7 @@ class TestDensityWeightedHome:
         from braunschweig.locations import home as bs_home
 
         df_buildings, df_grid = self._build_inputs()
-        monkeypatch.setattr(bs_home.delegate, "execute",
+        monkeypatch.setattr(bs_home, "_execute_base",
                             lambda ctx: df_buildings.copy())
         ctx = StubContext(
             config={"braunschweig.home_density_weighting": True},

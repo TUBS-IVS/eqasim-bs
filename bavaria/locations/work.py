@@ -1,42 +1,15 @@
-import numpy as np
-import pandas as pd
+"""Deprecation shim - merged into :mod:`braunschweig.locations.work`."""
 
-"""
-Yield work location candidates for Germany.
-"""
+from __future__ import annotations
 
-def configure(context):
-    context.stage("bavaria.data.osm.locations")
-    context.stage("data.spatial.municipalities")
+import warnings
 
-def execute(context):
-    # Load data
-    df = context.stage("bavaria.data.osm.locations")    
-    df = df[df["location_type"] == "work"].copy()
+from braunschweig.locations.work import *  # noqa: F401,F403
+from braunschweig.locations.work import configure, execute  # noqa: F401
 
-    df["employees"] = df["area"] * df["floors"]
-    df["fake"] = False
-
-    # Fill missing municipalities
-    df_fake = context.stage("data.spatial.municipalities")
-    df_fake = df_fake[~df_fake["commune_id"].isin(df["commune_id"])].copy()
-
-    df_fake["geometry"] = df_fake["geometry"].centroid
-
-    df_fake["iris_id"] = df_fake["commune_id"].astype(str) + "0000"
-    df_fake["iris_id"] = df_fake["iris_id"].astype("category")
-
-    df_fake["employees"] = 1
-    df_fake["fake"] = True
-
-    # Merge
-    df = pd.concat([
-        df[["employees", "fake", "commune_id", "iris_id", "geometry"]], 
-        df_fake[["employees", "fake", "commune_id", "iris_id", "geometry"]]
-    ])
-
-    # Identifiers
-    df["location_id"] = np.arange(len(df))
-    df["location_id"] = "work_" + df["location_id"].astype(str)
-
-    return df
+warnings.warn(
+    "bavaria.locations.work has been merged into braunschweig.locations.work; "
+    "update aliases.",
+    DeprecationWarning,
+    stacklevel=2,
+)
