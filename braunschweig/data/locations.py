@@ -105,7 +105,7 @@ def configure(context):
     context.stage("braunschweig.data.alkis")
     context.stage("braunschweig.data.landuse")
     context.stage("braunschweig.data.osm")
-    context.stage("bavaria.data.spatial.iris")
+    context.stage("eqasim_common.data.spatial.iris")
 
 
 def _prepare_alkis(df_alkis: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -205,7 +205,7 @@ def execute(context) -> gpd.GeoDataFrame:
     df_alkis = context.stage("braunschweig.data.alkis")
     df_landuse = context.stage("braunschweig.data.landuse")
     df_osm = context.stage("braunschweig.data.osm")
-    df_zones = context.stage("bavaria.data.spatial.iris")
+    df_zones = context.stage("eqasim_common.data.spatial.iris")
 
     if df_zones.crs != df_alkis.crs:
         df_zones = df_zones.to_crs(df_alkis.crs)

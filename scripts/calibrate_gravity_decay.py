@@ -5,7 +5,7 @@ Fits a Poisson GLM to BA Pendleratlas Kreis-pair flows:
     log E[flow_ij] = α_i (origin FE) + γ_j (destination FE) + β · d_ij
 
 The β estimate is the data-driven distance-decay slope to plug into
-``bavaria.gravity.gravity_slope`` (currently default −0.2, BS override
+``braunschweig.gravity.gravity_slope`` (currently default −0.2, BS override
 −0.18). Output is written as JSON to
 ``eqasim-data/cache_bs/calibration/gravity_beta.json`` and printed.
 
@@ -55,7 +55,7 @@ REPO = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO / "eqasim-data" / "data"
 OUTPUT_PATH = REPO / "eqasim-data" / "cache_bs" / "calibration" / "gravity_beta.json"
 
-# 8 ZGB Kreise (matches bavaria.political_prefix in BS configs).
+# 8 ZGB Kreise (matches braunschweig.political_prefix in BS configs).
 ZGB8 = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 
 # Existing pendler CSV file names from braunschweig/data/census/pendler.py.

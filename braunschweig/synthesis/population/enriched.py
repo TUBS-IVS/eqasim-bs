@@ -68,11 +68,11 @@ def _configure_base(context):
 
     context.config("random_seed")
 
-    context.config("bavaria.minimum_age.car_availability", 0)
-    context.config("bavaria.minimum_age.bicycle_availability", 0)
-    context.config("bavaria.minimum_age.pt_subscription", 0)
+    context.config("braunschweig.minimum_age.car_availability", 0)
+    context.config("braunschweig.minimum_age.bicycle_availability", 0)
+    context.config("braunschweig.minimum_age.pt_subscription", 0)
 
-    context.config("bavaria.minimum_age.one_person_household", 16)
+    context.config("braunschweig.minimum_age.one_person_household", 16)
     context.config("braunschweig.ipf.use_household_size_margin", False)
 
 
@@ -109,7 +109,7 @@ def _execute_base(context):
     df_persons["car_availability"] = 1.0
     constraints = mid["car_availability_constraints"]
     constraints.append({
-        "age": (-np.inf, context.config("bavaria.minimum_age.car_availability") - 1),
+        "age": (-np.inf, context.config("braunschweig.minimum_age.car_availability") - 1),
         "target": 0.0,
     })
     filters = []
@@ -138,7 +138,7 @@ def _execute_base(context):
     df_persons["bicycle_availability"] = 1.0
     constraints = mid["bicycle_availability_constraints"]
     constraints.append({
-        "age": (-np.inf, context.config("bavaria.minimum_age.bicycle_availability") - 1),
+        "age": (-np.inf, context.config("braunschweig.minimum_age.bicycle_availability") - 1),
         "target": 0.0,
     })
     filters = []
@@ -169,7 +169,7 @@ def _execute_base(context):
     df_persons["has_pt_subscription"] = 1.0
     constraints = mid["pt_subscription_constraints"]
     constraints.append({
-        "age": (-np.inf, context.config("bavaria.minimum_age.pt_subscription") - 1),
+        "age": (-np.inf, context.config("braunschweig.minimum_age.pt_subscription") - 1),
         "target": 0.0,
     })
     filters = []
@@ -232,7 +232,7 @@ def _execute_base(context):
     else:
         df_household_size = context.stage("braunschweig.data.census.household_size")
 
-        minimum_age = context.config("bavaria.minimum_age.one_person_household")
+        minimum_age = context.config("braunschweig.minimum_age.one_person_household")
         df_household_size["lower_age"] = df_household_size["lower_age"].replace({0: minimum_age})
 
         df_young = df_household_size[df_household_size["lower_age"] == minimum_age].copy()

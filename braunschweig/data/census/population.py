@@ -64,7 +64,7 @@ def configure(context):
                    "braunschweig/12411-0018_de.csv")
     context.config("braunschweig.urbistat_gemeinden_path",
                    "braunschweig/urbistat_age_gemeinden.csv")
-    context.stage("bavaria.data.population.raw")
+    context.stage("eqasim_common.data.population.raw")
 
 
 def _load_destatis(path: str, scope_kreise: set[str]) -> pd.DataFrame:
@@ -155,7 +155,7 @@ def execute(context):
     urbistat_path = os.path.join(data_path,
                                  context.config("braunschweig.urbistat_gemeinden_path"))
 
-    df_vg = context.stage("bavaria.data.population.raw")
+    df_vg = context.stage("eqasim_common.data.population.raw")
     if "municipality_code" in df_vg.columns:
         df_vg = df_vg.rename(columns={"municipality_code": "ARS", "population": "EWZ"})
     if "GEN" not in df_vg.columns:

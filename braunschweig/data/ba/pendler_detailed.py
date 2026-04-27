@@ -43,7 +43,7 @@ def configure(context):
     context.config("data_path")
     context.config("braunschweig.ba_pendler_detailed_path", None)
     context.config("braunschweig.ba_pendler_detailed_separator", ";")
-    context.config("bavaria.political_prefix", None)
+    context.config("braunschweig.political_prefix", None)
 
 
 def _resolve(context) -> str | None:
@@ -90,7 +90,7 @@ def execute(context) -> pd.DataFrame:
     df["sector"] = df["sector"].astype(str).str.strip().str.upper()
     df["flow"] = pd.to_numeric(df["flow"], errors="coerce").fillna(0).astype(int)
 
-    scope = context.config("bavaria.political_prefix")
+    scope = context.config("braunschweig.political_prefix")
     if scope:
         scope = {str(p) for p in scope}
         df = df[

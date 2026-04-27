@@ -2,7 +2,7 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/locations/education.py``.
 Moved to ``eqasim_common.locations`` in Phase 2.5 of the eqasim-bs refactor;
-inherited unchanged.  The producer aliased to ``bavaria.data.osm.locations``
+inherited unchanged.  The producer aliased to ``eqasim_common.data.osm.locations``
 is overridden in BS configs to ``braunschweig.data.locations``.
 """
 
@@ -11,14 +11,14 @@ import pandas as pd
 
 
 def configure(context):
-    context.stage("bavaria.data.osm.locations")
+    context.stage("eqasim_common.data.osm.locations")
     context.stage("data.spatial.municipalities")
 
 MINIMUM_AREA = 20
 
 def execute(context):
     # Load data
-    df = context.stage("bavaria.data.osm.locations")    
+    df = context.stage("eqasim_common.data.osm.locations")    
     df = df[df["location_type"] == "education"].copy()
     df["fake"] = False
 

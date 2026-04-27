@@ -19,12 +19,12 @@ import matsim.simulation.prepare as delegate
 
 def configure(context):
     delegate.configure(context)
-    context.stage("bavaria.data.mvg.zones")
+    context.stage("eqasim_common.data.mvg.zones")
 
 def execute(context):
     result = delegate.execute(context)
 
-    df_zones = context.stage("bavaria.data.mvg.zones")
+    df_zones = context.stage("eqasim_common.data.mvg.zones")
     df_zones.to_file("{}/transit_zones.shp".format(context.path()))
 
     eqasim.run(context, "org.eqasim.bavaria.scenario.AddTransitZoneInformation", [

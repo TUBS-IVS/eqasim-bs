@@ -120,7 +120,7 @@ def configure(context):
         "braunschweig.pendler_aus_path",
         "braunschweig/statistik_pendler_2026042493430.csv",
     )
-    context.config("bavaria.political_prefix")
+    context.config("braunschweig.political_prefix")
 
 
 def _paths(context) -> tuple[str, str]:
@@ -154,8 +154,8 @@ def execute(context) -> pd.DataFrame:
     df = df[df["orig_ars"] != df["dest_ars"]].copy()
 
     # Diagnostics: print inbound / outbound / intra-ZGB SvB totals against
-    # the configured ZGB Kreis scope (``bavaria.political_prefix``).
-    scope = [str(p) for p in context.config("bavaria.political_prefix")]
+    # the configured ZGB Kreis scope (``braunschweig.political_prefix``).
+    scope = [str(p) for p in context.config("braunschweig.political_prefix")]
     total_in = df.loc[df["dest_ars"].isin(scope), "flow"].sum()
     total_out = df.loc[df["orig_ars"].isin(scope), "flow"].sum()
     total_internal = df.loc[

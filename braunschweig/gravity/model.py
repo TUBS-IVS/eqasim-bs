@@ -8,10 +8,10 @@ This module is the merged successor of:
   SvB-Pendlerstroeme.
 
 Phase 2.11 of the eqasim-bs refactor merged both into a single module so
-the BS pipeline no longer delegates through ``bavaria.gravity.model``. The
+the BS pipeline no longer delegates through ``braunschweig.gravity.model``. The
 behaviour is unchanged.
 
-Output schema is identical to ``bavaria.gravity.model``::
+Output schema is identical to ``braunschweig.gravity.model``::
 
     origin_id          str   commune_id (8-digit AGS)
     destination_id     str
@@ -178,7 +178,7 @@ def configure(context):
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")
-    context.config("bavaria.political_prefix")
+    context.config("braunschweig.political_prefix")
 
 
 def _gemeinde_to_kreis(series: pd.Series) -> pd.Series:
@@ -356,7 +356,7 @@ def execute(context):
     df_employment = context.stage("braunschweig.data.census.employment")
     df_external = context.stage("braunschweig.data.external_workplaces")
 
-    scope = [str(p) for p in context.config("bavaria.political_prefix")]
+    scope = [str(p) for p in context.config("braunschweig.political_prefix")]
     mask = df_pendler["orig_ars"].isin(scope) | df_pendler["dest_ars"].isin(scope)
     df_pendler = df_pendler[mask].copy()
 

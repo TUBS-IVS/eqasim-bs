@@ -409,7 +409,7 @@ class TestSpatialCodes:
         path = _latest_cache("eqasim_common.spatial.codes__*.p")
         if path is None:
             # Fall back to the pre-refactor cache name during the transition.
-            path = _latest_cache("bavaria.data.spatial.codes__*.p")
+            path = _latest_cache("eqasim_common.data.spatial.codes__*.p")
         if path is None:
             pytest.skip("Spatial-codes cache not yet generated")
         with open(path, "rb") as fh:
@@ -563,7 +563,7 @@ class TestZensusGridLoader:
                 "germany.population_source":
                     "vg250-ew_12-31.utm32s.gpkg.ebenen/"
                     "vg250-ew_ebenen_1231/DE_VG250.gpkg",
-                "bavaria.political_prefix": ZGB_KREISE,
+                "braunschweig.political_prefix": ZGB_KREISE,
             }
         )
 
@@ -640,7 +640,7 @@ class TestRegioStarLoader:
             config={
                 "data_path": str(DATA_ROOT),
                 "regiostar.path": "regiostar/regiostar_referenzdatei.xlsx",
-                "bavaria.political_prefix": ZGB_KREISE,
+                "braunschweig.political_prefix": ZGB_KREISE,
             }
         )
 
@@ -790,7 +790,7 @@ class TestInkarFullPanel:
             "data_path": ".",
             "braunschweig.inkar_panel": {},
             "braunschweig.inkar_panel_year": "latest",
-            "bavaria.political_prefix": None,
+            "braunschweig.political_prefix": None,
         })
         df = full_panel.execute(ctx)
         assert list(df.columns) == ["ars5", "raumeinheit"]
@@ -806,7 +806,7 @@ class TestInkarFullPanel:
                 "household_income_eur": "braunschweig/E_Haushaltseinkommen.xls",
             },
             "braunschweig.inkar_panel_year": "latest",
-            "bavaria.political_prefix": [
+            "braunschweig.political_prefix": [
                 "03101", "03102", "03103",
                 "03151", "03153", "03154", "03157", "03158",
             ],
@@ -834,7 +834,7 @@ class TestBaPendlerDetailed:
             "data_path": ".",
             "braunschweig.ba_pendler_detailed_path": None,
             "braunschweig.ba_pendler_detailed_separator": ";",
-            "bavaria.political_prefix": None,
+            "braunschweig.political_prefix": None,
         })
         df = pendler_detailed.execute(ctx)
         assert list(df.columns) == ["home_kreis", "work_kreis", "sector", "flow"]
@@ -855,7 +855,7 @@ class TestBaPendlerDetailed:
             "data_path": str(tmp_path),
             "braunschweig.ba_pendler_detailed_path": "ba.csv",
             "braunschweig.ba_pendler_detailed_separator": ";",
-            "bavaria.political_prefix": ["03101", "03102"],
+            "braunschweig.political_prefix": ["03101", "03102"],
         })
         df = pendler_detailed.execute(ctx)
         assert (df["home_kreis"].str.len() == 5).all()

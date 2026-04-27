@@ -2,7 +2,7 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/ipf/model.py``.
 Adapted for Braunschweig:
-- Config keys renamed from ``bavaria.ipf.*`` to ``braunschweig.ipf.*`` (one-shot
+- Config keys renamed from ``braunschweig.ipf.*`` to ``braunschweig.ipf.*`` (one-shot
   migration handled by :mod:`braunschweig._config_compat`).
 - No behavioural change otherwise (Phase 2.6 is relocation-only per D-5).
 """
@@ -18,7 +18,7 @@ When ``braunschweig.ipf.use_household_size_margin`` is enabled (set in
 ``braunschweig.ipf.prepare``), an additional ``hh_size`` dimension is added to
 the joint distribution and a new ``commune × hh_size`` selector block
 is appended to the IPF schedule. A hard zero target is enforced for the
-physically impossible cell ``age < bavaria.minimum_age.one_person_household``
+physically impossible cell ``age < braunschweig.minimum_age.one_person_household``
 ∩ ``hh_size == "1"`` (children cannot live in single-person households).
 
 Returns columns:
@@ -32,8 +32,8 @@ HH_SIZE_BINS = ("1", "2", "3", "4", "5", "6+")
 
 def configure(context):
     context.stage("braunschweig.ipf.prepare")
-    context.config("bavaria.minimum_age.employment", 16)
-    context.config("bavaria.minimum_age.one_person_household", 16)
+    context.config("braunschweig.minimum_age.employment", 16)
+    context.config("braunschweig.minimum_age.one_person_household", 16)
     context.config("braunschweig.ipf.use_household_size_margin", False)
     context.config("braunschweig.ipf.max_iterations", 1500)
     context.config("braunschweig.ipf.tolerance", 1e-2)
@@ -79,7 +79,7 @@ def execute(context):
     employment_age_classes = np.sort(df_employment["age_class"].unique())
     employment_age_upper = list(employment_age_classes[1:]) + [9999]
 
-    minimum_employment_age = context.config("bavaria.minimum_age.employment")
+    minimum_employment_age = context.config("braunschweig.minimum_age.employment")
 
     license_age_classes = np.sort(df_licenses_country["age_class"].unique())
     license_age_upper = list(license_age_classes[1:]) + [9999]
@@ -257,7 +257,7 @@ def execute(context):
         # Hard zero: persons younger than ``minimum_age_one_person_household``
         # cannot live in a 1-person household.
         minimum_one_person_age = context.config(
-            "bavaria.minimum_age.one_person_household"
+            "braunschweig.minimum_age.one_person_household"
         )
         f_model = df_model["combined_age_class"] < minimum_one_person_age
         f_model &= df_model["hh_size"] == "1"

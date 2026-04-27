@@ -3,7 +3,7 @@
 Loads DESTATIS table ``1000A-3082`` (``Bevölkerung kompakt``,
 ``Gemeinden × Alter (11 Altersklassen) × Geschlecht × Größe des privaten
 Haushalts``) and emits a long-format DataFrame consumed by
-``bavaria.ipf.prepare`` as the fifth IPF margin.
+``braunschweig.ipf.prepare`` as the fifth IPF margin.
 
 The table reports **persons** (``value_variable_code = PRS002``) — exactly
 what the IPF model balances — so cell counts can be used directly as

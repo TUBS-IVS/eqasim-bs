@@ -30,7 +30,7 @@ config:
   projection_year: null
 
   # Region scope: ZGB-8 Kreise.
-  bavaria.political_prefix:
+  braunschweig.political_prefix:
     - "03101"
     - "03102"
     - "03103"
@@ -41,9 +41,9 @@ config:
     - "03158"
 
   # Data paths (identical to the smoke / validation configs).
-  bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx
-  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
-  bavaria.buildings_path: braunschweig/buildings
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
+  braunschweig.buildings_path: braunschweig/buildings
   osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
 
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
@@ -60,7 +60,7 @@ config:
 
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a
-  # Braunschweig fork (bavaria.data.spatial.iris etc.) are not aliased.
+  # Braunschweig fork (eqasim_common.data.spatial.iris etc.) are not aliased.
   data.census.filtered: braunschweig.ipf.attributed
   synthesis.population.income.selected: braunschweig.synthesis.income
   synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
@@ -71,7 +71,7 @@ aliases:
   synthesis.locations.work: braunschweig.locations.work
   data.od.weighted: braunschweig.gravity.model
   data.spatial.codes: eqasim_common.spatial.entd_codes
-  data.spatial.iris: bavaria.data.spatial.iris
+  data.spatial.iris: eqasim_common.data.spatial.iris
   synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare

@@ -47,8 +47,8 @@ def configure(context):
         "braunschweig.zensus_households_path",
         "braunschweig/5000H-2001_de_flat.csv",
     )
-    context.config("bavaria.political_prefix")
-    context.config("bavaria.minimum_age.one_person_household", 16)
+    context.config("braunschweig.political_prefix")
+    context.config("braunschweig.minimum_age.one_person_household", 16)
 
 
 def _path(context) -> str:
@@ -101,7 +101,7 @@ def _load_region_distribution(path: str, scope_prefixes):
 
 
 def execute(context) -> pd.DataFrame:
-    scope = [str(p) for p in context.config("bavaria.political_prefix")]
+    scope = [str(p) for p in context.config("braunschweig.political_prefix")]
     hh_counts = _load_region_distribution(_path(context), scope)
 
     # Person-weighted share of each size bin.

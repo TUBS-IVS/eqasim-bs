@@ -39,12 +39,12 @@ AREA_MAX = 400.0
 
 def configure(context):
     context.stage("braunschweig.data.alkis")
-    context.stage("bavaria.data.spatial.iris")
+    context.stage("eqasim_common.data.spatial.iris")
 
 
 def execute(context) -> gpd.GeoDataFrame:
     df_alkis = context.stage("braunschweig.data.alkis")
-    df_zones = context.stage("bavaria.data.spatial.iris")
+    df_zones = context.stage("eqasim_common.data.spatial.iris")
 
     # Ensure aligned CRS (both should be UTM32N/EPSG:25832).
     if df_zones.crs != df_alkis.crs:

@@ -33,7 +33,7 @@ Configuration keys
                                       metres (default 200.0)
 - ``germany.population_path`` /
   ``germany.population_source``       VG250-EW vsizip (re-used)
-- ``bavaria.political_prefix``        ZGB-8 ARS list
+- ``braunschweig.political_prefix``        ZGB-8 ARS list
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def configure(context):
         "germany.population_source",
         "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg",
     )
-    context.config("bavaria.political_prefix")
+    context.config("braunschweig.political_prefix")
 
 
 def _resolve_path(context) -> str:
@@ -86,7 +86,7 @@ def _vg250_vsi_path(context) -> str:
 
 def _zgb_bbox_3035(context) -> tuple[float, float, float, float]:
     """Return the ZGB-8 union bbox (minx, miny, maxx, maxy) in EPSG:3035."""
-    zgb = [str(p) for p in context.config("bavaria.political_prefix")]
+    zgb = [str(p) for p in context.config("braunschweig.political_prefix")]
     krs = gpd.read_file(
         _vg250_vsi_path(context),
         layer="vg250_krs",
@@ -125,7 +125,7 @@ def execute(context) -> gpd.GeoDataFrame:
         raise RuntimeError(
             "[braunschweig.data.zensus_grid.population] "
             "no Zensus cells inside the ZGB-8 bbox — "
-            "check `bavaria.political_prefix` and the source parquet."
+            "check `braunschweig.political_prefix` and the source parquet."
         )
 
     x = clipped["x"].to_numpy()

@@ -17,11 +17,11 @@ import numpy.linalg as la
 
 
 def configure(context):
-    context.stage("bavaria.data.spatial.iris")
+    context.stage("eqasim_common.data.spatial.iris")
 
 def execute(context):
     # One municipality per "IRIS"
-    df_municipalities = context.stage("bavaria.data.spatial.iris")
+    df_municipalities = context.stage("eqasim_common.data.spatial.iris")
     municipalities = df_municipalities["commune_id"].values
         
     # Initialize matrix to zero

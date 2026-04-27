@@ -3,8 +3,8 @@ IPF ``hh_size`` margin (added by ``feature-bs-ipf-hhsize-1``).
 
 The loader sits in ``braunschweig.data.census.households_type`` and exposes
 ``Personen`` per (Gemeinde × HSHGR2 × HSHTP1). The downstream IPF stage
-``bavaria.ipf.model`` consumes the (Gemeinde × HSHGR2) marginal as a fifth
-constraint when ``bavaria.ipf.use_household_size_margin`` is enabled.
+``braunschweig.ipf.model`` consumes the (Gemeinde × HSHGR2) marginal as a fifth
+constraint when ``braunschweig.ipf.use_household_size_margin`` is enabled.
 
 These tests are cache-level invariants — they read the synpp pickles and
 do not re-execute any stage. They are skipped (not failed) if the caches
@@ -98,17 +98,17 @@ class TestHouseholdTypeLoader:
 
 
 # ---------------------------------------------------------------------------
-# IPF: bavaria.ipf.model with hh_size margin
+# IPF: braunschweig.ipf.model with hh_size margin
 # ---------------------------------------------------------------------------
 
 class TestIPFHouseholdSizeMargin:
     """Cache-level invariants of the joint distribution returned by
-    ``bavaria.ipf.model`` when the hh_size margin is enabled."""
+    ``braunschweig.ipf.model`` when the hh_size margin is enabled."""
 
     def _load_model(self):
-        path = _latest_cache("bavaria.ipf.model__*.p")
+        path = _latest_cache("braunschweig.ipf.model__*.p")
         if path is None:
-            pytest.skip("bavaria.ipf.model cache not yet generated")
+            pytest.skip("braunschweig.ipf.model cache not yet generated")
         df = _load_pickle(path)
         if "hh_size" not in df.columns:
             pytest.skip("hh_size margin disabled in the cached IPF run")

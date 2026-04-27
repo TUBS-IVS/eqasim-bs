@@ -2,7 +2,7 @@
 
 Rationale
 ---------
-``bavaria.political_prefix`` restricts the whole upstream pipeline
+``braunschweig.political_prefix`` restricts the whole upstream pipeline
 (population, distance matrix, gravity model, ALKIS/OSM work locations)
 to the 8 ZGB Kreise. But the BA Pendleratlas 2025 shows that roughly
 28 % of all employed ZGB residents have their workplace outside the
@@ -67,7 +67,7 @@ def configure(context):
         "germany.population_source",
         "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg",
     )
-    context.config("bavaria.political_prefix")
+    context.config("braunschweig.political_prefix")
     context.config("braunschweig.external_work_min_flow", DEFAULT_MIN_FLOW)
     context.stage("braunschweig.data.census.pendler")
 
@@ -166,7 +166,7 @@ def _weighted_centroids(kreise: gpd.GeoDataFrame,
 
 
 def execute(context) -> gpd.GeoDataFrame:
-    zgb = [str(p) for p in context.config("bavaria.political_prefix")]
+    zgb = [str(p) for p in context.config("braunschweig.political_prefix")]
     min_flow = int(context.config("braunschweig.external_work_min_flow"))
 
     df_pendler = context.stage("braunschweig.data.census.pendler")

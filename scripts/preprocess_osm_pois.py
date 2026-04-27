@@ -44,7 +44,7 @@ import pyrosm
 
 
 # ---------------------------------------------------------------------------
-# Filter lists — identical to ``bavaria.data.osm.locations``.
+# Filter lists — identical to ``eqasim_common.data.osm.locations``.
 # ---------------------------------------------------------------------------
 
 OSM_FILTERS = [

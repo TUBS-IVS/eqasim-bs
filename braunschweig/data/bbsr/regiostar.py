@@ -20,7 +20,7 @@ Output
     - ``regiostar17``  integer 3-digit RegioStaR-17 type (finer).
     - ``regiostar_gem7`` integer Gemeinde-typ (RegioStaRGem7).
 
-The frame is filtered to the configured ``bavaria.political_prefix``
+The frame is filtered to the configured ``braunschweig.political_prefix``
 (ZGB-8 by default) so downstream stages do not pay for full-Germany
 overhead. A small ``RegioStaR-7`` legend is exposed as ``REGIOSTAR7_LABELS``
 for reporting.
@@ -60,7 +60,7 @@ def configure(context):
         "regiostar.path",
         "regiostar/regiostar_referenzdatei.xlsx",
     )
-    context.config("bavaria.political_prefix")
+    context.config("braunschweig.political_prefix")
 
 
 def _resolve_path(context) -> str:
@@ -97,13 +97,13 @@ def execute(context) -> pd.DataFrame:
     df["ars5"] = df["commune_id"].str[:5]
     df = df.dropna(subset=["regiostar7"]).copy()
 
-    scope = [str(p) for p in context.config("bavaria.political_prefix")]
+    scope = [str(p) for p in context.config("braunschweig.political_prefix")]
     df = df[df["ars5"].isin(scope)].reset_index(drop=True)
 
     if df.empty:
         raise RuntimeError(
             "[braunschweig.data.bbsr.regiostar] no Gemeinden matched scope "
-            f"{scope}; check ``bavaria.political_prefix`` and source file."
+            f"{scope}; check ``braunschweig.political_prefix`` and source file."
         )
 
     df = df[[

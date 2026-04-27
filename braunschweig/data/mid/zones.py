@@ -3,7 +3,7 @@ Zoning system for the MiD 2023 Großraum Braunschweig regional report.
 
 The eight ZGB Kreise match exactly the eight 'Teilgebiete' reported in the
 MiD 2023 sample 7555 tables, so we build the zones by dissolving the Gemeinde
-polygons (from bavaria.data.spatial.iris) on their 5-digit Kreis code
+polygons (from eqasim_common.data.spatial.iris) on their 5-digit Kreis code
 (departement_id / AGS-5).
 
 Zone names follow the naming convention used in braunschweig/data/mid/data.py.
@@ -25,11 +25,11 @@ ZONE_NAMES = {
 
 
 def configure(context):
-    context.stage("bavaria.data.spatial.iris")
+    context.stage("eqasim_common.data.spatial.iris")
 
 
 def execute(context):
-    df = context.stage("bavaria.data.spatial.iris")[["departement_id", "geometry"]].copy()
+    df = context.stage("eqasim_common.data.spatial.iris")[["departement_id", "geometry"]].copy()
     df["departement_id"] = df["departement_id"].astype(str)
 
     # Dissolve Gemeinden into Kreis polygons.

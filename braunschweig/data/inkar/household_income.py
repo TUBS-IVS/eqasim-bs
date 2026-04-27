@@ -35,7 +35,7 @@ def configure(context):
     context.config("braunschweig.inkar_year", "latest")
     # Optional scope (list of 5-digit Kreis prefixes). If absent, all Kreise
     # from the file are returned; downstream only reads the 8 ZGB Kreise.
-    context.config("bavaria.political_prefix", None)
+    context.config("braunschweig.political_prefix", None)
 
 
 def _path(context) -> str:
@@ -89,7 +89,7 @@ def _load(path: str, year_cfg):
 def execute(context) -> pd.DataFrame:
     df, year, de_mean = _load(_path(context), context.config("braunschweig.inkar_year"))
 
-    scope = context.config("bavaria.political_prefix")
+    scope = context.config("braunschweig.political_prefix")
     if scope:
         scope = [str(p) for p in scope]
         in_scope = df[df["ars5"].isin(scope)].copy()

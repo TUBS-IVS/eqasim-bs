@@ -1,6 +1,6 @@
 """Employees-at-workplace per municipality from GENESIS 13111-01-03-5.
 
-Replaces `braunschweig.data.census.employees`. Used by `bavaria.gravity.model`
+Replaces `braunschweig.data.census.employees`. Used by `braunschweig.gravity.model`
 as the attraction vector for the work-flow gravity model.
 
 Input (XLSX) 13111-01-03-5 — SvB **am Arbeitsort** nach Geschlecht und

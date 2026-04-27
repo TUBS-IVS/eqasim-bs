@@ -24,11 +24,11 @@ Mapping to the French codes used upstream:
 
 
 def configure(context):
-    context.stage("bavaria.data.population.raw")
+    context.stage("eqasim_common.data.population.raw")
 
 def execute(context):
     # Load codes
-    df_codes = context.stage("bavaria.data.population.raw")[["municipality_code"]]
+    df_codes = context.stage("eqasim_common.data.population.raw")[["municipality_code"]]
 
     # Clean up identifiers
     df_codes["region_id"] = df_codes["municipality_code"].str[:2].astype("category")

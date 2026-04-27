@@ -63,7 +63,7 @@ config:
   #   03101 SK Braunschweig, 03102 SK Salzgitter, 03103 SK Wolfsburg,
   #   03151 LK Gifhorn,      03153 LK Goslar,     03154 LK Helmstedt,
   #   03157 LK Peine,        03158 LK Wolfenbüttel
-  bavaria.political_prefix:
+  braunschweig.political_prefix:
     - "03101"
     - "03102"
     - "03103"
@@ -75,12 +75,12 @@ config:
 
   # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
   # GENESIS / Regionaldatenbank exports for Niedersachsen
-  bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
 
   # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
   # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
@@ -107,7 +107,7 @@ config:
   braunschweig.home_density_weighting: true
 
   # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
-  bavaria.buildings_path: braunschweig/buildings
+  braunschweig.buildings_path: braunschweig/buildings
 
   # Geofabrik snapshot for Niedersachsen
   osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
@@ -139,7 +139,7 @@ aliases:
   # OD-Matrix: BA Pendleratlas 2025 auf Kreis-Ebene (empirisch beobachtet)
   # kalibriert den Bavaria-Gravity-Output auf Gemeinde-Ebene.
   data.od.weighted: braunschweig.gravity.model
-  data.spatial.iris: bavaria.data.spatial.iris
+  data.spatial.iris: eqasim_common.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
   synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
   # Enriched-population stage: point directly to the Braunschweig fork so
@@ -149,7 +149,7 @@ aliases:
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
 
-  # Region-specific loader overrides: redirect selected bavaria.data.* stages
+  # Region-specific loader overrides: redirect selected eqasim_common.data.* stages
   # to their Braunschweig forks. Only stages whose input layout differs.
   # Population fork uses urbistat.com scraped data (11-class age scheme)
   # Employment fork uses GENESIS 13111-06-02-4 (Wohnort x Alter x Geschlecht)

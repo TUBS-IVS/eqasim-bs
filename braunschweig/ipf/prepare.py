@@ -2,7 +2,7 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/ipf/prepare.py``.
 Adapted for Braunschweig:
-- Config keys renamed from ``bavaria.ipf.*`` to ``braunschweig.ipf.*``.
+- Config keys renamed from ``braunschweig.ipf.*`` to ``braunschweig.ipf.*``.
 - No behavioural change otherwise (Phase 2.6 is relocation-only per D-5).
 """
 import pandas as pd

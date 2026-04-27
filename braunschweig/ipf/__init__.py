@@ -1,7 +1,7 @@
 """Iterative Proportional Fitting (IPF) for the Braunschweig synthetic population.
 
 Phase 2.6 of the refactor moves ``bavaria/ipf/{model,prepare,attributed}.py``
-here.  Until then the BS pipeline references ``bavaria.ipf.*`` via aliases in
+here.  Until then the BS pipeline references ``braunschweig.ipf.*`` via aliases in
 :file:`config_local_braunschweig.yml`.
 
 After the move every module in this package will carry a docstring header in

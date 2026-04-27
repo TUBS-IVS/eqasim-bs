@@ -48,7 +48,7 @@ def configure(context):
     context.config("data_path")
     context.config("braunschweig.inkar_panel", {})
     context.config("braunschweig.inkar_panel_year", "latest")
-    context.config("bavaria.political_prefix", None)
+    context.config("braunschweig.political_prefix", None)
 
 
 def _resolve(context, rel_path: str) -> str:
@@ -99,7 +99,7 @@ def execute(context) -> pd.DataFrame:
         "braunschweig.inkar_panel"
     ) or {}
     year_cfg = context.config("braunschweig.inkar_panel_year")
-    scope = context.config("bavaria.political_prefix")
+    scope = context.config("braunschweig.political_prefix")
 
     if not panel_cfg:
         print(

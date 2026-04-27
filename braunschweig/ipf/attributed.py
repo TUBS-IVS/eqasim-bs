@@ -2,7 +2,7 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/ipf/attributed.py``.
 Adapted for Braunschweig:
-- Config keys renamed from ``bavaria.ipf.*`` to ``braunschweig.ipf.*``.
+- Config keys renamed from ``braunschweig.ipf.*`` to ``braunschweig.ipf.*``.
 - Log message tags now read ``[braunschweig.ipf.attributed]`` (mechanical rename).
 - No behavioural change otherwise (Phase 2.6 is relocation-only per D-5).
 """
