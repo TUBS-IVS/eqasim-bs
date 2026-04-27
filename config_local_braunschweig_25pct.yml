@@ -144,7 +144,7 @@ aliases:
   data.od.weighted: braunschweig.gravity.model
   data.spatial.iris: bavaria.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
-  synthesis.population.spatial.primary.locations: bavaria.locations.synthesis.replacement
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
   # Enriched-population stage: point directly to the Braunschweig fork so
   # synpp's single-step alias resolution picks it up (synpp.resolve_stage
   # substitutes once, so aliasing via the intermediate bavaria.* entry below
