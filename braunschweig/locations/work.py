@@ -27,7 +27,7 @@ import geopandas as gpd
 
 def _execute_base(context):
     """OSM/ALKIS workplace points + synthetic centroids for missing Gemeinden."""
-    df = context.stage("bavaria.data.osm.locations")
+    df = context.stage("braunschweig.data.locations")
     df = df[df["location_type"] == "work"].copy()
 
     df["employees"] = df["area"] * df["floors"]
@@ -57,7 +57,7 @@ def _execute_base(context):
 # --- Braunschweig-specific -------------------------------------------------
 
 def configure(context):
-    context.stage("bavaria.data.osm.locations")
+    context.stage("braunschweig.data.locations")
     context.stage("data.spatial.municipalities")
     context.stage("braunschweig.data.external_workplaces")
 

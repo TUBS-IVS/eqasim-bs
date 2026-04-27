@@ -20,7 +20,7 @@ where ``U_age`` is the urbistat class that overlaps the DESTATIS class most.
 This keeps the spatial distribution from urbistat while adopting the official
 DESTATIS totals and the Bavaria-compatible 17-class age scheme.
 
-Output schema (matches ``bavaria.data.census.population``):
+Output schema (matches ``braunschweig.data.census.population``):
     (commune_id, sex, age_class, weight)  with ARS-12 commune_id.
 """
 

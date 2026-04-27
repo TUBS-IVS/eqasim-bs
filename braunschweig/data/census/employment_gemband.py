@@ -1,6 +1,6 @@
 """Employment marginals for the ZGB Braunschweig region from BA Gemeindedaten.
 
-Replaces `bavaria.data.census.employment`. Reads the BA Statistik
+Replaces `braunschweig.data.census.employment`. Reads the BA Statistik
 "Gemeindedaten der sozialversicherungspflichtig Beschäftigten" (XLSX), filters
 for the ZGB-8 Kreise and emits totals per (Kreis, sex) with a single age class.
 
@@ -29,7 +29,7 @@ Input (XLSX):
       13 Auspendler
       14 Zahl der Betriebe
 
-Output schema (matches bavaria.data.census.employment):
+Output schema (matches braunschweig.data.census.employment):
     (departement_id, age_class, sex, weight)
 """
 

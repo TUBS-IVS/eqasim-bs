@@ -11,7 +11,7 @@ targets without any HH→persons conversion.
 
 Output schema::
 
-    commune_id : str   (12-digit ARS, matches bavaria.data.census.population)
+    commune_id : str   (12-digit ARS, matches braunschweig.data.census.population)
     sex        : str   ("male" / "female")
     lower_age  : int   ALTKL2 lower bound (0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75)
     upper_age  : int   ALTKL2 upper bound exclusive (5, 10, …, 150)

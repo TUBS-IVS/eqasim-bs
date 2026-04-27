@@ -11,11 +11,11 @@ import numpy as np
 import pandas as pd
 
 def configure(context):
-    context.stage("bavaria.data.osm.locations")
+    context.stage("braunschweig.data.locations")
 
 def execute(context):
     # Load data
-    df = context.stage("bavaria.data.osm.locations")
+    df = context.stage("braunschweig.data.locations")
 
     # Activity types    
     df["offers_leisure"] = df["location_type"] == "leisure"

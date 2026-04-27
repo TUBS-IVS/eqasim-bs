@@ -1,6 +1,6 @@
 """
 Braunschweig building registry — drop-in replacement for
-``bavaria.data.buildings``.
+``braunschweig.data.buildings``.
 
 Emits the same schema expected by ``bavaria.locations.home``:
     building_id   int

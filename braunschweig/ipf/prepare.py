@@ -24,9 +24,9 @@ HH_SIZE_BINS = ("1", "2", "3", "4", "5", "6+")
 
 
 def configure(context):
-    context.stage("bavaria.data.census.population")
-    context.stage("bavaria.data.census.employment")
-    context.stage("bavaria.data.census.licenses")
+    context.stage("braunschweig.data.census.population")
+    context.stage("braunschweig.data.census.employment")
+    context.stage("braunschweig.data.census.licenses")
 
     context.config("braunschweig.ipf.use_household_size_margin", False)
     if context.config("braunschweig.ipf.use_household_size_margin"):
@@ -86,11 +86,11 @@ def _build_household_size_margin(
 
 def execute(context):
     # Load data
-    df_population = context.stage("bavaria.data.census.population")
-    df_employment = context.stage("bavaria.data.census.employment")
+    df_population = context.stage("braunschweig.data.census.population")
+    df_employment = context.stage("braunschweig.data.census.employment")
 
-    df_licenses_country = context.stage("bavaria.data.census.licenses")[0]
-    df_licenses_kreis = context.stage("bavaria.data.census.licenses")[2]
+    df_licenses_country = context.stage("braunschweig.data.census.licenses")[0]
+    df_licenses_kreis = context.stage("braunschweig.data.census.licenses")[2]
 
     use_hh_size = context.config("braunschweig.ipf.use_household_size_margin")
 

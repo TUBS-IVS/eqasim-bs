@@ -60,11 +60,11 @@ def _configure_base(context):
 
     context.stage("synthesis.population.spatial.home.locations")
 
-    context.stage("bavaria.data.mid.data")
-    context.stage("bavaria.data.mid.zones")
+    context.stage("braunschweig.data.mid.data")
+    context.stage("braunschweig.data.mid.zones")
 
-    context.stage("bavaria.data.census.household_size")
-    context.stage("bavaria.data.census.household_income")
+    context.stage("braunschweig.data.census.household_size")
+    context.stage("braunschweig.data.census.household_income")
 
     context.config("random_seed")
 
@@ -87,8 +87,8 @@ def _execute_base(context):
 
     df_homes = context.stage("synthesis.population.spatial.home.locations")[["household_id", "geometry"]].copy()
 
-    df_zones = context.stage("bavaria.data.mid.zones")
-    mid = context.stage("bavaria.data.mid.data")
+    df_zones = context.stage("braunschweig.data.mid.zones")
+    mid = context.stage("braunschweig.data.mid.data")
 
     f_covered = np.zeros(len(df_homes), dtype=bool)
     for zone in df_zones["name"].unique():
@@ -230,7 +230,7 @@ def _execute_base(context):
             )
         )
     else:
-        df_household_size = context.stage("bavaria.data.census.household_size")
+        df_household_size = context.stage("braunschweig.data.census.household_size")
 
         minimum_age = context.config("bavaria.minimum_age.one_person_household")
         df_household_size["lower_age"] = df_household_size["lower_age"].replace({0: minimum_age})
@@ -255,7 +255,7 @@ def _execute_base(context):
 
     # Household income (overwrite). The reference table can be 5-bin
     # (Bavaria GENESIS) or 6-bin (Braunschweig MiD H4); pick adaptively.
-    df_income = context.stage("bavaria.data.census.household_income")
+    df_income = context.stage("braunschweig.data.census.household_income")
     income_bins = set(df_income["household_size"].astype(str).unique())
     income_size_map, scheme = _build_income_size_map(income_bins)
     income_lookup_size = df_persons["household_size"].astype(str).map(
@@ -444,7 +444,7 @@ def execute(context):
             df_persons["household_size"].astype(str).value_counts(normalize=True)
             .sort_index()
         )
-        df_size_ref = context.stage("bavaria.data.census.household_size").copy()
+        df_size_ref = context.stage("braunschweig.data.census.household_size").copy()
         if "household_size" in df_size_ref.columns and "weight" in df_size_ref.columns:
             target = (
                 df_size_ref.groupby("household_size", observed=True)["weight"].sum()

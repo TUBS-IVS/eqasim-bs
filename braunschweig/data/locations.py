@@ -1,6 +1,6 @@
 """
 Braunschweig activity-location catalogue — drop-in replacement for
-``bavaria.data.osm.locations``.
+``braunschweig.data.locations``.
 
 Sources candidate non-home locations from:
 

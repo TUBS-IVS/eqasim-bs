@@ -91,7 +91,7 @@ def _execute_gravity_base(context):
     """
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
     df_population = context.stage("braunschweig.ipf.attributed")
-    df_employees = context.stage("bavaria.data.census.employees")
+    df_employees = context.stage("braunschweig.data.census.employees")
 
     df_population = df_population.rename(columns={
         "commune_id": "origin_id",
@@ -171,7 +171,7 @@ IPF_TOLERANCE = 1e-3
 def configure(context):
     context.stage("eqasim_common.gravity.distance_matrix")
     context.stage("braunschweig.ipf.attributed")
-    context.stage("bavaria.data.census.employees")
+    context.stage("braunschweig.data.census.employees")
     context.config("gravity_slope", DEFAULT_SLOPE)
     context.config("gravity_constant", DEFAULT_CONSTANT)
     context.config("gravity_diagonal", DEFAULT_DIAGONAL)

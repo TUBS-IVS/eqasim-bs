@@ -1,6 +1,7 @@
-## Synthetic population pipeline for the Braunschweig region — 25 % sample
+## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 25% sample
 ## incl. MATSim outputs. Derived from config_local_braunschweig.yml; only the
 ## sampling rate, the output prefix/folder and the `run` section differ.
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
 
 working_directory: eqasim-data/cache_bs_25pct
 
@@ -154,21 +155,13 @@ aliases:
 
   # Region-specific loader overrides: redirect selected bavaria.data.* stages
   # to their Braunschweig forks. Only stages whose input layout differs.
-  bavaria.data.census.licenses: braunschweig.data.census.licenses
   # Population fork uses urbistat.com scraped data (11-class age scheme)
-  bavaria.data.census.population: braunschweig.data.census.population
   # Employment fork uses GENESIS 13111-06-02-4 (Wohnort x Alter x Geschlecht)
-  bavaria.data.census.employment: braunschweig.data.census.employment
   # Employees-at-workplace fork uses GENESIS 13111-01-03-5 (SvB Arbeitsort, Gemeinde)
-  bavaria.data.census.employees: braunschweig.data.census.employees
   # MiD 2023 Großraum Braunschweig (infas sample 7555, 8 Teilgebiete = ZGB Kreise).
   # Replaces the hard-coded Munich 2017 values from bavaria/data/mid/data.py.
-  bavaria.data.mid.data:  braunschweig.data.mid.data
-  bavaria.data.mid.zones: braunschweig.data.mid.zones
   # Household size and income from MiD 2023 H1/H4 — replaces Bavaria-specific
   # GENESIS files (12211-105 / 12211-101) that are not available for NDS.
-  bavaria.data.census.household_size:   braunschweig.data.census.household_size
-  bavaria.data.census.household_income: braunschweig.data.census.household_income
   # Enriched-population fork: already registered directly as
   # synthesis.population.enriched above (synpp resolves aliases only one
   # step deep, so chaining via bavaria.synthesis.population.enriched would
@@ -176,11 +169,9 @@ aliases:
   # Buildings fork: ALKIS Hausumringe NDS (LGLN) preprocessed to GeoParquet
   # via scripts/preprocess_alkis_landuse.py, filtered to residential AAA-GFK
   # codes. See braunschweig/data/buildings.py for the area / activity rules.
-  bavaria.data.buildings: braunschweig.data.buildings
   # Activity-locations fork: ALKIS GFK codes + ATKIS landuse polygons
   # replace the OSM-tag based bavaria stage. Feeds work / education /
   # secondary samplers directly — no OSM parsing needed anymore.
-  bavaria.data.osm.locations: braunschweig.data.locations
   # Commute-distance fork: overrides the ENTD-sampled work commute
   # distances with MiD 2023 P13 Kreis-level distributions for ZGB
   # residents. See braunschweig/synthesis/spatial/commute_distance.py.

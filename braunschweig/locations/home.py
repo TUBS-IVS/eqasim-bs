@@ -34,7 +34,7 @@ ZENSUS_CRS = "EPSG:3035"
 
 def _execute_base(context):
     """Per-building home-location candidates with ``weight = area``."""
-    df = context.stage("bavaria.data.buildings")
+    df = context.stage("braunschweig.data.buildings")
     df = df.rename(columns={"building_id": "home_location_id"})
     return df[[
         "home_location_id", "weight", "commune_id", "iris_id", "geometry",
@@ -44,7 +44,7 @@ def _execute_base(context):
 # --- Braunschweig-specific -------------------------------------------------
 
 def configure(context):
-    context.stage("bavaria.data.buildings")
+    context.stage("braunschweig.data.buildings")
     context.config("braunschweig.home_density_weighting", False)
     if context.config("braunschweig.home_density_weighting"):
         context.stage("braunschweig.data.zensus_grid.population")
