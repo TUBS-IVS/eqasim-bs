@@ -1,29 +1,41 @@
-"""
-BA Pendleratlas (Beschäftigtenstatistik) — Kreis-zu-Kreis OD-Matrix für ZGB-8.
+"""BA Pendleratlas (employment statistics): Kreis-to-Kreis OD matrix for ZGB-8.
 
-Quelle: statistik.arbeitsagentur.de — zwei CSV-Exports:
-    * statistik_pendler_*412.csv  Einpendler (Arbeitsort ZGB)
-    * statistik_pendler_*430.csv  Auspendler (Wohnort ZGB)
-    * Gebietsstand Juni 2025, Datenstand Januar 2026
-    * Einheit: sozialversicherungspflichtig Beschäftigte (SvB) am Arbeitsort
+Source
+------
+``statistik.arbeitsagentur.de`` — two CSV exports requested for the eight
+ZGB Kreise:
 
-Diese Stage liefert eine bereinigte, lange DataFrame im Schema:
+    * ``statistik_pendler_*412.csv`` — *Einpendler* (workplace inside ZGB,
+      residence anywhere).
+    * ``statistik_pendler_*430.csv`` — *Auspendler* (residence inside ZGB,
+      workplace anywhere).
+    * Gebietsstand June 2025, Datenstand January 2026.
+    * Unit: ``sozialversicherungspflichtig Beschäftigte`` (SvB), counted
+      at the workplace.
 
-    origin_ars    str   5-stelliger ARS des Wohnorts (Kreis)
-    destination_ars  str   5-stelliger ARS des Arbeitsorts (Kreis)
-    flow          int   SvB-Pendlerstrom
-    source        str   'ein' | 'aus'   (Herkunftsdatei, Diagnose)
+Output schema
+-------------
+A long ``DataFrame`` with one row per ordered Kreis pair::
 
-Die Kreis-Ebene ist bewusst als Datenquelle gewählt, weil die BA keine
-Gemeinde-zu-Gemeinde-Matrix veröffentlicht (Datenschutz / kleine Fallzahlen).
+    orig_ars  str  5-digit ARS of the residence Kreis
+    dest_ars  str  5-digit ARS of the workplace Kreis
+    flow      int  SvB commuter count
 
-Nutzung downstream:
-    - Validierung der Gravity-Model-Ausgabe (bavaria.gravity.model) auf
-      Kreis-Ebene nach Aggregation.
-    - Optional: Zeilensummen-Kalibrierung des Gravity-Modells
-      (Gemeinde-Flows skalieren so dass Kreissummen stimmen).
-    - Direkte Arbeitsort-Sampling-Gewichte für Pendler über die
-      ZGB-Grenze (externes Einpendeln nach Hannover etc.).
+The Kreis level is chosen because the BA does not publish a
+Gemeinde-to-Gemeinde matrix (privacy / small-cell suppression).
+
+Downstream consumers
+--------------------
+* Validation of the gravity-model output
+  (``braunschweig.gravity.model``) after aggregation to the Kreis level.
+* Row-sum calibration of the gravity model: scale Gemeinde-level flows
+  so that their Kreis aggregates match the BA totals.
+* Workplace-sampling weights for synthetic commuters crossing the ZGB
+  boundary (e.g. external inbound to Hannover).
+
+The two source files overlap on ZGB↔ZGB pairs — the same pair appears
+once in each export. Deduplication keeps the larger of the two flows
+(see ``execute``); self-loops are dropped.
 """
 
 from __future__ import annotations
@@ -125,21 +137,24 @@ def execute(context) -> pd.DataFrame:
     df_ein = _read_one(path_ein, "ein")
     df_aus = _read_one(path_aus, "aus")
 
-    # Concatenate. The two files overlap for ZGB↔ZGB pairs — same pair
-    # appears once as 'ein' (from external Kreis view of ZGB dest) and once
-    # as 'aus' (from ZGB origin view). We deduplicate by keeping the first
-    # occurrence and emit both 'source' labels via a helper column only for
-    # forensic use.
+    # Concatenate. The two files overlap on ZGB↔ZGB pairs — the same pair
+    # appears once in the *Einpendler* export (workplace-side view) and
+    # once in the *Auspendler* export (residence-side view). The two
+    # numbers are identical when both reports cover the full population,
+    # so we deduplicate by keeping the maximum flow per ordered pair (a
+    # safety against zero rows that the BA emits when the count falls
+    # below the suppression threshold in only one of the two views).
     df = pd.concat([df_ein, df_aus], ignore_index=True)
     df = (
         df.groupby(["orig_ars", "dest_ars"], as_index=False)
-          .agg(flow=("flow", "max"))  # max keeps the non-zero value if any
+          .agg(flow=("flow", "max"))
     )
 
-    # Drop self-loops (always zero anyway)
+    # Drop self-loops; they are always zero in the BA exports.
     df = df[df["orig_ars"] != df["dest_ars"]].copy()
 
-    # Report against the configured ZGB scope
+    # Diagnostics: print inbound / outbound / intra-ZGB SvB totals against
+    # the configured ZGB Kreis scope (``bavaria.political_prefix``).
     scope = [str(p) for p in context.config("bavaria.political_prefix")]
     total_in = df.loc[df["dest_ars"].isin(scope), "flow"].sum()
     total_out = df.loc[df["orig_ars"].isin(scope), "flow"].sum()
