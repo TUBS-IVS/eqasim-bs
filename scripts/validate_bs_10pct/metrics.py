@@ -195,17 +195,14 @@ def mode_share_overall() -> pd.DataFrame:
 
 
 def mode_share_by_purpose() -> pd.DataFrame:
-    """Mode share stratified by MiD-aligned purpose.
+    """Mode share stratified by raw eqasim/ENTD ``following_purpose``.
 
-    R-D fix (consistent with ``purpose_mix``): relabel the destination
-    purpose with ``preceding_purpose`` whenever ``following_purpose ==
-    'home'`` so return-home legs are attributed to the activity they serve.
+    Each leg is counted with the activity it ends at; return-home legs keep
+    ``home`` as their purpose (consistent with the ENTD chain definition
+    used throughout the model).
     """
     trips = io.trips_full().copy()
     trips["mid_mode"] = trips["mode"].map(io.map_mode)
-    if "preceding_purpose" in trips.columns:
-        mask = trips["following_purpose"].astype(str).eq("home")
-        trips.loc[mask, "following_purpose"] = trips.loc[mask, "preceding_purpose"]
     out = (
         trips.groupby(["following_purpose", "mid_mode"]).size()
         .rename("count").reset_index()
@@ -269,19 +266,15 @@ def departure_profile() -> pd.DataFrame:
 
 
 def purpose_mix() -> pd.DataFrame:
-    """MiD-aligned purpose mix.
+    """Raw eqasim/ENTD purpose mix.
 
-    R-D fix: eqasim labels every return-home leg ``following_purpose=home`` so
-    ``home`` ends up at ~42 % of all trips, while MiD reports ~15 %. This is
-    a labelling convention mismatch, not an over-generation of trips. We
-    relabel the trip with ``preceding_purpose`` whenever ``following_purpose
-    == 'home'`` so each leg is attributed to the activity it serves
-    (consistent with MiD methodology).
+    Each trip is counted under the activity it ends at
+    (``following_purpose``). A chain ``home -> work -> home`` therefore
+    contributes one ``work`` and one ``home`` trip (the start-from-home is
+    not a trip). This matches the ENTD chain convention that the entire
+    pipeline operates on; no relabelling of return-home legs is performed.
     """
     trips = io.trips_full().copy()
-    if "preceding_purpose" in trips.columns:
-        mask = trips["following_purpose"].astype(str).eq("home")
-        trips.loc[mask, "following_purpose"] = trips.loc[mask, "preceding_purpose"]
     out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
     out = out.rename(columns={"index": "purpose"})
     out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix"])
@@ -290,13 +283,14 @@ def purpose_mix() -> pd.DataFrame:
 
 
 def purpose_mix_raw() -> pd.DataFrame:
-    """Raw eqasim purpose mix (no R-D remap) — diagnostic only."""
-    trips = io.trips_full()
-    out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
-    out = out.rename(columns={"index": "purpose"})
-    out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix"])
-    out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
-    return out
+    """Deprecated alias of :func:`purpose_mix`.
+
+    The R-D ``home -> preceding_purpose`` remap was removed; ``purpose_mix``
+    now returns the raw ENTD distribution, so this function is identical
+    to it. Kept for backward compatibility with the ``purpose_mix_raw``
+    JSON key written by :mod:`report`.
+    """
+    return purpose_mix()
 
 
 def activity_chains_top(n: int = 15) -> pd.DataFrame:

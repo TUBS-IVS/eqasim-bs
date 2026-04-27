@@ -137,24 +137,15 @@ def hh_size_fit_per_kreis() -> tuple[pd.DataFrame, pd.DataFrame]:
 # Purpose remap (H1 fix preview)
 # ---------------------------------------------------------------------------
 def purpose_mix_remapped() -> pd.DataFrame:
-    """Like metrics.purpose_mix() but with `home` collapsed onto preceding_purpose.
+    """Deprecated alias of :func:`metrics.purpose_mix` (raw ENTD purposes).
 
-    This is a **reporting-only** fix preview for hypothesis H1 — eqasim
-    classifies every return-home leg as `following_purpose == "home"`,
-    while MiD attributes the trip to the originating activity. We
-    therefore use `preceding_purpose` whenever `following_purpose == "home"`.
-    Trips that are home → home (rare, e.g. zero-length) collapse to `home`.
+    The H1/R-D ``home -> preceding_purpose`` remap was removed: the model
+    operates on ENTD chain semantics where each return-home leg is a real
+    trip ending at ``home``. This function is kept for backward
+    compatibility (JSON key ``purpose_mix_remapped`` and existing notebook
+    cells) and now returns the same frame as ``metrics.purpose_mix``.
     """
-    from .config import MID_BASELINE
-    trips = io.trips_full().copy()
-    fp = trips["following_purpose"].astype(str)
-    pp = trips["preceding_purpose"].astype(str) if "preceding_purpose" in trips.columns else fp
-    mid_purpose = np.where(fp == "home", pp, fp)
-    s = pd.Series(mid_purpose).value_counts(normalize=True).rename("synth_share")
-    out = s.reset_index().rename(columns={"index": "purpose"})
-    out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix"])
-    out["deviation_pp"] = (out["synth_share"] - out["mid_share"].fillna(0)) * 100
-    return out
+    return metrics.purpose_mix()
 
 
 # ---------------------------------------------------------------------------

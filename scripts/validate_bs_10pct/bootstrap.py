@@ -42,12 +42,8 @@ def _build_hh_aggregates() -> pd.DataFrame:
 
     trips = io.trips_full().copy()
     trips["mid_mode"] = trips["mode"].map(io.map_mode)
-    if "preceding_purpose" in trips.columns:
-        mask = trips["following_purpose"].astype(str).eq("home")
-        trips["mid_purpose"] = trips["following_purpose"].astype(str)
-        trips.loc[mask, "mid_purpose"] = trips.loc[mask, "preceding_purpose"].astype(str)
-    else:
-        trips["mid_purpose"] = trips["following_purpose"].astype(str)
+    # Raw ENTD purpose semantics: trip purpose = activity at destination.
+    trips["mid_purpose"] = trips["following_purpose"].astype(str)
 
     trips = trips.merge(
         persons[["person_id", "household_id"]], on="person_id", how="left"

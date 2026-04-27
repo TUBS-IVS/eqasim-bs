@@ -331,13 +331,13 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         {fig("hh_size_per_kreis", "Per-Kreis HH-size: Synth vs Zensus 2022 with χ² / TVD")}
         {_df_to_html(hh_summary, fmt={"chi2": ",.0f", "tvd_pp": ".2f", "n_synth_hh": ",.0f"})}
 
-        <h3>7.4 Purpose-mix remap (H1 preview)</h3>
-        <p>eqasim assigns <code>following_purpose = home</code> on every return-home leg,
-        while MiD attributes the trip to the originating activity. Remapping
-        <code>home → preceding_purpose</code> brings the synth purpose mix close to MiD
-        without touching the synthesis itself — this is a reporting-only fix
-        (R-D).</p>
-        {fig("purpose_remap", "Activity-purpose mix — raw vs MiD-aligned remap")}
+        <h3>7.4 Purpose mix (raw ENTD convention)</h3>
+        <p>The model uses ENTD chain semantics: each leg is counted under the
+        activity it ends at, so a chain <code>home → work → home</code> contributes
+        one <em>work</em> and one <em>home</em> trip. The earlier R-D remap
+        (<code>home → preceding_purpose</code>) has been removed; the table below is
+        identical to section 5 and is kept only for historical comparison.</p>
+        {fig("purpose_remap", "Activity-purpose mix (raw ENTD purposes)")}
         {_df_to_html(purpose_remap, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
     </div></section>

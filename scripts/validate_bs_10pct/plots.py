@@ -397,6 +397,7 @@ def plot_hh_size_per_kreis(out: Path) -> str:
 def plot_purpose_remap(out: Path) -> str:
     """Side-by-side: raw eqasim purpose mix vs MiD-aligned remap (H1 preview)."""
     raw = metrics.purpose_mix_raw().set_index("purpose")[["synth_share", "mid_share"]]
+    # Now uses raw ENTD purposes (R-D remap removed) — kept for filename compatibility.
     remap = diagnostics.purpose_mix_remapped().set_index("purpose")[["synth_share", "mid_share"]]
     purposes = sorted(set(raw.index) | set(remap.index) | set(MID_BASELINE["purpose_mix"].keys()))
     raw = raw.reindex(purposes).fillna(0)
