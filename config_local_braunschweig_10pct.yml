@@ -136,7 +136,7 @@ aliases:
   # substitutes once, so aliasing via the intermediate bavaria.* entry below
   # would silently fall back to the Bavaria delegate).
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
-  matsim.simulation.prepare: bavaria.matsim.simulation.prepare
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
 
   # Region-specific loader overrides: redirect selected bavaria.data.* stages
   # to their Braunschweig forks. Only stages whose input layout differs.
