@@ -261,12 +261,13 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
     </div></section>
     """)
 
-    notes = """
+    n_persons = int(pop_total['synth_sample'])
+    notes = f"""
     <section id="notes"><div class="container">
         <h2>6. Methodological notes</h2>
         <ul>
-            <li>Sample size: 10 % of the population (113,973 persons);
-                expansion to total population by factor 10.</li>
+            <li>Sample size: {SAMPLING_RATE*100:.0f} % of the population ({n_persons:,} persons);
+                expansion to total population by factor {1/SAMPLING_RATE:.0f}.</li>
             <li>BA commuter flows cover only employees subject to social-security
                 contributions (SvB); self-employed and civil servants are missing.
                 Expected structural offset of about +20 % synthesis vs. BA.</li>
@@ -354,7 +355,7 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
 
     head = f"""
     <header class="cover"><div class="container">
-        <h1>Braunschweig 10 % Validation Report</h1>
+        <h1>Braunschweig {SAMPLING_RATE*100:.0f} % Validation Report</h1>
         <div class="meta">
             Sample {SAMPLING_RATE*100:.0f} % &nbsp;·&nbsp;
             {int(pop_total['synth_sample']):,} persons &nbsp;·&nbsp;
@@ -367,7 +368,7 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
     html_doc = f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
-<title>Braunschweig 10 % Validation Report</title>
+<title>Braunschweig {SAMPLING_RATE*100:.0f} % Validation Report</title>
 <style>{CSS}</style>
 </head><body>
 {head}

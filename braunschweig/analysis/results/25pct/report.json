@@ -1,0 +1,499 @@
+{
+  "generated_at": "2026-04-27T12:33:44.787817",
+  "sampling_rate": 0.25,
+  "population": [
+    {
+      "ars5": "03101",
+      "kreis_name": "SK Braunschweig",
+      "zensus_2022": 252962,
+      "synth_sample": 63085,
+      "synth_expanded": 252340.0,
+      "deviation_pct": -0.2458867339758541
+    },
+    {
+      "ars5": "03102",
+      "kreis_name": "SK Salzgitter",
+      "zensus_2022": 104970,
+      "synth_sample": 26192,
+      "synth_expanded": 104768.0,
+      "deviation_pct": -0.19243593407640278
+    },
+    {
+      "ars5": "03103",
+      "kreis_name": "SK Wolfsburg",
+      "zensus_2022": 129560,
+      "synth_sample": 33274,
+      "synth_expanded": 133096.0,
+      "deviation_pct": 2.729237418956468
+    },
+    {
+      "ars5": "03151",
+      "kreis_name": "LK Gifhorn",
+      "zensus_2022": 175943,
+      "synth_sample": 43920,
+      "synth_expanded": 175680.0,
+      "deviation_pct": -0.14948022939247368
+    },
+    {
+      "ars5": "03153",
+      "kreis_name": "LK Goslar",
+      "zensus_2022": 126775,
+      "synth_sample": 31612,
+      "synth_expanded": 126448.0,
+      "deviation_pct": -0.25793729047525144
+    },
+    {
+      "ars5": "03154",
+      "kreis_name": "LK Helmstedt",
+      "zensus_2022": 90227,
+      "synth_sample": 22744,
+      "synth_expanded": 90976.0,
+      "deviation_pct": 0.8301284537887772
+    },
+    {
+      "ars5": "03157",
+      "kreis_name": "LK Peine",
+      "zensus_2022": 137045,
+      "synth_sample": 34129,
+      "synth_expanded": 136516.0,
+      "deviation_pct": -0.38600459703017254
+    },
+    {
+      "ars5": "03158",
+      "kreis_name": "LK Wolfenbüttel",
+      "zensus_2022": 118290,
+      "synth_sample": 29677,
+      "synth_expanded": 118708.0,
+      "deviation_pct": 0.3533688392932623
+    },
+    {
+      "ars5": "TOTAL",
+      "kreis_name": "ZGB-8",
+      "zensus_2022": 1135772,
+      "synth_sample": 284633,
+      "synth_expanded": 1138532.0,
+      "deviation_pct": 0.24300651891400737
+    }
+  ],
+  "trip_summary": {
+    "n_persons": 284801,
+    "n_trips": 886782,
+    "trips_per_person": 3.113689909796665,
+    "mean_distance_km": 10.663452365748775,
+    "median_distance_km": 3.657573226801404,
+    "mean_duration_min": 19.644589087284135,
+    "daily_distance_km": 38.94997308560297,
+    "mid_baseline": {
+      "trips_per_person": 3.1,
+      "mean_trip_distance_km": 12.6,
+      "mean_trip_duration_min": 22.0,
+      "daily_distance_km": 39.0,
+      "mode_share": {
+        "miv": 0.59,
+        "oev": 0.1,
+        "rad": 0.13,
+        "fuss": 0.18
+      },
+      "purpose_mix": {
+        "work": 0.16,
+        "education": 0.07,
+        "shop": 0.18,
+        "other": 0.12,
+        "leisure": 0.27,
+        "escort": 0.05,
+        "home": 0.15
+      },
+      "car_occupancy": 1.42
+    }
+  },
+  "mode_share": [
+    {
+      "mode": "miv",
+      "synth_share": 0.6151399103725605,
+      "mid_share": 0.59,
+      "deviation_pp": 2.513991037256058
+    },
+    {
+      "mode": "fuss",
+      "synth_share": 0.2717747992178461,
+      "mid_share": 0.18,
+      "deviation_pp": 9.17747992178461
+    },
+    {
+      "mode": "oev",
+      "synth_share": 0.08251069597713982,
+      "mid_share": 0.1,
+      "deviation_pp": -1.7489304022860184
+    },
+    {
+      "mode": "rad",
+      "synth_share": 0.030574594432453524,
+      "mid_share": 0.13,
+      "deviation_pp": -9.942540556754647
+    }
+  ],
+  "purpose_mix_raw": [
+    {
+      "purpose": "home",
+      "synth_share": 0.42248489482195173,
+      "mid_share": 0.15,
+      "deviation_pp": 27.248489482195172
+    },
+    {
+      "purpose": "leisure",
+      "synth_share": 0.148822371225397,
+      "mid_share": 0.27,
+      "deviation_pp": -12.117762877460303
+    },
+    {
+      "purpose": "work",
+      "synth_share": 0.13988105306602977,
+      "mid_share": 0.16,
+      "deviation_pp": -2.011894693397023
+    },
+    {
+      "purpose": "shop",
+      "synth_share": 0.12312721728677398,
+      "mid_share": 0.18,
+      "deviation_pp": -5.687278271322602
+    },
+    {
+      "purpose": "other",
+      "synth_share": 0.1057204589177498,
+      "mid_share": 0.12,
+      "deviation_pp": -1.42795410822502
+    },
+    {
+      "purpose": "education",
+      "synth_share": 0.05996400468209774,
+      "mid_share": 0.07,
+      "deviation_pp": -1.0035995317902267
+    }
+  ],
+  "purpose_mix": [
+    {
+      "purpose": "leisure",
+      "synth_share": 0.25611255077347084,
+      "mid_share": 0.27,
+      "deviation_pp": -1.388744922652918
+    },
+    {
+      "purpose": "work",
+      "synth_share": 0.23060233518497217,
+      "mid_share": 0.16,
+      "deviation_pp": 7.060233518497217
+    },
+    {
+      "purpose": "shop",
+      "synth_share": 0.21961880146417045,
+      "mid_share": 0.18,
+      "deviation_pp": 3.9618801464170463
+    },
+    {
+      "purpose": "other",
+      "synth_share": 0.17595530806895043,
+      "mid_share": 0.12,
+      "deviation_pp": 5.595530806895043
+    },
+    {
+      "purpose": "education",
+      "synth_share": 0.11070590066104183,
+      "mid_share": 0.07,
+      "deviation_pp": 4.070590066104182
+    },
+    {
+      "purpose": "home",
+      "synth_share": 0.007005103847394286,
+      "mid_share": 0.15,
+      "deviation_pp": -14.29948961526057
+    }
+  ],
+  "purpose_mix_remapped": [
+    {
+      "purpose": "leisure",
+      "synth_share": 0.25611255077347084,
+      "mid_share": 0.27,
+      "deviation_pp": -1.388744922652918
+    },
+    {
+      "purpose": "work",
+      "synth_share": 0.23060233518497217,
+      "mid_share": 0.16,
+      "deviation_pp": 7.060233518497217
+    },
+    {
+      "purpose": "shop",
+      "synth_share": 0.21961880146417045,
+      "mid_share": 0.18,
+      "deviation_pp": 3.9618801464170463
+    },
+    {
+      "purpose": "other",
+      "synth_share": 0.17595530806895043,
+      "mid_share": 0.12,
+      "deviation_pp": 5.595530806895043
+    },
+    {
+      "purpose": "education",
+      "synth_share": 0.11070590066104183,
+      "mid_share": 0.07,
+      "deviation_pp": 4.070590066104182
+    },
+    {
+      "purpose": "home",
+      "synth_share": 0.007005103847394286,
+      "mid_share": 0.15,
+      "deviation_pp": -14.29948961526057
+    }
+  ],
+  "od_fit": {
+    "n_pairs": 200,
+    "r2": 0.8805250344497472,
+    "rmse": 1373.2386828224728,
+    "mape_pct": 82.28255904571076,
+    "bias_pct": -58.8294604174872,
+    "ba_total": 253900.0,
+    "synth_total": 104532.0
+  },
+  "hh_size_per_kreis": [
+    {
+      "ars5": "03157",
+      "kreis_name": "LK Peine",
+      "n_synth_hh": 15485,
+      "chi2": 293.68618930953704,
+      "dof": 5,
+      "tvd_pp": 2.819637622336281
+    },
+    {
+      "ars5": "03151",
+      "kreis_name": "LK Gifhorn",
+      "n_synth_hh": 19708,
+      "chi2": 381.3364544317537,
+      "dof": 5,
+      "tvd_pp": 2.7067752620762717
+    },
+    {
+      "ars5": "03102",
+      "kreis_name": "SK Salzgitter",
+      "n_synth_hh": 12764,
+      "chi2": 279.0427615325981,
+      "dof": 5,
+      "tvd_pp": 2.6447367975678877
+    },
+    {
+      "ars5": "03103",
+      "kreis_name": "SK Wolfsburg",
+      "n_synth_hh": 16400,
+      "chi2": 239.1629049815557,
+      "dof": 5,
+      "tvd_pp": 2.520480028500612
+    },
+    {
+      "ars5": "03154",
+      "kreis_name": "LK Helmstedt",
+      "n_synth_hh": 11139,
+      "chi2": 152.33292729924585,
+      "dof": 5,
+      "tvd_pp": 2.0520876063330378
+    },
+    {
+      "ars5": "03158",
+      "kreis_name": "LK Wolfenbüttel",
+      "n_synth_hh": 14471,
+      "chi2": 182.5551859663396,
+      "dof": 5,
+      "tvd_pp": 1.8062475995583587
+    },
+    {
+      "ars5": "03153",
+      "kreis_name": "LK Goslar",
+      "n_synth_hh": 16852,
+      "chi2": 180.0621827426696,
+      "dof": 5,
+      "tvd_pp": 1.6345620061310455
+    },
+    {
+      "ars5": "03101",
+      "kreis_name": "SK Braunschweig",
+      "n_synth_hh": 34334,
+      "chi2": 288.21234035327734,
+      "dof": 5,
+      "tvd_pp": 1.185142406194495
+    }
+  ],
+  "kreise": {
+    "03101": "SK Braunschweig",
+    "03102": "SK Salzgitter",
+    "03103": "SK Wolfsburg",
+    "03151": "LK Gifhorn",
+    "03153": "LK Goslar",
+    "03154": "LK Helmstedt",
+    "03157": "LK Peine",
+    "03158": "LK Wolfenbüttel"
+  },
+  "git": "681107d",
+  "regression_guard": [
+    {
+      "kpi": "population_total_pct",
+      "description": "ZGB-8 population vs Zensus 2022 (% deviation)",
+      "value": 0.24300651891400737,
+      "tolerance": 2.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "trips_per_person_pct",
+      "description": "Trips/person vs MiD (% deviation)",
+      "value": 0.44160999344080576,
+      "tolerance": 10.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "mean_trip_distance_km",
+      "description": "Mean trip distance |Δ km|",
+      "value": 1.936547634251225,
+      "tolerance": 5.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "mode_share_miv_pp",
+      "description": "MIV share |Δ pp|",
+      "value": 2.513991037256058,
+      "tolerance": 5.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "mode_share_oev_pp",
+      "description": "ÖV share |Δ pp|",
+      "value": 1.7489304022860184,
+      "tolerance": 5.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "mode_share_rad_pp",
+      "description": "Bike share |Δ pp| (R-E deferred)",
+      "value": 9.942540556754647,
+      "tolerance": 12.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "mode_share_fuss_pp",
+      "description": "Walk share |Δ pp| (R-E deferred)",
+      "value": 9.17747992178461,
+      "tolerance": 12.0,
+      "status": "ok"
+    },
+    {
+      "kpi": "od_top200_r2",
+      "description": "OD top-200 R² (lower bound)",
+      "value": 0.8805250344497472,
+      "tolerance": 0.85,
+      "status": "ok"
+    }
+  ],
+  "bootstrap_ci": [
+    {
+      "kpi": "trips_per_person",
+      "p2.5": 3.1050602476352416,
+      "p50": 3.1132818302804535,
+      "p97.5": 3.1221503227916436,
+      "mean": 3.113636599938992,
+      "std": 0.004382325911832285
+    },
+    {
+      "kpi": "mean_distance_km",
+      "p2.5": 10.55904154816878,
+      "p50": 10.660696225012131,
+      "p97.5": 10.777398548248046,
+      "mean": 10.666226049092762,
+      "std": 0.05462666442971209
+    },
+    {
+      "kpi": "daily_distance_km",
+      "p2.5": 32.874391238417175,
+      "p50": 33.21465376151598,
+      "p97.5": 33.568047825801344,
+      "mean": 33.21074203797026,
+      "std": 0.17455669159086662
+    },
+    {
+      "kpi": "mode_share[miv]",
+      "p2.5": 0.6130348336689105,
+      "p50": 0.6152022320210142,
+      "p97.5": 0.6169383435139734,
+      "mean": 0.6150783682629948,
+      "std": 0.0009875447614551619
+    },
+    {
+      "kpi": "mode_share[oev]",
+      "p2.5": 0.08157551783372055,
+      "p50": 0.08248818274221786,
+      "p97.5": 0.0835545511784922,
+      "mean": 0.08249087452674424,
+      "std": 0.0004733594100912706
+    },
+    {
+      "kpi": "mode_share[rad]",
+      "p2.5": 0.029939097591754595,
+      "p50": 0.030559577637090253,
+      "p97.5": 0.03126603904644109,
+      "mean": 0.030579004133329164,
+      "std": 0.00034046898211392905
+    },
+    {
+      "kpi": "mode_share[fuss]",
+      "p2.5": 0.27020382367106976,
+      "p50": 0.2717907708911943,
+      "p97.5": 0.27379246049937905,
+      "mean": 0.27185175307693177,
+      "std": 0.0008945853551540294
+    },
+    {
+      "kpi": "purpose_share[home]",
+      "p2.5": 0.006826694796268535,
+      "p50": 0.007000879484516855,
+      "p97.5": 0.007172611878839958,
+      "mean": 0.007000799662858075,
+      "std": 9.63942430793625e-05
+    },
+    {
+      "kpi": "purpose_share[work]",
+      "p2.5": 0.2291014976737717,
+      "p50": 0.230456195681418,
+      "p97.5": 0.23230238818796017,
+      "mean": 0.2305109993824351,
+      "std": 0.0007970128868808541
+    },
+    {
+      "kpi": "purpose_share[leisure]",
+      "p2.5": 0.25480399361481554,
+      "p50": 0.2561451278482776,
+      "p97.5": 0.257602791028461,
+      "mean": 0.25615909938029663,
+      "std": 0.0007172247370456745
+    },
+    {
+      "kpi": "purpose_share[shop]",
+      "p2.5": 0.21862619343287434,
+      "p50": 0.21963455471641932,
+      "p97.5": 0.22086312968500202,
+      "mean": 0.21969219242046006,
+      "std": 0.0006385616189692639
+    },
+    {
+      "kpi": "purpose_share[education]",
+      "p2.5": 0.10936721344506939,
+      "p50": 0.11069548621639284,
+      "p97.5": 0.11184760690353975,
+      "mean": 0.11071516326217194,
+      "std": 0.0006242378632519621
+    },
+    {
+      "kpi": "purpose_share[other]",
+      "p2.5": 0.17464105388401807,
+      "p50": 0.17591732294108803,
+      "p97.5": 0.17728626509339662,
+      "mean": 0.17592174589177817,
+      "std": 0.0006870979459792093
+    }
+  ]
+}

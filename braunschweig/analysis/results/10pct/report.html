@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<title>Braunschweig 10 % Validation Report</title>
+<style>
+:root { --synth:#1f4e79; --ref:#c00000; --ok:#2e7d32; --warn:#ed8936; --bad:#c00000;
+        --bg:#fbfbfd; --muted:#6c757d; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; color:#1a1a1a;
+       background:var(--bg); margin:0; padding:0; line-height:1.55; }
+.container { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+header.cover { background: linear-gradient(135deg, var(--synth), #2c5d8f);
+               color:white; padding: 60px 32px 70px; }
+header.cover h1 { margin:0; font-size:2.4em; font-weight: 600; }
+header.cover .meta { opacity:0.85; margin-top: 12px; font-size:0.95em; }
+nav.toc { position:sticky; top:0; z-index:5; background:white;
+          border-bottom:1px solid #e5e5e5; padding: 12px 32px; }
+nav.toc a { display:inline-block; margin-right:18px; color:var(--synth);
+            text-decoration:none; font-weight:500; font-size:0.92em; }
+nav.toc a:hover { text-decoration:underline; }
+section { padding: 36px 0; border-bottom: 1px solid #ececec; }
+section h2 { color:var(--synth); margin-top:0; font-size:1.6em; }
+section h3 { color:#333; margin-top:1.6em; font-size:1.15em; }
+.kpi-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap:14px; margin-top:18px; }
+.kpi { background:white; border:1px solid #e5e5e5; border-radius:8px; padding:14px 16px;
+       box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.kpi .label { font-size:0.82em; color:var(--muted); text-transform:uppercase;
+              letter-spacing: 0.04em; }
+.kpi .value { font-size:1.7em; font-weight:600; color:var(--synth); margin-top:4px; }
+.kpi .delta { font-size:0.85em; margin-top:6px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.78em;
+         color:white; }
+.badge.ok { background:var(--ok); }
+.badge.warn { background:var(--warn); }
+.badge.bad { background:var(--bad); }
+table { border-collapse: collapse; width:100%; margin-top:12px; font-size:0.92em; }
+th { text-align:left; padding:8px; background:#f4f6fa; color:#222;
+     border-bottom: 2px solid #d8d8d8; font-weight:600; }
+td { padding: 6px 8px; border-bottom:1px solid #eee; }
+tr.total td { font-weight:600; background:#f9f9fc; }
+td.ok { color:var(--ok); font-weight:600; }
+td.warn { color:var(--warn); font-weight:600; }
+td.bad { color:var(--bad); font-weight:600; }
+.figure { margin: 16px 0; text-align:center; }
+.figure img { max-width:100%; border:1px solid #eee; border-radius:6px; }
+.figure .caption { margin-top:6px; color:var(--muted); font-size:0.9em; }
+.note { background:#f7f9fc; border-left:4px solid var(--synth);
+        padding:10px 14px; margin: 14px 0; font-size:0.92em; color:#333; }
+footer { background:#1a2940; color:#a8b3c4; padding: 22px 32px; font-size:0.85em; }
+@media print {
+    nav.toc { display:none; }
+    section { break-inside: avoid-page; }
+    body { background:white; }
+}
+</style>
+</head><body>
+
+    <header class="cover"><div class="container">
+        <h1>Braunschweig 10 % Validation Report</h1>
+        <div class="meta">
+            Sample 10 % &nbsp;·&nbsp;
+            113,698 persons &nbsp;·&nbsp;
+            Generated 26. April 2026, 11:33 &nbsp;·&nbsp;
+            git b20fbe6
+        </div>
+    </div></header>
+    
+<nav class="toc"><div class="container"><a href="#executive-summary">Summary</a><a href="#population">Population</a><a href="#households">Households</a><a href="#commute">Commuting</a><a href="#travel">Travel demand</a><a href="#diagnostics">Diagnostics</a><a href="#notes">Methodology</a></div></nav>
+
+    <section id="executive-summary"><div class="container">
+        <h2>1. Executive summary</h2>
+        <p>This report compares the synthetic population and modelled travel
+        demand for the Greater Braunschweig region (8 districts) against
+        Census 2022, the BA commuter atlas, and MiD 2023. Sample size
+        10 % (113,698 synthetic
+        persons).</p>
+        <div class="kpi-grid"><div class="kpi"><div class="label">Population (×10)</div><div class="value">1,136,980</div><div class="delta"><span class="badge ok">+0.1 %</span></div></div><div class="kpi"><div class="label">Trips per person</div><div class="value">3.10</div><div class="delta"><span class="badge ok">+0.1 %</span></div></div><div class="kpi"><div class="label">Mean trip distance</div><div class="value">9.0 km</div><div class="delta"><span class="badge warn">-3.6 %</span></div></div><div class="kpi"><div class="label">Mean travel time</div><div class="value">19.7 min</div><div class="delta"><span class="badge ok">-2.3 %</span></div></div><div class="kpi"><div class="label">Daily distance per person</div><div class="value">32.9 km</div><div class="delta"><span class="badge bad">-6.1 %</span></div></div><div class="kpi"><div class="label">Mode share MIV</div><div class="value">61.5 %</div><div class="delta"><span class="badge ok">+2.5 %</span></div></div><div class="kpi"><div class="label">Mode share FUSS</div><div class="value">27.9 %</div><div class="delta"><span class="badge bad">+9.9 %</span></div></div><div class="kpi"><div class="label">Mode share OEV</div><div class="value">7.6 %</div><div class="delta"><span class="badge ok">-2.4 %</span></div></div><div class="kpi"><div class="label">Mode share RAD</div><div class="value">3.0 %</div><div class="delta"><span class="badge bad">-10.0 %</span></div></div></div>
+    </div></section>
+    
+    <section id="population"><div class="container">
+        <h2>2. Population — Synthesis vs. Census 2022</h2>
+        <p>For each district the expanded synthetic population
+        (sample × 10) is compared against the DESTATIS
+        Census 2022.</p>
+        <div class="figure"><img src="01_population_per_kreis.png" alt="Population per ZGB district (thousand persons)"/><div class="caption">Population per ZGB district (thousand persons)</div></div>
+        <div class="figure"><img src="17_choropleth_population.png" alt="Spatial deviation of expanded synthesis"/><div class="caption">Spatial deviation of expanded synthesis</div></div>
+        <table><thead><tr><th>ars5</th><th>kreis_name</th><th>zensus_2022</th><th>synth_sample</th><th>synth_expanded</th><th>deviation_pct</th></tr></thead><tbody><tr class=""><td class="">03101</td><td class="">SK Braunschweig</td><td class="">252962</td><td class="">25313</td><td class="">253130</td><td class="ok">+0.07</td></tr><tr class=""><td class="">03102</td><td class="">SK Salzgitter</td><td class="">104970</td><td class="">10424</td><td class="">104240</td><td class="ok">-0.70</td></tr><tr class=""><td class="">03103</td><td class="">SK Wolfsburg</td><td class="">129560</td><td class="">13124</td><td class="">131240</td><td class="ok">+1.30</td></tr><tr class=""><td class="">03151</td><td class="">LK Gifhorn</td><td class="">175943</td><td class="">17606</td><td class="">176060</td><td class="ok">+0.07</td></tr><tr class=""><td class="">03153</td><td class="">LK Goslar</td><td class="">126775</td><td class="">12439</td><td class="">124390</td><td class="ok">-1.88</td></tr><tr class=""><td class="">03154</td><td class="">LK Helmstedt</td><td class="">90227</td><td class="">9117</td><td class="">91170</td><td class="ok">+1.05</td></tr><tr class=""><td class="">03157</td><td class="">LK Peine</td><td class="">137045</td><td class="">13836</td><td class="">138360</td><td class="ok">+0.96</td></tr><tr class=""><td class="">03158</td><td class="">LK Wolfenbüttel</td><td class="">118290</td><td class="">11839</td><td class="">118390</td><td class="ok">+0.08</td></tr><tr class="total"><td class="">TOTAL</td><td class="">ZGB-8</td><td class="">1135772</td><td class="">113698</td><td class="">1136980</td><td class="ok">+0.11</td></tr></tbody></table>
+        <div class="figure"><img src="02_age_pyramid.png" alt="Age and sex distribution of the synthesis"/><div class="caption">Age and sex distribution of the synthesis</div></div>
+    </div></section>
+    
+    <section id="households"><div class="container">
+        <h2>3. Households &amp; employment</h2>
+        <div class="figure"><img src="03_household_size.png" alt="Household-size distribution — ZGB-8 mean"/><div class="caption">Household-size distribution — ZGB-8 mean</div></div>
+        <h3>3.1 Household size per district (excerpt)</h3>
+        <table><thead><tr><th>ars5</th><th>size_bin</th><th>synth_count</th><th>synth_share</th><th>zensus_share</th><th>deviation_pp</th></tr></thead><tbody><tr class=""><td class="">03101</td><td class="">1</td><td class="">4671</td><td class="">0.185</td><td class="">0.512</td><td class="bad">-32.74</td></tr><tr class=""><td class="">03101</td><td class="">2</td><td class="">8082</td><td class="">0.319</td><td class="">0.287</td><td class="warn">+3.22</td></tr><tr class=""><td class="">03101</td><td class="">3</td><td class="">4959</td><td class="">0.196</td><td class="">0.101</td><td class="bad">+9.44</td></tr><tr class=""><td class="">03101</td><td class="">4</td><td class="">4574</td><td class="">0.181</td><td class="">0.071</td><td class="bad">+10.99</td></tr><tr class=""><td class="">03101</td><td class="">5</td><td class="">1813</td><td class="">0.072</td><td class="">0.020</td><td class="warn">+5.12</td></tr><tr class=""><td class="">03101</td><td class="">6+</td><td class="">1214</td><td class="">0.048</td><td class="">0.008</td><td class="warn">+3.96</td></tr><tr class=""><td class="">03102</td><td class="">1</td><td class="">1829</td><td class="">0.175</td><td class="">0.438</td><td class="bad">-26.27</td></tr><tr class=""><td class="">03102</td><td class="">2</td><td class="">3447</td><td class="">0.331</td><td class="">0.306</td><td class="ok">+2.47</td></tr><tr class=""><td class="">03102</td><td class="">3</td><td class="">2005</td><td class="">0.192</td><td class="">0.116</td><td class="warn">+7.67</td></tr><tr class=""><td class="">03102</td><td class="">4</td><td class="">1899</td><td class="">0.182</td><td class="">0.085</td><td class="bad">+9.71</td></tr><tr class=""><td class="">03102</td><td class="">5</td><td class="">751</td><td class="">0.072</td><td class="">0.033</td><td class="warn">+3.86</td></tr><tr class=""><td class="">03102</td><td class="">6+</td><td class="">493</td><td class="">0.047</td><td class="">0.022</td><td class="ok">+2.55</td></tr><tr class=""><td class="">03103</td><td class="">1</td><td class="">2380</td><td class="">0.181</td><td class="">0.453</td><td class="bad">-27.21</td></tr><tr class=""><td class="">03103</td><td class="">2</td><td class="">4268</td><td class="">0.325</td><td class="">0.291</td><td class="warn">+3.43</td></tr><tr class=""><td class="">03103</td><td class="">3</td><td class="">2488</td><td class="">0.190</td><td class="">0.121</td><td class="warn">+6.85</td></tr><tr class=""><td class="">03103</td><td class="">4</td><td class="">2410</td><td class="">0.184</td><td class="">0.091</td><td class="bad">+9.27</td></tr><tr class=""><td class="">03103</td><td class="">5</td><td class="">919</td><td class="">0.070</td><td class="">0.029</td><td class="warn">+4.06</td></tr><tr class=""><td class="">03103</td><td class="">6+</td><td class="">659</td><td class="">0.050</td><td class="">0.014</td><td class="warn">+3.61</td></tr><tr class=""><td class="">03151</td><td class="">1</td><td class="">3123</td><td class="">0.177</td><td class="">0.347</td><td class="bad">-16.99</td></tr><tr class=""><td class="">03151</td><td class="">2</td><td class="">5811</td><td class="">0.330</td><td class="">0.334</td><td class="ok">-0.35</td></tr></tbody></table>
+        <div class="figure"><img src="04_employment_rate.png" alt="Employment rate by age group and district"/><div class="caption">Employment rate by age group and district</div></div>
+    </div></section>
+    
+    <section id="commute"><div class="container">
+        <h2>4. Commuting behaviour</h2>
+        <p>Commute trips are analysed as the crow-fly distance between home
+        and primary workplace (eqasim {commutes.gpkg}).</p>
+        <div class="figure"><img src="05_commute_distance.png" alt="Commute distance distribution"/><div class="caption">Commute distance distribution</div></div>
+        <div class="figure"><img src="06_commute_per_kreis.png" alt="Commute distance by home district"/><div class="caption">Commute distance by home district</div></div>
+        <div class="figure"><img src="07_commute_heatmap.png" alt="Internal ZGB-8 commuter flows"/><div class="caption">Internal ZGB-8 commuter flows</div></div>
+        <div class="figure"><img src="08_commute_scatter_ba.png" alt="Synthesis vs. BA commuter atlas (log-log)"/><div class="caption">Synthesis vs. BA commuter atlas (log-log)</div></div>
+        <h3>4.1 Commute statistics by district</h3>
+        <table><thead><tr><th>ars5</th><th>n_commuters</th><th>mean_km</th><th>median_km</th><th>p90_km</th></tr></thead><tbody><tr class=""><td class="">03101</td><td class="">7079</td><td class="">25.01</td><td class="">7.86</td><td class="">45.87</td></tr><tr class=""><td class="">03102</td><td class="">2752</td><td class="">24.13</td><td class="">9.32</td><td class="">45.05</td></tr><tr class=""><td class="">03103</td><td class="">3730</td><td class="">23.10</td><td class="">7.96</td><td class="">25.75</td></tr><tr class=""><td class="">03151</td><td class="">4779</td><td class="">24.77</td><td class="">11.61</td><td class="">43.78</td></tr><tr class=""><td class="">03153</td><td class="">3337</td><td class="">27.44</td><td class="">7.39</td><td class="">59.34</td></tr><tr class=""><td class="">03154</td><td class="">2507</td><td class="">24.52</td><td class="">12.38</td><td class="">35.94</td></tr><tr class=""><td class="">03157</td><td class="">3722</td><td class="">28.27</td><td class="">14.03</td><td class="">43.44</td></tr><tr class=""><td class="">03158</td><td class="">3119</td><td class="">24.06</td><td class="">12.65</td><td class="">40.74</td></tr></tbody></table>
+        <h3>4.2 Top-20 district → district flows</h3>
+        <table><thead><tr><th>orig_ars</th><th>dest_ars</th><th>synth_flow</th><th>synth_flow_expanded</th><th>ba_flow</th><th>deviation_pct</th></tr></thead><tbody><tr class=""><td class="">03151</td><td class="">03103</td><td class="">1,640</td><td class="">16,400</td><td class="">24,410</td><td class="bad">-32.8</td></tr><tr class=""><td class="">03158</td><td class="">03101</td><td class="">979</td><td class="">9,790</td><td class="">14,240</td><td class="bad">-31.2</td></tr><tr class=""><td class="">03154</td><td class="">03103</td><td class="">790</td><td class="">7,900</td><td class="">11,960</td><td class="bad">-33.9</td></tr><tr class=""><td class="">03101</td><td class="">03103</td><td class="">652</td><td class="">6,520</td><td class="">10,790</td><td class="bad">-39.6</td></tr><tr class=""><td class="">03157</td><td class="">03101</td><td class="">692</td><td class="">6,920</td><td class="">10,600</td><td class="bad">-34.7</td></tr><tr class=""><td class="">03151</td><td class="">03101</td><td class="">388</td><td class="">3,880</td><td class="">8,740</td><td class="bad">-55.6</td></tr><tr class=""><td class="">03157</td><td class="">03241</td><td class="">0</td><td class="">0</td><td class="">8,600</td><td class="bad">-100.0</td></tr><tr class=""><td class="">03102</td><td class="">03101</td><td class="">482</td><td class="">4,820</td><td class="">6,640</td><td class="bad">-27.4</td></tr><tr class=""><td class="">03158</td><td class="">03102</td><td class="">288</td><td class="">2,880</td><td class="">6,350</td><td class="bad">-54.6</td></tr><tr class=""><td class="">03101</td><td class="">03102</td><td class="">350</td><td class="">3,500</td><td class="">5,330</td><td class="bad">-34.3</td></tr><tr class=""><td class="">03154</td><td class="">03101</td><td class="">306</td><td class="">3,060</td><td class="">5,060</td><td class="bad">-39.5</td></tr><tr class=""><td class="">03157</td><td class="">03102</td><td class="">291</td><td class="">2,910</td><td class="">4,820</td><td class="bad">-39.6</td></tr><tr class=""><td class="">03101</td><td class="">03241</td><td class="">0</td><td class="">0</td><td class="">3,540</td><td class="bad">-100.0</td></tr><tr class=""><td class="">03101</td><td class="">03158</td><td class="">237</td><td class="">2,370</td><td class="">3,520</td><td class="bad">-32.7</td></tr><tr class=""><td class="">03103</td><td class="">03101</td><td class="">237</td><td class="">2,370</td><td class="">3,330</td><td class="bad">-28.8</td></tr><tr class=""><td class="">03241</td><td class="">03101</td><td class="">0</td><td class="">0</td><td class="">3,300</td><td class="bad">-100.0</td></tr><tr class=""><td class="">03241</td><td class="">03103</td><td class="">0</td><td class="">0</td><td class="">3,290</td><td class="bad">-100.0</td></tr><tr class=""><td class="">15085</td><td class="">03153</td><td class="">0</td><td class="">0</td><td class="">3,280</td><td class="bad">-100.0</td></tr><tr class=""><td class="">15083</td><td class="">03103</td><td class="">0</td><td class="">0</td><td class="">3,280</td><td class="bad">-100.0</td></tr><tr class=""><td class="">15083</td><td class="">03154</td><td class="">0</td><td class="">0</td><td class="">3,270</td><td class="bad">-100.0</td></tr></tbody></table>
+    </div></section>
+    
+    <section id="travel"><div class="container">
+        <h2>5. Travel-demand indicators</h2>
+        <p>All-purpose trips from the MATSim selected plan (modes extracted
+        from {population.xml.gz}). Reference: MiD 2023 Greater Braunschweig.</p>
+        <div class="figure"><img src="09_mode_share_donut.png" alt="Modal split — all trips (donut)"/><div class="caption">Modal split — all trips (donut)</div></div>
+        <div class="figure"><img src="10_mode_x_distance.png" alt="Modal split by distance class"/><div class="caption">Modal split by distance class</div></div>
+        <div class="figure"><img src="11_mode_x_purpose.png" alt="Modal split by purpose"/><div class="caption">Modal split by purpose</div></div>
+        <h3>5.1 Modal split — detail</h3>
+        <table><thead><tr><th>mode</th><th>synth_share</th><th>mid_share</th><th>deviation_pp</th></tr></thead><tbody><tr class=""><td class="">miv</td><td class="">0.615</td><td class="">0.590</td><td class="ok">+2.48</td></tr><tr class=""><td class="">fuss</td><td class="">0.279</td><td class="">0.180</td><td class="bad">+9.85</td></tr><tr class=""><td class="">oev</td><td class="">0.076</td><td class="">0.100</td><td class="ok">-2.36</td></tr><tr class=""><td class="">rad</td><td class="">0.030</td><td class="">0.130</td><td class="bad">-9.96</td></tr></tbody></table>
+        <div class="figure"><img src="12_distance_distribution.png" alt="Trip distance histogram"/><div class="caption">Trip distance histogram</div></div>
+        <div class="figure"><img src="13_distance_cdf.png" alt="Trip distance CDF (log)"/><div class="caption">Trip distance CDF (log)</div></div>
+        <div class="figure"><img src="14_duration_distribution.png" alt="Travel time histogram"/><div class="caption">Travel time histogram</div></div>
+        <div class="figure"><img src="15_departure_profile.png" alt="Hourly departure profile (24 h)"/><div class="caption">Hourly departure profile (24 h)</div></div>
+        <div class="figure"><img src="16_purpose_mix.png" alt="Activity-purpose mix"/><div class="caption">Activity-purpose mix</div></div>
+        <h3>5.2 Activity-purpose mix</h3>
+        <table><thead><tr><th>purpose</th><th>synth_share</th><th>mid_share</th><th>deviation_pp</th></tr></thead><tbody><tr class=""><td class="">leisure</td><td class="">0.256</td><td class="">0.270</td><td class="bad">-1.44</td></tr><tr class=""><td class="">work</td><td class="">0.228</td><td class="">0.160</td><td class="bad">+6.78</td></tr><tr class=""><td class="">shop</td><td class="">0.223</td><td class="">0.180</td><td class="bad">+4.34</td></tr><tr class=""><td class="">other</td><td class="">0.175</td><td class="">0.120</td><td class="bad">+5.55</td></tr><tr class=""><td class="">education</td><td class="">0.111</td><td class="">0.070</td><td class="bad">+4.08</td></tr><tr class=""><td class="">home</td><td class="">0.007</td><td class="">0.150</td><td class="bad">-14.30</td></tr></tbody></table>
+    </div></section>
+    
+    <section id="notes"><div class="container">
+        <h2>6. Methodological notes</h2>
+        <ul>
+            <li>Sample size: 10 % of the population (113,973 persons);
+                expansion to total population by factor 10.</li>
+            <li>BA commuter flows cover only employees subject to social-security
+                contributions (SvB); self-employed and civil servants are missing.
+                Expected structural offset of about +20 % synthesis vs. BA.</li>
+            <li>Modes are extracted from the selected MATSim plan. The main
+                mode of each logical trip is chosen by priority
+                pt &gt; car &gt; car_passenger &gt; bicycle &gt; walk
+                (access/egress walk legs are not counted as separate trips).</li>
+            <li>Distances are crow-fly straight lines between home and
+                activity locations, not routed network distances.</li>
+        </ul>
+    </div></section>
+    
+    <section id="diagnostics"><div class="container">
+        <h2>7. Calibration diagnostics</h2>
+        <p>Quantitative fit indicators used to track refactor progress
+        (R-A gravity, R-C household size, R-D purpose remap). Targets are
+        deliberately conservative; bicycle / walk are documented residuals
+        because the mode-choice utility re-estimation (R-E) is deferred.</p>
+
+        <h3>7.1 Regression guard</h3>
+        <table><thead><tr><th>KPI</th><th>Value</th><th>Tolerance</th><th>Status</th></tr></thead>
+        <tbody><tr><td>ZGB-8 population vs Zensus 2022 (% deviation)</td><td>0.11</td><td>≤ 2.00</td><td class='ok'>OK</td></tr><tr><td>Trips/person vs MiD (% deviation)</td><td>0.11</td><td>≤ 10.00</td><td class='ok'>OK</td></tr><tr><td>Mean trip distance |Δ km|</td><td>3.56</td><td>≤ 5.00</td><td class='ok'>OK</td></tr><tr><td>MIV share |Δ pp|</td><td>2.48</td><td>≤ 5.00</td><td class='ok'>OK</td></tr><tr><td>ÖV share |Δ pp|</td><td>2.36</td><td>≤ 5.00</td><td class='ok'>OK</td></tr><tr><td>Bike share |Δ pp| (R-E deferred)</td><td>9.96</td><td>≤ 12.00</td><td class='ok'>OK</td></tr><tr><td>Walk share |Δ pp| (R-E deferred)</td><td>9.85</td><td>≤ 12.00</td><td class='ok'>OK</td></tr><tr><td>OD top-200 R² (lower bound)</td><td>0.873</td><td>≥ 0.85</td><td class='ok'>OK</td></tr></tbody></table>
+
+        <h3>7.2 OD fit — synth vs BA Pendleratlas</h3>
+        <p>Top-200 Kreis-pairs by BA flow.
+        n = 200, R² = 0.873,
+        RMSE = 1,432, MAPE = 83.2%,
+        Bias = -60.9%.</p>
+        <div class="figure"><img src="18_od_scatter_top200.png" alt="Synth (expanded) vs BA Pendleratlas — top-200 pairs"/><div class="caption">Synth (expanded) vs BA Pendleratlas — top-200 pairs</div></div>
+        <div class="figure"><img src="19_od_outbound_top20.png" alt="Top-20 outbound commuter flows ZGB → external"/><div class="caption">Top-20 outbound commuter flows ZGB → external</div></div>
+
+        <h3>7.3 Household-size fit per district</h3>
+        <div class="figure"><img src="20_hh_size_per_kreis.png" alt="Per-Kreis HH-size: Synth vs Zensus 2022 with χ² / TVD"/><div class="caption">Per-Kreis HH-size: Synth vs Zensus 2022 with χ² / TVD</div></div>
+        <table><thead><tr><th>ars5</th><th>kreis_name</th><th>n_synth_hh</th><th>chi2</th><th>dof</th><th>tvd_pp</th></tr></thead><tbody><tr class=""><td class="">03101</td><td class="">SK Braunschweig</td><td class="">25313</td><td class="">19,938</td><td class="">5</td><td class="">32.74</td></tr><tr class=""><td class="">03153</td><td class="">LK Goslar</td><td class="">12439</td><td class="">8,775</td><td class="">5</td><td class="">29.02</td></tr><tr class=""><td class="">03103</td><td class="">SK Wolfsburg</td><td class="">13124</td><td class="">5,886</td><td class="">5</td><td class="">27.21</td></tr><tr class=""><td class="">03102</td><td class="">SK Salzgitter</td><td class="">10424</td><td class="">4,125</td><td class="">5</td><td class="">26.27</td></tr><tr class=""><td class="">03154</td><td class="">LK Helmstedt</td><td class="">9117</td><td class="">3,653</td><td class="">5</td><td class="">22.81</td></tr><tr class=""><td class="">03158</td><td class="">LK Wolfenbüttel</td><td class="">11839</td><td class="">4,733</td><td class="">5</td><td class="">22.66</td></tr><tr class=""><td class="">03157</td><td class="">LK Peine</td><td class="">13836</td><td class="">3,095</td><td class="">5</td><td class="">17.68</td></tr><tr class=""><td class="">03151</td><td class="">LK Gifhorn</td><td class="">17606</td><td class="">3,617</td><td class="">5</td><td class="">17.34</td></tr></tbody></table>
+
+        <h3>7.4 Purpose-mix remap (H1 preview)</h3>
+        <p>eqasim assigns <code>following_purpose = home</code> on every return-home leg,
+        while MiD attributes the trip to the originating activity. Remapping
+        <code>home → preceding_purpose</code> brings the synth purpose mix close to MiD
+        without touching the synthesis itself — this is a reporting-only fix
+        (R-D).</p>
+        <div class="figure"><img src="21_purpose_remap.png" alt="Activity-purpose mix — raw vs MiD-aligned remap"/><div class="caption">Activity-purpose mix — raw vs MiD-aligned remap</div></div>
+        <table><thead><tr><th>purpose</th><th>synth_share</th><th>mid_share</th><th>deviation_pp</th></tr></thead><tbody><tr class=""><td class="">leisure</td><td class="">0.256</td><td class="">0.270</td><td class="bad">-1.44</td></tr><tr class=""><td class="">work</td><td class="">0.228</td><td class="">0.160</td><td class="bad">+6.78</td></tr><tr class=""><td class="">shop</td><td class="">0.223</td><td class="">0.180</td><td class="bad">+4.34</td></tr><tr class=""><td class="">other</td><td class="">0.175</td><td class="">0.120</td><td class="bad">+5.55</td></tr><tr class=""><td class="">education</td><td class="">0.111</td><td class="">0.070</td><td class="bad">+4.08</td></tr><tr class=""><td class="">home</td><td class="">0.007</td><td class="">0.150</td><td class="bad">-14.30</td></tr></tbody></table>
+    </div></section>
+    
+<footer><div class="container">eqasim-bs · Validation report · 26. April 2026, 11:33 · git b20fbe6</div></footer>
+</body></html>
