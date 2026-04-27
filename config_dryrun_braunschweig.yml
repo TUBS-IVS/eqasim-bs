@@ -1,26 +1,35 @@
-## Minimal dry-run config for validating the data-loading stages that have
-## been forked for the Braunschweig region. Does NOT descend into spatial
-## pipelines (buildings/OSM/ALKIS) — those come in a later step.
+## Continuous-integration dry run for Braunschweig.
+##
+## Sampling rate 0.1% - exercises the FULL synthesis.output pipeline end to
+## end. Used by the post-refactor CI gate to catch DAG regressions, missing
+## data files, and stage-name typos before they hit the 1% smoke or the
+## 10% / 25% validation runs.
+##
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+## Phase 3 of the eqasim-bs refactor wires this into pytest.
 ##
 ## Usage:  python -m synpp config_dryrun_braunschweig.yml
 
-working_directory: eqasim-data/cache_bs
+working_directory: eqasim-data/cache_bs_dryrun
 
 run:
-  - braunschweig.data.inkar.household_income
-  - braunschweig.data.census.household_income
-  - braunschweig.data.census.household_size
-  - braunschweig.data.census.pendler
-  - braunschweig.data.census.population
-  - braunschweig.data.census.employment
-  - braunschweig.data.census.employees
-  - braunschweig.data.census.licenses
-  - braunschweig.data.mid.data
+  - synthesis.output
 
 config:
   processes: 4
   data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs_dryrun
+  output_prefix: bs_dryrun_
 
+  random_seed: 1234
+  sampling_rate: 0.001
+  output_formats: [csv]
+
+  hts: entd
+  use_urban_type: false
+  projection_year: null
+
+  # Region scope: ZGB-8 Kreise.
   bavaria.political_prefix:
     - "03101"
     - "03102"
@@ -31,25 +40,39 @@ config:
     - "03157"
     - "03158"
 
+  # Data paths (identical to the smoke / validation configs).
   bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx
+  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
+  bavaria.buildings_path: braunschweig/buildings
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
-
   braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
   braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
-
   braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
   braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
   braunschweig.inkar_year: latest
 
+  # Gravity calibration parameters (frozen at smoke-baseline values).
+  gravity_slope: -0.065
+
 aliases:
-  bavaria.data.census.licenses:  braunschweig.data.census.licenses
-  bavaria.data.census.population: braunschweig.data.census.population
-  bavaria.data.census.employment: braunschweig.data.census.employment
-  bavaria.data.census.employees:  braunschweig.data.census.employees
-  bavaria.data.mid.data:  braunschweig.data.mid.data
-  bavaria.data.mid.zones: braunschweig.data.mid.zones
-  bavaria.data.census.household_size:   braunschweig.data.census.household_size
-  bavaria.data.census.household_income: braunschweig.data.census.household_income
+  # Same alias set as config_local_braunschweig.yml. Stages still without a
+  # Braunschweig fork (bavaria.data.spatial.iris etc.) are not aliased.
+  data.census.filtered: braunschweig.ipf.attributed
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  synthesis.locations.work: braunschweig.locations.work
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  data.spatial.iris: bavaria.data.spatial.iris
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
