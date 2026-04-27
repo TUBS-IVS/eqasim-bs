@@ -78,7 +78,18 @@ def _load(path: str, year_cfg):
     df = df[df["aggregat"] == "Kreise"].copy()
     df["ars5"] = df["kennziffer"].astype(str).str.zfill(5)
     df["einkommen_eur"] = pd.to_numeric(df["einkommen_eur"], errors="coerce")
+    n_before = len(df)
     df = df.dropna(subset=["einkommen_eur"])
+    # BUG-007 fix: if the INKAR export ships only "N.A." placeholders for the
+    # selected year (happens with old/preliminary releases), to_numeric+dropna
+    # silently empties the frame and de_mean becomes NaN, which propagates as
+    # 100 % NaN income downstream. Fail loud instead.
+    if len(df) == 0:
+        raise RuntimeError(
+            f"INKAR household-income table for year '{target_year}' has no "
+            f"numeric values after dropna ({n_before} Kreis rows before, 0 after). "
+            f"Check {path} - the source may contain only 'N.A.' placeholders."
+        )
 
     de_mean = df["einkommen_eur"].mean()
     df["scale"] = df["einkommen_eur"] / de_mean

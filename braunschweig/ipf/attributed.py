@@ -2,9 +2,11 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/ipf/attributed.py``.
 Adapted for Braunschweig:
-- Config keys renamed from ``braunschweig.ipf.*`` to ``braunschweig.ipf.*``.
-- Log message tags now read ``[braunschweig.ipf.attributed]`` (mechanical rename).
-- No behavioural change otherwise (Phase 2.6 is relocation-only per D-5).
+- Config keys are ``braunschweig.ipf.*``; the legacy ``bavaria.ipf.*`` mapping
+  was removed in Phase 4.3 along with the rest of the bavaria/ tree.
+- Log message tags read ``[braunschweig.ipf.attributed]``.
+- BUG-008 fix: ``commune_id`` is cast to a stable string before any sort or
+  factorize call so household_id assignment is deterministic across runs.
 """
 from tqdm import tqdm
 import pandas as pd
@@ -59,6 +61,12 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     frac = weights - floor
     counts = floor + (rng.random_sample(len(weights)) < frac).astype(np.int64)
     repeated = df.iloc[np.repeat(np.arange(len(df)), counts)].reset_index(drop=True)
+
+    # BUG-008 fix: ensure commune_id is a stable string before any sort or
+    # factorize. If df["commune_id"] arrives as a categorical or numeric type
+    # the sort below would honour category-definition order (which depends on
+    # IPF input order), making household_id assignment non-reproducible.
+    repeated["commune_id"] = repeated["commune_id"].astype(str)
 
     repeated["_hh_size_int"] = (
         repeated["household_size"].astype(str).map(_HH_SIZE_INT).astype(np.int64)

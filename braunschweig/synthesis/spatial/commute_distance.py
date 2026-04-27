@@ -91,7 +91,10 @@ def _override_work_distances(df_work: pd.DataFrame,
     fallback_cdf = cdfs.get("03ZGB")
 
     df = df_work.copy()
-    df["kreis"] = df["commune_id"].astype(str).str[:5]
+    # BUG-003 fix: commune_id is an 8-digit ARS but pandas may carry it as int
+    # (which strips the leading 0 of the Niedersachsen state code "03"). Force
+    # to string and pad to 8 digits before slicing the 5-digit Kreis prefix.
+    df["kreis"] = df["commune_id"].astype(str).str.zfill(8).str[:5]
 
     overrides_applied = 0
     for kreis, group_idx in df.groupby("kreis", sort=False,

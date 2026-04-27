@@ -1,37 +1,42 @@
 # Codebase Concerns
 
 > Verified hypotheses (H1..H4), known bugs (BUG-001..BUG-011), tech debt, and open questions.
+>
+> **Status (2026-04-27, post-bavaria-removal)**: BUG-001, -004, -009, -010, -011 are
+> resolved as part of the BS-merged code base. BUG-003, -006, -007, -008 fixed in
+> the bug-sweep commit on branch `refactor/braunschweig-clean-fork`. BUG-002, -005
+> remain documented (BUG-002 not reproducible in current code, BUG-005 RNG-offset
+> consistency is cosmetic and deferred).
 
 ## Core Sections (Required)
 
 ### 1) Top Risks (Prioritized)
 
-| Severity | Concern | Evidence | Impact | Suggested action |
+| Severity | Concern | Evidence | Status | Suggested action |
 |----------|---------|----------|--------|------------------|
-| **HIGH** | BUG-001: Residency flag mismatch in output | [synthesis/output.py](synthesis/output.py#L57) hardcoded `"is_munich_resident"` but Braunschweig enriched.py creates `"is_bs_resident"` | CSV writer outputs wrong/empty column for BS | Make column name config-driven (Decision D-5 deferred) |
-| **HIGH** | BUG-002: Household member grouping corruption | [synthesis/population/sampled.py](synthesis/population/sampled.py#L37-L39) — split indices don't match replication count → persons wrongly grouped into households | 10+ person households may contain members from 2-3 original households | Fix: compute expanded sizes before split (Decision D-5 deferred) |
-| **HIGH** | Bavaria coupling (CON-001) | Many core stages in [bavaria/](bavaria/) not customizable for BS without modifying Bavaria code | If we need to fix Bavaria bugs (e.g. BUG-002), must either patch upstream or override in BS | Refactor Phase 3 extracts region-neutral code to `eqasim_common/` |
-| **MEDIUM** | BUG-003: commune_id leading-zero loss | [braunschweig/synthesis/spatial/commute_distance.py](braunschweig/synthesis/spatial/commute_distance.py#L78) — astype(str) loses leading zero → Kreis lookup fails silently → uses fallback distribution | Commute distances for Braunschweig residents are region-wide instead of Kreis-specific; ~5 km bias | Use `str.zfill(5)` before slice (Decision D-5 deferred) |
-| **MEDIUM** | Cache invalidation cascade | If one input data file changes, all 62 downstream stages re-run (~4 hours on laptop) | High iteration cost; blocks rapid experimentation | Investigate partial re-run or cache partitioning (Phase 4+) |
-| **MEDIUM** | Java/Python boundary fragility (CON-002) | Mode-choice parameters live in Java (`org.eqasim.bavaria.routing.Modes`); if we want to tune utilities for ZGB-8, must rebuild Java | −10 pp bike bias, +9.9 pp walk bias unsolved (BUG-E-001) | Document Java rebuild steps; defer mode-choice tuning to Phase 2 (Decision D-1c) |
-| **MEDIUM** | RNG non-reproducibility (BUG-005) | Hardcoded seed offsets differ across modules (e.g. 91731 in enriched.py); if stage order changes, RNG state drifts | Two runs with same seed produce different vehicles/income if IPF output order changes | Use consistent offset or derive from stage name hash (Decision D-5 deferred) |
-| **MEDIUM** | BUG-004: Silent NaN in household-income map | [bavaria/synthesis/population/enriched.py](bavaria/synthesis/population/enriched.py#L270) `.map()` returns NaN silently if household_size not in income_size_map | ~1% of 5-person households get NaN income; downstream sampling skips them | Pre-check with assertion before sampling (Decision D-5 deferred) |
-| **LOW** | BUG-006: Encoding error in CSV read | [braunschweig/data/census/households_type.py](braunschweig/data/census/households_type.py#L69) no encoding param; defaults to system locale | If ZIP contains UTF-8 ü/ö/ä, corrupts ARS12 codes → merge fails silently → 0 households loaded from affected Gemeinden | Add `encoding="utf-8-sig"` to pd.read_csv() (Decision D-5 deferred) |
+| **RESOLVED** | BUG-001: Residency flag mismatch in output | [synthesis/output.py](../../synthesis/output.py#L57) | Auto-detects fork-specific `is_*_resident` column; falls back to `is_munich_resident=False`. | None — fixed in current code. |
+| **RESOLVED** | BUG-004: Silent NaN in household-income map | [braunschweig/synthesis/population/enriched.py](../../braunschweig/synthesis/population/enriched.py) | `_build_income_size_map` raises `RuntimeError` on unresolved bins; post-sampling `n_missing_income > 0` raises. | None — fixed in current code. |
+| **RESOLVED** | BUG-009: No post-IPF margin validation | [braunschweig/ipf/model.py](../../braunschweig/ipf/model.py) | Hard post-IPF check on `margin_validation_tolerance` (default 1 %) plus zero-target violation guard. | None — fixed in current code. |
+| **RESOLVED** | BUG-010: Silent allocation failure in HH-size rescaling | [braunschweig/ipf/prepare.py](../../braunschweig/ipf/prepare.py) | Explicit `if not (df["size_total"] > 0).all(): raise RuntimeError(...)`. | None — fixed in current code. |
+| **RESOLVED** | BUG-011: Categorical bin mismatch in HH-size sampling | [braunschweig/synthesis/population/enriched.py](../../braunschweig/synthesis/population/enriched.py) | `_build_income_size_map` validates the bin schema and raises on unknown labels. | None — fixed in current code. |
+| **RESOLVED (this commit)** | BUG-003: commune_id leading-zero loss | [braunschweig/synthesis/spatial/commute_distance.py](../../braunschweig/synthesis/spatial/commute_distance.py) | `astype(str).str.zfill(8)` before slicing the 5-digit Kreis prefix. | None. |
+| **RESOLVED (this commit)** | BUG-006: Encoding error in CSV read | [braunschweig/data/census/households_type.py](../../braunschweig/data/census/households_type.py) | `encoding="utf-8-sig"` added to `pd.read_csv`. | None. |
+| **RESOLVED (this commit)** | BUG-007: INKAR merge NaN | [braunschweig/data/inkar/household_income.py](../../braunschweig/data/inkar/household_income.py) | `RuntimeError` when `dropna` empties the frame, with diagnostic showing row counts. | None. |
+| **RESOLVED (this commit)** | BUG-008: Unsorted household formation | [braunschweig/ipf/attributed.py](../../braunschweig/ipf/attributed.py) | `commune_id` cast to `str` before sort/factorize; `kind="mergesort"` for stability. | None. |
+| **MEDIUM** | Cache invalidation cascade | If one input data file changes, all 62 downstream stages re-run (~4 hours on laptop) | Open. | Investigate partial re-run or cache partitioning (Phase 4+). |
+| **MEDIUM** | Java/Python boundary fragility (CON-002) | Mode-choice parameters live in Java (`org.eqasim.bavaria.routing.Modes`); if we want to tune utilities for ZGB-8, must rebuild Java | Open per Decision D-1c (Java rename out of scope). | Document Java rebuild steps; defer mode-choice tuning. |
+| **MEDIUM** | BUG-005: RNG seed offsets inconsistent across modules | Hardcoded offsets like `+ 8572` in `enriched.py`; if stage order changes, RNG state drifts | Documented; not reproducible failure today. | Cosmetic — derive from stage-name hash in a separate refactor. |
+| **LOW** | BUG-002: Household member grouping (claimed) | [synthesis/population/sampled.py](../../synthesis/population/sampled.py) — split + repeat sequence | Re-audited 2026-04-27: no defect reproducible. `np.split + filter + repeat` correctly preserves household groupings; `household_size` totals match `len(df_census)` by construction (one row per person). | Keep documented; reopen if validation harness ever shows mismatched HH groupings. |
+| **CLOSED** | Bavaria coupling (CON-001) | `bavaria/` folder deleted in commit `0b1d01d`; region-neutral code lives in `eqasim_common/`, BS-specific in `braunschweig/`. | None — done. |
 
 ### 2) Technical Debt
 
-List the most important debt items only.
-
-| Debt item | Why it exists | Where | Risk if ignored | Suggested fix |
-|-----------|---------------|-------|-----------------|--------------|
-| BUG-007: INKAR merge NaN | If INKAR file malformed (all `"N.A."`), `.dropna()` returns empty → all income becomes NaN | [braunschweig/data/inkar/household_income.py](braunschweig/data/inkar/household_income.py#L84-L85) | Silent mode-choice bias (all HHs use baseline mode, not income-dependent) | Assert `len(df) > 0` after dropna with diagnostic message |
-| BUG-008: Unsorted household formation | After stochastic shuffle, SORT is applied but sort order depends on category definition order (which varies with upstream data) | [bavaria/ipf/attributed.py](bavaria/ipf/attributed.py#L96-L98) | Two runs with same seed produce different household groupings if IPF output category order differs | Ensure `commune_id` sorted as string before category conversion |
-| BUG-009: No post-IPF margin validation | IPF convergence only checks factor tolerance, not that final weights satisfy all margin targets | [bavaria/ipf/model.py](bavaria/ipf/model.py#L262) | Infeasible problems can spuriously "converge" to suboptimal distribution; margins violated silently | Post-IPF loop: assert `abs(sum(weights[f]) - target) < 0.1 * target` for all margins |
-| BUG-010: Silent allocation failure in HH-size rescaling | No check before division; if `size_total` is 0 or NaN, produces inf/NaN | [bavaria/ipf/prepare.py](bavaria/ipf/prepare.py#L68) | NaN weights → IPF fails downstream | Assert `(size_total > 0).all()` before division with diagnostic message |
-| BUG-011: Categorical bin mismatch in HH-size sampling | Maps integer 6 to "6+" but household_size is always string; mapping is dead code | [bavaria/synthesis/population/enriched.py](bavaria/synthesis/population/enriched.py#L20-L22) | If attributed.py changes, mixed int/string household_size → sampling skips unmapped values | Assert all bins present before sampling |
-| Mixed German/English documentation | Docstrings, comments, config keys inconsistent; makes onboarding slow | All source files | High cognitive load for English-speaking contributors | Refactor Phase 3 standardizes on English (Decision D-5 target) |
-| No linting/formatting rules enforced | Code style varies (line length, blank lines, docstring format) | All source | Inconsistent PRs; merge conflicts | Add `black`, `pylint` config; run in CI (Phase 3+) |
-| No type hints | No static type checking; runtime errors catch type bugs late | All source | Harder to detect schema mismatches between stages | Add `mypy` config + type hints (Phase 3+) |
+| Debt item | Where | Status | Suggested fix |
+|-----------|-------|--------|--------------|
+| Mixed German/English documentation | All source files | Open. | Standardize on English in a future refactor; German Zensus/BA/MiD field names stay for traceability. |
+| No linting/formatting rules enforced | All source | Open. | Add `black`, `ruff` config; run in CI (Phase 4+). |
+| No type hints | All source | Open. | Add `mypy` config + type hints (Phase 4+). |
+| Stage-cache fingerprinting cascade | `eqasim-data/cache_bs/` | Open. | Single input change invalidates ~62 downstream stages; investigate per-stage hash partitioning. |
 
 ### 3) Security Concerns
 

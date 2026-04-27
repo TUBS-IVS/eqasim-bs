@@ -65,7 +65,11 @@ def _read_csv_from_zip(path: str) -> pd.DataFrame:
         if not members:
             raise RuntimeError(f"No CSV inside {path}")
         with zf.open(members[0]) as fh:
-            return pd.read_csv(fh, sep=";", dtype=str, usecols=usecols)
+            # BUG-006 fix: GENESIS exports are UTF-8 with BOM; without explicit
+            # encoding pandas uses the system locale (cp1252 on Windows) which
+            # mangles ü/ö/ä in ARS Gemeinde labels and silently drops rows.
+            return pd.read_csv(fh, sep=";", dtype=str, usecols=usecols,
+                               encoding="utf-8-sig")
 
 
 def execute(context) -> pd.DataFrame:

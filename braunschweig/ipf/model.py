@@ -2,9 +2,9 @@
 
 Origin: eqasim-bavaria @ b20fbe6, file ``bavaria/ipf/model.py``.
 Adapted for Braunschweig:
-- Config keys renamed from ``braunschweig.ipf.*`` to ``braunschweig.ipf.*`` (one-shot
-  migration handled by :mod:`braunschweig._config_compat`).
-- No behavioural change otherwise (Phase 2.6 is relocation-only per D-5).
+- Config keys are ``braunschweig.ipf.*``; the legacy ``bavaria.ipf.*`` mapping
+  was removed in Phase 4.3 along with the rest of the bavaria/ tree.
+- Includes a post-IPF margin-deviation control check (BUG-009 fix).
 """
 import pandas as pd
 import numpy as np
