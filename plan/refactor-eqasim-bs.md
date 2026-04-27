@@ -127,28 +127,24 @@ The plan is **strictly phased**. Each phase ends with a verification gate; the n
 
 Each step is a **single-purpose commit**. Order is dependency-driven.
 
-* [ ] 2.1 Move generic OSM utilities (`bavaria/data/osm/{osmconvert,chunked}.py`) → `eqasim_common/data/osm/`. Add a deprecation re-export at the old path (`from eqasim_common.data.osm import *  # type: ignore`). Update `braunschweig/data/locations.py` and the BS config to import from the new path.
-* [ ] 2.2 Move `bavaria/gravity/distance_matrix.py` → `eqasim_common/gravity/distance_matrix.py`. Add a deprecation re-export at the old path.
-* [ ] 2.3 Move `bavaria/entd_codes.py` and `bavaria/data/spatial/codes.py` → `eqasim_common/spatial/`. Rename the synpp stage from `bavaria.entd_codes` to `eqasim_common.spatial.codes`. Update the alias (`data.spatial.codes`).
-* [ ] 2.4 Move `bavaria/locations/synthesis/replacement.py` and `bavaria/locations/synthesis/education.py` → `eqasim_common/locations/synthesis/`. Update aliases.
-* [ ] 2.5 Move `bavaria/locations/education.py` → `eqasim_common/locations/education.py` (it is OSM-tag based, region-neutral; keep the docstring "Inherited from eqasim-bavaria; no Braunschweig-specific changes needed.").
-* [ ] 2.6 Move `bavaria/ipf/{model,prepare,attributed}.py` → `braunschweig/ipf/`. Rename all `bavaria.ipf.*` config keys to `braunschweig.ipf.*` (`use_household_size_margin`, `use_household_type_margin`, `use_employment_margin`, `dirichlet_prior_strength`, `margin_validation_tolerance`). Add a one-shot config-key migration helper in `braunschweig/_config_compat.py` that warns + remaps for one minor version. Inside each file, leave a docstring header:
-  ```
-  Origin: eqasim-bavaria @ <commit>, file <bavaria/ipf/...>.
-  Adapted for Braunschweig: <bullet list of substantive deviations>
-  ```
-* [ ] 2.7 Move `bavaria/locations/home.py`, `bavaria/locations/work.py`, `bavaria/locations/secondary.py`, `bavaria/locations/education.py` (the parts not already moved) → `braunschweig/locations/`. **Merge** the BS-specific wrappers (`braunschweig/locations/home.py`, `braunschweig/locations/work.py`) into the new files — no more delegation through `bavaria.locations.*`. Add explicit `# --- Inherited from eqasim-bavaria ---` and `# --- Braunschweig-specific ---` comment fences inside each file.
-* [ ] 2.8 Move `bavaria/synthesis/population/enriched.py` and `braunschweig/synthesis/population/enriched.py` → a single `braunschweig/synthesis/population/enriched.py`. **Behaviour-preserving relocation only** — keep the existing wrapper-around-wrapper structure intact (cleaning it up is a follow-up). BUG-001 stays untouched.
-* [ ] 2.9 Move `bavaria/income.py` → `braunschweig/synthesis/income.py`; rename to clarify it's the zero-income placeholder. Note in docstring this is a deliberate stand-in until BS gets MiD H4-derived household income (already partially in `braunschweig.data.census.household_income`; clarify which stage feeds the simulation).
-* [ ] 2.10 Move `bavaria/homes.py` → `braunschweig/synthesis/spatial/home_zones.py`. No code change beyond the relocation.
-* [ ] 2.11 Move `bavaria/gravity/model.py` content into `braunschweig/gravity/model.py` (which currently wraps it). Inline the calls; eliminate the indirection. Behaviour-preserving — no bug fix here.
-* [ ] 2.12 Move `bavaria/matsim/simulation/prepare.py` → `braunschweig/matsim/simulation/prepare.py`. Update `matsim/simulation/{run,prepare}.py` per Decision D-1 (default: leave Java class names as-is, add a code comment explaining why).
-* [ ] 2.13 Update `synthesis/population/sampled.py` to reference the new IPF stage name. **No bug fixes** — relocation/rename only.
-* [ ] 2.14 Rewrite `config_local_braunschweig.yml`, `config_local_braunschweig_10pct.yml`, `config_local_braunschweig_25pct.yml`: drop every `bavaria.*` alias, rename `bavaria.*` config keys to `braunschweig.*`. Aliases shrink to **only** the upstream `synthesis.*` overrides. Add a header comment block summarising what the config does, ZGB-8 scope, and the data download checklist link.
-* [ ] 2.15 Rewrite `config_dryrun_braunschweig.yml` to a 0.1 % CI dry run that exercises every stage; add it to the test suite (Phase 3).
-* [ ] 2.16 Delete `bavaria/`, `config.yml`, `config_bavaria.yml`, `config_local_bavaria.yml`, `config_corsica.yml`, `config_lyon.yml`, `config_nantes.yml`, `config_toulouse.yml`, `config_tum.yml`, `eqasim-data/data/bavaria/` (per Decision D-2).
-* [ ] 2.17 Sweep `analysis/`, `documentation/`, `scripts/`: rename every remaining `bavaria.*` reference. Run `grep -r "bavaria" --include="*.py"` afterwards — only docstring/history references should remain (and only when explaining provenance).
-* [ ] 2.18 Sweep `eqasim-data/cache_bs*`: delete. Caches are content-hashed against module paths and will all miss.
+* [x] 2.1 Move generic OSM utilities (`bavaria/data/osm/{osmconvert,chunked}.py`) → `eqasim_common/data/osm/`. (commit 27469bb)
+* [x] 2.2 Move `bavaria/gravity/distance_matrix.py` → `eqasim_common/gravity/distance_matrix.py`. (commit 6056feb)
+* [x] 2.3 Move `bavaria/entd_codes.py` and `bavaria/data/spatial/codes.py` → `eqasim_common/spatial/`. (commit 73c1f65)
+* [x] 2.4 Move `bavaria/locations/synthesis/{replacement,education}.py` → `eqasim_common/locations/synthesis/`. (commit 3071c71)
+* [x] 2.5 Move `bavaria/locations/education.py` → `eqasim_common/locations/education.py`. (commit 59eef97)
+* [x] 2.6 Move `bavaria/ipf/{model,prepare,attributed}.py` → `braunschweig/ipf/`. Renamed config keys; added `braunschweig/_config_compat.py`. (commit 4d6b052)
+* [x] 2.7 Merged `bavaria/locations/{home,work,secondary}.py` into `braunschweig/locations/`. Comment fences applied. (commit 0c033f0)
+* [x] 2.8 Merged `bavaria/synthesis/population/enriched.py` into `braunschweig/synthesis/population/enriched.py`. (commit 0c50b65)
+* [x] 2.9 Move `bavaria/income.py` → `braunschweig/synthesis/income.py` (zero-income placeholder). (commit 9371208)
+* [x] 2.10 Move `bavaria/homes.py` → `braunschweig/synthesis/spatial/home_zones.py`. (commit 9371208)
+* [x] 2.11 Inlined `bavaria/gravity/model.py` into `braunschweig/gravity/model.py` (`_execute_gravity_base`). (commit 2aaf278)
+* [x] 2.12 Move `bavaria/matsim/simulation/prepare.py` → `braunschweig/matsim/simulation/prepare.py`. Java class refs retained per D-1c. (commit 49f6e43)
+* [x] 2.13 No code change to `synthesis/population/sampled.py` (already alias-friendly); refreshed two stale `bavaria.ipf.*` doc-comments. (commit 67fa09d)
+* [x] 2.14 Renamed `bavaria.data.{census,buildings,mid,osm.locations}` stage refs in `braunschweig/*` to `braunschweig.data.*`; dropped 10 redundant aliases per BS config. Aliases for `bavaria.data.{spatial.iris, population.raw, mvg.zones}` kept (no BS fork yet). (commit 9ba5347)
+* [x] 2.15 Rewrote `config_dryrun_braunschweig.yml` as 0.1% full-pipeline CI dry run with separate `cache_bs_dryrun`. (commit aa4b956)
+* [ ] **2.16 DEFERRED (2026-04-27, user)**: not deleting `bavaria/` this session - several leaf modules (`bavaria.data.spatial.iris`, `bavaria.data.population.raw`, `bavaria.data.mvg.zones`) are still consumed via aliases by `braunschweig/*`. Revisit in Phase 4 or a follow-up branch after migrating those leaves.
+* [x] 2.17 Swept `analysis/`, `documentation/`, `scripts/`: only docstring/history references to bavaria remain (allowed per plan).
+* [ ] **2.18 DEFERRED (2026-04-27, user)**: caches at `eqasim-data/cache_bs*` left in place. They will silently miss on next run because module paths moved; safe to ignore until disk pressure or a confused cache hit appears.
 * [ ] **Verify after each step 2.x:** `pytest -q tests/test_braunschweig_data.py` passes; `python -m synpp config_dryrun_braunschweig.yml` reaches the affected stage without error. After 2.16, run the 1 % smoke pipeline; compare the household / person / activity / trip counts against the Phase-0 baseline; equal up to RNG noise (≤0.5 %).
 
 ### Phase 3 — Tests, docs, quality playbook
