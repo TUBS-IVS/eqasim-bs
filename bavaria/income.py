@@ -1,22 +1,14 @@
-import numpy as np
-import pandas as pd
-import multiprocessing as mp
-from tqdm import tqdm
+"""Deprecation shim - moved to :mod:`braunschweig.synthesis.income`."""
 
-"""
-This stage provides a zero household income for all households as it is needed in 
-downstream stages for Germany.
-"""
+from __future__ import annotations
 
-def configure(context):
-    context.stage("synthesis.population.sampled")
+import warnings
 
-def execute(context):
-    # Load data
-    df = context.stage("synthesis.population.sampled")[["household_id"]]
-    
-    # Format
-    df = df.drop_duplicates("household_id")
-    df["household_income"] = 0.0
-    
-    return df
+from braunschweig.synthesis.income import *  # noqa: F401,F403
+from braunschweig.synthesis.income import configure, execute  # noqa: F401
+
+warnings.warn(
+    "bavaria.income has moved to braunschweig.synthesis.income; update aliases.",
+    DeprecationWarning,
+    stacklevel=2,
+)

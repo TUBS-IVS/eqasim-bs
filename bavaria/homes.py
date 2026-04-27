@@ -1,18 +1,15 @@
-import numpy as np
-import pandas as pd
+"""Deprecation shim - moved to :mod:`braunschweig.synthesis.spatial.home_zones`."""
 
-"""
-Yield home zones for Germany based on synthetic population data.
-"""
+from __future__ import annotations
 
-def configure(context):
-    context.stage("synthesis.population.sampled")
+import warnings
 
-def execute(context):
-    # Load data
-    df = context.stage("synthesis.population.sampled")
+from braunschweig.synthesis.spatial.home_zones import *  # noqa: F401,F403
+from braunschweig.synthesis.spatial.home_zones import configure, execute  # noqa: F401
 
-    # Format data
-    df = df.drop_duplicates("household_id")
-
-    return df[["household_id", "departement_id", "commune_id", "iris_id"]]
+warnings.warn(
+    "bavaria.homes has moved to braunschweig.synthesis.spatial.home_zones; "
+    "update aliases.",
+    DeprecationWarning,
+    stacklevel=2,
+)

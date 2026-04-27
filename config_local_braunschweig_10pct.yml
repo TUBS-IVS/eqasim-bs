@@ -114,8 +114,8 @@ config:
 aliases:
   # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)
   data.census.filtered: braunschweig.ipf.attributed
-  synthesis.population.income.selected: bavaria.income
-  synthesis.population.spatial.home.zones: bavaria.homes
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
   synthesis.locations.home.locations: braunschweig.locations.home
   synthesis.locations.education: eqasim_common.locations.education
   synthesis.locations.secondary: braunschweig.locations.secondary
