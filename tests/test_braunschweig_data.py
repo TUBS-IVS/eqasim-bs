@@ -265,7 +265,7 @@ class TestHouseholdDistributions:
         which gets stringified to "1".."6". Every value must map to a
         bin actually present in df_income.
         """
-        from bavaria.synthesis.population.enriched import _build_income_size_map
+        from braunschweig.synthesis.population.enriched import _build_income_size_map
 
         bs_bins = {"1", "2", "3", "4", "5", "6+"}
         mapping, scheme = _build_income_size_map(bs_bins)
@@ -281,7 +281,7 @@ class TestHouseholdDistributions:
 
     def test_income_size_map_collapses_for_five_bin_reference(self):
         """Bavaria's GENESIS reference is 5-bin — 5/6 must collapse to 5+."""
-        from bavaria.synthesis.population.enriched import _build_income_size_map
+        from braunschweig.synthesis.population.enriched import _build_income_size_map
 
         bv_bins = {"1", "2", "3", "4", "5+"}
         mapping, scheme = _build_income_size_map(bv_bins)
@@ -293,7 +293,7 @@ class TestHouseholdDistributions:
             assert mapping[hh] in bv_bins
 
     def test_income_size_map_rejects_unknown_scheme(self):
-        from bavaria.synthesis.population.enriched import _build_income_size_map
+        from braunschweig.synthesis.population.enriched import _build_income_size_map
         import pytest
 
         with pytest.raises(ValueError, match="unrecognised hh_size bins"):
