@@ -1,0 +1,154 @@
+"""Reference-data loaders (MiD 2023, BA Pendleratlas, Zensus 2022, INKAR)."""
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+import pandas as pd
+
+from .config import DATA_DIR, ZGB8
+
+
+# ---------------------------------------------------------------------------
+# MiD 2023 regional tables (CSV mirrors of the PDF)
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def load_mid() -> dict[str, pd.DataFrame]:
+    """Return dict with 4 MiD tables keyed by code (P9, P12_1, P13, P17_1)."""
+    out: dict[str, pd.DataFrame] = {}
+    for code in ("P9", "P12_1", "P13", "P17_1"):
+        df = pd.read_csv(DATA_DIR / "mid" / f"mid2023_{code}.csv")
+        df["ars5"] = df["ars5"].astype(str).str.zfill(5)
+        df["kreis"] = df["kreis"].astype(str)
+        out[code] = df
+    return out
+
+
+# ---------------------------------------------------------------------------
+# BA Pendleratlas — origin → destination Kreis flows.
+# ---------------------------------------------------------------------------
+NUMERIC_COLUMNS = ["total", "male", "female", "de", "foreign", "apprentice"]
+
+
+def _read_ba(path: Path, orientation: str) -> pd.DataFrame:
+    raw = pd.read_csv(path, sep=";", skiprows=10, encoding="utf-8", dtype=str)
+    if orientation == "ein":
+        raw.columns = ["dest_name", "dest_ars", "orig_name", "orig_ars"] + NUMERIC_COLUMNS
+    else:
+        raw.columns = ["orig_name", "orig_ars", "dest_name", "dest_ars"] + NUMERIC_COLUMNS
+
+    mask = raw["orig_ars"].str.fullmatch(r"\d{5}", na=False) & raw["dest_ars"].str.fullmatch(r"\d{5}", na=False)
+    df = raw[mask].copy()
+    df["flow"] = pd.to_numeric(df["total"].str.replace(".", "", regex=False), errors="coerce")
+    df = df.dropna(subset=["flow"])
+    df["flow"] = df["flow"].astype(int)
+    return df[["orig_ars", "dest_ars", "flow"]]
+
+
+@lru_cache(maxsize=1)
+def load_pendler() -> pd.DataFrame:
+    """Combined Pendleratlas (in + aus) Kreis-pair flows. SvB only."""
+    ein = _read_ba(DATA_DIR / "statistik_pendler_2026042493412.csv", "ein")
+    aus = _read_ba(DATA_DIR / "statistik_pendler_2026042493430.csv", "aus")
+    df = pd.concat([ein, aus], ignore_index=True)
+    df = df.groupby(["orig_ars", "dest_ars"], as_index=False).agg(flow=("flow", "max"))
+    df = df[df["orig_ars"] != df["dest_ars"]].copy()
+    return df
+
+
+def load_pendler_outbound() -> pd.DataFrame:
+    """ZGB-8 → external (or other ZGB Kreis) flows."""
+    df = load_pendler()
+    return df[df["orig_ars"].isin(ZGB8)].copy()
+
+
+def load_pendler_inbound() -> pd.DataFrame:
+    """External → ZGB-8 work flows."""
+    df = load_pendler()
+    return df[df["dest_ars"].isin(ZGB8)].copy()
+
+
+# ---------------------------------------------------------------------------
+# Zensus 2022
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def load_zensus_population() -> pd.DataFrame:
+    """Total population per ZGB-8 Kreis from DESTATIS 12411-0018."""
+    path = DATA_DIR / "12411-0018_de.csv"
+    raw = pd.read_csv(path, sep=";", encoding="utf-8-sig", header=None, dtype=str, skiprows=6)
+    rows = []
+    for _, r in raw.iterrows():
+        ags = str(r.iloc[0]).strip()
+        if ags not in ZGB8:
+            continue
+        # Sum across all 17 age classes × 2 sexes.
+        total = 0
+        for i in range(17):
+            for off in (2 + 2 * i, 36 + 2 * i):
+                try:
+                    total += int(r.iloc[off])
+                except (TypeError, ValueError):
+                    pass
+        rows.append({"ars5": ags, "kreis_name": ZGB8[ags], "zensus_2022": total})
+    return pd.DataFrame(rows).sort_values("ars5").reset_index(drop=True)
+
+
+@lru_cache(maxsize=1)
+def load_zensus_households() -> pd.DataFrame:
+    """Household-size distribution per ZGB-8 Kreis from 5000H-2001.
+
+    Returns DataFrame[ars5, size_bin, count, share].
+    """
+    path = DATA_DIR / "5000H-2001_de_flat.csv"
+    df = pd.read_csv(
+        path, sep=";", dtype=str,
+        usecols=[
+            "1_variable_attribute_code", "2_variable_attribute_code",
+            "2_variable_attribute_label", "3_variable_attribute_code", "value",
+        ],
+    ).rename(columns={
+        "1_variable_attribute_code": "ars12",
+        "2_variable_attribute_code": "size_code",
+        "2_variable_attribute_label": "size_label",
+        "3_variable_attribute_code": "type_code",
+    })
+    df["ars5"] = df["ars12"].str[:5]
+    df = df[df["ars5"].isin(ZGB8)]
+    df = df[df["type_code"].isna() & df["size_code"].notna() & df["size_label"].ne("Insgesamt")]
+    df["count"] = pd.to_numeric(df["value"], errors="coerce").fillna(0.0)
+
+    bin_map = {
+        "1 Person": "1", "2 Personen": "2", "3 Personen": "3",
+        "4 Personen": "4", "5 Personen": "5", "6 und mehr Personen": "6+",
+    }
+    df["size_bin"] = df["size_label"].map(bin_map)
+    out = df.groupby(["ars5", "size_bin"], as_index=False)["count"].sum()
+    totals = out.groupby("ars5")["count"].transform("sum")
+    out["share"] = out["count"] / totals.where(totals > 0, 1.0)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# INKAR Haushaltseinkommen
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def load_inkar_income() -> pd.DataFrame:
+    """Latest available household income per Kreis (€/EW/month)."""
+    path = DATA_DIR / "E_Haushaltseinkommen.xls"
+    raw = pd.read_excel(path, sheet_name=0, header=None, skiprows=1)
+    # First two columns: Kennziffer, Raumeinheit (Kreis name). Last numeric column = latest year.
+    raw[0] = raw[0].astype(str).str.zfill(5)
+    raw = raw[raw[0].isin(ZGB8)].copy()
+    if raw.empty:
+        return pd.DataFrame(columns=["ars5", "income_eur"])
+    # Find the rightmost column that is numeric (latest year).
+    num_cols = [c for c in raw.columns[2:] if pd.to_numeric(raw[c], errors="coerce").notna().any()]
+    if not num_cols:
+        return pd.DataFrame(columns=["ars5", "income_eur"])
+    latest = num_cols[-1]
+    out = pd.DataFrame({
+        "ars5": raw[0].values,
+        "income_eur": pd.to_numeric(raw[latest], errors="coerce").values,
+    })
+    out["kreis_name"] = out["ars5"].map(ZGB8)
+    return out.dropna().sort_values("ars5").reset_index(drop=True)

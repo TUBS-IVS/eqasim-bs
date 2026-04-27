@@ -1,0 +1,48 @@
+## Re-run only the gravity stage so we can inspect its output after the
+## _calibrate / _append_outbound_flows scale fix.
+
+working_directory: eqasim-data/cache_bs
+
+run:
+  - braunschweig.gravity.model
+
+config:
+  processes: 4
+  data_path: eqasim-data/data
+
+  sampling_rate: 0.01
+  random_seed: 1234
+  hts: entd
+
+  bavaria.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+
+aliases:
+  bavaria.data.census.licenses:  braunschweig.data.census.licenses
+  bavaria.data.census.population: braunschweig.data.census.population
+  bavaria.data.census.employment: braunschweig.data.census.employment
+  bavaria.data.census.employees:  braunschweig.data.census.employees
+  bavaria.data.mid.data:  braunschweig.data.mid.data
+  bavaria.data.mid.zones: braunschweig.data.mid.zones
+  bavaria.data.census.household_size:   braunschweig.data.census.household_size
+  bavaria.data.census.household_income: braunschweig.data.census.household_income
+  bavaria.data.buildings: braunschweig.data.buildings
+  bavaria.data.osm.locations: braunschweig.data.locations

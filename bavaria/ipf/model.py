@@ -3,16 +3,66 @@ import numpy as np
 import itertools
 
 """
-This stage merge prepared datasets of employees from Kreis level 
-with inhabitants from Gemeinde level using Iterative Proportional Fitting
+This stage merge prepared datasets of employees from Kreis level
+with inhabitants from Gemeinde level using Iterative Proportional Fitting.
+
+When ``bavaria.ipf.use_household_size_margin`` is enabled (set in
+``bavaria.ipf.prepare``), an additional ``hh_size`` dimension is added to
+the joint distribution and a new ``commune × hh_size`` selector block
+is appended to the IPF schedule. A hard zero target is enforced for the
+physically impossible cell ``age < bavaria.minimum_age.one_person_household``
+∩ ``hh_size == "1"`` (children cannot live in single-person households).
+
+Returns columns:
+
+* legacy mode:  commune_id, departement_id, sex, age_class, employed, license, weight
+* hh-size mode: commune_id, departement_id, sex, age_class, employed, license, hh_size, weight
 """
+
+HH_SIZE_BINS = ("1", "2", "3", "4", "5", "6+")
+
 
 def configure(context):
     context.stage("bavaria.ipf.prepare")
     context.config("bavaria.minimum_age.employment", 16)
- 
+    context.config("bavaria.minimum_age.one_person_household", 16)
+    context.config("bavaria.ipf.use_household_size_margin", False)
+    context.config("bavaria.ipf.max_iterations", 1500)
+    context.config("bavaria.ipf.tolerance", 1e-2)
+    # TASK-010 — additional 4-way (Kreis × hh_size × employed) joint
+    # margin sourced from a Kreis-level cross-tab (e.g. Zensus 2022
+    # 13111-06-02-4 reshaped to long form). Requires
+    # ``use_household_size_margin`` to be on. When the flag is enabled
+    # but no supporting CSV is configured, the seed-prior is computed
+    # via outer product of the existing employment- and hh_size-margins
+    # (a pure marginal-consistency check that does not add information
+    # beyond what the existing IPF already enforces — useful as a
+    # smoke test before wiring real Zensus cross-tabs).
+    context.config("bavaria.ipf.use_employment_margin", False)
+    context.config(
+        "bavaria.ipf.employment_by_hhsize_path",
+        None,
+    )
+    # TASK-011 — symmetric-Dirichlet prior strength α (pseudo-counts
+    # added uniformly to the IPF seed). 0.0 disables the prior (=
+    # bit-identical to legacy behaviour). Typical calibrated values are
+    # in the range 0.01..1.0; higher α more strongly damps the
+    # contribution of zero/near-zero source cells in sparse Kreise.
+    context.config("bavaria.ipf.dirichlet_prior_strength", 0.0)
+    # Per-cell margin-deviation tolerance for the post-IPF control check.
+    # Any cell whose achieved weight differs from its target by more than
+    # this fraction triggers a hard failure. Defaults to 1 % which is
+    # roughly 5x the iteration tolerance — tight enough to catch
+    # systematic infeasibilities but loose enough to absorb the residual
+    # IPF wiggle.
+    context.config("bavaria.ipf.margin_validation_tolerance", 0.01)
+
+
 def execute(context):
-    df_population, df_employment, df_licenses_country, df_licenses_kreis = context.stage("bavaria.ipf.prepare")
+    (df_population, df_employment, df_licenses_country, df_licenses_kreis,
+     df_household_size) = context.stage("bavaria.ipf.prepare")
+
+    use_hh_size = context.config("bavaria.ipf.use_household_size_margin")
 
     # Construct a combined age class
     population_age_classes = np.sort(df_population["age_class"].unique())
@@ -49,9 +99,17 @@ def execute(context):
     unique_license = [True, False]
 
     # Initialize the seed with all combinations of values
-    index = pd.MultiIndex.from_product([
-        unique_communes, unique_sexes, combined_age_classes, unique_employed, unique_license
-    ], names = ["commune_index", "sex", "combined_age_class", "employed", "license"])
+    if use_hh_size:
+        unique_hh_sizes = list(HH_SIZE_BINS)
+        index = pd.MultiIndex.from_product([
+            unique_communes, unique_sexes, combined_age_classes, unique_employed,
+            unique_license, unique_hh_sizes
+        ], names=["commune_index", "sex", "combined_age_class",
+                  "employed", "license", "hh_size"])
+    else:
+        index = pd.MultiIndex.from_product([
+            unique_communes, unique_sexes, combined_age_classes, unique_employed, unique_license
+        ], names = ["commune_index", "sex", "combined_age_class", "employed", "license"])
 
     df_model = pd.DataFrame(index = index).reset_index()
     df_model["weight"] = 1.0
@@ -63,6 +121,22 @@ def execute(context):
     }
     combined_age_classes_sizes[combined_age_classes[-1]] = 1.0
     df_model["weight"] *= df_model["combined_age_class"].apply(lambda c: combined_age_classes_sizes[c])
+
+    # TASK-011 — symmetric-Dirichlet smoothing (sparse-cell prior).
+    # Adds α pseudo-counts uniformly to every seed cell. The IPF then
+    # rescales these to satisfy the margins, so very sparse Gemeinden
+    # (rural Goslar/Helmstedt) cannot collapse a cell weight to ~0
+    # before the margins have a chance to lift it. With α = 0 (default)
+    # this branch is a no-op and the iteration is bit-identical to the
+    # legacy formulation.
+    dirichlet_alpha = float(context.config("bavaria.ipf.dirichlet_prior_strength"))
+    if dirichlet_alpha > 0.0:
+        df_model["weight"] = df_model["weight"] + dirichlet_alpha
+        print(
+            f"[bavaria.ipf.model] Dirichlet prior α = {dirichlet_alpha:g} "
+            f"applied to {len(df_model):,} seed cells "
+            f"(seed weight now Σ = {df_model['weight'].sum():,.1f})"
+        )
 
     # Attach departement indices
     df_spatial = df_population[["commune_index", "departement_index"]].drop_duplicates()
@@ -141,6 +215,156 @@ def execute(context):
         target_weight = df_licenses_kreis.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
+    # Household-size constraints (commune × hh_size).
+    # Adds one selector per (commune, hh_size) cell with target = persons
+    # in that bin from Zensus 2022 1000A-2081 (rescaled to match the
+    # commune population total in bavaria.ipf.prepare).
+    if use_hh_size:
+        # Build commune_id -> commune_index mapping (from df_population)
+        commune_id_to_index = dict(zip(
+            df_population["commune_id"].astype(str),
+            df_population["commune_index"],
+        ))
+        df_hh = df_household_size.copy()
+        df_hh["commune_index"] = df_hh["commune_id"].astype(str).map(commune_id_to_index)
+        df_hh = df_hh.dropna(subset=["commune_index"]).copy()
+        df_hh["commune_index"] = df_hh["commune_index"].astype(int)
+
+        hh_combinations = list(
+            itertools.product(unique_communes, unique_hh_sizes)
+        )
+        hh_targets = (
+            df_hh.set_index(["commune_index", "hh_size"])["weight"].to_dict()
+        )
+        for combination in context.progress(
+            hh_combinations, total=len(hh_combinations),
+            label="Generating household-size constraints",
+        ):
+            target_weight = hh_targets.get(combination, 0.0)
+            f_model = df_model["commune_index"] == combination[0]
+            f_model &= df_model["hh_size"] == combination[1]
+            selectors.append(f_model)
+            targets.append(float(target_weight))
+
+        # Hard zero: persons younger than ``minimum_age_one_person_household``
+        # cannot live in a 1-person household.
+        minimum_one_person_age = context.config(
+            "bavaria.minimum_age.one_person_household"
+        )
+        f_model = df_model["combined_age_class"] < minimum_one_person_age
+        f_model &= df_model["hh_size"] == "1"
+        selectors.append(f_model)
+        targets.append(0.0)
+
+    # TASK-010 — optional Kreis × hh_size × employed joint margin.
+    # Sourced from a long-form CSV with columns
+    # ``departement_id, hh_size, employed, weight`` (Zensus 2022
+    # 13111-06-02-4 or equivalent). When the path is ``None`` or the
+    # file does not exist, fall back to an outer-product proxy derived
+    # from the existing employment- and hh_size-margins; this smoke
+    # tests the wiring without changing IPF behaviour materially.
+    use_employment_margin = bool(
+        context.config("bavaria.ipf.use_employment_margin")
+    )
+    if use_employment_margin and not use_hh_size:
+        raise RuntimeError(
+            "[bavaria.ipf.model] use_employment_margin requires "
+            "use_household_size_margin to be enabled."
+        )
+    if use_employment_margin:
+        emp_path_cfg = context.config("bavaria.ipf.employment_by_hhsize_path")
+        emp_targets_long = None
+        if emp_path_cfg:
+            import os as _os
+            full_path = (
+                emp_path_cfg if _os.path.isabs(emp_path_cfg)
+                else _os.path.join(context.config("data_path"), emp_path_cfg)
+            )
+            if _os.path.exists(full_path):
+                emp_targets_long = pd.read_csv(full_path, dtype={
+                    "departement_id": str,
+                    "hh_size": str,
+                })
+                required_cols = {"departement_id", "hh_size", "employed", "weight"}
+                missing = required_cols - set(emp_targets_long.columns)
+                if missing:
+                    raise RuntimeError(
+                        f"[bavaria.ipf.model] {full_path} missing columns: "
+                        f"{sorted(missing)}"
+                    )
+                emp_targets_long["employed"] = (
+                    emp_targets_long["employed"].astype(bool)
+                )
+                print(
+                    "[bavaria.ipf.model] Loaded {:,} (Kreis × hh_size × "
+                    "employed) targets from {}".format(
+                        len(emp_targets_long), full_path
+                    )
+                )
+        if emp_targets_long is None:
+            # Outer-product proxy from existing margins (informative
+            # smoke test only; preserves marginals).
+            emp_marginal = (
+                df_employment.groupby("departement_id", observed=True)
+                ["weight"].sum()
+                .rename("emp_total")
+            )
+            hhsize_marginal = (
+                df_household_size.assign(
+                    departement_id=df_household_size["commune_id"].astype(str).str[:5]
+                )
+                .groupby(["departement_id", "hh_size"], observed=True)
+                ["weight"].sum()
+                .rename("hhsize_total")
+            )
+            kreis_pop_total = hhsize_marginal.groupby(level=0).sum()
+            rows = []
+            for (dep_id, hh_size), n_in_hh in hhsize_marginal.items():
+                share = n_in_hh / max(kreis_pop_total.get(dep_id, 0.0), 1.0)
+                emp_in_hh = float(emp_marginal.get(dep_id, 0.0)) * share
+                rows.append({
+                    "departement_id": dep_id,
+                    "hh_size": hh_size,
+                    "employed": True,
+                    "weight": emp_in_hh,
+                })
+                rows.append({
+                    "departement_id": dep_id,
+                    "hh_size": hh_size,
+                    "employed": False,
+                    "weight": float(n_in_hh) - emp_in_hh,
+                })
+            emp_targets_long = pd.DataFrame(rows)
+            print(
+                "[bavaria.ipf.model] No employment-by-hhsize CSV configured; "
+                f"using outer-product proxy ({len(emp_targets_long)} cells)."
+            )
+
+        # Map departement_id -> departement_index
+        dep_id_to_index = dict(zip(
+            df_population["departement_id"].astype(str),
+            df_population["departement_index"],
+        ))
+        emp_targets_long = emp_targets_long.copy()
+        emp_targets_long["departement_index"] = (
+            emp_targets_long["departement_id"].astype(str).map(dep_id_to_index)
+        )
+        emp_targets_long = emp_targets_long.dropna(subset=["departement_index"])
+        emp_targets_long["departement_index"] = (
+            emp_targets_long["departement_index"].astype(int)
+        )
+
+        for _, row in context.progress(
+            list(emp_targets_long.iterrows()),
+            total=len(emp_targets_long),
+            label="Generating employment-by-hhsize constraints",
+        ):
+            f_model = df_model["departement_index"] == row["departement_index"]
+            f_model &= df_model["hh_size"] == row["hh_size"]
+            f_model &= df_model["employed"] == bool(row["employed"])
+            selectors.append(f_model)
+            targets.append(float(row["weight"]))
+
     # Transform to index-based
     selectors = [np.nonzero(s.values) for s in selectors]
     
@@ -149,7 +373,10 @@ def execute(context):
     converged = False
     weights = df_model["weight"].values
 
-    while iteration < 1000:
+    max_iterations = context.config("bavaria.ipf.max_iterations")
+    tolerance = context.config("bavaria.ipf.tolerance")
+
+    while iteration < max_iterations:
         iteration_factors = []
     
         for f, target_weight in zip(selectors, targets):
@@ -159,16 +386,24 @@ def execute(context):
                 update_factor = target_weight / current_weight
                 weights[f] *= update_factor
                 iteration_factors.append(update_factor)
+            elif target_weight > 0:
+                # Cell has zero current weight but a positive target: this
+                # would be infeasible. Re-seed with a tiny epsilon to allow
+                # the IPF to recover. Happens with the hh-size hard zero
+                # interaction at very small communes.
+                weights[f] = 1e-9
+                iteration_factors.append(target_weight / np.sum(weights[f]))
 
-        print(
-            "Iteration:", iteration,
-            "factors:", len(iteration_factors),
-            "mean:", np.mean(iteration_factors),
-            "min:", np.min(iteration_factors),
-            "max:", np.max(iteration_factors))
+        if iteration % 50 == 0 or iteration == max_iterations - 1:
+            print(
+                "Iteration:", iteration,
+                "factors:", len(iteration_factors),
+                "mean:", np.mean(iteration_factors),
+                "min:", np.min(iteration_factors),
+                "max:", np.max(iteration_factors))
         
-        if np.max(iteration_factors) - 1 < 1e-2:
-            if np.min(iteration_factors) > 1 - 1e-2:
+        if np.max(iteration_factors) - 1 < tolerance:
+            if np.min(iteration_factors) > 1 - tolerance:
                 converged = True
                 break
     
@@ -176,7 +411,75 @@ def execute(context):
 
     df_model["weight"] = weights
 
-    assert converged
+    assert converged, (
+        f"IPF did not converge in {max_iterations} iterations "
+        f"(last factor range: [{np.min(iteration_factors):.6f}, "
+        f"{np.max(iteration_factors):.6f}], tolerance: {tolerance})"
+    )
+
+    # ------------------------------------------------------------------
+    # Post-IPF margin validation (control variables).
+    #
+    # IPF is iterative: the loop terminates when the per-iteration
+    # update factors stay within ``tolerance`` of 1.0, but that does NOT
+    # guarantee that every individual margin matches its target — only
+    # that the *worst-cell update step* is small. This block performs an
+    # independent end-of-run check by comparing the achieved per-cell
+    # weight sums to the targets, raising a hard error if any cell
+    # diverges by more than the configured tolerance. Without this, a
+    # systematically infeasible target table (e.g. a malformed Zensus
+    # extract) can silently produce a "converged" but biased population.
+    # ------------------------------------------------------------------
+    try:
+        margin_tolerance = float(context.config("bavaria.ipf.margin_validation_tolerance"))
+    except Exception:
+        margin_tolerance = 0.01
+    achieved = np.array([weights[f].sum() for f in selectors])
+    targets_arr = np.array(targets, dtype=float)
+    nonzero = targets_arr > 0
+    rel_err = np.zeros_like(targets_arr)
+    rel_err[nonzero] = np.abs(
+        achieved[nonzero] - targets_arr[nonzero]
+    ) / targets_arr[nonzero]
+    abs_err_zero = np.abs(achieved[~nonzero])
+    n_persons_total = float(df_model["weight"].sum())
+    print(
+        f"[bavaria.ipf.model] post-IPF margin check: {len(targets)} cells, "
+        f"max relative deviation on positive targets = {rel_err.max():.4%}, "
+        f"max absolute deviation on zero targets = "
+        f"{abs_err_zero.max() if len(abs_err_zero) else 0.0:.4f} "
+        f"(of {n_persons_total:,.0f} total weight)."
+    )
+    bad = np.where(nonzero & (rel_err > margin_tolerance))[0]
+    if len(bad) > 0:
+        worst = bad[np.argsort(-rel_err[bad])[:5]]
+        details = "\n  ".join(
+            f"selector #{i}: target={targets_arr[i]:.2f}, "
+            f"achieved={achieved[i]:.2f}, rel_err={rel_err[i]:.2%}"
+            for i in worst
+        )
+        raise RuntimeError(
+            f"IPF margin validation failed: {len(bad)} cells exceed "
+            f"tolerance ({margin_tolerance:.2%}). Worst offenders:\n  "
+            + details
+        )
+    # Zero-target violations: any cell that should be empty (e.g. minors
+    # in 1-person households) but ends up with significant weight is a
+    # hard data integrity bug.
+    zero_thresh = max(1.0, 1e-6 * n_persons_total)
+    zero_idx = np.where(~nonzero)[0]
+    zero_bad_local = np.where(abs_err_zero > zero_thresh)[0]
+    if len(zero_bad_local) > 0:
+        zero_bad = zero_idx[zero_bad_local]
+        worst = zero_bad[np.argsort(-abs_err_zero[zero_bad_local])[:5]]
+        details = "\n  ".join(
+            f"selector #{i}: target=0.0, achieved={achieved[i]:.4f}"
+            for i in worst
+        )
+        raise RuntimeError(
+            f"IPF zero-target violation: {len(zero_bad)} cells with "
+            f"target=0 exceed threshold {zero_thresh:.4f}.\n  " + details
+        )
 
     # Reestablish sex categories
     df_model["sex"] = df_model["sex"].replace({ 1: "male", 2: "female" }).astype("category")
@@ -189,4 +492,10 @@ def execute(context):
     assert np.count_nonzero(df_model["departement_id"].isna()) == 0
 
     df_model = df_model.rename(columns = { "combined_age_class": "age_class" })
-    return df_model[["commune_id", "departement_id", "sex", "age_class", "employed", "license", "weight"]]
+
+    output_columns = ["commune_id", "departement_id", "sex", "age_class",
+                      "employed", "license", "weight"]
+    if use_hh_size:
+        df_model["hh_size"] = df_model["hh_size"].astype("category")
+        output_columns.insert(-1, "hh_size")
+    return df_model[output_columns]

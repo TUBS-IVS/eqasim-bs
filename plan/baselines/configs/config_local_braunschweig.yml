@@ -1,0 +1,181 @@
+## Synthetic population pipeline for the Braunschweig region (ARS prefix 031, Niedersachsen)
+## Based on config_local_bavaria.yml — all non-forked stages reuse the Bavaria code.
+
+working_directory: eqasim-data/cache_bs
+
+run:
+  - synthesis.output
+  # - matsim.output  # enable after synthesis.output succeeds
+
+config:
+  processes: 8
+
+  # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
+  hts: entd
+
+  sampling_rate: 0.01
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs
+  output_prefix: braunschweig_1pct_
+
+  java_memory: 32G
+
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "has_license"]
+
+  # --- R-A: Gravity calibration (TASK-001).
+  # Poisson-GLM MLE on BA Pendleratlas (α_O+γ_D+β d_ij; 939 ZGB pairs)
+  # → β=−0.065 ± 0.0002, log-L +82 % vs default −0.18.
+  # Note: braunschweig.gravity.model post-IPFs Gemeinde flows against
+  # BA Kreis totals, so β affects only sub-Kreis distribution
+  # (commute_distance KPI is MiD-P13-overridden, see commute_distance.py).
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+
+  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
+  bavaria.ipf.use_household_size_margin: true
+
+  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
+  # Draws one Familien-Haushaltstyp per household within its
+  # (commune_id, hh_size) bucket. No cell-explosion in the IPF itself.
+  bavaria.ipf.use_household_type_margin: true
+
+  # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26) ----------------------
+  # 4-way IPF (sex × age × hh_size × employment) with Dirichlet
+  # smoothing. Outer-product proxy when no external CSV is supplied.
+  bavaria.ipf.use_employment_margin: true
+  bavaria.ipf.dirichlet_prior_strength: 0.5
+
+  gtfs_path: gtfs
+  osm_path: osm
+
+  # --- Braunschweig region scope -----------------------------------------
+  # Zweckverband Großraum Braunschweig (ZGB) — 8 Kreise (~1.13 M EW),
+  # matches the region reported in the MiD 2023 regional tables (sample 7555).
+  # Göttingen (03159) and Northeim (03155) are EXCLUDED (outside ZGB).
+  #   03101 SK Braunschweig, 03102 SK Salzgitter, 03103 SK Wolfsburg,
+  #   03151 LK Gifhorn,      03153 LK Goslar,     03154 LK Helmstedt,
+  #   03157 LK Peine,        03158 LK Wolfenbüttel
+  bavaria.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
+  # GENESIS / Regionaldatenbank exports for Niedersachsen
+  bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx
+  # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  bavaria.work_flow_path:  braunschweig/pendler_ni.xlsx
+
+  # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
+  # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
+  # (Wohnort ZGB). Genutzt von braunschweig.gravity.model zur Kalibrierung.
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+
+  # Zensus 2022 — Haushalte nach Gemeinde × Größe × Typ (Tabelle 5000H-2001,
+  # Flatfile-Download von ergebnisse.zensus2022.de). Ersetzt die MiD-basierte
+  # Näherung sowie Bavarias GENESIS 12211-105. Registergestützte Vollerhebung,
+  # Referenz-Stichtag 2022-05-15.
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+
+  # BBSR INKAR Indikatorenexport "Haushaltseinkommen" (€/EW/Monat je Kreis,
+  # Zeitreihe 2000–2021). Liefert die fehlende Kreis-Dimension für die
+  # regionslose MiD H4 Quintil-Verteilung. Wird in enriched.py multiplikativ
+  # auf die Class-Midpoints angewandt (vgl. Wolfsburg 2197 € vs. Goslar 1905 €).
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+
+  # TASK-003: Density-weighted home sampling. Multiplies per-building
+  # area weight by spatially-joined Zensus 2022 100m population, then
+  # normalises per Gemeinde so inter-Gemeinde totals stay pinned.
+  braunschweig.home_density_weighting: true
+
+  # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
+  bavaria.buildings_path: braunschweig/buildings
+
+  # Geofabrik snapshot for Niedersachsen
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
+  # External toolchain (Windows paths)
+  osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
+  osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
+
+# --- Aliases ------------------------------------------------------------------
+# Same pattern as config_local_bavaria.yml but with three census loaders and the
+# buildings loader redirected to the forked Braunschweig implementations.
+aliases:
+  # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)
+  data.census.filtered: bavaria.ipf.attributed
+  synthesis.population.income.selected: bavaria.income
+  synthesis.population.spatial.home.zones: bavaria.homes
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: bavaria.locations.education
+  synthesis.locations.secondary: bavaria.locations.secondary
+  # Phase 2 (TASK-CS01, 2026-04-26): chainsolvers carla solver as a
+  # drop-in replacement for the legacy RDA secondary-location stage.
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  # Work-locations: Bavaria ALKIS/OSM pool for ZGB-8 + one synthetic
+  # workplace per external Kreis derived from BA Pendler outbound.
+  # Required so ~28% of ZGB commuters can reach workplaces outside the
+  # 8-Kreis scope (BA P2025 reports 61 160 SvB outbound). See
+  # braunschweig/locations/work.py + braunschweig/data/external_workplaces.py.
+  synthesis.locations.work: braunschweig.locations.work
+  # OD-Matrix: BA Pendleratlas 2025 auf Kreis-Ebene (empirisch beobachtet)
+  # kalibriert den Bavaria-Gravity-Output auf Gemeinde-Ebene.
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: bavaria.data.spatial.iris
+  data.spatial.codes: bavaria.entd_codes
+  synthesis.population.spatial.primary.locations: bavaria.locations.synthesis.replacement
+  # Enriched-population stage: point directly to the Braunschweig fork so
+  # synpp's single-step alias resolution picks it up (synpp.resolve_stage
+  # substitutes once, so aliasing via the intermediate bavaria.* entry below
+  # would silently fall back to the Bavaria delegate).
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: bavaria.matsim.simulation.prepare
+
+  # Region-specific loader overrides: redirect selected bavaria.data.* stages
+  # to their Braunschweig forks. Only stages whose input layout differs.
+  bavaria.data.census.licenses: braunschweig.data.census.licenses
+  # Population fork uses urbistat.com scraped data (11-class age scheme)
+  bavaria.data.census.population: braunschweig.data.census.population
+  # Employment fork uses GENESIS 13111-06-02-4 (Wohnort x Alter x Geschlecht)
+  bavaria.data.census.employment: braunschweig.data.census.employment
+  # Employees-at-workplace fork uses GENESIS 13111-01-03-5 (SvB Arbeitsort, Gemeinde)
+  bavaria.data.census.employees: braunschweig.data.census.employees
+  # MiD 2023 Großraum Braunschweig (infas sample 7555, 8 Teilgebiete = ZGB Kreise).
+  # Replaces the hard-coded Munich 2017 values from bavaria/data/mid/data.py.
+  bavaria.data.mid.data:  braunschweig.data.mid.data
+  bavaria.data.mid.zones: braunschweig.data.mid.zones
+  # Household size and income from MiD 2023 H1/H4 — replaces Bavaria-specific
+  # GENESIS files (12211-105 / 12211-101) that are not available for NDS.
+  bavaria.data.census.household_size:   braunschweig.data.census.household_size
+  bavaria.data.census.household_income: braunschweig.data.census.household_income
+  # Enriched-population fork: already registered directly as
+  # synthesis.population.enriched above (synpp resolves aliases only one
+  # step deep, so chaining via bavaria.synthesis.population.enriched would
+  # be ignored).
+  # Buildings fork: ALKIS Hausumringe NDS (LGLN) preprocessed to GeoParquet
+  # via scripts/preprocess_alkis_landuse.py, filtered to residential AAA-GFK
+  # codes. See braunschweig/data/buildings.py for the area / activity rules.
+  bavaria.data.buildings: braunschweig.data.buildings
+  # Activity-locations fork: ALKIS GFK codes + ATKIS landuse polygons
+  # replace the OSM-tag based bavaria stage. Feeds work / education /
+  # secondary samplers directly — no OSM parsing needed anymore.
+  bavaria.data.osm.locations: braunschweig.data.locations
+  # Commute-distance fork: overrides the ENTD-sampled work commute
+  # distances with MiD 2023 P13 Kreis-level distributions for ZGB
+  # residents. See braunschweig/synthesis/spatial/commute_distance.py.
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance

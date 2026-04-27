@@ -4,12 +4,78 @@ import numpy as np
 """
 This stage updates the formatting of the population and employment census data sets such
 that they can be procesed by the IPF algorithm.
+
+When ``bavaria.ipf.use_household_size_margin`` is ``True``, an additional
+DataFrame ``df_household_size`` is emitted carrying ``commune × hh_size``
+targets (in persons). It is consumed by ``bavaria.ipf.model`` as the
+fifth IPF margin. When the flag is ``False``, the DataFrame is empty and
+the IPF behaves identically to the legacy four-margin formulation
+(bit-identical for Bavaria configs).
 """
+
+HH_SIZE_BINS = ("1", "2", "3", "4", "5", "6+")
+
 
 def configure(context):
     context.stage("bavaria.data.census.population")
     context.stage("bavaria.data.census.employment")
     context.stage("bavaria.data.census.licenses")
+
+    context.config("bavaria.ipf.use_household_size_margin", False)
+    if context.config("bavaria.ipf.use_household_size_margin"):
+        context.stage("braunschweig.data.census.households_type")
+
+
+def _build_household_size_margin(
+    df_household_type: pd.DataFrame,
+    df_population: pd.DataFrame,
+) -> pd.DataFrame:
+    """Aggregate persons-per-(commune, hh_size) and align to the IPF spatial scope.
+
+    Source ``df_household_type`` is Zensus 2022 1000A-2081 (commune × size ×
+    type, in persons). We sum over hh_type to obtain a (commune, hh_size)
+    margin. The result is then *rescaled per commune* to match the total
+    population already balanced by the population margin — this guarantees
+    the IPF cannot be infeasible even if Zensus 2022 (Stichtag 15.05.2022)
+    and the population source (DESTATIS 12411-0018, 31.12.2024) disagree on
+    the commune total by a few percent.
+    """
+    df = (
+        df_household_type
+        .groupby(["commune_id", "hh_size"], observed=True, as_index=False)["weight"]
+        .sum()
+    )
+
+    # Filter to the spatial scope already used by the population margin.
+    scope = set(df_population["commune_id"].astype(str).unique())
+    df = df[df["commune_id"].astype(str).isin(scope)].copy()
+
+    # Rescale per commune to match the population total. This makes the
+    # 5th margin internally consistent with the 1st — IPF feasibility is
+    # then guaranteed up to floating-point precision.
+    df_pop_totals = (
+        df_population.groupby("commune_id", observed=True, as_index=False)["weight"]
+        .sum()
+        .rename(columns={"weight": "pop_total"})
+    )
+    df = df.merge(df_pop_totals, on="commune_id", how="left")
+    df = df[df["pop_total"] > 0].copy()
+
+    df_size_totals = (
+        df.groupby("commune_id", observed=True)["weight"].sum()
+        .rename("size_total")
+    )
+    df = df.merge(df_size_totals, on="commune_id", how="left")
+    if not (df["size_total"] > 0).all():
+        bad = df.loc[df["size_total"] <= 0, "commune_id"].unique()
+        raise RuntimeError(
+            "[bavaria.ipf.prepare] zero size_total in HH-size margin for "
+            f"{len(bad)} commune(s); first 5: {list(bad[:5])}"
+        )
+    df["weight"] = df["weight"] * df["pop_total"] / df["size_total"]
+
+    return df[["commune_id", "hh_size", "weight"]]
+
 
 def execute(context):
     # Load data
@@ -18,6 +84,8 @@ def execute(context):
 
     df_licenses_country = context.stage("bavaria.data.census.licenses")[0]
     df_licenses_kreis = context.stage("bavaria.data.census.licenses")[2]
+
+    use_hh_size = context.config("bavaria.ipf.use_household_size_margin")
 
     # Generate numeric sex
     df_population["sex"] = df_population["sex"].replace({ "male": 1, "female": 2 })
@@ -92,8 +160,34 @@ def execute(context):
                 df_licenses_country.loc[f_license, "weight"] *= factor
     
     # Take into account updated total
-    factor = df_licenses_country["weight"].sum() / df_licenses_kreis["weight"].sum()
+    licenses_kreis_total = df_licenses_kreis["weight"].sum()
+    if licenses_kreis_total <= 0:
+        raise RuntimeError(
+            "[bavaria.ipf.prepare] df_licenses_kreis weight sum is non-positive "
+            f"({licenses_kreis_total!r}); cannot rescale licenses."
+        )
+    factor = df_licenses_country["weight"].sum() / licenses_kreis_total
     print("Adapting total with correction factor {}".format(factor))
     df_licenses_kreis["weight"] *= factor
 
-    return df_population, df_employment, df_licenses_country, df_licenses_kreis
+    # Optional fifth margin: per-commune household-size distribution.
+    if use_hh_size:
+        df_household_type = context.stage("braunschweig.data.census.households_type")
+        df_household_size = _build_household_size_margin(df_household_type, df_population)
+        print(
+            "[bavaria.ipf.prepare] HH-size margin: {:,} cells across {:,} communes, "
+            "total persons = {:,.0f}".format(
+                len(df_household_size),
+                df_household_size["commune_id"].nunique(),
+                df_household_size["weight"].sum(),
+            )
+        )
+    else:
+        df_household_size = pd.DataFrame(
+            {"commune_id": pd.Series(dtype=str),
+             "hh_size": pd.Series(dtype=str),
+             "weight": pd.Series(dtype=float)}
+        )
+
+    return (df_population, df_employment, df_licenses_country, df_licenses_kreis,
+            df_household_size)

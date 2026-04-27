@@ -50,7 +50,7 @@ def execute(context):
     # Cut into chunks
     with context.progress(label = "Chunking OSM data ...", total = len(df_zones)) as progress:
         with context.parallel({
-            "input_path": "{}/{}".format(context.config("data_path"), context.config("osm_path_bavaria")),
+            "input_path": os.path.abspath("{}/{}".format(context.config("data_path"), context.config("osm_path_bavaria"))),
             "local_path": context.path()
         }) as parallel:
             for item in parallel.imap(process_municipality, df_zones["commune_id"].values):

@@ -2,6 +2,206 @@
 
 **Under development**
 
+- feat(ipf): symmetric-Dirichlet seed prior (TASK-011). New config
+  ``bavaria.ipf.dirichlet_prior_strength`` (default ``0.0`` ≡
+  bit-identical legacy behaviour). When > 0, α pseudo-counts are
+  added uniformly to every IPF seed cell after the age-class prior,
+  preventing very sparse Gemeinden (rural Goslar/Helmstedt) from
+  collapsing weights to ~0 before the margins lift them. The IPF
+  iteration is unchanged.
+- feat(ipf): optional Kreis × hh_size × employed joint margin
+  (TASK-010, 4-way IPF infrastructure). New flag
+  ``bavaria.ipf.use_employment_margin`` (default ``false``;
+  precondition: ``use_household_size_margin`` is also enabled). When
+  on, a long-form CSV at
+  ``bavaria.ipf.employment_by_hhsize_path`` (columns
+  ``departement_id, hh_size, employed, weight``) supplies the joint
+  targets; if no path is configured the stage falls back to an
+  outer-product proxy derived from the existing employment- and
+  hh_size-margins (smoke test). Default off — legacy pipelines
+  unaffected.
+- feat(data): INKAR multi-indicator full-panel loader (TASK-014).
+  New stage ``braunschweig.data.inkar.full_panel`` reads any number
+  of BBSR INKAR ``E_*.xls`` exports (config
+  ``braunschweig.inkar_panel: {<indicator>: <relpath>, ...}``) and
+  joins them on the 5-digit Kennziffer. Default config is empty so
+  the stage is a no-op; smoke test reuses the shipped
+  ``E_Haushaltseinkommen.xls`` to verify schema parity with the
+  single-indicator loader.
+- feat(data): Bundesagentur für Arbeit "Pendler nach
+  Wirtschaftsabschnitten" loader (TASK-015). New stage
+  ``braunschweig.data.ba.pendler_detailed`` reads a long-form CSV
+  with columns ``home_kreis;work_kreis;sector;flow``. Companion
+  pinned downloader ``scripts/download_ba_pendler_detailed.py``
+  (BA portal requires manual session — script verifies SHA-256 of a
+  user-placed file and supports ``--update-checksums``). Default
+  ``braunschweig.ba_pendler_detailed_path: null`` keeps the stage a
+  no-op until data is provided.
+- feat(data): INSPIRE 100 m landuse spatial-prior loader (TASK-012).
+  New stage ``braunschweig.data.inspire.landuse`` reads a
+  preprocessed Copernicus 100 m GeoParquet (EPSG:3035) keyed on
+  ``cell_id, class``. Feature-flagged behind
+  ``braunschweig.use_landuse_prior`` (default ``false``); when off
+  or input parquet missing, the stage returns an empty
+  GeoDataFrame so downstream consumers can guard via the flag.
+- feat(locations): density-weighted home-location candidates
+  (TASK-003). New stage ``braunschweig.locations.home`` wraps
+  ``bavaria.locations.home`` and, when
+  ``braunschweig.home_density_weighting: true``, multiplies each
+  building's area weight by the spatially-joined Zensus 2022 100 m
+  ``einwohner`` of the cell containing its centroid. Per-Gemeinde
+  rescale preserves inter-Gemeinde totals so the upstream
+  household-allocation step (``synthesis.population.spatial.home.zones``)
+  is untouched. Buildings outside any populated cell keep the pure
+  area weight (einwohner=0 → fallback factor 1.0). Wired via alias
+  ``synthesis.locations.home.locations`` in all three
+  ``config_local_braunschweig*.yml`` (1 %, 10 %, 25 %) with the flag
+  defaulted to ``true``. New tests
+  ``TestDensityWeightedHome::{test_density_off_returns_unchanged,
+  test_density_on_redistributes_within_commune}`` exercise both code
+  paths via a stub delegate + synthetic 3-cell grid.
+- feat(data): BBSR/BMV RegioStaR-7 Gemeindetypen loader (TASK-004).
+  New stage ``braunschweig.data.bbsr.regiostar`` parses the BMV
+  reference file (sheet ``ReferenzGebietsstand2020``) and yields one
+  row per ZGB-8 Gemeinde with ``commune_id, ars5, name, regiostar7,
+  regiostar17, regiostar_gem7``. Pinned to SHA-256
+  ``550da569…3a04e6`` (7 709 894 B). New downloader
+  ``scripts/download_regiostar.py`` (analogous to
+  ``download_zensus_grid.py``). Auxiliary stage
+  ``braunschweig.synthesis.population.regiostar`` joins the type onto
+  persons via home commune_id for downstream stratification (TASK-008
+  mode-choice MNL). New tests
+  ``tests/test_braunschweig_data.py::TestRegioStarLoader`` (SHA-256 +
+  ZGB-8 coverage 126 Gemeinden, all RegioStaR7 codes 72..77).
+- docs(gravity): clarify Pendleratlas vs MiD discrepancy. The BA
+  Pendleratlas dataset by definition contains **only cross-Kreis
+  commuters** (0/48 340 OD pairs are intra-Kreis — see
+  ``scripts/check_pendler_intra.py``), so the flow-weighted mean
+  distance implied by the GLM (~46 km on ZGB-8) is a *conditional*
+  cross-Kreis mean and **not directly comparable** to MiD's commute
+  mean (20.7 km, P13 ``mittel`` for ZGB-Gesamt). MiD's lower mean is
+  driven by the inclusion of intra-Kreis commuters which dominate
+  short trips, plus MiD's single-day diary design which under-counts
+  infrequent long-distance Wochenpendler. β = −0.065 governs only the
+  within-(orig, dest)-Kreis Gemeinde-pair spread; the intra/cross
+  share is pinned by BA-Atlas Kreis totals through ``bavaria.ipf``.
+  Methodological notes added to top of
+  ``scripts/calibrate_gravity_decay.py``.
+- feat(validation): MiD `mittel` reference column added to
+  ``scripts/validate_bs_10pct/metrics.py::commute_distance_summary``.
+  The summary table now carries ``mid_mean_km, deviation_km,
+  deviation_pct`` per home Kreis (ZGB-Gesamt 20.7 km, range 13.7
+  Salzgitter → 29.4 Goslar). New diagnostic script
+  ``scripts/inspect_mid_p13.py`` prints band-midpoint approximations
+  alongside MiD ``mittel`` for cross-checking.
+- feat(data): Zensus 2022 100 m population grid loader (TASK-002).
+  New stage ``braunschweig.data.zensus_grid.population`` reads the
+  official Zensus 2022 grid (3.1 M populated cells, EPSG:3035) from
+  parquet chunks distributed via the ``z22data`` mirror under
+  dl-de/by-2-0 and clips to the dissolved ZGB-8 bounding box (default
+  buffer 200 m). Returns ``GeoDataFrame[grid_id, einwohner, geometry]``
+  (~70 k cells, ~1.64 M inhabitants in ZGB-8 bbox). Companion
+  downloader ``scripts/download_zensus_grid.py`` pins SHA-256 for both
+  ``population_100m.parquet`` (9.9 MB) and ``grid_100m.parquet``
+  (1.4 MB). Regression tests in
+  ``tests/test_braunschweig_data.py::TestZensusGridLoader``.
+- feat(gravity): Poisson-GLM distance-decay calibration (TASK-001).
+  ``scripts/calibrate_gravity_decay.py`` fits log E[flow_ij] = α_O +
+  γ_D + β d_ij to BA Pendleratlas Kreis-pair flows (939 ZGB-touching
+  pairs within 250 km). Pure MLE → **β = −0.0650 ± 0.0002** (z=-342,
+  log-L improvement +82 % vs default −0.18). Script also exposes a
+  joint-loss diagnostic J(β)=−logL+λ(M_pred(β)−M_MiD)² with FE re-fit
+  (BA-implied mean ~46 km on Kreis aggregates, not directly comparable
+  to MiD’s person-trip 12.6 km). Configs ``config_local_braunschweig*
+  .yml`` set ``gravity_slope: -0.065``. **Note:** ``braunschweig.gravity
+  .model`` post-IPFs synthesised Gemeinde flows against BA Kreis totals,
+  so β only redistributes within (origin Kreis, destination Kreis)
+  cells; the validator’s ``commute_distance`` KPI is sampled from
+  MiD-P13 by home-Kreis (see ``braunschweig/synthesis/spatial/
+  commute_distance.py``) and therefore independent of β by design.
+  Calibration JSON: ``eqasim-data/cache_bs/calibration/gravity_beta.json``.
+- feat(validation): bootstrap confidence intervals (TASK-006). New module
+  ``scripts/validate_bs_10pct/bootstrap.py`` performs per-Kreis stratified
+  household resampling (n_replicates=200, seed=20260426), pre-aggregates
+  per-HH count/distance vectors and computes 2.5 / 50 / 97.5 percentiles +
+  mean/std for 13 KPIs (trips_per_person, mean_distance_km,
+  daily_distance_km, 4× mode shares, 6× purpose shares). Vectorised
+  (~8 s for 200 reps on 10 pct cache). Output added to ``report.json`` under
+  key ``bootstrap_ci``.
+- feat(validation): apply H1 R-D reporting-only fix to
+  ``scripts/validate_bs_10pct/metrics.py::mode_share_by_purpose`` (already
+  applied in ``purpose_mix``). Both functions now relabel return-home legs
+  with ``preceding_purpose`` so destination purpose distributions align
+  with MiD's `Wegezweck` convention. Effect on 10 % cache: synth `home`
+  42.4 % → 0.7 %, `leisure` 14.8 % → 25.6 %, `work` 13.8 % → 22.8 %. NO
+  synthesis change. Plan TASK-005 (`plan/feature-bs-model-improvements-1.md`).
+- fix(bavaria): defensive divide-by-zero guards in ``bavaria/ipf/prepare.py``
+  — ``_build_household_size_margin`` now raises ``RuntimeError`` if any
+  ``size_total`` is non-positive (instead of silently producing inf/NaN
+  weights). Top-level license rescaling at end of ``execute`` raises if
+  ``df_licenses_kreis["weight"].sum() <= 0``. Both guards never trip on
+  validated input data (1pct/10pct/25pct runs unchanged) but harden the
+  pipeline before 100 %-scale production runs.
+- fix(bs): silent NaN in household income for hh_size 5/6 (~12 % of HHs)
+  — `bavaria/synthesis/population/enriched.py` mapped IPF size-5/6 onto a
+  non-existent ``"5+"`` key in the Braunschweig 6-bin MiD H4 reference,
+  causing ~33 k persons to receive the median fallback. Replaced inline
+  map with adaptive ``_build_income_size_map`` that auto-detects 5-bin
+  (Bavaria GENESIS) vs 6-bin (Braunschweig MiD) schemes and raises on
+  unknown layouts. Hard ``RuntimeError`` if any post-groupby income NaN
+  remains. 4 regression tests in
+  ``tests/test_braunschweig_data.py::TestHouseholdDistributions``.
+- feat(bs): multi-level post-stage validation for production sign-off
+  - **post-IPF margin check** (``bavaria/ipf/model.py``): after
+    convergence, compares achieved per-cell weight sums to targets;
+    raises if any cell deviates by more than
+    ``bavaria.ipf.margin_validation_tolerance`` (default ``0.01``).
+    Separate hard-zero-target violation check
+    (threshold = max(1, 1e-6 × total weight)). Lists 5 worst offenders
+    on failure. 1 % run shows max deviation 0.93 %.
+  - **post-enrichment control block**
+    (``bavaria/synthesis/population/enriched.py``): NaN guards on
+    8 critical columns (``household_size``, ``household_income``,
+    ``high_income``, car/bike/PT availability, vehicle counts);
+    per-bin hh_size deviation vs Zensus reference (raises if max |Δ|
+    > 5 pp); ``household_income_eur`` range check [100, 20 000];
+    summary print of achieved shares.
+- feat(bs): export ``household_income_eur`` (continuous INKAR-scaled
+  income) as optional column in ``households.csv``.
+- fix(synthesis/output): residency flag detection no longer hard-codes
+  ``is_munich_resident``; auto-detects any ``is_*_resident`` column,
+  prefers fork-specific (Braunschweig writes ``is_bs_resident``).
+- feat(bs): add per-commune household-size IPF margin (Zensus 2022 1000A-2081)
+  - new loader `braunschweig.data.census.households_type` reads
+    `Personen × HSHGR2 × HSHTP1` per Gemeinde (SafeMosaic ``e``-flagged values
+    treated as valid, ``-`` and ``.`` as zero);
+  - new loader `braunschweig.data.census.households_size_age` reads the 4-way
+    cube 1000A-3082 (kept as descriptive reference; not used in IPF because the
+    ZGB coverage is too sparse);
+  - extends `bavaria.ipf.prepare` and `bavaria.ipf.model` with a fifth IPF
+    margin (commune × hh_size, six bins ``1..5, 6+``) gated behind
+    ``bavaria.ipf.use_household_size_margin`` (default ``false``;
+    Bavaria runs are bit-identical when off);
+  - hard-zero target: ``age < bavaria.minimum_age.one_person_household``
+    cannot live in a 1-person household;
+  - per-commune Zensus targets are rescaled to the population total to
+    guarantee IPF feasibility despite the Zensus/DESTATIS Stichtag mismatch;
+  - `bavaria.ipf.attributed` and `bavaria.synthesis.population.enriched`
+    propagate the IPF-assigned ``household_size`` and skip the
+    regions-aggregated post-hoc draw;
+  - **household-formation pass** in ``bavaria.ipf.attributed``
+    (``_form_households``): stochastic-rounds the IPF cell weights to
+    integer person counts, deterministically shuffles within each
+    ``(commune_id, hh_size)`` bucket, and chunks the persons into
+    households of size N, dropping ≤ N−1 trailing persons per bucket
+    (≤ 0.07 % of total persons in ZGB). Output is sorted by
+    ``household_id`` to satisfy ``synthesis.population.sampled`` invariants;
+  - 5-bin household-income table is mapped onto the 6-bin IPF schema by
+    folding ``5`` and ``6+`` onto the income table's ``5+`` bin;
+  - flag enabled in `config_local_braunschweig{_10pct,}.yml` only;
+  - **end-to-end validation (1 % run)**: ZGB-wide synth-vs-Zensus
+    HH-size shares within max |Δ| = 0.48 pp (was −16 to −33 pp);
+    children-in-1P-HH = 0 by construction.
 - feat: add municipality information to households and activities
 - chore: update to `eqasim-java` commit `ece4932`
 - feat: vehicles and vehicle types are now always generated

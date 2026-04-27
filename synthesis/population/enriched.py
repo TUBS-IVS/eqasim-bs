@@ -23,14 +23,21 @@ def configure(context):
 
 def execute(context):
     # Select population columns
-    df_population = context.stage("synthesis.population.sampled")[[
+    _sampled = context.stage("synthesis.population.sampled")
+    _columns = [
         "person_id", "household_id",
         "census_person_id", "census_household_id",
         "age", "sex", "employed", "studies",
         "number_of_cars", 
         "household_size", "consumption_units",
         "socioprofessional_class"
-    ]]
+    ]
+    # Propagate optional fork-specific attributes when present
+    # (Braunschweig: ``hh_type`` from Zensus 2022 1000A-2081, drawn in
+    # ``bavaria.ipf.attributed`` when ``use_household_type_margin`` is on).
+    if "hh_type" in _sampled.columns:
+        _columns.append("hh_type")
+    df_population = _sampled[_columns]
 
     # Attach matching information
     df_matching = context.stage("synthesis.population.matched")

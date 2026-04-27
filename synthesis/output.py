@@ -67,12 +67,27 @@ def execute(context):
         columns = { "has_license": "has_driving_license" }
     )
 
+    # Residency flag — historically "is_munich_resident" (Bavaria/Munich
+    # MiD zoning). Forks may emit a different flag (e.g. is_bs_resident
+    # in the Braunschweig setup). Pick whichever is present, prefer the
+    # fork-specific one over the legacy Munich default.
+    residency_candidates = [
+        c for c in df_persons.columns if c.startswith("is_") and c.endswith("_resident")
+    ]
+    if not residency_candidates:
+        df_persons["is_munich_resident"] = False
+        residency_col = "is_munich_resident"
+    else:
+        # Prefer non-munich (fork-specific) flag if both exist.
+        non_munich = [c for c in residency_candidates if c != "is_munich_resident"]
+        residency_col = non_munich[0] if non_munich else "is_munich_resident"
+
     df_persons = df_persons[[
         "person_id", "household_id",
         "age", "employed", "sex", "socioprofessional_class",
         "has_driving_license", "has_pt_subscription",
         "census_person_id", "hts_id",
-        "is_munich_resident" # added for Bavaria
+        residency_col,
     ]]
     if "csv" in output_formats:
         df_persons.to_csv("%s/%spersons.csv" % (output_path, output_prefix), sep = ";", index = None, lineterminator = "\n")
@@ -128,14 +143,23 @@ def execute(context):
 
     df_households = pd.merge(df_households,df_activities[df_activities["purpose"] == "home"][["household_id"
         ]].drop_duplicates("household_id"),how="left")
-    df_households = df_households[[
+    hh_columns = [
         "household_id",
         "car_availability", "bicycle_availability",
         "number_of_cars", "number_of_bicycles",
-        "income", 
+        "income",
         "high_income", "household_size", # added for Bavaria
-        "census_household_id"
-    ]]
+        "census_household_id",
+    ]
+    # Optional fork-specific continuous income column (Braunschweig INKAR).
+    if "household_income_eur" in df_households.columns:
+        hh_columns.insert(hh_columns.index("high_income"), "household_income_eur")
+    # Optional fork-specific household-type column (Braunschweig: drawn from
+    # Zensus 2022 1000A-2081 when ``bavaria.ipf.use_household_type_margin``
+    # is enabled).
+    if "hh_type" in df_households.columns:
+        hh_columns.insert(hh_columns.index("household_size") + 1, "hh_type")
+    df_households = df_households[hh_columns]
     if "csv" in output_formats:
         df_households.to_csv("%s/%shouseholds.csv" % (output_path, output_prefix), sep = ";", index = None, lineterminator = "\n")
     if "parquet" in output_formats:

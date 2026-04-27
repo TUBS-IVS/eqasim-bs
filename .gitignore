@@ -9,3 +9,22 @@ data/lyon_2015
 .idea
 
 config_local_*.yml
+# Track Braunschweig configs explicitly (they are versioned project artefacts,
+# not personal user overrides like config_local_lyon.yml etc.).
+!config_local_braunschweig.yml
+!config_local_braunschweig_10pct.yml
+!config_local_braunschweig_25pct.yml
+
+# Coverage and log artefacts
+.coverage
+*.log
+logs/
+pipeline_*.log
+hh_gap.txt
+zensus_hh_inspect.txt
+
+# Local pipeline data (large inputs, caches, outputs) — keep folder structure only
+eqasim-data/
+!eqasim-data/.gitkeep
+!eqasim-data/DOWNLOAD_CHECKLIST.md
+!eqasim-data/DOWNLOAD_CHECKLIST_BS.md
