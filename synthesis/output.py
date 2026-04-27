@@ -155,7 +155,7 @@ def execute(context):
     if "household_income_eur" in df_households.columns:
         hh_columns.insert(hh_columns.index("high_income"), "household_income_eur")
     # Optional fork-specific household-type column (Braunschweig: drawn from
-    # Zensus 2022 1000A-2081 when ``bavaria.ipf.use_household_type_margin``
+    # Zensus 2022 1000A-2081 when ``braunschweig.ipf.use_household_type_margin``
     # is enabled).
     if "hh_type" in df_households.columns:
         hh_columns.insert(hh_columns.index("household_size") + 1, "hh_type")

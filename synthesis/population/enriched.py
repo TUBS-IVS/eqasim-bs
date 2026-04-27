@@ -34,7 +34,7 @@ def execute(context):
     ]
     # Propagate optional fork-specific attributes when present
     # (Braunschweig: ``hh_type`` from Zensus 2022 1000A-2081, drawn in
-    # ``bavaria.ipf.attributed`` when ``use_household_type_margin`` is on).
+    # ``braunschweig.ipf.attributed`` when ``use_household_type_margin`` is on).
     if "hh_type" in _sampled.columns:
         _columns.append("hh_type")
     df_population = _sampled[_columns]
