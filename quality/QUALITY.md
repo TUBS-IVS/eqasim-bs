@@ -1,9 +1,14 @@
 # Quality Constitution: eqasim-bs (Braunschweig)
 
-> **Status**: scaffold (Phase 0.4 of `plan/refactor-eqasim-bs.md`).  Functional
-> tests, code-review protocol, integration-test protocol and spec-audit
-> deliverables are produced in Phase 3 once the refactor stabilises file
-> locations.  This document defines the bar; the deliverables enforce it.
+> **Status**: active (Phase 3.4 complete). The four `RUN_*.md` protocols
+> ([`RUN_CODE_REVIEW.md`](RUN_CODE_REVIEW.md),
+> [`RUN_FUNCTIONAL_TESTS.md`](RUN_FUNCTIONAL_TESTS.md),
+> [`RUN_INTEGRATION_TESTS.md`](RUN_INTEGRATION_TESTS.md),
+> [`RUN_SPEC_AUDIT.md`](RUN_SPEC_AUDIT.md)) operationalise the scenarios
+> below. The functional test layers live in
+> [`tests/braunschweig/test_stages.py`](../tests/braunschweig/test_stages.py),
+> [`tests/test_braunschweig_data.py`](../tests/test_braunschweig_data.py),
+> and [`tests/test_smoke_1pct.py`](../tests/test_smoke_1pct.py).
 
 ## Purpose
 

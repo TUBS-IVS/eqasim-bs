@@ -163,7 +163,7 @@ Each step is a **single-purpose commit**. Order is dependency-driven.
   * `test_gravity_kreis_totals.py` (BA Pendler totals preserved within tolerance)
   * `test_locations_home_density.py` (density-weighted sampling determinism)
 * [ ] 3.3 Add an end-to-end smoke test: `tests/test_smoke_1pct.py` that runs `config_dryrun_braunschweig.yml` and asserts on `households.csv`, `persons.csv`, and the hh_type share envelope (single ≈ 43 ± 2 %, couple ≈ 27 ± 2 %, …).
-* [ ] 3.4 Apply the **quality-playbook** skill → produce the four "RUN_*.md" deliverables.
+* [x] 3.4 Apply the **quality-playbook** skill → produce the four "RUN_*.md" deliverables. (commit pending — adds `quality/RUN_CODE_REVIEW.md`, `RUN_FUNCTIONAL_TESTS.md`, `RUN_INTEGRATION_TESTS.md`, `RUN_SPEC_AUDIT.md` plus `quality/{code_reviews,spec_audits,results}/README.md` archive scaffolding; updates `quality/QUALITY.md` status banner from "scaffold" to "active". Gate stays at 65 passed / 4 skipped.)
 * [ ] 3.5 Apply the **doublecheck** skill against the new README's data-source URLs and licences.
 * [ ] **Verify:** `pytest -q` is green; `pytest -q tests/test_smoke_1pct.py` passes (slow; mark `@pytest.mark.slow`).
 
