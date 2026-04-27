@@ -403,10 +403,13 @@ class TestLocationsWork:
 # ---------------------------------------------------------------------------
 
 class TestSpatialCodes:
-    """Verify the BS forks agree with ``bavaria.data.spatial.codes`` shape."""
+    """Verify the BS forks agree with ``eqasim_common.spatial.codes`` shape."""
 
     def test_bavaria_spatial_codes_cache_schema(self):
-        path = _latest_cache("bavaria.data.spatial.codes__*.p")
+        path = _latest_cache("eqasim_common.spatial.codes__*.p")
+        if path is None:
+            # Fall back to the pre-refactor cache name during the transition.
+            path = _latest_cache("bavaria.data.spatial.codes__*.p")
         if path is None:
             pytest.skip("Spatial-codes cache not yet generated")
         with open(path, "rb") as fh:

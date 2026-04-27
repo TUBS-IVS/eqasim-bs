@@ -1,21 +1,22 @@
-import numpy as np
-import pandas as pd
-import multiprocessing as mp
-from tqdm import tqdm
+"""Deprecation shim — moved to :mod:`eqasim_common.spatial.entd_codes`.
 
-"""
-This stage is used to short-circut the filtering of activity chains by department for
-the ENTD.
+Phase 2.3 of the eqasim-bs refactor moved this module.  The shim is kept
+for one minor release; it is dropped in Phase 4.3.
 """
 
-def configure(context):
-    context.stage("data.hts.entd.cleaned")
+from __future__ import annotations
 
-def execute(context):
-    df_households, df_persons, df_trips = context.stage("data.hts.entd.cleaned")
+import warnings
 
-    values = set(df_persons["departement_id"])
-    values |= set(df_trips["origin_departement_id"])
-    values |= set(df_trips["destination_departement_id"])
-    
-    return pd.DataFrame({ "departement_id": sorted(values) })
+from eqasim_common.spatial.entd_codes import *  # noqa: F401,F403
+from eqasim_common.spatial.entd_codes import (  # noqa: F401
+    configure,
+    execute,
+)
+
+warnings.warn(
+    "bavaria.entd_codes has moved to eqasim_common.spatial.entd_codes; "
+    "update your imports or alias.",
+    DeprecationWarning,
+    stacklevel=2,
+)

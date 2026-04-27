@@ -52,7 +52,7 @@ def configure(context):
     context.config("data_path")
     context.config("braunschweig.employment_gemband_path",
                    "braunschweig/gemband-dlk-0-202506-xlsx.xlsx")
-    context.stage("bavaria.data.spatial.codes")
+    context.stage("eqasim_common.spatial.codes")
 
 
 def _coerce_int(series: pd.Series) -> pd.Series:
@@ -75,7 +75,7 @@ def execute(context):
     df["ags"] = df["ags"].astype(str).str.strip().str.zfill(8)
 
     # Filter to ZGB-8 Kreise via the first 5 digits of the AGS
-    df_codes = context.stage("bavaria.data.spatial.codes")
+    df_codes = context.stage("eqasim_common.spatial.codes")
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
     df = df[df["ags"].str[:5].isin(scope_kreise)].copy()
 

@@ -55,7 +55,7 @@ def configure(context):
     context.config("data_path")
     context.config("braunschweig.employment_path",
                    "braunschweig/13111-06-02-4.xlsx")
-    context.stage("bavaria.data.spatial.codes")
+    context.stage("eqasim_common.spatial.codes")
 
 
 def _coerce_int(series: pd.Series) -> pd.Series:
@@ -83,8 +83,8 @@ def execute(context):
     # Keep only Kreis-level rows (5-digit AGS); drops Bundesland/Region aggregates.
     df = df[df["departement_id"].str.len() == 5].copy()
 
-    # Filter to the active scope (ZGB-8 from bavaria.data.spatial.codes).
-    df_codes = context.stage("bavaria.data.spatial.codes")
+    # Filter to the active scope (ZGB-8 from eqasim_common.spatial.codes).
+    df_codes = context.stage("eqasim_common.spatial.codes")
     scope = set(df_codes["departement_id"].astype(str).unique())
     df = df[df["departement_id"].isin(scope)].copy()
 

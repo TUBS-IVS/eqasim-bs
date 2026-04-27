@@ -33,7 +33,7 @@ def configure(context):
     context.config("data_path")
     context.config("braunschweig.employees_path",
                    "braunschweig/13111-01-03-5.xlsx")
-    context.stage("bavaria.data.spatial.codes")
+    context.stage("eqasim_common.spatial.codes")
 
 
 def _coerce_int(series: pd.Series) -> pd.Series:
@@ -54,7 +54,7 @@ def execute(context):
     # Keep only Gemeinde rows (8 digits) and kreisfreie Staedte (5 digits).
     # Aggregate levels (Bundesland=2, Regbz=3, Kreis=5) overlap with kreisfreie
     # (also 5-digit AGS) — distinguish by whether the 5-digit entry is in scope.
-    df_codes = context.stage("bavaria.data.spatial.codes")
+    df_codes = context.stage("eqasim_common.spatial.codes")
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
 
     # Normalize 5-digit kreisfreie AGS to 8-digit (BS 03101 -> 03101000).

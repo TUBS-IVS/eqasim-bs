@@ -16,7 +16,7 @@ def configure(context):
     context.config("data_path")
     context.config("bavaria.licenses_path", "germany/fe4_2024.xlsx")
 
-    context.stage("bavaria.data.spatial.codes")
+    context.stage("eqasim_common.spatial.codes")
     context.stage("bavaria.data.census.population")
 
 COUNT_COLUMN = "Fahrerlaubnisse bzw. Führerscheine"
@@ -82,7 +82,7 @@ def execute(context):
     df_kreis["departement_id"] = df_kreis["kreis_code"].astype("str").astype("category")
     df_kreis = df_kreis[["departement_id", "weight"]]
 
-    df_codes = context.stage("bavaria.data.spatial.codes")
+    df_codes = context.stage("eqasim_common.spatial.codes")
     df_kreis = df_kreis[df_kreis["departement_id"].isin(df_codes["departement_id"])]
 
     df_population = context.stage("bavaria.data.census.population")
