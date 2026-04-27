@@ -41,11 +41,11 @@ config:
   # Adds ``hh_size`` as a fifth IPF margin so the synthetic population
   # reproduces the strong urban–rural gradient in 1P-HH share that
   # 5000H-2001 alone (regions-aggregated) cannot capture.
-  bavaria.ipf.use_household_size_margin: true
+  braunschweig.ipf.use_household_size_margin: true
 
   # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26) ----------------------
-  bavaria.ipf.use_employment_margin: true
-  bavaria.ipf.dirichlet_prior_strength: 0.5
+  braunschweig.ipf.use_employment_margin: true
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs
   osm_path: osm
@@ -113,7 +113,7 @@ config:
 # buildings loader redirected to the forked Braunschweig implementations.
 aliases:
   # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)
-  data.census.filtered: bavaria.ipf.attributed
+  data.census.filtered: braunschweig.ipf.attributed
   synthesis.population.income.selected: bavaria.income
   synthesis.population.spatial.home.zones: bavaria.homes
   synthesis.locations.home.locations: braunschweig.locations.home

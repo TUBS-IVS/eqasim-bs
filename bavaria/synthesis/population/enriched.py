@@ -48,7 +48,7 @@ def configure(context):
     context.config("bavaria.minimum_age.pt_subscription", 0)
 
     context.config("bavaria.minimum_age.one_person_household", 16)
-    context.config("bavaria.ipf.use_household_size_margin", False)
+    context.config("braunschweig.ipf.use_household_size_margin", False)
 
 """
 This stage overrides car availability, bike availability and transit subscription based on MiD data
@@ -227,7 +227,7 @@ def execute(context):
     # 1000A-2081), df_persons["household_size"] arrives as a meaningful
     # categorical with values "1".. "6+" — we keep that and skip the
     # regions-aggregated post-hoc draw.
-    if context.config("bavaria.ipf.use_household_size_margin"):
+    if context.config("braunschweig.ipf.use_household_size_margin"):
         df_persons["household_size"] = df_persons["household_size"].astype("category")
         print(
             "[bavaria.synthesis.population.enriched] using IPF-balanced hh_size; "
@@ -336,7 +336,7 @@ def execute(context):
                 f"[bavaria.enriched] column '{col}' has {n_na}/{n} NaN values"
             )
 
-    if context.config("bavaria.ipf.use_household_size_margin"):
+    if context.config("braunschweig.ipf.use_household_size_margin"):
         achieved = (
             df_persons["household_size"].astype(str).value_counts(normalize=True)
             .sort_index()

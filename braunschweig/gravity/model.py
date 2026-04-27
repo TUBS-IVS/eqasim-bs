@@ -40,7 +40,7 @@ IPF_TOLERANCE = 1e-3
 
 def configure(context):
     context.stage("bavaria.gravity.model")
-    context.stage("bavaria.ipf.attributed")
+    context.stage("braunschweig.ipf.attributed")
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")
@@ -279,7 +279,7 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 def execute(context):
     df_work_od, df_education_od = context.stage("bavaria.gravity.model")
-    df_population = context.stage("bavaria.ipf.attributed")
+    df_population = context.stage("braunschweig.ipf.attributed")
     df_pendler = context.stage("braunschweig.data.census.pendler")
     df_employment = context.stage("braunschweig.data.census.employment")
     df_external = context.stage("braunschweig.data.external_workplaces")

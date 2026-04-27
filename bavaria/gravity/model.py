@@ -13,7 +13,7 @@ DEFAULT_DIAGONAL = 1.0
 
 def configure(context):
     context.stage("eqasim_common.gravity.distance_matrix")
-    context.stage("bavaria.ipf.attributed")
+    context.stage("braunschweig.ipf.attributed")
     context.stage("bavaria.data.census.employees")
     context.config("gravity_slope", DEFAULT_SLOPE)
     context.config("gravity_constant", DEFAULT_CONSTANT)
@@ -74,7 +74,7 @@ def evaluate_gravity(population, employees, friction):
 def execute(context):
     # Load data
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
-    df_population = context.stage("bavaria.ipf.attributed")
+    df_population = context.stage("braunschweig.ipf.attributed")
     df_employees = context.stage("bavaria.data.census.employees")
 
     # Manage identifiers

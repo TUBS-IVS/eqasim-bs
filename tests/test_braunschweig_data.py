@@ -908,12 +908,12 @@ class TestIpfFeatureFlags:
         # is the safest test that does not require the full IPF stack.
         import inspect
 
-        from bavaria.ipf import model as ipf_model
+        from braunschweig.ipf import model as ipf_model
 
         src = inspect.getsource(ipf_model.configure)
-        assert "bavaria.ipf.dirichlet_prior_strength" in src
-        assert "bavaria.ipf.use_employment_margin" in src
-        assert "bavaria.ipf.employment_by_hhsize_path" in src
+        assert "braunschweig.ipf.dirichlet_prior_strength" in src
+        assert "braunschweig.ipf.use_employment_margin" in src
+        assert "braunschweig.ipf.employment_by_hhsize_path" in src
 
 
 
