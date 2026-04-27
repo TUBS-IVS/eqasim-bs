@@ -1,39 +1,25 @@
-import subprocess as sp
-import shutil, os
+"""Deprecation shim — moved to :mod:`eqasim_common.data.osm.osmconvert`.
 
-def configure(context):
-    context.config("osmconvert_binary", "osmconvert")
+Phase 2.1 of the eqasim-bs refactor moved this module to
+``eqasim_common.data.osm.osmconvert``.  The shim is kept for one minor
+release so any external code that still imports the old path continues to
+work; it is dropped in Phase 4.3.
+"""
 
-def run(context, arguments = [], cwd = None):
-    """
-        This function calls osmconvert.
-    """
-    # Make sure there is a dependency
-    # context.stage("data.osm.osmconvert")
+from __future__ import annotations
 
-    if cwd is None:
-        cwd = context.path()
+import warnings
 
-    # Prepare command line
-    command_line = [
-        shutil.which(context.config("osmconvert_binary"))
-    ] + arguments
+from eqasim_common.data.osm.osmconvert import *  # noqa: F401,F403
+from eqasim_common.data.osm.osmconvert import (  # noqa: F401
+    configure,
+    run,
+    validate,
+)
 
-    # Run osmconvert
-    return_code = sp.check_call(command_line, cwd = cwd)
-
-    if not return_code == 0:
-        raise RuntimeError("osmconvert return code: %d" % return_code)
-
-def validate(context):
-    if shutil.which(context.config("osmconvert_binary")) in ["", None]:
-        raise RuntimeError("Cannot find osmconvert binary at: %s" % context.config("osmconvert_binary"))
-
-    if not b"0.8." in sp.check_output([
-        shutil.which(context.config("osmconvert_binary")),
-        "-v"
-    ], stderr = sp.STDOUT):
-        print("WARNING! osmconvert of at least version 0.8.x is recommended!")
-
-def execute(context):
-    pass
+warnings.warn(
+    "bavaria.data.osm.osmconvert has moved to eqasim_common.data.osm.osmconvert; "
+    "update your imports. The shim is removed in Phase 4 of the refactor.",
+    DeprecationWarning,
+    stacklevel=2,
+)

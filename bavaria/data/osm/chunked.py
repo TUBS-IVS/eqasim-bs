@@ -1,62 +1,25 @@
-import bavaria.data.osm.osmconvert
-import os
+"""Deprecation shim — moved to :mod:`eqasim_common.data.osm.chunked`.
 
+Phase 2.1 of the eqasim-bs refactor moved this module to
+``eqasim_common.data.osm.chunked``.  The shim is kept for one minor release
+so any external code that still imports the old path continues to work; it
+is dropped in Phase 4.3.
 """
-The purpose of this stage is to cut the OSM data into smaller chunks so we can process
-it more easily later on.
-"""
 
-def configure(context):
-    context.stage("data.spatial.municipalities")
-    context.stage("bavaria.data.osm.osmconvert")
+from __future__ import annotations
 
-    context.config("processes")
+import warnings
 
-    context.config("data_path")
-    context.config("osm_path_bavaria", "osm/bayern-latest.osm.pbf")
+from eqasim_common.data.osm.chunked import *  # noqa: F401,F403
+from eqasim_common.data.osm.chunked import (  # noqa: F401
+    configure,
+    execute,
+    process_municipality,
+)
 
-def process_municipality(context, zone_id):
-    input_path = context.data("input_path")
-    local_path = context.data("local_path")
-
-    bavaria.data.osm.osmconvert.run(context, [input_path,
-        "-B={}".format("{}/{}.poly".format(local_path, zone_id)),
-        "-o={}".format("{}/{}.osm.pbf".format(local_path, zone_id))], cwd = local_path)
-    
-    return zone_id
-    
-def execute(context):
-    # Load zones and convert to polyfiles
-    df_zones = context.stage("data.spatial.municipalities")[["commune_id", "geometry"]]
-    df_zones = df_zones.to_crs("EPSG:4326")
-
-    for zone_id, geometry in df_zones.itertuples(index = False):
-        if not hasattr(geometry, "exterior"):
-            geometry = geometry.convex_hull
-
-        data = []
-        data.append("polyfile")
-        data.append("polygon")
-
-        for coordinate in geometry.exterior.coords:
-            data.append("    %e    %e" % coordinate[:2])
-
-        data.append("END")
-        data.append("END")
-
-        with open("{}/{}.poly".format(context.path(), zone_id), "w+") as f:
-            f.write("\n".join(data))
-    
-    # Cut into chunks
-    with context.progress(label = "Chunking OSM data ...", total = len(df_zones)) as progress:
-        with context.parallel({
-            "input_path": os.path.abspath("{}/{}".format(context.config("data_path"), context.config("osm_path_bavaria"))),
-            "local_path": context.path()
-        }) as parallel:
-            for item in parallel.imap(process_municipality, df_zones["commune_id"].values):
-                progress.update()
-
-    return df_zones["commune_id"].values
-
-def validate(context):
-    return os.path.getsize("{}/{}".format(context.config("data_path"), context.config("osm_path_bavaria")))
+warnings.warn(
+    "bavaria.data.osm.chunked has moved to eqasim_common.data.osm.chunked; "
+    "update your imports. The shim is removed in Phase 4 of the refactor.",
+    DeprecationWarning,
+    stacklevel=2,
+)
