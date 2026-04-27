@@ -122,7 +122,7 @@ aliases:
   synthesis.population.income.selected: bavaria.income
   synthesis.population.spatial.home.zones: bavaria.homes
   synthesis.locations.home.locations: braunschweig.locations.home
-  synthesis.locations.education: bavaria.locations.education
+  synthesis.locations.education: eqasim_common.locations.education
   synthesis.locations.secondary: bavaria.locations.secondary
   # Phase 2 (TASK-CS01, 2026-04-26): chainsolvers carla solver as a
   # drop-in replacement for the legacy RDA secondary-location stage.
