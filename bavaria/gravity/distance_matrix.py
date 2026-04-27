@@ -1,39 +1,23 @@
-from tqdm import tqdm
-import pandas as pd
-import numpy as np
-import numpy.linalg as la
+"""Deprecation shim — moved to :mod:`eqasim_common.gravity.distance_matrix`.
 
-"""
-Generates a distance matrix for the German municipalities.
+Phase 2.2 of the eqasim-bs refactor moved this module.  The shim is kept
+for one minor release; it is dropped in Phase 4.3.
 """
 
-def configure(context):
-    context.stage("bavaria.data.spatial.iris")
+from __future__ import annotations
 
-def execute(context):
-    # One municipality per "IRIS"
-    df_municipalities = context.stage("bavaria.data.spatial.iris")
-    municipalities = df_municipalities["commune_id"].values
-        
-    # Initialize matrix to zero
-    distance_matrix = np.ones((len(municipalities), len(municipalities)))
-    
-    # Convert locations to (N,2)-array
-    locations = np.array([
-        df_municipalities["geometry"].centroid.x,
-        df_municipalities["geometry"].centroid.y
-    ]).T
-    
-    # Calculate Euclidean distances per row
-    for k in range(len(locations)):
-        distance_matrix[k,:] = la.norm(locations[k] - locations, axis = 1)
-    
-    # Convert to km
-    distance_matrix *= 1e-3
-    
-    # Formatting into a data frame
-    df_distances = pd.DataFrame({ "distance_km": distance_matrix.reshape(-1) }, index = pd.MultiIndex.from_product([
-    municipalities, municipalities
-    ], names = ["origin_id", "destination_id"])).reset_index()
-   
-    return df_distances
+import warnings
+
+from eqasim_common.gravity.distance_matrix import *  # noqa: F401,F403
+from eqasim_common.gravity.distance_matrix import (  # noqa: F401
+    configure,
+    execute,
+)
+
+warnings.warn(
+    "bavaria.gravity.distance_matrix has moved to "
+    "eqasim_common.gravity.distance_matrix; update your imports. "
+    "The shim is removed in Phase 4 of the refactor.",
+    DeprecationWarning,
+    stacklevel=2,
+)
