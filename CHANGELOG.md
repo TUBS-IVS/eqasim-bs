@@ -1,6 +1,64 @@
 # Changelog
 
-**Under development**
+## v0.1.0-bs (2026-04-27) — first regional release
+
+First tagged release of the **eqasim-bs** Braunschweig fork, produced by
+the `refactor/braunschweig-clean-fork` branch on top of
+[`eqasim-bavaria`](https://github.com/eqasim-org/eqasim-bavaria) `b20fbe6`.
+
+- **Region:** locked to ZGB-8 (ARS prefixes 03101, 03102, 03103, 03151,
+  03153, 03154, 03157, 03158).
+- **New region-neutral package** [`eqasim_common/`](eqasim_common/)
+  hosting shared OSM, gravity-distance, spatial codes, and location
+  synthesis helpers (Phase 2 of the refactor plan).
+- **New `braunschweig/` package** consolidating IPF, location, gravity,
+  enrichment, and MATSim simulation code that was previously fenced
+  inside `bavaria/`. Stage names migrated from `bavaria.*` to
+  `braunschweig.*`; aliases retained only where the BS DAG still
+  consumes leaf modules from upstream (`bavaria.data.spatial.iris`,
+  `bavaria.data.population.raw`, `bavaria.data.mvg.zones`).
+- **New configs** [`config_local_braunschweig.yml`](config_local_braunschweig.yml)
+  (1 %), `_10pct.yml`, `_25pct.yml`, plus `config_dryrun_braunschweig.yml`
+  (0.1 % CI smoke) and `config_gravity_only_braunschweig.yml`
+  (calibration). Seed `1234`, gravity slope `-0.065`.
+- **Reconciled data inventory** ([`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md),
+  [`scripts/verify_braunschweig_inputs.py`](scripts/verify_braunschweig_inputs.py)):
+  DESTATIS 12411-0018 + urbistat for population, BA Pendleratlas CSVs
+  for OD, Zensus 2022 5000H-2001 for households, BBSR INKAR
+  Haushaltseinkommen for income, MiD 2023 Großraum-Braunschweig CDFs
+  for commute distance, ALKIS / ATKIS preprocessed parquets for
+  buildings & landuse, OSM POIs preprocessed parquet, RegioStaR-7 and
+  Zensus 100 m grid auto-download.
+- **Quality playbook** ([`quality/QUALITY.md`](quality/QUALITY.md) +
+  four `RUN_*.md` protocols + Council-of-Three spec audit).
+- **Test suite** rewritten around BS configs:
+  `tests/braunschweig/test_stages.py` (12 unit tests),
+  `tests/test_braunschweig_data.py` (data loaders),
+  `tests/test_smoke_1pct.py` (1 % end-to-end, opt-in via
+  `EQASIM_BS_RUN_PIPELINE=1`). Gate: 65 passed, 4 skipped.
+- **Baselines** locked under [`plan/baselines/`](plan/baselines/)
+  (1 % smoke metrics + the five YAML configs).
+- **Documentation:** new [`AGENTS.md`](AGENTS.md), populated
+  [`docs/codebase/`](docs/codebase) directory (stack, structure,
+  architecture, conventions, integrations, testing, concerns).
+
+### Deferred / known limitations
+
+- Java MATSim package keeps `org.eqasim.bavaria.*` namespace
+  (Decision D-1c).
+- The 11 IPF / gravity bugs documented in
+  [`docs/codebase/CONCERNS.md`](docs/codebase/CONCERNS.md) are tracked
+  for a follow-up branch (Decision D-5).
+- `bavaria/` directory retained for the leaf modules listed above and
+  for upstream cherry-pick compatibility (Decision D-3).
+
+## Pre-release history (Bavaria fork, prior to v0.1.0-bs)
+
+The entries below are inherited from
+[`eqasim-bavaria`](https://github.com/eqasim-org/eqasim-bavaria) and
+describe features developed during the Bavaria → Braunschweig
+migration. They are kept for traceability; refer to git log for the
+exact authorship and dates.
 
 - feat(ipf): symmetric-Dirichlet seed prior (TASK-011). New config
   ``bavaria.ipf.dirichlet_prior_strength`` (default ``0.0`` ≡
