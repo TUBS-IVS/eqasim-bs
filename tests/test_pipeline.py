@@ -1,112 +1,80 @@
-import synpp
+"""Pipeline-level integration tests for the Braunschweig synthesis pipeline.
+
+These tests drive the real synpp DAG via ``config_dryrun_braunschweig.yml``
+(0.1% sampling, full ``synthesis.output`` target). They are **opt-in**:
+running them requires the full set of input data described in
+``eqasim-data/DOWNLOAD_CHECKLIST_BS.md`` and is gated on the environment
+variable ``EQASIM_BS_RUN_PIPELINE=1``.
+
+Default behaviour: the tests are skipped, so the unit-test gate stays fast.
+
+This module replaced the IDF region-10/11 tests inherited from upstream
+eqasim in Phase 3.1 of the eqasim-bs refactor (plan/refactor-eqasim-bs.md).
+The IDF testdata fixture (``tests/testdata.py``) is no longer compatible
+with the post-fork DAG; it remains in the tree for reference but is
+unused.
+"""
+
+from __future__ import annotations
+
 import os
-import hashlib
-from . import testdata
-import pandas as pd
+from pathlib import Path
 
-def test_data(tmpdir):
-    data_path = str(tmpdir.mkdir("data"))
-    testdata.create(data_path)
+import pytest
+import yaml
 
-    cache_path = str(tmpdir.mkdir("cache"))
-    output_path = str(tmpdir.mkdir("output"))
-    config = dict(
-        data_path = data_path, output_path = output_path,
-        regions = [10, 11], hts = "entd")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DRYRUN_CONFIG = REPO_ROOT / "config_dryrun_braunschweig.yml"
+DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
+BS_DATA_PATH = DATA_PATH / "braunschweig"
 
-    stages = [
-        dict(descriptor = "data.spatial.iris"),
-        dict(descriptor = "data.spatial.codes"),
-        dict(descriptor = "data.spatial.population"),
-        dict(descriptor = "data.bpe.cleaned"),
-        dict(descriptor = "data.income.municipality"),
-        dict(descriptor = "data.hts.entd.cleaned"),
-        dict(descriptor = "data.hts.egt.cleaned"),
-        dict(descriptor = "data.census.cleaned"),
-        dict(descriptor = "data.od.cleaned"),
-        dict(descriptor = "data.hts.output"),
-        dict(descriptor = "data.sirene.output"),
-    ]
+OPT_IN_VAR = "EQASIM_BS_RUN_PIPELINE"
 
-    synpp.run(stages, config, working_directory = cache_path)
+pytestmark = pytest.mark.skipif(
+    os.environ.get(OPT_IN_VAR) != "1" or not BS_DATA_PATH.is_dir(),
+    reason=(
+        f"Set {OPT_IN_VAR}=1 and provide eqasim-data/data/braunschweig/ "
+        "to run the full-pipeline integration test "
+        "(see eqasim-data/DOWNLOAD_CHECKLIST_BS.md)."
+    ),
+)
 
-    assert os.path.isfile("%s/ile_de_france_hts_households.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_hts_persons.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_hts_trips.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_sirene.gpkg" % output_path)
 
-def run_population(tmpdir, hts, update = {}):
-    data_path = str(tmpdir.mkdir("data"))
-    testdata.create(data_path)
+def _load_dryrun_config():
+    with DRYRUN_CONFIG.open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
 
-    cache_path = str(tmpdir.mkdir("cache"))
-    output_path = str(tmpdir.mkdir("output"))
-    config = dict(
-        data_path = data_path, output_path = output_path,
-        regions = [10, 11], sampling_rate = 1.0, hts = hts,
-        random_seed = 1000, processes = 1,
-        secloc_maximum_iterations = 10,
-        maven_skip_tests = True
+
+def test_dryrun_pipeline_runs(tmp_path):
+    """The 0.1% dryrun config must reach synthesis.output without error."""
+    import synpp
+
+    raw = _load_dryrun_config()
+    config = dict(raw.get("config", {}))
+    aliases = raw.get("aliases", {})
+
+    # Redirect outputs into the pytest tmp_path so we don't pollute the
+    # repository's working directories.
+    cache_path = tmp_path / "cache"
+    output_path = tmp_path / "output"
+    cache_path.mkdir()
+    output_path.mkdir()
+
+    config["data_path"] = str(DATA_PATH)
+    config["output_path"] = str(output_path)
+    config["output_prefix"] = "bs_dryrun_"
+
+    stages = [{"descriptor": stage} for stage in raw.get("run", ["synthesis.output"])]
+
+    synpp.run(
+        stages,
+        config,
+        working_directory=str(cache_path),
+        aliases=aliases,
     )
-    config.update(update)
 
-    stages = [
-        dict(descriptor = "synthesis.output"),
-    ]
-
-    synpp.run(stages, config, working_directory = cache_path)
-
-    assert os.path.isfile("%s/ile_de_france_activities.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_persons.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_households.csv" % output_path)
-    assert os.path.isfile("%s/ile_de_france_activities.gpkg" % output_path)
-    assert os.path.isfile("%s/ile_de_france_trips.gpkg" % output_path)
-    assert os.path.isfile("%s/ile_de_france_meta.json" % output_path)
-
-    assert 2235 == len(pd.read_csv("%s/ile_de_france_activities.csv" % output_path, usecols = ["household_id"], sep = ";"))
-    assert 447 == len(pd.read_csv("%s/ile_de_france_persons.csv" % output_path, usecols = ["household_id"], sep = ";"))
-    assert 149 == len(pd.read_csv("%s/ile_de_france_households.csv" % output_path, usecols = ["household_id"], sep = ";"))
-    
-    assert 447 * 2 == len(pd.read_csv("%s/ile_de_france_vehicles.csv" % output_path, usecols = ["vehicle_id"], sep = ";"))
-    if "vehicles_method" in update and update["vehicles_method"] == "fleet_sample":
-        assert 17 + 1 == len(pd.read_csv("%s/ile_de_france_vehicle_types.csv" % output_path, usecols = ["type_id"], sep = ";"))
-    else:
-        assert 2 == len(pd.read_csv("%s/ile_de_france_vehicle_types.csv" % output_path, usecols = ["type_id"], sep = ";"))
-
-def test_population_with_entd(tmpdir):
-    run_population(tmpdir, "entd")
-
-def test_population_with_egt(tmpdir):
-    run_population(tmpdir, "egt")
-
-def test_population_with_mode_choice(tmpdir):
-    run_population(tmpdir, "entd", { "mode_choice": True })
-
-def test_population_with_fleet_sample(tmpdir):
-    run_population(tmpdir, "entd", { 
-        "vehicles_method": "fleet_sample",
-        "vehicles_year": 2021
-    })
-
-def test_population_with_bhepop2_income(tmpdir):
-    run_population(tmpdir, "egt", { 
-        "income_assignation_method": "bhepop2"
-    })
-
-def test_population_with_urban_type(tmpdir):
-    run_population(tmpdir, "entd", { 
-        "use_urban_type": True, 
-        "matching_attributes": [
-            "urban_type", "*default*"
-        ],
-        "matching_minimum_observations": 5
-    })
-
-def test_population_with_urban_type_and_egt(tmpdir):
-    run_population(tmpdir, "egt", { 
-        "use_urban_type": True, 
-        "matching_attributes": [
-            "urban_type", "*default*"
-        ],
-        "matching_minimum_observations": 5
-    })
+    prefix = config["output_prefix"]
+    assert (output_path / f"{prefix}households.csv").is_file()
+    assert (output_path / f"{prefix}persons.csv").is_file()
+    assert (output_path / f"{prefix}activities.csv").is_file()
+    assert (output_path / f"{prefix}trips.csv").is_file()
