@@ -1,0 +1,359 @@
+
+=== DIRECTORY TREE (max depth 3, source files only) ===
+.coverage
+.github
+.github\auto-merge.yml
+.github\skills
+.github\skills\acquire-codebase-knowledge
+.github\skills\acquire-codebase-knowledge\assets
+.github\skills\acquire-codebase-knowledge\references
+.github\skills\acquire-codebase-knowledge\scripts
+.github\skills\acquire-codebase-knowledge\SKILL.md
+.github\skills\architecture-blueprint-generator
+.github\skills\architecture-blueprint-generator\SKILL.md
+.github\skills\context-map
+.github\skills\context-map\SKILL.md
+.github\skills\conventional-commit
+.github\skills\conventional-commit\SKILL.md
+.github\skills\create-implementation-plan
+.github\skills\create-implementation-plan\SKILL.md
+.github\skills\doublecheck
+.github\skills\doublecheck\assets
+.github\skills\doublecheck\SKILL.md
+.github\skills\folder-structure-blueprint-generator
+.github\skills\folder-structure-blueprint-generator\SKILL.md
+.github\skills\generate-custom-instructions-from-codebase
+.github\skills\generate-custom-instructions-from-codebase\SKILL.md
+.github\skills\pytest-coverage
+.github\skills\pytest-coverage\SKILL.md
+.github\skills\quality-playbook
+.github\skills\quality-playbook\LICENSE.txt
+.github\skills\quality-playbook\references
+.github\skills\quality-playbook\SKILL.md
+.github\skills\refactor
+.github\skills\refactor\SKILL.md
+.github\skills\refactor-plan
+.github\skills\refactor-plan\SKILL.md
+.github\workflows
+.github\workflows\data.yml
+.github\workflows\tests.yml
+.gitignore
+.pytest_cache
+.pytest_cache\.gitignore
+.pytest_cache\CACHEDIR.TAG
+.pytest_cache\README.md
+.pytest_cache\v
+.pytest_cache\v\cache
+.pytest_cache\v\cache\lastfailed
+.pytest_cache\v\cache\nodeids
+.pytest_cache\v\cache\stepwise
+.travis.yml
+analysis
+analysis\bootstrapping.py
+analysis\chains.py
+analysis\debug
+analysis\debug\sc.py
+analysis\grid
+analysis\grid\comparison_flow_volume.py
+analysis\marginals.py
+analysis\methods
+analysis\methods\income
+analysis\methods\income\compare_methods.py
+analysis\reference
+analysis\reference\census
+analysis\reference\census\sociodemographics.py
+analysis\reference\hts
+analysis\reference\hts\activities.py
+analysis\reference\hts\chains.py
+analysis\reference\hts\commute_distance.py
+analysis\reference\hts\commute_flow.py
+analysis\reference\hts\mode_distances.py
+analysis\reference\hts\sociodemographics.py
+analysis\reference\income.py
+analysis\reference\od
+analysis\reference\od\commute_distance.py
+analysis\reference\od\commute_flow.py
+analysis\statistics.py
+analysis\synthesis
+analysis\synthesis\commute_distance.py
+analysis\synthesis\commute_flow.py
+analysis\synthesis\income.py
+analysis\synthesis\matching.py
+analysis\synthesis\mode_distances.py
+analysis\synthesis\sociodemographics
+analysis\synthesis\sociodemographics\chains.py
+analysis\synthesis\sociodemographics\general.py
+analysis\synthesis\sociodemographics\spatial.py
+analysis\synthesis\statistics
+analysis\synthesis\statistics\marginal.py
+analysis\synthesis\statistics\monte_carlo.py
+bavaria
+bavaria\analysis
+bavaria\analysis\.gitignore
+bavaria\analysis\Calibration.ipynb
+bavaria\analysis\MiD Comparison.ipynb
+bavaria\analysis\Transit Comparison.ipynb
+bavaria\analysis\transit_reference.json.enc
+bavaria\analysis\zones.gpkg
+bavaria\analysis\zones.py
+bavaria\data
+bavaria\data\buildings.py
+bavaria\data\census
+bavaria\data\census\employees.py
+bavaria\data\census\employment.py
+bavaria\data\census\household_income.py
+bavaria\data\census\household_size.py
+bavaria\data\census\licenses.py
+bavaria\data\census\population.py
+bavaria\data\mid
+bavaria\data\mid\data.py
+bavaria\data\mid\zones.gpkg
+bavaria\data\mid\zones.py
+bavaria\data\mvg
+bavaria\data\mvg\zones.py
+bavaria\data\osm
+bavaria\data\osm\chunked.py
+bavaria\data\osm\locations.py
+bavaria\data\osm\osmconvert.py
+bavaria\data\population
+bavaria\data\population\municipalities.py
+bavaria\data\population\raw.py
+bavaria\data\spatial
+bavaria\data\spatial\codes.py
+bavaria\data\spatial\iris.py
+bavaria\entd_codes.py
+bavaria\gravity
+bavaria\gravity\distance_matrix.py
+bavaria\gravity\model.py
+bavaria\homes.py
+bavaria\income.py
+bavaria\ipf
+bavaria\ipf\attributed.py
+bavaria\ipf\model.py
+bavaria\ipf\prepare.py
+bavaria\locations
+bavaria\locations\education.py
+bavaria\locations\home.py
+bavaria\locations\secondary.py
+bavaria\locations\synthesis
+bavaria\locations\synthesis\education.py
+bavaria\locations\synthesis\replacement.py
+bavaria\locations\work.py
+bavaria\matsim
+bavaria\matsim\simulation
+bavaria\matsim\simulation\prepare.py
+bavaria\synthesis
+bavaria\synthesis\population
+bavaria\synthesis\population\enriched.py
+braunschweig
+braunschweig\__init__.py
+braunschweig\analysis
+braunschweig\analysis\validation_mid2023.ipynb
+braunschweig\data
+braunschweig\data\__init__.py
+braunschweig\data\alkis.py
+braunschweig\data\ba
+braunschweig\data\ba\__init__.py
+braunschweig\data\ba\pendler_detailed.py
+braunschweig\data\bbsr
+braunschweig\data\bbsr\__init__.py
+braunschweig\data\bbsr\regiostar.py
+braunschweig\data\buildings.py
+braunschweig\data\census
+braunschweig\data\census\__init__.py
+braunschweig\data\census\employees.py
+braunschweig\data\census\employment.py
+braunschweig\data\census\employment_gemband.py
+braunschweig\data\census\household_income.py
+braunschweig\data\census\household_size.py
+braunschweig\data\census\households_size_age.py
+braunschweig\data\census\households_type.py
+braunschweig\data\census\licenses.py
+braunschweig\data\census\pendler.py
+braunschweig\data\census\population.py
+braunschweig\data\external_workplaces.py
+braunschweig\data\inkar
+braunschweig\data\inkar\__init__.py
+braunschweig\data\inkar\full_panel.py
+braunschweig\data\inkar\household_income.py
+braunschweig\data\inspire
+braunschweig\data\inspire\__init__.py
+braunschweig\data\inspire\landuse.py
+braunschweig\data\landuse.py
+braunschweig\data\locations.py
+braunschweig\data\mid
+braunschweig\data\mid\__init__.py
+braunschweig\data\mid\data.py
+braunschweig\data\mid\references.py
+braunschweig\data\mid\zones.py
+braunschweig\data\osm.py
+braunschweig\data\zensus_grid
+braunschweig\data\zensus_grid\__init__.py
+braunschweig\data\zensus_grid\population.py
+braunschweig\gravity
+braunschweig\gravity\model.py
+braunschweig\locations
+braunschweig\locations\__init__.py
+braunschweig\locations\home.py
+braunschweig\locations\work.py
+braunschweig\synthesis
+braunschweig\synthesis\__init__.py
+braunschweig\synthesis\locations
+braunschweig\synthesis\locations\__init__.py
+
+=== STACK DETECTION (manifest files) ===
+No recognized manifest files found in project root.
+
+=== ENTRY POINTS ===
+No common entry points found. Check 'main' or 'scripts.start' in manifest files above.
+
+=== LINTING AND FORMATTING CONFIG ===
+No linting or formatting config files found in project root.
+
+=== ENVIRONMENT VARIABLE TEMPLATES ===
+No .env.example or .env.template found. Identify required environment variables by searching the code and config for environment variable reads.
+
+=== TODO / FIXME / HACK (production code only, test dirs excluded) ===
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:28: TODO_LIMIT = 60
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:291: """Search for TODO/FIXME/HACK comments."""
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:293: patterns = ["TODO", "FIXME", "HACK"]
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:320: return todos[:TODO_LIMIT]
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:617: # TODOs
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:620: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", todos, output_file)
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+.github\skills\acquire-codebase-knowledge\scripts\scan.py:622: print_section("TODO / FIXME / HACK (production code only, test dirs excluded)", ["None found."], output_file)
+bavaria\data\census\employment.py:8: TODO: Can this be replaced by a Germany-wide extract from GENESIS?
+bavaria\data\census\population.py:8: TODO: This could be replaced with a Germany-wide extract from GENESIS
+bavaria\synthesis\population\enriched.py:259: f &= df_persons["sex"] == sex ## TODO
+data\hts\commute_distance.py:27: # TODO: We can impute distances here by mode, which would make it more consistent!
+data\od\weighted.py:9: Potential TODO: Do this by mode of transport!
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\components\transit\departure\DefaultDepartureFinder.java:16: * TODO: this is sorting all the time. We can make it efficient by creating a
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:111: // TODO Check if we can remove stuff
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:169: // TODO: Check if we can remove stuff
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\PopulationCutterModule.java:138: // TODO: This may not only be "pt"!
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitRouteCrossingPointFinder.java:20: * TODO: This class should make use of StopSequenceCrossingPointFinder
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitTripCrossingPointFinder.java:18: * TODO: Focused on "pt" legs, but others are possible
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\FreightAssignment.java:16: * TODO: Eventually, this should happen in the pipeline. We assign facility IDs
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\RunPreparation.java:41: // Fix freight activities (TODO: should go to the pipeline)
+eqasim-data\cache\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\routing\RunPopulationRouting.java:61: // TODO: Check what we can remove here
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\components\transit\departure\DefaultDepartureFinder.java:16: * TODO: this is sorting all the time. We can make it efficient by creating a
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:111: // TODO Check if we can remove stuff
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:169: // TODO: Check if we can remove stuff
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\PopulationCutterModule.java:138: // TODO: This may not only be "pt"!
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitRouteCrossingPointFinder.java:20: * TODO: This class should make use of StopSequenceCrossingPointFinder
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitTripCrossingPointFinder.java:18: * TODO: Focused on "pt" legs, but others are possible
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\FreightAssignment.java:16: * TODO: Eventually, this should happen in the pipeline. We assign facility IDs
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\RunPreparation.java:41: // Fix freight activities (TODO: should go to the pipeline)
+eqasim-data\cache\matsim.runtime.eqasim__b97ff9adfe00b88995ca730c33f44d25.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\routing\RunPopulationRouting.java:61: // TODO: Check what we can remove here
+eqasim-data\cache\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:112: // TODO: check if dayNr is within the timetable period defined in ECKDATEN
+eqasim-data\cache\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:123: // TODO another important HAFAS-file is DURCHBI. This feature is not supported by MATSim yet (but in Switzerland, for example, locally very important.
+eqasim-data\cache\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\lib\BitfeldAnalyzer.java:173: // TODO this error-prone and should be removed by a stable solution
+eqasim-data\cache\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\lib\FPLANReader.java:123: // TODO there may be more than one *A VE line per *Z block (when the bitfield changes during the route). This is an important issue in HAFAS!
+eqasim-data\cache\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\run\gis\Schedule2Geojson.java:146: // TODO set refLink as network attribute
+eqasim-data\cache\matsim.runtime.pt2matsim__b85c9fcbfe76ef7d574ffeef18466842.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:112: // TODO: check if dayNr is within the timetable period defined in ECKDATEN
+eqasim-data\cache\matsim.runtime.pt2matsim__b85c9fcbfe76ef7d574ffeef18466842.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:123: // TODO another important HAFAS-file is DURCHBI. This feature is not supported by MATSim yet (but in Switzerland, for example, locally very important.
+eqasim-data\cache\matsim.runtime.pt2matsim__b85c9fcbfe76ef7d574ffeef18466842.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\lib\BitfeldAnalyzer.java:173: // TODO this error-prone and should be removed by a stable solution
+eqasim-data\cache\matsim.runtime.pt2matsim__b85c9fcbfe76ef7d574ffeef18466842.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\lib\FPLANReader.java:123: // TODO there may be more than one *A VE line per *Z block (when the bitfield changes during the route). This is an important issue in HAFAS!
+eqasim-data\cache\matsim.runtime.pt2matsim__b85c9fcbfe76ef7d574ffeef18466842.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\run\gis\Schedule2Geojson.java:146: // TODO set refLink as network attribute
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\components\transit\departure\DefaultDepartureFinder.java:16: * TODO: this is sorting all the time. We can make it efficient by creating a
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:111: // TODO Check if we can remove stuff
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\RunScenarioCutter.java:169: // TODO: Check if we can remove stuff
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\PopulationCutterModule.java:138: // TODO: This may not only be "pt"!
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitRouteCrossingPointFinder.java:20: * TODO: This class should make use of StopSequenceCrossingPointFinder
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\cutter\population\trips\crossing\transit\DefaultTransitTripCrossingPointFinder.java:18: * TODO: Focused on "pt" legs, but others are possible
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\FreightAssignment.java:16: * TODO: Eventually, this should happen in the pipeline. We assign facility IDs
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\preparation\RunPreparation.java:41: // Fix freight activities (TODO: should go to the pipeline)
+eqasim-data\cache_bs_10pct\matsim.runtime.eqasim__0bad9fc4c8f9a2e24b85adb185fe57d8.cache\eqasim-java\core\src\main\java\org\eqasim\core\scenario\routing\RunPopulationRouting.java:61: // TODO: Check what we can remove here
+eqasim-data\cache_bs_10pct\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:112: // TODO: check if dayNr is within the timetable period defined in ECKDATEN
+eqasim-data\cache_bs_10pct\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\HafasConverter.java:123: // TODO another important HAFAS-file is DURCHBI. This feature is not supported by MATSim yet (but in Switzerland, for example, locally very important.
+eqasim-data\cache_bs_10pct\matsim.runtime.pt2matsim__1c1e326d6cd4f93fae500345b93ed094.cache\pt2matsim\src\main\java\org\matsim\pt2matsim\hafas\lib\BitfeldAnalyzer.java:173: // TODO this error-prone and should be removed by a stable solution
+
+=== GIT RECENT COMMITS (last 20) ===
+e341b85 refactor(phase-0): lock pre-refactor baselines
+f31bedc chore(baseline): Braunschweig fork pre-refactor snapshot
+b20fbe6 Merge pull request #14 from eqasim-org/chore/rename
+73bbec5 chore: minor rename
+2749e1a Merge pull request #13 from eqasim-org/chore/cleanup-analysis
+761d17d chore: clean up analysis
+1e05116 Merge pull request #11 from eqasim-org/feat/isMunich
+be8e949 feat: add isMunichResident attribute
+bbdd2a5 Merge pull request #10 from eqasim-org/fix/remove-is-paris
+2023399 chore: remove isParis attribute
+c00d455 Merge pull request #9 from eqasim-org/feat/household-income
+782a3d7 bugfix
+04e4466 limit age for 1p household
+f728662 clean
+8b29214 add household size
+574ad8d simplify and add csv outputs
+b965b15 update config
+43ff04d update fields for persons
+6e89701 feat: add household income
+94e29dd Merge pull request #8 from eqasim-org/chore/update-eqasim-java
+
+=== HIGH-CHURN FILES (last 90 days, top 20) ===
+   1 plan/baselines/pytest_baseline.txt
+   1 plan/baselines/smoke_1pct_baseline.txt
+   1 .github/skills/acquire-codebase-knowledge/SKILL.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/ARCHITECTURE.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/CONCERNS.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/CONVENTIONS.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/INTEGRATIONS.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/STACK.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/STRUCTURE.md
+   1 .github/skills/acquire-codebase-knowledge/assets/templates/TESTING.md
+   1 .github/skills/acquire-codebase-knowledge/references/inquiry-checkpoints.md
+   1 .github/skills/acquire-codebase-knowledge/references/stack-detection.md
+   1 .github/skills/acquire-codebase-knowledge/scripts/scan.py
+   1 .github/skills/architecture-blueprint-generator/SKILL.md
+   1 .github/skills/context-map/SKILL.md
+   1 .github/skills/conventional-commit/SKILL.md
+   1 .github/skills/create-implementation-plan/SKILL.md
+   1 .github/skills/doublecheck/SKILL.md
+   1 .github/skills/doublecheck/assets/verification-report-template.md
+   1 .github/skills/folder-structure-blueprint-generator/SKILL.md
+
+=== MONOREPO SIGNALS ===
+No monorepo signals detected.
+
+=== CODE METRICS ===
+Total files scanned: 7119
+Total lines of code: 302245
+
+Files by language:
+  Other: 3999
+  Java: 2840
+  Python: 280
+
+Top 10 largest files:
+eqasim-data\data\braunschweig\buildings\buildings_with_households_NI_260128.gpkg: 4240536.0KB
+eqasim-data\data\braunschweig\landuse\FS_LN_03_NI_260101.gpkg: 3309928.0KB
+eqasim-data\data\braunschweig\landuse\FS_LN_03_NI_260101.zip: 1128935.7KB
+eqasim-data\cache_bs_25pct\matsim.simulation.run__5a9cbf70290ad1e9f25fe99fc327ce52.cache\simulation_output\ITERS\it.0\0.events.xml.gz: 873351.9KB
+eqasim-data\cache_bs_25pct\matsim.simulation.run__5a9cbf70290ad1e9f25fe99fc327ce52.cache\simulation_output\output_events.xml.gz: 871087.9KB
+eqasim-data\cache_bs_25pct\matsim.simulation.run__5a9cbf70290ad1e9f25fe99fc327ce52.cache\simulation_output\ITERS\it.1\1.events.xml.gz: 871087.9KB
+eqasim-data\data\osm\bayern-260421.osm.pbf: 818629.0KB
+eqasim-data\cache\data.osm.cleaned__6f7fbb37e19a1e78458ebb885e36b08c.cache\output.osm.gz: 733487.7KB
+eqasim-data\cache\data.osm.cleaned__944468ffeccbae3a5f76afe88dea3492.cache\output.osm.gz: 733487.7KB
+eqasim-data\data\braunschweig\buildings\gebaeude-ni.zip: 669676.8KB
+
+=== CI/CD PIPELINES ===
+CI/CD: GitHub Actions
+CI/CD: Travis CI
+
+=== CONTAINERS & ORCHESTRATION ===
+No containerization configs detected.
+
+=== SECURITY & COMPLIANCE ===
+No security configs detected.
+
+=== PERFORMANCE & TESTING ===
+No performance testing configs detected.
+
+=== SCAN COMPLETE ===
