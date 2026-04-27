@@ -1,21 +1,21 @@
 import numpy as np
 import pandas as pd
 
-import analysis.bootstrapping as bt
-import analysis.marginals as marginals
-import analysis.statistics as stats
+import eqasim_common.analysis.bootstrapping as bt
+import eqasim_common.analysis.marginals as marginals
+import eqasim_common.analysis.statistics as stats
 
 SAMPLING_RATES = [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2]
 ACQUISITION_SAMPLE_SIZE = 200
 ERROR_THRESHOLD = 0.01
 
-from analysis.synthesis.statistics.marginal import MARGINALS
+from eqasim_common.analysis.synthesis.statistics.marginal import MARGINALS
 
 def configure(context):
-    context.stage("analysis.reference.census.sociodemographics")
+    context.stage("eqasim_common.analysis.reference.census.sociodemographics")
 
     for sampling_rate in SAMPLING_RATES:
-        bt.configure(context, "analysis.synthesis.statistics.marginal", ACQUISITION_SAMPLE_SIZE, dict(
+        bt.configure(context, "eqasim_common.analysis.synthesis.statistics.marginal", ACQUISITION_SAMPLE_SIZE, dict(
             sampling_rate = sampling_rate
         ), alias = "sample_%f" % sampling_rate)
 
@@ -56,7 +56,7 @@ def process(context, k):
     return output
 
 def execute(context):
-    reference = context.stage("analysis.reference.census.sociodemographics")["person"]
+    reference = context.stage("eqasim_common.analysis.reference.census.sociodemographics")["person"]
 
     output = { marginal: [] for marginal in MARGINALS }
     total = len(SAMPLING_RATES) * len(MARGINALS) * ACQUISITION_SAMPLE_SIZE

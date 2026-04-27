@@ -6,8 +6,8 @@ import matplotlib.ticker as tck
 import documentation.plotting as plotting
 
 def configure(context):
-    context.stage("analysis.reference.hts.chains", { "hts": "egt" }, alias = "egt")
-    context.stage("analysis.reference.hts.chains", { "hts": "entd" }, alias = "entd")
+    context.stage("eqasim_common.analysis.reference.hts.chains", { "hts": "egt" }, alias = "egt")
+    context.stage("eqasim_common.analysis.reference.hts.chains", { "hts": "entd" }, alias = "entd")
 
 def execute(context):
     plotting.setup()

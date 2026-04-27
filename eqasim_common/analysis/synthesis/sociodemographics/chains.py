@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
 
-import analysis.bootstrapping as bs
-import analysis.statistics as stats
-import analysis.marginals as marginals
+import eqasim_common.analysis.bootstrapping as bs
+import eqasim_common.analysis.statistics as stats
+import eqasim_common.analysis.marginals as marginals
 
-from analysis.chains import aggregate_chains, CHAIN_MARGINALS, CHAIN_LENGTH_LIMIT, CHAIN_TOP_K
+from eqasim_common.analysis.chains import aggregate_chains, CHAIN_MARGINALS, CHAIN_LENGTH_LIMIT, CHAIN_TOP_K
 
 def configure(context):
     acquisition_sample_size = context.config("acquisition_sample_size")

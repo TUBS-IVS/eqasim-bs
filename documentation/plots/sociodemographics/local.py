@@ -10,10 +10,10 @@ from .general import prepare_data, add_labels
 SAMPLING_RATE = 0.05
 
 def configure(context):
-    context.stage("analysis.reference.census.sociodemographics")
+    context.stage("eqasim_common.analysis.reference.census.sociodemographics")
 
     context.stage(
-        "analysis.synthesis.sociodemographics.spatial",
+        "eqasim_common.analysis.synthesis.sociodemographics.spatial",
         dict(sampling_rate = SAMPLING_RATE), alias = "data"
     )
 
@@ -40,7 +40,7 @@ def filter_commune(marginals, commune_id, levels = ["person", "household"]):
 def execute(context):
     plotting.setup()
 
-    census = context.stage("analysis.reference.census.sociodemographics")
+    census = context.stage("eqasim_common.analysis.reference.census.sociodemographics")
     data = context.stage("data")
 
     cases = [

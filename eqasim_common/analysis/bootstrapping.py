@@ -1,6 +1,6 @@
 import numpy as np
 import copy
-import analysis.statistics
+import eqasim_common.analysis.statistics
 
 def get_seeds(number_of_seeds):
     return np.arange(1, number_of_seeds + 1) * 1000

@@ -8,7 +8,7 @@ SAMPLING_RATE = 0.05
 POPULATION_SAMPLES = 200
 
 def configure(context):
-    context.stage("analysis.matching", {
+    context.stage("eqasim_common.analysis.matching", {
         "sampling_rate": SAMPLING_RATE,
         "analysis_populations": POPULATION_SAMPLES,
     }, alias = "data")

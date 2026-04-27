@@ -5,18 +5,18 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 import documentation.plotting as plotting
 import documentation.plots.language as lang
-import analysis.marginals
+import eqasim_common.analysis.marginals
 
 SAMPLING_RATE = 0.05
 
 def configure(context):
     context.config("hts")
 
-    context.stage("analysis.reference.census.sociodemographics")
-    context.stage("analysis.reference.hts.sociodemographics")
+    context.stage("eqasim_common.analysis.reference.census.sociodemographics")
+    context.stage("eqasim_common.analysis.reference.hts.sociodemographics")
 
     context.stage(
-        "analysis.synthesis.sociodemographics.general",
+        "eqasim_common.analysis.synthesis.sociodemographics.general",
         dict(sampling_rate = SAMPLING_RATE), alias = "data"
     )
 
@@ -56,7 +56,7 @@ def prepare_marginal(data_marginals, hts_marginals, census_marginals, level, mar
 
 def label(row):
     if row["attribute"] == "age_class":
-        return "Age %s" % analysis.marginals.AGE_CLASS_LABELS[row["value"]]
+        return "Age %s" % eqasim_common.analysis.marginals.AGE_CLASS_LABELS[row["value"]]
 
     elif row["attribute"] == "sex":
         return row["value"].capitalize()
@@ -74,16 +74,16 @@ def label(row):
         return "PT Subscription %s" % ("Yes" if row["value"] else "No")
 
     elif row["attribute"] == "socioprofessional_class":
-        return "SC %s" % analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS[row["value"]]
+        return "SC %s" % eqasim_common.analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS[row["value"]]
 
     elif row["attribute"] == "household_size_class":
-        return "Household size %s" % analysis.marginals.HOUSEHOLD_SIZE_LABELS[row["value"]]
+        return "Household size %s" % eqasim_common.analysis.marginals.HOUSEHOLD_SIZE_LABELS[row["value"]]
 
     elif row["attribute"] == "number_of_cars_class":
-        return "No. vehicles %s" % analysis.marginals.NUMBER_OF_CARS_LABELS[row["value"]]
+        return "No. vehicles %s" % eqasim_common.analysis.marginals.NUMBER_OF_CARS_LABELS[row["value"]]
 
     elif row["attribute"] == "number_of_bicycles_class":
-        return "No. bicycles %s" % analysis.marginals.NUMBER_OF_BICYCLES_LABELS[row["value"]]
+        return "No. bicycles %s" % eqasim_common.analysis.marginals.NUMBER_OF_BICYCLES_LABELS[row["value"]]
 
 def add_labels(df_figure):
     df_figure["label"] = df_figure.apply(label, axis = 1, raw = False)
@@ -104,8 +104,8 @@ def reweight_hts(df_figure, hts_marginals, census_marginals, level):
 def execute(context):
     plotting.setup()
 
-    hts = context.stage("analysis.reference.hts.sociodemographics")
-    census = context.stage("analysis.reference.census.sociodemographics")
+    hts = context.stage("eqasim_common.analysis.reference.hts.sociodemographics")
+    census = context.stage("eqasim_common.analysis.reference.census.sociodemographics")
     data = context.stage("data")
 
     figures = [

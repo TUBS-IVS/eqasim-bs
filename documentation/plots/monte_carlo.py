@@ -5,13 +5,13 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 import documentation.plotting as plotting
 
-from analysis.synthesis.statistics.marginal import MARGINALS
-from analysis.synthesis.statistics.monte_carlo import SAMPLING_RATES
-from analysis.synthesis.statistics.monte_carlo import ACQUISITION_SAMPLE_SIZE
+from eqasim_common.analysis.synthesis.statistics.marginal import MARGINALS
+from eqasim_common.analysis.synthesis.statistics.monte_carlo import SAMPLING_RATES
+from eqasim_common.analysis.synthesis.statistics.monte_carlo import ACQUISITION_SAMPLE_SIZE
 
 def configure(context):
-    context.stage("analysis.reference.census.sociodemographics")
-    context.stage("analysis.synthesis.statistics.monte_carlo")
+    context.stage("eqasim_common.analysis.reference.census.sociodemographics")
+    context.stage("eqasim_common.analysis.synthesis.statistics.monte_carlo")
 
 SELECTED_MARGINAL = ("age_class", "employed")
 SELECTED_VALUES = (3, True)
@@ -28,7 +28,7 @@ ADDITIONAL_VALUES = [
     (3, True), (4, True), (5, True)
 ]
 
-from analysis.marginals import AGE_CLASS_LABELS
+from eqasim_common.analysis.marginals import AGE_CLASS_LABELS
 
 ADDITIONAL_LABELS = AGE_CLASS_LABELS[3:6]
 
@@ -45,7 +45,7 @@ def select(reference, data, marginal, values):
     return df_marginal, reference_value
 
 def execute(context):
-    data = context.stage("analysis.synthesis.statistics.monte_carlo")
+    data = context.stage("eqasim_common.analysis.synthesis.statistics.monte_carlo")
 
     # Prepare data for error probability table
     df_table = []
@@ -73,7 +73,7 @@ def execute(context):
     df_table.to_latex("%s/monte_carlo_table.tex" % context.path(), escape = False)
 
     # Prepare data for plotting
-    reference = context.stage("analysis.reference.census.sociodemographics")["person"]
+    reference = context.stage("eqasim_common.analysis.reference.census.sociodemographics")["person"]
 
     # Perform plotting
     plotting.setup()
@@ -139,11 +139,11 @@ def execute(context):
     plt.savefig("%s/monte_carlo.pdf" % context.path())
     plt.close()
 
-import analysis.marginals
+import eqasim_common.analysis.marginals
 
 def label_row(row):
     if row["marginal"] == "age_class":
-        return analysis.marginals.AGE_CLASS_LABELS[row["value"]]
+        return eqasim_common.analysis.marginals.AGE_CLASS_LABELS[row["value"]]
 
     elif row["marginal"] == "sex":
         return row["value"].capitalize()
@@ -155,7 +155,7 @@ def label_row(row):
         return "Yes" if row["value"] else "No"
 
     elif row["marginal"] == "socioprofessional_class":
-        return analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS[row["value"]]
+        return eqasim_common.analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS[row["value"]]
 
 def bold_probability(x):
     if x >= 0.9:

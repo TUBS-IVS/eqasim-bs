@@ -78,7 +78,7 @@ Full inventory recorded in this plan's appendix below; key deltas:
 | `tests/test_pipeline.py`, `tests/test_determinism.py`   | rewrite     | use the BS configs / data instead of IDF region 10/11                   |
 | `tests/test_simulation.py`, `tests/testdata.py`         | review/delete | replace with BS-shaped testdata helpers                                 |
 | `matsim/simulation/run.py`, `matsim/simulation/prepare.py` | modify     | Java class names: `org.eqasim.bavaria.*` → see Decision D-1 below        |
-| `analysis/`                                             | audit       | drop `bavaria.data.spatial.iris` reference, retarget to `braunschweig.*` |
+| `analysis/` → `eqasim_common/analysis/` | move (Phase 2) | region-neutral synpp stages relocated; stage names now `eqasim_common.analysis.*` |
 | `scripts/`                                              | audit       | rename comment / config references; verify each script still runs       |
 | `docs/codebase/*.md`                                    | create      | via acquire-codebase-knowledge skill                                    |
 | `quality/*.md`                                          | create      | via quality-playbook skill                                              |

@@ -8,10 +8,10 @@ import documentation.plotting as plotting
 SAMPLING_RATE = 0.05
 
 def configure(context):
-    context.stage("analysis.reference.hts.chains")
+    context.stage("eqasim_common.analysis.reference.hts.chains")
 
     context.stage(
-        "analysis.synthesis.sociodemographics.chains",
+        "eqasim_common.analysis.synthesis.sociodemographics.chains",
         dict(sampling_rate = SAMPLING_RATE), alias = "data"
     )
 
@@ -20,7 +20,7 @@ def configure(context):
 def execute(context):
     plotting.setup()
 
-    reference = context.stage("analysis.reference.hts.chains")
+    reference = context.stage("eqasim_common.analysis.reference.hts.chains")
     data = context.stage("data")
 
     # PLOT: Activity chains by sex

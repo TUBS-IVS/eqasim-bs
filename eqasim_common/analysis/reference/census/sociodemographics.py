@@ -1,5 +1,5 @@
-import analysis.statistics as stats
-import analysis.marginals as marginals
+import eqasim_common.analysis.statistics as stats
+import eqasim_common.analysis.marginals as marginals
 
 def configure(context):
     context.stage("data.census.filtered")

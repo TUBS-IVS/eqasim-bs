@@ -10,9 +10,9 @@ SAMPLING_RATE = 0.05
 def configure(context):
     context.config("hts")
 
-    context.stage("analysis.reference.od.commute_flow", alias = "census")
-    context.stage("analysis.reference.hts.commute_flow", alias = "hts")
-    context.stage("analysis.synthesis.commute_flow", dict(sampling_rate = SAMPLING_RATE), alias = "data")
+    context.stage("eqasim_common.analysis.reference.od.commute_flow", alias = "census")
+    context.stage("eqasim_common.analysis.reference.hts.commute_flow", alias = "hts")
+    context.stage("eqasim_common.analysis.synthesis.commute_flow", dict(sampling_rate = SAMPLING_RATE), alias = "data")
 
 def execute(context):
     plotting.setup()

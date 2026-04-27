@@ -6,8 +6,8 @@ import documentation.plotting as plotting
 def configure(context):
     context.stage("synthesis.population.spatial.secondary.distance_distributions")
 
-    context.stage("analysis.synthesis.mode_distances")
-    context.stage("analysis.reference.hts.mode_distances")
+    context.stage("eqasim_common.analysis.synthesis.mode_distances")
+    context.stage("eqasim_common.analysis.reference.hts.mode_distances")
 
     context.config("hts")
 
@@ -20,7 +20,7 @@ def execute(context):
 
     plt.figure()
 
-    modes = list(context.stage("analysis.reference.hts.mode_distances").keys())
+    modes = list(context.stage("eqasim_common.analysis.reference.hts.mode_distances").keys())
 
     for index, mode in enumerate(modes):
         mode_distribution = distributions[mode]
@@ -63,8 +63,8 @@ def execute(context):
     plt.close()
 
     # PLOT: Distance distributions
-    df_synthetic = context.stage("analysis.synthesis.mode_distances")
-    reference_data = context.stage("analysis.reference.hts.mode_distances")
+    df_synthetic = context.stage("eqasim_common.analysis.synthesis.mode_distances")
+    reference_data = context.stage("eqasim_common.analysis.reference.hts.mode_distances")
 
     plt.figure(figsize =  (6.0, 2.5), dpi = 100) # 2.5 * 2.5
 

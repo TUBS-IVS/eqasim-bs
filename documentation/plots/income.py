@@ -11,8 +11,8 @@ SAMPLING_RATE = 0.05
 def configure(context):
     context.stage("data.income.municipality")
 
-    context.stage("analysis.synthesis.income", dict(sampling_rate = SAMPLING_RATE), alias = "data")
-    context.stage("analysis.reference.income")
+    context.stage("eqasim_common.analysis.synthesis.income", dict(sampling_rate = SAMPLING_RATE), alias = "data")
+    context.stage("eqasim_common.analysis.reference.income")
 
 def execute(context):
     plotting.setup()
@@ -44,7 +44,7 @@ def execute(context):
     plt.figure()
 
     df_data = context.stage("data")
-    df_reference = context.stage("analysis.reference.income")
+    df_reference = context.stage("eqasim_common.analysis.reference.income")
 
     f = df_reference["source"] == "entd"
     plt.plot(df_reference[f]["income"].values * 1e-3, df_reference[f]["cdf"].values, color = plotting.COLORS["entd"], label = "ENTD", linewidth = 1.0)

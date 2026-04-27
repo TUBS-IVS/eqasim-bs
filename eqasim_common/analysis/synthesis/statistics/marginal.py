@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-import analysis.marginals as marginals
-import analysis.statistics as stats
+import eqasim_common.analysis.marginals as marginals
+import eqasim_common.analysis.statistics as stats
 
 MARGINALS = [
     ("age_class",), ("sex",), ("employed",), ("studies",),
