@@ -23,8 +23,10 @@ pipeline_*.log
 hh_gap.txt
 zensus_hh_inspect.txt
 
-# Local pipeline data (large inputs, caches, outputs) — keep folder structure only
-eqasim-data/
+# Local pipeline data (large inputs, caches, outputs) — keep folder structure only.
+# Use /* (not /) on the parent so the explicit negations below take effect:
+# git ignores files inside excluded directories regardless of negation rules.
+eqasim-data/*
 !eqasim-data/.gitkeep
 !eqasim-data/DOWNLOAD_CHECKLIST.md
 !eqasim-data/DOWNLOAD_CHECKLIST_BS.md
