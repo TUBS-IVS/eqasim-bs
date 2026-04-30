@@ -35,6 +35,15 @@ config:
   braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
   braunschweig.inkar_year: latest
 
+  # Match production config so the gravity-only run picks up the per-RS7
+  # slope override calibrated via scripts/calibrate_gravity_per_rs7.py.
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    72: -0.0333
+    74: -0.0782
+
 aliases:
   eqasim_common.data.census.licenses:  braunschweig.data.census.licenses
   eqasim_common.data.census.population: braunschweig.data.census.population

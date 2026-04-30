@@ -188,25 +188,29 @@ class TestMidReferences:
 class TestEnrichedFork:
     """``braunschweig.synthesis.population.enriched``: share tables + helpers."""
 
+    def _load_share_csv(self, fname):
+        from braunschweig.data.mid.reference_tables import load_kreis_share_table
+        from pathlib import Path
+        data_path = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
+        return load_kreis_share_table(data_path, fname)
+
     def test_cars_shares_are_probability_distributions(self):
-        from braunschweig.synthesis.population.enriched import (
-            CARS_BY_KREIS, CARS_REGION, CARS_VALUES,
-        )
-        for ars, shares in CARS_BY_KREIS.items():
-            assert len(shares) == len(CARS_VALUES)
+        by_kreis, region, values = self._load_share_csv(
+            "mid2023_H7_cars_by_kreis.csv")
+        for ars, shares in by_kreis.items():
+            assert len(shares) == len(values)
             assert abs(sum(shares) - 1.0) < 0.05, \
-                f"CARS_BY_KREIS[{ars}] sums to {sum(shares)}"
-        assert abs(sum(CARS_REGION) - 1.0) < 0.05
+                f"H7 cars[{ars}] sums to {sum(shares)}"
+        assert abs(sum(region) - 1.0) < 0.05
 
     def test_bikes_shares_are_probability_distributions(self):
-        from braunschweig.synthesis.population.enriched import (
-            BIKES_BY_KREIS, BIKES_REGION, BIKES_VALUES,
-        )
-        for ars, shares in BIKES_BY_KREIS.items():
-            assert len(shares) == len(BIKES_VALUES)
+        by_kreis, region, values = self._load_share_csv(
+            "mid2023_H12_3_bikes_by_kreis.csv")
+        for ars, shares in by_kreis.items():
+            assert len(shares) == len(values)
             assert abs(sum(shares) - 1.0) < 0.05, \
-                f"BIKES_BY_KREIS[{ars}] sums to {sum(shares)}"
-        assert abs(sum(BIKES_REGION) - 1.0) < 0.05
+                f"H12.3 bikes[{ars}] sums to {sum(shares)}"
+        assert abs(sum(region) - 1.0) < 0.05
 
     def test_inside_flag_map_covers_all_zgb_kreise(self):
         from braunschweig.synthesis.population.enriched import INSIDE_FLAG_TO_ARS5
@@ -233,20 +237,26 @@ class TestHouseholdDistributions:
     """Verify the categorical alignment between size + income tables."""
 
     def test_household_income_classes_match_bavaria(self):
-        from braunschweig.data.census.household_income import (
-            INCOME_BY_SIZE, INCOME_CLASS_MAP, CLASS_MIDPOINT_EUR,
+        from braunschweig.data.census.household_income import INCOME_CLASS_MAP
+        from braunschweig.data.mid.reference_tables import (
+            load_class_midpoint_eur, load_income_by_size,
         )
+        from pathlib import Path
+        data_path = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
+
         bavaria_classes = ["0-500", "1500-2000", "2600-3000", "3600-4500", "5000+"]
         bs_classes = [c for c, _ in INCOME_CLASS_MAP]
         assert bs_classes == bavaria_classes
 
+        midpoint_eur = load_class_midpoint_eur(data_path)
         for cls in bavaria_classes:
-            assert cls in CLASS_MIDPOINT_EUR
+            assert cls in midpoint_eur
 
-        sizes = set(INCOME_BY_SIZE)
+        income_by_size = load_income_by_size(data_path)
+        sizes = set(income_by_size)
         assert sizes == {"1", "2", "3", "4", "5", "6+"}
 
-        for size, shares in INCOME_BY_SIZE.items():
+        for size, shares in income_by_size.items():
             assert len(shares) == len(INCOME_CLASS_MAP)
             assert 0.9 < sum(shares) < 1.1, \
                 f"INCOME_BY_SIZE[{size}] sums to {sum(shares):.3f}"

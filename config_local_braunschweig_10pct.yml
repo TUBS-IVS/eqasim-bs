@@ -49,6 +49,7 @@ config:
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
   osm_path: osm
 
   # --- Braunschweig region scope -----------------------------------------

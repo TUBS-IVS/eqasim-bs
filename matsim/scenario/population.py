@@ -16,13 +16,45 @@ def configure(context):
     context.stage("synthesis.population.trips")
     context.stage("synthesis.vehicles.vehicles")
 
+    # Opt-in flag for the Bavaria "isParis" urban-parking code paths
+    # (BavariaCarCostModel + munich.* utility shifts). When false (default),
+    # neither the person-level nor the activity-level isParis attribute is
+    # written, preserving pre-refactor behaviour (Decision D-5). When true,
+    # the BS inner ring is emitted on activities and the resident flag on
+    # persons, activating 3 EUR/h parking cost for non-residents to the
+    # urban core.
+    context.config("enable_urban_parking", False)
+
+# is_urban_resident: boolean flag set by the regional enricher (e.g.
+# braunschweig.synthesis.population.enriched sets it from inside_braunschweig).
+# Written into MATSim XML under the Java-expected attribute key "isParis"
+# (the Bavaria fork inherited the IDF/Paris attribute name without renaming
+# it; BavariaPredictorUtils.isParisResident reads exactly that key). Setting
+# this flag enables the BavariaCarCostModel parking-cost exemption for urban
+# residents.
+#
+# Activity-side isParis: in addition to the person flag above, every activity
+# whose location lies within the BS inner-ring polygon (<= _URBAN_RADIUS_M of
+# the BS Hbf in EPSG:25832) is tagged with isParis=true. This activates the
+# Bavaria Java code paths in BavariaCarCostModel.hasParisDestination (3.0
+# EUR/h parking cost for non-resident commuters into the urban core) and the
+# munich.{car_u, bicycle_u, carPassenger_u} utility shifts in the Bicycle/
+# Car/CarPassenger utility estimators. Note that the upstream Bavaria
+# defaults for those utility coefficients are 0.0, so only the parking cost
+# is currently behaviourally relevant; the utility hooks become active once
+# the coefficients are calibrated.
+_URBAN_HBF_E = 605170.0  # BS Hbf (EPSG:25832)
+_URBAN_HBF_N = 5790274.0
+_URBAN_RADIUS_M = 8000.0  # Inner ring 1 (cf. braunschweig/data/vrb/zones.py)
+
 PERSON_FIELDS = [
     "person_id", "household_income", "car_availability", "bicycle_availability",
     "census_household_id", "census_person_id", "household_id",
     "has_license", "has_pt_subscription",
     "hts_id", "hts_household_id",
     "age", "employed", "sex",
-    "high_income", "is_munich_resident" # Bavaria added
+    "high_income", "is_urban_resident",  # Bavaria added (urban-area resident, written as isParis)
+    "pt_subscription_type",  # Braunschweig added (MiD P24.1 ticket category)
 ]
 
 ACTIVITY_FIELDS = [
@@ -37,14 +69,20 @@ VEHICLE_FIELDS = [
     "owner_id", "vehicle_id", "mode"
 ]
 
-def add_person(writer, person, activities, trips, vehicles):
+def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False):
     writer.start_person(person[PERSON_FIELDS.index("person_id")])
 
     writer.start_attributes()
     writer.add_attribute("householdId", "java.lang.Integer", person[PERSON_FIELDS.index("household_id")])
     writer.add_attribute("householdIncome", "java.lang.String", person[PERSON_FIELDS.index("household_income")]) # Bavaria updated
     writer.add_attribute("highIncome", "java.lang.Boolean", person[PERSON_FIELDS.index("high_income")]) # Bavaria added
-    writer.add_attribute("isMunichResident", "java.lang.Boolean", person[PERSON_FIELDS.index("is_munich_resident")]) # Bavaria added
+    # NOTE: Bavaria/IDF Java reads this under the legacy attribute key "isParis"
+    # (BavariaPredictorUtils.isParisResident). Keep the key as-is per Decision
+    # D-1c -- only the Python source column was renamed. Gated behind
+    # enable_urban_parking to keep the pre-refactor behaviour bit-identical
+    # when the flag is off (D-5).
+    if enable_urban_parking:
+        writer.add_attribute("isParis", "java.lang.Boolean", person[PERSON_FIELDS.index("is_urban_resident")])
 
     writer.add_attribute("carAvailability", "java.lang.String", person[PERSON_FIELDS.index("car_availability")])
     writer.add_attribute("bicycleAvailability", "java.lang.String", person[PERSON_FIELDS.index("bicycle_availability")])
@@ -56,6 +94,7 @@ def add_person(writer, person, activities, trips, vehicles):
     writer.add_attribute("htsPersonId", "java.lang.Long", person[PERSON_FIELDS.index("hts_id")])
 
     writer.add_attribute("hasPtSubscription", "java.lang.Boolean", person[PERSON_FIELDS.index("has_pt_subscription")])
+    writer.add_attribute("ptSubscriptionType", "java.lang.String", str(person[PERSON_FIELDS.index("pt_subscription_type")]))
     writer.add_attribute("hasLicense", "java.lang.String", writer.yes_no(person[PERSON_FIELDS.index("has_license")]))
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
@@ -85,11 +124,25 @@ def add_person(writer, person, activities, trips, vehicles):
             None if location_id == -1 else location_id
         )
 
+        # Activity-level isParis: tag activities whose location lies within
+        # the BS inner ring (<= _URBAN_RADIUS_M from BS Hbf). See module
+        # docstring above for the rationale. Off by default (D-5).
+        if enable_urban_parking:
+            dx = geometry.x - _URBAN_HBF_E
+            dy = geometry.y - _URBAN_HBF_N
+            is_urban_activity = (dx * dx + dy * dy) <= (_URBAN_RADIUS_M * _URBAN_RADIUS_M)
+            activity_attributes = {
+                "isParis": ("java.lang.Boolean", "true" if is_urban_activity else "false"),
+            }
+        else:
+            activity_attributes = None
+
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],
             location = location,
             start_time = None if np.isnan(start_time) else start_time,
-            end_time = None if np.isnan(end_time) else end_time
+            end_time = None if np.isnan(end_time) else end_time,
+            attributes = activity_attributes,
         )
 
         if not trip is None:
@@ -104,6 +157,8 @@ def add_person(writer, person, activities, trips, vehicles):
 
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
+
+    enable_urban_parking = bool(context.config("enable_urban_parking"))
 
     df_persons = context.stage("synthesis.population.enriched")
     df_persons = df_persons.sort_values(by = ["household_id", "person_id"])
@@ -173,7 +228,7 @@ def execute(context):
                         else:
                             vehicles.append(vehicle)
 
-                    add_person(writer, person, activities, trips, vehicles)
+                    add_person(writer, person, activities, trips, vehicles, enable_urban_parking)
                     progress.update()
 
             writer.end_population()

@@ -67,25 +67,31 @@ def execute(context):
         columns = { "has_license": "has_driving_license" }
     )
 
-    # Residency flag — historically "is_munich_resident" (Bavaria/Munich
-    # MiD zoning). Forks may emit a different flag (e.g. is_bs_resident
-    # in the Braunschweig setup). Pick whichever is present, prefer the
-    # fork-specific one over the legacy Munich default.
-    residency_candidates = [
-        c for c in df_persons.columns if c.startswith("is_") and c.endswith("_resident")
+    # Residency flag - region-neutral name "is_urban_resident".
+    # The Bavaria/IDF Java code reads this under the legacy attribute key
+    # "isParis" (BavariaPredictorUtils.isParisResident); see Decision D-1c.
+    # Forks may emit either the new region-neutral column or one of the
+    # historical ones (is_bs_resident, is_munich_resident); we coalesce here.
+    candidates = [
+        c for c in df_persons.columns
+        if c == "is_urban_resident" or (c.startswith("is_") and c.endswith("_resident"))
     ]
-    if not residency_candidates:
-        df_persons["is_munich_resident"] = False
-        residency_col = "is_munich_resident"
+    if "is_urban_resident" in candidates:
+        df_persons = df_persons.rename(columns={})  # already named correctly
+    elif candidates:
+        # Prefer non-munich (fork-specific) flag if present, else fall back.
+        non_munich = [c for c in candidates if c != "is_munich_resident"]
+        src = non_munich[0] if non_munich else candidates[0]
+        df_persons["is_urban_resident"] = df_persons[src].fillna(False).astype(bool)
     else:
-        # Prefer non-munich (fork-specific) flag if both exist.
-        non_munich = [c for c in residency_candidates if c != "is_munich_resident"]
-        residency_col = non_munich[0] if non_munich else "is_munich_resident"
+        df_persons["is_urban_resident"] = False
+    residency_col = "is_urban_resident"
 
     df_persons = df_persons[[
         "person_id", "household_id",
         "age", "employed", "sex", "socioprofessional_class",
         "has_driving_license", "has_pt_subscription",
+        "pt_subscription_type",
         "census_person_id", "hts_id",
         residency_col,
     ]]

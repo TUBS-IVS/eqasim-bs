@@ -24,6 +24,11 @@ config:
 
   java_memory: 44G
 
+  # MATSim simulation iterations (0..N-1). N=200 → 200 iterations.
+  matsim_last_iteration: 199
+  matsim_write_events_interval: 0   # 0 = only final iteration
+  matsim_write_plans_interval: 50
+
   home_location_sampling: weighted
   mode_choice: false
   matching_attributes: ["sex", "age_class", "has_license"]
@@ -58,6 +63,7 @@ config:
   braunschweig.ipf.use_employment_margin: true
 
   gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
   osm_path: osm
 
   # --- Braunschweig region scope -----------------------------------------

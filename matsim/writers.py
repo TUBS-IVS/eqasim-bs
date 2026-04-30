@@ -126,7 +126,7 @@ class PopulationWriter(XmlWriter):
         self.scope = self.PERSON_SCOPE
         self._write_line('</plan>')
 
-    def add_activity(self, type, location, start_time = None, end_time = None):
+    def add_activity(self, type, location, start_time = None, end_time = None, attributes = None):
         self._require_scope(self.PLAN_SCOPE)
 
         self._write_indent()
@@ -136,7 +136,21 @@ class PopulationWriter(XmlWriter):
         if location[2] is not None: self._write('facility="%s" ' % str(location[2]))
         if start_time is not None: self._write('start_time="%s" ' % self.time(start_time))
         if end_time is not None: self._write('end_time="%s" ' % self.time(end_time))
-        self._write('/>\n')
+        if attributes:
+            self._write('>\n')
+            self.indent += 1
+            self._write_line('<attributes>')
+            self.indent += 1
+            for attr_name, (attr_type, attr_value) in attributes.items():
+                self._write_line('<attribute name="%s" class="%s">%s</attribute>' % (
+                    attr_name, attr_type, attr_value
+                ))
+            self.indent -= 1
+            self._write_line('</attributes>')
+            self.indent -= 1
+            self._write_line('</activity>')
+        else:
+            self._write('/>\n')
 
     def add_leg(self, mode, departure_time, travel_time):
         self._require_scope(self.PLAN_SCOPE)

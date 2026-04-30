@@ -127,6 +127,8 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
     summary = metrics.trip_summary()
     mode_share = metrics.mode_share_overall()
     purpose = metrics.purpose_mix()
+    purpose_no_home = metrics.purpose_mix_no_home()
+    mob_quote = metrics.mobility_quote()
     duration = metrics.trip_duration_distribution()
     distance = metrics.trip_distance_distribution()
     od = metrics.commute_od_kreis().head(20)
@@ -258,6 +260,29 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         <h3>5.2 Activity-purpose mix</h3>
         {_df_to_html(purpose, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
+        <h3>5.3 Activity-purpose mix — ohne Heimwege (vs. MiD W1)</h3>
+        <p>Synthetische Wege gefiltert auf <code>following_purpose != "home"</code>
+        und auf 100 % renormiert. Vergleich gegen MiD 2023 W1
+        (<em>Hauptwegezweck analog MiD 2008</em>, p231 GR-BS): Heimwege werden
+        dort auf den Zweck des Hinwegs zurück-gemapped, daher fehlt eine
+        eigene <code>home</code>-Kategorie. Mapping eqasim → W1:
+        <code>work ← Arbeit + Dienst</code>, <code>education ← Ausbildung</code>,
+        <code>shop ← Einkauf</code>,
+        <code>other ← Erledigung + Begleitung</code> (eqasim kennt keine
+        eigene <code>escort</code>-Kategorie),
+        <code>leisure ← Freizeit</code>.</p>
+        {_df_to_html(purpose_no_home, dev_cols={"deviation_pp": "purpose_mix_l1"},
+                     fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
+        <h3>5.4 Mobilitätsquote (vs. MiD P36.1)</h3>
+        <p>Anteil Personen mit mindestens einem Weg am Stichtag (Basis = alle
+        Personen). MiD-Referenz: P36.1 <em>Mobilität am Stichtag in
+        Deutschland</em>, p195 GR-BS. ZGB-Gesamt:
+        <strong>synth = {mob_quote['synth_total']*100:.1f} %</strong> vs.
+        MiD = {mob_quote['mid_total']*100:.0f} %
+        (Δ {mob_quote['deviation_pp']:+.1f} pp).</p>
+        {_df_to_html(pd.DataFrame(mob_quote['per_kreis']),
+                     dev_cols={"deviation_pp": "mobility_quote_pp"},
+                     fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.1f"})}
     </div></section>
     """)
 
@@ -404,6 +429,8 @@ def _build_json_payload(od_stats: dict | None = None,
         "mode_share": mode.to_dict(orient="records"),
         "purpose_mix_raw": purpose_raw.to_dict(orient="records"),
         "purpose_mix": purpose.to_dict(orient="records"),
+        "purpose_mix_no_home": metrics.purpose_mix_no_home().to_dict(orient="records"),
+        "mobility_quote": metrics.mobility_quote(),
         "purpose_mix_remapped": purpose_remap.to_dict(orient="records"),
         "od_fit": od_stats,
         "hh_size_per_kreis": hh_summary.to_dict(orient="records"),

@@ -8,7 +8,7 @@ working_directory: eqasim-data/cache_bs
 
 run:
   - synthesis.output
-  # - matsim.output  # enable after synthesis.output succeeds
+  - matsim.output
 
 config:
   processes: 8
@@ -39,6 +39,20 @@ config:
   gravity_constant: -2.4
   gravity_diagonal: 1.0
 
+  # --- R-A.2: Per-RegioStaR-7 slope (TASK-RS-001).
+  # Optional override of ``gravity_slope`` per origin Gemeinde, keyed by
+  # the BMV/BBSR RegioStaR-7 code (71..77). Origins whose RS7 code is
+  # NOT listed fall back to ``gravity_slope`` above. The values below
+  # come from a Poisson-GLM fit on BA Pendleratlas Kreis-pair flows
+  # (see ``scripts/calibrate_gravity_per_rs7.py``), aggregated per
+  # dominant-RS7 of each ZGB-8 Kreis and rescaled so the flow-weighted
+  # mean equals ``gravity_slope`` above. Direction matches expectation:
+  # Großstädte (BS/SZ/WOB) flacher → mehr Fernpendler; ländliche Kleinstadt
+  # (Gifhorn/Goslar/Helmstedt/Peine/Wolfenbüttel) steiler → kürzer.
+  gravity_slope_by_regiostar7:
+    72: -0.0333   # Regiopole / Großstadt   (BS, SZ, WOB)
+    74: -0.0782   # Kleinstadt / dörfl. Raum (Gifhorn, Goslar, Helmstedt, Peine, Wolfenbüttel)
+
   # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
   braunschweig.ipf.use_household_size_margin: true
 
@@ -55,6 +69,12 @@ config:
 
   gtfs_path: gtfs
   osm_path: osm
+
+  # VRB tariff zones (Verkehrsverbund Region Braunschweig).
+  # Built by scripts/build_vrb_stations_json.py from GTFS stops + VRB Waben
+  # polygons; consumed by braunschweig.data.vrb.zones (analogue of the
+  # MVG stage). See DOWNLOAD_CHECKLIST_BS.md entry D3.
+  vrb_stations_path: vrb/stations.json
 
   # --- Braunschweig region scope -----------------------------------------
   # Zweckverband Großraum Braunschweig (ZGB) — 8 Kreise (~1.13 M EW),

@@ -89,6 +89,10 @@ class TableSpec:
     page_b: int | None      # 1-based page number of Tabelle B (socio-econ)
     columns: list[str]      # category column labels in order
     has_mittel: bool = False
+    # If True, also emit ``_by_sex.csv`` and ``_by_age.csv`` derived from
+    # the ``Geschlecht`` / ``Alter`` sections of Tabelle A.  Used as an
+    # additional IPF margin (e.g. P24.1 PT-ticket type).
+    extract_margins: bool = False
 
 
 SPECS = [
@@ -104,8 +108,53 @@ SPECS = [
                "d_30_50", "d_50_100", "d_100p", "keine_feste_arbeit",
                "keine_angabe"], has_mittel=True),
     TableSpec("P17_1", 87, 88,
-              ["ja", "nein", "keine_angabe"]),
+              ["ja", "nein", "keine_angabe"],
+              extract_margins=True),
+    # P24.1 (page 105): Üblicherweise genutzte ÖPNV-Fahrkartenart I,
+    # Basis = Personen ab 14 Jahre.  Nine row% columns.  ``extract_margins``
+    # produces additional ``_by_sex.csv`` / ``_by_age.csv`` consumed by the
+    # categorical PT-ticket IPF in braunschweig.synthesis.population.enriched.
+    TableSpec("P24_1", 105, 106,
+              ["einzelfahrschein", "mehrfachkarte",
+               "deutschlandticket", "wochen_monat_ohne_abo",
+               "monat_abo_jahreskarte", "jobticket_semesterticket",
+               "anderes", "fahre_nie", "keine_angabe"],
+              extract_margins=True),
+    # P36.1 Mobilität am Stichtag (Mobilitätsquote, Basis = alle Personen).
+    TableSpec("P36_1", 195, 196,
+              ["nicht_mobil", "mobil", "unbekannt"]),
+    # W1 Hauptwegezweck (analog MiD 2008): Heimwege werden auf den
+    # vorherigen Weg-Zweck zurück-gemapped — daher keine eigene "home"-
+    # Kategorie. Basis = alle Wege.
+    TableSpec("W1", 231, 232,
+              ["arbeit", "dienst", "ausbildung", "einkauf",
+               "erledigung", "freizeit", "begleitung", "keine_angabe"]),
+    # W2 Hauptwegezweck (unter Berücksichtigung der Wegekette): Heimwege
+    # werden auf den ranghöchsten Zweck der Wegekette gemapped. Auch ohne
+    # explizite "home"-Kategorie.
+    TableSpec("W2", 233, 234,
+              ["arbeit", "dienst", "ausbildung", "einkauf",
+               "erledigung", "freizeit", "begleitung", "keine_angabe"]),
 ]
+
+# Sex labels in the ``Geschlecht`` section (PDF) -> short key written to CSV.
+SEX_LABELS = {
+    "männlich": "male",
+    "weiblich": "female",
+}
+
+# Age labels in the ``Alter`` section -> (age_lo, age_hi) inclusive bounds.
+AGE_BINS = {
+    "14 bis 17 Jahre":     (14, 17),
+    "18 bis 29 Jahre":     (18, 29),
+    "30 bis 39 Jahre":     (30, 39),
+    "40 bis 49 Jahre":     (40, 49),
+    "50 bis 59 Jahre":     (50, 59),
+    "60 bis 64 Jahre":     (60, 64),
+    "65 bis 74 Jahre":     (65, 74),
+    "75 bis 79 Jahre":     (75, 79),
+    "80 Jahre und älter":  (80, 999),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +264,40 @@ def _parse_gesamt(lines, num_cols, has_mittel):
     return None
 
 
+def _parse_labelled_rows(lines, allowed_labels, num_cols):
+    """Parse rows whose label is in ``allowed_labels`` (a set of strings).
+
+    Unlike :func:`_split_row`, this matches the label by **prefix** to
+    support labels that begin with a digit (e.g. ``"14 bis 17 Jahre"``),
+    which the numeric tokenizer would otherwise confuse with a value.
+    """
+    rows = []
+    sorted_labels = sorted(allowed_labels, key=len, reverse=True)
+    for raw in lines:
+        stripped = raw.strip()
+        match_label = None
+        for lbl in sorted_labels:
+            if stripped.startswith(lbl + " "):
+                match_label = lbl
+                break
+        if match_label is None:
+            continue
+        rest = stripped[len(match_label):].strip()
+        values = rest.split()
+        if len(values) < 2 + num_cols:
+            continue
+        n_w = _to_number(values[0])
+        n_u = _to_number(values[1])
+        pct = [_to_number(v) for v in values[2:2 + num_cols]]
+        rows.append({
+            "label": match_label,
+            "n_weighted": n_w,
+            "n_unweighted": n_u,
+            **{col: val for col, val in zip(range(num_cols), pct)},
+        })
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Extraction
 # ---------------------------------------------------------------------------
@@ -246,6 +329,42 @@ def extract_table(pdf, spec: TableSpec) -> pd.DataFrame:
     return df
 
 
+def extract_margins(pdf, spec: TableSpec) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Extract the ``Geschlecht`` and ``Alter`` rows of Tabelle A.
+
+    Returns ``(by_sex, by_age)`` with one row per category and the full
+    ticket-type column set.
+    """
+    text = pdf.pages[spec.page_a - 1].extract_text() or ""
+    lines = text.split("\n")
+    n = len(spec.columns)
+
+    sex_lines = _extract_section(lines, "Geschlecht", SECTION_HEADERS)
+    sex_rows = _parse_labelled_rows(sex_lines, set(SEX_LABELS), n)
+    by_sex = []
+    for r in sex_rows:
+        out = {"sex": SEX_LABELS[r["label"]],
+               "n_weighted": r["n_weighted"],
+               "n_unweighted": r["n_unweighted"]}
+        for i, col in enumerate(spec.columns):
+            out[col] = r.get(i)
+        by_sex.append(out)
+
+    age_lines = _extract_section(lines, "Alter", SECTION_HEADERS)
+    age_rows = _parse_labelled_rows(age_lines, set(AGE_BINS), n)
+    by_age = []
+    for r in age_rows:
+        lo, hi = AGE_BINS[r["label"]]
+        out = {"age_lo": lo, "age_hi": hi, "label": r["label"],
+               "n_weighted": r["n_weighted"],
+               "n_unweighted": r["n_unweighted"]}
+        for i, col in enumerate(spec.columns):
+            out[col] = r.get(i)
+        by_age.append(out)
+
+    return pd.DataFrame(by_sex), pd.DataFrame(by_age)
+
+
 def main() -> int:
     if not PDF.exists():
         sys.stderr.write(f"[mid-extract] PDF not found: {PDF}\n")
@@ -262,6 +381,20 @@ def main() -> int:
                 f"[mid-extract] {spec.code:6s} page {spec.page_a:3d} -> "
                 f"{out.name}  ({len(df)} rows, {n_kreise} Kreise)"
             )
+            if spec.extract_margins:
+                df_sex, df_age = extract_margins(pdf, spec)
+                out_sex = OUT_DIR / f"mid2023_{spec.code}_by_sex.csv"
+                out_age = OUT_DIR / f"mid2023_{spec.code}_by_age.csv"
+                df_sex.to_csv(out_sex, index=False, encoding="utf-8")
+                df_age.to_csv(out_age, index=False, encoding="utf-8")
+                print(
+                    f"[mid-extract] {spec.code:6s}        -> "
+                    f"{out_sex.name}  ({len(df_sex)} rows)"
+                )
+                print(
+                    f"[mid-extract] {spec.code:6s}        -> "
+                    f"{out_age.name}  ({len(df_age)} rows)"
+                )
 
     return 0
 

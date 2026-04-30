@@ -164,7 +164,7 @@ def execute(context) -> pd.DataFrame:
 
     print(
         "[braunschweig.data.census.pendler] "
-        "{:,} Kreis→Kreis flows | inbound to ZGB: {:,} | outbound: {:,} | "
+        "{:,} Kreis-to-Kreis flows | inbound to ZGB: {:,} | outbound: {:,} | "
         "intra-ZGB: {:,}".format(
             len(df),
             int(total_in),

@@ -22,28 +22,21 @@ as a best-effort approximation:
     medium      → "2600-3000"    (110-150%)
     high        → "3600-4500"    (150-200%)
     very_high   → "5000+"        (> 200%)
+
+The numeric H4 percentages and the class-midpoint € lookup live in
+``eqasim-data/data/braunschweig/mid/mid2023_H4_income_by_size.csv`` and
+``mid2023_class_midpoint_eur.csv`` (see scripts/seed_mid_constraint_tables.py).
 """
 
-import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.reference_tables import (
+    load_class_midpoint_eur,
+    load_income_by_size,
+)
 
-# MiD 2023 Tabelle H4 — Zeilengruppe 'Haushaltsgröße', Zeilen% in households.
-# (Rows from the PDF extraction — 5P+ needed a third parse since it trails.)
-#   size  : (sehr_niedrig, niedrig, mittel, hoch, sehr_hoch)
-# R-C splits the upstream household_size IPF target into 5 + 6+ bins; MiD
-# H4 lumps them as "5 Personen und mehr", so we duplicate the same income
-# distribution onto both keys to preserve the join.
-INCOME_BY_SIZE = {
-    "1":  (0.16, 0.14, 0.39, 0.26, 0.03),
-    "2":  (0.04, 0.15, 0.28, 0.38, 0.15),
-    "3":  (0.03, 0.03, 0.17, 0.55, 0.22),
-    "4":  (0.02, 0.04, 0.23, 0.51, 0.19),
-    "5":  (0.04, 0.08, 0.30, 0.44, 0.14),   # from H4 row "5 Personen und mehr"
-    "6+": (0.04, 0.08, 0.30, 0.44, 0.14),   # H4 lumps with 5P
-}
 
-# Approximation: MiD 5-class BMDV status → Bavaria GENESIS € bucket.
+# Bavaria GENESIS €-class ↔ position in the H4 quintile vector.
 # Only the "5000+" mapping is consumed downstream (high_income flag).
 INCOME_CLASS_MAP = [
     ("0-500",     0),   # sehr niedrig
@@ -53,27 +46,17 @@ INCOME_CLASS_MAP = [
     ("5000+",     4),   # sehr hoch
 ]
 
-# Class midpoints for computing a numeric €-income per person. Open upper
-# bound "5000+" is set to 6000 € (conservative estimate of the mean HH
-# income above the BMDV 5000 threshold per DESTATIS 2022 tables).
-# Consumed by braunschweig.synthesis.population.enriched to derive the
-# INKAR-scaled ``household_income_eur`` column.
-CLASS_MIDPOINT_EUR = {
-    "0-500":     250.0,
-    "1500-2000": 1750.0,
-    "2600-3000": 2800.0,
-    "3600-4500": 4050.0,
-    "5000+":     6000.0,
-}
-
 
 def configure(context):
-    pass
+    context.config("data_path")
 
 
 def execute(context):
+    data_path = context.config("data_path")
+    income_by_size = load_income_by_size(data_path)
+
     rows = []
-    for size, shares in INCOME_BY_SIZE.items():
+    for size, shares in income_by_size.items():
         for income_class, idx in INCOME_CLASS_MAP:
             rows.append({
                 "household_size": size,
@@ -85,3 +68,23 @@ def execute(context):
     df["household_size"] = df["household_size"].astype("category")
     df["income_class"] = df["income_class"].astype("category")
     return df[["household_size", "income_class", "weight"]]
+
+
+# Re-export for callers (e.g. braunschweig.synthesis.population.enriched)
+# that expect a module-level ``CLASS_MIDPOINT_EUR`` constant. Loaded lazily
+# the first time it is accessed so import works without a configured
+# data_path.
+def __getattr__(name):
+    if name == "CLASS_MIDPOINT_EUR":
+        return load_class_midpoint_eur(_default_data_path())
+    raise AttributeError(name)
+
+
+def _default_data_path() -> str:
+    """Fallback ``data_path`` for module-level globals (tests / scripts)."""
+    import os
+    from pathlib import Path
+    env = os.environ.get("EQASIM_DATA_PATH")
+    if env:
+        return env
+    return str(Path(__file__).resolve().parents[3] / "eqasim-data" / "data")

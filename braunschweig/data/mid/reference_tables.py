@@ -1,0 +1,350 @@
+"""
+Loaders for the MiD 2023 reference CSVs that replace the previously
+hard-coded constraint tables.
+
+These helpers are used by:
+  * ``braunschweig.data.mid.data`` for the per-person constraint tables
+    (car availability, bicycle availability, PT subscription).
+  * ``braunschweig.synthesis.population.enriched`` for the H7 / H12.3
+    Kreis-level vehicle-count distributions.
+  * ``braunschweig.data.census.household_income`` for the H4 income-by-
+    household-size matrix and the class-midpoint € lookup.
+
+All CSVs are produced by ``scripts/seed_mid_constraint_tables.py`` and
+live under ``<data_path>/braunschweig/mid/``. Running the seed script is
+the supported way to regenerate them; manual edits to the CSVs are also
+fine and become part of the data-provenance trail.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+# Subdirectory inside the synpp ``data_path`` where the seed CSVs live.
+MID_SUBDIR = os.path.join("braunschweig", "mid")
+
+
+def _path(data_path: str, filename: str) -> str:
+    return os.path.join(data_path, MID_SUBDIR, filename)
+
+
+def _read_csv(path: str) -> pd.DataFrame:
+    """Read a seed CSV that may have ``# ...`` comment header lines."""
+    return pd.read_csv(path, comment="#")
+
+
+# ---------------------------------------------------------------------------
+# P19 / P22 / P24.1 — long-form constraint tables
+# ---------------------------------------------------------------------------
+
+# Mapping CSV ``key`` (age dimension) → constraint dict consumed by
+# bavaria/synthesis/population/enriched.py:_apply_*_constraints.
+def _row_to_constraint(row: pd.Series) -> dict[str, Any]:
+    dim = row["dimension"]
+    target = float(row["target"])
+    if dim == "zone":
+        return {"zone": str(row["key"]), "target": target}
+    if dim == "sex":
+        return {"sex": str(row["key"]), "target": target}
+    if dim == "age":
+        lo = float(row["age_lo"]) if str(row["age_lo"]).strip() != "" else -math.inf
+        hi = float(row["age_hi"]) if str(row["age_hi"]).strip() != "" else math.inf
+        return {"age": (lo, hi), "target": target}
+    raise ValueError(f"Unknown constraint dimension: {dim!r}")
+
+
+def load_constraint_table(data_path: str, filename: str) -> list[dict[str, Any]]:
+    """Load a P19 / P22 / P24.1 constraint CSV into the list-of-dicts form
+    expected by ``braunschweig.synthesis.population.enriched``."""
+    path = _path(data_path, filename)
+    df = _read_csv(path)
+    expected = {"dimension", "key", "age_lo", "age_hi", "target"}
+    missing = expected - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            f"Constraint CSV {path} is missing columns: {sorted(missing)}"
+        )
+    return [_row_to_constraint(row) for _, row in df.iterrows()]
+
+
+# ---------------------------------------------------------------------------
+# H7 / H12.3 — Kreis × count-bucket share tables
+# ---------------------------------------------------------------------------
+
+def load_kreis_share_table(
+    data_path: str, filename: str, region_key: str = "Gesamt",
+) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
+    """Load a Kreis-level share CSV (e.g. H7 cars or H12.3 bikes).
+
+    Returns
+    -------
+    by_kreis
+        ``{ars5: shares}`` excluding the region row.
+    region
+        Shares for the region-wide fallback row (``ars5 == region_key``).
+    values
+        Numeric count buckets (e.g. ``[0, 1, 2, 3]``) parsed from the CSV
+        column headers.
+    """
+    df = _read_csv(_path(data_path, filename))
+    if "ars5" not in df.columns:
+        raise RuntimeError(f"{filename}: expected 'ars5' column")
+    bucket_cols = [c for c in df.columns if c != "ars5"]
+    try:
+        values = np.array([int(c) for c in bucket_cols], dtype=int)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{filename}: bucket column headers must be integers, got {bucket_cols!r}"
+        ) from exc
+
+    by_kreis: dict[str, np.ndarray] = {}
+    region: np.ndarray | None = None
+    for _, row in df.iterrows():
+        ars5 = str(row["ars5"])
+        shares = np.array([float(row[c]) for c in bucket_cols], dtype=float)
+        if ars5 == region_key:
+            region = shares
+        else:
+            by_kreis[ars5] = shares
+    if region is None:
+        raise RuntimeError(
+            f"{filename}: region row 'ars5={region_key}' is missing"
+        )
+    return by_kreis, region, values
+
+
+# ---------------------------------------------------------------------------
+# H4 — income-by-household-size matrix + class-midpoint €
+# ---------------------------------------------------------------------------
+
+H4_QUINTILE_COLUMNS = ("sehr_niedrig", "niedrig", "mittel", "hoch", "sehr_hoch")
+
+
+def load_income_by_size(data_path: str) -> dict[str, tuple[float, ...]]:
+    """Load the H4 ``household_size → quintile_shares`` mapping."""
+    df = _read_csv(_path(data_path, "mid2023_H4_income_by_size.csv"))
+    out: dict[str, tuple[float, ...]] = {}
+    for _, row in df.iterrows():
+        key = str(row["household_size"])
+        out[key] = tuple(float(row[c]) for c in H4_QUINTILE_COLUMNS)
+    return out
+
+
+def load_class_midpoint_eur(data_path: str) -> dict[str, float]:
+    """Load the income-class-midpoint € lookup."""
+    df = _read_csv(_path(data_path, "mid2023_class_midpoint_eur.csv"))
+    return {str(row["income_class"]): float(row["midpoint_eur"])
+            for _, row in df.iterrows()}
+
+
+# ---------------------------------------------------------------------------
+# P24.1 — categorical PT ticket type (full breakdown by Kreis)
+# ---------------------------------------------------------------------------
+
+# Order is significant: matches the column layout in the MiD PDF.
+PT_TICKET_CATEGORIES: tuple[str, ...] = (
+    "einzelfahrschein",
+    "mehrfachkarte",
+    "deutschlandticket",
+    "wochen_monat_ohne_abo",
+    "monat_abo_jahreskarte",
+    "jobticket_semesterticket",
+    "anderes",
+    "fahre_nie",
+    "keine_angabe",
+)
+
+# Subset of categories that grant unlimited rides on local PT and therefore
+# map to the legacy boolean ``has_pt_subscription = True``.  ``Wochen-/
+# Monatskarte ohne Abonnement`` is included because MiD asks "üblicherweise
+# genutzte Fahrkarte" — an unlimited weekly/monthly pass without auto-renew
+# is functionally a subscription within its validity period.
+PT_TICKET_FLATRATE: frozenset[str] = frozenset({
+    "deutschlandticket",
+    "wochen_monat_ohne_abo",
+    "monat_abo_jahreskarte",
+    "jobticket_semesterticket",
+})
+
+# Mapping Kreis name (as it appears in the MiD PDF) → AGS-5.  ``Gesamt``
+# rows are kept under the synthetic key ``"03ZGB"``.
+_PT_KREIS_TO_ARS5 = {
+    "Braunschweig": "03101",
+    "Wolfsburg": "03103",
+    "Salzgitter": "03102",
+    "Landkreis Gifhorn": "03151",
+    "Landkreis Peine": "03157",
+    "Landkreis Helmstedt": "03154",
+    "Landkreis Wolfenbüttel": "03158",
+    "Landkreis Goslar": "03153",
+    "Gesamt": "03ZGB",
+}
+
+
+def load_pt_subscription_breakdown(
+    data_path: str,
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Load the per-Kreis PT-ticket-type probability vectors from MiD P24.1.
+
+    Returns
+    -------
+    by_kreis : dict[ars5, np.ndarray]
+        Per-Kreis probability vector over ``PT_TICKET_CATEGORIES`` (sums to 1).
+    region : np.ndarray
+        Probability vector for the ZGB-aggregate (``Gesamt`` row) used as
+        fallback for persons with no Kreis assignment.
+
+    The MiD raw values are integer percentages that may sum to 99 or 101
+    because of rounding; we normalise each Kreis vector to sum to 1.
+    """
+    df = _read_csv(_path(data_path, "mid2023_P24_1.csv"))
+    cols = list(PT_TICKET_CATEGORIES)
+    by_kreis: dict[str, np.ndarray] = {}
+    region: np.ndarray | None = None
+    for _, row in df.iterrows():
+        ars5 = str(row["ars5"])
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        if vec.sum() <= 0:
+            # All zeros / missing — leave as uniform fallback.
+            vec = np.ones(len(cols)) / len(cols)
+        else:
+            vec = vec / vec.sum()
+        if ars5 == "03ZGB":
+            region = vec
+        else:
+            by_kreis[ars5] = vec
+    if region is None:
+        # Fallback: average across Kreise.
+        region = np.mean(list(by_kreis.values()), axis=0)
+    return by_kreis, region
+
+
+def load_pt_subscription_margins(
+    data_path: str,
+) -> tuple[dict[str, np.ndarray], list[tuple[int, int, np.ndarray]]]:
+    """Load the sex- and age-margin probability vectors from MiD P24.1.
+
+    Returns
+    -------
+    by_sex : dict[str, np.ndarray]
+        Mapping ``"male"|"female"`` -> probability vector over
+        ``PT_TICKET_CATEGORIES`` (sums to 1).
+    by_age : list[(age_lo, age_hi, np.ndarray)]
+        One entry per age band from the MiD table (``14..17``, ``18..29``,
+        …, ``80..999``).  Vector sums to 1.
+    """
+    cols = list(PT_TICKET_CATEGORIES)
+    df_sex = _read_csv(_path(data_path, "mid2023_P24_1_by_sex.csv"))
+    by_sex: dict[str, np.ndarray] = {}
+    for _, row in df_sex.iterrows():
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        s = vec.sum()
+        by_sex[str(row["sex"])] = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
+
+    df_age = _read_csv(_path(data_path, "mid2023_P24_1_by_age.csv"))
+    by_age: list[tuple[int, int, np.ndarray]] = []
+    for _, row in df_age.iterrows():
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        s = vec.sum()
+        norm = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
+        by_age.append((int(row["age_lo"]), int(row["age_hi"]), norm))
+    return by_sex, by_age
+
+
+# ---------------------------------------------------------------------------
+# MiD P17.1 — Driving licence (PKW-Führerscheinbesitz)
+# ---------------------------------------------------------------------------
+#
+# Categories from MiD P17.1 (rows are people aged 17+; below 17 driving is
+# legally impossible, so persons below the minimum-age threshold are forced
+# to ``nein`` deterministically before sampling).
+LICENSE_CATEGORIES: tuple[str, ...] = ("ja", "nein", "keine_angabe")
+
+# ``has_driving_license`` is the boolean derived attribute used downstream
+# (eqasim, MATSim).  We map the categorical answer onto it via:
+#   ja            -> True
+#   nein          -> False
+#   keine_angabe  -> False  (conservative: treat unknown as no licence)
+LICENSE_TRUE: frozenset[str] = frozenset({"ja"})
+
+# Minimum legal driving age in Germany for the regular Pkw-Führerschein
+# (Klasse B): 18 years.  We deliberately ignore the BF17 special case
+# (begleitetes Fahren ab 17, common in Niedersachsen) because it requires
+# an accompanying licensed adult and does not grant independent car use.
+# MiD reports licence ownership starting at 14 to keep the denominator
+# consistent across tables; we treat all responses below 18 as "nein"
+# deterministically before the IPF-based assignment runs.
+LICENSE_MIN_AGE: int = 18
+
+
+def load_license_breakdown(
+    data_path: str,
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Load the per-Kreis driving-licence probability vectors from MiD P17.1.
+
+    Mirrors :func:`load_pt_subscription_breakdown` but for the
+    licence-ownership table (``ja`` / ``nein`` / ``keine_angabe``).
+
+    Returns
+    -------
+    by_kreis : dict[ars5, np.ndarray]
+        Per-Kreis probability vector over ``LICENSE_CATEGORIES`` (sums to 1).
+    region : np.ndarray
+        Probability vector for the ZGB-aggregate (``Gesamt`` row), used as
+        fallback for persons with no Kreis assignment.
+    """
+    df = _read_csv(_path(data_path, "mid2023_P17_1.csv"))
+    cols = list(LICENSE_CATEGORIES)
+    by_kreis: dict[str, np.ndarray] = {}
+    region: np.ndarray | None = None
+    for _, row in df.iterrows():
+        ars5 = str(row["ars5"])
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        if vec.sum() <= 0:
+            vec = np.ones(len(cols)) / len(cols)
+        else:
+            vec = vec / vec.sum()
+        if ars5 == "03ZGB":
+            region = vec
+        else:
+            by_kreis[ars5] = vec
+    if region is None:
+        region = np.mean(list(by_kreis.values()), axis=0)
+    return by_kreis, region
+
+
+def load_license_margins(
+    data_path: str,
+) -> tuple[dict[str, np.ndarray], list[tuple[int, int, np.ndarray]]]:
+    """Load the sex- and age-margin probability vectors from MiD P17.1.
+
+    Returns
+    -------
+    by_sex : dict[str, np.ndarray]
+        Mapping ``"male"|"female"`` -> probability vector over
+        ``LICENSE_CATEGORIES`` (sums to 1).
+    by_age : list[(age_lo, age_hi, np.ndarray)]
+        One entry per MiD age band (``14..17``, ``18..29``, …, ``80..999``);
+        each vector sums to 1.
+    """
+    cols = list(LICENSE_CATEGORIES)
+    df_sex = _read_csv(_path(data_path, "mid2023_P17_1_by_sex.csv"))
+    by_sex: dict[str, np.ndarray] = {}
+    for _, row in df_sex.iterrows():
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        s = vec.sum()
+        by_sex[str(row["sex"])] = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
+
+    df_age = _read_csv(_path(data_path, "mid2023_P17_1_by_age.csv"))
+    by_age: list[tuple[int, int, np.ndarray]] = []
+    for _, row in df_age.iterrows():
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        s = vec.sum()
+        norm = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
+        by_age.append((int(row["age_lo"]), int(row["age_hi"]), norm))
+    return by_sex, by_age

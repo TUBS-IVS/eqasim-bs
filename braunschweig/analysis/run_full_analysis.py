@@ -1,0 +1,97 @@
+"""Run the full Braunschweig analysis suite for one eqasim run.
+
+Wrapper that chains the two analysis tools currently available in this
+repo so a single command produces every artefact for a given run:
+
+  1. ``braunschweig.analysis.dashboard.build_dashboard`` — rebuilds the
+     interactive dashboard with the new run added (writes into
+     ``braunschweig/analysis/dashboard/runs/<run_id>/``).
+  2. ``braunschweig.analysis.run_mid_validation`` — writes per-table
+     CSVs, PNGs, ``report.json`` and ``summary.md`` into
+     ``<output-dir>/analysis/mid_validation/`` (or the path given via
+     ``--analysis-out``).
+
+Usage (PowerShell, conda env `eqasim` activated):
+
+    python -m braunschweig.analysis.run_full_analysis `
+        --output-dir eqasim-data/output_bs_25pct_parking `
+        --sim-cache  eqasim-data/cache_bs_25pct_parking `
+        --label      "25pct_parking"
+
+Pass ``--skip-dashboard`` to only refresh the MiD-validation outputs,
+or ``--skip-mid`` to only rebuild the dashboard.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+
+from braunschweig.analysis import run_mid_validation as _mid
+from braunschweig.analysis.dashboard import build_dashboard as _dash
+
+LOGGER = logging.getLogger("braunschweig.analysis.full")
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s",
+    )
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--sim-cache", required=False, default=None)
+    ap.add_argument("--prefix", required=False, default=None)
+    ap.add_argument("--analysis-out", required=False, default=None)
+    ap.add_argument("--label", required=False, default=None)
+    ap.add_argument("--sample-rate", required=False, type=float, default=None)
+    ap.add_argument("--notes", required=False, default="")
+    ap.add_argument("--skip-dashboard", action="store_true")
+    ap.add_argument("--skip-mid", action="store_true")
+    ns = ap.parse_args(argv)
+
+    output_dir = Path(ns.output_dir).resolve()
+
+    if not ns.skip_dashboard:
+        if ns.sim_cache is None:
+            ap.error("--sim-cache is required unless --skip-dashboard is set")
+        LOGGER.info("Building dashboard for %s", output_dir)
+        dash_argv = [
+            "--output-dir",
+            str(output_dir),
+            "--sim-cache",
+            str(Path(ns.sim_cache).resolve()),
+        ]
+        if ns.label:
+            dash_argv += ["--label", ns.label]
+        if ns.notes:
+            dash_argv += ["--notes", ns.notes]
+        if ns.sample_rate is not None:
+            dash_argv += ["--sample-rate", str(ns.sample_rate)]
+        # build_dashboard.main has no argv parameter; we patch sys.argv.
+        old_argv = sys.argv[:]
+        sys.argv = ["build_dashboard"] + dash_argv
+        try:
+            _dash.main()
+        finally:
+            sys.argv = old_argv
+
+    if not ns.skip_mid:
+        LOGGER.info("Running MiD validation for %s", output_dir)
+        mid_argv = ["--output-dir", str(output_dir)]
+        if ns.prefix:
+            mid_argv += ["--prefix", ns.prefix]
+        if ns.analysis_out:
+            mid_argv += ["--analysis-out", str(Path(ns.analysis_out).resolve())]
+        if ns.label:
+            mid_argv += ["--label", ns.label]
+        _mid.main(mid_argv)
+
+    LOGGER.info("Full analysis complete for %s", output_dir)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -188,7 +188,9 @@ def mode_share_overall() -> pd.DataFrame:
     trips = io.trips_full()
     trips["mid_mode"] = trips["mode"].map(io.map_mode)
     counts = trips["mid_mode"].value_counts(normalize=True).rename("synth_share")
-    df = counts.reset_index().rename(columns={"index": "mode"})
+    # pandas <2.0 named the index column "index"; pandas >=2.0 keeps the
+    # Series-index name ("mid_mode"). Rename both spellings to "mode".
+    df = counts.reset_index().rename(columns={"index": "mode", "mid_mode": "mode"})
     df["mid_share"] = df["mode"].map(MID_BASELINE["mode_share"])
     df["deviation_pp"] = (df["synth_share"] - df["mid_share"]) * 100
     return df
@@ -276,7 +278,8 @@ def purpose_mix() -> pd.DataFrame:
     """
     trips = io.trips_full().copy()
     out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
-    out = out.rename(columns={"index": "purpose"})
+    # pandas <2.0 → "index"; pandas >=2.0 → "following_purpose".
+    out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
     out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix"])
     out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
     return out
@@ -293,6 +296,84 @@ def purpose_mix_raw() -> pd.DataFrame:
     return purpose_mix()
 
 
+def purpose_mix_no_home() -> pd.DataFrame:
+    """Purpose mix excluding ``home`` legs, normalised to 100 %.
+
+    Compared against MiD 2023 W1 (``analog MiD 2008``) which uses the
+    same convention: Heimwege werden auf den vorherigen Weg-Zweck
+    zurück-gemapped und tauchen nicht als eigene Kategorie auf. This is
+    the literature-standard view of trip-purpose distribution and the
+    correct comparison for the model.
+
+    Source: ``eqasim-data/data/braunschweig/mid/mid2023_W1.csv``
+    (Gesamt = 03ZGB).  Mapping eqasim → W1:
+      work       ← Arbeit + Dienst
+      education  ← Ausbildung
+      shop       ← Einkauf
+      other      ← Erledigung + Begleitung   (eqasim has no "escort")
+      leisure    ← Freizeit
+    """
+    trips = io.trips_full().copy()
+    trips = trips[trips["following_purpose"] != "home"]
+    if len(trips) == 0:
+        return pd.DataFrame(columns=["purpose", "synth_share", "mid_share", "deviation_pp"])
+    out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
+    out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
+    out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix_w1"])
+    out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
+    return out.sort_values("synth_share", ascending=False).reset_index(drop=True)
+
+
+def mobility_quote() -> dict:
+    """Share of persons with at least one trip on the simulation day.
+
+    Compared against MiD 2023 P36.1 (``Mobilität am Stichtag``,
+    Basis = alle Personen).  Source:
+    ``eqasim-data/data/braunschweig/mid/mid2023_P36_1.csv``.
+
+    Returns dict with::
+
+        {
+          "synth_total":   <synth share>,
+          "mid_total":     0.80,
+          "deviation_pp":  <synth - mid> * 100,
+          "per_kreis": [   # one row per ZGB-8 Kreis
+            {"ars5", "kreis_name", "synth_share", "mid_share", "deviation_pp"},
+            ...
+          ],
+        }
+    """
+    persons = io.persons_with_kreis()[["person_id", "ars5"]]
+    trips = io.load_trips()[["person_id"]]
+    mobile_ids = set(trips["person_id"].unique())
+    persons = persons.copy()
+    persons["mobile"] = persons["person_id"].isin(mobile_ids).astype(int)
+
+    total_share = float(persons["mobile"].mean())
+    mid_total = MID_BASELINE["mobility_quote"]
+
+    per_kreis_rows = []
+    grouped = persons[persons["ars5"].isin(ZGB8.keys())].groupby("ars5")
+    for ars5, g in grouped:
+        synth_share = float(g["mobile"].mean())
+        mid_share = MID_BASELINE["mobility_quote_per_kreis"].get(ars5)
+        per_kreis_rows.append({
+            "ars5": ars5,
+            "kreis_name": ZGB8.get(ars5, ars5),
+            "n_persons": int(len(g)),
+            "synth_share": synth_share,
+            "mid_share": mid_share,
+            "deviation_pp": (synth_share - mid_share) * 100 if mid_share is not None else None,
+        })
+
+    return {
+        "synth_total": total_share,
+        "mid_total": mid_total,
+        "deviation_pp": (total_share - mid_total) * 100,
+        "per_kreis": per_kreis_rows,
+    }
+
+
 def activity_chains_top(n: int = 15) -> pd.DataFrame:
     """Top activity chains across the day."""
     trips = io.load_trips()
@@ -304,7 +385,8 @@ def activity_chains_top(n: int = 15) -> pd.DataFrame:
         .rename("chain")
         .reset_index()
     )
-    out = chains["chain"].value_counts().head(n).rename("count").reset_index()
-    out = out.rename(columns={"index": "chain"})
-    out["share"] = out["count"] / len(chains)
-    return out
+    counts = chains["chain"].value_counts().head(n).rename("count").reset_index()
+    # pandas <2.0 produces ["index", "count"]; pandas >=2.0 produces ["chain", "count"].
+    counts = counts.rename(columns={"index": "chain"})
+    counts["share"] = counts["count"] / len(chains)
+    return counts

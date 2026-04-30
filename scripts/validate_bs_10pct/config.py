@@ -50,6 +50,46 @@ MID_BASELINE = {
         "escort": 0.05,
         "home": 0.15,
     },
+    # MiD 2023 W1 (Großraum BS, p231): Hauptwegezweck "analog MiD 2008".
+    # Heimwege werden auf den Zweck des Hinwegs zurück-gemapped, daher
+    # gibt es keine eigene "home"-Kategorie. Quelle:
+    # eqasim-data/data/braunschweig/mid/mid2023_W1.csv (Gesamt = 03ZGB).
+    # Das ist die in der Literatur übliche Darstellung; wir vergleichen
+    # synthetische Wege ohne "home" gegen diese Verteilung in
+    # purpose_mix_no_home(). Mapping eqasim → W1:
+    #   work     ← Arbeit + Dienst   (13 + 16 = 29 %)
+    #   education← Ausbildung        ( 6 %)
+    #   shop     ← Einkauf           (16 %)
+    #   other    ← Erledigung        (11 %)
+    #   leisure  ← Freizeit          (29 %)
+    #   escort   ← Begleitung        ( 8 %)
+    # Summe ohne "keine Angabe" (1 %), normiert auf 100 %.
+    # Hinweis: Der eqasim-Pipeline-Output kennt keine eigene "escort"-
+    # Kategorie (Begleitwege werden auf "other" abgebildet). Damit der
+    # Vergleich apples-to-apples bleibt, fassen wir Erledigung +
+    # Begleitung MiD-seitig ebenfalls zu "other" zusammen.
+    "purpose_mix_w1": {
+        "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)
+        "education":  6 / 99,               # 0.061  (Ausbildung)
+        "shop":      16 / 99,               # 0.162  (Einkauf)
+        "other":     (11 + 8) / 99,         # 0.192  (Erledigung + Begleitung)
+        "leisure":   29 / 99,               # 0.293  (Freizeit)
+    },
+    # MiD 2023 P36.1 (p195): Mobilität am Stichtag (Mobilitätsquote).
+    # Anteil Personen mit mindestens einem Weg am Stichtag, Basis = alle
+    # Personen (inkl. Kinder). Quelle: mid2023_P36_1.csv (Gesamt 03ZGB).
+    # Die "unbekannt"-Spalte (1 %) wird ignoriert.
+    "mobility_quote": 0.80,
+    "mobility_quote_per_kreis": {
+        "03101": 0.81,   # Braunschweig
+        "03102": 0.80,   # Salzgitter
+        "03103": 0.76,   # Wolfsburg
+        "03151": 0.83,   # Gifhorn
+        "03153": 0.75,   # Goslar
+        "03154": 0.83,   # Helmstedt
+        "03157": 0.79,   # Peine
+        "03158": 0.84,   # Wolfenbüttel
+    },
     "car_occupancy": 1.42,
 }
 
@@ -71,4 +111,5 @@ THRESHOLDS = {
     "trip_distance_km": (2.0, 5.0),
     "trip_duration_min": (3.0, 8.0),
     "purpose_mix_l1": (0.10, 0.20),
+    "mobility_quote_pp": (3.0, 8.0),
 }

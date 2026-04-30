@@ -109,8 +109,88 @@ None of these are required for `synthesis.output`.
 |---|---------|--------|-------------|---------|
 | D1 | **OSM Niedersachsen PBF** (same file as C3) | https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf | `osm/niedersachsen-latest.osm.pbf` | ODbL 1.0 |
 | D2 | **GTFS Deutschland (Delfi) or ZGB feeds** (zip) | https://www.opendata-oepnv.de/ht/de/organisation/delfi/startseite or `https://www.zgb.de` | `gtfs/<any>.zip` | DELFI / ZGB terms |
+| D3 | **VRB tariff-zone mapping** for `braunschweig.data.vrb.zones` (consumed by Java `AddTransitZoneInformation` → ÖV-fare module). Built from the public VRB website (preferred) or from a Waben polygon delivery (fallback) | https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen (HTML) — alt: VRB / LGLN polygon delivery | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` (or `vrb/waben.gpkg` → same script) | VRB terms |
 
 GTFS should be pre-clipped to the ZGB bounding box (see below).
+
+D3 preprocessing (build `vrb/stations.json` once, in MVG schema):
+
+**Recommended — scrape the public VRB tariff-zone page** (no licence
+delivery required; ~9 000 / 25 000 GTFS stops in the ZGB bbox match):
+
+```powershell
+Invoke-WebRequest "https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen" `
+    -OutFile eqasim-data/data/vrb/tarifzonen.html
+
+python scripts/build_vrb_stations_json.py `
+    --vrb-html eqasim-data/data/vrb/tarifzonen.html `
+    --gtfs eqasim-data/data/gtfs/latest.zip `
+    --out eqasim-data/data/vrb/stations.json
+```
+
+**Fallback — Waben polygon spatial join** (when VRB delivers an
+authoritative shapefile):
+
+```powershell
+python scripts/build_vrb_stations_json.py `
+    --waben eqasim-data/data/vrb/waben.gpkg `
+    --waben-zone-column WABE `
+    --gtfs eqasim-data/data/gtfs/latest.zip `
+    --out eqasim-data/data/vrb/stations.json
+```
+
+The output JSON mirrors the MVG REST schema (`name`, `latitude`,
+`longitude`, `tariffZones`) so `braunschweig.data.vrb.zones` reuses the
+MVG algorithm bit-for-bit (400 m buffered MultiPoint per zone, EPSG:25832).
+
+## E. Education capacity inputs (Phase 0 of feature-education-gravity-bs-1)
+
+Required only when running with `gravity_education_separate: true`
+(see `plan/feature-education-gravity-bs-1.md`). The default off-state
+of the flag does not consult any of these files; verify them only when
+the feature is being calibrated.
+
+| # | Dataset | Source | Target path | Licence |
+|---|---------|--------|-------------|---------|
+| E1 | **LSN Schulstatistik — Schüler nach Schulform und Gemeinde** (allgemein bildende Schulen, table `K3300101` LSN / `21111-04-01-4` RDB) | https://www1.nls.niedersachsen.de/statistik/ — alt: https://www.regionalstatistik.de/genesis/online/ | `braunschweig/lsn/lsn_schulen_<year>.csv` | dl-de/by-2-0 (LSN) |
+| E2 | **LSN Schulstatistik — berufsbildende Schulen** (table `K3320101` LSN / `21121-04-01-4` RDB) | same | `braunschweig/lsn/lsn_berufsschulen_<year>.csv` | dl-de/by-2-0 (LSN) |
+| E3 | **DESTATIS Hochschulstatistik — Studierende nach Studienort** (table `21311-0007`) | https://www-genesis.destatis.de/genesis/online | `braunschweig/destatis/hochschulen_<year>.csv` | dl-de/by-2-0 (DESTATIS) |
+| E4 | **Hochschul-Standorte ZGB-8** (curated mapping institution → 8-digit AGS) | https://www.hochschulkompass.de/ | `braunschweig/education/hochschul_orte_zgb.csv` | HRK terms (research reuse) |
+| E5 | **OSM education POIs cross-check** (derivative of C3 + the main `osm_pois.parquet` artefact) | derived locally | `braunschweig/osm/osm_education_pois.gpkg` | ODbL 1.0 |
+
+### E1 / E2 — LSN download
+
+```powershell
+python scripts/download_lsn_schulen.py `
+    --dest eqasim-data/data/braunschweig/lsn/lsn_schulen_<year>.csv `
+    --url '<authenticated GENESIS / RDB CSV URL>'
+```
+
+The script also runs in verify-only mode (no `--url`) to re-check the
+SHA-256 of an already-present file. Pin the digest with
+`--update-checksums` after the first verified download.
+
+### E3 — DESTATIS download
+
+```powershell
+python scripts/download_destatis_hochschulen.py `
+    --dest eqasim-data/data/braunschweig/destatis/hochschulen_<year>.csv `
+    --url '<authenticated GENESIS REST URL>'
+```
+
+### E5 — OSM education POI cross-check
+
+After the main `osm_pois.parquet` was produced by
+`scripts/preprocess_osm_pois.py`:
+
+```powershell
+python scripts/extract_osm_education_pois.py `
+    --pois eqasim-data/data/braunschweig/preprocessed/osm_pois.parquet `
+    --out  eqasim-data/data/braunschweig/osm/osm_education_pois.gpkg
+```
+
+The GeoPackage is purely a QGIS cross-check artefact and is not
+consumed by the synpp DAG.
 
 ---
 

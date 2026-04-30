@@ -83,6 +83,67 @@ def evaluate_gravity(population, employees, friction):
     return flow
 
 
+def _build_origin_slope_vector(
+    municipalities: list[str],
+    default_slope: float,
+    overrides: dict | None,
+    df_regiostar: pd.DataFrame | None,
+) -> np.ndarray:
+    """Return one slope per origin, optionally overridden by RegioStaR-7.
+
+    ``overrides`` maps RegioStaR-7 codes (int 71..77) to slope values
+    (negative floats, e.g. ``-0.05``). Origins whose commune_id is not
+    in ``df_regiostar`` or whose RegioStaR-7 code has no override fall
+    back to ``default_slope``. The returned array has shape ``(N,)``
+    aligned with ``municipalities`` and is broadcast against the
+    distance matrix as ``slope[:, None] * distances``.
+    """
+    slope_vec = np.full(len(municipalities), float(default_slope))
+    if not overrides or df_regiostar is None or df_regiostar.empty:
+        return slope_vec
+
+    typed_overrides = {int(k): float(v) for k, v in overrides.items()}
+    rs7_lookup = (
+        df_regiostar.set_index("commune_id")["regiostar7"]
+        .astype("Int64")
+        .to_dict()
+    )
+
+    def _normalize(cid: str) -> str:
+        """Convert 12-digit ARS to 8-digit AGS if needed.
+
+        ``braunschweig.ipf.attributed`` produces commune_id in the full
+        12-character ARS format (Land(2)+RB(1)+Kreis(2)+VG(4)+Gem(3)),
+        while ``braunschweig.data.bbsr.regiostar`` keys on the 8-digit
+        AGS = ARS[0:5] + ARS[9:12]. Other consumers may already pass
+        the 8-digit form; in that case the slice is a no-op.
+        """
+        s = str(cid)
+        if len(s) == 12:
+            return s[0:5] + s[9:12]
+        return s
+
+    matched = 0
+    used_codes: dict[int, int] = {}
+    for i, commune_id in enumerate(municipalities):
+        key = _normalize(commune_id)
+        rs7 = rs7_lookup.get(key)
+        if rs7 is None or pd.isna(rs7):
+            continue
+        rs7 = int(rs7)
+        if rs7 in typed_overrides:
+            slope_vec[i] = typed_overrides[rs7]
+            matched += 1
+            used_codes[rs7] = used_codes.get(rs7, 0) + 1
+
+    print(
+        "[braunschweig.gravity.model] per-RegioStaR slope active: "
+        f"{matched}/{len(municipalities)} origins overridden "
+        f"(default={default_slope}; overrides per RS7 = {used_codes})"
+    )
+    return slope_vec
+
+
 def _execute_gravity_base(context):
     """Run the bavaria-style Gemeinde x Gemeinde gravity model.
 
@@ -92,6 +153,7 @@ def _execute_gravity_base(context):
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
     df_population = context.stage("braunschweig.ipf.attributed")
     df_employees = context.stage("braunschweig.data.census.employees")
+    df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
 
     df_population = df_population.rename(columns={
         "commune_id": "origin_id",
@@ -129,8 +191,21 @@ def _execute_gravity_base(context):
     slope = context.config("gravity_slope")
     constant = context.config("gravity_constant")
     diagonal = context.config("gravity_diagonal")
+    slope_overrides = context.config("gravity_slope_by_regiostar7")
 
-    friction = np.exp(slope * distances + constant) + np.eye(len(municipalities)) * diagonal
+    # Per-origin slope: defaults to scalar ``slope`` for every Gemeinde.
+    # When ``gravity_slope_by_regiostar7`` is non-empty, origins whose
+    # RegioStaR-7 code matches an override key receive that slope; the
+    # friction matrix becomes ``exp(slope_vec[:, None] * distances + c)``
+    # so each row (origin Gemeinde) decays at its own urban/rural rate.
+    slope_vec = _build_origin_slope_vector(
+        municipalities, slope, slope_overrides, df_regiostar,
+    )
+
+    friction = (
+        np.exp(slope_vec[:, None] * distances + constant)
+        + np.eye(len(municipalities)) * diagonal
+    )
     flow = evaluate_gravity(population, employees, friction)
 
     df_matrix = pd.DataFrame({
@@ -172,9 +247,12 @@ def configure(context):
     context.stage("eqasim_common.gravity.distance_matrix")
     context.stage("braunschweig.ipf.attributed")
     context.stage("braunschweig.data.census.employees")
+    context.stage("braunschweig.data.bbsr.regiostar")
     context.config("gravity_slope", DEFAULT_SLOPE)
     context.config("gravity_constant", DEFAULT_CONSTANT)
     context.config("gravity_diagonal", DEFAULT_DIAGONAL)
+    # Optional dict {regiostar7_code: slope}. Empty = use scalar slope.
+    context.config("gravity_slope_by_regiostar7", {})
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")

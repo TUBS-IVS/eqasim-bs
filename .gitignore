@@ -1,16 +1,37 @@
-__pycache__
-env
-cache
-output
+# Python cache files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
 
-data/nantes_2015
-data/lyon_2015
-.vscode
-.idea
+# Virtual environments
+env/
+venv/
+.venv/
+ENV/
 
+# Local IDE settings
+.vscode/
+.idea/
+
+# Local caches
+cache/
+**/cache/
+.cache/
+**/.cache/
+
+# Local outputs
+output/
+**/output/
+
+# Local pipeline data
+data/nantes_2015/
+data/lyon_2015/
+
+# Local configuration files
 config_local_*.yml
-# Track Braunschweig configs explicitly (they are versioned project artefacts,
-# not personal user overrides like config_local_lyon.yml etc.).
+
+# Track Braunschweig configs explicitly because they are versioned project artefacts.
 !config_local_braunschweig.yml
 !config_local_braunschweig_10pct.yml
 !config_local_braunschweig_25pct.yml
@@ -23,10 +44,71 @@ pipeline_*.log
 hh_gap.txt
 zensus_hh_inspect.txt
 
-# Local pipeline data (large inputs, caches, outputs) — keep folder structure only.
-# Use /* (not /) on the parent so the explicit negations below take effect:
-# git ignores files inside excluded directories regardless of negation rules.
+# Geospatial vector data
+*.gpkg
+*.gpkg-wal
+*.gpkg-shm
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qpj
+*.sbn
+*.sbx
+*.qix
+*.fix
+*.shp.xml
+*.geojson
+*.jsonl
+*.fgb
+*.kml
+*.kmz
+
+# Geospatial raster data
+*.tif
+*.tiff
+*.vrt
+*.asc
+*.img
+*.aux
+*.aux.xml
+*.ovr
+
+# Spatial databases and tiles
+*.sqlite
+*.sqlite3
+*.db
+*.mbtiles
+*.gdb/
+*.geodatabase/
+
+# Compressed data archives
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# Local pipeline data directory.
+# Keep only the folder structure and checklist documents.
 eqasim-data/*
 !eqasim-data/.gitkeep
 !eqasim-data/DOWNLOAD_CHECKLIST.md
 !eqasim-data/DOWNLOAD_CHECKLIST_BS.md
+
+# Internal documentation, plans, AI agent skills, code reviews, and private notes.
+# Ignore markdown broadly and re-include only the public repository interface.
+*.md
+!CLAUDE.md
+!README.md
+!eqasim-data/DOWNLOAD_CHECKLIST.md
+!eqasim-data/DOWNLOAD_CHECKLIST_BS.md
+
+# Private planning and quality folders
+plan/
+quality/
+.github/skills/
+docs/codebase/
+/memories/
