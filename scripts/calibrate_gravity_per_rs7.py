@@ -174,6 +174,22 @@ def aggregate_by_rs7(
     return out
 
 
+def kreis_distance_to_zgb(kreise, zgb=ZGB8):
+    """Euclidean distance (km) of each Kreis centroid to the ZGB centroid.
+
+    The ZGB centroid is the unweighted mean of the ZGB-8 Kreis centroids.
+    ``kreise`` must have columns ``ars5`` and ``centroid`` (shapely points in a
+    metric CRS, as returned by ``load_kreis_centroids``).
+    """
+    zgb_pts = [p for a, p in zip(kreise["ars5"], kreise["centroid"]) if a in set(zgb)]
+    cx = float(np.mean([p.x for p in zgb_pts]))
+    cy = float(np.mean([p.y for p in zgb_pts]))
+    return pd.DataFrame({
+        "ars5": list(kreise["ars5"]),
+        "dist_km": [float(np.hypot(p.x - cx, p.y - cy) / 1000.0) for p in kreise["centroid"]],
+    })
+
+
 def load_mid_mean() -> pd.DataFrame:
     df = pd.read_csv(MID_P13_CSV, dtype={"ars5": str})
     return df[["ars5", "kreis", "mittel"]].rename(columns={"mittel": "mid_mean_km"})
