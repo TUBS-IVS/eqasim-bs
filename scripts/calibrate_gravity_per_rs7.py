@@ -216,58 +216,81 @@ def select_ring_anchors(dist_to_zgb, kreis_to_rs7, required_rs7,
     return float(max_radius_km), sorted(within["ars5"].tolist()), counts
 
 
-def is_identified(sub, min_obs_margin=10):
-    """True if a destination-FE Poisson GLM on ``sub`` is over-identified.
+def fit_panel_rs7_slopes(df, origins, kreis_to_rs7, max_distance_km, rescale_to=-0.065):
+    """Identified per-RS7 distance-decay slopes from ONE full-panel Poisson GLM.
 
-    Model params = (n_distinct_destinations - 1) dummies + const + distance.
-    Require n_obs >= n_params + min_obs_margin and n_obs >= 10.
+    Model::
+
+        log E[flow_ij] = origin_FE_i + dest_FE_j
+                         + sum_c delta_c * d_ij * 1[RS7(origin_i) = c]
+
+    A per-origin fit with destination fixed effects is rank deficient on the BA
+    Pendleratlas (one flow row per origin-destination pair): for a single origin
+    the per-destination dummies span the full row space, so distance is
+    collinear with them and delta is not identified. Pooling all anchor origins
+    fixes this -- each per-RS7 slope ``delta_c`` is identified from the
+    within-origin distance variation shared across the many origins of class c.
+
+    Parameters
+    ----------
+    df : DataFrame[orig_ars, dest_ars, distance_km, flow]
+    origins : iterable of origin ARS to include as panel rows.
+    kreis_to_rs7 : DataFrame[ars5, dominant_rs7] -- each origin's RS7 class.
+    max_distance_km : float -- distance-band cap (km).
+    rescale_to : float or None. If set, slopes are scaled so their
+        flow-weighted mean equals this value (preserving the regional mean
+        commute distance); None returns the raw identified slopes.
+
+    Returns
+    -------
+    (slopes, diagnostics): ``slopes`` is ``{rs7_code: slope}``; ``diagnostics``
+    carries raw slopes, standard errors, the flow-weighted mean, the rescale
+    factor, n_obs, n_params, convergence flag, and per-code flow totals.
     """
-    n_obs = len(sub)
-    n_dest = sub["dest_ars"].nunique()
-    n_params = (n_dest - 1) + 2
-    return n_obs >= 10 and n_obs >= n_params + min_obs_margin
+    panel = df[(df["orig_ars"].isin(set(origins)))
+               & (df["distance_km"] <= max_distance_km)
+               & (df["flow"] > 0)].copy()
+    panel = panel.merge(
+        kreis_to_rs7[["ars5", "dominant_rs7"]].rename(columns={"ars5": "orig_ars"}),
+        on="orig_ars", how="left",
+    ).dropna(subset=["dominant_rs7"])
+    panel["dominant_rs7"] = panel["dominant_rs7"].astype(int)
 
+    origin_fe = pd.get_dummies(panel["orig_ars"], prefix="O", drop_first=True).astype(float)
+    dest_fe = pd.get_dummies(panel["dest_ars"], prefix="G", drop_first=True).astype(float)
+    codes = [int(c) for c in sorted(panel["dominant_rs7"].unique())]
+    slope_cols = {
+        f"d_rs{c}": (panel["distance_km"] * (panel["dominant_rs7"] == c)).astype(float).values
+        for c in codes
+    }
+    design = sm.add_constant(
+        pd.concat([origin_fe, dest_fe, pd.DataFrame(slope_cols, index=panel.index)], axis=1),
+        has_constant="add",
+    )
+    result = sm.GLM(
+        panel["flow"].astype(float).to_numpy(),
+        design.to_numpy(),
+        family=sm.families.Poisson(),
+    ).fit(maxiter=300, tol=1e-8)
 
-def _is_aggregate_flow_data(sub):
-    """True if every destination appears exactly once (aggregate OD-matrix pattern).
-
-    BA Pendleratlas provides one pre-summed flow per origin-destination Kreis
-    pair.  In that case the Poisson GLM with destination fixed effects is still
-    identifiable as long as n_obs >= 10 — Poisson deviance converges fine with
-    one observation per cell, unlike logistic regression.
-    """
-    return sub["dest_ars"].nunique() == len(sub)
-
-
-def fit_per_kreis_beta_guarded(df, origin, max_distance_km,
-                               shrink_factors=(1.0, 0.6, 0.4), min_obs_margin=10):
-    """Fit ``fit_per_kreis_beta`` at the widest distance band that is identified.
-
-    For aggregate OD-matrix data (one row per origin-destination pair, as in BA
-    Pendleratlas), the standard ``is_identified`` margin check would always fail
-    because n_obs == n_dest.  In that case, accept the widest band that has at
-    least 10 observations — Poisson GLM converges fine with one obs per cell.
-
-    Returns the fit dict, or None (and logs) if no band qualifies.
-    """
-    for factor in shrink_factors:
-        band = max_distance_km * factor
-        sub = df[(df["orig_ars"] == origin) & (df["distance_km"] <= band) & (df["flow"] > 0)]
-        if _is_aggregate_flow_data(sub):
-            # Aggregate OD-matrix: use relaxed criterion (n_obs >= 10 only).
-            if len(sub) >= 10:
-                return fit_per_kreis_beta(df, origin, band)
-        elif is_identified(sub, min_obs_margin=min_obs_margin):
-            return fit_per_kreis_beta(df, origin, band)
-    log.warning("  %s: under-identified at all bands (max obs/dest margin not met); dropped", origin)
-    return None
-
-
-def _per_rs7_for_anchor_set(df, anchors, kreis_to_rs7, max_distance, rescale_to):
-    """Fit guarded GLMs for the given anchor set and return per-RS7 beta Series."""
-    fits = [f for f in (fit_per_kreis_beta_guarded(df, a, max_distance) for a in anchors) if f]
-    tab = aggregate_by_rs7(fits, kreis_to_rs7, rescale_to=rescale_to)
-    return tab.set_index("dominant_rs7")["beta_rs7"]
+    raw = {c: float(result.params[design.columns.get_loc(f"d_rs{c}")]) for c in codes}
+    se = {c: float(result.bse[design.columns.get_loc(f"d_rs{c}")]) for c in codes}
+    flow_by_code = panel.groupby("dominant_rs7")["flow"].sum()
+    weighted_mean = float(np.average([raw[c] for c in codes],
+                                     weights=[flow_by_code[c] for c in codes]))
+    scale = (rescale_to / weighted_mean) if (rescale_to is not None and weighted_mean != 0.0) else 1.0
+    slopes = {c: round(raw[c] * scale, 4) for c in codes}
+    diagnostics = {
+        "raw_slope": raw,
+        "standard_error": se,
+        "flow_weighted_mean_raw": weighted_mean,
+        "rescale_factor": scale,
+        "n_obs": int(design.shape[0]),
+        "n_params": int(design.shape[1]),
+        "converged": bool(result.converged),
+        "flow_total_by_code": {c: int(flow_by_code[c]) for c in codes},
+    }
+    return slopes, diagnostics
 
 
 def load_mid_mean() -> pd.DataFrame:
@@ -335,70 +358,49 @@ def main() -> int:
         if missing:
             log.warning("RS7 codes still under-filled at max radius: %s", missing)
 
-    log.info("Fitting Poisson-GLM per origin Kreis (max_d=%.0f km, scope=%s, n_anchors=%d)",
-             args.max_distance, args.anchor_scope, len(anchors))
-    per_kreis: list[dict] = []
-    for ars in anchors:
-        fit = fit_per_kreis_beta_guarded(df, ars, args.max_distance)
-        if fit is None:
-            continue
-        log.info(
-            "  %s: β=%+.4f ± %.4f (z=%5.1f, n=%3d, obs_mean_d=%.1f km)",
-            ars, fit["beta"], fit["se"], fit["z"], fit["n_obs"],
-            fit["mean_distance_km_observed"],
-        )
-        per_kreis.append(fit)
-    log.info("Fitted %d/%d anchor Kreise (guarded)", len(per_kreis), len(anchors))
+    log.info("Fitting full-panel Poisson-GLM (origin FE + dest FE + RS7xdistance), "
+             "max_d=%.0f km, scope=%s, n_anchors=%d", args.max_distance, args.anchor_scope, len(anchors))
+    slopes, diag = fit_panel_rs7_slopes(df, anchors, kreis_to_rs7, args.max_distance, rescale_to=rescale)
+    log.info("panel: n_obs=%d n_params=%d converged=%s flow_wtd_mean_raw=%.5f rescale_factor=%.3f",
+             diag["n_obs"], diag["n_params"], diag["converged"],
+             diag["flow_weighted_mean_raw"], diag["rescale_factor"])
 
-    rs7_table = aggregate_by_rs7(per_kreis, kreis_to_rs7, rescale_to=rescale)
-
+    # Cross-scope sensitivity (same identified estimator on nds / germany).
     all_orig = sorted(df["orig_ars"].unique())
     nds = [a for a in all_orig if a.startswith("03")]
     sens = pd.DataFrame({
-        "ring": _per_rs7_for_anchor_set(df, anchors, kreis_to_rs7, args.max_distance, rescale),
-        "nds": _per_rs7_for_anchor_set(df, nds, kreis_to_rs7, args.max_distance, rescale),
-        "germany": _per_rs7_for_anchor_set(df, all_orig, kreis_to_rs7, args.max_distance, rescale),
-    })
-    print("\n=== per-RS7 beta sensitivity (rescaled), by anchor scope ===")
+        "scope": pd.Series(slopes),
+        "nds": pd.Series(fit_panel_rs7_slopes(df, nds, kreis_to_rs7, args.max_distance, rescale_to=rescale)[0]),
+        "germany": pd.Series(fit_panel_rs7_slopes(df, all_orig, kreis_to_rs7, args.max_distance, rescale_to=rescale)[0]),
+    }).sort_index()
+    print("\n=== per-RS7 slope sensitivity (identified panel, rescaled), by scope ===")
     print(sens.round(4).to_string())
 
-    mid_means = load_mid_mean()
-    df_kreis = (
-        pd.DataFrame(per_kreis)
-          .merge(kreis_to_rs7[["ars5", "dominant_rs7", "label"]], on="ars5", how="left")
-          .merge(mid_means, on="ars5", how="left")
-          .sort_values("ars5")
-    )
-
-    print("\n=== Per-Kreis β fits (BA Pendleratlas, cross-Kreis flows) ===")
-    print(df_kreis[[
-        "ars5", "dominant_rs7", "label", "beta", "se", "n_obs", "flow_total",
-        "mean_distance_km_observed", "mid_mean_km",
-    ]].round(4).to_string(index=False))
-
-    print("\n=== Aggregated β per RegioStaR-7 (flow-weighted) ===")
-    if rescale is not None:
-        print(f"  rescale_to = {rescale:+.4f}  (factor = {rs7_table['rescale_factor'].iloc[0]:+.3f})")
-    print(rs7_table[[
-        "dominant_rs7", "label", "n_kreise", "flow_total",
-        "mean_d_km_obs", "beta_rs7_raw", "beta_rs7",
-    ]].round(4).to_string(index=False))
+    print("\n=== Per-RS7 distance slope (identified full-panel GLM) ===")
+    print(f"  scope={args.anchor_scope}  n_obs={diag['n_obs']}  n_params={diag['n_params']}  "
+          f"converged={diag['converged']}  rescale_factor={diag['rescale_factor']:+.3f}")
+    for c in sorted(slopes):
+        print(f"  {c} {RS7_LABELS.get(c, ''):35s} slope={slopes[c]:+.4f}  "
+              f"raw={diag['raw_slope'][c]:+.5f}  se={diag['standard_error'][c]:.5f}  "
+              f"flow={diag['flow_total_by_code'][c]}")
 
     print("\n=== YAML snippet for config (gravity_slope_by_regiostar7) ===")
     if rescale is not None:
-        print(f"# Rescaled so flow-weighted mean β equals {rescale:+.4f} "
-              "(= current default gravity_slope).")
+        print(f"# Identified full-panel GLM (origin FE + dest FE + RS7xdistance), scope={args.anchor_scope}.")
+        print(f"# Rescaled so flow-weighted mean slope equals {rescale:+.4f}.")
     print("gravity_slope_by_regiostar7:")
-    for _, row in rs7_table.iterrows():
-        print(f"  {int(row['dominant_rs7'])}: {row['beta_rs7']:+.4f}  # {row['label']} (n_kreise={int(row['n_kreise'])}, raw={row['beta_rs7_raw']:+.4f})")
+    for c in sorted(slopes):
+        print(f"  {c}: {slopes[c]:+.4f}  # {RS7_LABELS.get(c, '')} (raw={diag['raw_slope'][c]:+.5f})")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "per_kreis": df_kreis.to_dict(orient="records"),
-        "per_rs7": rs7_table.to_dict(orient="records"),
-        "max_distance_km": args.max_distance,
+        "method": "full_panel_poisson_glm_origin_dest_fe_rs7_distance_interaction",
         "anchor_scope": args.anchor_scope,
-        "scope": anchors,
+        "max_distance_km": args.max_distance,
+        "rescale_to": rescale,
+        "slopes": slopes,
+        "diagnostics": diag,
+        "anchors": anchors,
     }
     args.out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     log.info("Calibration written to %s", args.out)
