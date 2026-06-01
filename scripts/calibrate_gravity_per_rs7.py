@@ -190,6 +190,32 @@ def kreis_distance_to_zgb(kreise, zgb=ZGB8):
     })
 
 
+def select_ring_anchors(dist_to_zgb, kreis_to_rs7, required_rs7,
+                        min_anchors, max_radius_km, step_km=25.0):
+    """Smallest radius (km) around ZGB s.t. every required RS7 code has at
+    least ``min_anchors`` Kreise within it; returns (radius, anchor_ars5_list,
+    per_code_counts). If the cap is hit before all codes are satisfied, the cap
+    radius and whatever was collected are returned.
+    """
+    merged = dist_to_zgb.merge(kreis_to_rs7[["ars5", "dominant_rs7"]], on="ars5", how="inner")
+    required = set(int(c) for c in required_rs7)
+
+    def counts_within(radius):
+        within = merged[merged["dist_km"] <= radius]
+        in_req = within[within["dominant_rs7"].isin(required)]
+        return within, in_req.groupby("dominant_rs7").size().to_dict()
+
+    radius = step_km
+    while radius <= max_radius_km:
+        within, counts = counts_within(radius)
+        if all(counts.get(c, 0) >= min_anchors for c in required):
+            return float(radius), sorted(within["ars5"].tolist()), counts
+        radius += step_km
+
+    within, counts = counts_within(max_radius_km)
+    return float(max_radius_km), sorted(within["ars5"].tolist()), counts
+
+
 def load_mid_mean() -> pd.DataFrame:
     df = pd.read_csv(MID_P13_CSV, dtype={"ars5": str})
     return df[["ars5", "kreis", "mittel"]].rename(columns={"mittel": "mid_mean_km"})
