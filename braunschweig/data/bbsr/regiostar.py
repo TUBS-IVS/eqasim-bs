@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import os
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 
@@ -135,6 +136,32 @@ def execute(context) -> pd.DataFrame:
             "[braunschweig.data.bbsr.regiostar] no Gemeinden matched scope "
             f"{scope}; check ``braunschweig.political_prefix`` and source file."
         )
+
+    # Expected universe: all Gemeinden in scope, from VG250 (gives coords too).
+    vg250 = os.path.join(context.config("data_path"),
+                         "germany", "vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
+    vsi = ("/vsizip/" + vg250 +
+           "/vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg")
+    gem = gpd.read_file(vsi, layer="vg250_gem", columns=["AGS", "GEN"])
+    gem["commune_id"] = gem["AGS"].astype(str).str.zfill(8)
+    gem = gem[gem["commune_id"].str[:5].isin(scope)].copy()
+    gem["x"] = gem.geometry.centroid.x
+    gem["y"] = gem.geometry.centroid.y
+
+    known = df.merge(gem[["commune_id", "x", "y"]], on="commune_id", how="inner")
+    expected = gem[["commune_id", "x", "y"]].drop_duplicates("commune_id")
+    filled = fill_missing_rs7_nearest_neighbour(known, expected)
+
+    n_filled = int(filled["rs7_filled"].sum())
+    if n_filled:
+        ids = filled[filled["rs7_filled"]]["commune_id"].tolist()
+        print(f"[braunschweig.data.bbsr.regiostar] filled RS7 for {n_filled} "
+              f"Gemeinde(n) via nearest-neighbour: {ids}")
+
+    meta = df[["commune_id", "ars5", "name", "regiostar17", "regiostar_gem7"]]
+    df = filled.merge(meta, on="commune_id", how="left")
+    df["ars5"] = df["ars5"].fillna(df["commune_id"].str[:5])
+    df["regiostar7"] = df["regiostar7"].astype("Int64")
 
     df = df[[
         "commune_id", "ars5", "name",

@@ -680,9 +680,10 @@ class TestRegioStarLoader:
             "commune_id", "ars5", "name",
             "regiostar7", "regiostar17", "regiostar_gem7",
         }
-        # ZGB-8 contains 126 Gemeinden in the 2020 reference (3 cities +
-        # 123 Landkreis-Gemeinden across 5 Landkreise).
-        assert len(df) == 126
+        # ZGB-8 has 123 Gemeinden according to the VG250 authoritative
+        # geographic universe (which supersedes the XLSX row count of 126).
+        # Langelsheim (03153019) is present via nearest-neighbour RS7 fill.
+        assert len(df) == 123
         assert set(df["ars5"].unique()) == set(ZGB_KREISE)
 
         # commune_id is 8-digit zero-padded AGS string.
