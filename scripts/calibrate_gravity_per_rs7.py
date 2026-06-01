@@ -216,6 +216,32 @@ def select_ring_anchors(dist_to_zgb, kreis_to_rs7, required_rs7,
     return float(max_radius_km), sorted(within["ars5"].tolist()), counts
 
 
+def is_identified(sub, min_obs_margin=10):
+    """True if a destination-FE Poisson GLM on ``sub`` is over-identified.
+
+    Model params = (n_distinct_destinations - 1) dummies + const + distance.
+    Require n_obs >= n_params + min_obs_margin and n_obs >= 10.
+    """
+    n_obs = len(sub)
+    n_dest = sub["dest_ars"].nunique()
+    n_params = (n_dest - 1) + 2
+    return n_obs >= 10 and n_obs >= n_params + min_obs_margin
+
+
+def fit_per_kreis_beta_guarded(df, origin, max_distance_km,
+                               shrink_factors=(1.0, 0.6, 0.4), min_obs_margin=10):
+    """Fit ``fit_per_kreis_beta`` at the widest distance band that is identified.
+    Returns the fit dict, or None (and logs) if no band qualifies.
+    """
+    for factor in shrink_factors:
+        band = max_distance_km * factor
+        sub = df[(df["orig_ars"] == origin) & (df["distance_km"] <= band) & (df["flow"] > 0)]
+        if is_identified(sub, min_obs_margin=min_obs_margin):
+            return fit_per_kreis_beta(df, origin, band)
+    log.warning("  %s: under-identified at all bands (max obs/dest margin not met); dropped", origin)
+    return None
+
+
 def load_mid_mean() -> pd.DataFrame:
     df = pd.read_csv(MID_P13_CSV, dtype={"ars5": str})
     return df[["ars5", "kreis", "mittel"]].rename(columns={"mittel": "mid_mean_km"})

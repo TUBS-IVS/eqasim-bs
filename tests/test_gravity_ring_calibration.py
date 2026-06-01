@@ -9,6 +9,7 @@ sys.path.insert(0, str(REPO))
 
 from scripts.calibrate_gravity_per_rs7 import kreis_distance_to_zgb  # noqa: E402
 from scripts.calibrate_gravity_per_rs7 import select_ring_anchors  # noqa: E402
+from scripts.calibrate_gravity_per_rs7 import is_identified  # noqa: E402
 
 
 class _Pt:
@@ -56,3 +57,21 @@ def test_ring_stops_at_max_radius_when_underfilled():
     )
     assert radius == 100.0
     assert counts.get(74, 0) == 0
+
+
+def test_is_identified_requires_margin_over_destinations():
+    sub = pd.DataFrame({
+        "dest_ars": [f"D{i % 12}" for i in range(30)],
+        "distance_km": np.linspace(5, 100, 30),
+        "flow": np.ones(30),
+    })
+    assert is_identified(sub, min_obs_margin=10) is True
+
+
+def test_is_identified_false_when_obs_barely_exceed_destinations():
+    sub = pd.DataFrame({
+        "dest_ars": [f"D{i}" for i in range(13)],
+        "distance_km": np.linspace(5, 100, 13),
+        "flow": np.ones(13),
+    })
+    assert is_identified(sub, min_obs_margin=10) is False
