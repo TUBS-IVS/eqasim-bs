@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 import pandas as pd
 
 REGIOSTAR7_LABELS = {
@@ -52,6 +53,35 @@ REGIOSTAR7_LABELS = {
 }
 
 SHEET = "ReferenzGebietsstand2020"
+
+
+def fill_missing_rs7_nearest_neighbour(df_known, df_expected):
+    """Return RS7 for every Gemeinde in ``df_expected``.
+
+    ``df_known`` has [commune_id, ars5, name, regiostar7, x, y] for Gemeinden
+    that already have an RS7 code (x/y are centroid coords in a metric CRS).
+    ``df_expected`` has [commune_id, x, y] for all Gemeinden downstream stages
+    need. Gemeinden in ``df_known`` keep their code (``rs7_filled=False``);
+    Gemeinden missing from it get the RS7 of the nearest known Gemeinde by
+    Euclidean centroid distance (``rs7_filled=True``).
+    """
+    known_ids = set(df_known["commune_id"])
+    kx = df_known["x"].to_numpy()
+    ky = df_known["y"].to_numpy()
+    kcode = df_known["regiostar7"].to_numpy()
+    rows = []
+    for _, r in df_expected.iterrows():
+        cid = r["commune_id"]
+        if cid in known_ids:
+            kr = df_known[df_known["commune_id"] == cid].iloc[0]
+            rows.append({"commune_id": cid, "regiostar7": int(kr["regiostar7"]),
+                         "rs7_filled": False})
+        else:
+            d2 = (kx - r["x"]) ** 2 + (ky - r["y"]) ** 2
+            nn = int(np.argmin(d2))
+            rows.append({"commune_id": cid, "regiostar7": int(kcode[nn]),
+                         "rs7_filled": True})
+    return pd.DataFrame(rows)
 
 
 def configure(context):
