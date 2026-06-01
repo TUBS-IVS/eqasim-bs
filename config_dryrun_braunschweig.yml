@@ -46,6 +46,14 @@ config:
   braunschweig.buildings_path: braunschweig/buildings
   osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
 
+  # External OSM toolchain (Windows paths, identical to
+  # config_local_braunschweig.yml). Required on the synthesis.output DAG
+  # because synthesis.locations.education -> eqasim_common.data.osm.locations
+  # -> eqasim_common.data.osm.chunked invokes osmconvert/osmosis. Without
+  # these the upfront stage validation aborts before any stage executes.
+  osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
+  osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
+
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
@@ -55,8 +63,16 @@ config:
   braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
   braunschweig.inkar_year: latest
 
-  # Gravity calibration parameters (frozen at smoke-baseline values).
+  # Gravity calibration parameters (mirrors config_local_braunschweig.yml so
+  # the dry run exercises the production sub-Kreis distribution, not just the
+  # scalar fallback). gravity_constant / gravity_diagonal equal the module
+  # defaults but are set explicitly for traceability.
   gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    72: -0.0333   # Regiopole / Grossstadt   (BS, SZ, WOB)
+    74: -0.0782   # Kleinstadt / doerfl. Raum (Gifhorn, Goslar, Helmstedt, Peine, Wolfenbuettel)
 
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a

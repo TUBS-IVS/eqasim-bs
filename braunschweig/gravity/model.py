@@ -251,8 +251,13 @@ def configure(context):
     context.config("gravity_slope", DEFAULT_SLOPE)
     context.config("gravity_constant", DEFAULT_CONSTANT)
     context.config("gravity_diagonal", DEFAULT_DIAGONAL)
-    # Optional dict {regiostar7_code: slope}. Empty = use scalar slope.
-    context.config("gravity_slope_by_regiostar7", {})
+    # Optional dict {regiostar7_code: slope}. None/absent = use scalar slope.
+    # The default MUST be ``None`` and not ``{}``: synpp's ``flatten()`` drops
+    # empty-dict values entirely, so an absent override with a ``{}`` default
+    # vanishes from ``required_config`` and ``context.config(...)`` then raises
+    # "Config option ... is not requested" at execute time. ``None`` survives
+    # flattening and is treated as "no overrides" by ``_build_origin_slope_vector``.
+    context.config("gravity_slope_by_regiostar7", None)
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")
