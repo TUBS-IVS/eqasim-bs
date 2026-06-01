@@ -228,18 +228,46 @@ def is_identified(sub, min_obs_margin=10):
     return n_obs >= 10 and n_obs >= n_params + min_obs_margin
 
 
+def _is_aggregate_flow_data(sub):
+    """True if every destination appears exactly once (aggregate OD-matrix pattern).
+
+    BA Pendleratlas provides one pre-summed flow per origin-destination Kreis
+    pair.  In that case the Poisson GLM with destination fixed effects is still
+    identifiable as long as n_obs >= 10 — Poisson deviance converges fine with
+    one observation per cell, unlike logistic regression.
+    """
+    return sub["dest_ars"].nunique() == len(sub)
+
+
 def fit_per_kreis_beta_guarded(df, origin, max_distance_km,
                                shrink_factors=(1.0, 0.6, 0.4), min_obs_margin=10):
     """Fit ``fit_per_kreis_beta`` at the widest distance band that is identified.
+
+    For aggregate OD-matrix data (one row per origin-destination pair, as in BA
+    Pendleratlas), the standard ``is_identified`` margin check would always fail
+    because n_obs == n_dest.  In that case, accept the widest band that has at
+    least 10 observations — Poisson GLM converges fine with one obs per cell.
+
     Returns the fit dict, or None (and logs) if no band qualifies.
     """
     for factor in shrink_factors:
         band = max_distance_km * factor
         sub = df[(df["orig_ars"] == origin) & (df["distance_km"] <= band) & (df["flow"] > 0)]
-        if is_identified(sub, min_obs_margin=min_obs_margin):
+        if _is_aggregate_flow_data(sub):
+            # Aggregate OD-matrix: use relaxed criterion (n_obs >= 10 only).
+            if len(sub) >= 10:
+                return fit_per_kreis_beta(df, origin, band)
+        elif is_identified(sub, min_obs_margin=min_obs_margin):
             return fit_per_kreis_beta(df, origin, band)
     log.warning("  %s: under-identified at all bands (max obs/dest margin not met); dropped", origin)
     return None
+
+
+def _per_rs7_for_anchor_set(df, anchors, kreis_to_rs7, max_distance, rescale_to):
+    """Fit guarded GLMs for the given anchor set and return per-RS7 beta Series."""
+    fits = [f for f in (fit_per_kreis_beta_guarded(df, a, max_distance) for a in anchors) if f]
+    tab = aggregate_by_rs7(fits, kreis_to_rs7, rescale_to=rescale_to)
+    return tab.set_index("dominant_rs7")["beta_rs7"]
 
 
 def load_mid_mean() -> pd.DataFrame:
@@ -257,6 +285,13 @@ def main() -> int:
               "value (the current synth gravity_slope). Pass 0 to disable."),
     )
     parser.add_argument("--out", type=Path, default=OUTPUT_PATH)
+    parser.add_argument("--anchor-scope", choices=["zgb", "nds", "ring", "germany"],
+                        default="ring",
+                        help="Which origin Kreise to fit. 'ring' grows a radius "
+                             "around ZGB until each ZGB RS7 code has "
+                             "--min-anchors-per-rs7 anchors.")
+    parser.add_argument("--min-anchors-per-rs7", type=int, default=5)
+    parser.add_argument("--max-radius-km", type=float, default=600.0)
     args = parser.parse_args()
     rescale = None if args.rescale_to == 0 else args.rescale_to
 
@@ -273,10 +308,38 @@ def main() -> int:
     for _, row in rs7_zgb.sort_values("ars5").iterrows():
         log.info("  %s → %d %s", row["ars5"], row["dominant_rs7"], row["label"])
 
-    log.info("Fitting Poisson-GLM per origin Kreis (max_d=%.0f km)", args.max_distance)
+    # RS7 codes actually present among ZGB-8 Gemeinden (per-Gemeinde): the
+    # codes the config dict must cover.
+    raw_rs7 = pd.read_excel(REGIOSTAR_XLSX, sheet_name=REGIOSTAR_SHEET, header=0)
+    raw_rs7 = pd.DataFrame({
+        "ars5": raw_rs7["gem_20"].astype("Int64").astype(str).str.zfill(8).str[:5],
+        "rs7": pd.to_numeric(raw_rs7["RegioStaR7"], errors="coerce").astype("Int64"),
+    }).dropna()
+    required_rs7 = set(int(c) for c in raw_rs7[raw_rs7["ars5"].isin(ZGB8)]["rs7"].unique())
+    log.info("RS7 codes present in ZGB-8: %s", sorted(required_rs7))
+
+    dist_to_zgb = kreis_distance_to_zgb(kreise)
+
+    if args.anchor_scope == "zgb":
+        anchors = list(ZGB8)
+    elif args.anchor_scope == "nds":
+        anchors = [a for a in sorted(df["orig_ars"].unique()) if a.startswith("03")]
+    elif args.anchor_scope == "germany":
+        anchors = sorted(df["orig_ars"].unique())
+    else:  # ring
+        radius, anchors, counts = select_ring_anchors(
+            dist_to_zgb, kreis_to_rs7, required_rs7,
+            min_anchors=args.min_anchors_per_rs7, max_radius_km=args.max_radius_km)
+        log.info("Adaptive ring radius = %.0f km; per-RS7 anchor counts = %s", radius, counts)
+        missing = [c for c in required_rs7 if counts.get(c, 0) < args.min_anchors_per_rs7]
+        if missing:
+            log.warning("RS7 codes still under-filled at max radius: %s", missing)
+
+    log.info("Fitting Poisson-GLM per origin Kreis (max_d=%.0f km, scope=%s, n_anchors=%d)",
+             args.max_distance, args.anchor_scope, len(anchors))
     per_kreis: list[dict] = []
-    for ars in ZGB8:
-        fit = fit_per_kreis_beta(df, ars, args.max_distance)
+    for ars in anchors:
+        fit = fit_per_kreis_beta_guarded(df, ars, args.max_distance)
         if fit is None:
             continue
         log.info(
@@ -285,8 +348,20 @@ def main() -> int:
             fit["mean_distance_km_observed"],
         )
         per_kreis.append(fit)
+    log.info("Fitted %d/%d anchor Kreise (guarded)", len(per_kreis), len(anchors))
 
     rs7_table = aggregate_by_rs7(per_kreis, kreis_to_rs7, rescale_to=rescale)
+
+    all_orig = sorted(df["orig_ars"].unique())
+    nds = [a for a in all_orig if a.startswith("03")]
+    sens = pd.DataFrame({
+        "ring": _per_rs7_for_anchor_set(df, anchors, kreis_to_rs7, args.max_distance, rescale),
+        "nds": _per_rs7_for_anchor_set(df, nds, kreis_to_rs7, args.max_distance, rescale),
+        "germany": _per_rs7_for_anchor_set(df, all_orig, kreis_to_rs7, args.max_distance, rescale),
+    })
+    print("\n=== per-RS7 beta sensitivity (rescaled), by anchor scope ===")
+    print(sens.round(4).to_string())
+
     mid_means = load_mid_mean()
     df_kreis = (
         pd.DataFrame(per_kreis)
@@ -322,7 +397,8 @@ def main() -> int:
         "per_kreis": df_kreis.to_dict(orient="records"),
         "per_rs7": rs7_table.to_dict(orient="records"),
         "max_distance_km": args.max_distance,
-        "scope": list(ZGB8),
+        "anchor_scope": args.anchor_scope,
+        "scope": anchors,
     }
     args.out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     log.info("Calibration written to %s", args.out)
