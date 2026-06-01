@@ -50,8 +50,16 @@ config:
   # Großstädte (BS/SZ/WOB) flacher → mehr Fernpendler; ländliche Kleinstadt
   # (Gifhorn/Goslar/Helmstedt/Peine/Wolfenbüttel) steiler → kürzer.
   gravity_slope_by_regiostar7:
-    72: -0.0333   # Regiopole / Großstadt   (BS, SZ, WOB)
-    74: -0.0782   # Kleinstadt / dörfl. Raum (Gifhorn, Goslar, Helmstedt, Peine, Wolfenbüttel)
+    # Identified full-panel Poisson GLM (origin FE + dest FE + RS7 x distance)
+    # on the 225 km ring around ZGB (141 anchor Kreise), rescaled so the
+    # flow-weighted mean equals gravity_slope (-0.065).
+    # Source: scripts/calibrate_gravity_per_rs7.py --anchor-scope ring
+    72: -0.0576   # Regiopole / Grossstadt
+    73: -0.0660   # Mittelstadt / staedt. Raum
+    74: -0.0661   # Kleinstadt / doerfl. Raum (Stadtregion)
+    75: -0.0728   # Zentrale Stadt (laendlich)
+    76: -0.0743   # Mittelstadt (laendlich)
+    77: -0.0690   # Kleinstadt / doerfl. (laendlich)
 
   # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
   braunschweig.ipf.use_household_size_margin: true
