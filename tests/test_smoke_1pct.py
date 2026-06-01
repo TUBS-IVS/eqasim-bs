@@ -2,7 +2,7 @@
 
 Drives ``config_local_braunschweig.yml`` end-to-end (``synthesis.output``)
 and validates the resulting CSV row counts against the locked baseline
-in ``plan/baselines/smoke_1pct_baseline.txt``.
+in ``tests/baselines/smoke_1pct_baseline.txt``.
 
 Tolerance
 ---------
@@ -41,7 +41,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_CONFIG = REPO_ROOT / "config_local_braunschweig.yml"
-BASELINE = REPO_ROOT / "plan" / "baselines" / "smoke_1pct_baseline.txt"
+BASELINE = REPO_ROOT / "tests" / "baselines" / "smoke_1pct_baseline.txt"
 DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
 BS_DATA_PATH = DATA_PATH / "braunschweig"
 
