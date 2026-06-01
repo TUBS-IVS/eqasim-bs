@@ -73,12 +73,12 @@ config:
   gravity_slope_by_regiostar7:
     # Identified full-panel GLM on the 225 km ring; see
     # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
-    72: -0.0576   # Regiopole / Grossstadt
-    73: -0.0660   # Mittelstadt / staedt. Raum
-    74: -0.0661   # Kleinstadt / doerfl. Raum (Stadtregion)
-    75: -0.0728   # Zentrale Stadt (laendlich)
-    76: -0.0743   # Mittelstadt (laendlich)
-    77: -0.0690   # Kleinstadt / doerfl. (laendlich)
+    72: -0.0558   # Regiopole / Grossstadt
+    73: -0.0638   # Mittelstadt / staedt. Raum
+    74: -0.0640   # Kleinstadt / doerfl. Raum (Stadtregion)
+    75: -0.0704   # Zentrale Stadt (laendlich)
+    76: -0.0719   # Mittelstadt (laendlich)
+    77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a

@@ -1,49 +1,39 @@
-"""Per-RegioStaR-7 gravity-decay calibration.
+"""Per-RegioStaR-7 gravity-decay calibration (identified full-panel GLM).
 
-Estimates one Poisson-GLM distance-decay slope β_k per ZGB-8 origin
-Kreis on BA Pendleratlas flows, aggregates the β_k by the dominant
-RegioStaR-7 class of the origin (population/Gemeinde-count-weighted),
-and emits a YAML snippet ready to paste under
-``gravity_slope_by_regiostar7`` in the local config.
+Estimates one distance-decay slope per RegioStaR-7 (RS7) class from a single
+Poisson GLM fitted to BA Pendleratlas Kreis-pair flows over an adaptive ring
+of anchor Kreise around ZGB:
 
-Methodology
------------
-For each origin Kreis k in ZGB-8:
+    log E[flow_ij] = origin_FE_i + dest_FE_j
+                     + sum_c delta_c * d_ij * 1[RS7(origin_i) = c]
 
-    log E[flow_{k,j}] = γ_j + β_k · d_{k,j}
+A per-origin fit with destination fixed effects is rank deficient on this data
+(one flow row per origin-destination pair makes distance collinear with the
+per-destination dummies), so all anchor origins are pooled into one panel:
+each per-RS7 slope ``delta_c`` is identified from the within-origin distance
+variation shared across the many origins of class c. See
+``fit_panel_rs7_slopes``.
 
-with destination fixed effects γ_j over all Kreise j != k within the
-configured max-distance band. β_k is the Poisson-MLE distance slope.
+The anchor set is chosen by ``select_ring_anchors``: the radius around the ZGB
+centroid grows until every RS7 code present in ZGB has at least
+``--min-anchors-per-rs7`` Kreise.
 
-Aggregation per RS7 c:
-
-    β_c = Σ_k w_k · β_k    over Kreise k whose dominant RS7 = c
-                            with w_k = (Σ_j flow_{k,j}) / Σ_{k' in c} ...
-
-i.e. flow-volume-weighted mean. The dominant RS7 of a Kreis is the
-mode of the per-Gemeinde RegioStaR-7 codes from the BMV reference
-(``eqasim-data/data/regiostar/regiostar_referenzdatei.xlsx``).
-
-Caveats — read the long methodological note in
-``scripts/calibrate_gravity_decay.py`` first. BA Pendleratlas only
-contains cross-Kreis commuters, so β_c governs the *cross-Kreis*
-distance distribution. Synth-level mean commute km vs. MiD P13 still
-needs the empirical synth-interpolation step from the existing
-calibration script.
+Caveat (see ``scripts/calibrate_gravity_decay.py``): the BA Pendleratlas
+contains only cross-Kreis commuters, so the raw slope level is biased flat.
+The slopes are therefore rescaled so their flow-weighted mean over the
+ZGB-relevant codes equals ``--rescale-to`` (the established ``gravity_slope``,
+-0.065), preserving the regional mean commute level while differentiating by
+RS7. The commute-distance KPI itself is MiD-P13-overridden downstream.
 
 Usage
 -----
-    python -m scripts.calibrate_gravity_per_rs7 [--max-distance 250]
+    python -m scripts.calibrate_gravity_per_rs7 --anchor-scope ring \
+        --min-anchors-per-rs7 5
 
 Output
 ------
 - JSON: ``eqasim-data/cache_bs/calibration/gravity_beta_per_rs7.json``
-- YAML snippet printed to stdout, e.g.::
-
-    gravity_slope_by_regiostar7:
-      72: -0.058
-      73: -0.072
-      74: -0.081
+- A ``gravity_slope_by_regiostar7`` YAML snippet (paste into config_*.yml).
 """
 from __future__ import annotations
 
@@ -68,7 +58,6 @@ REPO = Path(__file__).resolve().parents[1]
 OUTPUT_PATH = REPO / "eqasim-data" / "cache_bs" / "calibration" / "gravity_beta_per_rs7.json"
 REGIOSTAR_XLSX = DATA_DIR / "regiostar" / "regiostar_referenzdatei.xlsx"
 REGIOSTAR_SHEET = "ReferenzGebietsstand2020"
-MID_P13_CSV = DATA_DIR / "braunschweig" / "mid" / "mid2023_P13.csv"
 
 # Kept in sync with braunschweig.data.bbsr.regiostar.REGIOSTAR7_LABELS.
 RS7_LABELS = {
@@ -103,75 +92,6 @@ def load_kreis_to_rs7() -> pd.DataFrame:
     out = out.rename(columns={"n": "n_gemeinden", "regiostar7": "dominant_rs7"})
     out["label"] = out["dominant_rs7"].map(RS7_LABELS)
     return out[["ars5", "dominant_rs7", "n_gemeinden", "label"]]
-
-
-def fit_per_kreis_beta(
-    df: pd.DataFrame, origin: str, max_distance_km: float
-) -> dict | None:
-    """Fit Poisson-GLM with destination FE for one origin Kreis."""
-    sub = df[(df["orig_ars"] == origin) & (df["distance_km"] <= max_distance_km)]
-    sub = sub[sub["flow"] > 0]
-    if len(sub) < 10:
-        log.warning("  %s: only %d obs, skipping", origin, len(sub))
-        return None
-    D = pd.get_dummies(sub["dest_ars"], prefix="D", drop_first=True).astype(float)
-    X = pd.concat([D, sub[["distance_km"]]], axis=1)
-    X = sm.add_constant(X, has_constant="add")
-    y = sub["flow"].astype(float).to_numpy()
-    res = sm.GLM(y, X.to_numpy(), family=sm.families.Poisson()).fit(maxiter=200, tol=1e-8)
-    beta_idx = X.columns.get_loc("distance_km")
-    beta = float(res.params[beta_idx])
-    se = float(res.bse[beta_idx])
-    flow_total = int(sub["flow"].sum())
-    mean_d = float((sub["flow"] * sub["distance_km"]).sum() / sub["flow"].sum())
-    return {
-        "ars5": origin,
-        "beta": beta,
-        "se": se,
-        "z": beta / se if se > 0 else float("nan"),
-        "n_obs": int(len(sub)),
-        "flow_total": flow_total,
-        "mean_distance_km_observed": round(mean_d, 2),
-        "converged": bool(res.converged),
-    }
-
-
-def aggregate_by_rs7(
-    per_kreis: list[dict], kreis_to_rs7: pd.DataFrame, rescale_to: float | None,
-) -> pd.DataFrame:
-    df = pd.DataFrame(per_kreis).merge(kreis_to_rs7, on="ars5", how="left")
-    if df["dominant_rs7"].isna().any():
-        missing = df.loc[df["dominant_rs7"].isna(), "ars5"].tolist()
-        raise RuntimeError(f"No RS7 mapping for Kreise: {missing}")
-    rows = []
-    for (rs7, label), g in df.groupby(["dominant_rs7", "label"], sort=True):
-        w = g["flow_total"].to_numpy()
-        rows.append({
-            "dominant_rs7": int(rs7),
-            "label": label,
-            "n_kreise": int(len(g)),
-            "kreise": ",".join(sorted(g["ars5"].tolist())),
-            "flow_total": int(g["flow_total"].sum()),
-            "mean_d_km_obs": round(float(np.average(g["mean_distance_km_observed"], weights=w)), 2),
-            "beta_rs7_raw": float(np.average(g["beta"], weights=w)),
-        })
-    out = pd.DataFrame(rows).sort_values("dominant_rs7").reset_index(drop=True)
-    if rescale_to is not None:
-        # Rescale so the flow-weighted mean of β_rs7 equals ``rescale_to``
-        # (the current synth gravity_slope). This preserves the synth-level
-        # mean commute distance while letting RS7 classes diverge in
-        # relative steepness.
-        w_all = out["flow_total"].to_numpy()
-        mean_raw = float(np.average(out["beta_rs7_raw"], weights=w_all))
-        if mean_raw == 0:
-            raise RuntimeError("Mean raw β is zero, cannot rescale.")
-        scale = rescale_to / mean_raw
-        out["beta_rs7"] = (out["beta_rs7_raw"] * scale).round(4)
-        out["rescale_factor"] = round(scale, 4)
-    else:
-        out["beta_rs7"] = out["beta_rs7_raw"].round(4)
-        out["rescale_factor"] = 1.0
-    return out
 
 
 def kreis_distance_to_zgb(kreise, zgb=ZGB8):
@@ -216,7 +136,8 @@ def select_ring_anchors(dist_to_zgb, kreis_to_rs7, required_rs7,
     return float(max_radius_km), sorted(within["ars5"].tolist()), counts
 
 
-def fit_panel_rs7_slopes(df, origins, kreis_to_rs7, max_distance_km, rescale_to=-0.065):
+def fit_panel_rs7_slopes(df, origins, kreis_to_rs7, max_distance_km, rescale_to=-0.065,
+                         rescale_codes=None):
     """Identified per-RS7 distance-decay slopes from ONE full-panel Poisson GLM.
 
     Model::
@@ -276,8 +197,13 @@ def fit_panel_rs7_slopes(df, origins, kreis_to_rs7, max_distance_km, rescale_to=
     raw = {c: float(result.params[design.columns.get_loc(f"d_rs{c}")]) for c in codes}
     se = {c: float(result.bse[design.columns.get_loc(f"d_rs{c}")]) for c in codes}
     flow_by_code = panel.groupby("dominant_rs7")["flow"].sum()
-    weighted_mean = float(np.average([raw[c] for c in codes],
-                                     weights=[flow_by_code[c] for c in codes]))
+    # Anchor the level on the codes that are actually applied downstream
+    # (``rescale_codes``, e.g. the RS7 codes present in ZGB). Including codes
+    # that never occur in the study area (e.g. 71 Metropole) in the mean would
+    # bias the applied codes' mean away from ``rescale_to``.
+    mean_codes = [c for c in codes if (rescale_codes is None or c in set(rescale_codes))]
+    weighted_mean = float(np.average([raw[c] for c in mean_codes],
+                                     weights=[flow_by_code[c] for c in mean_codes]))
     scale = (rescale_to / weighted_mean) if (rescale_to is not None and weighted_mean != 0.0) else 1.0
     slopes = {c: round(raw[c] * scale, 4) for c in codes}
     diagnostics = {
@@ -291,11 +217,6 @@ def fit_panel_rs7_slopes(df, origins, kreis_to_rs7, max_distance_km, rescale_to=
         "flow_total_by_code": {c: int(flow_by_code[c]) for c in codes},
     }
     return slopes, diagnostics
-
-
-def load_mid_mean() -> pd.DataFrame:
-    df = pd.read_csv(MID_P13_CSV, dtype={"ars5": str})
-    return df[["ars5", "kreis", "mittel"]].rename(columns={"mittel": "mid_mean_km"})
 
 
 def main() -> int:
@@ -360,7 +281,8 @@ def main() -> int:
 
     log.info("Fitting full-panel Poisson-GLM (origin FE + dest FE + RS7xdistance), "
              "max_d=%.0f km, scope=%s, n_anchors=%d", args.max_distance, args.anchor_scope, len(anchors))
-    slopes, diag = fit_panel_rs7_slopes(df, anchors, kreis_to_rs7, args.max_distance, rescale_to=rescale)
+    slopes, diag = fit_panel_rs7_slopes(df, anchors, kreis_to_rs7, args.max_distance,
+                                        rescale_to=rescale, rescale_codes=required_rs7)
     log.info("panel: n_obs=%d n_params=%d converged=%s flow_wtd_mean_raw=%.5f rescale_factor=%.3f",
              diag["n_obs"], diag["n_params"], diag["converged"],
              diag["flow_weighted_mean_raw"], diag["rescale_factor"])
@@ -370,8 +292,10 @@ def main() -> int:
     nds = [a for a in all_orig if a.startswith("03")]
     sens = pd.DataFrame({
         "scope": pd.Series(slopes),
-        "nds": pd.Series(fit_panel_rs7_slopes(df, nds, kreis_to_rs7, args.max_distance, rescale_to=rescale)[0]),
-        "germany": pd.Series(fit_panel_rs7_slopes(df, all_orig, kreis_to_rs7, args.max_distance, rescale_to=rescale)[0]),
+        "nds": pd.Series(fit_panel_rs7_slopes(df, nds, kreis_to_rs7, args.max_distance,
+                                              rescale_to=rescale, rescale_codes=required_rs7)[0]),
+        "germany": pd.Series(fit_panel_rs7_slopes(df, all_orig, kreis_to_rs7, args.max_distance,
+                                                  rescale_to=rescale, rescale_codes=required_rs7)[0]),
     }).sort_index()
     print("\n=== per-RS7 slope sensitivity (identified panel, rescaled), by scope ===")
     print(sens.round(4).to_string())

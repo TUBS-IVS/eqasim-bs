@@ -40,26 +40,21 @@ config:
   gravity_diagonal: 1.0
 
   # --- R-A.2: Per-RegioStaR-7 slope (TASK-RS-001).
-  # Optional override of ``gravity_slope`` per origin Gemeinde, keyed by
-  # the BMV/BBSR RegioStaR-7 code (71..77). Origins whose RS7 code is
-  # NOT listed fall back to ``gravity_slope`` above. The values below
-  # come from a Poisson-GLM fit on BA Pendleratlas Kreis-pair flows
-  # (see ``scripts/calibrate_gravity_per_rs7.py``), aggregated per
-  # dominant-RS7 of each ZGB-8 Kreis and rescaled so the flow-weighted
-  # mean equals ``gravity_slope`` above. Direction matches expectation:
-  # Großstädte (BS/SZ/WOB) flacher → mehr Fernpendler; ländliche Kleinstadt
-  # (Gifhorn/Goslar/Helmstedt/Peine/Wolfenbüttel) steiler → kürzer.
+  # Origin-Gemeinde distance-decay slope keyed by the BMV/BBSR RegioStaR-7
+  # class (71..77); origins whose code is not listed fall back to
+  # ``gravity_slope`` above. Values are an identified full-panel Poisson GLM
+  # (origin FE + dest FE + RS7 x distance) on the 225 km ring around ZGB
+  # (141 anchor Kreise), rescaled so the flow-weighted mean over the ZGB codes
+  # equals ``gravity_slope``. Direction: urban (72) flatter -> longer commutes,
+  # rural region (75-77) steeper -> shorter. See CLAUDE.md "Gravity model" and
+  # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
   gravity_slope_by_regiostar7:
-    # Identified full-panel Poisson GLM (origin FE + dest FE + RS7 x distance)
-    # on the 225 km ring around ZGB (141 anchor Kreise), rescaled so the
-    # flow-weighted mean equals gravity_slope (-0.065).
-    # Source: scripts/calibrate_gravity_per_rs7.py --anchor-scope ring
-    72: -0.0576   # Regiopole / Grossstadt
-    73: -0.0660   # Mittelstadt / staedt. Raum
-    74: -0.0661   # Kleinstadt / doerfl. Raum (Stadtregion)
-    75: -0.0728   # Zentrale Stadt (laendlich)
-    76: -0.0743   # Mittelstadt (laendlich)
-    77: -0.0690   # Kleinstadt / doerfl. (laendlich)
+    72: -0.0558   # Regiopole / Grossstadt
+    73: -0.0638   # Mittelstadt / staedt. Raum
+    74: -0.0640   # Kleinstadt / doerfl. Raum (Stadtregion)
+    75: -0.0704   # Zentrale Stadt (laendlich)
+    76: -0.0719   # Mittelstadt (laendlich)
+    77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
   # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
   braunschweig.ipf.use_household_size_margin: true
