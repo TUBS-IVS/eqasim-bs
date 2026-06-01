@@ -98,17 +98,16 @@ eqasim-data/*
 !eqasim-data/DOWNLOAD_CHECKLIST.md
 !eqasim-data/DOWNLOAD_CHECKLIST_BS.md
 
-# Internal documentation, plans, AI agent skills, code reviews, and private notes.
-# Ignore markdown broadly and re-include only the public repository interface.
-*.md
-!CLAUDE.md
-!README.md
-!eqasim-data/DOWNLOAD_CHECKLIST.md
-!eqasim-data/DOWNLOAD_CHECKLIST_BS.md
-
-# Private planning and quality folders
+# --- Internal working artefacts (kept out of the public research repository) ---
+# Public-interface markdown is tracked normally -- README.md, CLAUDE.md,
+# AGENTS.md, CHANGELOG.md, CITATION.cff, docs/*.md, braunschweig/*.md and the
+# DOWNLOAD_CHECKLIST files. We deliberately do NOT ignore *.md globally, so the
+# repository reads like a standard research-software project.
+# The folders below hold ephemeral planning / AI-tooling / internal-QA content
+# that does not belong in a citable scientific repository.
 plan/
+docs/superpowers/
+docs/codebase/
 quality/
 .github/skills/
-docs/codebase/
 /memories/
