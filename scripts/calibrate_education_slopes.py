@@ -37,10 +37,17 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.synthesis.locations.education_gravity_model import (  # noqa: E402
     assign_by_capacity_gravity,
+    assign_by_decay,
 )
 from braunschweig.data.mid.school_distance import build_target_table  # noqa: E402
-from braunschweig.data.mikrozensus.school_distance import bbs_target_km  # noqa: E402
+from braunschweig.data.mikrozensus.school_distance import (  # noqa: E402
+    bbs_target_km,
+    hochschule_target_km,
+)
 from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: E402
+from braunschweig.data.schools.university_facilities import (  # noqa: E402
+    build_university_facilities,
+)
 
 # Maximum search radius per level (km). oberstufe and bbs share the 16-19 age
 # band; bbs gets the wider radius to reflect its regional catchment.
@@ -76,6 +83,15 @@ def mean_distance_for_slope(slope, pupil_xy, school_xy, capacity,
     delta = pupil_xy - school_xy[choice]
     d_km = np.sqrt((delta ** 2).sum(axis=1)) / 1000.0
     return float(np.mean(d_km))
+
+
+def mean_distance_decay(slope, pupil_xy, uni_xy, weight, max_radius_km, rng):
+    """Mean straight-line km for the singly-constrained university model
+    (assign_by_decay) at a single scalar slope."""
+    choice = assign_by_decay(pupil_xy, uni_xy, weight, slope=slope,
+                             max_radius_km=max_radius_km, rng=rng)
+    delta = pupil_xy - uni_xy[choice]
+    return float(np.mean(np.sqrt((delta ** 2).sum(axis=1)) / 1000.0))
 
 
 def secant_calibrate_slope(target_km, pupil_xy, school_xy, capacity,
@@ -220,6 +236,9 @@ def main():
                         help="Fraction of ages-16-19 pupils assigned to BBS "
                              "(vocational), remainder goes to oberstufe (academic). "
                              "Default 0.681 from NDS enrollment statistics.")
+    parser.add_argument("--university-max-radius", type=float, default=150.0,
+                        help="Maximum search radius in km for university assignment "
+                             "(singly-constrained decay model). Default 150.0 km.")
     args = parser.parse_args()
 
     wd = args.working_directory
@@ -452,7 +471,96 @@ def main():
             })
 
     # ------------------------------------------------------------------
-    # 6. Print paste-ready YAML block
+    # 6. University calibration (singly-constrained, single national slope)
+    #
+    # University commuters are age-20+ persons with an education trip. The
+    # model is assign_by_decay (no capacity balancing): a single national slope
+    # is bisected so the mean straight-line home-to-university distance matches
+    # the Destatis MZ 2024 Hochschule target (routed / detour_factor). The
+    # 20+ pupil subset is built by the same merge path as the school pupils
+    # (candidates[has_education_trip] + enriched age + home locations).
+    # ------------------------------------------------------------------
+
+    # Build the age-20+ pupil GeoDataFrame using the same stage data that was
+    # already loaded for the school pupil frame.
+    persons_raw_all = _load_stage(wd, "synthesis.population.spatial.primary.candidates")["persons"]
+    persons_20plus = persons_raw_all[persons_raw_all["has_education_trip"]].copy()
+    persons_20plus = persons_20plus.merge(age_cols, on="person_id", how="left")
+    persons_20plus = persons_20plus[persons_20plus["age"] >= 20].copy()
+    persons_20plus = persons_20plus.merge(homes_geom, on="household_id", how="left")
+    import geopandas as gpd  # already imported above; re-import is a no-op
+    persons_uni = gpd.GeoDataFrame(persons_20plus, geometry="home_geom",
+                                   crs=homes.crs)
+    logger.info("Age-20+ persons with education trip: %d", len(persons_uni))
+
+    if len(persons_uni) == 0:
+        logger.warning("No age-20+ education-trip persons found; skipping university calibration.")
+    else:
+        # Build university facilities from the raw CSV + cached OSM stage
+        nds_h_path = os.path.join(
+            repo_root, "eqasim-data/data/braunschweig/schools/nds_hochschulen.csv")
+        if not os.path.isfile(nds_h_path):
+            raise RuntimeError(
+                f"nds_hochschulen.csv not found at '{nds_h_path}'. "
+                "Run scripts/seed_nds_hochschulen.py first."
+            )
+        df_h = pd.read_csv(nds_h_path, dtype={"ars5": str})
+        osm_edu = _load_stage(wd, "eqasim_common.locations.education")
+        osm_uni = osm_edu[osm_edu["education_type"] == "university"].copy()
+        uni = build_university_facilities(df_h, osm_uni)
+        uni = uni.to_crs(persons_uni.crs)
+
+        pupil_xy_uni = np.column_stack([persons_uni.geometry.x.values,
+                                        persons_uni.geometry.y.values])
+        uni_xy = np.column_stack([uni.geometry.x.values, uni.geometry.y.values])
+        uni_weight = uni["capacity"].values.astype(float)
+
+        hochschule_t = hochschule_target_km(raw_mz, args.detour_factor)
+        logger.info("Hochschule straight-line target: %.3f km (detour factor %.2f)",
+                    hochschule_t, args.detour_factor)
+
+        # Bisection: mean distance decreases monotonically as slope becomes more
+        # negative. Bracket [lo, hi] = [-1.0, -0.001]; tolerance 0.3 km; 30 iters.
+        uni_lo, uni_hi = -1.0, -0.001
+        uni_tol = 0.3
+        uni_seed = args.seed
+
+        def _uni_f(s):
+            return mean_distance_decay(
+                s, pupil_xy_uni, uni_xy, uni_weight,
+                args.university_max_radius,
+                np.random.RandomState(uni_seed)) - hochschule_t
+
+        fa_uni = _uni_f(uni_lo)
+        for _ in range(30):
+            m_uni = 0.5 * (uni_lo + uni_hi)
+            fm_uni = _uni_f(m_uni)
+            if abs(fm_uni) < uni_tol:
+                break
+            if (fm_uni < 0) == (fa_uni < 0):
+                uni_lo, fa_uni = m_uni, fm_uni
+            else:
+                uni_hi = m_uni
+        uni_slope = 0.5 * (uni_lo + uni_hi)
+
+        uni_achieved = mean_distance_decay(
+            uni_slope, pupil_xy_uni, uni_xy, uni_weight,
+            args.university_max_radius, np.random.RandomState(uni_seed))
+        n_uni = len(persons_uni)
+        logger.info(
+            "university: n=%d, target=%.3f km, slope=%.4f, achieved=%.3f km",
+            n_uni, hochschule_t, uni_slope, uni_achieved)
+        results.append({
+            "level": "university",
+            "regiostar7": -1,
+            "n_pupils": n_uni,
+            "target_km": round(hochschule_t, 3),
+            "slope": round(uni_slope, 4),
+            "achieved_mean_km": round(uni_achieved, 3),
+        })
+
+    # ------------------------------------------------------------------
+    # 7. Print paste-ready YAML block
     # ------------------------------------------------------------------
     if not results:
         logger.warning("No calibration results produced. Check input data and pupil counts.")
@@ -461,6 +569,12 @@ def main():
     df_results = pd.DataFrame(results)
     print("\n# Paste under 'education_gravity_slope_by_level_rs7' in config_*braunschweig*.yml")
     print(_yaml_block(df_results))
+
+    # University slope is a single national value; emit on its own line so it
+    # can be pasted directly under 'education_university_slope' in the config.
+    uni_row = df_results[df_results["level"] == "university"]
+    if not uni_row.empty:
+        print("\neducation_university_slope: %.4f" % float(uni_row.iloc[0]["slope"]))
 
     print("\n# Full calibration log:")
     print(df_results.to_string(index=False))

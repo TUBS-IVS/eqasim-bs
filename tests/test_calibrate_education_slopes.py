@@ -63,3 +63,16 @@ def test_secant_calibrate_hits_target():
     got = mean_distance_for_slope(slope, pupils, schools, capacity,
                                   max_radius_km=60.0, rng=np.random.RandomState(2))
     assert abs(got - target) < 0.5
+
+
+def test_mean_distance_decay_decreases_with_steeper_slope():
+    from scripts.calibrate_education_slopes import mean_distance_decay
+    rng = np.random.RandomState(0)
+    pupils = np.zeros((300, 2))
+    unis = np.array([[0.0, 0.0], [40000.0, 0.0]])
+    weight = np.array([5000.0, 20000.0])
+    flat = mean_distance_decay(-0.02, pupils, unis, weight, 150.0,
+                               np.random.RandomState(1))
+    steep = mean_distance_decay(-0.5, pupils, unis, weight, 150.0,
+                                np.random.RandomState(1))
+    assert steep < flat
