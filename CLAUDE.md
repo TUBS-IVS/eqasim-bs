@@ -238,9 +238,42 @@ scaled to 100 %, fill_ratio) and `level_summary.csv` (per level: pupil count,
 mean/median straight-line school-commute km), so over-/under-filled schools and
 the slope calibration are immediately visible.
 
+**Per-(RegioStaR-7, level) slope calibration (MiD Tabelle 43).** The decay slope
+is differentiated by the pupil's **home RegioStaR-7** class so urban pupils (short
+trips) and rural pupils (long trips) decay at their own rate. Each pupil's home
+RS7 comes from a spatial join of the home point to `data.spatial.municipalities`
+(the 12-digit ARS is converted to the 8-digit AGS via
+`braunschweig.data.bbsr.regiostar.ars_to_ags8` before the RS7 merge -- without
+this every pupil silently falls back to the scalar slope). The per-RS7 slopes
+live in `education_gravity_slope_by_level_rs7` (nested `{level: {rs7: slope}}`;
+default `None` -> scalar `education_gravity_slope_by_level`, like
+`gravity_slope_by_regiostar7`). They are calibrated against **MiD 2023 Tabelle 43**
+("Kita- und Schulweglaengen nach Raumtyp und Altersgruppe", reference CSV
+`eqasim-data/data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` seeded
+by `scripts/seed_mid_t43_school_distance.py`, loaded by
+`braunschweig.data.mid.school_distance`). The MiD age groups map 7-10 ->
+grundschule, 11-13 -> sekundar_1, 14-17 -> sekundar_2; MiD routed lengths are
+divided by a detour factor (1.3) to a straight-line target.
+
+`scripts/calibrate_education_slopes.py` runs the calibration on the 25 % synthesis
+(`cache_bs_25pct`): the WHOLE level is assigned each round (per-pupil slope vector
+by home RS7) and each RS7's mean trip distance is secant-updated toward its target
+(`calibrate_level_per_rs7`). Calibrating cells in isolation is wrong -- the
+capacity constraint, scaled to a pupil subset, forces filling out-of-catchment
+schools. The committed evaluation (`--output-dir
+eqasim-data/data/braunschweig/mid/education_calibration/`:
+`calibration_results.csv`, two figures, `calibration_summary.md`) shows grundschule
+and sekundar_1 hit the targets; sekundar_2 rural cells (RS7 74/77) sit at the -3.0
+floor -- sparse rural Oberstufe/BBS make the nearest school already ~10 km, and the
+MiD 14-17 band mixes in nearer Sek-I pupils that our 16-19 band excludes, biasing
+the target short. Re-run the script and paste its YAML to update the slopes; do not
+hand-tune.
+
 Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
-`tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`.
+`tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`,
+`tests/test_mid_school_distance.py`, `tests/test_calibrate_education_slopes.py`,
+`tests/test_regiostar_fill.py` (the `ars_to_ags8` helper).
 
 ## Run analysis (post-simulation)
 
