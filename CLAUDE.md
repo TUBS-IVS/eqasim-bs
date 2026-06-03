@@ -164,10 +164,11 @@ recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 
 ## Education gravity model (NDS school data)
 
-School-age pupils (ages 6-19) are assigned to **real Niedersachsen schools** by a
-capacity-constrained distance-decay gravity model, instead of the generic OSM
-hard-radius sampler. Kindergarten (0-5) and university (20+) stay on the OSM
-sampler. The feature is flag-gated; with `education_gravity_enabled=false`
+All education levels are assigned by real-data distance-decay gravity models,
+replacing the generic OSM hard-radius sampler: school-age pupils (6-19) to **real
+Niedersachsen schools**, kindergarten children (0-5) to **real Kita facilities**
+(LSN Plaetze), and university students (20+) to **real Hochschulen** (LSN
+enrollment). The feature is flag-gated; with `education_gravity_enabled=false`
 (default) the pipeline is byte-identical to the legacy OSM education assignment.
 
 **Data.** The committed facilities table
@@ -217,8 +218,9 @@ schools fill in proportion to real Schuelerplaetze), friction
 double-constraint prevents a tiny nearby school from swallowing pupils that belong
 in a larger one ("no 2-vs-10000"). A per-level max radius bounds the candidate set
 (nearest-school fallback when a pupil has none in range). All randomness uses the
-single `random_seed`. Kindergarten/university use the OSM radius sampler
-(`assign_by_radius`). The per-person stage
+single `random_seed`. Kindergarten (0-5) uses the SAME doubly-constrained capacity
+gravity on the Kita facilities (see below); university (20+) uses a singly-
+constrained decay (see below). The per-person stage
 `braunschweig.synthesis.locations.education_gravity` produces the legacy output
 schema `[person_id, commune_id, location_id, geometry]` and is swapped in by the
 flag-gated wrapper
@@ -228,13 +230,30 @@ flag-gated wrapper
 Config keys (defaults in the stage's `configure`):
 `education_gravity_enabled` (false), `education_gravity_slope_by_level`
 (`{grundschule, sekundar_1, oberstufe, bbs}`),
-`education_gravity_max_radius_km_by_level`,
-`education_gravity_kindergarten_radius_m` (2000),
+`education_gravity_max_radius_km_by_level` (includes `kindergarten`),
 `education_gravity_max_iterations` (50), `education_gravity_tolerance` (1e-3),
-`nds_schools_path`, plus the university keys below.
+`nds_schools_path`, plus the kindergarten + university keys below.
 
-**University (Hochschule) students (age 20+).** Kindergarten (0-5) stays on the
-OSM radius sampler, but university students are routed through a dedicated
+**Kindergarten (Kita) children (age 0-5).** Routed through the SAME
+doubly-constrained capacity gravity as the schools, on real Kita facilities
+(`braunschweig.data.schools.kita_facilities`). Capacity = the LSN
+Kindertageseinrichtungen **Plaetze** per Einheits-/Samtgemeinde (committed
+`eqasim-data/data/braunschweig/schools/nds_kitas_zgb.csv` from LSN table K2300112,
+extracted by `scripts/extract_nds_kitas.py`; ZGB-8 = 832 facilities / 56084
+Plaetze). The Samtgemeinde Plaetze are distributed across the unit's OSM
+kindergarten POIs by area: each POI's LSN unit code is derived from its 12-digit
+ARS commune_id as `ARS[2:5] + ARS[6:9]` (Kreis + Verband), with a 3-digit Kreis
+fallback for the kreisfreie Staedte (BS/SZ/WOB, which LSN lists at Kreis level) --
+this needs no separate Samtgemeinde membership table. The per-RS7 slope is
+calibrated against the MiD 2023 Tabelle 43 **0-6** column (~1.5-2.3 km
+straight-line; RS7 72 floors at ~1.6 km = the nearest urban Kita). The LSN table
+K2300223 (children in Kita by age group + Besuchsquote) is a committed validation
+reference, not a model input. Config: `nds_kitas_path`, the `kindergarten` entries
+in `education_gravity_slope_by_level_rs7` / `education_gravity_max_radius_km_by_level`
+(8 km).
+
+**University (Hochschule) students (age 20+).** University students are routed
+through a dedicated
 **singly-constrained** distance-decay model (`assign_by_decay`): each student
 draws an institution `~ enrollment_j * exp(slope * d_ij)` within
 `education_university_max_radius_km` (150 km), with a nearest-campus fallback.
@@ -278,9 +297,10 @@ default `None` -> scalar `education_gravity_slope_by_level`, like
 ("Kita- und Schulweglaengen nach Raumtyp und Altersgruppe", reference CSV
 `eqasim-data/data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` seeded
 by `scripts/seed_mid_t43_school_distance.py`, loaded by
-`braunschweig.data.mid.school_distance`). The MiD age groups map 7-10 ->
-grundschule, 11-13 -> sekundar_1, 14-17 -> `oberstufe`; MiD routed lengths are
-divided by a detour factor (1.3) to a straight-line target. The vocational `bbs`
+`braunschweig.data.mid.school_distance`). The MiD age groups map 0-6 ->
+kindergarten, 7-10 -> grundschule, 11-13 -> sekundar_1, 14-17 -> `oberstufe`; MiD
+routed lengths are divided by a detour factor (1.3) to a straight-line target. The
+vocational `bbs`
 level has no per-RS7 MiD target -- BBS distance is benchmarked against the
 **Destatis Mikrozensus 2024** national school-trip distribution by school type
 (`braunschweig.data.mikrozensus.school_distance`, CSV seeded by
@@ -311,7 +331,8 @@ Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
 `tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`,
 `tests/test_mid_school_distance.py`, `tests/test_mikrozensus_school_distance.py`,
-`tests/test_university_facilities.py`, `tests/test_calibrate_education_slopes.py`,
+`tests/test_university_facilities.py`, `tests/test_extract_nds_kitas.py`,
+`tests/test_kita_facilities.py`, `tests/test_calibrate_education_slopes.py`,
 `tests/test_regiostar_fill.py` (the `ars_to_ags8` helper).
 
 ## Run analysis (post-simulation)
