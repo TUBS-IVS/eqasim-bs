@@ -130,7 +130,9 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
     # Kindergarten (age 0-5): doubly-constrained capacity gravity on real Kita
     # facilities. Kitas are local institutions; capacity targets are meaningful
     # (Plaetze ~ local demand), so the same doubly-constrained model used for
-    # NDS schools is appropriate here.
+    # NDS schools is appropriate here. commune_id is left empty below: it is not
+    # consumed downstream (synthesis.population.spatial.locations re-attributes the
+    # location geometry to a Gemeinde); the same applies to the university branch.
     sel = df[df["level"] == "kindergarten"]
     if not sel.empty:
         if df_kita.empty:

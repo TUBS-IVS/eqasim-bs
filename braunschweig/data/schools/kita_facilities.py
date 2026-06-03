@@ -63,12 +63,26 @@ def execute(context):
     gdf = build_kita_facilities(df_k, df_osm)
     placed = float(gdf["capacity"].sum())
     expected = float(df_k["plaetze"].sum())
-    if placed < 0.9 * expected:
-        print("[braunschweig.data.schools.kita_facilities] WARNING: placed %.0f < "
-              "reference %.0f Plaetze -- some units lack OSM kindergarten POIs."
-              % (placed, expected))
+
+    # Name any LSN unit whose Plaetze could not be placed because the unit has no
+    # OSM kindergarten POI: its children are silently redistributed to neighbouring
+    # units' Kitas (a bounded spatial distortion), so flag it for traceability.
+    plset = set(df_k["lsn_code"].astype(str))
+    placed_units = set()
+    for cid in df_osm["commune_id"].astype(str):
+        u6 = lsn_unit(cid)
+        placed_units.add(u6 if u6 in plset else cid[2:5])
+    dropped = [(c, n, p) for c, n, p in zip(df_k["lsn_code"].astype(str),
+                                            df_k["name"], df_k["plaetze"])
+               if c not in placed_units]
+    if dropped:
+        print("[braunschweig.data.schools.kita_facilities] WARNING: %d unit(s) "
+              "without OSM kindergarten POIs (%.0f Plaetze redistributed): %s"
+              % (len(dropped), sum(p for _, _, p in dropped),
+                 ", ".join("%s %s (%.0f)" % (c, n, p) for c, n, p in dropped)))
     print("[braunschweig.data.schools.kita_facilities] %d kita points; "
-          "capacity sum %.0f of %.0f" % (len(gdf), placed, expected))
+          "capacity sum %.0f of %.0f (%.1f%%)"
+          % (len(gdf), placed, expected, 100.0 * placed / expected))
     return gdf
 
 
