@@ -110,6 +110,33 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
     return choice, fallback
 
 
+def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng):
+    """Singly-constrained gravity draw: each pupil picks a destination with
+    probability proportional to ``weight_j * exp(slope * d_ij)`` among
+    destinations within ``max_radius_km`` (nearest-destination fallback when
+    none are in range). Unlike the doubly-constrained school model there is NO
+    capacity balancing -- used for universities, where far institutions' large
+    enrollment is mostly non-resident and only the distance decay should govern
+    how far the local tail commutes.
+    """
+    d_km = cdist(pupil_xy, school_xy) / 1000.0
+    weight = np.asarray(weight, dtype=float)
+    attract = weight[None, :] * np.exp(slope * d_km)
+    attract = np.where(d_km <= max_radius_km, attract, 0.0)
+
+    none_in_radius = attract.sum(axis=1) == 0
+    if none_in_radius.any():
+        rows = np.where(none_in_radius)[0]
+        nearest = np.argmin(d_km[rows], axis=1)
+        attract[rows, :] = 0.0
+        attract[rows, nearest] = 1.0
+
+    totals = attract.sum(axis=1, keepdims=True)
+    cdf = np.cumsum(attract / totals, axis=1)
+    u = rng.random_sample(size=attract.shape[0])
+    return (u[:, None] > cdf).sum(axis=1).clip(max=attract.shape[1] - 1)
+
+
 def assign_by_radius(pupil_xy, school_xy, weight, radius_m, rng):
     """Capacity-weighted draw within ``radius_m`` (nearest fallback). Mirrors the
     existing eqasim_common education sampler; used for kindergarten + university."""

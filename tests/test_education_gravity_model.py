@@ -1,6 +1,7 @@
 import numpy as np
 from braunschweig.synthesis.locations.education_gravity_model import (
     balance_doubly_constrained, assign_by_capacity_gravity, assign_by_radius,
+    assign_by_decay,
 )
 
 
@@ -113,3 +114,28 @@ def test_capacity_gravity_scalar_slope_still_works():
         pupils, schools, capacity, slope=-0.2, max_radius_km=60.0,
         max_iterations=200, tolerance=1e-9, rng=rng)
     assert set(np.unique(choice)) <= {0, 1}
+
+
+def test_assign_by_decay_weights_by_attraction_and_distance():
+    # Two universities: A near (0 km, small), B far (40 km, large). With a
+    # moderate slope most pupils pick the near one despite B's larger weight,
+    # but a non-trivial tail reaches B (singly-constrained: no capacity forcing).
+    rng = np.random.RandomState(0)
+    pupils = np.zeros((500, 2))
+    unis = np.array([[0.0, 0.0], [40_000.0, 0.0]])
+    weight = np.array([5000.0, 25000.0])
+    choice = assign_by_decay(pupils, unis, weight, slope=-0.08,
+                             max_radius_km=150.0, rng=rng)
+    near = np.mean(choice == 0)
+    assert 0.5 < near < 1.0           # near preferred, but some reach the far big one
+    assert set(np.unique(choice)) <= {0, 1}
+
+
+def test_assign_by_decay_nearest_fallback_outside_radius():
+    rng = np.random.RandomState(1)
+    pupils = np.zeros((5, 2))
+    unis = np.array([[200_000.0, 0.0]])     # 200 km away, radius 150 km
+    weight = np.array([10000.0])
+    choice = assign_by_decay(pupils, unis, weight, slope=-0.08,
+                             max_radius_km=150.0, rng=rng)
+    assert (choice == 0).all()              # nearest fallback when none in radius
