@@ -41,25 +41,28 @@ def balance_doubly_constrained(production, attraction, friction,
     return T
 
 
-def _draw_from_weights(weights, rng):
-    """One column index per row, drawn proportional to unnormalized row weights."""
-    totals = weights.sum(axis=1, keepdims=True)
+def _draw_from_rows(T, rng):
+    """One column index per row, drawn proportional to that row of the balanced
+    flow matrix T (doubly-constrained probabilities)."""
+    totals = T.sum(axis=1, keepdims=True)
     totals[totals == 0] = 1.0
-    cdf = np.cumsum(weights / totals, axis=1)
-    u = rng.random_sample(size=weights.shape[0])
-    return (u[:, None] > cdf).sum(axis=1).clip(max=weights.shape[1] - 1)
+    cdf = np.cumsum(T / totals, axis=1)
+    u = rng.random_sample(size=T.shape[0])
+    return (u[:, None] > cdf).sum(axis=1).clip(max=T.shape[1] - 1)
 
 
 def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
                                max_radius_km, max_iterations, tolerance, rng):
-    """Assign each pupil to a school by the capacity-constrained gravity model.
+    """Assign each pupil to a school by the doubly-constrained gravity model.
 
-    Each pupil draws a school proportional to ``capacity * exp(slope * dist_km)``,
-    which is the standard gravity attraction weight (capacity-scaled distance decay).
-    ``balance_doubly_constrained`` is called to verify aggregate margin convergence
-    but the per-pupil draw uses the unnormalized gravity weights directly, so that
-    both distance preference and capacity attractiveness are reflected in individual
-    choices.
+    Builds a friction matrix from distance-decay, scales school attraction
+    targets to the pupil count (so column sums match capacity proportions),
+    runs Furness balancing (``balance_doubly_constrained``) to satisfy both
+    the per-pupil row constraint (everyone is placed exactly once) and the
+    per-school column constraint (schools fill in proportion to their real
+    Schuelerplaetze), then draws each pupil's school proportional to the
+    balanced flow row. This is the doubly-constrained guarantee that prevents
+    a tiny-capacity school from absorbing all nearby pupils ("no 2-vs-10000").
 
     pupil_xy: (R, 2) metric coords; school_xy: (C, 2); capacity: (C,) > 0;
     slope: decay (1/km, negative); max_radius_km: candidate cutoff. Returns
@@ -74,11 +77,17 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
         rows = np.where(fallback)[0]
         friction[rows, nearest] = np.exp(slope * d_km[rows, nearest])
 
-    # Gravity attraction weight: capacity scales each school's pull.
+    # Scale attraction so that column targets sum to the pupil count, preserving
+    # capacity proportions: each school's target = n_pupils * cap_j / sum(cap).
     capacity = np.asarray(capacity, dtype=float)
-    weights = friction * capacity[None, :]
+    n_pupils = int(pupil_xy.shape[0])
+    attraction = n_pupils * capacity / capacity.sum()
+    production = np.ones(n_pupils)
 
-    choice = _draw_from_weights(weights, rng)
+    T = balance_doubly_constrained(production, attraction, friction,
+                                   max_iterations=max_iterations,
+                                   tolerance=tolerance)
+    choice = _draw_from_rows(T, rng)
     return choice, fallback
 
 
