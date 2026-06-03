@@ -82,14 +82,23 @@ def execute(context):
     df_osm = df_osm[df_osm["education_type"] == "university"].copy()
     gdf = build_university_facilities(df_h, df_osm)
     # Guard against silent enrollment loss: a local institution whose commune has
-    # no OSM university building would be dropped by the area-distribution. Warn
-    # if the placed capacity is materially below the reference enrollment.
+    # no OSM university building is dropped by the area-distribution (its students
+    # would be redistributed to the nearest surviving campus). Name any such
+    # institution explicitly so the calibration is not trusted on incomplete data.
+    osm_ars5 = set(df_osm["commune_id"].astype(str).str[:5])
+    dropped = []
+    for _, r in df_h[df_h["scope"] == "local"].iterrows():
+        communes = (OSTFALIA_COMMUNES
+                    if str(r["institution"]).startswith("Ostfalia")
+                    else [str(r["ars5"])])
+        if not (set(communes) & osm_ars5):
+            dropped.append("%s (commune(s) %s)" % (r["institution"], communes))
+    if dropped:
+        print("[braunschweig.data.schools.university_facilities] WARNING: no OSM "
+              "university buildings for local institution(s): %s -- their students "
+              "are redistributed to the nearest campus." % "; ".join(dropped))
     placed = float(gdf["capacity"].sum())
     expected = float(df_h["enrollment"].sum())
-    if placed < 0.99 * expected:
-        print("[braunschweig.data.schools.university_facilities] WARNING: placed "
-              "capacity %.0f < reference enrollment %.0f -- a local institution "
-              "may lack OSM university buildings in its commune." % (placed, expected))
     print("[braunschweig.data.schools.university_facilities] %d university points; "
           "capacity sum %.0f of %.0f" % (len(gdf), placed, expected))
     return gdf
