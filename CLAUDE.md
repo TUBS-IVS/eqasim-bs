@@ -186,20 +186,24 @@ capacities in Python is prohibited - change the xlsx source or
 `braunschweig/data/schools/typing.py` and re-run the script.
 
 **Age -> level + capacity.** `braunschweig.data.schools.typing` maps each LSN
-Schulgliederung (SGL) code to a level and sums the matching pupil counts:
-Primarbereich (SGL 00,01,03,04) -> `grundschule` (6-9); Haupt/Real/Gym-SekI/IGS/
-KGS (11-19) plus the Oberschule/Foerderschule block (40-69) -> `sekundar_1`
-(10-15); Gym/IGS/KGS Sek II (23,24,28,29) **plus all BBS pupils** -> `sekundar_2`
-(16-19). Adult forms (Abendgymnasium 30, Kolleg 31) are excluded. The
-Gymnasium/Realschule/Hauptschule mix emerges automatically from the real
-per-level capacity shares (no school-track choice is modelled). Note that the
+Schulgliederung (SGL) code to one of FOUR school levels and sums the matching
+pupil counts: Primarbereich (SGL 00,01,03,04) -> `grundschule` (6-9);
+Haupt/Real/Gym-SekI/IGS/KGS (11-19) plus the Oberschule/Foerderschule block
+(40-69) -> `sekundar_1` (10-15); Gym/IGS/KGS Sek II (23,24,28,29) -> `oberstufe`
+(academic upper secondary); all BBS pupils -> `bbs` (vocational). Adult forms
+(Abendgymnasium 30, Kolleg 31) are excluded. Age 16-19 pupils are split per
+person between `oberstufe` and `bbs` by `education_bbs_share` (default 0.681 =
+NDS enrollment BBS 29336 / (BBS 29336 + Oberstufe 13745)). The split matters
+because the two have very different trip lengths: BBS are sparse with a regional
+catchment (long trips), the gymnasiale Oberstufe is local. The
+Gymnasium/Realschule/Hauptschule mix within a level emerges automatically from
+the real per-level capacity shares (no school-track choice is modelled). Note the
 gravity age bands (0-5 / 6-9 / 10-15 / 16-19 / 20+) reclassify the boundary ages
 relative to the legacy OSM sampler's 0-6 / 7-17 / 18+ split: with the flag ON,
 age 6 moves from kindergarten to `grundschule` and ages 18-19 from university to
-`sekundar_2` (BBS/Oberstufe). This only affects the ON path; the OFF path keeps
-the legacy bands. LSN internal codes
-drop the Land prefix: official AGS-8 = `"03" + AGS6`, Kreis-5 = `"03" + Kreis3`;
-the table is filtered to the ZGB-8 Kreise.
+oberstufe/bbs. This only affects the ON path; the OFF path keeps the legacy
+bands. LSN internal codes drop the Land prefix: official AGS-8 = `"03" + AGS6`,
+Kreis-5 = `"03" + Kreis3`; the table is filtered to the ZGB-8 Kreise.
 
 **The model (capacity-constrained distance decay).** Per level, the assignment is
 a **rectangular doubly-constrained Furness balancing**
@@ -252,27 +256,39 @@ default `None` -> scalar `education_gravity_slope_by_level`, like
 `eqasim-data/data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` seeded
 by `scripts/seed_mid_t43_school_distance.py`, loaded by
 `braunschweig.data.mid.school_distance`). The MiD age groups map 7-10 ->
-grundschule, 11-13 -> sekundar_1, 14-17 -> sekundar_2; MiD routed lengths are
-divided by a detour factor (1.3) to a straight-line target.
+grundschule, 11-13 -> sekundar_1, 14-17 -> `oberstufe`; MiD routed lengths are
+divided by a detour factor (1.3) to a straight-line target. The vocational `bbs`
+level has no per-RS7 MiD target -- BBS distance is benchmarked against the
+**Destatis Mikrozensus 2024** national school-trip distribution by school type
+(`braunschweig.data.mikrozensus.school_distance`, CSV seeded by
+`scripts/seed_mikrozensus_school_distance.py`): the banded BBS distribution gives
+a national straight-line mean of ~15.8 km, applied as the same target to every RS7.
 
 `scripts/calibrate_education_slopes.py` runs the calibration on the 25 % synthesis
 (`cache_bs_25pct`): the WHOLE level is assigned each round (per-pupil slope vector
-by home RS7) and each RS7's mean trip distance is secant-updated toward its target
-(`calibrate_level_per_rs7`). Calibrating cells in isolation is wrong -- the
+by home RS7) and each RS7's mean trip distance is moved toward its target by a
+per-RS7 **bisection** (`calibrate_level_per_rs7`; bisection is stable on the noisy
+means of small rural cells). Calibrating cells in isolation is wrong -- the
 capacity constraint, scaled to a pupil subset, forces filling out-of-catchment
-schools. The committed evaluation (`--output-dir
-eqasim-data/data/braunschweig/mid/education_calibration/`:
-`calibration_results.csv`, two figures, `calibration_summary.md`) shows grundschule
-and sekundar_1 hit the targets; sekundar_2 rural cells (RS7 74/77) sit at the -3.0
-floor -- sparse rural Oberstufe/BBS make the nearest school already ~10 km, and the
-MiD 14-17 band mixes in nearer Sek-I pupils that our 16-19 band excludes, biasing
-the target short. Re-run the script and paste its YAML to update the slopes; do not
-hand-tune.
+schools. Tiny/sparse cells off by > 1.5 km whose slope is NOT at the steep bound
+are **shrinkage-regularised** to the pupil-weighted mean slope of the converged
+cells of the same level; cells AT the steep bound (slope ~ -3.0) are kept -- there
+the target is simply below the nearest-school distance (rural BBS / rural
+Oberstufe), a legitimate structural floor, not noise. The committed evaluation
+(`--output-dir eqasim-data/data/braunschweig/mid/education_calibration/`:
+`calibration_results.csv`, two figures, `calibration_summary.md`) shows
+grundschule, sekundar_1 and bbs hit their targets across RS7 (bbs RS7 77 floors at
+~20 km -- the nearest rural BBS is already that far); oberstufe converges for the
+larger cells, while the tiny rural cells (RS7 75/76/77, ~40-50 pupils at 25 %) are
+regularised and would sharpen at a higher sampling rate. Re-run the script
+(`--bbs-share` controls the upper-secondary split) and paste its YAML to update the
+slopes; do not hand-tune.
 
 Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
 `tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`,
-`tests/test_mid_school_distance.py`, `tests/test_calibrate_education_slopes.py`,
+`tests/test_mid_school_distance.py`, `tests/test_mikrozensus_school_distance.py`,
+`tests/test_calibrate_education_slopes.py`,
 `tests/test_regiostar_fill.py` (the `ars_to_ags8` helper).
 
 ## Run analysis (post-simulation)
