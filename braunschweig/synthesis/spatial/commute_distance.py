@@ -23,8 +23,12 @@ level CDF:
   3. Use the MiD draw for the ``work`` activity (P13 is a work-commute
      table) and leave ``education`` untouched (no MiD equivalent).
 
-Persons whose home Kreis is outside ZGB-8 or who match an HTS person
-without a commute trip keep the ENTD-sampled value unchanged.
+Persons whose home Kreis is not one of the eight ZGB Kreise receive a draw
+from the ZGB aggregate band (the ``03ZGB`` fallback row); the synthetic
+population is ZGB-8-resident, so this fallback is effectively unused today.
+Persons who match an HTS person without a commute trip carry a NaN commute
+distance into ``df_work`` and are filtered out downstream before the distance
+is consumed, so the fabricated value is harmless.
 
 Config keys (with defaults)::
 
@@ -91,10 +95,12 @@ def _override_work_distances(df_work: pd.DataFrame,
     fallback_cdf = cdfs.get("03ZGB")
 
     df = df_work.copy()
-    # BUG-003 fix: commune_id is an 8-digit ARS but pandas may carry it as int
+    # BUG-003 fix: commune_id is the 12-digit ARS but pandas may carry it as int
     # (which strips the leading 0 of the Niedersachsen state code "03"). Force
-    # to string and pad to 8 digits before slicing the 5-digit Kreis prefix.
-    df["kreis"] = df["commune_id"].astype(str).str.zfill(8).str[:5]
+    # to string and pad back to 12 digits before slicing the 5-digit Kreis
+    # prefix. zfill(12) is a no-op on the normal 12-char string and restores the
+    # leading zero if the column ever arrives as an int.
+    df["kreis"] = df["commune_id"].astype(str).str.zfill(12).str[:5]
 
     overrides_applied = 0
     for kreis, group_idx in df.groupby("kreis", sort=False,

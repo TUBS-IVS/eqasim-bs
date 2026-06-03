@@ -475,12 +475,22 @@ def _extract_locations(result_df: pd.DataFrame,
 
     # Group result rows by (person, problem) — leg order preserved by
     # the input order (chainsolvers preserves row order on output).
-    for (uid, leg_id, to_act, to_x, to_y) in zip(
+    # The solver's candidate identifier travels with each row, so we read it
+    # positionally from the same zip rather than re-scanning result_df per row
+    # (the latter is O(n^2) over the whole result frame and dominates runtime
+    # at 25% scale). Positional read is also more robust than a leg_id lookup
+    # if two rows ever share a unique_leg_id.
+    if "to_act_identifier" in result_df.columns:
+        identifiers = result_df["to_act_identifier"]
+    else:
+        identifiers = [None] * len(result_df)
+    for (uid, leg_id, to_act, to_x, to_y, cand) in zip(
         result_df["unique_person_id"],
         result_df["unique_leg_id"],
         result_df["to_act_type"],
         result_df["to_x"],
         result_df["to_y"],
+        identifiers,
     ):
         # uid = "{person_id}#{problem_idx}"
         # leg_id = "{person_id}#{problem_idx}#{leg_index}"
@@ -505,16 +515,9 @@ def _extract_locations(result_df: pd.DataFrame,
         person_id = meta["person_id"]
         activity_index = meta["activity_index"] + leg_idx
 
-        # Try to recover the canonical eqasim location_id by snapping to
-        # the nearest candidate of the right purpose (chainsolvers may
-        # round coords). Use direct lookup via the column the package
-        # writes.
-        loc_id = None
-        if "to_act_identifier" in result_df.columns:
-            row_idx = result_df.index[result_df["unique_leg_id"] == leg_id][0]
-            cand = result_df.at[row_idx, "to_act_identifier"]
-            if isinstance(cand, str):
-                loc_id = cand
+        # Recover the canonical eqasim location_id from the candidate
+        # identifier the solver wrote for this row (read positionally above).
+        loc_id = cand if isinstance(cand, str) else None
         if loc_id is None or loc_id not in coord_lookup:
             # fallback: synthesise an id from coords (downstream only
             # cares that the geometry is set correctly).

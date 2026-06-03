@@ -204,7 +204,11 @@ def configure(context):
     context.config("education_bbs_share", 0.681)
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("braunschweig.data.schools.kita_facilities")
-    context.config("education_university_slope", -0.08)
+    # Default mirrors the pinned calibration (Destatis MZ 2024 Hochschule mean,
+    # ~15.2 km straight-line) so a config that omits the key does not silently
+    # run the university model uncalibrated. The active BS configs pin the same
+    # value; re-run scripts/calibrate_education_slopes.py to update it.
+    context.config("education_university_slope", -0.1415)
     context.config("education_university_max_radius_km", 150.0)
     context.config("education_gravity_max_iterations", 50)
     context.config("education_gravity_tolerance", 1e-3)

@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
 
 def configure(context):
     context.stage("synthesis.population.enriched")
@@ -43,9 +45,13 @@ def execute(context) -> pd.DataFrame:
         "commune_id", "regiostar7",
     ]]
 
-    df = (df_persons
-          .merge(df_home, on="household_id", how="left")
-          .merge(df_regiostar, on="commune_id", how="left"))
+    df = df_persons.merge(df_home, on="household_id", how="left")
+    # ``home.locations`` carries the 12-digit ARS while the RegioStaR-7 table
+    # keys on the 8-digit AGS; convert before merging or every person would
+    # silently fall back to NaN (the same ARS12->AGS8 step the education
+    # gravity stage applies).
+    df["commune_id"] = df["commune_id"].map(ars_to_ags8)
+    df = df.merge(df_regiostar, on="commune_id", how="left")
 
     n_total = len(df)
     n_unmatched = int(df["regiostar7"].isna().sum())
