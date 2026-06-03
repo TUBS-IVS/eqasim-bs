@@ -1,0 +1,10 @@
+# MiD 2023 Großraum BS Tabelle H4 'Ökonomischer Status des Haushalts'
+# by household size (BMDV quintiles, Zeilen%). 5+ HH share is mirrored
+# to keys '5' and '6+' to support the IPF household-size split.
+household_size,sehr_niedrig,niedrig,mittel,hoch,sehr_hoch
+1,0.16,0.14,0.39,0.26,0.03
+2,0.04,0.15,0.28,0.38,0.15
+3,0.03,0.03,0.17,0.55,0.22
+4,0.02,0.04,0.23,0.51,0.19
+5,0.04,0.08,0.3,0.44,0.14
+6+,0.04,0.08,0.3,0.44,0.14

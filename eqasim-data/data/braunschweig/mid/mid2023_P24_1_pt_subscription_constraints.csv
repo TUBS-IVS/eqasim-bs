@@ -1,0 +1,24 @@
+# MiD 2023 Großraum BS Tabelle A P24.1 (PT subscription = sum of
+# Deutschlandticket + Wochen-/Monatskarte Abo + Jobticket/Semesterticket).
+# Source: infas 2025 report. Values are fractions in [0, 1].
+dimension,key,age_lo,age_hi,target
+zone,braunschweig,,,0.26
+zone,salzgitter,,,0.2
+zone,wolfsburg,,,0.18
+zone,gifhorn,,,0.16
+zone,goslar,,,0.19
+zone,helmstedt,,,0.19
+zone,peine,,,0.14
+zone,wolfenbuettel,,,0.14
+zone,external,,,0.19
+sex,male,,,0.2
+sex,female,,,0.18
+age,14-17,14,17,0.65
+age,18-29,18,29,0.43
+age,30-39,30,39,0.2
+age,40-49,40,49,0.21
+age,50-59,50,59,0.12
+age,60-64,60,64,0.09
+age,65-74,65,74,0.06
+age,75-79,75,79,0.07
+age,80+,80,inf,0.06

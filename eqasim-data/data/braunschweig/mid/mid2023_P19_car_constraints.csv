@@ -1,0 +1,23 @@
+# MiD 2023 Großraum BS Tabelle A P19 'jederzeit' (car availability).
+# Source: infas 2025 report, page P19. Values are fractions in [0, 1].
+dimension,key,age_lo,age_hi,target
+zone,braunschweig,,,0.67
+zone,salzgitter,,,0.8
+zone,wolfsburg,,,0.68
+zone,gifhorn,,,0.89
+zone,goslar,,,0.71
+zone,helmstedt,,,0.77
+zone,peine,,,0.8
+zone,wolfenbuettel,,,0.76
+zone,external,,,0.76
+sex,male,,,0.8
+sex,female,,,0.72
+age,14-17,14,17,0.41
+age,18-29,18,29,0.61
+age,30-39,30,39,0.77
+age,40-49,40,49,0.84
+age,50-59,50,59,0.86
+age,60-64,60,64,0.82
+age,65-74,65,74,0.84
+age,75-79,75,79,0.79
+age,80+,80,inf,0.6

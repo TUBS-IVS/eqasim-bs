@@ -1,0 +1,13 @@
+# MiD 2023 Großraum BS Tabelle H7 'Anzahl Autos im Haushalt'.
+# ars5='Gesamt' is the region-wide row used as fallback.
+# Columns 0/1/2/3 are the share with that vehicle count (3 == 3+).
+ars5,0,1,2,3
+03101,0.25,0.53,0.2,0.02
+03102,0.1,0.62,0.22,0.06
+03103,0.17,0.57,0.22,0.04
+03151,0.06,0.5,0.35,0.08
+03153,0.22,0.53,0.21,0.04
+03154,0.14,0.52,0.27,0.07
+03157,0.07,0.48,0.37,0.08
+03158,0.13,0.56,0.22,0.09
+Gesamt,0.15,0.53,0.26,0.06

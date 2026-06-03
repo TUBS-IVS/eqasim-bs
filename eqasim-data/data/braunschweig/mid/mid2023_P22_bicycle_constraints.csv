@@ -1,0 +1,26 @@
+# MiD 2023 Großraum BS Tabelle A P22 'ja' (own bicycle).
+# Source: infas 2025 report, page P22. Values are fractions in [0, 1].
+dimension,key,age_lo,age_hi,target
+zone,braunschweig,,,0.73
+zone,salzgitter,,,0.65
+zone,wolfsburg,,,0.57
+zone,gifhorn,,,0.78
+zone,goslar,,,0.54
+zone,helmstedt,,,0.64
+zone,peine,,,0.76
+zone,wolfenbuettel,,,0.63
+zone,external,,,0.67
+sex,male,,,0.72
+sex,female,,,0.63
+age,upto_6,-inf,6,0.52
+age,7-10,7,10,0.95
+age,11-13,11,13,0.86
+age,14-17,14,17,0.85
+age,18-29,18,29,0.74
+age,30-39,30,39,0.74
+age,40-49,40,49,0.78
+age,50-59,50,59,0.73
+age,60-64,60,64,0.64
+age,65-74,65,74,0.55
+age,75-79,75,79,0.48
+age,80+,80,inf,0.36

@@ -1,0 +1,8 @@
+# Class-midpoint € per BMDV income bin. Used to compute numeric
+# household_income_eur (post INKAR scaling).
+income_class,midpoint_eur
+0-500,250.0
+1500-2000,1750.0
+2600-3000,2800.0
+3600-4500,4050.0
+5000+,6000.0
