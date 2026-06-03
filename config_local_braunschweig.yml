@@ -146,6 +146,18 @@ config:
   # (braunschweig.synthesis.locations.education_gravity, NDS school register).
   education_gravity_enabled: false
 
+  # Per-(RegioStaR-7, level) education decay slopes, calibrated against MiD 2023
+  # Tabelle 43 (school-trip length by raumtyp x age group) on the 25% synthesis
+  # via scripts/calibrate_education_slopes.py (detour factor 1.3). Unset (None)
+  # -> fall back to the scalar education_gravity_slope_by_level. Re-run the
+  # calibration script and paste its YAML to update; do not hand-tune.
+  # Note: sekundar_2 rural cells (74/77) sit at the -3.0 floor (sparse rural
+  # Oberstufe/BBS -> nearest school already ~10 km; see calibration_summary.md).
+  education_gravity_slope_by_level_rs7:
+    grundschule: {72: -1.3446, 73: -0.6841, 74: -0.4415, 75: -1.0202, 76: -0.1253, 77: -0.2583}
+    sekundar_1: {72: -0.4969, 73: -0.2368, 74: -0.4523, 75: -0.5546, 76: -0.2213, 77: -0.0996}
+    sekundar_2: {72: -2.0755, 73: -1.9817, 74: -3.0000, 75: -2.1791, 76: -3.0000, 77: -3.0000}
+
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.

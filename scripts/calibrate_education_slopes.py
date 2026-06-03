@@ -180,6 +180,9 @@ def main():
                         help="Routed/straight-line detour factor applied to MiD target distances (default 1.3).")
     parser.add_argument("--seed", type=int, default=0,
                         help="Random seed for stochastic assignment (default 0).")
+    parser.add_argument("--output-dir", default=None,
+                        help="If set, write calibration_results.csv, two figures "
+                             "and calibration_summary.md to this directory.")
     args = parser.parse_args()
 
     wd = args.working_directory
@@ -345,17 +348,129 @@ def main():
 
     df_results = pd.DataFrame(results)
     print("\n# Paste under 'education_gravity_slope_by_level_rs7' in config_*braunschweig*.yml")
-    print("education_gravity_slope_by_level_rs7:")
+    print(_yaml_block(df_results))
+
+    print("\n# Full calibration log:")
+    print(df_results.to_string(index=False))
+
+    if args.output_dir:
+        _write_outputs(df_results, args.detour_factor, args.output_dir)
+        logger.info("Wrote calibration evaluation to %s", args.output_dir)
+
+
+_RS7_LABELS = {
+    71: "Metropole", 72: "Regiopole/GS", 73: "Mittelstadt",
+    74: "kleinst./doerfl.", 75: "l. zentrale Stadt",
+    76: "l. Mittelstadt", 77: "l. kleinst./doerfl.",
+}
+
+
+def _yaml_block(df_results):
+    lines = ["education_gravity_slope_by_level_rs7:"]
     for level in ("grundschule", "sekundar_1", "sekundar_2"):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             continue
-        pairs = ", ".join(f"{int(row.regiostar7)}: {row.slope:.4f}"
-                          for _, row in sub.iterrows())
-        print(f"  {level}: {{{pairs}}}")
+        pairs = ", ".join(f"{int(r.regiostar7)}: {r.slope:.4f}"
+                          for _, r in sub.iterrows())
+        lines.append(f"  {level}: {{{pairs}}}")
+    return "\n".join(lines)
 
-    print("\n# Full calibration log:")
-    print(df_results.to_string(index=False))
+
+def _write_outputs(df_results, detour_factor, output_dir):
+    """Write the calibration results CSV, two figures, and a markdown summary."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    os.makedirs(output_dir, exist_ok=True)
+    df_results = df_results.copy()
+    df_results["abs_error_km"] = (df_results["achieved_mean_km"]
+                                  - df_results["target_km"]).abs()
+    df_results.to_csv(os.path.join(output_dir, "calibration_results.csv"),
+                      index=False)
+
+    levels = ["grundschule", "sekundar_1", "sekundar_2"]
+
+    # Figure 1: target vs achieved straight-line mean per level x RS7
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+    for ax, level in zip(axes, levels):
+        sub = df_results[df_results["level"] == level].sort_values("regiostar7")
+        if sub.empty:
+            ax.set_title(level + " (no data)")
+            continue
+        idx = np.arange(len(sub))
+        ax.bar(idx - 0.2, sub["target_km"], width=0.4, label="MiD target",
+               color="#4C72B0")
+        ax.bar(idx + 0.2, sub["achieved_mean_km"], width=0.4, label="model",
+               color="#DD8452")
+        ax.set_xticks(idx)
+        ax.set_xticklabels([f"RS7 {int(r)}" for r in sub["regiostar7"]],
+                           rotation=45, ha="right", fontsize=8)
+        ax.set_title(level)
+        ax.set_ylabel("mean school-trip km (straight-line)")
+        ax.legend(fontsize=8)
+    fig.suptitle("Education slope calibration vs MiD Tab. 43 "
+                 f"(detour factor {detour_factor})")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "calibration_target_vs_achieved.png"),
+                dpi=120)
+    plt.close(fig)
+
+    # Figure 2: calibrated slope per RS7 x level
+    fig, ax = plt.subplots(figsize=(10, 5))
+    width = 0.25
+    for i, level in enumerate(levels):
+        sub = df_results[df_results["level"] == level].sort_values("regiostar7")
+        if sub.empty:
+            continue
+        idx = np.arange(len(sub))
+        ax.bar(idx + (i - 1) * width, sub["slope"], width=width, label=level)
+        ax.set_xticks(np.arange(len(sub)))
+        ax.set_xticklabels([f"RS7 {int(r)}" for r in sub["regiostar7"]])
+    ax.set_ylabel("calibrated slope (1/km)")
+    ax.set_title("Calibrated education decay slope by RegioStaR-7 and level")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "calibration_slopes_by_rs7.png"), dpi=120)
+    plt.close(fig)
+
+    # Markdown summary
+    floor = df_results[(df_results["slope"] <= -2.999)]
+    miss = df_results[df_results["abs_error_km"] > 0.5]
+    lines = [
+        "# Education slope calibration vs MiD 2023 Tabelle 43",
+        "",
+        f"Detour factor (routed -> straight-line): {detour_factor}. Calibrated on "
+        "the 25% synthesis (cache_bs_25pct); per-pupil slope by home RegioStaR-7, "
+        "coupled full-level secant.",
+        "",
+        "## Results (straight-line mean school-trip km)",
+        "",
+        "```",
+        df_results[["level", "regiostar7", "n_pupils", "target_km",
+                    "achieved_mean_km", "abs_error_km", "slope"]]
+        .to_string(index=False),
+        "```",
+        "",
+        "## Assessment",
+        "",
+        f"- Cells within 0.5 km of target: {len(df_results) - len(miss)} / "
+        f"{len(df_results)}.",
+        f"- Cells at the steepest bracket bound (slope = -3.0, school-sparsity "
+        f"floor): {len(floor)} "
+        f"({', '.join(f'{r.level}/RS7 {int(r.regiostar7)}' for _, r in floor.iterrows()) or 'none'}).",
+        "- grundschule and sekundar_1 calibrate well. sekundar_2 rural cells "
+        "(RS7 74/77) cannot reach the MiD target even at the steepest slope: rural "
+        "upper-secondary schools (Oberstufe/BBS) are sparse, so the nearest school "
+        "is already far. The MiD 14-17 age band also mixes in Sek-I pupils (ages "
+        "14-15, nearer schools) that our 16-19 sekundar_2 band excludes, biasing "
+        "the target short.",
+    ]
+    with open(os.path.join(output_dir, "calibration_summary.md"), "w",
+              encoding="utf-8") as fh:
+        fh.write("\n".join(lines))
 
 
 if __name__ == "__main__":
