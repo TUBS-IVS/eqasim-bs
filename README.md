@@ -191,6 +191,40 @@ For the synpp DAG and stage layout, see
 | Travel survey | MiD-Bayern | MiD 2023 regional sample for distance / mode CDFs; ENTD 2008 still feeds activity chains |
 | Spatial fix | Bavaria-wide | ARS prefixes 031xx pinned in every config |
 
+### Modelling and engineering changes on top of upstream
+
+Beyond swapping the regional inputs, a few model and code changes were made
+relative to eqasim-bavaria. They are intentionally additive — the upstream
+behaviour is preserved unless a change is explicitly enabled:
+
+- **Per-RegioStaR-7 gravity slope.** The commuting gravity model keeps the
+  eqasim distance-decay friction but differentiates the slope by the
+  origin Gemeinde's RegioStaR-7 class (urban vs. rural), calibrated on a single
+  identified full-panel Poisson GLM over BA Pendleratlas Kreis-pair flows. The
+  flow-weighted mean equals the scalar slope, so the regional mean commute is
+  unchanged.
+- **Data-driven education location models (flag-gated).** Schools,
+  kindergartens, and universities are assigned by dedicated gravity models on
+  real LSN facility registers instead of the generic OSM hard-radius sampler.
+  Off by default (`education_gravity_enabled=false` → byte-identical to the
+  legacy assignment); on, the slopes are calibrated against MiD 2023 Tabelle 43
+  and the DESTATIS Mikrozensus 2024.
+- **MiD-based categorical enrichment.** PT subscription type and driving
+  licence are drawn from a three-margin IPF (raking) on MiD 2023 Tabellen P24.1
+  / P17.1 (Kreis × sex × age), replacing the legacy single-target seeding and
+  the KBA-based licence model. The boolean flags (`has_pt_subscription`,
+  `has_license`) are derived from the categorical attributes.
+- **Commute-distance override.** ZGB residents' commute distances are sampled
+  from MiD 2023 P13 Kreis-level CDFs, overriding the ENTD-derived distances.
+- **Reference values as committed CSVs.** All MiD / Mikrozensus reference
+  numbers live as versioned CSV tables (not Python literals) and are
+  regenerated only via dedicated seed scripts — see
+  [`CLAUDE.md`](CLAUDE.md) and the
+  [download checklist](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
+- **Repository hygiene.** The inherited `bavaria/` tree was removed (its few
+  still-needed utilities migrated into `eqasim_common/` / `braunschweig/`), and
+  the codebase was documented under [`docs/codebase/`](docs/codebase).
+
 ## Calibration & validation
 
 - The gravity model is calibrated to BA Pendleratlas Kreis × Kreis flows
