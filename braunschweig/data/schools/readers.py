@@ -31,6 +31,25 @@ def _coerce_count(value):
         return 0.0
 
 
+def _clean_plz(value):
+    """Normalise a postal code cell to a clean 5-digit string.
+
+    pandas reads the ABS PLZ column as float when blank rows are present, so a
+    plain ``str(value)`` yields '38122.0' -- which then fails address geocoding.
+    Convert numeric values to their integer form and zero-pad to five digits;
+    empty/NaN cells map to ''.
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if s in ("", "nan", "None"):
+        return ""
+    try:
+        return str(int(float(s))).zfill(5)
+    except ValueError:
+        return s
+
+
 def build_abs_long(raw, scope):
     """Tidy long frame from the ABS raw sheet, filtered to ``scope`` (5-digit
     Kreis ids). One row per (school, level)."""
@@ -53,7 +72,7 @@ def build_abs_long(raw, scope):
                 "ags8": nds_ags8(r["AGS"]),
                 "kreis5": kreis5,
                 "street": str(r["Strasse"]).strip(),
-                "plz": str(r["PLZ"]).strip(),
+                "plz": _clean_plz(r["PLZ"]),
                 "city": str(r["Ort"]).strip(),
             })
     return pd.DataFrame(rows, columns=_LONG_COLUMNS)
@@ -79,7 +98,7 @@ def build_bbs_long(raw, scope, pupil_cols):
             "ags8": nds_ags8(r["AGS"]),
             "kreis5": kreis5,
             "street": str(r["Strasse"]).strip(),
-            "plz": str(r["PLZ"]).strip(),
+            "plz": _clean_plz(r["PLZ"]),
             "city": str(r["Ort"]).strip(),
         })
     return pd.DataFrame(rows, columns=_LONG_COLUMNS)

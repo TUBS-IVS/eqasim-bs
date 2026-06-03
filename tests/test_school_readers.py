@@ -72,3 +72,18 @@ def test_build_schools_long_concats_abs_and_bbs():
         "ags8", "kreis5", "street", "plz", "city",
     ]
     assert (df["capacity"] > 0).all()
+
+
+def test_plz_float_column_is_cleaned_to_5_digit_string():
+    # pandas reads the ABS PLZ column as float when blank rows are present,
+    # yielding e.g. 38122.0; str(38122.0) == "38122.0" then breaks geocoding.
+    # The reader must normalise PLZ to a clean 5-digit string.
+    raw = _abs_raw().copy()
+    raw["PLZ"] = [38122.0, 38300.0, 99999.0]
+    df = build_abs_long(raw, SCOPE)
+    assert set(df["plz"]) == {"38122", "38300"}   # out-of-scope (999) dropped
+
+    bbs = _bbs_raw().copy()
+    bbs["PLZ"] = [38100.0, 0.0]
+    dfb = build_bbs_long(bbs, SCOPE, ["Anzahl_BS", "Anzahl_BI", "Anzahl_FO"])
+    assert dfb.iloc[0]["plz"] == "38100"

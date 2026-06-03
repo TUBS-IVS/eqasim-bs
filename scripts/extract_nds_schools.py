@@ -204,10 +204,12 @@ def main():
           "falling back to PLZ centroid.")
 
     if n_missing:
+        # Fall back to the bare postal code (its centroid). Using only the PLZ is
+        # more robust than 'PLZ city' because some LSN city names carry an
+        # Ortsteil suffix (e.g. 'Helmstedt OT Offleben') that Nominatim fails to
+        # match even at postcode granularity.
         plz_addr = (
-            df.loc[df["lonlat"].isna(), "plz"]
-            + " "
-            + df.loc[df["lonlat"].isna(), "city"]
+            df.loc[df["lonlat"].isna(), "plz"].astype(str)
             + ", Germany"
         )
         plz_coords = geocode_addresses(
