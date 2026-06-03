@@ -227,12 +227,35 @@ flag-gated wrapper
 
 Config keys (defaults in the stage's `configure`):
 `education_gravity_enabled` (false), `education_gravity_slope_by_level`
-(`{grundschule:-0.3, sekundar_1:-0.15, sekundar_2:-0.08}`),
-`education_gravity_max_radius_km_by_level` (`{grundschule:15, sekundar_1:30,
-sekundar_2:60}`), `education_gravity_kindergarten_radius_m` (2000),
-`education_gravity_university_radius_m` (10000),
+(`{grundschule, sekundar_1, oberstufe, bbs}`),
+`education_gravity_max_radius_km_by_level`,
+`education_gravity_kindergarten_radius_m` (2000),
 `education_gravity_max_iterations` (50), `education_gravity_tolerance` (1e-3),
-`nds_schools_path`.
+`nds_schools_path`, plus the university keys below.
+
+**University (Hochschule) students (age 20+).** Kindergarten (0-5) stays on the
+OSM radius sampler, but university students are routed through a dedicated
+**singly-constrained** distance-decay model (`assign_by_decay`): each student
+draws an institution `~ enrollment_j * exp(slope * d_ij)` within
+`education_university_max_radius_km` (150 km), with a nearest-campus fallback.
+Singly-constrained (NOT the doubly-constrained school model) is the key choice:
+far universities (Goettingen, Hannover) have huge enrollment that is mostly
+non-resident, so only the distance decay -- not a hard capacity target -- should
+govern how far the local commute tail reaches. Destinations come from
+`braunschweig.data.schools.university_facilities`: real LSN SS2025 enrollment per
+institution (committed `eqasim-data/data/braunschweig/schools/nds_hochschulen.csv`,
+seeded by `scripts/seed_nds_hochschulen.py`) -- inside ZGB the per-commune
+enrollment is spread across the commune's OSM university buildings by area (TU BS +
+HBK pooled in 03101; Ostfalia split across 03158/03102/03103; TU Clausthal 03153);
+each of the 12 surrounding institutions (Hannover cluster, Goettingen, Hildesheim,
+HAWK, plus the cross-border Magdeburg OVGU / HS Magdeburg-Stendal and Hochschule
+Harz, Leuphana Lueneburg) is a single curated campus point. The single national
+`education_university_slope` (-0.1415) is calibrated so the mean ZGB student commute
+matches the **Destatis MZ 2024 Hochschule** mean (~15.2 km straight-line); the
+result is ~91 % local (TU BS / Ostfalia / Clausthal / HBK) and ~9 % commuting to
+Hildesheim / Hannover / Harz / Magdeburg / Goettingen. Config:
+`education_university_slope`, `education_university_max_radius_km`,
+`nds_hochschulen_path`.
 
 **Enrollment report (debug / calibrate).**
 `python -m braunschweig.analysis.run_education_validation --working-directory
@@ -288,7 +311,7 @@ Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
 `tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`,
 `tests/test_mid_school_distance.py`, `tests/test_mikrozensus_school_distance.py`,
-`tests/test_calibrate_education_slopes.py`,
+`tests/test_university_facilities.py`, `tests/test_calibrate_education_slopes.py`,
 `tests/test_regiostar_fill.py` (the `ars_to_ags8` helper).
 
 ## Run analysis (post-simulation)
