@@ -29,3 +29,11 @@ def test_missing_gemeinde_gets_nearest_neighbour_rs7():
     assert bool(row["rs7_filled"]) is True
     assert int(out[out["commune_id"] == "03153017"].iloc[0]["regiostar7"]) == 75
     assert bool(out[out["commune_id"] == "03153017"].iloc[0]["rs7_filled"]) is False
+
+
+def test_ars_to_ags8_drops_verbandsgemeinde_block():
+    from braunschweig.data.bbsr.regiostar import ars_to_ags8
+    # 12-digit ARS = Land(2)+RB(1)+Kreis(2)+VG(4)+Gem(3); AGS8 = ARS[0:5]+ARS[9:12]
+    assert ars_to_ags8("031010000000") == "03101000"
+    assert ars_to_ags8("031530000019") == "03153019"
+    assert ars_to_ags8("03101000") == "03101000"   # idempotent on 8-digit

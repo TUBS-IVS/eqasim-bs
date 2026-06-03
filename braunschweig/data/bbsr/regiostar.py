@@ -56,6 +56,20 @@ REGIOSTAR7_LABELS = {
 SHEET = "ReferenzGebietsstand2020"
 
 
+def ars_to_ags8(commune_id):
+    """Convert a 12-digit ARS to the 8-digit AGS this table keys on.
+
+    ``data.spatial.municipalities`` carries the full 12-character ARS
+    (Land(2)+RB(1)+Kreis(2)+VG(4)+Gem(3)) while the RegioStaR-7 table keys on the
+    8-digit AGS = ARS[0:5] + ARS[9:12] (the 4-digit Verbandsgemeinde block is
+    dropped). An 8-digit input is returned unchanged so the helper is idempotent.
+    """
+    s = str(commune_id)
+    if len(s) == 12:
+        return s[0:5] + s[9:12]
+    return s
+
+
 def fill_missing_rs7_nearest_neighbour(df_known, df_expected):
     """Return RS7 for every Gemeinde in ``df_expected``.
 

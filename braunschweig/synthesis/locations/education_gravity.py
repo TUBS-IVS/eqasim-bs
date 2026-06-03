@@ -14,6 +14,7 @@ import geopandas as gpd
 from braunschweig.synthesis.locations.education_gravity_model import (
     assign_by_capacity_gravity, assign_by_radius,
 )
+from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
 _SCHOOL_BANDS = [
     ("kindergarten", 0, 5),
@@ -179,7 +180,10 @@ def execute(context):
     df_rs7 = context.stage("braunschweig.data.bbsr.regiostar")[["commune_id", "regiostar7"]]
     joined = gpd.sjoin(df_persons[["person_id", "geometry"]], df_zones,
                        how="left", predicate="within").drop(columns="index_right")
-    joined = joined.drop_duplicates("person_id").merge(df_rs7, on="commune_id", how="left")
+    joined = joined.drop_duplicates("person_id")
+    # municipalities carry the 12-digit ARS; regiostar keys on the 8-digit AGS.
+    joined["commune_id"] = joined["commune_id"].map(ars_to_ags8)
+    joined = joined.merge(df_rs7, on="commune_id", how="left")
     rs7_by_person = joined.set_index("person_id")["regiostar7"]
     df_persons["home_rs7"] = (df_persons["person_id"].map(rs7_by_person)
                               .fillna(-1).astype(int))
