@@ -81,8 +81,17 @@ def execute(context):
     df_osm = context.stage("eqasim_common.locations.education")
     df_osm = df_osm[df_osm["education_type"] == "university"].copy()
     gdf = build_university_facilities(df_h, df_osm)
+    # Guard against silent enrollment loss: a local institution whose commune has
+    # no OSM university building would be dropped by the area-distribution. Warn
+    # if the placed capacity is materially below the reference enrollment.
+    placed = float(gdf["capacity"].sum())
+    expected = float(df_h["enrollment"].sum())
+    if placed < 0.99 * expected:
+        print("[braunschweig.data.schools.university_facilities] WARNING: placed "
+              "capacity %.0f < reference enrollment %.0f -- a local institution "
+              "may lack OSM university buildings in its commune." % (placed, expected))
     print("[braunschweig.data.schools.university_facilities] %d university points; "
-          "capacity sum %.0f" % (len(gdf), gdf["capacity"].sum()))
+          "capacity sum %.0f of %.0f" % (len(gdf), placed, expected))
     return gdf
 
 
