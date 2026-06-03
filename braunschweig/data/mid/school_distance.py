@@ -4,6 +4,17 @@ Source: MiD 2023 Ergebnisbericht (Grossraum Braunschweig), Tabelle 43
 "Kita- und Schulweglaengen nach Raumtyp und Altersgruppe" (page 178). Routed
 mean trip lengths in km. The committed CSV is produced by
 scripts/seed_mid_t43_school_distance.py.
+
+Age-group -> level mapping:
+  km_7_10  -> grundschule   (ages 6-10, primary school)
+  km_11_13 -> sekundar_1    (ages 10-15, lower secondary)
+  km_14_17 -> oberstufe     (ages 14-17, upper secondary academic track)
+
+Note: the MiD 14-17 column covers all upper-secondary pupils. The BBS
+(vocational) level is NOT mapped here; it uses the national Destatis MZ 2024
+reference instead (see braunschweig.data.mikrozensus.school_distance). The
+oberstufe/bbs split for ages 16-19 pupils is handled in
+scripts/calibrate_education_slopes.py via an enrollment-share draw.
 """
 from __future__ import annotations
 
@@ -16,7 +27,7 @@ import pandas as pd
 AGEGROUP_TO_LEVEL = {
     "km_7_10": "grundschule",
     "km_11_13": "sekundar_1",
-    "km_14_17": "sekundar_2",
+    "km_14_17": "oberstufe",
 }
 
 

@@ -5,6 +5,17 @@ straight-line school-trip distance matches the MiD target (routed / detour). Use
 ONLY the capacity-gravity Furness + a 1-D bisection search (no numpy.linalg
 decompositions), so it runs in the eqasim conda env.
 
+Levels calibrated:
+  grundschule  -- per-RS7 MiD Tab. 43 target (ages 6-9)
+  sekundar_1   -- per-RS7 MiD Tab. 43 target (ages 10-15)
+  oberstufe    -- per-RS7 MiD Tab. 43 target (ages 16-19, academic track)
+  bbs          -- national Destatis MZ 2024 BBS straight-line mean, same
+                  target for every RS7 (vocational, long regional catchment)
+
+Ages 16-19 pupils are first labelled "upper_secondary", then split into
+oberstufe / bbs by a Bernoulli draw with probability --bbs-share (default
+0.681, derived from NDS enrollment statistics).
+
 Run (after a 25 % synthesis exists in the working directory):
   python scripts/calibrate_education_slopes.py `
     --working-directory eqasim-data/cache_bs_25pct --detour-factor 1.3
@@ -28,10 +39,24 @@ from braunschweig.synthesis.locations.education_gravity_model import (  # noqa: 
     assign_by_capacity_gravity,
 )
 from braunschweig.data.mid.school_distance import build_target_table  # noqa: E402
+from braunschweig.data.mikrozensus.school_distance import bbs_target_km  # noqa: E402
 from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: E402
 
-_MAX_RADIUS_KM = {"grundschule": 15.0, "sekundar_1": 30.0, "sekundar_2": 60.0}
-_AGE_BANDS = {"grundschule": (6, 9), "sekundar_1": (10, 15), "sekundar_2": (16, 19)}
+# Maximum search radius per level (km). oberstufe and bbs share the 16-19 age
+# band; bbs gets the wider radius to reflect its regional catchment.
+_MAX_RADIUS_KM = {
+    "grundschule": 15.0,
+    "sekundar_1": 30.0,
+    "oberstufe": 60.0,
+    "bbs": 100.0,
+}
+# Age bands used to assign pupils to levels. Ages 16-19 are first labelled
+# "upper_secondary" and then split into oberstufe / bbs by enrollment share.
+_AGE_BANDS = {
+    "grundschule": (6, 9),
+    "sekundar_1": (10, 15),
+    "upper_secondary": (16, 19),
+}
 _MIN_PUPILS_PER_CELL = 20
 
 logger = logging.getLogger(__name__)
@@ -138,7 +163,11 @@ def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
 # ---------------------------------------------------------------------------
 
 def age_to_level_school(age):
-    """Return the school level for a given age, or None if outside 6-19."""
+    """Return the school level for a given age, or None if outside 6-19.
+
+    Ages 16-19 return the intermediate label 'upper_secondary'; the caller
+    in main() splits this into 'oberstufe' / 'bbs' by enrollment share.
+    """
     for level, (lo, hi) in _AGE_BANDS.items():
         if lo <= age <= hi:
             return level
@@ -183,6 +212,10 @@ def main():
     parser.add_argument("--output-dir", default=None,
                         help="If set, write calibration_results.csv, two figures "
                              "and calibration_summary.md to this directory.")
+    parser.add_argument("--bbs-share", type=float, default=0.681,
+                        help="Fraction of ages-16-19 pupils assigned to BBS "
+                             "(vocational), remainder goes to oberstufe (academic). "
+                             "Default 0.681 from NDS enrollment statistics.")
     args = parser.parse_args()
 
     wd = args.working_directory
@@ -228,6 +261,23 @@ def main():
     persons_gdf = persons_gdf[persons_gdf["level"].notna()].copy()
     logger.info("Persons in age 6-19 with school level assigned: %d", len(persons_gdf))
 
+    # Split ages-16-19 "upper_secondary" pupils into oberstufe (academic) and
+    # bbs (vocational) using an enrollment-share Bernoulli draw. The share is
+    # configurable via --bbs-share (default 0.681). Each draw is reproducible
+    # given a fixed --seed.
+    us = persons_gdf["level"] == "upper_secondary"
+    if us.any():
+        logger.info(
+            "Splitting %d upper_secondary pupils: bbs_share=%.3f -> "
+            "bbs ~%d, oberstufe ~%d",
+            int(us.sum()), args.bbs_share,
+            int(round(us.sum() * args.bbs_share)),
+            int(round(us.sum() * (1.0 - args.bbs_share))),
+        )
+        rng_split = np.random.RandomState(args.seed)
+        draw = rng_split.random_sample(size=int(us.sum())) < args.bbs_share
+        persons_gdf.loc[us, "level"] = np.where(draw, "bbs", "oberstufe")
+
     # ------------------------------------------------------------------
     # 3. Spatial join home points -> municipalities -> regiostar7
     # ------------------------------------------------------------------
@@ -251,7 +301,8 @@ def main():
                 persons_gdf["regiostar7"].notna().sum(), len(persons_gdf))
 
     # ------------------------------------------------------------------
-    # 4. Load MiD Tab. 43 target table
+    # 4. Load MiD Tab. 43 target table (grundschule / sekundar_1 / oberstufe)
+    #    and the Destatis MZ 2024 BBS national mean (bbs)
     # ------------------------------------------------------------------
     repo_root = str(Path(__file__).resolve().parents[1])
     t43_path = os.path.join(repo_root,
@@ -265,12 +316,28 @@ def main():
     target_table = build_target_table(raw_t43, args.detour_factor)
     logger.info("Target table rows: %d", len(target_table))
 
+    mz_path = os.path.join(
+        repo_root,
+        "eqasim-data/data/braunschweig/mikrozensus/"
+        "mikrozensus2024_school_distance_by_type.csv",
+    )
+    if not os.path.isfile(mz_path):
+        raise RuntimeError(
+            f"Destatis MZ 2024 school-distance CSV not found at '{mz_path}'. "
+            "Run scripts/extract_mikrozensus_bundesland_margins.py or the "
+            "relevant seed script first."
+        )
+    raw_mz = pd.read_csv(mz_path)
+    bbs_t = bbs_target_km(raw_mz, args.detour_factor)
+    logger.info("BBS national straight-line target: %.3f km "
+                "(detour factor %.2f)", bbs_t, args.detour_factor)
+
     # ------------------------------------------------------------------
     # 5. Calibrate per level on the FULL pupil set (coupled per-RS7 secant)
     # ------------------------------------------------------------------
     results = []
 
-    for level in ("grundschule", "sekundar_1", "sekundar_2"):
+    for level in ("grundschule", "sekundar_1", "oberstufe", "bbs"):
         level_pupils = persons_gdf[persons_gdf["level"] == level].copy()
 
         if "level" in schools_gdf.columns:
@@ -292,16 +359,30 @@ def main():
         pupil_xy = np.column_stack([level_pupils.geometry.x.values,
                                     level_pupils.geometry.y.values])
         pupil_rs7 = level_pupils["regiostar7"].fillna(-1).astype(int).to_numpy()
-
-        # targets: RS7 present in the target table AND with enough pupils
-        target_for_level = (target_table[target_table["level"] == level]
-                            .set_index("regiostar7"))
         counts = pd.Series(pupil_rs7).value_counts()
-        targets = {
-            int(rs7): float(target_for_level.loc[rs7, "target_km"])
-            for rs7 in target_for_level.index
-            if int(rs7) in counts.index and counts[int(rs7)] >= _MIN_PUPILS_PER_CELL
-        }
+
+        if level == "bbs":
+            # BBS uses a single national Destatis MZ 2024 target for every RS7;
+            # rural cells legitimately exceed it due to school sparsity.
+            targets = {
+                int(rs7): bbs_t
+                for rs7 in counts.index
+                if int(rs7) > 0 and counts[int(rs7)] >= _MIN_PUPILS_PER_CELL
+            }
+            logger.info(
+                "BBS: applying national target %.3f km to RS7 codes %s",
+                bbs_t, sorted(targets.keys()),
+            )
+        else:
+            # grundschule / sekundar_1 / oberstufe: per-RS7 MiD Tab. 43 target
+            target_for_level = (target_table[target_table["level"] == level]
+                                .set_index("regiostar7"))
+            targets = {
+                int(rs7): float(target_for_level.loc[rs7, "target_km"])
+                for rs7 in target_for_level.index
+                if int(rs7) in counts.index and counts[int(rs7)] >= _MIN_PUPILS_PER_CELL
+            }
+
         if not targets:
             logger.warning("No RS7 cells with >= %d pupils for level '%s'; skipping.",
                            _MIN_PUPILS_PER_CELL, level)
@@ -367,7 +448,7 @@ _RS7_LABELS = {
 
 def _yaml_block(df_results):
     lines = ["education_gravity_slope_by_level_rs7:"]
-    for level in ("grundschule", "sekundar_1", "sekundar_2"):
+    for level in ("grundschule", "sekundar_1", "oberstufe", "bbs"):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             continue
@@ -390,17 +471,18 @@ def _write_outputs(df_results, detour_factor, output_dir):
     df_results.to_csv(os.path.join(output_dir, "calibration_results.csv"),
                       index=False)
 
-    levels = ["grundschule", "sekundar_1", "sekundar_2"]
+    levels = ["grundschule", "sekundar_1", "oberstufe", "bbs"]
 
     # Figure 1: target vs achieved straight-line mean per level x RS7
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5), sharey=True)
     for ax, level in zip(axes, levels):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             ax.set_title(level + " (no data)")
             continue
         idx = np.arange(len(sub))
-        ax.bar(idx - 0.2, sub["target_km"], width=0.4, label="MiD target",
+        label = "MZ 2024 national" if level == "bbs" else "MiD target"
+        ax.bar(idx - 0.2, sub["target_km"], width=0.4, label=label,
                color="#4C72B0")
         ax.bar(idx + 0.2, sub["achieved_mean_km"], width=0.4, label="model",
                color="#DD8452")
@@ -410,7 +492,7 @@ def _write_outputs(df_results, detour_factor, output_dir):
         ax.set_title(level)
         ax.set_ylabel("mean school-trip km (straight-line)")
         ax.legend(fontsize=8)
-    fig.suptitle("Education slope calibration vs MiD Tab. 43 "
+    fig.suptitle("Education slope calibration vs MiD Tab. 43 / MZ 2024 BBS "
                  f"(detour factor {detour_factor})")
     fig.tight_layout()
     fig.savefig(os.path.join(output_dir, "calibration_target_vs_achieved.png"),
@@ -418,14 +500,14 @@ def _write_outputs(df_results, detour_factor, output_dir):
     plt.close(fig)
 
     # Figure 2: calibrated slope per RS7 x level
-    fig, ax = plt.subplots(figsize=(10, 5))
-    width = 0.25
+    fig, ax = plt.subplots(figsize=(12, 5))
+    width = 0.2
     for i, level in enumerate(levels):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             continue
         idx = np.arange(len(sub))
-        ax.bar(idx + (i - 1) * width, sub["slope"], width=width, label=level)
+        ax.bar(idx + (i - 1.5) * width, sub["slope"], width=width, label=level)
         ax.set_xticks(np.arange(len(sub)))
         ax.set_xticklabels([f"RS7 {int(r)}" for r in sub["regiostar7"]])
     ax.set_ylabel("calibrated slope (1/km)")
@@ -440,11 +522,15 @@ def _write_outputs(df_results, detour_factor, output_dir):
     floor = df_results[(df_results["slope"] <= -2.999)]
     miss = df_results[df_results["abs_error_km"] > 0.5]
     lines = [
-        "# Education slope calibration vs MiD 2023 Tabelle 43",
+        "# Education slope calibration vs MiD 2023 Tabelle 43 / MZ 2024 BBS",
         "",
         f"Detour factor (routed -> straight-line): {detour_factor}. Calibrated on "
         "the 25% synthesis (cache_bs_25pct); per-pupil slope by home RegioStaR-7, "
         "coupled full-level secant.",
+        "",
+        "Levels: grundschule / sekundar_1 / oberstufe use per-RS7 MiD Tab. 43 targets. "
+        "bbs uses the national Destatis MZ 2024 BBS straight-line mean as a uniform "
+        "target across all RS7 (rural cells may legitimately exceed it due to school sparsity).",
         "",
         "## Results (straight-line mean school-trip km)",
         "",
@@ -461,12 +547,11 @@ def _write_outputs(df_results, detour_factor, output_dir):
         f"- Cells at the steepest bracket bound (slope = -3.0, school-sparsity "
         f"floor): {len(floor)} "
         f"({', '.join(f'{r.level}/RS7 {int(r.regiostar7)}' for _, r in floor.iterrows()) or 'none'}).",
-        "- grundschule and sekundar_1 calibrate well. sekundar_2 rural cells "
-        "(RS7 74/77) cannot reach the MiD target even at the steepest slope: rural "
-        "upper-secondary schools (Oberstufe/BBS) are sparse, so the nearest school "
-        "is already far. The MiD 14-17 age band also mixes in Sek-I pupils (ages "
-        "14-15, nearer schools) that our 16-19 sekundar_2 band excludes, biasing "
-        "the target short.",
+        "- grundschule and sekundar_1 calibrate well. oberstufe rural cells "
+        "(RS7 74/77) may not reach the MiD target even at the steepest slope: rural "
+        "upper-secondary schools (Gymnasium/Oberstufe) are sparse. bbs rural cells "
+        "legitimately exceed the national MZ 2024 mean due to regional school sparsity "
+        "-- this is expected and consistent with the longer BBS catchment assumption.",
     ]
     with open(os.path.join(output_dir, "calibration_summary.md"), "w",
               encoding="utf-8") as fh:
