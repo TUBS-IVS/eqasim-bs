@@ -1,8 +1,15 @@
 """Pure typing helpers for the Niedersachsen (LSN) school directories.
 
-Maps Schulgliederung (SGL) structure codes and BBS Schulformen to the three
+Maps Schulgliederung (SGL) structure codes and BBS Schulformen to the four
 school-age levels used by the education gravity model, and converts the LSN
 internal area codes (which drop the federal-state prefix) to official IDs.
+
+School levels:
+- ``grundschule``  -- primary school (SGL 00/01/03/04)
+- ``sekundar_1``   -- lower secondary: Haupt/Real/IGS Sek-I/KGS Sek-I/Oberschule/
+                      Foerderschule (SGL 11-14, 16-19, 40-69)
+- ``oberstufe``    -- academic upper secondary / gymnasiale Oberstufe (SGL 23/24/28/29)
+- ``bbs``          -- all berufsbildende Schulen (from the BBS directory)
 
 Sources: ``Schulverzeichnis_ABS_2025.xlsx`` sheet ``SGL`` (structure legend);
 ``Verzeichnis_der_BBS_2024.xlsx`` (vocational). See
@@ -12,7 +19,7 @@ from __future__ import annotations
 
 import math
 
-SCHOOL_LEVELS = ("grundschule", "sekundar_1", "sekundar_2")
+SCHOOL_LEVELS = ("grundschule", "sekundar_1", "oberstufe", "bbs")
 
 # SGL structure code -> level. Codes absent here (e.g. 30 Abendgymnasium,
 # 31 Kolleg) are not school-age and map to None.
@@ -30,7 +37,7 @@ for _c in ("11", "12", "13", "14", "16", "17", "18", "19"):
 for _code in range(40, 70):
     _SGL_LEVEL["%02d" % _code] = "sekundar_1"
 for _c in ("23", "24", "28", "29"):
-    _SGL_LEVEL[_c] = "sekundar_2"
+    _SGL_LEVEL[_c] = "oberstufe"
 
 
 def sgl_to_level(code):

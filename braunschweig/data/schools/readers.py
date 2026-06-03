@@ -98,7 +98,7 @@ def build_abs_long(raw, scope):
 
 def build_bbs_long(raw, scope, pupil_cols):
     """Tidy long frame from the BBS raw sheet; all BBS pupils sum into
-    ``sekundar_2``. ``pupil_cols`` are the per-Schulform 'Anzahl der Schueler'
+    ``bbs``. ``pupil_cols`` are the per-Schulform 'Anzahl der Schueler'
     column names."""
     rows = []
     for _, r in raw.iterrows():
@@ -111,7 +111,7 @@ def build_bbs_long(raw, scope, pupil_cols):
         rows.append({
             "school_id": "bbs_" + _clean_id(r["Schulnummer"]),
             "name": str(r["Schulbezeichnung"]).strip(),
-            "level": "sekundar_2",
+            "level": "bbs",
             "capacity": float(capacity),
             "ags8": nds_ags8(_clean_id(r["AGS"])),
             "kreis5": kreis5,

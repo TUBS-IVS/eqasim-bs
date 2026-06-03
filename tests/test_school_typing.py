@@ -11,8 +11,8 @@ def test_sgl_to_level_primary_secondary():
     assert sgl_to_level("11") == "sekundar_1"
     assert sgl_to_level("14") == "sekundar_1"
     assert sgl_to_level("63") == "sekundar_1"   # Foerderschule folded in
-    assert sgl_to_level("23") == "sekundar_2"
-    assert sgl_to_level("29") == "sekundar_2"
+    assert sgl_to_level("23") == "oberstufe"
+    assert sgl_to_level("29") == "oberstufe"
     assert sgl_to_level("30") is None           # Abendgymnasium ignored
     assert sgl_to_level("31") is None           # Kolleg ignored
     # full Sekundarbereich-I 40-69 range maps to sekundar_1 (regression: 55/57/58/59
@@ -25,7 +25,7 @@ def test_capacity_by_level_splits_a_kgs_across_two_levels():
     sgl = ["04", "16", "28"]
     sch = [100, 50, 30]
     cap = capacity_by_level_from_sgl(sgl, sch)
-    assert cap == {"grundschule": 100.0, "sekundar_1": 50.0, "sekundar_2": 30.0}
+    assert cap == {"grundschule": 100.0, "sekundar_1": 50.0, "oberstufe": 30.0}
 
 
 def test_capacity_by_level_sums_same_level_and_skips_blanks():
@@ -42,4 +42,4 @@ def test_nds_code_to_official_ids():
 
 
 def test_levels_constant():
-    assert SCHOOL_LEVELS == ("grundschule", "sekundar_1", "sekundar_2")
+    assert SCHOOL_LEVELS == ("grundschule", "sekundar_1", "oberstufe", "bbs")

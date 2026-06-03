@@ -29,7 +29,7 @@ def test_build_abs_long_types_and_scopes():
     df = build_abs_long(_abs_raw(), SCOPE)
     assert set(df["school_id"]) == {"abs_05009", "abs_07123"}
     beta = df[df["school_id"] == "abs_07123"].set_index("level")["capacity"].to_dict()
-    assert beta == {"grundschule": 100.0, "sekundar_1": 60.0, "sekundar_2": 30.0}
+    assert beta == {"grundschule": 100.0, "sekundar_1": 60.0, "oberstufe": 30.0}
     alpha = df[df["school_id"] == "abs_05009"]
     assert list(alpha["level"]) == ["grundschule"]
     assert alpha.iloc[0]["ags8"] == "03101000"
@@ -52,12 +52,12 @@ def _bbs_raw():
     })
 
 
-def test_build_bbs_long_sums_to_sekundar_2():
+def test_build_bbs_long_sums_to_bbs():
     pupil_cols = ["Anzahl_BS", "Anzahl_BI", "Anzahl_FO"]
     df = build_bbs_long(_bbs_raw(), SCOPE, pupil_cols)
     assert set(df["school_id"]) == {"bbs_70026"}
     row = df.iloc[0]
-    assert row["level"] == "sekundar_2"
+    assert row["level"] == "bbs"
     assert row["capacity"] == 1681.0
     assert row["ags8"] == "03101000"
 
