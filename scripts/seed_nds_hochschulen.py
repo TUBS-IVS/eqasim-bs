@@ -37,6 +37,12 @@ _SURROUNDING = [
     ("HAWK Hildesheim", 9.9520, 52.1550, 5717),
     ("OVGU Magdeburg", 11.6455, 52.1392, 13800),
     ("Hochschule Magdeburg-Stendal", 11.6760, 52.1395, 5400),
+    # Hochschule Harz (Wernigerode, Sachsen-Anhalt) ~60 km from Goslar/Salzgitter;
+    # curated from Destatis / Stat. Landesamt Sachsen-Anhalt 2024.
+    ("Hochschule Harz", 10.7853, 51.8344, 2800),
+    # Leuphana Universitaet Lueneburg ~95 km north (Gifhorn tail); enrollment from
+    # the LSN SS2025 file (Universitaet Lueneburg 8461).
+    ("Leuphana Lueneburg", 10.4023, 53.2285, 8461),
 ]
 
 
