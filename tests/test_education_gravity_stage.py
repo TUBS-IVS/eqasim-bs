@@ -40,12 +40,23 @@ def _nds_schools():
 
 
 def _osm_education():
+    # The "university" OSM entry is kept in the fixture but is no longer consumed
+    # by assign_education_locations: universities are routed via df_universities.
     return gpd.GeoDataFrame({
         "location_id": ["edu_k", "edu_u"],
         "education_type": ["kindergarten", "university"],
         "weight": [10.0, 10.0],
         "commune_id": ["03101000", "03101000"],
         "geometry": [Point(300.0, 0.0), Point(2000.0, 0.0)],
+    }, crs="EPSG:25832")
+
+
+def _universities():
+    """Two real university facilities: one near (2000 m), one far (60 000 m)."""
+    return gpd.GeoDataFrame({
+        "location_id": ["uni_a", "uni_b"],
+        "capacity": [5000.0, 20000.0],
+        "geometry": [Point(2000.0, 0.0), Point(60000.0, 0.0)],
     }, crs="EPSG:25832")
 
 
@@ -60,12 +71,13 @@ def test_assign_education_locations_covers_all_persons():
             "grundschule": 15.0, "sekundar_1": 30.0,
             "oberstufe": 60.0, "bbs": 100.0,
         },
-        "kindergarten_radius_m": 2000.0, "university_radius_m": 10000.0,
+        "kindergarten_radius_m": 2000.0,
+        "university_slope": -0.08, "university_max_radius_km": 150.0,
         "max_iterations": 50, "tolerance": 1e-6,
         "bbs_share": 0.0,   # deterministically send all upper_secondary to oberstufe
     }
     out = assign_education_locations(
-        _persons(), _nds_schools(), _osm_education(), cfg,
+        _persons(), _nds_schools(), _osm_education(), _universities(), cfg,
         rng=np.random.RandomState(0),
     )
     assert list(out.columns) == ["person_id", "commune_id", "location_id", "geometry"]
@@ -76,7 +88,8 @@ def test_assign_education_locations_covers_all_persons():
     assert by_pid[3] == "s1"
     assert by_pid[4] == "o1"
     assert by_pid[1] == "edu_k"
-    assert by_pid[5] == "edu_u"
+    # Person 5 (age 30) must be routed to a real university facility, not an OSM point.
+    assert by_pid[5] in {"uni_a", "uni_b"}
 
 
 def test_slope_vector_for_level_uses_rs7_override_then_falls_back():

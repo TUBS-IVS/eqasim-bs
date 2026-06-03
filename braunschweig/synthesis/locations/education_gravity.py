@@ -1,9 +1,12 @@
 """Per-person education-location assignment for Braunschweig.
 
 School-age pupils (6-19) are placed by the capacity-constrained distance-decay
-gravity model on the real NDS school facilities; kindergarten (0-5) and university
-(20+) keep the OSM radius sampler. Output schema matches the legacy
-``eqasim_common.locations.synthesis.education`` so it is a drop-in replacement.
+gravity model on the real NDS school facilities; kindergarten (0-5) uses the
+OSM radius sampler; university students (20+) are routed through the
+singly-constrained ``assign_by_decay`` on real university facilities
+(``braunschweig.data.schools.university_facilities``). Output schema matches
+the legacy ``eqasim_common.locations.synthesis.education`` so it is a
+drop-in replacement.
 """
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ import pandas as pd
 import geopandas as gpd
 
 from braunschweig.synthesis.locations.education_gravity_model import (
-    assign_by_capacity_gravity, assign_by_radius,
+    assign_by_capacity_gravity, assign_by_decay, assign_by_radius,
 )
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
@@ -55,19 +58,29 @@ def _xy(gdf):
     return np.column_stack([gdf.geometry.x.values, gdf.geometry.y.values])
 
 
-def assign_education_locations(df_persons, df_nds, df_osm, cfg, rng):
+def assign_education_locations(df_persons, df_nds, df_osm, df_universities, cfg, rng):
     """Assign one education location to every person in ``df_persons``.
 
-    df_persons: GeoDataFrame[person_id, age, home_rs7, geometry(home)] (EPSG:25832).
-                ``home_rs7`` must be present: it is the RegioStaR-7 code of the
-                person's home Gemeinde (-1 for unmatched), used to build a
-                per-pupil slope when ``cfg["slope_by_level_rs7"]`` is set.
-    df_nds: facilities GeoDataFrame[school_id, level, capacity, commune_id, geometry].
-    df_osm: OSM education GeoDataFrame[location_id, education_type, weight,
-            commune_id, geometry] (used for kindergarten + university).
-    cfg: dict with slope_by_level, slope_by_level_rs7 (None or nested dict),
-         max_radius_km_by_level, kindergarten_radius_m, university_radius_m,
-         max_iterations, tolerance.
+    df_persons:     GeoDataFrame[person_id, age, home_rs7, geometry(home)]
+                    (EPSG:25832).  ``home_rs7`` must be present: it is the
+                    RegioStaR-7 code of the person's home Gemeinde (-1 for
+                    unmatched), used to build a per-pupil slope when
+                    ``cfg["slope_by_level_rs7"]`` is set.
+    df_nds:         Facilities GeoDataFrame[school_id, level, capacity,
+                    commune_id, geometry] -- NDS school levels only
+                    (grundschule/sekundar_1/oberstufe/bbs).
+    df_osm:         OSM education GeoDataFrame[location_id, education_type,
+                    weight, commune_id, geometry].  Used for kindergarten only.
+    df_universities: University facilities GeoDataFrame[location_id, capacity,
+                    geometry] (EPSG:25832).  University students (age 20+) are
+                    routed here via the singly-constrained ``assign_by_decay``
+                    using ``cfg["university_slope"]`` and
+                    ``cfg["university_max_radius_km"]``.  Institutions outside
+                    the ZGB cordon carry no commune_id (filled as empty string).
+    cfg:            dict with slope_by_level, slope_by_level_rs7 (None or
+                    nested dict), max_radius_km_by_level, kindergarten_radius_m,
+                    university_slope, university_max_radius_km,
+                    max_iterations, tolerance, bbs_share.
     Returns DataFrame[person_id, commune_id, location_id, geometry].
     """
     df = df_persons.copy()
@@ -109,24 +122,44 @@ def assign_education_locations(df_persons, df_nds, df_osm, cfg, rng):
             "geometry": picked["geometry"].values,
         }))
 
-    for level, radius_key in (("kindergarten", "kindergarten_radius_m"),
-                              ("university", "university_radius_m")):
-        sel = df[df["level"] == level]
-        if sel.empty:
-            continue
-        locs = df_osm[df_osm["education_type"] == level]
+    # Kindergarten (age 0-5): OSM radius sampler, unchanged from previous behaviour.
+    sel = df[df["level"] == "kindergarten"]
+    if not sel.empty:
+        locs = df_osm[df_osm["education_type"] == "kindergarten"]
         if locs.empty:
             raise RuntimeError(
-                f"[education_gravity] no OSM locations for '{level}'")
+                "[education_gravity] no OSM locations for 'kindergarten'")
         choice = assign_by_radius(
             _xy(sel), _xy(locs), locs["weight"].values,
-            radius_m=cfg[radius_key], rng=rng,
+            radius_m=cfg["kindergarten_radius_m"], rng=rng,
         )
         picked = locs.iloc[choice]
         parts.append(pd.DataFrame({
             "person_id": sel["person_id"].values,
             "location_id": picked["location_id"].values,
             "commune_id": picked["commune_id"].values,
+            "geometry": picked["geometry"].values,
+        }))
+
+    # University (age 20+): singly-constrained decay on real university facilities.
+    # Far institutions' large enrollment is largely non-resident; only the
+    # distance decay governs how far the local commuter tail reaches.
+    # commune_id is empty because many universities are outside the ZGB cordon.
+    sel = df[df["level"] == "university"]
+    if not sel.empty:
+        if df_universities.empty:
+            raise RuntimeError(
+                "[education_gravity] no university facilities provided")
+        choice = assign_by_decay(
+            _xy(sel), _xy(df_universities), df_universities["capacity"].values,
+            slope=cfg["university_slope"],
+            max_radius_km=cfg["university_max_radius_km"], rng=rng,
+        )
+        picked = df_universities.iloc[choice]
+        parts.append(pd.DataFrame({
+            "person_id": sel["person_id"].values,
+            "location_id": picked["location_id"].values,
+            "commune_id": "",   # surrounding universities have no ZGB commune
             "geometry": picked["geometry"].values,
         }))
 
@@ -154,8 +187,10 @@ def configure(context):
     # Source: NDS Kultusministerium Schuljahresstatistik 2023/24:
     # BBS ~68 100 / (BBS 68 100 + gymnasiale Oberstufe 32 000) ~ 0.681.
     context.config("education_bbs_share", 0.681)
+    context.stage("braunschweig.data.schools.university_facilities")
     context.config("education_gravity_kindergarten_radius_m", 2000.0)
-    context.config("education_gravity_university_radius_m", 10000.0)
+    context.config("education_university_slope", -0.08)
+    context.config("education_university_max_radius_km", 150.0)
     context.config("education_gravity_max_iterations", 50)
     context.config("education_gravity_tolerance", 1e-3)
     # None (not {}) so synpp flatten() does not drop this key; per-RS7 dict is
@@ -184,6 +219,7 @@ def execute(context):
     df_nds = context.stage("braunschweig.data.schools.facilities")
     df_osm = context.stage("eqasim_common.locations.education")
     df_osm = df_osm[~df_osm["fake"]].copy()
+    df_universities = context.stage("braunschweig.data.schools.university_facilities")
 
     # Attach home RegioStaR-7 code to each pupil via a spatial join with the
     # municipalities layer. The municipalities GeoDataFrame must share the same
@@ -211,13 +247,15 @@ def execute(context):
             context.config("education_gravity_max_radius_km_by_level"),
         "kindergarten_radius_m":
             context.config("education_gravity_kindergarten_radius_m"),
-        "university_radius_m":
-            context.config("education_gravity_university_radius_m"),
+        "university_slope": context.config("education_university_slope"),
+        "university_max_radius_km":
+            context.config("education_university_max_radius_km"),
         "max_iterations": context.config("education_gravity_max_iterations"),
         "tolerance": context.config("education_gravity_tolerance"),
         "bbs_share": context.config("education_bbs_share"),
     }
-    out = assign_education_locations(df_persons, df_nds, df_osm, cfg, rng)
+    out = assign_education_locations(
+        df_persons, df_nds, df_osm, df_universities, cfg, rng)
     out = gpd.GeoDataFrame(out, geometry="geometry", crs=df_nds.crs)
 
     assert len(out) == len(df_persons), (
