@@ -15,6 +15,10 @@ def test_sgl_to_level_primary_secondary():
     assert sgl_to_level("29") == "sekundar_2"
     assert sgl_to_level("30") is None           # Abendgymnasium ignored
     assert sgl_to_level("31") is None           # Kolleg ignored
+    # full Sekundarbereich-I 40-69 range maps to sekundar_1 (regression: 55/57/58/59
+    # were previously omitted)
+    for code in ("40", "55", "57", "58", "59", "69"):
+        assert sgl_to_level(code) == "sekundar_1"
 
 
 def test_capacity_by_level_splits_a_kgs_across_two_levels():

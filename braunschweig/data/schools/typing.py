@@ -19,11 +19,14 @@ SCHOOL_LEVELS = ("grundschule", "sekundar_1", "sekundar_2")
 _SGL_LEVEL = {}
 for _c in ("00", "01", "03", "04"):
     _SGL_LEVEL[_c] = "grundschule"
-for _c in ("11", "12", "13", "14", "16", "17", "18", "19",
-           "40", "41", "42", "43",
-           "51", "52", "53", "54", "56",
-           "60", "61", "62", "63", "64", "65", "66", "67", "68", "69"):
+# Sekundarbereich I: Haupt/Real/Gymnasium-SekI/IGS-SekI/KGS branches (11-19)
+# plus the contiguous Oberschule + Foerderschule block (40-69). The full 40..69
+# range is mapped (not only the codes present in the 2025 legend) so the typing
+# stays robust if LSN adds Foerderschule structure codes in that block.
+for _c in ("11", "12", "13", "14", "16", "17", "18", "19"):
     _SGL_LEVEL[_c] = "sekundar_1"
+for _code in range(40, 70):
+    _SGL_LEVEL["%02d" % _code] = "sekundar_1"
 for _c in ("23", "24", "28", "29"):
     _SGL_LEVEL[_c] = "sekundar_2"
 
