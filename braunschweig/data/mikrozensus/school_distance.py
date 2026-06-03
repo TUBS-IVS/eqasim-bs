@@ -31,6 +31,13 @@ def bbs_target_km(raw, detour_factor):
     return routed / float(detour_factor)
 
 
+def hochschule_target_km(raw, detour_factor):
+    """Straight-line Hochschule target = routed banded mean / detour_factor."""
+    row = raw[raw["school_type"] == "hochschule"].iloc[0]
+    routed = banded_mean_km([float(row[c]) for c in _BAND_COLS])
+    return routed / float(detour_factor)
+
+
 def configure(context):
     context.config("data_path")
     context.config("mikrozensus_school_distance_path",
