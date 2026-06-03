@@ -87,6 +87,14 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
     T = balance_doubly_constrained(production, attraction, friction,
                                    max_iterations=max_iterations,
                                    tolerance=tolerance)
+    # Traceability: report how well the balancing met both margins (a large
+    # col residual means some schools could not be filled to capacity within
+    # the radius -- a slope/radius calibration signal), plus the fallback count.
+    row_err = float(np.max(np.abs(T.sum(axis=1) - production)))
+    col_err = float(np.max(np.abs(T.sum(axis=0) - attraction)))
+    print("[education_gravity] %d pupils, %d schools: Furness residual "
+          "row=%.3g col=%.3g; %d radius-fallback"
+          % (n_pupils, friction.shape[1], row_err, col_err, int(fallback.sum())))
     choice = _draw_from_rows(T, rng)
     return choice, fallback
 

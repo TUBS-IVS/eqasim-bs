@@ -74,6 +74,21 @@ def test_build_schools_long_concats_abs_and_bbs():
     assert (df["capacity"] > 0).all()
 
 
+def test_ids_with_float_artifacts_are_cleaned():
+    # pandas reads SNR/AGS as float when blanks are present, so 158037 -> 158037.0;
+    # the trailing '.0' must be stripped so school_id has no '.0' and the derived
+    # 8-digit AGS stays a valid id (not '03158037.0'). Leading zeros on genuine
+    # string ids are preserved (see the existing scope/typing test).
+    raw = _abs_raw().copy()
+    raw["SNR"] = [5009.0, 7123.0, 1.0]
+    raw["AGS"] = [101000.0, 158001.0, 999000.0]
+    df = build_abs_long(raw, SCOPE)
+    assert set(df["school_id"]) == {"abs_5009", "abs_7123"}
+    assert set(df["ags8"]) == {"03101000", "03158001"}
+    assert not any("." in a for a in df["ags8"])
+    assert not any("." in s for s in df["school_id"])
+
+
 def test_plz_float_column_is_cleaned_to_5_digit_string():
     # pandas reads the ABS PLZ column as float when blank rows are present,
     # yielding e.g. 38122.0; str(38122.0) == "38122.0" then breaks geocoding.

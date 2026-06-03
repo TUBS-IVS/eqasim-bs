@@ -31,6 +31,24 @@ def _coerce_count(value):
         return 0.0
 
 
+def _clean_id(value):
+    """Strip a spurious trailing '.0' from an id cell.
+
+    pandas reads SNR / AGS as float when the column has blank rows, turning
+    158037 into '158037.0'; that would leak into ``school_id`` and the derived
+    8-digit AGS (yielding an invalid '03158037.0'). Only the float artifact is
+    removed -- genuine string ids keep their leading zeros (e.g. '05009').
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if s in ("", "nan", "None"):
+        return ""
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
+
 def _clean_plz(value):
     """Normalise a postal code cell to a clean 5-digit string.
 
@@ -65,11 +83,11 @@ def build_abs_long(raw, scope):
         )
         for level, capacity in cap.items():
             rows.append({
-                "school_id": "abs_" + str(r["SNR"]).strip(),
+                "school_id": "abs_" + _clean_id(r["SNR"]),
                 "name": str(r["Schulname"]).strip(),
                 "level": level,
                 "capacity": float(capacity),
-                "ags8": nds_ags8(r["AGS"]),
+                "ags8": nds_ags8(_clean_id(r["AGS"])),
                 "kreis5": kreis5,
                 "street": str(r["Strasse"]).strip(),
                 "plz": _clean_plz(r["PLZ"]),
@@ -91,11 +109,11 @@ def build_bbs_long(raw, scope, pupil_cols):
         if capacity <= 0:
             continue
         rows.append({
-            "school_id": "bbs_" + str(r["Schulnummer"]).strip(),
+            "school_id": "bbs_" + _clean_id(r["Schulnummer"]),
             "name": str(r["Schulbezeichnung"]).strip(),
             "level": "sekundar_2",
             "capacity": float(capacity),
-            "ags8": nds_ags8(r["AGS"]),
+            "ags8": nds_ags8(_clean_id(r["AGS"])),
             "kreis5": kreis5,
             "street": str(r["Strasse"]).strip(),
             "plz": _clean_plz(r["PLZ"]),

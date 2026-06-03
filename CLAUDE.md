@@ -192,7 +192,12 @@ KGS (11-19) plus the Oberschule/Foerderschule block (40-69) -> `sekundar_1`
 (10-15); Gym/IGS/KGS Sek II (23,24,28,29) **plus all BBS pupils** -> `sekundar_2`
 (16-19). Adult forms (Abendgymnasium 30, Kolleg 31) are excluded. The
 Gymnasium/Realschule/Hauptschule mix emerges automatically from the real
-per-level capacity shares (no school-track choice is modelled). LSN internal codes
+per-level capacity shares (no school-track choice is modelled). Note that the
+gravity age bands (0-5 / 6-9 / 10-15 / 16-19 / 20+) reclassify the boundary ages
+relative to the legacy OSM sampler's 0-6 / 7-17 / 18+ split: with the flag ON,
+age 6 moves from kindergarten to `grundschule` and ages 18-19 from university to
+`sekundar_2` (BBS/Oberstufe). This only affects the ON path; the OFF path keeps
+the legacy bands. LSN internal codes
 drop the Land prefix: official AGS-8 = `"03" + AGS6`, Kreis-5 = `"03" + Kreis3`;
 the table is filtered to the ZGB-8 Kreise.
 
