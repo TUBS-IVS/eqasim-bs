@@ -20,10 +20,10 @@ _SCHOOL_BANDS = [
     ("kindergarten", 0, 5),
     ("grundschule", 6, 9),
     ("sekundar_1", 10, 15),
-    ("sekundar_2", 16, 19),
+    ("upper_secondary", 16, 19),
     ("university", 20, 200),
 ]
-_NDS_LEVELS = ("grundschule", "sekundar_1", "sekundar_2")
+_NDS_LEVELS = ("grundschule", "sekundar_1", "oberstufe", "bbs")
 
 
 def slope_vector_for_level(level, home_rs7, by_level_rs7, scalar_by_level):
@@ -72,6 +72,15 @@ def assign_education_locations(df_persons, df_nds, df_osm, cfg, rng):
     """
     df = df_persons.copy()
     df["level"] = df["age"].apply(age_to_level)
+
+    # Resolve the synthetic "upper_secondary" band into oberstufe (academic)
+    # or bbs (vocational) per pupil, drawn from the configured enrollment share.
+    # bbs_share is the fraction going to vocational BBS (NDS default: 0.681).
+    us = df["level"] == "upper_secondary"
+    if us.any():
+        draw = rng.random_sample(size=int(us.sum())) < cfg["bbs_share"]
+        df.loc[us, "level"] = np.where(draw, "bbs", "oberstufe")
+
     parts = []
 
     for level in _NDS_LEVELS:
@@ -135,9 +144,16 @@ def configure(context):
     context.stage("braunschweig.data.bbsr.regiostar")
     context.config("random_seed")
     context.config("education_gravity_slope_by_level",
-                   {"grundschule": -0.3, "sekundar_1": -0.15, "sekundar_2": -0.08})
+                   {"grundschule": -0.3, "sekundar_1": -0.15,
+                    "oberstufe": -0.08, "bbs": -0.05})
     context.config("education_gravity_max_radius_km_by_level",
-                   {"grundschule": 15.0, "sekundar_1": 30.0, "sekundar_2": 60.0})
+                   {"grundschule": 15.0, "sekundar_1": 30.0,
+                    "oberstufe": 60.0, "bbs": 100.0})
+    # Share of upper-secondary (age 16-19) pupils assigned to berufsbildende
+    # Schulen (BBS); the remainder go to academic Oberstufe.
+    # Source: NDS Kultusministerium Schuljahresstatistik 2023/24:
+    # BBS ~68 100 / (BBS 68 100 + gymnasiale Oberstufe 32 000) ~ 0.681.
+    context.config("education_bbs_share", 0.681)
     context.config("education_gravity_kindergarten_radius_m", 2000.0)
     context.config("education_gravity_university_radius_m", 10000.0)
     context.config("education_gravity_max_iterations", 50)
@@ -199,6 +215,7 @@ def execute(context):
             context.config("education_gravity_university_radius_m"),
         "max_iterations": context.config("education_gravity_max_iterations"),
         "tolerance": context.config("education_gravity_tolerance"),
+        "bbs_share": context.config("education_bbs_share"),
     }
     out = assign_education_locations(df_persons, df_nds, df_osm, cfg, rng)
     out = gpd.GeoDataFrame(out, geometry="geometry", crs=df_nds.crs)

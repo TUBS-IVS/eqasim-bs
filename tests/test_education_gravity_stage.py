@@ -13,8 +13,8 @@ def test_age_to_level_bands():
     assert age_to_level(9) == "grundschule"
     assert age_to_level(10) == "sekundar_1"
     assert age_to_level(15) == "sekundar_1"
-    assert age_to_level(16) == "sekundar_2"
-    assert age_to_level(19) == "sekundar_2"
+    assert age_to_level(16) == "upper_secondary"
+    assert age_to_level(19) == "upper_secondary"
     assert age_to_level(25) == "university"
 
 
@@ -30,11 +30,12 @@ def _persons():
 
 def _nds_schools():
     return gpd.GeoDataFrame({
-        "school_id": ["g1", "s1", "z1"],
-        "level": ["grundschule", "sekundar_1", "sekundar_2"],
-        "capacity": [100.0, 100.0, 100.0],
-        "commune_id": ["03101000"] * 3,
-        "geometry": [Point(500.0, 0.0), Point(800.0, 0.0), Point(1000.0, 0.0)],
+        "school_id": ["g1", "s1", "o1", "b1"],
+        "level": ["grundschule", "sekundar_1", "oberstufe", "bbs"],
+        "capacity": [100.0, 100.0, 100.0, 100.0],
+        "commune_id": ["03101000"] * 4,
+        "geometry": [Point(500.0, 0.0), Point(800.0, 0.0),
+                     Point(1000.0, 0.0), Point(1500.0, 0.0)],
     }, crs="EPSG:25832")
 
 
@@ -50,11 +51,18 @@ def _osm_education():
 
 def test_assign_education_locations_covers_all_persons():
     cfg = {
-        "slope_by_level": {"grundschule": -0.3, "sekundar_1": -0.15, "sekundar_2": -0.08},
+        "slope_by_level": {
+            "grundschule": -0.3, "sekundar_1": -0.15,
+            "oberstufe": -0.08, "bbs": -0.05,
+        },
         "slope_by_level_rs7": None,
-        "max_radius_km_by_level": {"grundschule": 15.0, "sekundar_1": 30.0, "sekundar_2": 60.0},
+        "max_radius_km_by_level": {
+            "grundschule": 15.0, "sekundar_1": 30.0,
+            "oberstufe": 60.0, "bbs": 100.0,
+        },
         "kindergarten_radius_m": 2000.0, "university_radius_m": 10000.0,
         "max_iterations": 50, "tolerance": 1e-6,
+        "bbs_share": 0.0,   # deterministically send all upper_secondary to oberstufe
     }
     out = assign_education_locations(
         _persons(), _nds_schools(), _osm_education(), cfg,
@@ -66,7 +74,7 @@ def test_assign_education_locations_covers_all_persons():
     by_pid = out.set_index("person_id")["location_id"].to_dict()
     assert by_pid[2] == "g1"
     assert by_pid[3] == "s1"
-    assert by_pid[4] == "z1"
+    assert by_pid[4] == "o1"
     assert by_pid[1] == "edu_k"
     assert by_pid[5] == "edu_u"
 
