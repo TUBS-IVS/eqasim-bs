@@ -5,6 +5,13 @@
 > This checklist is the human-readable companion: if you change inputs
 > in the config or in `verify_braunschweig_inputs.py`, update this file
 > in the same commit.
+>
+> **Already in the repo:** the small aggregate reference tables (all
+> numbered MiD 2023 tables, the DESTATIS Mikrozensus 2024 tables, and the
+> derived NDS school / Hochschule / Kita facility tables) are **committed**
+> — see [Section F](#f-committed-reference-data-on-github). You only need
+> the raw downloads below to (re)build the large region inputs or to
+> regenerate a committed table from a newer data vintage.
 
 ## How to verify
 
@@ -45,8 +52,8 @@ pattern donor; the BS pipeline does not yet have a German HTS replacement.
 | B7 | **Zensus 2022 — Households (5000H-2001 flat-CSV)** Gemeinde × HH-size × HH-type | https://ergebnisse.zensus2022.de (Tabelle `5000H-2001`, Flat-File) | `braunschweig/5000H-2001_de_flat.csv` | dl-de/by-2-0 (Statistische Ämter) |
 | B8 | **BBSR INKAR — household income** (Kreis × year, Haushaltseinkommen €/EW/Monat) | https://www.inkar.de (Indikatorenexport `E_Haushaltseinkommen.xls`) | `braunschweig/E_Haushaltseinkommen.xls` | dl-de/by-2-0 (BBSR) |
 | B9 | **BBSR INKAR — full panel (optional)** other indicator exports `E_*.xls` (population density, unemployment, education, healthcare) | https://www.inkar.de | `braunschweig/E_Bevoelkerungsdichte.xls`, `E_Arbeitslosenquote.xls`, `E_HochschulabsolventenQuote.xls`, `E_AerzteJeEinwohner.xls` | dl-de/by-2-0 |
-| B10 | **MiD 2023 regional table volume** (result tables PDF, provided via the project / ZGB) | MiD 2023 regional table volume — provided by ZGB / BMDV | `braunschweig/Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf` | BMDV non-commercial |
-| B10a | **MiD 2023 — extracted CSVs** (P9 / P12_1 / P13 / P17_1 — produced from B10 by `scripts/extract_mid_tables.py`) | Generated locally | `braunschweig/mid/mid2023_P{9,12_1,13,17_1}.csv` | derived from B10 |
+| B10 | **MiD 2023 result tables** (numbered reference tables, regional sample; needed only to *regenerate* the committed CSVs) | MiD 2023 result-table volume (non-commercial sample, BMDV) | `braunschweig/mid/mid2023_result_tables.pdf` (any local filename — not redistributed) | BMDV non-commercial |
+| B10a | **MiD 2023 — extracted reference CSVs** (the numbered tables P9 / P12.1 / P13 / P17.1 / P24.1 / Tabelle 43 etc.) | **committed to the repo** (see Section F); regenerate from B10 via `scripts/extract_mid_tables.py` / the seed scripts | `braunschweig/mid/mid2023_*.csv` | aggregate reference values |
 | B11 | **BMV/BBSR RegioStaR-7 reference** (Gemeinde-level RegioStaR class) | https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx — auto-downloaded by `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` | dl-de/by-2-0 (BMV) |
 | B12 | **Zensus 2022 100 m population grid (parquet)** | `https://github.com/JsLth/z22data` (BKG GeoGitter + Statistische Ämter) — auto-downloaded by `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet`, `zensus_grid/grid_100m.parquet` | dl-de/by-2-0 (BKG / Statistische Ämter) |
 
@@ -56,7 +63,7 @@ Notes:
 - **Legacy dead-config keys** in `config_local_braunschweig.yml`: `bavaria.population_path: braunschweig/12111-0001_population_ni.xlsx` and `bavaria.work_flow_path: braunschweig/pendler_ni.xlsx`. Both are read only by upstream `bavaria/data/census/{population,employees}.py` modules, which are aliased to the `braunschweig.*` forks on the active DAG. The two filenames do **not** need to exist on disk for the BS pipeline to run; they remain only because the bavaria stages still resolve those config keys at import time.
 - **B5a/B5b** filenames carry the Pendleratlas export timestamp; rename in `config_local_braunschweig.yml` if you re-export. `braunschweig.data.census.pendler` parses both files via the `r"\d{5}"` ARS regex.
 - **B7** is required by [`braunschweig/data/census/household_size.py`](../braunschweig/data/census/household_size.py), [`households_size_age.py`](../braunschweig/data/census/households_size_age.py), and [`households_type.py`](../braunschweig/data/census/households_type.py). All three loaders raise with a download hint to https://ergebnisse.zensus2022.de if missing.
-- **B10** is the source of the BS-specific commute-distance CDFs (P13). If absent, [`braunschweig/synthesis/spatial/commute_distance.py`](../braunschweig/synthesis/spatial/commute_distance.py) falls back to the ZGB aggregate row.
+- **B10 / B10a**: the numbered MiD 2023 reference tables (e.g. P13 for the BS-specific commute-distance CDFs) are **committed as small aggregate CSVs** (Section F), so the raw B10 volume is needed only to regenerate them. If a CSV is absent the consuming stage falls back to its documented default (e.g. [`commute_distance.py`](../braunschweig/synthesis/spatial/commute_distance.py) falls back to the ZGB aggregate row).
 - **B11 / B12** are auto-downloaded — do not commit them; they live in user-local `eqasim-data/`.
 
 ## C. ALKIS / ATKIS / OSM raw inputs (preprocessed once)
@@ -143,54 +150,56 @@ The output JSON mirrors the MVG REST schema (`name`, `latitude`,
 `longitude`, `tariffZones`) so `braunschweig.data.vrb.zones` reuses the
 MVG algorithm bit-for-bit (400 m buffered MultiPoint per zone, EPSG:25832).
 
-## E. Education capacity inputs (Phase 0 of feature-education-gravity-bs-1)
+## E. Education facility inputs (real-data gravity models)
 
-Required only when running with `gravity_education_separate: true`
-(see `plan/feature-education-gravity-bs-1.md`). The default off-state
-of the flag does not consult any of these files; verify them only when
-the feature is being calibrated.
+The education location assignment (`education_gravity_enabled: true`) places
+**school pupils, kindergarten children, and university students on real
+facilities**. The **derived reference CSVs are committed to GitHub** (see
+[Section F](#f-committed-reference-data-on-github)) — so a normal run needs
+**none** of the raw downloads below. The raw LSN/OSM sources are only required to
+**regenerate** a reference CSV (e.g. for a newer data vintage). With the flag off
+(default) the legacy OSM education sampler runs and none of this is consulted.
 
-| # | Dataset | Source | Target path | Licence |
-|---|---------|--------|-------------|---------|
-| E1 | **LSN Schulstatistik — Schüler nach Schulform und Gemeinde** (allgemein bildende Schulen, table `K3300101` LSN / `21111-04-01-4` RDB) | https://www1.nls.niedersachsen.de/statistik/ — alt: https://www.regionalstatistik.de/genesis/online/ | `braunschweig/lsn/lsn_schulen_<year>.csv` | dl-de/by-2-0 (LSN) |
-| E2 | **LSN Schulstatistik — berufsbildende Schulen** (table `K3320101` LSN / `21121-04-01-4` RDB) | same | `braunschweig/lsn/lsn_berufsschulen_<year>.csv` | dl-de/by-2-0 (LSN) |
-| E3 | **DESTATIS Hochschulstatistik — Studierende nach Studienort** (table `21311-0007`) | https://www-genesis.destatis.de/genesis/online | `braunschweig/destatis/hochschulen_<year>.csv` | dl-de/by-2-0 (DESTATIS) |
-| E4 | **Hochschul-Standorte ZGB-8** (curated mapping institution → 8-digit AGS) | https://www.hochschulkompass.de/ | `braunschweig/education/hochschul_orte_zgb.csv` | HRK terms (research reuse) |
-| E5 | **OSM education POIs cross-check** (derivative of C3 + the main `osm_pois.parquet` artefact) | derived locally | `braunschweig/osm/osm_education_pois.gpkg` | ODbL 1.0 |
+### Raw sources (only to regenerate a committed CSV)
 
-### E1 / E2 — LSN download
+| # | Dataset | Source | Local path (any name) | Produces (committed CSV) |
+|---|---------|--------|-----------------------|--------------------------|
+| E1 | **LSN Schulverzeichnis — allgemeinbildende Schulen** (per school: Schulgliederung + Schülerzahlen + address) | https://www.statistik.niedersachsen.de — Verzeichnisse, `Schulverzeichnis_ABS_2025.xlsx` | `Schulen NDS/Schulverzeichnis_ABS_2025.xlsx` | `schools/nds_schools_zgb.csv` via `scripts/extract_nds_schools.py` (geocodes + OSM-validates) |
+| E2 | **LSN Verzeichnis der berufsbildenden Schulen (BBS)** (per school: Schulform + Schülerzahlen + address) | same — `Verzeichnis_der_BBS_2024.xlsx` | `Schulen NDS/Verzeichnis_der_BBS_2024.xlsx` | same `nds_schools_zgb.csv` (BBS rows) |
+| E3 | **LSN Studierende nach Hochschule** (enrollment per Hochschule, SS2025) | https://www.statistik.niedersachsen.de/hochschulen-studierende-hochschulfinanzen-niedersachsen/ — `VOE_Stud._1.HS_SS25_HSArt_HS_*.xlsx` | `Hochschulen NDS/VOE_Stud._1.HS_SS25_HSArt_HS_Barrierefrei.xlsx` | `schools/nds_hochschulen.csv` via `scripts/seed_nds_hochschulen.py` (LSN enrollment + curated surrounding/cross-border campus points) |
+| E4 | **LSN Kindertageseinrichtungen — Plätze** (places per Einheits-/Samtgemeinde, table K2300112) | https://www1.nls.niedersachsen.de/statistik/ — Kinder- und Jugendhilfestatistik 22544 (Excel-2003 SpreadsheetML, in a ZIP) | `Kitas NDS/K2300112_Kindertageseinrichtungen_Plaetze_2025.xml` | `schools/nds_kitas_zgb.csv` via `scripts/extract_nds_kitas.py` |
+| E5 | **DESTATIS Mikrozensus 2024 — school-trip distance by school type** (ABS / BBS / Hochschule distance bands) | https://www.destatis.de/.../Erwerbstaetigkeit/Tabellen/pendler2.html | (values pinned in seed script) | `mikrozensus/mikrozensus2024_school_distance_by_type.csv` via `scripts/seed_mikrozensus_school_distance.py` |
+| E6 | **MiD 2023 Tabelle 43** — Kita-/Schulweglängen by RegioStaR-7 + age group (school distance calibration target) | MiD 2023 regional sample (values pinned in seed script) | (values pinned in seed script) | `mid/mid2023_T43_school_distance_by_rs7.csv` via `scripts/seed_mid_t43_school_distance.py` |
 
-```powershell
-python scripts/download_lsn_schulen.py `
-    --dest eqasim-data/data/braunschweig/lsn/lsn_schulen_<year>.csv `
-    --url '<authenticated GENESIS / RDB CSV URL>'
-```
+E1/E2 feed the capacity-constrained school gravity (grundschule / sekundar_1 /
+oberstufe / bbs); E4 the Kita gravity (kindergarten); E3 the university decay
+model; E5/E6 are the distance-calibration targets. OSM kindergarten/university POIs
+come from `preprocessed/osm_pois.parquet` (C3) — no separate download. Regenerate
+commands and the full SGL/Schulform→level and ARS→Samtgemeinde rules are in
+`eqasim-data/data/braunschweig/schools/README.md` + `.../schools/DATA_FLOW.md`
+and in `CLAUDE.md` (sections "Education gravity model (NDS school data)").
 
-The script also runs in verify-only mode (no `--url`) to re-check the
-SHA-256 of an already-present file. Pin the digest with
-`--update-checksums` after the first verified download.
+## F. Committed reference data (on GitHub)
 
-### E3 — DESTATIS download
+`eqasim-data/` is `.gitignore`-d, but the small **aggregate reference tables** are
+**force-added** so the pipeline is reproducible directly from a clean checkout
+**without** any download or extractor run. Do not hand-edit them — change the seed
+script / raw source and re-run (see CLAUDE.md).
 
-```powershell
-python scripts/download_destatis_hochschulen.py `
-    --dest eqasim-data/data/braunschweig/destatis/hochschulen_<year>.csv `
-    --url '<authenticated GENESIS REST URL>'
-```
+| Committed CSV (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
+|---|---|---|
+| `schools/nds_schools_zgb.csv` | NDS schools (ABS+BBS) typed by level + geocoded + capacity | `scripts/extract_nds_schools.py` (E1+E2) |
+| `schools/nds_hochschulen.csv` | Hochschule enrollment + campus coords (local + surrounding) | `scripts/seed_nds_hochschulen.py` (E3) |
+| `schools/nds_kitas_zgb.csv` | Kita Plätze per Einheits-/Samtgemeinde | `scripts/extract_nds_kitas.py` (E4) |
+| `mid/mid2023_*.csv` | MiD 2023 reference tables (P9/P12.1/P13/P17.1/P24.1/H4/H7/H12.3/P36.1/W1/W2/Tabelle 43 + margins + class-midpoint) | `scripts/seed_mid_constraint_tables.py`, `scripts/extract_mid_tables.py`, `scripts/seed_mid_t43_school_distance.py` |
+| `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance (national + by Bundesland) + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
+| `mid/education_calibration/*` | committed calibration evaluation (results CSV, figures, summary) | `scripts/calibrate_education_slopes.py --output-dir ...` |
 
-### E5 — OSM education POI cross-check
-
-After the main `osm_pois.parquet` was produced by
-`scripts/preprocess_osm_pois.py`:
-
-```powershell
-python scripts/extract_osm_education_pois.py `
-    --pois eqasim-data/data/braunschweig/preprocessed/osm_pois.parquet `
-    --out  eqasim-data/data/braunschweig/osm/osm_education_pois.gpkg
-```
-
-The GeoPackage is purely a QGIS cross-check artefact and is not
-consumed by the synpp DAG.
+Licence note: the DESTATIS / Mikrozensus tables are dl-de/by-2-0 (free reuse with
+attribution). The MiD 2023 tables are aggregate reference values from a
+non-commercial regional sample (BMDV); they are committed as small aggregate
+tables for research reproducibility — do not redistribute the underlying raw
+report.
 
 ---
 

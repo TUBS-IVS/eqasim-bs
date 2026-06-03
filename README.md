@@ -1,6 +1,6 @@
 # eqasim-bs — synthetic population for Großraum Braunschweig
 
-> **Status:** active refactor on branch `refactor/braunschweig-clean-fork`.
+> **Status:** active development.
 > Region scope: Zweckverband Großraum Braunschweig (ZGB-8, ARS prefix `031`),
 > ~1.13 M inhabitants. Forked from
 > [`eqasim-org/eqasim-bavaria`](https://github.com/eqasim-org/eqasim-bavaria) @ `b20fbe6`.
@@ -10,8 +10,19 @@ This repository builds an open synthetic population of the
 agent-based transport simulations such as
 [MATSim](https://matsim.org). It is a regional fork of the eqasim
 pipeline, region-locked to Braunschweig and fed by German open data
-(BKG, DESTATIS, BBSR, BA, LGLN, BMV, OpenStreetMap, Zensus 2022) and
-the MiD 2023 regional sample.
+(BKG, DESTATIS, BBSR, BA, LGLN, BMV, LSN, OpenStreetMap, Zensus 2022)
+and the MiD 2023 regional sample.
+
+Education activity locations (schools, kindergartens, universities) are
+assigned by **dedicated, data-driven gravity models** on real
+Niedersachsen facility registers (LSN), calibrated against MiD 2023 and
+the DESTATIS Mikrozensus 2024 — see the education sections in
+[`CLAUDE.md`](CLAUDE.md) and sections E/F of
+[`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
+The small aggregate reference tables that drive and calibrate these
+models are committed directly to the repository, so the pipeline
+reproduces from a clean checkout without re-downloading the underlying
+registers.
 
 The pipeline is implemented as a content-hashed
 [synpp](https://github.com/eqasim-org/synpp) DAG in Python 3.10 and
@@ -133,10 +144,9 @@ flowchart LR
 
 Region-neutral building blocks live under
 [`eqasim_common/`](eqasim_common/); region overrides under
-[`braunschweig/`](braunschweig/). Inherited code from upstream
-eqasim-bavaria still lives in [`bavaria/`](bavaria/) for the few
-modules that have not yet been migrated and is fenced with explicit
-`# --- Inherited from eqasim-bavaria ---` comments.
+[`braunschweig/`](braunschweig/). The former `bavaria/` tree of
+inherited upstream modules has been removed; the few utilities still
+needed were migrated into `eqasim_common/` and `braunschweig/`.
 
 For the synpp DAG and stage layout, see
 [`docs/codebase/ARCHITECTURE.md`](docs/codebase/ARCHITECTURE.md) and
@@ -170,7 +180,7 @@ For the synpp DAG and stage layout, see
   [`quality/RUN_CODE_REVIEW.md`](quality/RUN_CODE_REVIEW.md),
   [`quality/RUN_SPEC_AUDIT.md`](quality/RUN_SPEC_AUDIT.md).
 
-Test gate: `pytest tests/ -q` → 65 passed, 4 skipped (smoke / pipeline /
+Test gate: `pytest tests/ -q` → 171 tests collected (smoke / pipeline /
 determinism tests are opt-in via `EQASIM_BS_RUN_PIPELINE=1`).
 
 ## Known limitations
@@ -184,9 +194,6 @@ determinism tests are opt-in via `EQASIM_BS_RUN_PIPELINE=1`).
   are fixed inline.
 - The Java MATSim package is still `org.eqasim.bavaria.*`; renaming is
   out of scope for this refactor (Decision D-1c).
-- `bavaria/` still hosts a handful of leaf modules consumed via synpp
-  aliases (`bavaria.data.{spatial.iris, population.raw, mvg.zones}`).
-  Deletion is deferred to a follow-up branch.
 
 ## Documentation
 
