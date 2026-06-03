@@ -104,8 +104,8 @@ def secant_calibrate_slope(target_km, pupil_xy, school_xy, capacity,
 
 
 def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
-                            max_radius_km, seed, rounds=15, lo=-3.0, hi=-0.03,
-                            tol=0.3):
+                            max_radius_km, seed, rounds=40, lo=-3.0, hi=-0.02,
+                            tol=0.25):
     """Calibrate one school level's per-RegioStaR-7 slopes on the FULL pupil set.
 
     Calibrating a single (RS7, level) cell in isolation is wrong: the capacity
@@ -113,8 +113,13 @@ def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
     schools outside its catchment, inflating distances. Instead the WHOLE level
     (all RS7 together) is assigned each round with a per-pupil slope vector
     (looked up by ``pupil_rs7``); each RS7's mean distance is measured and its
-    slope secant-updated toward ``targets[rs7]``. Because a class's slope mainly
-    moves its own pupils, the coupled coordinate updates converge in a few rounds.
+    slope updated toward ``targets[rs7]`` by a per-RS7 **bisection** on the
+    monotone slope -> mean relationship (mean increases as the slope flattens
+    toward 0). Bisection is used rather than a secant because small rural cells
+    (tens of pupils at 25%) have noisy means that make a secant overshoot; a
+    bracketed bisection lands stably inside the noise band. The coupling (one
+    full-level assignment per round) lets each class's slope mainly move its own
+    pupils, so the coordinate updates converge in a few rounds.
 
     pupil_xy: (R, 2) metric; pupil_rs7: (R,) int RS7 per pupil; school_xy: (C, 2);
     capacity: (C,); targets: {rs7: target straight-line km}. Returns {rs7: slope}.
@@ -123,13 +128,14 @@ def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
     """
     pupil_rs7 = np.asarray(pupil_rs7)
     classes = sorted(int(c) for c in targets)
-    mid = 0.5 * (lo + hi)
-    slope = {c: mid for c in classes}
-    hist = {c: [] for c in classes}
+    # per-RS7 bracket: steep end ``lo`` (short trips) .. flat end ``hi`` (long).
+    steep = {c: lo for c in classes}
+    flat = {c: hi for c in classes}
+    slope = {c: 0.5 * (lo + hi) for c in classes}
 
     for _ in range(int(rounds)):
-        slope_vec = np.array([slope.get(int(c), mid) for c in pupil_rs7],
-                             dtype=float)
+        slope_vec = np.array([slope.get(int(c), 0.5 * (lo + hi))
+                              for c in pupil_rs7], dtype=float)
         choice, _ = assign_by_capacity_gravity(
             pupil_xy, school_xy, capacity, slope=slope_vec,
             max_radius_km=max_radius_km, max_iterations=200, tolerance=1e-6,
@@ -142,17 +148,15 @@ def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
             if not mask.any():
                 continue
             mean_c = float(d_km[mask].mean())
-            hist[c].append((slope[c], mean_c))
             if abs(mean_c - targets[c]) > tol:
                 converged = False
-            if len(hist[c]) >= 2 and hist[c][-1][1] != hist[c][-2][1]:
-                (s0, m0), (s1, m1) = hist[c][-2], hist[c][-1]
-                s_new = s1 + (targets[c] - m1) * (s1 - s0) / (m1 - m0)
+            # mean too long -> need a steeper slope -> bring the flat bound in;
+            # mean too short -> need a flatter slope -> bring the steep bound in.
+            if mean_c > targets[c]:
+                flat[c] = slope[c]
             else:
-                # first round (or flat response): nudge by sign. Mean too long
-                # (positive error) -> steepen (more negative slope).
-                s_new = slope[c] * (1.4 if mean_c > targets[c] else 0.7)
-            slope[c] = float(np.clip(s_new, lo, hi))
+                steep[c] = slope[c]
+            slope[c] = 0.5 * (steep[c] + flat[c])
         if converged:
             break
     return slope
@@ -394,16 +398,43 @@ def main():
         slopes = calibrate_level_per_rs7(
             pupil_xy, pupil_rs7, school_xy, capacity, targets,
             max_radius_km=_MAX_RADIUS_KM[level], seed=args.seed,
-            rounds=15, lo=-3.0, hi=-0.03, tol=0.3)
+            rounds=40, lo=-3.0, hi=-0.02, tol=0.25)
 
-        # achieved per-RS7 mean from a single full-level draw with the result
-        slope_vec = np.array([slopes.get(int(c), -0.3) for c in pupil_rs7],
-                             dtype=float)
-        choice, _ = assign_by_capacity_gravity(
-            pupil_xy, school_xy, capacity, slope=slope_vec,
-            max_radius_km=_MAX_RADIUS_KM[level], max_iterations=200,
-            tolerance=1e-6, rng=np.random.RandomState(args.seed))
-        d_km = np.sqrt(((pupil_xy - school_xy[choice]) ** 2).sum(axis=1)) / 1000.0
+        def _achieved(slope_dict):
+            sv = np.array([slope_dict.get(int(c), -0.3) for c in pupil_rs7],
+                          dtype=float)
+            ch, _ = assign_by_capacity_gravity(
+                pupil_xy, school_xy, capacity, slope=sv,
+                max_radius_km=_MAX_RADIUS_KM[level], max_iterations=200,
+                tolerance=1e-6, rng=np.random.RandomState(args.seed))
+            return np.sqrt(((pupil_xy - school_xy[ch]) ** 2).sum(axis=1)) / 1000.0
+
+        d_km = _achieved(slopes)
+        counts = {rs7: int((pupil_rs7 == rs7).sum()) for rs7 in targets}
+        errs = {rs7: abs(float(d_km[pupil_rs7 == rs7].mean()) - targets[rs7])
+                for rs7 in targets}
+
+        # Shrinkage regularisation: tiny/sparse RS7 cells (tens of pupils at 25%)
+        # have a noisy, coupling-dominated mean that neither secant nor bisection
+        # can pin reliably. Any such cell off by > 1.5 km is replaced by the
+        # pupil-weighted mean slope of the converged cells (<= 1.0 km error) of
+        # the same level. Cells sitting at the steep bound (slope ~ -3.0) are NOT
+        # regularised: there the target is simply below the nearest-school floor
+        # (e.g. rural BBS, nearest school already farther than the national mean),
+        # which is a legitimate structural distance, not calibration noise.
+        floor_slope = -2.95
+        reliable = [rs7 for rs7 in targets if errs[rs7] <= 1.0]
+        unreliable = [rs7 for rs7 in targets
+                      if errs[rs7] > 1.5 and slopes[rs7] > floor_slope]
+        if reliable and unreliable:
+            wsum = sum(counts[rs7] for rs7 in reliable)
+            reg = sum(slopes[rs7] * counts[rs7] for rs7 in reliable) / wsum
+            for rs7 in unreliable:
+                logger.info("  regularize %s RS7=%d (n=%d, err=%.1f km) "
+                            "slope %.4f -> %.4f (reliable-cell mean)",
+                            level, rs7, counts[rs7], errs[rs7], slopes[rs7], reg)
+                slopes[rs7] = float(reg)
+            d_km = _achieved(slopes)
 
         for rs7 in sorted(targets):
             mask = pupil_rs7 == rs7

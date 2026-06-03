@@ -154,9 +154,14 @@ config:
   # Note: sekundar_2 rural cells (74/77) sit at the -3.0 floor (sparse rural
   # Oberstufe/BBS -> nearest school already ~10 km; see calibration_summary.md).
   education_gravity_slope_by_level_rs7:
-    grundschule: {72: -1.3446, 73: -0.6841, 74: -0.4415, 75: -1.0202, 76: -0.1253, 77: -0.2583}
-    sekundar_1: {72: -0.4969, 73: -0.2368, 74: -0.4523, 75: -0.5546, 76: -0.2213, 77: -0.0996}
-    sekundar_2: {72: -2.0755, 73: -1.9817, 74: -3.0000, 75: -2.1791, 76: -3.0000, 77: -3.0000}
+    grundschule: {72: -1.3354, 73: -0.6835, 74: -0.4507, 75: -1.0793, 76: -0.1248, 77: -0.2412}
+    sekundar_1: {72: -0.4944, 73: -0.2383, 74: -0.4303, 75: -0.5700, 76: -0.1568, 77: -0.1160}
+    oberstufe: {72: -1.5100, 73: -0.7650, 74: -3.0000, 75: -1.2588, 76: -1.2588, 77: -1.2588}
+    bbs: {72: -0.0350, 73: -0.0898, 74: -0.1524, 75: -0.0666, 76: -0.1346, 77: -3.0000}
+
+  # Share of upper-secondary (age 16-19) pupils assigned to berufsbildende
+  # Schulen (BBS); the rest go to academic Oberstufe. NDS enrollment ~0.681.
+  education_bbs_share: 0.681
 
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the

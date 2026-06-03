@@ -87,13 +87,16 @@ config:
   # (braunschweig.synthesis.locations.education_gravity, NDS school register).
   education_gravity_enabled: false
 
-  # Per-(RegioStaR-7, level) education decay slopes, calibrated against MiD 2023
-  # Tabelle 43 on the 25% synthesis (scripts/calibrate_education_slopes.py,
-  # detour factor 1.3). Unset -> scalar education_gravity_slope_by_level fallback.
+  # Per-(RegioStaR-7, level) education decay slopes, calibrated on the 25%
+  # synthesis (scripts/calibrate_education_slopes.py, detour 1.3). grundschule/
+  # sekundar_1/oberstufe vs MiD 2023 Tabelle 43; bbs vs Destatis MZ 2024 BBS
+  # mean. Unset -> scalar education_gravity_slope_by_level fallback.
   education_gravity_slope_by_level_rs7:
-    grundschule: {72: -1.3446, 73: -0.6841, 74: -0.4415, 75: -1.0202, 76: -0.1253, 77: -0.2583}
-    sekundar_1: {72: -0.4969, 73: -0.2368, 74: -0.4523, 75: -0.5546, 76: -0.2213, 77: -0.0996}
-    sekundar_2: {72: -2.0755, 73: -1.9817, 74: -3.0000, 75: -2.1791, 76: -3.0000, 77: -3.0000}
+    grundschule: {72: -1.3354, 73: -0.6835, 74: -0.4507, 75: -1.0793, 76: -0.1248, 77: -0.2412}
+    sekundar_1: {72: -0.4944, 73: -0.2383, 74: -0.4303, 75: -0.5700, 76: -0.1568, 77: -0.1160}
+    oberstufe: {72: -1.5100, 73: -0.7650, 74: -3.0000, 75: -1.2588, 76: -1.2588, 77: -1.2588}
+    bbs: {72: -0.0350, 73: -0.0898, 74: -0.1524, 75: -0.0666, 76: -0.1346, 77: -3.0000}
+  education_bbs_share: 0.681
 
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a
