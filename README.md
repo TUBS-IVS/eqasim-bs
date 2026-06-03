@@ -1,28 +1,34 @@
 # eqasim-bs — synthetic population for Großraum Braunschweig
 
-> **Status:** active development.
-> Region scope: Zweckverband Großraum Braunschweig (ZGB-8, ARS prefix `031`),
-> ~1.13 M inhabitants. Forked from
-> [`eqasim-org/eqasim-bavaria`](https://github.com/eqasim-org/eqasim-bavaria) @ `b20fbe6`.
+> 🚧 **Work in progress.** This project is under **active development** and
+> not yet released. Interfaces, configuration keys, calibrated parameters,
+> and outputs may still change between commits. It is already usable for
+> research runs, but treat results as preliminary and pin a commit hash for
+> reproducibility.
 
-This repository builds an open synthetic population of the
-**Zweckverband Großraum Braunschweig (ZGB)** for use as input to
-agent-based transport simulations such as
-[MATSim](https://matsim.org). It is a regional fork of the eqasim
-pipeline, region-locked to Braunschweig and fed by German open data
-(BKG, DESTATIS, BBSR, BA, LGLN, BMV, LSN, OpenStreetMap, Zensus 2022)
-and the MiD 2023 regional sample.
+## Built on eqasim
 
-Education activity locations (schools, kindergartens, universities) are
-assigned by **dedicated, data-driven gravity models** on real
-Niedersachsen facility registers (LSN), calibrated against MiD 2023 and
-the DESTATIS Mikrozensus 2024 — see the education sections in
-[`CLAUDE.md`](CLAUDE.md) and sections E/F of
-[`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
-The small aggregate reference tables that drive and calibrate these
-models are committed directly to the repository, so the pipeline
-reproduces from a clean checkout without re-downloading the underlying
-registers.
+**eqasim-bs is a regional fork of the [eqasim](https://github.com/eqasim-org)
+pipeline.** It is built directly on top of
+[`eqasim-org/eqasim-bavaria`](https://github.com/eqasim-org/eqasim-bavaria)
+(branched @ `b20fbe6`) and re-uses its
+[synpp](https://github.com/eqasim-org/synpp) DAG, stage structure, and MATSim
+scenario builder. The Bavaria-specific data loaders are replaced by
+Niedersachsen / Braunschweig equivalents, while the region-neutral eqasim
+machinery (synthesis, location assignment, MATSim export) is inherited largely
+unchanged. If you know eqasim, you already know how this pipeline is wired —
+only the regional inputs and a handful of calibrated, Braunschweig-specific
+models differ (see
+[*How eqasim-bs differs from eqasim-bavaria*](#how-eqasim-bs-differs-from-eqasim-bavaria)).
+
+**Region scope:** Zweckverband Großraum Braunschweig (ZGB-8, ARS prefix
+`031`), ~1.13 M inhabitants.
+
+This repository builds an open **synthetic population** of the ZGB for use as
+input to agent-based transport simulations such as
+[MATSim](https://matsim.org). It is region-locked to Braunschweig and fed by
+German open data (BKG, DESTATIS, BBSR, BA, LGLN, BMV, LSN, OpenStreetMap,
+Zensus 2022) and the MiD 2023 regional sample.
 
 The pipeline is implemented as a content-hashed
 [synpp](https://github.com/eqasim-org/synpp) DAG in Python 3.10 and
@@ -32,6 +38,25 @@ produces:
    trips) at 1 %, 10 %, or 25 % sampling rate.
 2. A MATSim scenario (network, transit schedule, vehicle definitions,
    plans) ready for `matsim-{plans|main}` runs.
+
+### Highlights
+
+- **Real German open data end to end** — population, employment, commuting,
+  households, income, buildings, and land use are all sourced from
+  authoritative federal / Niedersachsen registers (no synthetic proxies).
+- **Calibrated commuting gravity model** — work and education trips follow a
+  distance-decay model fitted to BA Pendleratlas Kreis-pair flows, with a
+  per-RegioStaR-7 slope so urban and rural origins decay at their own rate.
+- **Data-driven education location models** — schools, kindergartens, and
+  universities are assigned by dedicated gravity models on real
+  Niedersachsen facility registers (LSN), calibrated against MiD 2023 and the
+  DESTATIS Mikrozensus 2024. See the education sections in
+  [`CLAUDE.md`](CLAUDE.md) and sections E/F of
+  [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
+- **Reproducible from a clean checkout** — the small aggregate reference
+  tables (MiD 2023, Mikrozensus 2024, and the derived facility tables) are
+  committed directly to the repository, so the calibration and validation
+  reproduce without re-downloading the underlying registers.
 
 ## Region scope (ZGB-8)
 
