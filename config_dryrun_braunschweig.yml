@@ -92,6 +92,7 @@ config:
   # sekundar_1/oberstufe vs MiD 2023 Tabelle 43; bbs vs Destatis MZ 2024 BBS
   # mean. Unset -> scalar education_gravity_slope_by_level fallback.
   education_gravity_slope_by_level_rs7:
+    kindergarten: {72: -3.0000, 73: -2.0251, 74: -3.0000, 75: -3.0000, 76: -0.5167, 77: -2.8138}
     grundschule: {72: -1.3354, 73: -0.6835, 74: -0.4507, 75: -1.0793, 76: -0.1248, 77: -0.2412}
     sekundar_1: {72: -0.4944, 73: -0.2383, 74: -0.4303, 75: -0.5700, 76: -0.1568, 77: -0.1160}
     oberstufe: {72: -1.5100, 73: -0.7650, 74: -3.0000, 75: -1.2588, 76: -1.2588, 77: -1.2588}
