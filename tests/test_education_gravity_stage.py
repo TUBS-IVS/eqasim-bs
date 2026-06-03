@@ -39,15 +39,13 @@ def _nds_schools():
     }, crs="EPSG:25832")
 
 
-def _osm_education():
-    # The "university" OSM entry is kept in the fixture but is no longer consumed
-    # by assign_education_locations: universities are routed via df_universities.
+def _kita():
+    """Two Kita facilities near the origin (0,0): person_id 1 (age 4) should
+    be assigned to one of these via the capacity-gravity model."""
     return gpd.GeoDataFrame({
-        "location_id": ["edu_k", "edu_u"],
-        "education_type": ["kindergarten", "university"],
-        "weight": [10.0, 10.0],
-        "commune_id": ["03101000", "03101000"],
-        "geometry": [Point(300.0, 0.0), Point(2000.0, 0.0)],
+        "location_id": ["kita_a", "kita_b"],
+        "capacity": [50.0, 50.0],
+        "geometry": [Point(100.0, 0.0), Point(400.0, 0.0)],
     }, crs="EPSG:25832")
 
 
@@ -63,21 +61,22 @@ def _universities():
 def test_assign_education_locations_covers_all_persons():
     cfg = {
         "slope_by_level": {
+            "kindergarten": -0.5,
             "grundschule": -0.3, "sekundar_1": -0.15,
             "oberstufe": -0.08, "bbs": -0.05,
         },
         "slope_by_level_rs7": None,
         "max_radius_km_by_level": {
+            "kindergarten": 8.0,
             "grundschule": 15.0, "sekundar_1": 30.0,
             "oberstufe": 60.0, "bbs": 100.0,
         },
-        "kindergarten_radius_m": 2000.0,
         "university_slope": -0.08, "university_max_radius_km": 150.0,
         "max_iterations": 50, "tolerance": 1e-6,
         "bbs_share": 0.0,   # deterministically send all upper_secondary to oberstufe
     }
     out = assign_education_locations(
-        _persons(), _nds_schools(), _osm_education(), _universities(), cfg,
+        _persons(), _nds_schools(), _universities(), _kita(), cfg,
         rng=np.random.RandomState(0),
     )
     assert list(out.columns) == ["person_id", "commune_id", "location_id", "geometry"]
@@ -87,7 +86,8 @@ def test_assign_education_locations_covers_all_persons():
     assert by_pid[2] == "g1"
     assert by_pid[3] == "s1"
     assert by_pid[4] == "o1"
-    assert by_pid[1] == "edu_k"
+    # Person 1 (age 4) must be routed to a real Kita facility.
+    assert by_pid[1] in {"kita_a", "kita_b"}
     # Person 5 (age 30) must be routed to a real university facility, not an OSM point.
     assert by_pid[5] in {"uni_a", "uni_b"}
 

@@ -16,6 +16,7 @@ def _raw():
 
 def test_agegroup_to_level_mapping():
     assert AGEGROUP_TO_LEVEL == {
+        "km_0_6": "kindergarten",
         "km_7_10": "grundschule",
         "km_11_13": "sekundar_1",
         "km_14_17": "oberstufe",
@@ -27,7 +28,7 @@ def test_build_target_table_long_per_rs7_level():
     row = out[(out.regiostar7 == 74) & (out.level == "sekundar_1")].iloc[0]
     assert row.routed_km == 9.0
     assert row.target_km == 9.0
-    assert set(out.level.unique()) == {"grundschule", "sekundar_1", "oberstufe"}
+    assert set(out.level.unique()) == {"kindergarten", "grundschule", "sekundar_1", "oberstufe"}
 
 
 def test_detour_factor_shortens_target():

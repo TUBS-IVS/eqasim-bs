@@ -6,6 +6,7 @@ mean trip lengths in km. The committed CSV is produced by
 scripts/seed_mid_t43_school_distance.py.
 
 Age-group -> level mapping:
+  km_0_6   -> kindergarten  (ages 0-6, Kita)
   km_7_10  -> grundschule   (ages 6-10, primary school)
   km_11_13 -> sekundar_1    (ages 10-15, lower secondary)
   km_14_17 -> oberstufe     (ages 14-17, upper secondary academic track)
@@ -22,9 +23,11 @@ import os
 
 import pandas as pd
 
-# MiD age-group columns -> our school levels. The 0-6 (Kita) column is not
-# modelled by the education gravity (kindergarten stays on the OSM sampler).
+# MiD age-group columns -> our school levels. km_0_6 maps to kindergarten,
+# which is now routed through the capacity-constrained gravity model on real
+# Kita facilities (braunschweig.data.schools.kita_facilities).
 AGEGROUP_TO_LEVEL = {
+    "km_0_6": "kindergarten",
     "km_7_10": "grundschule",
     "km_11_13": "sekundar_1",
     "km_14_17": "oberstufe",
