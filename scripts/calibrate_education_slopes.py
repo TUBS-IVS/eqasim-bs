@@ -28,6 +28,7 @@ from braunschweig.synthesis.locations.education_gravity_model import (  # noqa: 
     assign_by_capacity_gravity,
 )
 from braunschweig.data.mid.school_distance import build_target_table  # noqa: E402
+from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: E402
 
 _MAX_RADIUS_KM = {"grundschule": 15.0, "sekundar_1": 30.0, "sekundar_2": 60.0}
 _AGE_BANDS = {"grundschule": (6, 9), "sekundar_1": (10, 15), "sekundar_2": (16, 19)}
@@ -75,6 +76,61 @@ def secant_calibrate_slope(target_km, pupil_xy, school_xy, capacity,
         else:
             b = m
     return 0.5 * (a + b)
+
+
+def calibrate_level_per_rs7(pupil_xy, pupil_rs7, school_xy, capacity, targets,
+                            max_radius_km, seed, rounds=15, lo=-3.0, hi=-0.03,
+                            tol=0.3):
+    """Calibrate one school level's per-RegioStaR-7 slopes on the FULL pupil set.
+
+    Calibrating a single (RS7, level) cell in isolation is wrong: the capacity
+    constraint, scaled to a pupil subset, would force that subset to also fill
+    schools outside its catchment, inflating distances. Instead the WHOLE level
+    (all RS7 together) is assigned each round with a per-pupil slope vector
+    (looked up by ``pupil_rs7``); each RS7's mean distance is measured and its
+    slope secant-updated toward ``targets[rs7]``. Because a class's slope mainly
+    moves its own pupils, the coupled coordinate updates converge in a few rounds.
+
+    pupil_xy: (R, 2) metric; pupil_rs7: (R,) int RS7 per pupil; school_xy: (C, 2);
+    capacity: (C,); targets: {rs7: target straight-line km}. Returns {rs7: slope}.
+    RS7 codes absent from ``targets`` keep the mid-bracket slope (and are not
+    returned).
+    """
+    pupil_rs7 = np.asarray(pupil_rs7)
+    classes = sorted(int(c) for c in targets)
+    mid = 0.5 * (lo + hi)
+    slope = {c: mid for c in classes}
+    hist = {c: [] for c in classes}
+
+    for _ in range(int(rounds)):
+        slope_vec = np.array([slope.get(int(c), mid) for c in pupil_rs7],
+                             dtype=float)
+        choice, _ = assign_by_capacity_gravity(
+            pupil_xy, school_xy, capacity, slope=slope_vec,
+            max_radius_km=max_radius_km, max_iterations=200, tolerance=1e-6,
+            rng=np.random.RandomState(seed))
+        d_km = np.sqrt(((pupil_xy - school_xy[choice]) ** 2).sum(axis=1)) / 1000.0
+
+        converged = True
+        for c in classes:
+            mask = pupil_rs7 == c
+            if not mask.any():
+                continue
+            mean_c = float(d_km[mask].mean())
+            hist[c].append((slope[c], mean_c))
+            if abs(mean_c - targets[c]) > tol:
+                converged = False
+            if len(hist[c]) >= 2 and hist[c][-1][1] != hist[c][-2][1]:
+                (s0, m0), (s1, m1) = hist[c][-2], hist[c][-1]
+                s_new = s1 + (targets[c] - m1) * (s1 - s0) / (m1 - m0)
+            else:
+                # first round (or flat response): nudge by sign. Mean too long
+                # (positive error) -> steepen (more negative slope).
+                s_new = slope[c] * (1.4 if mean_c > targets[c] else 0.7)
+            slope[c] = float(np.clip(s_new, lo, hi))
+        if converged:
+            break
+    return slope
 
 
 # ---------------------------------------------------------------------------
@@ -180,9 +236,11 @@ def main():
     elif "commune_id_right" in persons_gdf.columns:
         persons_gdf = persons_gdf.rename(columns={"commune_id_right": "commune_id"})
 
-    # Merge regiostar7
+    # Merge regiostar7. municipalities carry the 12-digit ARS; regiostar keys on
+    # the 8-digit AGS -> convert before the merge (else every pupil is unmatched).
     if "commune_id" not in regiostar.columns and "Gemeinde_id" in regiostar.columns:
         regiostar = regiostar.rename(columns={"Gemeinde_id": "commune_id"})
+    persons_gdf["commune_id"] = persons_gdf["commune_id"].map(ars_to_ags8)
     persons_gdf = persons_gdf.merge(regiostar[["commune_id", "regiostar7"]],
                                     on="commune_id", how="left")
     persons_gdf["regiostar7"] = persons_gdf["regiostar7"].astype("Int64")
@@ -205,80 +263,76 @@ def main():
     logger.info("Target table rows: %d", len(target_table))
 
     # ------------------------------------------------------------------
-    # 5. Calibrate per (level, RS7) using bisection
+    # 5. Calibrate per level on the FULL pupil set (coupled per-RS7 secant)
     # ------------------------------------------------------------------
     results = []
 
     for level in ("grundschule", "sekundar_1", "sekundar_2"):
-        level_mask = persons_gdf["level"] == level
-        level_pupils = persons_gdf[level_mask].copy()
+        level_pupils = persons_gdf[persons_gdf["level"] == level].copy()
 
-        # Schools for this level
         if "level" in schools_gdf.columns:
             level_schools = schools_gdf[schools_gdf["level"] == level].copy()
         else:
             level_schools = schools_gdf.copy()
         level_schools = level_schools.to_crs(persons_gdf.crs)
-
-        if len(level_schools) == 0:
-            logger.warning("No schools found for level '%s'; skipping.", level)
+        if len(level_schools) == 0 or level_pupils.empty:
+            logger.warning("No schools/pupils for level '%s'; skipping.", level)
             continue
 
-        school_xy = np.column_stack([
-            level_schools.geometry.x.values,
-            level_schools.geometry.y.values,
-        ])
-        cap_col = "capacity" if "capacity" in level_schools.columns else level_schools.columns[0]
+        school_xy = np.column_stack([level_schools.geometry.x.values,
+                                     level_schools.geometry.y.values])
         if "capacity" in level_schools.columns:
             capacity = level_schools["capacity"].values.astype(float)
         else:
             capacity = np.ones(len(level_schools), dtype=float)
 
-        target_for_level = target_table[target_table["level"] == level].set_index("regiostar7")
+        pupil_xy = np.column_stack([level_pupils.geometry.x.values,
+                                    level_pupils.geometry.y.values])
+        pupil_rs7 = level_pupils["regiostar7"].fillna(-1).astype(int).to_numpy()
 
-        rs7_values = sorted(level_pupils["regiostar7"].dropna().unique())
+        # targets: RS7 present in the target table AND with enough pupils
+        target_for_level = (target_table[target_table["level"] == level]
+                            .set_index("regiostar7"))
+        counts = pd.Series(pupil_rs7).value_counts()
+        targets = {
+            int(rs7): float(target_for_level.loc[rs7, "target_km"])
+            for rs7 in target_for_level.index
+            if int(rs7) in counts.index and counts[int(rs7)] >= _MIN_PUPILS_PER_CELL
+        }
+        if not targets:
+            logger.warning("No RS7 cells with >= %d pupils for level '%s'; skipping.",
+                           _MIN_PUPILS_PER_CELL, level)
+            continue
 
-        for rs7 in rs7_values:
-            rs7_int = int(rs7)
-            if rs7_int not in target_for_level.index:
-                logger.debug("RS7=%d not in target table for level=%s; skipping.", rs7_int, level)
-                continue
+        logger.info("Calibrating level=%s on %d pupils, %d schools, RS7 targets=%s",
+                    level, len(level_pupils), len(level_schools),
+                    {k: round(v, 2) for k, v in targets.items()})
+        slopes = calibrate_level_per_rs7(
+            pupil_xy, pupil_rs7, school_xy, capacity, targets,
+            max_radius_km=_MAX_RADIUS_KM[level], seed=args.seed,
+            rounds=15, lo=-3.0, hi=-0.03, tol=0.3)
 
-            cell_pupils = level_pupils[level_pupils["regiostar7"] == rs7]
-            n_pupils = len(cell_pupils)
-            if n_pupils < _MIN_PUPILS_PER_CELL:
-                logger.debug("RS7=%d level=%s: only %d pupils (< %d); skipping.",
-                             rs7_int, level, n_pupils, _MIN_PUPILS_PER_CELL)
-                continue
+        # achieved per-RS7 mean from a single full-level draw with the result
+        slope_vec = np.array([slopes.get(int(c), -0.3) for c in pupil_rs7],
+                             dtype=float)
+        choice, _ = assign_by_capacity_gravity(
+            pupil_xy, school_xy, capacity, slope=slope_vec,
+            max_radius_km=_MAX_RADIUS_KM[level], max_iterations=200,
+            tolerance=1e-6, rng=np.random.RandomState(args.seed))
+        d_km = np.sqrt(((pupil_xy - school_xy[choice]) ** 2).sum(axis=1)) / 1000.0
 
-            target_km = float(target_for_level.loc[rs7_int, "target_km"])
-            pupil_xy = np.column_stack([
-                cell_pupils.geometry.x.values,
-                cell_pupils.geometry.y.values,
-            ])
-
-            logger.info("Calibrating level=%s RS7=%d n=%d target=%.2f km ...",
-                        level, rs7_int, n_pupils, target_km)
-            slope = secant_calibrate_slope(
-                target_km, pupil_xy, school_xy, capacity,
-                max_radius_km=_MAX_RADIUS_KM[level],
-                seed=args.seed,
-                lo=-3.0, hi=-0.001,
-                max_iter=40, tol=0.1,
-            )
-            achieved = mean_distance_for_slope(
-                slope, pupil_xy, school_xy, capacity,
-                max_radius_km=_MAX_RADIUS_KM[level],
-                rng=np.random.RandomState(args.seed),
-            )
-            logger.info("  -> slope=%.4f  achieved=%.3f km (target=%.2f km)",
-                        slope, achieved, target_km)
+        for rs7 in sorted(targets):
+            mask = pupil_rs7 == rs7
+            achieved = float(d_km[mask].mean())
+            logger.info("  level=%s RS7=%d n=%d target=%.2f -> slope=%.4f achieved=%.2f km",
+                        level, rs7, int(mask.sum()), targets[rs7],
+                        slopes[rs7], achieved)
             results.append({
                 "level": level,
-                "regiostar7": rs7_int,
-                "n_pupils": n_pupils,
-                "target_km": target_km,
-                "slope": round(slope, 4),
+                "regiostar7": rs7,
+                "n_pupils": int(mask.sum()),
+                "target_km": round(targets[rs7], 3),
+                "slope": round(slopes[rs7], 4),
                 "achieved_mean_km": round(achieved, 3),
             })
 

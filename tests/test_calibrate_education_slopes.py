@@ -1,7 +1,40 @@
 import numpy as np
 from scripts.calibrate_education_slopes import (
-    mean_distance_for_slope, secant_calibrate_slope,
+    mean_distance_for_slope, secant_calibrate_slope, calibrate_level_per_rs7,
 )
+from braunschweig.synthesis.locations.education_gravity_model import (
+    assign_by_capacity_gravity,
+)
+
+
+def test_calibrate_level_per_rs7_differentiates_and_hits_targets():
+    # Two RS7 groups share the same uniform 0..20 km spatial spread and the same
+    # 11 schools (every 2 km). Group 72 has a short target (3 km), group 74 a long
+    # one (7 km). The coupled full-level calibration must give each group a slope
+    # that hits its own target, with the shorter-target group getting the steeper
+    # (more negative) slope.
+    rng = np.random.RandomState(0)
+    n = 400
+    x = rng.uniform(0, 20000, 2 * n)
+    pupil_xy = np.column_stack([x, np.zeros(2 * n)])
+    pupil_rs7 = np.array([72] * n + [74] * n)
+    schools = np.column_stack([np.arange(0, 20001, 2000, dtype=float),
+                               np.zeros(11)])
+    capacity = np.full(11, 1000.0)
+    targets = {72: 3.0, 74: 7.0}
+    slopes = calibrate_level_per_rs7(
+        pupil_xy, pupil_rs7, schools, capacity, targets,
+        max_radius_km=60.0, seed=1, rounds=25, tol=0.4)
+
+    assert slopes[72] < slopes[74]   # shorter target -> steeper slope
+
+    svec = np.array([slopes[c] for c in pupil_rs7], dtype=float)
+    ch, _ = assign_by_capacity_gravity(
+        pupil_xy, schools, capacity, slope=svec, max_radius_km=60.0,
+        max_iterations=200, tolerance=1e-6, rng=np.random.RandomState(1))
+    d = np.sqrt(((pupil_xy - schools[ch]) ** 2).sum(axis=1)) / 1000.0
+    assert abs(d[pupil_rs7 == 72].mean() - 3.0) < 1.0
+    assert abs(d[pupil_rs7 == 74].mean() - 7.0) < 1.0
 
 
 def _setup():
