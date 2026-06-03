@@ -162,6 +162,81 @@ Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 `tests/test_gravity_slope_config.py` (the `None` default / flatten contract).
 
+## Education gravity model (NDS school data)
+
+School-age pupils (ages 6-19) are assigned to **real Niedersachsen schools** by a
+capacity-constrained distance-decay gravity model, instead of the generic OSM
+hard-radius sampler. Kindergarten (0-5) and university (20+) stay on the OSM
+sampler. The feature is flag-gated; with `education_gravity_enabled=false`
+(default) the pipeline is byte-identical to the legacy OSM education assignment.
+
+**Data.** The committed facilities table
+`eqasim-data/data/braunschweig/schools/nds_schools_zgb.csv` (force-added; the
+`eqasim-data` tree is gitignored) is built by `scripts/extract_nds_schools.py`
+from the LSN directories `Schulverzeichnis_ABS_2025.xlsx` (allgemeinbildende
+Schulen) + `Verzeichnis_der_BBS_2024.xlsx` (berufsbildende Schulen). One row per
+**(school, level)**: a school offering several levels (e.g. a KGS) appears once
+per level with that level's real pupil count as `capacity`. The script geocodes
+addresses via OSM Nominatim (1 req/s, cached) and validates each point offline
+against the local OSM education POIs (`osm_pois.parquet`, distance to the nearest
+education feature; `validated = dist < 750 m`). Full provenance + the regenerate
+command live in `eqasim-data/data/braunschweig/schools/README.md` and the
+end-to-end trace in `.../schools/DATA_FLOW.md`. Hard-coding coordinates or
+capacities in Python is prohibited - change the xlsx source or
+`braunschweig/data/schools/typing.py` and re-run the script.
+
+**Age -> level + capacity.** `braunschweig.data.schools.typing` maps each LSN
+Schulgliederung (SGL) code to a level and sums the matching pupil counts:
+Primarbereich (SGL 00,01,03,04) -> `grundschule` (6-9); Haupt/Real/Gym-SekI/IGS/
+KGS (11-19) plus the Oberschule/Foerderschule block (40-69) -> `sekundar_1`
+(10-15); Gym/IGS/KGS Sek II (23,24,28,29) **plus all BBS pupils** -> `sekundar_2`
+(16-19). Adult forms (Abendgymnasium 30, Kolleg 31) are excluded. The
+Gymnasium/Realschule/Hauptschule mix emerges automatically from the real
+per-level capacity shares (no school-track choice is modelled). LSN internal codes
+drop the Land prefix: official AGS-8 = `"03" + AGS6`, Kreis-5 = `"03" + Kreis3`;
+the table is filtered to the ZGB-8 Kreise.
+
+**The model (capacity-constrained distance decay).** Per level, the assignment is
+a **rectangular doubly-constrained Furness balancing**
+(`braunschweig.synthesis.locations.education_gravity_model.balance_doubly_constrained`,
+the rectangular generalisation of `braunschweig.gravity.model.evaluate_gravity`):
+pupils are rows (production target 1 each -> everyone is placed), schools are
+columns (attraction target = real `capacity` **scaled to the pupil count** ->
+schools fill in proportion to real Schuelerplaetze), friction
+`f = exp(slope_level * d_km)`. Each pupil then draws a school proportional to the
+**balanced flow row** - so distance decay shapes the assignment while the
+double-constraint prevents a tiny nearby school from swallowing pupils that belong
+in a larger one ("no 2-vs-10000"). A per-level max radius bounds the candidate set
+(nearest-school fallback when a pupil has none in range). All randomness uses the
+single `random_seed`. Kindergarten/university use the OSM radius sampler
+(`assign_by_radius`). The per-person stage
+`braunschweig.synthesis.locations.education_gravity` produces the legacy output
+schema `[person_id, commune_id, location_id, geometry]` and is swapped in by the
+flag-gated wrapper
+`braunschweig.locations.synthesis.replacement_education_gravity` (aliased to
+`synthesis.population.spatial.primary.locations`).
+
+Config keys (defaults in the stage's `configure`):
+`education_gravity_enabled` (false), `education_gravity_slope_by_level`
+(`{grundschule:-0.3, sekundar_1:-0.15, sekundar_2:-0.08}`),
+`education_gravity_max_radius_km_by_level` (`{grundschule:15, sekundar_1:30,
+sekundar_2:60}`), `education_gravity_kindergarten_radius_m` (2000),
+`education_gravity_university_radius_m` (10000),
+`education_gravity_max_iterations` (50), `education_gravity_tolerance` (1e-3),
+`nds_schools_path`.
+
+**Enrollment report (debug / calibrate).**
+`python -m braunschweig.analysis.run_education_validation --working-directory
+<cache> --sampling-rate <r> --output-dir <out>` writes
+`school_enrollment_vs_capacity.csv` (per school: capacity vs assigned pupils
+scaled to 100 %, fill_ratio) and `level_summary.csv` (per level: pupil count,
+mean/median straight-line school-commute km), so over-/under-filled schools and
+the slope calibration are immediately visible.
+
+Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
+`tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
+`tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`.
+
 ## Run analysis (post-simulation)
 
 The validation notebook `braunschweig/analysis/validation_mid2023.ipynb`
