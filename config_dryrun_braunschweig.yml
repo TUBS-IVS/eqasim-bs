@@ -80,6 +80,13 @@ config:
     76: -0.0719   # Mittelstadt (laendlich)
     77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
+  # --- Feature flags -----------------------------------------------------------
+  # OFF (false, default): education locations come from the OSM per-person
+  # sampler (eqasim_common.locations.synthesis.education) -> byte-identical to
+  # the legacy replacement stage. ON: capacity-constrained gravity model
+  # (braunschweig.synthesis.locations.education_gravity, NDS school register).
+  education_gravity_enabled: false
+
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a
   # Braunschweig fork (eqasim_common.data.spatial.iris etc.) are not aliased.
@@ -94,7 +101,7 @@ aliases:
   data.od.weighted: braunschweig.gravity.model
   data.spatial.codes: eqasim_common.spatial.entd_codes
   data.spatial.iris: eqasim_common.data.spatial.iris
-  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance

@@ -139,6 +139,13 @@ config:
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
+  # --- Feature flags -----------------------------------------------------------
+  # OFF (false, default): education locations come from the OSM per-person
+  # sampler (eqasim_common.locations.synthesis.education) -> byte-identical to
+  # the legacy replacement stage. ON: capacity-constrained gravity model
+  # (braunschweig.synthesis.locations.education_gravity, NDS school register).
+  education_gravity_enabled: false
+
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.
@@ -164,7 +171,7 @@ aliases:
   data.od.weighted: braunschweig.gravity.model
   data.spatial.iris: eqasim_common.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
-  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
   # Enriched-population stage: point directly to the Braunschweig fork so
   # synpp's single-step alias resolution picks it up (synpp.resolve_stage
   # substitutes once, so aliasing via the intermediate bavaria.* entry below
