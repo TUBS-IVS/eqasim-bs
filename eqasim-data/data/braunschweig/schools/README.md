@@ -1,0 +1,93 @@
+# NDS school facilities (ZGB-8) — education gravity model input
+
+`nds_schools_zgb.csv` is the committed, reproducible facilities table for the
+Braunschweig education gravity model. One row per **(school, level)**: a school
+that offers several levels (e.g. a Kooperative Gesamtschule) appears once per
+level, each with that level's real pupil count as `capacity`.
+
+The synpp pipeline (`braunschweig.data.schools.facilities`) reads ONLY this CSV.
+The xlsx sources and the geocoder are never touched at pipeline run time.
+
+## Source
+
+Landesamt fuer Statistik Niedersachsen (LSN), "Verzeichnisse fuer Niedersachsen":
+https://www.statistik.niedersachsen.de/startseite/veroffentlichungen/sonstige_veroffentlichungen/verzeichnisse/verzeichnisse-fur-niedersachsen-87729.html
+
+- `Schulverzeichnis_ABS_2025.xlsx` — allgemeinbildende Schulen, Stichtag 28.08.2025.
+  Per school: Schulgliederung codes `SGL1..SGL6` with matching pupil counts
+  `Sch1..Sch6`, school type `Styp`, address (`Strasse`, `PLZ`, `Ort`),
+  LSN `Kreis` (3-digit) + `AGS` (6-digit).
+- `Verzeichnis_der_BBS_2024.xlsx` — berufsbildende Schulen (vocational), 2024.
+  Per school: per-Schulform pupil columns (`Anzahl der Schueler...`), address,
+  `Allgemeiner Gemeindeschluessel` (6-digit AGS). All BBS pupils sum into
+  `sekundar_2`.
+
+The xlsx files are NOT committed (downloaded from the LSN URL above into
+`C:/Users/<user>/Downloads/Schulen NDS/`).
+
+## Level typing + capacity
+
+`braunschweig/data/schools/typing.py` maps each LSN Schulgliederung (SGL) code to
+a level and sums the matching pupil counts per level:
+
+| level | age band | SGL codes (ABS) / source (BBS) |
+|---|---|---|
+| `grundschule` | 6-9   | Primarbereich 00, 01, 03, 04 |
+| `sekundar_1`  | 10-15 | 11, 12, 13, 14, 16-19 and the Oberschule/Foerderschule block 40-69 |
+| `sekundar_2`  | 16-19 | Gymnasium/IGS/KGS Sek II 23, 24, 28, 29 **+ all BBS pupils** |
+
+Adult forms (Abendgymnasium 30, Kolleg 31) are excluded. Kindergarten (0-5) and
+university (20+) are NOT in this table — they stay on the OSM sampler.
+
+IDs are normalised from the LSN internal coding (which drops the Land prefix):
+official AGS-8 = `"03" + AGS6`; official Kreis-5 = `"03" + Kreis3`. The table is
+filtered to the ZGB-8 Kreise: 03101, 03102, 03103, 03151, 03153, 03154, 03157,
+03158.
+
+## Geocoding + validation
+
+Addresses are geocoded with OSM Nominatim (`geopy`, max 1 request/second, on-disk
+JSON cache, not committed). Unresolved addresses fall back to the bare postcode
+centroid (`geocode_quality = plz_centroid`). Coordinates are stored in EPSG:25832.
+
+Each geocoded point is validated OFFLINE against the local OSM education POIs
+(`eqasim-data/data/braunschweig/preprocessed/osm_pois.parquet`,
+`location_type == "education"`): `dist_to_osm_edu_m` is the distance to the
+nearest OSM education feature and `validated = dist_to_osm_edu_m < 750 m`.
+
+Current run (Stichtag of the xlsx above): 477 (school,level) rows; geocode quality
+address 474 / plz_centroid 3; 458/477 validated (96 %); median distance to nearest
+OSM education feature 16.8 m. 19 rows exceed the 750 m radius and are flagged
+`validated = False` (kept, but worth a manual look).
+
+## CSV schema
+
+| column | meaning |
+|---|---|
+| `school_id` | `abs_<SNR>` or `bbs_<Schulnummer>` |
+| `name` | school name |
+| `level` | grundschule / sekundar_1 / sekundar_2 |
+| `capacity` | real pupil count for this (school, level) |
+| `ags8` | official 8-digit AGS (Gemeinde) |
+| `kreis5` | official 5-digit Kreis |
+| `x`, `y` | coordinates, EPSG:25832 |
+| `geocode_quality` | address / plz_centroid |
+| `dist_to_osm_edu_m` | distance to nearest OSM education feature (m) |
+| `validated` | dist_to_osm_edu_m < 750 m |
+
+## Regenerate
+
+```powershell
+$env:PYTHONUTF8=1
+$env:GDAL_DATA="C:/Users/<user>/AppData/Local/miniforge3/envs/eqasim/Library/share/gdal"
+python scripts/extract_nds_schools.py `
+  --abs "C:/Users/<user>/Downloads/Schulen NDS/Schulverzeichnis_ABS_2025.xlsx" `
+  --bbs "C:/Users/<user>/Downloads/Schulen NDS/Verzeichnis_der_BBS_2024.xlsx" `
+  --osm-pois eqasim-data/data/braunschweig/preprocessed/osm_pois.parquet `
+  --out-dir eqasim-data/data/braunschweig/schools
+```
+
+The geocoder needs internet once (the `geocode_cache*.json` files make re-runs
+resumable; they are gitignored). Hard-coding coordinates or capacities in Python
+is prohibited — change the xlsx source or `braunschweig/data/schools/typing.py`
+and re-run the script.
