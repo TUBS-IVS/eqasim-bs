@@ -83,3 +83,33 @@ def test_assign_by_radius_weighted_and_fallback():
     choice = assign_by_radius(pupils, schools, weight, radius_m=2000.0, rng=rng)
     assert np.mean(choice == 0) > 0.8
     assert set(np.unique(choice)) <= {0, 1}
+
+
+def test_capacity_gravity_accepts_per_pupil_slope_vector():
+    # Two groups of pupils at the same point; school A near (0), B far (8 km),
+    # equal capacity. Group 0 has a steep slope (strong distance aversion) ->
+    # prefers near A; group 1 has a near-flat slope -> more indifferent. The
+    # steep group must pick A more often than the flat group.
+    rng = np.random.RandomState(0)
+    n = 300
+    pupils = np.zeros((2 * n, 2))
+    schools = np.array([[0.0, 0.0], [8000.0, 0.0]])
+    capacity = np.array([1000.0, 1000.0])
+    slope = np.concatenate([np.full(n, -0.8), np.full(n, -0.02)])
+    choice, _ = assign_by_capacity_gravity(
+        pupils, schools, capacity, slope=slope, max_radius_km=60.0,
+        max_iterations=300, tolerance=1e-9, rng=rng)
+    steep_near = np.mean(choice[:n] == 0)
+    flat_near = np.mean(choice[n:] == 0)
+    assert steep_near > flat_near
+
+
+def test_capacity_gravity_scalar_slope_still_works():
+    rng = np.random.RandomState(1)
+    pupils = np.zeros((50, 2))
+    schools = np.array([[0.0, 0.0], [5000.0, 0.0]])
+    capacity = np.array([500.0, 500.0])
+    choice, _ = assign_by_capacity_gravity(
+        pupils, schools, capacity, slope=-0.2, max_radius_km=60.0,
+        max_iterations=200, tolerance=1e-9, rng=rng)
+    assert set(np.unique(choice)) <= {0, 1}

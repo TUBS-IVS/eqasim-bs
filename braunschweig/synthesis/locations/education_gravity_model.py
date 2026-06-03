@@ -65,22 +65,33 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
     a tiny-capacity school from absorbing all nearby pupils ("no 2-vs-10000").
 
     pupil_xy: (R, 2) metric coords; school_xy: (C, 2); capacity: (C,) > 0;
-    slope: decay (1/km, negative); max_radius_km: candidate cutoff. Returns
+    slope: decay (1/km, negative) -- scalar OR per-pupil array of length R so
+        pupils in different RegioStaR-7 home areas decay at their own rate;
+    max_radius_km: candidate cutoff. Returns
     (choice (R,) school index, fallback (R,) bool = no candidate in radius).
     """
     d_km = cdist(pupil_xy, school_xy) / 1000.0
-    friction = np.where(d_km <= max_radius_km, np.exp(slope * d_km), 0.0)
+    n_pupils = int(pupil_xy.shape[0])
+
+    # slope may be a scalar (same decay for all pupils) or a per-pupil vector
+    # (length n_pupils) so pupils in different RegioStaR-7 home areas decay at
+    # their own rate. Normalise to a column vector for broadcasting; a wrong-
+    # length vector raises here, which is the desired guard.
+    slope_vec = np.broadcast_to(np.asarray(slope, dtype=float),
+                                (n_pupils,)).reshape(-1, 1)
+
+    friction = np.where(d_km <= max_radius_km, np.exp(slope_vec * d_km), 0.0)
 
     fallback = friction.sum(axis=1) == 0
     if fallback.any():
-        nearest = np.argmin(d_km[fallback], axis=1)
         rows = np.where(fallback)[0]
-        friction[rows, nearest] = np.exp(slope * d_km[rows, nearest])
+        nearest = np.argmin(d_km[rows], axis=1)
+        friction[rows, nearest] = np.exp(
+            slope_vec[rows, 0] * d_km[rows, nearest])
 
     # Scale attraction so that column targets sum to the pupil count, preserving
     # capacity proportions: each school's target = n_pupils * cap_j / sum(cap).
     capacity = np.asarray(capacity, dtype=float)
-    n_pupils = int(pupil_xy.shape[0])
     attraction = n_pupils * capacity / capacity.sum()
     production = np.ones(n_pupils)
 
