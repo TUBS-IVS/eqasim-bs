@@ -3,7 +3,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
 from braunschweig.synthesis.locations.education_gravity import (
-    age_to_level, assign_education_locations,
+    age_to_level, assign_education_locations, slope_vector_for_level,
 )
 
 
@@ -23,6 +23,7 @@ def _persons():
     return gpd.GeoDataFrame({
         "person_id": [1, 2, 3, 4, 5],
         "age": ages,
+        "home_rs7": [72] * 5,
         "geometry": [Point(0.0, 0.0)] * 5,
     }, crs="EPSG:25832")
 
@@ -50,6 +51,7 @@ def _osm_education():
 def test_assign_education_locations_covers_all_persons():
     cfg = {
         "slope_by_level": {"grundschule": -0.3, "sekundar_1": -0.15, "sekundar_2": -0.08},
+        "slope_by_level_rs7": None,
         "max_radius_km_by_level": {"grundschule": 15.0, "sekundar_1": 30.0, "sekundar_2": 60.0},
         "kindergarten_radius_m": 2000.0, "university_radius_m": 10000.0,
         "max_iterations": 50, "tolerance": 1e-6,
@@ -67,3 +69,17 @@ def test_assign_education_locations_covers_all_persons():
     assert by_pid[4] == "z1"
     assert by_pid[1] == "edu_k"
     assert by_pid[5] == "edu_u"
+
+
+def test_slope_vector_for_level_uses_rs7_override_then_falls_back():
+    rs7 = pd.Series([72, 74, 99])   # 99 is an RS7 with no override
+    by_level_rs7 = {"grundschule": {72: -0.5, 74: -0.2}}
+    scalar_by_level = {"grundschule": -0.3}
+    out = slope_vector_for_level("grundschule", rs7, by_level_rs7, scalar_by_level)
+    assert list(out) == [-0.5, -0.2, -0.3]   # 99 falls back to the scalar
+
+
+def test_slope_vector_for_level_scalar_when_no_rs7_dict():
+    rs7 = pd.Series([72, 74])
+    out = slope_vector_for_level("grundschule", rs7, None, {"grundschule": -0.3})
+    assert list(out) == [-0.3, -0.3]
