@@ -174,6 +174,8 @@ def execute(context):
     # polygons receive -1 (unmatched); slope_vector_for_level falls back to the
     # scalar slope for those, which is the safe conservative default.
     df_zones = context.stage("data.spatial.municipalities")[["commune_id", "geometry"]]
+    if df_zones.crs is not None and df_persons.crs is not None:
+        df_zones = df_zones.to_crs(df_persons.crs)
     df_rs7 = context.stage("braunschweig.data.bbsr.regiostar")[["commune_id", "regiostar7"]]
     joined = gpd.sjoin(df_persons[["person_id", "geometry"]], df_zones,
                        how="left", predicate="within").drop(columns="index_right")
