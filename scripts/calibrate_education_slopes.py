@@ -48,10 +48,14 @@ from braunschweig.data.bbsr.regiostar import ars_to_ags8  # noqa: E402
 from braunschweig.data.schools.university_facilities import (  # noqa: E402
     build_university_facilities,
 )
+from braunschweig.data.schools.kita_facilities import build_kita_facilities  # noqa: E402
 
 # Maximum search radius per level (km). oberstufe and bbs share the 16-19 age
 # band; bbs gets the wider radius to reflect its regional catchment.
+# kindergarten: 8 km is consistent with the OSM radius sampler (2 km) scaled up
+# for a doubly-constrained model that must serve all children in the ZGB.
 _MAX_RADIUS_KM = {
+    "kindergarten": 8.0,
     "grundschule": 15.0,
     "sekundar_1": 30.0,
     "oberstufe": 60.0,
@@ -59,7 +63,9 @@ _MAX_RADIUS_KM = {
 }
 # Age bands used to assign pupils to levels. Ages 16-19 are first labelled
 # "upper_secondary" and then split into oberstufe / bbs by enrollment share.
+# kindergarten covers ages 0-5 (Kita, below compulsory school age).
 _AGE_BANDS = {
+    "kindergarten": (0, 5),
     "grundschule": (6, 9),
     "sekundar_1": (10, 15),
     "upper_secondary": (16, 19),
@@ -471,6 +477,183 @@ def main():
             })
 
     # ------------------------------------------------------------------
+    # 5b. Kindergarten calibration (doubly-constrained, per-RS7, MiD Tab. 43)
+    #
+    # Kindergarten children (ages 0-5) are assigned to real Kita facilities via
+    # the same doubly-constrained capacity-gravity model as the school levels.
+    # The per-RS7 slope is calibrated against the MiD 2023 Tabelle 43 "km_0_6"
+    # column (Kita trip length by RegioStaR-7). The pupil frame is built from
+    # the same stage pickles already loaded above (candidates + enriched + homes),
+    # but restricted to age 0-5 rather than 6-19.
+    # ------------------------------------------------------------------
+
+    kita_csv_path = os.path.join(
+        repo_root, "eqasim-data/data/braunschweig/schools/nds_kitas_zgb.csv")
+    if not os.path.isfile(kita_csv_path):
+        logger.warning(
+            "nds_kitas_zgb.csv not found at '%s'; skipping kindergarten calibration. "
+            "Run scripts/extract_nds_kitas.py first.", kita_csv_path)
+    else:
+        # Build Kita facilities from the LSN CSV + cached OSM education stage.
+        # The OSM stage was already loaded for the university block, but to avoid
+        # depending on load order we load it directly here (load is cached by OS).
+        osm_kita = _load_stage(wd, "eqasim_common.locations.education")
+        osm_kita = osm_kita[osm_kita["education_type"] == "kindergarten"].copy()
+        df_k = pd.read_csv(kita_csv_path, dtype={"lsn_code": str})
+        kita = build_kita_facilities(df_k, osm_kita)
+        kita = kita.to_crs(persons_gdf.crs)
+        logger.info("Kita facilities: %d points, capacity sum %.0f",
+                    len(kita), kita["capacity"].sum())
+
+        if len(kita) == 0:
+            logger.warning("No Kita facilities built; skipping kindergarten calibration.")
+        else:
+            # Build the age 0-5 pupil GeoDataFrame using the same stage data already
+            # loaded for the school pupil frame: candidates[has_education_trip] +
+            # enriched age + home locations + municipality sjoin -> RS7.
+            kita_pupils_raw = persons_raw[persons_raw["has_education_trip"]].copy()
+            kita_pupils_raw = kita_pupils_raw.merge(age_cols, on="person_id", how="left")
+            kita_pupils_raw = kita_pupils_raw[
+                (kita_pupils_raw["age"] >= 0) & (kita_pupils_raw["age"] <= 5)
+            ].copy()
+            kita_pupils_raw = kita_pupils_raw.merge(homes_geom, on="household_id",
+                                                    how="left")
+            import geopandas as gpd  # already imported above; re-import is a no-op
+            kita_pupils_gdf = gpd.GeoDataFrame(kita_pupils_raw,
+                                               geometry="home_geom",
+                                               crs=homes.crs)
+            logger.info("Age 0-5 persons with education trip: %d", len(kita_pupils_gdf))
+
+            if kita_pupils_gdf.empty:
+                logger.warning("No age 0-5 education-trip persons found; "
+                               "skipping kindergarten calibration.")
+            else:
+                # Spatial join home -> municipalities -> regiostar7
+                kita_pupils_gdf = gpd.sjoin(
+                    kita_pupils_gdf,
+                    muni[["commune_id", "geometry"]],
+                    how="left", predicate="within")
+                if "commune_id_left" in kita_pupils_gdf.columns:
+                    kita_pupils_gdf = kita_pupils_gdf.rename(
+                        columns={"commune_id_left": "commune_id"})
+                elif "commune_id_right" in kita_pupils_gdf.columns:
+                    kita_pupils_gdf = kita_pupils_gdf.rename(
+                        columns={"commune_id_right": "commune_id"})
+                kita_pupils_gdf["commune_id"] = \
+                    kita_pupils_gdf["commune_id"].map(ars_to_ags8)
+                kita_pupils_gdf = kita_pupils_gdf.merge(
+                    regiostar[["commune_id", "regiostar7"]],
+                    on="commune_id", how="left")
+                kita_pupils_gdf["regiostar7"] = \
+                    kita_pupils_gdf["regiostar7"].astype("Int64")
+                logger.info("Kita pupils with RS7 assigned: %d / %d",
+                            kita_pupils_gdf["regiostar7"].notna().sum(),
+                            len(kita_pupils_gdf))
+
+                # Per-RS7 MiD Tab. 43 targets for the kindergarten level
+                target_kita = (target_table[target_table["level"] == "kindergarten"]
+                               .set_index("regiostar7"))
+                kita_pupil_rs7 = (kita_pupils_gdf["regiostar7"]
+                                  .fillna(-1).astype(int).to_numpy())
+                kita_counts = pd.Series(kita_pupil_rs7).value_counts()
+                kita_targets = {
+                    int(rs7): float(target_kita.loc[rs7, "target_km"])
+                    for rs7 in target_kita.index
+                    if int(rs7) in kita_counts.index
+                    and kita_counts[int(rs7)] >= _MIN_PUPILS_PER_CELL
+                }
+
+                if not kita_targets:
+                    logger.warning(
+                        "No RS7 cells with >= %d pupils for kindergarten; skipping.",
+                        _MIN_PUPILS_PER_CELL)
+                else:
+                    kita_pupil_xy = np.column_stack(
+                        [kita_pupils_gdf.geometry.x.values,
+                         kita_pupils_gdf.geometry.y.values])
+                    kita_xy = np.column_stack(
+                        [kita.geometry.x.values, kita.geometry.y.values])
+                    kita_capacity = kita["capacity"].values.astype(float)
+
+                    logger.info(
+                        "Calibrating level=kindergarten on %d pupils, "
+                        "%d kita points, RS7 targets=%s",
+                        len(kita_pupils_gdf), len(kita),
+                        {k: round(v, 2) for k, v in kita_targets.items()})
+
+                    kita_slopes = calibrate_level_per_rs7(
+                        kita_pupil_xy, kita_pupil_rs7, kita_xy, kita_capacity,
+                        kita_targets,
+                        max_radius_km=_MAX_RADIUS_KM["kindergarten"],
+                        seed=args.seed, rounds=40, lo=-3.0, hi=-0.02, tol=0.25)
+
+                    def _achieved_kita(slope_dict):
+                        sv = np.array(
+                            [slope_dict.get(int(c), -0.3) for c in kita_pupil_rs7],
+                            dtype=float)
+                        ch, _ = assign_by_capacity_gravity(
+                            kita_pupil_xy, kita_xy, kita_capacity, slope=sv,
+                            max_radius_km=_MAX_RADIUS_KM["kindergarten"],
+                            max_iterations=200, tolerance=1e-6,
+                            rng=np.random.RandomState(args.seed))
+                        return (np.sqrt(
+                            ((kita_pupil_xy - kita_xy[ch]) ** 2).sum(axis=1))
+                            / 1000.0)
+
+                    kita_d_km = _achieved_kita(kita_slopes)
+                    kita_cell_counts = {
+                        rs7: int((kita_pupil_rs7 == rs7).sum())
+                        for rs7 in kita_targets
+                    }
+                    kita_errs = {
+                        rs7: abs(
+                            float(kita_d_km[kita_pupil_rs7 == rs7].mean())
+                            - kita_targets[rs7])
+                        for rs7 in kita_targets
+                    }
+
+                    # Floor-aware shrinkage regularisation (same logic as school loop):
+                    # tiny sparse RS7 cells off by > 1.5 km are replaced by the
+                    # pupil-weighted mean slope of the converged cells, unless they
+                    # are at the steep bound (floor, structural distance limitation).
+                    floor_slope_k = -2.95
+                    reliable_k = [rs7 for rs7 in kita_targets
+                                  if kita_errs[rs7] <= 1.0]
+                    unreliable_k = [rs7 for rs7 in kita_targets
+                                    if (kita_errs[rs7] > 1.5
+                                        and kita_slopes[rs7] > floor_slope_k)]
+                    if reliable_k and unreliable_k:
+                        wsum_k = sum(kita_cell_counts[rs7] for rs7 in reliable_k)
+                        reg_k = (sum(kita_slopes[rs7] * kita_cell_counts[rs7]
+                                     for rs7 in reliable_k) / wsum_k)
+                        for rs7 in unreliable_k:
+                            logger.info(
+                                "  regularize kindergarten RS7=%d (n=%d, "
+                                "err=%.1f km) slope %.4f -> %.4f "
+                                "(reliable-cell mean)",
+                                rs7, kita_cell_counts[rs7], kita_errs[rs7],
+                                kita_slopes[rs7], reg_k)
+                            kita_slopes[rs7] = float(reg_k)
+                        kita_d_km = _achieved_kita(kita_slopes)
+
+                    for rs7 in sorted(kita_targets):
+                        mask = kita_pupil_rs7 == rs7
+                        achieved = float(kita_d_km[mask].mean())
+                        logger.info(
+                            "  level=kindergarten RS7=%d n=%d "
+                            "target=%.2f -> slope=%.4f achieved=%.2f km",
+                            rs7, int(mask.sum()), kita_targets[rs7],
+                            kita_slopes[rs7], achieved)
+                        results.append({
+                            "level": "kindergarten",
+                            "regiostar7": rs7,
+                            "n_pupils": int(mask.sum()),
+                            "target_km": round(kita_targets[rs7], 3),
+                            "slope": round(kita_slopes[rs7], 4),
+                            "achieved_mean_km": round(achieved, 3),
+                        })
+
+    # ------------------------------------------------------------------
     # 6. University calibration (singly-constrained, single national slope)
     #
     # University commuters are age-20+ persons with an education trip. The
@@ -593,7 +776,7 @@ _RS7_LABELS = {
 
 def _yaml_block(df_results):
     lines = ["education_gravity_slope_by_level_rs7:"]
-    for level in ("grundschule", "sekundar_1", "oberstufe", "bbs"):
+    for level in ("kindergarten", "grundschule", "sekundar_1", "oberstufe", "bbs"):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             continue
@@ -616,10 +799,10 @@ def _write_outputs(df_results, detour_factor, output_dir):
     df_results.to_csv(os.path.join(output_dir, "calibration_results.csv"),
                       index=False)
 
-    levels = ["grundschule", "sekundar_1", "oberstufe", "bbs"]
+    levels = ["kindergarten", "grundschule", "sekundar_1", "oberstufe", "bbs"]
 
     # Figure 1: target vs achieved straight-line mean per level x RS7
-    fig, axes = plt.subplots(1, 4, figsize=(20, 5), sharey=True)
+    fig, axes = plt.subplots(1, len(levels), figsize=(5 * len(levels), 5), sharey=True)
     for ax, level in zip(axes, levels):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
@@ -645,14 +828,16 @@ def _write_outputs(df_results, detour_factor, output_dir):
     plt.close(fig)
 
     # Figure 2: calibrated slope per RS7 x level
-    fig, ax = plt.subplots(figsize=(12, 5))
-    width = 0.2
+    n_levels = len(levels)
+    fig, ax = plt.subplots(figsize=(max(12, 2 * n_levels), 5))
+    width = 0.15
     for i, level in enumerate(levels):
         sub = df_results[df_results["level"] == level].sort_values("regiostar7")
         if sub.empty:
             continue
         idx = np.arange(len(sub))
-        ax.bar(idx + (i - 1.5) * width, sub["slope"], width=width, label=level)
+        ax.bar(idx + (i - (n_levels - 1) / 2.0) * width,
+               sub["slope"], width=width, label=level)
         ax.set_xticks(np.arange(len(sub)))
         ax.set_xticklabels([f"RS7 {int(r)}" for r in sub["regiostar7"]])
     ax.set_ylabel("calibrated slope (1/km)")
@@ -673,7 +858,8 @@ def _write_outputs(df_results, detour_factor, output_dir):
         "the 25% synthesis (cache_bs_25pct); per-pupil slope by home RegioStaR-7, "
         "coupled full-level secant.",
         "",
-        "Levels: grundschule / sekundar_1 / oberstufe use per-RS7 MiD Tab. 43 targets. "
+        "Levels: kindergarten / grundschule / sekundar_1 / oberstufe use per-RS7 MiD Tab. 43 "
+        "targets (Tabelle 43, km_0_6 / km_7_10 / km_11_13 / km_14_17). "
         "bbs uses the national Destatis MZ 2024 BBS straight-line mean as a uniform "
         "target across all RS7 (rural cells may legitimately exceed it due to school sparsity).",
         "",
