@@ -1,6 +1,6 @@
 """
 Household-income distribution for the Braunschweig region, derived from the
-MiD 2023 regional report 'Großraum Braunschweig', Tabelle H4 'Ökonomischer
+MiD 2023 regional sample, Tabelle H4 'Ökonomischer
 Status des Haushalts' (Zeilengruppe Haushaltsgröße).
 
 This replaces bavaria/data/census/household_income.py which depends on

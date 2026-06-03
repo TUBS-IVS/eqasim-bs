@@ -1,7 +1,7 @@
 """Seed the committed MiD 2023 Tabelle 43 reference CSV.
 
-Pinned from the MiD 2023 Ergebnisbericht (Grossraum Braunschweig), Tabelle 43
-"Kita- und Schulweglaengen nach Raumtyp und Altersgruppe" (page 178), mean
+Pinned from MiD 2023 Tabelle 43
+"Kita- und Schulweglaengen nach Raumtyp und Altersgruppe", mean
 routed trip length in km. Re-run to regenerate; do not hand-edit the CSV.
 
 Usage: python scripts/seed_mid_t43_school_distance.py

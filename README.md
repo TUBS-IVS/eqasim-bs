@@ -11,7 +11,7 @@ agent-based transport simulations such as
 [MATSim](https://matsim.org). It is a regional fork of the eqasim
 pipeline, region-locked to Braunschweig and fed by German open data
 (BKG, DESTATIS, BBSR, BA, LGLN, BMV, OpenStreetMap, Zensus 2022) and
-the MiD 2023 Großraum-Braunschweig sample.
+the MiD 2023 regional sample.
 
 The pipeline is implemented as a content-hashed
 [synpp](https://github.com/eqasim-org/synpp) DAG in Python 3.10 and
@@ -106,12 +106,12 @@ Summary table (see the checklist for full paths and licences):
 | Group | Datasets |
 |-------|----------|
 | **A. Federal** | VG250-EW (BKG), KBA Fahrerlaubnisbestand FE4, ENTD 2008 (HTS donor) |
-| **B. Niedersachsen / Braunschweig** | DESTATIS 12411-0018 + urbistat shares (population), GENESIS 13111-06-02-4 / 13111-01-03-5 (employment), BA gemband-dlk (Wirtschaftsabteilungen), BA Pendleratlas Ein-/Auspendler CSVs, Zensus 2022 5000H-2001 households, BBSR INKAR Haushaltseinkommen (+ optional full panel), MiD 2023 Großraum-Braunschweig PDF + extracted CSVs, RegioStaR-7, Zensus 100 m grid |
+| **B. Niedersachsen / Braunschweig** | DESTATIS 12411-0018 + urbistat shares (population), GENESIS 13111-06-02-4 / 13111-01-03-5 (employment), BA gemband-dlk (Wirtschaftsabteilungen), BA Pendleratlas Ein-/Auspendler CSVs, Zensus 2022 5000H-2001 households, BBSR INKAR Haushaltseinkommen (+ optional full panel), MiD 2023 regional table volume + extracted CSVs, RegioStaR-7, Zensus 100 m grid |
 | **C. Preprocessed** | ALKIS Hausumringe → `alkis_buildings.parquet`, ATKIS Basis-DLM → `landuse.parquet`, OSM Niedersachsen → `osm_pois.parquet` |
 | **D. MATSim-only** | OSM Niedersachsen PBF, GTFS Deutschland (Delfi or ZGB) |
 
 Licences span dl-de/by-2-0, dl-de/zero-2-0, ODbL 1.0, BA terms, and
-infas/BMDV non-commercial (MiD 2023). Re-distribution rules apply per
+BMDV non-commercial (MiD 2023). Re-distribution rules apply per
 dataset; see the checklist.
 
 ## Pipeline architecture
@@ -153,7 +153,7 @@ For the synpp DAG and stage layout, see
 | Income | LfStat Bavaria | BBSR INKAR Haushaltseinkommen (Kreis × year) |
 | Buildings | OSM tags | ALKIS Hausumringe (LGLN) — preprocessed parquet |
 | Landuse | OSM tags | ATKIS Basis-DLM (LGLN) — preprocessed parquet |
-| Travel survey | MiD-Bayern | MiD 2023 Großraum-Braunschweig (infas 7555) for distance / mode CDFs; ENTD 2008 still feeds activity chains |
+| Travel survey | MiD-Bayern | MiD 2023 regional sample for distance / mode CDFs; ENTD 2008 still feeds activity chains |
 | Spatial fix | Bavaria-wide | ARS prefixes 031xx pinned in every config |
 
 ## Calibration & validation

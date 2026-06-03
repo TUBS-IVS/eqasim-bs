@@ -45,7 +45,7 @@ pattern donor; the BS pipeline does not yet have a German HTS replacement.
 | B7 | **Zensus 2022 — Households (5000H-2001 flat-CSV)** Gemeinde × HH-size × HH-type | https://ergebnisse.zensus2022.de (Tabelle `5000H-2001`, Flat-File) | `braunschweig/5000H-2001_de_flat.csv` | dl-de/by-2-0 (Statistische Ämter) |
 | B8 | **BBSR INKAR — household income** (Kreis × year, Haushaltseinkommen €/EW/Monat) | https://www.inkar.de (Indikatorenexport `E_Haushaltseinkommen.xls`) | `braunschweig/E_Haushaltseinkommen.xls` | dl-de/by-2-0 (BBSR) |
 | B9 | **BBSR INKAR — full panel (optional)** other indicator exports `E_*.xls` (population density, unemployment, education, healthcare) | https://www.inkar.de | `braunschweig/E_Bevoelkerungsdichte.xls`, `E_Arbeitslosenquote.xls`, `E_HochschulabsolventenQuote.xls`, `E_AerzteJeEinwohner.xls` | dl-de/by-2-0 |
-| B10 | **MiD 2023 — Großraum Braunschweig (infas 7555)** result tables PDF | infas mobility report — provided by ZGB / BMDV | `braunschweig/Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf` | infas / BMDV non-commercial |
+| B10 | **MiD 2023 regional table volume** (result tables PDF, provided via the project / ZGB) | MiD 2023 regional table volume — provided by ZGB / BMDV | `braunschweig/Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf` | BMDV non-commercial |
 | B10a | **MiD 2023 — extracted CSVs** (P9 / P12_1 / P13 / P17_1 — produced from B10 by `scripts/extract_mid_tables.py`) | Generated locally | `braunschweig/mid/mid2023_P{9,12_1,13,17_1}.csv` | derived from B10 |
 | B11 | **BMV/BBSR RegioStaR-7 reference** (Gemeinde-level RegioStaR class) | https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx — auto-downloaded by `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` | dl-de/by-2-0 (BMV) |
 | B12 | **Zensus 2022 100 m population grid (parquet)** | `https://github.com/JsLth/z22data` (BKG GeoGitter + Statistische Ämter) — auto-downloaded by `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet`, `zensus_grid/grid_100m.parquet` | dl-de/by-2-0 (BKG / Statistische Ämter) |
@@ -206,6 +206,6 @@ Use these bounds when pre-filtering OSM (C3 / D1) and GTFS (D2).
 
 - **No raw KBA download per region.** A2 (`fe4_2024.xlsx`) covers all of Germany; the BS pipeline reads it with a `Niedersachsen` filter on sheet FE4.3.
 - **Household sizes / income are required for the BS pipeline** (B7, B8) — unlike the upstream Bavaria setup, which derived those from MiD. Do not reuse the Bavaria value here.
-- **MiD 2023 (B10) is non-commercial.** The PDF is shared under infas / BMDV terms; do not redistribute. The extracted CSVs (B10a) are derivative works of B10 and inherit those terms.
+- **MiD 2023 (B10) is non-commercial.** The PDF is shared under BMDV terms; do not redistribute. The extracted CSVs (B10a) are derivative works of B10 and inherit those terms.
 - **z22data and RegioStaR scripts** write into `eqasim-data/`; that directory is `.gitignore`-d at the repo root. Re-run the download scripts after any clean checkout.
 - **Status tracking** is intentionally not part of this file — use `python scripts/verify_braunschweig_inputs.py` for an automated check rather than manual checkboxes.

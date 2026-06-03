@@ -1,7 +1,6 @@
 """
 Targets for car / bicycle / PT-subscription availability derived from the
-MiD 2023 regional report 'Großraum Braunschweig' (Tabellen-Version 2, sample
-7555, infas September 2025).
+MiD 2023 regional sample (Tabellen-Version 2).
 
 Values are taken from the 'Zeilen%' rows of Tables A P19, A P22 and A P24.1
 at Gesamtregion and Teilgebiete level, and extended with the sex / age

@@ -1,8 +1,8 @@
 """
-Zoning system for the MiD 2023 Großraum Braunschweig regional report.
+Zoning system for the MiD 2023 regional sample.
 
 The eight ZGB Kreise match exactly the eight 'Teilgebiete' reported in the
-MiD 2023 sample 7555 tables, so we build the zones by dissolving the Gemeinde
+MiD 2023 regional tables, so we build the zones by dissolving the Gemeinde
 polygons (from eqasim_common.data.spatial.iris) on their 5-digit Kreis code
 (departement_id / AGS-5).
 

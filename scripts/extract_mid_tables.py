@@ -1,7 +1,7 @@
 """
-Extractor for additional MiD 2023 Großraum Braunschweig tables (P0 set).
+Extractor for additional MiD 2023 regional sample tables (P0 set).
 
-Reads the infas 2025 PDF at
+Reads the MiD 2023 regional table volume PDF at
     eqasim-data/data/braunschweig/Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf
 
 and writes per-table CSVs to

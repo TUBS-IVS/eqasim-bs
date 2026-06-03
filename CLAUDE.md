@@ -10,7 +10,7 @@ The project should follow the style and structure of MATSim and eqasim as closel
 
 ## Reference data: MiD 2023 constraint tables (read this!)
 
-Numerical reference values from the MiD 2023 *Großraum Braunschweig* report
+Numerical reference values from the MiD 2023 regional sample
 are **not** stored as Python literals. They live as CSV files under
 `eqasim-data/data/braunschweig/mid/` and are loaded by
 `braunschweig.data.mid.reference_tables`:
@@ -39,7 +39,7 @@ The *additional* tables `mid2023_P9.csv`, `mid2023_P12_1.csv`, `mid2023_P13.csv`
 
 Each synthetic person receives a categorical attribute
 `pt_subscription_type` ∈ `PT_TICKET_CATEGORIES` sampled from the per-Kreis
-probability vector parsed from MiD 2023 P24.1 (Tabelle A, page 105).
+probability vector parsed from MiD 2023 Tabelle P24.1.
 The boolean `has_pt_subscription` is then derived as
 
 ```
@@ -102,7 +102,7 @@ ignored) is assigned a `license_type`
 Xl[kreis, sex, age_bin, license_category]
 ```
 
-with marginal targets parsed from MiD 2023 P17.1 (Tabelle A, page 87):
+with marginal targets parsed from MiD 2023 Tabelle P17.1:
 
 - `mid2023_P17_1.csv`        — Kreis × {ja,nein,k.A.}
 - `mid2023_P17_1_by_sex.csv` — Sex × {ja,nein,k.A.}

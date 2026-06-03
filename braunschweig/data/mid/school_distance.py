@@ -1,7 +1,7 @@
 """MiD 2023 Tabelle 43 loader: mean school-trip length by RegioStaR-7 + age group.
 
-Source: MiD 2023 Ergebnisbericht (Grossraum Braunschweig), Tabelle 43
-"Kita- und Schulweglaengen nach Raumtyp und Altersgruppe" (page 178). Routed
+Source: MiD 2023 Tabelle 43
+"Kita- und Schulweglaengen nach Raumtyp und Altersgruppe". Routed
 mean trip lengths in km. The committed CSV is produced by
 scripts/seed_mid_t43_school_distance.py.
 

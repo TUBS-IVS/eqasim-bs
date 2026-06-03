@@ -56,7 +56,7 @@ and 25 % runs.
 1. **Population control** — Zensus 2022 per Kreis (target vs expanded synth).
 2. **Household-size control** — TVD + χ² per Kreis vs Zensus 5000H-2001.
 3. **OD fit** — synth vs BA Pendleratlas top-200 Kreis-pairs (R², RMSE).
-4. **Mode share** — vs MiD 2023 Großraum Braunschweig.
+4. **Mode share** — vs MiD 2023 regional sample.
 5. **Activity-purpose mix** — synth (remapped) vs MiD 2023.
 6. **Trip distance / duration / departure profile** — vs MiD P13.
 7. **SRMSE / MAE summary** across every control.

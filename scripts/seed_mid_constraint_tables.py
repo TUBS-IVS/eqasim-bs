@@ -7,9 +7,8 @@ Background
 Several Braunschweig stages historically embedded MiD reference percentages
 as Python literals (CARS_BY_KREIS, BIKES_BY_KREIS, car/bike/PT subscription
 constraints, the H4 income-by-size matrix, the income-class midpoint
-lookup). All values were manually transcribed from the infas 2025 report
-``Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf``
-(Tabellen P19, P22, P24.1, H4, H7, H12.3).
+lookup). All values were manually transcribed from the MiD 2023 regional
+table volume (Tabellen P19, P22, P24.1, H4, H7, H12.3).
 
 This script materialises those literals as authoritative CSV files under
 ``eqasim-data/data/braunschweig/mid/``. The downstream Python modules
@@ -56,8 +55,8 @@ DEFAULT_OUT = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
 
 
 # ---------------------------------------------------------------------------
-# MiD 2023 Großraum Braunschweig — values transcribed from the infas 2025
-# PDF report. All percentages are stored as fractions in [0, 1].
+# MiD 2023 regional sample — values transcribed from the MiD 2023 regional
+# table volume. All percentages are stored as fractions in [0, 1].
 # ---------------------------------------------------------------------------
 
 # Tabelle A P19 'jederzeit' Anteil (Auto-Verfügbarkeit).
@@ -269,30 +268,30 @@ def main(argv: list[str] | None = None) -> int:
                                       P19_CAR_AVAIL_SEX,
                                       P19_CAR_AVAIL_AGE)),
         out / "mid2023_P19_car_constraints.csv",
-        "MiD 2023 Großraum BS Tabelle A P19 'jederzeit' (car availability).\n"
-        "Source: infas 2025 report, page P19. Values are fractions in [0, 1].",
+        "MiD 2023 regional sample Tabelle A P19 'jederzeit' (car availability).\n"
+        "Source: MiD 2023 Tabelle P19. Values are fractions in [0, 1].",
     )
     _write(
         pd.DataFrame(_constraint_rows(P22_BICYCLE_ZONE,
                                       P22_BICYCLE_SEX,
                                       P22_BICYCLE_AGE)),
         out / "mid2023_P22_bicycle_constraints.csv",
-        "MiD 2023 Großraum BS Tabelle A P22 'ja' (own bicycle).\n"
-        "Source: infas 2025 report, page P22. Values are fractions in [0, 1].",
+        "MiD 2023 regional sample Tabelle A P22 'ja' (own bicycle).\n"
+        "Source: MiD 2023 Tabelle P22. Values are fractions in [0, 1].",
     )
     _write(
         pd.DataFrame(_constraint_rows(P24_1_PT_ZONE,
                                       P24_1_PT_SEX,
                                       P24_1_PT_AGE)),
         out / "mid2023_P24_1_pt_subscription_constraints.csv",
-        "MiD 2023 Großraum BS Tabelle A P24.1 (PT subscription = sum of\n"
+        "MiD 2023 regional sample Tabelle A P24.1 (PT subscription = sum of\n"
         "Deutschlandticket + Wochen-/Monatskarte Abo + Jobticket/Semesterticket).\n"
-        "Source: infas 2025 report. Values are fractions in [0, 1].",
+        "Source: MiD 2023 Tabelle P24.1. Values are fractions in [0, 1].",
     )
     _write(
         _kreis_share_rows(H7_CARS_BY_KREIS, H7_CARS_REGION, [0, 1, 2, 3]),
         out / "mid2023_H7_cars_by_kreis.csv",
-        "MiD 2023 Großraum BS Tabelle H7 'Anzahl Autos im Haushalt'.\n"
+        "MiD 2023 regional sample Tabelle H7 'Anzahl Autos im Haushalt'.\n"
         "ars5='Gesamt' is the region-wide row used as fallback.\n"
         "Columns 0/1/2/3 are the share with that vehicle count (3 == 3+).",
     )
@@ -300,14 +299,14 @@ def main(argv: list[str] | None = None) -> int:
         _kreis_share_rows(H12_3_BIKES_BY_KREIS, H12_3_BIKES_REGION,
                           [0, 1, 2, 3, 4]),
         out / "mid2023_H12_3_bikes_by_kreis.csv",
-        "MiD 2023 Großraum BS Tabelle H12.3 'Anzahl Fahrraeder/Pedelecs/\n"
+        "MiD 2023 regional sample Tabelle H12.3 'Anzahl Fahrraeder/Pedelecs/\n"
         "E-Bikes im Haushalt'. ars5='Gesamt' is the region-wide fallback.\n"
         "Column 4 means 4+.",
     )
     _write(
         _income_by_size_rows(),
         out / "mid2023_H4_income_by_size.csv",
-        "MiD 2023 Großraum BS Tabelle H4 'Ökonomischer Status des Haushalts'\n"
+        "MiD 2023 regional sample Tabelle H4 'Ökonomischer Status des Haushalts'\n"
         "by household size (BMDV quintiles, Zeilen%). 5+ HH share is mirrored\n"
         "to keys '5' and '6+' to support the IPF household-size split.",
     )

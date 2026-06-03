@@ -28,8 +28,8 @@ ZGB8: dict[str, str] = {
 }
 
 # --- MiD 2023 Großraum Braunschweig — region baseline ---------------------
-# Region totals across all purposes, working day. Source: infas
-# Ergebnistabellen Großraum Braunschweig 2023, sample 7555.
+# Region totals across all purposes, working day. Source: MiD 2023
+# regional table volume (Tabelle A regional breakdown).
 MID_BASELINE = {
     "trips_per_person": 3.1,
     "mean_trip_distance_km": 12.6,
