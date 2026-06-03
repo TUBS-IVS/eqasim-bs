@@ -98,6 +98,12 @@ config:
     bbs: {72: -0.0350, 73: -0.0898, 74: -0.1524, 75: -0.0666, 76: -0.1346, 77: -3.0000}
   education_bbs_share: 0.681
 
+  # University (Hochschule, age 20+): singly-constrained decay over real LSN-
+  # enrollment campus points; slope calibrated to the Destatis MZ 2024 Hochschule
+  # mean (~15.2 km straight-line).
+  education_university_slope: -0.1415
+  education_university_max_radius_km: 150.0
+
 aliases:
   # Same alias set as config_local_braunschweig.yml. Stages still without a
   # Braunschweig fork (eqasim_common.data.spatial.iris etc.) are not aliased.

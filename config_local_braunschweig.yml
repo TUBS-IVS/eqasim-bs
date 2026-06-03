@@ -163,6 +163,15 @@ config:
   # Schulen (BBS); the rest go to academic Oberstufe. NDS enrollment ~0.681.
   education_bbs_share: 0.681
 
+  # University (Hochschule) students (age 20+): singly-constrained distance-decay
+  # over real LSN-enrollment campus points (braunschweig.data.schools.university_
+  # facilities). Slope calibrated so the mean ZGB student commute matches the
+  # Destatis MZ 2024 Hochschule mean (~15.2 km straight-line); ~91% study locally
+  # (TU BS/Ostfalia/Clausthal/HBK), ~9% commute to Hildesheim/Hannover/Harz/
+  # Magdeburg/Goettingen.
+  education_university_slope: -0.1415
+  education_university_max_radius_km: 150.0
+
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.
