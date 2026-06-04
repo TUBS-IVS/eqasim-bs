@@ -53,10 +53,12 @@ produces:
   DESTATIS Mikrozensus 2024. See the education sections in
   [`CLAUDE.md`](CLAUDE.md) and sections E/F of
   [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
-- **Reproducible from a clean checkout** — the small aggregate reference
-  tables (MiD 2023, Mikrozensus 2024, and the derived facility tables) are
-  committed directly to the repository, so the calibration and validation
-  reproduce without re-downloading the underlying registers.
+- **Privacy-conscious, fully documented data** — for data-protection reasons
+  this repository hosts **no** third-party statistical registers. Only the small
+  derived **MiD 2023 aggregate tables** are committed; every other input is
+  downloaded by you from its official source. Each dataset is documented below
+  with its exact source, table/code, target path, and licence so anyone can
+  reproduce the run — see [Input data](#input-data--what-to-download).
 
 ## Region scope (ZGB-8)
 
@@ -133,22 +135,93 @@ smoke-testing without producing artefacts. Seed is fixed at `1234` and
 gravity slope at `-0.065` across all configs — see
 [`AGENTS.md`](AGENTS.md) for the rules around changing those.
 
-## Input data — download checklist
+## Input data — what to download
 
-The full inventory with target paths, source URLs, and licences lives in
-[`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
-Summary table (see the checklist for full paths and licences):
+> **Data-protection policy.** This repository hosts **no** third-party
+> statistical data. The only data files committed are the small derived
+> **MiD 2023 aggregate tables** (`eqasim-data/data/braunschweig/mid/mid2023_*.csv`,
+> a few rows each) and the project's own calibration-evaluation outputs
+> (`.../mid/education_calibration/*`). **Every dataset below must be downloaded
+> by you** from its official source and placed under `eqasim-data/data/` at the
+> indicated path.
 
-| Group | Datasets |
-|-------|----------|
-| **A. Federal** | VG250-EW (BKG), KBA Fahrerlaubnisbestand FE4, ENTD 2008 (HTS donor) |
-| **B. Niedersachsen / Braunschweig** | DESTATIS 12411-0018 + urbistat shares (population), GENESIS 13111-06-02-4 / 13111-01-03-5 (employment), BA gemband-dlk (Wirtschaftsabteilungen), BA Pendleratlas Ein-/Auspendler CSVs, Zensus 2022 5000H-2001 households, BBSR INKAR Haushaltseinkommen (+ optional full panel), MiD 2023 regional table volume + extracted CSVs, RegioStaR-7, Zensus 100 m grid |
-| **C. Preprocessed** | ALKIS Hausumringe → `alkis_buildings.parquet`, ATKIS Basis-DLM → `landuse.parquet`, OSM Niedersachsen → `osm_pois.parquet` |
-| **D. MATSim-only** | OSM Niedersachsen PBF, GTFS Deutschland (Delfi or ZGB) |
+All target paths are **relative to `eqasim-data/data/`**. After downloading,
+verify the inventory with:
 
-Licences span dl-de/by-2-0, dl-de/zero-2-0, ODbL 1.0, BA terms, and
-BMDV non-commercial (MiD 2023). Re-distribution rules apply per
-dataset; see the checklist.
+```powershell
+python scripts/verify_braunschweig_inputs.py            # synthesis.output inputs
+python scripts/verify_braunschweig_inputs.py --matsim   # + MATSim-only inputs
+```
+
+The script prints `[OK]` / `[--]` per dataset. The exhaustive companion (with
+every note and edge case) is
+[`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md);
+the tables below are the primary, self-contained guide.
+
+### A. Federal datasets (shared across regions)
+
+| Dataset | Where / which table | Target path |
+|---------|---------------------|-------------|
+| **VG250-EW 31.12.** — administrative boundaries with population (BKG) | [gdz.bkg.bund.de](https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/verwaltungsgebiete-1-250-000-mit-einwohnerzahlen-stand-31-12-vg250-ew-31-12.html) — VG250-EW (GeoPackage UTM32s) | `germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` |
+| **KBA Fahrerlaubnisbestand FE4** — driving licences by Bundesland | [kba.de](https://www.kba.de/DE/Statistik/Kraftfahrer/Fahrerlaubnisse/Fahrerlaubnisbestand/fahrerlaubnisbestand_node.html) — table FE4 | `germany/fe4_2024.xlsx` |
+| **ENTD 2008** — French national HTS, reused as the activity-chain donor | [statistiques.developpement-durable.gouv.fr](https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008) | `entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv` |
+
+### B. Niedersachsen / Braunschweig statistical inputs (`synthesis.output`)
+
+| Dataset | Where / which table | Target path |
+|---------|---------------------|-------------|
+| **Population** — DESTATIS 12411-0018, Kreis × sex × age class | [www-genesis.destatis.de](https://www-genesis.destatis.de/genesis/online) code `12411` (Flat-CSV) | `braunschweig/12411-0018_de.csv` |
+| **Gemeinde population shares** — urbistat age table (11 classes) | [urbistat.com](https://urbistat.com) — Gemeinde age table | `braunschweig/urbistat_age_gemeinden.csv` |
+| **Employees by residence** — GENESIS 13111-06-02-4 | [regionalstatistik.de](https://www.regionalstatistik.de/genesis/online) code `13111` | `braunschweig/13111-06-02-4.xlsx` |
+| **Employees at workplace** — GENESIS 13111-01-03-5 | regionalstatistik.de code `13111` | `braunschweig/13111-01-03-5.xlsx` |
+| **Employees by Wirtschaftsabteilung** — BA gemband-dlk | [statistik.arbeitsagentur.de](https://statistik.arbeitsagentur.de) — Beschäftigung, Gemeindeband | `braunschweig/gemband-dlk-0-202506-xlsx.xlsx` |
+| **Commuters — Einpendler** (Arbeitsort ZGB) | statistik.arbeitsagentur.de — Pendleratlas (krpend) | `braunschweig/statistik_pendler_2026042493412.csv` |
+| **Commuters — Auspendler** (Wohnort ZGB) | same Pendleratlas explorer | `braunschweig/statistik_pendler_2026042493430.csv` |
+| **Households** — Zensus 2022 5000H-2001, Gemeinde × HH-size × type | [ergebnisse.zensus2022.de](https://ergebnisse.zensus2022.de) table `5000H-2001` (Flat-File) | `braunschweig/5000H-2001_de_flat.csv` |
+| **Household income** — BBSR INKAR (Kreis × year) | [inkar.de](https://www.inkar.de) — `E_Haushaltseinkommen.xls` | `braunschweig/E_Haushaltseinkommen.xls` |
+| **MiD 2023 reference tables** — numbered result tables (regional sample, non-commercial) | **committed** (`mid/mid2023_*.csv`); raw volume only needed to regenerate | `braunschweig/mid/mid2023_*.csv` |
+| **RegioStaR-7** — BMV/BBSR Gemeinde typology | auto-download: `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` |
+| **Zensus 100 m population grid** | auto-download: `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet` |
+
+### C. Large geodata (downloaded once, then preprocessed to parquet)
+
+The synpp pipeline reads only the compact GeoParquet; the raw archives are not
+loaded by stages. Run the two preprocessors (see [Quickstart](#3-inputs)).
+
+| Raw input | Where | Target path → preprocessed output |
+|-----------|-------|-----------------------------------|
+| **ALKIS Hausumringe Niedersachsen** (~1.7 GB) | [opengeodata.lgln.niedersachsen.de](https://opengeodata.lgln.niedersachsen.de) — "Hausumringe Niedersachsen" | `braunschweig/buildings/gebaeude-ni.zip` → `braunschweig/preprocessed/alkis_buildings.parquet` |
+| **ATKIS Basis-DLM landuse Niedersachsen** (~3.2 GB) | opengeodata.lgln.niedersachsen.de — "ATKIS Basis-DLM" | `braunschweig/landuse/FS_LN_03_NI_260101.zip` → `braunschweig/preprocessed/landuse.parquet` |
+| **OSM Niedersachsen PBF** (~470 MB) | [download.geofabrik.de](https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf) | `osm/niedersachsen-latest.osm.pbf` → `braunschweig/preprocessed/osm_pois.parquet` |
+
+### D. MATSim-only inputs (only for `matsim.output`)
+
+| Dataset | Where | Target path |
+|---------|-------|-------------|
+| **OSM Niedersachsen PBF** (same file as C) | download.geofabrik.de | `osm/niedersachsen-latest.osm.pbf` |
+| **GTFS Deutschland (Delfi) or ZGB feed** | [opendata-oepnv.de](https://www.opendata-oepnv.de/ht/de/organisation/delfi/startseite) / [zgb.de](https://www.zgb.de) | `gtfs/<any>.zip` |
+| **VRB tariff zones** (ÖV-fare module) | [vrb-online.de](https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen) → `scripts/build_vrb_stations_json.py` | `vrb/tarifzonen.html` → `vrb/stations.json` |
+
+### E. Education facility inputs (only with `education_gravity_enabled: true`)
+
+These build the school / kindergarten / university gravity models. The derived
+facility CSVs are **not committed** (data-protection); download the raw LSN
+registers and regenerate them with the listed scripts. See
+[`eqasim-data/data/braunschweig/schools/README.md`](eqasim-data/data/braunschweig/schools/README.md)
+and `DATA_FLOW.md` for the full provenance.
+
+| Raw input | Where | Regenerate → output (local only) |
+|-----------|-------|----------------------------------|
+| **LSN Schulverzeichnis ABS + BBS** (allgemein- + berufsbildende Schulen) | [statistik.niedersachsen.de](https://www.statistik.niedersachsen.de) — `Schulverzeichnis_ABS_2025.xlsx`, `Verzeichnis_der_BBS_2024.xlsx` | `scripts/extract_nds_schools.py` → `schools/nds_schools_zgb.csv` |
+| **LSN Studierende nach Hochschule** (SS2025) | statistik.niedersachsen.de — Hochschulstatistik | `scripts/seed_nds_hochschulen.py` → `schools/nds_hochschulen.csv` |
+| **LSN Kindertageseinrichtungen — Plätze** (table K2300112) | [nls.niedersachsen.de](https://www1.nls.niedersachsen.de/statistik/) — Kinder-/Jugendhilfestatistik | `scripts/extract_nds_kitas.py` → `schools/nds_kitas_zgb.csv` |
+| **DESTATIS Mikrozensus 2024** — school-trip distance by school type | [destatis.de](https://www.destatis.de) — Mikrozensus Pendler tables | `scripts/seed_mikrozensus_school_distance.py` → `mikrozensus/mikrozensus2024_*.csv` |
+| **MiD 2023 Tabelle 43** — school distance by RegioStaR-7 × age | **committed** (`mid/mid2023_T43_school_distance_by_rs7.csv`) | `scripts/seed_mid_t43_school_distance.py` |
+
+Licences span dl-de/by-2-0 (BKG, Statistische Ämter, BA, BBSR, BMV),
+dl-de/zero-2-0 (LGLN ALKIS/ATKIS), ODbL 1.0 (OSM), and BMDV non-commercial
+(MiD 2023). Redistribution rules apply per dataset — which is exactly why only
+the small derived MiD aggregates are committed here.
 
 ## Pipeline architecture
 
@@ -216,11 +289,13 @@ behaviour is preserved unless a change is explicitly enabled:
   `has_license`) are derived from the categorical attributes.
 - **Commute-distance override.** ZGB residents' commute distances are sampled
   from MiD 2023 P13 Kreis-level CDFs, overriding the ENTD-derived distances.
-- **Reference values as committed CSVs.** All MiD / Mikrozensus reference
-  numbers live as versioned CSV tables (not Python literals) and are
-  regenerated only via dedicated seed scripts — see
+- **Reference values as CSV tables, not Python literals.** All MiD / Mikrozensus
+  reference numbers live as versioned CSV tables and are regenerated only via
+  dedicated seed scripts. For data-protection reasons only the small derived
+  **MiD 2023 aggregates** are committed; the Mikrozensus and LSN-derived tables
+  are kept local and regenerated from their official sources — see
   [`CLAUDE.md`](CLAUDE.md) and the
-  [download checklist](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
+  [Input data](#input-data--what-to-download) guide.
 - **Repository hygiene.** The inherited `bavaria/` tree was removed (its few
   still-needed utilities migrated into `eqasim_common/` / `braunschweig/`), and
   the codebase was documented under [`docs/codebase/`](docs/codebase).

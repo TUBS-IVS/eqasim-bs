@@ -6,12 +6,14 @@
 > in the config or in `verify_braunschweig_inputs.py`, update this file
 > in the same commit.
 >
-> **Already in the repo:** the small aggregate reference tables (all
-> numbered MiD 2023 tables, the DESTATIS Mikrozensus 2024 tables, and the
-> derived NDS school / Hochschule / Kita facility tables) are **committed**
-> — see [Section F](#f-committed-reference-data-on-github). You only need
-> the raw downloads below to (re)build the large region inputs or to
-> regenerate a committed table from a newer data vintage.
+> **Data-protection policy:** this repository hosts **no** third-party
+> statistical data. The **only** committed data files are the small derived
+> **MiD 2023 aggregate tables** (`mid/mid2023_*.csv`) and the project's own
+> calibration-evaluation outputs (`mid/education_calibration/*`) — see
+> [Section F](#f-committed-reference-data-on-github). Everything else listed
+> below (incl. the DESTATIS Mikrozensus tables and the derived NDS school /
+> Hochschule / Kita facility tables) must be downloaded / regenerated locally
+> and is **never** committed.
 
 ## How to verify
 
@@ -154,15 +156,14 @@ MVG algorithm bit-for-bit (400 m buffered MultiPoint per zone, EPSG:25832).
 
 The education location assignment (`education_gravity_enabled: true`) places
 **school pupils, kindergarten children, and university students on real
-facilities**. The **derived reference CSVs are committed to GitHub** (see
-[Section F](#f-committed-reference-data-on-github)) — so a normal run needs
-**none** of the raw downloads below. The raw LSN/OSM sources are only required to
-**regenerate** a reference CSV (e.g. for a newer data vintage). With the flag off
-(default) the legacy OSM education sampler runs and none of this is consulted.
+facilities**. The derived facility CSVs are **not committed** (data-protection):
+you must download the raw LSN registers below and regenerate the CSVs with the
+listed scripts before running with the flag on. With the flag off (default) the
+legacy OSM education sampler runs and none of this is consulted.
 
-### Raw sources (only to regenerate a committed CSV)
+### Raw sources (download, then regenerate the local CSV)
 
-| # | Dataset | Source | Local path (any name) | Produces (committed CSV) |
+| # | Dataset | Source | Local path (any name) | Produces (local CSV) |
 |---|---------|--------|-----------------------|--------------------------|
 | E1 | **LSN Schulverzeichnis — allgemeinbildende Schulen** (per school: Schulgliederung + Schülerzahlen + address) | https://www.statistik.niedersachsen.de — Verzeichnisse, `Schulverzeichnis_ABS_2025.xlsx` | `Schulen NDS/Schulverzeichnis_ABS_2025.xlsx` | `schools/nds_schools_zgb.csv` via `scripts/extract_nds_schools.py` (geocodes + OSM-validates) |
 | E2 | **LSN Verzeichnis der berufsbildenden Schulen (BBS)** (per school: Schulform + Schülerzahlen + address) | same — `Verzeichnis_der_BBS_2024.xlsx` | `Schulen NDS/Verzeichnis_der_BBS_2024.xlsx` | same `nds_schools_zgb.csv` (BBS rows) |
@@ -179,27 +180,36 @@ commands and the full SGL/Schulform→level and ARS→Samtgemeinde rules are in
 `eqasim-data/data/braunschweig/schools/README.md` + `.../schools/DATA_FLOW.md`
 and in `CLAUDE.md` (sections "Education gravity model (NDS school data)").
 
-## F. Committed reference data (on GitHub)
+## F. What is committed vs. local-only (data-protection)
 
-`eqasim-data/` is `.gitignore`-d, but the small **aggregate reference tables** are
-**force-added** so the pipeline is reproducible directly from a clean checkout
-**without** any download or extractor run. Do not hand-edit them — change the seed
-script / raw source and re-run (see CLAUDE.md).
+`eqasim-data/` is `.gitignore`-d. Only the files below are deliberately
+`git add -f`-committed; **everything else stays local on your machine** and must
+be downloaded / regenerated from the sources in Sections A–E. Do not hand-edit
+the committed CSVs — change the seed script / raw source and re-run (see
+CLAUDE.md). Do **not** `git add -f` any other data file.
 
-| Committed CSV (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
+**Committed (on GitHub):**
+
+| File (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
+|---|---|---|
+| `mid/mid2023_*.csv` | MiD 2023 numbered reference tables (P9/P12.1/P13/P17.1/P24.1/H4/H7/H12.3/P36.1/W1/W2/Tabelle 43 + margins + class-midpoint) — small aggregate tables, a few rows each | `scripts/seed_mid_constraint_tables.py`, `scripts/extract_mid_tables.py`, `scripts/seed_mid_t43_school_distance.py` |
+| `mid/education_calibration/*` | the project's own calibration-evaluation outputs (results CSV, figures, summary) — model diagnostics, no third-party data | `scripts/calibrate_education_slopes.py --output-dir ...` |
+
+**Local-only — NEVER committed (download / regenerate yourself):**
+
+| File (under `eqasim-data/data/braunschweig/`) | Content | Regenerate with |
 |---|---|---|
 | `schools/nds_schools_zgb.csv` | NDS schools (ABS+BBS) typed by level + geocoded + capacity | `scripts/extract_nds_schools.py` (E1+E2) |
 | `schools/nds_hochschulen.csv` | Hochschule enrollment + campus coords (local + surrounding) | `scripts/seed_nds_hochschulen.py` (E3) |
 | `schools/nds_kitas_zgb.csv` | Kita Plätze per Einheits-/Samtgemeinde | `scripts/extract_nds_kitas.py` (E4) |
-| `mid/mid2023_*.csv` | MiD 2023 reference tables (P9/P12.1/P13/P17.1/P24.1/H4/H7/H12.3/P36.1/W1/W2/Tabelle 43 + margins + class-midpoint) | `scripts/seed_mid_constraint_tables.py`, `scripts/extract_mid_tables.py`, `scripts/seed_mid_t43_school_distance.py` |
-| `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance (national + by Bundesland) + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
-| `mid/education_calibration/*` | committed calibration evaluation (results CSV, figures, summary) | `scripts/calibrate_education_slopes.py --output-dir ...` |
+| `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
+| all Section A–D inputs | population/employment/commuting/household/income registers, ALKIS/ATKIS, OSM, GTFS, ... | download per Sections A–D |
 
-Licence note: the DESTATIS / Mikrozensus tables are dl-de/by-2-0 (free reuse with
-attribution). The MiD 2023 tables are aggregate reference values from a
-non-commercial regional sample (BMDV); they are committed as small aggregate
-tables for research reproducibility — do not redistribute the underlying raw
-report.
+Licence note: the committed MiD 2023 tables are aggregate reference values from a
+non-commercial regional sample (BMDV), kept small and derived for research
+reproducibility — do not redistribute the underlying raw report. The Mikrozensus
+tables (dl-de/by-2-0) would be redistributable, but are kept local for a uniform,
+conservative data-handling policy.
 
 ---
 

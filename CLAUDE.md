@@ -171,9 +171,10 @@ Niedersachsen schools**, kindergarten children (0-5) to **real Kita facilities**
 enrollment). The feature is flag-gated; with `education_gravity_enabled=false`
 (default) the pipeline is byte-identical to the legacy OSM education assignment.
 
-**Data.** The committed facilities table
-`eqasim-data/data/braunschweig/schools/nds_schools_zgb.csv` (force-added; the
-`eqasim-data` tree is gitignored) is built by `scripts/extract_nds_schools.py`
+**Data.** The facilities table
+`eqasim-data/data/braunschweig/schools/nds_schools_zgb.csv` (kept **local only**
+for data-protection -- not committed; the `eqasim-data` tree is gitignored) is
+built by `scripts/extract_nds_schools.py`
 from the LSN directories `Schulverzeichnis_ABS_2025.xlsx` (allgemeinbildende
 Schulen) + `Verzeichnis_der_BBS_2024.xlsx` (berufsbildende Schulen). One row per
 **(school, level)**: a school offering several levels (e.g. a KGS) appears once
@@ -237,7 +238,7 @@ Config keys (defaults in the stage's `configure`):
 **Kindergarten (Kita) children (age 0-5).** Routed through the SAME
 doubly-constrained capacity gravity as the schools, on real Kita facilities
 (`braunschweig.data.schools.kita_facilities`). Capacity = the LSN
-Kindertageseinrichtungen **Plaetze** per Einheits-/Samtgemeinde (committed
+Kindertageseinrichtungen **Plaetze** per Einheits-/Samtgemeinde (local-only
 `eqasim-data/data/braunschweig/schools/nds_kitas_zgb.csv` from LSN table K2300112,
 extracted by `scripts/extract_nds_kitas.py`; ZGB-8 = 832 facilities / 56084
 Plaetze). The Samtgemeinde Plaetze are distributed across the unit's OSM
@@ -247,7 +248,7 @@ fallback for the kreisfreie Staedte (BS/SZ/WOB, which LSN lists at Kreis level) 
 this needs no separate Samtgemeinde membership table. The per-RS7 slope is
 calibrated against the MiD 2023 Tabelle 43 **0-6** column (~1.5-2.3 km
 straight-line; RS7 72 floors at ~1.6 km = the nearest urban Kita). The LSN table
-K2300223 (children in Kita by age group + Besuchsquote) is a committed validation
+K2300223 (children in Kita by age group + Besuchsquote) is a local validation
 reference, not a model input. Config: `nds_kitas_path`, the `kindergarten` entries
 in `education_gravity_slope_by_level_rs7` / `education_gravity_max_radius_km_by_level`
 (8 km).
@@ -262,7 +263,7 @@ far universities (Goettingen, Hannover) have huge enrollment that is mostly
 non-resident, so only the distance decay -- not a hard capacity target -- should
 govern how far the local commute tail reaches. Destinations come from
 `braunschweig.data.schools.university_facilities`: real LSN SS2025 enrollment per
-institution (committed `eqasim-data/data/braunschweig/schools/nds_hochschulen.csv`,
+institution (local-only `eqasim-data/data/braunschweig/schools/nds_hochschulen.csv`,
 seeded by `scripts/seed_nds_hochschulen.py`) -- inside ZGB the per-commune
 enrollment is spread across the commune's OSM university buildings by area (TU BS +
 HBK pooled in 03101; Ostfalia split across 03158/03102/03103; TU Clausthal 03153);

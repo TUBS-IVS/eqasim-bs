@@ -12,7 +12,7 @@ LSN xlsx (ABS 2025 + BBS 2024)            [not committed]
    |    - geocode addresses (OSM Nominatim, 1 req/s, cached; PLZ-centroid fallback)
    |    - validate offline vs osm_pois.parquet education (dist_to_osm_edu_m)
    v
-nds_schools_zgb.csv                        [committed, this directory]
+nds_schools_zgb.csv                        [local only, NOT committed]
    |
    |  braunschweig.data.schools.facilities  (synpp loader, build_facilities_frame)
    v

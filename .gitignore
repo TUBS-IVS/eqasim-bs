@@ -92,7 +92,18 @@ zensus_hh_inspect.txt
 *.tgz
 
 # Local pipeline data directory.
-# Keep only the folder structure and checklist documents.
+#
+# DATA-PROTECTION POLICY: this public repository does NOT host third-party
+# statistical registers or any data downloaded from them. Everything under
+# eqasim-data/ is ignored by default; a contributor must download each input
+# from its official source per README.md / DOWNLOAD_CHECKLIST_BS.md and place
+# it locally. The ONLY data files that are deliberately force-added (committed)
+# are the small, derived MiD 2023 aggregate reference tables
+# (eqasim-data/data/braunschweig/mid/mid2023_*.csv) and the project's own
+# calibration-evaluation outputs (.../mid/education_calibration/*), plus the
+# documentation markdown. Do NOT `git add -f` any other data file here
+# (Mikrozensus tables, NDS school/Hochschule/Kita facility tables, ALKIS/ATKIS,
+# OSM, GTFS, population/employment registers, ...) -- they stay local only.
 eqasim-data/*
 !eqasim-data/.gitkeep
 !eqasim-data/DOWNLOAD_CHECKLIST.md
