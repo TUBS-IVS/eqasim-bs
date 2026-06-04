@@ -48,6 +48,10 @@ $server = "${ServerUser}@${ServerHost}"
 # the bash $-variables; __REPO__ is the only substitution.
 $remoteTemplate = @'
 REPO=__REPO__
+# Expand a leading "~" by hand: tilde expansion only happens at the start of a
+# word, so once REPO is used as "$REPO/logs/..." bash would treat the tilde as a
+# literal directory name. Substitute $HOME for a leading "~" explicitly.
+REPO="${REPO/#\~/$HOME}"
 LOG=$(ls -t $REPO/logs/run_*.log 2>/dev/null | head -1)
 printf 'LOG\t%s\n' "$LOG"
 if tmux has-session -t eqasim 2>/dev/null; then printf 'ALIVE\tyes\n'; else printf 'ALIVE\tno\n'; fi
@@ -64,10 +68,36 @@ if [ -n "$LOG" ]; then
   tail -n 12 "$LOG"
 fi
 '@
-$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo)
+# The here-string above uses Windows line endings (CRLF). When the script is
+# piped to the remote "bash -s", every line would keep a trailing carriage
+# return, so e.g. REPO=~/eqasim-bs<CR> yields the invalid path "$REPO<CR>/logs"
+# and all REPO-derived fields come back empty. Normalise to LF before sending.
+$remoteCmd = $remoteTemplate.Replace("__REPO__", $RemoteRepo).Replace("`r`n", "`n").Replace("`r", "`n")
 
 function Get-Snapshot {
-    $raw = ssh -o ConnectTimeout=8 $server $remoteCmd 2>&1
+    # Send the remote script base64-encoded as a single ASCII ssh argument and
+    # decode it remotely. This sidesteps three independent Windows-side hazards
+    # at once:
+    #   1. OpenSSH (Windows) re-quotes command-line arguments and mangled the
+    #      embedded awk single-quote program ("syntax error at or near %").
+    #   2. Piping the script to "bash -s" via stdin makes PowerShell prepend a
+    #      UTF-8 BOM, so the first line became an invalid command and REPO (and
+    #      every REPO-derived field) came back empty.
+    #   3. CRLF line endings leave a trailing carriage return on each line.
+    # base64 is pure ASCII with no shell metacharacters, so it survives intact;
+    # UTF8.GetBytes emits no BOM and $remoteCmd is already normalised to LF.
+    # ErrorActionPreference is relaxed locally so the client's non-fatal stderr
+    # (e.g. the OpenSSH post-quantum warning) is captured as text rather than
+    # raised as a terminating NativeCommandError.
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remoteCmd))
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $raw = ssh -o ConnectTimeout=8 $server "echo $encoded | base64 -d | bash" 2>&1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
     $fields = @{}
     $tail = New-Object System.Collections.Generic.List[string]
     $inTail = $false
