@@ -16,7 +16,9 @@ The script
   2. spatially joins home points to the eight ZGB Kreise (VG250),
   3. computes commute distance bands per Kreis vs MiD P13,
   4. computes employment / driver-license rate vs MiD P9 / P17.1,
-  5. writes a battery of PNGs + per-table CSVs + a `report.json` that
+  5. computes education-trip distance per RegioStaR-7 + level vs MiD
+     Tabelle 43 (the targets the education gravity slopes were calibrated to),
+  6. writes a battery of PNGs + per-table CSVs + a `report.json` that
      mirrors the metric structure consumed by the dashboard.
 
 All intermediate tables are also written so a downstream comparison
@@ -39,6 +41,8 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from braunschweig.data.mid.school_distance import build_target_table
 
 LOGGER = logging.getLogger("braunschweig.analysis.mid_validation")
 
@@ -383,6 +387,116 @@ def _commute_band_table(
     return pd.DataFrame(rows)
 
 
+# ---------------------------------------------------------------------------
+# Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
+# ---------------------------------------------------------------------------
+
+# Routed/straight-line detour factor used to convert the MiD Tabelle 43 routed
+# targets to a straight-line equivalent. Kept equal to the calibration default
+# in scripts/calibrate_education_slopes.py so the post-sim validation compares
+# against the same target the slopes were fitted to.
+_EDU_DETOUR_FACTOR = 1.3
+
+# Pupil-age -> school level, matching braunschweig.data.mid.school_distance
+# AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
+# same basis the gravity slopes were calibrated to. BBS / university pupils
+# (ages 18+) have no MiD Tabelle 43 target and are therefore not validated here.
+_EDU_AGE_LEVELS: list[tuple[int, int, str]] = [
+    (0, 6, "kindergarten"),
+    (7, 10, "grundschule"),
+    (11, 13, "sekundar_1"),
+    (14, 17, "oberstufe"),
+]
+
+
+def education_level_for_age(age: Any) -> str | None:
+    """MiD Tabelle 43 school level for a pupil age, or None outside its scope."""
+    if pd.isna(age):
+        return None
+    a = int(age)
+    for lower, upper, level in _EDU_AGE_LEVELS:
+        if lower <= a <= upper:
+            return level
+    return None
+
+
+def _education_distances(
+    activities: gpd.GeoDataFrame,
+    homes_kreis: gpd.GeoDataFrame,
+    persons_kreis: pd.DataFrame,
+) -> pd.DataFrame:
+    """Straight-line home->education distance (km) per pupil, with home RS7 and
+    the MiD Tabelle 43 level derived from the pupil's age."""
+    education = (
+        activities[activities["purpose"] == "education"]
+        .drop_duplicates("person_id")[["person_id", "household_id", "geometry"]]
+        .rename(columns={"geometry": "edu_geom"})
+    )
+    home_lookup = (
+        homes_kreis[["household_id", "geometry"]]
+        .rename(columns={"geometry": "home_geom"})
+        .drop_duplicates("household_id")
+    )
+    education = education.merge(home_lookup, on="household_id", how="inner")
+    if education.empty:
+        return education.assign(distance_km=[], regiostar7=[], age=[], level=[])
+    education["distance_km"] = education.apply(
+        lambda r: r["home_geom"].distance(r["edu_geom"]) / 1000.0, axis=1
+    )
+    education = education.merge(
+        persons_kreis[["person_id", "age", "regiostar7"]],
+        on="person_id",
+        how="left",
+    )
+    education["level"] = education["age"].map(education_level_for_age)
+    return education
+
+
+def _education_distance_table(
+    education: pd.DataFrame, t43_raw: pd.DataFrame, detour_factor: float
+) -> pd.DataFrame:
+    """Per (RegioStaR-7, level): pupil count, mean synthetic straight-line km,
+    the MiD Tabelle 43 straight-line target, and the signed deviation."""
+    targets = build_target_table(t43_raw, detour_factor)
+    valid = education.dropna(subset=["level", "regiostar7"])
+    rows: list[dict[str, Any]] = []
+    for (rs7, level), sub in valid.groupby(["regiostar7", "level"]):
+        target = targets[
+            (targets["regiostar7"] == int(rs7)) & (targets["level"] == level)
+        ]
+        if target.empty:
+            continue
+        rows.append(
+            {
+                "regiostar7": int(rs7),
+                "level": level,
+                "n_pupils": int(len(sub)),
+                "mean_synthetic_km": round(float(sub["distance_km"].mean()), 2),
+                "target_km": round(float(target["target_km"].iloc[0]), 2),
+                "routed_km": round(float(target["routed_km"].iloc[0]), 2),
+            }
+        )
+    table = pd.DataFrame(
+        rows,
+        columns=["regiostar7", "level", "n_pupils",
+                 "mean_synthetic_km", "target_km", "routed_km"],
+    )
+    if not table.empty:
+        table["delta_km"] = (
+            table["mean_synthetic_km"] - table["target_km"]
+        ).round(2)
+    return table
+
+
+def _load_t43() -> pd.DataFrame | None:
+    """Load the committed MiD Tabelle 43 reference, or None if absent (the
+    education-distance validation block is then skipped)."""
+    path = MID_DIR / "mid2023_T43_school_distance_by_rs7.csv"
+    if not path.exists():
+        return None
+    return pd.read_csv(path)
+
+
 def _plot_commute_bands(compare: pd.DataFrame, path: Path) -> None:
     fig, axes = plt.subplots(2, 4, figsize=(16, 7), sharey=True)
     band_labels = [name for _, _, name in BANDS]
@@ -642,6 +756,21 @@ def run(args: _Args) -> dict[str, Any]:
     ).round(2)
     commute_mean.to_csv(out / "commute_mean_vs_p13.csv", index=False)
 
+    # --- Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, level). ---
+    # Validates the realised home->education distances of a finished run against
+    # the same per-(RS7, level) targets the education gravity slopes were
+    # calibrated to. Skipped if the T43 reference is not present.
+    LOGGER.info("Computing education-trip distances vs MiD Tabelle 43")
+    t43_raw = _load_t43()
+    if t43_raw is not None:
+        education = _education_distances(activities, homes_kreis, persons_kreis)
+        education_table = _education_distance_table(
+            education, t43_raw, _EDU_DETOUR_FACTOR
+        )
+        education_table.to_csv(out / "education_distance_vs_t43.csv", index=False)
+    else:
+        education_table = pd.DataFrame()
+
     # --- License rate (KBA) vs MiD P17.1. ---
     # MiD 2023 P17.1 reports licence shares for the population aged 14+
     # (Tabelle A, page 87).  We mirror that base population here even
@@ -789,6 +918,10 @@ def run(args: _Args) -> dict[str, Any]:
         "employment_pct_synth": dict(zip(emp_tbl["ars5"], emp_tbl["synthetic_pct"])),
         "employment_pct_mid": dict(zip(emp_tbl["ars5"], emp_tbl["mid_pct"])),
         "secondary_success_pct": by_purpose["success_pct"].to_dict(),
+        "education_distance_vs_t43": (
+            education_table.to_dict(orient="records")
+            if not education_table.empty else []
+        ),
         "kpis_by_regiostar7": (
             rs7_tbl.assign(regiostar7=rs7_tbl["regiostar7"].astype(int))
                    .to_dict(orient="records")
@@ -827,6 +960,20 @@ def run(args: _Args) -> dict[str, Any]:
         _df_to_markdown(commute_mean),
         "",
     ]
+    if not education_table.empty:
+        md_lines += [
+            "## Education-trip distance vs MiD Tabelle 43 "
+            "(km, straight-line, per RegioStaR-7 + level)",
+            "",
+            "_Realised home->education distances of school-age pupils (ages "
+            "0-17, the T43 scope) compared to the per-(RS7, level) targets the "
+            "education gravity slopes were calibrated to (routed / detour "
+            f"{_EDU_DETOUR_FACTOR}). BBS / university pupils are out of T43 "
+            "scope and not shown._",
+            "",
+            _df_to_markdown(education_table),
+            "",
+        ]
     if not rs7_tbl.empty:
         md_lines += [
             "## KPIs per RegioStaR-7 class (synthetic only — no MiD reference)",

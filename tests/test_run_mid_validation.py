@@ -62,6 +62,54 @@ class TestDfToMarkdown:
         assert rmv._df_to_markdown(pd.DataFrame()) == "(no rows)"
 
 
+class TestEducationLevelForAge:
+    def test_maps_t43_age_bands_to_levels(self) -> None:
+        assert rmv.education_level_for_age(4) == "kindergarten"
+        assert rmv.education_level_for_age(8) == "grundschule"
+        assert rmv.education_level_for_age(12) == "sekundar_1"
+        assert rmv.education_level_for_age(16) == "oberstufe"
+
+    def test_returns_none_outside_t43_scope(self) -> None:
+        # BBS / university (18+) and infants below school age have no T43 target.
+        assert rmv.education_level_for_age(19) is None
+        assert rmv.education_level_for_age(25) is None
+        assert rmv.education_level_for_age(np.nan) is None
+
+
+class TestEducationDistanceTable:
+    def test_means_and_delta_vs_t43_target(self) -> None:
+        # T43 routed km for RS7 72; with detour 1.3 the grundschule straight-line
+        # target is 3.9 / 1.3 = 3.0 km.
+        t43_raw = pd.DataFrame({
+            "regiostar7": [72],
+            "km_0_6": [2.0], "km_7_10": [3.9],
+            "km_11_13": [6.5], "km_14_17": [10.0],
+        })
+        edu = pd.DataFrame({
+            "regiostar7": [72, 72],
+            "level": ["grundschule", "grundschule"],
+            "distance_km": [2.0, 4.0],  # mean 3.0
+        })
+        table = rmv._education_distance_table(edu, t43_raw, detour_factor=1.3)
+        row = table[table["level"] == "grundschule"].iloc[0]
+        assert int(row["n_pupils"]) == 2
+        assert row["mean_synthetic_km"] == pytest.approx(3.0)
+        assert row["target_km"] == pytest.approx(3.0)
+        assert row["delta_km"] == pytest.approx(0.0)
+
+    def test_skips_levels_without_a_target(self) -> None:
+        t43_raw = pd.DataFrame({
+            "regiostar7": [72], "km_0_6": [2.0], "km_7_10": [3.9],
+            "km_11_13": [6.5], "km_14_17": [10.0],
+        })
+        # bbs has no T43 target -> excluded from the comparison table.
+        edu = pd.DataFrame({
+            "regiostar7": [72], "level": ["bbs"], "distance_km": [15.0],
+        })
+        table = rmv._education_distance_table(edu, t43_raw, detour_factor=1.3)
+        assert table.empty
+
+
 class TestArgParser:
     def test_requires_existing_output_dir(self, tmp_path: Path) -> None:
         with pytest.raises(SystemExit):
