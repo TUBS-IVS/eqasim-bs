@@ -31,6 +31,7 @@ on the input distribution side.
 
 from __future__ import annotations
 
+import multiprocessing as mp
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -72,6 +73,20 @@ def configure(context):
     #   "random" — random candidate of the matching purpose (legacy
     #              stop-gap; lower quality, used pre-2026-04-26).
     context.config("braunschweig.chainsolvers.fallback", "rda")
+
+    # Parallel chain solving (flag-gated; default OFF -> byte-identical serial
+    # path). Person chains are independent, so they are sharded across worker
+    # processes, each with its own chainsolvers context seeded deterministically
+    # from random_seed and the shard index. The parallel result is fully
+    # reproducible but is a DIFFERENT (equally valid) Monte-Carlo realisation
+    # than the single-RNG serial path, and depends on the worker count -- so
+    # reproducing a parallel run requires the same chainsolvers.processes.
+    context.config("braunschweig.chainsolvers.parallel", False)
+    # Worker count for parallel solving. None -> fall back to the global
+    # "processes" config. Decoupled from "processes" so the embarrassingly
+    # parallel chain solve can use more cores than the (memory-bound) MATSim
+    # mobsim without changing the MATSim thread count.
+    context.config("braunschweig.chainsolvers.processes", None)
 
 
 # ---------------------------------------------------------------------------
@@ -558,20 +573,175 @@ def _extract_locations(result_df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Parallel chain solving
+#
+# Person chains are independent, so the population is sharded across worker
+# processes. Each worker builds its own chainsolvers context (one cs.setup per
+# shard) seeded deterministically from (base_seed, shard_index), so the result
+# is fully reproducible given the seed and the worker count. Shard results are
+# recombined in shard-index order regardless of completion order, so the output
+# does not depend on scheduling.
+# ---------------------------------------------------------------------------
+
+# Per-leg result columns chainsolvers' solve() returns (used for the empty
+# frame when no bounded legs are placed).
+_CHAIN_RESULT_COLUMNS = [
+    "unique_person_id", "unique_leg_id", "to_act_type",
+    "distance_meters", "from_x", "from_y", "to_x", "to_y",
+    "to_act_identifier",
+]
+
+# Number of persons per cs.solve() call within a shard. Solving in chunks
+# amortises chainsolvers' per-call validation overhead; on a chunk failure the
+# shard retries that chunk's persons individually so one bad person does not
+# drop the rest.
+_CHAIN_CHUNK_SIZE = 500
+
+# Worker-process globals: the (read-only) locations table and solver name are
+# sent once per worker via the Pool initializer instead of being pickled with
+# every task.
+_WORKER_LOCATIONS_DF = None
+_WORKER_SOLVER = None
+
+
+def _empty_chain_result_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=_CHAIN_RESULT_COLUMNS)
+
+
+def _make_person_shards(unique_persons: List[Any], n_workers: int) -> List[Tuple[int, List[Any]]]:
+    """Split the person list into ``n_workers`` contiguous, balanced shards.
+
+    Contiguous index-based slicing keeps the assignment deterministic and
+    independent of the worker count's scheduling, so a run is reproducible.
+    """
+    n_workers = max(1, min(n_workers, len(unique_persons))) if unique_persons else 1
+    shards: List[Tuple[int, List[Any]]] = []
+    for shard_index, shard in enumerate(np.array_split(np.asarray(unique_persons, dtype=object), n_workers)):
+        shard_list = list(shard)
+        if shard_list:
+            shards.append((shard_index, shard_list))
+    return shards
+
+
+def _derive_shard_seed(base_seed: int, shard_index: int) -> int:
+    """Deterministic per-shard rng seed derived from the run seed and shard.
+
+    Uses numpy ``SeedSequence`` so distinct shards get well-separated streams;
+    the same (base_seed, shard_index) always yields the same seed.
+    """
+    return int(np.random.SeedSequence([int(base_seed), int(shard_index)]).generate_state(1)[0])
+
+
+def _init_chain_worker(locations_df, solver) -> None:
+    global _WORKER_LOCATIONS_DF, _WORKER_SOLVER
+    _WORKER_LOCATIONS_DF = locations_df
+    _WORKER_SOLVER = solver
+
+
+def _solve_person_shard(task):
+    """Solve one shard of persons. Runs in a worker process (or in-process for
+    the serial path). Returns ``(shard_index, result_df_or_None, failed_idx)``.
+
+    Mirrors the legacy chunked solve loop exactly so the single-shard, seed=
+    base_seed case is byte-identical to the pre-parallel serial behaviour.
+    """
+    import logging as _logging
+
+    import chainsolvers as cs
+
+    for _name in ("chainsolvers", "chainsolvers.io", "chainsolvers.locations"):
+        _logging.getLogger(_name).setLevel(_logging.WARNING)
+
+    shard_index, shard_uids, shard_df, shard_seed = task
+    ctx = cs.setup(
+        locations_df=_WORKER_LOCATIONS_DF,
+        solver=_WORKER_SOLVER or "carla",
+        rng_seed=int(shard_seed),
+    )
+
+    by_person = dict(tuple(shard_df.groupby("unique_person_id", sort=False)))
+    result_chunks: List[pd.DataFrame] = []
+    failed_problem_idx: List[int] = []
+
+    for start in range(0, len(shard_uids), _CHAIN_CHUNK_SIZE):
+        chunk_uids = shard_uids[start:start + _CHAIN_CHUNK_SIZE]
+        chunk_df = pd.concat([by_person[u] for u in chunk_uids], ignore_index=True)
+        try:
+            res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=chunk_df)
+            result_chunks.append(res_df)
+        except Exception:
+            # Retry per-person to isolate the failures.
+            for uid in chunk_uids:
+                person_chunk = by_person[uid]
+                try:
+                    res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=person_chunk)
+                    result_chunks.append(res_df)
+                except Exception:
+                    try:
+                        _, prob_idx_str = str(uid).rsplit("#", 1)
+                        failed_problem_idx.append(int(prob_idx_str))
+                    except ValueError:
+                        pass
+
+    result_df = pd.concat(result_chunks, ignore_index=True) if result_chunks else None
+    return shard_index, result_df, failed_problem_idx
+
+
+def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
+                           base_seed, n_workers, t0):
+    """Solve all person chains across ``n_workers`` processes and recombine
+    deterministically (results concatenated in shard-index order)."""
+    shards = _make_person_shards(unique_persons, n_workers)
+    by_person = dict(tuple(plans_for_cs.groupby("unique_person_id", sort=False)))
+    tasks = [
+        (
+            shard_index,
+            shard_uids,
+            pd.concat([by_person[u] for u in shard_uids], ignore_index=True),
+            _derive_shard_seed(base_seed, shard_index),
+        )
+        for shard_index, shard_uids in shards
+    ]
+
+    results_by_index: Dict[int, pd.DataFrame] = {}
+    failed_problem_idx: List[int] = []
+    n_done = 0
+    pool_context = mp.get_context()  # platform default (fork on Linux)
+    with pool_context.Pool(
+        processes=len(tasks),
+        initializer=_init_chain_worker,
+        initargs=(locations_df, solver),
+    ) as pool:
+        for shard_index, res_df, shard_failed in pool.imap_unordered(_solve_person_shard, tasks):
+            results_by_index[shard_index] = res_df
+            failed_problem_idx.extend(shard_failed)
+            n_done += 1
+            print(
+                f"[braunschweig.secondary_chainsolvers] shard {n_done}/{len(tasks)} "
+                f"done (elapsed={time.time() - t0:.0f}s)",
+                flush=True,
+            )
+
+    ordered = [
+        results_by_index[i] for i in sorted(results_by_index)
+        if results_by_index[i] is not None
+    ]
+    result_df = pd.concat(ordered, ignore_index=True) if ordered else _empty_chain_result_df()
+    # Deterministic order for the downstream fallback (which consumes the RNG).
+    failed_problem_idx.sort()
+    return result_df, failed_problem_idx
+
+
+# ---------------------------------------------------------------------------
 # synpp execute
 # ---------------------------------------------------------------------------
 
 def execute(context):
-    import logging as _logging
-    import chainsolvers as cs  # imported lazily so tests w/o the dep work
-
-    # Chainsolvers' io module emits INFO per solve() call (input summary,
-    # column check, results summary). At 25% scale this floods the log
-    # with hundreds of thousands of lines — bump the threshold to WARNING
-    # so only real problems surface.
-    _logging.getLogger("chainsolvers").setLevel(_logging.WARNING)
-    _logging.getLogger("chainsolvers.io").setLevel(_logging.WARNING)
-    _logging.getLogger("chainsolvers.locations").setLevel(_logging.WARNING)
+    # Import eagerly (not used here directly) to fail fast with a clear error if
+    # the optional dependency is missing, rather than deep inside a worker; the
+    # actual solving imports it again in _solve_person_shard. Kept lazy at
+    # function scope so tests without the dependency can import this module.
+    import chainsolvers  # noqa: F401
 
     df_trips = context.stage("synthesis.population.trips").sort_values(
         by=["person_id", "trip_index"]
@@ -664,66 +834,47 @@ def execute(context):
     )
     locations_df = _build_locations_df(df_secondary)
 
-    ctx = cs.setup(
-        locations_df=locations_df,
-        solver=context.config("braunschweig.chainsolvers.solver") or "carla",
-        rng_seed=int(random.randint(0, 2**31 - 1)),
-    )
+    solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
+    # One base seed drawn from the deterministic RandomState. Drawing exactly
+    # once here (as the legacy single cs.setup did) preserves the RNG stream for
+    # the downstream fallback, so the serial path stays byte-identical.
+    base_seed = int(random.randint(0, 2**31 - 1))
 
-    print("[braunschweig.secondary_chainsolvers] running cs.solve()...")
-    t0 = time.time()
     # Drop helper columns chainsolvers does not expect.
     plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
-
-    # Solve in chunks; fall back to per-person within a failing chunk so
-    # that a single problematic person does not abort thousands of valid
-    # ones. Chunked solving avoids the per-call validation overhead.
-    failed_problem_idx: List[int] = []
-    result_chunks: List[pd.DataFrame] = []
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
     n_total = len(unique_persons)
-    CHUNK_SIZE = 500
-    n_done = 0
-    n_failed = 0
-    n_log_step = max(CHUNK_SIZE, n_total // 20)
-    by_person = dict(tuple(plans_for_cs.groupby("unique_person_id", sort=False)))
 
-    for start in range(0, n_total, CHUNK_SIZE):
-        chunk_uids = unique_persons[start:start + CHUNK_SIZE]
-        chunk_df = pd.concat([by_person[u] for u in chunk_uids], ignore_index=True)
-        try:
-            res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=chunk_df)
-            result_chunks.append(res_df)
-        except Exception:
-            # Retry per-person to isolate the failures.
-            for uid in chunk_uids:
-                person_chunk = by_person[uid]
-                try:
-                    res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=person_chunk)
-                    result_chunks.append(res_df)
-                except Exception:
-                    try:
-                        _, prob_idx_str = str(uid).rsplit("#", 1)
-                        failed_problem_idx.append(int(prob_idx_str))
-                    except ValueError:
-                        pass
-                    n_failed += 1
-        n_done += len(chunk_uids)
-        if n_done % n_log_step < CHUNK_SIZE or n_done == n_total:
-            print(
-                f"[braunschweig.secondary_chainsolvers] solved "
-                f"{n_done:,}/{n_total:,} persons (failed={n_failed:,}, "
-                f"elapsed={time.time() - t0:.0f}s)"
-            )
+    parallel_enabled = bool(context.config("braunschweig.chainsolvers.parallel"))
+    configured_procs = context.config("braunschweig.chainsolvers.processes")
+    n_workers = int(configured_procs) if configured_procs else int(context.config("processes"))
+    n_workers = max(1, min(n_workers, n_total)) if n_total else 1
+    run_parallel = parallel_enabled and n_workers > 1 and n_total > 0
 
-    if result_chunks:
-        result_df = pd.concat(result_chunks, ignore_index=True)
+    print(
+        f"[braunschweig.secondary_chainsolvers] running cs.solve() "
+        f"({'parallel, %d workers' % n_workers if run_parallel else 'serial'}; "
+        f"{n_total:,} persons)...",
+        flush=True,
+    )
+    t0 = time.time()
+
+    if run_parallel:
+        result_df, failed_problem_idx = _solve_chains_parallel(
+            plans_for_cs, unique_persons, locations_df, solver_name,
+            base_seed, n_workers, t0,
+        )
     else:
-        result_df = pd.DataFrame(columns=[
-            "unique_person_id", "unique_leg_id", "to_act_type",
-            "distance_meters", "from_x", "from_y", "to_x", "to_y",
-            "to_act_identifier",
-        ])
+        # Serial path: a single shard over all persons seeded with base_seed, so
+        # the chunked solve loop is byte-identical to the pre-parallel behaviour.
+        _init_chain_worker(locations_df, solver_name)
+        _shard_idx, result_df, failed_problem_idx = _solve_person_shard(
+            (0, unique_persons, plans_for_cs, base_seed)
+        )
+        if result_df is None:
+            result_df = _empty_chain_result_df()
+
+    n_failed = len(failed_problem_idx)
 
     # Route failed bounded problems through the configured fallback.
     extra_rows, extra_conv = _run_fallback(failed_problem_idx)
@@ -732,7 +883,8 @@ def execute(context):
     print(
         f"[braunschweig.secondary_chainsolvers] cs.solve() finished in "
         f"{time.time() - t0:.1f}s; "
-        f"persons solved={n_total - n_failed:,}, failed={n_failed:,}"
+        f"persons solved={n_total - n_failed:,}, failed={n_failed:,}",
+        flush=True,
     )
 
     df_locations, df_convergence = _extract_locations(

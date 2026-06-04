@@ -74,6 +74,19 @@ config:
   # stage falls back to an outer-product proxy of the existing margins.
   braunschweig.ipf.use_employment_margin: true
 
+  # --- Secondary-location chain solving: parallelised --------------------
+  # Person activity chains are independent, so the chainsolvers stage shards
+  # them across worker processes (the chainsolvers package itself has no
+  # internal parallelism). This removes the single-core bottleneck of the
+  # heaviest synthesis stage on the 64-core server. Each shard is seeded
+  # deterministically from (random_seed, shard_index), so a run is fully
+  # reproducible for a fixed worker count -- hence the count is pinned here.
+  # Decoupled from `processes` so the chain solve can use more cores than the
+  # memory-bound MATSim mobsim. Default OFF elsewhere keeps the serial path
+  # byte-identical.
+  braunschweig.chainsolvers.parallel: true
+  braunschweig.chainsolvers.processes: 32
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm

@@ -83,6 +83,21 @@ config:
   # 0.85 -> realised mean gap 31.8, same_sex_couple_share 0.011).
   braunschweig.chunking.sex_aware_couples: true
 
+  # --- Secondary-location chain solving: parallelised --------------------------
+  # Person activity chains are independent, so the chainsolvers stage shards them
+  # across worker processes (the chainsolvers package has no internal
+  # parallelism). On the 64-core box this turns the single-core bottleneck of the
+  # heaviest synthesis stage into a near-linear speed-up -- essential at 100%
+  # (~1.13 M persons). Each shard is seeded deterministically from (random_seed,
+  # shard_index), so a run is fully reproducible for a fixed worker count, which
+  # is therefore pinned here. 32 mirrors the `processes` memory budget (each
+  # worker holds a copy of the secondary-locations table); raise toward 48 if a
+  # run shows headroom. Decoupled from `processes` so the chain solve can use a
+  # different core count than the memory-bound MATSim mobsim. Default OFF
+  # elsewhere keeps the serial path byte-identical.
+  braunschweig.chainsolvers.parallel: true
+  braunschweig.chainsolvers.processes: 32
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm
