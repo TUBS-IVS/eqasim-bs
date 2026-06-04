@@ -123,6 +123,7 @@ quality/
 .github/skills/
 /memories/
 SESSION_LOG.md
+.claude/
 
 # One-time school geocoder caches (not pipeline inputs, machine-local only).
 eqasim-data/data/braunschweig/schools/geocode_cache*.json
