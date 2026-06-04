@@ -41,19 +41,33 @@ fi
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 
+# Preflight: the MATSim part of the pipeline builds the eqasim jar with Maven and
+# a JDK 21. Verify the toolchain up front and fail fast with actionable guidance,
+# instead of crashing hours into the run (which is what happened before this
+# check existed: missing Maven, then a JDK 17 that cannot target release 21).
+#
 # The eqasim-java sources are compiled for Java 21 (maven-compiler release 21),
-# so the build fails with "invalid target release: 21" under an older JDK. Pin
-# JAVA_HOME to a JDK 21 explicitly (and put it first on PATH) so both the Maven
-# build and the MATSim run use Java 21 regardless of the system default 'java'.
-# This is done after conda activation so it takes precedence on PATH.
+# so an older JDK fails the build with "invalid target release: 21". Pin
+# JAVA_HOME to a JDK 21 explicitly (first on PATH, after conda activation) so
+# both the Maven build and the MATSim run use Java 21 regardless of the system
+# default 'java'.
 java21_home=$(ls -d /usr/lib/jvm/java-21-openjdk-* 2>/dev/null | head -1)
-if [[ -n "$java21_home" ]]; then
-    export JAVA_HOME="$java21_home"
-    export PATH="$JAVA_HOME/bin:$PATH"
-    echo "==> Using JDK 21 at $JAVA_HOME"
-else
-    echo "WARNING: no JDK 21 found under /usr/lib/jvm; the eqasim-java build" >&2
-    echo "         requires Java 21. Install it with: sudo apt-get install -y openjdk-21-jdk" >&2
+if [[ -z "$java21_home" ]]; then
+    echo "ERROR: no JDK 21 found under /usr/lib/jvm. The eqasim-java sources target" >&2
+    echo "       Java 21; an older JDK fails the Maven build with 'invalid target" >&2
+    echo "       release: 21'. Install it with:" >&2
+    echo "         sudo apt-get install -y openjdk-21-jdk" >&2
+    exit 1
+fi
+export JAVA_HOME="$java21_home"
+export PATH="$JAVA_HOME/bin:$PATH"
+echo "==> Using JDK 21 at $JAVA_HOME"
+
+if ! command -v mvn >/dev/null 2>&1; then
+    echo "ERROR: Maven (mvn) not found on PATH. The eqasim MATSim jar is built with" >&2
+    echo "       Maven. Install it with:" >&2
+    echo "         sudo apt-get install -y maven" >&2
+    exit 1
 fi
 
 mkdir -p logs
