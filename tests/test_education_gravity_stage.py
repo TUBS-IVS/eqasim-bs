@@ -4,6 +4,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 from braunschweig.synthesis.locations.education_gravity import (
     age_to_level, assign_education_locations, slope_vector_for_level,
+    bbs_share_vector,
 )
 
 
@@ -104,3 +105,153 @@ def test_slope_vector_for_level_scalar_when_no_rs7_dict():
     rs7 = pd.Series([72, 74])
     out = slope_vector_for_level("grundschule", rs7, None, {"grundschule": -0.3})
     assert list(out) == [-0.3, -0.3]
+
+
+# ---------------------------------------------------------------------------
+# Age-resolved BBS share (model improvement #14)
+# ---------------------------------------------------------------------------
+
+def test_bbs_share_vector_none_is_scalar_for_all():
+    ages = pd.Series([16, 17, 18, 19])
+    out = bbs_share_vector(ages, None, 0.681)
+    assert list(out) == [0.681, 0.681, 0.681, 0.681]
+
+
+def test_bbs_share_vector_uses_age_override_then_falls_back():
+    ages = pd.Series([16, 17, 19, 18])
+    by_age = {16: 0.2, 17: 0.5, 19: 0.9}   # 18 missing -> scalar fallback
+    out = bbs_share_vector(ages, by_age, 0.681)
+    assert list(out) == [0.2, 0.5, 0.9, 0.681]
+
+
+def test_bbs_share_vector_accepts_string_age_keys():
+    """synpp/YAML config may deliver age keys as strings; they must coerce."""
+    ages = pd.Series([16, 19])
+    by_age = {"16": 0.2, "19": 0.9}
+    out = bbs_share_vector(ages, by_age, 0.681)
+    assert list(out) == [0.2, 0.9]
+
+
+def _upper_secondary_persons():
+    """Eight age-16-19 pupils plus one university student, at one origin."""
+    ages = [16, 16, 17, 17, 18, 18, 19, 19, 30]
+    return gpd.GeoDataFrame({
+        "person_id": list(range(1, len(ages) + 1)),
+        "age": ages,
+        "home_rs7": [72] * len(ages),
+        "geometry": [Point(0.0, 0.0)] * len(ages),
+    }, crs="EPSG:25832")
+
+
+def _base_cfg():
+    return {
+        "slope_by_level": {
+            "kindergarten": -0.5,
+            "grundschule": -0.3, "sekundar_1": -0.15,
+            "oberstufe": -0.08, "bbs": -0.05,
+        },
+        "slope_by_level_rs7": None,
+        "max_radius_km_by_level": {
+            "kindergarten": 8.0,
+            "grundschule": 15.0, "sekundar_1": 30.0,
+            "oberstufe": 60.0, "bbs": 100.0,
+        },
+        "university_slope": -0.08, "university_max_radius_km": 150.0,
+        "max_iterations": 50, "tolerance": 1e-6,
+        "bbs_share": 0.681,
+    }
+
+
+def _expected_levels_scalar(ages, share, seed):
+    """Reproduce the legacy scalar draw for the given upper-secondary ages."""
+    rng = np.random.RandomState(seed)
+    draw = rng.random_sample(size=len(ages)) < share
+    return np.where(draw, "bbs", "oberstufe")
+
+
+def test_bbs_split_none_path_byte_identical_to_legacy_scalar():
+    """With education_bbs_share_by_age absent, the per-pupil split must use the
+    exact same RNG sequence and assignment as the legacy scalar code path."""
+    persons = _upper_secondary_persons()
+    cfg = _base_cfg()
+    # No "bbs_share_by_age" key at all -> must behave like the scalar path.
+    out = assign_education_locations(
+        persons, _nds_schools(), _universities(), _kita(), cfg,
+        rng=np.random.RandomState(7),
+    )
+    # Recompute the expected per-pupil level with the legacy scalar logic.
+    us_ages = [a for a in persons["age"] if 16 <= a <= 19]
+    expected = _expected_levels_scalar(us_ages, cfg["bbs_share"], seed=7)
+    # oberstufe -> "o1", bbs -> "b1" in _nds_schools().
+    expected_loc = ["b1" if lv == "bbs" else "o1" for lv in expected]
+    by_pid = out.set_index("person_id")["location_id"].to_dict()
+    got_loc = [by_pid[pid] for pid in range(1, len(us_ages) + 1)]
+    assert got_loc == expected_loc
+
+
+def test_bbs_split_none_explicit_key_byte_identical():
+    """An explicit education_bbs_share_by_age=None is identical to omitting it."""
+    persons = _upper_secondary_persons()
+    cfg = _base_cfg()
+    cfg["bbs_share_by_age"] = None
+    out = assign_education_locations(
+        persons, _nds_schools(), _universities(), _kita(), cfg,
+        rng=np.random.RandomState(7),
+    )
+    us_ages = [a for a in persons["age"] if 16 <= a <= 19]
+    expected = _expected_levels_scalar(us_ages, cfg["bbs_share"], seed=7)
+    expected_loc = ["b1" if lv == "bbs" else "o1" for lv in expected]
+    by_pid = out.set_index("person_id")["location_id"].to_dict()
+    got_loc = [by_pid[pid] for pid in range(1, len(us_ages) + 1)]
+    assert got_loc == expected_loc
+
+
+def test_bbs_split_by_age_matches_per_age_probability():
+    """With a provided age->share dict, the BBS probability per age must match
+    the dict. Verified on a large synthetic single-age cohort with a fixed seed:
+    age 16 -> ~0.2 BBS, age 19 -> ~0.9 BBS."""
+    n = 4000
+    ages = [16] * n + [19] * n
+    persons = gpd.GeoDataFrame({
+        "person_id": list(range(1, 2 * n + 1)),
+        "age": ages,
+        "home_rs7": [72] * (2 * n),
+        "geometry": [Point(0.0, 0.0)] * (2 * n),
+    }, crs="EPSG:25832")
+    cfg = _base_cfg()
+    cfg["bbs_share_by_age"] = {16: 0.2, 19: 0.9}
+    out = assign_education_locations(
+        persons, _nds_schools(), _universities(), _kita(), cfg,
+        rng=np.random.RandomState(1),
+    )
+    by_pid = out.set_index("person_id")["location_id"].to_dict()
+    age16_pids = range(1, n + 1)
+    age19_pids = range(n + 1, 2 * n + 1)
+    bbs16 = np.mean([by_pid[p] == "b1" for p in age16_pids])
+    bbs19 = np.mean([by_pid[p] == "b1" for p in age19_pids])
+    assert abs(bbs16 - 0.2) < 0.02
+    assert abs(bbs19 - 0.9) < 0.02
+
+
+def test_bbs_split_by_age_missing_age_falls_back_to_scalar():
+    """Ages absent from the dict use the scalar education_bbs_share. With a
+    scalar of 1.0 and only age 16 overridden to 0.0, all age-18 pupils go to
+    BBS while all age-16 pupils go to oberstufe."""
+    n = 1500
+    ages = [16] * n + [18] * n
+    persons = gpd.GeoDataFrame({
+        "person_id": list(range(1, 2 * n + 1)),
+        "age": ages,
+        "home_rs7": [72] * (2 * n),
+        "geometry": [Point(0.0, 0.0)] * (2 * n),
+    }, crs="EPSG:25832")
+    cfg = _base_cfg()
+    cfg["bbs_share"] = 1.0                 # scalar fallback -> always BBS
+    cfg["bbs_share_by_age"] = {16: 0.0}    # age 16 overridden -> never BBS
+    out = assign_education_locations(
+        persons, _nds_schools(), _universities(), _kita(), cfg,
+        rng=np.random.RandomState(2),
+    )
+    by_pid = out.set_index("person_id")["location_id"].to_dict()
+    assert all(by_pid[p] == "o1" for p in range(1, n + 1))           # age 16
+    assert all(by_pid[p] == "b1" for p in range(n + 1, 2 * n + 1))   # age 18

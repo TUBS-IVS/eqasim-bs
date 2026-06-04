@@ -48,6 +48,29 @@ def slope_vector_for_level(level, home_rs7, by_level_rs7, scalar_by_level):
     return home_rs7.map(lambda c: overrides.get(int(c), scalar)).to_numpy(dtype=float)
 
 
+def bbs_share_vector(ages, by_age, scalar_share):
+    """Per-pupil vocational-BBS share for the age-16-19 upper-secondary cohort.
+
+    ``ages`` is a Series of each upper-secondary pupil's integer age.
+    If ``by_age`` (mapping ``age -> bbs_share``) is given, each pupil receives
+    its age's share, falling back to ``scalar_share`` for ages without an
+    override. If ``by_age`` is None (or empty) every pupil receives
+    ``scalar_share``, which reproduces the previous uniform-share behaviour.
+
+    The mechanism only consumes shares supplied via config; the real by-age
+    shares come from the NDS Schuljahresstatistik enrollment by age x school
+    form (BBS vs. gymnasiale Oberstufe) and are to be supplied there. No
+    by-age values are hard-coded here.
+
+    Returns a float64 numpy array of length ``len(ages)``.
+    """
+    scalar = float(scalar_share)
+    if not by_age:
+        return np.full(len(ages), scalar)
+    overrides = {int(k): float(v) for k, v in by_age.items()}
+    return ages.map(lambda a: overrides.get(int(a), scalar)).to_numpy(dtype=float)
+
+
 def age_to_level(age):
     for level, lo, hi in _SCHOOL_BANDS:
         if lo <= age <= hi:
@@ -85,7 +108,9 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
     cfg:            dict with slope_by_level, slope_by_level_rs7 (None or
                     nested dict), max_radius_km_by_level, university_slope,
                     university_max_radius_km, max_iterations, tolerance,
-                    bbs_share.
+                    bbs_share, and optional bbs_share_by_age (None or a
+                    mapping age -> bbs_share for the 16-19 cohort; None
+                    reproduces the scalar bbs_share path byte-for-byte).
     Returns DataFrame[person_id, commune_id, location_id, geometry].
     """
     df = df_persons.copy()
@@ -93,10 +118,18 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
 
     # Resolve the synthetic "upper_secondary" band into oberstufe (academic)
     # or bbs (vocational) per pupil, drawn from the configured enrollment share.
-    # bbs_share is the fraction going to vocational BBS (NDS default: 0.681).
+    # The BBS share is the fraction going to vocational BBS. When
+    # cfg["bbs_share_by_age"] is None (the default), every pupil uses the scalar
+    # cfg["bbs_share"] (NDS default: 0.681) and the draw is byte-identical to the
+    # previous uniform-share code path (same single random_sample call, same
+    # elementwise comparison). When an age->share dict is supplied, each pupil is
+    # compared against its age-resolved share instead (real BBS enrollment rises
+    # steeply with age 16->19), with the scalar as the per-age fallback.
     us = df["level"] == "upper_secondary"
     if us.any():
-        draw = rng.random_sample(size=int(us.sum())) < cfg["bbs_share"]
+        share = bbs_share_vector(
+            df.loc[us, "age"], cfg.get("bbs_share_by_age"), cfg["bbs_share"])
+        draw = rng.random_sample(size=int(us.sum())) < share
         df.loc[us, "level"] = np.where(draw, "bbs", "oberstufe")
 
     parts = []
@@ -202,6 +235,17 @@ def configure(context):
     # Source: NDS Kultusministerium Schuljahresstatistik 2023/24:
     # BBS ~68 100 / (BBS 68 100 + gymnasiale Oberstufe 32 000) ~ 0.681.
     context.config("education_bbs_share", 0.681)
+    # Optional age-resolved override of the scalar BBS share: a mapping
+    # {age -> bbs_share} for the age-16-19 upper-secondary cohort. Real BBS
+    # enrollment rises steeply with age (most 16-year-olds are still in the
+    # gymnasiale Oberstufe; BBS dominates 17-19), and the two levels have very
+    # different trip lengths, so a flat scalar mis-allocates the 16-19 distance
+    # distribution. Ages absent from the dict fall back to education_bbs_share.
+    # Source for the real shares (to be supplied here): NDS Schuljahresstatistik
+    # enrollment by age x school form (BBS vs. gymnasiale Oberstufe). No by-age
+    # values are pinned by default. None (not {}) so synpp flatten() keeps the
+    # key; this mirrors the education_gravity_slope_by_level_rs7 None-default.
+    context.config("education_bbs_share_by_age", None)
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("braunschweig.data.schools.kita_facilities")
     # Default mirrors the pinned calibration (Destatis MZ 2024 Hochschule mean,
@@ -269,6 +313,7 @@ def execute(context):
         "max_iterations": context.config("education_gravity_max_iterations"),
         "tolerance": context.config("education_gravity_tolerance"),
         "bbs_share": context.config("education_bbs_share"),
+        "bbs_share_by_age": context.config("education_bbs_share_by_age"),
     }
     out = assign_education_locations(
         df_persons, df_nds, df_universities, df_kita, cfg, rng)
