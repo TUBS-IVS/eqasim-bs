@@ -88,3 +88,169 @@ def assign_children_to_households(child_ages: np.ndarray, parent_ages: np.ndarra
     assign = np.empty(n_children, dtype=int)
     assign[row] = slot_household[col]
     return assign
+
+
+# ---------------------------------------------------------------------------
+# Bucket orchestrator
+# ---------------------------------------------------------------------------
+
+# Ideal number of adults per hh_type (capped at the household size at call time).
+_IDEAL_ADULTS: dict[str, int] = {
+    "single": 1, "couple": 2, "couple_with_children": 2,
+    "single_parent": 1, "other_multi": 1,
+}
+
+
+def required_adults(hh_type: str, size: int) -> int:
+    return min(_IDEAL_ADULTS.get(hh_type, 1), int(size))
+
+
+def required_children(hh_type: str, size: int) -> int:
+    size = int(size)
+    if hh_type == "couple_with_children":
+        return max(size - 2, 0)
+    if hh_type == "single_parent":
+        return max(size - 1, 0)
+    return 0
+
+
+def _reduce_demand(req: list[int], available: int) -> int:
+    """Reduce the per-household requirement list ``req`` (in place) until it sums
+    to at most ``available``, always trimming the current largest entry first.
+    Returns the number of slots relaxed (turned into free fill slots)."""
+    reduced = 0
+    while sum(req) > available:
+        idx = max(range(len(req)), key=lambda i: req[i])
+        if req[idx] <= 0:
+            break
+        req[idx] -= 1
+        reduced += 1
+    return reduced
+
+
+def _realised_type(member_ages: list[float], min_adult: int) -> str:
+    n = len(member_ages)
+    a = sum(1 for x in member_ages if x >= min_adult)
+    c = n - a
+    if n == 1:
+        return "single"
+    if a >= 2 and c == 0:
+        return "couple"
+    if a >= 2 and c >= 1:
+        return "couple_with_children"
+    if a == 1 and c >= 1:
+        return "single_parent"
+    return "other_multi"
+
+
+def build_bucket_households(ages: np.ndarray, hh_types: list[str],
+                           sizes: list[int], cfg: dict):
+    """Assign the persons of one (commune, hh_size) bucket to households.
+
+    ``hh_types`` and ``sizes`` describe the household shells (one per household).
+    Returns ``(household_of_person, realised_hh_type)`` where
+    ``household_of_person[i]`` is the household index of person ``i`` and
+    ``realised_hh_type[h]`` is the household's type derived from its final adult/
+    child composition (it may differ from the requested type if the bucket's
+    adult/child pool forced a feasibility relaxation).
+
+    The adult/child composition of each type is a HARD constraint; within that,
+    couples are paired by ``optimal_adult_pairs`` (min within-pair age gap) and
+    children placed by ``assign_children_to_households`` (min parent-child gap
+    deviation). When the pool cannot meet the requested composition the demand
+    is relaxed toward free fill slots (logged); no person is ever dropped.
+    """
+    ages = np.asarray(ages)
+    n = len(ages)
+    H = len(hh_types)
+    min_adult = int(cfg.get("min_adult_age", 18))
+    gap = float(cfg.get("parent_child_gap_years", DEFAULT_PARENT_CHILD_GAP_YEARS))
+    pc_weight = float(cfg.get("parent_child_weight", 1.0))
+
+    adults, children = split_pools(ages, min_adult)
+    adult_arr = np.asarray(adults, dtype=int)
+    child_arr = np.asarray(children, dtype=int)
+
+    a_req = [required_adults(t, s) for t, s in zip(hh_types, sizes)]
+    c_req = [required_children(t, s) for t, s in zip(hh_types, sizes)]
+
+    relaxed = _reduce_demand(a_req, len(adult_arr))
+    relaxed += _reduce_demand(c_req, len(child_arr))
+    if relaxed:
+        print(f"[household_composition] relaxed {relaxed} composition slot(s) "
+              f"due to pool shortage in a {n}-person bucket")
+
+    members: list[list[int]] = [[] for _ in range(H)]
+
+    # --- Adults: couples paired optimally (min within-pair age gap), then
+    # routed by age so the YOUNGER couples go to the child-rearing households
+    # (couple_with_children) and the older couples to childless couple shells.
+    # This is part of the parent-child objective: it avoids putting an
+    # empty-nest-age couple with young children when a childless couple shell
+    # exists in the same bucket. ---
+    couple_child_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] > 0]
+    couple_only_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] == 0]
+    n_couple = len(couple_child_hh) + len(couple_only_hh)
+    if len(adult_arr) > 0:
+        pairs_idx, leftover_idx = optimal_adult_pairs(
+            ages[adult_arr], n_couple, return_leftover=True)
+    else:
+        pairs_idx, leftover_idx = [], np.empty(0, dtype=int)
+    # Sort the formed pairs by their younger member's age, youngest first.
+    pair_min_age = [min(ages[adult_arr[i]], ages[adult_arr[j]]) for i, j in pairs_idx]
+    pair_order = np.argsort(pair_min_age, kind="mergesort")
+    sorted_pairs = [pairs_idx[k] for k in pair_order]
+    for k, h in enumerate(couple_child_hh + couple_only_hh):
+        i, j = sorted_pairs[k]
+        members[h].extend([int(adult_arr[i]), int(adult_arr[j])])
+    remaining_adults = [int(adult_arr[t]) for t in leftover_idx]
+
+    for h in range(H):
+        if a_req[h] == 1 and remaining_adults:
+            members[h].append(remaining_adults.pop(0))
+
+    # --- Children: place the required children into parent households. ---
+    need_child_hh = [h for h in range(H) if c_req[h] > 0]
+    remaining_children = list(child_arr)
+    if need_child_hh and remaining_children:
+        slots = np.array([c_req[h] for h in need_child_hh])
+        total_needed = int(slots.sum())
+        assigned = remaining_children[:total_needed]
+        remaining_children = remaining_children[total_needed:]
+        if pc_weight > 0:
+            parent_ages = np.array([
+                min(ages[m] for m in members[h]) if members[h] else float(min_adult + gap)
+                for h in need_child_hh
+            ])
+            who = assign_children_to_households(
+                ages[np.asarray(assigned, dtype=int)], parent_ages, slots, target_gap=gap)
+            for ci, person in enumerate(assigned):
+                members[need_child_hh[who[ci]]].append(int(person))
+        else:
+            ptr = 0
+            for hi, h in enumerate(need_child_hh):
+                for _ in range(int(slots[hi])):
+                    members[h].append(int(assigned[ptr]))
+                    ptr += 1
+
+    # --- Fill remaining slots (adults first, then children). ---
+    fill_pool = remaining_adults + remaining_children
+    fi = 0
+    for h in range(H):
+        while len(members[h]) < int(sizes[h]) and fi < len(fill_pool):
+            members[h].append(fill_pool[fi])
+            fi += 1
+
+    household_of_person = np.full(n, -1, dtype=int)
+    for h, mem in enumerate(members):
+        for p in mem:
+            household_of_person[p] = h
+    if (household_of_person < 0).any():
+        raise RuntimeError(
+            "[household_composition] internal error: unplaced persons in bucket"
+        )
+
+    realised = [
+        _realised_type([float(ages[p]) for p in mem], min_adult) for mem in members
+    ]
+    return household_of_person, realised

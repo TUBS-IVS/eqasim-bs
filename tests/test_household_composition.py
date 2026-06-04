@@ -66,3 +66,93 @@ class TestChildMatching:
         a = hc.assign_children_to_households(child_ages, parent_ages, slots, target_gap=30)
         b = hc.assign_children_to_households(child_ages, parent_ages, slots, target_gap=30)
         assert a.tolist() == b.tolist()
+
+
+class TestBuildBucket:
+    def _cfg(self, **kw):
+        base = dict(min_adult_age=18, couple_age_weight=1.0,
+                    parent_child_weight=1.0, parent_child_gap_years=31)
+        base.update(kw)
+        return base
+
+    def _members(self, ages, hoh, h):
+        return ages[hoh == h]
+
+    def test_couple_with_children_gets_two_adults_and_children(self):
+        ages = np.array([40, 38, 8, 5])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["couple_with_children"], sizes=[4], cfg=self._cfg())
+        assert set(hoh.tolist()) == {0}
+        m = self._members(ages, hoh, 0)
+        assert (m >= 18).sum() == 2 and (m < 18).sum() == 2
+        assert types[0] == "couple_with_children"
+
+    def test_single_parent_one_adult_rest_children(self):
+        ages = np.array([35, 7, 4])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["single_parent"], sizes=[3], cfg=self._cfg())
+        m = self._members(ages, hoh, 0)
+        assert (m >= 18).sum() == 1 and (m < 18).sum() == 2
+        assert types[0] == "single_parent"
+
+    def test_couple_two_similar_age_adults(self):
+        ages = np.array([29, 64, 31, 66])  # two couples (29,31) and (64,66)
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["couple", "couple"], sizes=[2, 2], cfg=self._cfg())
+        for h in (0, 1):
+            m = self._members(ages, hoh, h)
+            assert (m >= 18).sum() == 2
+            assert abs(int(m[0]) - int(m[1])) <= 3  # similar age within couple
+
+    def test_no_all_children_household_when_feasible(self):
+        ages = np.array([30, 32, 6, 8])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["other_multi", "other_multi"], sizes=[2, 2],
+            cfg=self._cfg())
+        for h in (0, 1):
+            m = self._members(ages, hoh, h)
+            assert (m >= 18).sum() >= 1
+
+    def test_feasibility_fallback_drops_nobody(self, capsys):
+        # 1 adult but two couple households requested -> infeasible -> relax.
+        ages = np.array([40, 6, 8, 10])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["couple", "couple"], sizes=[2, 2], cfg=self._cfg())
+        assert len(hoh) == 4
+        assert set(hoh.tolist()) == {0, 1}
+        out = capsys.readouterr().out
+        assert "relaxed" in out.lower()
+
+    def test_parent_older_than_child(self):
+        ages = np.array([34, 4, 60, 30])  # 2 single_parent size-2
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["single_parent", "single_parent"], sizes=[2, 2],
+            cfg=self._cfg())
+        for h in (0, 1):
+            m = sorted(self._members(ages, hoh, h).tolist())
+            assert m[-1] - m[0] > 0  # an adult older than the child present
+
+    def test_every_person_assigned_once(self):
+        ages = np.array([40, 38, 8, 5, 30, 6])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["couple_with_children", "single_parent"],
+            sizes=[4, 2], cfg=self._cfg())
+        assert sorted(hoh.tolist()) == sorted([0, 0, 0, 0, 1, 1])
+
+    def test_deterministic(self):
+        ages = np.array([40, 38, 8, 5, 30, 6])
+        a = hc.build_bucket_households(ages, ["couple_with_children", "single_parent"],
+                                      [4, 2], cfg=self._cfg())[0]
+        b = hc.build_bucket_households(ages, ["couple_with_children", "single_parent"],
+                                      [4, 2], cfg=self._cfg())[0]
+        assert a.tolist() == b.tolist()
+
+    def test_weight_zero_disables_child_age_matching(self):
+        # parent_child_weight 0 -> children still placed (composition holds),
+        # just no age optimisation. Composition must still be correct.
+        ages = np.array([35, 7, 4])
+        hoh, types = hc.build_bucket_households(
+            ages, hh_types=["single_parent"], sizes=[3],
+            cfg=self._cfg(parent_child_weight=0.0))
+        m = self._members(ages, hoh, 0)
+        assert (m >= 18).sum() == 1 and (m < 18).sum() == 2
