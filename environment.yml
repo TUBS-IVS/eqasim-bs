@@ -34,3 +34,9 @@ dependencies:
   - pip:
     - synpp==1.5.1
     - bhepop2==2.0.0
+    # Secondary-location chain solver used by
+    # braunschweig.synthesis.locations.secondary_chainsolvers (default solver
+    # "carla"). Pure-python (py3-none-any), MIT, public PyPI. Pinned so a fresh
+    # env includes it; without it the secondary-locations stage aborts with
+    # "ModuleNotFoundError: No module named 'chainsolvers'".
+    - chainsolvers==0.1.0
