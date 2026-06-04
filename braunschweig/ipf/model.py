@@ -35,6 +35,11 @@ def configure(context):
     context.config("braunschweig.minimum_age.employment", 16)
     context.config("braunschweig.minimum_age.one_person_household", 16)
     context.config("braunschweig.ipf.use_household_size_margin", False)
+    # Optional joint age x hh_size margin (Zensus 2022 1000A-3082). Adds a
+    # per-Kreis (age_group x hh_size) selector block so the IPF reproduces the
+    # observed age x size correlation, not just the two independent marginals.
+    # Requires use_household_size_margin. Default off -> IPF unchanged.
+    context.config("braunschweig.ipf.use_joint_age_size_margin", False)
     context.config("braunschweig.ipf.max_iterations", 1500)
     context.config("braunschweig.ipf.tolerance", 1e-2)
     # TASK-010 — additional 4-way (Kreis × hh_size × employed) joint
@@ -68,9 +73,10 @@ def configure(context):
 
 def execute(context):
     (df_population, df_employment, df_licenses_country, df_licenses_kreis,
-     df_household_size) = context.stage("braunschweig.ipf.prepare")
+     df_household_size, df_joint_age_size) = context.stage("braunschweig.ipf.prepare")
 
     use_hh_size = context.config("braunschweig.ipf.use_household_size_margin")
+    use_joint_age_size = context.config("braunschweig.ipf.use_joint_age_size_margin")
 
     # Construct a combined age class
     population_age_classes = np.sort(df_population["age_class"].unique())
@@ -263,6 +269,39 @@ def execute(context):
         f_model &= df_model["hh_size"] == "1"
         selectors.append(f_model)
         targets.append(0.0)
+
+    # Joint age × household-size constraints (departement × age_group × hh_size).
+    # Sourced from the Kreis-level raked joint (braunschweig.ipf.joint_age_size),
+    # which is consistent with the population age marginal and the size marginal,
+    # so it ties the two together with the observed Zensus correlation without
+    # making the IPF infeasible (its 1D marginals equal the existing margins).
+    if use_joint_age_size:
+        if not use_hh_size:
+            raise RuntimeError(
+                "[braunschweig.ipf.model] use_joint_age_size_margin requires "
+                "use_household_size_margin to be enabled."
+            )
+        from braunschweig.ipf.joint_age_size import age_group_lower
+        df_model["age_group"] = df_model["combined_age_class"].map(age_group_lower)
+        dep_id_to_index = dict(zip(
+            df_population["departement_id"].astype(str),
+            df_population["departement_index"],
+        ))
+        dj = df_joint_age_size.copy()
+        dj["departement_index"] = (
+            dj["departement_id"].astype(str).map(dep_id_to_index)
+        )
+        dj = dj.dropna(subset=["departement_index"]).copy()
+        dj["departement_index"] = dj["departement_index"].astype(int)
+        for _, row in context.progress(
+            list(dj.iterrows()), total=len(dj),
+            label="Generating joint age x hh_size constraints",
+        ):
+            f_model = df_model["departement_index"] == row["departement_index"]
+            f_model &= df_model["age_group"] == int(row["age_group_lower"])
+            f_model &= df_model["hh_size"] == row["hh_size"]
+            selectors.append(f_model)
+            targets.append(float(row["weight"]))
 
     # TASK-010 — optional Kreis × hh_size × employed joint margin.
     # Sourced from a long-form CSV with columns

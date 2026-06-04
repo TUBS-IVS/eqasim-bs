@@ -32,6 +32,14 @@ def configure(context):
     if context.config("braunschweig.ipf.use_household_size_margin"):
         context.stage("braunschweig.data.census.households_type")
 
+    # Optional joint age x household-size margin (Zensus 2022 1000A-3082).
+    # When on (requires use_household_size_margin), the IPF additionally
+    # enforces the per-Kreis age-group x hh_size correlation. Default off ->
+    # the returned df_joint_age_size is empty and the IPF is unchanged.
+    context.config("braunschweig.ipf.use_joint_age_size_margin", False)
+    if context.config("braunschweig.ipf.use_joint_age_size_margin"):
+        context.stage("braunschweig.data.census.households_size_age")
+
 
 def _build_household_size_margin(
     df_household_type: pd.DataFrame,
@@ -196,5 +204,36 @@ def execute(context):
              "weight": pd.Series(dtype=float)}
         )
 
+    # Optional sixth output: the joint age x hh_size margin (Kreis-level,
+    # raked to the population age marginal and the size marginal so it is
+    # consistent with both and cannot make the IPF infeasible).
+    use_joint = context.config("braunschweig.ipf.use_joint_age_size_margin")
+    if use_joint:
+        if not use_hh_size:
+            raise RuntimeError(
+                "[braunschweig.ipf.prepare] use_joint_age_size_margin requires "
+                "use_household_size_margin to be enabled."
+            )
+        from braunschweig.ipf.joint_age_size import build_joint_age_size_margin
+        df_joint = context.stage("braunschweig.data.census.households_size_age")
+        df_joint_age_size = build_joint_age_size_margin(
+            df_joint, df_population, df_household_size
+        )
+        print(
+            "[braunschweig.ipf.prepare] joint age x hh_size margin: {:,} cells "
+            "across {:,} Kreise, total persons = {:,.0f}".format(
+                len(df_joint_age_size),
+                df_joint_age_size["departement_id"].nunique(),
+                df_joint_age_size["weight"].sum(),
+            )
+        )
+    else:
+        df_joint_age_size = pd.DataFrame(
+            {"departement_id": pd.Series(dtype=str),
+             "age_group_lower": pd.Series(dtype=int),
+             "hh_size": pd.Series(dtype=str),
+             "weight": pd.Series(dtype=float)}
+        )
+
     return (df_population, df_employment, df_licenses_country, df_licenses_kreis,
-            df_household_size)
+            df_household_size, df_joint_age_size)
