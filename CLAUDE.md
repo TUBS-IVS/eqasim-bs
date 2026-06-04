@@ -149,13 +149,20 @@ Gemeinde x age x sex x hh_size), loaded by
 The coarse age groups are `DEFAULT_AGE_GROUP_BOUNDS = (15, 30, 40, 50, 60)` ->
 `[0,15) [15,30) [30,40) [40,50) [50,60) [60,inf)`. **All edges are native
 1000A-3082 ALTKL2 band edges** (0,5,10,15,20,25,30,40,50,60,75), so aggregating
-the Zensus joint never splits a band (no assumption). The middle band is
-deliberately split at **40 and 50**: a single coarse `[30,60)` group lets the IPF
-place a near-60 adult into a family-size cell, which the #3b chunking can then
-only resolve by pairing that adult with a young child (an implausibly large
-parent-child gap). The finer resolution removes that tail at the source -- real
-ZGB Zensus data show family sizes (4/5/6+) concentrate in `[30,40)`/`[40,50)`,
-which the old single group could not pin. A **structural zero** (children below
+the Zensus joint never splits a band (no assumption). The middle band is split at
+**40 and 50** to give the joint a finer age resolution for family-size households
+(real ZGB Zensus data show sizes 4/5/6+ concentrate in `[30,40)`/`[40,50)`, which
+the old single `[30,60)` group could not pin). On its own this does **not** reduce
+the parent-child age-gap tail -- that tail was dominated by a household-formation
+routing bug (surplus children landing on elderly childless-shell adults), fixed
+separately by the children-driven composition (see #3b below). Once that fix is in
+place the finer bounds **do** reduce the residual tail: on the real ZGB IPF (25 %,
+age-aware chunking) the parent-child gap>50 share falls 2.70 % -> 0.77 % and
+gap>55 -> 0.03 % with the refined bounds vs the old `[30,60)` group. The bounds are
+read from the config key `braunschweig.ipf.joint_age_group_bounds` (default =
+`DEFAULT_AGE_GROUP_BOUNDS`), registered in both `braunschweig.ipf.prepare` and
+`braunschweig.ipf.model` so a change correctly invalidates the synpp cache. A
+**structural zero** (children below
 `braunschweig.minimum_age.one_person_household`, default 16, in a 1-person
 household) is held at exactly zero in the rake so it agrees with the IPF hard
 zero (otherwise the full IPF diverges).
@@ -169,14 +176,25 @@ independent hh_type draw with one coupled, optimisation-based pass per
 `braunschweig.ipf.age_aware_chunking`. Adult/child composition per `hh_type` is a
 HARD constraint; within it: couples are paired minimising the within-pair age gap
 (jittered by `couple_age_std`, default 4.0, for a realistic spread), young
-couples are routed to child-rearing households, and children are placed by
-`scipy.linear_sum_assignment` minimising the parent-child age-gap deviation
-around a per-household target drawn `N(parent_child_gap_years, parent_child_gap_std)`
-(defaults **31.8** = Destatis 2024 mean mother age at birth, **5.5**), clipped to
-`parent_child_gap_max` (50). hh_type counts per bucket are allocated **exactly**
-by the largest-remainder method. No person is ever dropped; **all-children
-households are hard-blocked** (in-bucket merge + a global cross-bucket same-commune
-merge). Config keys live under `braunschweig.chunking.*`.
+couples are routed to child-rearing households, and children are placed by a
+**sorted rank match** (the 1-D optimum of the parent-child age-gap deviation
+around a per-household target drawn `N(parent_child_gap_years, parent_child_gap_std)`,
+defaults **31.8** = Destatis 2024 mean mother age at birth, **5.5**; clipped to
+`parent_child_gap_max`, 50). The sorted match replaced a Hungarian
+`linear_sum_assignment`: it is the same optimum but `O(n log n)` instead of
+`O(n^3)`, which is essential because formation runs on the **full** population
+(the attributed stage is upstream of sampling, so even a 25 % output forms
+households on all ~1.13 M persons; the dense LAP was a hard wall on large urban
+buckets). hh_type counts per bucket are allocated by the largest-remainder method,
+but **children drive the composition**: `_ensure_child_capacity` grows the
+child-bearing capacity until it covers every child in the bucket (the IPF places
+more children in a cell than the Zensus single_parent share provides shells for),
+so no surplus child spills onto the oldest childless-shell adults. Without this,
+~23 % of placed children had a youngest household adult 55+ years older (mean 84 --
+implausible "single parents"); with it the gap>55 tail drops to ~0.3 % (~0.03 %
+with the refined bounds) and the mean gap from 39 to 26 years. No person is ever
+dropped; **all-children households are hard-blocked** (in-bucket merge + a global
+cross-bucket same-commune merge). Config keys live under `braunschweig.chunking.*`.
 
 **Sex-aware couple pairing.** With `braunschweig.chunking.sex_aware_couples` on,
 couples are paired **opposite-sex by default** with a small calibrated same-sex

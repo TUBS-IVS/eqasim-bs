@@ -40,6 +40,12 @@ def configure(context):
     # observed age x size correlation, not just the two independent marginals.
     # Requires use_household_size_margin. Default off -> IPF unchanged.
     context.config("braunschweig.ipf.use_joint_age_size_margin", False)
+    if context.config("braunschweig.ipf.use_joint_age_size_margin"):
+        # Coarse age-group lower bounds, tracked as config so a change invalidates
+        # the cache. Must match braunschweig.ipf.prepare's value.
+        from braunschweig.ipf.joint_age_size import DEFAULT_AGE_GROUP_BOUNDS
+        context.config("braunschweig.ipf.joint_age_group_bounds",
+                       list(DEFAULT_AGE_GROUP_BOUNDS))
     context.config("braunschweig.ipf.max_iterations", 1500)
     context.config("braunschweig.ipf.tolerance", 1e-2)
     # TASK-010 — additional 4-way (Kreis × hh_size × employed) joint
@@ -282,7 +288,9 @@ def execute(context):
                 "use_household_size_margin to be enabled."
             )
         from braunschweig.ipf.joint_age_size import age_group_lower
-        df_model["age_group"] = df_model["combined_age_class"].map(age_group_lower)
+        bounds = tuple(context.config("braunschweig.ipf.joint_age_group_bounds"))
+        df_model["age_group"] = df_model["combined_age_class"].map(
+            lambda a: age_group_lower(a, bounds))
         dep_id_to_index = dict(zip(
             df_population["departement_id"].astype(str),
             df_population["departement_index"],

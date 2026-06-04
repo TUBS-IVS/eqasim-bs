@@ -40,6 +40,13 @@ def configure(context):
     if context.config("braunschweig.ipf.use_joint_age_size_margin"):
         context.stage("braunschweig.data.census.households_size_age")
         context.config("braunschweig.minimum_age.one_person_household", 16)
+        # Coarse age-group lower bounds for the joint margin. Registered as a
+        # config value (not just the module constant) so synpp tracks it: changing
+        # the bounds then correctly invalidates this stage's cache. Must match the
+        # value read by braunschweig.ipf.model.
+        from braunschweig.ipf.joint_age_size import DEFAULT_AGE_GROUP_BOUNDS
+        context.config("braunschweig.ipf.joint_age_group_bounds",
+                       list(DEFAULT_AGE_GROUP_BOUNDS))
 
 
 def _build_household_size_margin(
@@ -222,8 +229,10 @@ def execute(context):
         # the IPF and it stays feasible.
         min_one_person_age = context.config(
             "braunschweig.minimum_age.one_person_household")
+        bounds = tuple(context.config("braunschweig.ipf.joint_age_group_bounds"))
         df_joint_age_size = build_joint_age_size_margin(
             df_joint, df_population, df_household_size,
+            bounds=bounds,
             min_one_person_age=min_one_person_age,
         )
         print(
