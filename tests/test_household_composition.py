@@ -113,15 +113,29 @@ class TestBuildBucket:
             m = self._members(ages, hoh, h)
             assert (m >= 18).sum() >= 1
 
-    def test_feasibility_fallback_drops_nobody(self, capsys):
-        # 1 adult but two couple households requested -> infeasible -> relax.
+    def test_feasibility_fallback_drops_nobody_and_no_all_children(self, capsys):
+        # 1 adult but two couple households requested -> infeasible. Nobody is
+        # dropped AND no all-children household survives (the orphan children are
+        # merged into the adult-headed household).
         ages = np.array([40, 6, 8, 10])
         hoh, types = hc.build_bucket_households(
             ages, hh_types=["couple", "couple"], sizes=[2, 2], cfg=self._cfg())
-        assert len(hoh) == 4
-        assert set(hoh.tolist()) == {0, 1}
+        assert len(hoh) == 4                       # nobody dropped
+        for h in set(hoh.tolist()):
+            members = ages[hoh == h]
+            assert (members >= 18).sum() >= 1      # every household has an adult
         out = capsys.readouterr().out
         assert "relaxed" in out.lower()
+
+    def test_no_all_children_household_under_adult_shortage(self):
+        # 1 adult, 3 children, two size-2 shells -> would-be all-children shell
+        # eliminated; the single adult heads the (merged) household.
+        ages = np.array([30, 4, 6, 8])
+        hoh, _ = hc.build_bucket_households(
+            ages, hh_types=["other_multi", "other_multi"], sizes=[2, 2],
+            cfg=self._cfg())
+        for h in set(hoh.tolist()):
+            assert (ages[hoh == h] >= 18).sum() >= 1
 
     def test_parent_older_than_child(self):
         ages = np.array([34, 4, 60, 30])  # 2 single_parent size-2
@@ -168,6 +182,34 @@ class TestBuildBucket:
                           for h in (0, 1)
                           for i, j in [tuple(np.nonzero(off == h)[0])])
         assert max(off_gaps) >= 38
+
+    def test_gap_std_spreads_parent_child_gaps(self):
+        # Many single_parent size-2 households; with an rng + gap_std the realised
+        # parent-child gaps spread around the mean instead of collapsing to a
+        # single value. Adults 30-49, children 0-19.
+        ages = np.array([30 + i for i in range(20)] + [i for i in range(20)])
+        types = ["single_parent"] * 20
+        sizes = [2] * 20
+        rng = np.random.RandomState(0)
+        hoh, _ = hc.build_bucket_households(
+            ages, types, sizes, cfg=self._cfg(parent_child_gap_std=6.0), rng=rng)
+        gaps = []
+        for h in set(hoh.tolist()):
+            m = ages[hoh == h]
+            ad = m[m >= 18]; ch = m[m < 18]
+            if len(ad) and len(ch):
+                gaps.append(int(ad.min()) - int(ch.min()))
+        assert np.std(gaps) > 2.0      # a real spread, not a single spike
+
+    def test_age_aware_bucket_deterministic_with_rng(self):
+        ages = np.array([35, 7, 4, 33, 6, 2])
+        a = hc.build_bucket_households(ages, ["single_parent", "single_parent"],
+                                      [3, 3], cfg=self._cfg(parent_child_gap_std=5.0),
+                                      rng=np.random.RandomState(1))[0]
+        b = hc.build_bucket_households(ages, ["single_parent", "single_parent"],
+                                      [3, 3], cfg=self._cfg(parent_child_gap_std=5.0),
+                                      rng=np.random.RandomState(1))[0]
+        assert a.tolist() == b.tolist()
 
     def test_weight_zero_disables_child_age_matching(self):
         # parent_child_weight 0 -> children still placed (composition holds),

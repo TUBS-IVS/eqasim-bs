@@ -74,8 +74,13 @@ def assign_children_to_households(child_ages: np.ndarray, parent_ages: np.ndarra
     if n_children == 0:
         return np.empty(0, dtype=int)
 
+    # target_gap may be a scalar or a per-household array (a realistic spread of
+    # the parent-child age gap around the mean, rather than a single point).
+    tg = np.asarray(target_gap, dtype=float)
+    if tg.ndim == 0:
+        tg = np.full(len(parent_ages), float(tg))
     slot_household = np.repeat(np.arange(len(parent_ages)), child_slots)
-    slot_target = np.repeat(parent_ages - float(target_gap), child_slots)
+    slot_target = np.repeat(parent_ages - tg, child_slots)
     if len(slot_household) < n_children:
         raise ValueError(
             "assign_children_to_households: fewer child slots "
@@ -158,7 +163,7 @@ def _realised_type(member_ages: list[float], min_adult: int) -> str:
 
 
 def build_bucket_households(ages: np.ndarray, hh_types: list[str],
-                           sizes: list[int], cfg: dict):
+                           sizes: list[int], cfg: dict, rng=None):
     """Assign the persons of one (commune, hh_size) bucket to households.
 
     ``hh_types`` and ``sizes`` describe the household shells (one per household).
@@ -181,6 +186,10 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     gap = float(cfg.get("parent_child_gap_years", DEFAULT_PARENT_CHILD_GAP_YEARS))
     pc_weight = float(cfg.get("parent_child_weight", 1.0))
     couple_weight = float(cfg.get("couple_age_weight", 1.0))
+    # Realistic spread of the parent-child gap around the mean (the std of the
+    # mother's age at birth, Destatis ~5.5 y). Only applied when an ``rng`` is
+    # given (the pipeline path); pure deterministic calls use the point target.
+    gap_std = float(cfg.get("parent_child_gap_std", 0.0))
 
     adults, children = split_pools(ages, min_adult)
     adult_arr = np.asarray(adults, dtype=int)
@@ -256,8 +265,18 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
                 min(ages[m] for m in members[h]) if members[h] else float(min_adult + gap)
                 for h in need_child_hh
             ])
+            # Give each child-household its own target gap drawn around the mean
+            # so the realised parent-child gaps form a realistic distribution
+            # rather than a single spike at the mean. Clipped to a plausible
+            # band. Falls back to the point mean when no rng / std is given.
+            if rng is not None and gap_std > 0:
+                per_hh_gap = np.clip(
+                    rng.normal(gap, gap_std, size=len(need_child_hh)), 16.0, 50.0)
+            else:
+                per_hh_gap = gap
             who = assign_children_to_households(
-                ages[np.asarray(assigned, dtype=int)], parent_ages, slots, target_gap=gap)
+                ages[np.asarray(assigned, dtype=int)], parent_ages, slots,
+                target_gap=per_hh_gap)
             for ci, person in enumerate(assigned):
                 members[need_child_hh[who[ci]]].append(int(person))
         else:
@@ -274,6 +293,25 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
         while len(members[h]) < int(sizes[h]) and fi < len(fill_pool):
             members[h].append(fill_pool[fi])
             fi += 1
+
+    # Hard rule: NO all-children household. If the pool was too adult-poor for
+    # every shell to be headed by an adult, move the orphaned children into the
+    # adult-headed household whose youngest adult best fits the parent-child gap;
+    # the emptied shell is dropped. (A child older than an adult is structurally
+    # impossible given the >=18 adult split, so it needs no separate rule.)
+    def _youngest_adult(mem):
+        adult_ages = [ages[p] for p in mem if ages[p] >= min_adult]
+        return min(adult_ages) if adult_ages else None
+
+    adult_hh = [h for h in range(H) if _youngest_adult(members[h]) is not None]
+    if adult_hh:
+        for h in range(H):
+            if members[h] and _youngest_adult(members[h]) is None:
+                for p in members[h]:
+                    best = min(adult_hh, key=lambda a:
+                               abs(_youngest_adult(members[a]) - (ages[p] + gap)))
+                    members[best].append(p)
+                members[h] = []
 
     household_of_person = np.full(n, -1, dtype=int)
     for h, mem in enumerate(members):

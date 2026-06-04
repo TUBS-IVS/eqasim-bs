@@ -400,7 +400,7 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
 
         bucket_ages = ages_all[idx]
         local_of_person, realised_types = build_bucket_households(
-            bucket_ages, types, sizes, cfg)
+            bucket_ages, types, sizes, cfg, rng=rng)
 
         for local_h in range(n_chunks):
             sel = idx[local_of_person == local_h]
@@ -451,6 +451,7 @@ def configure(context):
     context.config("braunschweig.chunking.couple_age_weight", 1.0)
     context.config("braunschweig.chunking.parent_child_weight", 1.0)
     context.config("braunschweig.chunking.parent_child_gap_years", 31.0)
+    context.config("braunschweig.chunking.parent_child_gap_std", 5.5)
     if context.config("braunschweig.ipf.age_aware_chunking"):
         context.stage("braunschweig.data.census.households_type")
 
@@ -555,6 +556,7 @@ def execute(context):
             "couple_age_weight": context.config("braunschweig.chunking.couple_age_weight"),
             "parent_child_weight": context.config("braunschweig.chunking.parent_child_weight"),
             "parent_child_gap_years": context.config("braunschweig.chunking.parent_child_gap_years"),
+            "parent_child_gap_std": context.config("braunschweig.chunking.parent_child_gap_std"),
         }
         df = form_households_age_aware(
             df, context.config("random_seed"), df_household_type, cfg
