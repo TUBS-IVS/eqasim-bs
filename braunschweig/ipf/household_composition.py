@@ -22,6 +22,18 @@ from scipy.optimize import linear_sum_assignment
 # at birth 2024 = 31.8; the youngest household adult is usually the mother).
 DEFAULT_PARENT_CHILD_GAP_YEARS: float = 31.8
 
+# Default share of couples formed same-sex. Source: Statistisches Bundesamt,
+# Mikrozensus 2025 (Endergebnisse 2024 / Erstergebnisse 2025), Tabelle
+# "Gleichgeschlechtliche Lebensgemeinschaften": 204 000 same-sex couples (102 000
+# male, 102 000 female -- a ~50/50 split) against ~18.9 million couples in Germany
+# => ~1.1 % of all couples. The 50/50 male/female split emerges automatically
+# from a balanced adult pool, so only the aggregate share is parametrised. Applied
+# uniformly across couple shells, so a small realistic minority of same-sex
+# couples also have children (Regenbogenfamilien); most come out childless because
+# childless couple shells dominate. Configurable via
+# ``braunschweig.chunking.same_sex_couple_share``.
+DEFAULT_SAME_SEX_COUPLE_SHARE: float = 0.011
+
 
 def split_pools(ages: np.ndarray, min_adult_age: int = 18):
     """Return ``(adult_indices, child_indices)`` into ``ages``."""
@@ -51,6 +63,71 @@ def optimal_adult_pairs(ages: np.ndarray, n_pairs: int,
     if return_leftover:
         leftover = np.sort(order[2 * n_pairs:])
         return pairs, leftover
+    return pairs
+
+
+def pair_adults_sex_aware(block: np.ndarray, match_key: np.ndarray,
+                          is_female: np.ndarray, same_sex_share: float, rng):
+    """Pair the adults in ``block`` into couples, opposite-sex by default with a
+    small calibrated same-sex share.
+
+    ``block`` is an even-length array of person indices. The number of same-sex
+    couples is set to ``max(intended, forced)`` where ``intended`` is a
+    ``Binomial(k, same_sex_share)`` draw (the genuine ~1.1 % same-sex couples) and
+    ``forced = |#males - #females| / 2`` is the minimum imposed by the block's sex
+    imbalance -- so the only same-sex couples beyond the intended share are those a
+    sex-imbalanced pool makes unavoidable (never dropping anyone). This
+    opposite-first allocation keeps the realised share close to the target even on
+    small, locally-imbalanced buckets, where a per-seed greedy fallback would
+    inflate it.
+
+    Within each group, partners are paired adjacently in ``match_key`` (jittered)
+    order, so the realistic within-couple age spread is preserved and opposite-sex
+    couples are rank-aligned (small age gaps). ``match_key[i]`` and ``is_female[i]``
+    are indexed by person id. Returns a list of ``(i, j)`` index pairs.
+    Deterministic for a fixed ``rng``.
+    """
+    block = [int(x) for x in np.asarray(block, dtype=int)]
+    k = len(block) // 2
+    if k == 0:
+        return []
+    males = sorted((b for b in block if not bool(is_female[b])),
+                   key=lambda b: float(match_key[b]))
+    females = sorted((b for b in block if bool(is_female[b])),
+                     key=lambda b: float(match_key[b]))
+    m, f = len(males), len(females)
+
+    # Split the same-sex couples into ``cm`` male and ``cf`` female ones. From m
+    # males and f females, leaving ``n_opp`` of each for opposite pairs requires
+    # m - 2*cm == f - 2*cf == n_opp, i.e. cm - cf == (m - f) / 2. With
+    # cm + cf == n_same this fixes cm, cf; both must be non-negative integers,
+    # which forces n_same >= forced_same AND n_same == forced_same (mod 2). A
+    # single intended same-sex couple is therefore infeasible in a balanced block
+    # (you cannot make one same-sex couple without stranding an opposite pair), so
+    # the intended count is snapped to the nearest feasible parity-correct value.
+    delta = (m - f) // 2                                # signed; |delta| = floor
+    forced_same = abs(delta)
+    intended_same = int(np.sum(rng.random_sample(k) < same_sex_share))
+    n_same = max(forced_same, intended_same)
+    if (n_same - forced_same) % 2 != 0:                 # snap to feasible parity
+        n_same = n_same - 1 if n_same - 1 >= forced_same else n_same + 1
+    max_same = k if (min(m, f) % 2 == 0) else k - 1     # pair-budget + parity cap
+    while n_same > max_same:
+        n_same -= 2
+    n_same = max(n_same, forced_same)
+
+    cm = (n_same + delta) // 2                           # same-sex male couples
+    cf = (n_same - delta) // 2                           # same-sex female couples
+    mm, ff = 2 * cm, 2 * cf
+    pairs: list[tuple[int, int]] = []
+    # Same-sex couples are drawn from the youngest of each sex (adjacent pairs);
+    # opposite-sex couples use the remaining, rank-aligned, males and females.
+    for i in range(0, mm, 2):
+        pairs.append((males[i], males[i + 1]))
+    for i in range(0, ff, 2):
+        pairs.append((females[i], females[i + 1]))
+    for a, b in zip(males[mm:], females[ff:]):
+        pairs.append((a, b))
     return pairs
 
 
@@ -164,7 +241,8 @@ def _realised_type(member_ages: list[float], min_adult: int) -> str:
 
 
 def build_bucket_households(ages: np.ndarray, hh_types: list[str],
-                           sizes: list[int], cfg: dict, rng=None):
+                           sizes: list[int], cfg: dict, rng=None,
+                           is_female: np.ndarray | None = None):
     """Assign the persons of one (commune, hh_size) bucket to households.
 
     ``hh_types`` and ``sizes`` describe the household shells (one per household).
@@ -196,6 +274,13 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     # the sort key by N(0, couple_age_std) before pairing reproduces the real
     # partner age-difference spread (German mean ~3-4 y). Only with an rng.
     couple_std = float(cfg.get("couple_age_std", 0.0))
+    # Sex-aware couple formation: when enabled and a per-person sex vector is
+    # provided, couples are paired opposite-sex with a small calibrated same-sex
+    # share (Destatis Mikrozensus 2025, ~1.1 % of couples). Default off -> the
+    # legacy age-adjacent (sex-blind) pairing, byte-identical to before.
+    sex_aware = bool(cfg.get("sex_aware_couples", False)) and is_female is not None
+    same_sex_share = float(cfg.get("same_sex_couple_share",
+                                   DEFAULT_SAME_SEX_COUPLE_SHARE))
 
     adults, children = split_pools(ages, min_adult)
     adult_arr = np.asarray(adults, dtype=int)
@@ -239,23 +324,43 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     sp_hh = [h for h in range(H) if a_req[h] == 1 and c_req[h] > 0]
     single_other_hh = [h for h in range(H) if a_req[h] == 1 and c_req[h] == 0]
 
+    # match_key holds the (jittered) age per person; it drives both the age sort
+    # and -- in the sex-aware path -- the nearest-partner selection, so the couple
+    # age-spread is identical in both pairing modes.
+    match_key = ages.astype(float)
     if couple_weight > 0 or pc_weight > 0:
         keys = ages[adult_arr].astype(float)
         if rng is not None and couple_weight > 0 and couple_std > 0:
             keys = keys + rng.normal(0.0, couple_std, size=len(keys))
         adults_sorted = adult_arr[np.argsort(keys, kind="mergesort")]
+        match_key = ages.astype(float).copy()
+        match_key[adult_arr] = keys
     else:
         adults_sorted = adult_arr
+
+    def _pair_block(hh_list: list[int], start: int) -> int:
+        """Form a couple for each household in ``hh_list`` from the contiguous
+        block ``adults_sorted[start : start + 2*len(hh_list)]`` and return the new
+        pointer. Sex-aware when enabled (opposite-sex with a small same-sex share),
+        otherwise the legacy age-adjacent pairing."""
+        n_pairs = len(hh_list)
+        block = adults_sorted[start: start + 2 * n_pairs]
+        if sex_aware:
+            block_pairs = pair_adults_sex_aware(
+                block, match_key, is_female, same_sex_share, rng)
+        else:
+            block_pairs = [(int(block[2 * k]), int(block[2 * k + 1]))
+                           for k in range(n_pairs)]
+        for h, (a, b) in zip(hh_list, block_pairs):
+            members[h].extend([a, b])
+        return start + 2 * n_pairs
+
     ptr = 0
-    for h in cwc_hh:
-        members[h].extend([int(adults_sorted[ptr]), int(adults_sorted[ptr + 1])])
-        ptr += 2
+    ptr = _pair_block(cwc_hh, ptr)
     for h in sp_hh:
         members[h].append(int(adults_sorted[ptr]))
         ptr += 1
-    for h in couple_only:
-        members[h].extend([int(adults_sorted[ptr]), int(adults_sorted[ptr + 1])])
-        ptr += 2
+    ptr = _pair_block(couple_only, ptr)
     for h in single_other_hh:
         members[h].append(int(adults_sorted[ptr]))
         ptr += 1

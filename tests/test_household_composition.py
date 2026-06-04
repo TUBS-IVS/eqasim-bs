@@ -68,6 +68,141 @@ class TestChildMatching:
         assert a.tolist() == b.tolist()
 
 
+class TestSexAwarePairing:
+    """Sex-aware couple pairing: couples are opposite-sex by default with a small
+    calibrated same-sex share (Destatis Mikrozensus 2025 ~1.1% of couples)."""
+
+    def test_opposite_sex_when_share_zero(self):
+        # 3 males (ages 20,40,60) + 3 females (21,41,61); share 0 -> every couple
+        # must be opposite-sex, and partners nearest in age.
+        ages = np.array([20, 40, 60, 21, 41, 61], dtype=float)
+        is_female = np.array([False, False, False, True, True, True])
+        block = np.array([0, 3, 1, 4, 2, 5])  # interleaved age order
+        rng = np.random.RandomState(0)
+        pairs = hc.pair_adults_sex_aware(block, ages, is_female,
+                                         same_sex_share=0.0, rng=rng)
+        assert len(pairs) == 3
+        for i, j in pairs:
+            assert is_female[i] != is_female[j]      # opposite-sex
+        # nearest-age opposite-sex pairing -> (20,21),(40,41),(60,61)
+        gaps = sorted(abs(ages[i] - ages[j]) for i, j in pairs)
+        assert gaps == [1.0, 1.0, 1.0]
+
+    def test_all_same_sex_when_share_one(self):
+        ages = np.array([20, 22, 60, 62], dtype=float)
+        is_female = np.array([False, False, True, True])
+        block = np.array([0, 1, 2, 3])
+        rng = np.random.RandomState(0)
+        pairs = hc.pair_adults_sex_aware(block, ages, is_female,
+                                         same_sex_share=1.0, rng=rng)
+        for i, j in pairs:
+            assert is_female[i] == is_female[j]      # same-sex
+
+    def test_no_drop_under_sex_imbalance(self):
+        # 3 males, 1 female, share 0 (want opposite): only one opposite-sex pair
+        # is possible; the leftover two males must still be paired (no drop).
+        ages = np.array([20, 30, 40, 25], dtype=float)
+        is_female = np.array([False, False, False, True])
+        block = np.array([0, 1, 2, 3])
+        rng = np.random.RandomState(1)
+        pairs = hc.pair_adults_sex_aware(block, ages, is_female,
+                                         same_sex_share=0.0, rng=rng)
+        assert len(pairs) == 2
+        used = sorted([k for p in pairs for k in p])
+        assert used == [0, 1, 2, 3]                  # everyone placed
+
+    def test_deterministic(self):
+        ages = np.array([20, 40, 60, 21, 41, 61], dtype=float)
+        is_female = np.array([False, False, False, True, True, True])
+        block = np.array([0, 3, 1, 4, 2, 5])
+        a = hc.pair_adults_sex_aware(block, ages, is_female, 0.3,
+                                     np.random.RandomState(7))
+        b = hc.pair_adults_sex_aware(block, ages, is_female, 0.3,
+                                     np.random.RandomState(7))
+        assert a == b
+
+    def test_balanced_single_couple_intended_same_sex_falls_back(self):
+        # One balanced couple (1 male + 1 female) with share 1.0: a same-sex couple
+        # is structurally impossible here (would strand an opposite pair), so the
+        # only valid output is the opposite-sex pair -- and it must not crash.
+        ages = np.array([30, 32], dtype=float)
+        is_female = np.array([False, True])
+        block = np.array([0, 1])
+        pairs = hc.pair_adults_sex_aware(block, ages, is_female,
+                                         same_sex_share=1.0,
+                                         rng=np.random.RandomState(0))
+        assert len(pairs) == 1
+        i, j = pairs[0]
+        assert is_female[i] != is_female[j]
+        assert sorted([i, j]) == [0, 1]
+
+    def test_every_adult_paired_once_random_blocks(self):
+        # Fuzz: random sex mixes and shares must always pair everyone exactly once
+        # and never raise (covers all parity/imbalance branches).
+        rng = np.random.RandomState(3)
+        for _ in range(200):
+            k = int(rng.randint(1, 8))
+            block = np.arange(2 * k)
+            ages = rng.randint(18, 80, size=2 * k).astype(float)
+            is_female = rng.rand(2 * k) < rng.uniform(0.1, 0.9)
+            share = float(rng.uniform(0.0, 0.5))
+            pairs = hc.pair_adults_sex_aware(block, ages, is_female, share, rng)
+            used = sorted([x for p in pairs for x in p])
+            assert used == list(range(2 * k))
+            assert len(pairs) == k
+
+    def _same_sex_share(self, hoh, ages, is_female):
+        same = total = 0
+        for h in set(hoh.tolist()):
+            m = np.nonzero(hoh == h)[0]
+            if len(m) == 2 and (ages[m] >= 18).all():
+                total += 1
+                same += int(is_female[m[0]] == is_female[m[1]])
+        return same / total if total else 0.0
+
+    def test_share_is_small_minority_not_sex_blind(self):
+        # Many childless couple shells: sex-aware keeps same-sex a small minority,
+        # vs the sex-blind pairing which yields ~50% (random adjacency).
+        n = 400
+        ages = np.array([30 + (i % 40) for i in range(2 * n)], dtype=float)
+        is_female = np.array([i % 2 == 0 for i in range(2 * n)])
+        types, sizes = ["couple"] * n, [2] * n
+        base = dict(min_adult_age=18, couple_age_weight=1.0, parent_child_weight=1.0,
+                    parent_child_gap_years=31)
+        aware = hc.build_bucket_households(
+            ages, types, sizes,
+            cfg={**base, "sex_aware_couples": True, "same_sex_couple_share": 0.011},
+            rng=np.random.RandomState(0), is_female=is_female)[0]
+        blind = hc.build_bucket_households(
+            ages, types, sizes, cfg=base, rng=np.random.RandomState(0))[0]
+        assert self._same_sex_share(aware, ages, is_female) < 0.05
+        assert self._same_sex_share(blind, ages, is_female) > 0.30
+
+    def test_imbalanced_pool_forces_minimum_same_sex(self):
+        # 3 males + 1 female over two couple shells: exactly one same-sex (male)
+        # couple is unavoidable; opposite-first yields exactly that minimum.
+        ages = np.array([30, 32, 34, 36], dtype=float)
+        is_female = np.array([False, False, False, True])
+        cfg = dict(min_adult_age=18, couple_age_weight=1.0, parent_child_weight=1.0,
+                   parent_child_gap_years=31, sex_aware_couples=True,
+                   same_sex_couple_share=0.0)
+        hoh = hc.build_bucket_households(
+            ages, ["couple", "couple"], [2, 2], cfg=cfg,
+            rng=np.random.RandomState(0), is_female=is_female)[0]
+        assert self._same_sex_share(hoh, ages, is_female) == 0.5  # exactly 1 of 2
+
+    def test_sexes_none_is_byte_identical_to_legacy_pairing(self):
+        # Without is_female the pairing is the legacy age-adjacent one.
+        ages = np.array([29, 64, 31, 66], dtype=float)
+        cfg = dict(min_adult_age=18, couple_age_weight=1.0, parent_child_weight=1.0,
+                   parent_child_gap_years=31)
+        legacy = hc.build_bucket_households(
+            ages, ["couple", "couple"], [2, 2], cfg=cfg)[0]
+        with_none = hc.build_bucket_households(
+            ages, ["couple", "couple"], [2, 2], cfg=cfg, is_female=None)[0]
+        assert legacy.tolist() == with_none.tolist()
+
+
 class TestBuildBucket:
     def _cfg(self, **kw):
         base = dict(min_adult_age=18, couple_age_weight=1.0,

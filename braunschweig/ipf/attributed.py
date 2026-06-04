@@ -379,6 +379,15 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     df_zt, fallback = _prepare_type_shares(df_household_type)
 
     ages_all = repeated["age"].to_numpy()
+    # Per-person sex vector for sex-aware couple pairing (only consumed when
+    # braunschweig.chunking.sex_aware_couples is on; the IPF emits sex as a
+    # "male"/"female" category, see braunschweig.ipf.model). None otherwise so the
+    # bucket builder keeps its legacy sex-blind pairing.
+    is_female_all = (
+        (repeated["sex"].to_numpy() == "female")
+        if cfg.get("sex_aware_couples", False) and "sex" in repeated.columns
+        else None
+    )
     n = len(repeated)
     household_id = np.full(n, -1, dtype=np.int64)
     hh_type = np.empty(n, dtype=object)
@@ -400,8 +409,9 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
             df_zt, fallback, cid, hh_size_bin, n_chunks)
 
         bucket_ages = ages_all[idx]
+        bucket_is_female = None if is_female_all is None else is_female_all[idx]
         local_of_person, realised_types = build_bucket_households(
-            bucket_ages, types, sizes, cfg, rng=rng)
+            bucket_ages, types, sizes, cfg, rng=rng, is_female=bucket_is_female)
 
         for local_h in range(n_chunks):
             sel = idx[local_of_person == local_h]
@@ -495,6 +505,12 @@ def configure(context):
     context.config("braunschweig.chunking.parent_child_weight", 1.0)
     context.config("braunschweig.chunking.parent_child_gap_years", 31.8)
     context.config("braunschweig.chunking.parent_child_gap_std", 5.5)
+    # Sex-aware couple formation: pair couples opposite-sex with a small
+    # calibrated same-sex share (Destatis Mikrozensus 2025, ~1.1 % of couples).
+    # Default off -> the legacy sex-blind age-adjacent pairing.
+    context.config("braunschweig.chunking.sex_aware_couples", False)
+    context.config("braunschweig.chunking.same_sex_couple_share",
+                   hc_module.DEFAULT_SAME_SEX_COUPLE_SHARE)
     if context.config("braunschweig.ipf.age_aware_chunking"):
         context.stage("braunschweig.data.census.households_type")
 
@@ -601,6 +617,8 @@ def execute(context):
             "parent_child_weight": context.config("braunschweig.chunking.parent_child_weight"),
             "parent_child_gap_years": context.config("braunschweig.chunking.parent_child_gap_years"),
             "parent_child_gap_std": context.config("braunschweig.chunking.parent_child_gap_std"),
+            "sex_aware_couples": context.config("braunschweig.chunking.sex_aware_couples"),
+            "same_sex_couple_share": context.config("braunschweig.chunking.same_sex_couple_share"),
         }
         df = form_households_age_aware(
             df, context.config("random_seed"), df_household_type, cfg

@@ -125,6 +125,85 @@ Tests: `test_license_csv_has_all_kreise`,
 `test_license_margins_match_pdf_values`,
 `test_license_ipf_three_margins_converges_on_synthetic_population`.
 
+## IPF household synthesis: joint age x size margin (#3) + age-aware composition (#3b)
+
+All household-synthesis features below are **flag-gated and default off**, so the
+pipeline stays byte-identical to the legacy formation unless a config enables
+them. They build on the per-commune household-size margin
+(`braunschweig.ipf.use_household_size_margin`, Zensus 2022 1000A-2081).
+
+### Joint age x household-size margin (#3)
+
+`braunschweig.ipf.joint_age_size` adds the observed **age x household-size
+correlation** to the IPF. The flat size margin balances size independently of
+age, so the IPF would otherwise invent the joint (it would not know that large
+households skew toward school-age children while 1-person households skew toward
+the elderly). The joint is enforced at **Kreis** resolution over coarse age
+groups, raked (2D IPF) to be consistent with BOTH the population age-group
+marginal and the size marginal already in the IPF -- so adding it **cannot make
+the IPF infeasible**. Source: Zensus 2022 **1000A-3082** (persons by
+Gemeinde x age x sex x hh_size), loaded by
+`braunschweig.data.census.households_size_age`. Enabled by
+`braunschweig.ipf.use_joint_age_size_margin` (requires the size margin).
+
+The coarse age groups are `DEFAULT_AGE_GROUP_BOUNDS = (15, 30, 40, 50, 60)` ->
+`[0,15) [15,30) [30,40) [40,50) [50,60) [60,inf)`. **All edges are native
+1000A-3082 ALTKL2 band edges** (0,5,10,15,20,25,30,40,50,60,75), so aggregating
+the Zensus joint never splits a band (no assumption). The middle band is
+deliberately split at **40 and 50**: a single coarse `[30,60)` group lets the IPF
+place a near-60 adult into a family-size cell, which the #3b chunking can then
+only resolve by pairing that adult with a young child (an implausibly large
+parent-child gap). The finer resolution removes that tail at the source -- real
+ZGB Zensus data show family sizes (4/5/6+) concentrate in `[30,40)`/`[40,50)`,
+which the old single group could not pin. A **structural zero** (children below
+`braunschweig.minimum_age.one_person_household`, default 16, in a 1-person
+household) is held at exactly zero in the rake so it agrees with the IPF hard
+zero (otherwise the full IPF diverges).
+
+### Age-aware household composition (#3b)
+
+`braunschweig.ipf.household_composition` + `form_households_age_aware`
+(in `braunschweig.ipf.attributed`) replace the random within-bucket chunk + the
+independent hh_type draw with one coupled, optimisation-based pass per
+`(commune_id, hh_size)` bucket. Enabled by
+`braunschweig.ipf.age_aware_chunking`. Adult/child composition per `hh_type` is a
+HARD constraint; within it: couples are paired minimising the within-pair age gap
+(jittered by `couple_age_std`, default 4.0, for a realistic spread), young
+couples are routed to child-rearing households, and children are placed by
+`scipy.linear_sum_assignment` minimising the parent-child age-gap deviation
+around a per-household target drawn `N(parent_child_gap_years, parent_child_gap_std)`
+(defaults **31.8** = Destatis 2024 mean mother age at birth, **5.5**), clipped to
+`parent_child_gap_max` (50). hh_type counts per bucket are allocated **exactly**
+by the largest-remainder method. No person is ever dropped; **all-children
+households are hard-blocked** (in-bucket merge + a global cross-bucket same-commune
+merge). Config keys live under `braunschweig.chunking.*`.
+
+**Sex-aware couple pairing.** With `braunschweig.chunking.sex_aware_couples` on,
+couples are paired **opposite-sex by default** with a small calibrated same-sex
+share `braunschweig.chunking.same_sex_couple_share`
+(`DEFAULT_SAME_SEX_COUPLE_SHARE = 0.011`). Provenance: Statistisches Bundesamt,
+**Mikrozensus 2025**, Tabelle "Gleichgeschlechtliche Lebensgemeinschaften" --
+204 000 same-sex couples (102k male / 102k female, ~50/50) against ~18.9 M
+couples => ~1.1 %. Pairing is `pair_adults_sex_aware`, an **opposite-first**
+allocation: the number of same-sex couples in a block is
+`max(intended, forced)`, where `intended ~ Binomial(k, share)` is the genuine
+share and `forced = |#males - #females| / 2` is the minimum imposed by the
+block's sex imbalance (so nobody is dropped). Within each group, partners are
+paired adjacently in jittered-age order (small within-couple gaps, opposite pairs
+rank-aligned). The 50/50 male/female split emerges from the balanced pool.
+Default off (`is_female=None`) -> the legacy sex-blind age-adjacent pairing,
+byte-identical.
+
+The realised share **converges toward 1.1 % as the sampling rate rises** because
+the per-(commune, hh_size) bucket imbalance floor shrinks: on the cached ZGB
+population it is ~4.8 % at 5 %, **~2.9 % at 25 %**, and approaches the ~1.1 %
+target at 100 % (the residual is the genuine local sex imbalance in small
+Gemeinden). For contrast, the sex-blind pairing yields **~48 %** same-sex couples
+(every age-adjacent pair is sex-random) -- the reason the feature exists.
+
+Tests: `tests/test_joint_age_size.py`, `tests/test_household_composition.py`,
+`tests/test_run_household_composition.py`.
+
 ## Gravity model: per-RegioStaR-7 distance slope
 
 `braunschweig.gravity.model` distributes work/education trips with a
