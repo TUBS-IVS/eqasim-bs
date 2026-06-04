@@ -16,18 +16,30 @@ from braunschweig.ipf import joint_age_size as jas
 
 class TestAgeGroupLower:
     def test_maps_ages_to_group_lower_bounds(self) -> None:
+        # Default bounds (15, 30, 40, 50, 60): the middle band [30,60) is split
+        # at the native ALTKL2 edges 40 and 50 so family-size buckets receive
+        # specifically young parents (see DEFAULT_AGE_GROUP_BOUNDS rationale).
         assert jas.age_group_lower(0) == 0
         assert jas.age_group_lower(8) == 0
         assert jas.age_group_lower(14) == 0
         assert jas.age_group_lower(15) == 15
         assert jas.age_group_lower(29) == 15
         assert jas.age_group_lower(30) == 30
-        assert jas.age_group_lower(59) == 30
+        assert jas.age_group_lower(39) == 30
+        assert jas.age_group_lower(40) == 40
+        assert jas.age_group_lower(49) == 40
+        assert jas.age_group_lower(50) == 50
+        assert jas.age_group_lower(59) == 50
         assert jas.age_group_lower(60) == 60
         assert jas.age_group_lower(95) == 60
 
+    def test_default_bounds_split_middle_band_at_native_edges(self) -> None:
+        # The middle band is refined at the native 1000A-3082 ALTKL2 edges 40/50.
+        assert jas.DEFAULT_AGE_GROUP_BOUNDS == (15, 30, 40, 50, 60)
+
     def test_group_lowers_prepends_zero(self) -> None:
         assert jas.group_lowers((15, 30, 60)) == [0, 15, 30, 60]
+        assert jas.group_lowers() == [0, 15, 30, 40, 50, 60]
 
 
 class TestRake2d:

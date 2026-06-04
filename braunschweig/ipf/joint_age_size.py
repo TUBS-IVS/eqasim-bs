@@ -21,14 +21,24 @@ adding it as a margin CANNOT make the IPF infeasible -- it only ties the two
 existing marginals together with the observed correlation.  The commune-level
 size detail stays with the existing 5th margin.
 
-Coarse age groups (default boundaries 15 / 30 / 60) align with native
-1000A-3082 ALTKL2 band edges, so the 1000A side aggregates without band
+Coarse age groups (default boundaries 15 / 30 / 40 / 50 / 60) all align with
+native 1000A-3082 ALTKL2 band edges, so the 1000A side aggregates without band
 splitting::
 
     [0, 15)   children
     [15, 30)  young adults
-    [30, 60)  middle-aged
+    [30, 40)  young parents
+    [40, 50)  established parents
+    [50, 60)  older middle-aged
     [60, inf) older
+
+The middle band [30, 60) is deliberately split at the native ALTKL2 edges 40
+and 50 (rather than left coarse) so that the downstream age-aware household
+formation places young children with specifically young parents: a single coarse
+[30, 60) group lets the IPF put a 55-year-old into a family-size cell, which the
+chunking can only resolve by pairing that adult with a young child (an
+implausibly large parent-child gap). The finer resolution removes that tail at
+the source without any band-splitting assumption.
 
 The same lower-bound containment maps the IPF's ``combined_age_class`` values
 onto these groups, so the selector built in ``braunschweig.ipf.model`` lines up
@@ -43,9 +53,13 @@ import pandas as pd
 HH_SIZE_BINS: tuple[str, ...] = ("1", "2", "3", "4", "5", "6+")
 
 # Default coarse age-group lower boundaries. The implied groups are
-# [0,15) [15,30) [30,60) [60,inf). These edges are native 1000A-3082 ALTKL2
-# band edges, so aggregating the Zensus joint to groups never splits a band.
-DEFAULT_AGE_GROUP_BOUNDS: tuple[int, ...] = (15, 30, 60)
+# [0,15) [15,30) [30,40) [40,50) [50,60) [60,inf). All edges are native
+# 1000A-3082 ALTKL2 band edges (0,5,10,15,20,25,30,40,50,60,75), so aggregating
+# the Zensus joint to groups never splits a band. The middle band is refined at
+# 40 and 50 so the IPF cannot put a near-60 adult into a family-size cell, which
+# the age-aware chunking could otherwise only resolve with an implausibly large
+# parent-child age gap.
+DEFAULT_AGE_GROUP_BOUNDS: tuple[int, ...] = (15, 30, 40, 50, 60)
 
 # Tiny seed floor so a 2D rake stays feasible even when a Zensus joint cell is
 # zero (privacy-suppressed) while its row/column margins are positive.
@@ -55,9 +69,10 @@ _SEED_FLOOR = 1e-9
 def age_group_lower(age: float, bounds: tuple[int, ...] = DEFAULT_AGE_GROUP_BOUNDS) -> int:
     """Lower bound of the coarse age group containing ``age``.
 
-    With ``bounds = (15, 30, 60)`` the groups are [0,15) [15,30) [30,60)
-    [60,inf): age 8 -> 0, 20 -> 15, 45 -> 30, 70 -> 60. Any non-negative age
-    maps deterministically to exactly one group lower bound.
+    With the default ``bounds = (15, 30, 40, 50, 60)`` the groups are [0,15)
+    [15,30) [30,40) [40,50) [50,60) [60,inf): age 8 -> 0, 20 -> 15, 45 -> 40,
+    55 -> 50, 70 -> 60. Any non-negative age maps deterministically to exactly
+    one group lower bound.
     """
     a = int(age)
     lower = 0
@@ -134,7 +149,7 @@ def build_joint_age_size_margin(
     df_size_margin : the commune x hh_size margin from
         ``braunschweig.ipf.prepare`` (``commune_id, hh_size, weight``; persons,
         already rescaled per commune to the population total).
-    bounds : coarse age-group lower boundaries (default 15/30/60).
+    bounds : coarse age-group lower boundaries (default 15/30/40/50/60).
 
     Returns
     -------
