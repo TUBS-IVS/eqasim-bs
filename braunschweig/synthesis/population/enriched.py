@@ -57,6 +57,24 @@ def _build_income_size_map(income_bins):
     )
 
 
+def _income_bin_for_size(size_str, income_size_map, scheme):
+    """Resolve an IPF household_size value onto an income reference bin.
+
+    ``income_size_map`` covers the explicit sizes of the reference scheme (1..6
+    for "6-bin", 1..5 for "5-bin"). The IPF, however, forms real households of
+    any size (7, 8, ... up to ~11). The income reference's largest category is
+    open-ended ("6+" = six *or more*, "5+" = five or more), so a household
+    larger than that category belongs to it: any unmapped numeric size collapses
+    onto the scheme's top bin. Non-numeric, non-mapped values are returned
+    unchanged so the caller's downstream validation can surface a real mismatch.
+    """
+    if size_str in income_size_map:
+        return income_size_map[size_str]
+    if size_str.isdigit():
+        return "6+" if scheme == "6-bin" else "5+"
+    return size_str
+
+
 def _configure_base(context):
     """Inherited configure() from bavaria.synthesis.population.enriched."""
     delegate.configure(context)
@@ -591,7 +609,7 @@ def _execute_base(context):
     income_bins = set(df_income["household_size"].astype(str).unique())
     income_size_map, scheme = _build_income_size_map(income_bins)
     income_lookup_size = df_persons["household_size"].astype(str).map(
-        lambda s: income_size_map.get(s, s)
+        lambda s: _income_bin_for_size(s, income_size_map, scheme)
     )
     unresolved = set(income_lookup_size.unique()) - income_bins
     if unresolved:
