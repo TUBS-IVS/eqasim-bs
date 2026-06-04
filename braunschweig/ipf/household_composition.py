@@ -15,6 +15,7 @@ Niedersachsen figure.
 from __future__ import annotations
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 # Destatis-aligned default parent-child age gap in years (GENESIS 12612, mean
 # age of mother at birth ~30-31.5; blended mother/father ~31).
@@ -50,3 +51,40 @@ def optimal_adult_pairs(ages: np.ndarray, n_pairs: int,
         leftover = np.sort(order[2 * n_pairs:])
         return pairs, leftover
     return pairs
+
+
+def assign_children_to_households(child_ages: np.ndarray, parent_ages: np.ndarray,
+                                  child_slots: np.ndarray,
+                                  target_gap: float = DEFAULT_PARENT_CHILD_GAP_YEARS):
+    """Assign each child to a household child-slot minimising the total
+    parent-child age-gap deviation ``Sum |child_age - (parent_age - target_gap)|``.
+
+    ``child_slots[h]`` is the number of child slots in household ``h`` (with
+    parent age ``parent_ages[h]``). Each household is expanded into its slots,
+    a children x slots cost matrix is built, and ``scipy.optimize.
+    linear_sum_assignment`` finds the globally optimal (minimum total
+    deviation) child -> slot assignment. Requires ``sum(child_slots) >=
+    len(child_ages)``. Returns an int array of length ``len(child_ages)`` giving
+    the household index per child.
+    """
+    child_ages = np.asarray(child_ages, dtype=float)
+    parent_ages = np.asarray(parent_ages, dtype=float)
+    child_slots = np.asarray(child_slots, dtype=int)
+    n_children = len(child_ages)
+    if n_children == 0:
+        return np.empty(0, dtype=int)
+
+    slot_household = np.repeat(np.arange(len(parent_ages)), child_slots)
+    slot_target = np.repeat(parent_ages - float(target_gap), child_slots)
+    if len(slot_household) < n_children:
+        raise ValueError(
+            "assign_children_to_households: fewer child slots "
+            f"({len(slot_household)}) than children ({n_children})"
+        )
+
+    # children x slots cost of placing child c in slot s.
+    cost = np.abs(child_ages[:, None] - slot_target[None, :])
+    row, col = linear_sum_assignment(cost)
+    assign = np.empty(n_children, dtype=int)
+    assign[row] = slot_household[col]
+    return assign
