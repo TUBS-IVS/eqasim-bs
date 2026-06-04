@@ -51,6 +51,16 @@ fi
 
 if [[ "$hash_before" != "$hash_after" ]]; then
     echo "==> $ENV_FILE changed - updating conda environment '$CONDA_ENV' ..."
+    # conda is a shell function that only exists after sourcing conda.sh; this
+    # script runs in a non-interactive SSH shell where conda is not initialised,
+    # so 'conda env update' would fail with 'conda: command not found'.
+    CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
+    if [[ ! -f "$CONDA_ROOT/etc/profile.d/conda.sh" ]]; then
+        echo "ERROR: conda not found at $CONDA_ROOT. Set CONDA_ROOT to your install." >&2
+        exit 1
+    fi
+    # shellcheck disable=SC1091
+    source "$CONDA_ROOT/etc/profile.d/conda.sh"
     # 'conda env update --prune' adds new and removes dropped dependencies.
     conda env update -n "$CONDA_ENV" -f "$ENV_FILE" --prune
 else
