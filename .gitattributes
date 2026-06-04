@@ -1,0 +1,3 @@
+# Server-side shell scripts must keep LF line endings so bash on the Linux run
+# server can execute them -- a CRLF shebang line breaks with "bad interpreter".
+*.sh text eol=lf

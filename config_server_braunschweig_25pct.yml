@@ -1,0 +1,148 @@
+## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 25% sample
+## incl. MATSim outputs. SERVER (Linux) variant of config_local_braunschweig_25pct.yml.
+## ONLY difference: the external toolchain binary paths point to the Linux
+## installations (osmosis / osmconvert on PATH) instead of the Windows paths.
+## Everything else (working_directory, data_path, output_path, calibrated
+## parameters) is identical so results stay reproducible across machines.
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+
+working_directory: eqasim-data/cache_bs_25pct
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  processes: 8
+
+  # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
+  hts: entd
+
+  sampling_rate: 0.25
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs_25pct
+  output_prefix: braunschweig_25pct_
+
+  java_memory: 44G
+
+  # MATSim simulation iterations (0..N-1). N=200 -> 200 iterations.
+  matsim_last_iteration: 199
+  matsim_write_events_interval: 0   # 0 = only final iteration
+  matsim_write_plans_interval: 50
+
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "has_license"]
+
+  # --- R-A: Gravity calibration (TASK-001).
+  # Poisson-GLM MLE on BA Pendleratlas (939 ZGB pairs) -> beta=-0.065
+  # (log-L +82 % vs default -0.18). Note: braunschweig.gravity.model
+  # post-IPFs Gemeinde flows against BA Kreis totals, so beta affects only
+  # sub-Kreis distribution. commute_distance KPI is MiD-P13-overridden
+  # (see commute_distance.py) and therefore independent of beta.
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    # Identified full-panel GLM on the 225 km ring; see
+    # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
+    72: -0.0558
+    73: -0.0638
+    74: -0.0640
+    75: -0.0704
+    76: -0.0719
+    77: -0.0667
+
+  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
+  # Adds ``hh_size`` as a fifth IPF margin so the synthetic population
+  # reproduces the strong urban-rural gradient in 1P-HH share that
+  # 5000H-2001 alone (regions-aggregated) cannot capture.
+  braunschweig.ipf.use_household_size_margin: true
+
+  # --- Phase 2 IPF smoothing (TASK-011, 2026-04-26) ----------------------
+  # Symmetric-Dirichlet seed prior. Adds alpha pseudo-counts to every IPF
+  # cell to dampen the influence of empty source cells in sparse rural
+  # Gemeinden (Goslar/Helmstedt). alpha=0 reproduces legacy IPF bit-identically;
+  # alpha=0.5 is a moderate setting for a first comparison run.
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+
+  # --- Phase 2 IPF 4-way (TASK-010, 2026-04-26) --------------------------
+  # Adds an explicit hh_size x employment margin so 1P-HH/2P-HH employment
+  # rates match observed shares per Kreis. Without an external CSV the
+  # stage falls back to an outer-product proxy of the existing margins.
+  braunschweig.ipf.use_employment_margin: true
+
+  gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
+  osm_path: osm
+
+  # --- Braunschweig region scope -----------------------------------------
+  # Zweckverband Grossraum Braunschweig (ZGB) - 8 Kreise (~1.13 M EW),
+  # matches the region reported in the MiD 2023 regional tables (sample 7555).
+  # Goettingen (03159) and Northeim (03155) are EXCLUDED (outside ZGB).
+  #   03101 SK Braunschweig, 03102 SK Salzgitter, 03103 SK Wolfsburg,
+  #   03151 LK Gifhorn,      03153 LK Goslar,     03154 LK Helmstedt,
+  #   03157 LK Peine,        03158 LK Wolfenbuettel
+  braunschweig.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
+  # GENESIS / Regionaldatenbank exports for Niedersachsen
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
+
+  # BA Pendleratlas 2025 (Beschaeftigtenstatistik, Gebietsstand 6/2025)
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+
+  # Zensus 2022 - Haushalte nach Gemeinde x Groesse x Typ (Tabelle 5000H-2001)
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+
+  # BBSR INKAR Indikatorenexport "Haushaltseinkommen" (EUR/EW/Monat je Kreis)
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+
+  # TASK-003: Density-weighted home sampling (Zensus 2022 100m).
+  braunschweig.home_density_weighting: true
+
+  # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
+  braunschweig.buildings_path: braunschweig/buildings
+
+  # Geofabrik snapshot for Niedersachsen
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
+  # External toolchain (Linux paths - installed on PATH, see server setup).
+  # Use absolute paths if the binaries are not on PATH for the run user.
+  osmosis_binary: /usr/bin/osmosis
+  osmconvert_binary: /usr/bin/osmconvert
+
+# --- Aliases ------------------------------------------------------------------
+# Identical to config_local_braunschweig_25pct.yml.
+aliases:
+  data.census.filtered: braunschweig.ipf.attributed
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  synthesis.locations.work: braunschweig.locations.work
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: eqasim_common.data.spatial.iris
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance

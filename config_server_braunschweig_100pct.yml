@@ -1,0 +1,138 @@
+## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 100% sample
+## incl. MATSim outputs. SERVER (Linux) variant, derived from
+## config_server_braunschweig_25pct.yml.
+##
+## Differences vs the 25% server config:
+##   - sampling_rate 1.0 (full ~1.13 M synthetic persons)
+##   - matsim_last_iteration 99 (a 100-iteration test run)
+##   - resources tuned for the 64-core / 128 GB run server (processes 32,
+##     java_memory 100G) -- leaves headroom for the OS and the synpp Python driver
+##   - the validated household-realism features are ENABLED (joint age x size
+##     margin + age-aware chunking + sex-aware couples + parent-age targeting),
+##     so this is the first 100% test of the #3 / #3b work.
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+
+working_directory: eqasim-data/cache_bs_100pct
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  # 64-core server. 32 keeps RAM in check at 100% (each synthesis worker holds
+  # large GeoDataFrames; oversubscribing risks an OOM on the 128 GB box). Raise
+  # toward 48 if a run shows memory headroom; MATSim uses this as its thread count.
+  processes: 32
+
+  # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
+  hts: entd
+
+  sampling_rate: 1.0
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs_100pct
+  output_prefix: braunschweig_100pct_
+
+  # 128 GB box: give the JVM 100G and leave ~28 GB for the OS + Python driver.
+  # During MATSim the Python process is idle, so the JVM can own most of the RAM.
+  java_memory: 100G
+
+  # MATSim simulation: 100 iterations (0..99) on the full 100% population -- a
+  # scale + behaviour test of the whole chain. Keep output light: events only at
+  # the final iteration, plans every 50th (start, mid, end). scorestats /
+  # stopwatch are written every iteration by MATSim regardless.
+  matsim_last_iteration: 99
+  matsim_write_events_interval: 0
+  matsim_write_plans_interval: 50
+
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "has_license"]
+
+  # --- R-A: Gravity calibration (TASK-001). See 25pct config for provenance.
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    72: -0.0558
+    73: -0.0638
+    74: -0.0640
+    75: -0.0704
+    76: -0.0719
+    77: -0.0667
+
+  # --- IPF margins -------------------------------------------------------------
+  # Per-commune household-size margin (Zensus 2022 1000A-2081).
+  braunschweig.ipf.use_household_size_margin: true
+  # Dirichlet seed prior (sparse rural cells); 4-way employment margin.
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+  braunschweig.ipf.use_employment_margin: true
+
+  # --- Household realism (#3 / #3b), validated this session --------------------
+  # Joint age x household-size margin (Zensus 2022 1000A-3082): ties the age and
+  # size marginals with the observed correlation. Bounds (15,30,40,50,60).
+  braunschweig.ipf.use_joint_age_size_margin: true
+  # Age-aware household composition: couples paired by age, children placed with
+  # plausibly-aged parents, all-children households hard-blocked. Replaces the
+  # legacy random chunk + independent hh_type draw. Needs the size margin (on).
+  braunschweig.ipf.age_aware_chunking: true
+  # Sex-aware couple pairing: opposite-sex by default, ~1.1% same-sex
+  # (Destatis Mikrozensus 2025). The remaining chunking parameters use their
+  # calibrated defaults (parent_child_gap_years 31.8, child_parent_age_target_weight
+  # 0.85 -> realised mean gap 31.8, same_sex_couple_share 0.011).
+  braunschweig.chunking.sex_aware_couples: true
+
+  gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
+  osm_path: osm
+
+  # --- Braunschweig region scope (ZGB-8) ---------------------------------------
+  braunschweig.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  # --- Input data paths (Braunschweig / Niedersachsen) -------------------------
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+  braunschweig.home_density_weighting: true
+  braunschweig.buildings_path: braunschweig/buildings
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
+  # External toolchain (Linux paths - installed on PATH, see server setup).
+  osmosis_binary: /usr/bin/osmosis
+  osmconvert_binary: /usr/bin/osmconvert
+
+# --- Aliases ------------------------------------------------------------------
+# Identical to config_server_braunschweig_25pct.yml (education gravity stays OFF
+# for this test -> the legacy OSM education replacement is used).
+aliases:
+  data.census.filtered: braunschweig.ipf.attributed
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  synthesis.locations.work: braunschweig.locations.work
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: eqasim_common.data.spatial.iris
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
