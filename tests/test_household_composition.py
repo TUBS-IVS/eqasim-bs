@@ -397,6 +397,38 @@ class TestBuildBucket:
                                       rng=np.random.RandomState(1))[0]
         assert a.tolist() == b.tolist()
 
+    def test_excess_children_get_young_adults_not_old_singles(self):
+        # The real-data bug: a (commune, hh_size=2) bucket has MORE children than
+        # single_parent shells (the IPF puts more children in size-2 than the
+        # Zensus single_parent share). The excess children must NOT spill onto the
+        # oldest, childless-shell adults; child-bearing capacity is grown so every
+        # child gets one of the youngest adults.
+        # 6 adults (3 young, 3 very old) + 2 children, 4 size-2 shells, but the
+        # given types provide ZERO single_parent slots.
+        ages = np.array([25, 27, 30, 80, 82, 85, 8, 6])
+        types = ["couple", "couple", "other_multi", "other_multi"]
+        sizes = [2, 2, 2, 2]
+        hoh, realised = hc.build_bucket_households(ages, types, sizes, cfg=self._cfg())
+        # every child shares a household with a YOUNG adult (gap stays plausible)
+        for c in (6, 7):  # the two child indices
+            h = hoh[c]
+            members = ages[hoh == h]
+            adults = members[members >= 18]
+            assert len(adults) >= 1
+            assert adults.min() < 40            # young parent, not an 80+ "single parent"
+
+    def test_no_promotion_when_child_capacity_sufficient(self):
+        # When the given shells already hold all children, composition is unchanged
+        # (the fix is a no-op): one single_parent shell, one couple, one child.
+        ages = np.array([34, 40, 38, 6])
+        types = ["single_parent", "couple"]
+        sizes = [2, 2]
+        hoh, realised = hc.build_bucket_households(ages, types, sizes, cfg=self._cfg())
+        # the child is with the single_parent's adult, the couple keeps two adults
+        child_hh = hoh[3]
+        m = ages[hoh == child_hh]
+        assert (m < 18).sum() == 1 and (m >= 18).sum() == 1
+
     def test_weight_zero_disables_child_age_matching(self):
         # parent_child_weight 0 -> children still placed (composition holds),
         # just no age optimisation. Composition must still be correct.

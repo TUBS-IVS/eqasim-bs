@@ -232,6 +232,49 @@ def _reduce_demand(req: list[int], available: int) -> int:
     return reduced
 
 
+def _ensure_child_capacity(a_req: list[int], c_req: list[int], sizes: list[int],
+                           n_children: int) -> int:
+    """Grow the child-bearing capacity (``c_req``, in place) until it covers every
+    child in the bucket, so no child spills into the fill phase.
+
+    The IPF can place more children in a (commune, hh_size) cell than the Zensus
+    hh_type shares provide child-bearing shells for (e.g. ~20 % of size-2 persons
+    are children, far above the single_parent share). Without this, the surplus
+    children fall through to the fill phase and land on the childless shells'
+    adults -- which the priority routing fills with the OLDEST adults -- producing
+    implausible households such as an 84-year-old "single parent" of a minor.
+
+    Childless shells (``c_req == 0``) that still have room and at least one adult
+    are promoted to child-bearing one slot at a time. 2-adult shells are promoted
+    first (-> couple_with_children, two parents) before 1-adult shells
+    (-> single_parent). The existing adult routing then hands these shells the
+    youngest adults, so the surplus children get plausible parents. The hh_type
+    label is re-derived from the realised composition, so promoting trades a small
+    amount of hh_type-marginal fidelity (the Zensus single_parent/couple split) for
+    age plausibility -- a deliberate trade-off, used only when the IPF's child
+    count forces it. Returns the number of child slots added.
+    """
+    need = n_children - sum(c_req)
+    if need <= 0:
+        return 0
+    candidates = sorted(
+        (h for h in range(len(a_req))
+         if a_req[h] >= 1 and a_req[h] + c_req[h] < sizes[h]),
+        key=lambda h: (a_req[h] == 2, sizes[h] - a_req[h] - c_req[h]),
+        reverse=True,
+    )
+    promoted = 0
+    for h in candidates:
+        if need <= 0:
+            break
+        room = sizes[h] - a_req[h] - c_req[h]
+        add = min(room, need)
+        c_req[h] += add
+        promoted += add
+        need -= add
+    return promoted
+
+
 def _realised_type(member_ages: list[float], min_adult: int) -> str:
     n = len(member_ages)
     a = sum(1 for x in member_ages if x >= min_adult)
@@ -304,6 +347,10 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     if relaxed:
         print(f"[household_composition] relaxed {relaxed} composition slot(s) "
               f"due to pool shortage in a {n}-person bucket")
+
+    # Grow child-bearing capacity so every child gets a (young) adult instead of
+    # spilling onto the oldest childless-shell adults (see _ensure_child_capacity).
+    _ensure_child_capacity(a_req, c_req, list(sizes), len(child_arr))
 
     members: list[list[int]] = [[] for _ in range(H)]
 
