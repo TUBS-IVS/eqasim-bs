@@ -12,6 +12,8 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
+from braunschweig.ipf.household_composition import build_bucket_households
+
 """
 This stage adds additional attributes to the generated synthetic population from IPF.
 
@@ -270,6 +272,127 @@ def _assign_household_types(
         + ", ".join(f"{k}={v:.1%}" for k, v in type_counts.items())
     )
     return df
+
+
+def _prepare_type_shares(df_household_type: pd.DataFrame):
+    """Normalise the Zensus 1000A-2081 household-type frame and build the
+    scope-wide per-hh_size fallback. Returns ``(df_zt, fallback)``."""
+    df_zt = df_household_type.copy()
+    df_zt["commune_id"] = df_zt["commune_id"].astype(str)
+    df_zt["hh_size"] = df_zt["hh_size"].astype(str)
+    df_zt["hh_type"] = df_zt["hh_type"].astype(str)
+    df_zt["weight"] = df_zt["weight"].astype(float)
+    fallback = (
+        df_zt.groupby(["hh_size", "hh_type"], observed=True)["weight"]
+        .sum().reset_index()
+    )
+    return df_zt, fallback
+
+
+def _sample_types_for_bucket(df_zt, fallback, commune_id, hh_size_bin, n, rng):
+    """Sample ``n`` hh_types for a (commune, hh_size_bin) bucket from the Zensus
+    1000A-2081 shares, with scope-wide fallback then the ``other_multi`` default.
+    Mirrors the share/fallback logic of ``_assign_household_types``."""
+    local = df_zt[(df_zt["commune_id"] == commune_id)
+                  & (df_zt["hh_size"] == hh_size_bin)]
+    if float(local["weight"].sum()) > 0:
+        p = local["weight"].to_numpy(dtype=float)
+        p /= p.sum()
+        return list(rng.choice(local["hh_type"].to_numpy(), size=n, p=p))
+    fb = fallback[fallback["hh_size"] == hh_size_bin]
+    if float(fb["weight"].sum()) > 0:
+        p = fb["weight"].to_numpy(dtype=float)
+        p /= p.sum()
+        return list(rng.choice(fb["hh_type"].to_numpy(), size=n, p=p))
+    return ["other_multi"] * n
+
+
+def form_households_age_aware(df: pd.DataFrame, random_seed: int,
+                              df_household_type: pd.DataFrame,
+                              cfg: dict) -> pd.DataFrame:
+    """Age-aware household formation (#3b): replaces the random chunk + the
+    independent hh_type draw with one coupled pass.
+
+    Per ``(commune_id, hh_size)`` bucket: form household shells (same realised
+    sizes as ``_form_households`` -- complete groups of N with the trailing
+    remainder absorbed into the last household), sample one ``hh_type`` per shell
+    from the Zensus 1000A-2081 shares, then assign the bucket's persons to the
+    shells with ``braunschweig.ipf.household_composition.build_bucket_households``
+    so the optimisation produces age-plausible, ``hh_type``-consistent
+    households. Returns the persons frame with ``household_id``,
+    ``household_size`` (realised), ``hh_type`` and ``person_id`` set; ``weight``
+    is 1.0. Deterministic for a fixed seed.
+    """
+    rng = np.random.RandomState(random_seed)
+    weights = df["weight"].to_numpy()
+    floor = np.floor(weights).astype(np.int64)
+    frac = weights - floor
+    counts = floor + (rng.random_sample(len(weights)) < frac).astype(np.int64)
+    repeated = df.iloc[np.repeat(np.arange(len(df)), counts)].reset_index(drop=True)
+    repeated["commune_id"] = repeated["commune_id"].astype(str)
+    repeated["_hh_size_int"] = (
+        repeated["household_size"].astype(str).map(_HH_SIZE_INT).astype(np.int64)
+    )
+    if repeated["_hh_size_int"].isna().any():
+        bad = repeated.loc[repeated["_hh_size_int"].isna(), "household_size"].unique()
+        raise RuntimeError(f"Unknown hh_size labels in IPF output: {bad}")
+
+    # Deterministic bucket order.
+    repeated = repeated.sort_values(
+        ["commune_id", "_hh_size_int"], kind="mergesort"
+    ).reset_index(drop=True)
+
+    df_zt, fallback = _prepare_type_shares(df_household_type)
+    type_rng = np.random.RandomState(random_seed + 31337)
+
+    ages_all = repeated["age"].to_numpy()
+    n = len(repeated)
+    household_id = np.full(n, -1, dtype=np.int64)
+    hh_type = np.empty(n, dtype=object)
+    household_size = np.zeros(n, dtype=np.int64)
+    next_hid = 0
+    n_relaxed_buckets = 0
+
+    for (cid, size_int), g in repeated.groupby(
+        ["commune_id", "_hh_size_int"], sort=True, observed=True,
+    ):
+        idx = g.index.to_numpy()
+        bucket_size = len(idx)
+        N = int(size_int)
+        n_chunks = max(1, bucket_size // N)
+        # Realised sizes: complete groups of N, remainder absorbed into the last.
+        sizes = [N] * (n_chunks - 1) + [bucket_size - N * (n_chunks - 1)]
+        hh_size_bin = _INT_TO_HH_SIZE_BIN[min(N, 6)]
+        types = _sample_types_for_bucket(
+            df_zt, fallback, cid, hh_size_bin, n_chunks, type_rng)
+
+        bucket_ages = ages_all[idx]
+        local_of_person, realised_types = build_bucket_households(
+            bucket_ages, types, sizes, cfg)
+
+        for local_h in range(n_chunks):
+            sel = idx[local_of_person == local_h]
+            household_id[sel] = next_hid + local_h
+            hh_type[sel] = realised_types[local_h]
+            household_size[sel] = len(sel)
+        next_hid += n_chunks
+
+    repeated["household_id"] = household_id
+    repeated["hh_type"] = hh_type.astype(str)
+    repeated["household_size"] = household_size.astype(np.int64)
+    repeated["weight"] = 1.0
+    repeated = repeated.drop(columns=["_hh_size_int"])
+    repeated = repeated.sort_values("household_id", kind="mergesort").reset_index(drop=True)
+    repeated["person_id"] = np.arange(len(repeated))
+    repeated["hh_type"] = repeated["hh_type"].astype("category")
+
+    n_hh = int(repeated["household_id"].nunique())
+    print(
+        f"[braunschweig.ipf.attributed] age-aware chunking: formed {n_hh:,} "
+        f"age-plausible, hh_type-consistent households from {len(repeated):,} "
+        f"persons; 0 dropped."
+    )
+    return repeated
 
 
 def configure(context):

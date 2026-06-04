@@ -74,6 +74,53 @@ def test_formation_is_deterministic_for_fixed_seed():
     pd.testing.assert_frame_equal(a, b)
 
 
+def test_age_aware_chunking_produces_typed_plausible_households():
+    # 2 size-4 households' worth: 4 adults + 4 children in one commune.
+    df = pd.DataFrame({
+        "commune_id": ["03101"] * 8,
+        "household_size": ["4"] * 8,
+        "weight": [1.0] * 8,
+        "age": [40, 38, 8, 5, 34, 36, 6, 9],
+    })
+    df_type = pd.DataFrame({
+        "commune_id": ["03101", "03101"],
+        "hh_size": ["4", "4"],
+        "hh_type": ["couple_with_children", "single_parent"],
+        "weight": [1.0, 1.0],
+    })
+    cfg = dict(min_adult_age=18, couple_age_weight=1.0,
+               parent_child_weight=1.0, parent_child_gap_years=31)
+    out = attributed.form_households_age_aware(
+        df, random_seed=1, df_household_type=df_type, cfg=cfg)
+
+    assert len(out) == 8                       # nobody dropped
+    assert "hh_type" in out.columns
+    assert out["household_id"].nunique() == 2
+    # No all-children household.
+    for _, g in out.groupby("household_id"):
+        assert (g["age"] >= 18).sum() >= 1
+    # household_size attribute equals realised member count.
+    for _, g in out.groupby("household_id"):
+        assert (g["household_size"] == len(g)).all()
+
+
+def test_age_aware_chunking_is_deterministic():
+    df = pd.DataFrame({
+        "commune_id": ["03101"] * 6,
+        "household_size": ["3"] * 6,
+        "weight": [1.0] * 6,
+        "age": [40, 8, 5, 34, 7, 4],
+    })
+    df_type = pd.DataFrame({
+        "commune_id": ["03101"], "hh_size": ["3"],
+        "hh_type": ["single_parent"], "weight": [1.0],
+    })
+    cfg = dict(min_adult_age=18, parent_child_weight=1.0, parent_child_gap_years=31)
+    a = attributed.form_households_age_aware(df, 1, df_type, cfg)
+    b = attributed.form_households_age_aware(df, 1, df_type, cfg)
+    pd.testing.assert_frame_equal(a, b)
+
+
 def test_hh_type_binning_tolerates_oversized_household():
     # A realised size-7 household (6+ bucket with an absorbed remainder) must
     # bin to the Zensus "6+" open class, not raise.

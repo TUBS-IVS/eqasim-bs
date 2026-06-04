@@ -101,6 +101,20 @@ _IDEAL_ADULTS: dict[str, int] = {
 }
 
 
+def normalize_type(hh_type: str, size: int) -> str:
+    """Clamp a sampled hh_type to be size-compatible. By Zensus definition a
+    ``couple`` is a 2-person household and ``single`` a 1-person household; if a
+    sampled type cannot occur at the household's size (noise in the share data)
+    it is treated as ``other_multi`` so composition and the realised label stay
+    coherent."""
+    size = int(size)
+    if hh_type == "single" and size != 1:
+        return "other_multi"
+    if hh_type == "couple" and size != 2:
+        return "other_multi"
+    return hh_type
+
+
 def required_adults(hh_type: str, size: int) -> int:
     return min(_IDEAL_ADULTS.get(hh_type, 1), int(size))
 
@@ -134,13 +148,13 @@ def _realised_type(member_ages: list[float], min_adult: int) -> str:
     c = n - a
     if n == 1:
         return "single"
-    if a >= 2 and c == 0:
+    if n == 2 and a == 2:           # a couple is exactly two adults
         return "couple"
     if a >= 2 and c >= 1:
         return "couple_with_children"
     if a == 1 and c >= 1:
         return "single_parent"
-    return "other_multi"
+    return "other_multi"            # incl. multi-adult flatshares (a>=2, c==0, n>2)
 
 
 def build_bucket_households(ages: np.ndarray, hh_types: list[str],
@@ -171,6 +185,9 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     adult_arr = np.asarray(adults, dtype=int)
     child_arr = np.asarray(children, dtype=int)
 
+    # Clamp incompatible (type, size) shells (e.g. a 'couple' shell of size != 2)
+    # to other_multi so composition and labels stay coherent.
+    hh_types = [normalize_type(t, s) for t, s in zip(hh_types, sizes)]
     a_req = [required_adults(t, s) for t, s in zip(hh_types, sizes)]
     c_req = [required_children(t, s) for t, s in zip(hh_types, sizes)]
 
