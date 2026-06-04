@@ -110,6 +110,83 @@ class TestEducationDistanceTable:
         assert table.empty
 
 
+class TestModeShare:
+    def test_returns_empty_dict_for_empty_series(self) -> None:
+        assert rmv.mode_share(pd.Series([], dtype=str)) == {}
+
+    def test_shares_sum_to_100_and_are_percentages(self) -> None:
+        # 2x car, 1x pt, 1x walk -> 50 / 25 / 25.
+        modes = pd.Series(["car", "car", "pt", "walk"])
+        result = rmv.mode_share(modes)
+        assert result["car"] == pytest.approx(50.0)
+        assert result["pt"] == pytest.approx(25.0)
+        assert result["walk"] == pytest.approx(25.0)
+        assert sum(result.values()) == pytest.approx(100.0)
+
+    def test_ignores_nan_values(self) -> None:
+        # NaN must not inflate the denominator: 1x car, 1x pt over 2 valid obs.
+        modes = pd.Series(["car", np.nan, "pt"])
+        result = rmv.mode_share(modes)
+        assert result["car"] == pytest.approx(50.0)
+        assert result["pt"] == pytest.approx(50.0)
+        assert sum(result.values()) == pytest.approx(100.0)
+        # NaN is dropped, not reported as a key.
+        assert all(isinstance(k, str) for k in result)
+
+
+class TestModeShareTable:
+    def _trips(self) -> pd.DataFrame:
+        # Five trips: 3 car, 1 pt, 1 walk; two of them are work commutes.
+        return pd.DataFrame(
+            {
+                "mode": ["car", "car", "pt", "walk", "car"],
+                "following_purpose": ["work", "work", "home", "leisure", "shop"],
+            }
+        )
+
+    def test_all_trips_table_sums_to_100(self) -> None:
+        all_tbl, _, _ = rmv._mode_share_table(self._trips(), mid_p12_1=None)
+        assert set(all_tbl["mode"]) == {"car", "pt", "walk"}
+        assert all_tbl["share_pct"].sum() == pytest.approx(100.0)
+        car = all_tbl.loc[all_tbl["mode"] == "car", "share_pct"].iloc[0]
+        assert car == pytest.approx(60.0)
+
+    def test_by_purpose_table_each_purpose_sums_to_100(self) -> None:
+        _, by_purpose, _ = rmv._mode_share_table(self._trips(), mid_p12_1=None)
+        for _, sub in by_purpose.groupby("following_purpose"):
+            assert sub["share_pct"].sum() == pytest.approx(100.0)
+        work = by_purpose[by_purpose["following_purpose"] == "work"]
+        # Both work trips are by car -> 100 %.
+        assert work.loc[work["mode"] == "car", "share_pct"].iloc[0] == pytest.approx(100.0)
+
+    def test_commute_vs_p12_1_compares_only_work_trips(self) -> None:
+        # Minimal P12_1 ZGB-total row (auto/oeffentlich/fahrrad/zu_fuss in percent).
+        mid_p12_1 = pd.DataFrame(
+            {
+                "ars5": ["03ZGB"],
+                "auto": [73.0],
+                "oeffentlich": [11.0],
+                "fahrrad": [26.0],
+                "zu_fuss": [14.0],
+            }
+        )
+        _, _, commute_cmp = rmv._mode_share_table(self._trips(), mid_p12_1=mid_p12_1)
+        # Both work trips are car -> synthetic Car = 100, MiD Car = 73.
+        car_row = commute_cmp[commute_cmp["mode"] == "Car"].iloc[0]
+        assert car_row["synthetic_pct"] == pytest.approx(100.0)
+        assert car_row["mid_pct"] == pytest.approx(73.0)
+        # The four canonical MiD modes are always reported.
+        assert set(commute_cmp["mode"]) == {"Car", "PT", "Bicycle", "Walk"}
+
+    def test_handles_missing_mode_column(self) -> None:
+        # Pipeline trips.csv has no mode column -> empty tables, no crash.
+        trips = pd.DataFrame({"following_purpose": ["work", "home"]})
+        all_tbl, by_purpose, commute_cmp = rmv._mode_share_table(trips, mid_p12_1=None)
+        assert all_tbl.empty
+        assert by_purpose.empty
+        assert commute_cmp.empty
+
+
 class TestArgParser:
     def test_requires_existing_output_dir(self, tmp_path: Path) -> None:
         with pytest.raises(SystemExit):

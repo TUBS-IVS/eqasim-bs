@@ -89,6 +89,21 @@ VG250_INNER = (
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
 
+# eqasim main mode -> MiD P12_1 category, kept consistent with
+# braunschweig.analysis.dashboard.build_dashboard.MODE_LABEL.  Only the four
+# MiD P12_1 columns (auto / oeffentlich / fahrrad / zu_fuss) have a reference,
+# so car_passenger is folded into "Car" for the commute comparison.
+MODE_TO_MID: dict[str, str] = {
+    "car": "Car",
+    "car_passenger": "Car",
+    "pt": "PT",
+    "bicycle": "Bicycle",
+    "walk": "Walk",
+}
+
+# Order in which the four comparable MiD P12_1 modes are reported.
+MID_MODE_ORDER: list[str] = ["Car", "PT", "Bicycle", "Walk"]
+
 # RegioStaR-7 reference for per-Raumtyp diagnostics. Filename pinned via
 # scripts/download_regiostar.py (TASK-004); not regenerated here.
 REGIOSTAR_XLSX = (
@@ -118,6 +133,7 @@ class _Args:
     prefix: str
     analysis_out: Path
     label: str
+    sim_cache: Path | None
 
 
 def _parse_args(argv: list[str] | None) -> _Args:
@@ -147,6 +163,15 @@ def _parse_args(argv: list[str] | None) -> _Args:
         default=None,
         help="Human-readable label written into report.json. Defaults to the prefix.",
     )
+    ap.add_argument(
+        "--sim-cache",
+        required=False,
+        default=None,
+        help="synpp cache directory containing matsim.simulation.run__*.cache/"
+        "simulation_output/eqasim_trips.csv. When given, the all-trip modal "
+        "split is read from the MATSim simulation output (the eqasim pipeline "
+        "trips.csv carries no mode). Omitted -> the modal-split block is skipped.",
+    )
     ns = ap.parse_args(argv)
 
     output_dir = Path(ns.output_dir).resolve()
@@ -170,11 +195,16 @@ def _parse_args(argv: list[str] | None) -> _Args:
     )
     analysis_out.mkdir(parents=True, exist_ok=True)
 
+    sim_cache = Path(ns.sim_cache).resolve() if ns.sim_cache is not None else None
+    if sim_cache is not None and not sim_cache.is_dir():
+        ap.error(f"--sim-cache does not exist: {sim_cache}")
+
     return _Args(
         output_dir=output_dir,
         prefix=prefix,
         analysis_out=analysis_out,
         label=ns.label or prefix.rstrip("_"),
+        sim_cache=sim_cache,
     )
 
 
@@ -197,6 +227,22 @@ def band_share(distances_km: np.ndarray) -> dict[str, float]:
         name: float(100.0 * np.mean((distances_km >= lo) & (distances_km < hi)))
         for lo, hi, name in BANDS
     }
+
+
+def mode_share(modes: pd.Series) -> dict[str, float]:
+    """Percentage share of each transport mode in ``modes``.
+
+    Returns a dict mapping mode name -> share in percent over the
+    NaN-dropped observations.  The shares sum to 100 for any non-empty
+    input and to nothing (empty dict) for empty / all-NaN input, so the
+    helper is safe to call before knowing whether a run carries mode
+    information at all.
+    """
+    valid = modes.dropna()
+    if valid.empty:
+        return {}
+    counts = valid.value_counts(normalize=True) * 100.0
+    return {str(mode): float(share) for mode, share in counts.items()}
 
 
 def _bool_share(series: pd.Series) -> float:
@@ -305,6 +351,30 @@ def _read_gpkg(output_dir: Path, prefix: str, name: str) -> gpd.GeoDataFrame:
     return gpd.read_file(output_dir / f"{prefix}{name}.gpkg")
 
 
+def _find_sim_trips(sim_cache: Path | None) -> pd.DataFrame | None:
+    """Load the MATSim simulation-output trips (mode + purpose), or None.
+
+    The eqasim pipeline trips.csv has no realised mode; the mode is written by
+    the MATSim mobility simulation to ``matsim.simulation.run__*.cache/
+    simulation_output/eqasim_trips.csv``.  The lookup mirrors
+    ``braunschweig.analysis.dashboard.build_dashboard._find_sim_output`` so both
+    analysis entry points resolve the same file.  Returns None (and the modal-
+    split block is skipped) when no --sim-cache is given or the file is absent.
+    """
+    if sim_cache is None:
+        return None
+    for cache_dir in sim_cache.glob("matsim.simulation.run__*.cache"):
+        trips_path = cache_dir / "simulation_output" / "eqasim_trips.csv"
+        if trips_path.exists():
+            LOGGER.info("Reading realised trip modes from %s", trips_path)
+            return pd.read_csv(trips_path, sep=";")
+    LOGGER.warning(
+        "No simulation_output/eqasim_trips.csv under %s; modal-split block skipped.",
+        sim_cache,
+    )
+    return None
+
+
 def _save_fig(fig: plt.Figure, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=120, bbox_inches="tight")
@@ -385,6 +455,110 @@ def _commute_band_table(
                 }
             )
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Overall (all-trip) modal split  (model-improvement item #10)
+# ---------------------------------------------------------------------------
+#
+# The eqasim *pipeline* trips.csv carries no mode (mode is assigned by the
+# MATSim mobility simulation), so the realised modal split is read from the
+# simulation output `eqasim_trips.csv` when a --sim-cache is supplied.  There
+# is currently NO committed all-trip modal-split reference table for the ZGB
+# region; this block therefore *measures* the synthetic distribution fully and
+# only compares the work-commute subset to the committed MiD P12_1 table.  The
+# all-trip figures are reported as awaiting an external SrV-Braunschweig / MiD
+# all-trip reference.
+
+
+def _mode_share_table(
+    trips: pd.DataFrame, mid_p12_1: pd.DataFrame | None
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build the all-trip modal-split tables from a mode-carrying trips frame.
+
+    Returns three frames:
+
+    * ``all_tbl``       — overall modal split (``mode``, ``n_trips``,
+      ``share_pct``); ``share_pct`` sums to 100.
+    * ``by_purpose``    — modal split per ``following_purpose`` (each purpose's
+      ``share_pct`` sums to 100), present only if the column exists.
+    * ``commute_cmp``   — work-commute synthetic vs MiD P12_1 comparison over
+      the four comparable MiD modes (``mode``, ``synthetic_pct``, ``mid_pct``,
+      ``delta_pp``).  Empty when either the work subset or the P12_1 reference
+      is unavailable.
+
+    All three frames are empty when ``trips`` has no ``mode`` column, so the
+    feature degrades gracefully on runs without a simulation output.
+    """
+    empty = pd.DataFrame()
+    if "mode" not in trips.columns:
+        return empty, empty, empty
+
+    # --- Overall (all-trip) modal split. ---
+    overall = mode_share(trips["mode"])
+    n_by_mode = trips["mode"].dropna().value_counts()
+    all_tbl = pd.DataFrame(
+        {
+            "mode": list(overall.keys()),
+            "n_trips": [int(n_by_mode.get(m, 0)) for m in overall],
+            "share_pct": [round(v, 2) for v in overall.values()],
+        }
+    )
+
+    # --- Modal split per following_purpose (descriptive, no reference). ---
+    by_rows: list[dict[str, Any]] = []
+    if "following_purpose" in trips.columns:
+        for purpose, sub in trips.groupby("following_purpose"):
+            for mode, share in mode_share(sub["mode"]).items():
+                by_rows.append(
+                    {
+                        "following_purpose": str(purpose),
+                        "mode": mode,
+                        "n_trips": int((sub["mode"] == mode).sum()),
+                        "share_pct": round(share, 2),
+                    }
+                )
+    by_purpose = pd.DataFrame(
+        by_rows, columns=["following_purpose", "mode", "n_trips", "share_pct"]
+    )
+
+    # --- Work-commute subset vs MiD P12_1 (the only referenced comparison). ---
+    commute_cmp = empty
+    if mid_p12_1 is not None and "following_purpose" in trips.columns:
+        work = trips[trips["following_purpose"] == "work"]
+        if not work.empty:
+            # Map eqasim modes to the four MiD P12_1 categories and aggregate.
+            syn_raw = mode_share(work["mode"])
+            syn_mid: dict[str, float] = {label: 0.0 for label in MID_MODE_ORDER}
+            for mode, share in syn_raw.items():
+                label = MODE_TO_MID.get(mode)
+                if label is not None:
+                    syn_mid[label] += share
+            ref_row = mid_p12_1[mid_p12_1["ars5"] == "03ZGB"]
+            mid_cols = {"Car": "auto", "PT": "oeffentlich",
+                        "Bicycle": "fahrrad", "Walk": "zu_fuss"}
+            ref = ref_row.iloc[0] if not ref_row.empty else None
+            rows: list[dict[str, Any]] = []
+            for label in MID_MODE_ORDER:
+                mid_val = (
+                    float(ref[mid_cols[label]])
+                    if ref is not None and mid_cols[label] in ref_row.columns
+                    else float("nan")
+                )
+                rows.append(
+                    {
+                        "mode": label,
+                        "synthetic_pct": round(syn_mid[label], 1),
+                        "mid_pct": round(mid_val, 1) if mid_val == mid_val else mid_val,
+                        "delta_pp": round(syn_mid[label] - mid_val, 1)
+                        if mid_val == mid_val else float("nan"),
+                    }
+                )
+            commute_cmp = pd.DataFrame(
+                rows, columns=["mode", "synthetic_pct", "mid_pct", "delta_pp"]
+            )
+
+    return all_tbl, by_purpose, commute_cmp
 
 
 # ---------------------------------------------------------------------------
@@ -892,6 +1066,27 @@ def run(args: _Args) -> dict[str, Any]:
     ).round(2)
     by_purpose.to_csv(out / "secondary_success.csv")
 
+    # --- Overall (all-trip) modal split (model-improvement item #10). ---
+    # Measures the realised modal split from the MATSim simulation output (the
+    # eqasim pipeline trips.csv has no mode).  The all-trip split has NO
+    # external reference yet; only the work-commute subset is compared to MiD
+    # P12_1.  Skipped entirely when no --sim-cache / no eqasim_trips.csv.
+    LOGGER.info("Computing all-trip modal split (sim-cache=%s)", args.sim_cache)
+    sim_trips = _find_sim_trips(args.sim_cache)
+    mode_all_tbl = pd.DataFrame()
+    mode_by_purpose_tbl = pd.DataFrame()
+    mode_commute_cmp = pd.DataFrame()
+    if sim_trips is not None:
+        mode_all_tbl, mode_by_purpose_tbl, mode_commute_cmp = _mode_share_table(
+            sim_trips, mid.get("P12_1")
+        )
+        if not mode_all_tbl.empty:
+            mode_all_tbl.to_csv(out / "mode_share_all.csv", index=False)
+        if not mode_by_purpose_tbl.empty:
+            mode_by_purpose_tbl.to_csv(out / "mode_share_by_purpose.csv", index=False)
+        if not mode_commute_cmp.empty:
+            mode_commute_cmp.to_csv(out / "mode_share_commute_vs_p12_1.csv", index=False)
+
     # --- report.json ---
     report = {
         "label": args.label,
@@ -926,6 +1121,16 @@ def run(args: _Args) -> dict[str, Any]:
             rs7_tbl.assign(regiostar7=rs7_tbl["regiostar7"].astype(int))
                    .to_dict(orient="records")
             if not rs7_tbl.empty else []
+        ),
+        # Overall (all-trip) modal split — measurement only, no all-trip
+        # reference yet; the work subset is compared to MiD P12_1 separately.
+        "mode_share_pct": (
+            dict(zip(mode_all_tbl["mode"], mode_all_tbl["share_pct"]))
+            if not mode_all_tbl.empty else {}
+        ),
+        "mode_share_commute_vs_p12_1": (
+            mode_commute_cmp.to_dict(orient="records")
+            if not mode_commute_cmp.empty else []
         ),
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -981,6 +1186,40 @@ def run(args: _Args) -> dict[str, Any]:
             _df_to_markdown(rs7_tbl),
             "",
         ]
+    # Overall (all-trip) modal split — measurement addition (item #10).
+    if not mode_all_tbl.empty:
+        md_lines += [
+            "## Overall (all-trip) modal split — measurement only",
+            "",
+            "_Realised main-mode share over ALL trips of the run, read from the "
+            "MATSim simulation output (`eqasim_trips.csv`). There is currently "
+            "**no committed all-trip modal-split reference** for the ZGB region, "
+            "so these figures are reported for measurement only and are awaiting "
+            "an external SrV-Braunschweig / MiD all-trip modal split. Only the "
+            "work-commute subset below is compared to a reference (MiD P12_1)._",
+            "",
+            _df_to_markdown(mode_all_tbl),
+            "",
+        ]
+        if not mode_by_purpose_tbl.empty:
+            md_lines += [
+                "### Modal split per following activity purpose (descriptive)",
+                "",
+                _df_to_markdown(mode_by_purpose_tbl),
+                "",
+            ]
+        if not mode_commute_cmp.empty:
+            md_lines += [
+                "### Work-commute modal split vs MiD P12_1 (ZGB total)",
+                "",
+                "_The only referenced modal-split comparison. MiD P12_1 reports "
+                "'every mode used per commute' (rows can sum >100 %); the "
+                "synthetic column is the simulated MAIN mode, so an exact match "
+                "is not expected. car_passenger is folded into Car._",
+                "",
+                _df_to_markdown(mode_commute_cmp),
+                "",
+            ]
     (out / "summary.md").write_text("\n".join(md_lines), encoding="utf-8")
 
     LOGGER.info("Done. Wrote %d files to %s", len(list(out.iterdir())), out)
