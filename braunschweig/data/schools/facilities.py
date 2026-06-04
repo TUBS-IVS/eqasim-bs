@@ -1,7 +1,11 @@
-"""synpp stage: load the committed NDS school facilities CSV as a GeoDataFrame.
+"""synpp stage: load the NDS school facilities CSV as a GeoDataFrame.
 
-Output: GeoDataFrame[school_id, level, capacity, commune_id, geometry] in
-EPSG:25832, consumed by braunschweig.synthesis.locations.education_gravity.
+Output: GeoDataFrame[school_id, level, capacity, commune_id, geocode_quality,
+geometry] in EPSG:25832, consumed by
+braunschweig.synthesis.locations.education_gravity. ``geocode_quality`` is
+carried through for traceability so downstream validation can report the share
+of pupils assigned to schools placed by a coarse PLZ-centroid fallback rather
+than a resolved address.
 """
 from __future__ import annotations
 
@@ -32,12 +36,23 @@ def build_facilities_frame(df):
         raise RuntimeError(
             "[braunschweig.data.schools.facilities] non-positive capacity in CSV"
         )
+    # Carry the geocoding provenance through for traceability. Older CSVs
+    # without the column default to "unknown" so the loader stays compatible.
+    geocode_quality = (
+        df["geocode_quality"].astype(str)
+        if "geocode_quality" in df.columns
+        else "unknown"
+    )
     gdf = gpd.GeoDataFrame(
-        df.assign(commune_id=df["ags8"].astype(str).str.zfill(8)),
+        df.assign(
+            commune_id=df["ags8"].astype(str).str.zfill(8),
+            geocode_quality=geocode_quality,
+        ),
         geometry=[Point(x, y) for x, y in zip(df["x"], df["y"])],
         crs=CRS_METRIC,
     )
-    return gdf[["school_id", "level", "capacity", "commune_id", "geometry"]]
+    return gdf[["school_id", "level", "capacity", "commune_id",
+                "geocode_quality", "geometry"]]
 
 
 def configure(context):
@@ -53,9 +68,12 @@ def _resolve_path(context):
 def execute(context):
     df = pd.read_csv(_resolve_path(context), dtype={"ags8": str, "kreis5": str})
     gdf = build_facilities_frame(df)
+    n_plz = int((gdf["geocode_quality"] == "plz_centroid").sum())
     print(f"[braunschweig.data.schools.facilities] {len(gdf)} (school,level) "
           f"facilities; capacity by level: "
-          f"{gdf.groupby('level')['capacity'].sum().round(0).to_dict()}")
+          f"{gdf.groupby('level')['capacity'].sum().round(0).to_dict()}; "
+          f"{n_plz} placed by PLZ-centroid fallback "
+          f"({100.0 * n_plz / max(len(gdf), 1):.1f}%)")
     return gdf
 
 

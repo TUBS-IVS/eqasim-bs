@@ -23,11 +23,19 @@ def _csv_frame():
 def test_build_facilities_frame_schema_and_crs():
     gdf = build_facilities_frame(_csv_frame())
     assert list(gdf.columns) == ["school_id", "level", "capacity",
-                                 "commune_id", "geometry"]
+                                 "commune_id", "geocode_quality", "geometry"]
     assert gdf.crs.to_string() == "EPSG:25832"
     assert set(gdf["level"]) == {"grundschule", "sekundar_1", "oberstufe", "bbs"}
     assert (gdf["capacity"] > 0).all()
     assert gdf.iloc[0]["commune_id"] == "03101000"
+    assert list(gdf["geocode_quality"]) == ["address", "address",
+                                            "plz_centroid", "address"]
+
+
+def test_build_facilities_frame_defaults_geocode_quality_when_absent():
+    df = _csv_frame().drop(columns=["geocode_quality"])
+    gdf = build_facilities_frame(df)
+    assert (gdf["geocode_quality"] == "unknown").all()
 
 
 def test_build_facilities_frame_rejects_missing_level():
