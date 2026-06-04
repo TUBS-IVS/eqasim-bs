@@ -201,6 +201,26 @@ class TestBuildBucket:
                 gaps.append(int(ad.min()) - int(ch.min()))
         assert np.std(gaps) > 2.0      # a real spread, not a single spike
 
+    def test_couple_age_std_spreads_couple_gaps(self):
+        # Many couple shells over a dense adult pool (two adults per integer age):
+        # without a couple jitter the sorted pairing gives ~0-gap couples; with
+        # couple_age_std the gaps spread.
+        ages = np.array([30 + (i // 2) for i in range(40)])  # 20 ages, 2 each
+        types = ["couple"] * 20
+        sizes = [2] * 20
+        tight = hc.build_bucket_households(
+            ages, types, sizes, cfg=self._cfg(couple_age_std=0.0),
+            rng=np.random.RandomState(0))[0]
+        spread = hc.build_bucket_households(
+            ages, types, sizes, cfg=self._cfg(couple_age_std=5.0),
+            rng=np.random.RandomState(0))[0]
+
+        def gaps(hoh):
+            return [abs(int(ages[hoh == h][0]) - int(ages[hoh == h][1]))
+                    for h in set(hoh.tolist())]
+        assert np.mean(gaps(tight)) < 1.0       # no jitter -> ~0-gap couples
+        assert np.mean(gaps(spread)) > 2.0      # jitter -> realistic spread
+
     def test_age_aware_bucket_deterministic_with_rng(self):
         ages = np.array([35, 7, 4, 33, 6, 2])
         a = hc.build_bucket_households(ages, ["single_parent", "single_parent"],

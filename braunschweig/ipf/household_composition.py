@@ -190,6 +190,11 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     # mother's age at birth, Destatis ~5.5 y). Only applied when an ``rng`` is
     # given (the pipeline path); pure deterministic calls use the point target.
     gap_std = float(cfg.get("parent_child_gap_std", 0.0))
+    # Realistic spread of the within-couple age gap. Strict age-sorted pairing in
+    # a dense adult pool produces ~0-gap couples (everyone same age); jittering
+    # the sort key by N(0, couple_age_std) before pairing reproduces the real
+    # partner age-difference spread (German mean ~3-4 y). Only with an rng.
+    couple_std = float(cfg.get("couple_age_std", 0.0))
 
     adults, children = split_pools(ages, min_adult)
     adult_arr = np.asarray(adults, dtype=int)
@@ -234,7 +239,10 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     single_other_hh = [h for h in range(H) if a_req[h] == 1 and c_req[h] == 0]
 
     if couple_weight > 0 or pc_weight > 0:
-        adults_sorted = adult_arr[np.argsort(ages[adult_arr], kind="mergesort")]
+        keys = ages[adult_arr].astype(float)
+        if rng is not None and couple_weight > 0 and couple_std > 0:
+            keys = keys + rng.normal(0.0, couple_std, size=len(keys))
+        adults_sorted = adult_arr[np.argsort(keys, kind="mergesort")]
     else:
         adults_sorted = adult_arr
     ptr = 0

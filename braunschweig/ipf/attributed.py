@@ -449,6 +449,7 @@ def configure(context):
     context.config("braunschweig.ipf.age_aware_chunking", False)
     context.config("braunschweig.chunking.minimum_adult_age", 18)
     context.config("braunschweig.chunking.couple_age_weight", 1.0)
+    context.config("braunschweig.chunking.couple_age_std", 4.0)
     context.config("braunschweig.chunking.parent_child_weight", 1.0)
     context.config("braunschweig.chunking.parent_child_gap_years", 31.0)
     context.config("braunschweig.chunking.parent_child_gap_std", 5.5)
@@ -554,6 +555,7 @@ def execute(context):
         cfg = {
             "min_adult_age": context.config("braunschweig.chunking.minimum_adult_age"),
             "couple_age_weight": context.config("braunschweig.chunking.couple_age_weight"),
+            "couple_age_std": context.config("braunschweig.chunking.couple_age_std"),
             "parent_child_weight": context.config("braunschweig.chunking.parent_child_weight"),
             "parent_child_gap_years": context.config("braunschweig.chunking.parent_child_gap_years"),
             "parent_child_gap_std": context.config("braunschweig.chunking.parent_child_gap_std"),
