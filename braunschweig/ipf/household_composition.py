@@ -7,19 +7,20 @@ adult/child composition constraints. Pure numpy/scipy; deterministic (stable
 sorts, no RNG inside).
 
 The parent-child target gap default is Destatis-aligned: the mean age of the
-mother at birth (Statistisches Bundesamt, GENESIS 12612) is ~30-31.5 years and
-equals the mother-child age gap; ~31 years is a defensible blended (mother/
-father) default. It is exposed as a config value so it can be refined to the
-Niedersachsen figure.
+mother at birth (Statistisches Bundesamt 2024) is 31.8 years (1st child 30.4)
+and equals the mother-child age gap; the father is 34.7. The youngest adult in a
+two-parent household is usually the mother, so 31.8 is the default. The same
+Destatis basis (mothers 15-49, fathers 15-69) bounds the realistic gap, which is
+why placement avoids leaving a child with a very old adult.
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-# Destatis-aligned default parent-child age gap in years (GENESIS 12612, mean
-# age of mother at birth ~30-31.5; blended mother/father ~31).
-DEFAULT_PARENT_CHILD_GAP_YEARS: float = 31.0
+# Destatis-aligned default parent-child age gap in years (mean age of the mother
+# at birth 2024 = 31.8; the youngest household adult is usually the mother).
+DEFAULT_PARENT_CHILD_GAP_YEARS: float = 31.8
 
 
 def split_pools(ages: np.ndarray, min_adult_age: int = 18):
@@ -260,7 +261,14 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
         ptr += 1
     remaining_adults = [int(x) for x in adults_sorted[ptr:]]
 
-    # --- Children: place the required children into parent households. ---
+    # --- Children: place the required children into the (young, child-rearing)
+    # parent households, each with its own target gap drawn around the mean so
+    # the realised gaps form a realistic distribution rather than a spike. ---
+    gap_max = float(cfg.get("parent_child_gap_max", 50.0))
+
+    def _slots_open(h):
+        return int(sizes[h]) - len(members[h])
+
     need_child_hh = [h for h in range(H) if c_req[h] > 0]
     remaining_children = list(child_arr)
     if need_child_hh and remaining_children:
@@ -273,13 +281,9 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
                 min(ages[m] for m in members[h]) if members[h] else float(min_adult + gap)
                 for h in need_child_hh
             ])
-            # Give each child-household its own target gap drawn around the mean
-            # so the realised parent-child gaps form a realistic distribution
-            # rather than a single spike at the mean. Clipped to a plausible
-            # band. Falls back to the point mean when no rng / std is given.
             if rng is not None and gap_std > 0:
                 per_hh_gap = np.clip(
-                    rng.normal(gap, gap_std, size=len(need_child_hh)), 16.0, 50.0)
+                    rng.normal(gap, gap_std, size=len(need_child_hh)), 16.0, gap_max)
             else:
                 per_hh_gap = gap
             who = assign_children_to_households(
@@ -294,13 +298,33 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
                     members[h].append(int(assigned[ptr]))
                     ptr += 1
 
-    # --- Fill remaining slots (adults first, then children). ---
-    fill_pool = remaining_adults + remaining_children
-    fi = 0
+    # --- Fill remaining slots: adults fill any open household; leftover children
+    # go to the households with the YOUNGEST current adult first, so they land
+    # with the most plausibly-aged adults available (bounds the parent-child gap
+    # tail as far as the pool's young-adult capacity allows). ---
+    ai = 0
     for h in range(H):
-        while len(members[h]) < int(sizes[h]) and fi < len(fill_pool):
-            members[h].append(fill_pool[fi])
-            fi += 1
+        while _slots_open(h) > 0 and ai < len(remaining_adults):
+            members[h].append(remaining_adults[ai])
+            ai += 1
+    leftover_adults = remaining_adults[ai:]
+
+    open_for_children = sorted(
+        (h for h in range(H) if _slots_open(h) > 0),
+        key=lambda h: min((ages[p] for p in members[h] if ages[p] >= min_adult),
+                          default=10_000.0))
+    ci = 0
+    for h in open_for_children:
+        while _slots_open(h) > 0 and ci < len(remaining_children):
+            members[h].append(remaining_children[ci])
+            ci += 1
+
+    rest = list(leftover_adults) + remaining_children[ci:]
+    ri = 0
+    for h in range(H):
+        while _slots_open(h) > 0 and ri < len(rest):
+            members[h].append(rest[ri])
+            ri += 1
 
     # Hard rule: NO all-children household. If the pool was too adult-poor for
     # every shell to be headed by an adult, move the orphaned children into the

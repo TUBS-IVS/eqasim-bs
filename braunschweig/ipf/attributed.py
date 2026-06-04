@@ -12,6 +12,7 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
+import braunschweig.ipf.household_composition as hc_module
 from braunschweig.ipf.household_composition import build_bucket_households
 
 """
@@ -409,9 +410,50 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
             household_size[sel] = len(sel)
         next_hid += n_chunks
 
+    # Global hard rule: eliminate any remaining all-children household (a bucket
+    # that had no adult at all -- e.g. a tiny rural commune-size cell that
+    # stochastically rounded to only children). Merge its children into the
+    # same-commune adult household with the best parent-child age fit, so no
+    # household is adult-less (as long as the commune has any adult). Cheap
+    # vectorised check; the merge only runs in the rare event that orphans exist.
+    min_adult = int(cfg.get("min_adult_age", 18))
+    gap_mean = float(cfg.get("parent_child_gap_years",
+                             hc_module.DEFAULT_PARENT_CHILD_GAP_YEARS))
+    is_adult = ages_all >= min_adult
+    nh = int(household_id.max()) + 1
+    has_adult = np.zeros(nh, dtype=bool)
+    np.logical_or.at(has_adult, household_id, is_adult)
+    used = np.zeros(nh, dtype=bool)
+    used[household_id] = True
+    orphan_hids = np.nonzero((~has_adult) & used)[0]
+    n_merged = 0
+    if orphan_hids.size:
+        communes = repeated["commune_id"].to_numpy()
+        commune_of = np.empty(nh, dtype=object)
+        commune_of[household_id] = communes
+        young = np.full(nh, np.inf)
+        adult_idx = np.nonzero(is_adult)[0]
+        np.minimum.at(young, household_id[adult_idx], ages_all[adult_idx])
+        for hid in orphan_hids:
+            cand = np.nonzero((young < np.inf) & (commune_of == commune_of[hid]))[0]
+            if cand.size == 0:
+                continue
+            persons = np.nonzero(household_id == hid)[0]
+            mean_child_age = float(ages_all[persons].mean())
+            target = cand[np.argmin(np.abs(young[cand] - (mean_child_age + gap_mean)))]
+            household_id[persons] = target
+            n_merged += len(persons)
+        if n_merged:
+            # Rebuild realised size + hh_type for the (rarely) changed households.
+            diag = pd.DataFrame({"hid": household_id, "age": ages_all})
+            household_size = diag.groupby("hid")["hid"].transform("size").to_numpy()
+            types = diag.groupby("hid")["age"].apply(
+                lambda a: hc_module._realised_type(list(a.to_numpy()), min_adult))
+            hh_type = pd.Series(household_id).map(types).to_numpy()
+
     repeated["household_id"] = household_id
-    repeated["hh_type"] = hh_type.astype(str)
-    repeated["household_size"] = household_size.astype(np.int64)
+    repeated["hh_type"] = np.asarray(hh_type).astype(str)
+    repeated["household_size"] = np.asarray(household_size).astype(np.int64)
     repeated["weight"] = 1.0
     repeated = repeated.drop(columns=["_hh_size_int"])
     repeated = repeated.sort_values("household_id", kind="mergesort").reset_index(drop=True)
@@ -451,7 +493,7 @@ def configure(context):
     context.config("braunschweig.chunking.couple_age_weight", 1.0)
     context.config("braunschweig.chunking.couple_age_std", 4.0)
     context.config("braunschweig.chunking.parent_child_weight", 1.0)
-    context.config("braunschweig.chunking.parent_child_gap_years", 31.0)
+    context.config("braunschweig.chunking.parent_child_gap_years", 31.8)
     context.config("braunschweig.chunking.parent_child_gap_std", 5.5)
     if context.config("braunschweig.ipf.age_aware_chunking"):
         context.stage("braunschweig.data.census.households_type")
