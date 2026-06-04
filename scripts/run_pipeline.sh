@@ -42,6 +42,20 @@ source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 
 mkdir -p logs
+
+# synpp's output stage (synthesis/output.py validate()) requires the configured
+# output directory to already exist and aborts the whole run otherwise. Extract
+# output_path from the YAML config and create it up front so a fresh server
+# checkout does not crash on a missing directory.
+output_path=$(grep -E '^[[:space:]]*output_path:' "$CONFIG" \
+    | head -1 \
+    | sed -E 's/^[[:space:]]*output_path:[[:space:]]*//; s/[[:space:]]*$//' \
+    | tr -d '"'"'"'')
+if [[ -n "$output_path" ]]; then
+    mkdir -p "$output_path"
+    echo "==> Ensured output directory exists: $output_path"
+fi
+
 # Timestamp is taken from the server clock at launch time for traceability.
 log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 
