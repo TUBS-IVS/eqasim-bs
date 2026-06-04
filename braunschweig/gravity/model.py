@@ -308,12 +308,13 @@ def _read_betriebe_per_commune(context) -> pd.DataFrame:
     ``eqasim_common.spatial.codes`` -- the same AGS->commune_id mapping
     ``braunschweig.data.census.employees`` uses, so the join keys align.
     """
+    # Both keys are declared in configure() (data_path is required; the gemband
+    # path carries the default there). This helper runs in the execute context,
+    # whose config() takes the key alone -- passing a default here would raise
+    # "config() takes 2 positional arguments but 3 were given".
     path = os.path.join(
         context.config("data_path"),
-        context.config(
-            "braunschweig.employment_gemband_path",
-            "braunschweig/gemband-dlk-0-202506-xlsx.xlsx",
-        ),
+        context.config("braunschweig.employment_gemband_path"),
     )
     if not os.path.exists(path):
         raise RuntimeError(
