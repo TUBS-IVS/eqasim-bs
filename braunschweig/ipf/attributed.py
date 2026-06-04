@@ -45,12 +45,15 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     2. Replicate each row by its integer count.
     3. Within every (commune_id, hh_size) bucket, shuffle deterministically
        (seeded) and chunk into groups of ``N`` consecutive rows.
-    4. Drop the trailing partial chunk (≤ N-1 leftover persons per bucket
-       — typically <0.5 % of the bucket); demographic plausibility of the
-       grouping is left to downstream steps.
-    5. Assign a fresh contiguous ``household_id``; set ``household_size``
-       to the integer N; set ``weight`` to 1.0 (one discrete person per
-       row).
+    4. Absorb the trailing remainder (the ≤ N-1 leftover persons that do not
+       fill a complete group) into the bucket's last household instead of
+       dropping it, so the population total is preserved exactly. A bucket
+       with fewer than N persons forms a single below-target household.
+       Demographic plausibility of the grouping is left to downstream steps.
+    5. Assign a fresh contiguous ``household_id``; set ``household_size`` to
+       the *realised* member count (N for full households, N+k for the
+       absorbing last household, <N for an undersized bucket); set ``weight``
+       to 1.0 (one discrete person per row).
 
     The output is sorted by ``household_id`` so consecutive rows belong to
     the same household — required by ``synthesis.population.sampled``.
@@ -88,41 +91,55 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
         ["commune_id", "_hh_size_int"], sort=False
     ).cumcount().to_numpy()
     size_int = repeated["_hh_size_int"].to_numpy()
-    # Keep only persons that fit into a complete household.
     bucket_size = repeated.groupby(
         ["commune_id", "_hh_size_int"], sort=False
     )["_hh_size_int"].transform("size").to_numpy()
-    keep = idx_in_bucket < (bucket_size // size_int) * size_int
-    dropped = int((~keep).sum())
-    repeated = repeated.loc[keep].reset_index(drop=True)
-    idx_in_bucket = idx_in_bucket[keep]
-    size_int = size_int[keep]
+    # Absorb the trailing remainder into the bucket's last household rather than
+    # dropping it, so no synthetic person is lost and the population total stays
+    # anchored to the DESTATIS-derived input. Every non-empty bucket forms at
+    # least one household; the last household takes any persons that do not fill
+    # a complete group of N (and a bucket smaller than N becomes one
+    # below-target household). The realised household_size is therefore N for
+    # full households, N+k for the absorbing last household, and <N for an
+    # undersized bucket.
+    n_chunks = np.maximum(1, bucket_size // size_int)
+    chunk_idx = np.minimum(idx_in_bucket // size_int, n_chunks - 1)
 
     # household_id is unique per (commune, hh_size, chunk_index) tuple.
-    chunk_idx = idx_in_bucket // size_int
     bucket_id = pd.factorize(
         list(zip(repeated["commune_id"].astype(str).to_numpy(), size_int))
     )[0]
     # Compose a household_id that is unique across buckets.
-    n_chunks_per_bucket = (bucket_size[keep] // size_int)
     # Cumulative offset per bucket using first-occurrence ordering.
     first_index_of_bucket = pd.Series(bucket_id).drop_duplicates().index.to_numpy()
-    bucket_chunk_count = (n_chunks_per_bucket[first_index_of_bucket]).astype(np.int64)
+    bucket_chunk_count = (n_chunks[first_index_of_bucket]).astype(np.int64)
     bucket_offset = np.concatenate([[0], np.cumsum(bucket_chunk_count)[:-1]])
     repeated["household_id"] = bucket_offset[bucket_id] + chunk_idx
-    repeated["household_size"] = size_int.astype(np.int64)
+    # Realised size = actual member count per household (see absorption note).
+    repeated["household_size"] = (
+        repeated.groupby("household_id")["household_id"]
+        .transform("size").astype(np.int64)
+    )
     repeated["weight"] = 1.0
+    # Count households whose realised size exceeds their target N (i.e. that
+    # absorbed a trailing remainder) before _hh_size_int is dropped.
+    realised = repeated["household_size"].to_numpy()
+    n_oversized = int(
+        pd.unique(repeated["household_id"].to_numpy()[realised > size_int]).size
+    )
     repeated = repeated.drop(columns=["_hh_size_int"])
     repeated = repeated.sort_values("household_id", kind="mergesort").reset_index(drop=True)
     repeated["person_id"] = np.arange(len(repeated))
 
-    # Diagnostic — easy to grep in pipeline logs.
+    # Diagnostic — easy to grep in pipeline logs. No person is dropped; the
+    # number of households that absorbed a remainder (realised size > target N)
+    # is reported for traceability of the household-size-tail distortion.
     n_hh = repeated["household_id"].nunique()
     n_persons = len(repeated)
     print(
         f"[braunschweig.ipf.attributed] formed {n_hh:,} households from "
-        f"{n_persons:,} persons; dropped {dropped:,} persons in incomplete trailing chunks "
-        f"({dropped / (n_persons + dropped):.2%})."
+        f"{n_persons:,} persons; 0 dropped; {n_oversized:,} households absorbed a "
+        f"trailing remainder (realised size > target)."
     )
     return repeated
 
@@ -181,14 +198,17 @@ def _assign_household_types(
         .reset_index(drop=True)
     )
     hh_df["commune_id"] = hh_df["commune_id"].astype(str)
+    # Realised household sizes can exceed 6 when the last household of a bucket
+    # absorbed a trailing remainder; clip to the Zensus open "6+" bin before
+    # mapping so these households are typed from the 6+ distribution.
     hh_df["hh_size_bin"] = (
-        hh_df["household_size"].astype(int).map(_INT_TO_HH_SIZE_BIN)
+        hh_df["household_size"].astype(int).clip(upper=6).map(_INT_TO_HH_SIZE_BIN)
     )
     if hh_df["hh_size_bin"].isna().any():
         bad = sorted(hh_df.loc[hh_df["hh_size_bin"].isna(), "household_size"].unique())
         raise RuntimeError(
             f"[braunschweig.ipf.attributed] unmapped household_size in hh_type "
-            f"assignment: {bad} (expected ints 1..6)"
+            f"assignment: {bad} (expected ints >= 1)"
         )
 
     types_arr = np.empty(len(hh_df), dtype=object)
