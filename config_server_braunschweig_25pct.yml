@@ -27,6 +27,12 @@ config:
 
   java_memory: 44G
 
+  # MATSim thread count (qsim + global), decoupled from the memory-bound
+  # synthesis "processes" (8) so the CPU-bound simulation uses more of the
+  # 64-core box. None -> falls back to "processes". (Does not affect an
+  # already-launched run, whose config.xml is generated at prepare time.)
+  matsim_threads: 48
+
   # MATSim simulation iterations (0..N-1). N=200 -> 200 iterations.
   matsim_last_iteration: 199
   matsim_write_events_interval: 0   # 0 = only final iteration

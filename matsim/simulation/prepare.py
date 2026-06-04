@@ -22,11 +22,21 @@ def configure(context):
 
     context.config("sampling_rate")
     context.config("processes")
+    # Thread count for the MATSim preparation/routing/config-generation steps and
+    # the simulation (qsim + global numberOfThreads, baked into the generated
+    # config). Defaults to None -> use "processes", so existing configs are
+    # unchanged. Decoupled from "processes" because the synthesis worker count is
+    # memory-bound (large GeoDataFrames) while the MATSim phase is CPU-bound and
+    # can use more of the machine's cores.
+    context.config("matsim_threads", None)
     context.config("random_seed")
 
     context.config("output_prefix", "ile_de_france_")
 
 def execute(context):
+    # MATSim-phase thread count: explicit override or the global processes count.
+    matsim_threads = context.config("matsim_threads") or context.config("processes")
+
     # Prepare input files
     facilities_path = "%s/%s" % (
         context.path("matsim.scenario.facilities"),
@@ -50,7 +60,7 @@ def execute(context):
         "--output-population-path", "prepared_population.xml.gz",
         "--input-network-path", network_path,
         "--output-network-path", "%snetwork.xml.gz" % context.config("output_prefix"),
-        "--threads", context.config("processes")
+        "--threads", matsim_threads
     ])
 
     assert os.path.exists("%s/%sfacilities.xml.gz" % (context.path(), context.config("output_prefix")))
@@ -85,7 +95,7 @@ def execute(context):
     # Generate base configuration
     eqasim.run(context, "org.eqasim.core.scenario.config.RunGenerateConfig", [
         "--sample-size", context.config("sampling_rate"),
-        "--threads", context.config("processes"),
+        "--threads", matsim_threads,
         "--prefix", context.config("output_prefix"),
         "--random-seed", context.config("random_seed"),
         "--output-path", "generic_config.xml"
@@ -105,7 +115,7 @@ def execute(context):
         eqasim.run(context, "org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice", [
             "--config-path", "%sconfig.xml" % context.config("output_prefix"),
             "--config:standaloneModeChoice.outputDirectory", "mode_choice",
-            "--config:global.numberOfThreads", context.config("processes"),
+            "--config:global.numberOfThreads", matsim_threads,
             "--write-output-csv-trips", "true",
             "--skip-scenario-check", "true",
             "--config:plans.inputPlansFile", "prepared_population.xml.gz",
@@ -123,7 +133,7 @@ def execute(context):
         eqasim.run(context, "org.eqasim.core.scenario.routing.RunPopulationRouting", [
             "--config-path", "%sconfig.xml" % context.config("output_prefix"),
             "--output-path", "%spopulation.xml.gz" % context.config("output_prefix"),
-            "--threads", context.config("processes"),
+            "--threads", matsim_threads,
             "--config:plans.inputPlansFile", "prepared_population.xml.gz"
         ])
 

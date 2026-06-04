@@ -34,9 +34,17 @@ config:
   output_path: eqasim-data/output_bs_100pct
   output_prefix: braunschweig_100pct_
 
-  # 128 GB box: give the JVM 100G and leave ~28 GB for the OS + Python driver.
-  # During MATSim the Python process is idle, so the JVM can own most of the RAM.
-  java_memory: 100G
+  # 128 GB box: give the JVM 110G and leave ~18 GB for the OS + file cache.
+  # During MATSim the Python driver is idle, so the JVM can own most of the RAM;
+  # a larger heap reduces GC pressure on the full 1.13 M-agent scenario.
+  java_memory: 110G
+
+  # MATSim thread count (qsim + global numberOfThreads), decoupled from the
+  # memory-bound synthesis "processes" (32). The simulation is CPU-bound, so on
+  # the 64-core box use 56 threads, leaving ~8 cores for the OS, GC and I/O.
+  # Affects only the MATSim phase (preparation/routing/config + the simulation);
+  # synthesis still uses "processes" workers. None -> falls back to "processes".
+  matsim_threads: 56
 
   # MATSim simulation: 100 iterations (0..99) on the full 100% population -- a
   # scale + behaviour test of the whole chain. Keep output light: events only at
