@@ -362,7 +362,10 @@ def _execute_gravity_base(context):
     # Sector-aware destination attraction (flag-gated; OFF -> byte-identical).
     # Tilts the per-Gemeinde ``employees`` attraction by establishment density
     # while preserving Kreis totals (see ``apply_sector_aware_attraction``).
-    if context.config("braunschweig.gravity.sector_aware_enabled", False):
+    # synpp's ExecuteContext.config() takes only the key (no default argument);
+    # the default False is declared in configure(). Passing a default here raises
+    # "config() takes 2 positional arguments but 3 were given" and aborts the run.
+    if context.config("braunschweig.gravity.sector_aware_enabled"):
         df_betriebe = _read_betriebe_per_commune(context)
         df_employees = apply_sector_aware_attraction(
             df_employees, df_betriebe, enabled=True,
