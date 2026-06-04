@@ -147,15 +147,17 @@ class TestBuildBucket:
                                       [4, 2], cfg=self._cfg())[0]
         assert a.tolist() == b.tolist()
 
-    def test_couple_weight_zero_disables_age_pairing(self):
-        # 2 couple shells; adults in input order [60,20,62,22].
-        # weight>0 -> age-optimal pairs (20,22) and (60,62) (gaps 2,2).
-        # weight==0 -> pair in natural input order: (60,20) and (62,22).
+    def test_age_weights_zero_disables_age_pairing(self):
+        # 2 childless couple shells; adults in input order [60,20,62,22].
+        # any age weight on -> the adult sort makes age-optimal pairs (20,22),
+        # (60,62) (gaps 2,2). Both weights 0 -> natural-order pairing (60,20),
+        # (62,22) with a ~40-year gap.
         ages = np.array([60, 20, 62, 22])
         on = hc.build_bucket_households(
             ages, ["couple", "couple"], [2, 2], cfg=self._cfg(couple_age_weight=1.0))[0]
         off = hc.build_bucket_households(
-            ages, ["couple", "couple"], [2, 2], cfg=self._cfg(couple_age_weight=0.0))[0]
+            ages, ["couple", "couple"], [2, 2],
+            cfg=self._cfg(couple_age_weight=0.0, parent_child_weight=0.0))[0]
         # With optimisation on, the two within-couple gaps are both 2.
         on_gaps = sorted(abs(int(ages[i]) - int(ages[j]))
                          for h in (0, 1)

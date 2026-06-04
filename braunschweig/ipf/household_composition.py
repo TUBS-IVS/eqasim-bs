@@ -209,32 +209,39 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     couple_child_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] > 0]
     couple_only_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] == 0]
     n_couple = len(couple_child_hh) + len(couple_only_hh)
-    if len(adult_arr) == 0:
-        pairs_idx, leftover_idx = [], np.empty(0, dtype=int)
-    elif couple_weight > 0:
-        # Age-optimal pairing (min within-pair age gap).
-        pairs_idx, leftover_idx = optimal_adult_pairs(
-            ages[adult_arr], n_couple, return_leftover=True)
-    else:
-        # couple_age_weight == 0: no couple-age optimisation -- pair adults in
-        # their natural (stable) order and skip the age-based shell routing.
-        pairs_idx = [(2 * k, 2 * k + 1) for k in range(n_couple)]
-        leftover_idx = np.arange(2 * n_couple, len(adult_arr))
-    if couple_weight > 0:
-        # Route the formed pairs youngest-first to the child-rearing shells.
-        pair_min_age = [min(ages[adult_arr[i]], ages[adult_arr[j]]) for i, j in pairs_idx]
-        pair_order = np.argsort(pair_min_age, kind="mergesort")
-        sorted_pairs = [pairs_idx[k] for k in pair_order]
-    else:
-        sorted_pairs = pairs_idx
-    for k, h in enumerate(couple_child_hh + couple_only_hh):
-        i, j = sorted_pairs[k]
-        members[h].extend([int(adult_arr[i]), int(adult_arr[j])])
-    remaining_adults = [int(adult_arr[t]) for t in leftover_idx]
+    # Allocate adults to households in a priority order so the CHILD-REARING
+    # households get the youngest adults (tight parent-child gap) and the
+    # childless ones the older adults; within each household couples are formed
+    # from adults that are adjacent in the age sort (tight within-couple gap):
+    #   1. couple_with_children (2 youngest-available adults each)
+    #   2. single_parent       (1 next-youngest adult each)
+    #   3. childless couple    (2 older adults each)
+    #   4. single / other_multi(1 oldest adult each)
+    # The age sort is the whole optimisation here; with both weights 0 it falls
+    # back to natural order (no age objective).
+    cwc_hh = couple_child_hh                       # couple_with_children
+    couple_only = couple_only_hh                   # childless couple
+    sp_hh = [h for h in range(H) if a_req[h] == 1 and c_req[h] > 0]
+    single_other_hh = [h for h in range(H) if a_req[h] == 1 and c_req[h] == 0]
 
-    for h in range(H):
-        if a_req[h] == 1 and remaining_adults:
-            members[h].append(remaining_adults.pop(0))
+    if couple_weight > 0 or pc_weight > 0:
+        adults_sorted = adult_arr[np.argsort(ages[adult_arr], kind="mergesort")]
+    else:
+        adults_sorted = adult_arr
+    ptr = 0
+    for h in cwc_hh:
+        members[h].extend([int(adults_sorted[ptr]), int(adults_sorted[ptr + 1])])
+        ptr += 2
+    for h in sp_hh:
+        members[h].append(int(adults_sorted[ptr]))
+        ptr += 1
+    for h in couple_only:
+        members[h].extend([int(adults_sorted[ptr]), int(adults_sorted[ptr + 1])])
+        ptr += 2
+    for h in single_other_hh:
+        members[h].append(int(adults_sorted[ptr]))
+        ptr += 1
+    remaining_adults = [int(x) for x in adults_sorted[ptr:]]
 
     # --- Children: place the required children into parent households. ---
     need_child_hh = [h for h in range(H) if c_req[h] > 0]

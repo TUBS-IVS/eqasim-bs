@@ -60,30 +60,32 @@ class TestRake2d:
 
 class TestBuildJointAgeSizeMargin:
     def _inputs(self):
-        # One Kreis "03101" with two communes. df_joint puts children (age 8)
-        # mostly in size-5 households and elderly (age 70) in size-1.
+        # One Kreis "03101", two communes. Children (age 6 -> group 0) live in
+        # size-5; elderly (age 75 -> group 60) in size-1 and size-5. The size
+        # margin keeps size-1 within the adult total so it is feasible under the
+        # structural zero (no children in 1-person households).
         df_joint = pd.DataFrame([
             # commune, sex, lower_age, upper_age, hh_size, weight
             ["031010000001", "male", 5, 10, "5", 80.0],
-            ["031010000001", "male", 5, 10, "1", 5.0],
-            ["031010000001", "male", 75, 150, "1", 60.0],
-            ["031010000001", "male", 75, 150, "5", 5.0],
+            ["031010000001", "male", 75, 150, "1", 50.0],
+            ["031010000001", "male", 75, 150, "5", 10.0],
             ["031010000002", "female", 5, 10, "5", 20.0],
-            ["031010000002", "female", 75, 150, "1", 30.0],
+            ["031010000002", "female", 75, 150, "1", 10.0],
+            ["031010000002", "female", 75, 150, "5", 20.0],
         ], columns=["commune_id", "sex", "lower_age", "upper_age", "hh_size", "weight"])
-        # Population age classes (lower bounds): 100 children (age 6) + 90 elderly (age 75).
+        # Population: 100 children (age 6) + 90 elderly (age 75) = 190.
         df_population = pd.DataFrame([
             ["031010000001", 6, 70.0],
             ["031010000002", 6, 30.0],
             ["031010000001", 75, 60.0],
             ["031010000002", 75, 30.0],
         ], columns=["commune_id", "age_class", "weight"])
-        # Size margin (already rescaled to population total = 190 in this Kreis).
+        # Size margin: size-1 total = 60 (<= 90 adults), size-5 total = 130; 190.
         df_size = pd.DataFrame([
-            ["031010000001", "1", 70.0],
-            ["031010000001", "5", 60.0],
-            ["031010000002", "1", 40.0],
-            ["031010000002", "5", 20.0],
+            ["031010000001", "1", 40.0],
+            ["031010000001", "5", 90.0],
+            ["031010000002", "1", 20.0],
+            ["031010000002", "5", 40.0],
         ], columns=["commune_id", "hh_size", "weight"])
         return df_joint, df_population, df_size
 
@@ -91,17 +93,23 @@ class TestBuildJointAgeSizeMargin:
         df_joint, df_population, df_size = self._inputs()
         out = jas.build_joint_age_size_margin(df_joint, df_population, df_size)
 
-        # Row marginal (per age group) == population age-group totals.
         children = out[out["age_group_lower"] == 0]["weight"].sum()
         elderly = out[out["age_group_lower"] == 60]["weight"].sum()
-        assert children == pytest.approx(100.0, rel=1e-4)   # age 6 -> group 0
-        assert elderly == pytest.approx(90.0, rel=1e-4)     # age 75 -> group 60
+        assert children == pytest.approx(100.0, rel=1e-4)
+        assert elderly == pytest.approx(90.0, rel=1e-4)
 
-        # Column marginal (per hh_size) == size-margin totals.
         size1 = out[out["hh_size"] == "1"]["weight"].sum()
         size5 = out[out["hh_size"] == "5"]["weight"].sum()
-        assert size1 == pytest.approx(110.0, rel=1e-4)
-        assert size5 == pytest.approx(80.0, rel=1e-4)
+        assert size1 == pytest.approx(60.0, rel=1e-4)
+        assert size5 == pytest.approx(130.0, rel=1e-4)
+
+    def test_children_not_in_one_person_households(self) -> None:
+        # Structural zero consistent with the IPF hard zero: the children group
+        # x size-1 cell must be exactly zero.
+        df_joint, df_population, df_size = self._inputs()
+        out = jas.build_joint_age_size_margin(df_joint, df_population, df_size)
+        cell = out[(out["age_group_lower"] == 0) & (out["hh_size"] == "1")]
+        assert float(cell["weight"].iloc[0]) == pytest.approx(0.0, abs=1e-6)
 
     def test_preserves_observed_age_size_correlation(self) -> None:
         df_joint, df_population, df_size = self._inputs()
@@ -111,10 +119,10 @@ class TestBuildJointAgeSizeMargin:
             m = out[(out["age_group_lower"] == group) & (out["hh_size"] == size)]
             return float(m["weight"].iloc[0])
 
-        # Children skew to size-5; elderly skew to size-1 (the Zensus seed
-        # correlation survives raking).
+        # Children are in size-5 (not size-1); among the elderly, size-1 carries
+        # the whole 1-person column.
         assert cell(0, "5") > cell(0, "1")
-        assert cell(60, "1") > cell(60, "5")
+        assert cell(60, "1") > 0.0
 
     def test_total_equals_population_total(self) -> None:
         df_joint, df_population, df_size = self._inputs()

@@ -74,6 +74,7 @@ def group_lowers(bounds: tuple[int, ...] = DEFAULT_AGE_GROUP_BOUNDS) -> list[int
 
 
 def rake_2d(seed: np.ndarray, row_targets: np.ndarray, col_targets: np.ndarray,
+            forbidden: np.ndarray | None = None,
             max_iterations: int = 200, tolerance: float = 1e-9) -> np.ndarray:
     """Rake a 2D ``seed`` matrix to the given row and column marginals.
 
@@ -83,10 +84,18 @@ def rake_2d(seed: np.ndarray, row_targets: np.ndarray, col_targets: np.ndarray,
     converge to a table matching both exactly. A small floor is added to the
     seed so all-zero rows/cols cannot block a positive target.
 
+    ``forbidden`` is an optional boolean mask of structurally-zero cells (e.g.
+    children in a 1-person household, which the downstream IPF hard-zeros). Those
+    cells are held at exactly zero throughout, so the joint margin stays
+    consistent with the IPF's hard zeros (otherwise the full IPF cannot satisfy a
+    positive joint target on a hard-zeroed cell and diverges).
+
     Returns the fitted matrix (same shape as ``seed``).
     """
     m = np.array(seed, dtype=float)
     m = np.maximum(m, _SEED_FLOOR)
+    if forbidden is not None:
+        m = np.where(forbidden, 0.0, m)
     row_targets = np.asarray(row_targets, dtype=float)
     col_targets = np.asarray(col_targets, dtype=float)
     for _ in range(max_iterations):
@@ -111,6 +120,7 @@ def build_joint_age_size_margin(
     df_population: pd.DataFrame,
     df_size_margin: pd.DataFrame,
     bounds: tuple[int, ...] = DEFAULT_AGE_GROUP_BOUNDS,
+    min_one_person_age: int = 16,
 ) -> pd.DataFrame:
     """Per (Kreis, age_group, hh_size) target consistent with the IPF margins.
 
@@ -135,6 +145,17 @@ def build_joint_age_size_margin(
     """
     g_lowers = group_lowers(bounds)
     sizes = list(HH_SIZE_BINS)
+
+    # Structural zeros consistent with the IPF hard zero (persons younger than
+    # ``min_one_person_age`` cannot live in a 1-person household): forbid the
+    # (age group entirely below the threshold) x (hh_size == "1") cells. Without
+    # this the raked joint puts positive mass on a cell the full IPF hard-zeros,
+    # making the IPF infeasible (diverges).
+    g_uppers = [*g_lowers[1:], 10_000]
+    forbidden = np.zeros((len(g_lowers), len(sizes)), dtype=bool)
+    for gi, upper in enumerate(g_uppers):
+        if upper <= min_one_person_age:
+            forbidden[gi, sizes.index("1")] = True
 
     joint = df_joint.copy()
     joint["departement_id"] = joint["commune_id"].astype(str).str[:5]
@@ -183,7 +204,7 @@ def build_joint_age_size_margin(
                 for si, s in enumerate(sizes):
                     seed[gi, si] = float(pivot.get((g, s), 0.0))
 
-        fitted = rake_2d(seed, row_targets, col_targets)
+        fitted = rake_2d(seed, row_targets, col_targets, forbidden=forbidden)
         for gi, g in enumerate(g_lowers):
             for si, s in enumerate(sizes):
                 rows.append({

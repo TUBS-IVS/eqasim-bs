@@ -39,6 +39,7 @@ def configure(context):
     context.config("braunschweig.ipf.use_joint_age_size_margin", False)
     if context.config("braunschweig.ipf.use_joint_age_size_margin"):
         context.stage("braunschweig.data.census.households_size_age")
+        context.config("braunschweig.minimum_age.one_person_household", 16)
 
 
 def _build_household_size_margin(
@@ -216,8 +217,14 @@ def execute(context):
             )
         from braunschweig.ipf.joint_age_size import build_joint_age_size_margin
         df_joint = context.stage("braunschweig.data.census.households_size_age")
+        # Match the IPF hard zero (children below this age cannot live in a
+        # 1-person household) so the joint margin's structural zeros agree with
+        # the IPF and it stays feasible.
+        min_one_person_age = context.config(
+            "braunschweig.minimum_age.one_person_household")
         df_joint_age_size = build_joint_age_size_margin(
-            df_joint, df_population, df_household_size
+            df_joint, df_population, df_household_size,
+            min_one_person_age=min_one_person_age,
         )
         print(
             "[braunschweig.ipf.prepare] joint age x hh_size margin: {:,} cells "
