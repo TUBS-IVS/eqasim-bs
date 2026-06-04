@@ -16,7 +16,6 @@ why placement avoids leaving a child with a very old adult.
 from __future__ import annotations
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 
 # Destatis-aligned default parent-child age gap in years (mean age of the mother
 # at birth 2024 = 31.8; the youngest household adult is usually the mother).
@@ -138,10 +137,17 @@ def assign_children_to_households(child_ages: np.ndarray, parent_ages: np.ndarra
     parent-child age-gap deviation ``Sum |child_age - (parent_age - target_gap)|``.
 
     ``child_slots[h]`` is the number of child slots in household ``h`` (with
-    parent age ``parent_ages[h]``). Each household is expanded into its slots,
-    a children x slots cost matrix is built, and ``scipy.optimize.
-    linear_sum_assignment`` finds the globally optimal (minimum total
-    deviation) child -> slot assignment. Requires ``sum(child_slots) >=
+    parent age ``parent_ages[h]``). Each household is expanded into its slots
+    (target ``parent_age - target_gap``); the children are then matched to the
+    slot targets by **sorted rank** -- the i-th youngest child to the slot with
+    the i-th smallest target. For this 1-D cost (deviation on the age line) and
+    the balanced call this function always receives (``sum(child_slots) ==
+    len(child_ages)``, the caller slices exactly that many children) the sorted
+    matching is provably the global minimum-total-deviation assignment, identical
+    to a Hungarian ``linear_sum_assignment`` but ``O(n log n)`` instead of
+    ``O(n^3)`` -- essential at full-population scale where a single urban bucket
+    has tens of thousands of children (a dense LAP cost matrix is then quadratic
+    in memory and cubic in time). Requires ``sum(child_slots) >=
     len(child_ages)``. Returns an int array of length ``len(child_ages)`` giving
     the household index per child.
     """
@@ -165,11 +171,12 @@ def assign_children_to_households(child_ages: np.ndarray, parent_ages: np.ndarra
             f"({len(slot_household)}) than children ({n_children})"
         )
 
-    # children x slots cost of placing child c in slot s.
-    cost = np.abs(child_ages[:, None] - slot_target[None, :])
-    row, col = linear_sum_assignment(cost)
+    # Sorted rank matching: the optimal 1-D assignment pairs the sorted children
+    # with the sorted slot targets in rank order (stable sort -> deterministic).
+    order_children = np.argsort(child_ages, kind="mergesort")
+    order_slots = np.argsort(slot_target, kind="mergesort")
     assign = np.empty(n_children, dtype=int)
-    assign[row] = slot_household[col]
+    assign[order_children] = slot_household[order_slots[:n_children]]
     return assign
 
 

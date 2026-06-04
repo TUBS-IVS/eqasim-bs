@@ -67,6 +67,37 @@ class TestChildMatching:
         b = hc.assign_children_to_households(child_ages, parent_ages, slots, target_gap=30)
         assert a.tolist() == b.tolist()
 
+    def test_sorted_match_equals_lap_optimum_balanced(self):
+        # The fast sorted assignment must reach the SAME minimal total gap as the
+        # scipy Hungarian LAP on the balanced calls this function actually gets
+        # (#children == sum(slots)). Random fuzz over many instances.
+        from scipy.optimize import linear_sum_assignment
+        rng = np.random.RandomState(0)
+        for _ in range(150):
+            h = int(rng.randint(1, 12))
+            slots = rng.randint(1, 4, size=h)
+            n = int(slots.sum())
+            child_ages = rng.randint(0, 18, size=n).astype(float)
+            parent_ages = rng.randint(20, 70, size=h).astype(float)
+            gap = rng.uniform(20, 40, size=h)
+            who = hc.assign_children_to_households(child_ages, parent_ages, slots,
+                                                   target_gap=gap)
+            # reference LAP cost
+            slot_hh = np.repeat(np.arange(h), slots)
+            slot_target = np.repeat(parent_ages - gap, slots)
+            cost = np.abs(child_ages[:, None] - slot_target[None, :])
+            r, c = linear_sum_assignment(cost)
+            lap_cost = cost[r, c].sum()
+            # cost of our assignment: each child to its household's (any) slot
+            # target -- compute min over that household's slots is not needed since
+            # the household target is single-valued per household here.
+            mine = sum(abs(child_ages[i] - (parent_ages[who[i]] - gap[who[i]]))
+                       for i in range(n))
+            assert mine == pytest.approx(lap_cost, abs=1e-9)
+            # every slot respected (capacity per household)
+            counts = np.bincount(who, minlength=h)
+            assert (counts == slots).all()
+
 
 class TestSexAwarePairing:
     """Sex-aware couple pairing: couples are opposite-sex by default with a small
