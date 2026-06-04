@@ -7,10 +7,12 @@
 # It deliberately does NOT:
 #   - install system packages: git, osmosis, osmconvert and the MATSim Java
 #     toolchain need sudo. Run first:
-#       sudo apt-get install -y git osmosis osmctools maven openjdk-17-jdk
+#       sudo apt-get install -y git osmosis osmctools maven openjdk-21-jdk
 #     (osmctools provides /usr/bin/osmconvert; maven builds the eqasim MATSim
-#      jar and needs a full JDK - openjdk-17-jdk provides javac, matching the
-#      JRE; a plain JRE is not sufficient for the Maven build stage)
+#      jar and needs a full JDK with javac. The eqasim-java sources target
+#      Java 21 - an older JDK fails the build with "invalid target release: 21"
+#      - so install openjdk-21-jdk specifically; run_pipeline.sh pins JAVA_HOME
+#      to it. A plain JRE is not sufficient for the Maven build stage.)
 #   - start the pipeline (that is run_pipeline.sh / run_pipeline_on_server.ps1)
 #
 # Run it by piping this file to the server's bash over SSH (no checkout needed
@@ -28,7 +30,7 @@ CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
 
 if ! command -v git >/dev/null 2>&1; then
     echo "ERROR: git is not installed. Run this first (needs sudo):" >&2
-    echo "  sudo apt-get install -y git osmosis osmctools maven openjdk-17-jdk" >&2
+    echo "  sudo apt-get install -y git osmosis osmctools maven openjdk-21-jdk" >&2
     exit 1
 fi
 

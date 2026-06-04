@@ -41,6 +41,21 @@ fi
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 
+# The eqasim-java sources are compiled for Java 21 (maven-compiler release 21),
+# so the build fails with "invalid target release: 21" under an older JDK. Pin
+# JAVA_HOME to a JDK 21 explicitly (and put it first on PATH) so both the Maven
+# build and the MATSim run use Java 21 regardless of the system default 'java'.
+# This is done after conda activation so it takes precedence on PATH.
+java21_home=$(ls -d /usr/lib/jvm/java-21-openjdk-* 2>/dev/null | head -1)
+if [[ -n "$java21_home" ]]; then
+    export JAVA_HOME="$java21_home"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    echo "==> Using JDK 21 at $JAVA_HOME"
+else
+    echo "WARNING: no JDK 21 found under /usr/lib/jvm; the eqasim-java build" >&2
+    echo "         requires Java 21. Install it with: sudo apt-get install -y openjdk-21-jdk" >&2
+fi
+
 mkdir -p logs
 
 # synpp's output stage (synthesis/output.py validate()) requires the configured
