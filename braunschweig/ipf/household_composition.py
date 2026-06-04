@@ -180,6 +180,7 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     min_adult = int(cfg.get("min_adult_age", 18))
     gap = float(cfg.get("parent_child_gap_years", DEFAULT_PARENT_CHILD_GAP_YEARS))
     pc_weight = float(cfg.get("parent_child_weight", 1.0))
+    couple_weight = float(cfg.get("couple_age_weight", 1.0))
 
     adults, children = split_pools(ages, min_adult)
     adult_arr = np.asarray(adults, dtype=int)
@@ -208,15 +209,24 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     couple_child_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] > 0]
     couple_only_hh = [h for h in range(H) if a_req[h] == 2 and c_req[h] == 0]
     n_couple = len(couple_child_hh) + len(couple_only_hh)
-    if len(adult_arr) > 0:
+    if len(adult_arr) == 0:
+        pairs_idx, leftover_idx = [], np.empty(0, dtype=int)
+    elif couple_weight > 0:
+        # Age-optimal pairing (min within-pair age gap).
         pairs_idx, leftover_idx = optimal_adult_pairs(
             ages[adult_arr], n_couple, return_leftover=True)
     else:
-        pairs_idx, leftover_idx = [], np.empty(0, dtype=int)
-    # Sort the formed pairs by their younger member's age, youngest first.
-    pair_min_age = [min(ages[adult_arr[i]], ages[adult_arr[j]]) for i, j in pairs_idx]
-    pair_order = np.argsort(pair_min_age, kind="mergesort")
-    sorted_pairs = [pairs_idx[k] for k in pair_order]
+        # couple_age_weight == 0: no couple-age optimisation -- pair adults in
+        # their natural (stable) order and skip the age-based shell routing.
+        pairs_idx = [(2 * k, 2 * k + 1) for k in range(n_couple)]
+        leftover_idx = np.arange(2 * n_couple, len(adult_arr))
+    if couple_weight > 0:
+        # Route the formed pairs youngest-first to the child-rearing shells.
+        pair_min_age = [min(ages[adult_arr[i]], ages[adult_arr[j]]) for i, j in pairs_idx]
+        pair_order = np.argsort(pair_min_age, kind="mergesort")
+        sorted_pairs = [pairs_idx[k] for k in pair_order]
+    else:
+        sorted_pairs = pairs_idx
     for k, h in enumerate(couple_child_hh + couple_only_hh):
         i, j = sorted_pairs[k]
         members[h].extend([int(adult_arr[i]), int(adult_arr[j])])

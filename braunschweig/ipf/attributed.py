@@ -289,21 +289,46 @@ def _prepare_type_shares(df_household_type: pd.DataFrame):
     return df_zt, fallback
 
 
-def _sample_types_for_bucket(df_zt, fallback, commune_id, hh_size_bin, n, rng):
-    """Sample ``n`` hh_types for a (commune, hh_size_bin) bucket from the Zensus
-    1000A-2081 shares, with scope-wide fallback then the ``other_multi`` default.
-    Mirrors the share/fallback logic of ``_assign_household_types``."""
+def _largest_remainder(choices: np.ndarray, weights: np.ndarray, n: int) -> list[str]:
+    """Allocate ``n`` items to ``choices`` proportional to ``weights`` using the
+    largest-remainder (Hare-quota) method: deterministic integer counts that sum
+    to exactly ``n`` and reproduce the share vector as closely as integers allow.
+    Choices are processed in name order so the result is reproducible regardless
+    of input row order."""
+    order = np.argsort(choices.astype(str), kind="mergesort")
+    choices = choices[order]
+    probs = weights[order].astype(float)
+    probs = probs / probs.sum()
+    raw = probs * n
+    counts = np.floor(raw).astype(int)
+    remainder = int(n - counts.sum())
+    if remainder > 0:
+        frac = raw - counts
+        # Largest fractional remainder first; ties broken by name order (stable).
+        take = np.lexsort((np.arange(len(choices)), -frac))[:remainder]
+        counts[take] += 1
+    out: list[str] = []
+    for c, k in zip(choices, counts):
+        out.extend([str(c)] * int(k))
+    return out
+
+
+def _allocate_types_for_bucket(df_zt, fallback, commune_id, hh_size_bin, n):
+    """Deterministic exact-count hh_type allocation for a (commune, hh_size_bin)
+    bucket from the Zensus 1000A-2081 shares (scope-wide fallback, then the
+    ``other_multi`` default). Unlike per-household sampling this reproduces the
+    Zensus type marginal exactly per bucket (up to integer rounding), removing
+    sampling noise; only the downstream feasibility relaxation can still shift a
+    type (and that is logged)."""
     local = df_zt[(df_zt["commune_id"] == commune_id)
                   & (df_zt["hh_size"] == hh_size_bin)]
     if float(local["weight"].sum()) > 0:
-        p = local["weight"].to_numpy(dtype=float)
-        p /= p.sum()
-        return list(rng.choice(local["hh_type"].to_numpy(), size=n, p=p))
+        return _largest_remainder(
+            local["hh_type"].to_numpy(), local["weight"].to_numpy(), n)
     fb = fallback[fallback["hh_size"] == hh_size_bin]
     if float(fb["weight"].sum()) > 0:
-        p = fb["weight"].to_numpy(dtype=float)
-        p /= p.sum()
-        return list(rng.choice(fb["hh_type"].to_numpy(), size=n, p=p))
+        return _largest_remainder(
+            fb["hh_type"].to_numpy(), fb["weight"].to_numpy(), n)
     return ["other_multi"] * n
 
 
@@ -322,6 +347,14 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     households. Returns the persons frame with ``household_id``,
     ``household_size`` (realised), ``hh_type`` and ``person_id`` set; ``weight``
     is 1.0. Deterministic for a fixed seed.
+
+    The hh_type counts per bucket are allocated EXACTLY from the Zensus
+    1000A-2081 shares by the largest-remainder method (no per-household
+    sampling), so the type marginal is reproduced exactly per bucket up to
+    integer rounding. Only ``normalize_type`` (a 'couple' shell of size != 2)
+    and the feasibility relaxation can still shift a type to ``other_multi``;
+    both are rare with the joint age x size IPF margin (#3) on and are
+    observable via ``braunschweig.analysis.run_household_composition``.
     """
     rng = np.random.RandomState(random_seed)
     weights = df["weight"].to_numpy()
@@ -343,7 +376,6 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     ).reset_index(drop=True)
 
     df_zt, fallback = _prepare_type_shares(df_household_type)
-    type_rng = np.random.RandomState(random_seed + 31337)
 
     ages_all = repeated["age"].to_numpy()
     n = len(repeated)
@@ -363,8 +395,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         # Realised sizes: complete groups of N, remainder absorbed into the last.
         sizes = [N] * (n_chunks - 1) + [bucket_size - N * (n_chunks - 1)]
         hh_size_bin = _INT_TO_HH_SIZE_BIN[min(N, 6)]
-        types = _sample_types_for_bucket(
-            df_zt, fallback, cid, hh_size_bin, n_chunks, type_rng)
+        types = _allocate_types_for_bucket(
+            df_zt, fallback, cid, hh_size_bin, n_chunks)
 
         bucket_ages = ages_all[idx]
         local_of_person, realised_types = build_bucket_households(

@@ -104,6 +104,74 @@ def test_age_aware_chunking_produces_typed_plausible_households():
         assert (g["household_size"] == len(g)).all()
 
 
+class _StubCtx:
+    def __init__(self, cfg, stages):
+        self._cfg = cfg
+        self._stages = stages
+
+    def config(self, key, default=None):
+        return self._cfg.get(key, default)
+
+    def stage(self, name):
+        return self._stages[name]
+
+
+def _model_frame():
+    return pd.DataFrame({
+        "commune_id": ["03101"] * 4,
+        "departement_id": ["03101"] * 4,
+        "sex": ["male", "female", "male", "female"],
+        "age_class": [98, 98, 98, 98],
+        "employed": [False] * 4,
+        "license": [False] * 4,
+        "weight": [1.0] * 4,
+        "hh_size": ["2", "2", "2", "2"],
+    })
+
+
+def _base_cfg(**kw):
+    cfg = {
+        "braunschweig.ipf.use_household_size_margin": True,
+        "braunschweig.ipf.use_household_type_margin": False,
+        "braunschweig.ipf.age_aware_chunking": False,
+        "random_seed": 1,
+        "braunschweig.chunking.minimum_adult_age": 18,
+        "braunschweig.chunking.couple_age_weight": 1.0,
+        "braunschweig.chunking.parent_child_weight": 1.0,
+        "braunschweig.chunking.parent_child_gap_years": 31.0,
+    }
+    cfg.update(kw)
+    return cfg
+
+
+def test_execute_uses_legacy_path_when_age_aware_off(monkeypatch):
+    calls = []
+    monkeypatch.setattr(attributed, "_form_households",
+                        lambda df, seed: (calls.append("legacy"), df)[1])
+    monkeypatch.setattr(attributed, "form_households_age_aware",
+                        lambda *a, **k: (calls.append("age_aware"), a[0])[1])
+    ctx = _StubCtx(_base_cfg(), {"braunschweig.ipf.model": _model_frame()})
+    attributed.execute(ctx)
+    assert calls == ["legacy"]   # flag OFF -> legacy formation, age-aware untouched
+
+
+def test_execute_uses_age_aware_path_when_flag_on(monkeypatch):
+    calls = []
+    monkeypatch.setattr(attributed, "_form_households",
+                        lambda df, seed: (calls.append("legacy"), df)[1])
+    monkeypatch.setattr(attributed, "form_households_age_aware",
+                        lambda *a, **k: (calls.append("age_aware"), a[0])[1])
+    df_type = pd.DataFrame({"commune_id": ["03101"], "hh_size": ["2"],
+                            "hh_type": ["couple"], "weight": [1.0]})
+    ctx = _StubCtx(
+        _base_cfg(**{"braunschweig.ipf.age_aware_chunking": True}),
+        {"braunschweig.ipf.model": _model_frame(),
+         "braunschweig.data.census.households_type": df_type},
+    )
+    attributed.execute(ctx)
+    assert calls == ["age_aware"]   # flag ON -> age-aware path only
+
+
 def test_age_aware_chunking_is_deterministic():
     df = pd.DataFrame({
         "commune_id": ["03101"] * 6,

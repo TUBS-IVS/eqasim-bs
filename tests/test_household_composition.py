@@ -147,6 +147,26 @@ class TestBuildBucket:
                                       [4, 2], cfg=self._cfg())[0]
         assert a.tolist() == b.tolist()
 
+    def test_couple_weight_zero_disables_age_pairing(self):
+        # 2 couple shells; adults in input order [60,20,62,22].
+        # weight>0 -> age-optimal pairs (20,22) and (60,62) (gaps 2,2).
+        # weight==0 -> pair in natural input order: (60,20) and (62,22).
+        ages = np.array([60, 20, 62, 22])
+        on = hc.build_bucket_households(
+            ages, ["couple", "couple"], [2, 2], cfg=self._cfg(couple_age_weight=1.0))[0]
+        off = hc.build_bucket_households(
+            ages, ["couple", "couple"], [2, 2], cfg=self._cfg(couple_age_weight=0.0))[0]
+        # With optimisation on, the two within-couple gaps are both 2.
+        on_gaps = sorted(abs(int(ages[i]) - int(ages[j]))
+                         for h in (0, 1)
+                         for i, j in [tuple(np.nonzero(on == h)[0])])
+        assert on_gaps == [2, 2]
+        # With optimisation off, natural-order pairing -> a 40-year gap appears.
+        off_gaps = sorted(abs(int(ages[i]) - int(ages[j]))
+                          for h in (0, 1)
+                          for i, j in [tuple(np.nonzero(off == h)[0])])
+        assert max(off_gaps) >= 38
+
     def test_weight_zero_disables_child_age_matching(self):
         # parent_child_weight 0 -> children still placed (composition holds),
         # just no age optimisation. Composition must still be correct.
