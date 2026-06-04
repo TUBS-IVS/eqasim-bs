@@ -57,6 +57,21 @@ DESTATIS_TO_URBISTAT_AGE: dict[int, int] = {
     55: 55, 60: 55, 65: 65, 75: 75,
 }
 
+# Zensus 2022 1000A-3082 ALTKL2 band lower bounds (11 bands).
+ZENSUS_AGES: list[int] = [0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75]
+
+# Map each DESTATIS age class to the Zensus 1000A-3082 band that CONTAINS its
+# lower bound. The Zensus band edges (5/10/15/20/25/30/40/50/60/75) align with
+# the DESTATIS edges far better than urbistat's coarse Italian bands: in
+# particular DESTATIS 10 (ages 10-14) maps to the native Zensus 10-15 band
+# instead of urbistat's 12-17, removing the school-age spatial smear flagged in
+# the model review (item #5).
+DESTATIS_TO_ZENSUS_AGE: dict[int, int] = {
+    0: 0, 3: 0, 6: 5, 10: 10, 15: 15, 18: 15, 20: 20,
+    25: 25, 30: 30, 35: 30, 40: 40, 45: 40, 50: 50,
+    55: 50, 60: 60, 65: 60, 75: 75,
+}
+
 
 def configure(context):
     context.config("data_path")
@@ -65,6 +80,13 @@ def configure(context):
     context.config("braunschweig.urbistat_gemeinden_path",
                    "braunschweig/urbistat_age_gemeinden.csv")
     context.stage("eqasim_common.data.population.raw")
+
+    # Optional: take the Gemeinde-within-Kreis population shares from open
+    # Zensus 2022 (1000A-3082) instead of the scraped, non-redistributable
+    # urbistat table. Default False -> urbistat path, byte-identical (item #5).
+    context.config("braunschweig.census.use_zensus_gemeinde_shares", False)
+    if context.config("braunschweig.census.use_zensus_gemeinde_shares"):
+        context.stage("braunschweig.data.census.households_size_age")
 
 
 def _load_destatis(path: str, scope_kreise: set[str]) -> pd.DataFrame:
@@ -148,6 +170,39 @@ def _load_urbistat_shares(path: str, df_vg: pd.DataFrame) -> pd.DataFrame:
     return agg[["kreis", "commune_id", "sex", "u_age", "share"]]
 
 
+def _load_zensus_shares(df_zensus: pd.DataFrame,
+                        scope_kreise: set[str]) -> pd.DataFrame:
+    """Gemeinde-within-Kreis population shares from Zensus 2022 1000A-3082.
+
+    Unlike urbistat, the Zensus loader carries the authoritative 12-digit ARS
+    ``commune_id`` directly, so no fuzzy Gemeinde-name matching against VG250 is
+    needed. Persons are aggregated over household size (and the input is already
+    per sex x ALTKL2 age band), then the share each Gemeinde contributes to its
+    Kreis is computed per (sex, Zensus age band).
+
+    Returns ``[kreis, commune_id, sex, z_age, share]`` where ``z_age`` is the
+    ALTKL2 lower bound and the shares sum to 1 per (kreis, sex, z_age).
+    """
+    df = df_zensus.copy()
+    df["commune_id"] = df["commune_id"].astype(str)
+    df["kreis"] = df["commune_id"].str[:5]
+    df = df[df["kreis"].isin(scope_kreise)].copy()
+    df["z_age"] = df["lower_age"].astype(int)
+    df["sex"] = df["sex"].astype(str)
+
+    agg = (df.groupby(["kreis", "commune_id", "sex", "z_age"],
+                      as_index=False)["weight"].sum())
+    tot = (agg.groupby(["kreis", "sex", "z_age"], as_index=False)["weight"]
+              .sum().rename(columns={"weight": "kreis_total"}))
+    agg = agg.merge(tot, on=["kreis", "sex", "z_age"])
+
+    agg["share"] = 0.0
+    mask = agg["kreis_total"] > 0
+    agg.loc[mask, "share"] = agg.loc[mask, "weight"] / agg.loc[mask, "kreis_total"]
+
+    return agg[["kreis", "commune_id", "sex", "z_age", "share"]]
+
+
 def execute(context):
     data_path = context.config("data_path")
     destatis_path = os.path.join(data_path,
@@ -175,12 +230,19 @@ def execute(context):
           f"{df_destatis['kreis'].nunique()} Kreise, "
           f"total={df_destatis['weight'].sum():,}")
 
-    df_shares = _load_urbistat_shares(urbistat_path, df_vg)
-
+    use_zensus = context.config("braunschweig.census.use_zensus_gemeinde_shares")
     df_destatis = df_destatis.rename(columns={"age_class": "d_age"})
-    df_destatis["u_age"] = df_destatis["d_age"].map(DESTATIS_TO_URBISTAT_AGE)
-
-    merged = df_shares.merge(df_destatis, on=["kreis", "sex", "u_age"])
+    if use_zensus:
+        df_zensus = context.stage("braunschweig.data.census.households_size_age")
+        df_shares = _load_zensus_shares(df_zensus, scope_kreise)
+        df_destatis["z_age"] = df_destatis["d_age"].map(DESTATIS_TO_ZENSUS_AGE)
+        merged = df_shares.merge(df_destatis, on=["kreis", "sex", "z_age"])
+        print(f"[braunschweig.population] Gemeinde shares from Zensus 1000A-3082 "
+              f"({df_shares['commune_id'].nunique()} communes)")
+    else:
+        df_shares = _load_urbistat_shares(urbistat_path, df_vg)
+        df_destatis["u_age"] = df_destatis["d_age"].map(DESTATIS_TO_URBISTAT_AGE)
+        merged = df_shares.merge(df_destatis, on=["kreis", "sex", "u_age"])
     merged["weight"] = merged["share"] * merged["weight"]
 
     df_out = merged.rename(columns={"d_age": "age_class"})[
@@ -208,8 +270,14 @@ def execute(context):
 def validate(context):
     data_path = context.config("data_path")
     dest = os.path.join(data_path, context.config("braunschweig.destatis_population_path"))
-    urb  = os.path.join(data_path, context.config("braunschweig.urbistat_gemeinden_path"))
-    for p in (dest, urb):
+    required = [dest]
+    # urbistat is only needed for the legacy share path; the Zensus path
+    # validates its own input via the households_size_age stage.
+    if not context.config("braunschweig.census.use_zensus_gemeinde_shares"):
+        required.append(
+            os.path.join(data_path, context.config("braunschweig.urbistat_gemeinden_path"))
+        )
+    for p in required:
         if not os.path.exists(p):
             raise RuntimeError(f"Missing input: {p}")
-    return os.path.getsize(dest) + os.path.getsize(urb)
+    return sum(os.path.getsize(p) for p in required)
