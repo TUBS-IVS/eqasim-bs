@@ -1039,6 +1039,12 @@ Utility classes are acceptable only when they contain cohesive static helper met
 
 ## Git and version control
 
+**Never run `git push` without explicit user confirmation.** Committing locally is
+fine and expected, but every push to any remote must be approved by the user
+first: ask before pushing and wait for an explicit "yes" / "push it" / equivalent
+each time (a prior confirmation does not authorise later pushes). This applies to
+all branches and remotes, including `origin/main`.
+
 Keep commits focused.
 
 Commit messages must be in English.
