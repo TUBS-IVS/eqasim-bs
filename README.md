@@ -28,7 +28,7 @@ This repository builds an open **synthetic population** of the ZGB for use as
 input to agent-based transport simulations such as
 [MATSim](https://matsim.org). It is region-locked to Braunschweig and fed by
 German open data (BKG, DESTATIS, BBSR, BA, LGLN, BMV, LSN, OpenStreetMap,
-Zensus 2022) and the MiD 2023 regional sample.
+Zensus 2022) and the MiD 2023 household travel survey.
 
 The pipeline is implemented as a content-hashed
 [synpp](https://github.com/eqasim-org/synpp) DAG in Python 3.10 and
@@ -54,8 +54,8 @@ produces:
   [`CLAUDE.md`](CLAUDE.md) and sections E/F of
   [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
 - **Privacy-conscious, fully documented data** — for data-protection reasons
-  this repository hosts **no** third-party statistical registers. Only the small
-  derived **MiD 2023 aggregate tables** are committed; every other input is
+  this repository hosts **no** third-party statistical registers. Only a small set
+  of derived **aggregate reference tables** is committed; every other input is
   downloaded by you from its official source. Each dataset is documented below
   with its exact source, table/code, target path, and licence so anyone can
   reproduce the run — see [Input data](#input-data--what-to-download).
@@ -138,8 +138,8 @@ gravity slope at `-0.065` across all configs — see
 ## Input data — what to download
 
 > **Data-protection policy.** This repository hosts **no** third-party
-> statistical data. The only data files committed are the small derived
-> **MiD 2023 aggregate tables** (`eqasim-data/data/braunschweig/mid/mid2023_*.csv`,
+> statistical data. The only data files committed are small derived
+> **aggregate reference tables** (`eqasim-data/data/braunschweig/mid/mid2023_*.csv`,
 > a few rows each) and the project's own calibration-evaluation outputs
 > (`.../mid/education_calibration/*`). **Every dataset below must be downloaded
 > by you** from its official source and placed under `eqasim-data/data/` at the
@@ -179,7 +179,7 @@ the tables below are the primary, self-contained guide.
 | **Commuters — Auspendler** (Wohnort ZGB) | same Pendleratlas explorer | `braunschweig/statistik_pendler_2026042493430.csv` |
 | **Households** — Zensus 2022 5000H-2001, Gemeinde × HH-size × type | [ergebnisse.zensus2022.de](https://ergebnisse.zensus2022.de) table `5000H-2001` (Flat-File) | `braunschweig/5000H-2001_de_flat.csv` |
 | **Household income** — BBSR INKAR (Kreis × year) | [inkar.de](https://www.inkar.de) — `E_Haushaltseinkommen.xls` | `braunschweig/E_Haushaltseinkommen.xls` |
-| **MiD 2023 reference tables** — numbered result tables (regional sample, non-commercial) | **committed** (`mid/mid2023_*.csv`); raw volume only needed to regenerate | `braunschweig/mid/mid2023_*.csv` |
+| **Additional aggregate reference tables** — small committed numbered tables (a few rows each) | **committed** (`mid/mid2023_*.csv`); raw source only needed to regenerate | `braunschweig/mid/mid2023_*.csv` |
 | **RegioStaR-7** — BMV/BBSR Gemeinde typology | auto-download: `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` |
 | **Zensus 100 m population grid** | auto-download: `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet` |
 
@@ -219,9 +219,8 @@ and `DATA_FLOW.md` for the full provenance.
 | **MiD 2023 Tabelle 43** — school distance by RegioStaR-7 × age | **committed** (`mid/mid2023_T43_school_distance_by_rs7.csv`) | `scripts/seed_mid_t43_school_distance.py` |
 
 Licences span dl-de/by-2-0 (BKG, Statistische Ämter, BA, BBSR, BMV),
-dl-de/zero-2-0 (LGLN ALKIS/ATKIS), ODbL 1.0 (OSM), and BMDV non-commercial
-(MiD 2023). Redistribution rules apply per dataset — which is exactly why only
-the small derived MiD aggregates are committed here.
+dl-de/zero-2-0 (LGLN ALKIS/ATKIS), and ODbL 1.0 (OSM); some inputs carry
+stricter terms — check each dataset before reuse.
 
 ## Pipeline architecture
 
@@ -261,7 +260,7 @@ For the synpp DAG and stage layout, see
 | Income | LfStat Bavaria | BBSR INKAR Haushaltseinkommen (Kreis × year) |
 | Buildings | OSM tags | ALKIS Hausumringe (LGLN) — preprocessed parquet |
 | Landuse | OSM tags | ATKIS Basis-DLM (LGLN) — preprocessed parquet |
-| Travel survey | MiD-Bayern | MiD 2023 regional sample for distance / mode CDFs; ENTD 2008 still feeds activity chains |
+| Travel survey | MiD-Bayern | MiD 2023 for distance / mode CDFs; ENTD 2008 still feeds activity chains |
 | Spatial fix | Bavaria-wide | ARS prefixes 031xx pinned in every config |
 
 ### Modelling and engineering changes on top of upstream
@@ -289,11 +288,11 @@ behaviour is preserved unless a change is explicitly enabled:
   `has_license`) are derived from the categorical attributes.
 - **Commute-distance override.** ZGB residents' commute distances are sampled
   from MiD 2023 P13 Kreis-level CDFs, overriding the ENTD-derived distances.
-- **Reference values as CSV tables, not Python literals.** All MiD / Mikrozensus
+- **Reference values as CSV tables, not Python literals.** All survey / census
   reference numbers live as versioned CSV tables and are regenerated only via
   dedicated seed scripts. For data-protection reasons only the small derived
-  **MiD 2023 aggregates** are committed; the Mikrozensus and LSN-derived tables
-  are kept local and regenerated from their official sources — see
+  **aggregate reference tables** are committed; the other reference and
+  LSN-derived tables are kept local and regenerated from their official sources — see
   [`CLAUDE.md`](CLAUDE.md) and the
   [Input data](#input-data--what-to-download) guide.
 - **Repository hygiene.** The inherited `bavaria/` tree was removed (its few
@@ -358,5 +357,5 @@ region. https://github.com/<owner>/eqasim-bs
 
 Code: GPL-3.0 (inherited from upstream eqasim).
 Generated synthetic population data: see individual input licences;
-the most restrictive (MiD 2023) requires non-commercial use of any
+the most restrictive input licence requires non-commercial use of any
 output that depends on it.

@@ -54,7 +54,7 @@ pattern donor; the BS pipeline does not yet have a German HTS replacement.
 | B7 | **Zensus 2022 — Households (5000H-2001 flat-CSV)** Gemeinde × HH-size × HH-type | https://ergebnisse.zensus2022.de (Tabelle `5000H-2001`, Flat-File) | `braunschweig/5000H-2001_de_flat.csv` | dl-de/by-2-0 (Statistische Ämter) |
 | B8 | **BBSR INKAR — household income** (Kreis × year, Haushaltseinkommen €/EW/Monat) | https://www.inkar.de (Indikatorenexport `E_Haushaltseinkommen.xls`) | `braunschweig/E_Haushaltseinkommen.xls` | dl-de/by-2-0 (BBSR) |
 | B9 | **BBSR INKAR — full panel (optional)** other indicator exports `E_*.xls` (population density, unemployment, education, healthcare) | https://www.inkar.de | `braunschweig/E_Bevoelkerungsdichte.xls`, `E_Arbeitslosenquote.xls`, `E_HochschulabsolventenQuote.xls`, `E_AerzteJeEinwohner.xls` | dl-de/by-2-0 |
-| B10 | **MiD 2023 result tables** (numbered reference tables, regional sample; needed only to *regenerate* the committed CSVs) | MiD 2023 result-table volume (non-commercial sample, BMDV) | `braunschweig/mid/mid2023_result_tables.pdf` (any local filename — not redistributed) | BMDV non-commercial |
+| B10 | **Additional reference tables** (numbered tables; needed only to *regenerate* the committed CSVs) | result-table volume provided to the project | `braunschweig/mid/mid2023_result_tables.pdf` (any local filename) | see source terms |
 | B10a | **MiD 2023 — extracted reference CSVs** (the numbered tables P9 / P12.1 / P13 / P17.1 / P24.1 / Tabelle 43 etc.) | **committed to the repo** (see Section F); regenerate from B10 via `scripts/extract_mid_tables.py` / the seed scripts | `braunschweig/mid/mid2023_*.csv` | aggregate reference values |
 | B11 | **BMV/BBSR RegioStaR-7 reference** (Gemeinde-level RegioStaR class) | https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx — auto-downloaded by `python scripts/download_regiostar.py` | `regiostar/regiostar_referenzdatei.xlsx` | dl-de/by-2-0 (BMV) |
 | B12 | **Zensus 2022 100 m population grid (parquet)** | `https://github.com/JsLth/z22data` (BKG GeoGitter + Statistische Ämter) — auto-downloaded by `python scripts/download_zensus_grid.py` | `zensus_grid/population_100m.parquet`, `zensus_grid/grid_100m.parquet` | dl-de/by-2-0 (BKG / Statistische Ämter) |
@@ -170,7 +170,7 @@ legacy OSM education sampler runs and none of this is consulted.
 | E3 | **LSN Studierende nach Hochschule** (enrollment per Hochschule, SS2025) | https://www.statistik.niedersachsen.de/hochschulen-studierende-hochschulfinanzen-niedersachsen/ — `VOE_Stud._1.HS_SS25_HSArt_HS_*.xlsx` | `Hochschulen NDS/VOE_Stud._1.HS_SS25_HSArt_HS_Barrierefrei.xlsx` | `schools/nds_hochschulen.csv` via `scripts/seed_nds_hochschulen.py` (LSN enrollment + curated surrounding/cross-border campus points) |
 | E4 | **LSN Kindertageseinrichtungen — Plätze** (places per Einheits-/Samtgemeinde, table K2300112) | https://www1.nls.niedersachsen.de/statistik/ — Kinder- und Jugendhilfestatistik 22544 (Excel-2003 SpreadsheetML, in a ZIP) | `Kitas NDS/K2300112_Kindertageseinrichtungen_Plaetze_2025.xml` | `schools/nds_kitas_zgb.csv` via `scripts/extract_nds_kitas.py` |
 | E5 | **DESTATIS Mikrozensus 2024 — school-trip distance by school type** (ABS / BBS / Hochschule distance bands) | https://www.destatis.de/.../Erwerbstaetigkeit/Tabellen/pendler2.html | (values pinned in seed script) | `mikrozensus/mikrozensus2024_school_distance_by_type.csv` via `scripts/seed_mikrozensus_school_distance.py` |
-| E6 | **MiD 2023 Tabelle 43** — Kita-/Schulweglängen by RegioStaR-7 + age group (school distance calibration target) | MiD 2023 regional sample (values pinned in seed script) | (values pinned in seed script) | `mid/mid2023_T43_school_distance_by_rs7.csv` via `scripts/seed_mid_t43_school_distance.py` |
+| E6 | **MiD 2023 Tabelle 43** — Kita-/Schulweglängen by RegioStaR-7 + age group (school distance calibration target) | MiD 2023 (values pinned in seed script) | (values pinned in seed script) | `mid/mid2023_T43_school_distance_by_rs7.csv` via `scripts/seed_mid_t43_school_distance.py` |
 
 E1/E2 feed the capacity-constrained school gravity (grundschule / sekundar_1 /
 oberstufe / bbs); E4 the Kita gravity (kindergarten); E3 the university decay
@@ -205,11 +205,8 @@ CLAUDE.md). Do **not** `git add -f` any other data file.
 | `mikrozensus/mikrozensus2024_*.csv` | DESTATIS Mikrozensus 2024 commute time/mode/distance + school distance by type | `scripts/seed_mikrozensus_school_distance.py` (+ the mikrozensus extractors) |
 | all Section A–D inputs | population/employment/commuting/household/income registers, ALKIS/ATKIS, OSM, GTFS, ... | download per Sections A–D |
 
-Licence note: the committed MiD 2023 tables are aggregate reference values from a
-non-commercial regional sample (BMDV), kept small and derived for research
-reproducibility — do not redistribute the underlying raw report. The Mikrozensus
-tables (dl-de/by-2-0) would be redistributable, but are kept local for a uniform,
-conservative data-handling policy.
+Licence note: the committed tables are small derived aggregate reference values;
+all other inputs are kept local. Check each dataset's own terms before reuse.
 
 ---
 
@@ -225,6 +222,5 @@ Use these bounds when pre-filtering OSM (C3 / D1) and GTFS (D2).
 
 - **No raw KBA download per region.** A2 (`fe4_2024.xlsx`) covers all of Germany; the BS pipeline reads it with a `Niedersachsen` filter on sheet FE4.3.
 - **Household sizes / income are required for the BS pipeline** (B7, B8) — unlike the upstream Bavaria setup, which derived those from MiD. Do not reuse the Bavaria value here.
-- **MiD 2023 (B10) is non-commercial.** The PDF is shared under BMDV terms; do not redistribute. The extracted CSVs (B10a) are derivative works of B10 and inherit those terms.
 - **z22data and RegioStaR scripts** write into `eqasim-data/`; that directory is `.gitignore`-d at the repo root. Re-run the download scripts after any clean checkout.
 - **Status tracking** is intentionally not part of this file — use `python scripts/verify_braunschweig_inputs.py` for an automated check rather than manual checkboxes.
