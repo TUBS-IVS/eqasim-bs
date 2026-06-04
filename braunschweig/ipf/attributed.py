@@ -408,6 +408,20 @@ def configure(context):
     if context.config("braunschweig.ipf.use_household_type_margin"):
         context.stage("braunschweig.data.census.households_type")
 
+    # Optional age-aware household chunking (#3b). When on (requires
+    # use_household_size_margin), the random within-bucket chunk + independent
+    # hh_type draw are replaced by one coupled, optimisation-based pass that
+    # produces age-plausible, hh_type-consistent households. Default off ->
+    # byte-identical to the legacy formation. Needs the Zensus household-type
+    # shares regardless of use_household_type_margin.
+    context.config("braunschweig.ipf.age_aware_chunking", False)
+    context.config("braunschweig.chunking.minimum_adult_age", 18)
+    context.config("braunschweig.chunking.couple_age_weight", 1.0)
+    context.config("braunschweig.chunking.parent_child_weight", 1.0)
+    context.config("braunschweig.chunking.parent_child_gap_years", 31.0)
+    if context.config("braunschweig.ipf.age_aware_chunking"):
+        context.stage("braunschweig.data.census.households_type")
+
 def execute(context):
     df = context.stage("braunschweig.ipf.model")
     use_hh_size = context.config("braunschweig.ipf.use_household_size_margin")
@@ -491,7 +505,30 @@ def execute(context):
     final_weight = df["weight"].sum()
     assert np.abs(initial_weight - final_weight) < 1e-6
 
-    if use_hh_size:
+    age_aware = context.config("braunschweig.ipf.age_aware_chunking")
+    if age_aware and not use_hh_size:
+        raise RuntimeError(
+            "[braunschweig.ipf.attributed] age_aware_chunking requires "
+            "use_household_size_margin to be enabled (it forms households "
+            "within each (commune_id, hh_size) bucket)."
+        )
+
+    if use_hh_size and age_aware:
+        # Age-aware path: couple formation + hh_type in one optimisation pass.
+        df_household_type = context.stage(
+            "braunschweig.data.census.households_type"
+        )
+        cfg = {
+            "min_adult_age": context.config("braunschweig.chunking.minimum_adult_age"),
+            "couple_age_weight": context.config("braunschweig.chunking.couple_age_weight"),
+            "parent_child_weight": context.config("braunschweig.chunking.parent_child_weight"),
+            "parent_child_gap_years": context.config("braunschweig.chunking.parent_child_gap_years"),
+        }
+        df = form_households_age_aware(
+            df, context.config("random_seed"), df_household_type, cfg
+        )
+        # hh_type is already assigned by the age-aware pass -> no separate draw.
+    elif use_hh_size:
         # Group persons into real households according to the IPF hh_size cell.
         df = _form_households(df, context.config("random_seed"))
 
