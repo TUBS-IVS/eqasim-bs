@@ -505,6 +505,12 @@ def configure(context):
     context.config("braunschweig.chunking.parent_child_weight", 1.0)
     context.config("braunschweig.chunking.parent_child_gap_years", 31.8)
     context.config("braunschweig.chunking.parent_child_gap_std", 5.5)
+    # Parent-age targeting weight: 0 -> child households get the youngest adults
+    # (realised mean gap collapses to ~26 y, below the target); 1 -> adults centred
+    # on (child + gap), mean ~33 y. The default 0.85 is calibrated on the real ZGB
+    # IPF (25%) so the realised mean parent-child gap is 31.8 y, equal to
+    # parent_child_gap_years (Destatis 2024 mean mother age at birth).
+    context.config("braunschweig.chunking.child_parent_age_target_weight", 0.85)
     # Sex-aware couple formation: pair couples opposite-sex with a small
     # calibrated same-sex share (Destatis Mikrozensus 2025, ~1.1 % of couples).
     # Default off -> the legacy sex-blind age-adjacent pairing.
@@ -619,6 +625,8 @@ def execute(context):
             "parent_child_gap_std": context.config("braunschweig.chunking.parent_child_gap_std"),
             "sex_aware_couples": context.config("braunschweig.chunking.sex_aware_couples"),
             "same_sex_couple_share": context.config("braunschweig.chunking.same_sex_couple_share"),
+            "child_parent_age_target_weight": context.config(
+                "braunschweig.chunking.child_parent_age_target_weight"),
         }
         df = form_households_age_aware(
             df, context.config("random_seed"), df_household_type, cfg

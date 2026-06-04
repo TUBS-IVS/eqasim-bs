@@ -392,13 +392,12 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     else:
         adults_sorted = adult_arr
 
-    def _pair_block(hh_list: list[int], start: int) -> int:
+    def _pair_from(hh_list: list[int], source: np.ndarray, p: int) -> int:
         """Form a couple for each household in ``hh_list`` from the contiguous
-        block ``adults_sorted[start : start + 2*len(hh_list)]`` and return the new
-        pointer. Sex-aware when enabled (opposite-sex with a small same-sex share),
-        otherwise the legacy age-adjacent pairing."""
+        block ``source[p : p + 2*len(hh_list)]`` and return the new pointer.
+        Sex-aware when enabled, otherwise the legacy age-adjacent pairing."""
         n_pairs = len(hh_list)
-        block = adults_sorted[start: start + 2 * n_pairs]
+        block = source[p: p + 2 * n_pairs]
         if sex_aware:
             block_pairs = pair_adults_sex_aware(
                 block, match_key, is_female, same_sex_share, rng)
@@ -407,18 +406,44 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
                            for k in range(n_pairs)]
         for h, (a, b) in zip(hh_list, block_pairs):
             members[h].extend([a, b])
-        return start + 2 * n_pairs
+        return p + 2 * n_pairs
 
-    ptr = 0
-    ptr = _pair_block(cwc_hh, ptr)
+    # --- Parent-age targeting. The child-bearing households (cwc + single_parent)
+    # claim a contiguous window of the age-sorted adults centred on the desired
+    # parent age (median child age + gap) instead of the absolute youngest, so the
+    # realised parent-child gap is lifted toward the Destatis target: with the
+    # youngest-first routing the 18-25-year-olds become parents of newborns and
+    # collapse the gap (~26 y vs target 31.8). The very youngest and the oldest
+    # adults are then left for childless young couples/singles and the elderly.
+    # The window position blends from "youngest" (weight 0 -> legacy, byte-
+    # identical) to "fully targeted" (weight 1). The childless segments stay
+    # globally age-sorted (the pre-window adults are all younger than the
+    # post-window ones), so childless couples keep tight within-pair gaps. ---
+    target_w = float(cfg.get("child_parent_age_target_weight", 0.0))
+    P = 2 * len(cwc_hh) + len(sp_hh)               # child-bearing adult slots
+    A = len(adults_sorted)
+    start = 0
+    if target_w > 0 and 0 < P < A and len(child_arr) > 0:
+        sorted_adult_ages = match_key[adults_sorted]
+        desired = float(np.median(ages[child_arr])) + gap
+        idx = int(np.searchsorted(sorted_adult_ages, desired))
+        start_target = min(max(idx - P // 2, 0), A - P)
+        start = min(max(int(round(target_w * start_target)), 0), A - P)
+    parent_adults = adults_sorted[start: start + P]
+    childless_adults = np.concatenate(
+        [adults_sorted[:start], adults_sorted[start + P:]])
+
+    pp = 0
+    pp = _pair_from(cwc_hh, parent_adults, pp)
     for h in sp_hh:
-        members[h].append(int(adults_sorted[ptr]))
-        ptr += 1
-    ptr = _pair_block(couple_only, ptr)
+        members[h].append(int(parent_adults[pp]))
+        pp += 1
+    cp = 0
+    cp = _pair_from(couple_only, childless_adults, cp)
     for h in single_other_hh:
-        members[h].append(int(adults_sorted[ptr]))
-        ptr += 1
-    remaining_adults = [int(x) for x in adults_sorted[ptr:]]
+        members[h].append(int(childless_adults[cp]))
+        cp += 1
+    remaining_adults = [int(x) for x in childless_adults[cp:]]
 
     # --- Children: place the required children into the (young, child-rearing)
     # parent households, each with its own target gap drawn around the mean so

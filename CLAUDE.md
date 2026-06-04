@@ -192,8 +192,20 @@ more children in a cell than the Zensus single_parent share provides shells for)
 so no surplus child spills onto the oldest childless-shell adults. Without this,
 ~23 % of placed children had a youngest household adult 55+ years older (mean 84 --
 implausible "single parents"); with it the gap>55 tail drops to ~0.3 % (~0.03 %
-with the refined bounds) and the mean gap from 39 to 26 years. No person is ever
-dropped; **all-children households are hard-blocked** (in-bucket merge + a global
+with the refined bounds) and the mean gap from 39 to 26 years.
+
+The children-driven fix gives child households the youngest adults, which pulls
+the realised mean gap *below* the target (26 vs 31.8: 18-25-year-olds become
+parents of newborns). `child_parent_age_target_weight` corrects this -- child
+households claim a contiguous window of the age-sorted adults centred on
+(median child age + gap) rather than the absolute youngest, leaving the very
+youngest adults for childless young couples/singles. The weight blends from 0
+(youngest, mean 26) to 1 (fully targeted, mean 33); the default **0.85** is
+calibrated on the real ZGB IPF to a realised mean of **31.8** (= Destatis
+`parent_child_gap_years`), with the gap>55 tail unchanged at ~0.04 %.
+
+No person is ever dropped; **all-children households are hard-blocked**
+(in-bucket merge + a global
 cross-bucket same-commune merge). Config keys live under `braunschweig.chunking.*`.
 
 **Sex-aware couple pairing.** With `braunschweig.chunking.sex_aware_couples` on,

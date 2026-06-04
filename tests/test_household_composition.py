@@ -417,6 +417,41 @@ class TestBuildBucket:
             assert len(adults) >= 1
             assert adults.min() < 40            # young parent, not an 80+ "single parent"
 
+    def test_parent_age_targeting_lifts_parent_ages(self):
+        # With the targeting weight at 0 the child households get the youngest
+        # adults (small gap); at 1 they get adults near (child + gap), lifting the
+        # parent ages. 2 children + 6 adults spanning young / parent-aged / old.
+        ages = np.array([5, 6, 20, 22, 36, 38, 70, 72])
+        types = ["other_multi", "other_multi", "other_multi", "other_multi"]
+        sizes = [2, 2, 2, 2]
+
+        def youngest_parents(weight):
+            hoh = hc.build_bucket_households(
+                ages, types, sizes,
+                cfg=self._cfg(parent_child_gap_years=31.8,
+                              child_parent_age_target_weight=weight))[0]
+            out = []
+            for c in (0, 1):  # child indices
+                m = ages[hoh == hoh[c]]
+                out.append(m[m >= 18].min())
+            return out
+
+        w0 = youngest_parents(0.0)
+        w1 = youngest_parents(1.0)
+        assert max(w0) < 25            # youngest-first -> young parents, tiny gap
+        assert min(w1) >= 30           # targeted -> parent-aged adults, gap ~ target
+
+    def test_targeting_weight_zero_is_legacy(self):
+        # weight 0 must be byte-identical to omitting the key entirely.
+        ages = np.array([40, 38, 8, 5, 30, 6])
+        a = hc.build_bucket_households(
+            ages, ["couple_with_children", "single_parent"], [4, 2],
+            cfg=self._cfg())[0]
+        b = hc.build_bucket_households(
+            ages, ["couple_with_children", "single_parent"], [4, 2],
+            cfg=self._cfg(child_parent_age_target_weight=0.0))[0]
+        assert a.tolist() == b.tolist()
+
     def test_no_promotion_when_child_capacity_sufficient(self):
         # When the given shells already hold all children, composition is unchanged
         # (the fix is a no-op): one single_parent shell, one couple, one child.
