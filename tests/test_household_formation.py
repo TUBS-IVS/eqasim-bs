@@ -59,6 +59,21 @@ def test_population_total_preserved_across_buckets():
     assert out["household_id"].nunique() == out["household_id"].max() + 1
 
 
+def test_formation_is_deterministic_for_fixed_seed():
+    # Same input + same seed must yield a bit-identical household assignment
+    # (the reproducibility property BUG-008 protects).
+    spec = [["03101", "3", 7.0], ["03101", "2", 5.0], ["03102", "6+", 13.0]]
+    a = attributed._form_households(
+        pd.DataFrame(spec, columns=["commune_id", "household_size", "weight"]),
+        random_seed=1,
+    )
+    b = attributed._form_households(
+        pd.DataFrame(spec, columns=["commune_id", "household_size", "weight"]),
+        random_seed=1,
+    )
+    pd.testing.assert_frame_equal(a, b)
+
+
 def test_hh_type_binning_tolerates_oversized_household():
     # A realised size-7 household (6+ bucket with an absorbed remainder) must
     # bin to the Zensus "6+" open class, not raise.

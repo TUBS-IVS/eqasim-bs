@@ -26,10 +26,13 @@ stochastic rounding in ``synthesis.population.sampled`` keeps the
 household intact.
 """
 
-# Mapping from the IPF's hh_size cell label to the integer count used by
-# synthesis.population.sampled. The ``6+`` bin is mapped to 6 — this is a
-# slight under-count of >6-person households (~0.5 % of all households in
-# ZGB) but avoids modelling the open-ended tail.
+# Mapping from the IPF's hh_size cell label to the integer *target* size used by
+# synthesis.population.sampled. The ``6+`` bin maps to a target of 6 (the
+# open-ended tail is not modelled explicitly). Note that the *realised* size of a
+# household can exceed its target: ``_form_households`` absorbs each bucket's
+# trailing remainder into the last household, so a ``6+`` bucket can yield a
+# size-7+ household, which ``_assign_household_types`` types from the ``6+``
+# distribution (clip-to-6).
 _HH_SIZE_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6+": 6}
 
 
@@ -121,25 +124,29 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
         .transform("size").astype(np.int64)
     )
     repeated["weight"] = 1.0
-    # Count households whose realised size exceeds their target N (i.e. that
-    # absorbed a trailing remainder) before _hh_size_int is dropped.
+    # Quantify the household-size-tail distortion from absorption before
+    # _hh_size_int is dropped: count households whose realised size exceeds their
+    # target N, and how many persons were shifted into the tail (sum of the
+    # per-household excess, realised - target). size_int is the per-row target N.
     realised = repeated["household_size"].to_numpy()
-    n_oversized = int(
-        pd.unique(repeated["household_id"].to_numpy()[realised > size_int]).size
-    )
+    hh_first_row = ~repeated["household_id"].duplicated().to_numpy()
+    oversized_hh_row = hh_first_row & (realised > size_int)
+    n_oversized = int(oversized_hh_row.sum())
+    n_absorbed_persons = int((realised - size_int)[oversized_hh_row].sum())
     repeated = repeated.drop(columns=["_hh_size_int"])
     repeated = repeated.sort_values("household_id", kind="mergesort").reset_index(drop=True)
     repeated["person_id"] = np.arange(len(repeated))
 
     # Diagnostic — easy to grep in pipeline logs. No person is dropped; the
-    # number of households that absorbed a remainder (realised size > target N)
-    # is reported for traceability of the household-size-tail distortion.
+    # households that absorbed a remainder and the persons thereby shifted into
+    # the size tail are reported for traceability of the size-tail distortion.
     n_hh = repeated["household_id"].nunique()
     n_persons = len(repeated)
     print(
         f"[braunschweig.ipf.attributed] formed {n_hh:,} households from "
         f"{n_persons:,} persons; 0 dropped; {n_oversized:,} households absorbed a "
-        f"trailing remainder (realised size > target)."
+        f"trailing remainder ({n_absorbed_persons:,} persons shifted into the "
+        f"size tail, {n_absorbed_persons / max(n_persons, 1):.2%})."
     )
     return repeated
 
