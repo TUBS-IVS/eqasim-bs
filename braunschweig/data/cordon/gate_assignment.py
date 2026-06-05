@@ -151,6 +151,43 @@ def population_gravity_gate_assignment(gemeinden: gpd.GeoDataFrame, gates: gpd.G
     return long[["ars5", "gate_id"] + value_cols].reset_index(drop=True)
 
 
+def sample_gate_per_agent(orig_ars, gate_assignment: pd.DataFrame, rng,
+                          weight_col: str = "inbound"):
+    """Draw one entry/exit gate per agent from its Kreis's gravity gate distribution.
+
+    Each injected commuter belongs to an external Kreis; this samples its gate
+    categorically, weighted by that Kreis's per-gate volume (``weight_col``) from
+    :func:`population_gravity_gate_assignment`. So agents from a Kreis spread over its
+    gates in the same proportions the gravity model produced.
+
+    Args:
+        orig_ars: iterable of each agent's external Kreis ARS (origin for inbound,
+            destination for outbound).
+        gate_assignment: DataFrame [ars5, gate_id, <weight_col>, ...].
+        rng: a numpy Generator (seeded for reproducibility).
+        weight_col: the volume column to weight gate choice by (default "inbound").
+
+    Returns:
+        list of gate_id (one per agent); ``None`` where the Kreis has no positive
+        volume in ``gate_assignment``.
+    """
+    dist = {}
+    for ars5, sub in gate_assignment.groupby("ars5"):
+        sub = sub[sub[weight_col] > 0]
+        if len(sub):
+            w = sub[weight_col].to_numpy(dtype=float)
+            dist[ars5] = (sub["gate_id"].to_numpy(), w / w.sum())
+    out = []
+    for ars5 in orig_ars:
+        choice = dist.get(ars5)
+        if choice is None:
+            out.append(None)
+        else:
+            gids, probs = choice
+            out.append(gids[int(rng.choice(len(gids), p=probs))])
+    return out
+
+
 def gate_volume_summary(assignment: pd.DataFrame,
                         value_cols=("inbound", "outbound")) -> pd.DataFrame:
     """Aggregate the Kreis->gate assignment per gate, for each direction.
