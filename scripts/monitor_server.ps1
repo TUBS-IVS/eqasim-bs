@@ -120,7 +120,10 @@ if [ -n "$LOG" ]; then
     b2=$(date -d "$(echo "$BEGINS" | tail -1 | tr T ' ')" +%s 2>/dev/null)
     if [ -n "$b1" ] && [ -n "$b2" ]; then printf 'PERITER\t%s\n' "$((b2-b1))"; fi
   fi
-  printf 'ERRORS\t%s\n' "$(grep -acE 'Traceback|RuntimeError|PipelineError|Exception in thread|ERROR' "$LOG")"
+  # Count only genuinely fatal markers. NOT a bare "ERROR": MATSim logs benign
+  # network notices at ERROR level (e.g. "PreProcessDijkstra ... are dead ends!"),
+  # which are not failures and would otherwise raise a false alarm.
+  printf 'ERRORS\t%s\n' "$(grep -acE 'Traceback|RuntimeError|PipelineError|Exception in thread|Java return code|FATAL' "$LOG")"
   printf 'WARNINGS\t%s\n' "$(grep -acE ' WARN| WARNING' "$LOG")"
   printf 'DONE\t%s\n' "$(grep -acE 'Pipeline finished|MATSim run finished|run completed' "$LOG")"
   # Working-cache size (grows as synpp caches). Best-effort with a hard timeout so
