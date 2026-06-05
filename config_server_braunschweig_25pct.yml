@@ -121,7 +121,7 @@ config:
   cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
   cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
 
-  gtfs_path: gtfs
+  gtfs_path: gtfs_cordon   # Germany-wide GTFS (de_full); cut to the enlarged cordon extent
   vrb_stations_path: vrb/stations.json
   osm_path: osm
 

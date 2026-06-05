@@ -198,18 +198,31 @@ def _sample_workplaces(dest_ars, zgb_work, rng):
 
 
 def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
-    """Home coords = gate point, except PT agents board at their Kreis's nearest PT stop."""
+    """Home coords = road gate for car; PT agents board at a REAL PT entry stop.
+
+    A PT in-commuter boards at the nearest one-seat-to-ZGB entry stop of its own Kreis;
+    if its Kreis has none, at the nearest real PT entry stop anywhere -- never the road
+    gate (no fallback; PT must use real transit data). Only if there are no PT entry
+    stops at all (no regional GTFS) does the road gate remain.
+    """
     home_x = np.array(gate_x, dtype=float).copy()
     home_y = np.array(gate_y, dtype=float).copy()
     if pt_entry_stops is None or len(pt_entry_stops) == 0:
         return home_x, home_y
     by_kreis = {k: sub for k, sub in pt_entry_stops.groupby("source_ars5")}
+    all_x = pt_entry_stops["x"].to_numpy(dtype=float)
+    all_y = pt_entry_stops["y"].to_numpy(dtype=float)
     for i, (ars5, mode) in enumerate(zip(orig_ars, modes)):
-        if mode == "pt" and ars5 in by_kreis:
-            sub = by_kreis[ars5]
-            d = (sub["x"].to_numpy() - gate_x[i]) ** 2 + (sub["y"].to_numpy() - gate_y[i]) ** 2
-            row = sub.iloc[int(np.argmin(d))]
-            home_x[i] = float(row["x"]); home_y[i] = float(row["y"])
+        if mode != "pt":
+            continue
+        sub = by_kreis.get(ars5)
+        if sub is not None:
+            sx = sub["x"].to_numpy(dtype=float); sy = sub["y"].to_numpy(dtype=float)
+            j = int(np.argmin((sx - gate_x[i]) ** 2 + (sy - gate_y[i]) ** 2))
+            home_x[i] = float(sx[j]); home_y[i] = float(sy[j])
+        else:
+            j = int(np.argmin((all_x - gate_x[i]) ** 2 + (all_y - gate_y[i]) ** 2))
+            home_x[i] = float(all_x[j]); home_y[i] = float(all_y[j])
     return home_x, home_y
 
 

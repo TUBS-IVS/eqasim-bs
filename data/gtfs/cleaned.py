@@ -10,13 +10,26 @@ def configure(context):
     context.config("data_path")
     context.config("gtfs_path", "gtfs_idf")
 
+    # Cross-cordon: cut the (wider, Germany-wide) GTFS to the ENLARGED extent so the
+    # transit schedule includes the regional lines + external stops that PT
+    # in-commuters board (mirrors the OSM network enlargement). Default off -> ZGB cut.
+    context.config("cordon_enabled", False)
+    context.config("cordon_network_source_buffer_m", 0.0)
+
     context.stage("data.spatial.municipalities")
 
 def execute(context):
     input_files = get_input_files("{}/{}".format(context.config("data_path"), context.config("gtfs_path")))
-    
-    # Prepare bounding area
+
+    # Prepare bounding area. With the cross-cordon feature on, enlarge the cut area by
+    # the network source buffer so regional lines reaching ZGB from the surrounding
+    # Kreise stay in the schedule (real PT entry corridors, no road-gate fallback).
     df_area = context.stage("data.spatial.municipalities")
+    if context.config("cordon_enabled") and context.config("cordon_network_source_buffer_m"):
+        from braunschweig.data.cordon.network_clip import osm_clip_geometry
+        df_area = osm_clip_geometry(
+            df_area, context.config("cordon_enabled"),
+            context.config("cordon_network_source_buffer_m"))
 
     # Load and cut feeds
     feeds = []
