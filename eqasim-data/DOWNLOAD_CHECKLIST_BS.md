@@ -224,3 +224,31 @@ Use these bounds when pre-filtering OSM (C3 / D1) and GTFS (D2).
 - **Household sizes / income are required for the BS pipeline** (B7, B8) — unlike the upstream Bavaria setup, which derived those from MiD. Do not reuse the Bavaria value here.
 - **z22data and RegioStaR scripts** write into `eqasim-data/`; that directory is `.gitignore`-d at the repo root. Re-run the download scripts after any clean checkout.
 - **Status tracking** is intentionally not part of this file — use `python scripts/verify_braunschweig_inputs.py` for an automated check rather than manual checkboxes.
+
+## Cordon in-commuter mode reference (Mikrozensus / MiD)
+
+The fixed travel mode of cordon in-commuter (Einpendler) agents is drawn from a
+German commute mode-by-distance reference, anchored **per source Bundesland**.
+Modes modelled: `walk`, `bicycle`, `car`, `pt`. The committed clean CSVs live
+under `eqasim-data/data/braunschweig/mikrozensus/` (gitignored like all raw data;
+copied to the server by `sync_data_to_server.ps1`). Full provenance:
+`braunschweig/mikrozensus/README.md`; flow: `.../DATA_FLOW.md`.
+
+| # | Source | How to obtain | CSV(s) produced | Extraction script |
+|---|--------|---------------|-----------------|-------------------|
+| G1 | **MiT 2023** national mode x distance for commute trips (rbW; Hauptverkehrsmittel imputed; Wegelaenge groups; row-%). | mobilitaet-in-deutschland.de (free account) | `mid2023_commute_mode_by_distance_de.csv`, `mid2023_commute_distance_de.csv` | `scripts/extract_mit_commute_mode_by_distance.py` |
+| G2a | **GENESIS 12251-0105** Verkehrsmittel x Bundesland (Mikrozensus 2024). | www-genesis.destatis.de (free account), code 12251 | `mid_mode_margin_by_bundesland.csv` | `scripts/extract_mikrozensus_bundesland_margins.py` |
+| G2b | **GENESIS 12251-0106** Entfernung x Bundesland (Mikrozensus 2024). | www-genesis.destatis.de (free account), code 12251 | `mid_distance_margin_by_bundesland.csv` | `scripts/extract_mikrozensus_bundesland_margins.py` |
+| G3 | **LSN PM 096/2025** Anlagen (NDS twins of G2, provenance only). | statistik.niedersachsen.de (PM 096/2025, public) | `lsn_pm096-2025_*.pdf`, `Anlage_{1..4}_*.xlsx` (not extracted) | — |
+| G4 | **MiD 2023 Grossraum Braunschweig** (infas 7555) regional tables P38.4/P38.2/W12. **NON-PUBLIC** — sanity cross-check only, **NOT used in the reference**. | infas 7555 (via ZGB/BMDV); not redistributable | `mid2023zgb_*.csv` | `scripts/extract_mid_zgb_commute_tables.py` (needs `pdfplumber`) |
+
+Notes:
+- G1/G2 exports are login-gated; export with the exact filters, file the raw
+  `.xlsx`/`.csv`, then run the extraction scripts to produce the clean CSVs.
+- **G4 is NON-PUBLIC** — only the extracted CSVs exist locally; the raw report must
+  not be redistributed, and it never enters the mode model (cross-check only).
+- The reference itself uses **G1 + G2** only. Regenerate:
+  ```powershell
+  python scripts/extract_mit_commute_mode_by_distance.py
+  python scripts/extract_mikrozensus_bundesland_margins.py
+  ```
