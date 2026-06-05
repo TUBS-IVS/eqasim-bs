@@ -1,0 +1,127 @@
+## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 1% SMOKE /
+## VALIDATION sample incl. MATSim outputs. SERVER (Linux) variant.
+##
+## Faithful small twin of config_server_braunschweig_25pct.yml: IDENTICAL feature
+## set (urban parking costs, gravity calibration, IPF household realism, parallel
+## chainsolvers, decoupled MATSim threads) so a 1% run is representative of the
+## real 25%/100% runs -- only the MATSim sample (sampling_rate 0.01) and the
+## iteration count are reduced so the MATSim + (later) cordon integration can be
+## validated end-to-end in minutes.
+##
+## NOTE: synthesis forms households on the FULL population even at 1% (sampling is
+## downstream), so the FIRST run pays the full synthesis cost; thereafter synpp
+## caches it and only MATSim (+ the cordon cut) re-run -> fast iteration loop.
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+
+working_directory: eqasim-data/cache_bs_1pct
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  # Synthesis still forms households on the FULL population at 1%, so keep the
+  # memory-safe 32 workers (mirrors 25%/100%); chainsolvers parallelises separately.
+  processes: 32
+
+  hts: entd
+
+  sampling_rate: 0.01
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs_1pct
+  output_prefix: braunschweig_1pct_
+
+  java_memory: 100G
+
+  # MATSim threads: split global (routing/replanning) vs qsim (mobsim, ~plateau).
+  matsim_threads: 48        # global.numberOfThreads
+  matsim_qsim_threads: 12   # qsim.numberOfThreads
+
+  # Reduced iterations for the fast validation loop (1% MATSim is tiny per iter).
+  # Enough to confirm the run completes, converges a little, and emits outputs.
+  matsim_last_iteration: 10
+  matsim_write_events_interval: 0   # 0 = only final iteration
+  matsim_write_plans_interval: 10
+
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "has_license"]
+
+  # Urban parking costs (3 EUR/h non-resident car into the BS inner ring) -- same
+  # as the 25%/100% configs (realistic).
+  enable_urban_parking: true
+
+  # --- Gravity calibration (same as 25%/100%) ----------------------------------
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    72: -0.0558
+    73: -0.0638
+    74: -0.0640
+    75: -0.0704
+    76: -0.0719
+    77: -0.0667
+
+  # --- IPF household realism (same as 25%/100%) --------------------------------
+  braunschweig.ipf.use_household_size_margin: true
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+  braunschweig.ipf.use_employment_margin: true
+
+  # --- Parallel chainsolvers (same as 25%/100%) --------------------------------
+  braunschweig.chainsolvers.parallel: true
+  braunschweig.chainsolvers.processes: 32
+
+  gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
+  osm_path: osm
+
+  # --- Braunschweig region scope (ZGB-8) ---------------------------------------
+  braunschweig.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  # --- Input data paths (Braunschweig / Niedersachsen) -------------------------
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+  braunschweig.home_density_weighting: true
+  braunschweig.buildings_path: braunschweig/buildings
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
+  # External toolchain (Linux paths).
+  osmosis_binary: /usr/bin/osmosis
+  osmconvert_binary: /usr/bin/osmconvert
+
+# --- Aliases (identical to the 25%/100% server configs) -----------------------
+aliases:
+  data.census.filtered: braunschweig.ipf.attributed
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  synthesis.locations.work: braunschweig.locations.work
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: eqasim_common.data.spatial.iris
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
