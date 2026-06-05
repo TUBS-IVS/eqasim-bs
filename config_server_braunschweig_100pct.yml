@@ -17,6 +17,7 @@ working_directory: eqasim-data/cache_bs_100pct
 run:
   - synthesis.output
   - matsim.output
+  - braunschweig.analysis.cordon_validation   # per-run commuter_validation + gate flows (cordon)
 
 config:
   # 64-core server. 32 keeps RAM in check at 100% (each synthesis worker holds
@@ -38,6 +39,11 @@ config:
   # During MATSim the Python driver is idle, so the JVM can own most of the RAM;
   # a larger heap reduces GC pressure on the full 1.13 M-agent scenario.
   java_memory: 110G
+
+  # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module)
+  # instead of cloning upstream eqasim-java. Required: the Python class refs are
+  # org.eqasim.braunschweig.* -- the sibling source tree must exist next to the repo.
+  eqasim_source_path: ../eqasim-java-bs
 
   # MATSim thread counts, decoupled from the memory-bound synthesis "processes"
   # (32) AND split between the two MATSim phases, because they parallelise very
@@ -117,7 +123,17 @@ config:
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 32
 
-  gtfs_path: gtfs
+  # --- Cross-cordon external demand (Einpendler injection) at 100% --------------
+  # Enlarge the OSM network clip by cordon_network_source_buffer_m so motorways reach
+  # beyond the cordon, cut the prepared scenario at the cordon (ZGB +
+  # cordon_network_buffer_fraction), and inject in-commuter agents (gates derived from
+  # the cut network, gravity-placed, Mikrozensus mode restricted to car+PT, outside
+  # home via the cutter). Validated end-to-end at 1% and at scale at 25%.
+  cordon_enabled: true
+  cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
+  cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
+
+  gtfs_path: gtfs_cordon   # Germany-wide GTFS (de_full); cut to the enlarged cordon extent
   vrb_stations_path: vrb/stations.json
   osm_path: osm
 
@@ -170,3 +186,9 @@ aliases:
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
+  # Cross-cordon einpendler injection: terminal injection at the MATSim writers
+  # (no-op when cordon_enabled=false). Resident synthesis chain untouched.
+  matsim.scenario.population: braunschweig.matsim.scenario.population
+  matsim.scenario.households: braunschweig.matsim.scenario.households
+  matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
+  matsim.scenario.facilities: braunschweig.matsim.scenario.facilities
