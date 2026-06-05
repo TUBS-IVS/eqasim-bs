@@ -16,6 +16,7 @@ Part of the cross-cordon external-demand module; see
 from __future__ import annotations
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 
@@ -84,6 +85,70 @@ def assign_kreise_to_gates_with_volume(kreise: gpd.GeoDataFrame, gates: gpd.GeoD
     out["_total"] = out[value_cols].sum(axis=1)
     out = out.sort_values("_total", ascending=False).drop(columns="_total")
     return out[["ars5", "gate_id"] + value_cols + ["distance_km"]].reset_index(drop=True)
+
+
+def population_gravity_gate_assignment(gemeinden: gpd.GeoDataFrame, gates: gpd.GeoDataFrame,
+                                       kreis_volume: pd.DataFrame, beta: float = -0.05,
+                                       capacity_exponent: float = 1.0,
+                                       value_cols=("inbound", "outbound")) -> pd.DataFrame:
+    """Smart, gravity-based Kreis->gate assignment with population weighting.
+
+    Instead of routing a whole Kreis through its single nearest gate, distribute each
+    external Kreis's commuter volume FIRST across its Gemeinden by population (so the
+    geographic spread of where people live is respected), THEN across the gates by a
+    gravity model -- gate "attraction" = ``capacity^capacity_exponent`` times a
+    distance decay ``exp(beta * dist_km)``. A Kreis therefore splits realistically
+    over several corridors (e.g. Region Hannover between the A2 motorway gate and the
+    nearer Bundesstrasse gates) instead of dumping everything on one gate.
+
+    Args:
+        gemeinden: GeoDataFrame [ars5, ewz, geometry] of external Gemeinden (ars5 =
+            5-digit Kreis ARS, ewz = population; any geometry, representative point used).
+        gates: GeoDataFrame [gate_id, capacity, geometry(point)].
+        kreis_volume: DataFrame [ars5, <value_cols...>] (e.g. inbound, outbound).
+        beta: distance-decay slope per km (negative; default -0.05).
+        capacity_exponent: exponent on gate capacity as attraction (default 1.0).
+        value_cols: the volume columns to distribute.
+
+    Returns:
+        DataFrame [ars5, gate_id, <value_cols...>] with each Kreis's volume spread
+        across the gates it plausibly uses (integer counts; zero rows dropped).
+    """
+    if "gate_id" not in gates.columns:
+        raise ValueError("population_gravity_gate_assignment: gates needs a 'gate_id' column")
+    value_cols = list(value_cols)
+    g = gemeinden.copy()
+    g["geometry"] = g.geometry.representative_point()
+    g["ewz"] = pd.to_numeric(g["ewz"], errors="coerce").fillna(0.0).astype(float)
+    kreis_ewz = g.groupby("ars5")["ewz"].transform("sum")
+    g["pop_share"] = np.where(kreis_ewz.to_numpy() > 0, g["ewz"] / kreis_ewz, 0.0)
+
+    gx = g.geometry.x.to_numpy(); gy = g.geometry.y.to_numpy()
+    tx = gates.geometry.x.to_numpy(); ty = gates.geometry.y.to_numpy()
+    cap = pd.to_numeric(gates["capacity"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    cap = np.where(cap <= 0, 1.0, cap)
+    gate_ids = gates["gate_id"].to_numpy()
+
+    # Gravity share of each Gemeinde over the gates (n_gem x n_gate), summing to 1.
+    dist_km = np.sqrt((gx[:, None] - tx[None, :]) ** 2
+                      + (gy[:, None] - ty[None, :]) ** 2) / 1000.0
+    weight = (cap[None, :] ** capacity_exponent) * np.exp(beta * dist_km)
+    wsum = weight.sum(axis=1, keepdims=True)
+    grav = np.where(wsum > 0, weight / wsum, 0.0)
+
+    # Combined Gemeinde weight over gates = population share * gravity share, then
+    # aggregate per Kreis -> the fraction of the Kreis volume routed to each gate.
+    combined = g["pop_share"].to_numpy()[:, None] * grav
+    factor = pd.DataFrame(combined, columns=gate_ids)
+    factor["ars5"] = g["ars5"].to_numpy()
+    factor = factor.groupby("ars5", as_index=True).sum()
+    long = (factor.reset_index()
+            .melt(id_vars="ars5", var_name="gate_id", value_name="factor"))
+    long = long.merge(kreis_volume, on="ars5", how="left")
+    for col in value_cols:
+        long[col] = (long[col].fillna(0.0) * long["factor"]).round().astype(int)
+    long = long[long[value_cols].sum(axis=1) > 0]
+    return long[["ars5", "gate_id"] + value_cols].reset_index(drop=True)
 
 
 def gate_volume_summary(assignment: pd.DataFrame,

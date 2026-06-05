@@ -21,6 +21,7 @@ from braunschweig.data.cordon.gate_assignment import (  # noqa: E402
     commuter_volume_by_kreis,
     gate_volume_summary,
     inbound_volume_by_kreis,
+    population_gravity_gate_assignment,
 )
 
 ZGB = {"03101", "03102"}
@@ -83,3 +84,27 @@ def test_gate_volume_summary_per_direction():
     assert top["gate_id"] == "gate_0000"          # 600+200 = 800 total, the busiest
     assert top["inbound"] == 600 and top["outbound"] == 200
     assert top["n_kreise"] == 1 and top["source_kreise"] == "03241"
+
+
+def test_population_gravity_splits_kreis_across_gates():
+    # One Kreis, two equal-population Gemeinden: one next to the high-capacity gate,
+    # one next to the low-capacity gate. The Kreis volume must SPLIT across both gates
+    # (not dump on one), with the high-capacity/near gate taking the larger share.
+    gemeinden = gpd.GeoDataFrame(
+        {"ars5": ["03241", "03241"], "ewz": [1000, 1000]},
+        geometry=[Point(600000, 5800000), Point(620000, 5800000)],
+        crs="EPSG:25832",
+    )
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000", "gate_0001"], "capacity": [8000.0, 2000.0]},
+        geometry=[Point(600000, 5800000), Point(620000, 5800000)],
+        crs="EPSG:25832",
+    )
+    kreis_volume = pd.DataFrame([("03241", 1000, 500)],
+                               columns=["ars5", "inbound", "outbound"])
+    out = population_gravity_gate_assignment(gemeinden, gates, kreis_volume, beta=-0.2)
+    by_gate = out.groupby("gate_id")["inbound"].sum()
+    assert set(by_gate.index) == {"gate_0000", "gate_0001"}        # split across both
+    assert by_gate["gate_0000"] > by_gate["gate_0001"] > 0          # high-cap gate larger
+    assert abs(int(out["inbound"].sum()) - 1000) <= 2              # volume conserved
+    assert abs(int(out["outbound"].sum()) - 500) <= 2

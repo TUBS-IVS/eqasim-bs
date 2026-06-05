@@ -51,9 +51,9 @@ from braunschweig.data.cordon.gates import (  # noqa: E402
     select_major_gates,
 )
 from braunschweig.data.cordon.gate_assignment import (  # noqa: E402
-    assign_kreise_to_gates_with_volume,
     commuter_volume_by_kreis,
     gate_volume_summary,
+    population_gravity_gate_assignment,
 )
 from braunschweig.data.census.pendler import _read_one as _read_ba_pendler  # noqa: E402
 
@@ -169,19 +169,21 @@ def load_matsim_links(network_path: str, crs: str = "EPSG:25832") -> gpd.GeoData
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=crs)
 
 
-def _load_external_kreise(vg250_path, crs="EPSG:25832"):
-    """External (non-ZGB) Kreis polygons from VG250 (vg250_krs), dissolved per ARS."""
+def _load_external_gemeinden(vg250_path, crs="EPSG:25832"):
+    """External (non-ZGB) Gemeinde points with population (EWZ) from VG250 (vg250_gem)."""
     if not vg250_path:
-        raise ValueError("no --vg250 path for external Kreis polygons")
+        raise ValueError("no --vg250 path for external Gemeinde population")
     src = (f"/vsizip/{os.path.abspath(vg250_path)}/{VG250_INNER_GPKG}"
            if vg250_path.endswith(".zip") else vg250_path)
-    krs = gpd.read_file(src, layer="vg250_krs")
-    krs["ARS"] = krs["ARS"].astype(str)
-    if "GF" in krs.columns:
-        krs = krs[krs["GF"] == 4]   # land area (drop water-only parts)
-    ext = krs[~krs["ARS"].str[:5].isin(ZGB_KREIS_PREFIXES)].to_crs(crs).copy()
+    gem = gpd.read_file(src, layer="vg250_gem")
+    gem["ARS"] = gem["ARS"].astype(str)
+    if "GF" in gem.columns:
+        gem = gem[gem["GF"] == 4]   # land area
+    if "EWZ" not in gem.columns:
+        raise ValueError("vg250_gem has no EWZ (population) column")
+    ext = gem[~gem["ARS"].str[:5].isin(ZGB_KREIS_PREFIXES)].to_crs(crs).copy()
     ext["ars5"] = ext["ARS"].str[:5]
-    return ext.dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
+    return ext.rename(columns={"EWZ": "ewz"})[["ars5", "ewz", "geometry"]]
 
 
 def _load_ba_inbound_flows(data_path, ein_rel, aus_rel):
@@ -216,6 +218,10 @@ def main(argv=None) -> int:
                         default="braunschweig/statistik_pendler_2026042493412.csv")
     parser.add_argument("--pendler-aus",
                         default="braunschweig/statistik_pendler_2026042493430.csv")
+    parser.add_argument("--gravity-beta", type=float, default=-0.05,
+                        help="distance-decay slope per km for population-gravity gate choice")
+    parser.add_argument("--capacity-exponent", type=float, default=1.0,
+                        help="exponent on gate capacity (attraction) in the gravity choice")
     args = parser.parse_args(argv)
 
     if not args.muni_pickle and not args.vg250:
@@ -274,19 +280,21 @@ def main(argv=None) -> int:
     assignment = None
     gate_summary = None
     try:
-        krs = _load_external_kreise(args.vg250, args.crs)
         flows = _load_ba_inbound_flows(args.data_path, args.pendler_ein, args.pendler_aus)
         volume = commuter_volume_by_kreis(flows, ZGB_KREIS_PREFIXES)
-        assignment = assign_kreise_to_gates_with_volume(
-            krs[["ars5", "geometry"]], major[["gate_id", "geometry"]], volume)
+        gem = _load_external_gemeinden(args.vg250, args.crs)
+        assignment = population_gravity_gate_assignment(
+            gem, major[["gate_id", "capacity", "geometry"]], volume,
+            beta=args.gravity_beta, capacity_exponent=args.capacity_exponent)
         gate_summary = gate_volume_summary(assignment)
         used = int(((gate_summary["inbound"] + gate_summary["outbound"]) > 0).sum())
-        print(f"[6] external Kreise -> nearest gate: {len(assignment)} Kreise, "
-              f"{int(gate_summary['inbound'].sum()):,} inbound + "
-              f"{int(gate_summary['outbound'].sum()):,} outbound SvB across "
-              f"{used} gates with traffic")
+        print(f"[6] population-gravity assignment (beta={args.gravity_beta}, "
+              f"cap^{args.capacity_exponent}): {volume['ars5'].nunique()} external "
+              f"Kreise via {len(gem):,} Gemeinden -> {int(gate_summary['inbound'].sum()):,} "
+              f"inbound + {int(gate_summary['outbound'].sum()):,} outbound SvB across "
+              f"{used} gates")
     except Exception as exc:  # diagnostic only; gate geometry validation must stand
-        print(f"[6] Kreis->gate volume assignment skipped: {exc}")
+        print(f"[6] population-gravity gate assignment skipped: {exc}")
 
     os.makedirs(args.out, exist_ok=True)
     gates_csv = os.path.join(args.out, "gates.csv")
