@@ -142,3 +142,4 @@ aliases:
   matsim.scenario.population: braunschweig.matsim.scenario.population
   matsim.scenario.households: braunschweig.matsim.scenario.households
   matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
+  matsim.scenario.facilities: braunschweig.matsim.scenario.facilities

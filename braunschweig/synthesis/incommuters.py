@@ -133,8 +133,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     gate_x = np.array([gate_geom[g].x for g in gate_ids], dtype=float)
     gate_y = np.array([gate_geom[g].y for g in gate_ids], dtype=float)
 
-    # 2) workplace inside the destination ZGB Kreis (employment-weighted).
-    work_x, work_y, work_loc = _sample_workplaces(agents["dest_ars"].to_numpy(), zgb_work, rng)
+    # 2) workplace inside the destination ZGB Kreis (employment-weighted); the pool
+    # location_id is discarded -- in-commuters get their own unique work facility id.
+    work_x, work_y, _ = _sample_workplaces(agents["dest_ars"].to_numpy(), zgb_work, rng)
 
     # 3) fixed mode from the Mikrozensus reference by commute-distance band (gate->work).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
@@ -152,11 +153,19 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
     trips = build_incommuter_trips(person_ids, depart_home, arrive_work, depart_work, arrive_home)
     trips["mode"] = np.repeat(np.asarray(modes), 2)
+    # Home stays a normal "home" activity here. The eqasim scenario cutter converts
+    # it to an "outside" activity (its location is at the gate / beyond the cordon),
+    # which is the native point where outside activities are created -- creating them
+    # pre-cut would leave RunPreparation's LinkAssignment without a facility.
     activities = build_incommuter_activities(person_ids, depart_home, arrive_work,
                                              depart_work, arrive_home)
-    activities.loc[activities["purpose"] == "home", "purpose"] = "outside"
+    # Each in-commuter workplace gets a unique facility id so it never collides with a
+    # resident work facility; the facilities-writer override registers it. Home keeps
+    # the placeholder id (-1); the population writer references home_<household_id>,
+    # which the facilities override also registers.
+    work_facility_ids = [f"ic_work_{int(pid)}" for pid in person_ids]
     locations = build_incommuter_locations(person_ids, home_x, home_y, work_x, work_y,
-                                           work_loc, zgb_work.crs)
+                                           work_facility_ids, zgb_work.crs)
 
     persons = _build_persons(ids, donors, person_col, modes)
     households = _build_households(ids)

@@ -50,9 +50,13 @@ def test_build_incommuter_frames_schema_and_counts():
     assert len(frames["locations"]) == 30
     assert frames["persons"]["person_id"].min() >= 100
     assert frames["households"]["household_id"].min() >= 40
-    # home activities are "outside"; work is "work"
-    assert (frames["activities"]["purpose"] == "outside").sum() == 20  # 2 home acts/agent
+    # home stays "home" pre-cut (the cutter converts the gate home to "outside"); work
+    # is "work". 2 home + 1 work per agent.
+    assert (frames["activities"]["purpose"] == "home").sum() == 20
     assert (frames["activities"]["purpose"] == "work").sum() == 10
+    # work activities carry a unique in-commuter work facility id
+    work_locs = frames["locations"][frames["locations"]["activity_index"] == 1]
+    assert work_locs["location_id"].str.startswith("ic_work_").all()
     persons = frames["persons"]
     for col in ["person_id", "household_id", "age", "sex", "employed",
                 "car_availability", "bicycle_availability", "has_license",
