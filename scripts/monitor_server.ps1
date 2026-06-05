@@ -80,6 +80,17 @@ if [ "$dt" -gt 0 ]; then printf 'CPUPCT\t%d\n' $(( (100*(dt-di))/dt )); else pri
 printf 'PYPROC\t%s\n' "$(pgrep -fc '[p]ython' 2>/dev/null || echo 0)"
 printf 'JAVAPROC\t%s\n' "$(pgrep -fc '[j]ava' 2>/dev/null || echo 0)"
 printf 'TOPPROC\t%s\n' "$(ps -eo pcpu,comm --sort=-pcpu 2>/dev/null | awk 'NR==2{printf "%s%% %s", $1, $2}')"
+# Free disk on the data partition (guardrail: a 100% run must not fill it) and the
+# git commit the server is running (reproducibility, per CLAUDE.md).
+df -PBG "$REPO" 2>/dev/null | awk 'NR==2{gsub(/G/,"",$4); gsub(/%/,"",$5); printf "DISK_AVAIL\t%s\nDISK_PCT\t%s\n", $4, $5}'
+printf 'GIT\t%s\n' "$(git -C "$REPO" log -1 --format='%h %s' 2>/dev/null | cut -c1-58)"
+# JVM heap during MATSim: resident set of all java processes (GB) + configured
+# -Xmx. RSS is version-independent and always available; the MATSim memory log
+# line (true heap used/total) is added below when present.
+JRSS=$(ps -C java -o rss= 2>/dev/null | awk '{s+=$1} END{if(s>0) printf "%.1f", s/1048576}')
+[ -n "$JRSS" ] && printf 'JAVA_RSS\t%s\n' "$JRSS"
+JXMX=$(ps -C java -o args= 2>/dev/null | grep -oE 'Xmx[0-9]+[gGmM]' | head -1)
+[ -n "$JXMX" ] && printf 'JAVA_XMX\t%s\n' "$JXMX"
 if [ -n "$LOG" ]; then
   printf 'MTIME\t%s\n' "$(date -r "$LOG" '+%Y-%m-%d %H:%M:%S')"
   # Total run elapsed (now - first timestamped log line).
@@ -126,6 +137,23 @@ if [ -n "$LOG" ]; then
   fi
   if [ -n "$WDP" ] && [ -d "$WDP" ]; then
     printf 'CACHE\t%s\n' "$(timeout 5 du -sh "$WDP" 2>/dev/null | cut -f1)"
+  fi
+  # MATSim's periodic memory log line (true JVM heap used/total), if present.
+  printf 'JAVA_HEAP\t%s\n' "$(grep -aioE 'used ram: [0-9]+ mb|memory usage[^|]*|usedmemory[^,]*' "$LOG" | tail -1 | cut -c1-60)"
+  # MATSim convergence, read straight from the controler log listeners (robust:
+  # no dependency on the stats-file path or its .csv/.txt extension/delimiter).
+  # ScoreStatsControlerListener logs "executed plan of each agent: <score>" once
+  # per iteration; the last two give the current score and its delta.
+  printf 'SCORE_EXEC\t%s\n'      "$(grep -aoE 'executed plan of each agent: -?[0-9.]+' "$LOG" | tail -1 | grep -oE '\-?[0-9.]+')"
+  printf 'SCORE_EXEC_PREV\t%s\n' "$(grep -aoE 'executed plan of each agent: -?[0-9.]+' "$LOG" | tail -2 | head -1 | grep -oE '\-?[0-9.]+')"
+  # ModeStatsControlerListener logs "mode share of mode <m> = <frac>"; keep the
+  # last value seen per mode (final iteration) in first-seen order.
+  printf 'MODES\t%s\n' "$(grep -aoE 'mode share of mode [a-z_]+ = [0-9.]+' "$LOG" | sed -E 's/mode share of mode //; s/ = /=/' | awk -F= '{v[$1]=$2; if(!($1 in seen)){ord[++n]=$1; seen[$1]=1}} END{for(i=1;i<=n;i++) printf "%s=%s,", ord[i], v[ord[i]]}' | sed 's/,$//')"
+  # CPU sparkline: last ~24 cpu_pct samples from the load sampler CSV that
+  # run_pipeline.sh writes next to the log (ts,cpu_pct,mem_used_gb,nproc).
+  SAMP="${LOG%.log}_samples.csv"
+  if [ -f "$SAMP" ]; then
+    printf 'SPARK\t%s\n' "$(tail -n 24 "$SAMP" | awk -F, '$2 ~ /^[0-9.]+$/{printf "%s,", $2}' | sed 's/,$//')"
   fi
   echo '---TAIL---'
   tail -n 10 "$LOG"
@@ -185,6 +213,33 @@ function Format-Seconds([int]$s) {
     return ("{0:00}:{1:00}" -f [int]($s / 60), ($s % 60))
 }
 
+function ConvertTo-Double($s) {
+    # Parse with the invariant culture: the server emits "." as the decimal point
+    # (Java/MATSim logs, /proc), but a German-locale PowerShell would otherwise read
+    # "-17.186" as thousands-grouped and produce nonsense. Returns $null on failure.
+    $v = 0.0
+    if ($s -and [double]::TryParse([string]$s, [Globalization.NumberStyles]::Float,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) {
+        return $v
+    }
+    return $null
+}
+
+function New-Sparkline([string]$csv) {
+    # Map a comma-separated list of 0..100 values to a unicode block sparkline.
+    if (-not $csv) { return "" }
+    $blocks = ' .:-=+*#%@'.ToCharArray()  # 10 ASCII levels (terminal-safe)
+    $sb = ""
+    foreach ($tok in $csv.Split(',')) {
+        $v = ConvertTo-Double $tok
+        if ($null -ne $v) {
+            $idx = [int][math]::Round([math]::Min([math]::Max($v, 0), 100) / 100.0 * ($blocks.Count - 1))
+            $sb += $blocks[$idx]
+        }
+    }
+    return $sb
+}
+
 function Show-Dashboard($snap) {
     $f = $snap.Fields
     Clear-Host
@@ -209,6 +264,10 @@ function Show-Dashboard($snap) {
         Write-Host -NoNewline ("  cpu     : [{0}] " -f (New-Bar ($cpupct / 100.0) 40))
         Write-Host ("{0,3}%  ~{1}/{2} cores busy" -f $cpupct, $busy, $nproc) -ForegroundColor $cpuColor
     }
+    # CPU history sparkline (last ~24 samples from the load sampler).
+    if ($f['SPARK']) {
+        Write-Host ("  trend   : {0}  (cpu %, last {1} samples)" -f (New-Sparkline $f['SPARK']), $f['SPARK'].Split(',').Count) -ForegroundColor DarkCyan
+    }
     # RAM bar.
     if ($f['MEMPCT']) {
         $mempct = [int]$f['MEMPCT']
@@ -216,14 +275,28 @@ function Show-Dashboard($snap) {
     }
     Write-Host ("  load    : {0}   |   python {1}  java {2}   |   hottest {3}" -f `
         $f['LOAD'], $f['PYPROC'], $f['JAVAPROC'], $f['TOPPROC'])
-    if ($f['CACHE']) { Write-Host "  cache   : $($f['CACHE']) on disk" }
+    # JVM heap (shown whenever java is running, i.e. during MATSim).
+    if ($f['JAVA_RSS']) {
+        $jline = "  java    : heap RSS $($f['JAVA_RSS']) GB"
+        if ($f['JAVA_XMX']) { $jline += " / -$($f['JAVA_XMX'])" }
+        if ($f['JAVA_HEAP']) { $jline += "   ($($f['JAVA_HEAP']))" }
+        Write-Host $jline -ForegroundColor Magenta
+    }
+    $diskText = ""
+    if ($f['DISK_AVAIL']) { $diskText = "disk $($f['DISK_AVAIL']) GB free ($($f['DISK_PCT'])% used)" }
+    if ($f['CACHE']) { $diskText = if ($diskText) { "$diskText   |   cache $($f['CACHE'])" } else { "cache $($f['CACHE'])" } }
+    if ($diskText) {
+        $diskColor = if ($f['DISK_PCT'] -and [int]$f['DISK_PCT'] -ge 90) { 'Red' } else { 'Gray' }
+        Write-Host "  storage : $diskText" -ForegroundColor $diskColor
+    }
+    if ($f['GIT']) { Write-Host "  commit  : $($f['GIT'])" -ForegroundColor DarkGray }
     Write-Host "  log     : $($f['LOG'])" -ForegroundColor DarkGray
     Write-Host "  updated : $($f['MTIME'])   (server now $($f['NOW']))" -ForegroundColor DarkGray
     Write-Host ("  " + ("-" * $width))
 
     # --- phase: MATSim if iterations have started, else synpp ----------------
     $iter = $f['ITER']
-    if ($iter -ne $null -and $iter -ne '') {
+    if ($null -ne $iter -and $iter -ne '') {
         $i = [int]$iter
         $total = if ($f['ITER_TOTAL'] -and [int]$f['ITER_TOTAL'] -gt 0) { [int]$f['ITER_TOTAL'] } else { [math]::Max($LastIteration, 1) }
         $frac = if ($total -gt 0) { [math]::Min($i / $total, 1.0) } else { 0 }
@@ -233,7 +306,34 @@ function Show-Dashboard($snap) {
             $per = [int]$f['PERITER']
             $remain = [math]::Max($total - $i, 0)
             $eta = $per * $remain
-            Write-Host ("  pace    : {0}s / iteration   ETA ~{1}  ({2} iters left)" -f $per, (Format-Seconds $eta), $remain) -ForegroundColor Gray
+            $finishText = ""
+            $nowParsed = [datetime]::MinValue
+            if ([datetime]::TryParse($f['NOW'], [ref]$nowParsed)) {
+                $finishText = "   finish ~" + $nowParsed.AddSeconds($eta).ToString("HH:mm")
+            }
+            Write-Host ("  pace    : {0}s / iteration   ETA ~{1}{2}  ({3} iters left)" -f $per, (Format-Seconds $eta), $finishText, $remain) -ForegroundColor Gray
+        }
+        # Convergence: avg executed score (+delta) and modal split, parsed from the
+        # controler log listeners.
+        $score = ConvertTo-Double $f['SCORE_EXEC']
+        if ($null -ne $score) {
+            $deltaText = ""
+            $prev = ConvertTo-Double $f['SCORE_EXEC_PREV']
+            if ($null -ne $prev) {
+                $deltaText = "  (delta {0:+0.000;-0.000;0.000})" -f ($score - $prev)
+            }
+            Write-Host ("  score   : {0:0.000}{1}  (avg executed)" -f $score, $deltaText) -ForegroundColor Cyan
+        }
+        if ($f['MODES']) {
+            $parts = @()
+            foreach ($pair in $f['MODES'].Split(',')) {
+                $kv = $pair.Split('=')
+                if ($kv.Count -eq 2) {
+                    $mv = ConvertTo-Double $kv[1]
+                    if ($null -ne $mv) { $parts += ("{0} {1:P0}" -f $kv[0], $mv) }
+                }
+            }
+            if ($parts.Count -gt 0) { Write-Host ("  modes   : " + ($parts -join "  ")) -ForegroundColor Cyan }
         }
     }
     else {
@@ -278,9 +378,28 @@ if ($Once) {
 }
 
 Write-Host "Connecting to $server ..." -ForegroundColor Cyan
+$wasAlive = $false   # only beep on a real running -> ended transition
+$beeped = $false
 while ($true) {
     try {
-        Show-Dashboard (Get-Snapshot)
+        $snap = Get-Snapshot
+        Show-Dashboard $snap
+        $f = $snap.Fields
+        $done = ($f['DONE'] -and [int]$f['DONE'] -gt 0)
+        $ended = ($f['ALIVE'] -ne 'yes')
+        if (-not $beeped -and ($done -or ($ended -and $wasAlive))) {
+            $errN = if ($f['ERRORS']) { [int]$f['ERRORS'] } else { 0 }
+            if ($done -and $errN -eq 0) {
+                Write-Host "  >>> RUN FINISHED <<<" -ForegroundColor Green
+                try { [console]::Beep(880, 200); [console]::Beep(1175, 350) } catch {}
+            }
+            else {
+                Write-Host "  >>> RUN ENDED - check errors ($errN) <<<" -ForegroundColor Red
+                try { [console]::Beep(440, 250); [console]::Beep(330, 450) } catch {}
+            }
+            $beeped = $true
+        }
+        if ($f['ALIVE'] -eq 'yes') { $wasAlive = $true }
     }
     catch {
         Write-Host "  (poll failed: $($_.Exception.Message)) - retrying ..." -ForegroundColor Red
