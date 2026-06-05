@@ -92,13 +92,23 @@ log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 # (e.g. the IPF "max |delta| per margin" line) into a redirected/teed stream.
 # run_synpp.py is a thin wrapper around `python -m synpp` that timestamps the log
 # lines so per-stage runtimes can be extracted afterwards.
+# Sample machine CPU/RAM utilization while the pipeline runs (background). The
+# runtime analysis below joins these samples to each stage to expose single-core
+# bottlenecks (cores_busy ~ 1). Best-effort; never blocks the run.
+samples_csv="${log_file%.log}_samples.csv"
+bash scripts/sample_load.sh "$samples_csv" 15 &
+SAMPLER_PID=$!
+
 echo "==> Running synpp on $CONFIG (env: $CONDA_ENV), logging to $log_file"
 PYTHONUTF8=1 python scripts/run_synpp.py "$CONFIG" 2>&1 | tee "$log_file"
 
+# Stop the load sampler.
+kill "$SAMPLER_PID" 2>/dev/null || true
+
 echo "==> Pipeline finished. Log: $REPO_DIR/$log_file"
 
-# Per-stage runtime CSV (which stages dominated the run -> tune settings). Runs on
-# the timestamped log; best-effort, never fails the run.
+# Per-stage runtime + utilization CSV (which stages dominated, and whether they
+# ran on one core -> tune settings). Auto-detects <log>_samples.csv. Best-effort.
 runtime_csv="${log_file%.log}_stage_runtime.csv"
 PYTHONUTF8=1 python -m braunschweig.analysis.runtime --log "$log_file" \
     --output "$runtime_csv" || echo "WARNING: runtime analysis failed (non-fatal)"
