@@ -1,0 +1,18 @@
+{
+  "//": "The synpp pipeline auto-clones and Maven-builds eqasim-java into eqasim-data/cache_*/matsim.runtime.eqasim__*/. The VS Code Java extension would analyse those .java files without their Maven classpath and report false 'cannot find symbol' errors. Exclude eqasim-data from Java import/analysis and file watching; the real build is done by Maven in the pipeline. eqasim-data is gitignored anyway.",
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/eqasim-data/**"
+  ],
+  "java.project.resourceFilters": [
+    "node_modules",
+    ".git",
+    "eqasim-data"
+  ],
+  "files.watcherExclude": {
+    "**/eqasim-data/**": true
+  }
+}
