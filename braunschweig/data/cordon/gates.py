@@ -1,0 +1,72 @@
+"""Derive cordon gates: network links crossing the cordon boundary.
+
+A gate is the point where a network link intersects the cordon-polygon boundary.
+Each crossing link yields one gate point, carrying the link's capacity so callers
+can rank/select the dominant corridors. External origin Kreise are then mapped to
+their nearest gate. Region-neutral; expects a metric CRS (EPSG:25832 for ZGB).
+Rail/PT gates are derived separately from GTFS entry stops.
+
+Part of the cross-cordon external-demand module; see
+``docs/superpowers/specs/2026-06-05-cross-cordon-external-demand-design.md``.
+"""
+from __future__ import annotations
+
+import geopandas as gpd
+from shapely.geometry import Point
+from shapely.geometry.base import BaseGeometry
+
+
+def derive_road_gates(links: gpd.GeoDataFrame, cordon: BaseGeometry) -> gpd.GeoDataFrame:
+    """Return one gate Point per network link that crosses the cordon boundary.
+
+    A link "crosses" if it intersects the cordon-polygon boundary (i.e. it has
+    points both inside and outside). The gate is the boundary intersection point
+    (a representative point if the intersection is multi-part). Output is sorted by
+    descending ``capacity`` so callers can pick the dominant corridors first.
+
+    Args:
+        links: LineString network links with ``link_id`` and ``capacity`` columns.
+        cordon: the cordon polygon (its ``.boundary`` is the crossing line).
+
+    Returns:
+        GeoDataFrame [link_id, capacity, geometry(Point)] in ``links.crs``.
+    """
+    boundary = cordon.boundary
+    rows = []
+    for _, row in links.iterrows():
+        geom = row.geometry
+        if geom is None or not geom.intersects(boundary):
+            continue
+        hit = geom.intersection(boundary)
+        pt = hit if isinstance(hit, Point) else hit.representative_point()
+        rows.append({
+            "link_id": row["link_id"],
+            "capacity": row.get("capacity"),
+            "geometry": Point(pt.x, pt.y),
+        })
+    gates = gpd.GeoDataFrame(rows, columns=["link_id", "capacity", "geometry"],
+                            geometry="geometry", crs=links.crs)
+    if len(gates):
+        gates = gates.sort_values("capacity", ascending=False).reset_index(drop=True)
+    return gates
+
+
+def assign_kreise_to_gates(kreise: gpd.GeoDataFrame, gates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Attach the nearest gate to each Kreis (by the Kreis representative point).
+
+    Args:
+        kreise: external origin Kreise (any geometry; uses representative_point()).
+        gates: gate points; must carry a ``gate_id`` column.
+
+    Returns:
+        ``kreise`` with the nearest ``gate_id`` (and gate geometry) joined on.
+
+    Raises:
+        ValueError: if ``gates`` has no ``gate_id`` column.
+    """
+    if "gate_id" not in gates.columns:
+        raise ValueError("assign_kreise_to_gates: gates needs a 'gate_id' column")
+    k = kreise.copy()
+    k["geometry"] = k.geometry.representative_point()
+    joined = gpd.sjoin_nearest(k, gates[["gate_id", "geometry"]], how="left")
+    return joined.drop(columns=[c for c in joined.columns if c.startswith("index_")])
