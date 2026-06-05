@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO))
 from braunschweig.data.cordon.gates import (  # noqa: E402
     assign_kreise_to_gates,
     derive_road_gates,
+    select_major_gates,
 )
 
 CORDON = box(0, 0, 1000, 1000)  # simple square cordon
@@ -74,3 +75,49 @@ def test_assign_requires_gate_id():
     kreise = gpd.GeoDataFrame({"ars5": ["A"]}, geometry=[Point(1, 1)], crs="EPSG:25832")
     with pytest.raises(ValueError):
         assign_kreise_to_gates(kreise, gates)
+
+
+# --- Major-road gate selection (gates belong on Autobahn/Bundesstrasse) -------
+
+def _classed_links():
+    # Four links crossing the top boundary at distinct x, different road classes.
+    def crosser(x):
+        return LineString([(x, 500), (x, 1500)])
+    return gpd.GeoDataFrame(
+        {
+            "link_id": ["a", "b", "c", "d"],
+            "capacity": [4000.0, 2000.0, 1000.0, 300.0],
+            "road_class": ["motorway", "trunk", "primary", "residential"],
+            "geometry": [crosser(100), crosser(300), crosser(500), crosser(700)],
+        },
+        crs="EPSG:25832",
+    )
+
+
+def test_derive_carries_road_class_when_present():
+    gates = derive_road_gates(_classed_links(), CORDON)
+    assert "road_class" in gates.columns
+    assert set(gates["road_class"]) == {"motorway", "trunk", "primary", "residential"}
+
+
+def test_select_major_gates_filters_by_class():
+    gates = derive_road_gates(_classed_links(), CORDON)
+    major = select_major_gates(gates, allowed_classes={"motorway", "trunk", "primary"})
+    assert set(major["road_class"]) == {"motorway", "trunk", "primary"}
+    assert "residential" not in set(major["road_class"])
+
+
+def test_select_major_gates_top_n_by_capacity():
+    gates = derive_road_gates(_classed_links(), CORDON)
+    top2 = select_major_gates(gates, top_n=2)
+    assert list(top2["link_id"]) == ["a", "b"]  # highest capacity first
+
+
+def test_select_major_gates_fallback_keeps_strongest_when_filter_empties():
+    gates = derive_road_gates(_classed_links(), CORDON)
+    # No link is a motorway-only-allowed match in a region of just 'residential'
+    res_only = gates[gates["road_class"] == "residential"].reset_index(drop=True)
+    out = select_major_gates(res_only, allowed_classes={"motorway"})
+    # Filter would empty it -> fall back to the single strongest gate, never zero.
+    assert len(out) == 1
+    assert out.iloc[0]["link_id"] == "d"

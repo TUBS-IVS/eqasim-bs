@@ -32,6 +32,8 @@ def derive_road_gates(links: gpd.GeoDataFrame, cordon: BaseGeometry) -> gpd.GeoD
         GeoDataFrame [link_id, capacity, geometry(Point)] in ``links.crs``.
     """
     boundary = cordon.boundary
+    has_road_class = "road_class" in links.columns
+    columns = ["link_id", "capacity"] + (["road_class"] if has_road_class else []) + ["geometry"]
     rows = []
     for _, row in links.iterrows():
         geom = row.geometry
@@ -39,16 +41,53 @@ def derive_road_gates(links: gpd.GeoDataFrame, cordon: BaseGeometry) -> gpd.GeoD
             continue
         hit = geom.intersection(boundary)
         pt = hit if isinstance(hit, Point) else hit.representative_point()
-        rows.append({
-            "link_id": row["link_id"],
-            "capacity": row.get("capacity"),
-            "geometry": Point(pt.x, pt.y),
-        })
-    gates = gpd.GeoDataFrame(rows, columns=["link_id", "capacity", "geometry"],
-                            geometry="geometry", crs=links.crs)
+        record = {"link_id": row["link_id"], "capacity": row.get("capacity"),
+                  "geometry": Point(pt.x, pt.y)}
+        if has_road_class:
+            record["road_class"] = row.get("road_class")
+        rows.append(record)
+    gates = gpd.GeoDataFrame(rows, columns=columns, geometry="geometry", crs=links.crs)
     if len(gates):
         gates = gates.sort_values("capacity", ascending=False).reset_index(drop=True)
     return gates
+
+
+def select_major_gates(gates: gpd.GeoDataFrame, allowed_classes=None,
+                       min_capacity: float | None = None,
+                       top_n: int | None = None) -> gpd.GeoDataFrame:
+    """Restrict gates to the main corridors where long-distance commuters enter.
+
+    Long-distance car commuters use motorways / trunk / primary roads, so keep
+    only those gates (by ``road_class`` allowlist and/or a minimum capacity and/or
+    the top-N by capacity). If the filters would leave no gate but there were
+    crossings, fall back to the single highest-capacity gate so a region never
+    ends up gateless.
+
+    Args:
+        gates: output of :func:`derive_road_gates` (sorted by capacity desc).
+        allowed_classes: iterable of road classes to keep (needs a ``road_class``
+            column); e.g. ``{"motorway", "trunk", "primary"}``. None = no class filter.
+        min_capacity: keep only gates with ``capacity >= min_capacity``. None = off.
+        top_n: keep only the top-N gates by capacity. None = keep all matching.
+
+    Returns:
+        The filtered gates (capacity-sorted), or the strongest single gate as a
+        fallback.
+    """
+    if len(gates) == 0:
+        return gates
+    ranked = gates.sort_values("capacity", ascending=False).reset_index(drop=True)
+    out = ranked
+    if allowed_classes is not None and "road_class" in out.columns:
+        out = out[out["road_class"].isin(set(allowed_classes))]
+    if min_capacity is not None:
+        out = out[out["capacity"] >= min_capacity]
+    if top_n is not None:
+        out = out.head(top_n)
+    if len(out) == 0:
+        # Never leave a region without a gate when links did cross the boundary.
+        out = ranked.head(1)
+    return out.reset_index(drop=True)
 
 
 def assign_kreise_to_gates(kreise: gpd.GeoDataFrame, gates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
