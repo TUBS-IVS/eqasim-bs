@@ -11,6 +11,7 @@ working_directory: eqasim-data/cache_bs_25pct
 run:
   - synthesis.output
   - matsim.output
+  - braunschweig.analysis.cordon_validation   # per-run commuter_validation + gate flows (cordon)
 
 config:
   # Use the full 64-core / 128 GB server. Synthesis still forms households on the

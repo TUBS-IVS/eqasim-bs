@@ -57,6 +57,12 @@ def test_build_incommuter_frames_schema_and_counts():
     # work activities carry a unique in-commuter work facility id
     work_locs = frames["locations"][frames["locations"]["activity_index"] == 1]
     assert work_locs["location_id"].str.startswith("ic_work_").all()
+    # per-agent validation record: one row per in-commuter, with gate + direction + mode
+    val = frames["validation"]
+    assert len(val) == 10
+    assert list(val.columns) == ["ars5", "direction", "mode", "gate_id", "gate_x", "gate_y"]
+    assert (val["direction"] == "ein").all()
+    assert set(val["mode"]) <= {"car", "pt"}
     persons = frames["persons"]
     for col in ["person_id", "household_id", "age", "sex", "employed",
                 "car_availability", "bicycle_availability", "has_license",

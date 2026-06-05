@@ -18,6 +18,7 @@ working_directory: eqasim-data/cache_bs_1pct
 run:
   - synthesis.output
   - matsim.output
+  - braunschweig.analysis.cordon_validation   # per-run commuter_validation + gate flows (cordon)
 
 config:
   # Synthesis still forms households on the FULL population at 1%, so keep the

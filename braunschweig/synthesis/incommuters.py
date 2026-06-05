@@ -170,8 +170,16 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     persons = _build_persons(ids, donors, person_col, modes)
     households = _build_households(ids)
     vehicles = _build_vehicles(person_ids, modes)
+    # Per-agent validation record (one row per in-commuter): source Kreis, direction,
+    # fixed mode, and the GATE it enters through (gate coords, not the PT-moved home),
+    # for the per-run commuter_validation + gate-flow outputs.
+    validation = pd.DataFrame({
+        "ars5": orig_ars, "direction": "ein", "mode": np.asarray(modes),
+        "gate_id": gate_ids, "gate_x": gate_x, "gate_y": gate_y,
+    })
     return dict(persons=persons, trips=trips, activities=activities,
-                locations=locations, vehicles=vehicles, households=households)
+                locations=locations, vehicles=vehicles, households=households,
+                validation=validation)
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
@@ -279,7 +287,9 @@ def _empty_frames(crs):
         activities=pd.DataFrame(columns=["person_id"]),
         locations=gpd.GeoDataFrame({"person_id": []}, geometry=[], crs=crs),
         vehicles=pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
-        households=pd.DataFrame(columns=["household_id", "person_id"]))
+        households=pd.DataFrame(columns=["household_id", "person_id"]),
+        validation=pd.DataFrame(columns=["ars5", "direction", "mode", "gate_id",
+                                         "gate_x", "gate_y"]))
 
 
 def configure(context):
