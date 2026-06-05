@@ -13,7 +13,10 @@ run:
   - matsim.output
 
 config:
-  processes: 8
+  # Use the full 64-core / 128 GB server. Synthesis still forms households on the
+  # FULL population even at 25 % (sampling is downstream), so 32 workers mirror
+  # the memory-safe 100 % setting; chainsolvers parallelises separately.
+  processes: 32
 
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
   hts: entd
@@ -25,15 +28,16 @@ config:
   output_path: eqasim-data/output_bs_25pct
   output_prefix: braunschweig_25pct_
 
-  java_memory: 44G
+  # 128 GB box: give the JVM most of the RAM (the Python driver is idle during
+  # MATSim). 25 % population fits easily; a large heap minimises GC.
+  java_memory: 100G
 
   # MATSim thread counts, split between the two phases (they scale differently):
   # global.numberOfThreads (routing/replanning/scoring) parallelises well -> high;
   # qsim.numberOfThreads (mobsim) plateaus at ~4-8 threads (Dobler 2013) -> low.
-  # Decoupled from the memory-bound synthesis "processes" (8). Does NOT affect an
-  # already-launched run (config.xml is generated at prepare time).
-  matsim_threads: 32        # global.numberOfThreads (routing/replanning/scoring)
-  matsim_qsim_threads: 8    # qsim.numberOfThreads (mobsim; ~plateau, kept low)
+  # Decoupled from the memory-bound synthesis "processes". Use most of the box.
+  matsim_threads: 48        # global.numberOfThreads (routing/replanning/scoring)
+  matsim_qsim_threads: 12   # qsim.numberOfThreads (mobsim; ~plateau, kept low)
 
   # MATSim simulation iterations (0..N-1). N=200 -> 200 iterations.
   matsim_last_iteration: 199
