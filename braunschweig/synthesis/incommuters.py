@@ -26,7 +26,7 @@ from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
 from braunschweig.data.cordon.gate_entry import gate_entry_time_s
-from braunschweig.data.cordon.mode_reference import commute_distance_band
+from braunschweig.data.cordon.mode_reference import MID_DISTANCE_EDGES, route_distance_band
 from braunschweig.data.cordon.plans import (
     assign_fixed_mode, build_incommuter_activities, build_incommuter_locations,
     build_incommuter_trips, extract_commute_times, sample_donors,
@@ -107,10 +107,10 @@ def build_pt_entry_stops(stops, routes, kreise, zgb_kreise):
 
 
 def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
-                            zgb_work, mode_reference, band_edges, hts_persons,
+                            zgb_work, mode_reference, hts_persons,
                             hts_trips, person_col, n_residents, n_resident_households,
-                            rng, gate_speed_kmh=30.0, detour_factor=1.3,
-                            pt_entry_stops=None):
+                            rng, band_edges=MID_DISTANCE_EDGES, gate_speed_kmh=30.0,
+                            detour_factor=1.3, pt_entry_stops=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -138,8 +138,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
     # 3) fixed mode from the Mikrozensus reference by commute-distance band (gate->work).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
-    modes = assign_fixed_mode(dist_km, mode_reference,
-                              lambda d: commute_distance_band(d, edges=band_edges), rng)
+    modes = assign_fixed_mode(
+        dist_km, mode_reference,
+        lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng)
 
     # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any).
     home_x, home_y = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops)
@@ -256,3 +257,50 @@ def _empty_frames(crs):
         locations=gpd.GeoDataFrame({"person_id": []}, geometry=[], crs=crs),
         vehicles=pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
         households=pd.DataFrame(columns=["household_id", "person_id"]))
+
+
+def configure(context):
+    context.config("cordon_enabled", False)
+    context.config("random_seed")
+    if not context.config("cordon_enabled"):
+        return
+    context.config("data_path")
+    context.config("sampling_rate")
+    context.config("braunschweig.political_prefix")
+    context.config("cordon_gate_speed_kmh", 30.0)
+    context.stage("braunschweig.synthesis.cordon_gates")
+    context.stage("braunschweig.data.cordon_pt_gates")
+    context.stage("braunschweig.data.census.pendler")
+    context.stage("braunschweig.locations.work")
+    context.stage("braunschweig.synthesis.population.enriched")  # RAW, for n_residents
+    context.stage("data.hts.selected", alias="hts")
+
+
+def execute(context):
+    crs = "EPSG:25832"
+    if not context.config("cordon_enabled"):
+        return _empty_frames(crs)
+
+    from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
+
+    gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
+    residents = context.stage("braunschweig.synthesis.population.enriched")
+    _hts_households, hts_persons, hts_trips = context.stage("hts")
+    rng = np.random.default_rng(int(context.config("random_seed")) + 100000)
+
+    frames = build_incommuter_frames(
+        flows=context.stage("braunschweig.data.census.pendler"),
+        zgb_kreise={str(p) for p in context.config("braunschweig.political_prefix")},
+        sampling_rate=float(context.config("sampling_rate")),
+        gates=gate_volume["gates"], assignment=gate_volume["assignment"],
+        zgb_work=context.stage("braunschweig.locations.work"),
+        mode_reference=load_commute_mode_by_distance(context.config("data_path")),
+        hts_persons=hts_persons, hts_trips=hts_trips, person_col="person_id",
+        n_residents=len(residents),
+        n_resident_households=int(residents["household_id"].nunique()),
+        rng=rng,
+        gate_speed_kmh=float(context.config("cordon_gate_speed_kmh")),
+        pt_entry_stops=context.stage("braunschweig.data.cordon_pt_gates"))
+    print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
+          f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
+    return frames
