@@ -117,9 +117,17 @@ $remoteCmd = "cd $RemoteRepo && bash scripts/update_server.sh && " +
              "'bash scripts/run_pipeline.sh $Config'"
 
 Write-Host "==> [3/4] Updating server checkout + [4/4] launching pipeline in tmux ..." -ForegroundColor Cyan
-ssh $server $remoteCmd
-if ($LASTEXITCODE -ne 0) {
-    throw "Remote launch failed (exit code $LASTEXITCODE)."
+# update_server.sh's git pull writes normal progress ("From <remote>") to stderr;
+# under ErrorActionPreference Stop PowerShell would raise it as a NativeCommandError
+# and abort before the tmux launch even though the remote command succeeded. Relax
+# locally and gate on the real exit code instead.
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+ssh $server $remoteCmd 2>&1 | Write-Host
+$sshExit = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorAction
+if ($sshExit -ne 0) {
+    throw "Remote launch failed (exit code $sshExit)."
 }
 
 Write-Host "==> Pipeline started on $ServerHost in tmux session 'eqasim'." -ForegroundColor Green
