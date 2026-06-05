@@ -6,7 +6,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from braunschweig.data.cordon.network import read_matsim_links  # noqa: E402
+from braunschweig.data.cordon.network import (  # noqa: E402
+    read_matsim_links,
+    read_transit_stops_routes,
+)
+
+SCHEDULE = b"""<?xml version="1.0"?><transitSchedule><transitStops>
+<stopFacility id="s1" x="600000" y="5800000"/>
+<stopFacility id="s2" x="650000" y="5800000"/></transitStops>
+<transitLine><transitRoute><transportMode>rail</transportMode>
+<routeProfile><stop refId="s1"/><stop refId="s2"/></routeProfile>
+</transitRoute></transitLine></transitSchedule>"""
 
 NETWORK = b"""<?xml version="1.0"?><network><nodes>
 <node id="1" x="600000" y="5800000"/><node id="2" x="601000" y="5800000"/></nodes>
@@ -24,3 +34,12 @@ def test_read_matsim_links_parses_highway_and_capacity(tmp_path):
     row = links.iloc[0]
     assert row["road_class"] == "motorway" and row["capacity"] == 8000.0
     assert str(links.crs) == "EPSG:25832"
+
+
+def test_read_transit_stops_routes(tmp_path):
+    p = tmp_path / "schedule.xml.gz"
+    with gzip.open(p, "wb") as fh:
+        fh.write(SCHEDULE)
+    stops, routes = read_transit_stops_routes(str(p))
+    assert stops == {"s1": (600000.0, 5800000.0), "s2": (650000.0, 5800000.0)}
+    assert routes == [("rail", ["s1", "s2"])]

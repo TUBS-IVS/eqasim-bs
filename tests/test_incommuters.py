@@ -10,7 +10,13 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from braunschweig.synthesis.incommuters import direct_ride_stops  # noqa: E402
+import geopandas as gpd  # noqa: E402
+from shapely.geometry import Point, box  # noqa: E402
+
+from braunschweig.synthesis.incommuters import (  # noqa: E402
+    build_pt_entry_stops,
+    direct_ride_stops,
+)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent  # noqa: E402
 
 ZGB = {"03101", "03102"}
@@ -52,6 +58,22 @@ def test_sample_gate_per_agent_weights_by_volume_and_is_seeded():
     # 03241 agents split ~90/10 toward gate_A
     share_a = (chosen.iloc[:1000] == "gate_A").mean()
     assert 0.85 < share_a < 0.95
+
+
+def test_build_pt_entry_stops_maps_and_filters():
+    # s1 in external Kreis 03241, s2 in ZGB 03101; a route serving both -> s1 is a
+    # one-seat entry stop for 03241. s3 (external, on a route never reaching ZGB) out.
+    stops = {"s1": (605000.0, 5805000.0), "s2": (615000.0, 5805000.0),
+             "s3": (605000.0, 5845000.0)}
+    routes = [("rail", ["s1", "s2"]), ("bus", ["s3"])]
+    kreise = gpd.GeoDataFrame(
+        {"ars5": ["03241", "03101"]},
+        geometry=[box(600000, 5800000, 610000, 5850000),     # contains s1, s3
+                  box(610000, 5800000, 620000, 5810000)],    # contains s2 (ZGB)
+        crs="EPSG:25832")
+    df = build_pt_entry_stops(stops, routes, kreise, zgb_kreise={"03101"})
+    assert list(df.columns) == ["source_ars5", "stop_id", "x", "y"]
+    assert set(zip(df["source_ars5"], df["stop_id"])) == {("03241", "s1")}
 
 
 def test_sample_gate_per_agent_none_for_unknown_kreis():

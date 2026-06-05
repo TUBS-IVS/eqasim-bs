@@ -78,6 +78,51 @@ def read_matsim_links(network_path: str, crs: str = "EPSG:25832") -> gpd.GeoData
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=crs)
 
 
+def read_transit_stops_routes(schedule_path: str):
+    """Parse a MATSim transit schedule XML(.gz) into stops + routes.
+
+    Returns ``(stops, routes)`` where ``stops`` is ``{stop_id: (x, y)}`` and
+    ``routes`` is a list of ``(transport_mode, [stop_id, ...])`` in route order. Used
+    to derive PT entry stops (one-seat rides into ZGB) for PT in-commuters.
+    """
+    opener = gzip.open if schedule_path.endswith(".gz") else open
+    stops: dict[str, tuple[float, float]] = {}
+    routes = []
+    current = None
+    mode = None
+    with opener(schedule_path, "rb") as handle:
+        for event, elem in ET.iterparse(handle, events=("start", "end")):
+            tag = elem.tag.split("}")[-1]
+            if event == "end" and tag == "stopFacility":
+                stops[elem.get("id")] = (float(elem.get("x")), float(elem.get("y")))
+                elem.clear()
+            elif event == "start" and tag == "transitRoute":
+                current = []
+            elif event == "end" and tag == "transportMode":
+                mode = elem.text
+            elif event == "end" and tag == "stop":
+                if current is not None and elem.get("refId"):
+                    current.append(elem.get("refId"))
+            elif event == "end" and tag == "transitRoute":
+                routes.append((mode, current))
+                current = None
+                mode = None
+    return stops, routes
+
+
+def read_kreise(vg250_path: str, crs: str = "EPSG:25832") -> gpd.GeoDataFrame:
+    """Kreis polygons [ars5, geometry] from VG250 (vg250_krs), land area only."""
+    src = (f"/vsizip/{os.path.abspath(vg250_path)}/{VG250_INNER_GPKG}"
+           if vg250_path.endswith(".zip") else vg250_path)
+    krs = gpd.read_file(src, layer="vg250_krs")
+    krs["ARS"] = krs["ARS"].astype(str)
+    if "GF" in krs.columns:
+        krs = krs[krs["GF"] == 4]
+    krs = krs.to_crs(crs).copy()
+    krs["ars5"] = krs["ARS"].str[:5]
+    return krs.dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
+
+
 def read_external_gemeinden(vg250_path: str, crs: str = "EPSG:25832",
                             zgb_prefixes=ZGB_KREIS_PREFIXES) -> gpd.GeoDataFrame:
     """External (non-ZGB) Gemeinde points with population (EWZ) from VG250 (vg250_gem).

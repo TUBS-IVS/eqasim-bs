@@ -17,6 +17,10 @@ Region-neutral; the synpp stage wires the data sources. See
 """
 from __future__ import annotations
 
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import Point
+
 
 def direct_ride_stops(routes, stop_kreis, zgb_kreise):
     """Per source Kreis, the transit stops offering a one-seat ride into ZGB.
@@ -45,3 +49,34 @@ def direct_ride_stops(routes, stop_kreis, zgb_kreise):
             if kreis is not None and kreis not in zgb:
                 entry.setdefault(kreis, set()).add(stop_id)
     return entry
+
+
+def build_pt_entry_stops(stops, routes, kreise, zgb_kreise):
+    """PT entry stops per external source Kreis, as a tidy DataFrame.
+
+    Maps each schedule stop to its Kreis by point-in-polygon against ``kreise``
+    (GeoDataFrame [ars5, geometry]), then keeps the one-seat-to-ZGB entry stops via
+    :func:`direct_ride_stops`.
+
+    Args:
+        stops: ``{stop_id: (x, y)}`` (from :func:`read_transit_stops_routes`).
+        routes: list of ``(mode, [stop_id, ...])``.
+        kreise: GeoDataFrame [ars5, geometry] (Kreis polygons, same CRS as stops).
+        zgb_kreise: iterable of in-scope ZGB 5-digit Kreis ARS.
+
+    Returns:
+        DataFrame [source_ars5, stop_id, x, y], one row per external entry stop.
+    """
+    ids = list(stops)
+    pts = gpd.GeoDataFrame({"stop_id": ids},
+                           geometry=[Point(stops[i]) for i in ids], crs=kreise.crs)
+    joined = gpd.sjoin(pts, kreise[["ars5", "geometry"]], predicate="within", how="left")
+    joined = joined.drop_duplicates(subset="stop_id")
+    stop_kreis = dict(zip(joined["stop_id"], joined["ars5"]))
+    entry = direct_ride_stops(routes, stop_kreis, zgb_kreise)
+    rows = []
+    for ars5, stop_set in entry.items():
+        for stop_id in stop_set:
+            x, y = stops[stop_id]
+            rows.append((ars5, stop_id, x, y))
+    return pd.DataFrame(rows, columns=["source_ars5", "stop_id", "x", "y"])
