@@ -86,13 +86,15 @@ def _cut_to_cordon(context):
 
     # The cutter loads the scenario relative to the config file's directory (the
     # stage path, the java cwd), so config-path / extent-path are given relative.
+    # No --eqasim-configurator is passed: like every other prepare/run java call,
+    # the cutter falls back to the bavaria jar's default configurator (the cutter's
+    # option is "eqasim-configurator", not "...-class", and is unnecessary here).
     eqasim.run(context, "org.eqasim.core.scenario.cutter.RunScenarioCutter", [
         "--config-path", "%sconfig.xml" % prefix,
         "--output-path", context.path(),
         "--extent-path", "cordon_extent.gpkg",
         "--threads", threads,
         "--prefix", prefix,
-        "--eqasim-configurator-class", "org.eqasim.bavaria.BavariaConfigurator",
     ])
 
     cut_config = "%sconfig.xml" % prefix
