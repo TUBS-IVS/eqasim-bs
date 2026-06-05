@@ -72,7 +72,18 @@ try {
 
     $branch = (git rev-parse --abbrev-ref HEAD).Trim()
     Write-Host "    Pushing branch '$branch' to origin ..."
-    git push origin $branch
+    # git writes normal progress (e.g. "To https://...") to stderr; under
+    # $ErrorActionPreference='Stop' PowerShell treats that as a terminating
+    # NativeCommandError even when the push succeeds. Relax locally and gate on the
+    # real exit code instead.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    git push origin $branch 2>&1 | Write-Host
+    $pushExit = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    if ($pushExit -ne 0) {
+        throw "git push failed (exit $pushExit)."
+    }
 }
 finally {
     Pop-Location
