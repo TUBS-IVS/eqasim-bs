@@ -52,6 +52,31 @@ def derive_road_gates(links: gpd.GeoDataFrame, cordon: BaseGeometry) -> gpd.GeoD
     return gates
 
 
+def dedupe_gates(gates: gpd.GeoDataFrame, tolerance_m: float = 100.0) -> gpd.GeoDataFrame:
+    """Merge gates at the same physical boundary crossing into one.
+
+    A road crossing the cordon has two directed links (one per direction), so
+    :func:`derive_road_gates` yields two near-identical gate points per crossing.
+    Snap gate points to a ``tolerance_m`` grid and keep one representative per cell
+    (the highest-capacity row), so each physical corridor counts once.
+
+    Args:
+        gates: output of :func:`derive_road_gates` (point geometry, ``capacity``).
+        tolerance_m: grid size in metres for collapsing co-located gates.
+
+    Returns:
+        The deduplicated gates, capacity-sorted descending.
+    """
+    if len(gates) == 0:
+        return gates
+    g = gates.copy()
+    g["_gx"] = (g.geometry.x / tolerance_m).round().astype(int)
+    g["_gy"] = (g.geometry.y / tolerance_m).round().astype(int)
+    g = g.sort_values("capacity", ascending=False).drop_duplicates(subset=["_gx", "_gy"],
+                                                                   keep="first")
+    return g.drop(columns=["_gx", "_gy"]).reset_index(drop=True)
+
+
 def select_major_gates(gates: gpd.GeoDataFrame, allowed_classes=None,
                        min_capacity: float | None = None,
                        top_n: int | None = None) -> gpd.GeoDataFrame:

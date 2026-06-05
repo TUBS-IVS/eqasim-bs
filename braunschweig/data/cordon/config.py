@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Default car-gate road classes: long-distance commuters enter on motorways and
-# Bundesstrassen (OSM motorway/trunk/primary, plus secondary as a fallback tier).
-_DEFAULT_GATE_ROAD_CLASSES = ("motorway", "trunk", "primary", "secondary")
+# Default car-gate road classes: long-distance cross-cordon commuters enter on the
+# classified network -- Autobahn (OSM motorway) and Bundesstrasse (OSM trunk/
+# primary). Landstrassen (OSM secondary) are intentionally excluded: including them
+# made the nearest-gate assignment route far-away Kreise (e.g. Magdeburg, Hannover)
+# onto small boundary roads instead of the A2/A7/A39 corridors. Restricting to the
+# major roads makes the nearest gate the right corridor in the vast majority of cases.
+_DEFAULT_GATE_ROAD_CLASSES = ("motorway", "trunk", "primary")
 
 
 @dataclass(frozen=True)

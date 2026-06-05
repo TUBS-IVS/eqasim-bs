@@ -1,10 +1,11 @@
-"""Assign external Kreise to cordon gates and aggregate per-gate inbound volume.
+"""Assign external Kreise to cordon gates and aggregate per-gate commuter volume.
 
-For in-commuters, each external (non-ZGB) source Kreis enters the region through
-its nearest cordon gate; the BA-Pendler inbound SvB of that Kreis is the volume
-routed through that gate. This yields, per gate, *how many* commuters choose it and
-*which* Kreise feed it -- both the einpendler placement basis (Phase 3) and the
-per-gate usage shown in the validation outputs (gates.csv + gate_assignment.csv).
+Each external (non-ZGB) Kreis enters/leaves the region through its nearest cordon
+gate; a gate serves BOTH directions -- Einpendler (Einfahren: dest in ZGB) and
+Auspendler (Ausfahren: orig in ZGB). The BA-Pendler SvB give the volume per Kreis
+and direction. This yields, per gate, how many commuters use it inbound vs outbound
+and which Kreise feed it -- the (ein/aus) placement basis (Phase 3) and the per-gate
+usage in the validation outputs (gates.csv + gate_assignment.csv).
 
 Region-neutral; expects a metric CRS (EPSG:25832 for ZGB). Pure functions; the
 synpp stage / validator wires the data sources (BA OD, Kreis polygons, gates).
@@ -18,79 +19,99 @@ import geopandas as gpd
 import pandas as pd
 
 
-def inbound_volume_by_kreis(flows: pd.DataFrame, zgb_kreise) -> pd.DataFrame:
-    """Inbound SvB per external source Kreis.
+def commuter_volume_by_kreis(flows: pd.DataFrame, zgb_kreise) -> pd.DataFrame:
+    """Inbound and outbound SvB per external Kreis (one row per external Kreis).
 
-    Keeps flows whose destination Kreis is in ZGB and whose origin Kreis is NOT in
-    ZGB (true in-commuters), summed per origin Kreis.
+    - inbound  (Einpendler): dest Kreis in ZGB, orig Kreis NOT in ZGB -> by orig.
+    - outbound (Auspendler):  orig Kreis in ZGB, dest Kreis NOT in ZGB -> by dest.
+
+    The external Kreis is the origin for inbound and the destination for outbound;
+    both map to the same external Kreis ARS, hence the same gate.
 
     Args:
         flows: columns [orig_ars, dest_ars, flow] (5-digit ARS, SvB count).
         zgb_kreise: iterable of in-scope ZGB 5-digit Kreis ARS.
 
     Returns:
-        DataFrame [ars5, inbound] (one row per external source Kreis), inbound int.
+        DataFrame [ars5, inbound, outbound] (int), one row per external Kreis that
+        has any cross-cordon commute.
     """
     zgb = {str(k) for k in zgb_kreise}
-    mask = flows["dest_ars"].isin(zgb) & ~flows["orig_ars"].isin(zgb)
-    agg = (flows[mask].groupby("orig_ars", as_index=False)["flow"].sum()
-           .rename(columns={"orig_ars": "ars5", "flow": "inbound"}))
-    agg["inbound"] = agg["inbound"].astype(int)
-    return agg
+    inb = (flows[flows["dest_ars"].isin(zgb) & ~flows["orig_ars"].isin(zgb)]
+           .groupby("orig_ars")["flow"].sum().rename("inbound"))
+    outb = (flows[flows["orig_ars"].isin(zgb) & ~flows["dest_ars"].isin(zgb)]
+            .groupby("dest_ars")["flow"].sum().rename("outbound"))
+    vol = pd.concat([inb, outb], axis=1).fillna(0).astype(int)
+    vol.index.name = "ars5"
+    return vol.reset_index()
+
+
+def inbound_volume_by_kreis(flows: pd.DataFrame, zgb_kreise) -> pd.DataFrame:
+    """Inbound-only convenience: [ars5, inbound]. See :func:`commuter_volume_by_kreis`."""
+    vol = commuter_volume_by_kreis(flows, zgb_kreise)
+    return vol[vol["inbound"] > 0][["ars5", "inbound"]].reset_index(drop=True)
 
 
 def assign_kreise_to_gates_with_volume(kreise: gpd.GeoDataFrame, gates: gpd.GeoDataFrame,
-                                       inbound: pd.DataFrame) -> pd.DataFrame:
-    """Assign each external Kreis to its nearest gate and attach its inbound volume.
+                                       volume: pd.DataFrame) -> pd.DataFrame:
+    """Assign each external Kreis to its nearest gate and attach its volume columns.
 
     Args:
-        kreise: GeoDataFrame [ars5, geometry] of external source Kreise (any
-            geometry; the representative point is used for the nearest-gate match).
+        kreise: GeoDataFrame [ars5, geometry] of external Kreise (representative
+            point used for the nearest-gate match).
         gates: GeoDataFrame with a ``gate_id`` column and point geometry.
-        inbound: DataFrame [ars5, inbound] from :func:`inbound_volume_by_kreis`.
+        volume: DataFrame [ars5, <value columns...>] (e.g. inbound, outbound).
 
     Returns:
-        DataFrame [ars5, gate_id, inbound, distance_km], one row per Kreis, sorted
-        by inbound descending. Kreise with no inbound flow get inbound 0.
+        DataFrame [ars5, gate_id, <value columns...>, distance_km], one row per
+        Kreis, sorted by total volume descending. Missing volumes become 0.
 
     Raises:
         ValueError: if ``gates`` has no ``gate_id`` column.
     """
     if "gate_id" not in gates.columns:
         raise ValueError("assign_kreise_to_gates_with_volume: gates needs a 'gate_id' column")
+    value_cols = [c for c in volume.columns if c != "ars5"]
     k = kreise.copy()
     k["geometry"] = k.geometry.representative_point()
     joined = gpd.sjoin_nearest(k, gates[["gate_id", "geometry"]], how="left",
                                distance_col="dist_m")
     joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_")])
-    out = joined.merge(inbound, on="ars5", how="left")
-    out["inbound"] = out["inbound"].fillna(0).astype(int)
+    out = joined.merge(volume, on="ars5", how="left")
+    for col in value_cols:
+        out[col] = out[col].fillna(0).astype(int)
     out["distance_km"] = out["dist_m"] / 1000.0
-    return (out[["ars5", "gate_id", "inbound", "distance_km"]]
-            .sort_values("inbound", ascending=False).reset_index(drop=True))
+    out["_total"] = out[value_cols].sum(axis=1)
+    out = out.sort_values("_total", ascending=False).drop(columns="_total")
+    return out[["ars5", "gate_id"] + value_cols + ["distance_km"]].reset_index(drop=True)
 
 
-def gate_volume_summary(assignment: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate the Kreis->gate assignment per gate.
+def gate_volume_summary(assignment: pd.DataFrame,
+                        value_cols=("inbound", "outbound")) -> pd.DataFrame:
+    """Aggregate the Kreis->gate assignment per gate, for each direction.
 
     Args:
         assignment: output of :func:`assign_kreise_to_gates_with_volume`.
+        value_cols: the volume columns to sum per gate (e.g. inbound, outbound).
 
     Returns:
-        DataFrame [gate_id, n_commuters_inbound, n_kreise, source_kreise], sorted by
-        n_commuters_inbound descending. ``source_kreise`` is a ';'-joined list of the
-        contributing Kreis ARS (those with inbound > 0), sorted by inbound desc.
+        DataFrame [gate_id, <value_cols summed>, n_kreise, source_kreise], sorted by
+        total volume descending. ``n_kreise`` counts Kreise with any volume;
+        ``source_kreise`` is a ';'-joined list of those ARS (by total volume desc).
     """
+    cols = [c for c in value_cols if c in assignment.columns]
     rows = []
     for gid, sub in assignment.groupby("gate_id"):
-        sub = sub.sort_values("inbound", ascending=False)
-        contributing = sub.loc[sub["inbound"] > 0, "ars5"].tolist()
-        rows.append({
-            "gate_id": gid,
-            "n_commuters_inbound": int(sub["inbound"].sum()),
-            "n_kreise": int(len(contributing)),
-            "source_kreise": ";".join(contributing),
-        })
-    return (pd.DataFrame(rows, columns=["gate_id", "n_commuters_inbound", "n_kreise",
-                                        "source_kreise"])
-            .sort_values("n_commuters_inbound", ascending=False).reset_index(drop=True))
+        sub = sub.copy()
+        sub["_total"] = sub[cols].sum(axis=1)
+        sub = sub.sort_values("_total", ascending=False)
+        contributing = sub.loc[sub["_total"] > 0, "ars5"].tolist()
+        row = {"gate_id": gid}
+        for c in cols:
+            row[c] = int(sub[c].sum())
+        row["n_kreise"] = int(len(contributing))
+        row["source_kreise"] = ";".join(contributing)
+        rows.append(row)
+    frame = pd.DataFrame(rows, columns=["gate_id"] + cols + ["n_kreise", "source_kreise"])
+    frame["_total"] = frame[cols].sum(axis=1)
+    return frame.sort_values("_total", ascending=False).drop(columns="_total").reset_index(drop=True)

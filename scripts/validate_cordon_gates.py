@@ -46,13 +46,14 @@ from braunschweig.data.spatial.cordon import (  # noqa: E402
     buffer_m_from_fraction,
 )
 from braunschweig.data.cordon.gates import (  # noqa: E402
+    dedupe_gates,
     derive_road_gates,
     select_major_gates,
 )
 from braunschweig.data.cordon.gate_assignment import (  # noqa: E402
     assign_kreise_to_gates_with_volume,
+    commuter_volume_by_kreis,
     gate_volume_summary,
-    inbound_volume_by_kreis,
 )
 from braunschweig.data.census.pendler import _read_one as _read_ba_pendler  # noqa: E402
 
@@ -64,9 +65,11 @@ VG250_INNER_GPKG = ("vg250-ew_12-31.utm32s.gpkg.ebenen/"
 # prefixes (see braunschweig.analysis.run_mid_validation / political_prefix).
 ZGB_KREIS_PREFIXES = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 
-# Road classes where long-distance car commuters cross the cordon. Mirrors the
-# CordonConfig default gate_road_classes.
-MAJOR_ROAD_CLASSES = ("motorway", "trunk", "primary", "secondary")
+# Road classes where long-distance car commuters cross the cordon: Autobahn
+# (motorway) + Bundesstrasse (trunk/primary). Landstrassen (secondary) are excluded
+# so nearest-gate assignment routes far Kreise onto the real A2/A7/A39 corridors,
+# not small boundary roads. Mirrors the CordonConfig default gate_road_classes.
+MAJOR_ROAD_CLASSES = ("motorway", "trunk", "primary")
 
 # Candidate link attribute names that may carry the OSM road type.
 _HIGHWAY_ATTR_NAMES = ("osm:way:highway", "osm_highway", "osm:highway", "highway", "type")
@@ -249,6 +252,11 @@ def main(argv=None) -> int:
               "check CRS / buffer")
         return 1
 
+    # Each physical crossing has two directed links -> dedupe to one gate that
+    # serves both directions (Einfahren + Ausfahren).
+    gates = dedupe_gates(gates, tolerance_m=100.0)
+    print(f"    after dedupe (one gate per crossing): {len(gates):,}")
+
     allowed = MAJOR_ROAD_CLASSES if gates["road_class"].notna().any() else None
     major = select_major_gates(gates, allowed_classes=allowed, top_n=args.top_n)
     major = major.reset_index(drop=True)
@@ -259,23 +267,24 @@ def main(argv=None) -> int:
         print("    by road class: "
               + ", ".join(f"{k}:{v}" for k, v in major["road_class"].value_counts().items()))
 
-    # Assign every external (non-ZGB) Kreis to its nearest gate, weighted by the
-    # real BA-Pendler inbound SvB, so we see how often each gate is chosen and which
-    # Kreise feed it (the einpendler placement basis). Best-effort: a diagnostic,
-    # never fails the gate validation.
+    # Assign every external (non-ZGB) Kreis to its nearest gate, weighted by the real
+    # BA-Pendler SvB in BOTH directions (Einfahren = inbound, Ausfahren = outbound),
+    # so we see how often each gate is chosen per direction and which Kreise feed it
+    # (the ein/aus placement basis). Best-effort: a diagnostic, never fails the run.
     assignment = None
     gate_summary = None
     try:
         krs = _load_external_kreise(args.vg250, args.crs)
         flows = _load_ba_inbound_flows(args.data_path, args.pendler_ein, args.pendler_aus)
-        inbound = inbound_volume_by_kreis(flows, ZGB_KREIS_PREFIXES)
+        volume = commuter_volume_by_kreis(flows, ZGB_KREIS_PREFIXES)
         assignment = assign_kreise_to_gates_with_volume(
-            krs[["ars5", "geometry"]], major[["gate_id", "geometry"]], inbound)
+            krs[["ars5", "geometry"]], major[["gate_id", "geometry"]], volume)
         gate_summary = gate_volume_summary(assignment)
-        used = int((gate_summary["n_commuters_inbound"] > 0).sum())
-        total_in = int(gate_summary["n_commuters_inbound"].sum())
+        used = int(((gate_summary["inbound"] + gate_summary["outbound"]) > 0).sum())
         print(f"[6] external Kreise -> nearest gate: {len(assignment)} Kreise, "
-              f"{total_in:,} inbound SvB across {used} gates with traffic")
+              f"{int(gate_summary['inbound'].sum()):,} inbound + "
+              f"{int(gate_summary['outbound'].sum()):,} outbound SvB across "
+              f"{used} gates with traffic")
     except Exception as exc:  # diagnostic only; gate geometry validation must stand
         print(f"[6] Kreis->gate volume assignment skipped: {exc}")
 
@@ -286,25 +295,27 @@ def main(argv=None) -> int:
     out["gate_x"] = out.geometry.x
     out["gate_y"] = out.geometry.y
 
-    # Attach per-gate inbound usage (how often each gate is chosen + which Kreise).
+    # Attach per-gate usage per direction (Einfahren=inbound, Ausfahren=outbound) +
+    # which Kreise feed each gate.
     if gate_summary is not None:
         out = out.merge(gate_summary, on="gate_id", how="left")
-        out["n_commuters_inbound"] = out["n_commuters_inbound"].fillna(0).astype(int)
-        out["n_kreise"] = out["n_kreise"].fillna(0).astype(int)
+        for col in ("inbound", "outbound", "n_kreise"):
+            out[col] = out[col].fillna(0).astype(int)
         out["source_kreise"] = out["source_kreise"].fillna("")
 
     out.drop(columns="geometry").to_csv(gates_csv, index=False)
     gpd.GeoDataFrame(out, geometry="geometry", crs=major.crs).to_file(gates_gpkg, driver="GPKG")
 
-    # Per-Kreis assignment: which Kreis -> which gate, and how often (inbound SvB).
+    # Per-Kreis assignment: which Kreis -> which gate, inbound + outbound SvB.
     if assignment is not None:
         gate_attrs = out[["gate_id", "road_class", "capacity"]] if "road_class" in out.columns \
             else out[["gate_id", "capacity"]]
-        assignment_out = (assignment.merge(gate_attrs, on="gate_id", how="left")
-                          .sort_values("inbound", ascending=False))
+        assignment_out = assignment.merge(gate_attrs, on="gate_id", how="left")
+        assignment_out["_total"] = assignment_out["inbound"] + assignment_out["outbound"]
+        assignment_out = assignment_out.sort_values("_total", ascending=False).drop(columns="_total")
         assignment_csv = os.path.join(args.out, "gate_assignment.csv")
         assignment_out.to_csv(assignment_csv, index=False)
-        print(f"\n[*] wrote {assignment_csv} (which Kreis -> which gate, inbound SvB)")
+        print(f"\n[*] wrote {assignment_csv} (which Kreis -> which gate, inbound + outbound SvB)")
 
     # Reload to prove the GeoPackage is valid and geometry round-trips.
     reloaded = gpd.read_file(gates_gpkg)
@@ -324,13 +335,15 @@ def main(argv=None) -> int:
               f"@ ({r['gate_x']:,.0f}, {r['gate_y']:,.0f})")
 
     if gate_summary is not None and len(gate_summary):
-        print("\n[9] most-used gates (inbound SvB desc) and their source Kreise:")
-        top = gate_summary[gate_summary["n_commuters_inbound"] > 0].head(12)
+        print("\n[9] most-used gates (total SvB desc) -- in/out and source Kreise:")
+        gs = gate_summary.copy()
+        gs["_total"] = gs["inbound"] + gs["outbound"]
+        top = gs[gs["_total"] > 0].head(12)
         rc_by_gate = dict(zip(out["gate_id"], out["road_class"])) if "road_class" in out.columns else {}
         for _, r in top.iterrows():
             rc = f" {rc_by_gate.get(r['gate_id'], '')}" if rc_by_gate else ""
-            kreise = r["source_kreise"][:60] + ("..." if len(r["source_kreise"]) > 60 else "")
-            print(f"    {r['gate_id']}{rc}  {r['n_commuters_inbound']:>7,} SvB  "
+            kreise = r["source_kreise"][:50] + ("..." if len(r["source_kreise"]) > 50 else "")
+            print(f"    {r['gate_id']}{rc}  in {r['inbound']:>6,} / out {r['outbound']:>6,} SvB  "
                   f"from {r['n_kreise']} Kreis(e): {kreise}")
 
     print("\nDONE: gate geometry validated on the real network.")
