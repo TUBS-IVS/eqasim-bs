@@ -39,12 +39,17 @@ config:
   # a larger heap reduces GC pressure on the full 1.13 M-agent scenario.
   java_memory: 110G
 
-  # MATSim thread count (qsim + global numberOfThreads), decoupled from the
-  # memory-bound synthesis "processes" (32). The simulation is CPU-bound, so on
-  # the 64-core box use 56 threads, leaving ~8 cores for the OS, GC and I/O.
-  # Affects only the MATSim phase (preparation/routing/config + the simulation);
-  # synthesis still uses "processes" workers. None -> falls back to "processes".
-  matsim_threads: 56
+  # MATSim thread counts, decoupled from the memory-bound synthesis "processes"
+  # (32) AND split between the two MATSim phases, because they parallelise very
+  # differently (see the MATSim literature: Dobler 2013, Waraich 2009):
+  #   * global.numberOfThreads (routing / replanning / scoring between iterations)
+  #     parallelises per-person and scales well -> use most of the 64 cores.
+  #   * qsim.numberOfThreads (the mobsim) is a shared-memory parallel queue that
+  #     plateaus at ~4-8 threads (memory-bandwidth bound); more threads waste
+  #     cores and add sync overhead -> keep it low.
+  # This only affects the MATSim phase; synthesis still uses "processes" workers.
+  matsim_threads: 48        # global.numberOfThreads (routing/replanning/scoring)
+  matsim_qsim_threads: 12   # qsim.numberOfThreads (mobsim; ~plateau, kept low)
 
   # MATSim simulation: 100 iterations (0..99) on the full 100% population -- a
   # scale + behaviour test of the whole chain. Keep output light: events only at

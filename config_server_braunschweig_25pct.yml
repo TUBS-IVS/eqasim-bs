@@ -27,11 +27,13 @@ config:
 
   java_memory: 44G
 
-  # MATSim thread count (qsim + global), decoupled from the memory-bound
-  # synthesis "processes" (8) so the CPU-bound simulation uses more of the
-  # 64-core box. None -> falls back to "processes". (Does not affect an
-  # already-launched run, whose config.xml is generated at prepare time.)
-  matsim_threads: 48
+  # MATSim thread counts, split between the two phases (they scale differently):
+  # global.numberOfThreads (routing/replanning/scoring) parallelises well -> high;
+  # qsim.numberOfThreads (mobsim) plateaus at ~4-8 threads (Dobler 2013) -> low.
+  # Decoupled from the memory-bound synthesis "processes" (8). Does NOT affect an
+  # already-launched run (config.xml is generated at prepare time).
+  matsim_threads: 32        # global.numberOfThreads (routing/replanning/scoring)
+  matsim_qsim_threads: 8    # qsim.numberOfThreads (mobsim; ~plateau, kept low)
 
   # MATSim simulation iterations (0..N-1). N=200 -> 200 iterations.
   matsim_last_iteration: 199

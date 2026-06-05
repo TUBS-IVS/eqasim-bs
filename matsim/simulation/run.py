@@ -13,10 +13,17 @@ def configure(context):
     context.config("matsim_write_events_interval", 0)
     context.config("matsim_write_plans_interval", 0)
     context.config("processes")
-    # Explicit MATSim thread count (qsim + global), defaults to "processes".
-    # Decoupled from the (memory-bound) synthesis worker count so the CPU-bound
-    # simulation can use more of the machine's cores.
+    # MATSim thread counts, decoupled from the (memory-bound) synthesis worker
+    # count. global.numberOfThreads (routing / replanning / scoring between
+    # iterations) parallelises well across persons and gets the high value;
+    # qsim.numberOfThreads (the mobsim) is a Java shared-memory parallel queue
+    # that only scales to ~4-8 threads (memory-bandwidth bound; Dobler 2013,
+    # Waraich 2009), so it gets a separate, low value to avoid wasted cores and
+    # synchronisation overhead. Both default to None -> fall back
+    # (matsim_threads -> processes; qsim -> min(global, 12)), so legacy configs
+    # are unchanged.
     context.config("matsim_threads", None)
+    context.config("matsim_qsim_threads", None)
 
 def execute(context):
     config_path = "%s/%s" % (
@@ -27,7 +34,11 @@ def execute(context):
     last_iteration = int(context.config("matsim_last_iteration"))
     write_events_interval = int(context.config("matsim_write_events_interval"))
     write_plans_interval = int(context.config("matsim_write_plans_interval"))
-    matsim_threads = int(context.config("matsim_threads") or context.config("processes"))
+    global_threads = int(context.config("matsim_threads") or context.config("processes"))
+    # The parallel QSim plateaus at ~4-8 threads, so cap it well below the global
+    # thread count; an explicit matsim_qsim_threads overrides the cap.
+    qsim_threads = context.config("matsim_qsim_threads")
+    qsim_threads = int(qsim_threads) if qsim_threads else min(global_threads, 12)
 
     # Always write final iteration outputs even if interval is 0
     if write_events_interval == 0:
@@ -35,15 +46,16 @@ def execute(context):
     if write_plans_interval == 0:
         write_plans_interval = max(last_iteration, 1)
 
-    # Run routing. The qsim/global thread counts are set explicitly here (not only
-    # baked into the generated config) so the simulation reliably uses the
-    # configured MATSim thread count regardless of the generated defaults.
+    # Run the simulation. global.numberOfThreads (routing/replanning/scoring) and
+    # qsim.numberOfThreads (mobsim) are set explicitly here, not only baked into
+    # the generated config, so the run reliably uses the intended counts. They
+    # differ on purpose: the mobsim does not scale past ~4-8 threads.
     eqasim.run(context, "org.eqasim.bavaria.RunSimulation", [
         "--config-path", config_path,
         "--config:controler.lastIteration", str(last_iteration),
         "--config:controler.writeEventsInterval", str(write_events_interval),
         "--config:controler.writePlansInterval", str(write_plans_interval),
-        "--config:global.numberOfThreads", str(matsim_threads),
-        "--config:qsim.numberOfThreads", str(matsim_threads),
+        "--config:global.numberOfThreads", str(global_threads),
+        "--config:qsim.numberOfThreads", str(qsim_threads),
     ])
     assert os.path.exists("%s/simulation_output/output_events.xml.gz" % context.path())
