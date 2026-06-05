@@ -67,5 +67,15 @@ else
     echo "==> $ENV_FILE unchanged - conda environment '$CONDA_ENV' left as is."
 fi
 
+# Keep the sibling eqasim-java-bs (our own editable Java project, built via
+# eqasim_source_path=../eqasim-java-bs) in sync, so Java changes pushed to that repo
+# are picked up and rebuilt on the next run.
+JAVA_DIR="${EQASIM_JAVA_BS_DIR:-$HOME/eqasim-java-bs}"
+if [[ -d "$JAVA_DIR/.git" ]]; then
+    echo "==> Fetching latest eqasim-java-bs ..."
+    git -C "$JAVA_DIR" pull --ff-only || echo "WARN: eqasim-java-bs pull failed (continuing)"
+    echo "    eqasim-java-bs at: $(git -C "$JAVA_DIR" rev-parse --short HEAD)"
+fi
+
 echo "==> Done. Now at commit:"
 git --no-pager log -1 --oneline
