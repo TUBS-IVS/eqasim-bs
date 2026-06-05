@@ -32,6 +32,11 @@ config:
   # MATSim). 25 % population fits easily; a large heap minimises GC.
   java_memory: 100G
 
+  # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module)
+  # instead of cloning upstream eqasim-java. Required now that the Python class refs
+  # are org.eqasim.braunschweig.* -- the sibling source tree must exist next to the repo.
+  eqasim_source_path: ../eqasim-java-bs
+
   # MATSim thread counts, split between the two phases (they scale differently):
   # global.numberOfThreads (routing/replanning/scoring) parallelises well -> high;
   # qsim.numberOfThreads (mobsim) plateaus at ~4-8 threads (Dobler 2013) -> low.
@@ -105,6 +110,16 @@ config:
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 32
 
+  # --- Cross-cordon external demand (Einpendler injection) at 25% ---------------
+  # Enlarge the OSM network clip by cordon_network_source_buffer_m so motorways reach
+  # beyond the cordon, cut the prepared scenario at the cordon (ZGB +
+  # cordon_network_buffer_fraction), and inject in-commuter agents (gates derived from
+  # the cut network, gravity-placed, Mikrozensus mode, outside home via the cutter).
+  # Validated end-to-end at 1%; this is the at-scale run.
+  cordon_enabled: true
+  cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
+  cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm
@@ -177,3 +192,9 @@ aliases:
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
+  # Cross-cordon einpendler injection: terminal injection at the MATSim writers
+  # (no-op when cordon_enabled=false). Resident synthesis chain untouched.
+  matsim.scenario.population: braunschweig.matsim.scenario.population
+  matsim.scenario.households: braunschweig.matsim.scenario.households
+  matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
+  matsim.scenario.facilities: braunschweig.matsim.scenario.facilities
