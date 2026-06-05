@@ -112,7 +112,11 @@ if ($CheckOnly) {
 # A detached tmux session keeps the multi-hour run alive after we disconnect.
 # update_server.sh does git pull + conda env update; run_pipeline.sh activates
 # conda and runs synpp. Single quotes inside keep the remote shell parsing sane.
+# Kill any lingering 'eqasim' tmux session (e.g. a previous crashed run still
+# finishing its cleanup) before starting, so the launch never fails with
+# "duplicate session". This starts a fresh run; do not use while a wanted run is live.
 $remoteCmd = "cd $RemoteRepo && bash scripts/update_server.sh && " +
+             "tmux kill-session -t eqasim 2>/dev/null; " +
              "tmux new-session -d -s eqasim " +
              "'bash scripts/run_pipeline.sh $Config'"
 
