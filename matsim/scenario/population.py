@@ -155,28 +155,28 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     writer.end_plan()
     writer.end_person()
 
-def execute(context):
-    output_path = "%s/population.xml.gz" % context.path()
+def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicles):
+    """Order + merge the raw synthesis frames into the writer's expected shape.
 
-    enable_urban_parking = bool(context.config("enable_urban_parking"))
-
-    df_persons = context.stage("synthesis.population.enriched")
-    df_persons = df_persons.sort_values(by = ["household_id", "person_id"])
-    df_persons = df_persons[PERSON_FIELDS]
-
-    df_activities = context.stage("synthesis.population.activities").sort_values(by = ["person_id", "activity_index"])
-    df_locations = context.stage("synthesis.population.spatial.locations")[[
-        "person_id", "activity_index", "geometry", "location_id"]].sort_values(by = ["person_id", "activity_index"])
-
-    df_activities = pd.merge(df_activities, df_locations, how = "left", on = ["person_id", "activity_index"])
-    #df_activities["location_id"] = df_activities["location_id"].fillna(-1).astype(int)
-
-    df_trips = context.stage("synthesis.population.trips")
+    Factored out of execute() so a regional override (e.g. the cross-cordon
+    in-commuter injection) can concatenate injected agents into the raw frames and
+    reuse the exact same preparation + writer. Behaviour-preserving.
+    """
+    df_persons = df_persons.sort_values(by = ["household_id", "person_id"])[PERSON_FIELDS]
+    df_activities = df_activities.sort_values(by = ["person_id", "activity_index"])
+    df_locations = df_locations[[
+        "person_id", "activity_index", "geometry", "location_id"]].sort_values(
+            by = ["person_id", "activity_index"])
+    df_activities = pd.merge(df_activities, df_locations, how = "left",
+                             on = ["person_id", "activity_index"])
+    df_trips = df_trips.copy()
     df_trips["travel_time"] = df_trips["arrival_time"] - df_trips["departure_time"]
-
-    df_vehicles = context.stage("synthesis.vehicles.vehicles")[1]
     df_vehicles = df_vehicles.sort_values(by = ["owner_id"])
+    return df_persons, df_activities, df_trips, df_vehicles
 
+
+def write_population(output_path, df_persons, df_activities, df_trips, df_vehicles,
+                    enable_urban_parking, context):
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
             writer = writers.PopulationWriter(writer)
@@ -234,3 +234,26 @@ def execute(context):
             writer.end_population()
 
     return "population.xml.gz"
+
+
+def load_raw(context):
+    """Raw synthesis frames the population writer consumes (persons, activities,
+    locations, trips, vehicles). Factored out so a regional override can append
+    injected agents before prepare_frames()."""
+    return dict(
+        persons = context.stage("synthesis.population.enriched"),
+        activities = context.stage("synthesis.population.activities"),
+        locations = context.stage("synthesis.population.spatial.locations"),
+        trips = context.stage("synthesis.population.trips"),
+        vehicles = context.stage("synthesis.vehicles.vehicles")[1],
+    )
+
+
+def execute(context):
+    output_path = "%s/population.xml.gz" % context.path()
+    enable_urban_parking = bool(context.config("enable_urban_parking"))
+    raw = load_raw(context)
+    df_persons, df_activities, df_trips, df_vehicles = prepare_frames(
+        raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
+    return write_population(output_path, df_persons, df_activities, df_trips,
+                           df_vehicles, enable_urban_parking, context)

@@ -27,8 +27,13 @@ def add_household(writer, household, member_ids):
 
 def execute(context):
     output_path = "%s/households.xml.gz" % context.path()
-
     df_persons = context.stage("synthesis.population.enriched")
+    return write_households(output_path, df_persons, context)
+
+
+def write_households(output_path, df_persons, context):
+    """Write the households XML from a persons frame. Factored out so a regional
+    override can concatenate injected in-commuters before writing."""
     df_persons = df_persons.sort_values(by = ["household_id", "person_id"])
     df_persons = df_persons[FIELDS]
 

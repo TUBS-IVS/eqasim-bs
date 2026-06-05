@@ -132,13 +132,13 @@ aliases:
   data.spatial.iris: eqasim_common.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
   synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance
-  # Cross-cordon einpendler injection: the merge-wrappers append injected in-commuters
-  # to each resident frame (no-op when cordon_enabled=false, so byte-identical). They
-  # reference the RAW braunschweig.synthesis.population.enriched internally (no cycle).
-  synthesis.population.enriched: braunschweig.synthesis.incommuter_merge.enriched
-  synthesis.population.trips: braunschweig.synthesis.incommuter_merge.trips
-  synthesis.population.activities: braunschweig.synthesis.incommuter_merge.activities
-  synthesis.population.spatial.locations: braunschweig.synthesis.incommuter_merge.locations
-  synthesis.vehicles.vehicles: braunschweig.synthesis.incommuter_merge.vehicles
+  # Cross-cordon einpendler injection: terminal injection at the MATSim writers. The
+  # resident synthesis chain stays untouched (resident-only); these overrides read the
+  # resident frames + the injected in-commuters and write the merged scenario. No-op
+  # when cordon_enabled=false (byte-identical). Downstream of synthesis -> no cycle.
+  matsim.scenario.population: braunschweig.matsim.scenario.population
+  matsim.scenario.households: braunschweig.matsim.scenario.households
+  matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
