@@ -14,7 +14,16 @@ logging itself.
 from __future__ import annotations
 
 import logging
+import os
 import sys
+
+# Running this file as a script puts scripts/ on sys.path[0] (NOT the repo root),
+# so synpp could not import the stage packages (synthesis, matsim, braunschweig)
+# and failed with "<stage> is not a supported object". Prepend the repo root (the
+# parent of scripts/) so stage modules resolve exactly as with `python -m synpp`.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 import synpp
 
