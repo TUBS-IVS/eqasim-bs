@@ -25,6 +25,12 @@ def configure(context):
     context.config("osm_highways", "*")
     context.config("osm_railways", "*")
 
+    # Cross-cordon feature (flag-gated, default off): enlarge ONLY the OSM clip
+    # polygon so the built network reaches beyond the cordon (motorways crossing it
+    # become gates after cutting). The population scope is unchanged.
+    context.config("cordon_enabled", False)
+    context.config("cordon_network_source_buffer_m", 0.0)
+
     context.stage("data.osm.osmosis")
     context.stage("data.spatial.municipalities")
 
@@ -54,8 +60,15 @@ def write_poly(df, path, geometry_column = "geometry"):
 def execute(context):
     input_files = get_input_files("{}/{}".format(context.config("data_path"), context.config("osm_path")))
     
-    # Prepare bounding area
+    # Prepare bounding area. With the cross-cordon feature on, enlarge the clip
+    # polygon by a source buffer (in metres) so the network extends beyond the
+    # cordon; otherwise this is the legacy dissolved-municipalities clip.
     df_area = context.stage("data.spatial.municipalities")
+    if context.config("cordon_enabled") and context.config("cordon_network_source_buffer_m"):
+        from braunschweig.data.cordon.network_clip import osm_clip_geometry
+        df_area = osm_clip_geometry(
+            df_area, context.config("cordon_enabled"),
+            context.config("cordon_network_source_buffer_m"))
     write_poly(df_area, "%s/boundary.poly" % context.path())
 
     # Filter input files for quicker processing
