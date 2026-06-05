@@ -16,6 +16,7 @@ from braunschweig.data.cordon.mode_reference import (  # noqa: E402
     commute_distance_band,
     mode_reference_from_table,
     rake_to_margins,
+    restrict_to_modes,
     route_distance_band,
 )
 
@@ -52,6 +53,29 @@ def test_commute_distance_band_exclusive_upper():
     assert commute_distance_band(0.4, edges=(0.5, 1, 2)) == "<0.5"
     assert commute_distance_band(1.5, edges=(0.5, 1, 2)) == "1-2"
     assert commute_distance_band(2.0, edges=(0.5, 1, 2)) == ">=2"
+
+
+def test_restrict_to_modes_drops_walk_and_renormalises():
+    # A short band where the raw Mikrozensus reference is walk-heavy -- exactly the
+    # case that produced unrealistic walking in-commuters before the restriction.
+    reference = {
+        "<0.5": {"walk": 0.6, "bike": 0.2, "car": 0.15, "pt": 0.05},
+        "10-20": {"walk": 0.02, "car": 0.78, "pt": 0.20},
+    }
+    restricted = restrict_to_modes(reference, allowed=("car", "pt"))
+    # No walk/bike survive.
+    for band, dist in restricted.items():
+        assert set(dist) <= {"car", "pt"}
+        assert abs(sum(dist.values()) - 1.0) < 1e-9
+    # car:pt ratio within the kept modes is preserved (0.15:0.05 -> 0.75:0.25).
+    assert abs(restricted["<0.5"]["car"] - 0.75) < 1e-9
+    assert abs(restricted["<0.5"]["pt"] - 0.25) < 1e-9
+
+
+def test_restrict_to_modes_falls_back_when_no_allowed_mode():
+    reference = {"x": {"walk": 0.7, "bike": 0.3}}
+    restricted = restrict_to_modes(reference, allowed=("car", "pt"))
+    assert restricted["x"] == {"car": 1.0}
 
 
 def test_route_distance_band_applies_detour():

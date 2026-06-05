@@ -63,6 +63,28 @@ def rake_to_margins(matrix, row_margin, col_margin, iterations: int = 200):
     return X
 
 
+def restrict_to_modes(reference: dict, allowed=("car", "pt")) -> dict:
+    """Restrict a nested mode reference ``{band: {mode: prob}}`` to ``allowed`` modes,
+    renormalising each band to sum to 1.
+
+    Cross-cordon commuters realistically use only car or PT -- walk/bike over a cordon
+    are negligible (design assumption), and the raw Mikrozensus reference would
+    otherwise assign walk to short gate->work distances. The dropped probability mass
+    is redistributed proportionally over the kept modes; if a band has none of the
+    allowed modes, it falls back to the first allowed mode with probability 1.
+    """
+    allowed = tuple(allowed)
+    out = {}
+    for band, dist in reference.items():
+        kept = {m: float(p) for m, p in dist.items() if m in allowed}
+        total = sum(kept.values())
+        if total > 0:
+            out[band] = {m: p / total for m, p in kept.items()}
+        else:
+            out[band] = {allowed[0]: 1.0}
+    return out
+
+
 def commute_distance_band(distance_km, edges=(5, 10, 25, 50)) -> str:
     """Classify a commute distance (km) into a band with an EXCLUSIVE upper bound.
 

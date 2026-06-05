@@ -26,7 +26,8 @@ from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
 from braunschweig.data.cordon.gate_entry import gate_entry_time_s
-from braunschweig.data.cordon.mode_reference import MID_DISTANCE_EDGES, route_distance_band
+from braunschweig.data.cordon.mode_reference import (
+    MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon.plans import (
     assign_fixed_mode, build_incommuter_activities, build_incommuter_locations,
     build_incommuter_trips, extract_commute_times, sample_donors,
@@ -110,7 +111,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             zgb_work, mode_reference, hts_persons,
                             hts_trips, person_col, n_residents, n_resident_households,
                             rng, band_edges=MID_DISTANCE_EDGES, gate_speed_kmh=30.0,
-                            detour_factor=1.3, pt_entry_stops=None):
+                            detour_factor=1.3, pt_entry_stops=None,
+                            commute_modes=("car", "pt")):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -138,9 +140,13 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     work_x, work_y, _ = _sample_workplaces(agents["dest_ars"].to_numpy(), zgb_work, rng)
 
     # 3) fixed mode from the Mikrozensus reference by commute-distance band (gate->work).
+    # Cross-cordon commuters realistically use only car or PT -- walk/bike over the
+    # cordon are negligible, so the reference is restricted to ``commute_modes`` (the
+    # dropped probability mass is redistributed proportionally; see restrict_to_modes).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
+    restricted_reference = restrict_to_modes(mode_reference, allowed=commute_modes)
     modes = assign_fixed_mode(
-        dist_km, mode_reference,
+        dist_km, restricted_reference,
         lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng)
 
     # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any).

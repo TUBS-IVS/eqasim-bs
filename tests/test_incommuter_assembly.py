@@ -75,6 +75,21 @@ def test_build_incommuter_frames_schema_and_counts():
     assert (persons["subpopulation"] == "incommuter").all()
 
 
+def test_walk_and_bike_are_never_assigned_to_incommuters():
+    # Even a walk/bike-dominated reference (e.g. a short gate->work distance) must yield
+    # only car/pt for cross-cordon commuters -- walk/bike over the cordon are unrealistic.
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    rng = np.random.default_rng(3)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"walk": 0.7, "bike": 0.2, "car": 0.08, "pt": 0.02}},
+        band_edges=(10,), hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0)
+    assert set(frames["trips"]["mode"]) <= {"car", "pt"}
+    assert set(frames["validation"]["mode"]) <= {"car", "pt"}
+
+
 def test_pt_agents_board_at_pt_entry_stop():
     gates, assignment, flows, zgb_work, hp, ht = _inputs()
     pt_stops = pd.DataFrame([("03241", "stopA", 604000.0, 5841000.0)],
