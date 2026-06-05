@@ -46,10 +46,19 @@ from braunschweig.data.spatial.cordon import (  # noqa: E402
     buffer_m_from_fraction,
 )
 from braunschweig.data.cordon.gates import (  # noqa: E402
-    assign_kreise_to_gates,
     derive_road_gates,
     select_major_gates,
 )
+from braunschweig.data.cordon.gate_assignment import (  # noqa: E402
+    assign_kreise_to_gates_with_volume,
+    gate_volume_summary,
+    inbound_volume_by_kreis,
+)
+from braunschweig.data.census.pendler import _read_one as _read_ba_pendler  # noqa: E402
+
+# Inner path of the vg250_krs (Kreis) layer inside the VG250 GeoPackage zip.
+VG250_INNER_GPKG = ("vg250-ew_12-31.utm32s.gpkg.ebenen/"
+                    "vg250-ew_ebenen_1231/DE_VG250.gpkg")
 
 # The eight Zweckverband Grossraum Braunschweig (ZGB) Kreise, as 5-digit ARS
 # prefixes (see braunschweig.analysis.run_mid_validation / political_prefix).
@@ -157,6 +166,34 @@ def load_matsim_links(network_path: str, crs: str = "EPSG:25832") -> gpd.GeoData
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=crs)
 
 
+def _load_external_kreise(vg250_path, crs="EPSG:25832"):
+    """External (non-ZGB) Kreis polygons from VG250 (vg250_krs), dissolved per ARS."""
+    if not vg250_path:
+        raise ValueError("no --vg250 path for external Kreis polygons")
+    src = (f"/vsizip/{os.path.abspath(vg250_path)}/{VG250_INNER_GPKG}"
+           if vg250_path.endswith(".zip") else vg250_path)
+    krs = gpd.read_file(src, layer="vg250_krs")
+    krs["ARS"] = krs["ARS"].astype(str)
+    if "GF" in krs.columns:
+        krs = krs[krs["GF"] == 4]   # land area (drop water-only parts)
+    ext = krs[~krs["ARS"].str[:5].isin(ZGB_KREIS_PREFIXES)].to_crs(crs).copy()
+    ext["ars5"] = ext["ARS"].str[:5]
+    return ext.dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
+
+
+def _load_ba_inbound_flows(data_path, ein_rel, aus_rel):
+    """BA-Pendler Kreis OD [orig_ars, dest_ars, flow] from the two statistik CSVs."""
+    frames = []
+    for rel, orient in ((ein_rel, "ein"), (aus_rel, "aus")):
+        path = os.path.join(data_path, rel)
+        if os.path.exists(path):
+            frames.append(_read_ba_pendler(path, orient)[["orig_ars", "dest_ars", "flow"]])
+    if not frames:
+        raise ValueError(f"no BA pendler CSV found under {data_path}")
+    df = pd.concat(frames, ignore_index=True)
+    return df.groupby(["orig_ars", "dest_ars"], as_index=False)["flow"].max()
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -170,6 +207,12 @@ def main(argv=None) -> int:
                         help="cordon buffer as fraction of the region half-diagonal")
     parser.add_argument("--top-n", type=int, default=None,
                         help="optional cap on number of major gates (by capacity)")
+    # BA-Pendler OD (for per-gate inbound volume + Kreis->gate assignment).
+    parser.add_argument("--data-path", default="eqasim-data/data")
+    parser.add_argument("--pendler-ein",
+                        default="braunschweig/statistik_pendler_2026042493412.csv")
+    parser.add_argument("--pendler-aus",
+                        default="braunschweig/statistik_pendler_2026042493430.csv")
     args = parser.parse_args(argv)
 
     if not args.muni_pickle and not args.vg250:
@@ -216,24 +259,25 @@ def main(argv=None) -> int:
         print("    by road class: "
               + ", ".join(f"{k}:{v}" for k, v in major["road_class"].value_counts().items()))
 
-    # Map the external (non-ZGB) NDS Kreise to their nearest gate as a smoke test of
-    # the entry-corridor assignment (this is what inbound commuters will use).
-    if not args.vg250:
-        print("[6] Kreis->gate assignment skipped (no --vg250 for external Kreis polygons)")
-    else:
-        try:
-            all_kreise = gpd.read_file(f"zip://{args.vg250}", layer="vg250_krs") \
-                if args.vg250.endswith(".zip") else gpd.read_file(args.vg250, layer="vg250_krs")
-            all_kreise["ARS"] = all_kreise["ARS"].astype(str)
-            ext = all_kreise[(all_kreise["ARS"].str[:2] == "03")
-                             & (~all_kreise["ARS"].str[:5].isin(ZGB_KREIS_PREFIXES))].to_crs(args.crs)
-            assigned = assign_kreise_to_gates(ext[["ARS", "geometry"]],
-                                              major[["gate_id", "geometry"]])
-            used = assigned["gate_id"].nunique()
-            print(f"[6] external NDS Kreise -> nearest gate: {len(assigned)} Kreise use "
-                  f"{used} distinct gates")
-        except Exception as exc:  # diagnostic only; never fail gate validation on this
-            print(f"[6] Kreis->gate assignment skipped: {exc}")
+    # Assign every external (non-ZGB) Kreis to its nearest gate, weighted by the
+    # real BA-Pendler inbound SvB, so we see how often each gate is chosen and which
+    # Kreise feed it (the einpendler placement basis). Best-effort: a diagnostic,
+    # never fails the gate validation.
+    assignment = None
+    gate_summary = None
+    try:
+        krs = _load_external_kreise(args.vg250, args.crs)
+        flows = _load_ba_inbound_flows(args.data_path, args.pendler_ein, args.pendler_aus)
+        inbound = inbound_volume_by_kreis(flows, ZGB_KREIS_PREFIXES)
+        assignment = assign_kreise_to_gates_with_volume(
+            krs[["ars5", "geometry"]], major[["gate_id", "geometry"]], inbound)
+        gate_summary = gate_volume_summary(assignment)
+        used = int((gate_summary["n_commuters_inbound"] > 0).sum())
+        total_in = int(gate_summary["n_commuters_inbound"].sum())
+        print(f"[6] external Kreise -> nearest gate: {len(assignment)} Kreise, "
+              f"{total_in:,} inbound SvB across {used} gates with traffic")
+    except Exception as exc:  # diagnostic only; gate geometry validation must stand
+        print(f"[6] Kreis->gate volume assignment skipped: {exc}")
 
     os.makedirs(args.out, exist_ok=True)
     gates_csv = os.path.join(args.out, "gates.csv")
@@ -241,8 +285,26 @@ def main(argv=None) -> int:
     out = major.copy()
     out["gate_x"] = out.geometry.x
     out["gate_y"] = out.geometry.y
+
+    # Attach per-gate inbound usage (how often each gate is chosen + which Kreise).
+    if gate_summary is not None:
+        out = out.merge(gate_summary, on="gate_id", how="left")
+        out["n_commuters_inbound"] = out["n_commuters_inbound"].fillna(0).astype(int)
+        out["n_kreise"] = out["n_kreise"].fillna(0).astype(int)
+        out["source_kreise"] = out["source_kreise"].fillna("")
+
     out.drop(columns="geometry").to_csv(gates_csv, index=False)
-    major.to_file(gates_gpkg, driver="GPKG")
+    gpd.GeoDataFrame(out, geometry="geometry", crs=major.crs).to_file(gates_gpkg, driver="GPKG")
+
+    # Per-Kreis assignment: which Kreis -> which gate, and how often (inbound SvB).
+    if assignment is not None:
+        gate_attrs = out[["gate_id", "road_class", "capacity"]] if "road_class" in out.columns \
+            else out[["gate_id", "capacity"]]
+        assignment_out = (assignment.merge(gate_attrs, on="gate_id", how="left")
+                          .sort_values("inbound", ascending=False))
+        assignment_csv = os.path.join(args.out, "gate_assignment.csv")
+        assignment_out.to_csv(assignment_csv, index=False)
+        print(f"\n[*] wrote {assignment_csv} (which Kreis -> which gate, inbound SvB)")
 
     # Reload to prove the GeoPackage is valid and geometry round-trips.
     reloaded = gpd.read_file(gates_gpkg)
@@ -260,6 +322,16 @@ def main(argv=None) -> int:
         rc = f"  {r['road_class']}" if "road_class" in show.columns else ""
         print(f"    {r['gate_id']}  cap={r['capacity']:>7.0f}{rc}  "
               f"@ ({r['gate_x']:,.0f}, {r['gate_y']:,.0f})")
+
+    if gate_summary is not None and len(gate_summary):
+        print("\n[9] most-used gates (inbound SvB desc) and their source Kreise:")
+        top = gate_summary[gate_summary["n_commuters_inbound"] > 0].head(12)
+        rc_by_gate = dict(zip(out["gate_id"], out["road_class"])) if "road_class" in out.columns else {}
+        for _, r in top.iterrows():
+            rc = f" {rc_by_gate.get(r['gate_id'], '')}" if rc_by_gate else ""
+            kreise = r["source_kreise"][:60] + ("..." if len(r["source_kreise"]) > 60 else "")
+            print(f"    {r['gate_id']}{rc}  {r['n_commuters_inbound']:>7,} SvB  "
+                  f"from {r['n_kreise']} Kreis(e): {kreise}")
 
     print("\nDONE: gate geometry validated on the real network.")
     return 0
