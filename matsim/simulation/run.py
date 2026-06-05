@@ -50,7 +50,7 @@ def execute(context):
     # qsim.numberOfThreads (mobsim) are set explicitly here, not only baked into
     # the generated config, so the run reliably uses the intended counts. They
     # differ on purpose: the mobsim does not scale past ~4-8 threads.
-    eqasim.run(context, "org.eqasim.bavaria.RunSimulation", [
+    eqasim.run(context, "org.eqasim.braunschweig.RunSimulation", [
         "--config-path", config_path,
         "--config:controler.lastIteration", str(last_iteration),
         "--config:controler.writeEventsInterval", str(write_events_interval),

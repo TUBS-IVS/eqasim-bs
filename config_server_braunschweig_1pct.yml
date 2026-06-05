@@ -35,6 +35,11 @@ config:
 
   java_memory: 100G
 
+  # Build our OWN editable Java project (../eqasim-java-bs, the renamed 'braunschweig'
+  # module) instead of cloning upstream eqasim-java. Requires the sibling source tree
+  # to exist next to the repo (locally and on the server). Empty -> legacy upstream clone.
+  eqasim_source_path: ../eqasim-java-bs
+
   # MATSim threads: split global (routing/replanning) vs qsim (mobsim, ~plateau).
   matsim_threads: 48        # global.numberOfThreads
   matsim_qsim_threads: 12   # qsim.numberOfThreads
