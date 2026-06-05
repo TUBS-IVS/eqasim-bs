@@ -310,8 +310,12 @@ def execute(context):
         zgb_work=context.stage("braunschweig.locations.work"),
         mode_reference=load_commute_mode_by_distance(context.config("data_path")),
         hts_persons=hts_persons, hts_trips=hts_trips, person_col="person_id",
-        n_residents=len(residents),
-        n_resident_households=int(residents["household_id"].nunique()),
+        # Offsets are max+1, NOT count/nunique: resident person/household ids need not
+        # be a contiguous [0, n) range, and any overlap would make injected ids
+        # collide with residents -> interleaved (household_id, person_id) sort ->
+        # a person ends up with zero activities (population writer assertion).
+        n_residents=int(residents["person_id"].max()) + 1,
+        n_resident_households=int(residents["household_id"].max()) + 1,
         rng=rng,
         gate_speed_kmh=float(context.config("cordon_gate_speed_kmh")),
         pt_entry_stops=context.stage("braunschweig.data.cordon_pt_gates"))
