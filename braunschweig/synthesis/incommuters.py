@@ -243,9 +243,23 @@ def _build_households(ids):
 
 
 def _build_vehicles(person_ids, modes):
-    """One car vehicle per car-mode in-commuter (others use PT/walk/bike)."""
-    rows = [(pid, f"{pid}:car", "car") for pid, m in zip(person_ids, modes) if m == "car"]
-    return pd.DataFrame(rows, columns=["owner_id", "vehicle_id", "mode"])
+    """One car vehicle per car-mode in-commuter (others use PT/walk/bike).
+
+    Columns match the resident vehicles frame (synthesis.vehicles.cars.default) so
+    the concat-wrapper appends cleanly: owner_id, mode, vehicle_id, type_id, critair,
+    technology, age, euro.
+    """
+    owners = [pid for pid, m in zip(person_ids, modes) if m == "car"]
+    return pd.DataFrame({
+        "owner_id": owners,
+        "mode": "car",
+        "vehicle_id": [f"{pid}:car" for pid in owners],
+        "type_id": "default_car",
+        "critair": "Crit'air 1",
+        "technology": "Gazole",
+        "age": 0,
+        "euro": 6,
+    })
 
 
 def _empty_frames(crs):
