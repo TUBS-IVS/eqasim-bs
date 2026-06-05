@@ -63,6 +63,7 @@ if [ -n "$LOG" ]; then
   printf 'MTIME\t%s\n' "$(date -r "$LOG" '+%Y-%m-%d %H:%M:%S')"
   printf 'ITER\t%s\n' "$(grep -aoE 'ITERATION [0-9]+' "$LOG" | tail -1 | grep -oE '[0-9]+')"
   printf 'STAGE\t%s\n' "$(grep -aE 'Executing|Running|^\[' "$LOG" | tail -1 | cut -c1-110)"
+  printf 'PROGRESS\t%s\n' "$(grep -aoE 'Pipeline progress: [0-9]+/[0-9]+' "$LOG" | tail -1 | grep -oE '[0-9]+/[0-9]+')"
   printf 'DONE\t%s\n' "$(grep -acE 'Pipeline finished|MATSim run finished' "$LOG")"
   echo '---TAIL---'
   tail -n 12 "$LOG"
@@ -138,6 +139,18 @@ function Show-Dashboard($snap) {
     }
     else {
         Write-Host "  phase  : population synthesis (synpp)" -ForegroundColor Yellow
+        # Stage-progress bar (synpp prints "Pipeline progress: N/M"), analogous to
+        # the MATSim iteration bar, so the synthesis phase is observable too.
+        $progress = $f['PROGRESS']
+        if ($progress -and $progress -match '^(\d+)/(\d+)$') {
+            $pdone = [int]$matches[1]
+            $ptotal = [math]::Max([int]$matches[2], 1)
+            $pfrac = [math]::Min($pdone / $ptotal, 1.0)
+            $barLen = 40
+            $pfill = [int]([math]::Round($pfrac * $barLen))
+            $pbar = ('#' * $pfill) + ('.' * ($barLen - $pfill))
+            Write-Host ("  stages : [{0}] {1} / {2}  ({3:P0})" -f $pbar, $pdone, $ptotal, $pfrac)
+        }
         Write-Host "  stage  : $($f['STAGE'])"
     }
     if ($f['DONE'] -and [int]$f['DONE'] -gt 0) {
