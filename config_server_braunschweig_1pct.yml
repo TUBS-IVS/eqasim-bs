@@ -74,6 +74,16 @@ config:
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 32
 
+  # --- Cross-cordon external demand (Phase 3, ON for 1% validation) -------------
+  # Enabled here so the 1% loop validates the build-then-cut flow end to end. The
+  # 25%/100% configs keep it off (default) until validated. Enabling it (a) enlarges
+  # ONLY the OSM network clip by cordon_network_source_buffer_m so motorways reach
+  # beyond the cordon, and (b) cuts the prepared scenario at the cordon (dissolved
+  # ZGB + cordon_network_buffer_fraction) with eqasim's RunScenarioCutter.
+  cordon_enabled: true
+  cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
+  cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm
