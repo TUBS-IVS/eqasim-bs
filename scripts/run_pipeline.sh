@@ -90,7 +90,15 @@ log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 
 # PYTHONUTF8=1 avoids UnicodeEncodeError when stages print non-ASCII diagnostics
 # (e.g. the IPF "max |delta| per margin" line) into a redirected/teed stream.
+# run_synpp.py is a thin wrapper around `python -m synpp` that timestamps the log
+# lines so per-stage runtimes can be extracted afterwards.
 echo "==> Running synpp on $CONFIG (env: $CONDA_ENV), logging to $log_file"
-PYTHONUTF8=1 python -m synpp "$CONFIG" 2>&1 | tee "$log_file"
+PYTHONUTF8=1 python scripts/run_synpp.py "$CONFIG" 2>&1 | tee "$log_file"
 
 echo "==> Pipeline finished. Log: $REPO_DIR/$log_file"
+
+# Per-stage runtime CSV (which stages dominated the run -> tune settings). Runs on
+# the timestamped log; best-effort, never fails the run.
+runtime_csv="${log_file%.log}_stage_runtime.csv"
+PYTHONUTF8=1 python -m braunschweig.analysis.runtime --log "$log_file" \
+    --output "$runtime_csv" || echo "WARNING: runtime analysis failed (non-fatal)"
