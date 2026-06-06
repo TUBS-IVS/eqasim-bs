@@ -36,12 +36,17 @@ def expand_to_agents(flows: pd.DataFrame, sampling_rate: float) -> pd.DataFrame:
     Scales each SvB flow by ``sampling_rate`` and rounds to the nearest integer
     count; flows whose scaled count rounds to zero are dropped. Returns a
     DataFrame with columns [orig_ars, dest_ars], one row per agent.
+
+    Vectorised via ``np.repeat`` for speed. The per-row count uses ``np.round``,
+    which applies the same round-half-to-even (banker's) rule as the Python 3
+    builtin ``round`` used by the original elementwise loop, so the resulting
+    counts -- and hence the agent rows and their order -- are identical.
     """
-    rows = []
-    for _, r in flows.iterrows():
-        n = int(round(float(r["flow"]) * sampling_rate))
-        rows.extend([(r["orig_ars"], r["dest_ars"])] * n)
-    return pd.DataFrame(rows, columns=["orig_ars", "dest_ars"])
+    flow = flows["flow"].to_numpy(dtype=float)
+    counts = np.round(flow * sampling_rate).astype(np.int64)
+    orig = np.repeat(flows["orig_ars"].to_numpy(), counts)
+    dest = np.repeat(flows["dest_ars"].to_numpy(), counts)
+    return pd.DataFrame({"orig_ars": orig, "dest_ars": dest})
 
 
 def make_incommuter_ids(n: int, n_residents: int, n_resident_households: int) -> pd.DataFrame:

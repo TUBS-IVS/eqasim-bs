@@ -25,7 +25,6 @@ from shapely.geometry import Point
 from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
-from braunschweig.data.cordon.gate_entry import gate_entry_time_s
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon.plans import (
@@ -233,17 +232,32 @@ def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
 
 
 def _agent_times(donors, hts_trips, person_col, dist_km, speed_kmh, detour_factor):
-    """Per-agent (arrive_work, depart_work, depart_home, arrive_home) seconds."""
-    by_person = {pid: sub for pid, sub in hts_trips.groupby(person_col)}
-    arrive_work, depart_work, arrive_home = [], [], []
-    for _, donor in donors.iterrows():
-        _dh, aw, dw, ah = extract_commute_times(by_person[donor[person_col]])
-        arrive_work.append(aw); depart_work.append(dw); arrive_home.append(ah)
-    arrive_work = np.array(arrive_work, dtype=float)
-    depart_work = np.array(depart_work, dtype=float)
-    arrive_home = np.array(arrive_home, dtype=float)
-    depart_home = np.array([gate_entry_time_s(aw, dkm, speed_kmh, detour_factor)
-                            for aw, dkm in zip(arrive_work, dist_km)], dtype=float)
+    """Per-agent (arrive_work, depart_work, depart_home, arrive_home) seconds.
+
+    Donors are sampled WITH REPLACEMENT, so the same HTS person can back many
+    agents. ``extract_commute_times`` is therefore memoised ONCE per unique donor
+    id and mapped onto the agents -- the per-agent result is identical to calling
+    it per agent (the function is a pure read of the donor's trips), but the work
+    is done once per distinct donor instead of once per agent. The trip table is
+    grouped only over the donors actually used.
+    """
+    donor_ids = donors[person_col].to_numpy()
+    unique_ids = pd.unique(donor_ids)
+    used = hts_trips[hts_trips[person_col].isin(unique_ids)]
+    by_person = {pid: sub for pid, sub in used.groupby(person_col)}
+    # Memoise the four commute times per UNIQUE donor id (same donor -> same times).
+    times_by_id = {pid: extract_commute_times(by_person[pid]) for pid in unique_ids}
+    arrive_work = np.array([times_by_id[pid][1] for pid in donor_ids], dtype=float)
+    depart_work = np.array([times_by_id[pid][2] for pid in donor_ids], dtype=float)
+    arrive_home = np.array([times_by_id[pid][3] for pid in donor_ids], dtype=float)
+    # gate_entry_time_s is pure arithmetic: max(0, arrive_work - travel_s) with
+    # travel_s = (dist_km * detour_factor) / speed_kmh * 3600. Vectorise it directly
+    # (identical to the per-agent scalar call; speed_kmh > 0 guarded as before).
+    if speed_kmh <= 0:
+        raise ValueError("gate_entry_time_s: speed_kmh must be > 0")
+    dist_km = np.asarray(dist_km, dtype=float)
+    travel_s = (dist_km * detour_factor) / speed_kmh * 3600.0
+    depart_home = np.maximum(0.0, arrive_work - travel_s)
     return arrive_work, depart_work, depart_home, arrive_home
 
 

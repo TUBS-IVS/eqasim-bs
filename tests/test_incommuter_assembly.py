@@ -10,7 +10,10 @@ from shapely.geometry import Point
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from braunschweig.synthesis.incommuters import build_incommuter_frames  # noqa: E402
+from braunschweig.synthesis.incommuters import (  # noqa: E402
+    _agent_times, build_incommuter_frames)
+from braunschweig.data.cordon.gate_entry import gate_entry_time_s  # noqa: E402
+from braunschweig.data.cordon.plans import extract_commute_times  # noqa: E402
 
 
 def _inputs():
@@ -109,3 +112,59 @@ def test_pt_agents_board_at_pt_entry_stop():
     assert abs(home_loc.geometry.y - 5841000.0) < 1e-6
     # car-only commuters own no vehicle here
     assert len(frames["vehicles"]) == 0
+
+
+def _agent_times_reference(donors, hts_trips, person_col, dist_km, speed_kmh, detour_factor):
+    """Original per-agent implementation, kept as the equivalence oracle."""
+    by_person = {pid: sub for pid, sub in hts_trips.groupby(person_col)}
+    arrive_work, depart_work, arrive_home = [], [], []
+    for _, donor in donors.iterrows():
+        _dh, aw, dw, ah = extract_commute_times(by_person[donor[person_col]])
+        arrive_work.append(aw); depart_work.append(dw); arrive_home.append(ah)
+    arrive_work = np.array(arrive_work, dtype=float)
+    depart_work = np.array(depart_work, dtype=float)
+    arrive_home = np.array(arrive_home, dtype=float)
+    depart_home = np.array([gate_entry_time_s(aw, dkm, speed_kmh, detour_factor)
+                            for aw, dkm in zip(arrive_work, dist_km)], dtype=float)
+    return arrive_work, depart_work, depart_home, arrive_home
+
+
+def test_agent_times_memoised_matches_per_agent_recomputation():
+    # Three distinct donors with different Home->Work->Home timings; the agent table
+    # samples them WITH duplicates (donor 2 used three times, donor 1 twice) so the
+    # memoised path must reproduce each agent's times from its donor exactly.
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 7.0 * 3600, 7.5 * 3600),
+        (1, "work", "home", 16.0 * 3600, 16.5 * 3600),
+        (2, "home", "work", 6.0 * 3600, 7.0 * 3600),
+        (2, "work", "home", 17.0 * 3600, 18.0 * 3600),
+        (3, "home", "work", 8.0 * 3600, 8.25 * 3600),
+        (3, "work", "home", 15.0 * 3600, 15.25 * 3600),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+    # Sampled-with-replacement donor order (duplicates on purpose).
+    donor_ids = [2, 1, 2, 3, 1, 2]
+    donors = pd.DataFrame({"person_id": donor_ids})
+    # One distance per agent (drives the vectorised gate_entry_time_s); include 0.0
+    # to exercise the max(0, ...) clamp boundary identically in both paths.
+    dist_km = np.array([5.0, 12.3, 0.0, 40.0, 2.5, 100.0])
+    speed_kmh, detour_factor = 30.0, 1.3
+
+    out = _agent_times(donors, hts_trips, "person_id", dist_km, speed_kmh, detour_factor)
+    ref = _agent_times_reference(donors, hts_trips, "person_id", dist_km, speed_kmh, detour_factor)
+    for got, expected in zip(out, ref):
+        np.testing.assert_array_equal(got, expected)
+
+
+def test_agent_times_raises_on_non_positive_speed():
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 7.0 * 3600, 8.0 * 3600),
+        (1, "work", "home", 17.0 * 3600, 18.0 * 3600),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+    donors = pd.DataFrame({"person_id": [1, 1]})
+    try:
+        _agent_times(donors, hts_trips, "person_id", np.array([1.0, 2.0]), 0.0, 1.3)
+        assert False, "expected ValueError for speed_kmh <= 0"
+    except ValueError:
+        pass
