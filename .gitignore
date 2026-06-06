@@ -126,4 +126,7 @@ SESSION_LOG.md
 .claude/
 
 # One-time school geocoder caches (not pipeline inputs, machine-local only).
-eqasim-data/data/braunschweig/schools/geocode_cache*.jsonskills-lock.json
+eqasim-data/data/braunschweig/schools/geocode_cache*.json
+
+# Claude Code plugin lock file (machine-local, not project code)
+skills-lock.json
