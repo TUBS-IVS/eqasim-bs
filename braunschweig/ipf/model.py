@@ -78,6 +78,14 @@ def configure(context):
 
 
 def execute(context):
+    from braunschweig.ipf.config_validation import (
+        MODEL_REQUIREMENTS, validate_household_realism_config)
+
+    # Fail fast on an invalid household-realism flag combination (this stage's
+    # subset: joint / employment margins require the size margin), before any
+    # expensive IPF work. Single source of truth: braunschweig.ipf.config_validation.
+    validate_household_realism_config(context.config, MODEL_REQUIREMENTS)
+
     (df_population, df_employment, df_licenses_country, df_licenses_kreis,
      df_household_size, df_joint_age_size) = context.stage("braunschweig.ipf.prepare")
 
@@ -282,11 +290,7 @@ def execute(context):
     # so it ties the two together with the observed Zensus correlation without
     # making the IPF infeasible (its 1D marginals equal the existing margins).
     if use_joint_age_size:
-        if not use_hh_size:
-            raise RuntimeError(
-                "[braunschweig.ipf.model] use_joint_age_size_margin requires "
-                "use_household_size_margin to be enabled."
-            )
+        # use_hh_size is guaranteed on here (validate_household_realism_config).
         from braunschweig.ipf.joint_age_size import age_group_lower
         bounds = tuple(context.config("braunschweig.ipf.joint_age_group_bounds"))
         df_model["age_group"] = df_model["combined_age_class"].map(
@@ -321,11 +325,8 @@ def execute(context):
     use_employment_margin = bool(
         context.config("braunschweig.ipf.use_employment_margin")
     )
-    if use_employment_margin and not use_hh_size:
-        raise RuntimeError(
-            "[braunschweig.ipf.model] use_employment_margin requires "
-            "use_household_size_margin to be enabled."
-        )
+    # use_hh_size is guaranteed on when use_employment_margin is set
+    # (validate_household_realism_config at the top of execute()).
     if use_employment_margin:
         emp_path_cfg = context.config("braunschweig.ipf.employment_by_hhsize_path")
         emp_targets_long = None

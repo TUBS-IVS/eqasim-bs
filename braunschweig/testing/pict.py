@@ -141,12 +141,14 @@ def _requires(assignment: Assignment, flag: str, prerequisite: str) -> bool:
     return (not assignment[flag]) or assignment[prerequisite]
 
 
-# Each constraint returns True when the assignment is FEASIBLE. The first five
-# mirror hard guards / architectural requirements in the production code
-# (braunschweig/ipf/attributed.py + model.py); the last two are canonicalisation
-# rules that drop no-op variants (a parameter that has no effect when its gating
-# flag is off is pinned to its default so the model does not generate
-# meaningless rows).
+# Each constraint returns True when the assignment is FEASIBLE. The first four
+# mirror hard guards in the production code (braunschweig/ipf/attributed.py +
+# model.py); the fifth (sex-aware -> age-aware) is enforced by the centralised
+# validator in braunschweig.ipf.config_validation; the last is a canonicalisation
+# rule that drops no-op variants (cordon_network_buffer_fraction has no effect
+# when the cordon is off, so it is pinned to its default there). Note: the
+# Dirichlet prior is deliberately NOT constrained -- it is applied to EVERY IPF
+# seed cell (model.py), so it is meaningful with or without the employment margin.
 def _c_joint_requires_size(a: Assignment) -> bool:
     return _requires(a, "use_joint_age_size_margin", "use_household_size_margin")
 
@@ -163,11 +165,6 @@ def _c_sexaware_requires_ageaware(a: Assignment) -> bool:
     return _requires(a, "sex_aware_couples", "age_aware_chunking")
 
 
-def _c_dirichlet_requires_employment(a: Assignment) -> bool:
-    # A non-zero Dirichlet prior only affects the employment-margin seed.
-    return a["dirichlet_prior_strength"] == 0.0 or a["use_employment_margin"]
-
-
 def _c_buffer_only_when_cordon(a: Assignment) -> bool:
     # cordon_network_buffer_fraction is a no-op when the cordon is off -> pin it
     # to the default 0.10 so we do not generate meaningless 0.20-without-cordon.
@@ -179,7 +176,6 @@ PIPELINE_CONSTRAINTS: Tuple[Constraint, ...] = (
     _c_ageaware_requires_size,
     _c_employment_requires_size,
     _c_sexaware_requires_ageaware,
-    _c_dirichlet_requires_employment,
     _c_buffer_only_when_cordon,
 )
 

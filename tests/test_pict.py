@@ -79,8 +79,10 @@ def test_pipeline_constraints_reject_documented_violations():
     assert not feasible(
         sex_aware_couples=True, age_aware_chunking=False, use_household_size_margin=True
     )
-    # a non-zero Dirichlet prior without the employment margin is rejected.
-    assert not feasible(dirichlet_prior_strength=0.5, use_employment_margin=False)
+    # The Dirichlet prior is NOT constrained: it applies to every IPF seed cell,
+    # so it is feasible with or without the employment margin.
+    assert feasible(dirichlet_prior_strength=0.5, use_employment_margin=False,
+                    use_household_size_margin=True)
     # the full valid stack is feasible.
     assert feasible(
         use_household_size_margin=True,

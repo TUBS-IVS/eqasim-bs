@@ -521,15 +521,17 @@ def configure(context):
         context.stage("braunschweig.data.census.households_type")
 
 def execute(context):
+    from braunschweig.ipf.config_validation import (
+        ATTRIBUTED_REQUIREMENTS, validate_household_realism_config)
+
+    # Fail fast on an invalid household-realism flag combination (this stage's
+    # subset: hh_type / age-aware require the size margin, sex-aware couples require
+    # age-aware chunking). Single source of truth: braunschweig.ipf.config_validation.
+    validate_household_realism_config(context.config, ATTRIBUTED_REQUIREMENTS)
+
     df = context.stage("braunschweig.ipf.model")
     use_hh_size = context.config("braunschweig.ipf.use_household_size_margin")
     use_hh_type = context.config("braunschweig.ipf.use_household_type_margin")
-    if use_hh_type and not use_hh_size:
-        raise RuntimeError(
-            "[braunschweig.ipf.attributed] use_household_type_margin requires "
-            "use_household_size_margin to be enabled (hh_type is drawn "
-            "within each (commune_id, hh_size) bucket)."
-        )
 
     # Identifiers
     df["person_id"] = np.arange(len(df))
@@ -603,13 +605,9 @@ def execute(context):
     final_weight = df["weight"].sum()
     assert np.abs(initial_weight - final_weight) < 1e-6
 
+    # Flag interdependencies are validated at the top of execute()
+    # (validate_household_realism_config); age_aware implies use_hh_size here.
     age_aware = context.config("braunschweig.ipf.age_aware_chunking")
-    if age_aware and not use_hh_size:
-        raise RuntimeError(
-            "[braunschweig.ipf.attributed] age_aware_chunking requires "
-            "use_household_size_margin to be enabled (it forms households "
-            "within each (commune_id, hh_size) bucket)."
-        )
 
     if use_hh_size and age_aware:
         # Age-aware path: couple formation + hh_type in one optimisation pass.
