@@ -171,9 +171,13 @@ def _build_locations_df(df_secondary: pd.DataFrame) -> pd.DataFrame:
             acts.append("other")
         activities.append("; ".join(acts))
 
-    coords = np.vstack(
-        df_secondary["geometry"].apply(lambda g: np.array([g.x, g.y])).values
-    )
+    # Vectorised coordinate access (GeoSeries.x/.y) instead of a per-geometry
+    # Python lambda; produces the identical (n, 2) ordering as the candidate
+    # set, so the resulting locations table is byte-identical.
+    coords = np.column_stack((
+        df_secondary.geometry.x.values,
+        df_secondary.geometry.y.values,
+    ))
     out = pd.DataFrame({
         "id": df_secondary["location_id"].astype(str).values,
         "x": coords[:, 0],
@@ -325,9 +329,43 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     return plans_df, problem_meta, unbounded_idx
 
 
+def _build_rda_candidate_index(df_secondary: pd.DataFrame):
+    """Build the eqasim ``CandidateIndex`` (3 KDTrees over the secondary
+    candidate set) ONCE so it can be shared across both RDA fallback calls.
+
+    The candidate coordinate array and the per-purpose ``destinations`` dict
+    are derived purely from ``df_secondary`` and consume NO randomness, so
+    building this once instead of once-per-fallback-call cannot change any
+    drawn result. The candidate ordering (and therefore every KDTree query /
+    sample index) is identical to the previous per-call construction.
+
+    Returns the constructed ``CandidateIndex`` instance (its KDTrees are
+    deterministic given the fixed candidate order).
+    """
+    from synthesis.population.spatial.secondary.components import CandidateIndex
+
+    identifiers = df_secondary["location_id"].values
+    # Vectorised coordinate access (GeoSeries.x/.y) instead of a per-geometry
+    # Python lambda. np.column_stack preserves the exact (n, 2) row order of
+    # df_secondary, so the candidate ordering is unchanged.
+    coords = np.column_stack((
+        df_secondary.geometry.x.values,
+        df_secondary.geometry.y.values,
+    ))
+    destinations = {}
+    for purpose in SECONDARY_PURPOSES:
+        mask = df_secondary[f"offers_{purpose}"].values
+        destinations[purpose] = dict(
+            identifiers=identifiers[mask],
+            locations=coords[mask],
+        )
+
+    return CandidateIndex(destinations)
+
+
 def _rda_fallback_place(problems: List[Dict[str, Any]],
                         problem_indices: List[int],
-                        df_secondary: pd.DataFrame,
+                        candidate_index,
                         distributions: Dict[str, Any],
                         leisure_correction_factor: float,
                         random: np.random.RandomState,
@@ -340,6 +378,13 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     destination) where the GravityChainSolver delegates to
     ``AngularTailSolver`` / ``CustomFreeChainSolver``. Output schema
     matches ``_fallback_place`` so the caller can splice rows in.
+
+    ``candidate_index`` is the prebuilt :class:`CandidateIndex` shared across
+    both fallback calls (see :func:`_build_rda_candidate_index`). It carries no
+    state mutated by solving, so reusing the same instance across the unbounded
+    and the failed-bounded calls is byte-identical to constructing a fresh one
+    each time: the index is queried/sampled but never modified, and all
+    randomness flows through ``random`` inside ``assignment_solver.solve``.
     """
     if not problem_indices:
         return [], []
@@ -350,22 +395,9 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     )
     from synthesis.population.spatial.secondary.components import (
         CustomDistanceSampler, CustomDiscretizationSolver,
-        CandidateIndex, CustomFreeChainSolver,
+        CustomFreeChainSolver,
     )
 
-    identifiers = df_secondary["location_id"].values
-    coords = np.vstack(
-        df_secondary["geometry"].apply(lambda g: np.array([g.x, g.y])).values
-    )
-    destinations = {}
-    for purpose in SECONDARY_PURPOSES:
-        mask = df_secondary[f"offers_{purpose}"].values
-        destinations[purpose] = dict(
-            identifiers=identifiers[mask],
-            locations=coords[mask],
-        )
-
-    candidate_index = CandidateIndex(destinations)
     discretization_solver = CustomDiscretizationSolver(candidate_index)
     distance_sampler = CustomDistanceSampler(
         maximum_iterations=1000, random=random,
@@ -773,12 +805,22 @@ def execute(context):
             f"strategy {fallback_strategy!r} (expected 'rda' or 'random')."
         )
 
+    # The RDA candidate index (3 KDTrees over the full secondary candidate set)
+    # is expensive to build and is independent of the problems being placed, so
+    # it is constructed at most ONCE and reused across both fallback calls
+    # (unbounded chains and failed-bounded problems). It consumes no randomness,
+    # so building it once instead of twice cannot change any drawn result. Built
+    # lazily so the "random" strategy and the no-fallback case never pay for it.
+    rda_index_cache: Dict[str, Any] = {}
+
     def _run_fallback(problem_indices):
         if not problem_indices:
             return [], []
         if fallback_strategy == "rda":
+            if "index" not in rda_index_cache:
+                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary)
             return _rda_fallback_place(
-                problems, problem_indices, df_secondary,
+                problems, problem_indices, rda_index_cache["index"],
                 distance_distributions, leisure_corr, random, crs,
             )
         return _fallback_place(
