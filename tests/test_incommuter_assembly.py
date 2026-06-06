@@ -150,10 +150,36 @@ def test_agent_times_memoised_matches_per_agent_recomputation():
     dist_km = np.array([5.0, 12.3, 0.0, 40.0, 2.5, 100.0])
     speed_kmh, detour_factor = 30.0, 1.3
 
-    out = _agent_times(donors, hts_trips, "person_id", dist_km, speed_kmh, detour_factor)
+    # home_to_gate = 0 (the car case: home == gate) -> identical to the original
+    # gate->work-only reference, so the memoisation equivalence still holds.
+    out = _agent_times(donors, hts_trips, "person_id", dist_km,
+                       np.zeros_like(dist_km), speed_kmh, detour_factor)
     ref = _agent_times_reference(donors, hts_trips, "person_id", dist_km, speed_kmh, detour_factor)
     for got, expected in zip(out, ref):
         np.testing.assert_array_equal(got, expected)
+
+
+def test_agent_times_outside_access_shifts_departure_earlier():
+    # A non-zero home->gate access (PT boarding stop away from the gate) must move
+    # the home departure earlier by exactly the access travel time, while the work
+    # arrival/departure are unchanged. With home_to_gate = 0 it equals the car case.
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 6.0 * 3600, 8.0 * 3600),
+        (1, "work", "home", 17.0 * 3600, 18.0 * 3600),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+    donors = pd.DataFrame({"person_id": [1, 1]})
+    dist_km = np.array([5.0, 5.0])           # inside gate->work
+    home_to_gate = np.array([0.0, 4.0])      # agent 0: car (home==gate); agent 1: PT access
+    speed_kmh, detour_factor = 30.0, 1.3
+
+    aw, dw, dh, ah = _agent_times(donors, hts_trips, "person_id", dist_km,
+                                  home_to_gate, speed_kmh, detour_factor)
+    # Work arrival unchanged by the access change.
+    assert np.allclose(aw, 8.0 * 3600)
+    # The 4 km access (agent 1) shifts departure earlier by 4*1.3/30*3600 s vs agent 0.
+    access_s = 4.0 * detour_factor / speed_kmh * 3600.0
+    assert np.isclose(dh[0] - dh[1], access_s)
 
 
 def test_agent_times_raises_on_non_positive_speed():
@@ -164,7 +190,8 @@ def test_agent_times_raises_on_non_positive_speed():
                 "departure_time", "arrival_time"])
     donors = pd.DataFrame({"person_id": [1, 1]})
     try:
-        _agent_times(donors, hts_trips, "person_id", np.array([1.0, 2.0]), 0.0, 1.3)
+        _agent_times(donors, hts_trips, "person_id", np.array([1.0, 2.0]),
+                     np.array([0.0, 0.0]), 0.0, 1.3)
         assert False, "expected ValueError for speed_kmh <= 0"
     except ValueError:
         pass

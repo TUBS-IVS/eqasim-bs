@@ -136,7 +136,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
     # 2) workplace inside the destination ZGB Kreis (employment-weighted); the pool
     # location_id is discarded -- in-commuters get their own unique work facility id.
-    work_x, work_y, _ = _sample_workplaces(agents["dest_ars"].to_numpy(), zgb_work, rng)
+    # n_work_fallback: in-commuters that fell back to the whole-ZGB pool (logged).
+    work_x, work_y, _, _n_work_fallback = _sample_workplaces(
+        agents["dest_ars"].to_numpy(), zgb_work, rng)
 
     # 3) fixed mode from the Mikrozensus reference by commute-distance band (gate->work).
     # Cross-cordon commuters realistically use only car or PT -- walk/bike over the
@@ -151,10 +153,19 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any).
     home_x, home_y = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops)
 
-    # 4) timings from HTS donors; gate-entry = work arrival - in-ZGB travel.
+    # 3c) OUTSIDE access distance home->gate: the non-simulated portion of the trip.
+    # The agent enters the simulated network at the gate; the home->gate leg (0 for
+    # car, where home == gate; the boarding-stop->gate access for PT) is teleported
+    # at the gate speed. The inside gate->work leg (dist_km) is simulated by MATSim.
+    home_to_gate_km = straight_line_distance_km(home_x, home_y, gate_x, gate_y)
+
+    # 4) timings from HTS donors. depart_home is seeded so that the outside access
+    # (home->gate) plus the inside leg (gate->work) lands at the donor work arrival;
+    # MATSim then re-times the simulated gate->work leg over the iterations.
     donors = sample_donors(select_commuter_donors(hts_persons, hts_trips, person_col), n, rng)
     arrive_work, depart_work, depart_home, arrive_home = _agent_times(
-        donors, hts_trips, person_col, dist_km, gate_speed_kmh, detour_factor)
+        donors, hts_trips, person_col, dist_km, home_to_gate_km,
+        gate_speed_kmh, detour_factor)
 
     trips = build_incommuter_trips(person_ids, depart_home, arrive_work, depart_work, arrive_home)
     trips["mode"] = np.repeat(np.asarray(modes), 2)
@@ -188,18 +199,43 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
-    """Sample an employment-weighted ZGB workplace per agent within its dest Kreis."""
+    """Sample an employment-weighted ZGB workplace per agent within its dest Kreis.
+
+    PRIMARY method: sample within the agent's destination Kreis (commune_id[:5]).
+    FALLBACK: if the dest Kreis has no workplaces (absent / ARS-format mismatch),
+    sample from the whole-ZGB pool. The fallback rate is logged and returned so a
+    high rate (which would mean a systematic Kreis-key mismatch, not a few empty
+    cells) is visible rather than silent (CLAUDE.md "Fallback transparency").
+
+    Returns ``(x, y, location_ids, n_fallback)``.
+    """
     w = zgb_work[~zgb_work["commune_id"].astype(str).str.startswith("EXT")].copy()
     w["kreis"] = w["commune_id"].astype(str).str[:5]
     by_kreis = {k: sub for k, sub in w.groupby("kreis")}
     xs, ys, ids = [], [], []
+    n_fallback = 0
     for dest in dest_ars:
-        pool = by_kreis.get(str(dest), w)
+        pool = by_kreis.get(str(dest))
+        if pool is None:
+            pool = w
+            n_fallback += 1
         prob = pool["employees"].to_numpy(dtype=float)
         prob = prob / prob.sum() if prob.sum() > 0 else None
         row = pool.iloc[int(rng.choice(len(pool), p=prob))]
         xs.append(row.geometry.x); ys.append(row.geometry.y); ids.append(row["location_id"])
-    return np.array(xs, dtype=float), np.array(ys, dtype=float), ids
+    n = len(ids)
+    if n_fallback:
+        share = 100.0 * n_fallback / n if n else 0.0
+        level = "WARNING: " if share > 5.0 else ""
+        print(
+            f"[braunschweig.incommuters] {level}workplace Kreis fallback: "
+            f"primary {n - n_fallback}/{n} ({100.0 - share:.1f}%), "
+            f"fallback {n_fallback} ({share:.1f}%) in-commuters had no workplace in "
+            f"their destination Kreis -> sampled from the whole-ZGB pool. A high rate "
+            f"means a systematic dest_ars vs commune_id[:5] key mismatch.",
+            flush=True,
+        )
+    return np.array(xs, dtype=float), np.array(ys, dtype=float), ids, n_fallback
 
 
 def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
@@ -231,7 +267,8 @@ def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
     return home_x, home_y
 
 
-def _agent_times(donors, hts_trips, person_col, dist_km, speed_kmh, detour_factor):
+def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
+                 speed_kmh, detour_factor):
     """Per-agent (arrive_work, depart_work, depart_home, arrive_home) seconds.
 
     Donors are sampled WITH REPLACEMENT, so the same HTS person can back many
@@ -240,6 +277,12 @@ def _agent_times(donors, hts_trips, person_col, dist_km, speed_kmh, detour_facto
     it per agent (the function is a pure read of the donor's trips), but the work
     is done once per distinct donor instead of once per agent. The trip table is
     grouped only over the donors actually used.
+
+    ``dist_km`` is the inside (gate->work) straight-line distance; ``home_to_gate_km``
+    is the outside (home->gate) access distance (0 for car, where home == gate). The
+    home departure is seeded so the total teleported access plus the (initially
+    estimated) inside leg lands at the donor work arrival; MATSim re-times the
+    simulated gate->work leg over the iterations.
     """
     donor_ids = donors[person_col].to_numpy()
     unique_ids = pd.unique(donor_ids)
@@ -250,13 +293,16 @@ def _agent_times(donors, hts_trips, person_col, dist_km, speed_kmh, detour_facto
     arrive_work = np.array([times_by_id[pid][1] for pid in donor_ids], dtype=float)
     depart_work = np.array([times_by_id[pid][2] for pid in donor_ids], dtype=float)
     arrive_home = np.array([times_by_id[pid][3] for pid in donor_ids], dtype=float)
-    # gate_entry_time_s is pure arithmetic: max(0, arrive_work - travel_s) with
-    # travel_s = (dist_km * detour_factor) / speed_kmh * 3600. Vectorise it directly
-    # (identical to the per-agent scalar call; speed_kmh > 0 guarded as before).
+    # Home departure = work arrival minus the total teleported travel time:
+    # (home->gate outside access) + (gate->work inside estimate), each at gate speed
+    # with the detour factor. For car home_to_gate_km is 0, so this is identical to
+    # the previous gate->work-only seed; for PT it adds the boarding-stop->gate
+    # access so the departure is consistent with the actual (moved) home coordinate.
     if speed_kmh <= 0:
-        raise ValueError("gate_entry_time_s: speed_kmh must be > 0")
+        raise ValueError("_agent_times: speed_kmh must be > 0")
     dist_km = np.asarray(dist_km, dtype=float)
-    travel_s = (dist_km * detour_factor) / speed_kmh * 3600.0
+    home_to_gate_km = np.asarray(home_to_gate_km, dtype=float)
+    travel_s = ((dist_km + home_to_gate_km) * detour_factor) / speed_kmh * 3600.0
     depart_home = np.maximum(0.0, arrive_work - travel_s)
     return arrive_work, depart_work, depart_home, arrive_home
 
