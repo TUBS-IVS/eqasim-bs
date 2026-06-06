@@ -161,6 +161,35 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
 _INT_TO_HH_SIZE_BIN = {1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6+"}
 
 
+# Sentinel returned by the bucket index for (commune_id, hh_size) keys that have
+# no rows in the Zensus type frame. Sharing one empty frame avoids re-allocating
+# per missing bucket; its ``weight`` sum is 0.0, so the lookup behaves exactly
+# like the previous empty boolean-mask result (-> hh_size-only fallback).
+_EMPTY_TYPE_SHARES = pd.DataFrame(
+    {"commune_id": [], "hh_size": [], "hh_type": [], "weight": []}
+)
+
+
+def _index_type_shares(df_zt: pd.DataFrame) -> dict:
+    """Pre-index the Zensus 1000A-2081 type frame by ``(commune_id, hh_size)``.
+
+    Returns a dict mapping each ``(commune_id, hh_size)`` key to its sub-frame so
+    per-bucket lookups are O(1) instead of a full boolean scan of ``df_zt`` per
+    bucket. ``pandas`` groupby preserves the original row order within each group,
+    so the sub-frames are row-identical to the previous
+    ``df_zt[(df_zt["commune_id"] == cid) & (df_zt["hh_size"] == hsb)]`` filter
+    (boolean masking also preserves original row order). Buckets with no matching
+    rows are simply absent from the dict (the caller substitutes an empty frame),
+    reproducing the previous empty-mask behaviour.
+    """
+    return {
+        key: group
+        for key, group in df_zt.groupby(
+            ["commune_id", "hh_size"], sort=False, observed=True
+        )
+    }
+
+
 def _assign_household_types(
     df: pd.DataFrame,
     df_household_type: pd.DataFrame,
@@ -197,6 +226,14 @@ def _assign_household_types(
         .sum().reset_index()
     )
     fb_total = fallback.groupby("hh_size", observed=True)["weight"].transform("sum")
+
+    # Pre-index the Zensus type frame once by (commune_id, hh_size) so the
+    # per-bucket lookup below is O(1) instead of a full boolean scan of df_zt for
+    # each of the ~123 x 6 buckets over the full-population formation. groupby
+    # preserves the original row order within each group, so the sub-frame handed
+    # to the sampler is row-identical to the previous boolean-mask filter and the
+    # RNG draw order is unchanged.
+    type_shares_by_bucket = _index_type_shares(df_zt)
     fallback["share"] = np.where(fb_total > 0, fallback["weight"] / fb_total, 0.0)
 
     # One row per household, indexed contiguously 0..N-1.
@@ -227,7 +264,7 @@ def _assign_household_types(
     for (cid, hsb), g in hh_df.groupby(
         ["commune_id", "hh_size_bin"], sort=False, observed=True,
     ):
-        local = df_zt[(df_zt["commune_id"] == cid) & (df_zt["hh_size"] == hsb)]
+        local = type_shares_by_bucket.get((cid, hsb), _EMPTY_TYPE_SHARES)
         local_sum = float(local["weight"].sum())
         if local_sum > 0:
             probs = local["weight"].to_numpy(dtype=float)
@@ -277,7 +314,12 @@ def _assign_household_types(
 
 def _prepare_type_shares(df_household_type: pd.DataFrame):
     """Normalise the Zensus 1000A-2081 household-type frame and build the
-    scope-wide per-hh_size fallback. Returns ``(df_zt, fallback)``."""
+    scope-wide per-hh_size fallback plus a ``(commune_id, hh_size)`` index.
+
+    Returns ``(df_zt, fallback, type_shares_by_bucket)``. The index is built once
+    here so the age-aware path does an O(1) dict lookup per bucket instead of a
+    full boolean scan of ``df_zt`` for every ``(commune, hh_size)`` bucket over
+    the full-population formation (see ``_index_type_shares``)."""
     df_zt = df_household_type.copy()
     df_zt["commune_id"] = df_zt["commune_id"].astype(str)
     df_zt["hh_size"] = df_zt["hh_size"].astype(str)
@@ -287,7 +329,8 @@ def _prepare_type_shares(df_household_type: pd.DataFrame):
         df_zt.groupby(["hh_size", "hh_type"], observed=True)["weight"]
         .sum().reset_index()
     )
-    return df_zt, fallback
+    type_shares_by_bucket = _index_type_shares(df_zt)
+    return df_zt, fallback, type_shares_by_bucket
 
 
 def _largest_remainder(choices: np.ndarray, weights: np.ndarray, n: int) -> list[str]:
@@ -314,15 +357,20 @@ def _largest_remainder(choices: np.ndarray, weights: np.ndarray, n: int) -> list
     return out
 
 
-def _allocate_types_for_bucket(df_zt, fallback, commune_id, hh_size_bin, n):
+def _allocate_types_for_bucket(type_shares_by_bucket, fallback, commune_id,
+                               hh_size_bin, n):
     """Deterministic exact-count hh_type allocation for a (commune, hh_size_bin)
     bucket from the Zensus 1000A-2081 shares (scope-wide fallback, then the
     ``other_multi`` default). Unlike per-household sampling this reproduces the
     Zensus type marginal exactly per bucket (up to integer rounding), removing
     sampling noise; only the downstream feasibility relaxation can still shift a
-    type (and that is logged)."""
-    local = df_zt[(df_zt["commune_id"] == commune_id)
-                  & (df_zt["hh_size"] == hh_size_bin)]
+    type (and that is logged).
+
+    ``type_shares_by_bucket`` is the pre-built ``(commune_id, hh_size)`` -> sub-frame
+    index from ``_prepare_type_shares``; the lookup is O(1) and row-order-identical
+    to the previous boolean-mask filter, so the allocation is unchanged."""
+    local = type_shares_by_bucket.get((commune_id, hh_size_bin),
+                                      _EMPTY_TYPE_SHARES)
     if float(local["weight"].sum()) > 0:
         return _largest_remainder(
             local["hh_type"].to_numpy(), local["weight"].to_numpy(), n)
@@ -376,7 +424,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         ["commune_id", "_hh_size_int"], kind="mergesort"
     ).reset_index(drop=True)
 
-    df_zt, fallback = _prepare_type_shares(df_household_type)
+    df_zt, fallback, type_shares_by_bucket = _prepare_type_shares(
+        df_household_type)
 
     ages_all = repeated["age"].to_numpy()
     # Per-person sex vector for sex-aware couple pairing (only consumed when
@@ -406,7 +455,7 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         sizes = [N] * (n_chunks - 1) + [bucket_size - N * (n_chunks - 1)]
         hh_size_bin = _INT_TO_HH_SIZE_BIN[min(N, 6)]
         types = _allocate_types_for_bucket(
-            df_zt, fallback, cid, hh_size_bin, n_chunks)
+            type_shares_by_bucket, fallback, cid, hh_size_bin, n_chunks)
 
         bucket_ages = ages_all[idx]
         bucket_is_female = None if is_female_all is None else is_female_all[idx]

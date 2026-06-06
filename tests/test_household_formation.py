@@ -207,3 +207,52 @@ def test_hh_type_binning_tolerates_oversized_household():
     out = attributed._assign_household_types(df_formed, df_ht, random_seed=1)
 
     assert (out["hh_type"] == "other_multi").all()
+
+
+def test_type_share_index_matches_boolean_mask_row_order():
+    """The pre-indexed ``(commune_id, hh_size)`` lookup must return sub-frames
+    that are row-order-identical to the previous boolean-mask filter, including
+    for buckets with no matching rows (empty -> same fallback). Row order matters
+    because the sampler's RNG draw order depends on it; reordering would silently
+    change the output. Several hh_type rows per bucket and several communes/sizes
+    are included so a stable group order is actually exercised."""
+    df_household_type = pd.DataFrame({
+        "commune_id": [
+            "03101", "03101", "03101",  # 03101 / size 1: three types
+            "03101", "03101",           # 03101 / size 2: two types
+            "03102", "03102",           # 03102 / size 1: two types
+            "03102",                    # 03102 / size 3: one type
+        ],
+        "hh_size": [
+            "1", "1", "1",
+            "2", "2",
+            "1", "1",
+            "3",
+        ],
+        "hh_type": [
+            "single", "couple", "other_multi",
+            "couple", "single_parent",
+            "single", "other_multi",
+            "couple_with_children",
+        ],
+        "weight": [10.0, 5.0, 1.0, 7.0, 3.0, 4.0, 2.0, 9.0],
+    })
+
+    # Normalise types exactly as the production helper does, then build the index.
+    df_zt, _fallback, index = attributed._prepare_type_shares(df_household_type)
+
+    # Every present (commune, hh_size) bucket plus one absent bucket.
+    buckets = [
+        ("03101", "1"), ("03101", "2"),
+        ("03102", "1"), ("03102", "3"),
+        ("03101", "3"),  # absent: no matching rows in df_zt
+        ("09999", "1"),  # absent: unknown commune
+    ]
+
+    for cid, hsb in buckets:
+        expected = df_zt[(df_zt["commune_id"] == cid) & (df_zt["hh_size"] == hsb)]
+        actual = index.get((cid, hsb), attributed._EMPTY_TYPE_SHARES)
+        # Same number of rows, same values in the SAME order (RNG-relevant).
+        assert list(actual["hh_type"]) == list(expected["hh_type"])
+        assert list(actual["weight"]) == list(expected["weight"])
+        assert float(actual["weight"].sum()) == float(expected["weight"].sum())
