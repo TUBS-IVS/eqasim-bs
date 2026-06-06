@@ -480,6 +480,91 @@ def test_loader_constraint_includes_all_three_dimensions():
 # Seed script idempotency
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Region vector: 03ZGB-sourced reference, dead averaged fallback removed
+# ---------------------------------------------------------------------------
+#
+# Background: the ``region`` second return value of
+# ``load_pt_subscription_breakdown`` / ``load_license_breakdown`` is the
+# ZGB-aggregate (``03ZGB`` / Gesamt) probability vector.  It is NOT consumed
+# by the live categorical-IPF path in
+# ``braunschweig.synthesis.population.enriched`` (ineligible persons get
+# ``fahre_nie`` / ``nein`` deterministically, never the region vector).  The
+# loaders used to fabricate ``region`` as a cross-Kreis average when the
+# ``03ZGB`` row was absent; that branch was dead code (the row is always
+# present) and was removed in favour of an explicit error.  These tests pin
+# the two contracts: (a) ``region`` still equals the ``03ZGB`` row exactly
+# (used output unchanged), and (b) a missing ``03ZGB`` row now raises instead
+# of silently fabricating an averaged vector.
+
+
+def _write_breakdown_csv(path, cols, rows):
+    """Write a minimal breakdown CSV (``ars5`` + category columns)."""
+    header = "kreis,ars5," + ",".join(cols) + "\n"
+    lines = [header]
+    for kreis, ars5, values in rows:
+        lines.append(
+            "{},{},".format(kreis, ars5) + ",".join(str(v) for v in values) + "\n"
+        )
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+def test_pt_region_equals_03zgb_row_used_output_unchanged():
+    """``region`` is exactly the normalised ``03ZGB`` Gesamt row."""
+    from braunschweig.data.mid.reference_tables import load_pt_subscription_breakdown
+    _by_kreis, region = load_pt_subscription_breakdown(str(DATA))
+    raw = sum(EXPECTED_P24_1_GESAMT_PCT)
+    expected = np.asarray(EXPECTED_P24_1_GESAMT_PCT, dtype=float) / raw
+    assert np.allclose(region, expected, atol=1e-9)
+
+
+def test_license_region_equals_03zgb_row_used_output_unchanged():
+    """``region`` is exactly the normalised ``03ZGB`` Gesamt row (P17.1)."""
+    from braunschweig.data.mid.reference_tables import load_license_breakdown
+    _by_kreis, region = load_license_breakdown(str(DATA))
+    # P17.1 Gesamt row: ja=86, nein=13, keine_angabe=1 -> sums to 100.
+    expected = np.asarray([86.0, 13.0, 1.0]) / 100.0
+    assert np.allclose(region, expected, atol=1e-9)
+
+
+def test_pt_breakdown_missing_03zgb_raises_no_averaged_fallback(tmp_path, monkeypatch):
+    """Without the ``03ZGB`` row the loader raises (dead averaged fallback gone)."""
+    from braunschweig.data.mid import reference_tables
+    mid_dir = tmp_path / reference_tables.MID_SUBDIR
+    mid_dir.mkdir(parents=True)
+    cols = list(reference_tables.PT_TICKET_CATEGORIES)
+    n = len(cols)
+    # Two Kreise, NO 03ZGB Gesamt row.
+    _write_breakdown_csv(
+        mid_dir / "mid2023_P24_1.csv",
+        cols,
+        [
+            ("Braunschweig", "03101", [100] + [0] * (n - 1)),
+            ("Wolfsburg", "03103", [0, 100] + [0] * (n - 2)),
+        ],
+    )
+    with pytest.raises(RuntimeError, match="03ZGB"):
+        reference_tables.load_pt_subscription_breakdown(str(tmp_path))
+
+
+def test_license_breakdown_missing_03zgb_raises_no_averaged_fallback(tmp_path):
+    """Without the ``03ZGB`` row the licence loader raises (dead fallback gone)."""
+    from braunschweig.data.mid import reference_tables
+    mid_dir = tmp_path / reference_tables.MID_SUBDIR
+    mid_dir.mkdir(parents=True)
+    cols = list(reference_tables.LICENSE_CATEGORIES)
+    _write_breakdown_csv(
+        mid_dir / "mid2023_P17_1.csv",
+        cols,
+        [
+            ("Braunschweig", "03101", [82, 17, 1]),
+            ("Wolfsburg", "03103", [74, 25, 0]),
+        ],
+    )
+    with pytest.raises(RuntimeError, match="03ZGB"):
+        reference_tables.load_license_breakdown(str(tmp_path))
+
+
 def test_seed_script_writes_to_tmp(tmp_path):
     """Run seed script with a temp output dir and verify it produces all files."""
     from scripts import seed_mid_constraint_tables as seed

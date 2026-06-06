@@ -56,6 +56,58 @@ from shapely.geometry import Point
 # workplace list short enough to inspect manually.
 DEFAULT_MIN_FLOW = 50
 
+# Share of external Kreise placed at the (cruder) dissolved Kreis-polygon
+# centroid instead of the population-weighted centroid above which the
+# placement log is emitted with a ``WARNING:`` prefix.  The Kreis-centroid
+# fallback is expected to be rare (only Kreise with no usable VG250-EW
+# Gemeinde EWZ); a high share signals a data-quality problem in the
+# Gemeinde population layer that systematically biases external-workplace
+# locations toward land centroids (possibly uninhabited terrain).
+KREIS_CENTROID_FALLBACK_WARN_SHARE = 0.10
+
+
+def summarise_placement_fallback(placement, total_employees, min_flow):
+    """Build the external-workplace placement log line.
+
+    Counts how many external Kreise were anchored at the
+    population-weighted Gemeinde centroid (``emp_weighted``) versus the
+    Kreis-polygon-centroid fallback (``kreis_centroid``), reports the
+    fallback as both an absolute count and a share, and prefixes the line
+    with ``WARNING:`` when the fallback share exceeds
+    :data:`KREIS_CENTROID_FALLBACK_WARN_SHARE`.
+
+    This function is pure (no side effects, no I/O): it only derives the
+    log message from the already-computed ``placement`` labels, so it does
+    not change any output value, geometry, or RNG draw.
+
+    Parameters
+    ----------
+    placement
+        Iterable / pandas Series of per-Kreis placement labels, each one of
+        ``"emp_weighted"`` or ``"kreis_centroid"``.
+    total_employees : int
+        Total outbound SvB across all external Kreise (for the log line).
+    min_flow : int
+        Configured minimum outbound flow threshold (for the log line).
+
+    Returns
+    -------
+    str
+        The formatted log line (caller is responsible for printing it).
+    """
+    placement = pd.Series(list(placement), dtype=object)
+    n_total = int(len(placement))
+    n_weighted = int((placement == "emp_weighted").sum())
+    n_fallback = int((placement == "kreis_centroid").sum())
+    fallback_share = (n_fallback / n_total) if n_total > 0 else 0.0
+    prefix = "WARNING: " if fallback_share > KREIS_CENTROID_FALLBACK_WARN_SHARE else ""
+    return (
+        f"{prefix}[braunschweig.data.external_workplaces] "
+        f"{n_total} external Kreise, {total_employees:,} SvB (outbound from ZGB), "
+        f"threshold >= {min_flow}; placement: {n_weighted} emp-weighted, "
+        f"{n_fallback} Kreis-centroid fallback ({fallback_share:.1%})"
+    )
+
 
 def configure(context):
     context.config("data_path")
@@ -229,14 +281,7 @@ def execute(context) -> gpd.GeoDataFrame:
     df["employees"] = df["employees"].astype(int)
 
     total = int(df["employees"].sum())
-    n_weighted = int((df["placement"] == "emp_weighted").sum())
-    n_fallback = int((df["placement"] == "kreis_centroid").sum())
-    print(
-        "[braunschweig.data.external_workplaces] "
-        f"{len(df)} external Kreise, {total:,} SvB (outbound from ZGB), "
-        f"threshold >= {min_flow}; placement: {n_weighted} emp-weighted, "
-        f"{n_fallback} Kreis-centroid fallback"
-    )
+    print(summarise_placement_fallback(df["placement"], total, min_flow))
 
     return df[[
         "ars5", "kreis_name", "commune_id", "iris_id",

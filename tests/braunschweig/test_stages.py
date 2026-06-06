@@ -190,6 +190,107 @@ class TestCommuteOverride:
         # band 1 like the others.
         assert 500.0 <= d_unknown <= 5000.0
 
+    def test_fallback_provenance_logging(self, capsys):
+        """Fallback transparency: the override log must separate the primary
+        own-Kreis CDF count from the regional 03ZGB fallback count, so a
+        systematic missing-Kreis-CDF is visible. Persons whose Kreise all have
+        own CDFs -> 0 fallback; a person whose Kreis lacks a CDF -> counted as
+        a regional fallback override."""
+        from braunschweig.synthesis.spatial import commute_distance as cd
+
+        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+
+        # Case A: every person's Kreis has its own CDF -> no fallback at all.
+        # commune_id is the 12-digit ARS; Kreis = first 5 digits (03101/03102).
+        df_all_own = pd.DataFrame({
+            "person_id":        [1, 2],
+            "hts_id":           [101, 102],
+            "commute_distance": [9999.0, 9999.0],
+            "commune_id":       ["031010000000", "031020000000"],
+        })
+        mid_refs_full = {
+            "p13_distance_cdfs": {
+                "03101": unit_cdf_band1,
+                "03102": unit_cdf_band1,
+                "03ZGB": unit_cdf_band1,
+            }
+        }
+        rng = np.random.RandomState(0)
+        cd._override_work_distances(df_all_own, mid_refs_full, rng)
+        log_a = capsys.readouterr().out
+        # Primary count 2, regional 03ZGB fallback count 0.
+        assert "primary own-Kreis CDF 2" in log_a
+        assert "regional 03ZGB fallback 0" in log_a
+        assert "WARNING" not in log_a
+
+        # Case B: one person's Kreis (99999) has no own CDF -> regional fallback.
+        df_missing = pd.DataFrame({
+            "person_id":        [1, 2],
+            "hts_id":           [101, 102],
+            "commute_distance": [9999.0, 9999.0],
+            "commune_id":       ["031010000000", "999990000000"],
+        })
+        mid_refs_missing = {
+            "p13_distance_cdfs": {
+                "03101": unit_cdf_band1,
+                "03ZGB": unit_cdf_band1,
+            }
+        }
+        rng = np.random.RandomState(0)
+        cd._override_work_distances(df_missing, mid_refs_missing, rng)
+        log_b = capsys.readouterr().out
+        # One primary (03101) + one regional 03ZGB fallback (99999).
+        assert "primary own-Kreis CDF 1" in log_b
+        assert "regional 03ZGB fallback 1" in log_b
+        # 50% fallback rate exceeds the 5% threshold -> WARNING raised.
+        assert "WARNING" in log_b
+
+    def test_fallback_split_does_not_change_drawn_distances(self):
+        """Output preservation: instrumenting the provenance split must not
+        change which CDF is used, the draw, or the RNG. The drawn distances
+        must equal a reference computation using the documented
+        cdfs.get(kreis, fallback_cdf) selection on the same seeded RNG."""
+        from braunschweig.synthesis.spatial import commute_distance as cd
+
+        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        df_work = pd.DataFrame({
+            "person_id":        [1, 2, 3, 4],
+            "hts_id":           [101, 102, 103, 104],
+            "commute_distance": [9999.0, 9999.0, 9999.0, 9999.0],
+            "commune_id": ["031010000000", "031011110000",
+                           "999990000000", "031020000000"],
+        })
+        mid_refs = {
+            "p13_distance_cdfs": {
+                "03101": unit_cdf_band1,
+                "03ZGB": unit_cdf_band1,
+            }
+        }
+
+        # Actual output from the instrumented function.
+        out = cd._override_work_distances(
+            df_work.copy(), mid_refs, np.random.RandomState(7))
+
+        # Reference: replicate the exact per-group selection + draw with the
+        # same fresh RNG, mirroring cdfs.get(kreis, fallback_cdf).
+        cdfs = mid_refs["p13_distance_cdfs"]
+        fallback_cdf = cdfs.get("03ZGB")
+        ref = df_work.copy()
+        ref["kreis"] = ref["commune_id"].astype(str).str.zfill(12).str[:5]
+        ref_rng = np.random.RandomState(7)
+        for kreis, group_idx in ref.groupby("kreis", sort=False,
+                                            dropna=True).groups.items():
+            cdf = cdfs.get(str(kreis), fallback_cdf)
+            if cdf is None:
+                continue
+            samples = cd._draw_from_cdf(cdf, ref_rng, len(group_idx))
+            ref.loc[group_idx, "commute_distance"] = samples * 1000.0
+
+        merged = out.merge(ref[["person_id", "commute_distance"]],
+                           on="person_id", suffixes=("_out", "_ref"))
+        assert np.allclose(merged["commute_distance_out"],
+                           merged["commute_distance_ref"])
+
 
 # ---------------------------------------------------------------------------
 # 6. enriched._derive_kreis_ars5 (BS resident flag -> ARS5)
@@ -345,6 +446,105 @@ class TestSampleCounts:
         _sample_counts(df_again, "n_cars", values, region_shares, kreis_shares,
                        np.random.RandomState(2024))
         assert df_again["n_cars"].tolist() == df_out["n_cars"].tolist()
+
+
+# ---------------------------------------------------------------------------
+# 7a. enriched._sample_counts per-Kreis share fallback transparency
+#     (cars from MiD H7, bikes from MiD H12.3). A Kreis-ARS format mismatch
+#     would silently route ALL persons to the region-wide distribution; these
+#     tests pin the primary/fallback accounting exposed via df.attrs.
+# ---------------------------------------------------------------------------
+
+class TestSampleCountsFallbackTransparency:
+    def _build_population(self):
+        return pd.DataFrame({
+            "person_id":           list(range(20)),
+            "inside_braunschweig": [True] * 10 + [False] * 10,
+            "inside_salzgitter":   [False] * 10 + [True] * 10,
+        })
+
+    def test_all_kreise_present_means_zero_fallback(self):
+        """When every Kreis ARS-5 is present in the share table, the PRIMARY
+        per-Kreis lookup must cover all persons and the fallback count is 0."""
+        from braunschweig.synthesis.population.enriched import _sample_counts
+
+        df = self._build_population()
+        values = np.array([0, 1, 2, 3])
+        kreis_shares = {
+            "03101": (0.1, 0.4, 0.3, 0.2),
+            "03102": (0.2, 0.2, 0.3, 0.3),
+        }
+        region_shares = (0.25, 0.25, 0.25, 0.25)
+
+        _sample_counts(df, "number_of_cars", values, region_shares,
+                       kreis_shares, np.random.RandomState(123))
+
+        assert df.attrs["number_of_cars_kreis_share_fallback_count"] == 0
+        assert df.attrs["number_of_cars_kreis_share_primary_count"] == 20
+        assert df.attrs["number_of_cars_kreis_share_fallback_rate"] == 0.0
+        assert df.attrs["number_of_cars_kreis_share_fallback_kreise"] == []
+        # Result is still a valid count drawn from the value set.
+        assert df["number_of_cars"].isin(values).all()
+
+    def test_absent_kreis_is_counted_as_region_fallback(self):
+        """When a Kreis ARS-5 is ABSENT from the share table, every person in
+        that Kreis must be counted against the region-wide fallback (and the
+        fallback Kreis code recorded), while the result stays valid."""
+        from braunschweig.synthesis.population.enriched import _sample_counts
+
+        df = self._build_population()
+        values = np.array([0, 1, 2, 3])
+        # 03102 (Salzgitter, 10 persons) is intentionally missing -> fallback.
+        kreis_shares = {
+            "03101": (0.1, 0.4, 0.3, 0.2),
+        }
+        region_shares = (0.25, 0.25, 0.25, 0.25)
+
+        _sample_counts(df, "number_of_cars", values, region_shares,
+                       kreis_shares, np.random.RandomState(123))
+
+        assert df.attrs["number_of_cars_kreis_share_fallback_count"] == 10
+        assert df.attrs["number_of_cars_kreis_share_primary_count"] == 10
+        assert df.attrs["number_of_cars_kreis_share_fallback_rate"] == 0.5
+        assert df.attrs["number_of_cars_kreis_share_fallback_kreise"] == ["03102"]
+        # The fallback path must still produce valid counts for all persons.
+        assert df["number_of_cars"].isin(values).all()
+        assert len(df["number_of_cars"]) == 20
+
+    def test_fallback_accounting_does_not_change_sampled_values(self):
+        """The added counting/logging must be output-preserving: the sampled
+        per-person values with an absent Kreis must equal an independent
+        sorted-order RNG replay that uses the same region fallback vector."""
+        from braunschweig.synthesis.population.enriched import (
+            _derive_kreis_ars5, _sample_counts,
+        )
+
+        df = self._build_population()
+        values = np.array([0, 1, 2, 3])
+        kreis_shares = {
+            "03101": (0.1, 0.4, 0.3, 0.2),
+        }
+        region_shares = (0.2, 0.3, 0.3, 0.2)
+
+        df_out = df.copy()
+        _sample_counts(df_out, "number_of_cars", values, region_shares,
+                       kreis_shares, np.random.RandomState(99))
+
+        # Independent sorted-order replay with the identical fallback vector.
+        kreis = _derive_kreis_ars5(df)
+        replay = np.zeros(len(df), dtype=int)
+        rng = np.random.RandomState(99)
+        for ars in sorted(kreis.unique()):
+            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
+            shares = shares / shares.sum()
+            mask = (kreis == ars).values
+            n = int(mask.sum())
+            if n == 0:
+                continue
+            replay[mask] = rng.choice(values, size=n, p=shares)
+
+        assert df_out["number_of_cars"].tolist() == replay.tolist(), \
+            "fallback instrumentation must not change the sampled values/RNG"
 
 
 # ---------------------------------------------------------------------------

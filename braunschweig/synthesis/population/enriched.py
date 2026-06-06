@@ -41,6 +41,16 @@ INCOME_MIDPOINT_FALLBACK_EUR = 2800.0
 # class-midpoint table or an unexpected income_class vocabulary.
 INCOME_MIDPOINT_FALLBACK_WARN_RATE = 0.001
 
+# Fallback-rate threshold above which the per-Kreis share fallback in
+# :func:`_sample_counts` (cars from MiD H7, bikes from MiD H12.3) is logged at
+# WARNING level (fraction of persons in [0, 1]). Every in-scope Kreis ARS-5 code
+# is expected to be present in the per-Kreis share table, so the region-wide
+# fallback should never fire on correct data. A non-zero rate almost always
+# signals a Kreis-ARS format mismatch (e.g. AGS-5 vs AGS-8) that would silently
+# route persons to the region-wide distribution; even a small share is therefore
+# escalated.
+KREIS_SHARE_FALLBACK_WARN_RATE = 0.0
+
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
 # Helper: map IPF hh_size values onto the bins present in df_income.
@@ -764,16 +774,34 @@ def _sample_counts(df_persons, column, values, region_shares, kreis_shares,
     It is accepted as an argument so the caller can derive it once and reuse it
     across the (cars, bikes, income) calls instead of rebuilding the object-dtype
     array on every call; passing ``None`` derives it locally (output-identical).
+
+    Fallback transparency: each Kreis's share vector comes either from the
+    PRIMARY per-Kreis lookup in ``kreis_shares`` (the MiD H7 / H12.3 per-Kreis
+    table) or, when the Kreis ARS-5 code is absent from that table, from the
+    region-wide ``region_shares`` FALLBACK. Because cars and bikes are the most
+    widely consumed person attributes, a Kreis-ARS format mismatch (e.g. AGS-5
+    vs AGS-8) would silently route ALL persons to the region distribution. The
+    primary/fallback split is therefore counted (persons and distinct Kreis
+    codes) and the fallback rate is logged; a rate above
+    :data:`KREIS_SHARE_FALLBACK_WARN_RATE` is escalated to a WARNING that lists
+    the unmapped Kreis codes. The counts are also stored on ``df_persons.attrs``
+    (keyed by ``column``) so callers/tests can assert the primary lookup was
+    taken without a signature change. This logging is purely observational: it
+    does not alter the share vectors, the sampling, or the RNG consumption.
     """
     if kreis is None:
         kreis = _derive_kreis_ars5(df_persons)
     result = np.zeros(len(df_persons), dtype=int)
+    n_total = int(len(df_persons))
+    n_fallback = 0
+    fallback_kreise = []
     # Iterate the Kreis codes in a deterministic (sorted) order. ``set()``
     # iteration order over Python strings depends on PYTHONHASHSEED, so it
     # would vary the order in which the shared ``random`` stream is consumed
     # across the Kreise and thus make the per-person draws non-reproducible.
     # ``sorted`` pins the consumption order (reproducible result).
     for ars in sorted(kreis.unique()):
+        is_fallback = ars not in kreis_shares
         shares = kreis_shares.get(ars, region_shares)
         shares = np.asarray(shares, dtype=float)
         shares /= shares.sum()
@@ -781,8 +809,36 @@ def _sample_counts(df_persons, column, values, region_shares, kreis_shares,
         n = int(mask.sum())
         if n == 0:
             continue
+        if is_fallback:
+            n_fallback += n
+            fallback_kreise.append(ars)
         result[mask] = random.choice(values, size=n, p=shares)
     df_persons[column] = result
+
+    n_primary = n_total - n_fallback
+    fallback_rate = (n_fallback / n_total) if n_total else 0.0
+    df_persons.attrs[f"{column}_kreis_share_primary_count"] = n_primary
+    df_persons.attrs[f"{column}_kreis_share_fallback_count"] = n_fallback
+    df_persons.attrs[f"{column}_kreis_share_fallback_rate"] = fallback_rate
+    df_persons.attrs[f"{column}_kreis_share_fallback_kreise"] = list(fallback_kreise)
+    if n_fallback:
+        level = (
+            "WARNING: "
+            if fallback_rate > KREIS_SHARE_FALLBACK_WARN_RATE
+            else ""
+        )
+        print(
+            f"[braunschweig.enriched] {level}{column} per-Kreis share fallback "
+            f"used for {n_fallback}/{n_total} persons "
+            f"({fallback_rate:.2%}); primary per-Kreis lookup hit {n_primary}. "
+            f"Unmapped Kreis ARS-5 codes {sorted(fallback_kreise)}; "
+            f"using region-wide share distribution."
+        )
+    else:
+        print(
+            f"[braunschweig.enriched] {column} per-Kreis share PRIMARY lookup "
+            f"hit all {n_primary}/{n_total} persons (fallback rate 0.00%)."
+        )
 
 
 def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,

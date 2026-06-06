@@ -89,10 +89,27 @@ def configure(context):
         context.stage("braunschweig.data.census.households_size_age")
 
 
+# A DESTATIS (sex, age_class) cell that fails to parse as an integer is dropped
+# (the cell is not added to the marginal). This is a silent population shrink:
+# the cell is real demand that disappears with no count. We therefore count the
+# PRIMARY (parsed) vs FALLBACK (skipped) cells and surface the skipped share.
+#
+# A non-zero skip rate is expected and benign on the genuine DESTATIS export
+# because the suppressed-value placeholder ("-") and trailing summary/footer rows
+# do not carry counts; the warning threshold is set above that natural floor so it
+# never fires on valid data. A high skipped share almost always means the table
+# format changed (wrong column offsets, shifted header) and the population is
+# being silently shrunk -- that must fail loudly rather than run quietly.
+DESTATIS_SKIP_WARN_FRACTION: float = 0.05
+DESTATIS_SKIP_RAISE_FRACTION: float = 0.50
+
+
 def _load_destatis(path: str, scope_kreise: set[str]) -> pd.DataFrame:
     raw = pd.read_csv(path, sep=";", encoding="utf-8-sig",
                       header=None, dtype=str, skiprows=6)
     rows: list[dict] = []
+    parsed_cells = 0   # PRIMARY: (sex, age_class) cells parsed to an integer count
+    skipped_cells = 0  # FALLBACK: cells dropped because they did not parse
     for _, r in raw.iterrows():
         ags = str(r.iloc[0]).strip()
         if ags not in scope_kreise:
@@ -103,13 +120,40 @@ def _load_destatis(path: str, scope_kreise: set[str]) -> pd.DataFrame:
             try:
                 m = int(m_val); f = int(f_val)
             except (TypeError, ValueError):
+                # One non-integer cell drops both the male and female count for
+                # this (kreis, age_class). Count it so a partial parse failure
+                # cannot silently shrink the population (the all-empty case is
+                # still caught by the `if not rows` raise below).
+                skipped_cells += 1
                 continue
+            parsed_cells += 1
             rows.append({"kreis": ags, "sex": "male",   "age_class": age, "weight": m})
             rows.append({"kreis": ags, "sex": "female", "age_class": age, "weight": f})
     if not rows:
         raise RuntimeError(
             f"No DESTATIS rows matched ZGB Kreise in {path}. Scope={sorted(scope_kreise)}"
         )
+
+    total_cells = parsed_cells + skipped_cells
+    skipped_fraction = skipped_cells / total_cells if total_cells else 0.0
+    print(f"[braunschweig.population] DESTATIS cells: primary {parsed_cells}/{total_cells} "
+          f"({100.0 * parsed_cells / total_cells:.1f}%), "
+          f"skipped {skipped_cells} ({100.0 * skipped_fraction:.1f}%)")
+    if skipped_fraction >= DESTATIS_SKIP_RAISE_FRACTION:
+        raise RuntimeError(
+            f"DESTATIS parse skipped {skipped_cells}/{total_cells} cells "
+            f"({100.0 * skipped_fraction:.1f}%) in {path}, above the "
+            f"{100.0 * DESTATIS_SKIP_RAISE_FRACTION:.0f}% limit. This implausibly "
+            f"high drop rate would silently shrink the population and almost "
+            f"certainly means the table format/column offsets changed -- refusing "
+            f"to continue with a corrupted marginal."
+        )
+    if skipped_fraction >= DESTATIS_SKIP_WARN_FRACTION:
+        print(f"[braunschweig.population] WARNING: DESTATIS dropped {skipped_cells}/"
+              f"{total_cells} unparseable (sex, age_class) cells "
+              f"({100.0 * skipped_fraction:.1f}%); each dropped cell removes a real "
+              f"population count. Verify the export is complete and the column "
+              f"offsets still match.")
     return pd.DataFrame(rows)
 
 

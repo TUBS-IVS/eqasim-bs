@@ -196,11 +196,22 @@ def load_pt_subscription_breakdown(
     by_kreis : dict[ars5, np.ndarray]
         Per-Kreis probability vector over ``PT_TICKET_CATEGORIES`` (sums to 1).
     region : np.ndarray
-        Probability vector for the ZGB-aggregate (``Gesamt`` row) used as
-        fallback for persons with no Kreis assignment.
+        Probability vector for the ZGB-aggregate (``Gesamt`` / ``03ZGB``
+        row), provided as a regional reference. The ``03ZGB`` row is
+        required; if it is absent a ``RuntimeError`` is raised (the
+        previously fabricated cross-Kreis average was dead -- see note
+        below).
 
     The MiD raw values are integer percentages that may sum to 99 or 101
     because of rounding; we normalise each Kreis vector to sum to 1.
+
+    Note
+    ----
+    ``region`` is **not** consumed by the live categorical-IPF path in
+    ``braunschweig.synthesis.population.enriched``: persons with no Kreis
+    (or below the MiD basis age) are assigned ``fahre_nie``
+    deterministically, not the region vector. It is retained as a
+    documented regional reference (and for tests).
     """
     df = _read_csv(_path(data_path, "mid2023_P24_1.csv"))
     cols = list(PT_TICKET_CATEGORIES)
@@ -219,8 +230,10 @@ def load_pt_subscription_breakdown(
         else:
             by_kreis[ars5] = vec
     if region is None:
-        # Fallback: average across Kreise.
-        region = np.mean(list(by_kreis.values()), axis=0)
+        raise RuntimeError(
+            "mid2023_P24_1.csv: ZGB-aggregate row 'ars5=03ZGB' (Gesamt) is "
+            "missing -- it is the documented source of the region vector."
+        )
     return by_kreis, region
 
 
@@ -295,8 +308,18 @@ def load_license_breakdown(
     by_kreis : dict[ars5, np.ndarray]
         Per-Kreis probability vector over ``LICENSE_CATEGORIES`` (sums to 1).
     region : np.ndarray
-        Probability vector for the ZGB-aggregate (``Gesamt`` row), used as
-        fallback for persons with no Kreis assignment.
+        Probability vector for the ZGB-aggregate (``Gesamt`` / ``03ZGB``
+        row), provided as a regional reference. The ``03ZGB`` row is
+        required; if it is absent a ``RuntimeError`` is raised (the
+        previously fabricated cross-Kreis average was dead).
+
+    Note
+    ----
+    ``region`` is **not** consumed by the live licence categorical-IPF path
+    in ``braunschweig.synthesis.population.enriched``: persons below
+    ``LICENSE_MIN_AGE`` (or with no Kreis) are assigned ``nein``
+    deterministically, not the region vector. It is retained as a
+    documented regional reference (and for tests).
     """
     df = _read_csv(_path(data_path, "mid2023_P17_1.csv"))
     cols = list(LICENSE_CATEGORIES)
@@ -314,7 +337,10 @@ def load_license_breakdown(
         else:
             by_kreis[ars5] = vec
     if region is None:
-        region = np.mean(list(by_kreis.values()), axis=0)
+        raise RuntimeError(
+            "mid2023_P17_1.csv: ZGB-aggregate row 'ars5=03ZGB' (Gesamt) is "
+            "missing -- it is the documented source of the region vector."
+        )
     return by_kreis, region
 
 
