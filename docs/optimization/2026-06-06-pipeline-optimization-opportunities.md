@@ -13,14 +13,29 @@ a deliberate re-baseline.
 
 ---
 
-## P0 — Headline finding (biggest lever in the whole pipeline)
+## P0 — CORRECTED (the original "DMC is off" claim was WRONG)
 
-| # | Finding | Where | Impact | Effort | Risk |
-|---|---|---|---|---|---|
-| 0.1 | **MATSim runs with `mode_choice: false`** → population is routed ONCE, the DMC mode-choice strategy is cleared, and the whole `BraunschweigModeChoiceModule` (car/PT/bike estimators, parking cost, PT tariff) is **dead code at runtime**. Modal split = whatever synthesis seeded, never equilibrated to congestion/cost. | `config_server_*_100pct.yml:69`; `matsim/simulation/prepare.py:114,131`; `RunPopulationRouting.java:36` | **H** | M | Repro (intended) |
-| 0.2 | **ASCs are un-calibrated Munich leftovers**, hand-nudged to round numbers (car 0.4, walk 1.8…) with SP originals commented out; no ASC-calibration loop targets the MiD 2023 ZGB modal split; no mode/cost params file is passed from config, so `isParis` car-ASC bonus is a silent no-op. | `BraunschweigModeParameters.java:31-69`; `BraunschweigCarUtilityEstimator.java:44` | **H** | M | Repro (intended) |
+The scan agent claimed mode choice was disabled. **This is incorrect** and has been
+retracted. Verified 2026-06-06:
 
-> **Interpretation:** the current run is a *fixed-mode traffic assignment*, not a behavioural mode-choice equilibrium. Everything under P4 (PT tariff, car cost, parking, P+R) only matters once 0.1 is on. This is the most important strategic decision — decide whether v1 is intentionally fixed-mode or whether to turn DMC on + calibrate ASCs.
+- `BraunschweigConfigurator` registers `BraunschweigModeChoiceModule`
+  (`BraunschweigConfigurator.java:11`) and `RunAdaptConfig` configures the
+  `DiscreteModeChoiceConfigGroup` (`RunAdaptConfig.java`) → **Discrete Mode Choice
+  runs inside the MATSim loop**; the cost/parking/PT-tariff models are live, NOT dead.
+- The `mode_choice` config flag is read ONLY in the upstream
+  `eqasim-bs/matsim/simulation/prepare.py:114` and gates the optional **standalone
+  (offline, one-shot) mode-choice pre-pass** (`--config:standaloneModeChoice...`).
+  `mode_choice: false` just means that offline pre-pass is skipped — it does NOT
+  disable the in-loop DMC. So the run IS a behavioural mode-choice equilibrium.
+
+What MAY still be worth a look (separate, lower-priority, NOT a P0):
+
+| # | Finding | Where | Impact | Effort |
+|---|---|---|---|---|
+| 0.2 | ASC values inherited from Munich and hand-adjusted (SP originals commented out). Worth confirming the ZGB modal split validates against MiD 2023 after a run, and whether an ASC re-fit is warranted. NOTE: needs verification against the actual post-run modal split before treating as an issue (the earlier "uncalibrated" framing came from the same over-reading). | `BraunschweigModeParameters.java:31-69` | M (if split is off) | M |
+
+> Net: there is **no fixed-mode problem**. Treat the modal-split calibration as a
+> normal post-run validation question, not a structural gap.
 
 ---
 
@@ -91,7 +106,7 @@ Also flagged (low priority): dead-code check on `assign_by_radius` (education_gr
 
 ## Recommended sequencing
 
-1. **Decide P0** (fixed-mode vs behavioural DMC + ASC calibration) — this frames everything else and is the biggest scientific lever.
+1. ~~Decide P0~~ **RETRACTED** — DMC already runs in-loop; no fixed-mode problem. Modal-split calibration is a normal post-run validation question (0.2), not a structural gap.
 2. **Land P1 quick wins** (all low-risk, mostly output-identical): 1.1–1.8. Immediate runtime/memory relief for the 100% run, no re-baseline needed.
 3. **Fix P2 hazards** as one deliberate, documented re-baseline (2.1–2.6) — they make runs reproducible and remove latent bugs.
 4. **P3 performance refactors** before/with the 100% run if synthesis time/memory is the bottleneck (3.1, 3.3, 3.5 are the big three).
