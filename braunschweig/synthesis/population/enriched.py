@@ -682,9 +682,17 @@ def _derive_kreis_ars5(df_persons):
     return pd.Series(ars5, index=df_persons.index)
 
 
-def _sample_counts(df_persons, column, values, region_shares, kreis_shares, random):
-    """Sample an integer count per person given a Kreis-indexed share table."""
-    kreis = _derive_kreis_ars5(df_persons)
+def _sample_counts(df_persons, column, values, region_shares, kreis_shares,
+                   random, kreis=None):
+    """Sample an integer count per person given a Kreis-indexed share table.
+
+    ``kreis`` is the per-person AGS-5 Series from :func:`_derive_kreis_ars5`.
+    It is accepted as an argument so the caller can derive it once and reuse it
+    across the (cars, bikes, income) calls instead of rebuilding the object-dtype
+    array on every call; passing ``None`` derives it locally (output-identical).
+    """
+    if kreis is None:
+        kreis = _derive_kreis_ars5(df_persons)
     result = np.zeros(len(df_persons), dtype=int)
     for ars in set(kreis.unique()):
         shares = kreis_shares.get(ars, region_shares)
@@ -698,8 +706,14 @@ def _sample_counts(df_persons, column, values, region_shares, kreis_shares, rand
     df_persons[column] = result
 
 
-def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur):
-    """Add ``household_income_eur`` = class_midpoint * INKAR-scale[home_kreis]."""
+def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,
+                              kreis=None):
+    """Add ``household_income_eur`` = class_midpoint * INKAR-scale[home_kreis].
+
+    ``kreis`` is the per-person AGS-5 Series from :func:`_derive_kreis_ars5`,
+    accepted so the caller can reuse a single derivation (passing ``None``
+    derives it locally; output-identical).
+    """
     midpoint = df_persons["household_income"].astype(str).map(class_midpoint_eur)
     if midpoint.isna().any():
         n_na = int(midpoint.isna().sum())
@@ -709,7 +723,8 @@ def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur):
         )
         midpoint = midpoint.fillna(2800.0)
 
-    kreis = _derive_kreis_ars5(df_persons)
+    if kreis is None:
+        kreis = _derive_kreis_ars5(df_persons)
     scale_lookup = dict(zip(df_inkar["ars5"], df_inkar["scale"]))
     scale = kreis.map(scale_lookup).fillna(1.0).astype(float)
 
@@ -735,19 +750,26 @@ def execute(context):
     bikes_by_kreis, bikes_region, bikes_values = load_kreis_share_table(
         data_path, "mid2023_H12_3_bikes_by_kreis.csv")
 
+    # Derive the per-person Kreis AGS-5 once and reuse it across all three
+    # consumers below (cars, bikes, income). The derivation rebuilds an
+    # object-dtype array via a Python loop over the 8 political-prefix flags on
+    # the full ~1.13M-row population, so computing it a single time avoids the
+    # previous 3x redundant passes. Output is identical (same Kreis per row).
+    kreis = _derive_kreis_ars5(df_persons)
+
     # Re-sample vehicle counts from MiD H7 / H12.3 instead of the hardcoded 1s.
     random = np.random.RandomState(context.config("random_seed") + 91731)
     _sample_counts(df_persons, "number_of_cars", cars_values,
-                   cars_region, cars_by_kreis, random)
+                   cars_region, cars_by_kreis, random, kreis=kreis)
     _sample_counts(df_persons, "number_of_bicycles", bikes_values,
-                   bikes_region, bikes_by_kreis, random)
+                   bikes_region, bikes_by_kreis, random, kreis=kreis)
 
     # INKAR-based EUR income (Kreis-specific shift on top of the MiD H4
     # regionless quintile distribution).
     df_inkar = context.stage("braunschweig.data.inkar.household_income")
     class_midpoint_eur = load_class_midpoint_eur(data_path)
     df_persons = _apply_inkar_income_scale(df_persons, df_inkar,
-                                           class_midpoint_eur)
+                                           class_midpoint_eur, kreis=kreis)
 
     # BS-specific residency flag (aligns with is_munich_resident semantics).
     if "inside_braunschweig" in df_persons.columns:

@@ -11,6 +11,15 @@ def configure(context):
 
     context.config("data_path")
     context.config("processes")
+    # MATSim CPU thread budget for the pt2matsim PublicTransitMapper. The PT
+    # mapping is CPU-bound, so it should use the (potentially higher) MATSim
+    # thread budget rather than the memory-bound synthesis worker count. Defaults
+    # to None -> fall back to "processes", so existing configs are unchanged.
+    # Declared here because the two-arg default form is only allowed in
+    # configure(); execute() reads it with the one-arg form. pt2matsim mapping is
+    # deterministic w.r.t. thread count, so the output network/schedule is
+    # unchanged regardless of the value.
+    context.config("matsim_threads", None)
 
 def execute(context):
     # Prepare input paths
@@ -42,7 +51,8 @@ def execute(context):
         )
         content = content.replace(
             '<param name="numOfThreads" value="2" />',
-            '<param name="numOfThreads" value="%d" />' % context.config("processes")
+            '<param name="numOfThreads" value="%d" />'
+            % (context.config("matsim_threads") or context.config("processes"))
         )
         content = content.replace(
             '<param name="outputNetworkFile" value="" />',

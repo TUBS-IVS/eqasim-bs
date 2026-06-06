@@ -255,6 +255,80 @@ class TestSampleCounts:
         assert (df1.loc[:9, "n_cars"] == 1).all()
         assert (df1.loc[10:, "n_cars"] == 2).all()
 
+    def test_kreis_argument_matches_local_derivation(self):
+        """Passing the pre-derived ``kreis`` Series must be output-identical to
+        letting ``_sample_counts`` derive it internally (the FIX A refactor that
+        derives the Kreis once in execute() and reuses it across cars/bikes/
+        income instead of rebuilding it on every call)."""
+        from braunschweig.synthesis.population.enriched import (
+            _derive_kreis_ars5, _sample_counts,
+        )
+
+        df = pd.DataFrame({
+            "person_id":           list(range(20)),
+            "inside_braunschweig": [True] * 10 + [False] * 10,
+            "inside_salzgitter":   [False] * 10 + [True] * 10,
+        })
+        values = np.array([0, 1, 2, 3])
+        kreis_shares = {
+            "03101": (0.1, 0.4, 0.3, 0.2),
+            "03102": (0.2, 0.2, 0.3, 0.3),
+        }
+        region_shares = (0.25, 0.25, 0.25, 0.25)
+
+        df_local = df.copy()
+        df_reused = df.copy()
+        # Local derivation path (kreis=None).
+        _sample_counts(df_local, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(7))
+        # Reuse path: derive once, pass it in.
+        kreis = _derive_kreis_ars5(df_reused)
+        _sample_counts(df_reused, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(7), kreis=kreis)
+
+        assert df_local["n_cars"].tolist() == df_reused["n_cars"].tolist(), \
+            "passing kreis= must yield identical output to local derivation"
+
+
+# ---------------------------------------------------------------------------
+# 7b. enriched._derive_kreis_ars5 over all eight political-prefix flags
+# ---------------------------------------------------------------------------
+
+class TestDeriveKreisArs5AllFlags:
+    def test_all_eight_inside_flags_map_to_expected_ars5(self):
+        """Every one of the 8 ZGB inside_<kreis> flags must resolve to its
+        AGS-5 Kreis code, in the same order as INSIDE_FLAG_TO_ARS5."""
+        from braunschweig.synthesis.population.enriched import (
+            INSIDE_FLAG_TO_ARS5, _derive_kreis_ars5,
+        )
+
+        flags = list(INSIDE_FLAG_TO_ARS5.keys())
+        n = len(flags)
+        # One person per flag: person i has only flags[i] set to True.
+        data = {"person_id": list(range(n))}
+        for j, flag in enumerate(flags):
+            data[flag] = [i == j for i in range(n)]
+        df = pd.DataFrame(data)
+
+        out = _derive_kreis_ars5(df)
+        expected = [INSIDE_FLAG_TO_ARS5[flag] for flag in flags]
+        assert out.tolist() == expected
+        # Index is preserved (used as a Series elsewhere in execute()).
+        assert list(out.index) == list(df.index)
+
+    def test_nan_flags_treated_as_false(self):
+        """NaN in an inside flag must be treated as False (fillna), not raise."""
+        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
+
+        df = pd.DataFrame({
+            "person_id":           [1, 2, 3],
+            "inside_braunschweig": [True, np.nan, False],
+            "inside_salzgitter":   [False, np.nan, True],
+        })
+        out = _derive_kreis_ars5(df)
+        # Person 2: both flags NaN -> no Kreis -> empty string.
+        assert out.tolist() == ["03101", "", "03102"]
+
 
 # ---------------------------------------------------------------------------
 # 8. enriched._build_income_size_map (scheme detection)
