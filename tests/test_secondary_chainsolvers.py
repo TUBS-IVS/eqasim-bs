@@ -299,3 +299,66 @@ def test_build_rda_candidate_index_preserves_candidate_order():
             df_secondary.geometry.x.values, df_secondary.geometry.y.values,
         ))
         assert np.array_equal(coords, expected)
+
+
+# ---------------------------------------------------------------------------
+# FIX 2.3: _resample_distributions must not mutate the (synpp-cached) input.
+# ---------------------------------------------------------------------------
+
+# Non-zero resample factors for every mode so the operation actually changes
+# the CDFs (a zero factor leaves _resample_cdf a no-op).
+_RESAMPLE_FACTORS = dict(car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5)
+
+
+def test_resample_distributions_does_not_mutate_input():
+    """The cached ``distance_distributions`` object is shared with the legacy
+    locations stage, so ``_resample_distributions`` must return a resampled deep
+    copy and leave the original CDF arrays untouched."""
+    original = _flat_distribution()
+    # Snapshot the original CDF arrays (deep) before resampling.
+    original_cdfs = {
+        mode: [d["cdf"].copy() for d in original[mode]["distributions"]]
+        for mode in original
+    }
+
+    resampled = sc._resample_distributions(original, _RESAMPLE_FACTORS)
+
+    # The original object's CDF arrays are byte-identical to the snapshot.
+    for mode in original:
+        for d, snapshot in zip(original[mode]["distributions"], original_cdfs[mode]):
+            assert np.array_equal(d["cdf"], snapshot), (
+                f"input CDF for mode {mode} was mutated in place"
+            )
+
+    # The returned copy is a distinct object whose CDFs differ for the modes
+    # with a non-zero factor (pt, walk), proving the resample was applied to the
+    # copy rather than the input.
+    assert resampled is not original
+    for mode in ("pt", "walk"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert d_out["cdf"] is not d_in["cdf"]
+            assert not np.array_equal(d_out["cdf"], d_in["cdf"])
+    # Zero-factor modes resample to the (normalised) same values but on a copy.
+    for mode in ("car", "bicycle"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert d_out["cdf"] is not d_in["cdf"]
+            assert np.allclose(d_out["cdf"], d_in["cdf"])
+
+
+def test_resample_distributions_is_not_compounded_via_cached_object():
+    """Calling ``_resample_distributions`` twice on the SAME cached object must
+    yield the SAME result both times (no compounding of the resample factors),
+    because each call resamples a fresh copy of the untouched input."""
+    cached = _flat_distribution()
+
+    first = sc._resample_distributions(cached, _RESAMPLE_FACTORS)
+    second = sc._resample_distributions(cached, _RESAMPLE_FACTORS)
+
+    for mode in cached:
+        for d_first, d_second in zip(first[mode]["distributions"],
+                                     second[mode]["distributions"]):
+            assert np.array_equal(d_first["cdf"], d_second["cdf"]), (
+                f"resampling the cached object twice compounded mode {mode}"
+            )

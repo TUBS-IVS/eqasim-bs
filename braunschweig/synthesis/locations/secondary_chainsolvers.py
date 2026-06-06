@@ -31,6 +31,7 @@ on the input distribution side.
 
 from __future__ import annotations
 
+import copy
 import multiprocessing as mp
 import time
 from typing import Any, Dict, List, Tuple
@@ -139,9 +140,21 @@ def _resample_cdf(cdf, factor):
 
 
 def _resample_distributions(distributions, factors):
+    """Return a resampled deep copy of ``distributions``; never mutate the input.
+
+    The ``distance_distributions`` stage object is synpp-cached and shared with
+    the legacy locations stage. Resampling in place would compound the resample
+    factors if the same cached object were resampled twice (double-resample
+    contamination across consumers). We therefore deep-copy the nested dict and
+    mutate only the copy; the returned object carries the resampled CDFs while
+    the original cached object stays untouched. The deep copy is cheap (a
+    handful of small distribution dicts per mode).
+    """
+    distributions = copy.deepcopy(distributions)
     for mode, mode_distributions in distributions.items():
         for distribution in mode_distributions["distributions"]:
             distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
+    return distributions
 
 
 def _sample_leg_distance(distributions, mode, travel_time, purpose,
@@ -788,8 +801,11 @@ def execute(context):
     df_secondary = context.stage("synthesis.locations.secondary")
 
     # Apply the same calibration tweaks as the legacy stage so the
-    # input-side distributions are bit-comparable.
-    _resample_distributions(distance_distributions, dict(
+    # input-side distributions are bit-comparable. ``_resample_distributions``
+    # returns a resampled deep copy; the cached stage object (shared with the
+    # legacy locations stage) is never mutated, so it can never be
+    # double-resampled across consumers.
+    distance_distributions = _resample_distributions(distance_distributions, dict(
         car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5,
     ))
 
