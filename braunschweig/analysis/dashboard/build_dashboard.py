@@ -406,6 +406,16 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     ms = _safe_read_csv(sim_output / "modestats.csv", sep=";")
     if ms is not None and len(ms):
         modes = [c for c in ms.columns if c != "iteration"]
+        # Exclude the cordon "outside" pseudo-mode and renormalise the per-iteration
+        # shares over the real modes, so the reported modal split sums to 100% for
+        # trips inside the study area. No-op when the cordon is off ("outside" absent).
+        real_modes = [m for m in modes if m != "outside"]
+        if "outside" in modes and real_modes:
+            ms = ms.copy()
+            row_sums = ms[real_modes].sum(axis=1).replace(0, 1.0)
+            for m in real_modes:
+                ms[m] = ms[m] / row_sums
+            modes = real_modes
         last = ms.iloc[-1]
         first = ms.iloc[0]
         out["modes"] = modes
@@ -446,6 +456,11 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     et = _safe_read_csv(sim_output / "eqasim_trips.csv", sep=";")
     if et is not None and len(et):
         et = et[et["routed_distance"].notna()].copy()
+        # Drop cordon out-of-scope legs: "outside" is not a real transport mode but
+        # the eqasim marker for the portion of a trip beyond the cordon (set by the
+        # scenario cutter). Excluding it keeps the modal split / distance KPIs about
+        # the real modes used inside the study area. No-op when the cordon is off.
+        et = et[et["mode"] != "outside"].copy()
         et["km"] = et["routed_distance"].astype(float) / 1000.0
 
         # Overall distance distribution (all trips)

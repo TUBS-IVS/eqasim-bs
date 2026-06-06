@@ -494,6 +494,12 @@ def _mode_share_table(
     if "mode" not in trips.columns:
         return empty, empty, empty
 
+    # Drop cordon out-of-scope legs: "outside" is the eqasim marker for the part of
+    # a trip beyond the cordon (set by the scenario cutter), not a real transport
+    # mode. Excluding it keeps the modal split about real modes inside the study
+    # area. No-op when the cordon is off ("outside" absent).
+    trips = trips[trips["mode"] != "outside"]
+
     # --- Overall (all-trip) modal split. ---
     overall = mode_share(trips["mode"])
     n_by_mode = trips["mode"].dropna().value_counts()
