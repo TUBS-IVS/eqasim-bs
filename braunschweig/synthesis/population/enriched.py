@@ -129,7 +129,12 @@ def _execute_base(context):
 
     # CAR AVAILABILITY
     df_persons["car_availability"] = 1.0
-    constraints = mid["car_availability_constraints"]
+    # Copy the cached constraint list before appending: ``mid`` is the cached
+    # ``braunschweig.data.mid.data`` stage object, so appending to the original
+    # list would mutate the cache in place (and on a re-run within the same
+    # process the extra age constraint would be appended again). ``list(...)``
+    # takes a shallow copy so the cached stage object is never mutated.
+    constraints = list(mid["car_availability_constraints"])
     constraints.append({
         "age": (-np.inf, context.config("braunschweig.minimum_age.car_availability") - 1),
         "target": 0.0,
@@ -158,7 +163,10 @@ def _execute_base(context):
 
     # BIKE AVAILABILITY
     df_persons["bicycle_availability"] = 1.0
-    constraints = mid["bicycle_availability_constraints"]
+    # Copy the cached constraint list before appending (see car-availability
+    # block above): never mutate the cached ``braunschweig.data.mid.data``
+    # stage object.
+    constraints = list(mid["bicycle_availability_constraints"])
     constraints.append({
         "age": (-np.inf, context.config("braunschweig.minimum_age.bicycle_availability") - 1),
         "target": 0.0,
@@ -550,8 +558,14 @@ def _execute_base(context):
         f"{df_persons['has_pt_subscription'].mean():.1%}"
     )
 
-    # Sample categorical values from the IPF probabilities
-    random = np.random.RandomState(context.config("random_seed") + 8572)
+    # Sample categorical values from the IPF probabilities.
+    #
+    # Use a DISTINCT seed offset from the PT block above (which uses +8572):
+    # the car/bike draw is a statistically independent attribute and must not
+    # share the same uniform stream as the PT-subscription draw. Re-using +8572
+    # here made the two draws identical uniforms (correlated by construction);
+    # +23761 gives the car/bike block its own independent stream.
+    random = np.random.RandomState(context.config("random_seed") + 23761)
 
     u = random.random_sample(len(df_persons))
     selection = u < df_persons["car_availability"]
@@ -694,7 +708,12 @@ def _sample_counts(df_persons, column, values, region_shares, kreis_shares,
     if kreis is None:
         kreis = _derive_kreis_ars5(df_persons)
     result = np.zeros(len(df_persons), dtype=int)
-    for ars in set(kreis.unique()):
+    # Iterate the Kreis codes in a deterministic (sorted) order. ``set()``
+    # iteration order over Python strings depends on PYTHONHASHSEED, so it
+    # would vary the order in which the shared ``random`` stream is consumed
+    # across the Kreise and thus make the per-person draws non-reproducible.
+    # ``sorted`` pins the consumption order (reproducible result).
+    for ars in sorted(kreis.unique()):
         shares = kreis_shares.get(ars, region_shares)
         shares = np.asarray(shares, dtype=float)
         shares /= shares.sum()

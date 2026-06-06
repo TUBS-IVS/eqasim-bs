@@ -289,6 +289,63 @@ class TestSampleCounts:
         assert df_local["n_cars"].tolist() == df_reused["n_cars"].tolist(), \
             "passing kreis= must yield identical output to local derivation"
 
+    def test_kreis_iteration_order_is_sorted_and_deterministic(self):
+        """FIX 2.1: ``_sample_counts`` must consume the shared RNG stream over
+        the Kreise in a deterministic SORTED order, not the hash-dependent
+        ``set()`` iteration order (which varies with PYTHONHASHSEED).
+
+        We verify this by replaying the exact draws the function should make if
+        it iterates the Kreis codes in ``sorted`` order, drawing ``n`` values
+        per Kreis from a fresh RNG with the same seed, and assert the function
+        reproduces that per-person assignment. A ``set()``-based iteration would
+        consume the per-Kreis blocks in a different (hash-dependent) order and
+        therefore generally mismatch this sorted-order replay."""
+        from braunschweig.synthesis.population.enriched import _sample_counts
+
+        values = np.array([0, 1, 2, 3])
+        # Non-degenerate shares so the actual draw depends on the position in
+        # the consumed RNG stream (degenerate 1.0 shares would hide the order).
+        kreis_shares = {
+            "03101": (0.1, 0.4, 0.3, 0.2),
+            "03102": (0.2, 0.2, 0.3, 0.3),
+            "03151": (0.3, 0.3, 0.2, 0.2),
+        }
+        region_shares = (0.25, 0.25, 0.25, 0.25)
+
+        df = pd.DataFrame({
+            "person_id":           list(range(12)),
+            "inside_braunschweig": [True] * 4 + [False] * 8,
+            "inside_salzgitter":   [False] * 4 + [True] * 4 + [False] * 4,
+            "inside_gifhorn":      [False] * 8 + [True] * 4,
+        })
+
+        df_out = df.copy()
+        _sample_counts(df_out, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(2024))
+
+        # Independent sorted-order replay of the same draws.
+        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
+        kreis = _derive_kreis_ars5(df)
+        replay = np.zeros(len(df), dtype=int)
+        rng = np.random.RandomState(2024)
+        for ars in sorted(kreis.unique()):
+            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
+            shares = shares / shares.sum()
+            mask = (kreis == ars).values
+            n = int(mask.sum())
+            if n == 0:
+                continue
+            replay[mask] = rng.choice(values, size=n, p=shares)
+
+        assert df_out["n_cars"].tolist() == replay.tolist(), \
+            "_sample_counts must consume the RNG in sorted Kreis order (FIX 2.1)"
+
+        # And it must be reproducible across two executions with equal seeds.
+        df_again = df.copy()
+        _sample_counts(df_again, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(2024))
+        assert df_again["n_cars"].tolist() == df_out["n_cars"].tolist()
+
 
 # ---------------------------------------------------------------------------
 # 7b. enriched._derive_kreis_ars5 over all eight political-prefix flags
@@ -360,6 +417,76 @@ class TestIncomeSizeMap:
 
         with pytest.raises(ValueError, match="unrecognised hh_size bins"):
             _build_income_size_map({"a", "b", "c"})
+
+
+# ---------------------------------------------------------------------------
+# 8b. enriched._execute_base reproducibility / cache-mutation guards
+#     (FIX 2.2 cached-list mutation, FIX 2.6 distinct RNG seed offsets)
+# ---------------------------------------------------------------------------
+
+import inspect
+
+from braunschweig.synthesis.population import enriched as _enriched_module
+
+
+class TestConstraintListNotMutated:
+    """FIX 2.2: the car/bike availability blocks must copy the cached MiD
+    constraint list (``list(mid["..."])``) before ``.append(...)`` so the
+    cached ``braunschweig.data.mid.data`` stage object is never mutated in
+    place.
+
+    We reproduce the exact copy-then-append idiom used in ``_execute_base`` and
+    assert the original list is untouched; we additionally pin the source so a
+    future regression back to a bare reference is caught."""
+
+    def test_copy_then_append_does_not_mutate_input(self):
+        # Mirror the production idiom: ``constraints = list(mid["..."])``.
+        cached_list = [{"sex": "male", "target": 0.5}]
+        len_before = len(cached_list)
+        constraints = list(cached_list)  # copy (production behaviour)
+        constraints.append({"age": (-np.inf, -1), "target": 0.0})
+        # The copy received the new constraint ...
+        assert len(constraints) == len_before + 1
+        # ... but the cached source list is unchanged.
+        assert len(cached_list) == len_before
+        assert cached_list == [{"sex": "male", "target": 0.5}]
+
+    def test_source_copies_cached_constraint_lists(self):
+        src = inspect.getsource(_enriched_module._execute_base)
+        # Both availability blocks must take a copy before appending.
+        assert 'list(mid["car_availability_constraints"])' in src, \
+            "car constraints must be copied before append (FIX 2.2)"
+        assert 'list(mid["bicycle_availability_constraints"])' in src, \
+            "bicycle constraints must be copied before append (FIX 2.2)"
+        # Guard against the regressed bare-reference form.
+        assert 'constraints = mid["car_availability_constraints"]\n' not in src
+        assert 'constraints = mid["bicycle_availability_constraints"]\n' not in src
+
+
+class TestRandomSeedOffsetsDistinct:
+    """FIX 2.6: the PT-subscription draw and the car/bike availability draw are
+    independent attributes and must NOT share the same uniform RNG stream. Their
+    ``random_seed`` offsets therefore have to differ (previously both used
+    +8572, making the two draws correlated by construction)."""
+
+    def test_pt_and_car_bike_seed_offsets_differ(self):
+        src = inspect.getsource(_enriched_module._execute_base)
+        import re
+
+        offsets = [
+            int(m) for m in re.findall(
+                r"RandomState\(context\.config\(\"random_seed\"\)\s*\+\s*(\d+)\)",
+                src,
+            )
+        ]
+        # PT block (+8572) and car/bike block must both be present and distinct.
+        assert 8572 in offsets, "PT block must keep its +8572 offset"
+        # There must be at least two RandomState constructions in this function
+        # and no offset may be used twice (every independent draw is its own
+        # stream).
+        assert len(offsets) >= 2
+        assert len(offsets) == len(set(offsets)), \
+            f"RNG seed offsets must all be distinct, got {offsets} (FIX 2.6)"
 
 
 # ---------------------------------------------------------------------------
