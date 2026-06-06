@@ -177,17 +177,62 @@ def apply_sector_aware_attraction(
     return df
 
 
-def evaluate_gravity(population, employees, friction):
-    """Iterative balancing of a doubly-constrained gravity model."""
+# Iteration cap for the doubly-constrained balancing in ``evaluate_gravity``.
+# Deliberately high so convergence (the 1e-3 per-step delta test below) is
+# always reached before the cap on realistic inputs -- the cap only guards
+# against a non-converging pathological input. Kept as a module constant (and
+# overridable via the ``gravity_max_iterations`` config key declared in
+# ``configure``) instead of the previous magic ``int(1e6)`` literal. The default
+# preserves the exact prior behaviour: the loop ran up to 1e6 times before.
+DEFAULT_GRAVITY_MAX_ITERATIONS = int(1e6)
+
+
+def evaluate_gravity(
+    population,
+    employees,
+    friction,
+    max_iterations=DEFAULT_GRAVITY_MAX_ITERATIONS,
+    debug=False,
+):
+    """Iterative balancing of a doubly-constrained gravity model.
+
+    Parameters
+    ----------
+    population, employees, friction
+        Production targets, attraction targets and the friction matrix.
+    max_iterations
+        Maximum number of balancing iterations before giving up. The default
+        (``DEFAULT_GRAVITY_MAX_ITERATIONS`` = 1e6) reproduces the prior
+        behaviour exactly; convergence is normally reached far earlier.
+    debug
+        When ``True`` the per-iteration convergence deltas are printed (off by
+        default; the previous unconditional per-iteration print is the only
+        behaviour change and is non-numerical).
+
+    Notes
+    -----
+    The convergence test is unchanged: it compares ``production`` and
+    ``attraction`` against their values at the start of the iteration and
+    ``flow`` against its value from the previous iteration. ``production`` and
+    ``attraction`` are mutated element-by-element in place, so their pre-update
+    snapshots must be copies. ``flow`` is fully reassigned each iteration
+    (``flow = np.copy(friction)``) and never mutated in place after the
+    reassignment, so a plain reference to the previous ``flow`` object is
+    sufficient for the delta -- the explicit ``np.copy(flow)`` was redundant and
+    is removed. The returned matrix and the number of iterations performed are
+    therefore identical to before.
+    """
     production = np.ones((len(population),))
     attraction = np.ones((len(population),))
     flow = np.ones((len(population), len(population)))
     converged = False
 
-    for iteration in range(int(1e6)):
+    for iteration in range(int(max_iterations)):
         previous_production = np.copy(production)
         previous_attraction = np.copy(attraction)
-        previous_flow = np.copy(flow)
+        # ``flow`` is reassigned (not mutated in place) below, so the old object
+        # this reference points to stays valid for the delta -- no copy needed.
+        previous_flow = flow
 
         for k in range(len(population)):
             production[k] = population[k] / np.sum(attraction * friction[k, :])
@@ -205,12 +250,13 @@ def evaluate_gravity(population, employees, friction):
         attraction_delta = np.abs(attraction - previous_attraction)
         flow_delta = np.abs(flow - previous_flow)
 
-        print(
-            "Gravity iteration", iteration,
-            "prod. max. delta:", np.max(production_delta),
-            "attr. max. delta:", np.max(attraction_delta),
-            "flow max. delta:", np.max(flow_delta),
-        )
+        if debug:
+            print(
+                "Gravity iteration", iteration,
+                "prod. max. delta:", np.max(production_delta),
+                "attr. max. delta:", np.max(attraction_delta),
+                "flow max. delta:", np.max(flow_delta),
+            )
 
         if (np.max(production_delta) < 1e-3
                 and np.max(attraction_delta) < 1e-3
@@ -423,7 +469,10 @@ def _execute_gravity_base(context):
         np.exp(slope_vec[:, None] * distances + constant)
         + np.eye(len(municipalities)) * diagonal
     )
-    flow = evaluate_gravity(population, employees, friction)
+    # ExecuteContext.config() takes the key alone (the default is declared in
+    # configure()); passing a default here would raise.
+    max_iterations = context.config("gravity_max_iterations")
+    flow = evaluate_gravity(population, employees, friction, max_iterations)
 
     df_matrix = pd.DataFrame({
         "weight": flow.reshape((-1,)),
@@ -468,6 +517,11 @@ def configure(context):
     context.config("gravity_slope", DEFAULT_SLOPE)
     context.config("gravity_constant", DEFAULT_CONSTANT)
     context.config("gravity_diagonal", DEFAULT_DIAGONAL)
+    # Iteration cap for the doubly-constrained balancing (``evaluate_gravity``).
+    # The default reproduces the prior magic 1e6 literal, so convergence is
+    # reached exactly as before; exposed only so a non-converging run can be
+    # bounded explicitly.
+    context.config("gravity_max_iterations", DEFAULT_GRAVITY_MAX_ITERATIONS)
     # Optional dict {regiostar7_code: slope}. None/absent = use scalar slope.
     # The default MUST be ``None`` and not ``{}``: synpp's ``flatten()`` drops
     # empty-dict values entirely, so an absent override with a ``{}`` default
