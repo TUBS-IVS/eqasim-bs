@@ -328,15 +328,32 @@ function Show-Dashboard($snap) {
             Write-Host ("  score   : {0:0.000}{1}  (avg executed)" -f $score, $deltaText) -ForegroundColor Cyan
         }
         if ($f['MODES']) {
-            $parts = @()
+            $modeMap = @{}
+            $order = @()
             foreach ($pair in $f['MODES'].Split(',')) {
                 $kv = $pair.Split('=')
                 if ($kv.Count -eq 2) {
                     $mv = ConvertTo-Double $kv[1]
-                    if ($null -ne $mv) { $parts += ("{0} {1:P0}" -f $kv[0], $mv) }
+                    if ($null -ne $mv) { $modeMap[$kv[0]] = $mv; $order += $kv[0] }
                 }
             }
-            if ($parts.Count -gt 0) { Write-Host ("  modes   : " + ($parts -join "  ")) -ForegroundColor Cyan }
+            # "outside" is the cordon out-of-scope pseudo-mode (the part of a trip
+            # beyond the cordon), not a real transport mode. Show the real modes
+            # renormalised to 100% (the modal split inside the study area), and
+            # report outside separately as its own share of all trips.
+            $realSum = 0.0
+            foreach ($m in $order) { if ($m -ne 'outside') { $realSum += $modeMap[$m] } }
+            if ($realSum -le 0) { $realSum = 1.0 }
+            $parts = @()
+            foreach ($m in $order) {
+                if ($m -ne 'outside') { $parts += ("{0} {1:P0}" -f $m, ($modeMap[$m] / $realSum)) }
+            }
+            if ($parts.Count -gt 0) {
+                Write-Host ("  modes   : " + ($parts -join "  ") + "   (=100% inside)") -ForegroundColor Cyan
+            }
+            if ($modeMap.ContainsKey('outside')) {
+                Write-Host ("  outside : {0:P1} of all trips (cross-cordon, out of scope)" -f $modeMap['outside']) -ForegroundColor DarkGray
+            }
         }
     }
     else {
