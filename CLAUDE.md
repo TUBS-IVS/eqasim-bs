@@ -788,6 +788,39 @@ Add validation for:
 
 For scientific workflows, report validation results in a dedicated summary file where appropriate.
 
+## Fallback transparency (no silent fallbacks) — MANDATORY
+
+Silent fallbacks are a recurring source of hidden bugs in this project: a stage's
+primary (real-data / proper) method quietly fails for some or all items and a
+fallback catches it, so the pipeline runs and the tests stay green — but the
+intended method never actually worked. Bugs then go undetected because "it ran".
+This is unacceptable for research software.
+
+Therefore, for **every** code path that has a fallback (nearest-neighbour fill,
+whole-region pool, "rda"/"random" solver fallback, scalar-default-when-map-missing,
+default-when-data-absent, except/try recovery, etc.):
+
+1. **Make the fallback observable.** Count and `log` (info/warn) how many items used
+   the PRIMARY method vs the FALLBACK, as an explicit rate, e.g.
+   `"[stage] primary 9842/10000 (98.4%), fallback 158 (1.6%)"`. Never let a fallback
+   fire silently.
+2. **Treat a high fallback rate as a failure signal.** If most/all items hit the
+   fallback (e.g. above a configurable threshold, and especially ~100%), that almost
+   always means the primary method is broken (a format mismatch, an empty join, a
+   wrong key) — surface it loudly (`warn`, or `raise` where a high rate cannot be
+   scientifically defensible). Add the rate to the per-run validation summary where
+   one exists.
+3. **Test the primary method, not just the fallback.** A green test that only
+   exercises (or silently tolerates) the fallback proves nothing about the real
+   method. Add tests/assertions that the PRIMARY path is actually taken on
+   representative input, and that the fallback rate stays below an expected bound.
+4. **When adding or reviewing ANY stage with a fallback, verify primary-method
+   coverage** and wire in the rate logging above. Do this proactively across the
+   model, not only when a bug appears.
+
+This applies to existing fallbacks too: when you touch a stage, add the rate
+instrumentation if it is missing.
+
 ## Tests
 
 Add tests for non trivial logic.
