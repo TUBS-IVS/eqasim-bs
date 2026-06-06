@@ -27,7 +27,8 @@ def configure(context):
 
 def execute(context):
     if not context.config("cordon_enabled"):
-        return pd.DataFrame(columns=["source_ars5", "stop_id", "x", "y"])
+        return pd.DataFrame(
+            columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
     supply = context.stage("matsim.scenario.supply.processed")
     schedule_path = "%s/%s" % (context.path("matsim.scenario.supply.processed"),
                                supply["schedule_path"])
@@ -36,6 +37,9 @@ def execute(context):
     kreise = read_kreise(vg250, crs="EPSG:25832")
     zgb = {str(p) for p in context.config("braunschweig.political_prefix")}
     df = build_pt_entry_stops(stops, routes, kreise, zgb)
+    n_rail = int(df["is_rail"].sum()) if len(df) else 0
+    n_multi = int((df["n_zgb_routes"] >= 2).sum()) if len(df) else 0
     print(f"[braunschweig.data.cordon_pt_gates] {len(df)} PT entry stops across "
-          f"{df['source_ars5'].nunique() if len(df) else 0} source Kreise")
+          f"{df['source_ars5'].nunique() if len(df) else 0} source Kreise "
+          f"({n_rail} regional-rail, {n_multi} on >=2 ZGB-serving routes)")
     return df
