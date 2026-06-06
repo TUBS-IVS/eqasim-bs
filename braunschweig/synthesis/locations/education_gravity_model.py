@@ -33,11 +33,30 @@ def balance_doubly_constrained(production, attraction, friction,
         denom_c = friction.T @ (a * production)
         b = np.divide(1.0, denom_c, out=np.zeros_like(denom_c),
                       where=denom_c > 0)
-        T = (a * production)[:, None] * friction * (b * attraction)[None, :]
-        row_err = np.max(np.abs(T.sum(axis=1) - production))
-        col_err = np.max(np.abs(T.sum(axis=0) - attraction))
+        # Convergence residuals are computed from matrix-vector products instead
+        # of the full R x C flow matrix (which used to be rebuilt every
+        # iteration just to sum its rows/columns). For the flow matrix
+        # T = (a*production)[:,None] * friction * (b*attraction)[None,:] formed
+        # from the *current* a and b:
+        #   T.sum(axis=1) = (a*production) * (friction @ (b*attraction))
+        #   T.sum(axis=0) = (b*attraction) * (friction.T @ (a*production))
+        #                 = (b*attraction) * denom_c
+        # The column sum reuses denom_c (built from the current a). The row sum
+        # needs a fresh matvec with the *updated* b -- note this is NOT
+        # (a*production)*denom_r, because denom_r used the previous b, whereas T
+        # is built with the new b; using denom_r would understate the residual
+        # and change the iteration count. These two expressions are exactly
+        # T.sum(axis=1) / T.sum(axis=0) of the old per-iteration T, so the
+        # tolerance check is bit-identical without materialising T.
+        row_sum = (a * production) * (friction @ (b * attraction))
+        col_sum = (b * attraction) * denom_c
+        row_err = np.max(np.abs(row_sum - production))
+        col_err = np.max(np.abs(col_sum - attraction))
         if max(row_err, col_err) < tolerance:
             break
+    # Build the dense flow matrix once, after convergence (or max_iterations),
+    # from the final scaling factors -- identical to the old final-iteration T.
+    T = (a * production)[:, None] * friction * (b * attraction)[None, :]
     return T
 
 
