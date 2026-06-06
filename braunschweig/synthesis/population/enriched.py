@@ -45,6 +45,51 @@ INCOME_MIDPOINT_FALLBACK_WARN_RATE = 0.001
 # --- Inherited from eqasim-bavaria -----------------------------------------
 # Helper: map IPF hh_size values onto the bins present in df_income.
 
+def _compute_zone_membership(df_homes, df_zones):
+    """Add ``inside_<zone>`` boolean columns to ``df_homes`` (FIX 3.8).
+
+    Replaces the per-zone loop of ``gpd.sjoin(df_homes, df_zones[zone])`` (one
+    spatial join per zone) with a SINGLE ``gpd.sjoin(df_homes, df_zones,
+    predicate="within")`` followed by a membership reduction. A home counts as
+    inside a zone iff its geometry is ``within`` that zone's polygon -- exactly
+    the predicate of the legacy per-zone join.
+
+    Output-identity: the legacy code derived membership purely from
+    ``df_homes["household_id"].isin(df_query["household_id"])``, i.e. a home is
+    "inside zone Z" iff its ``household_id`` appears at least once in the join
+    against zone Z. A home whose geometry lies within several zones (boundary
+    tie / overlapping polygons) is therefore counted inside EVERY matching zone,
+    independently per zone. The single join reproduces this: every (home, zone)
+    match becomes one row; reducing the join to the set of distinct
+    (household_id, zone) pairs and testing membership per zone yields the same
+    per-zone boolean, regardless of duplicate matches (a household_id that
+    matches a zone in one or several rows is "inside" exactly when it appears at
+    least once). ``df_zones["name"].unique()`` is iterated in the same order so
+    the column order is preserved.
+
+    Note: ``inside_external`` (= not covered by any zone) is intentionally NOT
+    added here; the caller derives it from the OR of the per-zone columns, as in
+    the legacy code.
+    """
+    zone_names = df_zones["name"].unique()
+
+    # Single spatial join: one row per (home, matching zone). ``predicate=
+    # "within"`` matches the legacy per-zone join predicate exactly.
+    df_query = gpd.sjoin(df_homes, df_zones[["name", "geometry"]], predicate="within")
+
+    # Distinct (household_id, zone-name) pairs. The legacy ``isin`` membership
+    # test is insensitive to duplicate matches, so deduping here is safe and
+    # makes the per-zone membership sets identical to the per-zone joins.
+    matched = df_query[["household_id", "name"]].drop_duplicates()
+
+    household_ids = df_homes["household_id"]
+    for zone in zone_names:
+        ids_in_zone = matched.loc[matched["name"] == zone, "household_id"]
+        df_homes["inside_{}".format(zone)] = household_ids.isin(ids_in_zone)
+
+    return df_homes
+
+
 def _build_income_size_map(income_bins):
     """Map IPF hh_size values onto the bins present in df_income.
 
@@ -125,10 +170,12 @@ def _execute_base(context):
     df_zones = context.stage("braunschweig.data.mid.zones")
     mid = context.stage("braunschweig.data.mid.data")
 
+    # Per-home zone membership (FIX 3.8): a single spatial join produces the
+    # same ``inside_<zone>`` boolean columns as the former per-zone sjoin loop.
+    df_homes = _compute_zone_membership(df_homes, df_zones)
+
     f_covered = np.zeros(len(df_homes), dtype=bool)
     for zone in df_zones["name"].unique():
-        df_query = gpd.sjoin(df_homes, df_zones[df_zones["name"] == zone], predicate="within")
-        df_homes["inside_{}".format(zone)] = df_homes["household_id"].isin(df_query["household_id"])
         f_covered |= df_homes["inside_{}".format(zone)]
 
     df_homes["inside_external"] = ~f_covered
