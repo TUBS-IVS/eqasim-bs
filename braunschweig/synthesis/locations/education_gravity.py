@@ -16,7 +16,7 @@ import pandas as pd
 import geopandas as gpd
 
 from braunschweig.synthesis.locations.education_gravity_model import (
-    assign_by_capacity_gravity, assign_by_decay,
+    assign_by_capacity_gravity, assign_by_decay, FALLBACK_WARN_SHARE,
 )
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 
@@ -42,9 +42,28 @@ def slope_vector_for_level(level, home_rs7, by_level_rs7, scalar_by_level):
     Returns a float64 numpy array of length ``len(home_rs7)``.
     """
     scalar = scalar_by_level[level]
+    n = len(home_rs7)
     if not by_level_rs7 or level not in by_level_rs7:
-        return np.full(len(home_rs7), float(scalar))
+        # No per-RS7 dict for this level: every pupil takes the scalar slope.
+        # This is the configured default (slope_by_level_rs7=None), NOT a
+        # per-pupil fallback, so it is reported as 0 primary / scalar-by-design.
+        print("[education:%s] slope: scalar-by-config for all %d pupils "
+              "(no per-RS7 override configured)" % (level, n))
+        return np.full(n, float(scalar))
     overrides = {int(k): float(v) for k, v in by_level_rs7[level].items()}
+    # PRIMARY: pupil's home RS7 has a per-RS7 slope override.
+    # FALLBACK: home RS7 is -1 (unmatched to a Gemeinde) or absent from the
+    # override dict -> the pupil silently takes the scalar slope. Make that
+    # observable as a PRIMARY-vs-FALLBACK rate (WARNING above the threshold).
+    has_override = home_rs7.map(lambda c: int(c) in overrides).to_numpy()
+    n_fallback = int((~has_override).sum())
+    n_primary = n - n_fallback
+    share = (n_fallback / n) if n > 0 else 0.0
+    prefix = "WARNING: " if share > FALLBACK_WARN_SHARE else ""
+    print("%s[education:%s] slope: primary %d/%d (%.1f%%) per-RS7 override, "
+          "scalar fallback %d (%.1f%%)"
+          % (prefix, level, n_primary, n, 100.0 * n_primary / n if n else 0.0,
+             n_fallback, 100.0 * share))
     return home_rs7.map(lambda c: overrides.get(int(c), scalar)).to_numpy(dtype=float)
 
 
@@ -150,7 +169,7 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
             slope=slope,
             max_radius_km=cfg["max_radius_km_by_level"][level],
             max_iterations=cfg["max_iterations"], tolerance=cfg["tolerance"],
-            rng=rng,
+            rng=rng, label="education:%s" % level,
         )
         picked = schools.iloc[choice]
         parts.append(pd.DataFrame({
@@ -178,7 +197,7 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
             _xy(sel), _xy(df_kita), df_kita["capacity"].values, slope=slope,
             max_radius_km=cfg["max_radius_km_by_level"]["kindergarten"],
             max_iterations=cfg["max_iterations"], tolerance=cfg["tolerance"],
-            rng=rng,
+            rng=rng, label="education:kindergarten",
         )
         picked = df_kita.iloc[choice]
         parts.append(pd.DataFrame({
@@ -201,6 +220,7 @@ def assign_education_locations(df_persons, df_nds, df_universities, df_kita, cfg
             _xy(sel), _xy(df_universities), df_universities["capacity"].values,
             slope=cfg["university_slope"],
             max_radius_km=cfg["university_max_radius_km"], rng=rng,
+            label="education:university",
         )
         picked = df_universities.iloc[choice]
         parts.append(pd.DataFrame({

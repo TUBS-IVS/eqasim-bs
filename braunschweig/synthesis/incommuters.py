@@ -150,8 +150,11 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         dist_km, restricted_reference,
         lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng)
 
-    # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any).
-    home_x, home_y = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops)
+    # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any). The
+    # primary/fallback split is counted + logged inside _pt_home_coords (the returned
+    # counts are not threaded further here; the home coords drawn are unchanged).
+    home_x, home_y, _pt_home_counts = _pt_home_coords(
+        orig_ars, modes, gate_x, gate_y, pt_entry_stops)
 
     # 3c) OUTSIDE access distance home->gate: the non-simulated portion of the trip.
     # The agent enters the simulated network at the gate; the home->gate leg (0 for
@@ -241,15 +244,32 @@ def _sample_workplaces(dest_ars, zgb_work, rng):
 def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
     """Home coords = road gate for car; PT agents board at a REAL PT entry stop.
 
-    A PT in-commuter boards at the nearest one-seat-to-ZGB entry stop of its own Kreis;
-    if its Kreis has none, at the nearest real PT entry stop anywhere -- never the road
-    gate (no fallback; PT must use real transit data). Only if there are no PT entry
-    stops at all (no regional GTFS) does the road gate remain.
+    A PT in-commuter boards at the nearest one-seat-to-ZGB entry stop of its own Kreis
+    (PRIMARY); if its Kreis has none, at the nearest real PT entry stop anywhere
+    (FALLBACK -- never the road gate; PT must use real transit data). Only if there are
+    no PT entry stops at all (no regional GTFS) does the road gate remain (WORST
+    fallback).
+
+    The three outcomes are counted per PT agent and the non-primary share is logged
+    (with a "WARNING: " prefix when it is high) so a systematic PT-stop key mismatch is
+    visible rather than silent (CLAUDE.md "Fallback transparency"). The drawn home
+    coordinates are unchanged by this instrumentation; only the returned counts are new.
+
+    Returns ``(home_x, home_y, counts)`` where ``counts`` is a dict with integer keys
+    ``own_kreis_stop`` (primary), ``nearest_anywhere_stop`` (fallback),
+    ``road_gate`` (worst fallback), and ``pt_agents`` (the PT total).
     """
     home_x = np.array(gate_x, dtype=float).copy()
     home_y = np.array(gate_y, dtype=float).copy()
+    counts = {"own_kreis_stop": 0, "nearest_anywhere_stop": 0,
+              "road_gate": 0, "pt_agents": 0}
+    n_pt = int(np.sum(np.asarray(modes) == "pt"))
+    counts["pt_agents"] = n_pt
     if pt_entry_stops is None or len(pt_entry_stops) == 0:
-        return home_x, home_y
+        # No PT entry stops at all -> every PT agent keeps the road gate (worst fallback).
+        counts["road_gate"] = n_pt
+        _log_pt_home_fallback(counts)
+        return home_x, home_y, counts
     by_kreis = {k: sub for k, sub in pt_entry_stops.groupby("source_ars5")}
     all_x = pt_entry_stops["x"].to_numpy(dtype=float)
     all_y = pt_entry_stops["y"].to_numpy(dtype=float)
@@ -261,10 +281,42 @@ def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops):
             sx = sub["x"].to_numpy(dtype=float); sy = sub["y"].to_numpy(dtype=float)
             j = int(np.argmin((sx - gate_x[i]) ** 2 + (sy - gate_y[i]) ** 2))
             home_x[i] = float(sx[j]); home_y[i] = float(sy[j])
+            counts["own_kreis_stop"] += 1
         else:
             j = int(np.argmin((all_x - gate_x[i]) ** 2 + (all_y - gate_y[i]) ** 2))
             home_x[i] = float(all_x[j]); home_y[i] = float(all_y[j])
-    return home_x, home_y
+            counts["nearest_anywhere_stop"] += 1
+    _log_pt_home_fallback(counts)
+    return home_x, home_y, counts
+
+
+def _log_pt_home_fallback(counts):
+    """Log the PT-boarding primary/fallback split as a rate (CLAUDE.md transparency).
+
+    Primary = the agent boards at a one-seat entry stop of its own source Kreis.
+    Non-primary = nearest-anywhere stop fallback + road-gate (no-GTFS) worst fallback.
+    A high non-primary share is prefixed "WARNING: " because it means a systematic
+    PT-stop -> source-Kreis key mismatch, not a few genuinely stop-less Kreise.
+    """
+    n_pt = counts["pt_agents"]
+    if n_pt == 0:
+        return
+    primary = counts["own_kreis_stop"]
+    nearest = counts["nearest_anywhere_stop"]
+    gate = counts["road_gate"]
+    non_primary = nearest + gate
+    primary_share = 100.0 * primary / n_pt
+    non_primary_share = 100.0 * non_primary / n_pt
+    level = "WARNING: " if non_primary_share > 5.0 else ""
+    print(
+        f"[braunschweig.incommuters] {level}PT boarding fallback: "
+        f"primary {primary}/{n_pt} ({primary_share:.1f}%) boarded an own-Kreis entry "
+        f"stop; fallback {non_primary} ({non_primary_share:.1f}%) = "
+        f"{nearest} nearest-anywhere stop + {gate} road gate (no PT entry stop in "
+        f"their Kreis). A high rate means a systematic PT-stop vs source-Kreis key "
+        f"mismatch.",
+        flush=True,
+    )
 
 
 def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,

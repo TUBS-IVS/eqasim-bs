@@ -108,6 +108,44 @@ def test_slope_vector_for_level_scalar_when_no_rs7_dict():
 
 
 # ---------------------------------------------------------------------------
+# Slope-override fallback observability (CLAUDE.md "Fallback transparency"):
+# a pupil whose home RS7 is unmatched (-1) or absent from the override dict
+# silently takes the scalar slope; that must be observable as a PRIMARY-vs-
+# FALLBACK rate, with the PRIMARY (per-RS7 override) path provably taken when
+# every pupil's RS7 is covered.
+# ---------------------------------------------------------------------------
+
+def test_slope_vector_primary_override_taken_no_fallback(capsys):
+    # Every pupil's home RS7 has a per-RS7 override -> PRIMARY path fully taken,
+    # scalar fallback 0, no WARNING.
+    rs7 = pd.Series([72, 74, 72, 74])
+    by_level_rs7 = {"grundschule": {72: -0.5, 74: -0.2}}
+    out = slope_vector_for_level("grundschule", rs7, by_level_rs7,
+                                 {"grundschule": -0.3})
+    assert list(out) == [-0.5, -0.2, -0.5, -0.2]
+    log = capsys.readouterr().out
+    assert "[education:grundschule]" in log
+    assert "primary 4/4 (100.0%) per-RS7 override" in log
+    assert "scalar fallback 0 (0.0%)" in log
+    assert "WARNING" not in log
+
+
+def test_slope_vector_unmatched_rs7_counted_as_fallback(capsys):
+    # home_rs7 == -1 (unmatched to a Gemeinde) and an RS7 absent from the dict
+    # both fall back to the scalar slope; the fallback must be COUNTED and
+    # WARNING-prefixed when its share exceeds the threshold.
+    rs7 = pd.Series([72, -1, 99, -1])    # only 72 is covered -> 3/4 fallback
+    by_level_rs7 = {"grundschule": {72: -0.5}}
+    out = slope_vector_for_level("grundschule", rs7, by_level_rs7,
+                                 {"grundschule": -0.3})
+    assert list(out) == [-0.5, -0.3, -0.3, -0.3]   # drawn slopes unchanged
+    log = capsys.readouterr().out
+    assert "primary 1/4 (25.0%) per-RS7 override" in log
+    assert "scalar fallback 3 (75.0%)" in log
+    assert "WARNING: " in log
+
+
+# ---------------------------------------------------------------------------
 # Age-resolved BBS share (model improvement #14)
 # ---------------------------------------------------------------------------
 

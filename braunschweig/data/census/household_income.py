@@ -55,14 +55,50 @@ def execute(context):
     data_path = context.config("data_path")
     income_by_size = load_income_by_size(data_path)
 
+    # Fallback transparency: each (household_size, income_class) cell takes its
+    # quintile share from the PRIMARY H4 vector position ``idx`` when that
+    # position exists in the loaded share tuple; a position absent from the
+    # vector would be a FALLBACK (a malformed H4 table that does not carry all
+    # five BMDV quintiles). We count the primary/fallback split and log the
+    # fallback rate (escalated to WARNING above the threshold) so the mapping
+    # health is observable. This is purely observational and does not change any
+    # computed weight: a genuine miss still aborts via the explicit raise below
+    # rather than being silently defaulted.
     rows = []
+    n_primary = 0
+    n_fallback = 0
+    fallback_cells = []
     for size, shares in income_by_size.items():
         for income_class, idx in INCOME_CLASS_MAP:
-            rows.append({
-                "household_size": size,
-                "income_class": income_class,
-                "weight": shares[idx] * 1e6,   # scale to 'persons per million'
-            })
+            if idx < len(shares):
+                n_primary += 1
+                rows.append({
+                    "household_size": size,
+                    "income_class": income_class,
+                    "weight": shares[idx] * 1e6,   # scale to 'persons per million'
+                })
+            else:
+                n_fallback += 1
+                fallback_cells.append((size, income_class, idx))
+
+    n_total = n_primary + n_fallback
+    fallback_rate = (n_fallback / n_total) if n_total else 0.0
+    if n_fallback:
+        print(
+            f"WARNING: [braunschweig.household_income] INCOME_CLASS_MAP fallback "
+            f"for {n_fallback}/{n_total} cells ({fallback_rate:.2%}); primary hit "
+            f"{n_primary}. Missing H4 quintile positions {fallback_cells}."
+        )
+        raise ValueError(
+            "[braunschweig.household_income] INCOME_CLASS_MAP references H4 "
+            f"quintile positions absent from the loaded share vectors: "
+            f"{fallback_cells}. The MiD H4 income-by-size table must carry all "
+            f"{len(INCOME_CLASS_MAP)} BMDV quintiles per household size."
+        )
+    print(
+        f"[braunschweig.household_income] INCOME_CLASS_MAP PRIMARY lookup hit all "
+        f"{n_primary}/{n_total} cells (fallback rate 0.00%)."
+    )
 
     df = pd.DataFrame(rows)
     df["household_size"] = df["household_size"].astype("category")

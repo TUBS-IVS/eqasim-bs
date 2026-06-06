@@ -268,6 +268,16 @@ def evaluate_gravity(
     return flow
 
 
+# Fallback-rate threshold for the per-RegioStaR slope override (CLAUDE.md
+# "Fallback transparency"). Above this share of origins falling back to the
+# scalar default slope, a WARNING is emitted: a high rate means the override
+# map / RegioStaR join is not actually shaping the friction matrix for most
+# origins (a wrong RS7 lookup, a stale override map, or an ARS-format mismatch),
+# so the per-RS7 differentiation is silently inert. Below the threshold the
+# per-RS7 primary path is doing its job. 10 % matches the "~5-10%" guidance.
+ORIGIN_SLOPE_FALLBACK_WARN_THRESHOLD = 0.10
+
+
 def _build_origin_slope_vector(
     municipalities: list[str],
     default_slope: float,
@@ -282,9 +292,28 @@ def _build_origin_slope_vector(
     back to ``default_slope``. The returned array has shape ``(N,)``
     aligned with ``municipalities`` and is broadcast against the
     distance matrix as ``slope[:, None] * distances``.
+
+    Fallback transparency (CLAUDE.md): the PRIMARY path is a per-RegioStaR-7
+    override slope; the FALLBACK is the scalar ``default_slope`` (used when an
+    origin has no RS7 in ``df_regiostar`` or its RS7 code is absent from
+    ``overrides``). The primary-vs-fallback counts are logged as an explicit
+    rate and a ``WARNING`` is printed when the fallback share exceeds
+    ``ORIGIN_SLOPE_FALLBACK_WARN_THRESHOLD``, so a silently inert override map
+    is surfaced rather than passing unnoticed.
     """
     slope_vec = np.full(len(municipalities), float(default_slope))
     if not overrides or df_regiostar is None or df_regiostar.empty:
+        # No override map / no RegioStaR table -> every origin is the scalar
+        # fallback by construction. This is the legitimate "feature off" case
+        # (the scalar slope is the intended model), so it is reported at info
+        # level without a WARNING: 100 % "fallback" here is the configured
+        # behaviour, not a broken primary path.
+        n = len(municipalities)
+        print(
+            "[braunschweig.gravity.model] per-RegioStaR slope inactive "
+            f"(no override map): scalar slope used for all {n}/{n} origins "
+            f"(default={default_slope})."
+        )
         return slope_vec
 
     typed_overrides = {int(k): float(v) for k, v in overrides.items()}
@@ -310,21 +339,43 @@ def _build_origin_slope_vector(
 
     matched = 0
     used_codes: dict[int, int] = {}
+    # Fallback breakdown for traceability: an origin can fall back either
+    # because it has no RS7 in the RegioStaR table (no_rs7) or because its RS7
+    # code is not a key in the override map (rs7_not_in_overrides). Both reuse
+    # the scalar default slope.
+    fallback_no_rs7 = 0
+    fallback_rs7_not_in_overrides = 0
     for i, commune_id in enumerate(municipalities):
         key = _normalize(commune_id)
         rs7 = rs7_lookup.get(key)
         if rs7 is None or pd.isna(rs7):
+            fallback_no_rs7 += 1
             continue
         rs7 = int(rs7)
         if rs7 in typed_overrides:
             slope_vec[i] = typed_overrides[rs7]
             matched += 1
             used_codes[rs7] = used_codes.get(rs7, 0) + 1
+        else:
+            fallback_rs7_not_in_overrides += 1
 
+    n = len(municipalities)
+    n_fallback = fallback_no_rs7 + fallback_rs7_not_in_overrides
+    primary_pct = 100.0 * matched / n if n else 0.0
+    fallback_pct = 100.0 * n_fallback / n if n else 0.0
+    warn_prefix = (
+        "WARNING: "
+        if n and (n_fallback / n) > ORIGIN_SLOPE_FALLBACK_WARN_THRESHOLD
+        else ""
+    )
     print(
-        "[braunschweig.gravity.model] per-RegioStaR slope active: "
-        f"{matched}/{len(municipalities)} origins overridden "
-        f"(default={default_slope}; overrides per RS7 = {used_codes})"
+        f"[braunschweig.gravity.model] {warn_prefix}per-RegioStaR slope: "
+        f"primary (per-RS7 override) {matched}/{n} ({primary_pct:.1f}%), "
+        f"fallback (scalar default={default_slope}) {n_fallback}/{n} "
+        f"({fallback_pct:.1f}%) "
+        f"[no RS7 in table: {fallback_no_rs7}, "
+        f"RS7 not in override map: {fallback_rs7_not_in_overrides}]; "
+        f"overrides per RS7 = {used_codes}"
     )
     return slope_vec
 

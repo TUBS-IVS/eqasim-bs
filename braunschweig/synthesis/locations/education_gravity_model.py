@@ -11,6 +11,33 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial.distance import cdist
 
+# Fallback share above which the per-call log line is prefixed "WARNING: ".
+# A handful of out-of-radius pupils/students is expected at the catchment edge;
+# a large share signals a mis-calibrated radius or slope (the primary
+# distance-decay / capacity model is then NOT what placed most items).
+FALLBACK_WARN_SHARE = 0.10
+
+
+def _log_fallback(label, n_total, n_fallback, fallback_name):
+    """Emit a single PRIMARY-vs-FALLBACK observability line for one assignment
+    call. ``label`` identifies the call site (e.g. an education level), ``n_total``
+    is the number of assigned items, ``n_fallback`` the count that took the
+    fallback path, and ``fallback_name`` names the fallback (e.g.
+    "nearest-school"). The line is prefixed "WARNING: " when the fallback share
+    exceeds ``FALLBACK_WARN_SHARE`` so a mis-calibrated radius/slope is visible
+    in the run log. Returns the integer fallback count for convenience."""
+    n_total = int(n_total)
+    n_fallback = int(n_fallback)
+    n_primary = n_total - n_fallback
+    share = (n_fallback / n_total) if n_total > 0 else 0.0
+    primary_pct = (100.0 * n_primary / n_total) if n_total > 0 else 0.0
+    fallback_pct = 100.0 * share
+    prefix = "WARNING: " if share > FALLBACK_WARN_SHARE else ""
+    print("%s[%s] primary %d/%d (%.1f%%), %s fallback %d (%.1f%%)"
+          % (prefix, label, n_primary, n_total, primary_pct,
+             fallback_name, n_fallback, fallback_pct))
+    return n_fallback
+
 
 def balance_doubly_constrained(production, attraction, friction,
                                max_iterations=50, tolerance=1e-3):
@@ -71,7 +98,8 @@ def _draw_from_rows(T, rng):
 
 
 def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
-                               max_radius_km, max_iterations, tolerance, rng):
+                               max_radius_km, max_iterations, tolerance, rng,
+                               label="education_gravity"):
     """Assign each pupil to a school by the doubly-constrained gravity model.
 
     Builds a friction matrix from distance-decay, scales school attraction
@@ -86,8 +114,16 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
     pupil_xy: (R, 2) metric coords; school_xy: (C, 2); capacity: (C,) > 0;
     slope: decay (1/km, negative) -- scalar OR per-pupil array of length R so
         pupils in different RegioStaR-7 home areas decay at their own rate;
-    max_radius_km: candidate cutoff. Returns
+    max_radius_km: candidate cutoff;
+    label: identifies the call site in the PRIMARY-vs-FALLBACK log line
+        (e.g. an education level). Returns
     (choice (R,) school index, fallback (R,) bool = no candidate in radius).
+
+    The "primary" path is the doubly-constrained distance-decay draw on schools
+    within ``max_radius_km``; the fallback is the nearest-school assignment for
+    pupils with no school in range. Both the per-call counts and the share are
+    logged via ``_log_fallback`` so the fallback rate is observable in the run
+    log (WARNING-prefixed above ``FALLBACK_WARN_SHARE``).
     """
     d_km = cdist(pupil_xy, school_xy) / 1000.0
     n_pupils = int(pupil_xy.shape[0])
@@ -122,14 +158,18 @@ def assign_by_capacity_gravity(pupil_xy, school_xy, capacity, slope,
     # the radius -- a slope/radius calibration signal), plus the fallback count.
     row_err = float(np.max(np.abs(T.sum(axis=1) - production)))
     col_err = float(np.max(np.abs(T.sum(axis=0) - attraction)))
-    print("[education_gravity] %d pupils, %d schools: Furness residual "
-          "row=%.3g col=%.3g; %d radius-fallback"
-          % (n_pupils, friction.shape[1], row_err, col_err, int(fallback.sum())))
+    print("[%s] %d pupils, %d schools: Furness residual "
+          "row=%.3g col=%.3g"
+          % (label, n_pupils, friction.shape[1], row_err, col_err))
+    # PRIMARY (in-radius doubly-constrained draw) vs FALLBACK (nearest-school)
+    # observability: count and log the share that took the nearest-school path.
+    _log_fallback(label, n_pupils, int(fallback.sum()), "nearest-school")
     choice = _draw_from_rows(T, rng)
     return choice, fallback
 
 
-def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng):
+def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng,
+                    label="university"):
     """Singly-constrained gravity draw: each pupil picks a destination with
     probability proportional to ``weight_j * exp(slope * d_ij)`` among
     destinations within ``max_radius_km`` (nearest-destination fallback when
@@ -137,6 +177,12 @@ def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng):
     capacity balancing -- used for universities, where far institutions' large
     enrollment is mostly non-resident and only the distance decay should govern
     how far the local tail commutes.
+
+    The "primary" path is the in-radius weighted distance-decay draw; the
+    fallback is the nearest-campus assignment for students with no campus in
+    range. ``label`` names the call site in the PRIMARY-vs-FALLBACK log line.
+    The count and share are logged via ``_log_fallback`` (WARNING-prefixed above
+    ``FALLBACK_WARN_SHARE``) so the fallback rate is observable in the run log.
     """
     d_km = cdist(pupil_xy, school_xy) / 1000.0
     weight = np.asarray(weight, dtype=float)
@@ -150,15 +196,27 @@ def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng):
         attract[rows, :] = 0.0
         attract[rows, nearest] = 1.0
 
+    # PRIMARY (in-radius weighted decay draw) vs FALLBACK (nearest-campus)
+    # observability: count and log the share that took the nearest-campus path.
+    _log_fallback(label, attract.shape[0], int(none_in_radius.sum()),
+                  "nearest-campus")
+
     totals = attract.sum(axis=1, keepdims=True)
     cdf = np.cumsum(attract / totals, axis=1)
     u = rng.random_sample(size=attract.shape[0])
     return (u[:, None] > cdf).sum(axis=1).clip(max=attract.shape[1] - 1)
 
 
-def assign_by_radius(pupil_xy, school_xy, weight, radius_m, rng):
+def assign_by_radius(pupil_xy, school_xy, weight, radius_m, rng,
+                     label="radius_sampler"):
     """Capacity-weighted draw within ``radius_m`` (nearest fallback). Mirrors the
-    existing eqasim_common education sampler; used for kindergarten + university."""
+    existing eqasim_common education sampler; used for kindergarten + university.
+
+    The "primary" path is the capacity-weighted draw among facilities within
+    ``radius_m``; the fallback is the nearest-facility assignment for pupils with
+    none in range. The count and share are logged via ``_log_fallback``
+    (WARNING-prefixed above ``FALLBACK_WARN_SHARE``) under ``label`` so the
+    fallback rate is observable in the run log."""
     from sklearn.neighbors import KDTree
 
     tree = KDTree(school_xy)
@@ -168,12 +226,17 @@ def assign_by_radius(pupil_xy, school_xy, weight, radius_m, rng):
 
     u = rng.random_sample(size=len(candidates))
     choice = np.empty(len(candidates), dtype=int)
+    n_fallback = 0
     for k in range(len(candidates)):
         idx = candidates[k]
         if len(idx) == 0:
             choice[k] = nearest[k]
+            n_fallback += 1
             continue
         w = weight[idx]
         cdf = np.cumsum(w) / np.sum(w)
         choice[k] = idx[np.count_nonzero(u[k] > cdf)]
+    # PRIMARY (in-radius weighted draw) vs FALLBACK (nearest-facility)
+    # observability: count and log the share that took the nearest path.
+    _log_fallback(label, len(candidates), n_fallback, "nearest-facility")
     return choice

@@ -777,6 +777,70 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
 
 
 # ---------------------------------------------------------------------------
+# Primary-vs-fallback accounting (fallback transparency)
+#
+# The PRIMARY method is the chainsolvers carla solver (cs.solve). Problems carla
+# cannot place -- unbounded chains (no anchored origin and/or destination) plus
+# bounded problems carla raised on -- fall through to the RDA / random FALLBACK.
+# A high fallback share means the primary solver is effectively not working, so
+# the share must be observable as an explicit rate rather than hidden inside the
+# separate per-stage prints.
+# ---------------------------------------------------------------------------
+
+# Fallback share above which the summary line is flagged. A fallback share over
+# this threshold means a large fraction of secondary trips are placed by the
+# lower-quality fallback rather than the carla primary solver, i.e. carla is
+# effectively not working and the result should not be trusted without
+# investigation.
+DEFAULT_FALLBACK_WARNING_SHARE = 0.20
+
+
+def _fallback_accounting_summary(n_total_problems: int,
+                                 n_unbounded: int,
+                                 n_failed_bounded: int,
+                                 warning_share: float = DEFAULT_FALLBACK_WARNING_SHARE) -> str:
+    """Build the one-line PRIMARY (carla) vs FALLBACK accounting summary.
+
+    Pure (no I/O, no randomness, no side effects) so it can be unit-tested
+    without the optional ``chainsolvers`` package. It only counts; it never
+    influences solving, fallback selection, the RNG, or any placed result.
+
+    Args:
+        n_total_problems: total number of assignment problems enumerated
+            (bounded + unbounded). Equals ``len(problems)``.
+        n_unbounded: unbounded problems routed straight to the fallback
+            (no anchored origin and/or destination). Equals ``len(unbounded_idx)``.
+        n_failed_bounded: bounded problems carla raised on, routed to the
+            fallback. Equals ``len(failed_problem_idx)``.
+        warning_share: fallback share (in [0, 1]) at or above which the line is
+            prefixed with ``"WARNING: "``.
+
+    Returns:
+        A single human-readable log line. ``n_fallback = n_unbounded +
+        n_failed_bounded`` is the FALLBACK count; the remainder
+        (``n_total_problems - n_fallback``) is the PRIMARY (carla) count. The
+        fallback share is reported as a percentage of all problems; when it is
+        at or above ``warning_share`` the line is prefixed with ``"WARNING: "``.
+    """
+    n_fallback = n_unbounded + n_failed_bounded
+    n_primary = n_total_problems - n_fallback
+    if n_total_problems > 0:
+        fallback_share = n_fallback / n_total_problems
+    else:
+        fallback_share = 0.0
+
+    prefix = "WARNING: " if fallback_share >= warning_share else ""
+    return (
+        f"[braunschweig.secondary_chainsolvers] {prefix}primary/fallback split: "
+        f"primary (carla) placed {n_primary:,}/{n_total_problems:,} problems "
+        f"({(1.0 - fallback_share) * 100.0:.1f}%); "
+        f"fallback placed {n_fallback:,}/{n_total_problems:,} "
+        f"({fallback_share * 100.0:.1f}%) "
+        f"[unbounded={n_unbounded:,}, carla-failed-bounded={n_failed_bounded:,}]"
+    )
+
+
+# ---------------------------------------------------------------------------
 # synpp execute
 # ---------------------------------------------------------------------------
 
@@ -873,6 +937,17 @@ def execute(context):
             "[braunschweig.secondary_chainsolvers] no bounded legs to place; "
             "returning fallback-only result."
         )
+        # No bounded problems -> carla placed nothing; every problem went to the
+        # fallback. Report the (100% fallback) split so the rate stays observable
+        # on this early-return path too. Counting only.
+        print(
+            _fallback_accounting_summary(
+                n_total_problems=len(problems),
+                n_unbounded=len(unbounded_idx),
+                n_failed_bounded=0,
+            ),
+            flush=True,
+        )
         df_loc = gpd.GeoDataFrame(
             pd.DataFrame.from_records(
                 fallback_rows,
@@ -941,6 +1016,22 @@ def execute(context):
         f"[braunschweig.secondary_chainsolvers] cs.solve() finished in "
         f"{time.time() - t0:.1f}s; "
         f"persons solved={n_total - n_failed:,}, failed={n_failed:,}",
+        flush=True,
+    )
+
+    # Consolidated PRIMARY (carla) vs FALLBACK accounting over ALL problems
+    # (bounded + unbounded), so the carla-vs-fallback usage is observable as an
+    # explicit rate. n_failed counts the bounded problems carla raised on;
+    # len(unbounded_idx) the chains carla could never accept -- both go to the
+    # fallback. A high fallback share is flagged with a WARNING prefix because it
+    # means carla is effectively not working. Counting only; no placed result,
+    # selection, or RNG draw is affected.
+    print(
+        _fallback_accounting_summary(
+            n_total_problems=len(problems),
+            n_unbounded=len(unbounded_idx),
+            n_failed_bounded=n_failed,
+        ),
         flush=True,
     )
 

@@ -55,6 +55,18 @@ REGIOSTAR7_LABELS = {
 
 SHEET = "ReferenzGebietsstand2020"
 
+# Fallback-rate threshold for the nearest-neighbour RS7 fill (CLAUDE.md
+# "Fallback transparency"). The PRIMARY path is a direct match against the
+# RegioStaR reference (a Gemeinde keeps its published RS7 code); the FALLBACK
+# is the nearest-neighbour spatial fill for Gemeinden absent from the
+# reference. Above this share of Gemeinden being filled, a WARNING is emitted:
+# a high rate means the reference join is broken for most Gemeinden (a stale
+# RegioStaR file, a Gebietsstand / AGS-format mismatch), so almost every RS7
+# code would be guessed rather than published. 10 % matches the "~5-10%"
+# guidance; a handful of merged/renamed Gemeinden filled by neighbour is
+# expected and stays well below it.
+RS7_FILL_FALLBACK_WARN_THRESHOLD = 0.10
+
 
 def ars_to_ags8(commune_id):
     """Convert a 12-digit ARS to the 8-digit AGS this table keys on.
@@ -79,6 +91,13 @@ def fill_missing_rs7_nearest_neighbour(df_known, df_expected):
     need. Gemeinden in ``df_known`` keep their code (``rs7_filled=False``);
     Gemeinden missing from it get the RS7 of the nearest known Gemeinde by
     Euclidean centroid distance (``rs7_filled=True``).
+
+    Fallback transparency (CLAUDE.md): the PRIMARY path is the direct match
+    (``rs7_filled=False``); the FALLBACK is the nearest-neighbour fill
+    (``rs7_filled=True``). The primary-vs-fallback counts are logged as an
+    explicit rate, with a ``WARNING`` when the fill share exceeds
+    ``RS7_FILL_FALLBACK_WARN_THRESHOLD`` -- a broken reference join (most
+    Gemeinden guessed) is then surfaced rather than passing silently.
     """
     known_ids = set(df_known["commune_id"])
     kx = df_known["x"].to_numpy()
@@ -96,7 +115,24 @@ def fill_missing_rs7_nearest_neighbour(df_known, df_expected):
             nn = int(np.argmin(d2))
             rows.append({"commune_id": cid, "regiostar7": int(kcode[nn]),
                          "rs7_filled": True})
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+
+    n = len(out)
+    n_fallback = int(out["rs7_filled"].sum()) if n else 0
+    n_primary = n - n_fallback
+    primary_pct = 100.0 * n_primary / n if n else 0.0
+    fallback_pct = 100.0 * n_fallback / n if n else 0.0
+    warn_prefix = (
+        "WARNING: "
+        if n and (n_fallback / n) > RS7_FILL_FALLBACK_WARN_THRESHOLD
+        else ""
+    )
+    print(
+        f"[braunschweig.data.bbsr.regiostar] {warn_prefix}RS7 fill: "
+        f"primary (direct match) {n_primary}/{n} ({primary_pct:.1f}%), "
+        f"fallback (nearest-neighbour) {n_fallback}/{n} ({fallback_pct:.1f}%)"
+    )
+    return out
 
 
 def configure(context):

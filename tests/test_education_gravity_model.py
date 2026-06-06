@@ -1,7 +1,7 @@
 import numpy as np
 from braunschweig.synthesis.locations.education_gravity_model import (
     balance_doubly_constrained, assign_by_capacity_gravity, assign_by_radius,
-    assign_by_decay,
+    assign_by_decay, FALLBACK_WARN_SHARE,
 )
 
 
@@ -139,3 +139,115 @@ def test_assign_by_decay_nearest_fallback_outside_radius():
     choice = assign_by_decay(pupils, unis, weight, slope=-0.08,
                              max_radius_km=150.0, rng=rng)
     assert (choice == 0).all()              # nearest fallback when none in radius
+
+
+# ---------------------------------------------------------------------------
+# Fallback observability (CLAUDE.md "Fallback transparency"): every fallback
+# must be observable as a PRIMARY-vs-FALLBACK rate and the PRIMARY path must be
+# provably taken on representative input.
+# ---------------------------------------------------------------------------
+
+def test_capacity_gravity_primary_path_taken_no_fallback(capsys):
+    # Representative case: every pupil HAS at least one school within the radius
+    # -> the doubly-constrained PRIMARY path is fully taken, the nearest-school
+    # fallback count is exactly 0, and the log reports 100% primary.
+    rng = np.random.RandomState(0)
+    pupils = np.zeros((1000, 2))
+    schools = np.array([[1000.0, 0.0], [2000.0, 0.0]])   # both ~1-2 km away
+    capacity = np.array([500.0, 500.0])
+    choice, fallback = assign_by_capacity_gravity(
+        pupils, schools, capacity, slope=-0.2, max_radius_km=15.0,
+        max_iterations=200, tolerance=1e-9, rng=rng, label="education:grundschule")
+    assert fallback.sum() == 0                     # PRIMARY path fully taken
+    assert set(np.unique(choice)) <= {0, 1}
+    out = capsys.readouterr().out
+    assert "[education:grundschule]" in out
+    assert "primary 1000/1000 (100.0%)" in out
+    assert "nearest-school fallback 0 (0.0%)" in out
+    assert "WARNING" not in out                    # no warning when fallback=0
+
+
+def test_capacity_gravity_fallback_counted_and_warned(capsys):
+    # Force the fallback: all 10 pupils sit 40 km from the only school, radius
+    # 10 km -> every pupil takes the nearest-school fallback. The fallback must
+    # be COUNTED (10/10) and the line WARNING-prefixed (share > threshold).
+    rng = np.random.RandomState(2)
+    pupils = np.zeros((10, 2))
+    schools = np.array([[40_000.0, 0.0]])
+    capacity = np.array([100.0])
+    choice, fallback = assign_by_capacity_gravity(
+        pupils, schools, capacity, slope=-0.2, max_radius_km=10.0,
+        max_iterations=50, tolerance=1e-6, rng=rng, label="education:grundschule")
+    assert fallback.all()
+    assert int(fallback.sum()) == 10
+    out = capsys.readouterr().out
+    assert "primary 0/10 (0.0%)" in out
+    assert "nearest-school fallback 10 (100.0%)" in out
+    assert out.lstrip().startswith("WARNING: ") or "WARNING: [education:grundschule]" in out
+
+
+def test_assign_by_decay_primary_path_taken_no_fallback(capsys):
+    # Representative case: every student has a campus within the radius -> the
+    # in-radius weighted-decay PRIMARY path is fully taken, nearest-campus
+    # fallback count is 0.
+    rng = np.random.RandomState(0)
+    pupils = np.zeros((500, 2))
+    unis = np.array([[5_000.0, 0.0], [40_000.0, 0.0]])   # both within 150 km
+    weight = np.array([5000.0, 25000.0])
+    choice = assign_by_decay(pupils, unis, weight, slope=-0.08,
+                             max_radius_km=150.0, rng=rng,
+                             label="education:university")
+    assert set(np.unique(choice)) <= {0, 1}
+    out = capsys.readouterr().out
+    assert "[education:university]" in out
+    assert "primary 500/500 (100.0%)" in out
+    assert "nearest-campus fallback 0 (0.0%)" in out
+    assert "WARNING" not in out
+
+
+def test_assign_by_decay_fallback_counted_and_warned(capsys):
+    # Force the fallback: the only campus is 200 km away, radius 150 km -> every
+    # student takes the nearest-campus fallback, counted and WARNING-prefixed.
+    rng = np.random.RandomState(1)
+    pupils = np.zeros((5, 2))
+    unis = np.array([[200_000.0, 0.0]])
+    weight = np.array([10000.0])
+    choice = assign_by_decay(pupils, unis, weight, slope=-0.08,
+                             max_radius_km=150.0, rng=rng,
+                             label="education:university")
+    assert (choice == 0).all()
+    out = capsys.readouterr().out
+    assert "primary 0/5 (0.0%)" in out
+    assert "nearest-campus fallback 5 (100.0%)" in out
+    assert "WARNING: " in out
+
+
+def test_assign_by_radius_fallback_observability(capsys):
+    # PRIMARY: pupils with a facility in radius draw it. FALLBACK: pupils with
+    # none in radius take the nearest. Mixed input -> both counts must appear.
+    rng = np.random.RandomState(3)
+    # 4 pupils at origin (school in radius), 1 far away (forces nearest fallback)
+    pupils = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0],
+                       [50_000.0, 0.0]])
+    schools = np.array([[0.0, 0.0]])
+    weight = np.array([1.0])
+    assign_by_radius(pupils, schools, weight, radius_m=2000.0, rng=rng,
+                     label="education:kindergarten")
+    out = capsys.readouterr().out
+    assert "[education:kindergarten]" in out
+    assert "primary 4/5 (80.0%)" in out
+    assert "nearest-facility fallback 1 (20.0%)" in out
+
+
+def test_assign_by_radius_primary_path_no_fallback(capsys):
+    # Every pupil has a facility in radius -> nearest-facility fallback is 0.
+    rng = np.random.RandomState(3)
+    pupils = np.zeros((20, 2))
+    schools = np.array([[100.0, 0.0]])
+    weight = np.array([1.0])
+    assign_by_radius(pupils, schools, weight, radius_m=2000.0, rng=rng,
+                     label="education:kindergarten")
+    out = capsys.readouterr().out
+    assert "primary 20/20 (100.0%)" in out
+    assert "nearest-facility fallback 0 (0.0%)" in out
+    assert "WARNING" not in out

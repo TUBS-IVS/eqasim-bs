@@ -29,6 +29,19 @@ from braunschweig.data.mid.reference_tables import (
 )
 
 
+# Hard-coded median € midpoint applied when a person's ``household_income``
+# class label is absent from the MiD H4 class-midpoint table (the PRIMARY
+# lookup). Kept at the legacy value so behaviour is unchanged; only the
+# primary/fallback split is now counted and logged for transparency.
+INCOME_MIDPOINT_FALLBACK_EUR = 2800.0
+
+# Fallback-rate threshold above which the class-midpoint fallback is logged at
+# WARNING level (fraction of persons in [0, 1]). A non-zero but rare fallback is
+# expected only on malformed reference data; a large share signals a broken
+# class-midpoint table or an unexpected income_class vocabulary.
+INCOME_MIDPOINT_FALLBACK_WARN_RATE = 0.001
+
+
 # --- Inherited from eqasim-bavaria -----------------------------------------
 # Helper: map IPF hh_size values onto the bins present in df_income.
 
@@ -732,15 +745,51 @@ def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,
     ``kreis`` is the per-person AGS-5 Series from :func:`_derive_kreis_ars5`,
     accepted so the caller can reuse a single derivation (passing ``None``
     derives it locally; output-identical).
+
+    Fallback transparency: each person's € midpoint comes either from the
+    PRIMARY per-class lookup in ``class_midpoint_eur`` (the MiD H4 class-midpoint
+    table) or, when the person's ``household_income`` class label is absent from
+    that table, from the hard-coded FALLBACK median midpoint
+    (:data:`INCOME_MIDPOINT_FALLBACK_EUR`). The primary/fallback split is counted
+    and the fallback rate is logged; a rate above
+    :data:`INCOME_MIDPOINT_FALLBACK_WARN_RATE` is escalated to a WARNING and the
+    distinct unmapped class labels are listed. The counts are also stored on
+    ``df_persons.attrs`` so callers/tests can assert the primary mapping was
+    taken without a signature change. This logging is purely observational: it
+    does not alter any computed ``household_income_eur`` value.
     """
     midpoint = df_persons["household_income"].astype(str).map(class_midpoint_eur)
-    if midpoint.isna().any():
-        n_na = int(midpoint.isna().sum())
-        print(
-            f"[braunschweig.enriched] {n_na} persons with unknown income_class; "
-            f"using median midpoint 2800 EUR."
+    n_total = int(len(midpoint))
+    fallback_mask = midpoint.isna()
+    n_fallback = int(fallback_mask.sum())
+    n_primary = n_total - n_fallback
+    fallback_rate = (n_fallback / n_total) if n_total else 0.0
+    df_persons.attrs["income_midpoint_primary_count"] = n_primary
+    df_persons.attrs["income_midpoint_fallback_count"] = n_fallback
+    df_persons.attrs["income_midpoint_fallback_rate"] = fallback_rate
+    if n_fallback:
+        unknown_classes = sorted(
+            df_persons.loc[fallback_mask.values, "household_income"]
+            .astype(str).unique().tolist()
         )
-        midpoint = midpoint.fillna(2800.0)
+        level = (
+            "WARNING: "
+            if fallback_rate > INCOME_MIDPOINT_FALLBACK_WARN_RATE
+            else ""
+        )
+        print(
+            f"[braunschweig.enriched] {level}income class-midpoint fallback used "
+            f"for {n_fallback}/{n_total} persons "
+            f"({fallback_rate:.2%}); primary lookup hit {n_primary}. "
+            f"Unmapped income_class labels {unknown_classes}; "
+            f"using median midpoint {INCOME_MIDPOINT_FALLBACK_EUR:.0f} EUR."
+        )
+        midpoint = midpoint.fillna(INCOME_MIDPOINT_FALLBACK_EUR)
+    else:
+        print(
+            f"[braunschweig.enriched] income class-midpoint PRIMARY lookup hit "
+            f"all {n_primary}/{n_total} persons (fallback rate 0.00%)."
+        )
 
     if kreis is None:
         kreis = _derive_kreis_ars5(df_persons)

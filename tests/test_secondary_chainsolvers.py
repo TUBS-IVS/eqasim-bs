@@ -362,3 +362,78 @@ def test_resample_distributions_is_not_compounded_via_cached_object():
             assert np.array_equal(d_first["cdf"], d_second["cdf"]), (
                 f"resampling the cached object twice compounded mode {mode}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Fallback transparency: PRIMARY (carla) vs FALLBACK accounting.
+#
+# The PRIMARY method is the carla solver; unbounded chains plus the bounded
+# problems carla raises on go to the FALLBACK. _fallback_accounting_summary is a
+# pure counting helper (no chainsolvers import, no RNG, no I/O), so the
+# primary-vs-fallback split can be asserted in isolation. The bulk of problems
+# must be placed by the primary path; a high fallback share is flagged.
+# ---------------------------------------------------------------------------
+
+def test_fallback_accounting_primary_path_reports_zero_fallback():
+    # A small problem set where carla solved everything (no unbounded chains, no
+    # carla failures) -> the fallback count is exactly 0 and the primary share is
+    # 100%. This is the "primary path places the bulk" guarantee in its purest
+    # form: every problem is placed by carla.
+    line = sc._fallback_accounting_summary(
+        n_total_problems=10, n_unbounded=0, n_failed_bounded=0,
+    )
+    assert "primary (carla) placed 10/10 problems (100.0%)" in line
+    assert "fallback placed 0/10 (0.0%)" in line
+    # No WARNING prefix because the fallback share is below the threshold.
+    assert "WARNING" not in line
+
+
+def test_fallback_accounting_counts_unbounded_and_failed_as_fallback():
+    # An unbounded problem (and a carla-failed bounded problem) must be counted
+    # as fallback, and the primary count is the remainder. 8 of 10 placed by
+    # carla (the bulk), 2 by the fallback (1 unbounded + 1 carla-failed).
+    line = sc._fallback_accounting_summary(
+        n_total_problems=10, n_unbounded=1, n_failed_bounded=1,
+    )
+    assert "primary (carla) placed 8/10 problems (80.0%)" in line
+    assert "fallback placed 2/10 (20.0%)" in line
+    assert "unbounded=1" in line and "carla-failed-bounded=1" in line
+    # 20% fallback is AT the default threshold -> flagged.
+    assert line.startswith("[braunschweig.secondary_chainsolvers] WARNING: ")
+
+
+def test_fallback_accounting_warns_only_above_threshold():
+    # Just below the default 20% threshold -> no warning; the carla primary path
+    # still places the clear majority.
+    below = sc._fallback_accounting_summary(
+        n_total_problems=100, n_unbounded=19, n_failed_bounded=0,
+    )
+    assert "WARNING" not in below
+    assert "primary (carla) placed 81/100 problems (81.0%)" in below
+
+    # A high fallback share (carla effectively not working) -> warning prefix.
+    high = sc._fallback_accounting_summary(
+        n_total_problems=100, n_unbounded=40, n_failed_bounded=20,
+    )
+    assert high.startswith("[braunschweig.secondary_chainsolvers] WARNING: ")
+    assert "fallback placed 60/100 (60.0%)" in high
+
+
+def test_fallback_accounting_respects_custom_warning_share():
+    # The threshold is configurable; a 10% fallback share is fine at the default
+    # 20% threshold but flagged once the threshold is tightened to 5%.
+    counts = dict(n_total_problems=100, n_unbounded=10, n_failed_bounded=0)
+    assert "WARNING" not in sc._fallback_accounting_summary(**counts)
+    strict = sc._fallback_accounting_summary(**counts, warning_share=0.05)
+    assert strict.startswith("[braunschweig.secondary_chainsolvers] WARNING: ")
+
+
+def test_fallback_accounting_handles_zero_problems():
+    # Edge case: no problems at all. No division by zero; reported as 0/0 with a
+    # 100% primary share (nothing to fall back on) and no warning.
+    line = sc._fallback_accounting_summary(
+        n_total_problems=0, n_unbounded=0, n_failed_bounded=0,
+    )
+    assert "primary (carla) placed 0/0 problems (100.0%)" in line
+    assert "fallback placed 0/0 (0.0%)" in line
+    assert "WARNING" not in line
