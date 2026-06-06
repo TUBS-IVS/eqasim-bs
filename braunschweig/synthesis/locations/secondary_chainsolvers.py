@@ -487,6 +487,12 @@ def _extract_locations(result_df: pd.DataFrame,
 
     out_rows = []
     convergence_rows = []
+    # Placed secondary legs per problem index, accumulated in the main loop below
+    # so the per-problem convergence flags can be computed in O(problems) instead
+    # of scanning the full placement set for every problem. The previous
+    # O(problems x placements) scan was the dominant single-core cost of this
+    # stage at full population scale (tens of minutes at 25%, hours at 100%).
+    placed_per_prob: Dict[int, int] = {}
 
     # Group result rows by (person, problem) — leg order preserved by
     # the input order (chainsolvers preserves row order on output).
@@ -541,24 +547,17 @@ def _extract_locations(result_df: pd.DataFrame,
         out_rows.append((
             person_id, activity_index, loc_id, geo.Point(float(to_x), float(to_y))
         ))
+        placed_per_prob[prob_idx] = placed_per_prob.get(prob_idx, 0) + 1
 
-    # Convergence flag: per problem, valid if all secondary legs placed.
-    placed_per_problem: Dict[int, int] = {}
-    for r in out_rows:
-        pid_aidx = (r[0], r[1])
-        # Reverse engineer prob_idx from activity_index
-        # (cheap: count placed entries per (person, activity_index))
-        placed_per_problem.setdefault(pid_aidx, 0)
-        placed_per_problem[pid_aidx] += 1
-
+    # Convergence flag: per problem, valid iff all of its secondary legs were
+    # placed. placed_per_prob (built in the loop above) holds the count directly
+    # per problem index, so this is O(problems). Each problem's secondary legs
+    # have distinct activity indices, so the per-problem placement count equals
+    # the number of distinct placed activities -- identical to the previous
+    # (person, activity-index range) scan, but without the O(n^2) blow-up.
     for meta in problem_meta:
         n_expected = meta["n_secondary"]
-        person_id = meta["person_id"]
-        a0 = meta["activity_index"]
-        n_placed = sum(
-            1 for k in placed_per_problem
-            if k[0] == person_id and a0 <= k[1] < a0 + n_expected
-        )
+        n_placed = placed_per_prob.get(meta["problem_idx"], 0)
         convergence_rows.append((n_placed == n_expected, n_expected))
 
     df_locations = pd.DataFrame.from_records(

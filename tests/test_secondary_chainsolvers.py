@@ -59,6 +59,38 @@ def test_extract_locations_recovers_canonical_ids_and_skips_anchor():
     assert list(df_conv["size"]) == [2]
 
 
+def test_extract_locations_convergence_per_problem_partial_placement():
+    # Two bounded problems. Problem 0 (person 7): both secondary legs placed ->
+    # converged. Problem 1 (person 9): one secondary leg has NaN coords (solver
+    # failed to place it) -> only 1 of 2 placed -> NOT converged. This locks the
+    # per-problem convergence accounting so the O(n) computation matches the old
+    # O(problems x placements) scan, including the problem_meta output order.
+    rdf = pd.DataFrame({
+        "unique_person_id": ["7#0", "7#0", "7#0", "9#1", "9#1", "9#1"],
+        "unique_leg_id": ["7#0#0", "7#0#1", "7#0#2", "9#1#0", "9#1#1", "9#1#2"],
+        "to_act_type": ["shop", "leisure", "home", "shop", "leisure", "home"],
+        "to_x": [0.0, 10.0, 99.0, 0.0, float("nan"), 99.0],
+        "to_y": [0.0, 10.0, 99.0, 0.0, float("nan"), 99.0],
+        "to_act_identifier": ["L1", "L2", "Lhome", "L1", "L2", "Lhome"],
+    })
+    meta = [
+        {"problem_idx": 0, "person_id": 7, "activity_index": 3, "n_secondary": 2},
+        {"problem_idx": 1, "person_id": 9, "activity_index": 5, "n_secondary": 2},
+    ]
+
+    df_loc, df_conv = sc._extract_locations(
+        rdf, meta, _df_secondary(), crs="EPSG:25832"
+    )
+
+    # Person 7: two placed (activity_index 3, 4). Person 9: only the first leg
+    # placed (activity_index 5); the NaN-coord leg is skipped.
+    assert list(df_loc["person_id"]) == [7, 7, 9]
+    assert list(df_loc["activity_index"]) == [3, 4, 5]
+    # Convergence in problem_meta order: problem 0 fully placed, problem 1 not.
+    assert list(df_conv["valid"]) == [True, False]
+    assert list(df_conv["size"]) == [2, 2]
+
+
 def test_extract_locations_synthesises_id_when_identifier_unknown():
     # An identifier that is not in the facility coord lookup must fall back to
     # a synthesised id while still emitting the placed geometry.
