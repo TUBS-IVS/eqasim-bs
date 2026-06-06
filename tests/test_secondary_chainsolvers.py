@@ -109,6 +109,274 @@ def test_extract_locations_synthesises_id_when_identifier_unknown():
 
 
 # ---------------------------------------------------------------------------
+# _extract_locations vectorisation: byte-identity vs the previous per-row loop.
+#
+# _extract_locations was vectorised for performance (it consumes NO randomness,
+# so it is a pure transform). ``_extract_locations_reference`` below is a verbatim
+# copy of the previous per-row-loop implementation; the equivalence test asserts
+# the new vectorised output is byte-identical to it across a representative result
+# frame (several persons/problems, a skipped trailing fixed-anchor leg, an unknown
+# candidate id -> "cs_" fallback, a NaN-coordinate skipped leg, a partially placed
+# problem, an unknown problem_idx, and a malformed leg id).
+# ---------------------------------------------------------------------------
+
+def _extract_locations_reference(result_df, problem_meta, df_secondary, crs):
+    """Verbatim previous per-row-loop implementation of ``_extract_locations``.
+
+    Kept as the equivalence oracle for the vectorised version. Do NOT change the
+    behaviour here -- it is intentionally the pre-refactor code.
+    """
+    coord_lookup = {
+        str(lid): (float(g.x), float(g.y))
+        for lid, g in zip(df_secondary["location_id"].astype(str),
+                          df_secondary["geometry"])
+    }
+    meta_by_idx = {m["problem_idx"]: m for m in problem_meta}
+
+    out_rows = []
+    convergence_rows = []
+    placed_per_prob = {}
+
+    if "to_act_identifier" in result_df.columns:
+        identifiers = result_df["to_act_identifier"]
+    else:
+        identifiers = [None] * len(result_df)
+    for (uid, leg_id, to_act, to_x, to_y, cand) in zip(
+        result_df["unique_person_id"],
+        result_df["unique_leg_id"],
+        result_df["to_act_type"],
+        result_df["to_x"],
+        result_df["to_y"],
+        identifiers,
+    ):
+        try:
+            person_str, prob_idx_str, leg_idx_str = leg_id.split("#")
+        except ValueError:
+            continue
+        prob_idx = int(prob_idx_str)
+        leg_idx = int(leg_idx_str)
+        meta = meta_by_idx.get(prob_idx)
+        if meta is None:
+            continue
+        if to_act not in sc.SECONDARY_PURPOSES:
+            continue
+        if pd.isna(to_x) or pd.isna(to_y):
+            continue
+        person_id = meta["person_id"]
+        activity_index = meta["activity_index"] + leg_idx
+        loc_id = cand if isinstance(cand, str) else None
+        if loc_id is None or loc_id not in coord_lookup:
+            loc_id = f"cs_{prob_idx}_{leg_idx}"
+        out_rows.append((
+            person_id, activity_index, loc_id, geo.Point(float(to_x), float(to_y))
+        ))
+        placed_per_prob[prob_idx] = placed_per_prob.get(prob_idx, 0) + 1
+
+    for meta in problem_meta:
+        n_expected = meta["n_secondary"]
+        n_placed = placed_per_prob.get(meta["problem_idx"], 0)
+        convergence_rows.append((n_placed == n_expected, n_expected))
+
+    df_locations = pd.DataFrame.from_records(
+        out_rows,
+        columns=["person_id", "activity_index", "location_id", "geometry"],
+    )
+    df_locations = gpd.GeoDataFrame(df_locations, crs=crs)
+    df_convergence = pd.DataFrame.from_records(
+        convergence_rows, columns=["valid", "size"]
+    )
+    return df_locations, df_convergence
+
+
+def _representative_extract_inputs():
+    """A result frame + meta exercising every branch of _extract_locations.
+
+    Persons/problems:
+      * 7#0 : two secondary legs placed (shop, leisure) + trailing fixed home leg
+              (skipped); both legs have known candidate ids -> canonical L1/L2.
+      * 9#1 : two secondary legs, the second has NaN coordinates (skipped) ->
+              partially placed problem (1 of 2).
+      * 9#2 : one secondary leg with an UNKNOWN candidate id -> "cs_2_0" fallback.
+      * 9#3 : one secondary leg whose candidate id is non-string (None) ->
+              also falls back to a synthesised id.
+      * 5#9 : one secondary leg for an UNKNOWN problem_idx (9 not in meta) ->
+              the whole row is skipped.
+      * a row with a malformed unique_leg_id ("badid", no '#') -> skipped.
+
+    The interleaving (problem 2 emits before problem 1's second leg, etc.) and the
+    trailing/skip rows make the result-frame row order non-trivial, so the test
+    also locks the surviving-row order.
+    """
+    result_df = pd.DataFrame({
+        "unique_person_id": [
+            "7#0", "7#0", "7#0",
+            "9#1", "9#1", "9#1",
+            "9#2",
+            "9#3",
+            "5#9",
+            "bad",
+        ],
+        "unique_leg_id": [
+            "7#0#0", "7#0#1", "7#0#2",
+            "9#1#0", "9#1#1", "9#1#2",
+            "9#2#0",
+            "9#3#0",
+            "5#9#0",
+            "badid",
+        ],
+        "to_act_type": [
+            "shop", "leisure", "home",
+            "shop", "leisure", "home",
+            "other",
+            "shop",
+            "leisure",
+            "shop",
+        ],
+        "to_x": [
+            0.0, 10.0, 99.0,
+            0.0, float("nan"), 99.0,
+            10.0,
+            0.0,
+            10.0,
+            0.0,
+        ],
+        "to_y": [
+            0.0, 10.0, 99.0,
+            0.0, float("nan"), 99.0,
+            10.0,
+            0.0,
+            10.0,
+            0.0,
+        ],
+        "to_act_identifier": [
+            "L1", "L2", "Lhome",
+            "L1", "L2", "Lhome",
+            "UNKNOWN",
+            None,
+            "L2",
+            "L1",
+        ],
+    })
+    meta = [
+        {"problem_idx": 0, "person_id": 7, "activity_index": 3, "n_secondary": 2},
+        {"problem_idx": 1, "person_id": 9, "activity_index": 5, "n_secondary": 2},
+        {"problem_idx": 2, "person_id": 9, "activity_index": 8, "n_secondary": 1},
+        {"problem_idx": 3, "person_id": 9, "activity_index": 12, "n_secondary": 1},
+    ]
+    return result_df, meta
+
+
+def _assert_locations_identical(df_a, df_b):
+    """Assert two location GeoDataFrames are equal in rows, order, ids, dtypes
+    and exact geometry."""
+    assert list(df_a.columns) == list(df_b.columns)
+    assert len(df_a) == len(df_b)
+    # dtypes byte-identical (int64 person_id/activity_index, object location_id).
+    for col in ("person_id", "activity_index", "location_id"):
+        assert df_a[col].dtype == df_b[col].dtype, col
+        assert list(df_a[col]) == list(df_b[col]), col
+    # Exact geometry equality, in order.
+    assert df_a.geometry.dtype == df_b.geometry.dtype
+    for ga, gb in zip(df_a.geometry, df_b.geometry):
+        assert ga.equals_exact(gb, tolerance=0.0)
+
+
+def _assert_convergence_identical(df_a, df_b):
+    assert list(df_a.columns) == list(df_b.columns)
+    assert df_a["valid"].dtype == df_b["valid"].dtype
+    assert df_a["size"].dtype == df_b["size"].dtype
+    assert list(df_a["valid"]) == list(df_b["valid"])
+    assert list(df_a["size"]) == list(df_b["size"])
+
+
+def test_extract_locations_vectorised_matches_reference():
+    result_df, meta = _representative_extract_inputs()
+
+    ref_loc, ref_conv = _extract_locations_reference(
+        result_df.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+    new_loc, new_conv = sc._extract_locations(
+        result_df.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+
+    _assert_locations_identical(ref_loc, new_loc)
+    _assert_convergence_identical(ref_conv, new_conv)
+
+    # Spot-check the expected content so a refactor that breaks BOTH paths the
+    # same way is still caught.
+    # Surviving placements in result order: 7#0#0, 7#0#1, 9#1#0, 9#2#0, 9#3#0.
+    assert list(new_loc["person_id"]) == [7, 7, 9, 9, 9]
+    assert list(new_loc["activity_index"]) == [3, 4, 5, 8, 12]
+    assert list(new_loc["location_id"]) == ["L1", "L2", "L1", "cs_2_0", "cs_3_0"]
+    # Convergence in problem_meta order: prob 0 full (2/2), prob 1 partial (1/2),
+    # prob 2 full (1/1), prob 3 full (1/1).
+    assert list(new_conv["valid"]) == [True, False, True, True]
+    assert list(new_conv["size"]) == [2, 2, 1, 1]
+
+
+def test_extract_locations_vectorised_matches_reference_empty_result():
+    # No result rows at all: both paths must yield the all-object empty locations
+    # frame and a convergence frame with one (False, size) row per problem.
+    empty = pd.DataFrame({
+        "unique_person_id": pd.Series([], dtype=object),
+        "unique_leg_id": pd.Series([], dtype=object),
+        "to_act_type": pd.Series([], dtype=object),
+        "to_x": pd.Series([], dtype=float),
+        "to_y": pd.Series([], dtype=float),
+        "to_act_identifier": pd.Series([], dtype=object),
+    })
+    meta = [
+        {"problem_idx": 0, "person_id": 7, "activity_index": 3, "n_secondary": 2},
+        {"problem_idx": 1, "person_id": 9, "activity_index": 5, "n_secondary": 0},
+    ]
+
+    ref_loc, ref_conv = _extract_locations_reference(
+        empty.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+    new_loc, new_conv = sc._extract_locations(
+        empty.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+
+    assert len(ref_loc) == 0 and len(new_loc) == 0
+    assert list(ref_loc.columns) == list(new_loc.columns)
+    for col in new_loc.columns:
+        assert ref_loc[col].dtype == new_loc[col].dtype, col
+    _assert_convergence_identical(ref_conv, new_conv)
+    # n_secondary == 0 -> placed (0) equals expected (0) -> valid True.
+    assert list(new_conv["valid"]) == [False, True]
+    assert list(new_conv["size"]) == [2, 0]
+
+
+def test_extract_locations_vectorised_matches_reference_all_skipped():
+    # Every result row is skipped (all land on fixed anchors), so no placements
+    # are produced even though result_df is non-empty -> exercises the
+    # "no kept rows" branch. Output must equal the reference (empty locations).
+    result_df = pd.DataFrame({
+        "unique_person_id": ["7#0", "7#0"],
+        "unique_leg_id": ["7#0#0", "7#0#1"],
+        "to_act_type": ["home", "work"],
+        "to_x": [1.0, 2.0],
+        "to_y": [1.0, 2.0],
+        "to_act_identifier": ["Lhome", "Lwork"],
+    })
+    meta = [{"problem_idx": 0, "person_id": 7, "activity_index": 3,
+             "n_secondary": 0}]
+
+    ref_loc, ref_conv = _extract_locations_reference(
+        result_df.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+    new_loc, new_conv = sc._extract_locations(
+        result_df.copy(), meta, _df_secondary(), crs="EPSG:25832"
+    )
+
+    assert len(new_loc) == 0
+    assert list(ref_loc.columns) == list(new_loc.columns)
+    for col in new_loc.columns:
+        assert ref_loc[col].dtype == new_loc[col].dtype, col
+    _assert_convergence_identical(ref_conv, new_conv)
+
+
+# ---------------------------------------------------------------------------
 # RDA fallback equivalence (shared prebuilt CandidateIndex).
 #
 # These tests cover the performance refactor that builds the eqasim

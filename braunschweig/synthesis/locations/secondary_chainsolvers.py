@@ -519,99 +519,156 @@ def _extract_locations(result_df: pd.DataFrame,
                        problem_meta: List[Dict[str, Any]],
                        df_secondary: pd.DataFrame,
                        crs) -> Tuple[gpd.GeoDataFrame, pd.DataFrame]:
-    """Convert chainsolvers result rows back to eqasim's output shape."""
-    # Build location_id -> (x, y) lookup for fallback geometry construction.
-    coord_lookup = {
-        str(lid): (float(g.x), float(g.y))
-        for lid, g in zip(df_secondary["location_id"].astype(str),
-                          df_secondary["geometry"])
-    }
+    """Convert chainsolvers result rows back to eqasim's output shape.
 
-    # Index meta by problem_idx for activity_index recovery.
+    Pure transform (no randomness): the returned ``df_locations`` (row order,
+    person_id, activity_index, location_id, geometry) and ``df_convergence``
+    (valid, size, order) are byte-identical to the previous per-row loop. The
+    body is fully vectorised because at full population scale the per-row Python
+    loop (str.split, int casts, pd.isna, Point construction over millions of
+    result rows) was the dominant single-core cost of this stage.
+    """
+    # Build location_id -> (x, y) lookup; here only its key set is needed to
+    # decide whether the solver's candidate id is a known facility (the
+    # canonical id is kept verbatim) or must fall back to a synthesised id.
+    known_location_ids = set(df_secondary["location_id"].astype(str))
+
+    # Index meta by problem_idx for activity_index / person_id recovery.
     meta_by_idx = {m["problem_idx"]: m for m in problem_meta}
 
-    out_rows = []
-    convergence_rows = []
-    # Placed secondary legs per problem index, accumulated in the main loop below
-    # so the per-problem convergence flags can be computed in O(problems) instead
-    # of scanning the full placement set for every problem. The previous
-    # O(problems x placements) scan was the dominant single-core cost of this
-    # stage at full population scale (tens of minutes at 25%, hours at 100%).
-    placed_per_prob: Dict[int, int] = {}
+    n_rows = len(result_df)
+    # Empty-result fast path: ``pd.DataFrame.from_records([], columns=...)``
+    # yields all-object columns (no rows to infer dtypes from). Reproduce that
+    # exact (dtype-included) empty shape so the output stays byte-identical.
+    if n_rows == 0:
+        df_locations = gpd.GeoDataFrame(
+            pd.DataFrame.from_records(
+                [],
+                columns=["person_id", "activity_index", "location_id", "geometry"],
+            ),
+            crs=crs,
+        )
+        df_convergence = pd.DataFrame.from_records(
+            [(0 == m["n_secondary"], m["n_secondary"]) for m in problem_meta],
+            columns=["valid", "size"],
+        )
+        return df_locations, df_convergence
 
-    # Group result rows by (person, problem) — leg order preserved by
-    # the input order (chainsolvers preserves row order on output).
-    # The solver's candidate identifier travels with each row, so we read it
-    # positionally from the same zip rather than re-scanning result_df per row
-    # (the latter is O(n^2) over the whole result frame and dominates runtime
-    # at 25% scale). Positional read is also more robust than a leg_id lookup
-    # if two rows ever share a unique_leg_id.
+    leg_ids = result_df["unique_leg_id"].to_numpy()
+    to_act = result_df["to_act_type"].to_numpy()
+    to_x = pd.to_numeric(result_df["to_x"], errors="coerce").to_numpy()
+    to_y = pd.to_numeric(result_df["to_y"], errors="coerce").to_numpy()
     if "to_act_identifier" in result_df.columns:
-        identifiers = result_df["to_act_identifier"]
+        identifiers = result_df["to_act_identifier"].to_numpy()
     else:
-        identifiers = [None] * len(result_df)
-    for (uid, leg_id, to_act, to_x, to_y, cand) in zip(
-        result_df["unique_person_id"],
-        result_df["unique_leg_id"],
-        result_df["to_act_type"],
-        result_df["to_x"],
-        result_df["to_y"],
-        identifiers,
-    ):
-        # uid = "{person_id}#{problem_idx}"
-        # leg_id = "{person_id}#{problem_idx}#{leg_index}"
-        try:
-            person_str, prob_idx_str, leg_idx_str = leg_id.split("#")
-        except ValueError:
-            continue
-        prob_idx = int(prob_idx_str)
-        leg_idx = int(leg_idx_str)
-        meta = meta_by_idx.get(prob_idx)
-        if meta is None:
-            continue
+        identifiers = np.array([None] * n_rows, dtype=object)
 
-        # Only emit rows for *secondary* legs (skip the trailing leg
-        # that lands on a fixed anchor).
-        if to_act not in SECONDARY_PURPOSES:
-            continue
+    # Split "{person_id}#{problem_idx}#{leg_index}" into its three fields. The
+    # previous loop unpacked ``leg_id.split("#")`` into exactly three targets
+    # and skipped (ValueError) any id that did not have exactly three fields, so
+    # ``rsplit("#", 2)`` (three fields from the right) is combined with a hard
+    # "exactly two '#'" mask to reproduce that filtering precisely.
+    leg_id_series = pd.Series(leg_ids, dtype=object)
+    hash_count = leg_id_series.str.count("#").to_numpy()
+    split = leg_id_series.str.rsplit("#", n=2, expand=True)
+    prob_idx_str = split[1].to_numpy()
+    leg_idx_str = split[2].to_numpy()
 
-        if pd.isna(to_x) or pd.isna(to_y):
-            continue  # solver failed to place this leg — skip
+    # Row-level keep mask, applied as the conjunction of every per-row skip in
+    # the original loop, evaluated in result-frame order so the surviving rows
+    # keep their original order.
+    valid_split = hash_count == 2  # exactly three fields -> no ValueError
 
-        person_id = meta["person_id"]
-        activity_index = meta["activity_index"] + leg_idx
+    # int() casts only on the rows that survived the split filter; map remaining
+    # values to NaN so a downstream cast cannot raise on the skipped rows.
+    prob_idx_num = pd.to_numeric(pd.Series(prob_idx_str), errors="coerce").to_numpy()
+    leg_idx_num = pd.to_numeric(pd.Series(leg_idx_str), errors="coerce").to_numpy()
+    # A field that does not parse as an int would have raised in the old loop;
+    # such ids never occur for solver output but are excluded for safety so the
+    # behaviour is at least as strict (skip rather than crash on the bad row).
+    valid_split = valid_split & ~np.isnan(prob_idx_num) & ~np.isnan(leg_idx_num)
 
-        # Recover the canonical eqasim location_id from the candidate
-        # identifier the solver wrote for this row (read positionally above).
-        loc_id = cand if isinstance(cand, str) else None
-        if loc_id is None or loc_id not in coord_lookup:
-            # fallback: synthesise an id from coords (downstream only
-            # cares that the geometry is set correctly).
-            loc_id = f"cs_{prob_idx}_{leg_idx}"
+    prob_idx_int = np.where(valid_split, prob_idx_num, -1).astype(np.int64)
+    leg_idx_int = np.where(valid_split, leg_idx_num, -1).astype(np.int64)
 
-        out_rows.append((
-            person_id, activity_index, loc_id, geo.Point(float(to_x), float(to_y))
-        ))
-        placed_per_prob[prob_idx] = placed_per_prob.get(prob_idx, 0) + 1
-
-    # Convergence flag: per problem, valid iff all of its secondary legs were
-    # placed. placed_per_prob (built in the loop above) holds the count directly
-    # per problem index, so this is O(problems). Each problem's secondary legs
-    # have distinct activity indices, so the per-problem placement count equals
-    # the number of distinct placed activities -- identical to the previous
-    # (person, activity-index range) scan, but without the O(n^2) blow-up.
-    for meta in problem_meta:
-        n_expected = meta["n_secondary"]
-        n_placed = placed_per_prob.get(meta["problem_idx"], 0)
-        convergence_rows.append((n_placed == n_expected, n_expected))
-
-    df_locations = pd.DataFrame.from_records(
-        out_rows,
-        columns=["person_id", "activity_index", "location_id", "geometry"],
+    # meta lookup (skip rows whose problem_idx is unknown), secondary-purpose
+    # filter, and the NaN-coordinate filter -- all the original per-row skips.
+    known_prob = np.array(
+        [valid_split[i] and (prob_idx_int[i] in meta_by_idx) for i in range(n_rows)]
     )
-    df_locations = gpd.GeoDataFrame(df_locations, crs=crs)
+    is_secondary = pd.Series(to_act, dtype=object).isin(SECONDARY_PURPOSES).to_numpy()
+    coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
+
+    keep = known_prob & is_secondary & coords_present
+
+    if not keep.any():
+        df_locations = gpd.GeoDataFrame(
+            pd.DataFrame.from_records(
+                [],
+                columns=["person_id", "activity_index", "location_id", "geometry"],
+            ),
+            crs=crs,
+        )
+        df_convergence = pd.DataFrame.from_records(
+            [(0 == m["n_secondary"], m["n_secondary"]) for m in problem_meta],
+            columns=["valid", "size"],
+        )
+        return df_locations, df_convergence
+
+    kept_prob_idx = prob_idx_int[keep]
+    kept_leg_idx = leg_idx_int[keep]
+
+    # person_id and activity_index come from the per-problem meta (person_id
+    # and activity_index + leg_index). Python ints from meta keep the int64
+    # output dtype identical to the old ``from_records`` path.
+    person_id = np.array(
+        [meta_by_idx[p]["person_id"] for p in kept_prob_idx], dtype=np.int64
+    )
+    activity_index = np.array(
+        [meta_by_idx[p]["activity_index"] for p in kept_prob_idx], dtype=np.int64
+    ) + kept_leg_idx
+
+    # Recover the canonical eqasim location_id from the solver's candidate
+    # identifier; fall back to a synthesised "cs_{prob}_{leg}" id when the id is
+    # not a string or is not a known facility (identical to the loop's rule).
+    kept_cand = identifiers[keep]
+    location_id = [
+        cand if (isinstance(cand, str) and cand in known_location_ids)
+        else f"cs_{kept_prob_idx[i]}_{kept_leg_idx[i]}"
+        for i, cand in enumerate(kept_cand)
+    ]
+
+    # Geometry built in one shot from the float coordinate arrays.
+    geometry = gpd.points_from_xy(to_x[keep], to_y[keep])
+
+    df_locations = gpd.GeoDataFrame(
+        {
+            "person_id": person_id,
+            "activity_index": activity_index,
+            "location_id": np.asarray(location_id, dtype=object),
+            "geometry": geometry,
+        },
+        crs=crs,
+    )
+
+    # Placed secondary legs per problem index, via a single groupby/size over
+    # the kept rows (each problem's secondary legs have distinct activity
+    # indices, so the count equals the number of distinct placed activities --
+    # identical to the previous per-row accumulation).
+    placed_per_prob: Dict[int, int] = (
+        pd.Series(kept_prob_idx).value_counts().to_dict()
+    )
+
+    # Convergence flag in problem_meta order: valid iff all secondary legs of
+    # the problem were placed. ``from_records`` keeps the bool/int64 dtypes
+    # identical to the previous implementation.
     df_convergence = pd.DataFrame.from_records(
-        convergence_rows, columns=["valid", "size"]
+        [
+            (placed_per_prob.get(m["problem_idx"], 0) == m["n_secondary"],
+             m["n_secondary"])
+            for m in problem_meta
+        ],
+        columns=["valid", "size"],
     )
     return df_locations, df_convergence
 
