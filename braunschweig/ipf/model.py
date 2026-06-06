@@ -29,6 +29,46 @@ Returns columns:
 
 HH_SIZE_BINS = ("1", "2", "3", "4", "5", "6+")
 
+# Empty index selector in the same representation as ``np.nonzero(mask.values)``
+# for an all-False mask: a 1-tuple holding an ascending (here: empty) int64
+# index array. Used as the lookup default for combinations whose cell does not
+# exist in ``df_model`` (the legacy boolean-mask path produced exactly this).
+_EMPTY_SELECTOR = (np.array([], dtype=np.int64),)
+
+
+def _build_group_indices(df_model, key_columns):
+    """Map each observed combination of ``key_columns`` to its ascending row indices.
+
+    This is the vectorised replacement for the legacy per-constraint boolean mask
+    ``np.nonzero((df_model[c0] == v0) & (df_model[c1] == v1) & ...)``. ``pandas``
+    ``DataFrameGroupBy.indices`` returns, per group key, the **ascending** array of
+    integer row positions of that group in ``df_model`` -- byte-identical to what
+    ``np.nonzero`` returns for the equivalent boolean mask, because both enumerate
+    matching rows in ascending order.
+
+    Args:
+        df_model: the full IPF cell table (one row per joint-distribution cell).
+        key_columns: list of column names whose value tuple identifies a group.
+
+    Returns:
+        dict mapping a key tuple (single key columns still produce a 1-tuple, see
+        below) to ``(ascending_int64_index_array,)`` -- the exact representation of
+        ``np.nonzero(mask.values)``.
+
+    Note:
+        For a single key column, ``groupby([col]).indices`` is keyed by the scalar
+        value, not a 1-tuple. We normalise every key to a tuple so callers always
+        look up with ``(v0, v1, ...)`` regardless of arity.
+    """
+    raw = df_model.groupby(key_columns, sort=False).indices
+    normalised = {}
+    single_key = len(key_columns) == 1
+    for key, index_array in raw.items():
+        key_tuple = (key,) if single_key else tuple(key)
+        # Wrap as a 1-tuple to mirror ``np.nonzero`` (which returns ``(array,)``).
+        normalised[key_tuple] = (index_array,)
+    return normalised
+
 
 def configure(context):
     context.stage("braunschweig.ipf.prepare")
@@ -177,69 +217,82 @@ def execute(context):
     df_model["age_class_employment"] = df_model["combined_age_class"].replace(employment_age_mapping)
     df_model["age_class_license"] = df_model["combined_age_class"].replace(license_age_mapping)
 
-    # Initialize weighting selectors and targets
+    # Initialize weighting selectors and targets.
+    #
+    # PERFORMANCE: the per-constraint row-index arrays into ``df_model`` are no
+    # longer built by scanning the full ``df_model`` with chained boolean masks
+    # (O(constraints x |df_model|), the dominant cost at 100 %). Instead each
+    # constraint group does ONE ``groupby(...).indices`` pass over ``df_model``
+    # and every combination is an O(1) dict lookup. ``groupby().indices`` returns
+    # the ascending row positions per group key -- byte-identical to the array
+    # ``np.nonzero(mask.values)`` produced for the equivalent boolean mask. Target
+    # weights still come from the SMALL reference tables via the original
+    # ``df_reference.loc[mask, "weight"].sum()`` call, preserving the exact
+    # floating-point summation (groupby-sum is NOT bit-identical to Series.sum).
     selectors = []
     targets = []
-    
-    # Population constraints
+
+    # Population constraints (commune x sex x population-age-class).
+    population_indices = _build_group_indices(
+        df_model, ["commune_index", "sex", "age_class_population"])
     combinations = list(itertools.product(unique_communes, unique_sexes, population_age_classes))
-    for combination in context.progress(combinations, total = len(combinations), label = "Generating population constraints"):    
+    for combination in context.progress(combinations, total = len(combinations), label = "Generating population constraints"):
         f_reference = df_population["commune_index"] == combination[0]
         f_reference &= df_population["sex"] == combination[1]
-        f_reference &= df_population["age_class"] == combination[2] 
-    
-        f_model = df_model["commune_index"] == combination[0]
-        f_model &= df_model["sex"] == combination[1]
-        f_model &= df_model["age_class_population"] == combination[2]
-        selectors.append(f_model)
-    
+        f_reference &= df_population["age_class"] == combination[2]
+
+        selectors.append(population_indices.get(tuple(combination), _EMPTY_SELECTOR))
+
         target_weight = df_population.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
-    # Employment constraints   
+    # Employment constraints (departement x sex x employment-age-class, employed only).
+    # The legacy ``& df_model["employed"]`` filter is folded into the groupby key
+    # so the (..., True) sub-key holds exactly the employed rows of each cell.
+    employment_indices = _build_group_indices(
+        df_model, ["departement_index", "sex", "age_class_employment", "employed"])
     combinations = list(itertools.product(unique_departements, unique_sexes, employment_age_classes))
     for combination in context.progress(combinations, total = len(combinations), label = "Generating employment constraints"):
         f_reference = df_employment["departement_index"] == combination[0]
         f_reference &= df_employment["sex"] == combination[1]
-        f_reference &= df_employment["age_class"] == combination[2] 
-    
-        f_model = df_model["departement_index"] == combination[0]
-        f_model &= df_model["sex"] == combination[1]
-        f_model &= df_model["age_class_employment"] == combination[2]
-        f_model &= df_model["employed"] # Only select employed!
-        selectors.append(f_model)
-    
+        f_reference &= df_employment["age_class"] == combination[2]
+
+        selectors.append(
+            employment_indices.get((combination[0], combination[1], combination[2], True),
+                                   _EMPTY_SELECTOR))
+
         target_weight = df_employment.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
-    # Minimum employment age
+    # Minimum employment age (single condition, cheap: kept as a boolean mask).
     f_model = df_model["combined_age_class"] < minimum_employment_age
     f_model &= df_model["employed"]
     selectors.append(f_model)
     targets.append(0.0)
 
-    # License country constraints
+    # License country constraints (sex x license-age-class, license owners only).
+    license_country_indices = _build_group_indices(
+        df_model, ["sex", "age_class_license", "license"])
     combinations = list(itertools.product(unique_sexes, license_age_classes))
     for combination in context.progress(combinations, total = len(combinations), label = "Generating license constraints"):
         f_reference = df_licenses_country["sex"] == combination[0]
-        f_reference &= df_licenses_country["age_class"] == combination[1] 
-    
-        f_model = df_model["sex"] == combination[0]
-        f_model &= df_model["age_class_license"] == combination[1]
-        f_model &= df_model["license"] # Only select license owners!
-        selectors.append(f_model)
-    
+        f_reference &= df_licenses_country["age_class"] == combination[1]
+
+        selectors.append(
+            license_country_indices.get((combination[0], combination[1], True), _EMPTY_SELECTOR))
+
         target_weight = df_licenses_country.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
-    # License Kreis constraints
+    # License Kreis constraints (departement, license owners only).
+    license_kreis_indices = _build_group_indices(
+        df_model, ["departement_index", "license"])
     for departement_index in context.progress(unique_departements, total = len(unique_departements), label = "Generating license constraints per Kreis"):
         f_reference = df_licenses_kreis["departement_index"] == departement_index
-    
-        f_model = df_model["departement_index"] == departement_index
-        f_model &= df_model["license"] # Only select license owners!
-        selectors.append(f_model)
-    
+
+        selectors.append(
+            license_kreis_indices.get((departement_index, True), _EMPTY_SELECTOR))
+
         target_weight = df_licenses_kreis.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
@@ -264,14 +317,14 @@ def execute(context):
         hh_targets = (
             df_hh.set_index(["commune_index", "hh_size"])["weight"].to_dict()
         )
+        hh_size_indices = _build_group_indices(
+            df_model, ["commune_index", "hh_size"])
         for combination in context.progress(
             hh_combinations, total=len(hh_combinations),
             label="Generating household-size constraints",
         ):
             target_weight = hh_targets.get(combination, 0.0)
-            f_model = df_model["commune_index"] == combination[0]
-            f_model &= df_model["hh_size"] == combination[1]
-            selectors.append(f_model)
+            selectors.append(hh_size_indices.get(tuple(combination), _EMPTY_SELECTOR))
             targets.append(float(target_weight))
 
         # Hard zero: persons younger than ``minimum_age_one_person_household``
@@ -305,14 +358,15 @@ def execute(context):
         )
         dj = dj.dropna(subset=["departement_index"]).copy()
         dj["departement_index"] = dj["departement_index"].astype(int)
+        joint_indices = _build_group_indices(
+            df_model, ["departement_index", "age_group", "hh_size"])
         for _, row in context.progress(
             list(dj.iterrows()), total=len(dj),
             label="Generating joint age x hh_size constraints",
         ):
-            f_model = df_model["departement_index"] == row["departement_index"]
-            f_model &= df_model["age_group"] == int(row["age_group_lower"])
-            f_model &= df_model["hh_size"] == row["hh_size"]
-            selectors.append(f_model)
+            key = (int(row["departement_index"]), int(row["age_group_lower"]),
+                   row["hh_size"])
+            selectors.append(joint_indices.get(key, _EMPTY_SELECTOR))
             targets.append(float(row["weight"]))
 
     # TASK-010 — optional Kreis × hh_size × employed joint margin.
@@ -410,19 +464,26 @@ def execute(context):
             emp_targets_long["departement_index"].astype(int)
         )
 
+        emp_margin_indices = _build_group_indices(
+            df_model, ["departement_index", "hh_size", "employed"])
         for _, row in context.progress(
             list(emp_targets_long.iterrows()),
             total=len(emp_targets_long),
             label="Generating employment-by-hhsize constraints",
         ):
-            f_model = df_model["departement_index"] == row["departement_index"]
-            f_model &= df_model["hh_size"] == row["hh_size"]
-            f_model &= df_model["employed"] == bool(row["employed"])
-            selectors.append(f_model)
+            key = (int(row["departement_index"]), row["hh_size"], bool(row["employed"]))
+            selectors.append(emp_margin_indices.get(key, _EMPTY_SELECTOR))
             targets.append(float(row["weight"]))
 
-    # Transform to index-based
-    selectors = [np.nonzero(s.values) for s in selectors]
+    # Transform to index-based. Vectorised constraint groups already appended
+    # ``(ascending_int64_index_array,)`` tuples (the exact representation of
+    # ``np.nonzero(mask.values)``); the remaining single-condition selectors are
+    # still boolean Series and are converted here. This keeps every selector in
+    # the identical ``np.nonzero``-tuple form the IPF loop expects.
+    selectors = [
+        s if isinstance(s, tuple) else np.nonzero(s.values)
+        for s in selectors
+    ]
     
     # Perform IPF
     iteration = 0
