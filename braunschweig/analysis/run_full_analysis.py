@@ -29,6 +29,7 @@ import logging
 import sys
 from pathlib import Path
 
+from braunschweig.analysis import modestats_inside as _modestats_inside
 from braunschweig.analysis import run_mid_validation as _mid
 from braunschweig.analysis.dashboard import build_dashboard as _dash
 
@@ -77,6 +78,17 @@ def main(argv: list[str] | None = None) -> int:
             _dash.main()
         finally:
             sys.argv = old_argv
+
+    # Outside-free modestats artefact (modestats_inside.csv + .png) next to the
+    # native MATSim modestats. Best-effort: a missing modestats.csv (e.g. a
+    # synthesis-only run) must not fail the analysis suite.
+    if ns.sim_cache is not None:
+        sim_output = Path(ns.sim_cache).resolve() / "simulation_output"
+        try:
+            csv_path, png_path = _modestats_inside.write_modestats_inside(sim_output)
+            LOGGER.info("Wrote outside-free modestats: %s, %s", csv_path, png_path)
+        except FileNotFoundError:
+            LOGGER.info("No modestats.csv under %s; skipping outside-free modestats.", sim_output)
 
     if not ns.skip_mid:
         LOGGER.info("Running MiD validation for %s", output_dir)
