@@ -475,6 +475,17 @@ def _configure_base(context):
     if context.config("cars_income_aware", True):
         context.stage("braunschweig.data.bbsr.regiostar")
 
+    # household_income_eur from the real MiD net-income distribution (size x
+    # region), rank-aligned to economic_status. Default ON. OFF -> the legacy
+    # class-midpoint x INKAR-scale path (byte-identical household_income_eur).
+    # When ON the EUR value is drawn from P(bracket | hh_size, raumtyp) (MiD,
+    # NDS base + raumtyp tilt) and the regiostar stage is required to resolve the
+    # home raumtyp. The actual EUR draw happens in the OUTER execute() (after the
+    # INKAR stage is available); the dependency is registered here so the OFF
+    # path keeps the legacy dependency graph.
+    if context.config("income_eur_from_distribution", True):
+        context.stage("braunschweig.data.bbsr.regiostar")
+
 
 def _execute_base(context):
     """Inherited execute() from bavaria.synthesis.population.enriched.
@@ -494,6 +505,7 @@ def _execute_base(context):
     _needs_commune = (
         context.config("status_from_hhtype")
         or context.config("cars_income_aware")
+        or context.config("income_eur_from_distribution")
     )
     if _needs_commune and "commune_id" in _df_home_src.columns:
         _home_cols.append("commune_id")
@@ -1220,10 +1232,17 @@ def _execute_base(context):
         else False
     )
 
-    # ``commune_id`` was only merged in to resolve the home RegioStaR-7 raumtyp
-    # for the status_from_hhtype derivation; drop it so the returned schema is
-    # unchanged vs the legacy path (the OFF path never reads it).
-    if "commune_id" in df_persons.columns:
+    # ``commune_id`` was merged in to resolve the home RegioStaR-7 raumtyp for the
+    # status_from_hhtype / cars_income_aware derivations. When the distribution
+    # income (income_eur_from_distribution) is ON it is ALSO needed by the OUTER
+    # execute() (the EUR draw runs there, after the INKAR stage is available), so
+    # it is kept and dropped by the outer execute() instead. Otherwise drop it
+    # here so the returned schema is unchanged vs the legacy path (OFF never reads
+    # it).
+    if (
+        "commune_id" in df_persons.columns
+        and not context.config("income_eur_from_distribution")
+    ):
         df_persons = df_persons.drop(columns=["commune_id"])
 
     return df_persons
@@ -2028,6 +2047,278 @@ def _derive_car_availability_consistent(df_persons, mid, random_seed,
     return df_persons
 
 
+# --- Distribution-based household_income_eur (income_eur_from_distribution) ---
+#
+# Open-top heavy-tail mean. The MiD top bracket "over_7000" is open-ended; a
+# finite EUR value is drawn as 7000 * (1 + Exponential(mean)). The mean 0.4 puts
+# the bracket's expected value at ~9800 EUR/month (a heavy but bounded-in-practice
+# right tail), matching the German top-income shape better than a uniform draw
+# against an arbitrary cap. Documented in
+# braunschweig.data.mid.income_by_size (INCOME_BRACKET_BOUNDS_EUR open-top note).
+INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION = 0.4
+
+# Plausible clamp for the open-top draw so a rare exponential outlier cannot push
+# household_income_eur past the post-enrichment sanity range [100, 20000]. 18000
+# leaves head-room below the 20000 hard cap after the INKAR fine tilt.
+INCOME_OPEN_TOP_MAX_EUR = 18000.0
+
+# Fallback-rate threshold above which the distribution-income per-cell bracket pmf
+# fallback (NDS base cell absent for a household's hh_size -> uniform-over-brackets
+# within the cell) is escalated to WARNING. Every synthetic hh_size 1..5+ has an
+# NDS base cell, so a non-trivial rate signals a malformed reference table.
+INCOME_DISTRIBUTION_FALLBACK_WARN_RATE = 0.01
+
+
+def _income_class_from_eur(eur_values, class_midpoint_eur):
+    """Map continuous EUR values onto the BMDV income EUR-class labels.
+
+    The categorical ``household_income`` label must stay consistent with the
+    continuous ``household_income_eur`` when the latter is drawn from the MiD
+    distribution. We bucket each EUR value to the income class whose midpoint is
+    nearest, using the midpoints between consecutive class midpoints as the bin
+    edges (a 1-D nearest-midpoint classifier). The classes are ordered by
+    midpoint so the mapping is monotone in EUR.
+
+    ``class_midpoint_eur`` is the MiD H4 class-midpoint table
+    (label -> midpoint EUR). Returns a numpy object array of class labels aligned
+    to ``eur_values``.
+    """
+    labels = list(class_midpoint_eur.keys())
+    midpoints = np.array([class_midpoint_eur[k] for k in labels], dtype=float)
+    order = np.argsort(midpoints)
+    labels_sorted = [labels[i] for i in order]
+    mids_sorted = midpoints[order]
+    # Bin edges = midpoints between consecutive class midpoints.
+    edges = (mids_sorted[:-1] + mids_sorted[1:]) / 2.0
+    idx = np.searchsorted(edges, np.asarray(eur_values, dtype=float), side="right")
+    labels_arr = np.asarray(labels_sorted, dtype=object)
+    return labels_arr[idx]
+
+
+def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
+                               df_regiostar, class_midpoint_eur, random_seed,
+                               kreis=None):
+    """Draw ``household_income_eur`` from the MiD net-income distribution.
+
+    Per household, an income bracket is drawn from
+    ``P(bracket | hh_size, raumtyp)``
+    (:func:`braunschweig.data.mid.income_by_size.income_bracket_probabilities`,
+    Niedersachsen base + raumtyp within-NDS tilt). To stay coherent with the
+    categorical ``economic_status`` anchor, the draw is RANK-ALIGNED within each
+    ``(hh_size, raumtyp)`` cell: the cell's households are sorted by
+    economic_status rank (very_low < .. < very_high, ties broken by a seeded
+    jitter) and the bracket draws sorted within the cell are assigned so that
+    higher-status households receive higher brackets. This keeps the bracket
+    MARGINAL EXACTLY equal to the MiD distribution while making
+    household_income_eur monotone in economic_status.
+
+    Within the chosen bracket a continuous EUR value is drawn uniformly in
+    ``[low, high)``; the open top bracket uses ``7000 * (1 + Exponential(mean))``
+    (clamped to :data:`INCOME_OPEN_TOP_MAX_EUR`).
+
+    The INKAR Kreis scale is applied only as a FINE adjustment: each value is
+    multiplied by ``scale[kreis] / mean(scale over kreise)``. The MiD
+    distribution is already REGIONAL (NDS + raumtyp), so multiplying by the raw
+    INKAR scale (which is national-mean-relative) would double-count the regional
+    level; dividing by the mean scale makes INKAR a within-region Kreis tilt with
+    a regional mean of ~1.0 (no level shift, only the Wolfsburg/Goslar spread).
+
+    Finally ``household_income`` (EUR-class label) and ``high_income`` are
+    re-derived from the drawn EUR via :func:`_income_class_from_eur` so the
+    categorical label stays consistent with the continuous value.
+    ``economic_status`` is left UNCHANGED.
+
+    A dedicated RNG offset (+72831) is used so the OFF path and all other streams
+    are untouched.
+    """
+    from braunschweig.data.mid.income_by_size import (
+        INCOME_BRACKET_BOUNDS_EUR,
+        INCOME_BRACKET_CATEGORIES,
+        RS7_TO_RAUMTYP_KEY,
+        income_bracket_probabilities,
+    )
+    from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+    n_brackets = len(INCOME_BRACKET_CATEGORIES)
+    bracket_low = np.array(
+        [INCOME_BRACKET_BOUNDS_EUR[b][0] for b in INCOME_BRACKET_CATEGORIES], dtype=float
+    )
+    # Closed-bracket high; open top marked with NaN so the EUR draw branches.
+    bracket_high = np.array(
+        [
+            np.nan if INCOME_BRACKET_BOUNDS_EUR[b][1] is None
+            else INCOME_BRACKET_BOUNDS_EUR[b][1]
+            for b in INCOME_BRACKET_CATEGORIES
+        ],
+        dtype=float,
+    )
+
+    status_rank = {s: i for i, s in enumerate(ECONOMIC_STATUS_CATEGORIES)}
+
+    # Per-household aggregation (income is a HOUSEHOLD quantity: one draw per
+    # household, broadcast to every member). household_size / economic_status are
+    # household-consistent already, but we take the first per group defensively.
+    has_commune = "commune_id" in df_persons.columns
+    rs7_by_ags8 = dict(zip(
+        df_regiostar["commune_id"].astype(str),
+        df_regiostar["regiostar7"].astype("Int64"),
+    ))
+
+    work = pd.DataFrame({
+        "household_id": df_persons["household_id"].to_numpy(),
+        "household_size": df_persons["household_size"].astype(str).to_numpy(),
+        "economic_status": df_persons["economic_status"].astype(str).to_numpy(),
+    })
+    if has_commune:
+        work["commune_id"] = df_persons["commune_id"].astype(str).to_numpy()
+
+    hh = work.groupby("household_id", sort=False).first()
+    hh_ids = hh.index.to_numpy()
+    hh_size = hh["household_size"].to_numpy()
+    hh_status = hh["economic_status"].to_numpy()
+
+    # Per-household raumtyp key (commune_id -> AGS-8 -> RS7 -> raumtyp key).
+    if has_commune:
+        hh_ags8 = pd.Series(hh["commune_id"].to_numpy()).map(ars_to_ags8)
+        hh_rs7 = hh_ags8.map(rs7_by_ags8)
+        hh_raumtyp = hh_rs7.map(
+            lambda c: RS7_TO_RAUMTYP_KEY.get(int(c)) if pd.notna(c) else None
+        ).to_numpy()
+    else:
+        hh_raumtyp = np.array([None] * len(hh_ids), dtype=object)
+
+    n_hh = len(hh_ids)
+    rng = np.random.RandomState(random_seed + 72831)
+
+    # Per-cell pmf cache (only n_sizes x n_raumtyp distinct cells).
+    pmf_cache: dict[tuple[str, object], np.ndarray | None] = {}
+
+    def _pmf_for(size_key, raumtyp_key):
+        ck = (size_key, raumtyp_key)
+        if ck not in pmf_cache:
+            pmf_cache[ck] = income_bracket_probabilities(
+                df_bundesland, df_raumtyp, size_key, raumtyp_key
+            )
+        return pmf_cache[ck]
+
+    hh_bracket = np.full(n_hh, -1, dtype=np.int64)
+    n_primary = 0
+    n_fallback = 0
+
+    # Seeded per-household jitter to break economic_status ties deterministically.
+    jitter = rng.random_sample(n_hh)
+    status_rank_arr = np.array(
+        [status_rank.get(s, -1) for s in hh_status], dtype=float
+    )
+
+    # Group households by (hh_size, raumtyp) cell; draw + rank-align per cell.
+    cell_df = pd.DataFrame({
+        "row": np.arange(n_hh),
+        "size": hh_size,
+        "raumtyp": hh_raumtyp,
+        "rank": status_rank_arr,
+        "jitter": jitter,
+    })
+    for (size_key, raumtyp_key), grp in cell_df.groupby(["size", "raumtyp"], dropna=False, sort=False):
+        rows = grp["row"].to_numpy()
+        m = len(rows)
+        pmf = _pmf_for(size_key, raumtyp_key if raumtyp_key is not None else None)
+        if pmf is None:
+            # FALLBACK: NDS base cell absent for this hh_size -> uniform over
+            # brackets within the cell (observable, not silent).
+            pmf = np.full(n_brackets, 1.0 / n_brackets)
+            n_fallback += m
+        else:
+            n_primary += m
+        # Draw m brackets from the cell pmf (this preserves the cell marginal in
+        # expectation; the realised marginal is the multinomial draw of size m).
+        u = rng.random_sample(m)
+        cdf = np.cumsum(pmf)
+        drawn = np.searchsorted(cdf, u, side="right")
+        drawn = np.clip(drawn, 0, n_brackets - 1)
+        # Rank-align: sort households by (status rank, jitter) ascending and the
+        # drawn brackets ascending, then pair them so higher-status households
+        # get higher brackets. This keeps the realised bracket marginal EXACTLY
+        # the multinomial draw while making the bracket monotone in status.
+        rank_key = grp["rank"].to_numpy() + grp["jitter"].to_numpy() * 1e-6
+        hh_order = np.argsort(rank_key, kind="stable")
+        bracket_sorted = np.sort(drawn, kind="stable")
+        hh_bracket[rows[hh_order]] = bracket_sorted
+
+    # Draw a continuous EUR value within each household's bracket.
+    hh_low = bracket_low[hh_bracket]
+    hh_high = bracket_high[hh_bracket]
+    eur = np.empty(n_hh, dtype=float)
+    is_open_top = np.isnan(hh_high)
+    closed = ~is_open_top
+    if closed.any():
+        u_eur = rng.random_sample(int(closed.sum()))
+        eur[closed] = hh_low[closed] + u_eur * (hh_high[closed] - hh_low[closed])
+    if is_open_top.any():
+        n_top = int(is_open_top.sum())
+        exp_draw = rng.exponential(
+            scale=INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION, size=n_top
+        )
+        top_vals = hh_low[is_open_top] * (1.0 + exp_draw)
+        eur[is_open_top] = np.minimum(top_vals, INCOME_OPEN_TOP_MAX_EUR)
+
+    # INKAR FINE Kreis tilt (scale / mean(scale)), broadcast per household.
+    if kreis is None:
+        kreis = _derive_kreis_ars5(df_persons)
+    kreis_by_hh = (
+        pd.Series(kreis.to_numpy(), index=df_persons["household_id"])
+        .groupby(level=0).first()
+    )
+    hh_kreis = pd.Series(hh_ids).map(kreis_by_hh).to_numpy()
+    scale_lookup = dict(zip(df_inkar["ars5"], df_inkar["scale"]))
+    raw_scale = pd.Series(hh_kreis).map(scale_lookup).astype(float)
+    # Mean over the IN-SCOPE kreise present in the population (not the national
+    # INKAR mean) so the fine tilt has a population mean of ~1.0.
+    in_scope_scales = [
+        scale_lookup[k] for k in pd.unique(hh_kreis)
+        if k in scale_lookup
+    ]
+    mean_scale = float(np.mean(in_scope_scales)) if in_scope_scales else 1.0
+    fine_tilt = (raw_scale / mean_scale).fillna(1.0).to_numpy()
+    eur = eur * fine_tilt
+
+    # Broadcast the household EUR back to every person.
+    eur_by_hh = dict(zip(hh_ids, np.round(eur, 0)))
+    df_persons["household_income_eur"] = (
+        df_persons["household_id"].map(eur_by_hh).astype(float).to_numpy()
+    )
+
+    # Re-derive the EUR-class label + high_income from the continuous value so the
+    # categorical household_income stays consistent (economic_status untouched).
+    new_class = _income_class_from_eur(
+        df_persons["household_income_eur"].to_numpy(), class_midpoint_eur
+    )
+    df_persons["household_income"] = new_class
+    df_persons["high_income"] = df_persons["household_income"] == "5000+"
+
+    fallback_rate = (n_fallback / n_hh) if n_hh else 0.0
+    df_persons.attrs["income_distribution_primary_count"] = n_primary
+    df_persons.attrs["income_distribution_fallback_count"] = n_fallback
+    df_persons.attrs["income_distribution_fallback_rate"] = fallback_rate
+    level = "WARNING: " if fallback_rate > INCOME_DISTRIBUTION_FALLBACK_WARN_RATE else ""
+    print(
+        f"[braunschweig.enriched] {level}distribution household_income_eur: "
+        f"MiD-distribution primary {n_primary}/{n_hh} households "
+        f"({1 - fallback_rate:.2%}), fallback (uniform-over-brackets, NDS base "
+        f"cell absent) {n_fallback} ({fallback_rate:.2%}). "
+        f"INKAR applied as a fine Kreis tilt (mean scale {mean_scale:.3f}). "
+        f"mean income {np.mean(eur):.0f} EUR."
+    )
+    print(
+        "[braunschweig.enriched] mean household_income_eur by economic_status = "
+        + ", ".join(
+            f"{s}={df_persons.loc[df_persons['economic_status'] == s, 'household_income_eur'].mean():.0f}"
+            for s in ECONOMIC_STATUS_CATEGORIES
+        )
+    )
+    return df_persons
+
+
 def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,
                               kreis=None):
     """Add ``household_income_eur`` = class_midpoint * INKAR-scale[home_kreis].
@@ -2112,12 +2403,40 @@ def execute(context):
     # legacy outer-execute sampling.
     kreis = _derive_kreis_ars5(df_persons)
 
-    # INKAR-based EUR income (Kreis-specific shift on top of the MiD H4
-    # regionless quintile distribution).
+    # household_income_eur.
+    #
+    # ON (income_eur_from_distribution, default): draw the EUR value from the real
+    # MiD monthly net-income distribution P(bracket | hh_size, raumtyp) (NDS base +
+    # raumtyp tilt), rank-aligned to economic_status so income is monotone in the
+    # SES anchor; INKAR is applied only as a FINE within-region Kreis tilt. The
+    # categorical household_income / high_income are RE-DERIVED from the drawn EUR.
+    #
+    # OFF: the legacy class-midpoint x INKAR-scale path (byte-identical
+    # household_income_eur).
     df_inkar = context.stage("braunschweig.data.inkar.household_income")
     class_midpoint_eur = load_class_midpoint_eur(data_path)
-    df_persons = _apply_inkar_income_scale(df_persons, df_inkar,
-                                           class_midpoint_eur, kreis=kreis)
+    if context.config("income_eur_from_distribution"):
+        from braunschweig.data.mid.income_by_size import (
+            load_income_by_size_bundesland,
+            load_income_by_size_raumtyp,
+        )
+        df_regiostar_income = context.stage("braunschweig.data.bbsr.regiostar")
+        df_income_bund = load_income_by_size_bundesland(data_path)
+        df_income_raum = load_income_by_size_raumtyp(data_path)
+        df_persons = _apply_distribution_income(
+            df_persons, df_inkar, df_income_bund, df_income_raum,
+            df_regiostar_income, class_midpoint_eur,
+            context.config("random_seed"), kreis=kreis,
+        )
+    else:
+        df_persons = _apply_inkar_income_scale(df_persons, df_inkar,
+                                               class_midpoint_eur, kreis=kreis)
+
+    # ``commune_id`` (kept by _execute_base only for the distribution income
+    # raumtyp lookup) is dropped now so the returned schema matches the legacy
+    # path (the income draw above is the last consumer).
+    if "commune_id" in df_persons.columns:
+        df_persons = df_persons.drop(columns=["commune_id"])
 
     # BS-specific residency flag (aligns with is_munich_resident semantics).
     if "inside_braunschweig" in df_persons.columns:

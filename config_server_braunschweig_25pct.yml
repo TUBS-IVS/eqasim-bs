@@ -138,6 +138,20 @@ config:
   # legacy per-Kreis MiD-H7 draw (byte-identical). Feeds the F5 fleet generator.
   cars_income_aware: true
 
+  # Distribution-based household_income_eur. ON -> draw the monthly net household
+  # income in EUR from the REAL MiD 2023 distribution P(bracket | hh_size,
+  # raumtyp) (10 brackets, Niedersachsen base + RegioStaR raumtyp tilt) instead of
+  # the coarse 5 class-midpoints x a single INKAR Kreis scalar. The draw is
+  # rank-aligned to economic_status (income monotone in the SES anchor, bracket
+  # marginal preserved exactly), the open top bracket gets a heavy-tail draw, and
+  # INKAR is applied only as a FINE within-region Kreis tilt (scale / mean-scale,
+  # no double-count of the already-regional MiD level). household_income (the EUR
+  # class label) + high_income are re-derived from the continuous value;
+  # economic_status is unchanged. OFF -> legacy class-midpoint x INKAR-scale path
+  # (byte-identical household_income_eur). Flows into the A1 MATSim attribute
+  # writer (householdIncomeEur) and any income-sensitive downstream model.
+  income_eur_from_distribution: true
+
   # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
   # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
   # are neither employed nor studying and the per-person ticket-type vector
