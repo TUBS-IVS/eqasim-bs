@@ -208,13 +208,15 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
                                 derive=None):
     """Categorical control on ``frames.vehicles``.
 
-    The vehicles frame carries ``owner_id`` (= a person ``person_id``) but no
-    ``household_id``, so it is joined vehicles -> persons (owner_id == person_id)
-    -> geo to obtain the geography. If ``frames.vehicles is None`` an INFO line is
-    logged and an empty long frame is returned (vehicles are an optional source).
-    ``derive`` is an optional ``Series -> Series`` callable that maps the raw
-    ``column`` onto the reported categories (e.g. powertrain label -> bev/not_bev);
-    when ``None`` the raw column value (as string) is the category.
+    The geography is obtained by joining the vehicles to ``geo`` on
+    ``household_id``: the German household fleet vehicles already carry a
+    ``household_id`` column (used directly), while the legacy eqasim vehicles
+    carry only ``owner_id`` (= a person ``person_id``), which is first resolved to
+    ``household_id`` via ``frames.persons``. If ``frames.vehicles is None`` an INFO
+    line is logged and an empty long frame is returned (vehicles are an optional
+    source). ``derive`` is an optional ``Series -> Series`` callable that maps the
+    raw ``column`` onto the reported categories (e.g. powertrain label ->
+    bev/not_bev); when ``None`` the raw column value (as string) is the category.
     """
     geo_col = _geo_col(geography)
 
@@ -227,11 +229,18 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
             LOGGER.warning("control %s: column %r absent in vehicles; skipped", name, column)
             return empty
         veh = frames.vehicles.copy()
-        if "owner_id" not in veh.columns:
-            LOGGER.warning("control %s: vehicles have no 'owner_id'; cannot join geography; skipped", name)
-            return empty
-        persons = frames.persons[["person_id", "household_id"]].copy()
-        veh = veh.merge(persons, left_on="owner_id", right_on="person_id", how="left")
+        # Resolve household_id: use it directly when present (German household
+        # fleet), else map owner_id -> person_id -> household_id (legacy fleet).
+        # Doing the owner_id join when household_id already exists would create
+        # household_id_x/_y and break the geo merge.
+        if "household_id" not in veh.columns:
+            if "owner_id" not in veh.columns:
+                LOGGER.warning(
+                    "control %s: vehicles have neither 'household_id' nor "
+                    "'owner_id'; cannot join geography; skipped", name)
+                return empty
+            persons = frames.persons[["person_id", "household_id"]].drop_duplicates("person_id")
+            veh = veh.merge(persons, left_on="owner_id", right_on="person_id", how="left")
         veh = veh.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         veh = veh.dropna(subset=[geo_col]).copy()
         if derive is not None:

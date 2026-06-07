@@ -39,6 +39,33 @@ def _geo():
                          "commune_id": ["031010000000", "031010000000"]})
 
 
+# --- vehicle control household_id handling -----------------------------------
+
+def test_vehicle_control_uses_household_id_when_present():
+    """Regression: the German household fleet vehicles carry BOTH household_id and
+    owner_id. categorical_vehicle_control must use household_id directly (the
+    owner_id->person_id join would otherwise create household_id_x/_y and break the
+    geo merge with a KeyError). Legacy vehicles (owner_id only) still resolve via
+    owner_id->person_id->household_id."""
+    persons = pd.DataFrame({"person_id": [1, 2], "household_id": [10, 20]})
+    geo = pd.DataFrame({"household_id": [10, 20], "ars5": ["03101", "03101"],
+                        "commune_id": ["03101000", "03101000"]})
+    ctrl = C.categorical_vehicle_control(
+        "bev", "distribution", "kreis", "technology", ("bev", "not_bev"),
+        target=None, derive=C._bev_not_bev)
+
+    veh_de = pd.DataFrame({"vehicle_id": ["v1", "v2"], "household_id": [10, 20],
+                           "owner_id": [1, 2], "technology": ["bev", "diesel"]})
+    out_de = ctrl.realized(
+        PopulationFrames(persons, pd.DataFrame(), None, veh_de, "run_output", "x", "p_"), geo)
+    assert dict(zip(out_de["category"], out_de["synthetic_count"])) == {"bev": 1, "not_bev": 1}
+
+    veh_legacy = pd.DataFrame({"vehicle_id": ["v1"], "owner_id": [1], "technology": ["bev"]})
+    out_legacy = ctrl.realized(
+        PopulationFrames(persons, pd.DataFrame(), None, veh_legacy, "run_output", "x", "p_"), geo)
+    assert dict(zip(out_legacy["category"], out_legacy["synthetic_count"])) == {"bev": 1}
+
+
 # --- registry membership -----------------------------------------------------
 
 def test_registry_includes_census_and_distribution_controls():
