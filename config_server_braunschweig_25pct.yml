@@ -123,6 +123,15 @@ config:
   # before car_availability (output-identical re-order).
   consistent_car_availability: true
 
+  # Income/household-type-aware household car count (number_of_cars). ON -> draw
+  # number_of_cars per household from the MiD-coupled pmf
+  # P(num_cars | hhtype, status, raumtyp) (richer / family households own more
+  # cars), then rake the per-Kreis distribution back to the MiD-H7 Kreis control
+  # so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7 marginal -- only the
+  # within-Kreis allocation by income/household type/raumtyp changes. OFF ->
+  # legacy per-Kreis MiD-H7 draw (byte-identical). Feeds the F5 fleet generator.
+  cars_income_aware: true
+
   # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
   # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
   # are neither employed nor studying and the per-person ticket-type vector
