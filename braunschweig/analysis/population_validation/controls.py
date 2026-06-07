@@ -29,16 +29,6 @@ SCOPE_PREFIXES: tuple[str, ...] = ZGB_KREIS_PREFIXES
 # never splits a source class -> the target is exact, not an interpolation.
 AGE_GROUP_BOUNDS: tuple[int, ...] = (15, 30, 45, 60, 75)
 
-# Five BMDV economic-status classes (very_low..very_high), matching
-# braunschweig.data.mid.status_by_hhtype.ECONOMIC_STATUS_CATEGORIES.
-ECONOMIC_STATUS_CATEGORIES: tuple[str, ...] = (
-    "very_low", "low", "medium", "high", "very_high",
-)
-
-# Three-class housing-tenure vocabulary, matching
-# braunschweig.data.mid.tenure_by_income.TENURE_CATEGORIES.
-HOUSING_TENURE_CATEGORIES: tuple[str, ...] = ("rent", "own", "other")
-
 RealizedExtractor = Callable[["PopulationFrames", pd.DataFrame], pd.DataFrame]
 TargetLoader = Callable[[str], pd.DataFrame]
 
@@ -61,7 +51,21 @@ def _geo_col(geography: str) -> str:
     raise ValueError(f"unknown geography {geography!r}; expected 'kreis' or 'gemeinde'")
 
 
-def categorical_person_control(name, family, geography, column, categories, target):
+def categorical_person_control(name, family, geography, column, categories, target,
+                               age_min=None, age_max=None, derive=None):
+    """Categorical control on ``frames.persons``.
+
+    Optional parameters keep existing callers byte-identical (they pass none):
+
+    * ``age_min`` / ``age_max``: when both/either are set AND an ``"age"`` column
+      exists, restrict the realized distribution to persons whose age is within
+      the inclusive ``[age_min, age_max]`` band (e.g. the MiD P9 employment base
+      15-74). Persons outside the band are excluded from the control entirely.
+    * ``derive``: an optional ``Series -> array-like`` callable mapping the raw
+      ``column`` onto the reported categories (e.g. a boolean ``employed`` ->
+      ``"employed"`` / ``"not_employed"``). When ``None`` the raw column value
+      (as string) is the category.
+    """
     geo_col = _geo_col(geography)
 
     def realized(frames, geo) -> pd.DataFrame:
@@ -69,8 +73,16 @@ def categorical_person_control(name, family, geography, column, categories, targ
             LOGGER.warning("control %s: column %r absent in persons; skipped", name, column)
             return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
         df = frames.persons.merge(geo[["household_id", geo_col]], on="household_id", how="left")
-        df = df.dropna(subset=[geo_col])
-        df["category"] = df[column].astype(str)
+        df = df.dropna(subset=[geo_col]).copy()
+        if (age_min is not None or age_max is not None) and "age" in df.columns:
+            ages = pd.to_numeric(df["age"], errors="coerce")
+            lower = -np.inf if age_min is None else float(age_min)
+            upper = np.inf if age_max is None else float(age_max)
+            df = df[(ages >= lower) & (ages <= upper)]
+        if derive is not None:
+            df["category"] = np.asarray(derive(df[column])).astype(str)
+        else:
+            df["category"] = df[column].astype(str)
         out = (df.groupby([geo_col, "category"]).size()
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
@@ -232,6 +244,68 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
     return Control(name, family, geography, tuple(categories), realized, target)
 
 
+# Eqasim run-output booleans are written as strings; treat these (case-folded,
+# stripped) as truthy. Reused by the licence and employment derivations so the
+# two boolean fallbacks share one convention.
+_TRUTHY_TOKENS: frozenset[str] = frozenset({"true", "1", "yes"})
+
+
+def _is_truthy(series: pd.Series) -> np.ndarray:
+    """Vectorised eqasim truthy test: ``str(v).strip().lower() in {true,1,yes}``."""
+    return series.astype(str).str.strip().str.lower().isin(_TRUTHY_TOKENS).to_numpy()
+
+
+def _employed_label(series: pd.Series) -> np.ndarray:
+    """Map a boolean ``employed`` column onto the employment control categories."""
+    return np.where(_is_truthy(series), "employed", "not_employed")
+
+
+def license_control(name, family, geography, target):
+    """Driving-licence control that is robust to the run-output schema.
+
+    The categorical ``license_type`` column (values from ``RT.LICENSE_CATEGORIES``)
+    is preferred, but the eqasim run-output person-attribute writer often omits it
+    while still writing the boolean ``has_driving_license``. This builder therefore:
+
+    * uses ``license_type`` verbatim when present;
+    * otherwise derives the category from the boolean ``has_driving_license``
+      (truthy -> ``"ja"``, else ``"nein"``) -- ``"keine_angabe"`` cannot be
+      represented this way, which is logged once (its P17.1 share is ~1-2%);
+    * otherwise (neither column present) logs a WARNING and returns an empty long
+      frame (no silent fallback).
+    """
+    geo_col = _geo_col(geography)
+
+    def realized(frames, geo) -> pd.DataFrame:
+        empty = pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+        persons = frames.persons
+        if "license_type" in persons.columns:
+            df = persons.merge(geo[["household_id", geo_col]], on="household_id", how="left")
+            df = df.dropna(subset=[geo_col]).copy()
+            df["category"] = df["license_type"].astype(str)
+        elif "has_driving_license" in persons.columns:
+            LOGGER.info(
+                "control %s: 'license_type' absent; deriving category from the "
+                "boolean 'has_driving_license' (truthy -> 'ja', else 'nein'). "
+                "'keine_angabe' cannot be represented from a boolean.",
+                name,
+            )
+            df = persons.merge(geo[["household_id", geo_col]], on="household_id", how="left")
+            df = df.dropna(subset=[geo_col]).copy()
+            df["category"] = np.where(_is_truthy(df["has_driving_license"]), "ja", "nein")
+        else:
+            LOGGER.warning(
+                "control %s: neither 'license_type' nor 'has_driving_license' "
+                "present in persons; skipped", name,
+            )
+            return empty
+        out = (df.groupby([geo_col, "category"]).size()
+                 .rename("synthetic_count").reset_index())
+        return out.rename(columns={geo_col: "geo_id"})
+
+    return Control(name, family, geography, RT.LICENSE_CATEGORIES, realized, target)
+
+
 def _kreis_categorical_target(by_kreis: dict[str, np.ndarray], cats: tuple[str, ...]) -> pd.DataFrame:
     rows = []
     for ars5, vec in by_kreis.items():
@@ -260,6 +334,34 @@ def bikes_target(data_path: str) -> pd.DataFrame:
     by_kreis, _, values = RT.load_kreis_share_table(data_path, "mid2023_H12_3_bikes_by_kreis.csv")
     cats = tuple(str(v) for v in values)
     return _kreis_categorical_target(by_kreis, cats)
+
+
+def employment_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis employed share from MiD 2023 Tabelle P9.
+
+    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` (percentages summing to
+    ~100 per Kreis). The employed share is the sum of the five employment columns
+    (``vollzeit`` + ``teilzeit`` + ``geringfuegig`` + ``sonstiges`` +
+    ``erwerbstaetig_unspec``) / 100, clipped to [0, 1]; ``not_employed`` is the
+    complement. Two long rows per Kreis (``employed`` / ``not_employed``).
+
+    ``geo_id`` is the 5-digit Kreis ``ars5``; the ZGB aggregate row (``03ZGB``)
+    is excluded. The base population is **age 15-74**, matching the MiD P9 basis
+    and ``braunschweig.analysis.run_mid_validation`` -- the registered employment
+    control filters the synthetic side to the same band so realized and target
+    align.
+    """
+    path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
+    df = df[df["ars5"] != "03ZGB"].copy()
+    employ_cols = ["vollzeit", "teilzeit", "geringfuegig", "sonstiges", "erwerbstaetig_unspec"]
+    employed = df[employ_cols].fillna(0.0).sum(axis=1) / 100.0
+    employed = employed.clip(lower=0.0, upper=1.0)
+    rows = []
+    for ars5, share in zip(df["ars5"], employed):
+        rows.append({"geo_id": str(ars5), "category": "employed", "target_share": float(share)})
+        rows.append({"geo_id": str(ars5), "category": "not_employed", "target_share": float(1.0 - share)})
+    return pd.DataFrame(rows)
 
 
 def _shares_within_geo(df: pd.DataFrame, geo_col: str, cat_col: str,
@@ -380,33 +482,34 @@ def _bev_not_bev(powertrain: pd.Series) -> pd.Series:
 
 
 def build_registry(data_path: str) -> list[Control]:
-    """Build the full control set: the four MiD person/household controls plus
-    the census + economic-status + fleet controls.
+    """Build the full control set: the MiD person/household controls plus the
+    census + fleet controls.
 
-    Target wiring (CLAUDE.md: no invented data) -- a control carries a real
-    ``target`` loader ONLY where a genuine geographic reference distribution
-    exists; otherwise it is registered DESCRIPTIVE-ONLY (``target=None``) and the
-    decision is logged so a downstream consumer can confirm:
+    Every registered control carries a REAL ``target`` loader -- a genuine
+    geographic reference distribution exists for each (CLAUDE.md: no invented
+    data):
 
-    * household_size -> Zensus 2022 1000A-2081 (Gemeinde) -- REAL target.
-    * age_group / sex -> DESTATIS 12411-0018 (Kreis) -- REAL target.
-    * cars/bikes/license/pt -> MiD reference CSVs -- REAL target (existing).
-    * bev_share -> KBA FZ 27.15 (Kreis) -- REAL target (lazy; only loaded when a
-      comparison runs, so a missing non-redistributable fleet file does not break
-      registry construction).
-    * economic_status -> DESCRIPTIVE-ONLY: modelled from MiD hhtype x region Bayes;
-      there is no hard Kreis/Gemeinde target by design.
-    * housing_tenure -> DESCRIPTIVE-ONLY: the MiD tenure source is conditional on
-      income bracket x raumtyp, not a Kreis/Gemeinde marginal, so no geographic
-      target is defensible.
-    * income_class -> DESCRIPTIVE-ONLY: MiD H4 is size-conditional (income x HH
-      size), not a direct geographic target.
+    * household_size -> Zensus 2022 1000A-2081 (Gemeinde).
+    * age_group / sex -> DESTATIS 12411-0018 (Kreis).
+    * cars/bikes/license/pt -> MiD reference CSVs.
+    * employment -> MiD 2023 P9 (Kreis), age 15-74 base.
+    * bev_share -> KBA FZ 27.15 (Kreis) -- lazy target loader; a missing
+      non-redistributable fleet file does not break registry construction (it
+      only fails if a comparison is run).
+
+    The attributes ``economic_status``, ``housing_tenure`` and ``income_class``
+    are intentionally NOT registered here: no hard Kreis/Gemeinde target exists
+    for them (economic_status is Bayes-modelled from hhtype x region; the MiD
+    tenure source is conditional on income x raumtyp; MiD H4 income is HH-size
+    conditional), so a validation deviation would be meaningless. Their spatial
+    distributions are exported by
+    :func:`braunschweig.analysis.population_validation.geo_export.write_geo_package`
+    instead, not validated against an invented target.
     """
     reg: list[Control] = []
 
-    reg.append(categorical_person_control(
-        "driving_license_type", "mid_person", "kreis", "license_type",
-        RT.LICENSE_CATEGORIES, license_target))
+    reg.append(license_control(
+        "driving_license_type", "mid_person", "kreis", license_target))
     reg.append(categorical_person_control(
         "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
         RT.PT_TICKET_CATEGORIES, pt_ticket_target))
@@ -434,31 +537,14 @@ def build_registry(data_path: str) -> list[Control]:
         "household_size", "census", "gemeinde", "household_size",
         top=6, top_label="6+", target=household_size_target))
 
-    # --- Economic status (DESCRIPTIVE-ONLY: Bayes-modelled, no geo target) ----
-    LOGGER.info(
-        "control economic_status registered DESCRIPTIVE-ONLY (target=None): "
-        "modelled from MiD hhtype x region Bayes, no hard Kreis target exists.")
+    # --- Employment (REAL target, MiD 2023 P9; age 15-74 base) ---------------
+    # The synthetic side is filtered to the same 15-74 base as the MiD P9 basis
+    # so realized and target align; the boolean `employed` column is mapped to
+    # the {employed, not_employed} categories.
     reg.append(categorical_person_control(
-        "economic_status", "census", "kreis", "economic_status",
-        ECONOMIC_STATUS_CATEGORIES, target=None))
-
-    # --- Housing tenure (DESCRIPTIVE-ONLY: source is income x raumtyp, not geo) -
-    LOGGER.info(
-        "control housing_tenure registered DESCRIPTIVE-ONLY (target=None): "
-        "MiD tenure source is conditional on income bracket x raumtyp, not a "
-        "Kreis/Gemeinde marginal -- no geographic target is defensible.")
-    reg.append(categorical_household_control(
-        "housing_tenure", "census", "kreis", "housing_tenure",
-        HOUSING_TENURE_CATEGORIES, target=None))
-
-    # --- Income class (DESCRIPTIVE-ONLY: MiD H4 is size-conditional) ----------
-    LOGGER.info(
-        "control income_class registered DESCRIPTIVE-ONLY (target=None): "
-        "MiD H4 income is conditional on HH size, not a direct geographic target.")
-    income_classes = tuple(cls for cls, _ in _income_class_categories())
-    reg.append(categorical_household_control(
-        "income_class", "census", "kreis", "income",
-        income_classes, target=None))
+        "employment", "mid_person", "kreis", "employed",
+        ("employed", "not_employed"), employment_target,
+        age_min=15, age_max=74, derive=_employed_label))
 
     # --- Fleet BEV share (REAL target, KBA FZ 27.15) -------------------------
     # The target loader is lazy: a missing non-redistributable fleet file does
@@ -468,12 +554,3 @@ def build_registry(data_path: str) -> list[Control]:
         ("bev", "not_bev"), bev_share_target, derive=_bev_not_bev))
 
     return reg
-
-
-def _income_class_categories() -> list[tuple[str, int]]:
-    """The BMDV income EUR-class vocabulary used by the synthesis (for the
-    descriptive-only income_class control). Imported lazily to keep the census
-    stage import graph out of module load."""
-    from braunschweig.data.census.household_income import INCOME_CLASS_MAP
-
-    return list(INCOME_CLASS_MAP)

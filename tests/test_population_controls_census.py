@@ -43,8 +43,19 @@ def _geo():
 
 def test_registry_includes_census_and_distribution_controls():
     names = {c.name for c in C.build_registry(DATA)}
-    assert {"household_size", "age_group", "economic_status",
-            "cars_per_hh", "driving_license_type"} <= names
+    # The registry now holds only REAL-target controls (descriptive-only ones
+    # were removed -- their attributes are exported spatially via geo_export, not
+    # validated against an invented target).
+    assert names == {
+        "household_size", "age_group", "sex", "cars_per_hh",
+        "driving_license_type", "pt_ticket_type", "bicycles_per_hh",
+        "employment", "bev_share",
+    }
+    # economic_status / housing_tenure / income_class are exported spatially
+    # (geo_export), not validated -> they must NOT be registered as controls.
+    assert "economic_status" not in names
+    assert "housing_tenure" not in names
+    assert "income_class" not in names
 
 
 # --- target loader schemas ---------------------------------------------------
@@ -152,7 +163,70 @@ def test_categorical_vehicle_control_counts_when_present():
     assert got == {"bev": 1, "petrol": 1}
 
 
-def test_descriptive_only_controls_have_no_target():
+# --- employment (P9) control ------------------------------------------------
+
+def test_employment_target_schema():
+    t = C.employment_target(DATA)
+    assert set(t.columns) == {"geo_id", "category", "target_share"}
+    # 8 ZGB Kreise (the ZGB aggregate row 03ZGB is excluded).
+    assert len(t["geo_id"].unique()) == 8
+    assert all(len(g) == 5 for g in t["geo_id"].unique())
+    assert set(t["category"].unique()) == {"employed", "not_employed"}
+    s = t.groupby("geo_id")["target_share"].sum()
+    assert (abs(s - 1.0) < 1e-9).all()
+
+
+def test_employment_control_respects_age_base():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "household_id": [10, 20, 30],
+        "age": [10, 40, 80],
+        "employed": [True, True, True],
+    })
+    households = pd.DataFrame({"household_id": [10, 20, 30]})
+    frames = PopulationFrames(persons, households, None, None,
+                              "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20, 30],
+                        "ars5": ["03101", "03101", "03101"],
+                        "commune_id": ["031010000000"] * 3})
     reg = {c.name: c for c in C.build_registry(DATA)}
-    # economic_status is Bayes-modelled from hhtype x region -> no hard geo target.
-    assert reg["economic_status"].target is None
+    long = reg["employment"].realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    # Only the age-40 person is within the 15-74 base -> exactly one "employed".
+    assert got.get("employed", 0) == 1
+    assert got.get("not_employed", 0) == 0
+
+
+# --- robust driving-licence control -----------------------------------------
+
+def test_license_control_derives_from_boolean():
+    # Case 1: no license_type column, only the boolean has_driving_license.
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "household_id": [10, 20, 30],
+        "has_driving_license": [True, True, False],
+    })
+    households = pd.DataFrame({"household_id": [10, 20, 30]})
+    frames = PopulationFrames(persons, households, None, None,
+                              "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20, 30],
+                        "ars5": ["03101", "03101", "03101"],
+                        "commune_id": ["031010000000"] * 3})
+    ctrl = C.license_control("driving_license_type", "mid_person", "kreis",
+                             target=None)
+    long = ctrl.realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    assert got == {"ja": 2, "nein": 1}
+
+    # Case 2: license_type present -> used verbatim (boolean ignored).
+    persons2 = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "household_id": [10, 20, 30],
+        "license_type": ["ja", "nein", "keine_angabe"],
+        "has_driving_license": [True, True, True],
+    })
+    frames2 = PopulationFrames(persons2, households, None, None,
+                               "run_output", "x", "p_")
+    long2 = ctrl.realized(frames2, geo)
+    got2 = dict(zip(long2["category"], long2["synthetic_count"]))
+    assert got2 == {"ja": 1, "nein": 1, "keine_angabe": 1}

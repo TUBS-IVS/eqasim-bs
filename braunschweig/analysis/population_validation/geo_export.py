@@ -20,6 +20,11 @@ DEFAULT_HOUSEHOLD_SPEC = [
     ("household_size", "numeric"), ("household_income_eur", "numeric"),
     ("number_of_cars", "numeric"), ("number_of_bicycles", "numeric"),
     ("housing_tenure", "categorical"),
+    # The income EUR-class distribution is exported spatially here (the
+    # descriptive-only income_class control was removed from the validation
+    # registry because MiD H4 income is HH-size conditional, not a geographic
+    # target).
+    ("income", "categorical"),
 ]
 DEFAULT_VEHICLE_SPEC = [
     ("brand", "categorical"), ("powertrain", "categorical"),
