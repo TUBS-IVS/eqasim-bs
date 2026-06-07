@@ -123,6 +123,7 @@ def _stub(config_overrides=None, path=None):
         "hbefa_segment_size_map": None,
         "fleet_model_enabled": True,
         "fleet_model_brands": True,
+        "fleet_hsn_tsn_attributes": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }
@@ -244,3 +245,69 @@ def test_fleet_model_brands_disabled_drops_brand_model():
     # The emissions-relevant chain is unaffected.
     assert df_vehicles["powertrain"].notna().all()
     assert df_vehicles["type_id"].notna().all()
+
+
+# --------------------------------------------------------------------------- #
+# 5. HSN/TSN engine attributes: ON adds the six engine columns, OFF omits them.
+# --------------------------------------------------------------------------- #
+HSN_TSN_COLUMNS = [
+    "engine_power_kw", "engine_power_ps", "displacement_ccm",
+    "fuel_detail", "hsn", "tsn",
+]
+
+
+def test_hsn_tsn_attributes_on_adds_engine_columns():
+    ctx = _stub()  # fleet_hsn_tsn_attributes defaults True
+    _, df_vehicles = hh.execute(ctx)
+    for col in HSN_TSN_COLUMNS:
+        assert col in df_vehicles.columns
+    # Power is always populated (global-median fallback at worst).
+    assert (df_vehicles["engine_power_kw"] > 0).all()
+
+
+def test_hsn_tsn_attributes_off_omits_engine_columns():
+    ctx = _stub(config_overrides={"fleet_hsn_tsn_attributes": False})
+    _, df_vehicles = hh.execute(ctx)
+    for col in HSN_TSN_COLUMNS:
+        assert col not in df_vehicles.columns
+    # The rest of the German spec is unaffected.
+    assert "powertrain" in df_vehicles.columns
+    assert "brand" in df_vehicles.columns
+
+
+def test_hsn_tsn_attributes_off_writes_no_engine_attributes(tmp_path):
+    """OFF -> the vehicles XML carries none of the engine attributes on any
+    vehicle (the legacy + non-engine German attributes only)."""
+    ctx = _stub(config_overrides={"fleet_hsn_tsn_attributes": False})
+    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    write_ctx = _StubContext({}, {}, path=tmp_path)
+    writer.write_vehicles(str(Path(tmp_path) / "vehicles.xml.gz"),
+                          df_vehicle_types, df_vehicles, write_ctx)
+    with gzip.open(Path(tmp_path) / "vehicles.xml.gz", "rb") as handle:
+        root = ET.fromstring(handle.read().decode("utf-8"))
+    for v in root.findall(f"{MATSIM_NS}vehicle"):
+        attrs_node = v.find(f"{MATSIM_NS}attributes")
+        names = ({a.get("name") for a in attrs_node.findall(f"{MATSIM_NS}attribute")}
+                 if attrs_node is not None else set())
+        assert not (set(HSN_TSN_COLUMNS) & names), (
+            f"engine attributes leaked into the OFF XML: {set(HSN_TSN_COLUMNS) & names}")
+
+
+def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path):
+    """ON -> at least one vehicle carries the engine attributes in the XML."""
+    ctx = _stub()
+    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    write_ctx = _StubContext({}, {}, path=tmp_path)
+    writer.write_vehicles(str(Path(tmp_path) / "vehicles.xml.gz"),
+                          df_vehicle_types, df_vehicles, write_ctx)
+    with gzip.open(Path(tmp_path) / "vehicles.xml.gz", "rb") as handle:
+        root = ET.fromstring(handle.read().decode("utf-8"))
+    seen = set()
+    for v in root.findall(f"{MATSIM_NS}vehicle"):
+        attrs_node = v.find(f"{MATSIM_NS}attributes")
+        if attrs_node is None:
+            continue
+        seen |= {a.get("name") for a in attrs_node.findall(f"{MATSIM_NS}attribute")}
+    assert "engine_power_kw" in seen
+    assert "displacement_ccm" in seen
+    assert "hsn" in seen and "tsn" in seen

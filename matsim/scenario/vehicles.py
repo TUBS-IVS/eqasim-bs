@@ -19,7 +19,18 @@ LEGACY_VEHICLE_ATTRIBUTES = ["critair", "technology", "age", "euro"]
 # is present in the vehicles frame AND the per-vehicle value is non-empty, so the
 # legacy default fleet (which has none of these columns) stays byte-identical
 # (OFF-equivalence). The order is fixed for a reproducible, stable XML.
-GERMAN_VEHICLE_ATTRIBUTES = ["segment", "powertrain", "euro_class", "brand", "model"]
+#
+# The trailing six are the additive HSN/TSN engine attributes (power kW/PS,
+# displacement ccm, the matched dominant fuel and a representative HSN/TSN code)
+# attached by braunschweig.data.kba.hsn_tsn.attach_hsn_tsn. They are additive
+# completeness data, not consumed by the simulation; flag-gated by
+# fleet_hsn_tsn_attributes (default ON). OFF -> the columns are absent and none
+# of the engine attributes are written (byte-identical to the pre-feature XML).
+GERMAN_VEHICLE_ATTRIBUTES = [
+    "segment", "powertrain", "euro_class", "brand", "model",
+    "engine_power_kw", "engine_power_ps", "displacement_ccm", "fuel_detail",
+    "hsn", "tsn",
+]
 
 
 def execute(context):

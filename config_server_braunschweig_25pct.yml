@@ -41,6 +41,12 @@ config:
   # model (per-Kreis KBA FZ 27.15 mix + per-Gemeinde FZ 27.17 BEV tilt).
   fleet_model_enabled: true
   fleet_model_brands: true
+  # Additive HSN/TSN engine attributes (power kW/PS, displacement ccm, a
+  # representative HSN/TSN and the matched dominant fuel) attached to every
+  # vehicle by brand + model family. Completeness data only -- not consumed by
+  # the simulation yet. Default ON; OFF -> the six engine columns are absent and
+  # the writer emits no engine attributes (byte-identical to pre-feature).
+  fleet_hsn_tsn_attributes: true
   fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
 
   # 128 GB box: give the JVM most of the RAM (the Python driver is idle during

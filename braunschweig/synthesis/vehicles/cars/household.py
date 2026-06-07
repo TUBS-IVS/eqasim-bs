@@ -76,6 +76,7 @@ import logging
 import pandas as pd
 
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
+from braunschweig.data.kba import hsn_tsn
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
 
 logger = logging.getLogger(__name__)
@@ -284,6 +285,13 @@ def configure(context):
     # default_car fleet byte-identically (OFF-equivalence).
     context.config("fleet_model_enabled", True)
     context.config("fleet_model_brands", True)
+    # Additive HSN/TSN engine attributes (power kW/PS, displacement ccm, a
+    # representative HSN/TSN and the dominant fuel) matched onto every vehicle by
+    # brand + model family. Default True. OFF -> the five engine columns are
+    # absent and the writer emits no engine attributes (byte-identical). Requires
+    # fleet_model_brands (the matcher keys on brand/model); with brands off the
+    # attach is skipped.
+    context.config("fleet_hsn_tsn_attributes", True)
     context.config("fleet_electric_calibration", "kreis_mix_gemeinde_bev_tilt")
     # Optional override for the KBA derived-CSV directory. Default None -> the
     # readers (braunschweig.data.kba.fleet_tables) resolve the tables under
@@ -304,6 +312,7 @@ def execute(context):
     size_map = context.config("hbefa_segment_size_map")
     fleet_model_enabled = bool(context.config("fleet_model_enabled"))
     model_brands = bool(context.config("fleet_model_brands"))
+    hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -339,6 +348,21 @@ def execute(context):
     df_spec, df_vehicle_types = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands)
+
+    # Additive HSN/TSN engine attributes (power/displacement/fuel + a
+    # representative HSN/TSN), matched by brand + model family. Requires the
+    # brand/model columns; skipped (with a logged note) when brands are off so
+    # the matcher never keys on empty brand/model strings. The match-tier rates
+    # are logged by attach_hsn_tsn (no-silent-fallback rule).
+    if hsn_tsn_attributes:
+        if not model_brands:
+            logger.info(
+                "[vehicles.household] fleet_hsn_tsn_attributes=True but "
+                "fleet_model_brands=False -> brand/model are empty, skipping the "
+                "HSN/TSN attach (no engine attributes written).")
+        else:
+            df_spec = hsn_tsn.attach_hsn_tsn(
+                df_spec, data_path=fleet_data_path, keep_tier=False)
 
     # The current vehicles writer consumes critair/technology/age/euro per
     # vehicle (synthesis.vehicles.vehicles + matsim.scenario.vehicles). The
