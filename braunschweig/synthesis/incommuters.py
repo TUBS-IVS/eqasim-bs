@@ -255,7 +255,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             detour_factor=1.3, pt_entry_stops=None,
                             commute_modes=("car", "pt"),
                             pt_min_zgb_routes=2, pt_prefer_rail=True,
-                            inkar_income=None):
+                            inkar_income=None, data_path=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -346,7 +346,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
 
     persons = _build_persons(ids, donors, person_col, modes, income_eur)
     households = _build_households(ids, income_eur)
-    vehicles = _build_vehicles(person_ids, modes)
+    # In-commuter cars are drawn from the German NDS fleet (Task F6) when a
+    # ``data_path`` is supplied (the production stage); legacy callers / unit tests
+    # that omit it keep the single default-car row so their behaviour is unchanged.
+    if data_path is not None:
+        vehicle_types, vehicles = build_incommuter_fleet(
+            person_ids, modes, orig_ars, income_eur, data_path, rng)
+    else:
+        vehicle_types = pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                              "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                              "hbefa_emission"])
+        vehicles = _build_legacy_vehicles(person_ids, modes)
     # Per-agent validation record (one row per in-commuter): source Kreis, direction,
     # fixed mode, and the GATE it enters through (gate coords, not the PT-moved home),
     # for the per-run commuter_validation + gate-flow outputs.
@@ -355,7 +365,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         "gate_id": gate_ids, "gate_x": gate_x, "gate_y": gate_y,
     })
     return dict(persons=persons, trips=trips, activities=activities,
-                locations=locations, vehicles=vehicles, households=households,
+                locations=locations, vehicles=vehicles,
+                vehicle_types=vehicle_types, households=households,
                 validation=validation)
 
 
@@ -623,12 +634,138 @@ def _build_households(ids, income_eur):
     })
 
 
-def _build_vehicles(person_ids, modes):
-    """One car vehicle per car-mode in-commuter (others use PT/walk/bike).
+# Monthly household income (EUR) quintile thresholds used to map a cross-cordon
+# in-commuter's INKAR-scaled income onto the 5-class MiD economic status the German
+# fleet's segment IPF expects. The income is INCOMMUTER_BASE_INCOME_EUR (the regional
+# mean, mapped to "medium") scaled by the origin-Kreis INKAR factor; the thresholds
+# are placed symmetrically around the base so that an at-mean income is "medium" and
+# the spread maps the richer / poorer origin Kreise onto the higher / lower classes.
+# This is a documented, transparent mapping (the in-commuter income carries no MiD
+# income CLASS, only a continuous EUR value), not a free parameter.
+_INCOMMUTER_STATUS_THRESHOLDS_EUR = (
+    0.70 * INCOMMUTER_BASE_INCOME_EUR,   # < -> very_low
+    0.90 * INCOMMUTER_BASE_INCOME_EUR,   # < -> low
+    1.10 * INCOMMUTER_BASE_INCOME_EUR,   # < -> medium
+    1.30 * INCOMMUTER_BASE_INCOME_EUR,   # < -> high ; else very_high
+)
+_INCOMMUTER_STATUS_LABELS = ("very_low", "low", "medium", "high", "very_high")
 
-    Columns match the resident vehicles frame (synthesis.vehicles.cars.default) so
-    the concat-wrapper appends cleanly: owner_id, mode, vehicle_id, type_id, critair,
-    technology, age, euro.
+
+def _economic_status_from_income(income_eur):
+    """Map per-agent monthly household income (EUR) to the 5-class economic status.
+
+    Uses :data:`_INCOMMUTER_STATUS_THRESHOLDS_EUR` (centred on the regional-mean
+    base income) so an in-commuter from a richer origin Kreis draws from a higher
+    economic status -- the same income->status coupling the resident fleet has via
+    the MiD H4 income classes, expressed here on the continuous INKAR-scaled EUR.
+    """
+    income_eur = np.asarray(income_eur, dtype=float)
+    idx = np.digitize(income_eur, _INCOMMUTER_STATUS_THRESHOLDS_EUR)
+    return np.array([_INCOMMUTER_STATUS_LABELS[i] for i in idx])
+
+
+def _incommuter_kreis_ags5(orig_ars):
+    """Origin Kreis AGS-5 from the in-commuter origin ARS (first 5 digits).
+
+    The KBA fleet tables are ZGB-only, so an out-of-ZGB origin Kreis is not in the
+    per-Kreis powertrain table; the fleet sampler then falls back (observably,
+    logged) to the national P(powertrain|segment). The Kreis code is still carried
+    through so the (rare) cross-cordon commuter from an in-table Kreis is typed
+    locally.
+    """
+    return np.array([str(a)[:5] for a in orig_ars])
+
+
+def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, rng):
+    """Draw cross-cordon in-commuter cars from the German NDS fleet (Task F6).
+
+    Replaces the legacy single hardcoded ``Gazole/euro6`` row: each car-mode
+    in-commuter gets one vehicle drawn from the same KBA/HBEFA generative chain as
+    residents (:func:`braunschweig.synthesis.vehicles.fleet_sampling_de.sample_fleet`),
+    using the agent's origin-Kreis-scaled economic status. The origin Gemeinde /
+    RegioStaR raumtyp are outside the ZGB scope and unavailable, so the Gemeinde
+    BEV tilt and the raumtyp-specific segment IPF fall back to the Kreis / national
+    levels -- this is logged by the sampler (no-silent-fallback rule).
+
+    Parameters
+    ----------
+    person_ids : per-agent in-commuter person ids (all modes).
+    modes : per-agent fixed commute mode; only ``"car"`` agents get a vehicle.
+    orig_ars : per-agent 5-digit origin Kreis ARS.
+    income_eur : per-agent monthly household income (EUR), origin-Kreis scaled.
+    data_path : the synpp ``data_path`` (parent of ``braunschweig/kba/...``).
+    rng : the in-commuter :class:`numpy.random.Generator` (seed propagated to the
+        fleet draw so the whole in-commuter synthesis stays reproducible).
+
+    Returns
+    -------
+    (df_vehicle_types, df_vehicles) :
+        ``df_vehicle_types`` are the distinct HBEFA :class:`VehicleType` records of
+        the drawn in-commuter cars (to be merged into the scenario type table);
+        ``df_vehicles`` is one row per car-mode in-commuter with the legacy writer
+        columns (``owner_id, mode, vehicle_id, type_id, critair, technology, age,
+        euro``) plus the German per-vehicle spec columns the F6 writer emits
+        (``segment, powertrain, euro_class, brand, model``).
+    """
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet
+
+    person_ids = np.asarray(person_ids)
+    modes = np.asarray(modes)
+    orig_ars = np.asarray(orig_ars)
+    income_eur = np.asarray(income_eur, dtype=float)
+
+    car_mask = modes == "car"
+    car_person_ids = person_ids[car_mask]
+    empty_types = pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                        "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                        "hbefa_emission"])
+    if len(car_person_ids) == 0:
+        empty_vehicles = pd.DataFrame(columns=[
+            "owner_id", "mode", "vehicle_id", "type_id", "critair", "technology",
+            "age", "euro", "segment", "powertrain", "euro_class", "brand", "model"])
+        return empty_types, empty_vehicles
+
+    df_cars = pd.DataFrame({
+        "economic_status": _economic_status_from_income(income_eur[car_mask]),
+        "kreis_ags5": _incommuter_kreis_ags5(orig_ars[car_mask]),
+        # Origin Gemeinde + RegioStaR raumtyp are outside ZGB -> not available; the
+        # sampler falls back to the Kreis / national levels (logged).
+        "gemeinde": np.nan,
+        "raumtyp": np.nan,
+    })
+
+    # Derive a deterministic integer seed from the in-commuter rng so the fleet
+    # draw is reproducible and decoupled from the rng's mutable internal state.
+    fleet_seed = int(rng.integers(0, 2**31 - 1))
+    df_spec, df_vehicle_types = fleet.sample_fleet(
+        df_cars, data_path, random_seed=fleet_seed)
+
+    df_vehicles = pd.DataFrame({
+        "owner_id": car_person_ids,
+        "mode": "car",
+        "vehicle_id": [f"{pid}:car" for pid in car_person_ids],
+        "type_id": df_spec["type_id"].to_numpy(),
+        # critair is empty for the German fleet (HBEFA attributes live on the type);
+        # technology/age/euro mirror the resident household frame writer columns.
+        "critair": "",
+        "technology": df_spec["powertrain"].to_numpy(),
+        "age": df_spec["age"].to_numpy(),
+        "euro": df_spec["euro_class"].to_numpy(),
+        "segment": df_spec["segment"].to_numpy(),
+        "powertrain": df_spec["powertrain"].to_numpy(),
+        "euro_class": df_spec["euro_class"].to_numpy(),
+        "brand": df_spec["brand"].to_numpy(),
+        "model": df_spec["model"].to_numpy(),
+    })
+    return df_vehicle_types, df_vehicles
+
+
+def _build_legacy_vehicles(person_ids, modes):
+    """Legacy single-type in-commuter cars (no ``data_path`` supplied).
+
+    Kept for legacy callers / unit tests that build in-commuter frames without a
+    German fleet ``data_path``: one ``default_car`` per car-mode in-commuter with
+    the four legacy attributes, exactly the pre-F6 behaviour (byte-identical).
     """
     owners = [pid for pid, m in zip(person_ids, modes) if m == "car"]
     return pd.DataFrame({
@@ -651,6 +788,9 @@ def _empty_frames(crs):
         activities=pd.DataFrame(columns=["person_id"]),
         locations=gpd.GeoDataFrame({"person_id": []}, geometry=[], crs=crs),
         vehicles=pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
+        vehicle_types=pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                            "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                            "hbefa_emission"]),
         households=pd.DataFrame(columns=["household_id", "person_id"]),
         validation=pd.DataFrame(columns=["ars5", "direction", "mode", "gate_id",
                                          "gate_x", "gate_y"]))
@@ -664,6 +804,10 @@ def configure(context):
     context.config("data_path")
     context.config("sampling_rate")
     context.config("braunschweig.political_prefix")
+    # The German NDS fleet draw for in-commuter cars (Task F6) is active only when
+    # the resident fleet uses the household method; otherwise the in-commuter cars
+    # keep the legacy single default-car row (OFF-equivalence).
+    context.config("vehicles_method", "default")
     context.config("cordon_gate_speed_kmh", 30.0)
     # PT in-commuter boarding-stop selection (CLAUDE.md cordon PT realism): prefer
     # well-connected one-seat entry stops (regional rail / multi-line hubs) over the
@@ -712,7 +856,13 @@ def execute(context):
         pt_entry_stops=context.stage("braunschweig.data.cordon_pt_gates"),
         pt_min_zgb_routes=int(context.config("cordon_pt_min_zgb_routes")),
         pt_prefer_rail=bool(context.config("cordon_pt_prefer_rail")),
-        inkar_income=context.stage("braunschweig.data.inkar.household_income"))
+        inkar_income=context.stage("braunschweig.data.inkar.household_income"),
+        # data_path drives the German NDS fleet draw for the in-commuter cars
+        # (Task F6); only set it when the German fleet is active so OFF keeps the
+        # legacy single default-car in-commuter rows.
+        data_path=(context.config("data_path")
+                   if context.config("vehicles_method", "default") == "household"
+                   else None))
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
     return frames
