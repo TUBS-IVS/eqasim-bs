@@ -48,3 +48,23 @@ def test_summarize_stats_match_hand_values():
     assert abs(row["rmse_pct_diff"] - 10.0) < 1e-9
     assert abs(row["stdev_pct_diff"] - 10.0) < 1e-9
     assert abs(row["max_abs_delta_pp"] - 2.0) < 1e-9
+
+
+def test_zero_count_target_category_is_evaluated_not_dropped():
+    # Synthetic: kreis 03101 has 4 persons, all license True (0 False).
+    persons = pd.DataFrame({"person_id": [1, 2, 3, 4],
+                            "household_id": [10, 10, 20, 20],
+                            "has_driving_license": [True, True, True, True]})
+    frames = PopulationFrames(persons, pd.DataFrame(), None, None, "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20], "ars5": ["03101", "03101"],
+                        "commune_id": ["03101000", "03101000"]})
+    ctrl = C.categorical_person_control("lic", "mid_person", "kreis",
+                                        "has_driving_license", ("True", "False"), _target_75_25)
+    long = CV.evaluate_control(ctrl, frames, geo, data_path="x")
+    # The "False" target category (25%) must appear with synthetic 0 -> delta_pp -25, pct_diff -100.
+    false_row = long[long["category"] == "False"]
+    assert len(false_row) == 1
+    assert false_row["synthetic_count"].iloc[0] == 0
+    assert abs(false_row["synthetic_pct"].iloc[0] - 0.0) < 1e-9
+    assert abs(false_row["delta_pp"].iloc[0] - (-25.0)) < 1e-9
+    assert abs(false_row["pct_diff"].iloc[0] - (-100.0)) < 1e-9

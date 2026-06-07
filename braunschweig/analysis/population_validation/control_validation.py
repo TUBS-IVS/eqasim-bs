@@ -25,13 +25,39 @@ def evaluate_control(control, frames, geo, data_path: str) -> pd.DataFrame:
 
     realized = realized.copy()
     realized["category"] = realized["category"].astype(str)
-    totals = realized.groupby("geo_id")["synthetic_count"].transform("sum")
-    realized["synthetic_pct"] = 100.0 * realized["synthetic_count"] / totals
+    target = target.copy()
+    target["category"] = target["category"].astype(str)
 
-    merged = realized.merge(target, on=["geo_id", "category"], how="inner")
+    # Per-geo synthetic totals from the FULL realised frame (including any
+    # categories not present in the target), so shares use a stable denominator
+    # and zero-count target categories are not lost.
+    totals = realized.groupby("geo_id")["synthetic_count"].sum()
+
+    # No silent fallback: log synthetic (geo, category) cells that have no target
+    # category (out-of-vocabulary). They stay in the `totals` denominator but
+    # cannot be compared to a target, so they are excluded from the deviation.
+    realized_cats = set(zip(realized["geo_id"], realized["category"]))
+    target_cats = set(zip(target["geo_id"], target["category"]))
+    oov = realized_cats - target_cats
+    if oov:
+        LOGGER.warning(
+            "control %s: %d synthetic (geo, category) cell(s) have no matching "
+            "target category and are excluded from the deviation; examples: %s",
+            control.name, len(oov), sorted(oov)[:3],
+        )
+
+    # Restrict the target to geo cells that actually carry synthetic data, then
+    # RIGHT-join so every target category is evaluated -- filling synthetic_count
+    # = 0 where the synthetic population produced none (the key validation case
+    # the previous inner join silently dropped).
+    target = target[target["geo_id"].isin(totals.index)]
+    merged = realized.merge(target, on=["geo_id", "category"], how="right")
+    merged["synthetic_count"] = merged["synthetic_count"].fillna(0).astype(int)
+
+    merged["geo_total"] = merged["geo_id"].map(totals)
+    merged["synthetic_pct"] = 100.0 * merged["synthetic_count"] / merged["geo_total"]
     merged["target_pct"] = 100.0 * merged["target_share"]
-    cell_total = merged.groupby("geo_id")["synthetic_count"].transform("sum")
-    merged["target_count"] = merged["target_share"] * cell_total
+    merged["target_count"] = merged["target_share"] * merged["geo_total"]
     merged["delta_pp"] = merged["synthetic_pct"] - merged["target_pct"]
     with np.errstate(divide="ignore", invalid="ignore"):
         merged["pct_diff"] = np.where(
@@ -56,7 +82,7 @@ def evaluate_all(registry, frames, geo, data_path: str) -> pd.DataFrame:
 
 
 def summarize(long: pd.DataFrame) -> pd.DataFrame:
-    """One row per (control, category): n_cells + deviation statistics.
+    """One row per (control, family, category): n_cells + deviation statistics.
     STDEV is the population standard deviation (ddof=0) so a single-cell control
     is well defined (0)."""
     if long.empty:
