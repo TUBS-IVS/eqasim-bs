@@ -245,6 +245,21 @@ def test_rank_coherence_income_rises_with_status():
     assert all(b > a for a, b in zip(means, means[1:])), means
 
 
+def test_income_eur_never_below_floor():
+    """Regression: the lowest MiD bracket "under_500" has low=0, so a uniform draw
+    within it (further tilted down by a low-income Kreis INKAR scale) could yield an
+    implausible near-zero household_income_eur (observed 1 EUR, tripping the
+    post-enrichment sanity floor [100, 20000]). The lowest-bracket draw is now
+    floored at INCOME_MIN_EUR and the final value is clamped after the INKAR tilt.
+    The breach is RNG-rare, so check across several seeds."""
+    from braunschweig.synthesis.population.enriched import INCOME_MIN_EUR
+    for seed in range(15):
+        df = _make_population(n_households=3000, seed=seed)
+        df = _run_distribution(df, seed=seed)
+        got_min = float(df["household_income_eur"].min())
+        assert got_min >= INCOME_MIN_EUR, (seed, got_min)
+
+
 def test_marginal_preserved_by_hh_size_nds():
     """The realised bracket distribution by (hh_size) matches the MiD NDS-base
     distribution within tolerance under the rank-alignment FALLBACK path (which

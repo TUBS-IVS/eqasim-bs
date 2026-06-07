@@ -2076,6 +2076,18 @@ INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION = 0.4
 # leaves head-room below the 20000 hard cap after the INKAR fine tilt.
 INCOME_OPEN_TOP_MAX_EUR = 18000.0
 
+# Lower floor for the drawn monthly net household_income_eur. The lowest MiD
+# bracket "under_500" has bounds (0, 500), so a plain uniform draw within it can
+# yield an implausible near-zero net household income (observed: 1 EUR). A net
+# household income below ~100 EUR/month does not occur in practice -- the MiD
+# bracket has no true zero floor, it merely caps at 500. The lowest-bracket draw
+# is therefore taken uniformly in [INCOME_MIN_EUR, 500) instead of [0, 500), and
+# the final value is floored at INCOME_MIN_EUR after the INKAR Kreis tilt (a
+# low-income Kreis tilt < 1 could otherwise push a 100 EUR value back below the
+# post-enrichment sanity floor). Matches the lower bound of the sanity range
+# [100, 20000] checked in execute().
+INCOME_MIN_EUR = 100.0
+
 # Fallback-rate threshold above which the distribution-income per-cell bracket pmf
 # fallback (NDS base cell absent for a household's hh_size -> uniform-over-brackets
 # within the cell) is escalated to WARNING. Every synthetic hh_size 1..5+ has an
@@ -2368,7 +2380,11 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     closed = ~is_open_top
     if closed.any():
         u_eur = rng.random_sample(int(closed.sum()))
-        eur[closed] = hh_low[closed] + u_eur * (hh_high[closed] - hh_low[closed])
+        # Floor the lowest bracket's draw low at INCOME_MIN_EUR so the open-bottom
+        # "under_500" bracket (low=0) cannot yield an implausible near-zero income;
+        # all higher brackets have low >= 500 > INCOME_MIN_EUR (no-op for them).
+        low_draw = np.maximum(hh_low[closed], INCOME_MIN_EUR)
+        eur[closed] = low_draw + u_eur * (hh_high[closed] - low_draw)
     if is_open_top.any():
         n_top = int(is_open_top.sum())
         exp_draw = rng.exponential(
@@ -2396,6 +2412,11 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     mean_scale = float(np.mean(in_scope_scales)) if in_scope_scales else 1.0
     fine_tilt = (raw_scale / mean_scale).fillna(1.0).to_numpy()
     eur = eur * fine_tilt
+
+    # Defense-in-depth floor: a low-income Kreis tilt (< 1) could push a draw at the
+    # bracket floor below INCOME_MIN_EUR; clamp so the value never breaches the
+    # post-enrichment sanity floor [100, 20000] (the open-top is already capped).
+    eur = np.maximum(eur, INCOME_MIN_EUR)
 
     # Broadcast the household EUR back to every person.
     eur_by_hh = dict(zip(hh_ids, np.round(eur, 0)))
