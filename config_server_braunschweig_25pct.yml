@@ -99,6 +99,16 @@ config:
   # income-class mapping. OFF -> legacy income-derived status (byte-identical).
   status_from_hhtype: true
 
+  # Consistent car_availability (A5, causal IPF chain). Derive car_availability
+  # in {none, some, all} conditionally on the per-person MiD-P17.1 licence and
+  # the MiD-H7 household car count, then rake the residual to the MiD-P19
+  # "jederzeit" marginal. This makes car_availability consistent with cars and
+  # licences (no "all" in a 0-car or licence-less household) and reinstates the
+  # "some" category. OFF -> legacy free P19 IPF + all/none binarisation
+  # (byte-identical). Requires the vehicle-count / licence sampling that now runs
+  # before car_availability (output-identical re-order).
+  consistent_car_availability: true
+
   # --- Phase 2 IPF smoothing (TASK-011, 2026-04-26) ----------------------
   # Symmetric-Dirichlet seed prior. Adds alpha pseudo-counts to every IPF
   # cell to dampen the influence of empty source cells in sparse rural

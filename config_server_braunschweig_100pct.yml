@@ -103,6 +103,14 @@ config:
   # status. Household type is a much stronger SES predictor than the legacy 1:1
   # income-class mapping. OFF -> legacy income-derived status (byte-identical).
   status_from_hhtype: true
+  # Consistent car_availability (A5, causal IPF chain). Derive car_availability
+  # in {none, some, all} conditionally on the per-person MiD-P17.1 licence and
+  # the MiD-H7 household car count, then rake the residual to the MiD-P19
+  # "jederzeit" marginal (no "all" in a 0-car or licence-less household; "some"
+  # reinstated). OFF -> legacy free P19 IPF + all/none binarisation
+  # (byte-identical). Requires the vehicle-count / licence sampling that now runs
+  # before car_availability (output-identical re-order).
+  consistent_car_availability: true
   # Dirichlet seed prior (sparse rural cells); 4-way employment margin.
   braunschweig.ipf.dirichlet_prior_strength: 0.5
   braunschweig.ipf.use_employment_margin: true

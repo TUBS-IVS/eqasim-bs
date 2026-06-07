@@ -424,6 +424,15 @@ def _configure_base(context):
     context.config("braunschweig.minimum_age.one_person_household", 16)
     context.config("braunschweig.ipf.use_household_size_margin", False)
 
+    # A5: consistent car_availability (causal IPF chain). Default ON. OFF -> the
+    # legacy free P19 IPF + all/none binarisation (byte-identical). When ON,
+    # car_availability is derived conditionally from the MiD-P17.1 licence and
+    # the MiD-H7 household car count and then raked to the P19 marginal; this
+    # requires licence + number_of_cars to be computed BEFORE car_availability
+    # (the A-REORDER), which the stage now always does (the vehicle-count
+    # sampling moved earlier is output-identical with the flag OFF).
+    context.config("consistent_car_availability", True)
+
     # Economic status from MiD household-type x region (Bayes). Default ON.
     # OFF -> exact legacy income-class-derived status (commit c65399d), so the
     # pipeline is byte-identical. The RegioStaR-7 stage (raumtyp tilt) is only a
@@ -718,6 +727,35 @@ def _execute_base(context):
         f"{df_persons['has_license'].mean():.1%}"
     )
 
+    # VEHICLE COUNTS + CAR / BIKE AVAILABILITY (A-REORDER causal chain).
+    #
+    # The MiD-H7 household car count (number_of_cars) and MiD-H12.3 bike count
+    # (number_of_bicycles) are sampled HERE -- after the licence IPF and before
+    # car_availability -- so the consistent-car_availability feature (A5) can
+    # condition car_availability on both the per-person licence and the household
+    # car count. This sampling was historically done in the OUTER execute() after
+    # this stage returned; it uses its own RNG stream (+91731), independent of the
+    # licence (+5417) / PT (+8572) / binarisation (+23761) streams, so moving it
+    # earlier is output-identical.
+    _vehicle_seed = context.config("random_seed")
+    _vehicle_data_path = context.config("data_path")
+    _sample_vehicle_counts(df_persons, _vehicle_data_path, _vehicle_seed)
+
+    if context.config("consistent_car_availability"):
+        # A5: derive car_availability conditionally (licence + household cars)
+        # and rake to the P19 marginal. The car Bernoulli uniform is still
+        # consumed (apply_car=False) so the BICYCLE binarisation stays
+        # byte-identical to the legacy path; only car_availability is replaced.
+        _binarise_availability(df_persons, _vehicle_seed, apply_car=False)
+        _derive_car_availability_consistent(
+            df_persons, mid, _vehicle_seed,
+            context.config("braunschweig.minimum_age.car_availability"),
+        )
+    else:
+        # OFF: legacy free P19 IPF weights -> {none, all} Bernoulli (and the
+        # bicycle binarisation), byte-identical to the historical in-line block.
+        _binarise_availability(df_persons, _vehicle_seed, apply_car=True)
+
     # PT SUBSCRIPTION (categorical, MiD 2023 P24.1).
     #
     # Three-margin IPF (raking) on the 4-way contingency table
@@ -903,26 +941,9 @@ def _execute_base(context):
         f"{df_persons['has_pt_subscription'].mean():.1%}"
     )
 
-    # Sample categorical values from the IPF probabilities.
-    #
-    # Use a DISTINCT seed offset from the PT block above (which uses +8572):
-    # the car/bike draw is a statistically independent attribute and must not
-    # share the same uniform stream as the PT-subscription draw. Re-using +8572
-    # here made the two draws identical uniforms (correlated by construction);
-    # +23761 gives the car/bike block its own independent stream.
-    random = np.random.RandomState(context.config("random_seed") + 23761)
-
-    u = random.random_sample(len(df_persons))
-    selection = u < df_persons["car_availability"]
-    df_persons["car_availability"] = "none"
-    df_persons.loc[selection, "car_availability"] = "all"
-    df_persons["car_availability"] = df_persons["car_availability"].astype("category")
-
-    u = random.random_sample(len(df_persons))
-    selection = u < df_persons["bicycle_availability"]
-    df_persons["bicycle_availability"] = "none"
-    df_persons.loc[selection, "bicycle_availability"] = "all"
-    df_persons["bicycle_availability"] = df_persons["bicycle_availability"].astype("category")
+    # (Vehicle counts + car/bike availability were computed above, before PT, so
+    # the A5 consistent car_availability can condition on licence + household
+    # cars; see the VEHICLE COUNTS block after the licence IPF.)
 
     # Household size: keep IPF-balanced values when the margin was active,
     # otherwise sample from the German census reference table.
@@ -1143,6 +1164,267 @@ def _sample_counts(df_persons, column, values, region_shares, kreis_shares,
         )
 
 
+def _sample_vehicle_counts(df_persons, data_path, random_seed, kreis=None):
+    """Sample per-person ``number_of_cars`` / ``number_of_bicycles`` (MiD H7/H12.3).
+
+    Extracted verbatim from the former outer ``execute`` body so the vehicle
+    counts can be sampled BEFORE ``car_availability`` (the A-REORDER causal
+    chain) without changing the draws. The RNG offset (+91731) and the
+    cars-then-bikes consumption order on the SHARED stream are preserved exactly,
+    so this helper is output-identical to the legacy outer-execute sampling
+    regardless of WHERE it is called in the stage (the +91731 stream is
+    independent of the licence/PT/binarisation streams). ``kreis`` is the
+    per-person AGS-5 Series; passing ``None`` derives it locally.
+    """
+    if kreis is None:
+        kreis = _derive_kreis_ars5(df_persons)
+    cars_by_kreis, cars_region, cars_values = load_kreis_share_table(
+        data_path, "mid2023_H7_cars_by_kreis.csv")
+    bikes_by_kreis, bikes_region, bikes_values = load_kreis_share_table(
+        data_path, "mid2023_H12_3_bikes_by_kreis.csv")
+
+    random = np.random.RandomState(random_seed + 91731)
+    _sample_counts(df_persons, "number_of_cars", cars_values,
+                   cars_region, cars_by_kreis, random, kreis=kreis)
+    _sample_counts(df_persons, "number_of_bicycles", bikes_values,
+                   bikes_region, bikes_by_kreis, random, kreis=kreis)
+    return df_persons
+
+
+def _binarise_availability(df_persons, random_seed, apply_car=True):
+    """Binarise car/bike availability from fractional IPF weights (Bernoulli).
+
+    Converts the fractional IPF ``car_availability`` / ``bicycle_availability``
+    weights produced by the P19 / P22 raking into the categorical {none, all}
+    via a Bernoulli draw on a DISTINCT RNG offset (+23761), exactly as the legacy
+    in-line block did. Extracted into a helper so the A-REORDER moves the
+    vehicle-count sampling earlier WITHOUT changing this draw (the +23761 stream
+    is independent of the +91731 vehicle-count stream).
+
+    ``apply_car`` controls only whether the CAR result is written: with A5
+    (consistent car_availability) ON, ``car_availability`` is derived separately
+    AFTER this call, so the car uniform must still be drawn here (to keep the
+    bicycle draw byte-identical to the OFF path) but its result discarded. The
+    car uniform is ALWAYS consumed first, then the bicycle uniform second, so the
+    bicycle binarisation is byte-identical regardless of ``apply_car``.
+    """
+    random = np.random.RandomState(random_seed + 23761)
+
+    u = random.random_sample(len(df_persons))
+    if apply_car:
+        selection = u < df_persons["car_availability"]
+        df_persons["car_availability"] = "none"
+        df_persons.loc[selection, "car_availability"] = "all"
+        df_persons["car_availability"] = df_persons["car_availability"].astype("category")
+
+    u = random.random_sample(len(df_persons))
+    selection = u < df_persons["bicycle_availability"]
+    df_persons["bicycle_availability"] = "none"
+    df_persons.loc[selection, "bicycle_availability"] = "all"
+    df_persons["bicycle_availability"] = df_persons["bicycle_availability"].astype("category")
+    return df_persons
+
+
+# --- A5: consistent car_availability ----------------------------------------
+# Categorical car_availability values (eqasim core vocabulary). The Java
+# mode-choice side and the MATSim writers treat the value as an opaque string,
+# so all three pass through unchanged; "some" is fully supported (the eqasim
+# core itself emits it, see synthesis/population/enriched.py:96-98).
+CAR_AVAILABILITY_CATEGORIES = ("none", "some", "all")
+
+# Fallback-rate threshold above which the per-(Kreis) P19 raking fallback in
+# :func:`_derive_car_availability_consistent` is logged at WARNING level. The
+# fallback fires only for a Kreis cell whose "some/all" capacity is too small to
+# reach the P19 "jederzeit" (>=some) target after the hard floors are applied
+# (e.g. almost every person already floored to "none" by the carless/licence
+# constraints); such a cell keeps the conditional assignment and is counted.
+CAR_AVAILABILITY_RAKE_FALLBACK_WARN_RATE = 0.05
+
+
+def _derive_car_availability_consistent(df_persons, mid, random_seed,
+                                        minimum_age_car):
+    """Derive a licence/car-consistent categorical ``car_availability`` (A5).
+
+    Replaces the legacy free P19 IPF + all/none binarisation with a conditional
+    derivation that respects the eqasim cars-vs-licences coupling and the MiD H7
+    household car ownership, then rakes the residual to the MiD P19 "jederzeit"
+    (= car available at any time) marginal so that aggregate target is still
+    matched. The result is one of {none, some, all}:
+
+    1. HARD FLOOR ``none`` if the person has no driving licence
+       (``has_license == False``) OR lives in a 0-car household
+       (household ``number_of_cars == 0``) OR is below the minimum age. These
+       persons can never have a car available, so the P19 marginal is matched on
+       the eligible remainder only.
+    2. ``all`` if the household has at least as many cars as licensed adults
+       (``number_of_cars >= n_licensed_adults``): no intra-household competition,
+       every licensed adult can always take a car.
+    3. otherwise ``some`` (more licensed adults than cars -> the car is shared /
+       not always available).
+
+    The conditional rule reproduces the eqasim-core all/some/none logic at
+    HOUSEHOLD level (``synthesis/population/enriched.py:91-101``) but on the
+    MiD-derived ``number_of_cars`` and the MiD-P17.1-derived ``has_license``,
+    instead of the stale HTS-matched values the core saw before this stage
+    overwrote them. On top of that, within each Kreis the ELIGIBLE persons
+    (floor not applied) are raked toward the P19 per-zone "jederzeit" target:
+    P19 reports the share of persons with a car available at any time, which maps
+    to ``car_availability == "all"``. If the conditional "all" share in a Kreis
+    is above the target, the surplus "all" persons (those in the most-competitive
+    households first) are demoted to "some"; if it is below, "some" persons are
+    promoted to "all". The carless/licenceless floor is never violated by the
+    rake (only eligible persons move), so consistency is preserved while the
+    aggregate P19 marginal is matched within the granularity of the eligible
+    pool.
+
+    Fallback transparency (CLAUDE.md): a Kreis whose eligible pool is too small
+    to reach its P19 "all" target (target above the eligible share) cannot be
+    fully raked; it keeps the conditional assignment and is counted. The
+    primary/fallback split (persons and Kreis codes) is logged, WARNING above
+    :data:`CAR_AVAILABILITY_RAKE_FALLBACK_WARN_RATE`.
+    """
+    n = len(df_persons)
+    has_license = df_persons["has_license"].fillna(False).to_numpy().astype(bool)
+    number_of_cars = df_persons["number_of_cars"].to_numpy().astype(np.int64)
+    age = df_persons["age"].to_numpy()
+
+    # Household aggregates: total cars per household are stored per-person but
+    # represent a household quantity (MiD H7, "Autos im HH"); aggregate to a
+    # single household value via the max so a single household car count drives
+    # the coupling (drop_duplicates downstream takes one person's value, so the
+    # per-person column must be made household-consistent here). Licensed adults
+    # per household = count of has_license within the household.
+    cars_by_hh = (
+        pd.Series(number_of_cars, index=df_persons["household_id"])
+        .groupby(level=0).max()
+    )
+    licensed_by_hh = (
+        pd.Series(has_license.astype(np.int64), index=df_persons["household_id"])
+        .groupby(level=0).sum()
+    )
+    hh_cars = df_persons["household_id"].map(cars_by_hh).to_numpy().astype(np.int64)
+    hh_licensed = df_persons["household_id"].map(licensed_by_hh).to_numpy().astype(np.int64)
+
+    # Make number_of_cars household-consistent (max within household) so the
+    # downstream household table (drop_duplicates) reports a coherent count and
+    # the A5 logic is reproducible regardless of which person is kept.
+    df_persons["number_of_cars"] = hh_cars
+
+    # Conditional base assignment.
+    floor_none = (
+        (~has_license)
+        | (hh_cars == 0)
+        | (age < minimum_age_car)
+    )
+    eligible = ~floor_none
+    base = np.empty(n, dtype=object)
+    base[floor_none] = "none"
+    all_mask = eligible & (hh_cars >= np.maximum(hh_licensed, 1))
+    some_mask = eligible & ~all_mask
+    base[all_mask] = "all"
+    base[some_mask] = "some"
+
+    # P19 "jederzeit" per-zone targets (share of persons with a car at any time,
+    # i.e. car_availability == "all"). Read from the same constraint list the
+    # legacy IPF used; only the per-zone targets are needed for the rake.
+    zone_target = {}
+    for constraint in mid["car_availability_constraints"]:
+        if "zone" in constraint:
+            zone_target[constraint["zone"]] = float(constraint["target"])
+
+    # A "competition score" orders eligible persons within a Kreis for promotion
+    # / demotion: persons with the largest licensed-adults-minus-cars gap are the
+    # most plausibly car-sharing ("some"); they are demoted first / promoted
+    # last. Ties are broken by a seeded shuffle so the choice is reproducible but
+    # not systematically biased by row order.
+    rng = np.random.RandomState(random_seed + 41719)
+    competition = (hh_licensed - hh_cars).astype(float)
+    jitter = rng.random_sample(n)
+    score = competition + jitter  # higher score -> more competition -> prefer "some"
+
+    result = base.copy()
+    n_total = n
+    n_fallback = 0
+    fallback_zones = []
+
+    for zone, target in sorted(zone_target.items()):
+        col = "inside_{}".format(zone)
+        if col not in df_persons.columns:
+            continue
+        in_zone = df_persons[col].fillna(False).to_numpy().astype(bool)
+        if not in_zone.any():
+            continue
+        zone_rows = np.where(in_zone)[0]
+        n_zone = zone_rows.size
+        # Target count of "all" persons in this zone (P19 share x persons).
+        target_all = int(round(target * n_zone))
+        zone_eligible = eligible[zone_rows]
+        elig_rows = zone_rows[zone_eligible]
+        n_elig = elig_rows.size
+        cur_all_rows = elig_rows[result[elig_rows] == "all"]
+        n_cur_all = cur_all_rows.size
+
+        if target_all > n_elig:
+            # Cannot reach the target: not enough eligible persons (the rest are
+            # floored to "none"). Promote ALL eligible to "all" and record the
+            # shortfall as fallback.
+            result[elig_rows] = "all"
+            n_fallback += n_zone
+            fallback_zones.append(zone)
+            continue
+
+        if n_cur_all > target_all:
+            # Demote the surplus "all" persons to "some": pick those with the
+            # HIGHEST competition score (most car-sharing) first.
+            surplus = n_cur_all - target_all
+            order = cur_all_rows[np.argsort(-score[cur_all_rows], kind="stable")]
+            result[order[:surplus]] = "some"
+        elif n_cur_all < target_all:
+            # Promote "some" persons to "all": pick those with the LOWEST
+            # competition score (least car-sharing) first.
+            deficit = target_all - n_cur_all
+            some_rows = elig_rows[result[elig_rows] == "some"]
+            order = some_rows[np.argsort(score[some_rows], kind="stable")]
+            result[order[:deficit]] = "all"
+
+    fallback_rate = (n_fallback / n_total) if n_total else 0.0
+    df_persons.attrs["car_availability_rake_primary_count"] = n_total - n_fallback
+    df_persons.attrs["car_availability_rake_fallback_count"] = n_fallback
+    df_persons.attrs["car_availability_rake_fallback_rate"] = fallback_rate
+    df_persons.attrs["car_availability_rake_fallback_zones"] = list(fallback_zones)
+
+    df_persons["car_availability"] = pd.Categorical(
+        result, categories=list(CAR_AVAILABILITY_CATEGORIES)
+    )
+
+    if n_fallback:
+        level = (
+            "WARNING: "
+            if fallback_rate > CAR_AVAILABILITY_RAKE_FALLBACK_WARN_RATE
+            else ""
+        )
+        print(
+            f"[braunschweig.enriched] {level}car_availability P19 rake fallback "
+            f"for {n_fallback}/{n_total} persons ({fallback_rate:.2%}) in zones "
+            f"{sorted(fallback_zones)}: eligible pool too small to reach the P19 "
+            f"'jederzeit' target after the carless/licence floor; kept conditional."
+        )
+    else:
+        print(
+            f"[braunschweig.enriched] car_availability P19 rake matched all "
+            f"{n_total} persons (fallback rate 0.00%)."
+        )
+    print(
+        "[braunschweig.enriched] consistent car_availability share = "
+        + ", ".join(
+            f"{k}={v:.1%}"
+            for k, v in pd.Series(result).value_counts(normalize=True)
+            .reindex(CAR_AVAILABILITY_CATEGORIES).fillna(0.0).items()
+        )
+    )
+    return df_persons
+
+
 def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,
                               kreis=None):
     """Add ``household_income_eur`` = class_midpoint * INKAR-scale[home_kreis].
@@ -1215,27 +1497,17 @@ def configure(context):
 def execute(context):
     df_persons = _execute_base(context)
 
-    # Load the H7 / H12.3 reference distributions from CSV (replaces the
-    # legacy module-level CARS_BY_KREIS / BIKES_BY_KREIS dictionaries).
     data_path = context.config("data_path")
-    cars_by_kreis, cars_region, cars_values = load_kreis_share_table(
-        data_path, "mid2023_H7_cars_by_kreis.csv")
-    bikes_by_kreis, bikes_region, bikes_values = load_kreis_share_table(
-        data_path, "mid2023_H12_3_bikes_by_kreis.csv")
 
-    # Derive the per-person Kreis AGS-5 once and reuse it across all three
-    # consumers below (cars, bikes, income). The derivation rebuilds an
-    # object-dtype array via a Python loop over the 8 political-prefix flags on
-    # the full ~1.13M-row population, so computing it a single time avoids the
-    # previous 3x redundant passes. Output is identical (same Kreis per row).
+    # Derive the per-person Kreis AGS-5 once for the INKAR income scaling below.
+    # NOTE: the MiD H7 / H12.3 vehicle counts (number_of_cars /
+    # number_of_bicycles) are NO LONGER sampled here. They were moved into
+    # _execute_base (the VEHICLE COUNTS block, before car_availability) so the A5
+    # consistent-car_availability feature can condition on the household car count
+    # and the licence. The +91731 RNG stream and the cars-then-bikes consumption
+    # order are preserved there, so the OFF-path draws are byte-identical to the
+    # legacy outer-execute sampling.
     kreis = _derive_kreis_ars5(df_persons)
-
-    # Re-sample vehicle counts from MiD H7 / H12.3 instead of the hardcoded 1s.
-    random = np.random.RandomState(context.config("random_seed") + 91731)
-    _sample_counts(df_persons, "number_of_cars", cars_values,
-                   cars_region, cars_by_kreis, random, kreis=kreis)
-    _sample_counts(df_persons, "number_of_bicycles", bikes_values,
-                   bikes_region, bikes_by_kreis, random, kreis=kreis)
 
     # INKAR-based EUR income (Kreis-specific shift on top of the MiD H4
     # regionless quintile distribution).
