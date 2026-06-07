@@ -25,6 +25,13 @@ def configure(context):
     # urban core.
     context.config("enable_urban_parking", False)
 
+    # Braunschweig A2: write the realistic continuous monthly income (EUR) as a
+    # numeric person attribute "householdIncomeEur" (java.lang.Double) in addition
+    # to the legacy categorical "householdIncome" string. Default True (the
+    # behaviour-driving income for Java mode choice); set False for byte-identical
+    # pre-A2 output (the attribute is simply not written).
+    context.config("write_income_eur", True)
+
 # is_urban_resident: boolean flag set by the regional enricher (e.g.
 # braunschweig.synthesis.population.enriched sets it from inside_braunschweig).
 # Written into MATSim XML under the Java-expected attribute key "isParis"
@@ -55,6 +62,7 @@ PERSON_FIELDS = [
     "age", "employed", "sex",
     "high_income", "is_urban_resident",  # Bavaria added (urban-area resident, written as isParis)
     "pt_subscription_type",  # Braunschweig added (MiD P24.1 ticket category)
+    "household_income_eur",  # Braunschweig added (INKAR-scaled continuous monthly income, EUR)
 ]
 
 ACTIVITY_FIELDS = [
@@ -69,12 +77,21 @@ VEHICLE_FIELDS = [
     "owner_id", "vehicle_id", "mode"
 ]
 
-def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False):
+def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
+               write_income_eur = False):
     writer.start_person(person[PERSON_FIELDS.index("person_id")])
 
     writer.start_attributes()
     writer.add_attribute("householdId", "java.lang.Integer", person[PERSON_FIELDS.index("household_id")])
     writer.add_attribute("householdIncome", "java.lang.String", person[PERSON_FIELDS.index("household_income")]) # Bavaria updated
+    # Braunschweig: the realistic continuous monthly income in EUR (INKAR-scaled MiD
+    # H4 class midpoint, computed in braunschweig.synthesis.population.enriched). Gated
+    # behind write_income_eur so the pre-A2 output stays byte-identical when off (the
+    # categorical "householdIncome" string above remains the legacy placeholder). Read
+    # in the Java mode-choice utility (BraunschweigPersonPredictor, Task A1).
+    if write_income_eur:
+        writer.add_attribute("householdIncomeEur", "java.lang.Double",
+                             float(person[PERSON_FIELDS.index("household_income_eur")]))
     writer.add_attribute("highIncome", "java.lang.Boolean", person[PERSON_FIELDS.index("high_income")]) # Bavaria added
     # NOTE: Bavaria/IDF Java reads this under the legacy attribute key "isParis"
     # (BavariaPredictorUtils.isParisResident). Keep the key as-is per Decision
@@ -176,7 +193,7 @@ def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicle
 
 
 def write_population(output_path, df_persons, df_activities, df_trips, df_vehicles,
-                    enable_urban_parking, context):
+                    enable_urban_parking, context, write_income_eur = False):
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
             writer = writers.PopulationWriter(writer)
@@ -228,7 +245,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                         else:
                             vehicles.append(vehicle)
 
-                    add_person(writer, person, activities, trips, vehicles, enable_urban_parking)
+                    add_person(writer, person, activities, trips, vehicles,
+                               enable_urban_parking, write_income_eur)
                     progress.update()
 
             writer.end_population()
@@ -252,8 +270,10 @@ def load_raw(context):
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
+    write_income_eur = bool(context.config("write_income_eur"))
     raw = load_raw(context)
     df_persons, df_activities, df_trips, df_vehicles = prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
     return write_population(output_path, df_persons, df_activities, df_trips,
-                           df_vehicles, enable_urban_parking, context)
+                           df_vehicles, enable_urban_parking, context,
+                           write_income_eur=write_income_eur)

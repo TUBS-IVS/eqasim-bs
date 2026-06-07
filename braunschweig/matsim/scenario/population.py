@@ -22,6 +22,7 @@ def configure(context):
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
+    write_income_eur = bool(context.config("write_income_eur"))
     raw = base.load_raw(context)
 
     if context.config("cordon_enabled"):
@@ -38,4 +39,5 @@ def execute(context):
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
     return base.write_population(output_path, df_persons, df_activities, df_trips,
-                                df_vehicles, enable_urban_parking, context)
+                                df_vehicles, enable_urban_parking, context,
+                                write_income_eur=write_income_eur)
