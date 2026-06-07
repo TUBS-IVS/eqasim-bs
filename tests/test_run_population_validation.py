@@ -1,5 +1,8 @@
+import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely.geometry import Point
+
 from braunschweig.analysis.population_validation import run_population_validation as R
 
 
@@ -29,3 +32,36 @@ def test_interpretation_sections_split_good_and_bad():
     md = R._interpretation_markdown(quality)
     assert "good_one" in md and "bad_one" in md
     assert "structural offset" in md
+
+
+# ---------------------------------------------------------------------------
+# _attach_home_geometry_to_vehicles
+# ---------------------------------------------------------------------------
+
+def _home_geom():
+    return gpd.GeoDataFrame(
+        {"household_id": [10], "ars5": ["03101"], "commune_id": ["03101000"]},
+        geometry=[Point(605000, 5790000)], crs="EPSG:25832")
+
+
+def test_attach_vehicle_geometry_via_owner_id():
+    vehicles = pd.DataFrame({"vehicle_id": ["v1"], "owner_id": [1], "brand": ["VW"]})
+    persons = pd.DataFrame({"person_id": [1], "household_id": [10]})
+    out = R._attach_home_geometry_to_vehicles(vehicles, persons, _home_geom())
+    assert out is not None
+    assert out["ars5"].iloc[0] == "03101"
+    assert out["geometry"].notna().all()
+
+
+def test_attach_vehicle_geometry_via_household_id():
+    vehicles = pd.DataFrame({"vehicle_id": ["v1"], "household_id": [10], "brand": ["VW"]})
+    persons = pd.DataFrame({"person_id": [1], "household_id": [10]})
+    out = R._attach_home_geometry_to_vehicles(vehicles, persons, _home_geom())
+    assert out is not None
+    assert out["geometry"].notna().all()
+
+
+def test_attach_vehicle_geometry_no_key_returns_none():
+    vehicles = pd.DataFrame({"vehicle_id": ["v1"], "brand": ["VW"]})
+    persons = pd.DataFrame({"person_id": [1], "household_id": [10]})
+    assert R._attach_home_geometry_to_vehicles(vehicles, persons, _home_geom()) is None

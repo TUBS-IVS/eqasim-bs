@@ -32,6 +32,35 @@ REPO_ROOT = spatial.REPO_ROOT
 DATA_PATH = str(REPO_ROOT / "eqasim-data" / "data")
 
 
+def _attach_home_geometry_to_vehicles(vehicles, persons, home_geom):
+    """Attach home geometry + ars5 + commune_id to each vehicle.
+
+    The eqasim vehicles frame is keyed on ``owner_id`` (a person id), not
+    ``household_id`` (only the household-fleet car rows carry household_id;
+    passenger and legacy-fleet rows do not). We therefore route
+    owner_id -> person_id -> household_id -> home geometry. Returns None and
+    logs a WARNING if the vehicles frame has neither ``owner_id`` nor
+    ``household_id`` (cannot be geolocated -> no silent fallback).
+    """
+    if "household_id" in vehicles.columns:
+        return vehicles.merge(home_geom, on="household_id", how="left")
+    if "owner_id" in vehicles.columns:
+        person_hh = persons[["person_id", "household_id"]].drop_duplicates("person_id")
+        linked = vehicles.merge(person_hh, left_on="owner_id", right_on="person_id", how="left")
+        n_unlinked = int(linked["household_id"].isna().sum())
+        if n_unlinked:
+            LOGGER.warning(
+                "vehicles: %d/%d vehicle(s) could not be linked to a household via "
+                "owner_id->person_id; their geometry will be missing",
+                n_unlinked, len(linked),
+            )
+        return linked.merge(home_geom, on="household_id", how="left")
+    LOGGER.warning(
+        "vehicles frame has neither 'household_id' nor 'owner_id'; the vehicles "
+        "layer cannot be geolocated and is skipped")
+    return None
+
+
 def _parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--run-output-dir", default=None)
@@ -117,20 +146,21 @@ def run(ns) -> dict:
         VC.dot_and_whisker(summary, out / "validation_chart_rmse.png", whisker="rmse")
     VC.quality_plot(quality, out / "quality_by_control.png")
 
+    geo_paths: dict = {}
     if ns.geo:
         home_geom = homes_geo[["household_id", "ars5", "commune_id", "geometry"]]
         persons_geo = frames.persons.merge(home_geom, on="household_id", how="left")
         persons_gdf = gpd.GeoDataFrame(persons_geo, geometry="geometry", crs=frames.homes.crs)
         households_geo = frames.households.merge(home_geom, on="household_id", how="left")
         households_gdf = gpd.GeoDataFrame(households_geo, geometry="geometry", crs=frames.homes.crs)
+        vehicles_gdf = None
         if frames.vehicles is not None:
-            veh = frames.vehicles.merge(home_geom, on="household_id", how="left")
-            vehicles_gdf = gpd.GeoDataFrame(veh, geometry="geometry", crs=frames.homes.crs)
-        else:
-            vehicles_gdf = None
+            veh = _attach_home_geometry_to_vehicles(frames.vehicles, frames.persons, home_geom)
+            if veh is not None:
+                vehicles_gdf = gpd.GeoDataFrame(veh, geometry="geometry", crs=frames.homes.crs)
         kreis_poly = kreise[["ars5", "geometry"]]
         gem_poly = spatial.load_gemeinden(frames.homes.crs)[["commune_id", "geometry"]]
-        GE.write_geo_package(
+        geo_paths = GE.write_geo_package(
             out_dir=out, persons=persons_gdf, households=households_gdf,
             vehicles=vehicles_gdf, gemeinde_poly=gem_poly, kreis_poly=kreis_poly,
             deviation_kreis=_deviation_wide(long, "kreis", "ars5"),
@@ -145,6 +175,7 @@ def run(ns) -> dict:
         "n_vehicles": int(len(frames.vehicles)) if frames.vehicles is not None else 0,
         "family_scores": fam.to_dict(orient="records"),
         "quality": quality.to_dict(orient="records"),
+        "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False),
                                      encoding="utf-8")
