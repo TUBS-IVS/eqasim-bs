@@ -65,6 +65,14 @@ REGIOSTAR7_LABELS: dict[int, str] = {
 
 
 def load_kreise(homes_crs: Any) -> gpd.GeoDataFrame:
+    """Load ZGB-8 Kreis polygons keyed by 5-digit ARS (``ars5``).
+
+    VG250 ``ARS`` is 12 digits; ``ars5`` is the first 5 digits (Land(2) +
+    Kreis(3)), which is the standard 5-digit Kreiskennziffer used throughout
+    the pipeline.  Geometries are dissolved to one polygon per Kreis,
+    reprojected to ``homes_crs``, and a ``kreis_name`` column is added from
+    the :data:`ZGB8` display-name map.
+    """
     if not VG250_ZIP.exists():
         raise FileNotFoundError(
             f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
@@ -129,14 +137,28 @@ def load_regiostar() -> pd.DataFrame:
     return df
 
 
-def assign_geographies(homes: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def assign_geographies(
+    homes: gpd.GeoDataFrame,
+    kreise: gpd.GeoDataFrame | None = None,
+) -> gpd.GeoDataFrame:
     """Attach ars5 (Kreis), commune_id (8-digit AGS) and regiostar7 to each home.
 
     One row per household_id. Logs the share of homes that could not be matched
     to a Kreis / Gemeinde (no silent fallback: a high unmatched rate is a bug
     signal, see CLAUDE.md 'Fallback transparency').
+
+    Parameters
+    ----------
+    homes:
+        GeoDataFrame of home points; must contain ``household_id``.
+    kreise:
+        Optional pre-loaded Kreis polygons as returned by :func:`load_kreise`.
+        Pass an already-loaded frame to avoid re-reading VG250 when the caller
+        has loaded it for another purpose (e.g. map plotting).  When ``None``
+        the frame is loaded from VG250 automatically.
     """
-    kreise = load_kreise(homes.crs)
+    if kreise is None:
+        kreise = load_kreise(homes.crs)
     homes_kreis = gpd.sjoin(
         homes, kreise[["ars5", "kreis_name", "geometry"]],
         how="left", predicate="within",

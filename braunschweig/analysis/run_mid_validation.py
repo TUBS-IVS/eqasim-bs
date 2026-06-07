@@ -758,7 +758,7 @@ def run(args: _Args) -> dict[str, Any]:
     mid = _load_mid()
 
     LOGGER.info("Spatial-joining home points to ZGB-8 Kreise + Gemeinden (assign_geographies)")
-    homes_kreis = spatial.assign_geographies(homes)
+    homes_kreis = spatial.assign_geographies(homes, kreise=kreise)
 
     persons_kreis = persons.merge(
         homes_kreis[["household_id", "ars5", "kreis_name",
