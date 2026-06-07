@@ -10,6 +10,9 @@ repo so a single command produces every artefact for a given run:
      CSVs, PNGs, ``report.json`` and ``summary.md`` into
      ``<output-dir>/analysis/mid_validation/`` (or the path given via
      ``--analysis-out``).
+  3. ``braunschweig.analysis.population_validation.run_population_validation``
+     — runs the PopulationSim-style control validation and geo export
+     (default: on; disable with ``--no-population-validation``).
 
 Usage (PowerShell, conda env `eqasim` activated):
 
@@ -54,7 +57,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run the PopulationSim-style control validation + geo export as part "
              "of the default analysis output (default: on).",
     )
-    return ap.parse_args(argv)
+    ns = ap.parse_args(argv)
+    if not ns.skip_dashboard and ns.sim_cache is None:
+        ap.error("--sim-cache is required unless --skip-dashboard is set")
+    return ns
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,8 +73,6 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(ns.output_dir).resolve()
 
     if not ns.skip_dashboard:
-        if ns.sim_cache is None:
-            ap.error("--sim-cache is required unless --skip-dashboard is set")
         LOGGER.info("Building dashboard for %s", output_dir)
         dash_argv = [
             "--output-dir",
