@@ -106,8 +106,8 @@ def dot_and_whisker(summary: pd.DataFrame, out_path: Path, whisker: str = "stdev
     # Matplotlib clips errorbars to the axes by default; overflow rows are
     # additionally flagged with explicit triangle markers below.
     n_overflow = 0
-    for i, (yi, xi, hi_i, li_i, ci) in enumerate(zip(y, means, hi, lo, colors)):
-        ax.errorbar(xi, yi, xerr=half[i], fmt="none",
+    for yi, xi, hi_i, li_i, ci, half_i in zip(y, means, hi, lo, colors, half):
+        ax.errorbar(xi, yi, xerr=half_i, fmt="none",
                     ecolor=ci, elinewidth=2, capsize=3, zorder=1)
         # Overflow markers: triangle pointing toward the clipped region.
         row_overflows = False

@@ -51,6 +51,29 @@ def test_bucket_household_extractor_clips_top_bucket():
     assert got["0"] == 1 and got["1"] == 1
 
 
+def test_bucket_household_top_label_maps_overflow_to_label():
+    """With top=6 and top_label='6+', a value of 7 (>= top) and a value of 6
+    (== top) both map to '6+', while a value of 3 (< top) maps to '3'."""
+    households = pd.DataFrame({
+        "household_id": [10, 20, 30],
+        "household_size": [7, 3, 6],
+    })
+    persons = pd.DataFrame({"person_id": [1], "household_id": [10]})
+    frames = PopulationFrames(persons, households, None, None, "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20, 30],
+                        "ars5": ["03101", "03101", "03101"],
+                        "commune_id": ["03101000", "03101000", "03101000"]})
+    ctrl = C.bucket_household_control(
+        name="household_size", family="census", geography="kreis",
+        column="household_size", top=6, target=None, top_label="6+")
+    long = ctrl.realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    # 7 and 6 both fall in the "6+" bucket; 3 stays "3".
+    assert got["6+"] == 2
+    assert got["3"] == 1
+    assert "6" not in got  # the bare "6" label is never produced
+
+
 def test_registry_is_nonempty_and_well_formed():
     reg = C.build_registry(data_path="eqasim-data/data")
     assert len(reg) > 0

@@ -19,6 +19,39 @@ def test_aggregate_numeric_and_categorical():
     assert abs(r["sex_share_male"] - 0.5) < 1e-9
 
 
+def test_aggregate_skips_absent_column():
+    """A spec referencing a column not present in the frame is skipped without
+    raising; the count column is still returned."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2], "ars5": ["03101", "03101"], "age": [40, 20],
+    })
+    agg = GE.aggregate(persons, group_col="ars5",
+                       spec=[("age", "numeric"), ("not_a_column", "categorical")],
+                       count_name="n_persons")
+    assert "n_persons" in agg.columns
+    assert agg.set_index("ars5").loc["03101", "n_persons"] == 2
+    # The absent column produced no share columns.
+    assert not any(c.startswith("not_a_column") for c in agg.columns)
+
+
+def test_write_geo_package_returns_agg_path_keys(tmp_path):
+    """write_geo_package returns a paths dict carrying both aggregate-CSV keys."""
+    persons = gpd.GeoDataFrame(
+        {"person_id": [1], "ars5": ["03101"], "commune_id": ["03101000"], "age": [30]},
+        geometry=[Point(605000, 5790000)], crs="EPSG:25832")
+    kreis_poly = gpd.GeoDataFrame(
+        {"ars5": ["03101"]},
+        geometry=[Polygon([(604000, 5789000), (606000, 5789000),
+                           (606000, 5791000), (604000, 5791000)])], crs="EPSG:25832")
+    paths = GE.write_geo_package(
+        out_dir=tmp_path, persons=persons, households=persons.iloc[:0],
+        vehicles=None, gemeinde_poly=kreis_poly.rename(columns={"ars5": "commune_id"}),
+        kreis_poly=kreis_poly,
+        person_spec=[("age", "numeric")], household_spec=[], vehicle_spec=[])
+    assert "agg_gemeinde" in paths
+    assert "agg_kreis" in paths
+
+
 def test_write_layers_creates_gpkg_and_csv(tmp_path):
     persons = gpd.GeoDataFrame(
         {"person_id": [1], "ars5": ["03101"], "commune_id": ["03101000"], "age": [30]},

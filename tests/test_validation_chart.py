@@ -45,6 +45,12 @@ def test_quality_plot_writes_png(tmp_path):
     assert path.exists() and path.stat().st_size > 0
 
 
+def test_quality_plot_empty_writes_placeholder(tmp_path):
+    out = tmp_path / "quality_empty.png"
+    path = VC.quality_plot(pd.DataFrame(), out)
+    assert path.exists() and path.stat().st_size > 0
+
+
 # ---------------------------------------------------------------------------
 # Tests for the _robust_xlim helper
 # ---------------------------------------------------------------------------

@@ -68,3 +68,27 @@ def test_zero_count_target_category_is_evaluated_not_dropped():
     assert abs(false_row["synthetic_pct"].iloc[0] - 0.0) < 1e-9
     assert abs(false_row["delta_pp"].iloc[0] - (-25.0)) < 1e-9
     assert abs(false_row["pct_diff"].iloc[0] - (-100.0)) < 1e-9
+
+
+def test_evaluate_control_descriptive_only_returns_empty():
+    """A control with target=None (descriptive-only) has realised data but no
+    geographic target, so evaluate_control returns an empty frame."""
+    ctrl = C.categorical_person_control(
+        "descriptive", "census", "kreis", "has_driving_license",
+        ("True", "False"), target=None)
+    long = CV.evaluate_control(ctrl, _frames(), _geo(), data_path="x")
+    assert long.empty
+
+
+def test_evaluate_all_concatenates_only_targeted_controls():
+    """evaluate_all over a registry of one targeted + one descriptive-only
+    control concatenates only the targeted control's rows."""
+    targeted = C.categorical_person_control(
+        "lic", "mid_person", "kreis", "has_driving_license",
+        ("True", "False"), _target_75_25)
+    descriptive = C.categorical_person_control(
+        "descriptive", "census", "kreis", "has_driving_license",
+        ("True", "False"), target=None)
+    long = CV.evaluate_all([targeted, descriptive], _frames(), _geo(), data_path="x")
+    assert not long.empty
+    assert set(long["control"].unique()) == {"lic"}
