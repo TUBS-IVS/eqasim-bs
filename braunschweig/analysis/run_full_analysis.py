@@ -36,11 +36,7 @@ from braunschweig.analysis.dashboard import build_dashboard as _dash
 LOGGER = logging.getLogger("braunschweig.analysis.full")
 
 
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s",
-    )
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--sim-cache", required=False, default=None)
@@ -51,7 +47,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--notes", required=False, default="")
     ap.add_argument("--skip-dashboard", action="store_true")
     ap.add_argument("--skip-mid", action="store_true")
-    ns = ap.parse_args(argv)
+    ap.add_argument(
+        "--population-validation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the PopulationSim-style control validation + geo export as part "
+             "of the default analysis output (default: on).",
+    )
+    return ap.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s",
+    )
+    ns = _parse_args(argv)
 
     output_dir = Path(ns.output_dir).resolve()
 
@@ -100,6 +111,21 @@ def main(argv: list[str] | None = None) -> int:
         if ns.label:
             mid_argv += ["--label", ns.label]
         _mid.main(mid_argv)
+
+    if ns.population_validation:
+        # Local import so the (heavy) geopandas/control-validation dependency
+        # is only loaded when the validation actually runs.
+        from braunschweig.analysis.population_validation import (
+            run_population_validation as _pop_validation,
+        )
+
+        LOGGER.info("Running population validation (default analysis output)")
+        pop_argv = ["--run-output-dir", str(output_dir)]
+        if ns.label:
+            pop_argv += ["--label", ns.label]
+        if ns.prefix:
+            pop_argv += ["--prefix", ns.prefix]
+        _pop_validation.run(_pop_validation._parse_args(pop_argv))
 
     LOGGER.info("Full analysis complete for %s", output_dir)
     return 0
