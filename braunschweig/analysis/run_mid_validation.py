@@ -32,7 +32,6 @@ import argparse
 import json
 import logging
 import sys
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,24 +41,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from braunschweig.analysis import spatial
 from braunschweig.data.mid.school_distance import build_target_table
 
 LOGGER = logging.getLogger("braunschweig.analysis.mid_validation")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# ZGB-8 Kreise: AGS-5 → display name.  Kept consistent with
-# `braunschweig.analysis.dashboard.build_dashboard.KREIS_NAMES`.
-ZGB8: dict[str, str] = {
-    "03101": "SK Braunschweig",
-    "03102": "SK Salzgitter",
-    "03103": "SK Wolfsburg",
-    "03151": "LK Gifhorn",
-    "03153": "LK Goslar",
-    "03154": "LK Helmstedt",
-    "03157": "LK Peine",
-    "03158": "LK Wolfenbüttel",
-}
+# Re-exported from spatial so callers and tests can import them from here
+# while the single source of truth lives in braunschweig.analysis.spatial.
+REPO_ROOT = spatial.REPO_ROOT
+ZGB8 = spatial.ZGB8
 
 # MiD P13 distance bands (km).  Matches the keys in
 # `eqasim-data/data/braunschweig/mid/mid2023_P13.csv`.
@@ -73,19 +63,6 @@ BANDS: list[tuple[float, float, str]] = [
     (50.0, 100.0, "d_50_100"),
     (100.0, np.inf, "d_100p"),
 ]
-
-# VG250 zip shipped alongside the rest of the spatial inputs.
-VG250_ZIP = (
-    REPO_ROOT
-    / "eqasim-data"
-    / "data"
-    / "germany"
-    / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
-)
-VG250_INNER = (
-    "vg250-ew_12-31.utm32s.gpkg.ebenen/"
-    "vg250-ew_ebenen_1231/DE_VG250.gpkg"
-)
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
 
@@ -103,23 +80,6 @@ MODE_TO_MID: dict[str, str] = {
 
 # Order in which the four comparable MiD P12_1 modes are reported.
 MID_MODE_ORDER: list[str] = ["Car", "PT", "Bicycle", "Walk"]
-
-# RegioStaR-7 reference for per-Raumtyp diagnostics. Filename pinned via
-# scripts/download_regiostar.py (TASK-004); not regenerated here.
-REGIOSTAR_XLSX = (
-    REPO_ROOT / "eqasim-data" / "data" / "regiostar"
-    / "regiostar_referenzdatei.xlsx"
-)
-REGIOSTAR_SHEET = "ReferenzGebietsstand2020"
-REGIOSTAR7_LABELS: dict[int, str] = {
-    71: "Metropole",
-    72: "Regiopole/Großstadt",
-    73: "Mittelstadt/städt. Raum",
-    74: "Kleinstadt/dörfl. Raum",
-    75: "Zentrale Stadt (ländlich)",
-    76: "Mittelstadt (ländlich)",
-    77: "Kleinstadt/dörfl. (ländlich)",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -255,71 +215,6 @@ def _bool_share(series: pd.Series) -> float:
         return float("nan")
     truthy = series.astype(str).str.lower().isin(["true", "1", "yes"])
     return float(100.0 * truthy.mean())
-
-
-def _load_kreise(homes_crs: Any) -> gpd.GeoDataFrame:
-    if not VG250_ZIP.exists():
-        raise FileNotFoundError(
-            f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
-        )
-    with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as fh:
-        vg = gpd.read_file(fh, layer="vg250_gem")
-    vg["ars5"] = vg["ARS"].astype(str).str[:5]
-    kreise = (
-        vg[vg["ars5"].isin(ZGB8)][["ars5", "geometry"]]
-        .dissolve(by="ars5", as_index=False)
-        .to_crs(homes_crs)
-    )
-    kreise["kreis_name"] = kreise["ars5"].map(ZGB8)
-    return kreise
-
-
-def _load_gemeinden(homes_crs: Any) -> gpd.GeoDataFrame:
-    """Load ZGB-8 Gemeinde polygons keyed by 8-digit AGS (commune_id).
-
-    VG250 ``ARS`` is 12 digits (Land(2) + RB(1) + Kreis(2) + VG(4) + Gem(3)).
-    The 8-digit AGS used by the RegioStaR reference and downstream stages
-    is ``ARS[0:5] + ARS[9:12]`` (Kreis prefix + 3-digit Gemeinde number).
-    """
-    if not VG250_ZIP.exists():
-        raise FileNotFoundError(
-            f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
-        )
-    with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as fh:
-        vg = gpd.read_file(fh, layer="vg250_gem")
-    ars = vg["ARS"].astype(str).str.zfill(12)
-    vg["commune_id"] = ars.str[:5] + ars.str[9:12]
-    vg["ars5"] = vg["commune_id"].str[:5]
-    gem = (
-        vg[vg["ars5"].isin(ZGB8)][["commune_id", "geometry"]]
-        .dissolve(by="commune_id", as_index=False)
-        .to_crs(homes_crs)
-    )
-    return gem
-
-
-def _load_regiostar() -> pd.DataFrame:
-    """Load the RegioStaR-7 reference (commune_id → regiostar7).
-
-    Returns an empty frame with the expected schema if the source file is
-    missing — RS7 diagnostics will then be silently skipped instead of
-    failing the whole validation run.
-    """
-    if not REGIOSTAR_XLSX.exists():
-        LOGGER.warning(
-            "RegioStaR reference missing (%s); RS7 breakdowns will be skipped.",
-            REGIOSTAR_XLSX,
-        )
-        return pd.DataFrame(columns=["commune_id", "regiostar7"])
-    raw = pd.read_excel(REGIOSTAR_XLSX, sheet_name=REGIOSTAR_SHEET, header=0)
-    df = pd.DataFrame({
-        "commune_id": raw["gem_20"].astype("Int64").astype(str).str.zfill(8),
-        "regiostar7": pd.to_numeric(raw["RegioStaR7"], errors="coerce")
-                       .astype("Int64"),
-    }).dropna(subset=["regiostar7"])
-    df["regiostar7"] = df["regiostar7"].astype(int)
-    df["rs7_label"] = df["regiostar7"].map(REGIOSTAR7_LABELS).fillna("unknown")
-    return df
 
 
 def _load_mid() -> dict[str, pd.DataFrame]:
@@ -859,42 +754,11 @@ def run(args: _Args) -> dict[str, Any]:
     households["household_size"] = households["household_size"].astype(str)
 
     LOGGER.info("Loading VG250 polygons + MiD reference tables")
-    kreise = _load_kreise(homes.crs)
-    gemeinden = _load_gemeinden(homes.crs)
-    regiostar = _load_regiostar()
+    kreise = spatial.load_kreise(homes.crs)
     mid = _load_mid()
 
-    LOGGER.info("Spatial-joining home points to ZGB-8 Kreise")
-    homes_kreis = gpd.sjoin(
-        homes,
-        kreise[["ars5", "kreis_name", "geometry"]],
-        how="left",
-        predicate="within",
-    ).drop(columns="index_right")
-
-    # Second sjoin onto Gemeinde polygons → 8-digit AGS → RegioStaR-7.
-    if not regiostar.empty:
-        homes_gem = gpd.sjoin(
-            homes,
-            gemeinden[["commune_id", "geometry"]],
-            how="left",
-            predicate="within",
-        ).drop(columns="index_right")
-        rs7_per_household = (
-            homes_gem[["household_id", "commune_id"]]
-            .merge(regiostar[["commune_id", "regiostar7", "rs7_label"]],
-                   on="commune_id", how="left")
-            .drop_duplicates("household_id")
-        )
-        homes_kreis = homes_kreis.merge(
-            rs7_per_household[["household_id", "commune_id",
-                               "regiostar7", "rs7_label"]],
-            on="household_id", how="left",
-        )
-    else:
-        homes_kreis["commune_id"] = pd.NA
-        homes_kreis["regiostar7"] = pd.NA
-        homes_kreis["rs7_label"] = pd.NA
+    LOGGER.info("Spatial-joining home points to ZGB-8 Kreise + Gemeinden (assign_geographies)")
+    homes_kreis = spatial.assign_geographies(homes)
 
     persons_kreis = persons.merge(
         homes_kreis[["household_id", "ars5", "kreis_name",
