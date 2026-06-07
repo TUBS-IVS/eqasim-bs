@@ -126,6 +126,22 @@ def _german_fleet():
     return df_types, df_vehicles
 
 
+def test_special_chars_in_model_are_xml_escaped(tmp_path):
+    """Regression: a real model name with '&' ("LYNK & CO 01") must be XML-escaped
+    in the per-vehicle attributes, else vehicles.xml is malformed and MATSim's
+    RunPopulationRouting fails to parse it (SAXParseException on the raw '&'). The
+    per-vehicle attribute writer now escapes like the vehicle-type writer."""
+    df_types, df_vehicles = _german_fleet()
+    df_vehicles.loc[0, "model"] = "LYNK & CO 01"
+    df_vehicles.loc[1, "brand"] = "A&B <Auto>"
+    # ET.fromstring raises on a raw '&'; a clean parse proves the value was escaped.
+    text, root = _write_and_parse(tmp_path, df_types, df_vehicles)
+    veh = {v.get("id"): v for v in root.iter(f"{MATSIM_NS}vehicle")}
+    assert _vehicle_attributes(veh["1:car:0"])["model"] == "LYNK & CO 01"
+    assert _vehicle_attributes(veh["2:car:0"])["brand"] == "A&B <Auto>"
+    assert "&amp;" in text  # the raw '&' was escaped on disk
+
+
 def _legacy_fleet():
     df_types = pd.DataFrame.from_records([{
         "type_id": "default_car", "nb_seats": 4, "length": 5.0, "width": 1.0,

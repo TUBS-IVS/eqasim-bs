@@ -48,8 +48,9 @@ def _write_preface_attributes(writer, attributes):
         writer._write_line('<attributes>')
         writer.indent += 1
 
-        for item in attributes.items():
-            writer._write_line('<attribute name="%s" class="java.lang.String">%s</attribute>' % item)
+        for key, value in attributes.items():
+            writer._write_line('<attribute name="%s" class="java.lang.String">%s</attribute>' % (
+                escape(str(key)), escape(str(value))))
 
         writer.indent -= 1
         writer._write_line('</attributes>')
@@ -111,7 +112,7 @@ class PopulationWriter(XmlWriter):
     def add_attribute(self, name, type, value):
         self._require_scope(self.ATTRIBUTES_SCOPE)
         self._write_line('<attribute name="%s" class="%s">%s</attribute>' % (
-            name, type, value
+            escape(str(name)), type, escape(str(value))
         ))
 
     def start_plan(self, selected):
@@ -143,7 +144,7 @@ class PopulationWriter(XmlWriter):
             self.indent += 1
             for attr_name, (attr_type, attr_value) in attributes.items():
                 self._write_line('<attribute name="%s" class="%s">%s</attribute>' % (
-                    attr_name, attr_type, attr_value
+                    escape(str(attr_name)), attr_type, escape(str(attr_value))
                 ))
             self.indent -= 1
             self._write_line('</attributes>')
@@ -217,7 +218,7 @@ class HouseholdsWriter(XmlWriter):
     def add_attribute(self, name, type, value):
         self._require_scope(self.ATTRIBUTES_SCOPE)
         self._write_line('<attribute name="%s" class="%s">%s</attribute>' % (
-            name, type, value
+            escape(str(name)), type, escape(str(value))
         ))
 
     def add_members(self, person_ids):
@@ -350,7 +351,7 @@ class VehiclesWriter(XmlWriter):
             self._write_line('<attributes>')
             self.indent += 1
             for key, item in attributes.items():
-                self._write_line('<attribute name="%s" class="java.lang.String">%s</attribute>' % (str(key), str(item)))
+                self._write_line('<attribute name="%s" class="java.lang.String">%s</attribute>' % (escape(str(key)), escape(str(item))))
             self.indent -= 1
             self._write_line('</attributes>')
             self.indent -= 1
