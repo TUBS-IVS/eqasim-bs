@@ -1,5 +1,8 @@
+import logging
+
 import numpy as np
 import pandas as pd
+import pytest
 from braunschweig.analysis.population_validation import controls as C
 from braunschweig.analysis.population_validation.population_source import PopulationFrames
 
@@ -55,3 +58,29 @@ def test_registry_is_nonempty_and_well_formed():
         assert ctrl.family in {"census", "mid_person", "mid_household", "distribution"}
         assert ctrl.geography in {"kreis", "gemeinde"}
         assert callable(ctrl.realized)
+
+
+def test_absent_column_categorical_person_logs_warning_and_returns_empty(caplog):
+    frames, geo = _frames(), _geo()
+    ctrl = C.categorical_person_control(
+        "missing_attr", "mid_person", "kreis",
+        column="not_a_column", categories=("a",), target=None,
+    )
+    with caplog.at_level(logging.WARNING):
+        out = ctrl.realized(frames, geo)
+    assert list(out.columns) == ["geo_id", "category", "synthetic_count"]
+    assert out.empty
+    assert any("missing_attr" in r.message for r in caplog.records)
+
+
+def test_absent_column_bucket_household_logs_warning_and_returns_empty(caplog):
+    frames, geo = _frames(), _geo()
+    ctrl = C.bucket_household_control(
+        "missing_hh_attr", "mid_household", "kreis",
+        column="not_a_column", top=3, target=None,
+    )
+    with caplog.at_level(logging.WARNING):
+        out = ctrl.realized(frames, geo)
+    assert list(out.columns) == ["geo_id", "category", "synthetic_count"]
+    assert out.empty
+    assert any("missing_hh_attr" in r.message for r in caplog.records)

@@ -5,16 +5,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import pandas as pd
 
 from braunschweig.data.mid import reference_tables as RT
 
+if TYPE_CHECKING:
+    from braunschweig.analysis.population_validation.population_source import PopulationFrames
+
 LOGGER = logging.getLogger("braunschweig.analysis.population_validation.controls")
 
-RealizedExtractor = Callable[["object", pd.DataFrame], pd.DataFrame]
+RealizedExtractor = Callable[["PopulationFrames", pd.DataFrame], pd.DataFrame]
 TargetLoader = Callable[[str], pd.DataFrame]
 
 
@@ -29,7 +32,11 @@ class Control:
 
 
 def _geo_col(geography: str) -> str:
-    return "ars5" if geography == "kreis" else "commune_id"
+    if geography == "kreis":
+        return "ars5"
+    if geography == "gemeinde":
+        return "commune_id"
+    raise ValueError(f"unknown geography {geography!r}; expected 'kreis' or 'gemeinde'")
 
 
 def categorical_person_control(name, family, geography, column, categories, target):
@@ -60,7 +67,15 @@ def bucket_household_control(name, family, geography, column, top, target):
         df = frames.households.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         df = df.dropna(subset=[geo_col]).copy()
         vals = pd.to_numeric(df[column], errors="coerce").clip(upper=top)
-        df["category"] = vals.astype("Int64").astype(str)
+        n_na = int(vals.isna().sum())
+        if n_na:
+            LOGGER.warning(
+                "control %s: %d household(s) have non-numeric/missing %r; excluded from the bucket distribution",
+                name, n_na, column,
+            )
+        df = df.assign(_bucket=vals)
+        df = df[df["_bucket"].notna()]
+        df["category"] = df["_bucket"].astype("int64").astype(str)
         out = (df.groupby([geo_col, "category"]).size()
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
