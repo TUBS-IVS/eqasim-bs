@@ -780,19 +780,167 @@ def _execute_base(context):
     _sample_vehicle_counts(df_persons, _vehicle_data_path, _vehicle_seed)
 
     if context.config("consistent_car_availability"):
-        # A5: derive car_availability conditionally (licence + household cars)
-        # and rake to the P19 marginal. The car Bernoulli uniform is still
-        # consumed (apply_car=False) so the BICYCLE binarisation stays
-        # byte-identical to the legacy path; only car_availability is replaced.
+        # A5: the consistent car_availability derivation is DEFERRED to AFTER the
+        # income-aware number_of_cars draw (see the A5/A6 block further down), so
+        # it conditions on the FINAL household car count rather than the legacy
+        # H7 draw. Here only the car Bernoulli uniform is still consumed
+        # (apply_car=False) so the BICYCLE binarisation stays byte-identical to
+        # the legacy path; the fractional car_availability weights are left in
+        # place for the deferred A5 rake (which overwrites car_availability).
         _binarise_availability(df_persons, _vehicle_seed, apply_car=False)
+    else:
+        # OFF: legacy free P19 IPF weights -> {none, all} Bernoulli (and the
+        # bicycle binarisation), byte-identical to the historical in-line block.
+        # The legacy car_availability does NOT depend on number_of_cars, so it is
+        # set HERE (independent of the later income-aware cars draw).
+        _binarise_availability(df_persons, _vehicle_seed, apply_car=True)
+
+    # NOTE: the A5 consistent car_availability derivation and the A6 PT
+    # subscription block (which conditions on car_availability) are computed
+    # FURTHER DOWN, after the income-aware number_of_cars draw, so they see the
+    # FINAL car count. See the "A5/A6 (deferred)" block after _sample_cars_income_aware.
+
+    # Household size: keep IPF-balanced values when the margin was active,
+    # otherwise sample from the German census reference table.
+    if context.config("braunschweig.ipf.use_household_size_margin"):
+        df_persons["household_size"] = df_persons["household_size"].astype("category")
+        print(
+            "[braunschweig.enriched] using IPF-balanced hh_size; share by bin = "
+            + ", ".join(
+                f"{k}={v:.1%}"
+                for k, v in df_persons["household_size"]
+                .value_counts(normalize=True)
+                .sort_index()
+                .items()
+            )
+        )
+    else:
+        df_household_size = context.stage("braunschweig.data.census.household_size")
+
+        minimum_age = context.config("braunschweig.minimum_age.one_person_household")
+        df_household_size["lower_age"] = df_household_size["lower_age"].replace({0: minimum_age})
+
+        df_young = df_household_size[df_household_size["lower_age"] == minimum_age].copy()
+        df_young["lower_age"] = 0
+        df_young["upper_age"] = minimum_age
+        df_young.loc[df_young["household_size"] == "1", "weight"] = 0
+
+        df_household_size = pd.concat([df_household_size, df_young])
+
+        for (lower_age, upper_age, sex), df in df_household_size.groupby(["lower_age", "upper_age", "sex"]):
+            f = df_persons["age"].between(lower_age, upper_age, inclusive="left")
+            f &= df_persons["sex"] == sex  # TODO
+
+            df = df.copy()
+            df["weight"] /= df["weight"].sum()
+            df = df.sample(n=np.count_nonzero(f), weights="weight", replace=True)
+            df_persons.loc[f, "household_size"] = df["household_size"].values
+
+        df_persons["household_size"] = df_persons["household_size"].astype("category")
+
+    # Household income (overwrite). The reference table can be 5-bin
+    # (Bavaria GENESIS) or 6-bin (Braunschweig MiD H4); pick adaptively.
+    df_income = context.stage("braunschweig.data.census.household_income")
+    income_bins = set(df_income["household_size"].astype(str).unique())
+    income_size_map, scheme = _build_income_size_map(income_bins)
+    income_lookup_size = df_persons["household_size"].astype(str).map(
+        lambda s: _income_bin_for_size(s, income_size_map, scheme)
+    )
+    unresolved = set(income_lookup_size.unique()) - income_bins
+    if unresolved:
+        raise RuntimeError(
+            "income_size_map produced bins not present in df_income: "
+            f"{sorted(unresolved)} (reference has {sorted(income_bins)}, "
+            f"scheme={scheme})"
+        )
+
+    for household_size, df in df_income.groupby("household_size"):
+        f = (income_lookup_size == household_size).values
+        df = df.copy()
+        df["weight"] /= df["weight"].sum()
+        df = df.sample(n=np.count_nonzero(f), weights="weight", replace=True)
+        df_persons.loc[f, "household_income"] = df["income_class"].values
+
+    n_missing_income = int(df_persons["household_income"].isna().sum())
+    if n_missing_income > 0:
+        raise RuntimeError(
+            f"{n_missing_income} persons have no household_income after "
+            f"reference sampling (scheme={scheme}, reference bins "
+            f"{sorted(income_bins)}, lookup bins "
+            f"{sorted(income_lookup_size.unique())})"
+        )
+
+    df_persons["high_income"] = df_persons["household_income"] == "5000+"
+
+    # 5-class MiD economic status.
+    #
+    # ON (status_from_hhtype, default): sample economic_status from the MiD
+    # P(status | hhtype, region) (Bayes; NDS base tilted by RegioStaR-7 raumtyp)
+    # and RE-DERIVE household_income / high_income from the sampled status, so the
+    # much stronger household-type predictor drives both. household_income_eur is
+    # computed downstream (INKAR scaling) from the re-derived class.
+    #
+    # OFF: exact legacy path (commit c65399d) -- economic_status mapped 1:1 from
+    # the already-sampled income EUR-class; income untouched -> byte-identical.
+    if context.config("status_from_hhtype"):
+        df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
+        df_persons = _derive_economic_status_from_hhtype(
+            df_persons,
+            context.config("data_path"),
+            df_regiostar,
+            context.config("random_seed"),
+        )
+    else:
+        df_persons = _derive_economic_status(df_persons)
+
+    # INCOME/HOUSEHOLD-TYPE-AWARE number_of_cars (cars_income_aware). Default ON.
+    #
+    # The legacy per-Kreis MiD-H7 number_of_cars was already sampled in the
+    # VEHICLE COUNTS block (above, before car_availability). Here -- now that
+    # economic_status, the Haushaltstyp inputs (age / hh_type) and commune_id
+    # (raumtyp) are all available -- it is OVERWRITTEN by a draw from the
+    # MiD-coupled pmf P(num_cars | hhtype, status, raumtyp), raked per Kreis back
+    # to the MiD-H7 marginal so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7
+    # control (only the within-Kreis allocation by income/hhtype/raumtyp changes).
+    # OFF -> the legacy H7 draw is left untouched (byte-identical).
+    #
+    # CAUSAL ORDER (A5/A6 consistency): the A5 consistent car_availability
+    # derivation and the A6 PT-subscription block are run AFTER this income-aware
+    # draw (see the "A5/A6 (deferred)" block immediately below), so they condition
+    # on the FINAL income-aware number_of_cars rather than the legacy H7 draw.
+    # Otherwise a household could end up with car_availability != "none" while its
+    # final number_of_cars == 0 (the bug this order fixes). The downstream fleet
+    # stage (F5, braunschweig.synthesis.vehicles.cars.household) reads this final,
+    # income-aware number_of_cars, so vehicle generation is income-coupled.
+    if context.config("cars_income_aware"):
+        df_regiostar_cars = context.stage("braunschweig.data.bbsr.regiostar")
+        df_persons = _sample_cars_income_aware(
+            df_persons,
+            context.config("data_path"),
+            context.config("random_seed"),
+            df_regiostar_cars,
+        )
+
+    # A5/A6 (deferred): now that number_of_cars is FINAL (income-aware draw above,
+    # or the legacy H7 draw if cars_income_aware is OFF), derive the consistent
+    # car_availability (A5) and then the PT subscription (A6, which conditions on
+    # car_availability). Moving these here -- rather than next to the vehicle-count
+    # block -- guarantees A5 sees the final household car count, so no household
+    # gets car_availability != "none" with a final number_of_cars == 0.
+    #
+    # RNG: A5 consumes its own seeded stream (random_seed + 41719) exactly once;
+    # PT consumes (random_seed + 8572) exactly once. Both are independent of the
+    # income-aware cars stream (+47629) and the vehicle-count / binarisation
+    # streams, so the OFF paths stay byte-identical -- only the call ORDER moved.
+    if context.config("consistent_car_availability"):
+        # A5: derive car_availability conditionally (licence + FINAL household
+        # cars) and rake to the P19 marginal. The car Bernoulli uniform was
+        # already consumed (apply_car=False) in the vehicle block to keep the
+        # BICYCLE binarisation byte-identical; here car_availability is overwritten.
         _derive_car_availability_consistent(
             df_persons, mid, _vehicle_seed,
             context.config("braunschweig.minimum_age.car_availability"),
         )
-    else:
-        # OFF: legacy free P19 IPF weights -> {none, all} Bernoulli (and the
-        # bicycle binarisation), byte-identical to the historical in-line block.
-        _binarise_availability(df_persons, _vehicle_seed, apply_car=True)
 
     # PT SUBSCRIPTION (categorical, MiD 2023 P24.1).
     #
@@ -1003,7 +1151,8 @@ def _execute_base(context):
             # the P24.1 marginal so the aggregate target stays matched (the
             # carless<->PT-pass coupling is imposed WITHIN persons; the column
             # levels are preserved). car_availability is already categorical at
-            # this point ({none, some, all} with A5 ON, {none, all} with A5 OFF).
+            # this point ({none, some, all} with A5 ON, {none, all} with A5 OFF)
+            # and reflects the FINAL income-aware number_of_cars (A5 ran above).
             if "car_availability" not in df_persons.columns:
                 print(
                     "[braunschweig.enriched] WARNING: PT A6 car-availability "
@@ -1060,130 +1209,6 @@ def _execute_base(context):
         "[braunschweig.enriched] derived has_pt_subscription = "
         f"{df_persons['has_pt_subscription'].mean():.1%}"
     )
-
-    # (Vehicle counts + car/bike availability were computed above, before PT, so
-    # the A5 consistent car_availability can condition on licence + household
-    # cars; see the VEHICLE COUNTS block after the licence IPF.)
-
-    # Household size: keep IPF-balanced values when the margin was active,
-    # otherwise sample from the German census reference table.
-    if context.config("braunschweig.ipf.use_household_size_margin"):
-        df_persons["household_size"] = df_persons["household_size"].astype("category")
-        print(
-            "[braunschweig.enriched] using IPF-balanced hh_size; share by bin = "
-            + ", ".join(
-                f"{k}={v:.1%}"
-                for k, v in df_persons["household_size"]
-                .value_counts(normalize=True)
-                .sort_index()
-                .items()
-            )
-        )
-    else:
-        df_household_size = context.stage("braunschweig.data.census.household_size")
-
-        minimum_age = context.config("braunschweig.minimum_age.one_person_household")
-        df_household_size["lower_age"] = df_household_size["lower_age"].replace({0: minimum_age})
-
-        df_young = df_household_size[df_household_size["lower_age"] == minimum_age].copy()
-        df_young["lower_age"] = 0
-        df_young["upper_age"] = minimum_age
-        df_young.loc[df_young["household_size"] == "1", "weight"] = 0
-
-        df_household_size = pd.concat([df_household_size, df_young])
-
-        for (lower_age, upper_age, sex), df in df_household_size.groupby(["lower_age", "upper_age", "sex"]):
-            f = df_persons["age"].between(lower_age, upper_age, inclusive="left")
-            f &= df_persons["sex"] == sex  # TODO
-
-            df = df.copy()
-            df["weight"] /= df["weight"].sum()
-            df = df.sample(n=np.count_nonzero(f), weights="weight", replace=True)
-            df_persons.loc[f, "household_size"] = df["household_size"].values
-
-        df_persons["household_size"] = df_persons["household_size"].astype("category")
-
-    # Household income (overwrite). The reference table can be 5-bin
-    # (Bavaria GENESIS) or 6-bin (Braunschweig MiD H4); pick adaptively.
-    df_income = context.stage("braunschweig.data.census.household_income")
-    income_bins = set(df_income["household_size"].astype(str).unique())
-    income_size_map, scheme = _build_income_size_map(income_bins)
-    income_lookup_size = df_persons["household_size"].astype(str).map(
-        lambda s: _income_bin_for_size(s, income_size_map, scheme)
-    )
-    unresolved = set(income_lookup_size.unique()) - income_bins
-    if unresolved:
-        raise RuntimeError(
-            "income_size_map produced bins not present in df_income: "
-            f"{sorted(unresolved)} (reference has {sorted(income_bins)}, "
-            f"scheme={scheme})"
-        )
-
-    for household_size, df in df_income.groupby("household_size"):
-        f = (income_lookup_size == household_size).values
-        df = df.copy()
-        df["weight"] /= df["weight"].sum()
-        df = df.sample(n=np.count_nonzero(f), weights="weight", replace=True)
-        df_persons.loc[f, "household_income"] = df["income_class"].values
-
-    n_missing_income = int(df_persons["household_income"].isna().sum())
-    if n_missing_income > 0:
-        raise RuntimeError(
-            f"{n_missing_income} persons have no household_income after "
-            f"reference sampling (scheme={scheme}, reference bins "
-            f"{sorted(income_bins)}, lookup bins "
-            f"{sorted(income_lookup_size.unique())})"
-        )
-
-    df_persons["high_income"] = df_persons["household_income"] == "5000+"
-
-    # 5-class MiD economic status.
-    #
-    # ON (status_from_hhtype, default): sample economic_status from the MiD
-    # P(status | hhtype, region) (Bayes; NDS base tilted by RegioStaR-7 raumtyp)
-    # and RE-DERIVE household_income / high_income from the sampled status, so the
-    # much stronger household-type predictor drives both. household_income_eur is
-    # computed downstream (INKAR scaling) from the re-derived class.
-    #
-    # OFF: exact legacy path (commit c65399d) -- economic_status mapped 1:1 from
-    # the already-sampled income EUR-class; income untouched -> byte-identical.
-    if context.config("status_from_hhtype"):
-        df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
-        df_persons = _derive_economic_status_from_hhtype(
-            df_persons,
-            context.config("data_path"),
-            df_regiostar,
-            context.config("random_seed"),
-        )
-    else:
-        df_persons = _derive_economic_status(df_persons)
-
-    # INCOME/HOUSEHOLD-TYPE-AWARE number_of_cars (cars_income_aware). Default ON.
-    #
-    # The legacy per-Kreis MiD-H7 number_of_cars was already sampled in the
-    # VEHICLE COUNTS block (above, before car_availability). Here -- now that
-    # economic_status, the Haushaltstyp inputs (age / hh_type) and commune_id
-    # (raumtyp) are all available -- it is OVERWRITTEN by a draw from the
-    # MiD-coupled pmf P(num_cars | hhtype, status, raumtyp), raked per Kreis back
-    # to the MiD-H7 marginal so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7
-    # control (only the within-Kreis allocation by income/hhtype/raumtyp changes).
-    # OFF -> the legacy H7 draw is left untouched (byte-identical).
-    #
-    # NOTE: A5 (consistent car_availability) was computed in the vehicle block on
-    # the legacy per-Kreis cars draw. Because the rake preserves the per-Kreis H7
-    # marginal exactly, the COUNT of 0-car households per Kreis (and hence the
-    # aggregate P19 "all" target A5 rakes to) is unchanged; only WHICH households
-    # are 0-car shifts by income. The downstream fleet stage (F5,
-    # braunschweig.synthesis.vehicles.cars.household) reads this final, income-aware
-    # number_of_cars, so vehicle generation is income-coupled.
-    if context.config("cars_income_aware"):
-        df_regiostar_cars = context.stage("braunschweig.data.bbsr.regiostar")
-        df_persons = _sample_cars_income_aware(
-            df_persons,
-            context.config("data_path"),
-            context.config("random_seed"),
-            df_regiostar_cars,
-        )
 
     # Urban-area resident flag (legacy Munich/Paris name kept for downstream
     # compatibility). Region-neutral default: only set when the regional
