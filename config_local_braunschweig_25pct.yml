@@ -22,6 +22,12 @@ config:
   output_path: eqasim-data/output_bs_25pct
   output_prefix: braunschweig_25pct_
 
+  # Vehicle fleet (spec A4 / Task F5): emit exactly the MiD-H7 number_of_cars
+  # vehicles per household (each owned by a licensed adult, typed via the
+  # KBA/HBEFA fleet chain) instead of one identical default car per person.
+  # OFF (vehicles_method: "default") reproduces the legacy fleet byte-identically.
+  vehicles_method: household
+
   java_memory: 44G
 
   # MATSim simulation iterations (0..N-1). N=200 → 200 iterations.

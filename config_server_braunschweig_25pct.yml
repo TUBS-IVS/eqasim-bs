@@ -29,6 +29,12 @@ config:
   output_path: eqasim-data/output_bs_25pct
   output_prefix: braunschweig_25pct_
 
+  # Vehicle fleet (spec A4 / Task F5): emit exactly the MiD-H7 number_of_cars
+  # vehicles per household (each owned by a licensed adult, typed via the
+  # KBA/HBEFA fleet chain) instead of one identical default car per person.
+  # OFF (vehicles_method: "default") reproduces the legacy fleet byte-identically.
+  vehicles_method: household
+
   # 128 GB box: give the JVM most of the RAM (the Python driver is idle during
   # MATSim). 25 % population fits easily; a large heap minimises GC.
   java_memory: 100G

@@ -7,6 +7,10 @@ def configure(context):
         context.stage("synthesis.vehicles.cars.default", alias = "cars")
     elif method == "fleet_sample":
         context.stage("synthesis.vehicles.cars.fleet_sampling", alias = "cars")
+    elif method == "household":
+        # Spec A4 / Task F5: exactly number_of_cars German vehicles per household,
+        # each owned by a licensed adult and typed via the KBA/HBEFA fleet chain.
+        context.stage("braunschweig.synthesis.vehicles.cars.household", alias = "cars")
     else:
         raise RuntimeError("Unknown vehicles generation method : %s" % method)
     
