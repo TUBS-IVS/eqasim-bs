@@ -33,6 +33,17 @@ config:
   mode_choice: false
   matching_attributes: ["sex", "age_class", "has_license"]
 
+  # --- Tier A3: reactivate the synthesised couple / studies /
+  # socioprofessional_class person attributes (previously dead constants in
+  # braunschweig.ipf.attributed). couple is derived from the formed hh_type,
+  # studies from age x the Destatis education-participation share
+  # (braunschweig.data.education.student_share), socioprofessional_class from
+  # the broad activity status. When ON, ``studies`` is also appended as the
+  # lowest-priority HTS matching key so students get student activity-day
+  # donors. Default ON; set to false to reproduce the legacy byte-identical
+  # output (couple=False, studies=False, socioprofessional_class=0).
+  reactivate_person_attributes: true
+
   # --- R-A: Gravity calibration (TASK-001).
   # Poisson-GLM MLE on BA Pendleratlas (939 ZGB pairs) → β=−0.065
   # (log-L +82 % vs default −0.18). Note: braunschweig.gravity.model

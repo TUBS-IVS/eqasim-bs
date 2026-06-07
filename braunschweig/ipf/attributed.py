@@ -14,6 +14,9 @@ import numpy as np
 
 import braunschweig.ipf.household_composition as hc_module
 from braunschweig.ipf.household_composition import build_bucket_households
+from braunschweig.data.education.student_share import (
+    build_share_lookup, share_for_age,
+)
 
 """
 This stage adds additional attributes to the generated synthetic population from IPF.
@@ -37,6 +40,167 @@ household intact.
 # size-7+ household, which ``_assign_household_types`` types from the ``6+``
 # distribution (clip-to-6).
 _HH_SIZE_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6+": 6}
+
+
+# ---------------------------------------------------------------------------
+# Person-attribute reactivation (Task A3): couple / studies / SPC.
+#
+# These three attributes were previously hardcoded to dead constants
+# (couple=False, studies=False, socioprofessional_class=0) although the data to
+# derive them already exists in the formed household and the synthesised age /
+# employment. The derivations below are gated by the config flag
+# ``reactivate_person_attributes`` (default True): with the flag OFF the legacy
+# constants are kept, so the pipeline output is byte-identical to before.
+# ---------------------------------------------------------------------------
+
+# Household types whose adults form a couple. In a ``couple`` shell the two
+# adults ARE the partners; in a ``couple_with_children`` shell the (>=2) adults
+# are the partners and the children are not. ``single_parent`` / ``single`` /
+# ``other_multi`` carry no couple relationship.
+COUPLE_HOUSEHOLD_TYPES = frozenset({"couple", "couple_with_children"})
+
+# eqasim/INSEE CS1 socioprofessional-class codes (see
+# eqasim_common.analysis.marginals.SOCIOPROFESIONAL_CLASS_LABELS):
+#   0 ??? 1 Agriculture 2 Independent 3 Science 4 Intermediate
+#   5 Employee 6 Worker 7 Retired 8 Other (incl. students/children)
+SPC_INDEPENDENT = 2
+SPC_SCIENCE = 3
+SPC_INTERMEDIATE = 4
+SPC_EMPLOYEE = 5
+SPC_WORKER = 6
+SPC_RETIRED = 7
+SPC_STUDENT = 8          # students fall in the inactive "Other" class (ENTD CS24 80 -> 8)
+SPC_OTHER_INACTIVE = 8   # working-age inactive non-students also map to "Other"
+
+# Statutory retirement age used to separate retired (-> SPC 7) from working-age
+# inactive (-> SPC 8). Germany's Regelaltersgrenze is rising toward 67; 65 is a
+# conservative threshold for classifying the inactive elderly.
+SPC_RETIREMENT_AGE = 65
+
+
+def derive_couple(hh_type, age, min_adult_age: int = 18):
+    """Derive the boolean ``couple`` attribute per person from the realised
+    household type (Task A3a).
+
+    A person is in a couple iff they are an adult (``age >= min_adult_age``) AND
+    their household type is ``couple`` or ``couple_with_children`` -- exactly the
+    adults the household-composition pass paired as partners. Children in a
+    couple-with-children household, and everyone in single / single_parent /
+    other_multi households, are not in a couple.
+
+    Args:
+        hh_type: per-person household-type Series (string / category).
+        age: per-person integer age Series.
+        min_adult_age: adult threshold (matches the chunking ``min_adult_age``).
+
+    Returns:
+        A boolean Series aligned to the inputs.
+    """
+    hh_type = pd.Series(hh_type).astype(str).reset_index(drop=True)
+    age = pd.Series(age).reset_index(drop=True)
+    is_couple_household = hh_type.isin(COUPLE_HOUSEHOLD_TYPES)
+    is_adult = age >= int(min_adult_age)
+    return (is_couple_household & is_adult).reset_index(drop=True)
+
+
+def derive_studies(age, share_table, random_seed: int):
+    """Synthesise the boolean ``studies`` attribute from age + an
+    education-participation share per age band (Task A3b).
+
+    Each person of age ``a`` studies with probability ``share_for_age(a)`` drawn
+    from ``share_table`` (Destatis Bildungsbeteiligung; see
+    ``braunschweig.data.education.student_share``). The share is exogenous -- it
+    is NOT taken from the later campus assignment in the education-gravity stage,
+    so there is no chicken-egg dependency. The draw is seeded and deterministic.
+
+    Fallback transparency (CLAUDE.md): ages that fall outside every band receive
+    a share of 0.0; the count and rate of such persons is logged so a silent gap
+    in the share table is observable.
+
+    Args:
+        age: per-person integer age Series.
+        share_table: DataFrame with columns ``age_lower, age_upper,
+            student_share`` (contiguous bands).
+        random_seed: seed for the per-person Bernoulli draw.
+
+    Returns:
+        A boolean Series aligned to the input.
+    """
+    age = pd.Series(age).reset_index(drop=True)
+    lookup = build_share_lookup(share_table)
+    # Vectorise the band lookup over the unique ages present (cheap; ages are a
+    # small integer range), then map back to every person.
+    unique_ages = age.unique()
+    share_by_age = {int(a): share_for_age(int(a), lookup) for a in unique_ages}
+    per_person_share = age.map(share_by_age).to_numpy(dtype=float)
+
+    # Fallback transparency: how many persons hit no band (share 0 because they
+    # are outside the table, e.g. the pre-school cohort). Reported as a rate.
+    band_lower = min(lo for lo, _, _ in lookup) if lookup else 0
+    band_upper = max(up for _, up, _ in lookup) if lookup else 0
+    out_of_table = ((age < band_lower) | (age >= band_upper)).to_numpy()
+    n = len(age)
+    n_out = int(out_of_table.sum())
+    if n > 0:
+        print(
+            f"[braunschweig.ipf.attributed] studies: {n - n_out:,}/{n:,} persons "
+            f"({100.0 * (n - n_out) / n:.1f}%) matched an age band; "
+            f"{n_out:,} ({100.0 * n_out / n:.1f}%) outside the table -> share 0.0"
+        )
+
+    rng = np.random.RandomState(random_seed + 90210)
+    draws = rng.random_sample(n)
+    return pd.Series(draws < per_person_share)
+
+
+def derive_socioprofessional_class(employed, age, studies):
+    """Map the eqasim/INSEE ``socioprofessional_class`` from broad activity
+    status (Task A3c).
+
+    No occupation data exists upstream of the HTS in this fork, so SPC is derived
+    from the activity status that the IPF + age inflation DO carry:
+
+    - ``studies`` -> 8 (Other; students are inactive in the CS1 sense, matching
+      ENTD CS24 code 80 -> 8).
+    - inactive (not employed, not studying) and ``age >= SPC_RETIREMENT_AGE``
+      -> 7 (Retired).
+    - inactive working-age -> 8 (Other inactive).
+    - employed -> an age-proxied active occupational class. Because real
+      occupation is unavailable, age is used as a COARSE seniority proxy
+      (documented assumption, NOT measured occupation): young employed lean
+      toward Worker/Employee, mid-career toward Intermediate, older toward
+      Science (cadres). This keeps the active SPC non-degenerate so the HTS
+      matching does not collapse all employed persons onto one donor class.
+
+    The mapping is a pure deterministic function of (employed, age, studies);
+    studies takes precedence over employment (working students count as
+    students for the activity-status attribute).
+
+    Returns:
+        An integer Series aligned to the inputs.
+    """
+    employed = pd.Series(employed).reset_index(drop=True)
+    age = pd.Series(age).reset_index(drop=True)
+    studies = pd.Series(studies).reset_index(drop=True)
+
+    spc = pd.Series(np.full(len(age), SPC_OTHER_INACTIVE, dtype=int))
+
+    # Retired: inactive elderly (overwritten by studies/employed below).
+    spc[age >= SPC_RETIREMENT_AGE] = SPC_RETIRED
+
+    # Employed -> age-proxied active class. Boundaries are a documented coarse
+    # seniority proxy, not measured occupation.
+    emp = employed.astype(bool).to_numpy()
+    a = age.to_numpy()
+    active = np.full(len(age), SPC_INTERMEDIATE, dtype=int)
+    active[a < 25] = SPC_EMPLOYEE        # entry-level / apprenticeship-aged
+    active[(a >= 25) & (a < 45)] = SPC_INTERMEDIATE
+    active[a >= 45] = SPC_SCIENCE        # senior / cadre-aged
+    spc[emp] = active[emp]
+
+    # Students take precedence over employment for the activity-status attribute.
+    spc[studies.astype(bool)] = SPC_STUDENT
+    return spc.reset_index(drop=True)
 
 
 def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
@@ -569,6 +733,15 @@ def configure(context):
     if context.config("braunschweig.ipf.age_aware_chunking"):
         context.stage("braunschweig.data.census.households_type")
 
+    # Person-attribute reactivation (Task A3): derive couple / studies /
+    # socioprofessional_class instead of the dead constants. Default ON; OFF
+    # keeps the legacy constants (couple=False, studies=False, SPC=0) so the
+    # output is byte-identical. The studies share table is only staged when the
+    # flag is on, so OFF does not change the synpp dependency graph.
+    context.config("reactivate_person_attributes", True)
+    if context.config("reactivate_person_attributes"):
+        context.stage("braunschweig.data.education.student_share")
+
 def execute(context):
     from braunschweig.ipf.config_validation import (
         ATTRIBUTED_REQUIREMENTS, validate_household_realism_config)
@@ -607,6 +780,10 @@ def execute(context):
     else:
         df["household_size"] = 1
 
+    # Placeholder values. When ``reactivate_person_attributes`` is ON these are
+    # overwritten at the end of execute() (after age inflation + household
+    # formation, which provide the integer age / hh_type the derivations need);
+    # when OFF the legacy dead constants are kept (byte-identical output).
     df["couple"] = False
     df["studies"] = False
     df["socioprofessional_class"] = 0
@@ -690,6 +867,50 @@ def execute(context):
             df = _assign_household_types(
                 df, df_household_type, context.config("random_seed")
             )
+
+    # Person-attribute reactivation (Task A3): override the dead placeholder
+    # constants with the derived couple / studies / socioprofessional_class.
+    # Gated by ``reactivate_person_attributes``; OFF -> the constants above are
+    # kept and the output is byte-identical to the legacy behaviour.
+    if context.config("reactivate_person_attributes"):
+        random_seed = context.config("random_seed")
+        min_adult_age = int(context.config("braunschweig.chunking.minimum_adult_age"))
+
+        # couple requires the realised household type from the formation pass.
+        # Without it (household formation disabled, no hh_type column) the couple
+        # relationship is undefined -> keep False and log that it stayed dead.
+        if "hh_type" in df.columns:
+            df["couple"] = derive_couple(
+                df["hh_type"], df["age"], min_adult_age=min_adult_age
+            ).to_numpy()
+            n_couple = int(df["couple"].sum())
+            print(
+                f"[braunschweig.ipf.attributed] couple: derived True for "
+                f"{n_couple:,}/{len(df):,} persons "
+                f"({100.0 * n_couple / max(len(df), 1):.1f}%) from hh_type."
+            )
+        else:
+            print(
+                "[braunschweig.ipf.attributed] couple: no hh_type column "
+                "(household formation disabled) -> couple stays False."
+            )
+
+        share_table = context.stage("braunschweig.data.education.student_share")
+        df["studies"] = derive_studies(
+            df["age"], share_table, random_seed
+        ).to_numpy()
+
+        df["socioprofessional_class"] = derive_socioprofessional_class(
+            df["employed"], df["age"], df["studies"]
+        ).to_numpy()
+        spc_counts = (
+            df["socioprofessional_class"].value_counts(normalize=True)
+            .sort_index().to_dict()
+        )
+        print(
+            "[braunschweig.ipf.attributed] socioprofessional_class shares: "
+            + ", ".join(f"{k}={v:.1%}" for k, v in spc_counts.items())
+        )
 
     return df
 

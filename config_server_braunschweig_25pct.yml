@@ -54,6 +54,13 @@ config:
   mode_choice: false
   matching_attributes: ["sex", "age_class", "has_license"]
 
+  # --- Tier A3: reactivate couple / studies / socioprofessional_class person
+  # attributes (see config_local_braunschweig_25pct.yml for the full rationale).
+  # couple <- hh_type; studies <- age x Destatis education-participation share;
+  # socioprofessional_class <- broad activity status. ``studies`` is appended as
+  # the lowest-priority HTS matching key. Default ON; false reproduces legacy.
+  reactivate_person_attributes: true
+
   # Urban parking: tag urban residents (isParis) + inner-ring activities so the
   # BavariaCarCostModel charges 3 EUR/h parking for non-resident car trips into
   # the BS inner ring (8 km around Hbf). Braunschweig's core is parking-priced in

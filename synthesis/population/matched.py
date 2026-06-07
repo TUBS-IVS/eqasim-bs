@@ -24,11 +24,40 @@ DEFAULT_MATCHING_ATTRIBUTES = [
     "departement_id"
 ]
 
+
+def resolve_matching_columns(configured, reactivate_person_attributes):
+    """Resolve the effective list of statistical-matching keys.
+
+    Expands the ``*default*`` sentinel into ``DEFAULT_MATCHING_ATTRIBUTES`` and,
+    when ``reactivate_person_attributes`` is True (Task A3b), appends ``studies``
+    as the LAST (lowest-priority) key unless it is already configured. With the
+    flag False the configured list is returned unchanged (byte-identical
+    matching). A fresh list is always returned so the caller never mutates the
+    config object in place.
+    """
+    columns = list(configured)
+    try:
+        default_index = columns.index("*default*")
+        columns[default_index:default_index + 1] = DEFAULT_MATCHING_ATTRIBUTES
+    except ValueError:
+        pass
+    if reactivate_person_attributes and "studies" not in columns:
+        columns.append("studies")
+    return columns
+
+
 def configure(context):
     context.config("processes")
     context.config("random_seed")
     context.config("matching_minimum_observations", 20)
     context.config("matching_attributes", DEFAULT_MATCHING_ATTRIBUTES)
+    # Task A3b: when the synthesised ``studies`` attribute is reactivated, add it
+    # as a matching key so students receive HTS donors with a student activity
+    # day. Default ON; OFF leaves ``matching_attributes`` untouched
+    # (byte-identical matching). The synthetic ``studies`` is produced by
+    # ``braunschweig.ipf.attributed`` and the HTS side already carries ``studies``
+    # (data.hts.*.cleaned), so the key is available on both sides.
+    context.config("reactivate_person_attributes", True)
 
     context.stage("synthesis.population.sampled")
     context.stage("synthesis.population.income.selected")
@@ -174,12 +203,13 @@ def execute(context):
 
     df_target = context.stage("synthesis.population.sampled")
 
-    columns = context.config("matching_attributes")
-
-    try:
-        default_index = columns.index("*default*")
-        columns[default_index:default_index + 1] = DEFAULT_MATCHING_ATTRIBUTES
-    except ValueError: pass
+    # Resolve matching keys: expand ``*default*`` and (Task A3b) append the
+    # reactivated ``studies`` key as the lowest-priority fallback key when the
+    # flag is ON. OFF -> the configured list is used unchanged (byte-identical).
+    columns = resolve_matching_columns(
+        context.config("matching_attributes"),
+        context.config("reactivate_person_attributes"),
+    )
 
     # Define matching attributes
     AGE_BOUNDARIES = [14, 29, 44, 59, 74, 1000]
