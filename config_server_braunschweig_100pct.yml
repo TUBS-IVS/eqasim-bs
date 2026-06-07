@@ -97,6 +97,12 @@ config:
   # --- IPF margins -------------------------------------------------------------
   # Per-commune household-size margin (Zensus 2022 1000A-2081).
   braunschweig.ipf.use_household_size_margin: true
+  # Determine economic_status from the MiD household-type x region predictor
+  # (Bayes: P(status|hhtype,region), Niedersachsen base tilted by RegioStaR-7),
+  # then re-derive household_income / household_income_eur from the sampled
+  # status. Household type is a much stronger SES predictor than the legacy 1:1
+  # income-class mapping. OFF -> legacy income-derived status (byte-identical).
+  status_from_hhtype: true
   # Dirichlet seed prior (sparse rural cells); 4-way employment margin.
   braunschweig.ipf.dirichlet_prior_strength: 0.5
   braunschweig.ipf.use_employment_margin: true

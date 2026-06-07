@@ -92,6 +92,13 @@ config:
   # 5000H-2001 alone (regions-aggregated) cannot capture.
   braunschweig.ipf.use_household_size_margin: true
 
+  # Determine economic_status from the MiD household-type x region predictor
+  # (Bayes: P(status|hhtype,region), Niedersachsen base tilted by RegioStaR-7),
+  # then re-derive household_income / household_income_eur from the sampled
+  # status. Household type is a much stronger SES predictor than the legacy 1:1
+  # income-class mapping. OFF -> legacy income-derived status (byte-identical).
+  status_from_hhtype: true
+
   # --- Phase 2 IPF smoothing (TASK-011, 2026-04-26) ----------------------
   # Symmetric-Dirichlet seed prior. Adds alpha pseudo-counts to every IPF
   # cell to dampen the influence of empty source cells in sparse rural
