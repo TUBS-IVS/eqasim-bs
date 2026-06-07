@@ -78,9 +78,18 @@ def categorical_person_control(name, family, geography, column, categories, targ
     return Control(name, family, geography, tuple(categories), realized, target)
 
 
-def bucket_household_control(name, family, geography, column, top, target):
+def bucket_household_control(name, family, geography, column, top, target, top_label=None):
+    """Bucket a numeric household column into ``[0, 1, ..., top-1, top_lab]`` categories.
+
+    ``top_label`` is the string label for values >= ``top`` (e.g. ``"6+"``).
+    When ``None`` (default), the top label is ``str(top)`` — identical to the
+    previous behaviour, so existing callers (cars_per_hh, bicycles_per_hh) are
+    byte-unchanged.
+    """
     geo_col = _geo_col(geography)
-    cats = tuple(str(i) for i in range(top + 1))
+    top_lab = top_label if top_label is not None else str(top)
+    # Categories: 0 .. top-1 as strings, then top_lab for values >= top.
+    cats = tuple(str(i) for i in range(top)) + (top_lab,)
 
     def realized(frames, geo) -> pd.DataFrame:
         if column not in frames.households.columns:
@@ -88,7 +97,7 @@ def bucket_household_control(name, family, geography, column, top, target):
             return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
         df = frames.households.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         df = df.dropna(subset=[geo_col]).copy()
-        vals = pd.to_numeric(df[column], errors="coerce").clip(upper=top)
+        vals = pd.to_numeric(df[column], errors="coerce")
         n_na = int(vals.isna().sum())
         if n_na:
             LOGGER.warning(
@@ -97,7 +106,12 @@ def bucket_household_control(name, family, geography, column, top, target):
             )
         df = df.assign(_bucket=vals)
         df = df[df["_bucket"].notna()]
-        df["category"] = df["_bucket"].astype("int64").astype(str)
+        # Clip values above top down to top (they will receive the top_lab label).
+        capped = df["_bucket"].clip(upper=top)
+        cat = capped.astype("int64").astype(str)
+        # Values equal to top (after clipping) get the top_lab label (e.g. "6+").
+        cat = cat.where(capped < top, top_lab)
+        df["category"] = cat.to_numpy()
         out = (df.groupby([geo_col, "category"]).size()
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
@@ -271,13 +285,36 @@ def household_size_target(data_path: str) -> pd.DataFrame:
     Reuses the census stage's own parser
     (:func:`braunschweig.data.census.households_type.load_household_size_by_commune`,
     the same per-commune size source the IPF size margin consumes). Categories are
-    the source's six size bins ("1".."5", "6+"); ``geo_id`` is the 12-digit
-    commune_id. Shares sum to 1 per commune."""
+    the source's six size bins ("1".."5", "6+"); ``geo_id`` is the 8-digit AGS
+    commune_id (matching the ``commune_id`` produced by
+    :func:`braunschweig.analysis.spatial.assign_geographies` and used by the
+    ``household_size`` bucket control).
+
+    The Zensus 1000A-2081 source carries a 12-digit ARS; this function converts
+    it to the 8-digit AGS via ``ARS[:5] + ARS[9:12]`` (the standard rule used
+    throughout the project). Shares sum to 1 per (converted) commune."""
     from braunschweig.data.census import households_type as HT
 
     df = HT.load_household_size_by_commune(data_path, SCOPE_PREFIXES)
     df["hh_size"] = df["hh_size"].astype(str)
-    return _shares_within_geo(df, "commune_id", "hh_size", "weight")
+    # Convert 12-digit ARS -> 8-digit AGS8 so the target geo_id matches the
+    # commune_id produced by assign_geographies (e.g. "031010000000" -> "03101000").
+    mask12 = df["commune_id"].str.len() == 12
+    df.loc[mask12, "commune_id"] = (
+        df.loc[mask12, "commune_id"].str[:5]
+        + df.loc[mask12, "commune_id"].str[9:12]
+    )
+    result = _shares_within_geo(df, "commune_id", "hh_size", "weight")
+    # Sanity check: shares should sum to 1 per commune (allow fp tolerance).
+    sums = result.groupby("geo_id")["target_share"].sum()
+    bad = sums[abs(sums - 1.0) > 1e-6]
+    if not bad.empty:
+        LOGGER.warning(
+            "household_size_target: %d commune(s) have target_share sum != 1.0 "
+            "(max deviation %.2e); check census source data.",
+            len(bad), float(abs(bad - 1.0).max()),
+        )
+    return result
 
 
 def _age_sex_kreis_frame(data_path: str) -> pd.DataFrame:
@@ -390,9 +427,12 @@ def build_registry(data_path: str) -> list[Control]:
     reg.append(categorical_person_control(
         "sex", "census", "kreis", "sex",
         ("male", "female"), sex_target))
-    reg.append(categorical_household_control(
+    # household_size uses the bucket builder so values >= 6 are collapsed to the
+    # "6+" label matching the Zensus 1000A-2081 target categories. The geography
+    # is "gemeinde" (8-digit commune_id) because the Zensus source is per-Gemeinde.
+    reg.append(bucket_household_control(
         "household_size", "census", "gemeinde", "household_size",
-        ("1", "2", "3", "4", "5", "6+"), household_size_target))
+        top=6, top_label="6+", target=household_size_target))
 
     # --- Economic status (DESCRIPTIVE-ONLY: Bayes-modelled, no geo target) ----
     LOGGER.info(
