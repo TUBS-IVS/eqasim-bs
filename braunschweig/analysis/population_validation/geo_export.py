@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import geopandas as gpd
 import pandas as pd
 
 LOGGER = logging.getLogger("braunschweig.analysis.geo_export")
@@ -54,6 +53,42 @@ def aggregate(df: pd.DataFrame, group_col: str, spec, count_name: str) -> pd.Dat
             ct = pd.crosstab(df[group_col], df[col].astype(str), normalize="index")
             ct.columns = [f"{col}_share_{c}" for c in ct.columns]
             out = out.merge(ct.reset_index(), on=group_col, how="left")
+    return out
+
+
+def _aggregate_level(persons, households, vehicles, geo_col,
+                     person_spec, household_spec, vehicle_spec) -> pd.DataFrame:
+    """Combine person + household + vehicle aggregates for one geography level
+    (keyed by geo_col) into a single wide frame.
+
+    Sources that are empty/None or lack geo_col are skipped (logged). The
+    returned frame always contains the count column from the person aggregate
+    (``n_persons``) plus any household/vehicle columns joined via outer merge on
+    ``geo_col``.
+    """
+    frames = []
+    p = pd.DataFrame(persons.drop(columns="geometry", errors="ignore"))
+    frames.append(aggregate(p, geo_col, person_spec, "n_persons"))
+
+    if households is not None and len(households) and geo_col in households.columns:
+        h = pd.DataFrame(households.drop(columns="geometry", errors="ignore"))
+        frames.append(aggregate(h, geo_col, household_spec, "n_households"))
+    elif household_spec:
+        LOGGER.info(
+            "geo_export: households absent/empty or missing %r; household aggregates skipped",
+            geo_col)
+
+    if vehicles is not None and len(vehicles) and geo_col in vehicles.columns:
+        v = pd.DataFrame(vehicles.drop(columns="geometry", errors="ignore"))
+        frames.append(aggregate(v, geo_col, vehicle_spec, "n_vehicles"))
+    elif vehicle_spec:
+        LOGGER.info(
+            "geo_export: vehicles absent/empty or missing %r; vehicle aggregates skipped",
+            geo_col)
+
+    out = frames[0]
+    for f in frames[1:]:
+        out = out.merge(f, on=geo_col, how="outer")
     return out
 
 
@@ -111,16 +146,17 @@ def write_geo_package(out_dir, persons, households, vehicles,
     if vehicles is not None and len(vehicles):
         vehicles.to_file(str(gpkg), layer="vehicles", driver="GPKG", mode="a")
 
-    # --- Gemeinde polygon layer with per-person aggregates ---
-    persons_df = pd.DataFrame(persons.drop(columns="geometry"))
-    agg_gem = aggregate(persons_df, "commune_id", person_spec, "n_persons")
+    # --- Gemeinde polygon layer with person + household + vehicle aggregates ---
+    agg_gem = _aggregate_level(persons, households, vehicles, "commune_id",
+                               person_spec, household_spec, vehicle_spec)
     if deviation_gemeinde is not None:
         agg_gem = agg_gem.merge(deviation_gemeinde, on="commune_id", how="left")
     gem = gemeinde_poly.merge(agg_gem, on="commune_id", how="left")
     gem.to_file(str(gpkg), layer="gemeinde_aggregat", driver="GPKG", mode="a")
 
-    # --- Kreis polygon layer with per-person aggregates ---
-    agg_kreis = aggregate(persons_df, "ars5", person_spec, "n_persons")
+    # --- Kreis polygon layer with person + household + vehicle aggregates ---
+    agg_kreis = _aggregate_level(persons, households, vehicles, "ars5",
+                                 person_spec, household_spec, vehicle_spec)
     if deviation_kreis is not None:
         agg_kreis = agg_kreis.merge(deviation_kreis, on="ars5", how="left")
     kreis = kreis_poly.merge(agg_kreis, on="ars5", how="left")
@@ -130,7 +166,7 @@ def write_geo_package(out_dir, persons, households, vehicles,
 
     # --- Flat CSV exports (no geometry, for spreadsheet / pandas use) ---
     for name, frame in (("level_persons", persons), ("level_households", households)):
-        if len(frame):
+        if frame is not None and len(frame):
             csv_path = out_dir / f"{name}.csv"
             pd.DataFrame(frame.drop(columns="geometry", errors="ignore")).to_csv(
                 csv_path, index=False)
