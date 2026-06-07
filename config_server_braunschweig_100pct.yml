@@ -155,6 +155,15 @@ config:
   # writer (householdIncomeEur) and any income-sensitive downstream model.
   income_eur_from_distribution: true
 
+  # Completeness household attribute housing_tenure {rent, own, other}. ON -> per
+  # household a tenure is sampled from P(tenure | income_bracket, raumtyp) (MiD
+  # income x Wohnen, NDS base + raumtyp tilt, Bayes-inverted) and written to the
+  # MATSim population as the string attribute "housingTenure". It is NOT consumed
+  # by the simulation (a completeness attribute, like the HSN/TSN vehicle engine
+  # attributes); it is provided for downstream studies. OFF -> the attribute is
+  # absent and the population output is byte-identical.
+  synthesise_housing_tenure: true
+
   # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
   # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
   # are neither employed nor studying and the per-person ticket-type vector

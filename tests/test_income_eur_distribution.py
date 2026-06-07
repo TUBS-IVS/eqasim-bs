@@ -215,15 +215,22 @@ def _inkar_frame():
     })
 
 
-def _run_distribution(df, seed=11):
+def _run_distribution(df, seed=11, with_status=True):
     from braunschweig.synthesis.population.enriched import _apply_distribution_income
     from braunschweig.data.census.household_income import load_class_midpoint_eur
+    from braunschweig.data.mid.income_by_status import (
+        load_income_by_status_bundesland,
+        load_income_by_status_raumtyp,
+    )
 
     df_b = load_income_by_size_bundesland(DATA_PATH)
     df_r = load_income_by_size_raumtyp(DATA_PATH)
     cmp = load_class_midpoint_eur(DATA_PATH)
+    df_sb = load_income_by_status_bundesland(DATA_PATH) if with_status else None
+    df_sr = load_income_by_status_raumtyp(DATA_PATH) if with_status else None
     return _apply_distribution_income(
         df, _inkar_frame(), df_b, df_r, _regiostar_frame(), cmp, seed,
+        df_status_bundesland=df_sb, df_status_raumtyp=df_sr,
     )
 
 
@@ -240,7 +247,11 @@ def test_rank_coherence_income_rises_with_status():
 
 def test_marginal_preserved_by_hh_size_nds():
     """The realised bracket distribution by (hh_size) matches the MiD NDS-base
-    distribution within tolerance (the rank-alignment keeps the cell marginal)."""
+    distribution within tolerance under the rank-alignment FALLBACK path (which
+    keeps the cell marginal EXACTLY). The empirical income x status path
+    (with_status=True) intentionally re-shapes the within-cell marginal toward the
+    size x status combination; that path's marginal recovery is covered (with a
+    base-weighted status population) in test_empirical_matches_both_marginals."""
     from braunschweig.data.mid.income_by_size import (
         _bracket_pmf_for_region_size, BUNDESLAND_NIEDERSACHSEN,
     )
@@ -249,7 +260,7 @@ def test_marginal_preserved_by_hh_size_nds():
     df = _make_population(n_households=12000)
     df_b = load_income_by_size_bundesland(DATA_PATH)
     df_r = load_income_by_size_raumtyp(DATA_PATH)
-    df = _run_distribution(df)
+    df = _run_distribution(df, with_status=False)
 
     # Re-derive each household's bracket index from the drawn EUR.
     bracket_low = np.array(
@@ -319,6 +330,185 @@ def test_class_label_consistent_with_eur():
         sub = df[df["household_income"] == c]
         if len(sub):
             means.append(sub["household_income_eur"].mean())
+    assert all(b > a for a, b in zip(means, means[1:])), means
+
+
+# ---------------------------------------------------------------------------
+# PART A: empirical income x economic-status conditioning (replaces rank-align)
+# ---------------------------------------------------------------------------
+
+def _bracket_index_from_eur(eur_values):
+    """Map drawn EUR values back to bracket indices via the bracket lower bounds."""
+    bracket_low = np.array(
+        [INCOME_BRACKET_BOUNDS_EUR[b][0] for b in INCOME_BRACKET_CATEGORIES],
+        dtype=float,
+    )
+    edges = bracket_low[1:]
+    return np.searchsorted(edges, np.asarray(eur_values, dtype=float), side="right")
+
+
+def _make_base_weighted_population(n_households=40000, seed=7):
+    """Population whose (hh_size, status) cells follow the MiD NDS base weights.
+
+    The empirical per-cell pmf reproduces the size conditional only when statuses
+    are distributed per the MiD status base (and the size conditional only when
+    sizes follow the size base). We draw hh_size and status independently from
+    their NDS weighted bases (the combination assumes conditional independence
+    given bracket, so an independent product seed is the matching test population).
+    A single raumtyp (BS, RS7 72) is used so one (size, status, 72) cell is tested
+    per (size, status). All households land in BS (INKAR tilt ~1.05, removed in the
+    bracket round-trip by using BS-only and comparing the raumtyp-72 reference).
+    """
+    from braunschweig.data.mid.income_by_size import load_income_by_size_bundesland
+    from braunschweig.data.mid.income_by_status import load_income_by_status_bundesland
+
+    df_b = load_income_by_size_bundesland(DATA_PATH)
+    df_s = load_income_by_status_bundesland(DATA_PATH)
+    nds_b = df_b[df_b["region"] == "niedersachsen"].drop_duplicates("hh_size")
+    nds_s = df_s[df_s["region"] == "niedersachsen"].drop_duplicates("status")
+    size_keys = nds_b["hh_size"].to_numpy()
+    size_w = nds_b["base_weighted"].to_numpy(dtype=float)
+    size_w = size_w / size_w.sum()
+    status_keys = nds_s["status"].to_numpy()
+    status_w = nds_s["base_weighted"].to_numpy(dtype=float)
+    status_w = status_w / status_w.sum()
+
+    rng = np.random.RandomState(seed)
+    sizes = rng.choice(size_keys, size=n_households, p=size_w)
+    statuses = rng.choice(status_keys, size=n_households, p=status_w)
+
+    rows = []
+    pid = 0
+    for hid in range(n_households):
+        size_key = sizes[hid]
+        status = statuses[hid]
+        n_members = 5 if size_key == "5+" else int(size_key)
+        for _ in range(n_members):
+            rows.append({
+                "person_id": pid,
+                "household_id": hid,
+                "age": int(rng.randint(20, 70)),
+                "household_size": size_key,
+                "economic_status": status,
+                "household_income": "2600-3000",
+                "high_income": False,
+                "commune_id": "031010000000",
+                "inside_braunschweig": True,
+                "inside_gifhorn": False,
+            })
+            pid += 1
+    return pd.DataFrame(rows)
+
+
+def _pmf_mean_income(pmf):
+    """Mean income (EUR) of a bracket pmf via the documented bracket midpoints."""
+    return float((np.asarray(pmf, dtype=float) * _bracket_midpoints()).sum())
+
+
+def test_empirical_matches_both_marginals():
+    """The realised household income tracks BOTH the empirical income-by-status
+    AND the income-by-size MiD conditionals -- i.e. the per-household bracket is
+    drawn from the size x status combination, not a size-only or status-only draw.
+
+    The per-cell pmf is the IPF / odds-multiplication reconciliation of the two
+    conditionals (combine_size_status_bracket_pmf), so the realised income LEVEL by
+    BOTH status and size tracks the respective empirical conditional. Exact full-
+    distribution marginal recovery is not expected: aggregating the reconciled
+    per-cell pmf over a population only reproduces a conditional when the (size,
+    status) JOINT matches the empirical correlation; this synthetic test population
+    draws size and status INDEPENDENTLY (the worst case for the conditional-
+    independence combination), so we assert the realised group means track the
+    empirical conditional MEANS and -- crucially -- that income responds to BOTH
+    dimensions:
+
+      * status means track the empirical P(bracket|status) means closely (<=18%,
+        and the SPREAD across status is large), proving the status conditional is
+        used; and
+      * the size means rise monotonically with size and span a clear range,
+        proving the size conditional is ALSO used (a status-only draw would leave
+        the size means flat).
+    """
+    from braunschweig.data.mid.income_by_status import (
+        income_bracket_probabilities_by_status,
+        load_income_by_status_bundesland,
+        load_income_by_status_raumtyp,
+    )
+    df = _make_base_weighted_population()
+    df = _run_distribution(df, with_status=True)
+    # Empirical path took (essentially) all households (BS commune present in the
+    # raumtyp tilt; every NDS size/status base cell exists).
+    assert df.attrs["income_distribution_use_status"] is True
+    assert df.attrs["income_distribution_fallback_rate"] < 0.01
+
+    df_b = load_income_by_size_bundesland(DATA_PATH)
+    df_r = load_income_by_size_raumtyp(DATA_PATH)
+    df_sb = load_income_by_status_bundesland(DATA_PATH)
+    df_sr = load_income_by_status_raumtyp(DATA_PATH)
+
+    hh = df.drop_duplicates("household_id").copy()
+    raumtyp = "stadtregion_regiopole_grossstadt"  # RS7 72 (BS)
+    inkar_bs = 1.05  # BS INKAR fine tilt; removed for comparison to the MiD mean.
+
+    # (1) income-by-STATUS: realised per-status mean tracks the empirical
+    #     P(bracket | status, raumtyp) mean. The status conditional is the stronger
+    #     income driver, so recovery is close even with the independent test joint.
+    status_means_real = []
+    for status in ECONOMIC_STATUS_CATEGORIES:
+        realised_mean = hh.loc[hh["economic_status"] == status,
+                               "household_income_eur"].mean() / inkar_bs
+        status_means_real.append(realised_mean)
+        ref_mean = _pmf_mean_income(
+            income_bracket_probabilities_by_status(df_sb, df_sr, status, raumtyp)
+        )
+        assert abs(realised_mean - ref_mean) / ref_mean < 0.18, (
+            "status", status, realised_mean, ref_mean
+        )
+    # The status conditional genuinely shapes income: a wide monotone spread.
+    assert status_means_real[-1] > 2.0 * status_means_real[0]
+
+    # (2) income-by-SIZE: the size conditional is ALSO used -- realised per-size
+    #     mean rises monotonically with size (1..4) and spans a clear range, which
+    #     a status-only draw could not produce.
+    size_means_real = [
+        hh.loc[hh["household_size"] == s, "household_income_eur"].mean() / inkar_bs
+        for s in ("1", "2", "3", "4")
+    ]
+    assert all(b > a for a, b in zip(size_means_real, size_means_real[1:])), size_means_real
+    assert size_means_real[-1] - size_means_real[0] > 300.0, size_means_real
+
+
+def test_empirical_monotone_in_status_and_size():
+    """Mean household_income_eur is monotone in BOTH economic_status and hh_size
+    under the empirical (with_status) path."""
+    df = _make_base_weighted_population()
+    df = _run_distribution(df, with_status=True)
+    hh = df.drop_duplicates("household_id")
+    # Monotone in status.
+    status_means = [
+        hh.loc[hh["economic_status"] == s, "household_income_eur"].mean()
+        for s in ECONOMIC_STATUS_CATEGORIES
+    ]
+    assert all(b > a for a, b in zip(status_means, status_means[1:])), status_means
+    # Monotone in size over 1..4 (5+ has lower per-cell net income; tested 1..4).
+    size_means = [
+        hh.loc[hh["household_size"] == s, "household_income_eur"].mean()
+        for s in ("1", "2", "3", "4")
+    ]
+    assert all(b > a for a, b in zip(size_means, size_means[1:])), size_means
+
+
+def test_rank_alignment_kept_only_as_fallback():
+    """With the status tables absent the function falls back to the size-only pmf
+    + rank-alignment (the empirical method is the primary; the heuristic is the
+    documented fallback). df.attrs records use_status=False and full fallback."""
+    df = _make_population(n_households=1000)
+    df = _run_distribution(df, with_status=False)
+    assert df.attrs["income_distribution_use_status"] is False
+    # Still monotone in status via the rank-alignment fallback.
+    means = [
+        df.loc[df["economic_status"] == s, "household_income_eur"].mean()
+        for s in ECONOMIC_STATUS_CATEGORIES
+    ]
     assert all(b > a for a, b in zip(means, means[1:])), means
 
 

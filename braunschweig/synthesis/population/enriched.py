@@ -486,6 +486,18 @@ def _configure_base(context):
     if context.config("income_eur_from_distribution", True):
         context.stage("braunschweig.data.bbsr.regiostar")
 
+    # housing_tenure completeness attribute (synthesise_housing_tenure). Default
+    # ON. Per household a tenure in {rent, own, other} is sampled from
+    # P(tenure | income_bracket, raumtyp) (MiD income x Wohnen, NDS base + raumtyp
+    # tilt, Bayes-inverted). This is a COMPLETENESS attribute: written to the
+    # MATSim population (attribute ``housingTenure``) but NOT consumed by the
+    # simulation, like the HSN/TSN vehicle engine attributes. OFF -> the attribute
+    # is absent and the output schema is byte-identical. The draw needs the home
+    # raumtyp, so it depends on the regiostar stage (already a dependency when the
+    # distribution income is on; ensured here too for the income-OFF combination).
+    if context.config("synthesise_housing_tenure", True):
+        context.stage("braunschweig.data.bbsr.regiostar")
+
 
 def _execute_base(context):
     """Inherited execute() from bavaria.synthesis.population.enriched.
@@ -506,6 +518,7 @@ def _execute_base(context):
         context.config("status_from_hhtype")
         or context.config("cars_income_aware")
         or context.config("income_eur_from_distribution")
+        or context.config("synthesise_housing_tenure")
     )
     if _needs_commune and "commune_id" in _df_home_src.columns:
         _home_cols.append("commune_id")
@@ -1242,6 +1255,7 @@ def _execute_base(context):
     if (
         "commune_id" in df_persons.columns
         and not context.config("income_eur_from_distribution")
+        and not context.config("synthesise_housing_tenure")
     ):
         df_persons = df_persons.drop(columns=["commune_id"])
 
@@ -2097,20 +2111,38 @@ def _income_class_from_eur(eur_values, class_midpoint_eur):
 
 def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
                                df_regiostar, class_midpoint_eur, random_seed,
+                               df_status_bundesland=None, df_status_raumtyp=None,
                                kreis=None):
     """Draw ``household_income_eur`` from the MiD net-income distribution.
 
-    Per household, an income bracket is drawn from
-    ``P(bracket | hh_size, raumtyp)``
-    (:func:`braunschweig.data.mid.income_by_size.income_bracket_probabilities`,
-    Niedersachsen base + raumtyp within-NDS tilt). To stay coherent with the
-    categorical ``economic_status`` anchor, the draw is RANK-ALIGNED within each
-    ``(hh_size, raumtyp)`` cell: the cell's households are sorted by
-    economic_status rank (very_low < .. < very_high, ties broken by a seeded
-    jitter) and the bracket draws sorted within the cell are assigned so that
-    higher-status households receive higher brackets. This keeps the bracket
-    MARGINAL EXACTLY equal to the MiD distribution while making
-    household_income_eur monotone in economic_status.
+    Per household, an income bracket is drawn from the EMPIRICAL per-cell pmf
+    ``P(bracket | hh_size, economic_status, raumtyp)``. This pmf RECONCILES the
+    two MiD conditionals on the income-bracket axis:
+
+      * ``P(bracket | hh_size, raumtyp)`` -- income_by_size (NDS base + raumtyp
+        tilt; :func:`braunschweig.data.mid.income_by_size.income_bracket_probabilities`);
+      * ``P(bracket | status, raumtyp)`` -- income_by_status (same NDS base +
+        raumtyp tilt;
+        :func:`braunschweig.data.mid.income_by_status.income_bracket_probabilities_by_status`).
+
+    The two conditionals are combined into one per-cell bracket pmf by
+    :func:`braunschweig.data.mid.income_by_status.combine_size_status_bracket_pmf`
+    (the IPF / odds-multiplication reconciliation
+    ``P(b|size)*P(b|status)/P(b)``, with the overall region marginal ``P(b)`` from
+    :func:`...overall_bracket_pmf`). Every household in the ``(size, status,
+    raumtyp)`` cell then draws its bracket directly from that pmf -- so income is
+    monotone in BOTH economic_status and household size by construction, and the
+    realised income-by-status / income-by-size aggregates match the empirical MiD
+    conditionals (within the combination/rounding tolerance).
+
+    This REPLACES the former rank-alignment heuristic (which sorted the cell's
+    households by economic_status rank and paired them with the size-only bracket
+    draws). The rank alignment only ENFORCED monotonicity onto a size-only pmf; it
+    did not use the empirical income x status data. The empirical conditioning is
+    retained as the PRIMARY method; if the status conditional is unavailable for a
+    cell (status table missing, or the NDS status base cell absent), the code
+    FALLS BACK to the size-only pmf + the legacy rank-alignment, logged as a
+    fallback (no silent fallback; CLAUDE.md).
 
     Within the chosen bracket a continuous EUR value is drawn uniformly in
     ``[low, high)``; the open top bracket uses ``7000 * (1 + Exponential(mean))``
@@ -2137,7 +2169,17 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
         RS7_TO_RAUMTYP_KEY,
         income_bracket_probabilities,
     )
+    from braunschweig.data.mid.income_by_status import (
+        income_bracket_probabilities_by_status,
+        overall_bracket_pmf,
+        combine_size_status_bracket_pmf,
+    )
     from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+    # The empirical income x status conditioning is the PRIMARY method; it needs
+    # both status tables. When they are absent (caller passed None) the function
+    # falls back to the size-only pmf + the legacy rank-alignment, logged per cell.
+    use_status = (df_status_bundesland is not None) and (df_status_raumtyp is not None)
 
     n_brackets = len(INCOME_BRACKET_CATEGORIES)
     bracket_low = np.array(
@@ -2190,31 +2232,75 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     n_hh = len(hh_ids)
     rng = np.random.RandomState(random_seed + 72831)
 
-    # Per-cell pmf cache (only n_sizes x n_raumtyp distinct cells).
-    pmf_cache: dict[tuple[str, object], np.ndarray | None] = {}
+    # Per-(size, raumtyp) size-only pmf cache (the rank-alignment fallback base
+    # and one input of the empirical combination).
+    size_pmf_cache: dict[tuple[str, object], np.ndarray | None] = {}
 
-    def _pmf_for(size_key, raumtyp_key):
+    def _size_pmf_for(size_key, raumtyp_key):
         ck = (size_key, raumtyp_key)
-        if ck not in pmf_cache:
-            pmf_cache[ck] = income_bracket_probabilities(
+        if ck not in size_pmf_cache:
+            size_pmf_cache[ck] = income_bracket_probabilities(
                 df_bundesland, df_raumtyp, size_key, raumtyp_key
             )
-        return pmf_cache[ck]
+        return size_pmf_cache[ck]
+
+    # Per-(size, status, raumtyp) combined pmf cache (PRIMARY empirical method):
+    # combine the size conditional and the status conditional via the overall
+    # region marginal. Returns None when the status conditional is unavailable for
+    # that (status, raumtyp) cell (caller then rank-aligns the size-only pmf).
+    status_pmf_cache: dict[tuple[str, object], np.ndarray | None] = {}
+    overall_pmf_cache: dict[object, np.ndarray | None] = {}
+    combined_pmf_cache: dict[tuple[str, str, object], np.ndarray | None] = {}
+
+    def _combined_pmf_for(size_key, status_key, raumtyp_key):
+        if not use_status:
+            return None
+        ck = (size_key, status_key, raumtyp_key)
+        if ck in combined_pmf_cache:
+            return combined_pmf_cache[ck]
+        size_pmf = _size_pmf_for(size_key, raumtyp_key)
+        if size_pmf is None:
+            combined_pmf_cache[ck] = None
+            return None
+        sk = (status_key, raumtyp_key)
+        if sk not in status_pmf_cache:
+            status_pmf_cache[sk] = income_bracket_probabilities_by_status(
+                df_status_bundesland, df_status_raumtyp, status_key, raumtyp_key
+            )
+        status_pmf = status_pmf_cache[sk]
+        if raumtyp_key not in overall_pmf_cache:
+            overall_pmf_cache[raumtyp_key] = overall_bracket_pmf(
+                df_status_bundesland, df_status_raumtyp, raumtyp_key
+            )
+        overall = overall_pmf_cache[raumtyp_key]
+        if status_pmf is None or overall is None:
+            combined_pmf_cache[ck] = None
+            return None
+        combined = combine_size_status_bracket_pmf(size_pmf, status_pmf, overall)
+        combined_pmf_cache[ck] = combined
+        return combined
 
     hh_bracket = np.full(n_hh, -1, dtype=np.int64)
     n_primary = 0
     n_fallback = 0
 
-    # Seeded per-household jitter to break economic_status ties deterministically.
+    # Seeded per-household jitter to break economic_status ties deterministically
+    # (only consumed by the rank-alignment fallback, but drawn for ALL households
+    # up front so the RNG stream stays independent of how many cells fall back).
     jitter = rng.random_sample(n_hh)
     status_rank_arr = np.array(
         [status_rank.get(s, -1) for s in hh_status], dtype=float
     )
 
-    # Group households by (hh_size, raumtyp) cell; draw + rank-align per cell.
+    # Group households by (hh_size, raumtyp) cell. The cell's RNG draw is one
+    # uniform per household (a single rng.random_sample(m) call per cell, in the
+    # stable cell-iteration order), so the stream consumption is independent of
+    # whether the cell uses the PRIMARY empirical pmf or the rank-alignment
+    # fallback -- only the bracket each uniform maps to differs.
     cell_df = pd.DataFrame({
         "row": np.arange(n_hh),
         "size": hh_size,
+        "status": hh_status,
         "raumtyp": hh_raumtyp,
         "rank": status_rank_arr,
         "jitter": jitter,
@@ -2222,28 +2308,57 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     for (size_key, raumtyp_key), grp in cell_df.groupby(["size", "raumtyp"], dropna=False, sort=False):
         rows = grp["row"].to_numpy()
         m = len(rows)
-        pmf = _pmf_for(size_key, raumtyp_key if raumtyp_key is not None else None)
-        if pmf is None:
-            # FALLBACK: NDS base cell absent for this hh_size -> uniform over
-            # brackets within the cell (observable, not silent).
-            pmf = np.full(n_brackets, 1.0 / n_brackets)
-            n_fallback += m
-        else:
-            n_primary += m
-        # Draw m brackets from the cell pmf (this preserves the cell marginal in
-        # expectation; the realised marginal is the multinomial draw of size m).
+        rk = raumtyp_key if raumtyp_key is not None else None
+        # One uniform per household for this cell (fixed RNG consumption).
         u = rng.random_sample(m)
-        cdf = np.cumsum(pmf)
-        drawn = np.searchsorted(cdf, u, side="right")
-        drawn = np.clip(drawn, 0, n_brackets - 1)
+
+        # PRIMARY: draw each household's bracket directly from the empirical
+        # P(bracket | size, status, raumtyp) (monotone in BOTH dimensions by
+        # construction). The combined pmf depends on the household's status, so we
+        # group the cell by status and draw within each status sub-group using the
+        # cell's pre-drawn uniforms (sliced in stable row order so the consumption
+        # is unchanged). If the combined pmf is unavailable for ALL statuses in the
+        # cell (status table / cell missing), we fall back to the size-only pmf +
+        # rank alignment for the whole cell.
+        drawn = np.full(m, -1, dtype=np.int64)
+        status_arr_cell = grp["status"].to_numpy()
+        any_primary = False
+        for si in range(m):
+            combined = _combined_pmf_for(size_key, status_arr_cell[si], rk)
+            if combined is None:
+                continue
+            cdf = np.cumsum(combined)
+            b = int(np.searchsorted(cdf, u[si], side="right"))
+            drawn[si] = min(max(b, 0), n_brackets - 1)
+            any_primary = True
+
+        if any_primary and (drawn >= 0).all():
+            # Full empirical coverage for this cell: every household drew from its
+            # (size, status, raumtyp) pmf. Income is monotone in status because the
+            # per-status pmf is monotone (combination preserves the status order).
+            hh_bracket[rows] = drawn
+            n_primary += m
+            continue
+
+        # FALLBACK: size-only pmf + legacy rank-alignment for the whole cell. Used
+        # when the empirical income x status conditioning is unavailable (status
+        # table absent, or NDS status cell missing for some/all households here).
+        size_pmf = _size_pmf_for(size_key, rk)
+        if size_pmf is None:
+            # NDS base cell absent for this hh_size -> uniform over brackets.
+            size_pmf = np.full(n_brackets, 1.0 / n_brackets)
+        cdf = np.cumsum(size_pmf)
+        drawn_fb = np.searchsorted(cdf, u, side="right")
+        drawn_fb = np.clip(drawn_fb, 0, n_brackets - 1)
         # Rank-align: sort households by (status rank, jitter) ascending and the
-        # drawn brackets ascending, then pair them so higher-status households
-        # get higher brackets. This keeps the realised bracket marginal EXACTLY
-        # the multinomial draw while making the bracket monotone in status.
+        # drawn brackets ascending, then pair them so higher-status households get
+        # higher brackets. Keeps the realised bracket marginal EXACTLY the
+        # multinomial draw while making the bracket monotone in status.
         rank_key = grp["rank"].to_numpy() + grp["jitter"].to_numpy() * 1e-6
         hh_order = np.argsort(rank_key, kind="stable")
-        bracket_sorted = np.sort(drawn, kind="stable")
+        bracket_sorted = np.sort(drawn_fb, kind="stable")
         hh_bracket[rows[hh_order]] = bracket_sorted
+        n_fallback += m
 
     # Draw a continuous EUR value within each household's bracket.
     hh_low = bracket_low[hh_bracket]
@@ -2300,12 +2415,17 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     df_persons.attrs["income_distribution_primary_count"] = n_primary
     df_persons.attrs["income_distribution_fallback_count"] = n_fallback
     df_persons.attrs["income_distribution_fallback_rate"] = fallback_rate
+    df_persons.attrs["income_distribution_use_status"] = bool(use_status)
     level = "WARNING: " if fallback_rate > INCOME_DISTRIBUTION_FALLBACK_WARN_RATE else ""
+    primary_label = (
+        "empirical P(bracket|size,status,raumtyp)" if use_status
+        else "size-only P(bracket|size,raumtyp) + rank-alignment (status tables absent)"
+    )
     print(
         f"[braunschweig.enriched] {level}distribution household_income_eur: "
-        f"MiD-distribution primary {n_primary}/{n_hh} households "
-        f"({1 - fallback_rate:.2%}), fallback (uniform-over-brackets, NDS base "
-        f"cell absent) {n_fallback} ({fallback_rate:.2%}). "
+        f"{primary_label} primary {n_primary}/{n_hh} households "
+        f"({1 - fallback_rate:.2%}), fallback (size-only pmf + rank-alignment; "
+        f"status cell / NDS base absent) {n_fallback} ({fallback_rate:.2%}). "
         f"INKAR applied as a fine Kreis tilt (mean scale {mean_scale:.3f}). "
         f"mean income {np.mean(eur):.0f} EUR."
     )
@@ -2315,6 +2435,174 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
             f"{s}={df_persons.loc[df_persons['economic_status'] == s, 'household_income_eur'].mean():.0f}"
             for s in ECONOMIC_STATUS_CATEGORIES
         )
+    )
+    return df_persons
+
+
+# --- Housing tenure completeness attribute (synthesise_housing_tenure) --------
+#
+# ``housing_tenure`` in {rent, own, other} is sampled per household from
+# P(tenure | income_bracket, raumtyp) (MiD income x Wohnen, NDS base + raumtyp
+# tilt, Bayes-inverted; braunschweig.data.mid.tenure_by_income). It is a
+# COMPLETENESS attribute: written to the MATSim population but NOT consumed by the
+# simulation (like the HSN/TSN vehicle engine attributes). The income bracket is
+# resolved from the FINAL household_income_eur via the bracket EUR bounds (so the
+# tenure agrees with whichever income path -- distribution or class-midpoint --
+# produced the EUR value). A dedicated RNG offset (+83947) keeps it independent of
+# every other stream.
+
+# Fallback-rate threshold above which the housing-tenure per-bracket pmf fallback
+# (NDS Bayes inversion unavailable for a household's raumtyp cell -> the
+# unconditional NDS tenure marginal) is escalated to WARNING.
+HOUSING_TENURE_FALLBACK_WARN_RATE = 0.01
+
+
+def _eur_to_bracket_index(eur_values):
+    """Map continuous household income EUR onto the 10-bracket index.
+
+    Uses the half-open bracket lower bounds from
+    :data:`braunschweig.data.mid.income_by_size.INCOME_BRACKET_BOUNDS_EUR` (the
+    same edges used to draw the EUR value). Values below the first edge fall in the
+    lowest bracket; values at/above the top edge fall in the open top bracket.
+    """
+    from braunschweig.data.mid.income_by_size import (
+        INCOME_BRACKET_BOUNDS_EUR,
+        INCOME_BRACKET_CATEGORIES,
+    )
+    lows = np.array(
+        [INCOME_BRACKET_BOUNDS_EUR[b][0] for b in INCOME_BRACKET_CATEGORIES],
+        dtype=float,
+    )
+    edges = lows[1:]  # the boundary between consecutive brackets
+    idx = np.searchsorted(edges, np.asarray(eur_values, dtype=float), side="right")
+    return np.clip(idx, 0, len(INCOME_BRACKET_CATEGORIES) - 1)
+
+
+def _apply_housing_tenure(df_persons, df_tenure_bund, df_tenure_raum,
+                          df_regiostar, random_seed):
+    """Sample the completeness attribute ``housing_tenure`` per household.
+
+    Per household: resolve the income bracket from the FINAL
+    ``household_income_eur`` (:func:`_eur_to_bracket_index`) and the home raumtyp
+    (commune_id -> AGS-8 -> RS7 -> raumtyp key); draw a tenure in
+    ``{rent, own, other}`` from ``P(tenure | bracket, raumtyp)``
+    (:func:`braunschweig.data.mid.tenure_by_income.tenure_probabilities_given_income`,
+    NDS base + raumtyp tilt, Bayes-inverted). The household tenure is broadcast to
+    every member. A dedicated RNG offset (+83947) is used so all other streams are
+    untouched.
+
+    Fallback transparency (CLAUDE.md): a household whose raumtyp Bayes matrix is
+    unavailable (status/tenure cell missing) falls back to the unconditional NDS
+    tenure marginal (raumtyp_region=None); the primary/fallback rate is logged and
+    stored on ``df_persons.attrs``.
+    """
+    from braunschweig.data.mid.tenure_by_income import (
+        TENURE_CATEGORIES,
+        RS7_TO_RAUMTYP_KEY,
+        tenure_probabilities_given_income,
+    )
+    from braunschweig.data.bbsr.regiostar import ars_to_ags8
+
+    tenure_arr = np.asarray(TENURE_CATEGORIES, dtype=object)
+    n_tenure = len(TENURE_CATEGORIES)
+
+    has_commune = "commune_id" in df_persons.columns
+    rs7_by_ags8 = dict(zip(
+        df_regiostar["commune_id"].astype(str),
+        df_regiostar["regiostar7"].astype("Int64"),
+    ))
+
+    # Per-household income bracket + raumtyp (income/tenure are HOUSEHOLD quantities).
+    bracket_person = _eur_to_bracket_index(df_persons["household_income_eur"].to_numpy())
+    work = pd.DataFrame({
+        "household_id": df_persons["household_id"].to_numpy(),
+        "bracket": bracket_person,
+    })
+    if has_commune:
+        work["commune_id"] = df_persons["commune_id"].astype(str).to_numpy()
+    hh = work.groupby("household_id", sort=False).first()
+    hh_ids = hh.index.to_numpy()
+    hh_bracket = hh["bracket"].to_numpy().astype(int)
+
+    if has_commune:
+        hh_ags8 = pd.Series(hh["commune_id"].to_numpy()).map(ars_to_ags8)
+        hh_rs7 = hh_ags8.map(rs7_by_ags8)
+        hh_raumtyp = hh_rs7.map(
+            lambda c: RS7_TO_RAUMTYP_KEY.get(int(c)) if pd.notna(c) else None
+        ).to_numpy()
+    else:
+        hh_raumtyp = np.array([None] * len(hh_ids), dtype=object)
+
+    n_hh = len(hh_ids)
+    rng = np.random.RandomState(random_seed + 83947)
+
+    # Per-raumtyp Bayes matrix cache: P(tenure | bracket) of shape (10, 3).
+    bayes_cache: dict[object, np.ndarray | None] = {}
+
+    def _bayes_for(raumtyp_key):
+        if raumtyp_key not in bayes_cache:
+            bayes_cache[raumtyp_key] = tenure_probabilities_given_income(
+                df_tenure_bund, df_tenure_raum, raumtyp_key
+            )
+        return bayes_cache[raumtyp_key]
+
+    # Unconditional NDS tenure marginal (raumtyp None) is the documented fallback.
+    fallback_matrix = _bayes_for(None)
+    if fallback_matrix is None:
+        raise RuntimeError(
+            "[braunschweig.enriched] housing_tenure: NDS Bayes inversion is "
+            "unavailable (income_by_tenure bundesland table missing Niedersachsen); "
+            "cannot synthesise the tenure attribute."
+        )
+
+    hh_tenure = np.empty(n_hh, dtype=object)
+    n_primary = 0
+    n_fallback = 0
+
+    # One uniform per household (fixed RNG consumption regardless of cell mix).
+    u = rng.random_sample(n_hh)
+
+    # Group by raumtyp so each Bayes matrix is fetched once; within a group draw
+    # each household's tenure from the bracket row of the matrix.
+    cell = pd.DataFrame({"row": np.arange(n_hh), "raumtyp": hh_raumtyp})
+    for raumtyp_key, grp in cell.groupby("raumtyp", dropna=False, sort=False):
+        rows = grp["row"].to_numpy()
+        rk = raumtyp_key if raumtyp_key is not None else None
+        matrix = _bayes_for(rk)
+        if matrix is None:
+            matrix = fallback_matrix
+            n_fallback += len(rows)
+        else:
+            n_primary += len(rows)
+        for r in rows:
+            pmf = matrix[hh_bracket[r]]
+            c = int(np.searchsorted(np.cumsum(pmf), u[r], side="right"))
+            hh_tenure[r] = tenure_arr[min(max(c, 0), n_tenure - 1)]
+
+    tenure_by_hh = dict(zip(hh_ids, hh_tenure))
+    df_persons["housing_tenure"] = pd.Categorical(
+        df_persons["household_id"].map(tenure_by_hh),
+        categories=list(TENURE_CATEGORIES),
+    )
+
+    fallback_rate = (n_fallback / n_hh) if n_hh else 0.0
+    df_persons.attrs["housing_tenure_primary_count"] = n_primary
+    df_persons.attrs["housing_tenure_fallback_count"] = n_fallback
+    df_persons.attrs["housing_tenure_fallback_rate"] = fallback_rate
+
+    shares = (
+        df_persons.drop_duplicates("household_id")["housing_tenure"]
+        .value_counts(normalize=True)
+        .reindex(TENURE_CATEGORIES).fillna(0.0)
+    )
+    level = "WARNING: " if fallback_rate > HOUSING_TENURE_FALLBACK_WARN_RATE else ""
+    print(
+        f"[braunschweig.enriched] {level}housing_tenure (completeness attribute, "
+        f"not consumed by the simulation): MiD Bayes P(tenure|bracket,raumtyp) "
+        f"primary {n_primary}/{n_hh} households ({1 - fallback_rate:.2%}), fallback "
+        f"(unconditional NDS tenure marginal; raumtyp cell absent) {n_fallback} "
+        f"({fallback_rate:.2%}). realised household shares: "
+        + ", ".join(f"{k}={v:.1%}" for k, v in shares.items())
     )
     return df_persons
 
@@ -2420,21 +2708,50 @@ def execute(context):
             load_income_by_size_bundesland,
             load_income_by_size_raumtyp,
         )
+        from braunschweig.data.mid.income_by_status import (
+            load_income_by_status_bundesland,
+            load_income_by_status_raumtyp,
+        )
         df_regiostar_income = context.stage("braunschweig.data.bbsr.regiostar")
         df_income_bund = load_income_by_size_bundesland(data_path)
         df_income_raum = load_income_by_size_raumtyp(data_path)
+        # Empirical income x economic-status conditional (replaces the legacy
+        # rank-alignment heuristic; see _apply_distribution_income).
+        df_income_status_bund = load_income_by_status_bundesland(data_path)
+        df_income_status_raum = load_income_by_status_raumtyp(data_path)
         df_persons = _apply_distribution_income(
             df_persons, df_inkar, df_income_bund, df_income_raum,
             df_regiostar_income, class_midpoint_eur,
-            context.config("random_seed"), kreis=kreis,
+            context.config("random_seed"),
+            df_status_bundesland=df_income_status_bund,
+            df_status_raumtyp=df_income_status_raum,
+            kreis=kreis,
         )
     else:
         df_persons = _apply_inkar_income_scale(df_persons, df_inkar,
                                                class_midpoint_eur, kreis=kreis)
 
-    # ``commune_id`` (kept by _execute_base only for the distribution income
-    # raumtyp lookup) is dropped now so the returned schema matches the legacy
-    # path (the income draw above is the last consumer).
+    # housing_tenure COMPLETENESS attribute (synthesise_housing_tenure, default
+    # ON). Sampled per household from P(tenure | income_bracket, raumtyp) using the
+    # FINAL household_income_eur (resolved to a bracket) -- so it runs AFTER the
+    # income block above regardless of which income path produced the EUR value.
+    # OFF -> the attribute is never added, so the output schema is byte-identical.
+    if context.config("synthesise_housing_tenure"):
+        from braunschweig.data.mid.tenure_by_income import (
+            load_tenure_by_income_bundesland,
+            load_tenure_by_income_raumtyp,
+        )
+        df_regiostar_tenure = context.stage("braunschweig.data.bbsr.regiostar")
+        df_tenure_bund = load_tenure_by_income_bundesland(data_path)
+        df_tenure_raum = load_tenure_by_income_raumtyp(data_path)
+        df_persons = _apply_housing_tenure(
+            df_persons, df_tenure_bund, df_tenure_raum,
+            df_regiostar_tenure, context.config("random_seed"),
+        )
+
+    # ``commune_id`` (kept by _execute_base only for the distribution income +
+    # housing-tenure raumtyp lookups) is dropped now so the returned schema matches
+    # the legacy path (the tenure draw above is the last consumer).
     if "commune_id" in df_persons.columns:
         df_persons = df_persons.drop(columns=["commune_id"])
 

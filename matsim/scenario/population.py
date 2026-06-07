@@ -65,6 +65,23 @@ PERSON_FIELDS = [
     "household_income_eur",  # Braunschweig added (INKAR-scaled continuous monthly income, EUR)
 ]
 
+# Optional, ADDITIVE person field. ``housing_tenure`` (Braunschweig completeness
+# attribute, MiD income x Wohnen; written as "housingTenure") is appended to the
+# projected fields ONLY when the enrichment stage produced the column (flag
+# synthesise_housing_tenure ON). When absent, PERSON_FIELDS is used unchanged so
+# the output is byte-identical. Kept out of PERSON_FIELDS so the positional
+# PERSON_FIELDS.index(...) lookups for the mandatory fields are unaffected.
+OPTIONAL_PERSON_FIELDS = [
+    "housing_tenure",  # Braunschweig completeness attribute (not consumed by the sim)
+]
+
+
+def effective_person_fields(df_persons):
+    """Return PERSON_FIELDS plus any present OPTIONAL_PERSON_FIELDS (in order)."""
+    return PERSON_FIELDS + [
+        f for f in OPTIONAL_PERSON_FIELDS if f in df_persons.columns
+    ]
+
 ACTIVITY_FIELDS = [
     "person_id", "start_time", "end_time", "purpose", "geometry", "location_id"
 ]
@@ -78,8 +95,14 @@ VEHICLE_FIELDS = [
 ]
 
 def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
-               write_income_eur = False):
-    writer.start_person(person[PERSON_FIELDS.index("person_id")])
+               write_income_eur = False, person_fields = None):
+    # ``person_fields`` is the (possibly extended) field order of the ``person``
+    # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
+    # population writer passes effective_person_fields(df) so optional additive
+    # attributes (e.g. housing_tenure) can be emitted only when present.
+    if person_fields is None:
+        person_fields = PERSON_FIELDS
+    writer.start_person(person[person_fields.index("person_id")])
 
     writer.start_attributes()
     writer.add_attribute("householdId", "java.lang.Integer", person[PERSON_FIELDS.index("household_id")])
@@ -113,6 +136,15 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     writer.add_attribute("hasPtSubscription", "java.lang.Boolean", person[PERSON_FIELDS.index("has_pt_subscription")])
     writer.add_attribute("ptSubscriptionType", "java.lang.String", str(person[PERSON_FIELDS.index("pt_subscription_type")]))
     writer.add_attribute("hasLicense", "java.lang.String", writer.yes_no(person[PERSON_FIELDS.index("has_license")]))
+
+    # Braunschweig completeness attribute: housing tenure {rent, own, other} from
+    # the MiD income x Wohnen cross-tab (braunschweig.synthesis.population.enriched,
+    # flag synthesise_housing_tenure). ADDITIVE: emitted only when the column is
+    # present in the person tuple (i.e. the flag is ON), so the output is
+    # byte-identical when off. NOT consumed by the simulation (documentation only).
+    if "housing_tenure" in person_fields:
+        writer.add_attribute("housingTenure", "java.lang.String",
+                             str(person[person_fields.index("housing_tenure")]))
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])
@@ -179,7 +211,8 @@ def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicle
     in-commuter injection) can concatenate injected agents into the raw frames and
     reuse the exact same preparation + writer. Behaviour-preserving.
     """
-    df_persons = df_persons.sort_values(by = ["household_id", "person_id"])[PERSON_FIELDS]
+    df_persons = df_persons.sort_values(
+        by = ["household_id", "person_id"])[effective_person_fields(df_persons)]
     df_activities = df_activities.sort_values(by = ["person_id", "activity_index"])
     df_locations = df_locations[[
         "person_id", "activity_index", "geometry", "location_id"]].sort_values(
@@ -203,9 +236,15 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             trip_iterator = backlog_iterator(iter(df_trips[TRIP_FIELDS].itertuples(index = False)))
             vehicle_iterator = backlog_iterator(iter(df_vehicles[VEHICLE_FIELDS].itertuples(index = False)))
 
+            # The person tuple may carry additive optional fields (e.g.
+            # housing_tenure) appended AFTER PERSON_FIELDS; use the actual column
+            # order so add_person can index them. Mandatory-field indices are
+            # unchanged because optional fields are appended at the end.
+            person_fields = list(df_persons.columns)
+
             with context.progress(total = len(df_persons), label = "Writing population ...") as progress:
                 for person in df_persons.itertuples(index = False):
-                    person_id = person[PERSON_FIELDS.index("person_id")]
+                    person_id = person[person_fields.index("person_id")]
 
                     activities = []
                     trips = []
@@ -246,7 +285,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                             vehicles.append(vehicle)
 
                     add_person(writer, person, activities, trips, vehicles,
-                               enable_urban_parking, write_income_eur)
+                               enable_urban_parking, write_income_eur,
+                               person_fields=person_fields)
                     progress.update()
 
             writer.end_population()
