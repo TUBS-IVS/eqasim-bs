@@ -1,0 +1,736 @@
+"""Per-vehicle generative chain for the German (KBA/MiD) fleet + HBEFA mapping.
+
+For each household car -- a row carrying the household ``economic_status``, the
+home Kreis (AGS-5), the home Gemeinde and the home RegioStaR raumtyp -- this
+module draws a full, mutually consistent vehicle specification and maps it to a
+canonical HBEFA :class:`braunschweig.synthesis.vehicles.hbefa.VehicleType` for
+emissions. Everything is driven by a single seeded RNG so a run is reproducible.
+
+The draw order (spec component 4) is:
+
+1. **segment** from the income-coupled segment IPF
+   (:mod:`braunschweig.synthesis.vehicles.segment`), given the household's
+   economic status and home raumtyp. This is where the income->segment coupling
+   enters.
+2. **powertrain** from ``P(powertrain | segment)`` (KBA FZ 27.10), but **raked
+   per Kreis** so the Kreis powertrain totals match KBA FZ 27.15 AND tilted to
+   the home Gemeinde's private BEV/PHEV share (KBA FZ 27.17). The
+   income->segment->powertrain path carries the income correlation of the
+   electric share; the rake + tilt enforce the LOCAL electric share. See
+   :class:`PowertrainModel`.
+3. **euro_class** from ``P(euro | powertrain)`` (KBA FZ 27.4, NDS).
+4. **age band** from ``P(age | powertrain)`` (KBA FZ 27.7), kept consistent with
+   the Euro class (newer age <=> higher Euro; see :func:`_age_consistent_with_euro`).
+5. **brand + model** from ``P(model | segment)`` (KBA FZ 12.1; the model implies
+   the brand), reconciled with ``P(brand | powertrain)`` (KBA FZ 27.11) where
+   feasible. Brand/model are ADDITIVE (not HBEFA-critical) attributes; they are
+   sampled in an isolated, fully guarded step with its own fallback so a parsing
+   or edge issue there can never break the emissions-relevant chain.
+6. The ``(powertrain, euro_class, segment)`` triple is mapped to a canonical
+   HBEFA :class:`VehicleType` (:mod:`braunschweig.synthesis.vehicles.hbefa`).
+
+The public entry point is :func:`sample_fleet`, which returns the input frame
+augmented with the spec columns plus the distinct :class:`VehicleType` records to
+register with the MATSim writer.
+
+All numeric reference values come from the committed derived CSVs loaded via
+:mod:`braunschweig.data.kba.fleet_tables`; hard-coding them in Python is
+prohibited (see CLAUDE.md).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Mapping, Optional, Sequence
+
+import numpy as np
+import pandas as pd
+
+from braunschweig.data.kba import fleet_tables as ft
+from braunschweig.ipf.joint_age_size import rake_2d
+from braunschweig.synthesis.vehicles import hbefa
+from braunschweig.synthesis.vehicles.segment import SegmentModel
+
+logger = logging.getLogger(__name__)
+
+#: Canonical powertrain order used for every powertrain probability vector.
+POWERTRAINS: tuple[str, ...] = ft.POWERTRAIN_LABELS
+
+#: Electric (plug-in) powertrains tilted by the Gemeinde private BEV/PHEV share.
+ELECTRIC_POWERTRAINS: tuple[str, ...] = ("bev", "phev")
+
+#: Vehicle-age band -> representative age in years (band midpoint; ``30_plus``
+#: uses a conservative 32). Used to attach a numeric ``age`` column alongside the
+#: categorical ``age_band`` so downstream consumers (and the legacy writer's
+#: ``age`` attribute) have an integer year.
+AGE_BAND_MIDPOINT_YEARS: dict[str, int] = {
+    "under_5": 2,
+    "5_to_9": 7,
+    "10_to_14": 12,
+    "15_to_19": 17,
+    "20_to_24": 22,
+    "25_to_29": 27,
+    "30_plus": 32,
+}
+
+#: Euro class -> the registration-period start year (EU type-approval dates for
+#: passenger cars). Used only for the age<->Euro consistency rule: a vehicle's
+#: registration year is ``current_year - age``, and a combustion Euro class
+#: cannot be NEWER than the registration year allows. ``other`` (pre-Euro-1 /
+#: unclassifiable) has no lower bound.
+EURO_INTRODUCTION_YEAR: dict[str, int] = {
+    "euro1": 1993,
+    "euro2": 1997,
+    "euro3": 2001,
+    "euro4": 2006,
+    "euro5": 2011,
+    "euro6": 2015,
+    "other": 0,
+}
+
+#: Reference "current year" of the KBA stock (FZ tables are the 2024-01-01
+#: register). Registration year = REGISTER_YEAR - vehicle_age_years.
+REGISTER_YEAR = 2024
+
+
+# --------------------------------------------------------------------------- #
+# Powertrain model: P(powertrain | segment) raked per Kreis + Gemeinde tilt
+# --------------------------------------------------------------------------- #
+@dataclass
+class PowertrainModel:
+    """``P(powertrain | segment, kreis)`` raked to the per-Kreis KBA marginal.
+
+    The model holds, per Kreis, the raked ``segment x powertrain`` joint whose
+    column marginal matches the KBA FZ 27.15 per-Kreis powertrain totals and
+    whose row marginal matches the national ``P(segment)`` (so the seed's
+    income->segment->powertrain association is preserved). The per-car draw is
+    the segment row of that Kreis joint, optionally tilted to the home Gemeinde's
+    private electric share (FZ 27.17).
+    """
+
+    segments: list[str]
+    powertrains: list[str]
+    # kreis_ags5 -> P(powertrain | segment) matrix (n_segment, n_powertrain).
+    kreis_segment_powertrain: dict[str, np.ndarray]
+    # National P(powertrain | segment) fallback (n_segment, n_powertrain).
+    national_segment_powertrain: np.ndarray
+    # Per-Kreis private electric (bev/phev) share, used as the tilt denominator.
+    kreis_private_electric_share: dict[str, dict[str, float]]
+    # (kreis_ags5, gemeinde_upper) -> private electric share, tilt numerator.
+    gemeinde_private_electric_share: dict[tuple[str, str], dict[str, float]]
+    # Mutable fallback counters.
+    _kreis_primary: int = field(default=0)
+    _kreis_fallback: int = field(default=0)
+    _gemeinde_primary: int = field(default=0)
+    _gemeinde_fallback: int = field(default=0)
+
+    @classmethod
+    def from_data_path(cls, data_path: str, segments: Sequence[str],
+                       max_iterations: int = 200,
+                       tolerance: float = 1e-9) -> "PowertrainModel":
+        """Build the per-Kreis powertrain model from the committed KBA CSVs."""
+        df_seg = ft.load_segment_powertrain(data_path)
+        df_kreis = ft.load_kreis_powertrain(data_path)
+        df_fuel = ft.load_fuel_euro_nds(data_path)
+        df_gem = ft.load_gemeinde_private_bev(data_path)
+
+        segments = list(segments)
+        powertrains = list(POWERTRAINS)
+
+        # NDS petrol:diesel split of the combustion residual (FZ 27.4 totals).
+        fuel_totals = df_fuel.groupby("fuel")["count"].sum()
+        petrol_total = float(fuel_totals.get("petrol", 0.0))
+        diesel_total = float(fuel_totals.get("diesel", 0.0))
+        combustion_total = petrol_total + diesel_total
+        if combustion_total <= 0:
+            raise RuntimeError(
+                "FZ 27.4 has no petrol/diesel counts; cannot split the "
+                "combustion residual into petrol/diesel."
+            )
+        petrol_fraction = petrol_total / combustion_total
+
+        national_counts = cls._national_segment_powertrain_counts(
+            df_seg, segments, powertrains, petrol_fraction)
+        # Row-normalised P(powertrain | segment), used as the rake seed shape and
+        # the national fallback.
+        national_psg = cls._row_normalise(national_counts)
+
+        # Per-Kreis powertrain marginal target (FZ 27.15), in the 8-label order.
+        kreis_marginal = cls._kreis_powertrain_marginal(
+            df_kreis, powertrains, petrol_fraction)
+
+        # National segment marginal (FZ 27.10 segment_share) -- the rake row
+        # target, preserving the income->segment->powertrain association.
+        seg_share = (
+            df_seg.set_index("segment")["segment_share"].reindex(segments)
+            .fillna(0.0).to_numpy(dtype=float)
+        )
+        seg_share = seg_share / seg_share.sum()
+
+        kreis_psp: dict[str, np.ndarray] = {}
+        for kreis, col_target in kreis_marginal.items():
+            # Seed = P(powertrain | segment) * P(segment): carries the
+            # association and has the national segment marginal as its row sums.
+            seed = national_psg * seg_share[:, None]
+            joint = rake_2d(
+                seed,
+                row_targets=seg_share,
+                col_targets=col_target / col_target.sum(),
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+            )
+            kreis_psp[kreis] = cls._row_normalise(joint)
+
+        # Per-Kreis and per-Gemeinde private electric shares (FZ 27.17 / 27.15).
+        kreis_priv = cls._kreis_private_electric_share(df_kreis)
+        gem_priv = cls._gemeinde_private_electric_share(df_gem)
+
+        return cls(
+            segments=segments,
+            powertrains=powertrains,
+            kreis_segment_powertrain=kreis_psp,
+            national_segment_powertrain=national_psg,
+            kreis_private_electric_share=kreis_priv,
+            gemeinde_private_electric_share=gem_priv,
+        )
+
+    # -- construction helpers ------------------------------------------------
+    @staticmethod
+    def _national_segment_powertrain_counts(
+        df_seg: pd.DataFrame, segments: Sequence[str],
+        powertrains: Sequence[str], petrol_fraction: float,
+    ) -> np.ndarray:
+        """National ``segment x powertrain`` count matrix from FZ 27.10.
+
+        FZ 27.10 reports per-segment ``total`` and the alternative-drive columns
+        (bev/phev/hybrid/gas/hydrogen). The combustion residual
+        ``total - sum(alt)`` is split into petrol/diesel by the NDS petrol:diesel
+        ratio (FZ 27.4). ``other`` is left at zero at the national level (FZ
+        27.10 has no residual fuel column beyond the listed alternatives).
+        """
+        idx = {p: i for i, p in enumerate(powertrains)}
+        out = np.zeros((len(segments), len(powertrains)), dtype=float)
+        seg_rows = df_seg.set_index("segment")
+        for i, seg in enumerate(segments):
+            row = seg_rows.loc[seg]
+            total = float(row["total"])
+            bev = float(row["bev"])
+            phev = float(row["phev"])
+            hybrid = float(row["hybrid"])
+            gas = float(row["gas"])
+            hydrogen = float(row["hydrogen"])
+            alt = bev + phev + hybrid + gas + hydrogen
+            combustion = max(total - alt, 0.0)
+            out[i, idx["bev"]] = bev
+            out[i, idx["phev"]] = phev
+            out[i, idx["hybrid"]] = hybrid
+            out[i, idx["gas"]] = gas
+            out[i, idx["hydrogen"]] = hydrogen
+            out[i, idx["petrol"]] = combustion * petrol_fraction
+            out[i, idx["diesel"]] = combustion * (1.0 - petrol_fraction)
+        return out
+
+    @staticmethod
+    def _kreis_powertrain_marginal(
+        df_kreis: pd.DataFrame, powertrains: Sequence[str],
+        petrol_fraction: float,
+    ) -> dict[str, np.ndarray]:
+        """Per-Kreis powertrain marginal target vector (FZ 27.15).
+
+        bev/phev/hybrid/gas come straight from FZ 27.15; the combustion residual
+        ``total - alt_total`` is split petrol/diesel by the NDS ratio.
+        hydrogen/other are not tabulated per Kreis and are left at zero (their
+        national mass is negligible -- see FZ 27.10).
+        """
+        idx = {p: i for i, p in enumerate(powertrains)}
+        out: dict[str, np.ndarray] = {}
+        for _, row in df_kreis.iterrows():
+            vec = np.zeros(len(powertrains), dtype=float)
+            total = float(row["total"])
+            bev = float(row["bev"])
+            phev = float(row["phev"])
+            hybrid = float(row["hybrid"])
+            gas = float(row["gas"])
+            alt_total = float(row["alt_total"])
+            combustion = max(total - alt_total, 0.0)
+            vec[idx["bev"]] = bev
+            vec[idx["phev"]] = phev
+            vec[idx["hybrid"]] = hybrid
+            vec[idx["gas"]] = gas
+            vec[idx["petrol"]] = combustion * petrol_fraction
+            vec[idx["diesel"]] = combustion * (1.0 - petrol_fraction)
+            out[str(row["kreis_ags5"])] = vec
+        return out
+
+    @staticmethod
+    def _kreis_private_electric_share(df_kreis: pd.DataFrame) -> dict[str, dict[str, float]]:
+        """Per-Kreis electric share used as the Gemeinde-tilt denominator.
+
+        FZ 27.15 ``bev_share`` / ``phev_share`` are the all-ownership shares; the
+        Gemeinde table (FZ 27.17) reports the PRIVATE shares. Using the Kreis
+        all-ownership share as the denominator and the Gemeinde private share as
+        the numerator yields a relative within-Kreis tilt that is robust to the
+        ownership-scope difference (the tilt is a ratio of shares, so a constant
+        private:all offset cancels to first order).
+        """
+        out: dict[str, dict[str, float]] = {}
+        for _, row in df_kreis.iterrows():
+            out[str(row["kreis_ags5"])] = {
+                "bev": float(row["bev_share"]),
+                "phev": float(row["phev_share"]),
+            }
+        return out
+
+    @staticmethod
+    def _gemeinde_private_electric_share(
+        df_gem: pd.DataFrame,
+    ) -> dict[tuple[str, str], dict[str, float]]:
+        """(kreis, gemeinde) -> private bev/phev share (FZ 27.17).
+
+        The Gemeinde name is upper-cased for a case-insensitive join with the
+        home Gemeinde label. Missing (coerced) shares are dropped so the tilt
+        falls back to the Kreis level for that Gemeinde.
+        """
+        out: dict[tuple[str, str], dict[str, float]] = {}
+        for _, row in df_gem.iterrows():
+            key = (str(row["kreis_ags5"]), str(row["gemeinde"]).strip().upper())
+            shares: dict[str, float] = {}
+            for col, pt in (("private_bev_share", "bev"),
+                            ("private_phev_share", "phev")):
+                val = row[col]
+                if pd.notna(val):
+                    shares[pt] = float(val)
+            if shares:
+                out[key] = shares
+        return out
+
+    @staticmethod
+    def _row_normalise(matrix: np.ndarray) -> np.ndarray:
+        sums = matrix.sum(axis=1, keepdims=True)
+        return np.divide(matrix, sums, out=np.zeros_like(matrix), where=sums > 0)
+
+    # -- per-car query -------------------------------------------------------
+    def powertrain_probabilities(self, segment: str, kreis_ags5: str,
+                                 gemeinde: Optional[str]) -> np.ndarray:
+        """``P(powertrain | segment, kreis)`` with the Gemeinde electric tilt.
+
+        Falls back to the national ``P(powertrain | segment)`` when the Kreis is
+        unknown (counted/logged), and to the Kreis-level electric share when the
+        Gemeinde is unknown or has no FZ 27.17 entry.
+        """
+        if segment not in self.segments:
+            raise ValueError(f"unknown segment '{segment}'")
+        seg_index = self.segments.index(segment)
+
+        kreis_matrix = self.kreis_segment_powertrain.get(kreis_ags5)
+        if kreis_matrix is None:
+            self._kreis_fallback += 1
+            base = self.national_segment_powertrain[seg_index].copy()
+        else:
+            self._kreis_primary += 1
+            base = kreis_matrix[seg_index].copy()
+
+        base = self._apply_gemeinde_tilt(base, kreis_ags5, gemeinde)
+        total = base.sum()
+        if total <= 0:
+            return np.ones(len(self.powertrains)) / len(self.powertrains)
+        return base / total
+
+    def _apply_gemeinde_tilt(self, pmf: np.ndarray, kreis_ags5: str,
+                             gemeinde: Optional[str]) -> np.ndarray:
+        """Tilt the bev/phev mass to the home Gemeinde's private share.
+
+        Multiplies the electric powertrain probabilities by
+        ``gemeinde_share / kreis_share`` (clipped to a sane band) and leaves the
+        non-electric mass untouched; the whole vector is renormalised by the
+        caller. The tilt is a relative re-weighting, so a Gemeinde with a higher
+        private BEV share than its Kreis gets proportionally more BEVs.
+        """
+        if gemeinde is None:
+            self._gemeinde_fallback += 1
+            return pmf
+        key = (kreis_ags5, str(gemeinde).strip().upper())
+        gem_shares = self.gemeinde_private_electric_share.get(key)
+        kreis_shares = self.kreis_private_electric_share.get(kreis_ags5)
+        if gem_shares is None or kreis_shares is None:
+            self._gemeinde_fallback += 1
+            return pmf
+        self._gemeinde_primary += 1
+        idx = {p: i for i, p in enumerate(self.powertrains)}
+        tilted = pmf.copy()
+        for pt in ELECTRIC_POWERTRAINS:
+            kreis_share = kreis_shares.get(pt, 0.0)
+            gem_share = gem_shares.get(pt)
+            if gem_share is None or kreis_share <= 0.0:
+                continue
+            # Clip the tilt to [0.2, 5] so a tiny denominator cannot explode a
+            # single Gemeinde's electric share.
+            factor = float(np.clip(gem_share / kreis_share, 0.2, 5.0))
+            tilted[idx[pt]] *= factor
+        return tilted
+
+    def log_fallback_rate(self) -> None:
+        """Log the primary-vs-fallback rates (no-silent-fallback rule)."""
+        ktot = self._kreis_primary + self._kreis_fallback
+        gtot = self._gemeinde_primary + self._gemeinde_fallback
+        krate = (self._kreis_fallback / ktot) if ktot else 0.0
+        grate = (self._gemeinde_fallback / gtot) if gtot else 0.0
+        (logger.warning if krate > 0.05 else logger.info)(
+            "[fleet_de] powertrain Kreis lookup: primary %d/%d (%.1f%%), "
+            "fallback %d (%.1f%%)", self._kreis_primary, ktot,
+            100.0 * self._kreis_primary / ktot if ktot else 0.0,
+            self._kreis_fallback, 100.0 * krate,
+        )
+        (logger.warning if grate > 0.50 else logger.info)(
+            "[fleet_de] powertrain Gemeinde tilt: primary %d/%d (%.1f%%), "
+            "fallback %d (%.1f%%)", self._gemeinde_primary, gtot,
+            100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
+            self._gemeinde_fallback, 100.0 * grate,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Euro / age conditional distributions (FZ 27.4 / FZ 27.7)
+# --------------------------------------------------------------------------- #
+def _euro_given_powertrain(data_path: str) -> dict[str, np.ndarray]:
+    """``P(euro | powertrain)`` (FZ 27.4, NDS) as powertrain -> pmf over euro.
+
+    FZ 27.4 only tabulates the combustion + bev/phev/hybrid/other fuels. The
+    powertrains absent from FZ 27.4 (``gas`` aside, ``hydrogen``) reuse the
+    ``other`` fuel row as a conservative fallback. The ``share`` column is
+    already ``P(euro | fuel)``.
+    """
+    df = ft.load_fuel_euro_nds(data_path)
+    euros = list(ft.EURO_CLASS_LABELS)
+    out: dict[str, np.ndarray] = {}
+    for fuel, grp in df.groupby("fuel"):
+        vec = (grp.set_index("euro_class")["share"].reindex(euros)
+               .fillna(0.0).to_numpy(dtype=float))
+        s = vec.sum()
+        out[fuel] = (vec / s) if s > 0 else _euro_all_other(euros)
+    # Fallbacks for powertrains absent from FZ 27.4.
+    fallback = out.get("other", _euro_all_other(euros))
+    for pt in POWERTRAINS:
+        out.setdefault(pt, fallback)
+    return out
+
+
+def _euro_all_other(euros: Sequence[str]) -> np.ndarray:
+    vec = np.zeros(len(euros), dtype=float)
+    vec[list(euros).index("other")] = 1.0
+    return vec
+
+
+def _age_given_powertrain(data_path: str) -> dict[str, np.ndarray]:
+    """``P(age_band | powertrain)`` (FZ 27.7) as powertrain -> pmf over age band.
+
+    FZ 27.7 ``share`` is ``P(age_band | fuel)`` only within the listed fuels; we
+    re-normalise per fuel so each powertrain pmf sums to 1. Powertrains absent
+    from FZ 27.7 reuse the petrol age profile.
+    """
+    df = ft.load_age_fuel(data_path)
+    bands = list(ft.AGE_BAND_LABELS)
+    out: dict[str, np.ndarray] = {}
+    for fuel, grp in df.groupby("fuel"):
+        vec = (grp.set_index("age_band")["pkw_count"].reindex(bands)
+               .fillna(0.0).to_numpy(dtype=float))
+        s = vec.sum()
+        out[fuel] = (vec / s) if s > 0 else np.ones(len(bands)) / len(bands)
+    fallback = out.get("petrol", np.ones(len(bands)) / len(bands))
+    for pt in POWERTRAINS:
+        out.setdefault(pt, fallback)
+    return out
+
+
+def _age_consistent_with_euro(age_band: str, euro_class: str,
+                              powertrain: str) -> bool:
+    """Return ``True`` iff the vehicle age can coexist with the Euro class.
+
+    Consistency rule: a combustion vehicle of a given Euro stage cannot be older
+    than the Euro stage's EU introduction allows. The registration year is
+    ``REGISTER_YEAR - max_age_in_band``; if that earliest possible registration
+    year is before the Euro stage existed, the pair is inconsistent (e.g. a
+    25-29-year-old car cannot be Euro-6). Newer => higher Euro. Electrified /
+    fuel-cell powertrains carry no combustion Euro stage, so any age is allowed.
+    """
+    if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
+        return True
+    intro = EURO_INTRODUCTION_YEAR.get(euro_class, 0)
+    if intro <= 0:
+        return True
+    max_age = _age_band_max_years(age_band)
+    earliest_registration = REGISTER_YEAR - max_age
+    # Allow a 1-year grace for end-of-stage registrations.
+    return earliest_registration >= intro - 1
+
+
+def _age_band_max_years(age_band: str) -> int:
+    """Upper edge of an age band in years (``30_plus`` -> a large bound)."""
+    mapping = {
+        "under_5": 4, "5_to_9": 9, "10_to_14": 14, "15_to_19": 19,
+        "20_to_24": 24, "25_to_29": 29, "30_plus": 60,
+    }
+    return mapping[age_band]
+
+
+# --------------------------------------------------------------------------- #
+# Brand / model conditional distributions (additive, isolated)
+# --------------------------------------------------------------------------- #
+def _model_given_segment(data_path: str) -> dict[str, pd.DataFrame]:
+    """segment -> DataFrame[model, share] (FZ 12.1, model implies brand).
+
+    Returned per-segment frames are normalised to a proper pmf over models. The
+    brand is derived from the model string (the first token) at draw time.
+    """
+    df = ft.load_segment_model(data_path)
+    out: dict[str, pd.DataFrame] = {}
+    for seg, grp in df.groupby("segment"):
+        sub = grp[["model", "share"]].copy()
+        s = sub["share"].sum()
+        if s > 0:
+            sub["share"] = sub["share"] / s
+            out[seg] = sub.reset_index(drop=True)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Public entry point
+# --------------------------------------------------------------------------- #
+@dataclass
+class FleetSampler:
+    """Bundled models for the per-vehicle generative chain.
+
+    Holds the segment IPF, the per-Kreis powertrain model, and the Euro / age /
+    brand-model conditional tables. Build via :meth:`from_data_path`.
+    """
+
+    segment_model: SegmentModel
+    powertrain_model: PowertrainModel
+    euro_given_powertrain: dict[str, np.ndarray]
+    age_given_powertrain: dict[str, np.ndarray]
+    model_given_segment: dict[str, pd.DataFrame]
+    size_map: dict[str, str]
+
+    @classmethod
+    def from_data_path(cls, data_path: str,
+                       size_map: Optional[Mapping[str, str]] = None) -> "FleetSampler":
+        segment_model = SegmentModel.from_data_path(data_path)
+        powertrain_model = PowertrainModel.from_data_path(
+            data_path, segment_model.segments)
+        return cls(
+            segment_model=segment_model,
+            powertrain_model=powertrain_model,
+            euro_given_powertrain=_euro_given_powertrain(data_path),
+            age_given_powertrain=_age_given_powertrain(data_path),
+            model_given_segment=_model_given_segment(data_path),
+            size_map=dict(size_map) if size_map is not None else {},
+        )
+
+
+def _draw_categorical(rng: np.random.Generator, labels: Sequence[str],
+                      pmf: np.ndarray) -> str:
+    pmf = np.asarray(pmf, dtype=float)
+    total = pmf.sum()
+    if total <= 0:
+        return labels[0]
+    return str(rng.choice(labels, p=pmf / total))
+
+
+def _draw_age_consistent_with_euro(rng: np.random.Generator,
+                                   age_pmf: np.ndarray, euro_class: str,
+                                   powertrain: str) -> str:
+    """Draw an age band that is consistent with the Euro class.
+
+    The age pmf is masked to the bands consistent with ``euro_class`` (per
+    :func:`_age_consistent_with_euro`) and renormalised. If no band is
+    consistent (degenerate data) the unmasked pmf is used so a vehicle is always
+    produced.
+    """
+    bands = list(ft.AGE_BAND_LABELS)
+    mask = np.array(
+        [_age_consistent_with_euro(b, euro_class, powertrain) for b in bands],
+        dtype=float,
+    )
+    masked = age_pmf * mask
+    if masked.sum() <= 0:
+        masked = age_pmf
+    return _draw_categorical(rng, bands, masked)
+
+
+def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
+                 size_map: Optional[Mapping[str, str]] = None,
+                 sampler: Optional[FleetSampler] = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Draw a full vehicle specification for every household car.
+
+    Parameters
+    ----------
+    df_cars : DataFrame with one row per household car carrying the columns
+        ``economic_status`` (one of
+        :data:`braunschweig.data.kba.fleet_tables.STATUS_LABELS`),
+        ``kreis_ags5`` (home Kreis AGS-5 string), ``gemeinde`` (home Gemeinde
+        name; may be missing/``NaN``) and ``raumtyp`` (RegioStaR-7 code 71..77;
+        may be missing/``NaN``).
+    data_path : the synpp ``data_path`` (the parent of ``braunschweig/kba/...``).
+    random_seed : seed for the single :class:`numpy.random.Generator` used for
+        every draw (reproducible).
+    size_map : optional segment -> HBEFA size-class overrides for the HBEFA
+        mapping (``hbefa_segment_size_map`` config key).
+    sampler : optional pre-built :class:`FleetSampler` (avoids re-reading the
+        CSVs when sampling several frames); built from ``data_path`` if ``None``.
+
+    Returns
+    -------
+    (df_spec, df_vehicle_types) :
+        ``df_spec`` is ``df_cars`` with the added spec columns
+        ``segment, powertrain, euro_class, age_band, age, brand, model,
+        type_id, hbefa_cat, hbefa_tech, hbefa_size, hbefa_emission``;
+        ``df_vehicle_types`` holds the distinct HBEFA :class:`VehicleType`
+        records to register (one per ``type_id``).
+    """
+    required = {"economic_status", "kreis_ags5", "gemeinde", "raumtyp"}
+    missing = required - set(df_cars.columns)
+    if missing:
+        raise ValueError(
+            f"sample_fleet: df_cars is missing required columns {sorted(missing)}"
+        )
+
+    if sampler is None:
+        sampler = FleetSampler.from_data_path(data_path, size_map=size_map)
+    elif size_map is not None:
+        sampler.size_map = dict(size_map)
+
+    rng = np.random.default_rng(random_seed)
+    segments = sampler.segment_model.segments
+
+    n = len(df_cars)
+    out_segment = [""] * n
+    out_powertrain = [""] * n
+    out_euro = [""] * n
+    out_age_band = [""] * n
+    out_age = [0] * n
+    out_brand = [""] * n
+    out_model = [""] * n
+    out_type_id = [""] * n
+    out_cat = [""] * n
+    out_tech = [""] * n
+    out_size = [""] * n
+    out_emission = [""] * n
+
+    vehicle_types: dict[str, hbefa.VehicleType] = {}
+    size_fallback_counter: dict[str, int] = {}
+    brand_model_fallback = 0
+
+    records = df_cars.to_dict(orient="records")
+    for i, car in enumerate(records):
+        status = car["economic_status"]
+        kreis = str(car["kreis_ags5"])
+        gemeinde = car.get("gemeinde")
+        if pd.isna(gemeinde):
+            gemeinde = None
+        raumtyp = car.get("raumtyp")
+        raumtyp = int(raumtyp) if pd.notna(raumtyp) else None
+
+        # 1. segment <- income-coupled segment IPF.
+        seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
+        segment = _draw_categorical(rng, segments, seg_pmf)
+
+        # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
+        pt_pmf = sampler.powertrain_model.powertrain_probabilities(
+            segment, kreis, gemeinde)
+        powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
+
+        # 3. euro_class <- P(euro | powertrain).
+        euro_pmf = sampler.euro_given_powertrain[powertrain]
+        euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+
+        # 4. age band <- P(age | powertrain), consistent with the Euro class.
+        age_pmf = sampler.age_given_powertrain[powertrain]
+        age_band = _draw_age_consistent_with_euro(
+            rng, age_pmf, euro_class, powertrain)
+
+        # 5. brand + model <- P(model | segment) (isolated, guarded, additive).
+        brand, model = _draw_brand_model(rng, sampler, segment)
+        if not model:
+            brand_model_fallback += 1
+
+        # 6. HBEFA VehicleType.
+        vt = hbefa.vehicle_type_for(
+            powertrain, euro_class, segment,
+            size_map=sampler.size_map,
+            fallback_counter=size_fallback_counter,
+        )
+        vehicle_types.setdefault(vt.type_id, vt)
+
+        out_segment[i] = segment
+        out_powertrain[i] = powertrain
+        out_euro[i] = euro_class
+        out_age_band[i] = age_band
+        out_age[i] = AGE_BAND_MIDPOINT_YEARS[age_band]
+        out_brand[i] = brand
+        out_model[i] = model
+        out_type_id[i] = vt.type_id
+        out_cat[i] = vt.hbefa_category
+        out_tech[i] = vt.hbefa_technology
+        out_size[i] = vt.hbefa_size
+        out_emission[i] = vt.hbefa_emission
+
+    df_spec = df_cars.copy()
+    df_spec["segment"] = out_segment
+    df_spec["powertrain"] = out_powertrain
+    df_spec["euro_class"] = out_euro
+    df_spec["age_band"] = out_age_band
+    df_spec["age"] = out_age
+    df_spec["brand"] = out_brand
+    df_spec["model"] = out_model
+    df_spec["type_id"] = out_type_id
+    df_spec["hbefa_cat"] = out_cat
+    df_spec["hbefa_tech"] = out_tech
+    df_spec["hbefa_size"] = out_size
+    df_spec["hbefa_emission"] = out_emission
+
+    df_vehicle_types = pd.DataFrame.from_records(
+        [vt.as_record() for vt in vehicle_types.values()]
+    )
+
+    # Fallback observability (project no-silent-fallback rule).
+    sampler.powertrain_model.log_fallback_rate()
+    _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
+    _log_simple_fallback("brand/model draw", brand_model_fallback, n)
+
+    return df_spec, df_vehicle_types
+
+
+def _draw_brand_model(rng: np.random.Generator, sampler: FleetSampler,
+                      segment: str) -> tuple[str, str]:
+    """Draw ``(brand, model)`` for a segment; fully guarded (additive attribute).
+
+    Any failure (segment absent from FZ 12.1, empty frame, parse error) returns
+    ``("", "")`` instead of raising, so a brand/model issue can never break the
+    emissions-relevant chain. The model string's first token is taken as the
+    brand (FZ 12.1 Modellreihe strings are ``BRAND MODEL``).
+    """
+    try:
+        frame = sampler.model_given_segment.get(segment)
+        if frame is None or frame.empty:
+            return "", ""
+        idx = rng.choice(len(frame), p=frame["share"].to_numpy(dtype=float))
+        model = str(frame["model"].iloc[idx])
+        brand = model.split(" ", 1)[0] if model else ""
+        return brand, model
+    except Exception as exc:  # noqa: BLE001 -- additive attribute, never fatal
+        logger.warning(
+            "[fleet_de] brand/model draw failed for segment '%s' (%s) -> "
+            "empty brand/model", segment, exc,
+        )
+        return "", ""
+
+
+def _log_simple_fallback(label: str, fallback: int, total: int) -> None:
+    rate = (fallback / total) if total else 0.0
+    (logger.warning if rate > 0.05 else logger.info)(
+        "[fleet_de] %s: primary %d/%d (%.1f%%), fallback %d (%.1f%%)",
+        label, total - fallback, total,
+        100.0 * (total - fallback) / total if total else 0.0,
+        fallback, 100.0 * rate,
+    )
