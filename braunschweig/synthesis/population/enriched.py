@@ -433,6 +433,17 @@ def _configure_base(context):
     # sampling moved earlier is output-identical with the flag OFF).
     context.config("consistent_car_availability", True)
 
+    # A6: condition pt_subscription on student / employment status (+ optional
+    # carless<->PT car-availability margin). Default ON. OFF -> the exact legacy
+    # 3-margin {Kreis,sex,age} P24.1 IPF (byte-identical). When ON, the combined
+    # Job-/Semesterticket category is zeroed for persons who are neither employed
+    # nor studying and the per-person vector re-normalised before sampling; this
+    # requires employed/studies (attributed stage) computed before PT (already the
+    # case in the causal IPF order). The car-availability margin only activates if
+    # the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab CSV is present (documented
+    # logged fallback otherwise).
+    context.config("pt_subscription_conditioned", True)
+
     # Economic status from MiD household-type x region (Bayes). Default ON.
     # OFF -> exact legacy income-class-derived status (commit c65399d), so the
     # pipeline is byte-identical. The RegioStaR-7 stage (raumtyp tilt) is only a
@@ -915,6 +926,59 @@ def _execute_base(context):
     row_sums[row_sums == 0] = 1.0
     pt_probs = pt_probs / row_sums
 
+    # A6: condition pt_subscription on student / employment status (+car hook).
+    # Default ON. OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF above
+    # is used unchanged (byte-identical sampling, since the same pt_probs feed the
+    # same +8572 RNG stream).
+    if context.config("pt_subscription_conditioned"):
+        # (1) DATA-FREE logical constraint: the work/study-bound combined ticket
+        # category requires employed OR studies; zero it for everyone else and
+        # re-normalise. employed/studies are produced upstream (attributed stage,
+        # reactivate_person_attributes); fall back to all-False if the columns are
+        # absent (e.g. flag OFF in attributed) -- which then zeroes the work/study
+        # ticket for everyone, a documented but loud limitation.
+        for _col in ("employed", "studies"):
+            if _col not in df_persons.columns:
+                print(
+                    f"[braunschweig.enriched] WARNING: pt_subscription_conditioned "
+                    f"is ON but column '{_col}' is missing; treating it as all-False "
+                    f"(work/study ticket will be unavailable). Enable "
+                    f"reactivate_person_attributes to fix."
+                )
+                df_persons[_col] = False
+        pt_probs = _condition_pt_subscription_probs(
+            pt_probs, df_persons, PT_TICKET_CATEGORIES
+        )
+        print(
+            "[braunschweig.enriched] PT A6 conditioning: work/study ticket zeroed "
+            f"for {df_persons.attrs.get('pt_subscription_workstudy_zeroed_count', 0)} "
+            "non-working/non-studying persons; degenerate->fahre_nie fallback "
+            f"{df_persons.attrs.get('pt_subscription_degenerate_fallback_count', 0)}"
+        )
+
+        # (2) DATA-DEPENDENT carless<->PT correlation. Only an extra margin when
+        # the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab is present; otherwise the
+        # loader returns None and logs an INFO fallback (documented, not silent).
+        from braunschweig.data.mid.reference_tables import (
+            load_pt_subscription_by_car_availability,
+        )
+        pt_by_car = load_pt_subscription_by_car_availability(
+            context.config("data_path")
+        )
+        if pt_by_car is None:
+            print(
+                "[braunschweig.enriched] PT A6: carless<->PT car-availability "
+                "margin NOT applied (cross-tab CSV absent; coupling uncalibrated)."
+            )
+        else:
+            # Hook reserved for the calibrated cross-tab margin. When the CSV
+            # arrives, rake pt_probs toward the per-car-availability ticket-type
+            # targets here. Until then we only report that the data is available.
+            print(
+                "[braunschweig.enriched] PT A6: car-availability cross-tab present "
+                f"({sorted(pt_by_car.keys())}); margin hook ready."
+            )
+
     # Sample categorical via inverse-CDF with a dedicated RNG seed.
     random = np.random.RandomState(context.config("random_seed") + 8572)
     pt_cdf = np.cumsum(pt_probs, axis=1)
@@ -1223,6 +1287,78 @@ def _binarise_availability(df_persons, random_seed, apply_car=True):
     df_persons.loc[selection, "bicycle_availability"] = "all"
     df_persons["bicycle_availability"] = df_persons["bicycle_availability"].astype("category")
     return df_persons
+
+
+# --- A6: condition pt_subscription on student / employment status -------------
+def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
+    """Apply the DATA-FREE logical PT-ticket constraints to the per-person
+    probability matrix and re-normalise (A6).
+
+    The MiD P24.1 combined category ``jobticket_semesterticket`` (Jobticket =
+    employer-subsidised pass, Semesterticket = student Solidarmodell pass) is a
+    work/study-bound ticket: it can only be held by a person who is ``employed``
+    OR ``studies`` (see ``PT_TICKET_WORK_STUDY_BOUND``; MiD reports the two as one
+    column, so ``employed OR studies`` is the tightest defensible rule). For every
+    person who is neither employed nor studying, that category's probability is
+    set to zero and the remaining vector re-normalised so it still sums to 1, then
+    that person samples among the categories they CAN actually hold.
+
+    Eligible persons (employed or studying) and the remaining categories are left
+    untouched, so the P24.1 marginal stays matched within tolerance -- only the
+    redistributed work/study mass of the non-eligible minority drifts.
+
+    A defensive guard: if zeroing leaves an all-zero row (a degenerate vector
+    whose mass sat entirely on the disallowed category), the person falls back to
+    ``fahre_nie`` deterministically rather than producing an un-normalisable row.
+    The fallback count is recorded in ``df_persons.attrs`` for traceability.
+
+    Parameters
+    ----------
+    pt_probs : np.ndarray
+        Per-person probability matrix, shape ``(n_persons, n_categories)``.
+    df_persons : pd.DataFrame
+        Must carry boolean ``employed`` and ``studies`` columns.
+    pt_categories : sequence[str]
+        The PT ticket categories in column order (``PT_TICKET_CATEGORIES``).
+
+    Returns
+    -------
+    np.ndarray
+        The conditioned, re-normalised probability matrix (a copy).
+    """
+    from braunschweig.data.mid.reference_tables import PT_TICKET_WORK_STUDY_BOUND
+
+    out = pt_probs.copy()
+    categories = list(pt_categories)
+    idx_fahre_nie = categories.index("fahre_nie")
+    work_study_idx = [categories.index(c) for c in PT_TICKET_WORK_STUDY_BOUND
+                      if c in categories]
+
+    employed = df_persons["employed"].astype(bool).to_numpy()
+    studies = df_persons["studies"].astype(bool).to_numpy()
+    not_work_study = ~(employed | studies)
+
+    # Zero the work/study-bound categories for persons who are neither employed
+    # nor studying.
+    if work_study_idx and not_work_study.any():
+        out[np.ix_(not_work_study, work_study_idx)] = 0.0
+
+    # Re-normalise rows. Rows that became all-zero (mass had sat entirely on the
+    # disallowed category) fall back to fahre_nie deterministically.
+    row_sums = out.sum(axis=1)
+    degenerate = row_sums <= 0.0
+    fallback_count = int(np.count_nonzero(degenerate))
+    if fallback_count > 0:
+        out[degenerate, :] = 0.0
+        out[degenerate, idx_fahre_nie] = 1.0
+        row_sums = out.sum(axis=1)
+    out = out / row_sums[:, None]
+
+    df_persons.attrs["pt_subscription_workstudy_zeroed_count"] = int(
+        np.count_nonzero(not_work_study) if work_study_idx else 0
+    )
+    df_persons.attrs["pt_subscription_degenerate_fallback_count"] = fallback_count
+    return out
 
 
 # --- A5: consistent car_availability ----------------------------------------

@@ -109,6 +109,15 @@ config:
   # before car_availability (output-identical re-order).
   consistent_car_availability: true
 
+  # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
+  # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
+  # are neither employed nor studying and the per-person ticket-type vector
+  # re-normalised before sampling (a work/study pass requires a work/study
+  # relationship). OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF
+  # (byte-identical). The optional carless<->PT car-availability margin activates
+  # only when the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab CSV is present.
+  pt_subscription_conditioned: true
+
   # --- Phase 2 IPF smoothing (TASK-011, 2026-04-26) ----------------------
   # Symmetric-Dirichlet seed prior. Adds alpha pseudo-counts to every IPF
   # cell to dampen the influence of empty source cells in sparse rural

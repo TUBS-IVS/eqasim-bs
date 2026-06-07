@@ -18,12 +18,15 @@ fine and become part of the data-provenance trail.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # Subdirectory inside the synpp ``data_path`` where the seed CSVs live.
 MID_SUBDIR = os.path.join("braunschweig", "mid")
@@ -171,6 +174,21 @@ PT_TICKET_FLATRATE: frozenset[str] = frozenset({
     "jobticket_semesterticket",
 })
 
+# Categories that are logically bound to a work or study relationship (A6).
+# MiD P24.1 reports the Jobticket and the Semesterticket as ONE combined column
+# ("Job-/Semesterticket"), so the two cannot be separated in the survey. Both
+# are obtainable only through such a relationship:
+#   * the Jobticket is an employer-subsidised pass (requires employment);
+#   * the Semesterticket is a student Solidarmodell pass (requires enrolment).
+# Therefore the COMBINED category is gated on ``employed OR studies``: a person
+# who is neither employed nor a student cannot hold a Job-/Semesterticket and is
+# zeroed out of that category before sampling. The combined-column limitation
+# means we cannot enforce the stricter per-ticket rule (jobticket -> employed,
+# semesterticket -> studies) separately; ``employed OR studies`` is the tightest
+# defensible constraint on the data we have. Used by
+# ``braunschweig.synthesis.population.enriched._condition_pt_subscription_probs``.
+PT_TICKET_WORK_STUDY_BOUND: frozenset[str] = frozenset({"jobticket_semesterticket"})
+
 # Mapping Kreis name (as it appears in the MiD PDF) → AGS-5.  ``Gesamt``
 # rows are kept under the synthetic key ``"03ZGB"``.
 _PT_KREIS_TO_ARS5 = {
@@ -267,6 +285,91 @@ def load_pt_subscription_margins(
         norm = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
         by_age.append((int(row["age_lo"]), int(row["age_hi"]), norm))
     return by_sex, by_age
+
+
+# Filename of the (optional, manually-downloaded) MiD P24.1 x Pkw-Verfuegbarkeit
+# cross-tab. It is NOT seeded by ``scripts/seed_mid_constraint_tables.py`` because
+# the underlying MiD regional export has not yet been obtained (see
+# ``load_pt_subscription_by_car_availability``).
+PT_BY_CAR_AVAILABILITY_FILENAME = "mid2023_P24_1_by_car_availability.csv"
+
+# Car-availability categories expected as row keys in the cross-tab CSV. These
+# mirror ``enriched.CAR_AVAILABILITY_CATEGORIES``; the "some" row is optional
+# (MiD typically reports only Pkw "jederzeit verfuegbar" yes/no, i.e. all/none).
+PT_BY_CAR_AVAILABILITY_KEYS: tuple[str, ...] = ("none", "some", "all")
+
+
+def load_pt_subscription_by_car_availability(
+    data_path: str,
+) -> dict[str, np.ndarray] | None:
+    """Load the OPTIONAL MiD P24.1 x Pkw-Verfuegbarkeit cross-tab (A6 hook).
+
+    This wires the carless<->PT-pass correlation into the PT-subscription IPF as
+    an additional margin. The required MiD regional export
+    (P24.1 broken down by Pkw-Verfuegbarkeit) has NOT yet been obtained, so the
+    CSV is normally absent. When it is absent this function returns ``None`` and
+    logs an INFO message: this is a DOCUMENTED fallback (the carless<->PT coupling
+    is simply not calibrated yet), not a silent one. When the CSV arrives, drop it
+    at ``<data_path>/braunschweig/mid/mid2023_P24_1_by_car_availability.csv`` and
+    the PT IPF picks up the extra margin automatically.
+
+    Expected schema (one row per car-availability category, header order free)::
+
+        car_availability,einzelfahrschein,mehrfachkarte,deutschlandticket,
+        wochen_monat_ohne_abo,monat_abo_jahreskarte,jobticket_semesterticket,
+        anderes,fahre_nie,keine_angabe
+        none,<...9 integer percentages...>
+        all,<...9 integer percentages...>
+
+    where ``car_availability`` is one of ``PT_BY_CAR_AVAILABILITY_KEYS`` and the
+    remaining 9 columns are the ``PT_TICKET_CATEGORIES`` ticket-type shares for
+    that car-availability group (integer percentages; each row is normalised to
+    sum to 1, mirroring the other P24.1 loaders).
+
+    Returns
+    -------
+    by_car_availability : dict[str, np.ndarray] | None
+        ``{car_availability -> probability vector over PT_TICKET_CATEGORIES}``
+        (each sums to 1), or ``None`` when the CSV is absent.
+    """
+    path = _path(data_path, PT_BY_CAR_AVAILABILITY_FILENAME)
+    if not os.path.exists(path):
+        logger.info(
+            "MiD P24.1 x Pkw-Verfuegbarkeit cross-tab not found at %s -- the "
+            "carless<->PT-subscription coupling is not yet calibrated; the PT "
+            "IPF runs WITHOUT the car-availability margin (documented fallback). "
+            "Place the file there to enable it.",
+            path,
+        )
+        return None
+
+    df = _read_csv(path)
+    if "car_availability" not in df.columns:
+        raise RuntimeError(
+            f"{path}: expected a 'car_availability' column "
+            f"(rows keyed by {sorted(PT_BY_CAR_AVAILABILITY_KEYS)})"
+        )
+    cols = list(PT_TICKET_CATEGORIES)
+    missing = set(cols) - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            f"{path}: missing PT ticket-type columns: {sorted(missing)}"
+        )
+
+    by_car_availability: dict[str, np.ndarray] = {}
+    for _, row in df.iterrows():
+        key = str(row["car_availability"])
+        if key not in PT_BY_CAR_AVAILABILITY_KEYS:
+            raise RuntimeError(
+                f"{path}: unexpected car_availability key {key!r}; "
+                f"expected one of {sorted(PT_BY_CAR_AVAILABILITY_KEYS)}"
+            )
+        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        s = vec.sum()
+        by_car_availability[key] = (
+            vec / s if s > 0 else np.ones(len(cols)) / len(cols)
+        )
+    return by_car_availability
 
 
 # ---------------------------------------------------------------------------

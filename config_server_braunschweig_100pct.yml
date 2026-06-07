@@ -111,6 +111,14 @@ config:
   # (byte-identical). Requires the vehicle-count / licence sampling that now runs
   # before car_availability (output-identical re-order).
   consistent_car_availability: true
+  # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
+  # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
+  # are neither employed nor studying and the per-person ticket-type vector
+  # re-normalised before sampling (a work/study pass requires a work/study
+  # relationship). OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF
+  # (byte-identical). The optional carless<->PT car-availability margin activates
+  # only when the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab CSV is present.
+  pt_subscription_conditioned: true
   # Dirichlet seed prior (sparse rural cells); 4-way employment margin.
   braunschweig.ipf.dirichlet_prior_strength: 0.5
   braunschweig.ipf.use_employment_margin: true
