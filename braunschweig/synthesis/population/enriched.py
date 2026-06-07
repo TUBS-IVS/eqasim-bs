@@ -52,6 +52,88 @@ INCOME_MIDPOINT_FALLBACK_WARN_RATE = 0.001
 KREIS_SHARE_FALLBACK_WARN_RATE = 0.0
 
 
+# --- 5-class MiD economic status -------------------------------------------
+# The MiD 2023 Tabelle H4 "Oekonomischer Status des Haushalts" reports the
+# BMDV-defined needs-adjusted net-equivalent-income quintile of each household
+# (sehr niedrig / niedrig / mittel / hoch / sehr hoch). The income-synthesis
+# pipeline samples a household_income EUR-class from the H4 quintile vector via
+# braunschweig.data.census.household_income.INCOME_CLASS_MAP, which is a 1:1
+# correspondence (EUR-class i  <->  H4 quintile position i). The upcoming
+# vehicle-segment IPF (Spec 2) needs the quintile status itself, not the
+# best-effort EUR-class label, so we re-expose it under the canonical English
+# names below.
+#
+# ECONOMIC_STATUS_CATEGORIES is ordered low -> high and matches the H4 quintile
+# column order (sehr_niedrig, niedrig, mittel, hoch, sehr_hoch) one-to-one. The
+# EUR-class -> status mapping is DERIVED from INCOME_CLASS_MAP so that income and
+# economic status can never disagree: each EUR-class maps to the status at the
+# exact H4 quintile position from which that EUR-class was sampled.
+ECONOMIC_STATUS_CATEGORIES = ("very_low", "low", "medium", "high", "very_high")
+
+
+def _build_economic_status_by_income_class():
+    """Return the deterministic EUR-class -> 5-class economic status mapping.
+
+    Built from INCOME_CLASS_MAP (EUR-class label, H4 quintile position) so the
+    status is exactly the quintile that produced the EUR-class. Kept as a
+    function-built constant rather than a literal to avoid duplicating the
+    EUR-class vocabulary, which lives in household_income.INCOME_CLASS_MAP.
+    """
+    from braunschweig.data.census.household_income import INCOME_CLASS_MAP
+
+    return {
+        income_class: ECONOMIC_STATUS_CATEGORIES[idx]
+        for income_class, idx in INCOME_CLASS_MAP
+    }
+
+
+ECONOMIC_STATUS_BY_INCOME_CLASS = _build_economic_status_by_income_class()
+
+
+def _derive_economic_status(df_persons):
+    """Add the 5-class MiD economic status as ``economic_status`` (additive).
+
+    Maps each person's already-sampled ``household_income`` EUR-class onto its
+    BMDV quintile status via ECONOMIC_STATUS_BY_INCOME_CLASS. This is purely
+    derived: ``household_income`` / ``household_income_eur`` / ``high_income``
+    are left untouched. An EUR-class absent from the mapping is a FALLBACK (it
+    means the income vocabulary drifted from INCOME_CLASS_MAP); such cells are
+    left as ``None`` and counted, and the primary/fallback split is logged so a
+    high fallback rate surfaces a broken income vocabulary rather than silently
+    producing a wrong status (project no-silent-fallback rule).
+    """
+    income_class = df_persons["household_income"].astype(str)
+    status = income_class.map(ECONOMIC_STATUS_BY_INCOME_CLASS)
+
+    fallback_mask = status.isna()
+    n_fallback = int(fallback_mask.sum())
+    n_total = len(df_persons)
+    n_primary = n_total - n_fallback
+    fallback_rate = (n_fallback / n_total) if n_total else 0.0
+
+    df_persons["economic_status"] = status.values
+    df_persons.attrs["economic_status_primary_count"] = n_primary
+    df_persons.attrs["economic_status_fallback_count"] = n_fallback
+    df_persons.attrs["economic_status_fallback_rate"] = fallback_rate
+
+    if n_fallback:
+        unknown = sorted(set(income_class[fallback_mask.values].unique()))
+        print(
+            f"WARNING: [braunschweig.enriched] economic_status fallback for "
+            f"{n_fallback}/{n_total} persons ({fallback_rate:.2%}); primary hit "
+            f"{n_primary}. Unmapped household_income classes {unknown} are not in "
+            f"ECONOMIC_STATUS_BY_INCOME_CLASS (income vocabulary drifted from "
+            f"INCOME_CLASS_MAP)."
+        )
+    else:
+        print(
+            f"[braunschweig.enriched] economic_status PRIMARY mapping hit all "
+            f"{n_primary}/{n_total} persons (fallback rate 0.00%)."
+        )
+
+    return df_persons
+
+
 # --- Inherited from eqasim-bavaria -----------------------------------------
 # Helper: map IPF hh_size values onto the bins present in df_income.
 
@@ -721,6 +803,12 @@ def _execute_base(context):
 
     df_persons["high_income"] = df_persons["household_income"] == "5000+"
 
+    # 5-class MiD economic status (additive). Derived deterministically from the
+    # just-sampled household_income EUR-class so that income and status agree by
+    # construction; required by the vehicle-segment IPF (Spec 2). Leaves
+    # household_income / high_income untouched.
+    df_persons = _derive_economic_status(df_persons)
+
     # Urban-area resident flag (legacy Munich/Paris name kept for downstream
     # compatibility). Region-neutral default: only set when the regional
     # enricher attaches an "inside_<region>" column. Braunschweig overrides
@@ -959,7 +1047,7 @@ def execute(context):
     # ------------------------------------------------------------------
     n = len(df_persons)
     for col in [
-        "household_size", "household_income", "high_income",
+        "household_size", "household_income", "high_income", "economic_status",
         "car_availability", "bicycle_availability", "has_pt_subscription",
         "pt_subscription_type",
         "number_of_cars", "number_of_bicycles",
