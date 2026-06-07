@@ -560,7 +560,8 @@ def _draw_age_consistent_with_euro(rng: np.random.Generator,
 
 def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  size_map: Optional[Mapping[str, str]] = None,
-                 sampler: Optional[FleetSampler] = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 sampler: Optional[FleetSampler] = None,
+                 model_brands: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -578,6 +579,10 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         mapping (``hbefa_segment_size_map`` config key).
     sampler : optional pre-built :class:`FleetSampler` (avoids re-reading the
         CSVs when sampling several frames); built from ``data_path`` if ``None``.
+    model_brands : when ``False`` the additive (non-HBEFA) brand/model attributes
+        are not drawn (the ``brand``/``model`` columns are left empty); the
+        emissions-relevant segment->powertrain->euro->HBEFA chain is unchanged.
+        Driven by the ``fleet_model_brands`` config key (default ``True``).
 
     Returns
     -------
@@ -650,9 +655,14 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             rng, age_pmf, euro_class, powertrain)
 
         # 5. brand + model <- P(model | segment) (isolated, guarded, additive).
-        brand, model = _draw_brand_model(rng, sampler, segment)
-        if not model:
-            brand_model_fallback += 1
+        # Skipped entirely when fleet_model_brands is off (brand/model stay empty);
+        # this never touches the emissions-relevant chain above.
+        if model_brands:
+            brand, model = _draw_brand_model(rng, sampler, segment)
+            if not model:
+                brand_model_fallback += 1
+        else:
+            brand, model = "", ""
 
         # 6. HBEFA VehicleType.
         vt = hbefa.vehicle_type_for(
@@ -696,7 +706,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     # Fallback observability (project no-silent-fallback rule).
     sampler.powertrain_model.log_fallback_rate()
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
-    _log_simple_fallback("brand/model draw", brand_model_fallback, n)
+    if model_brands:
+        _log_simple_fallback("brand/model draw", brand_model_fallback, n)
 
     return df_spec, df_vehicle_types
 

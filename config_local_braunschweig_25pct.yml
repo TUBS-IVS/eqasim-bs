@@ -27,6 +27,14 @@ config:
   # KBA/HBEFA fleet chain) instead of one identical default car per person.
   # OFF (vehicles_method: "default") reproduces the legacy fleet byte-identically.
   vehicles_method: household
+  # German fleet model switches (Task F7), default ON. fleet_model_enabled:false
+  # (or vehicles_method:"default") reproduces the legacy single default_car fleet
+  # byte-identically. fleet_model_brands toggles the additive (non-HBEFA)
+  # brand/model attributes. fleet_electric_calibration selects the electric-share
+  # model (per-Kreis KBA FZ 27.15 mix + per-Gemeinde FZ 27.17 BEV tilt).
+  fleet_model_enabled: true
+  fleet_model_brands: true
+  fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
 
   java_memory: 44G
 

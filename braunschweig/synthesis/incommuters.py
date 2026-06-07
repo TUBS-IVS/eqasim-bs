@@ -861,7 +861,7 @@ def execute(context):
         # (Task F6); only set it when the German fleet is active so OFF keeps the
         # legacy single default-car in-commuter rows.
         data_path=(context.config("data_path")
-                   if context.config("vehicles_method", "default") == "household"
+                   if context.config("vehicles_method") == "household"
                    else None))
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")

@@ -264,6 +264,14 @@ def legacy_one_car_per_person(df_persons: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # synpp stage: vehicles_method == "household"
 # --------------------------------------------------------------------------- #
+#: Allowed values for the electric-share calibration mode (``fleet_electric_calibration``).
+#: Only the per-Kreis KBA FZ 27.15 mix with the per-Gemeinde FZ 27.17 BEV tilt is
+#: implemented (the model the per-vehicle chain in
+#: :mod:`braunschweig.synthesis.vehicles.fleet_sampling_de` realises); the key exists
+#: so an unsupported mode fails early rather than silently ignoring the request.
+FLEET_ELECTRIC_CALIBRATIONS = ("kreis_mix_gemeinde_bev_tilt",)
+
+
 def configure(context):
     context.stage("synthesis.population.enriched")
     context.stage("synthesis.population.spatial.home.zones")
@@ -271,6 +279,17 @@ def configure(context):
     context.config("data_path")
     context.config("random_seed")
     context.config("hbefa_segment_size_map", None)
+    # Fleet model switches (Task F7). All flag-gated with the spec defaults; with
+    # the German fleet disabled the stage reproduces the legacy one-car-per-person
+    # default_car fleet byte-identically (OFF-equivalence).
+    context.config("fleet_model_enabled", True)
+    context.config("fleet_model_brands", True)
+    context.config("fleet_electric_calibration", "kreis_mix_gemeinde_bev_tilt")
+    # Optional override for the KBA derived-CSV directory. Default None -> the
+    # readers (braunschweig.data.kba.fleet_tables) resolve the tables under
+    # ``data_path``; the key is registered so an explicit override invalidates the
+    # synpp cache and is documented in one place.
+    context.config("kba_fleet_paths", None)
 
 
 def execute(context):
@@ -278,9 +297,33 @@ def execute(context):
     df_homes = context.stage("synthesis.population.spatial.home.zones")
     df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
 
+    # All defaults are registered in configure(); the execute context's config()
+    # takes the key alone (see tests/test_execute_context_config_contract.py).
     data_path = context.config("data_path")
     random_seed = context.config("random_seed")
-    size_map = context.config("hbefa_segment_size_map", None)
+    size_map = context.config("hbefa_segment_size_map")
+    fleet_model_enabled = bool(context.config("fleet_model_enabled"))
+    model_brands = bool(context.config("fleet_model_brands"))
+    electric_calibration = context.config("fleet_electric_calibration")
+    # Optional explicit KBA derived-CSV directory; default None -> use data_path.
+    kba_fleet_paths = context.config("kba_fleet_paths")
+    fleet_data_path = kba_fleet_paths if kba_fleet_paths is not None else data_path
+
+    # OFF switch: the German fleet model disabled -> emit the legacy
+    # one-car-per-person default_car fleet (byte-identical to
+    # synthesis.vehicles.cars.default), so a single config flag turns the whole
+    # fleet feature off even while vehicles_method stays "household".
+    if not fleet_model_enabled:
+        logger.info(
+            "[vehicles.household] fleet_model_enabled=False -> legacy "
+            "one-car-per-person default_car fleet (OFF).")
+        return _legacy_default_fleet(df_persons)
+
+    if electric_calibration not in FLEET_ELECTRIC_CALIBRATIONS:
+        raise ValueError(
+            f"unknown fleet_electric_calibration '{electric_calibration}' "
+            f"(supported: {FLEET_ELECTRIC_CALIBRATIONS})"
+        )
 
     df_cars = build_household_car_frame(df_persons, df_homes, df_regiostar)
     df_cars = assign_vehicle_ids(df_cars)
@@ -294,7 +337,8 @@ def execute(context):
 
     # Attach the full KBA/HBEFA spec to every household car (F4 chain).
     df_spec, df_vehicle_types = fleet.sample_fleet(
-        df_cars, data_path, random_seed=random_seed, size_map=size_map)
+        df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
+        model_brands=model_brands)
 
     # The current vehicles writer consumes critair/technology/age/euro per
     # vehicle (synthesis.vehicles.vehicles + matsim.scenario.vehicles). The
@@ -303,6 +347,34 @@ def execute(context):
     # concatenated with the passenger frame.
     df_vehicles = _attach_writer_columns(df_spec)
 
+    return df_vehicle_types, df_vehicles
+
+
+def _legacy_default_fleet(df_persons: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Reproduce the legacy ``synthesis.vehicles.cars.default`` stage output.
+
+    Returns the exact ``(df_vehicle_types, df_vehicles)`` of the upstream eqasim
+    default fleet (one ``default_car`` per person, single ``default_car`` type with
+    HBEFA "average" attributes, the four legacy per-vehicle attributes), so that
+    ``fleet_model_enabled=False`` yields a byte-identical legacy vehicles file even
+    while ``vehicles_method`` stays ``"household"``. Mirrors
+    ``synthesis/vehicles/cars/default.py`` field-for-field.
+    """
+    df_vehicle_types = pd.DataFrame.from_records([{
+        "type_id": "default_car", "nb_seats": 4, "length": 5.0, "width": 1.0,
+        "pce": 1.0, "mode": "car", "hbefa_cat": "PASSENGER_CAR",
+        "hbefa_tech": "average", "hbefa_size": "average", "hbefa_emission": "average",
+    }])
+
+    df_vehicles = df_persons[["person_id"]].copy()
+    df_vehicles = df_vehicles.rename(columns={"person_id": "owner_id"})
+    df_vehicles["mode"] = "car"
+    df_vehicles["vehicle_id"] = df_vehicles["owner_id"].astype(str) + ":car"
+    df_vehicles["type_id"] = "default_car"
+    df_vehicles["critair"] = "Crit'air 1"
+    df_vehicles["technology"] = "Gazole"
+    df_vehicles["age"] = 0
+    df_vehicles["euro"] = 6
     return df_vehicle_types, df_vehicles
 
 
