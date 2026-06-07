@@ -1,0 +1,770 @@
+"""Extract KBA / MiD fleet reference tables into committed tidy CSVs.
+
+Source xlsx files (raw, local-only under ``eqasim-data/data/braunschweig/kba/``,
+documented in that directory's ``README.md``):
+
+- ``fz27_202501.xlsx`` (KBA FZ 27 series, stock date 1 January 2025)
+    * FZ 27.10 -> segment x powertrain (national)        -> kba_segment_powertrain.csv
+    * FZ 27.15 -> Kreis x powertrain (ZGB Kreise only)   -> kba_kreis_powertrain.csv
+    * FZ 27.17 -> Gemeinde x private BEV/PHEV (ZGB only)  -> kba_gemeinde_private_bev.csv
+    * FZ 27.4  -> Niedersachsen fuel x Euro class         -> kba_fuel_euro_nds.csv
+    * FZ 27.7  -> vehicle age band x fuel (Pkw column)    -> kba_age_fuel.csv
+    * FZ 27.11 -> brand x powertrain (national)           -> kba_brand_powertrain.csv
+- ``fz12_2025.xlsx`` (KBA FZ 12.1)
+    * FZ 12.1  -> segment x model (Modellreihe)           -> kba_segment_model.csv
+- ``output_mit_2023_bundesland_fahrzeuge.xlsx`` (MiD 2023)
+    * segment x economic status, by Bundesland           -> mid2023_segment_by_status_bundesland.csv
+- ``output_mit_2023_raumtyp_fahrzeuge.xlsx`` (MiD 2023)
+    * segment x economic status, by RegioStaR Raumtyp     -> mid2023_segment_by_status_raumtyp.csv
+
+The xlsx headers are multi-line and the data starts around row 12, so every
+sheet is parsed by *explicit column indices* (documented in the README), never
+by header autodetection. KBA / MiD placeholder symbols (``-`` none, ``.``
+secret/unknown, ``/`` not reliable, ``()`` uncertain, blank) are coerced to 0
+or NaN *explicitly*, and the coercion count per file is logged (project
+no-silent-fallback rule).
+
+The derived CSVs are written under
+``eqasim-data/data/braunschweig/kba/derived/`` and force-committed (the
+``eqasim-data`` tree is otherwise gitignored), matching the committed-MiD-CSV
+pattern. This script is idempotent: re-running it reproduces the same CSVs from
+the (unchanged) raw xlsx.
+
+Usage::
+
+    python scripts/extract_kba_fleet.py
+
+Provenance: see ``eqasim-data/data/braunschweig/kba/README.md``. Do not
+hand-edit the derived CSVs; re-run this script instead.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import openpyxl
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("extract_kba_fleet")
+
+# --------------------------------------------------------------------------- #
+# Paths
+# --------------------------------------------------------------------------- #
+KBA_DIR = Path("eqasim-data/data/braunschweig/kba")
+DERIVED_DIR = KBA_DIR / "derived"
+
+FZ27_PATH = KBA_DIR / "fz27_202501.xlsx"
+FZ12_PATH = KBA_DIR / "fz12_2025.xlsx"
+MID_BUNDESLAND_PATH = KBA_DIR / "output_mit_2023_bundesland_fahrzeuge.xlsx"
+MID_RAUMTYP_PATH = KBA_DIR / "output_mit_2023_raumtyp_fahrzeuge.xlsx"
+
+# --------------------------------------------------------------------------- #
+# Canonical label sets
+# --------------------------------------------------------------------------- #
+# Canonical powertrain labels used everywhere downstream.
+POWERTRAIN_LABELS = ("petrol", "diesel", "gas", "bev", "phev", "hybrid", "hydrogen", "other")
+# Canonical economic-status labels (MiD 5-class oekonomischer Status).
+STATUS_LABELS = ("very_low", "low", "medium", "high", "very_high")
+# Canonical snake_case segment labels (stable across KBA + MiD).
+SEGMENT_LABELS = (
+    "minis", "kleinwagen", "kompaktklasse", "mittelklasse", "obere_mittelklasse",
+    "oberklasse", "suv", "gelaendewagen", "sportwagen", "mini_vans",
+    "grossraum_vans", "utilities", "wohnmobile", "sonstige",
+)
+
+# KBA German segment name -> canonical snake_case segment.
+KBA_SEGMENT_MAP = {
+    "minis": "minis",
+    "kleinwagen": "kleinwagen",
+    "kompaktklasse": "kompaktklasse",
+    "mittelklasse": "mittelklasse",
+    "obere mittelklasse": "obere_mittelklasse",
+    "oberklasse": "oberklasse",
+    "suvs": "suv",
+    "gelaendewagen": "gelaendewagen",
+    "gelandewagen": "gelaendewagen",
+    "sportwagen": "sportwagen",
+    "mini-vans": "mini_vans",
+    "grossraum-vans": "grossraum_vans",
+    "grosraum-vans": "grossraum_vans",
+    "utilities": "utilities",
+    "wohnmobile": "wohnmobile",
+    "sonstige": "sonstige",
+}
+
+# MiD German segment name -> canonical snake_case segment.
+# MiD uses "Sportgelaendewagen" for what KBA calls SUVs, and
+# "nicht zuzuordnen" for the residual ("Sonstige").  MiD has no Wohnmobile block.
+MID_SEGMENT_MAP = dict(KBA_SEGMENT_MAP)
+MID_SEGMENT_MAP.update({
+    "sportgelaendewagen": "suv",
+    "nicht zuzuordnen": "sonstige",
+})
+
+# MiD region header labels arrive line-wrapped (e.g. "Niedersach sen",
+# "Baden- Wuerttember g", "kleinstaedtische r, doerflicher Raum").  Map the
+# wrapped (whitespace-collapsed, umlaut-normalised) form to a clean label.
+MID_BUNDESLAND_NAME_MAP = {
+    "Schleswig- Holstein": "Schleswig-Holstein",
+    "Hamburg": "Hamburg",
+    "Niedersach sen": "Niedersachsen",
+    "Bremen": "Bremen",
+    "Nordrhein- Westfalen": "Nordrhein-Westfalen",
+    "Hessen": "Hessen",
+    "Rheinland- Pfalz": "Rheinland-Pfalz",
+    "Baden- Wuerttember g": "Baden-Wuerttemberg",
+    "Bayern": "Bayern",
+    "Saarland": "Saarland",
+    "Berlin": "Berlin",
+    "Brandenbu rg": "Brandenburg",
+    "Mecklenbur g- Vorpommer n": "Mecklenburg-Vorpommern",
+    "Sachsen": "Sachsen",
+    "Sachsen- Anhalt": "Sachsen-Anhalt",
+    "Thueringen": "Thueringen",
+}
+MID_RAUMTYP_NAME_MAP = {
+    "Stadtregion - Metropole": "Stadtregion - Metropole",
+    "Stadtregion - Regiopole und Grossstadt": "Stadtregion - Regiopole und Grossstadt",
+    "Stadtregion - Mittelstadt, staedtischer Raum": "Stadtregion - Mittelstadt, staedtischer Raum",
+    "Stadtregion - kleinstaedtische r, doerflicher Raum": "Stadtregion - kleinstaedtischer, doerflicher Raum",
+    "laendliche Region - zentrale Stadt": "laendliche Region - zentrale Stadt",
+    "laendliche Region - Mittelstadt, staedtischer Raum": "laendliche Region - Mittelstadt, staedtischer Raum",
+    "laendliche Region - kleinstaedtische r, doerflicher Raum": "laendliche Region - kleinstaedtischer, doerflicher Raum",
+}
+
+# MiD German economic-status label -> canonical status.
+MID_STATUS_MAP = {
+    "sehr niedrig": "very_low",
+    "niedrig": "low",
+    "mittel": "medium",
+    "hoch": "high",
+    "sehr hoch": "very_high",
+}
+
+# KBA fuel ("Kraftstoffart") label -> canonical powertrain (FZ 27.4 / FZ 27.7).
+KBA_FUEL_MAP = {
+    "benzin": "petrol",
+    "diesel": "diesel",
+    "gas insgesamt": "gas",
+    "elektro (bev)": "bev",
+    "hybrid insgesamt": "hybrid",
+    "darunter plug-in": "phev",
+    "sonstige": "other",
+}
+
+# ZGB Kreise (KBA Kennziffer == Kreis AGS-5 == "03" + Kreis3).
+ZGB_KREISE = {
+    "03101": "Braunschweig, Stadt",
+    "03102": "Salzgitter",
+    "03103": "Wolfsburg",
+    "03151": "Gifhorn",
+    "03153": "Goslar",
+    "03154": "Helmstedt",
+    "03157": "Peine",
+    "03158": "Wolfenbuettel",
+}
+
+# KBA placeholder symbols that map to a numeric 0 (count below 0.5 / none).
+_ZERO_SYMBOLS = {"-", "0"}
+# KBA placeholder symbols that map to NaN (secret / not reliable / uncertain).
+_NAN_SYMBOLS = {".", "/", "()", "(", ")", "x", "X"}
+
+
+@dataclass
+class CoercionCounter:
+    """Tracks how many placeholder cells were coerced to 0 / NaN per file."""
+
+    file_label: str
+    to_zero: int = 0
+    to_nan: int = 0
+    cells_seen: int = 0
+    distinct_symbols: dict = field(default_factory=dict)
+
+    def record(self, raw_value, coerced_value) -> None:
+        self.cells_seen += 1
+        if isinstance(raw_value, str):
+            symbol = raw_value.strip()
+        else:
+            symbol = raw_value
+        if pd.isna(coerced_value):
+            self.to_nan += 1
+            self.distinct_symbols[str(symbol)] = self.distinct_symbols.get(str(symbol), 0) + 1
+        elif coerced_value == 0 and not _looks_numeric_zero(raw_value):
+            self.to_zero += 1
+            self.distinct_symbols[str(symbol)] = self.distinct_symbols.get(str(symbol), 0) + 1
+
+    def log(self) -> None:
+        total = self.to_zero + self.to_nan
+        logger.info(
+            "[%s] numeric cells=%d, coerced placeholders=%d (-> 0: %d, -> NaN: %d); symbols=%s",
+            self.file_label, self.cells_seen, total, self.to_zero, self.to_nan,
+            dict(sorted(self.distinct_symbols.items())),
+        )
+
+
+def _looks_numeric_zero(raw_value) -> bool:
+    """True if the raw value is a genuine numeric 0, not a placeholder string."""
+    return isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool) and raw_value == 0
+
+
+def _coerce_count(raw_value, counter: CoercionCounter):
+    """Coerce a KBA/MiD count cell to float, mapping placeholder symbols explicitly.
+
+    ``- 0`` (string) -> 0; ``. / ()`` / blank -> NaN; numbers pass through.
+    Every coercion of a placeholder symbol is recorded in ``counter``.
+    """
+    if raw_value is None:
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+    if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool):
+        # Genuine numeric value (including a real 0); not a placeholder.
+        counter.cells_seen += 1
+        return float(raw_value)
+    text = str(raw_value).strip()
+    if text == "":
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+    if text in _ZERO_SYMBOLS:
+        result = 0.0
+        counter.record(raw_value, result)
+        return result
+    if text in _NAN_SYMBOLS:
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+    # German thousands separators (".") inside numbers, decimal comma.
+    cleaned = text.replace(".", "").replace(",", ".")
+    try:
+        value = float(cleaned)
+        counter.cells_seen += 1
+        return value
+    except ValueError:
+        # Unknown non-numeric token -> NaN, recorded as a coercion.
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+
+
+def _coerce_percent(raw_value, counter: CoercionCounter):
+    """Coerce a MiD percent cell like ``'7 %'`` to a float share in percent.
+
+    ``'7 %'`` -> 7.0; placeholders -> NaN (recorded).
+    """
+    if raw_value is None:
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+    if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool):
+        counter.cells_seen += 1
+        return float(raw_value)
+    text = str(raw_value).strip()
+    if text == "" or text in _NAN_SYMBOLS:
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+    cleaned = text.replace("%", "").replace(",", ".").strip()
+    try:
+        value = float(cleaned)
+        counter.cells_seen += 1
+        return value
+    except ValueError:
+        result = np.nan
+        counter.record(raw_value, result)
+        return result
+
+
+def _normalise_label(text: str) -> str:
+    """Collapse line-wrap whitespace and German umlauts for label matching."""
+    if text is None:
+        return ""
+    collapsed = " ".join(str(text).split())
+    return (
+        collapsed.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+        .replace("Ä", "Ae").replace("Ö", "Oe").replace("Ü", "Ue")
+        .replace("ß", "ss")
+    )
+
+
+def _cell(row, index):
+    """Return ``row[index]`` or None when the row is shorter (ragged xlsx rows)."""
+    return row[index] if index < len(row) else None
+
+
+def _read_sheet(path: Path, sheet_name: str):
+    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    worksheet = workbook[sheet_name]
+    rows = list(worksheet.iter_rows(values_only=True))
+    workbook.close()
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.10 -> kba_segment_powertrain.csv
+# --------------------------------------------------------------------------- #
+def extract_segment_powertrain() -> pd.DataFrame:
+    """FZ 27.10: per-segment total + BEV/PHEV/hybrid/gas/hydrogen counts.
+
+    Column indices (0-based, verified against the data rows): col1=segment,
+    col2=total, col3=alt total, col5=electro total, col7=BEV (Elektro),
+    col8=fuel cell (hydrogen, in the electro group), col9=PHEV, col10=hybrid
+    total, col13=gas insgesamt, col14=hydrogen (Wasserstoff column).  Only the
+    14 KBA segment rows of the 1 January 2025 block are read (the first block;
+    later blocks repeat prior years).
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.10")
+    counter = CoercionCounter("FZ 27.10 segment_powertrain")
+    records = []
+    started = False
+    for row in rows:
+        label = _normalise_label(row[1]).lower() if row[1] is not None else ""
+        if not started:
+            # The 1 January 2025 total row precedes the segment rows.
+            if label.startswith("1. januar 2025"):
+                started = True
+            continue
+        if label.startswith("1. januar"):
+            break  # next year's block
+        canonical = KBA_SEGMENT_MAP.get(label)
+        if canonical is None:
+            continue
+        total = _coerce_count(_cell(row, 2), counter)
+        bev = _coerce_count(_cell(row, 7), counter)
+        fuel_cell = _coerce_count(_cell(row, 8), counter)
+        phev = _coerce_count(_cell(row, 9), counter)
+        hybrid = _coerce_count(_cell(row, 10), counter)
+        gas = _coerce_count(_cell(row, 13), counter)
+        hydrogen_col = _coerce_count(_cell(row, 14), counter)
+        hydrogen = np.nansum([fuel_cell, hydrogen_col])
+        records.append({
+            "segment": canonical,
+            "total": total,
+            "bev": bev,
+            "phev": phev,
+            "hybrid": hybrid,
+            "gas": gas,
+            "hydrogen": hydrogen,
+        })
+    counter.log()
+    frame = pd.DataFrame(records)
+    # The "alternative drive" columns are a strict subset of the total; the
+    # remaining vehicles are conventional petrol/diesel (not separable in this
+    # sheet).  We expose the alternative counts plus their per-segment shares.
+    alt_total = frame[["bev", "phev", "hybrid", "gas", "hydrogen"]].sum(axis=1)
+    frame["alt_total"] = alt_total
+    frame["segment_share"] = frame["total"] / frame["total"].sum()
+    for powertrain in ("bev", "phev", "hybrid", "gas", "hydrogen"):
+        frame[f"{powertrain}_share"] = frame[powertrain] / frame["total"]
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.15 -> kba_kreis_powertrain.csv (ZGB Kreise only)
+# --------------------------------------------------------------------------- #
+def extract_kreis_powertrain() -> pd.DataFrame:
+    """FZ 27.15: per-Kreis total + alternative-drive + BEV/PHEV/hybrid/gas.
+
+    Column indices (0-based, verified against the data rows): col2=Kennziffer
+    (= Kreis AGS-5), col3=name, col4=total, col5=alt total, col7=electro total,
+    col9=BEV, col10=PHEV, col11=hybrid total, col14=gas insgesamt (the data
+    rows have no hydrogen column, so gas is the last cell).  Filtered to the 8
+    ZGB Kreise.
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.15")
+    counter = CoercionCounter("FZ 27.15 kreis_powertrain")
+    records = []
+    for row in rows:
+        kennziffer = _cell(row, 2)
+        if kennziffer is None:
+            continue
+        code = str(kennziffer).strip()
+        if code not in ZGB_KREISE:
+            continue
+        records.append({
+            "kreis_ags5": code,
+            "kreis_name": ZGB_KREISE[code],
+            "total": _coerce_count(_cell(row, 4), counter),
+            "alt_total": _coerce_count(_cell(row, 5), counter),
+            "bev": _coerce_count(_cell(row, 9), counter),
+            "phev": _coerce_count(_cell(row, 10), counter),
+            "hybrid": _coerce_count(_cell(row, 11), counter),
+            "gas": _coerce_count(_cell(row, 14), counter),
+        })
+    counter.log()
+    frame = pd.DataFrame(records).sort_values("kreis_ags5").reset_index(drop=True)
+    frame["bev_share"] = frame["bev"] / frame["total"]
+    frame["phev_share"] = frame["phev"] / frame["total"]
+    frame["alt_share"] = frame["alt_total"] / frame["total"]
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.17 -> kba_gemeinde_private_bev.csv (ZGB Kreise only)
+# --------------------------------------------------------------------------- #
+def extract_gemeinde_private_bev() -> pd.DataFrame:
+    """FZ 27.17: per-Gemeinde private car total + private BEV/PHEV.
+
+    Column indices (0-based, README): col2=Zulassungsbezirk ("AGS5 NAME",
+    filled once per Bezirk), col3=Gemeinde, col7=private total, col8=private
+    BEV, col9=private PHEV.  Filtered to Gemeinden whose Bezirk prefix is a ZGB
+    Kreis AGS-5.
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.17")
+    counter = CoercionCounter("FZ 27.17 gemeinde_private_bev")
+    records = []
+    current_kreis: Optional[str] = None
+    for row in rows:
+        bezirk = _cell(row, 2)
+        if bezirk is not None and str(bezirk).strip():
+            # e.g. "08111 STUTTGART,STADT" -> the leading 5-digit AGS is the Kreis.
+            token = str(bezirk).strip().split()[0]
+            if token.isdigit() and len(token) == 5:
+                current_kreis = token
+        gemeinde = _cell(row, 3)
+        if gemeinde is None or not str(gemeinde).strip():
+            continue
+        if current_kreis not in ZGB_KREISE:
+            continue
+        records.append({
+            "kreis_ags5": current_kreis,
+            "kreis_name": ZGB_KREISE[current_kreis],
+            "gemeinde": str(gemeinde).strip(),
+            "private_total": _coerce_count(_cell(row, 7), counter),
+            "private_bev": _coerce_count(_cell(row, 8), counter),
+            "private_phev": _coerce_count(_cell(row, 9), counter),
+        })
+    counter.log()
+    frame = pd.DataFrame(records)
+    frame = frame.sort_values(["kreis_ags5", "gemeinde"]).reset_index(drop=True)
+    frame["private_bev_share"] = frame["private_bev"] / frame["private_total"]
+    frame["private_phev_share"] = frame["private_phev"] / frame["private_total"]
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.4 -> kba_fuel_euro_nds.csv (Niedersachsen)
+# --------------------------------------------------------------------------- #
+def extract_fuel_euro_nds() -> pd.DataFrame:
+    """FZ 27.4: Niedersachsen fuel x Euro class (long form).
+
+    Column indices (0-based, README): col1=Land (once per block), col2=fuel,
+    col3=Euro1, col4=Euro2, col5=Euro3, col6=Euro4, col7=Euro5,
+    col8=Euro6 total, col12=Sonstige, col13=row total.  We keep the headline
+    Euro classes (1..6, plus "other" = Sonstige) and skip the Euro-6
+    sub-breakdown columns (6d-temp / 6d / 6e) so the per-fuel Euro shares sum
+    to one without double counting.
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.4")
+    counter = CoercionCounter("FZ 27.4 fuel_euro_nds")
+    euro_columns = {
+        "euro1": 3, "euro2": 4, "euro3": 5, "euro4": 6, "euro5": 7,
+        "euro6": 8, "other": 12,
+    }
+    records = []
+    in_block = False
+    for row in rows:
+        land = _normalise_label(row[1]) if row[1] is not None else ""
+        if land.lower().startswith("niedersachsen zusammen"):
+            break
+        if land.lower() == "niedersachsen":
+            in_block = True
+        if not in_block:
+            continue
+        fuel_label = _normalise_label(row[2]).lower() if row[2] is not None else ""
+        powertrain = KBA_FUEL_MAP.get(fuel_label)
+        if powertrain is None:
+            continue
+        for euro_class, col in euro_columns.items():
+            records.append({
+                "fuel": powertrain,
+                "euro_class": euro_class,
+                "count": _coerce_count(_cell(row, col), counter),
+            })
+    counter.log()
+    frame = pd.DataFrame(records)
+    # Per-fuel Euro-class share (within powertrain).
+    fuel_totals = frame.groupby("fuel")["count"].transform("sum")
+    frame["share"] = frame["count"] / fuel_totals
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.7 -> kba_age_fuel.csv (Pkw column)
+# --------------------------------------------------------------------------- #
+def extract_age_fuel() -> pd.DataFrame:
+    """FZ 27.7: vehicle age band x fuel, Pkw (passenger-car) column only.
+
+    Column indices (0-based, README): col1=Fahrzeugalter (filled once per
+    block), col2=Kraftstoffart, col4=Personenkraftwagen (the Pkw column).
+    "... zusammen" subtotal rows are skipped.
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.7")
+    counter = CoercionCounter("FZ 27.7 age_fuel")
+    records = []
+    current_age: Optional[str] = None
+    for row in rows:
+        age_label = _normalise_label(row[1]) if row[1] is not None else ""
+        if age_label and "zusammen" in age_label.lower():
+            current_age = None
+            continue
+        if age_label and "Jahre" in age_label:
+            current_age = _canonical_age_band(age_label)
+        fuel_label = _normalise_label(row[2]).lower() if row[2] is not None else ""
+        powertrain = KBA_FUEL_MAP.get(fuel_label)
+        if powertrain is None or current_age is None:
+            continue
+        records.append({
+            "age_band": current_age,
+            "fuel": powertrain,
+            "pkw_count": _coerce_count(_cell(row, 4), counter),
+        })
+    counter.log()
+    frame = pd.DataFrame(records)
+    fuel_totals = frame.groupby("fuel")["pkw_count"].transform("sum")
+    frame["share"] = frame["pkw_count"] / fuel_totals
+    return frame
+
+
+def _canonical_age_band(german_label: str) -> str:
+    """Map a German FZ 27.7 age band to a stable snake_case label."""
+    text = german_label.lower()
+    mapping = {
+        "unter 5 jahre": "under_5",
+        "5 bis 9 jahre": "5_to_9",
+        "10 bis 14 jahre": "10_to_14",
+        "15 bis 19 jahre": "15_to_19",
+        "20 bis 24 jahre": "20_to_24",
+        "25 bis 29 jahre": "25_to_29",
+        "30 jahre und mehr": "30_plus",
+    }
+    return mapping.get(text, text.replace(" ", "_"))
+
+
+# --------------------------------------------------------------------------- #
+# FZ 27.11 -> kba_brand_powertrain.csv
+# --------------------------------------------------------------------------- #
+def extract_brand_powertrain() -> pd.DataFrame:
+    """FZ 27.11: per-brand total + BEV/PHEV/hybrid/gas counts.
+
+    Same column layout as FZ 27.10: col1=brand, col2=total, col7=BEV,
+    col9=PHEV, col10=hybrid total, col13=gas insgesamt.  The trailing
+    ``INSGESAMT`` grand-total row is skipped; ``SONSTIGE`` (residual brands) is
+    kept.
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.11")
+    counter = CoercionCounter("FZ 27.11 brand_powertrain")
+    records = []
+    started = False
+    for row in rows:
+        label = _normalise_label(row[1]) if row[1] is not None else ""
+        if not label:
+            continue
+        if not started:
+            # Brand rows begin after the column-header block; the first brand
+            # row has a numeric total in col2.
+            if isinstance(_cell(row, 2), (int, float)) and label.upper() != "INSGESAMT":
+                started = True
+            else:
+                continue
+        if label.upper() == "INSGESAMT":
+            break
+        if "Kraftfahrt-Bundesamt" in label:
+            break
+        records.append({
+            "brand": label,
+            "total": _coerce_count(_cell(row, 2), counter),
+            "bev": _coerce_count(_cell(row, 7), counter),
+            "phev": _coerce_count(_cell(row, 9), counter),
+            "hybrid": _coerce_count(_cell(row, 10), counter),
+            "gas": _coerce_count(_cell(row, 13), counter),
+        })
+    counter.log()
+    frame = pd.DataFrame(records)
+    frame["brand_share"] = frame["total"] / frame["total"].sum()
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# FZ 12.1 -> kba_segment_model.csv
+# --------------------------------------------------------------------------- #
+def extract_segment_model() -> pd.DataFrame:
+    """FZ 12.1: per-segment model (Modellreihe) counts and within-segment share.
+
+    Column indices (0-based, README): col1=Segment (filled once per block,
+    uppercase), col2=Modellreihe, col3=Anzahl (count).  Segment subtotal rows
+    ("... ZUSAMMEN") and the trailing ``BESTAND INSGESAMT`` / footnotes are
+    skipped.  The within-segment share is recomputed from the counts so it is
+    exact and reproducible.
+    """
+    rows = _read_sheet(FZ12_PATH, "FZ 12.1")
+    counter = CoercionCounter("FZ 12.1 segment_model")
+    records = []
+    current_segment: Optional[str] = None
+    for row in rows:
+        seg_label = _normalise_label(row[1]) if row[1] is not None else ""
+        if seg_label:
+            upper = seg_label.upper().strip()
+            if "ZUSAMMEN" in upper:
+                current_segment = None
+                continue
+            # End of the data block (grand total + footnotes).  Match only the
+            # exact "BESTAND INSGESAMT" / "HINWEIS:" markers, never the sheet
+            # title row ("Bestand an Personenkraftwagen nach Segmenten ...").
+            if upper.startswith("BESTAND INSGESAMT") or upper.startswith("HINWEIS"):
+                break
+            if "Kraftfahrt-Bundesamt" in seg_label:
+                break
+            canonical = KBA_SEGMENT_MAP.get(seg_label.lower().strip())
+            if canonical is not None:
+                current_segment = canonical
+        model = _cell(row, 2)
+        if model is None or not str(model).strip():
+            continue
+        if current_segment is None:
+            continue
+        records.append({
+            "segment": current_segment,
+            "model": str(model).strip(),
+            "count": _coerce_count(_cell(row, 3), counter),
+        })
+    counter.log()
+    frame = pd.DataFrame(records)
+    segment_totals = frame.groupby("segment")["count"].transform("sum")
+    frame["share"] = frame["count"] / segment_totals
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# MiD segment x economic status, by region (Bundesland / Raumtyp)
+# --------------------------------------------------------------------------- #
+def extract_mid_segment_by_status(path: Path, segment_map: dict, region_name_map: dict,
+                                  file_label: str) -> pd.DataFrame:
+    """MiD 2023 segment x economic status, column-% per region.
+
+    Each segment block: a "Basis: PKW" title, a region header row (col1 ==
+    "Total", col2.. == region names), a "Basis gewichtet" row (weighted base),
+    an "oekonomischer Status" marker, then the 5 status rows (sehr niedrig ..
+    sehr hoch), each a column-% per region.  Long form output:
+    ``region, segment, status, share_pct, base_weighted``.
+    """
+    # The MiD files contain a single sheet ("MiD Tabellen"); read it by index.
+    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    sheet_name = workbook.sheetnames[0]
+    workbook.close()
+    rows = _read_sheet(path, sheet_name)
+    counter = CoercionCounter(file_label)
+
+    # Locate block starts (the segment title lines).
+    block_starts = []
+    for index, row in enumerate(rows):
+        cell0 = _normalise_label(row[0]) if row[0] is not None else ""
+        if cell0.lower().startswith("pkw-segmentierung nach kba"):
+            # The segment name follows the last "- ".
+            after = cell0.split("- ")[-1].strip().lower()
+            canonical = segment_map.get(after)
+            block_starts.append((index, canonical, after))
+
+    records = []
+    for index, canonical, raw_name in block_starts:
+        if canonical is None:
+            logger.warning("[%s] unmapped MiD segment '%s' at row %d (skipped)",
+                           file_label, raw_name, index)
+            continue
+        # Region header: the row that follows the "... | Total | <group> ..."
+        # row.  In the "Total" row, col2 carries the group title (e.g.
+        # "Bundesland"); the individual region names are in the *next* row's
+        # col2 onward (col1 there is blank).
+        header_row = None
+        base_row = None
+        status_rows = {}
+        block_end = min(index + 26, len(rows))
+        for offset in range(index, block_end):
+            row = rows[offset]
+            cell0 = _normalise_label(_cell(row, 0)).lower() if _cell(row, 0) is not None else ""
+            cell1 = _normalise_label(_cell(row, 1)).lower() if _cell(row, 1) is not None else ""
+            if header_row is None and cell1 == "total" and offset + 1 < block_end:
+                header_row = rows[offset + 1]
+            if cell0.startswith("basis gewichtet"):
+                base_row = row
+            if cell0 in MID_STATUS_MAP:
+                status_rows[MID_STATUS_MAP[cell0]] = row
+        if header_row is None or len(status_rows) != len(STATUS_LABELS):
+            logger.warning("[%s] incomplete block for segment '%s' at row %d (skipped)",
+                           file_label, canonical, index)
+            continue
+        # Region columns: every non-empty header cell from col2 onward.
+        region_columns = []
+        for col in range(2, len(header_row)):
+            name = _cell(header_row, col)
+            if name is not None and str(name).strip():
+                wrapped = _normalise_label(name)
+                clean = region_name_map.get(wrapped)
+                if clean is None:
+                    logger.warning("[%s] unmapped region header '%s' (kept verbatim)",
+                                   file_label, wrapped)
+                    clean = wrapped
+                region_columns.append((col, clean))
+        for col, region in region_columns:
+            base_weighted = (_coerce_count(_cell(base_row, col), counter)
+                             if base_row is not None else np.nan)
+            for status in STATUS_LABELS:
+                share_pct = _coerce_percent(_cell(status_rows[status], col), counter)
+                records.append({
+                    "region": region,
+                    "segment": canonical,
+                    "status": status,
+                    "share_pct": share_pct,
+                    "base_weighted": base_weighted,
+                })
+    counter.log()
+    frame = pd.DataFrame(records)
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# Driver
+# --------------------------------------------------------------------------- #
+def _write(frame: pd.DataFrame, name: str) -> None:
+    DERIVED_DIR.mkdir(parents=True, exist_ok=True)
+    path = DERIVED_DIR / name
+    frame.to_csv(path, index=False)
+    logger.info("[write] %s (%d rows, %d cols)", path, len(frame), frame.shape[1])
+
+
+def main() -> None:
+    for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH):
+        if not required.exists():
+            raise FileNotFoundError(
+                f"Required raw KBA/MiD input missing: {required} "
+                f"(raw xlsx are local-only; see {KBA_DIR / 'README.md'})."
+            )
+
+    _write(extract_segment_powertrain(), "kba_segment_powertrain.csv")
+    _write(extract_kreis_powertrain(), "kba_kreis_powertrain.csv")
+    _write(extract_gemeinde_private_bev(), "kba_gemeinde_private_bev.csv")
+    _write(extract_fuel_euro_nds(), "kba_fuel_euro_nds.csv")
+    _write(extract_age_fuel(), "kba_age_fuel.csv")
+    _write(extract_brand_powertrain(), "kba_brand_powertrain.csv")
+    _write(extract_segment_model(), "kba_segment_model.csv")
+    _write(
+        extract_mid_segment_by_status(MID_BUNDESLAND_PATH, MID_SEGMENT_MAP,
+                                      MID_BUNDESLAND_NAME_MAP,
+                                      "MiD bundesland segment_by_status"),
+        "mid2023_segment_by_status_bundesland.csv",
+    )
+    _write(
+        extract_mid_segment_by_status(MID_RAUMTYP_PATH, MID_SEGMENT_MAP,
+                                      MID_RAUMTYP_NAME_MAP,
+                                      "MiD raumtyp segment_by_status"),
+        "mid2023_segment_by_status_raumtyp.csv",
+    )
+    logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
+
+
+if __name__ == "__main__":
+    main()

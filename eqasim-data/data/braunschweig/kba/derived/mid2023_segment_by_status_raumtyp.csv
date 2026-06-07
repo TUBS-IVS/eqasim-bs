@@ -1,0 +1,456 @@
+region,segment,status,share_pct,base_weighted
+Stadtregion - Metropole,minis,very_low,5.0,2043.0
+Stadtregion - Metropole,minis,low,9.0,2043.0
+Stadtregion - Metropole,minis,medium,30.0,2043.0
+Stadtregion - Metropole,minis,high,38.0,2043.0
+Stadtregion - Metropole,minis,very_high,17.0,2043.0
+Stadtregion - Regiopole und Grossstadt,minis,very_low,8.0,2176.0
+Stadtregion - Regiopole und Grossstadt,minis,low,13.0,2176.0
+Stadtregion - Regiopole und Grossstadt,minis,medium,28.0,2176.0
+Stadtregion - Regiopole und Grossstadt,minis,high,36.0,2176.0
+Stadtregion - Regiopole und Grossstadt,minis,very_high,15.0,2176.0
+"Stadtregion - Mittelstadt, staedtischer Raum",minis,very_low,6.0,4375.0
+"Stadtregion - Mittelstadt, staedtischer Raum",minis,low,9.0,4375.0
+"Stadtregion - Mittelstadt, staedtischer Raum",minis,medium,29.0,4375.0
+"Stadtregion - Mittelstadt, staedtischer Raum",minis,high,40.0,4375.0
+"Stadtregion - Mittelstadt, staedtischer Raum",minis,very_high,16.0,4375.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",minis,very_low,6.0,977.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",minis,low,13.0,977.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",minis,medium,26.0,977.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",minis,high,41.0,977.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",minis,very_high,14.0,977.0
+laendliche Region - zentrale Stadt,minis,very_low,14.0,949.0
+laendliche Region - zentrale Stadt,minis,low,12.0,949.0
+laendliche Region - zentrale Stadt,minis,medium,33.0,949.0
+laendliche Region - zentrale Stadt,minis,high,30.0,949.0
+laendliche Region - zentrale Stadt,minis,very_high,12.0,949.0
+"laendliche Region - Mittelstadt, staedtischer Raum",minis,very_low,6.0,2364.0
+"laendliche Region - Mittelstadt, staedtischer Raum",minis,low,14.0,2364.0
+"laendliche Region - Mittelstadt, staedtischer Raum",minis,medium,30.0,2364.0
+"laendliche Region - Mittelstadt, staedtischer Raum",minis,high,40.0,2364.0
+"laendliche Region - Mittelstadt, staedtischer Raum",minis,very_high,10.0,2364.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",minis,very_low,8.0,2430.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",minis,low,12.0,2430.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",minis,medium,31.0,2430.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",minis,high,37.0,2430.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",minis,very_high,11.0,2430.0
+Stadtregion - Metropole,kleinwagen,very_low,5.0,8196.0
+Stadtregion - Metropole,kleinwagen,low,8.0,8196.0
+Stadtregion - Metropole,kleinwagen,medium,29.0,8196.0
+Stadtregion - Metropole,kleinwagen,high,40.0,8196.0
+Stadtregion - Metropole,kleinwagen,very_high,18.0,8196.0
+Stadtregion - Regiopole und Grossstadt,kleinwagen,very_low,6.0,9072.0
+Stadtregion - Regiopole und Grossstadt,kleinwagen,low,11.0,9072.0
+Stadtregion - Regiopole und Grossstadt,kleinwagen,medium,31.0,9072.0
+Stadtregion - Regiopole und Grossstadt,kleinwagen,high,38.0,9072.0
+Stadtregion - Regiopole und Grossstadt,kleinwagen,very_high,15.0,9072.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kleinwagen,very_low,5.0,18656.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kleinwagen,low,9.0,18656.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kleinwagen,medium,28.0,18656.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kleinwagen,high,41.0,18656.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kleinwagen,very_high,16.0,18656.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kleinwagen,very_low,8.0,4833.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kleinwagen,low,10.0,4833.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kleinwagen,medium,27.0,4833.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kleinwagen,high,43.0,4833.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kleinwagen,very_high,12.0,4833.0
+laendliche Region - zentrale Stadt,kleinwagen,very_low,8.0,4279.0
+laendliche Region - zentrale Stadt,kleinwagen,low,12.0,4279.0
+laendliche Region - zentrale Stadt,kleinwagen,medium,30.0,4279.0
+laendliche Region - zentrale Stadt,kleinwagen,high,38.0,4279.0
+laendliche Region - zentrale Stadt,kleinwagen,very_high,12.0,4279.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kleinwagen,very_low,8.0,10482.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kleinwagen,low,13.0,10482.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kleinwagen,medium,30.0,10482.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kleinwagen,high,37.0,10482.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kleinwagen,very_high,12.0,10482.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kleinwagen,very_low,8.0,11657.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kleinwagen,low,11.0,11657.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kleinwagen,medium,31.0,11657.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kleinwagen,high,40.0,11657.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kleinwagen,very_high,10.0,11657.0
+Stadtregion - Metropole,kompaktklasse,very_low,3.0,9691.0
+Stadtregion - Metropole,kompaktklasse,low,6.0,9691.0
+Stadtregion - Metropole,kompaktklasse,medium,24.0,9691.0
+Stadtregion - Metropole,kompaktklasse,high,42.0,9691.0
+Stadtregion - Metropole,kompaktklasse,very_high,24.0,9691.0
+Stadtregion - Regiopole und Grossstadt,kompaktklasse,very_low,3.0,9899.0
+Stadtregion - Regiopole und Grossstadt,kompaktklasse,low,8.0,9899.0
+Stadtregion - Regiopole und Grossstadt,kompaktklasse,medium,26.0,9899.0
+Stadtregion - Regiopole und Grossstadt,kompaktklasse,high,43.0,9899.0
+Stadtregion - Regiopole und Grossstadt,kompaktklasse,very_high,20.0,9899.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kompaktklasse,very_low,3.0,20690.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kompaktklasse,low,7.0,20690.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kompaktklasse,medium,25.0,20690.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kompaktklasse,high,45.0,20690.0
+"Stadtregion - Mittelstadt, staedtischer Raum",kompaktklasse,very_high,21.0,20690.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kompaktklasse,very_low,4.0,5290.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kompaktklasse,low,9.0,5290.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kompaktklasse,medium,25.0,5290.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kompaktklasse,high,45.0,5290.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",kompaktklasse,very_high,18.0,5290.0
+laendliche Region - zentrale Stadt,kompaktklasse,very_low,5.0,4398.0
+laendliche Region - zentrale Stadt,kompaktklasse,low,9.0,4398.0
+laendliche Region - zentrale Stadt,kompaktklasse,medium,30.0,4398.0
+laendliche Region - zentrale Stadt,kompaktklasse,high,42.0,4398.0
+laendliche Region - zentrale Stadt,kompaktklasse,very_high,14.0,4398.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kompaktklasse,very_low,5.0,11828.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kompaktklasse,low,8.0,11828.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kompaktklasse,medium,29.0,11828.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kompaktklasse,high,42.0,11828.0
+"laendliche Region - Mittelstadt, staedtischer Raum",kompaktklasse,very_high,17.0,11828.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kompaktklasse,very_low,5.0,13192.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kompaktklasse,low,10.0,13192.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kompaktklasse,medium,26.0,13192.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kompaktklasse,high,45.0,13192.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",kompaktklasse,very_high,14.0,13192.0
+Stadtregion - Metropole,mittelklasse,very_low,3.0,3449.0
+Stadtregion - Metropole,mittelklasse,low,5.0,3449.0
+Stadtregion - Metropole,mittelklasse,medium,17.0,3449.0
+Stadtregion - Metropole,mittelklasse,high,42.0,3449.0
+Stadtregion - Metropole,mittelklasse,very_high,33.0,3449.0
+Stadtregion - Regiopole und Grossstadt,mittelklasse,very_low,2.0,3360.0
+Stadtregion - Regiopole und Grossstadt,mittelklasse,low,5.0,3360.0
+Stadtregion - Regiopole und Grossstadt,mittelklasse,medium,21.0,3360.0
+Stadtregion - Regiopole und Grossstadt,mittelklasse,high,44.0,3360.0
+Stadtregion - Regiopole und Grossstadt,mittelklasse,very_high,28.0,3360.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mittelklasse,very_low,1.0,7535.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mittelklasse,low,5.0,7535.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mittelklasse,medium,21.0,7535.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mittelklasse,high,45.0,7535.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mittelklasse,very_high,27.0,7535.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mittelklasse,very_low,3.0,1900.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mittelklasse,low,4.0,1900.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mittelklasse,medium,20.0,1900.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mittelklasse,high,51.0,1900.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mittelklasse,very_high,21.0,1900.0
+laendliche Region - zentrale Stadt,mittelklasse,very_low,6.0,1584.0
+laendliche Region - zentrale Stadt,mittelklasse,low,5.0,1584.0
+laendliche Region - zentrale Stadt,mittelklasse,medium,20.0,1584.0
+laendliche Region - zentrale Stadt,mittelklasse,high,44.0,1584.0
+laendliche Region - zentrale Stadt,mittelklasse,very_high,25.0,1584.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mittelklasse,very_low,4.0,4199.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mittelklasse,low,6.0,4199.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mittelklasse,medium,22.0,4199.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mittelklasse,high,45.0,4199.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mittelklasse,very_high,23.0,4199.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mittelklasse,very_low,4.0,4888.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mittelklasse,low,7.0,4888.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mittelklasse,medium,24.0,4888.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mittelklasse,high,48.0,4888.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mittelklasse,very_high,17.0,4888.0
+Stadtregion - Metropole,obere_mittelklasse,very_low,2.0,848.0
+Stadtregion - Metropole,obere_mittelklasse,low,2.0,848.0
+Stadtregion - Metropole,obere_mittelklasse,medium,14.0,848.0
+Stadtregion - Metropole,obere_mittelklasse,high,45.0,848.0
+Stadtregion - Metropole,obere_mittelklasse,very_high,36.0,848.0
+Stadtregion - Regiopole und Grossstadt,obere_mittelklasse,very_low,3.0,781.0
+Stadtregion - Regiopole und Grossstadt,obere_mittelklasse,low,4.0,781.0
+Stadtregion - Regiopole und Grossstadt,obere_mittelklasse,medium,21.0,781.0
+Stadtregion - Regiopole und Grossstadt,obere_mittelklasse,high,40.0,781.0
+Stadtregion - Regiopole und Grossstadt,obere_mittelklasse,very_high,32.0,781.0
+"Stadtregion - Mittelstadt, staedtischer Raum",obere_mittelklasse,very_low,1.0,1996.0
+"Stadtregion - Mittelstadt, staedtischer Raum",obere_mittelklasse,low,4.0,1996.0
+"Stadtregion - Mittelstadt, staedtischer Raum",obere_mittelklasse,medium,14.0,1996.0
+"Stadtregion - Mittelstadt, staedtischer Raum",obere_mittelklasse,high,47.0,1996.0
+"Stadtregion - Mittelstadt, staedtischer Raum",obere_mittelklasse,very_high,34.0,1996.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,very_low,3.0,552.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,low,6.0,552.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,medium,14.0,552.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,high,46.0,552.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,very_high,32.0,552.0
+laendliche Region - zentrale Stadt,obere_mittelklasse,very_low,2.0,361.0
+laendliche Region - zentrale Stadt,obere_mittelklasse,low,5.0,361.0
+laendliche Region - zentrale Stadt,obere_mittelklasse,medium,16.0,361.0
+laendliche Region - zentrale Stadt,obere_mittelklasse,high,48.0,361.0
+laendliche Region - zentrale Stadt,obere_mittelklasse,very_high,29.0,361.0
+"laendliche Region - Mittelstadt, staedtischer Raum",obere_mittelklasse,very_low,4.0,827.0
+"laendliche Region - Mittelstadt, staedtischer Raum",obere_mittelklasse,low,4.0,827.0
+"laendliche Region - Mittelstadt, staedtischer Raum",obere_mittelklasse,medium,22.0,827.0
+"laendliche Region - Mittelstadt, staedtischer Raum",obere_mittelklasse,high,44.0,827.0
+"laendliche Region - Mittelstadt, staedtischer Raum",obere_mittelklasse,very_high,26.0,827.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,very_low,4.0,933.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,low,5.0,933.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,medium,17.0,933.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,high,51.0,933.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",obere_mittelklasse,very_high,22.0,933.0
+Stadtregion - Metropole,oberklasse,very_low,1.0,278.0
+Stadtregion - Metropole,oberklasse,low,1.0,278.0
+Stadtregion - Metropole,oberklasse,medium,15.0,278.0
+Stadtregion - Metropole,oberklasse,high,35.0,278.0
+Stadtregion - Metropole,oberklasse,very_high,47.0,278.0
+Stadtregion - Regiopole und Grossstadt,oberklasse,very_low,2.0,214.0
+Stadtregion - Regiopole und Grossstadt,oberklasse,low,4.0,214.0
+Stadtregion - Regiopole und Grossstadt,oberklasse,medium,22.0,214.0
+Stadtregion - Regiopole und Grossstadt,oberklasse,high,38.0,214.0
+Stadtregion - Regiopole und Grossstadt,oberklasse,very_high,34.0,214.0
+"Stadtregion - Mittelstadt, staedtischer Raum",oberklasse,very_low,3.0,526.0
+"Stadtregion - Mittelstadt, staedtischer Raum",oberklasse,low,4.0,526.0
+"Stadtregion - Mittelstadt, staedtischer Raum",oberklasse,medium,19.0,526.0
+"Stadtregion - Mittelstadt, staedtischer Raum",oberklasse,high,41.0,526.0
+"Stadtregion - Mittelstadt, staedtischer Raum",oberklasse,very_high,34.0,526.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",oberklasse,very_low,3.0,153.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",oberklasse,low,8.0,153.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",oberklasse,medium,18.0,153.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",oberklasse,high,38.0,153.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",oberklasse,very_high,33.0,153.0
+laendliche Region - zentrale Stadt,oberklasse,very_low,6.0,107.0
+laendliche Region - zentrale Stadt,oberklasse,low,1.0,107.0
+laendliche Region - zentrale Stadt,oberklasse,medium,14.0,107.0
+laendliche Region - zentrale Stadt,oberklasse,high,45.0,107.0
+laendliche Region - zentrale Stadt,oberklasse,very_high,33.0,107.0
+"laendliche Region - Mittelstadt, staedtischer Raum",oberklasse,very_low,11.0,300.0
+"laendliche Region - Mittelstadt, staedtischer Raum",oberklasse,low,5.0,300.0
+"laendliche Region - Mittelstadt, staedtischer Raum",oberklasse,medium,17.0,300.0
+"laendliche Region - Mittelstadt, staedtischer Raum",oberklasse,high,48.0,300.0
+"laendliche Region - Mittelstadt, staedtischer Raum",oberklasse,very_high,19.0,300.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",oberklasse,very_low,1.0,312.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",oberklasse,low,5.0,312.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",oberklasse,medium,26.0,312.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",oberklasse,high,42.0,312.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",oberklasse,very_high,26.0,312.0
+Stadtregion - Metropole,suv,very_low,1.0,4555.0
+Stadtregion - Metropole,suv,low,5.0,4555.0
+Stadtregion - Metropole,suv,medium,22.0,4555.0
+Stadtregion - Metropole,suv,high,44.0,4555.0
+Stadtregion - Metropole,suv,very_high,28.0,4555.0
+Stadtregion - Regiopole und Grossstadt,suv,very_low,3.0,4836.0
+Stadtregion - Regiopole und Grossstadt,suv,low,8.0,4836.0
+Stadtregion - Regiopole und Grossstadt,suv,medium,24.0,4836.0
+Stadtregion - Regiopole und Grossstadt,suv,high,41.0,4836.0
+Stadtregion - Regiopole und Grossstadt,suv,very_high,23.0,4836.0
+"Stadtregion - Mittelstadt, staedtischer Raum",suv,very_low,2.0,11818.0
+"Stadtregion - Mittelstadt, staedtischer Raum",suv,low,6.0,11818.0
+"Stadtregion - Mittelstadt, staedtischer Raum",suv,medium,24.0,11818.0
+"Stadtregion - Mittelstadt, staedtischer Raum",suv,high,44.0,11818.0
+"Stadtregion - Mittelstadt, staedtischer Raum",suv,very_high,24.0,11818.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",suv,very_low,3.0,3121.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",suv,low,8.0,3121.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",suv,medium,26.0,3121.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",suv,high,44.0,3121.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",suv,very_high,19.0,3121.0
+laendliche Region - zentrale Stadt,suv,very_low,3.0,2462.0
+laendliche Region - zentrale Stadt,suv,low,9.0,2462.0
+laendliche Region - zentrale Stadt,suv,medium,28.0,2462.0
+laendliche Region - zentrale Stadt,suv,high,43.0,2462.0
+laendliche Region - zentrale Stadt,suv,very_high,17.0,2462.0
+"laendliche Region - Mittelstadt, staedtischer Raum",suv,very_low,4.0,6608.0
+"laendliche Region - Mittelstadt, staedtischer Raum",suv,low,9.0,6608.0
+"laendliche Region - Mittelstadt, staedtischer Raum",suv,medium,29.0,6608.0
+"laendliche Region - Mittelstadt, staedtischer Raum",suv,high,42.0,6608.0
+"laendliche Region - Mittelstadt, staedtischer Raum",suv,very_high,16.0,6608.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",suv,very_low,5.0,8002.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",suv,low,11.0,8002.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",suv,medium,27.0,8002.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",suv,high,44.0,8002.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",suv,very_high,14.0,8002.0
+Stadtregion - Metropole,gelaendewagen,very_low,0.0,197.0
+Stadtregion - Metropole,gelaendewagen,low,0.0,197.0
+Stadtregion - Metropole,gelaendewagen,medium,23.0,197.0
+Stadtregion - Metropole,gelaendewagen,high,41.0,197.0
+Stadtregion - Metropole,gelaendewagen,very_high,36.0,197.0
+Stadtregion - Regiopole und Grossstadt,gelaendewagen,very_low,1.0,205.0
+Stadtregion - Regiopole und Grossstadt,gelaendewagen,low,7.0,205.0
+Stadtregion - Regiopole und Grossstadt,gelaendewagen,medium,29.0,205.0
+Stadtregion - Regiopole und Grossstadt,gelaendewagen,high,38.0,205.0
+Stadtregion - Regiopole und Grossstadt,gelaendewagen,very_high,24.0,205.0
+"Stadtregion - Mittelstadt, staedtischer Raum",gelaendewagen,very_low,2.0,613.0
+"Stadtregion - Mittelstadt, staedtischer Raum",gelaendewagen,low,6.0,613.0
+"Stadtregion - Mittelstadt, staedtischer Raum",gelaendewagen,medium,23.0,613.0
+"Stadtregion - Mittelstadt, staedtischer Raum",gelaendewagen,high,43.0,613.0
+"Stadtregion - Mittelstadt, staedtischer Raum",gelaendewagen,very_high,26.0,613.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",gelaendewagen,very_low,1.0,169.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",gelaendewagen,low,9.0,169.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",gelaendewagen,medium,22.0,169.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",gelaendewagen,high,56.0,169.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",gelaendewagen,very_high,13.0,169.0
+laendliche Region - zentrale Stadt,gelaendewagen,very_low,,105.0
+laendliche Region - zentrale Stadt,gelaendewagen,low,12.0,105.0
+laendliche Region - zentrale Stadt,gelaendewagen,medium,20.0,105.0
+laendliche Region - zentrale Stadt,gelaendewagen,high,45.0,105.0
+laendliche Region - zentrale Stadt,gelaendewagen,very_high,23.0,105.0
+"laendliche Region - Mittelstadt, staedtischer Raum",gelaendewagen,very_low,3.0,317.0
+"laendliche Region - Mittelstadt, staedtischer Raum",gelaendewagen,low,14.0,317.0
+"laendliche Region - Mittelstadt, staedtischer Raum",gelaendewagen,medium,26.0,317.0
+"laendliche Region - Mittelstadt, staedtischer Raum",gelaendewagen,high,37.0,317.0
+"laendliche Region - Mittelstadt, staedtischer Raum",gelaendewagen,very_high,20.0,317.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",gelaendewagen,very_low,4.0,492.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",gelaendewagen,low,7.0,492.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",gelaendewagen,medium,29.0,492.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",gelaendewagen,high,48.0,492.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",gelaendewagen,very_high,12.0,492.0
+Stadtregion - Metropole,sportwagen,very_low,4.0,1163.0
+Stadtregion - Metropole,sportwagen,low,8.0,1163.0
+Stadtregion - Metropole,sportwagen,medium,27.0,1163.0
+Stadtregion - Metropole,sportwagen,high,35.0,1163.0
+Stadtregion - Metropole,sportwagen,very_high,27.0,1163.0
+Stadtregion - Regiopole und Grossstadt,sportwagen,very_low,3.0,1117.0
+Stadtregion - Regiopole und Grossstadt,sportwagen,low,13.0,1117.0
+Stadtregion - Regiopole und Grossstadt,sportwagen,medium,28.0,1117.0
+Stadtregion - Regiopole und Grossstadt,sportwagen,high,38.0,1117.0
+Stadtregion - Regiopole und Grossstadt,sportwagen,very_high,18.0,1117.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sportwagen,very_low,3.0,2280.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sportwagen,low,9.0,2280.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sportwagen,medium,31.0,2280.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sportwagen,high,37.0,2280.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sportwagen,very_high,20.0,2280.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sportwagen,very_low,5.0,472.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sportwagen,low,9.0,472.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sportwagen,medium,29.0,472.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sportwagen,high,40.0,472.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sportwagen,very_high,18.0,472.0
+laendliche Region - zentrale Stadt,sportwagen,very_low,5.0,471.0
+laendliche Region - zentrale Stadt,sportwagen,low,10.0,471.0
+laendliche Region - zentrale Stadt,sportwagen,medium,34.0,471.0
+laendliche Region - zentrale Stadt,sportwagen,high,33.0,471.0
+laendliche Region - zentrale Stadt,sportwagen,very_high,18.0,471.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sportwagen,very_low,4.0,1249.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sportwagen,low,10.0,1249.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sportwagen,medium,35.0,1249.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sportwagen,high,34.0,1249.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sportwagen,very_high,17.0,1249.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sportwagen,very_low,7.0,1184.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sportwagen,low,14.0,1184.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sportwagen,medium,34.0,1184.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sportwagen,high,32.0,1184.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sportwagen,very_high,13.0,1184.0
+Stadtregion - Metropole,mini_vans,very_low,3.0,1265.0
+Stadtregion - Metropole,mini_vans,low,13.0,1265.0
+Stadtregion - Metropole,mini_vans,medium,31.0,1265.0
+Stadtregion - Metropole,mini_vans,high,37.0,1265.0
+Stadtregion - Metropole,mini_vans,very_high,15.0,1265.0
+Stadtregion - Regiopole und Grossstadt,mini_vans,very_low,4.0,1465.0
+Stadtregion - Regiopole und Grossstadt,mini_vans,low,12.0,1465.0
+Stadtregion - Regiopole und Grossstadt,mini_vans,medium,34.0,1465.0
+Stadtregion - Regiopole und Grossstadt,mini_vans,high,35.0,1465.0
+Stadtregion - Regiopole und Grossstadt,mini_vans,very_high,14.0,1465.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mini_vans,very_low,3.0,3332.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mini_vans,low,12.0,3332.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mini_vans,medium,32.0,3332.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mini_vans,high,39.0,3332.0
+"Stadtregion - Mittelstadt, staedtischer Raum",mini_vans,very_high,13.0,3332.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mini_vans,very_low,3.0,885.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mini_vans,low,9.0,885.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mini_vans,medium,41.0,885.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mini_vans,high,37.0,885.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",mini_vans,very_high,9.0,885.0
+laendliche Region - zentrale Stadt,mini_vans,very_low,8.0,696.0
+laendliche Region - zentrale Stadt,mini_vans,low,12.0,696.0
+laendliche Region - zentrale Stadt,mini_vans,medium,38.0,696.0
+laendliche Region - zentrale Stadt,mini_vans,high,30.0,696.0
+laendliche Region - zentrale Stadt,mini_vans,very_high,13.0,696.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mini_vans,very_low,7.0,2107.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mini_vans,low,15.0,2107.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mini_vans,medium,32.0,2107.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mini_vans,high,36.0,2107.0
+"laendliche Region - Mittelstadt, staedtischer Raum",mini_vans,very_high,10.0,2107.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mini_vans,very_low,10.0,2247.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mini_vans,low,16.0,2247.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mini_vans,medium,30.0,2247.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mini_vans,high,33.0,2247.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",mini_vans,very_high,11.0,2247.0
+Stadtregion - Metropole,grossraum_vans,very_low,4.0,1296.0
+Stadtregion - Metropole,grossraum_vans,low,5.0,1296.0
+Stadtregion - Metropole,grossraum_vans,medium,22.0,1296.0
+Stadtregion - Metropole,grossraum_vans,high,44.0,1296.0
+Stadtregion - Metropole,grossraum_vans,very_high,25.0,1296.0
+Stadtregion - Regiopole und Grossstadt,grossraum_vans,very_low,3.0,1321.0
+Stadtregion - Regiopole und Grossstadt,grossraum_vans,low,5.0,1321.0
+Stadtregion - Regiopole und Grossstadt,grossraum_vans,medium,28.0,1321.0
+Stadtregion - Regiopole und Grossstadt,grossraum_vans,high,43.0,1321.0
+Stadtregion - Regiopole und Grossstadt,grossraum_vans,very_high,21.0,1321.0
+"Stadtregion - Mittelstadt, staedtischer Raum",grossraum_vans,very_low,3.0,2885.0
+"Stadtregion - Mittelstadt, staedtischer Raum",grossraum_vans,low,6.0,2885.0
+"Stadtregion - Mittelstadt, staedtischer Raum",grossraum_vans,medium,24.0,2885.0
+"Stadtregion - Mittelstadt, staedtischer Raum",grossraum_vans,high,43.0,2885.0
+"Stadtregion - Mittelstadt, staedtischer Raum",grossraum_vans,very_high,23.0,2885.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",grossraum_vans,very_low,2.0,722.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",grossraum_vans,low,11.0,722.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",grossraum_vans,medium,31.0,722.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",grossraum_vans,high,35.0,722.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",grossraum_vans,very_high,21.0,722.0
+laendliche Region - zentrale Stadt,grossraum_vans,very_low,6.0,664.0
+laendliche Region - zentrale Stadt,grossraum_vans,low,8.0,664.0
+laendliche Region - zentrale Stadt,grossraum_vans,medium,30.0,664.0
+laendliche Region - zentrale Stadt,grossraum_vans,high,40.0,664.0
+laendliche Region - zentrale Stadt,grossraum_vans,very_high,16.0,664.0
+"laendliche Region - Mittelstadt, staedtischer Raum",grossraum_vans,very_low,3.0,1729.0
+"laendliche Region - Mittelstadt, staedtischer Raum",grossraum_vans,low,8.0,1729.0
+"laendliche Region - Mittelstadt, staedtischer Raum",grossraum_vans,medium,30.0,1729.0
+"laendliche Region - Mittelstadt, staedtischer Raum",grossraum_vans,high,41.0,1729.0
+"laendliche Region - Mittelstadt, staedtischer Raum",grossraum_vans,very_high,19.0,1729.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",grossraum_vans,very_low,6.0,1976.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",grossraum_vans,low,7.0,1976.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",grossraum_vans,medium,30.0,1976.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",grossraum_vans,high,44.0,1976.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",grossraum_vans,very_high,13.0,1976.0
+Stadtregion - Metropole,utilities,very_low,4.0,2687.0
+Stadtregion - Metropole,utilities,low,7.0,2687.0
+Stadtregion - Metropole,utilities,medium,24.0,2687.0
+Stadtregion - Metropole,utilities,high,41.0,2687.0
+Stadtregion - Metropole,utilities,very_high,24.0,2687.0
+Stadtregion - Regiopole und Grossstadt,utilities,very_low,3.0,2913.0
+Stadtregion - Regiopole und Grossstadt,utilities,low,9.0,2913.0
+Stadtregion - Regiopole und Grossstadt,utilities,medium,26.0,2913.0
+Stadtregion - Regiopole und Grossstadt,utilities,high,42.0,2913.0
+Stadtregion - Regiopole und Grossstadt,utilities,very_high,20.0,2913.0
+"Stadtregion - Mittelstadt, staedtischer Raum",utilities,very_low,3.0,5865.0
+"Stadtregion - Mittelstadt, staedtischer Raum",utilities,low,8.0,5865.0
+"Stadtregion - Mittelstadt, staedtischer Raum",utilities,medium,26.0,5865.0
+"Stadtregion - Mittelstadt, staedtischer Raum",utilities,high,43.0,5865.0
+"Stadtregion - Mittelstadt, staedtischer Raum",utilities,very_high,20.0,5865.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",utilities,very_low,3.0,2008.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",utilities,low,10.0,2008.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",utilities,medium,29.0,2008.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",utilities,high,41.0,2008.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",utilities,very_high,17.0,2008.0
+laendliche Region - zentrale Stadt,utilities,very_low,7.0,1415.0
+laendliche Region - zentrale Stadt,utilities,low,9.0,1415.0
+laendliche Region - zentrale Stadt,utilities,medium,25.0,1415.0
+laendliche Region - zentrale Stadt,utilities,high,39.0,1415.0
+laendliche Region - zentrale Stadt,utilities,very_high,21.0,1415.0
+"laendliche Region - Mittelstadt, staedtischer Raum",utilities,very_low,4.0,3734.0
+"laendliche Region - Mittelstadt, staedtischer Raum",utilities,low,10.0,3734.0
+"laendliche Region - Mittelstadt, staedtischer Raum",utilities,medium,30.0,3734.0
+"laendliche Region - Mittelstadt, staedtischer Raum",utilities,high,41.0,3734.0
+"laendliche Region - Mittelstadt, staedtischer Raum",utilities,very_high,15.0,3734.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",utilities,very_low,6.0,4340.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",utilities,low,7.0,4340.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",utilities,medium,34.0,4340.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",utilities,high,40.0,4340.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",utilities,very_high,13.0,4340.0
+Stadtregion - Metropole,sonstige,very_low,5.0,156.0
+Stadtregion - Metropole,sonstige,low,3.0,156.0
+Stadtregion - Metropole,sonstige,medium,35.0,156.0
+Stadtregion - Metropole,sonstige,high,46.0,156.0
+Stadtregion - Metropole,sonstige,very_high,11.0,156.0
+Stadtregion - Regiopole und Grossstadt,sonstige,very_low,16.0,179.0
+Stadtregion - Regiopole und Grossstadt,sonstige,low,6.0,179.0
+Stadtregion - Regiopole und Grossstadt,sonstige,medium,27.0,179.0
+Stadtregion - Regiopole und Grossstadt,sonstige,high,45.0,179.0
+Stadtregion - Regiopole und Grossstadt,sonstige,very_high,6.0,179.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sonstige,very_low,5.0,345.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sonstige,low,4.0,345.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sonstige,medium,20.0,345.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sonstige,high,55.0,345.0
+"Stadtregion - Mittelstadt, staedtischer Raum",sonstige,very_high,16.0,345.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sonstige,very_low,1.0,93.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sonstige,low,24.0,93.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sonstige,medium,20.0,93.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sonstige,high,51.0,93.0
+"Stadtregion - kleinstaedtischer, doerflicher Raum",sonstige,very_high,4.0,93.0
+laendliche Region - zentrale Stadt,sonstige,very_low,6.0,106.0
+laendliche Region - zentrale Stadt,sonstige,low,7.0,106.0
+laendliche Region - zentrale Stadt,sonstige,medium,26.0,106.0
+laendliche Region - zentrale Stadt,sonstige,high,55.0,106.0
+laendliche Region - zentrale Stadt,sonstige,very_high,5.0,106.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sonstige,very_low,3.0,200.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sonstige,low,14.0,200.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sonstige,medium,28.0,200.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sonstige,high,38.0,200.0
+"laendliche Region - Mittelstadt, staedtischer Raum",sonstige,very_high,16.0,200.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sonstige,very_low,7.0,282.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sonstige,low,4.0,282.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sonstige,medium,31.0,282.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sonstige,high,50.0,282.0
+"laendliche Region - kleinstaedtischer, doerflicher Raum",sonstige,very_high,8.0,282.0
