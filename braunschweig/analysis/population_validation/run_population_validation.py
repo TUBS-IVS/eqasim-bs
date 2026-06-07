@@ -7,10 +7,13 @@ Usage (PowerShell, conda env eqasim):
 
 Note: controls whose attribute column is absent from the chosen source are skipped
 (logged as WARNING), not silently ignored. The eqasim run-output CSVs carry a
-narrower person/household schema than the synpp cache; in particular `license_type`,
-`economic_status` and `housing_tenure` may be absent from a run-output dir, so those
-controls validate only when present (e.g. when run against `--sim-cache` or a richer
-output). This is expected and logged.
+narrower person/household schema than the synpp cache; in particular `license_type`
+may be absent from a run-output dir (the licence control then falls back to the
+boolean `has_driving_license`), so that control validates only when one of the two
+columns is present (e.g. when run against `--sim-cache` or a richer output). This is
+expected and logged. The attributes `economic_status`, `housing_tenure` and income
+are NOT validated as controls (no hard Kreis/Gemeinde target exists for them); they
+are exported spatially via `geo_export` instead.
 """
 from __future__ import annotations
 

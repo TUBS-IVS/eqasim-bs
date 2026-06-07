@@ -60,7 +60,8 @@ def categorical_person_control(name, family, geography, column, categories, targ
     * ``age_min`` / ``age_max``: when both/either are set AND an ``"age"`` column
       exists, restrict the realized distribution to persons whose age is within
       the inclusive ``[age_min, age_max]`` band (e.g. the MiD P9 employment base
-      15-74). Persons outside the band are excluded from the control entirely.
+      age 14+ via ``age_min=14, age_max=None``). Persons outside the band are
+      excluded from the control entirely.
     * ``derive``: an optional ``Series -> array-like`` callable mapping the raw
       ``column`` onto the reported categories (e.g. a boolean ``employed`` ->
       ``"employed"`` / ``"not_employed"``). When ``None`` the raw column value
@@ -363,10 +364,13 @@ def employment_target(data_path: str) -> pd.DataFrame:
     complement. Two long rows per Kreis (``employed`` / ``not_employed``).
 
     ``geo_id`` is the 5-digit Kreis ``ars5``; the ZGB aggregate row (``03ZGB``)
-    is excluded. The base population is **age 15-74**, matching the MiD P9 basis
-    and ``braunschweig.analysis.run_mid_validation`` -- the registered employment
-    control filters the synthetic side to the same band so realized and target
-    align.
+    is excluded. The MiD P9 percentages are over the **"Personen ab 14 Jahre"**
+    basis -- the standard MiD person basis (the same one used for P17.1 and
+    P24.1). The registered employment control therefore matches the synthetic
+    side to age **>= 14 with no upper bound**, so realized and target share the
+    same denominator. (An upper cap of 74 would drop the 75+ group -- almost all
+    non-employed -- from the synthetic denominator while MiD keeps it, biasing
+    the realized employed share upward.)
     """
     path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
     df = pd.read_csv(path, comment="#", dtype={"ars5": str})
@@ -509,7 +513,7 @@ def build_registry(data_path: str) -> list[Control]:
     * household_size -> Zensus 2022 1000A-2081 (Gemeinde).
     * age_group / sex -> DESTATIS 12411-0018 (Kreis).
     * cars/bikes/license/pt -> MiD reference CSVs.
-    * employment -> MiD 2023 P9 (Kreis), age 15-74 base.
+    * employment -> MiD 2023 P9 (Kreis), age 14+ (no upper bound) base.
     * bev_share -> KBA FZ 27.15 (Kreis) -- lazy target loader; a missing
       non-redistributable fleet file does not break registry construction (it
       only fails if a comparison is run).
@@ -556,14 +560,17 @@ def build_registry(data_path: str) -> list[Control]:
         "household_size", "census", "gemeinde", "household_size",
         top=6, top_label="6+", target=household_size_target))
 
-    # --- Employment (REAL target, MiD 2023 P9; age 15-74 base) ---------------
-    # The synthetic side is filtered to the same 15-74 base as the MiD P9 basis
-    # so realized and target align; the boolean `employed` column is mapped to
-    # the {employed, not_employed} categories.
+    # --- Employment (REAL target, MiD 2023 P9; age 14+ base, no upper cap) ----
+    # The MiD P9 percentages are over the "Personen ab 14 Jahre" basis, so the
+    # synthetic side is filtered to age >= 14 with NO upper bound (the same basis
+    # as P17.1 / P24.1). Capping at 74 would drop the 75+ group -- almost all
+    # non-employed -- from the synthetic denominator while MiD keeps it, biasing
+    # the realized employed share upward. The boolean `employed` column is mapped
+    # to the {employed, not_employed} categories.
     reg.append(categorical_person_control(
         "employment", "mid_person", "kreis", "employed",
         ("employed", "not_employed"), employment_target,
-        age_min=15, age_max=74, derive=_employed_label))
+        age_min=14, age_max=None, derive=_employed_label))
 
     # --- Fleet BEV share (REAL target, KBA FZ 27.15) -------------------------
     # The target loader is lazy: a missing non-redistributable fleet file does

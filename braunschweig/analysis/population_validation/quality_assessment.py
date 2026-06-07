@@ -24,6 +24,11 @@ CAUSE_HINTS = {
     "pt_ticket_type": (
         "MiD P24.1 margins are rounded to integer percent and raked across "
         "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
+    "employment": (
+        "MiD P9 employed share is over the 'Personen ab 14 Jahre' basis; the "
+        "realized base is matched to age 14+ (no upper bound). A residual "
+        "deviation can reflect the synthetic employment model rather than a "
+        "base mismatch."),
     # economic_status is intentionally NOT registered as a validation control
     # (no hard Kreis target exists -- it is Bayes-modelled from hhtype x region
     # and exported spatially via geo_export instead). Its hint key was removed

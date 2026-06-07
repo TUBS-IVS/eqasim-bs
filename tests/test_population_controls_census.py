@@ -177,6 +177,13 @@ def test_employment_target_schema():
 
 
 def test_employment_control_respects_age_base():
+    """The employment control base is age 14+ with no upper cap (MiD P9 basis).
+
+    The age-10 child is below the 14+ base and excluded; both the age-40 and the
+    age-80 person are within the base (no upper cap), so both are counted -> two
+    "employed" (not one). This matches the MiD P9 'Personen ab 14 Jahre' basis,
+    which keeps the 75+ group instead of dropping it at an upper cap of 74.
+    """
     persons = pd.DataFrame({
         "person_id": [1, 2, 3],
         "household_id": [10, 20, 30],
@@ -192,8 +199,8 @@ def test_employment_control_respects_age_base():
     reg = {c.name: c for c in C.build_registry(DATA)}
     long = reg["employment"].realized(frames, geo)
     got = dict(zip(long["category"], long["synthetic_count"]))
-    # Only the age-40 person is within the 15-74 base -> exactly one "employed".
-    assert got.get("employed", 0) == 1
+    # age-10 excluded; age-40 AND age-80 within the 14+ (no upper cap) base.
+    assert got.get("employed", 0) == 2, f"Expected employed=2 (age-10 excluded), got {got}"
     assert got.get("not_employed", 0) == 0
 
 
@@ -230,6 +237,33 @@ def test_license_control_derives_from_boolean():
     long2 = ctrl.realized(frames2, geo)
     got2 = dict(zip(long2["category"], long2["synthetic_count"]))
     assert got2 == {"ja": 1, "nein": 1, "keine_angabe": 1}
+
+
+def test_license_control_truthy_string_tokens():
+    """Run-output CSVs store booleans as STRINGS ("True"/"false"/"1").
+
+    The licence boolean fallback must apply the eqasim truthy convention to
+    string tokens: "True" and "1" count as ja, "false" as nein. Three persons
+    in one Kreis with has_driving_license = ["True","false","1"] (strings) and
+    no license_type column must realize ja=2, nein=1.
+    """
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "household_id": [10, 20, 30],
+        "has_driving_license": ["True", "false", "1"],
+    })
+    households = pd.DataFrame({"household_id": [10, 20, 30]})
+    frames = PopulationFrames(persons, households, None, None,
+                              "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20, 30],
+                        "ars5": ["03101", "03101", "03101"],
+                        "commune_id": ["031010000000"] * 3})
+    ctrl = C.license_control("driving_license_type", "mid_person", "kreis",
+                             target=None, age_min=None)
+    long = ctrl.realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    assert got.get("ja", 0) == 2, f"Expected ja=2 ('True','1'), got {got}"
+    assert got.get("nein", 0) == 1, f"Expected nein=1 ('false'), got {got}"
 
 
 def test_license_control_respects_age_base():
