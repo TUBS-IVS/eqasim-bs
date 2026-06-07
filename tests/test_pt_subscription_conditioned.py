@@ -38,16 +38,20 @@ import pandas as pd  # noqa: E402
 
 from braunschweig.data.mid.reference_tables import (  # noqa: E402
     PT_TICKET_CATEGORIES,
+    PT_TICKET_FLATRATE,
     PT_TICKET_WORK_STUDY_BOUND,
     load_pt_subscription_by_car_availability,
 )
 from braunschweig.synthesis.population.enriched import (  # noqa: E402
+    _apply_car_availability_pt_margin,
     _condition_pt_subscription_probs,
 )
 
 
 _IDX_WORK_STUDY = PT_TICKET_CATEGORIES.index("jobticket_semesterticket")
 _IDX_FAHRE_NIE = PT_TICKET_CATEGORIES.index("fahre_nie")
+_IDX_DEUTSCHLANDTICKET = PT_TICKET_CATEGORIES.index("deutschlandticket")
+_FLATRATE_IDX = [PT_TICKET_CATEGORIES.index(c) for c in PT_TICKET_FLATRATE]
 
 
 def _uniform_probs(n: int) -> np.ndarray:
@@ -180,3 +184,190 @@ def test_car_availability_loader_reads_present_csv(tmp_path):
     for vec in result.values():
         assert abs(vec.sum() - 1.0) < 1e-9
         assert len(vec) == len(PT_TICKET_CATEGORIES)
+
+
+# ---------------------------------------------------------------------------
+# Extract script: schema, per-row normalisation, symbol coercion logging
+# ---------------------------------------------------------------------------
+
+def _parse_committed_cross_tab():
+    """Load the committed cross-tab CSV via the loader from the repo data tree."""
+    return load_pt_subscription_by_car_availability(str(REPO / "eqasim-data" / "data"))
+
+
+def test_extract_csv_schema_and_rows_sum_to_one():
+    """The committed cross-tab CSV has the canonical {none, some, all} row keys,
+    the 9 PT ticket columns, and each row is a probability vector summing to 1
+    (= P(ticket | car_availability))."""
+    import pandas as pd
+
+    csv_path = (
+        REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
+        / "mid2023_P24_1_by_car_availability.csv"
+    )
+    assert csv_path.exists(), (
+        "run scripts/extract_mid_p24_by_car_availability.py to seed the CSV"
+    )
+    df = pd.read_csv(csv_path, comment="#")
+    assert "car_availability" in df.columns
+    assert list(PT_TICKET_CATEGORIES) == [
+        c for c in df.columns if c != "car_availability"
+    ]
+    # keine Angabe dropped; the three informative car-availability rows remain.
+    assert set(df["car_availability"]) == {"none", "some", "all"}
+    row_sums = df[list(PT_TICKET_CATEGORIES)].sum(axis=1)
+    np.testing.assert_allclose(row_sums.to_numpy(), 1.0, rtol=0, atol=1e-9)
+
+
+def test_extract_symbol_coercion_logged(capsys):
+    """The extract parser reports the per-cell coercion split (numeric vs.
+    suppression-token vs. blank) so MiD symbol coercion is never silent."""
+    import pandas as pd
+
+    from scripts.extract_mid_p24_by_car_availability import (
+        parse_car_availability_sheet,
+    )
+
+    xlsx_path = (
+        REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
+        / "mid2023_P24_1_by_car_availability.xlsx"
+    )
+    if not xlsx_path.exists():
+        import pytest
+        pytest.skip("source xlsx is local-only; not present in this checkout")
+
+    df_raw = pd.read_excel(xlsx_path, sheet_name=0, header=None)
+    tidy, coercion = parse_car_availability_sheet(df_raw)
+    # 3 informative rows x 9 ticket columns, all numeric in the weighted-base row.
+    assert len(tidy) == 3
+    assert set(coercion.keys()) == {"suppression", "blank", "value"}
+    assert sum(coercion.values()) == 3 * len(PT_TICKET_CATEGORIES)
+    assert coercion["value"] == 3 * len(PT_TICKET_CATEGORIES)
+
+
+def test_committed_cross_tab_shows_carless_pt_coupling():
+    """The committed MiD cross-tab encodes the expected coupling direction:
+    carless persons hold PT flatrate passes far more often than car-available
+    persons."""
+    by_car = _parse_committed_cross_tab()
+    assert by_car is not None, "committed cross-tab CSV must be present"
+    flat_none = by_car["none"][_FLATRATE_IDX].sum()
+    flat_all = by_car["all"][_FLATRATE_IDX].sum()
+    assert flat_none > flat_all
+
+
+# ---------------------------------------------------------------------------
+# Re-weight helper: coupling direction + marginal preservation
+# ---------------------------------------------------------------------------
+
+def _synthetic_cross_tab():
+    """A toy P(ticket | car_availability) with a strong carless tilt toward the
+    Deutschlandticket and a car tilt toward fahre_nie."""
+    n_cats = len(PT_TICKET_CATEGORIES)
+    base = np.full(n_cats, 1.0 / n_cats)
+
+    none = base.copy()
+    none[_IDX_DEUTSCHLANDTICKET] += 0.30
+    none[_IDX_FAHRE_NIE] = max(none[_IDX_FAHRE_NIE] - 0.10, 0.0)
+    none = none / none.sum()
+
+    allv = base.copy()
+    allv[_IDX_FAHRE_NIE] += 0.30
+    allv[_IDX_DEUTSCHLANDTICKET] = max(allv[_IDX_DEUTSCHLANDTICKET] - 0.10, 0.0)
+    allv = allv / allv.sum()
+
+    return {"none": none, "all": allv}
+
+
+def _persons_with_car_availability(n=2000, seed=11):
+    import pandas as pd
+
+    rng = np.random.RandomState(seed)
+    car = np.where(rng.random_sample(n) < 0.5, "none", "all")
+    return pd.DataFrame({"car_availability": pd.Categorical(car)})
+
+
+def test_car_margin_imposes_carless_higher_pt_rate():
+    """After re-weighting, carless persons have a HIGHER modelled PT-flatrate /
+    Deutschlandticket probability than car-available persons (the coupling
+    direction from the cross-tab)."""
+    df = _persons_with_car_availability()
+    probs = _uniform_probs(len(df))
+    out = _apply_car_availability_pt_margin(
+        probs, df, PT_TICKET_CATEGORIES, _synthetic_cross_tab()
+    )
+
+    none = df["car_availability"].to_numpy() == "none"
+    allv = df["car_availability"].to_numpy() == "all"
+
+    flat_none = out[none][:, _FLATRATE_IDX].sum(axis=1).mean()
+    flat_all = out[allv][:, _FLATRATE_IDX].sum(axis=1).mean()
+    assert flat_none > flat_all + 0.05
+
+    dt_none = out[none, _IDX_DEUTSCHLANDTICKET].mean()
+    dt_all = out[allv, _IDX_DEUTSCHLANDTICKET].mean()
+    assert dt_none > dt_all + 0.05
+
+
+def test_car_margin_preserves_overall_p24_marginal():
+    """The light rake restores the overall P24.1 marginal: the population mean
+    per category after re-weighting matches the pre-coupling mean within a small
+    tolerance, even though the within-person distribution is tilted."""
+    df = _persons_with_car_availability()
+    probs = _uniform_probs(len(df))
+    before = probs.mean(axis=0)
+    out = _apply_car_availability_pt_margin(
+        probs, df, PT_TICKET_CATEGORIES, _synthetic_cross_tab()
+    )
+    after = out.mean(axis=0)
+    np.testing.assert_allclose(after, before, atol=2e-3)
+    np.testing.assert_allclose(out.sum(axis=1), 1.0, atol=1e-9)
+    # Marginal-deviation diagnostic recorded for traceability.
+    assert df.attrs["pt_subscription_car_margin_max_dev_pp"] < 0.5
+
+
+def test_car_margin_fallback_rate_is_reported_and_rows_unchanged():
+    """Persons with a car_availability value absent from the cross-tab keep their
+    original vector and are counted as fallback (no silent fallback)."""
+    import pandas as pd
+
+    n = 300
+    car = ["none"] * 100 + ["all"] * 100 + ["some"] * 100  # "some" absent from tab
+    df = pd.DataFrame({"car_availability": pd.Categorical(car)})
+    probs = _uniform_probs(n)
+    out = _apply_car_availability_pt_margin(
+        probs, df, PT_TICKET_CATEGORIES, _synthetic_cross_tab()
+    )
+    some = df["car_availability"].to_numpy() == "some"
+    np.testing.assert_allclose(out[some], probs[some])
+    assert df.attrs["pt_subscription_car_margin_fallback_count"] == 100
+    assert abs(df.attrs["pt_subscription_car_margin_fallback_rate"] - 1 / 3) < 1e-9
+
+
+def test_car_margin_no_anchor_returns_unchanged():
+    """If no person carries a usable car_availability value the matrix is returned
+    unchanged and the fallback rate is 100% (loud, not silent)."""
+    import pandas as pd
+
+    df = pd.DataFrame({"car_availability": pd.Categorical(["some"] * 50)})
+    probs = _uniform_probs(50)
+    out = _apply_car_availability_pt_margin(
+        probs, df, PT_TICKET_CATEGORIES, _synthetic_cross_tab()
+    )
+    np.testing.assert_array_equal(out, probs)
+    assert df.attrs["pt_subscription_car_margin_fallback_rate"] == 1.0
+
+
+def test_car_margin_absent_crosstab_is_no_op_via_loader(tmp_path):
+    """OFF/absent-file equivalence at the hook boundary: when the loader returns
+    None (cross-tab absent) the activation branch is never entered, so pt_probs is
+    byte-identical to the pre-activation path. We assert the loader contract that
+    drives that branch."""
+    result = load_pt_subscription_by_car_availability(str(tmp_path))
+    assert result is None  # -> caller skips _apply_car_availability_pt_margin
+
+    # And when the helper IS called, an empty cross-tab leaves probs untouched.
+    df = _persons_with_car_availability(n=10)
+    probs = _uniform_probs(len(df))
+    out = _apply_car_availability_pt_margin(probs, df, PT_TICKET_CATEGORIES, {})
+    np.testing.assert_array_equal(out, probs)

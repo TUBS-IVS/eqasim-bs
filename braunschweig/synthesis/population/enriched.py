@@ -971,13 +971,42 @@ def _execute_base(context):
                 "margin NOT applied (cross-tab CSV absent; coupling uncalibrated)."
             )
         else:
-            # Hook reserved for the calibrated cross-tab margin. When the CSV
-            # arrives, rake pt_probs toward the per-car-availability ticket-type
-            # targets here. Until then we only report that the data is available.
-            print(
-                "[braunschweig.enriched] PT A6: car-availability cross-tab present "
-                f"({sorted(pt_by_car.keys())}); margin hook ready."
-            )
+            # Re-weight each person's PT vector toward P(ticket | their
+            # car_availability) from the MiD cross-tab, then lightly rake back to
+            # the P24.1 marginal so the aggregate target stays matched (the
+            # carless<->PT-pass coupling is imposed WITHIN persons; the column
+            # levels are preserved). car_availability is already categorical at
+            # this point ({none, some, all} with A5 ON, {none, all} with A5 OFF).
+            if "car_availability" not in df_persons.columns:
+                print(
+                    "[braunschweig.enriched] WARNING: PT A6 car-availability "
+                    "cross-tab present but 'car_availability' column missing; "
+                    "carless<->PT coupling skipped."
+                )
+            else:
+                pt_probs = _apply_car_availability_pt_margin(
+                    pt_probs, df_persons, PT_TICKET_CATEGORIES, pt_by_car,
+                )
+                _car_primary = df_persons.attrs.get(
+                    "pt_subscription_car_margin_primary_count", 0
+                )
+                _car_fallback = df_persons.attrs.get(
+                    "pt_subscription_car_margin_fallback_count", 0
+                )
+                _car_rate = df_persons.attrs.get(
+                    "pt_subscription_car_margin_fallback_rate", 0.0
+                )
+                _car_dev = df_persons.attrs.get(
+                    "pt_subscription_car_margin_max_dev_pp", float("nan")
+                )
+                _level = "WARNING: " if _car_rate > 0.5 else ""
+                print(
+                    f"[braunschweig.enriched] {_level}PT A6 carless<->PT margin "
+                    f"applied: primary {_car_primary}, fallback {_car_fallback} "
+                    f"({_car_rate:.2%}) persons without a usable car_availability; "
+                    f"P24.1 marginal restored to max |Δ| {_car_dev:.2f} pp "
+                    f"(cross-tab keys {sorted(pt_by_car.keys())})."
+                )
 
     # Sample categorical via inverse-CDF with a dedicated RNG seed.
     random = np.random.RandomState(context.config("random_seed") + 8572)
@@ -1358,6 +1387,124 @@ def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
         np.count_nonzero(not_work_study) if work_study_idx else 0
     )
     df_persons.attrs["pt_subscription_degenerate_fallback_count"] = fallback_count
+    return out
+
+
+# Light rake of the re-weighted PT probabilities back to the overall P24.1
+# marginal: how many fixed-point iterations to run (each scales every category by
+# target_marginal / current_marginal and re-normalises). Five passes drive the
+# column mean to within ~0.1 pp of the target on representative input; the result
+# is reported in ``df_persons.attrs`` for traceability.
+_PT_CAR_MARGIN_RAKE_ITERATIONS = 5
+
+
+def _apply_car_availability_pt_margin(
+    pt_probs, df_persons, pt_categories, pt_by_car_availability,
+):
+    """Impose the MiD carless<->PT-pass coupling on the per-person PT probability
+    matrix while preserving the overall P24.1 marginal (A6, data-dependent).
+
+    The 3-margin {Kreis, sex, age} IPF above does NOT know the car-availability
+    dimension, so the carless<->PT-pass correlation observed in MiD P24.1 x Pkw-
+    Verfuegbarkeit is absent from ``pt_probs``. This helper re-weights each
+    person's vector by the Bayes factor
+
+        factor(person, ticket) = P(ticket | car_availability_of_person)
+                                 / P(ticket)
+
+    where ``P(ticket)`` is the population mean of ``pt_probs`` over the persons
+    that carry a usable car-availability value (the "anchor" pool). Multiplying
+    by this factor tilts each person toward the ticket types that are over-
+    represented in their car-availability group and away from the under-
+    represented ones, then the vector is re-normalised. To keep the AGGREGATE
+    P24.1 marginal matched (the IPF target), the re-weighted matrix is then lightly
+    raked: each category is scaled by ``target_marginal / current_marginal`` and
+    the rows re-normalised, repeated :data:`_PT_CAR_MARGIN_RAKE_ITERATIONS` times.
+    The rake adjusts only the column LEVELS, so the within-person carless tilt is
+    preserved while the column means converge back to the pre-coupling marginal.
+
+    Only persons whose ``car_availability`` maps to a key present in the cross-tab
+    are re-weighted; persons with an unusable / missing car-availability value
+    keep their original vector (counted + logged -- this is the documented primary
+    vs. fallback split, no silent fallback). The P24.1 marginal target is computed
+    over the anchor pool ONLY, so the unchanged fallback rows do not bias it.
+
+    Parameters
+    ----------
+    pt_probs : np.ndarray
+        Per-person probability matrix, shape ``(n_persons, n_categories)``.
+    df_persons : pd.DataFrame
+        Must carry a ``car_availability`` column whose values are in
+        ``{none, some, all}`` (categorical, A5 ON) or ``{none, all}`` (A5 OFF).
+    pt_categories : sequence[str]
+        The PT ticket categories in column order (``PT_TICKET_CATEGORIES``).
+    pt_by_car_availability : dict[str, np.ndarray]
+        ``{car_availability -> P(ticket | car_availability)}`` from the MiD
+        cross-tab (each vector sums to 1, column order == ``pt_categories``).
+
+    Returns
+    -------
+    np.ndarray
+        The re-weighted, marginal-preserving probability matrix (a copy).
+    """
+    out = pt_probs.copy()
+    n_cats = len(pt_categories)
+    eps = 1e-12
+
+    car_values = df_persons["car_availability"].astype(str).to_numpy()
+    # Anchor pool: persons whose car-availability is covered by the cross-tab.
+    anchor = np.zeros(len(out), dtype=bool)
+    for key in pt_by_car_availability:
+        anchor |= car_values == key
+
+    n_anchor = int(np.count_nonzero(anchor))
+    n_total = len(out)
+    df_persons.attrs["pt_subscription_car_margin_primary_count"] = n_anchor
+    df_persons.attrs["pt_subscription_car_margin_fallback_count"] = n_total - n_anchor
+    df_persons.attrs["pt_subscription_car_margin_fallback_rate"] = (
+        (n_total - n_anchor) / n_total if n_total else 0.0
+    )
+
+    if n_anchor == 0:
+        # No person carries a usable car-availability value: nothing to couple.
+        # Loudly surfaced by the caller (fallback rate == 100%).
+        return out
+
+    # Population ticket marginal over the anchor pool BEFORE re-weighting -- this
+    # is the P24.1 target the rake restores.
+    target_marginal = out[anchor].mean(axis=0)
+    target_marginal = target_marginal / max(target_marginal.sum(), eps)
+
+    # Bayes re-weight: multiply each anchor person's vector by
+    # P(ticket | their car_availability) / P(ticket).
+    safe_marginal = np.maximum(target_marginal, eps)
+    for key, cond_vec in pt_by_car_availability.items():
+        f = anchor & (car_values == key)
+        if not f.any():
+            continue
+        factor = np.asarray(cond_vec, dtype=float) / safe_marginal
+        out[f] *= factor[None, :]
+
+    # Re-normalise the re-weighted rows.
+    row_sums = out[anchor].sum(axis=1, keepdims=True)
+    row_sums[row_sums <= 0.0] = 1.0
+    out[anchor] = out[anchor] / row_sums
+
+    # Light rake back to the pre-coupling P24.1 marginal (column-level only).
+    for _ in range(_PT_CAR_MARGIN_RAKE_ITERATIONS):
+        current = out[anchor].mean(axis=0)
+        scale = np.where(current > eps, target_marginal / np.maximum(current, eps), 1.0)
+        out[anchor] *= scale[None, :]
+        row_sums = out[anchor].sum(axis=1, keepdims=True)
+        row_sums[row_sums <= 0.0] = 1.0
+        out[anchor] = out[anchor] / row_sums
+
+    # Final marginal-deviation diagnostic (max abs over categories, in pp).
+    final_marginal = out[anchor].mean(axis=0)
+    df_persons.attrs["pt_subscription_car_margin_max_dev_pp"] = float(
+        np.max(np.abs(final_marginal - target_marginal)) * 100.0
+    )
+    assert n_cats == out.shape[1]  # column order preserved
     return out
 
 
