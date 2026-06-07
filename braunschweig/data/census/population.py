@@ -73,10 +73,43 @@ DESTATIS_TO_ZENSUS_AGE: dict[int, int] = {
 }
 
 
+# Default DESTATIS 12411-0018 file name, kept in sync with the configure()
+# default so a context-free caller resolves the same authoritative Kreis-level
+# (sex, age) population source the stage uses.
+DEFAULT_DESTATIS_POPULATION_PATH = "braunschweig/12411-0018_de.csv"
+
+
+def _path_for_data_path(data_path: str) -> str:
+    """Resolve the DESTATIS 12411-0018 file from a bare ``data_path`` string.
+
+    Context-free counterpart of the ``data_path`` + config join in
+    :func:`execute`, so the validation harness can read the authoritative
+    Kreis-level (sex, age) population marginal (official 31.12.2024 totals)
+    without a synpp context. Only the Kreis totals are reused; the Gemeinde
+    redistribution (which needs the VG250 / urbistat / Zensus join driven by the
+    synpp stage graph) is intentionally not reproduced here. The default file
+    name matches ``configure``; no project config overrides this key.
+    """
+    return os.path.join(data_path, DEFAULT_DESTATIS_POPULATION_PATH)
+
+
+def load_age_sex_by_kreis(data_path: str, scope_prefixes) -> pd.DataFrame:
+    """Kreis-level (sex, age_class) population counts from DESTATIS 12411-0018.
+
+    Reuses the stage's own :func:`_load_destatis` parser (PRIMARY/skip logging
+    included) and restricts to the given 5-digit Kreis prefixes. Returns
+    ``[kreis, sex, age_class, weight]`` where ``age_class`` is the DESTATIS lower
+    bound (one of :data:`DESTATIS_AGES`). Used by the validation harness age /
+    sex target loaders; no synpp context required.
+    """
+    path = _path_for_data_path(data_path)
+    return _load_destatis(path, {str(p) for p in scope_prefixes})
+
+
 def configure(context):
     context.config("data_path")
     context.config("braunschweig.destatis_population_path",
-                   "braunschweig/12411-0018_de.csv")
+                   DEFAULT_DESTATIS_POPULATION_PATH)
     context.config("braunschweig.urbistat_gemeinden_path",
                    "braunschweig/urbistat_age_gemeinden.csv")
     context.stage("eqasim_common.data.population.raw")

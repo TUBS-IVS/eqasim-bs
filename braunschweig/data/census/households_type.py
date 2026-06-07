@@ -37,12 +37,30 @@ HSHTP1_TYPE: dict[str, str] = {
 }
 
 
+# Default 1000A-2081 archive name, kept in sync with the configure() default so a
+# standalone (context-free) caller resolves the same file the stage uses.
+DEFAULT_HOUSEHOLDS_TYPE_PATH = "braunschweig/1000A-2081_de_flat.zip"
+
+
 def configure(context):
     context.config("data_path")
     context.config(
         "braunschweig.households_type_path",
-        "braunschweig/1000A-2081_de_flat.zip",
+        DEFAULT_HOUSEHOLDS_TYPE_PATH,
     )
+
+
+def _path_for_data_path(data_path: str) -> str:
+    """Resolve the 1000A-2081 archive from a bare ``data_path`` string.
+
+    This mirrors :func:`_resolve_path` but does not require a synpp ``context``,
+    so the validation harness (``braunschweig.analysis.population_validation``)
+    can read the same per-commune household-size source the IPF size margin uses
+    without spinning up a synpp pipeline. The default archive name is the same
+    one ``configure`` registers; a config override is therefore NOT reflected
+    here, which is acceptable because no project config overrides this key.
+    """
+    return os.path.join(data_path, DEFAULT_HOUSEHOLDS_TYPE_PATH)
 
 
 def _resolve_path(context) -> str:
@@ -72,10 +90,13 @@ def _read_csv_from_zip(path: str) -> pd.DataFrame:
                                encoding="utf-8-sig")
 
 
-def execute(context) -> pd.DataFrame:
-    path = _resolve_path(context)
-    df = _read_csv_from_zip(path)
+def _parse_long(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the raw 1000A-2081 frame into ``commune_id x hh_size x hh_type``.
 
+    Shared by :func:`execute` and the context-free
+    :func:`load_household_size_by_commune` so both apply identical filtering and
+    suppression handling.
+    """
     df = df.rename(columns={
         "1_variable_attribute_code": "commune_id",
         "2_variable_attribute_code": "hshgr2",
@@ -85,11 +106,44 @@ def execute(context) -> pd.DataFrame:
     df = df[df["hshgr2"].isin(HSHGR2_SIZE)]
     df = df[df["hshtp1"].isin(HSHTP1_TYPE)]
 
+    df = df.copy()
     df["weight"]  = _parse_value(df["value"], df["value_q"])
     df["hh_size"] = df["hshgr2"].map(HSHGR2_SIZE).astype("category")
     df["hh_type"] = df["hshtp1"].map(HSHTP1_TYPE).astype("category")
 
-    out = df[["commune_id", "hh_size", "hh_type", "weight"]].reset_index(drop=True)
+    return df[["commune_id", "hh_size", "hh_type", "weight"]].reset_index(drop=True)
+
+
+def load_household_size_by_commune(data_path: str, scope_prefixes) -> pd.DataFrame:
+    """Per-commune household-size distribution from Zensus 2022 1000A-2081.
+
+    Context-free counterpart of the stage's per-commune size source (the same
+    table :func:`braunschweig.ipf.prepare._build_household_size_margin` consumes).
+    Aggregates over ``hh_type`` to give one weight per
+    ``(commune_id, hh_size)`` cell, restricted to communes whose 5-digit Kreis
+    prefix is in ``scope_prefixes``. Used by the validation harness target
+    loader; no synpp context required.
+
+    Returns columns ``[commune_id, hh_size, weight]`` (households, suppressed
+    cells = 0).
+    """
+    df = _parse_long(_read_csv_from_zip(_path_for_data_path(data_path)))
+    df["commune_id"] = df["commune_id"].astype(str)
+    scope = {str(p) for p in scope_prefixes}
+    df = df[df["commune_id"].str[:5].isin(scope)]
+    out = (df.groupby(["commune_id", "hh_size"], observed=True, as_index=False)["weight"]
+             .sum())
+    if out.empty or out["weight"].sum() <= 0:
+        raise RuntimeError(
+            f"No Zensus 1000A-2081 households for scope {sorted(scope)} "
+            f"under {data_path}"
+        )
+    return out
+
+
+def execute(context) -> pd.DataFrame:
+    path = _resolve_path(context)
+    out = _parse_long(_read_csv_from_zip(path))
     print(
         "[braunschweig.data.census.households_type] "
         f"loaded {len(out):,} cells, total HHs = {out['weight'].sum():,.0f}"
