@@ -4,6 +4,13 @@
 Usage (PowerShell, conda env eqasim):
     $env:PYTHONUTF8=1; python -m braunschweig.analysis.population_validation.run_population_validation `
         --run-output-dir eqasim-data/output_bs_25pct --label 25pct
+
+Note: controls whose attribute column is absent from the chosen source are skipped
+(logged as WARNING), not silently ignored. The eqasim run-output CSVs carry a
+narrower person/household schema than the synpp cache; in particular `license_type`,
+`economic_status` and `housing_tenure` may be absent from a run-output dir, so those
+controls validate only when present (e.g. when run against `--sim-cache` or a richer
+output). This is expected and logged.
 """
 from __future__ import annotations
 

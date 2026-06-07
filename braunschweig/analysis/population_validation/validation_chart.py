@@ -29,13 +29,12 @@ def _robust_xlim(means: np.ndarray, half: np.ndarray) -> float:
 
     Strategy: take the 75th percentile of all finite endpoint magnitudes,
     apply a sensible floor (5 %) and 10 % headroom.  The 75th percentile
-    is used (rather than p90) so that even a dataset with as few as four
-    rows can have one outlier without it dominating the axis: one explosive
-    row contributes two large endpoint values out of 2*N total, which at
-    N=4 is 25 % of the sorted list -- p75 therefore still captures the
-    bulk of non-outlier rows.  A single row whose whisker spans +/-400 %
-    will not set the axis; it receives an overflow marker instead (drawn by
-    the caller).
+    is used so that even a dataset with as few as four rows can have one
+    outlier without it dominating the axis: one explosive row contributes
+    two large endpoint values out of 2*N total, which at N=4 is 25 % of
+    the sorted list -- p75 therefore still captures the bulk of non-outlier
+    rows.  A single row whose whisker spans +/-400 % will not set the axis;
+    it receives an overflow marker instead (drawn by the caller).
 
     Parameters
     ----------
@@ -49,8 +48,12 @@ def _robust_xlim(means: np.ndarray, half: np.ndarray) -> float:
     cap:
         Positive symmetric limit; set ax.set_xlim(-cap, cap).
     """
-    lo = means - half
-    hi = means + half
+    # Suppress invalid-value warnings that arise when means or half contain
+    # NaN (e.g. the all-NaN test path); the result is still correct because
+    # the NaN endpoints are filtered out by isfinite() immediately after.
+    with np.errstate(invalid="ignore"):
+        lo = means - half
+        hi = means + half
     ends = np.abs(np.concatenate([lo, hi]))
     finite = ends[np.isfinite(ends)]
     if finite.size == 0:
@@ -64,7 +67,7 @@ def dot_and_whisker(summary: pd.DataFrame, out_path: Path, whisker: str = "stdev
     """Dot = mean_pct_diff; whisker = +/-2*STDEV (whisker='stdev') or +/-RMSE
     (whisker='rmse'), centred on 0. Rows grouped + coloured by family.
 
-    The x-axis is bounded by a robust 90th-percentile cap so a single noisy
+    The x-axis is bounded by a robust 75th-percentile cap so a single noisy
     control cannot compress all other rows into the centre.  Rows whose
     whisker (or dot) extends beyond the cap receive a small outward-pointing
     triangle marker at the clipped edge, and a note is appended to the x-label
