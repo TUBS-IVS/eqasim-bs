@@ -24,9 +24,10 @@ CAUSE_HINTS = {
     "pt_ticket_type": (
         "MiD P24.1 margins are rounded to integer percent and raked across "
         "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
-    "economic_status": (
-        "Descriptive only: economic_status has no hard Kreis target (modelled "
-        "from hhtype x region Bayes), so deviations reflect the model, not a fit."),
+    # economic_status is intentionally NOT registered as a validation control
+    # (no hard Kreis target exists -- it is Bayes-modelled from hhtype x region
+    # and exported spatially via geo_export instead). Its hint key was removed
+    # to keep CAUSE_HINTS consistent with the registered controls.
 }
 _GENERIC_SMALL_CELL = ("Deviation correlates with small cell counts -> likely "
                        "sampling noise; expected to shrink at a higher sampling rate.")

@@ -97,3 +97,16 @@ def test_grade_for_boundaries():
     assert QA.grade_for(0.99) == "very good"
     assert QA.grade_for(1.0) == "good"
     assert QA.grade_for(5.0) == "needs improvement"
+
+
+def test_cause_hints_has_no_dead_economic_status_key():
+    """economic_status is no longer a validation control (removed from the registry).
+
+    Its dead CAUSE_HINTS entry must be removed so the dict stays consistent with
+    the registered controls; the two live entries must be present.
+    """
+    assert "economic_status" not in QA.CAUSE_HINTS, (
+        "Dead key 'economic_status' still present in CAUSE_HINTS; remove it."
+    )
+    assert "driving_license_type" in QA.CAUSE_HINTS
+    assert "pt_ticket_type" in QA.CAUSE_HINTS

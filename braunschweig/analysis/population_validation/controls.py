@@ -260,7 +260,7 @@ def _employed_label(series: pd.Series) -> np.ndarray:
     return np.where(_is_truthy(series), "employed", "not_employed")
 
 
-def license_control(name, family, geography, target):
+def license_control(name, family, geography, target, age_min=None, age_max=None):
     """Driving-licence control that is robust to the run-output schema.
 
     The categorical ``license_type`` column (values from ``RT.LICENSE_CATEGORIES``)
@@ -273,6 +273,17 @@ def license_control(name, family, geography, target):
       represented this way, which is logged once (its P17.1 share is ~1-2%);
     * otherwise (neither column present) logs a WARNING and returns an empty long
       frame (no silent fallback).
+
+    Optional parameters:
+
+    * ``age_min`` / ``age_max``: when set AND an ``"age"`` column exists, restrict
+      the realized distribution to persons whose age is within the inclusive
+      ``[age_min, age_max]`` band -- mirrors the filter in
+      :func:`categorical_person_control`.  Register with ``age_min=14`` to match
+      the MiD P17.1 14+ survey base.  Note that the synthesis floor is 18 (the
+      BF17 / begleitetes Fahren option is intentionally ignored), leaving a
+      structural ~1pp shortfall vs the 14+ target for ages 14-17; this is
+      documented in ``quality_assessment.CAUSE_HINTS["driving_license_type"]``.
     """
     geo_col = _geo_col(geography)
 
@@ -299,6 +310,12 @@ def license_control(name, family, geography, target):
                 "present in persons; skipped", name,
             )
             return empty
+        # Restrict to the MiD survey age base when age_min / age_max are set.
+        if (age_min is not None or age_max is not None) and "age" in df.columns:
+            ages = pd.to_numeric(df["age"], errors="coerce")
+            lower = -np.inf if age_min is None else float(age_min)
+            upper = np.inf if age_max is None else float(age_max)
+            df = df[(ages >= lower) & (ages <= upper)]
         out = (df.groupby([geo_col, "category"]).size()
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
@@ -509,10 +526,12 @@ def build_registry(data_path: str) -> list[Control]:
     reg: list[Control] = []
 
     reg.append(license_control(
-        "driving_license_type", "mid_person", "kreis", license_target))
+        "driving_license_type", "mid_person", "kreis", license_target, age_min=14))
+    # MiD P24.1 survey base is age 14+; restrict the realized distribution to
+    # match (persons <14 are deterministically assigned fahre_nie in synthesis).
     reg.append(categorical_person_control(
         "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
-        RT.PT_TICKET_CATEGORIES, pt_ticket_target))
+        RT.PT_TICKET_CATEGORIES, pt_ticket_target, age_min=14))
 
     _, _, car_vals = RT.load_kreis_share_table(data_path, "mid2023_H7_cars_by_kreis.csv")
     reg.append(bucket_household_control(

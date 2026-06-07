@@ -230,3 +230,66 @@ def test_license_control_derives_from_boolean():
     long2 = ctrl.realized(frames2, geo)
     got2 = dict(zip(long2["category"], long2["synthetic_count"]))
     assert got2 == {"ja": 1, "nein": 1, "keine_angabe": 1}
+
+
+def test_license_control_respects_age_base():
+    """license_control with age_min=14 must count only persons age >= 14.
+
+    Both persons have has_driving_license=True (no license_type column), but
+    the age-10 child is below the 14+ MiD P17.1 base, so only the age-40
+    person contributes a "ja" count (total = 1, not 2).
+    """
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [10, 40],
+        "has_driving_license": [True, True],
+    })
+    households = pd.DataFrame({"household_id": [10, 20]})
+    frames = PopulationFrames(persons, households, None, None,
+                              "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20],
+                        "ars5": ["03101", "03101"],
+                        "commune_id": ["031010000000", "031010000000"]})
+    ctrl = C.license_control("driving_license_type", "mid_person", "kreis",
+                             target=None, age_min=14)
+    long = ctrl.realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    # Only the age-40 person is within the 14+ base -> exactly one "ja".
+    assert got.get("ja", 0) == 1, f"Expected ja=1 (age-10 excluded), got {got}"
+    assert got.get("nein", 0) == 0
+
+
+def test_pt_control_age_base_excludes_children():
+    """pt_ticket_type categorical control with age_min=14 must exclude children.
+
+    The age-8 child has pt_subscription_type="fahre_nie"; the age-40 adult
+    has "deutschlandticket".  With age_min=14 the child is excluded, so only
+    the adult's category is counted (deutschlandticket=1); fahre_nie=0.
+    """
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [8, 40],
+        "pt_subscription_type": ["fahre_nie", "deutschlandticket"],
+    })
+    households = pd.DataFrame({"household_id": [10, 20]})
+    frames = PopulationFrames(persons, households, None, None,
+                              "run_output", "x", "p_")
+    geo = pd.DataFrame({"household_id": [10, 20],
+                        "ars5": ["03101", "03101"],
+                        "commune_id": ["031010000000", "031010000000"]})
+    import braunschweig.data.mid.reference_tables as RT
+    ctrl = C.categorical_person_control(
+        "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
+        RT.PT_TICKET_CATEGORIES, target=None, age_min=14,
+    )
+    long = ctrl.realized(frames, geo)
+    got = dict(zip(long["category"], long["synthetic_count"]))
+    # Only the age-40 adult is within the 14+ base -> deutschlandticket=1.
+    assert got.get("deutschlandticket", 0) == 1, (
+        f"Expected deutschlandticket=1 (age-8 child excluded), got {got}"
+    )
+    assert got.get("fahre_nie", 0) == 0, (
+        f"Expected fahre_nie=0 (age-8 child excluded from base), got {got}"
+    )
