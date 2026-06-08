@@ -51,7 +51,27 @@ config:
 
   home_location_sampling: weighted
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "has_license"]
+  # Optimization step (1): richer, behaviourally-relevant HTS matching keys.
+  # Beyond the legacy [sex, age_class, has_license] we add the EXOGENOUS
+  # demographic anchors that are genuinely populated on BOTH sides at matching
+  # time and drive daily mobility:
+  #   employed             -> commute vs. no commute (native both sides)
+  #   household_size_class -> trip generation (binned 1..5+, native both sides)
+  #   urban_class          -> urban/rural trip-length gradient (DE RegioStaR-2
+  #                           <-> FR unite-urbaine crosswalk; target column added
+  #                           by braunschweig.ipf.attributed.attach_urban_class)
+  # Order = matching priority: the LAST key is relaxed first, so the strongest
+  # anchors (sex, age_class) stay longest and the weaker ones drop first when a
+  # cell falls below matching_minimum_observations (the built-in anti-overfitting
+  # guard). socioprofessional_class is intentionally NOT added: on the target it
+  # is a deterministic function of (employed, age, studies), which are already
+  # keys, so it would only fragment cells without independent signal.
+  # car_availability / has_pt_subscription / economic_status are NOT added either:
+  # at the matching stage they are still placeholders (real values are derived
+  # downstream in braunschweig.synthesis.population.enriched), so matching on them
+  # would be matching on invented data. ``studies`` is appended automatically as
+  # the lowest-priority key by reactivate_person_attributes.
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- Tier A3: reactivate the synthesised couple / studies /
   # socioprofessional_class person attributes (previously dead constants in

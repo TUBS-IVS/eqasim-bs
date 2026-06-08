@@ -53,6 +53,44 @@ REGIOSTAR7_LABELS = {
     77: "Kleinstädtischer, dörflicher Raum (ländlich)",
 }
 
+# Official RegioStaR-2 collapse of the 7-class RegioStaR typology (BMVI/BBSR):
+# the "Stadtregion" (city region) comprises RS7 codes 71-74, the "Laendliche
+# Region" (rural region) comprises 75-77. Used by the HTS statistical matching
+# (optimization step 1) to derive an ``urban_class`` matching key that is
+# label-comparable with the French unite-urbaine (UU2010) urban/rural split.
+REGIOSTAR2_URBAN_CODES = (71, 72, 73, 74)
+REGIOSTAR2_RURAL_CODES = (75, 76, 77)
+
+
+def regiostar2_label(regiostar7):
+    """Collapse a RegioStaR-7 code (71-77) into the RegioStaR-2 label
+    ``"urban"`` (Stadtregion, 71-74) or ``"rural"`` (Laendliche Region, 75-77).
+
+    Raises ValueError for codes outside 71-77 so a broken RS7 join surfaces
+    loudly instead of silently defaulting (CLAUDE.md: no silent fallback).
+    """
+    code = int(regiostar7)
+    if code in REGIOSTAR2_URBAN_CODES:
+        return "urban"
+    if code in REGIOSTAR2_RURAL_CODES:
+        return "rural"
+    raise ValueError(f"RegioStaR-7 code outside 71-77: {regiostar7!r}")
+
+
+def urban_class_by_commune(commune_ids, rs7_by_ags8):
+    """Map each commune id to its RegioStaR-2 ``urban``/``rural`` label.
+
+    ``commune_ids`` may be 8-digit AGS or 12-digit ARS (``ars_to_ags8``
+    normalises both). ``rs7_by_ags8`` is a {AGS-8 -> RegioStaR-7} lookup (e.g.
+    from the regiostar stage). Communes absent from the lookup yield ``pd.NA``
+    rather than a silent default so the caller can log the mapped/unmapped rate
+    (CLAUDE.md: no silent fallback).
+    """
+    ags8 = pd.Series(commune_ids).astype(str).map(ars_to_ags8)
+    rs7 = ags8.map(rs7_by_ags8)
+    return rs7.map(lambda code: pd.NA if pd.isna(code) else regiostar2_label(code))
+
+
 SHEET = "ReferenzGebietsstand2020"
 
 # Fallback-rate threshold for the nearest-neighbour RS7 fill (CLAUDE.md

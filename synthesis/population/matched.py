@@ -24,6 +24,55 @@ DEFAULT_MATCHING_ATTRIBUTES = [
     "departement_id"
 ]
 
+# Optimization step (1): top of the open-ended household-size class. Sizes are
+# binned to 1, 2, 3, 4, "5 or more" so the synthetic target (household_size as a
+# string from braunschweig.ipf.attributed) and the HTS side (integer NPERS) share
+# one comparable categorical domain. 5+ is collapsed because the HTS donor pool
+# for very large households is thin; the relaxing matcher would otherwise have to
+# fall back for them anyway.
+HOUSEHOLD_SIZE_CLASS_TOP = 5
+
+
+def household_size_class(values):
+    """Bin a household-size column into the comparable matching class
+    ``1, 2, 3, 4, 5(+)``.
+
+    Accepts integer (HTS ``NPERS``) or string (synthetic ``household_size``,
+    written as ``hh_size.astype(str)`` by ``braunschweig.ipf.attributed``) input
+    and returns an integer array where ``HOUSEHOLD_SIZE_CLASS_TOP`` is the
+    open-ended "5 or more" class.
+    """
+    sizes = pd.to_numeric(pd.Series(values).values, errors="raise").astype(int)
+    return np.minimum(sizes, HOUSEHOLD_SIZE_CLASS_TOP)
+
+
+# Optimization step (1): cross-country urban/rural crosswalk for the HTS side.
+# The French HTS carries ``urban_type`` from the unite-urbaine (UU2010)
+# definition: ville-centre (central_city), banlieue (suburb) and isolated city
+# all lie INSIDE an urban unit, while "none" is outside any urban unit (rural).
+# Collapsing both this and the German RegioStaR-2 (see
+# braunschweig.data.bbsr.regiostar.regiostar2_label) onto the same {urban, rural}
+# label set lets the matcher key the urban/rural trip-length gradient across the
+# two countries' native urbanity definitions. This is a documented approximation
+# (UU2010 != RegioStaR), not an exact equivalence.
+URBAN_TYPE_TO_URBAN_CLASS = {
+    "central_city": "urban",
+    "suburb": "urban",
+    "isolated_city": "urban",
+    "none": "rural",
+}
+
+
+def urban_class_from_urban_type(values):
+    """Map the HTS ``urban_type`` (UU2010) categories onto the ``urban``/``rural``
+    class used as a matching key. Raises if an unmapped category appears so a
+    changed HTS coding surfaces loudly instead of silently defaulting."""
+    series = pd.Series(values).astype(str)
+    unknown = set(series.unique()) - set(URBAN_TYPE_TO_URBAN_CLASS)
+    if unknown:
+        raise ValueError(f"Unmapped HTS urban_type categories: {sorted(unknown)}")
+    return series.map(URBAN_TYPE_TO_URBAN_CLASS).to_numpy()
+
 
 def resolve_matching_columns(configured, reactivate_person_attributes):
     """Resolve the effective list of statistical-matching keys.
@@ -59,11 +108,62 @@ def configure(context):
     # (data.hts.*.cleaned), so the key is available on both sides.
     context.config("reactivate_person_attributes", True)
 
+    # Optimization step (4): within-cell kNN-style similarity weighting on a
+    # continuous secondary attribute (default exact ``age``). Default OFF ->
+    # legacy shared-CDF draw, byte-identical. ``matching_similarity_bandwidth``
+    # is in the same unit as the attribute (years for age); a cell with more than
+    # ``matching_similarity_max_donors`` donors falls back to the shared-CDF draw
+    # (the cost-bound; the fallback rate is logged).
+    context.config("matching_similarity", False)
+    context.config("matching_similarity_attribute", "age")
+    context.config("matching_similarity_bandwidth", 5.0)
+    context.config("matching_similarity_max_donors", 2000)
+
     context.stage("synthesis.population.sampled")
     context.stage("synthesis.population.income.selected")
 
     hts = context.config("hts")
     context.stage("data.hts.selected", alias = "hts")
+
+# Optimization step (4): within-cell kNN-style similarity weighting. After the
+# demographic keys define a (relaxed) matching cell, donors are drawn not just by
+# their survey weight but additionally weighted by proximity to the target person
+# in a continuous secondary attribute (standardised exact age). This refines the
+# choice WITHIN the cell only -- the cell membership (and thus the anti-overfitting
+# relaxing) is unchanged. Flag-gated, default OFF (-> the legacy shared-CDF draw,
+# byte-identical).
+SIMILARITY_TARGET_CHUNK = 4096  # bound the kernel matrix memory to chunk x n_donors
+
+
+def kernel_weighted_sample(uniform, donor_weights, donor_values, target_values,
+                           bandwidth):
+    """Draw one donor per target with probability proportional to
+    ``donor_weight * exp(-|target_value - donor_value| / bandwidth)``.
+
+    ``uniform`` is one U[0,1) draw per target (so the result is deterministic for
+    a fixed RNG stream). Returns a local donor index per target (into the
+    ``donor_*`` arrays). Targets are processed in chunks so the dense kernel
+    matrix never exceeds ``SIMILARITY_TARGET_CHUNK x n_donors``.
+    """
+    donor_weights = np.asarray(donor_weights, dtype=float)
+    donor_values = np.asarray(donor_values, dtype=float)
+    target_values = np.asarray(target_values, dtype=float)
+    uniform = np.asarray(uniform, dtype=float)
+
+    n_target = len(target_values)
+    out = np.empty(n_target, dtype=int)
+    for start in range(0, n_target, SIMILARITY_TARGET_CHUNK):
+        stop = min(start + SIMILARITY_TARGET_CHUNK, n_target)
+        tv = target_values[start:stop]
+        # kernel[t, d] = w_d * exp(-|tv_t - dv_d| / bandwidth)
+        diff = np.abs(tv[:, None] - donor_values[None, :])
+        kernel = donor_weights[None, :] * np.exp(-diff / bandwidth)
+        cdf = np.cumsum(kernel, axis=1)
+        totals = cdf[:, -1]
+        thresholds = uniform[start:stop] * totals
+        out[start:stop] = (cdf < thresholds[:, None]).sum(axis=1)
+    return out
+
 
 @numba.jit(nopython = True) # Already parallelized parallel = True)
 def sample_indices(uniform, cdf, selected_indices):
@@ -74,16 +174,32 @@ def sample_indices(uniform, cdf, selected_indices):
 
     return selected_indices[indices]
 
-def statistical_matching(progress, df_source, source_identifier, weight, df_target, target_identifier, columns, random_seed = 0, minimum_observations = 0):
+def statistical_matching(progress, df_source, source_identifier, weight, df_target, target_identifier, columns, random_seed = 0, minimum_observations = 0,
+                         similarity_column = None, similarity_bandwidth = 5.0, similarity_max_donors = 2000):
     random = np.random.RandomState(random_seed)
 
+    # Optimization step (4): the optional continuous similarity attribute (e.g.
+    # exact ``age``) is carried as an extra column so it is sorted/filtered in
+    # lockstep with the matching keys (no separate index alignment to get wrong).
+    extra = []
+    if similarity_column is not None and similarity_column not in columns:
+        extra = [similarity_column]
+
     # Reduce data frames
-    df_source = df_source[[source_identifier, weight] + columns].copy()
-    df_target = df_target[[target_identifier] + columns].copy()
+    df_source = df_source[[source_identifier, weight] + columns + extra].copy()
+    df_target = df_target[[target_identifier] + columns + extra].copy()
 
     # Sort data frames
     df_source = df_source.sort_values(by = columns)
     df_target = df_target.sort_values(by = columns)
+
+    # Continuous similarity values aligned to the now-sorted frames.
+    source_similarity = (df_source[similarity_column].values.astype(float)
+                         if similarity_column is not None else None)
+    target_similarity = (df_target[similarity_column].values.astype(float)
+                         if similarity_column is not None else None)
+    n_similarity_applied = 0
+    n_similarity_skipped = 0
 
     # Find unique values for all columns
     unique_values = {}
@@ -132,7 +248,24 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
                 cdf = np.cumsum(selected_weights)
                 cdf /= cdf[-1]
 
-                assigned_indices[f_target] = sample_indices(uniform[f_target], cdf, selected_indices)
+                # Optimization step (4): within-cell similarity weighting. Applied
+                # only when enabled AND the donor pool is small enough to bound the
+                # cost (large, heavily-relaxed cells fall back to the legacy
+                # shared-CDF draw; the fallback count is logged -- no silent
+                # fallback). When disabled (column None) this branch is never taken
+                # and the draw is byte-identical to the legacy path.
+                if source_similarity is not None and len(selected_indices) <= similarity_max_donors:
+                    local = kernel_weighted_sample(
+                        uniform[f_target], selected_weights,
+                        source_similarity[f_source], target_similarity[f_target],
+                        similarity_bandwidth)
+                    assigned_indices[f_target] = selected_indices[local]
+                    n_similarity_applied += requested_samples
+                else:
+                    assigned_indices[f_target] = sample_indices(uniform[f_target], cdf, selected_indices)
+                    if source_similarity is not None:
+                        n_similarity_skipped += requested_samples
+
                 assigned_levels[f_target] = level
                 unassigned_mask[f_target] = False
 
@@ -153,6 +286,20 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
     assert np.count_nonzero(unassigned_mask) == 0
     assert np.count_nonzero(assigned_indices == -1) == 0
 
+    # Optimization step (4): report how many target persons were matched with the
+    # within-cell similarity weighting vs. fell back to the legacy shared-CDF draw
+    # (large/relaxed cells above similarity_max_donors). A high fallback share is a
+    # signal that the donor cells are too coarse for similarity to act.
+    if source_similarity is not None:
+        total_sim = n_similarity_applied + n_similarity_skipped
+        applied_pct = 100.0 * n_similarity_applied / max(total_sim, 1)
+        print(
+            "[matched.similarity] within-cell similarity on '%s' applied to "
+            "%d/%d (%.1f%%); shared-CDF fallback %d (cells > %d donors)."
+            % (similarity_column, n_similarity_applied, total_sim, applied_pct,
+               n_similarity_skipped, similarity_max_donors)
+        )
+
     # Write back indices
     df_target[source_identifier] = df_source[source_identifier].values[assigned_indices]
     df_target = df_target[[target_identifier, source_identifier]]
@@ -170,10 +317,17 @@ def _run_parallel_statistical_matching(context, args):
     target_identifier = context.data("target_identifier")
     columns = context.data("columns")
     minimum_observations = context.data("minimum_observations")
+    similarity_column = context.data("similarity_column")
+    similarity_bandwidth = context.data("similarity_bandwidth")
+    similarity_max_donors = context.data("similarity_max_donors")
 
-    return statistical_matching(context.progress, df_source, source_identifier, weight, df_target, target_identifier, columns, random_seed, minimum_observations)
+    return statistical_matching(context.progress, df_source, source_identifier, weight, df_target, target_identifier, columns, random_seed, minimum_observations,
+                                similarity_column = similarity_column,
+                                similarity_bandwidth = similarity_bandwidth,
+                                similarity_max_donors = similarity_max_donors)
 
-def parallel_statistical_matching(context, df_source, source_identifier, weight, df_target, target_identifier, columns, minimum_observations = 0):
+def parallel_statistical_matching(context, df_source, source_identifier, weight, df_target, target_identifier, columns, minimum_observations = 0,
+                                  similarity_column = None, similarity_bandwidth = 5.0, similarity_max_donors = 2000):
     random_seed = context.config("random_seed")
     processes = context.config("processes")
 
@@ -184,7 +338,10 @@ def parallel_statistical_matching(context, df_source, source_identifier, weight,
         with context.parallel({
             "df_source": df_source, "source_identifier": source_identifier, "weight": weight,
             "target_identifier": target_identifier, "columns": columns,
-            "minimum_observations": minimum_observations
+            "minimum_observations": minimum_observations,
+            "similarity_column": similarity_column,
+            "similarity_bandwidth": similarity_bandwidth,
+            "similarity_max_donors": similarity_max_donors
         }) as parallel:
                 random_seeds = random.randint(10000, size = len(chunks))
                 results = parallel.map(_run_parallel_statistical_matching, zip(chunks, random_seeds))
@@ -228,6 +385,22 @@ def execute(context):
         df_target["any_cars"] = df_target["number_of_cars"] > 0
         df_source["any_cars"] = df_source["number_of_cars"] > 0
 
+    # Optimization step (1): household-size class as a matching key. The
+    # synthetic target carries household_size as a string, the HTS side as
+    # integer NPERS; household_size_class harmonises both into 1..5(+).
+    if "household_size_class" in columns:
+        df_target["household_size_class"] = household_size_class(df_target["household_size"])
+        df_source["household_size_class"] = household_size_class(df_source["household_size"])
+
+    # Optimization step (1): urban/rural class as a matching key. The HTS side is
+    # derived here from the unite-urbaine ``urban_type``; the synthetic target
+    # carries ``urban_class`` already (produced upstream by
+    # braunschweig.ipf.attributed via commune_id -> RegioStaR-2). Both use the
+    # same {urban, rural} labels. The guard loop below raises if either side is
+    # missing the column.
+    if "urban_class" in columns:
+        df_source["urban_class"] = urban_class_from_urban_type(df_source["urban_type"])
+
     # Perform statistical matching
     df_source = df_source.rename(columns = { "person_id": "hts_id" })
 
@@ -238,12 +411,30 @@ def execute(context):
         if not column in df_target:
             raise RuntimeError("Attribute not available in target (census) for matching: {}".format(column))
 
+    # Optimization step (4): resolve the optional within-cell similarity attribute.
+    # When enabled, the attribute (default exact ``age``) must exist on both sides;
+    # OFF -> similarity_column stays None and the matching is byte-identical.
+    similarity_column = None
+    if context.config("matching_similarity"):
+        similarity_column = context.config("matching_similarity_attribute")
+        for side, frame in (("source (HTS)", df_source), ("target (census)", df_target)):
+            if similarity_column not in frame:
+                raise RuntimeError(
+                    "matching_similarity is on but the similarity attribute '{}' "
+                    "is not available in {}.".format(similarity_column, side))
+        print("[matched.similarity] enabled on '%s' (bandwidth=%.1f, max_donors=%d)."
+              % (similarity_column, context.config("matching_similarity_bandwidth"),
+                 context.config("matching_similarity_max_donors")))
+
     df_assignment, levels = parallel_statistical_matching(
         context,
         df_source, "hts_id", "person_weight",
         df_target, "person_id",
         columns,
-        minimum_observations = context.config("matching_minimum_observations"))
+        minimum_observations = context.config("matching_minimum_observations"),
+        similarity_column = similarity_column,
+        similarity_bandwidth = context.config("matching_similarity_bandwidth"),
+        similarity_max_donors = context.config("matching_similarity_max_donors"))
 
     df_target = pd.merge(df_target, df_assignment, on = "person_id")
     assert len(df_target) == len(df_assignment)
