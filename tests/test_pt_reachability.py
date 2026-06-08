@@ -3,11 +3,19 @@
 Spec: eligible_rail_entry_stations returns every NON-ZGB rail stop that is
 reachable to ZGB directly (single train) or with exactly one transfer, with
 "direct" winning when a stop qualifies for both.
+
+weight_entry_stations / sample_pt_station_per_agent: population+accessibility
+weighting and per-agent station draw for cross-cordon PT in-commuters.
 """
+import numpy as np
 import pandas as pd
 import pytest
 
-from braunschweig.data.cordon.pt_reachability import eligible_rail_entry_stations
+from braunschweig.data.cordon.pt_reachability import (
+    eligible_rail_entry_stations,
+    weight_entry_stations,
+    sample_pt_station_per_agent,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,3 +113,124 @@ def test_stop_with_none_kreis_is_omitted():
     # ZGB1 is a ZGB stop and must also be absent
     assert "ZGB1" not in df["stop_id"].values
     assert len(df) == 0
+
+
+# ---------------------------------------------------------------------------
+# weight_entry_stations tests (B2)
+# ---------------------------------------------------------------------------
+
+def test_weight_prefers_direct_and_populous():
+    """A direct station with high catchment population must dominate the weight.
+
+    Station A: direct reach, ewz=100000 -> weight proportional to 100000*1.0
+    Station B: transfer reach, ewz=1000  -> weight proportional to 1000*0.5
+
+    A's weight must exceed B's, and the within-Kreis weights must sum to 1.0.
+    A statistical draw over 1000 agents must pick A more than 80% of the time.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15003"],
+        "stop_id": ["A", "B"],
+        "reach": ["direct", "transfer"],
+        "ewz": [100000.0, 1000.0],
+    })
+    w = weight_entry_stations(stations, transfer_penalty=0.5)
+    wa = w.loc[w.stop_id == "A", "weight"].iloc[0]
+    wb = w.loc[w.stop_id == "B", "weight"].iloc[0]
+    assert wa > wb, "direct high-population station must have higher weight than transfer low-population station"
+    assert abs(w.groupby("source_ars5")["weight"].sum().iloc[0] - 1.0) < 1e-9, \
+        "weights must normalise to 1.0 within each Kreis"
+
+    rng = np.random.default_rng(0)
+    draws = sample_pt_station_per_agent(["15003"] * 1000, w, rng)
+    share_a = sum(d == "A" for d in draws) / 1000.0
+    assert share_a > 0.8, f"station A must be drawn >80% of the time; got {share_a:.3f}"
+
+
+def test_sample_returns_none_for_unknown_kreis():
+    """Agents from an unknown Kreis must get None; known Kreis returns the single station."""
+    stations = pd.DataFrame({
+        "source_ars5": ["15003"],
+        "stop_id": ["A"],
+        "reach": ["direct"],
+        "ewz": [5000.0],
+    })
+    w = weight_entry_stations(stations)
+    rng = np.random.default_rng(1)
+    draws = sample_pt_station_per_agent(["99999", "15003"], w, rng)
+    assert draws[0] is None, "unknown Kreis 99999 must yield None"
+    assert draws[1] == "A", "known Kreis 15003 with one station must always yield that station"
+
+
+def test_transfer_only_kreis_weights_normalise_to_one():
+    """A Kreis with only transfer-reach stations still produces weights summing to 1.0.
+
+    The transfer_penalty downweights all stations by the same factor, which cancels
+    during normalisation; the Kreis remains fully sampled.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["03159", "03159", "03159"],
+        "stop_id": ["X", "Y", "Z"],
+        "reach": ["transfer", "transfer", "transfer"],
+        "ewz": [2000.0, 4000.0, 6000.0],
+    })
+    w = weight_entry_stations(stations, transfer_penalty=0.3)
+    total_weight = w.groupby("source_ars5")["weight"].sum().iloc[0]
+    assert abs(total_weight - 1.0) < 1e-9, \
+        "transfer-only Kreis weights must still normalise to 1.0"
+
+    # Proportions must match ewz ratios (transfer_penalty cancels in normalisation).
+    by_id = w.set_index("stop_id")["weight"]
+    assert by_id["Y"] > by_id["X"], "station with higher ewz must receive higher weight"
+    assert by_id["Z"] > by_id["Y"], "station with highest ewz must receive highest weight"
+
+    rng = np.random.default_rng(42)
+    draws = sample_pt_station_per_agent(["03159"] * 500, w, rng)
+    assert all(d is not None for d in draws), "all agents from transfer-only Kreis must be assigned a station"
+
+
+def test_weight_ewz_floored_at_one():
+    """ewz <= 0 must be treated as 1.0 (floor) so no station is silently zeroed out."""
+    stations = pd.DataFrame({
+        "source_ars5": ["03101", "03101"],
+        "stop_id": ["P", "Q"],
+        "reach": ["direct", "direct"],
+        "ewz": [0.0, -5.0],
+    })
+    w = weight_entry_stations(stations)
+    # Both clipped to 1.0 -> equal weight 0.5 each
+    wp = w.loc[w.stop_id == "P", "weight"].iloc[0]
+    wq = w.loc[w.stop_id == "Q", "weight"].iloc[0]
+    assert abs(wp - 0.5) < 1e-9, "zero ewz must be floored to 1.0 and yield weight 0.5"
+    assert abs(wq - 0.5) < 1e-9, "negative ewz must be floored to 1.0 and yield weight 0.5"
+
+
+def test_weight_output_contains_required_columns():
+    """weight_entry_stations must return all input columns plus 'weight'."""
+    stations = pd.DataFrame({
+        "source_ars5": ["03104"],
+        "stop_id": ["S1"],
+        "reach": ["direct"],
+        "ewz": [3000.0],
+        "x": [123456.0],
+        "y": [654321.0],
+    })
+    w = weight_entry_stations(stations)
+    for col in ("source_ars5", "stop_id", "reach", "ewz", "x", "y", "weight"):
+        assert col in w.columns, f"column '{col}' missing from weight_entry_stations output"
+
+
+def test_sample_pt_station_reproducible_given_seed():
+    """Identical seeds must produce identical draws; different seeds may differ."""
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15003"],
+        "stop_id": ["M", "N"],
+        "reach": ["direct", "transfer"],
+        "ewz": [50000.0, 30000.0],
+    })
+    w = weight_entry_stations(stations)
+    orig_ars = ["15003"] * 20
+
+    draws_a = sample_pt_station_per_agent(orig_ars, w, np.random.default_rng(7))
+    draws_b = sample_pt_station_per_agent(orig_ars, w, np.random.default_rng(7))
+    assert draws_a == draws_b, "same seed must produce identical draws"
