@@ -161,12 +161,25 @@ def test_build_manifest_rejects_unknown_km_cell():
 # --------------------------------------------------------------------------- #
 
 
-def test_manifests_equivalent_true_for_same_cells_diff_index_and_source():
+def test_manifests_equivalent_true_for_identical_split_any_km_order():
+    # Same source, index, max_cells and cells (km order differs only on input).
+    groups = _make_groups({"km_A": 3, "km_B": 2})
+    a = batch.build_manifest("src", 100, 0, ["km_A", "km_B"], groups)
+    b = batch.build_manifest("src", 100, 0, ["km_B", "km_A"], groups)
+    assert batch.manifests_equivalent(a, b) is True
+
+
+def test_manifests_equivalent_false_when_source_or_index_differs():
+    # Faithful to popsimprep batch_run_popsim.py: source_folder and split_index
+    # are part of the split identity (reuse-or-rebuild is per split folder).
     groups = _make_groups({"km_A": 3, "km_B": 2})
     a = batch.build_manifest("srcA", 100, 0, ["km_A", "km_B"], groups)
-    b = batch.build_manifest("srcB", 100, 9, ["km_B", "km_A"], groups)
-    # split_index and source_folder differ but cells are identical.
-    assert batch.manifests_equivalent(a, b) is True
+    assert batch.manifests_equivalent(
+        a, batch.build_manifest("srcB", 100, 0, ["km_A", "km_B"], groups)
+    ) is False
+    assert batch.manifests_equivalent(
+        a, batch.build_manifest("srcA", 100, 9, ["km_A", "km_B"], groups)
+    ) is False
 
 
 def test_manifests_equivalent_false_when_a_cell_differs():

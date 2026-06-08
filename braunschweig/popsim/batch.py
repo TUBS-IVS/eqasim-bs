@@ -95,12 +95,18 @@ def partition_by_1km(
 def sha1_of_cells(cell_ids: Sequence[str]) -> str:
     """Order-independent, deterministic SHA-1 hex digest of a set of cell ids.
 
-    The ids are sorted and newline-joined before hashing, so the digest depends
-    only on the SET of ids, not their order. No time or randomness is used, so
-    the digest is stable across runs (essential for the split manifest).
+    The ids are sorted, then each is fed to the hash followed by a newline byte
+    (including a trailing newline after the last id). This is byte-for-byte the
+    same digest as popsimprep ``batch_run_popsim.py``'s ``sha1_of_list`` on the
+    same sorted ids, so manifests are comparable across both implementations. The
+    digest depends only on the SET of ids, not their input order; no time or
+    randomness is used, so it is stable across runs.
     """
-    joined = "\n".join(sorted(cell_ids))
-    return hashlib.sha1(joined.encode("utf-8")).hexdigest()
+    hasher = hashlib.sha1()
+    for cell_id in sorted(cell_ids):
+        hasher.update(cell_id.encode("utf-8"))
+        hasher.update(b"\n")
+    return hasher.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -159,14 +165,19 @@ def build_manifest(
 
 
 def manifests_equivalent(a: SplitManifest, b: SplitManifest) -> bool:
-    """Return ``True`` iff two manifests describe the same batch content.
+    """Return ``True`` iff two manifests describe the same split.
 
-    Compares the content-identity fields only (ignores ``source_folder`` and
-    ``split_index``), so a split folder reused under a different name / index is
-    still recognised as up-to-date.
+    Matches popsimprep ``batch_run_popsim.py``'s ``manifests_equivalent``: it
+    compares ``schema_version``, ``source_folder``, ``max_cells``,
+    ``split_index``, ``km_cells`` and the 100 m counts + content hash. Including
+    ``source_folder`` and ``split_index`` is deliberate -- the reuse-or-rebuild
+    decision is made for one specific split folder, so a differing source or
+    index means a different split and must trigger a rebuild rather than a reuse.
+    The ``created_at`` timestamp present in the original manifest is intentionally
+    NOT compared (and not stored here) so it never affects equivalence.
     """
-    keys = ("schema_version", "max_cells", "km_cells", "num_1km", "num_100m",
-            "cells_100m_sha1")
+    keys = ("schema_version", "source_folder", "max_cells", "split_index",
+            "km_cells", "num_1km", "num_100m", "cells_100m_sha1")
     return all(getattr(a, k) == getattr(b, k) for k in keys)
 
 
