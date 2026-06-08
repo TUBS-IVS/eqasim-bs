@@ -94,3 +94,68 @@ def emit_overview(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("overview", emit_overview))
+
+
+def emit_mode_share(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Mode share tab with final-iteration shares, commute comparison vs MiD, and evolution.
+
+    CSVs written:
+    - ``mode_share_final.csv``: columns ``mode``, ``share_pct`` (all-trip final iteration).
+    - ``mode_share_commute_vs_mid.csv``: columns ``mode``, ``sim_pct``, ``mid_pct``
+      (work-trip comparison against MiD P12_1; only when data is present).
+    - ``mode_share_evolution.csv``: columns ``iteration`` + one column per mode
+      (share across MATSim iterations; only when evolution data is present).
+
+    Returns ``None`` when MATSim output is absent or mode-share data is missing.
+    """
+    ms = record.get("matsim", {})
+    cmp = record.get("comparisons", {})
+    if not ms.get("available") or not ms.get("mode_share_pct_final"):
+        return None
+    rows: dict[str, list] = {}
+
+    # Final all-trip mode share (bar chart).
+    final = pd.DataFrame(
+        [(m, v) for m, v in ms["mode_share_pct_final"].items()],
+        columns=["mode", "share_pct"],
+    )
+    n_final = w.write_csv(folder, "mode_share_final.csv", final)
+    rows["final"] = [w.card_bar(
+        "All-trip mode share (final iteration)", n_final,
+        x="mode", columns=["share_pct"], y_axis_name="%",
+    )]
+
+    # Commute mode share sim vs MiD P12_1 (bar chart, only when present).
+    wm = cmp.get("work_mode_share")
+    if wm:
+        df = pd.DataFrame({
+            "mode": wm["modes"],
+            "sim_pct": wm["sim_pct"],
+            "mid_pct": wm["mid_pct"],
+        })
+        n = w.write_csv(folder, "mode_share_commute_vs_mid.csv", df)
+        rows["commute"] = [w.card_bar(
+            "Commute mode share - Sim vs MiD P12_1", n,
+            x="mode", columns=["sim_pct", "mid_pct"],
+            legend_titles=["Simulation", "MiD 2023"],
+            y_axis_name="%",
+            description=wm.get("note", ""),
+        )]
+
+    # Mode-share evolution across iterations (line chart, only when present).
+    evo = ms.get("mode_share_evolution")
+    if evo and "iterations" in evo:
+        modes = [m for m in ms.get("modes", []) if m in evo]
+        df = pd.DataFrame({"iteration": evo["iterations"], **{m: evo[m] for m in modes}})
+        n = w.write_csv(folder, "mode_share_evolution.csv", df)
+        rows["evolution"] = [w.card_line(
+            "Mode share evolution across iterations", n,
+            x="iteration", columns=modes,
+            legend_titles=[m.upper() for m in modes],
+            x_axis_name="Iteration", y_axis_name="%", width=2,
+        )]
+
+    return w.dashboard("Mode share", "Mode share", rows)
+
+
+_REGISTRY.append(("mode-share", emit_mode_share))

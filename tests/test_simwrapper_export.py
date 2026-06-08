@@ -115,3 +115,18 @@ def test_emit_overview(tmp_path, record):
     assert {"metric", "value"}.issubset(df.columns)
     metrics = set(df["metric"])
     assert "Persons" in metrics and "Mean commute (km)" in metrics
+
+
+def test_emit_mode_share(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_mode_share(record, tmp_path)
+    assert board["header"]["tab"] == "Mode share"
+    final = pd.read_csv(tmp_path / "mode_share_final.csv")
+    assert {"mode", "share_pct"}.issubset(final.columns)
+    cmp = pd.read_csv(tmp_path / "mode_share_commute_vs_mid.csv")
+    assert {"mode", "sim_pct", "mid_pct"}.issubset(cmp.columns)
+    evo = pd.read_csv(tmp_path / "mode_share_evolution.csv")
+    assert "iteration" in evo.columns and "car" in evo.columns
+    types = {c["type"] for row in board["layout"].values() for c in row}
+    assert {"bar", "line"}.issubset(types)
