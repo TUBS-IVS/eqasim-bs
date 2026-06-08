@@ -210,3 +210,98 @@ def emit_distances(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("distances", emit_distances))
+
+
+def emit_time_of_day(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Time of day tab with stacked hourly trip counts by mode and purpose.
+
+    CSVs written:
+    - ``trips_by_hour_mode.csv``: columns ``hour`` + one column per mode
+      (trip departure counts per hour, one row per hour 0-23; only when present).
+    - ``trips_by_hour_purpose.csv``: columns ``hour`` + one column per purpose
+      (trip departure counts per hour; only when present).
+
+    Returns ``None`` when time-of-day data or the hours list is absent.
+    """
+    tod = record.get("matsim", {}).get("time_of_day") or {}
+    if not tod.get("hours"):
+        return None
+    rows: dict[str, list] = {}
+
+    # Trips by hour and mode (stacked bar chart).
+    by_mode = tod.get("by_mode", {})
+    if by_mode:
+        df = pd.DataFrame({"hour": tod["hours"], **by_mode})
+        n = w.write_csv(folder, "trips_by_hour_mode.csv", df)
+        rows["mode"] = [w.card_bar(
+            "Trips by hour and mode", n,
+            x="hour", columns=list(by_mode.keys()), stacked=True,
+            x_axis_name="Hour", y_axis_name="Trips", width=2,
+        )]
+
+    # Trips by hour and purpose (stacked bar chart).
+    by_pur = tod.get("by_purpose", {})
+    if by_pur:
+        df = pd.DataFrame({"hour": tod["hours"], **by_pur})
+        n = w.write_csv(folder, "trips_by_hour_purpose.csv", df)
+        rows["purpose"] = [w.card_bar(
+            "Trips by hour and purpose", n,
+            x="hour", columns=list(by_pur.keys()), stacked=True,
+            x_axis_name="Hour", y_axis_name="Trips", width=2,
+        )]
+
+    return w.dashboard("Time of day", "Trip departures over the day", rows) if rows else None
+
+
+def emit_convergence(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Convergence tab with MATSim score and distance evolution across iterations.
+
+    CSVs written:
+    - ``score_evolution.csv``: columns ``iteration``, ``avg_executed``, ``avg_best``,
+      ``avg_worst`` (plan scores per iteration; only when present).
+    - ``distance_evolution.csv``: columns ``iteration``, ``avg_trip_km``, ``avg_leg_km``
+      (mean trip and leg distances per iteration; only when present).
+
+    Returns ``None`` when no convergence data is present.
+    """
+    ms = record.get("matsim", {})
+    rows: dict[str, list] = {}
+
+    # Score evolution (line chart).
+    sc = ms.get("score_evolution")
+    if sc and "iterations" in sc:
+        df = pd.DataFrame({
+            "iteration": sc["iterations"],
+            "avg_executed": sc["avg_executed"],
+            "avg_best": sc["avg_best"],
+            "avg_worst": sc["avg_worst"],
+        })
+        n = w.write_csv(folder, "score_evolution.csv", df)
+        rows["score"] = [w.card_line(
+            "Score evolution", n,
+            x="iteration", columns=["avg_executed", "avg_best", "avg_worst"],
+            legend_titles=["Executed", "Best", "Worst"],
+            x_axis_name="Iteration", y_axis_name="Score",
+        )]
+
+    # Distance evolution (line chart).
+    di = ms.get("distance_evolution")
+    if di and "iterations" in di:
+        df = pd.DataFrame({
+            "iteration": di["iterations"],
+            "avg_trip_km": di["avg_trip_km"],
+            "avg_leg_km": di["avg_leg_km"],
+        })
+        n = w.write_csv(folder, "distance_evolution.csv", df)
+        rows["dist"] = [w.card_line(
+            "Average distance evolution", n,
+            x="iteration", columns=["avg_trip_km", "avg_leg_km"],
+            legend_titles=["Trip (km)", "Leg (km)"],
+            x_axis_name="Iteration", y_axis_name="km",
+        )]
+
+    return w.dashboard("Convergence", "MATSim convergence", rows) if rows else None
+
+
+_REGISTRY.append(("time-of-day", emit_time_of_day))
+_REGISTRY.append(("convergence", emit_convergence))

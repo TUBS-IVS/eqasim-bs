@@ -141,3 +141,23 @@ def test_emit_distances(tmp_path, record):
     assert {"band", "sim_pct", "mid_pct"}.issubset(dist.columns)
     mk = pd.read_csv(tmp_path / "mean_km_by_mode.csv")
     assert {"mode", "mean_km"}.issubset(mk.columns)
+
+
+def test_emit_time_of_day(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_time_of_day(record, tmp_path)
+    assert board["header"]["tab"] == "Time of day"
+    df = pd.read_csv(tmp_path / "trips_by_hour_mode.csv")
+    assert "hour" in df.columns and len(df) == 24
+
+
+def test_emit_convergence(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_convergence(record, tmp_path)
+    assert board["header"]["tab"] == "Convergence"
+    sc = pd.read_csv(tmp_path / "score_evolution.csv")
+    assert {"iteration", "avg_executed"}.issubset(sc.columns)
+    di = pd.read_csv(tmp_path / "distance_evolution.csv")
+    assert {"iteration", "avg_trip_km"}.issubset(di.columns)
