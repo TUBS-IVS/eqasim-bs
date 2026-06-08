@@ -65,12 +65,15 @@ def test_mid_seed_columns_constant():
     """The module ships the canonical MiD 2023 column mapping."""
     assert MID_SEED_COLUMNS.household_id == "H_ID"
     assert MID_SEED_COLUMNS.household_weight == "H_GEW"
-    assert MID_SEED_COLUMNS.person_household_id == "HP_ID"
+    # Persons link to their household by H_ID (not HP_ID); using HP_ID would make
+    # the complete-household grouping treat each person as its own household.
+    assert MID_SEED_COLUMNS.person_household_id == "H_ID"
     assert MID_SEED_COLUMNS.person_id == "P_ID"
     assert MID_SEED_COLUMNS.person_weight == "P_GEW"
     assert MID_SEED_COLUMNS.age == "HP_ALTER"
     assert MID_SEED_COLUMNS.sex == "HP_SEX"
     assert MID_SEED_COLUMNS.day_filter_col == "kernwo"
+    assert MID_SEED_COLUMNS.day_filter_values == (1, 2, 3)
 
 
 def test_seed_columns_is_frozen():

@@ -83,12 +83,13 @@ class SeedColumns:
 MID_SEED_COLUMNS = SeedColumns(
     household_id="H_ID",
     household_weight="H_GEW",
-    person_household_id="HP_ID",
+    person_household_id="H_ID",  # persons link to their household by H_ID (not HP_ID)
     person_id="P_ID",
     person_weight="P_GEW",
     age="HP_ALTER",
     sex="HP_SEX",
     day_filter_col="kernwo",
+    day_filter_values=(1, 2, 3),
 )
 
 
