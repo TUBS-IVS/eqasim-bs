@@ -64,6 +64,58 @@ def _write_one_person(person_row, write_income_eur):
     return buffer.getvalue().decode("utf-8")
 
 
+def _write_person_with_car_trip(car_availability, remode):
+    """Write a person with a home->work->home plan whose first leg mode is 'car',
+    returning the XML. Used to test the carless car-leg re-mode shim."""
+    from shapely.geometry import Point
+
+    defaults = {
+        "person_id": 1, "household_income": "3000", "car_availability": car_availability,
+        "bicycle_availability": "none", "census_household_id": 1,
+        "census_person_id": 1, "household_id": 1, "has_license": True,
+        "has_pt_subscription": False, "hts_id": 1, "hts_household_id": 1,
+        "age": 40, "employed": "yes", "sex": "male", "high_income": False,
+        "is_urban_resident": False, "pt_subscription_type": "fahre_nie",
+        "household_income_eur": 4321.0,
+    }
+    person = tuple(defaults[field] for field in pop.PERSON_FIELDS)
+
+    def _activity(purpose):
+        return tuple(
+            {"person_id": 1, "start_time": float("nan"), "end_time": float("nan"),
+             "purpose": purpose, "geometry": Point(0.0, 0.0), "location_id": -1}[f]
+            for f in pop.ACTIVITY_FIELDS)
+
+    trip = tuple({"person_id": 1, "mode": "car", "departure_time": 28800.0,
+                  "travel_time": 600.0}[f] for f in pop.TRIP_FIELDS)
+
+    buffer = io.BytesIO()
+    writer = writers.PopulationWriter(buffer)
+    writer.start_population()
+    pop.add_person(writer, person, [_activity("home"), _activity("work")], [trip], [],
+                   enable_urban_parking=False, write_income_eur=False,
+                   remode_carless_car_legs=remode)
+    writer.end_population()
+    return buffer.getvalue().decode("utf-8")
+
+
+def test_carless_car_leg_remoded_to_car_passenger_when_flag_on():
+    xml = _write_person_with_car_trip("none", remode=True)
+    assert 'mode="car_passenger"' in xml
+    assert 'mode="car"' not in xml.replace('car_passenger', '')
+
+
+def test_carless_car_leg_kept_when_flag_off_byte_identical():
+    xml = _write_person_with_car_trip("none", remode=False)
+    assert 'mode="car"' in xml.replace('car_passenger', 'X')
+
+
+def test_car_available_person_keeps_car_leg_with_flag_on():
+    # Only carless persons are re-moded; a car-available person still drives.
+    xml = _write_person_with_car_trip("all", remode=True)
+    assert 'mode="car"' in xml.replace('car_passenger', 'X')
+
+
 def test_household_income_eur_attribute_written_when_flag_on():
     xml = _write_one_person({"household_income_eur": 4321.0}, write_income_eur=True)
     assert 'name="householdIncomeEur"' in xml

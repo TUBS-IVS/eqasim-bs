@@ -32,6 +32,19 @@ def configure(context):
     # pre-A2 output (the attribute is simply not written).
     context.config("write_income_eur", True)
 
+    # Re-mode the initial-plan car-driver legs of carless persons to car_passenger
+    # before writing (and thus before MATSim's pre-loop RunPopulationRouting). With
+    # the household vehicle fleet a person in a 0-car household owns no "car"
+    # vehicle, but its HTS-donor plan can still carry a car-driver leg -> MATSim
+    # aborts routing with "Could not retrieve vehicle id ... for mode car". eqasim
+    # treats car_availability as a MODE-CHOICE constraint (enforced in-loop by DMC),
+    # so a carless person should not start as a car driver. ON: such legs are
+    # written as car_passenger (the person owns a car_passenger vehicle), making the
+    # initial plan routable and consistent with car_availability. Default False ->
+    # byte-identical legacy output (needed only with the household fleet, where
+    # carless persons lack a routing car). Region-neutral.
+    context.config("remode_carless_car_legs", False)
+
 # is_urban_resident: boolean flag set by the regional enricher (e.g.
 # braunschweig.synthesis.population.enriched sets it from inside_braunschweig).
 # Written into MATSim XML under the Java-expected attribute key "isParis"
@@ -95,7 +108,8 @@ VEHICLE_FIELDS = [
 ]
 
 def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
-               write_income_eur = False, person_fields = None):
+               write_income_eur = False, person_fields = None,
+               remode_carless_car_legs = False):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
@@ -195,8 +209,16 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         )
 
         if not trip is None:
+            mode = trip[TRIP_FIELDS.index("mode")]
+            # A carless person cannot drive: re-mode an initial car-driver leg to
+            # car_passenger so the plan is routable with the household fleet (the
+            # person owns no "car" vehicle). car_availability is then still enforced
+            # by the in-loop mode choice. No-op unless the flag is on.
+            if (remode_carless_car_legs and mode == "car"
+                    and person[person_fields.index("car_availability")] == "none"):
+                mode = "car_passenger"
             writer.add_leg(
-                mode = trip[TRIP_FIELDS.index("mode")],
+                mode = mode,
                 departure_time = trip[TRIP_FIELDS.index("departure_time")],
                 travel_time = trip[TRIP_FIELDS.index("travel_time")]
             )
@@ -241,6 +263,7 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             # order so add_person can index them. Mandatory-field indices are
             # unchanged because optional fields are appended at the end.
             person_fields = list(df_persons.columns)
+            remode_carless_car_legs = bool(context.config("remode_carless_car_legs"))
 
             with context.progress(total = len(df_persons), label = "Writing population ...") as progress:
                 for person in df_persons.itertuples(index = False):
@@ -286,7 +309,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
 
                     add_person(writer, person, activities, trips, vehicles,
                                enable_urban_parking, write_income_eur,
-                               person_fields=person_fields)
+                               person_fields=person_fields,
+                               remode_carless_car_legs=remode_carless_car_legs)
                     progress.update()
 
             writer.end_population()
