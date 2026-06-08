@@ -52,8 +52,23 @@ INCOME_GROUP_MIDPOINT_EUR = {
     15: 8000.0,  # mehr als 7000 (open-ended estimate)
 }
 
-# MiD H_ANZAUTO missing code (keine Angabe) -> treated as 0 cars.
+# MiD hheink_gr1 group -> a categorical household income class label (the codebook
+# EUR range), so household_income (categorical) accompanies household_income_eur.
+INCOME_CLASS_BY_GROUP = {
+    1: "under_500", 2: "500_900", 3: "900_1500", 4: "1500_2000", 5: "2000_2600",
+    6: "2600_3000", 7: "3000_3600", 8: "3600_4000", 9: "4000_4600", 10: "4600_5000",
+    11: "5000_5600", 12: "5600_6000", 13: "6000_6600", 14: "6600_7000", 15: "over_7000",
+}
+
+# MiD H_ANZAUTO / H_ANZRAD missing code (keine Angabe) -> treated as 0.
 CARS_MISSING_CODE = 99
+BIKES_MISSING_CODE = 99
+
+# MiD P_FKARTE (Fahrkartenart) codes that grant unlimited local PT rides during
+# their validity (= eqasim flatrate / has_pt_subscription): 3 Deutschlandticket,
+# 4 Wochen-/Monatskarte ohne Abo, 5 Monatskarte im Abo / Jahreskarte,
+# 6 Jobticket / Firmenabo / Semesterticket. 1/2 single/multi-ride, 7 other, 8 never.
+PT_SUBSCRIPTION_FKARTE = frozenset({3, 4, 5, 6})
 
 
 def map_employed(persons: pd.DataFrame, *, taet_col: str = "P_TAET") -> pd.DataFrame:
@@ -88,6 +103,15 @@ def map_household_income_eur(
     return out
 
 
+def map_household_income(
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1"
+) -> pd.DataFrame:
+    """Add the categorical ``household_income`` class from the MiD income group."""
+    out = households.copy()
+    out["household_income"] = out[group_col].map(INCOME_CLASS_BY_GROUP)
+    return out
+
+
 def map_number_of_cars(
     households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO"
 ) -> pd.DataFrame:
@@ -108,5 +132,37 @@ def derive_car_availability(n_cars: int, n_adults: int) -> str:
     if n_cars <= 0:
         return "none"
     if n_adults <= 0 or n_cars >= n_adults:
+        return "all"
+    return "some"
+
+
+def map_has_pt_subscription(
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE"
+) -> pd.DataFrame:
+    """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` (flatrate set)."""
+    out = persons.copy()
+    out["has_pt_subscription"] = out[fkarte_col].isin(PT_SUBSCRIPTION_FKARTE)
+    return out
+
+
+def map_number_of_bicycles(
+    households: pd.DataFrame, *, bikes_col: str = "H_ANZRAD"
+) -> pd.DataFrame:
+    """Add ``number_of_bicycles`` from MiD ``H_ANZRAD`` (the 99 missing code -> 0)."""
+    out = households.copy()
+    bikes = out[bikes_col].where(out[bikes_col] != BIKES_MISSING_CODE, 0)
+    out["number_of_bicycles"] = bikes.fillna(0).astype(int)
+    return out
+
+
+def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
+    """Derive bicycle availability {none, some, all} from bikes vs. household size.
+
+    No bike -> ``none``; at least one bike per person -> ``all``; otherwise
+    ``some`` (bikes are shared by everyone in the household, children included).
+    """
+    if n_bikes <= 0:
+        return "none"
+    if n_persons <= 0 or n_bikes >= n_persons:
         return "all"
     return "some"

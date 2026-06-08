@@ -26,6 +26,7 @@ def _mid_persons():
             "HP_SEX": [1, 2, 2],
             "P_TAET": [1, 9, 11],     # employed, pupil, retired
             "P_FSCHEIN": [1, 2, 1],   # licence yes/no/yes
+            "P_FKARTE": [3, 8, 5],    # Deutschlandticket, never, monthly-abo
         }
     )
 
@@ -37,6 +38,7 @@ def _mid_households():
             "oek_status": [3, 5],
             "hheink_gr1": [4, 9],     # 1500-2000 -> 1750; 4000-4600 -> 4300
             "H_ANZAUTO": [1, 2],
+            "H_ANZRAD": [2, 0],
         }
     )
 
@@ -55,6 +57,9 @@ def test_build_persons_composes_demographics_attributes_and_household():
     assert p1["number_of_cars"] == 1
     # car availability derived per household from cars vs adults (>=18).
     assert p1["car_availability"] in {"none", "some", "all"}
+    assert bool(p1["has_pt_subscription"]) is True   # P_FKARTE 3 = Deutschlandticket
+    # household A has 2 bikes / 2 persons -> all.
+    assert p1["bicycle_availability"] == "all"
 
 
 def test_build_persons_car_availability_uses_adult_count():

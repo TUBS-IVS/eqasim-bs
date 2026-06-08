@@ -52,3 +52,26 @@ def test_derive_car_availability():
     assert attr.derive_car_availability(3, 2) == "all"
     assert attr.derive_car_availability(1, 2) == "some"
     assert attr.derive_car_availability(1, 0) == "all"  # no adults -> cars cover them
+
+
+def test_map_has_pt_subscription_from_p_fkarte():
+    # P_FKARTE 3..6 = flatrate (Deutschlandticket, Wochen/Monat ohne Abo,
+    # Monat-Abo/Jahreskarte, Jobticket/Semesterticket); 1,2,7,8 not.
+    persons = pd.DataFrame({"P_FKARTE": [1, 2, 3, 4, 5, 6, 7, 8, 99]})
+    out = attr.map_has_pt_subscription(persons)
+    assert list(out["has_pt_subscription"]) == [
+        False, False, True, True, True, True, False, False, False
+    ]
+
+
+def test_map_number_of_bicycles():
+    hh = pd.DataFrame({"H_ANZRAD": [0, 3, 99]})
+    out = attr.map_number_of_bicycles(hh)
+    assert list(out["number_of_bicycles"]) == [0, 3, 0]  # 99 missing -> 0
+
+
+def test_derive_bicycle_availability():
+    assert attr.derive_bicycle_availability(0, 3) == "none"
+    assert attr.derive_bicycle_availability(3, 3) == "all"
+    assert attr.derive_bicycle_availability(4, 3) == "all"
+    assert attr.derive_bicycle_availability(1, 3) == "some"
