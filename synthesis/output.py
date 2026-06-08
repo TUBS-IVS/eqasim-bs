@@ -7,6 +7,56 @@ import sqlite3
 import math
 import numpy as np
 
+# Optional fork attributes appended to the persons CSV when the synthesis produced
+# them (license_type / economic_status from the Braunschweig enriched stage). When
+# absent (feature OFF) they are simply not appended, so the column set stays
+# byte-identical to the legacy output. Appended AFTER the legacy columns so existing
+# column positions never shift.
+PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status")
+
+
+def select_person_output_columns(available_columns, residency_col):
+    """Ordered persons-CSV column list: the legacy columns + the residency flag,
+    plus any present optional fork attribute (PERSON_OPTIONAL_OUTPUT_COLUMNS),
+    appended last so the legacy order is preserved byte-identically."""
+    available = set(available_columns)
+    columns = [
+        "person_id", "household_id",
+        "age", "employed", "sex", "socioprofessional_class",
+        "has_driving_license", "has_pt_subscription",
+        "pt_subscription_type",
+        "census_person_id", "hts_id",
+        residency_col,
+    ]
+    for column in PERSON_OPTIONAL_OUTPUT_COLUMNS:
+        if column in available:
+            columns.append(column)
+    return columns
+
+
+def select_household_output_columns(available_columns):
+    """Ordered households-CSV column list. Reproduces the legacy column set + the
+    existing optional inserts (household_income_eur before high_income, hh_type
+    after household_size) and appends ``housing_tenure`` when present. Byte-identical
+    to the legacy output when the optional columns are absent."""
+    available = set(available_columns)
+    columns = [
+        "household_id",
+        "car_availability", "bicycle_availability",
+        "number_of_cars", "number_of_bicycles",
+        "income",
+        "high_income", "household_size",
+        "census_household_id",
+    ]
+    if "household_income_eur" in available:
+        columns.insert(columns.index("high_income"), "household_income_eur")
+    if "hh_type" in available:
+        columns.insert(columns.index("household_size") + 1, "hh_type")
+    if "housing_tenure" in available:
+        columns.append("housing_tenure")
+    return columns
+
+
 def configure(context):
     context.stage("synthesis.population.enriched")
 
@@ -87,14 +137,7 @@ def execute(context):
         df_persons["is_urban_resident"] = False
     residency_col = "is_urban_resident"
 
-    df_persons = df_persons[[
-        "person_id", "household_id",
-        "age", "employed", "sex", "socioprofessional_class",
-        "has_driving_license", "has_pt_subscription",
-        "pt_subscription_type",
-        "census_person_id", "hts_id",
-        residency_col,
-    ]]
+    df_persons = df_persons[select_person_output_columns(df_persons.columns, residency_col)]
     if "csv" in output_formats:
         df_persons.to_csv("%s/%spersons.csv" % (output_path, output_prefix), sep = ";", index = None, lineterminator = "\n")
     if "parquet" in output_formats:
@@ -149,23 +192,7 @@ def execute(context):
 
     df_households = pd.merge(df_households,df_activities[df_activities["purpose"] == "home"][["household_id"
         ]].drop_duplicates("household_id"),how="left")
-    hh_columns = [
-        "household_id",
-        "car_availability", "bicycle_availability",
-        "number_of_cars", "number_of_bicycles",
-        "income",
-        "high_income", "household_size", # added for Bavaria
-        "census_household_id",
-    ]
-    # Optional fork-specific continuous income column (Braunschweig INKAR).
-    if "household_income_eur" in df_households.columns:
-        hh_columns.insert(hh_columns.index("high_income"), "household_income_eur")
-    # Optional fork-specific household-type column (Braunschweig: drawn from
-    # Zensus 2022 1000A-2081 when ``braunschweig.ipf.use_household_type_margin``
-    # is enabled).
-    if "hh_type" in df_households.columns:
-        hh_columns.insert(hh_columns.index("household_size") + 1, "hh_type")
-    df_households = df_households[hh_columns]
+    df_households = df_households[select_household_output_columns(df_households.columns)]
     if "csv" in output_formats:
         df_households.to_csv("%s/%shouseholds.csv" % (output_path, output_prefix), sep = ";", index = None, lineterminator = "\n")
     if "parquet" in output_formats:
