@@ -172,3 +172,45 @@ def assign_households_to_buildings(
         n_households_assigned, n_households_orphan, orphan_rate * 100.0,
     )
     return result, report
+
+
+def household_home_coordinates(
+    assigned_buildings,
+    *,
+    hh_ids_col: str = "HH_IDs",
+    id_separator: str = ";",
+    x_col: str = "home_x",
+    y_col: str = "home_y",
+) -> pd.DataFrame:
+    """Invert the building assignment into one home coordinate per household.
+
+    Takes the assigned-buildings GeoDataFrame (output of
+    :func:`assign_households_to_buildings`, with a geometry column) and produces a
+    ``[household_id, home_x, home_y]`` table: every household listed in a
+    building's ``hh_ids_col`` is placed at that building's centroid. Vectorised
+    (a single explode), so it scales to the full building stock.
+
+    Parameters
+    ----------
+    assigned_buildings:
+        GeoDataFrame with a geometry column and the ``hh_ids_col`` (``;``-joined
+        household ids per building).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per household with its home x / y (in the buildings' CRS).
+    """
+    centroids = assigned_buildings.geometry.centroid
+    frame = pd.DataFrame(
+        {
+            hh_ids_col: assigned_buildings[hh_ids_col].to_numpy(),
+            x_col: centroids.x.to_numpy(),
+            y_col: centroids.y.to_numpy(),
+        }
+    )
+    frame = frame[frame[hh_ids_col].notna() & (frame[hh_ids_col].astype(str) != "")]
+    frame["household_id"] = frame[hh_ids_col].astype(str).str.split(id_separator)
+    frame = frame.explode("household_id")
+    frame = frame[frame["household_id"] != ""]
+    return frame[["household_id", x_col, y_col]].reset_index(drop=True)

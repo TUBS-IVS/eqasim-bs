@@ -88,3 +88,27 @@ def test_assign_requires_expected_columns():
     bad = pd.DataFrame({"wrong": [1]})
     with pytest.raises(ValueError):
         handoff.assign_households_to_buildings({"A": [1]}, bad)
+
+
+# ---------------------------------------------------------------------------
+# household_home_coordinates
+# ---------------------------------------------------------------------------
+
+def test_household_home_coordinates_explodes_assignment():
+    gpd = pytest.importorskip("geopandas")
+    from shapely.geometry import Point
+
+    gdf = gpd.GeoDataFrame(
+        {"HH_IDs": ["A_1_0;A_1_1", None, "B_2_0"]},
+        geometry=[Point(10, 20), Point(0, 0), Point(30, 40)],
+        crs="EPSG:25832",
+    )
+    out = handoff.household_home_coordinates(gdf)
+    assert set(out["household_id"]) == {"A_1_0", "A_1_1", "B_2_0"}
+    # The two households on building 0 share its coordinate; the empty one is dropped.
+    a = out[out["household_id"] == "A_1_0"].iloc[0]
+    assert (a["home_x"], a["home_y"]) == (10, 20)
+    b = out[out["household_id"] == "B_2_0"].iloc[0]
+    assert (b["home_x"], b["home_y"]) == (30, 40)
+    assert len(out) == 3
+    assert out["household_id"].is_unique
