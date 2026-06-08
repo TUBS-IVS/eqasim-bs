@@ -137,11 +137,57 @@ similarity draw).
 
 ---
 
+## Step 3 / 3b -- replacing the French donor (deferred, the dominant lever)
+
+The aggregate purpose distribution is dominated by the **donor pool** (French
+ENTD), not by which donor each German person draws: matching only redistributes
+WHICH French diary a person gets, it cannot change the pool. So step 1 sharpens
+SEGMENT differentiation but cannot close pool-level gaps (e.g. the freizeit
+under-share). Closing those needs a German behavioural donor.
+
+**Step 3 (simpler) -- German MiD trip donor.** Replace the ENTD trip/activity
+donor with German MiD 2023 Wege microdata, re-estimate mode-choice parameters.
+The matching keys then key onto German-consistent behaviour. This is the
+straightforward realism jump.
+
+**Step 3b (ambitious) -- PopulationSim-style synthesis with a MiD-SUF seed.**
+Today the joint distribution is *constructed from marginals* (a flat IPF over the
+cell cross-product, plus the one explicit joint age x size margin), households are
+*formed heuristically*, and behaviour comes from the *French* donor at matching
+time. A PopulationSim (ActivitySim) approach instead *list-balances the weights of
+a real household+person SEED* across nested geographies, preserving the seed's full
+multivariate joint and integerising whole households.
+
+- Our IPF already does **multi-level geographic controls** (Gemeinde + Kreis +
+  national margins fitted simultaneously in one raking loop -- see
+  `braunschweig.ipf.model`), so the *controls* side is close to PopulationSim's
+  input format. The missing piece is the **seed**.
+- **ENTD as the seed is technically possible** (it is real weighted household +
+  person + trip microdata: `household_size`, `number_of_cars`,
+  `number_of_bicycles`, `income_class`, `urban_type`, `departement_id`,
+  `household_weight`), **but does not solve the bias**: PopulationSim preserves the
+  SEED's joint, so a French seed gives French correlations/behaviour re-weighted to
+  German margins -- the same donor bias relocated into synthesis. A passable EU
+  proxy for demographic joints (size/cars/income), wrong for behaviour
+  (trips/modes/car use).
+- **The real win is PopulationSim + a German MiD-SUF seed.** It fixes three things
+  at once: (a) real multivariate joint preservation instead of marginal
+  reconstruction, (b) households + persons balanced jointly instead of heuristic
+  formation, (c) German behaviour instead of French. **Data prerequisite:** the MiD
+  2023 **Scientific Use File / regional microdata** (household-linked records from
+  infas/BMDV via the FDZ / clearing house) -- we currently hold only the MiD
+  *margin tables* (the CSVs), which are aggregates, not microdata.
+- Worth doing as a **methodological benchmark** even with an ENTD seed (compare
+  PopulationSim entropy-balancing vs. our IPF+matching to validate the current
+  approach), but the production direction is the MiD seed.
+
 ## Recommended sequence
 
 1. Run the 25 % synthesis with step 1 ON, then `run_population_validation` (step 2)
    to measure the realised purpose/mobility coherence per segment.
 2. If a residual car/mode-related gap remains, evaluate step 4 (similarity ON) and
    only then weigh the step-1 Option-B refactor against its risks above.
-3. **Step 3 (MiD trip donor)** -- the dominant realism lever -- as a separate
-   work item; the step-2 tool is the objective function for it.
+3. **Step 3 / 3b** -- the dominant realism lever -- as a separate work item; the
+   step-2 tool is the objective function for it. Decide between the simpler MiD
+   trip donor and the PopulationSim + MiD-SUF-seed rebuild based on whether the
+   MiD microdata can be obtained.
