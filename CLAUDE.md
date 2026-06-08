@@ -521,6 +521,53 @@ python -m braunschweig.analysis.run_full_analysis `
 Tests: `tests/test_run_mid_validation.py` covers the helpers
 (`band_share`, `_bool_share`, markdown rendering, CLI parser).
 
+### SimWrapper dashboards
+
+The run analytics can additionally be exported as a self-contained
+**SimWrapper** dashboard project (https://simwrapper.app), so the whole
+dashboard is viewable inside the MATSim/SimWrapper ecosystem. There are two
+complementary, flag-gated layers:
+
+**Layer 1 - MATSim simwrapper contrib (Java).** The `braunschweig` module
+(`../eqasim-java-bs`) depends on `org.matsim.contrib:simwrapper` (pinned to the
+active MATSim version `2025.0-PR3568`, verified present on `repo.matsim.org`).
+`RunSimulation` registers `SimWrapperModule` behind a `--simwrapper`
+CommandLine flag, so MATSim writes its standard dashboards (network volumes,
+mode share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. The
+pipeline (`matsim/simulation/run.py`) passes `--simwrapper true` only when the
+config key `simwrapper_dashboards` is set (**default `False`** -> a standard run
+is byte-identical).
+
+**Layer 2 - Python emitter (`braunschweig.analysis.simwrapper`).** Converts the
+existing `record` dict from
+`braunschweig.analysis.dashboard.build_dashboard.assemble_run_record` (the same
+metrics that drive the interactive HTML dashboard - **no scientific logic is
+duplicated**) into SimWrapper-native CSV + `dashboard-*.yaml` written to
+`<output_dir>/simwrapper/`. It rebuilds the full HTML dashboard as 8 tabs:
+Overview (KPI tiles), Mode share (final / commute-vs-MiD P12_1 / iteration
+evolution), Distances (commute distribution vs MiD P13 + mean km by mode),
+Time of day, Convergence (score + distance evolution), Per-Kreis (table + bar),
+OD (matrix table + a real **aggregate-od spider** built from the 8 ZGB Kreis
+zones, VG250 EPSG:25832, written as `zones.shp`), and Quality (EMD vs MiD).
+Tabs whose source data is absent are skipped with an explicit log line (no
+silent fallback). Regenerate standalone:
+
+```powershell
+python -m braunschweig.analysis.simwrapper.export `
+    --output-dir eqasim-data/output_bs_25pct `
+    --sim-cache  eqasim-data/cache_bs_25pct `
+    --label      "25pct"
+```
+
+It also runs **default-on** inside `run_full_analysis` (disable with
+`--no-simwrapper`; it is read-only and writes only into the new `simwrapper/`
+subfolder). Open `<output_dir>/simwrapper/` via "View local files" in
+simwrapper.app; the Layer-1 MATSim dashboards open from `simulation_output/`.
+
+Tests: `tests/test_simwrapper_writers.py`,
+`tests/test_simwrapper_export.py` (synthetic `record` fixture per tab + a
+real-VG250 OD-spider test exercising the primary geometry path).
+
 ## Language policy
 
 All code must be written in English.
