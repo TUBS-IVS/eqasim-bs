@@ -205,3 +205,11 @@ def test_emit_per_kreis(tmp_path, record):
     assert {"ars5", "name", "mean_km", "n_trips"}.issubset(df.columns)
     types = {c["type"] for row in board["layout"].values() for c in row}
     assert "csv" in types and "bar" in types
+
+
+def test_cli_parser_defaults():
+    from braunschweig.analysis.simwrapper import export as ex
+    ns = ex._parse_args(["--output-dir", "eqasim-data/output_bs_25pct",
+                          "--sim-cache", "eqasim-data/cache_bs_25pct"])
+    assert ns.output_dir.endswith("output_bs_25pct")
+    assert ns.out_subdir == "simwrapper"

@@ -493,3 +493,35 @@ def emit_quality(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("quality", emit_quality))
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(
+        description="Export a SimWrapper dashboard folder for one eqasim run.")
+    ap.add_argument("--output-dir", required=True,
+                    help="eqasim CSV output folder for the run.")
+    ap.add_argument("--sim-cache", required=True,
+                    help="Synpp cache folder with matsim.simulation.run__*.cache/.")
+    ap.add_argument("--label", default=None)
+    ap.add_argument("--sample-rate", type=float, default=None)
+    ap.add_argument("--out-subdir", default="simwrapper",
+                    help="Subfolder of --output-dir to write the dashboard into.")
+    return ap.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s")
+    ns = _parse_args(argv)
+    out_dir = (REPO_ROOT / ns.output_dir).resolve() if not Path(ns.output_dir).is_absolute() else Path(ns.output_dir)
+    sim_cache = (REPO_ROOT / ns.sim_cache).resolve() if not Path(ns.sim_cache).is_absolute() else Path(ns.sim_cache)
+    label = ns.label or out_dir.name
+    record = assemble_run_record(label, out_dir, sim_cache, ns.sample_rate)
+    target = out_dir / ns.out_subdir
+    written = export_run(record, target)
+    LOGGER.info("[simwrapper] open this folder in simwrapper.app: %s", target)
+    return 0 if written else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
