@@ -284,3 +284,102 @@ def test_run_batches_unknown_status_is_rejected():
     # Also surfaced if a result with an invalid status reaches the summary.
     with pytest.raises(ValueError):
         batch.run_batches(["f"], fake_run_one, num_workers=1)
+
+
+# --------------------------------------------------------------------------- #
+# make_populationsim_run_one (concrete subprocess runner, fake-injected)
+# --------------------------------------------------------------------------- #
+
+
+class _FakeCompleted:
+    def __init__(self, returncode):
+        self.returncode = returncode
+        self.stdout = ""
+        self.stderr = ""
+
+
+def _completed_folder(tmp_path, name="batch"):
+    folder = tmp_path / name
+    (folder / "output").mkdir(parents=True)
+    return folder
+
+
+def test_subprocess_run_one_skips_completed_without_calling_subprocess(tmp_path):
+    folder = _completed_folder(tmp_path)
+    (folder / "output" / "final_expanded_household_ids.csv").write_text("x")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeCompleted(0)
+
+    run_one = batch.make_populationsim_run_one(subprocess_run=fake_run)
+    result = run_one(str(folder))
+    assert result.status == "skipped"
+    assert calls == []  # a completed batch must not spawn the subprocess
+
+
+def test_subprocess_run_one_succeeds_when_output_created(tmp_path):
+    folder = _completed_folder(tmp_path)
+
+    def fake_run(cmd, **kwargs):
+        (folder / "output" / "final_expanded_household_ids.csv").write_text("x")
+        return _FakeCompleted(0)
+
+    run_one = batch.make_populationsim_run_one(subprocess_run=fake_run)
+    assert run_one(str(folder)).status == "succeeded"
+
+
+def test_subprocess_run_one_fails_on_nonzero_exit(tmp_path):
+    folder = _completed_folder(tmp_path)
+    run_one = batch.make_populationsim_run_one(
+        subprocess_run=lambda cmd, **kwargs: _FakeCompleted(2)
+    )
+    result = run_one(str(folder))
+    assert result.status == "failed"
+    assert "2" in result.message
+
+
+def test_subprocess_run_one_fails_when_no_output_despite_success(tmp_path):
+    folder = _completed_folder(tmp_path)
+    run_one = batch.make_populationsim_run_one(
+        subprocess_run=lambda cmd, **kwargs: _FakeCompleted(0)
+    )
+    result = run_one(str(folder))
+    assert result.status == "failed"
+    assert "output" in result.message.lower()
+
+
+def test_subprocess_run_one_fails_on_timeout(tmp_path):
+    import subprocess
+
+    folder = _completed_folder(tmp_path)
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 3600)
+
+    run_one = batch.make_populationsim_run_one(subprocess_run=fake_run)
+    result = run_one(str(folder))
+    assert result.status == "failed"
+    assert "timeout" in result.message.lower()
+
+
+def test_subprocess_run_one_builds_expected_command_and_cwd(tmp_path):
+    folder = _completed_folder(tmp_path)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["cwd"] = kwargs.get("cwd")
+        (folder / "output" / "final_expanded_household_ids.csv").write_text("x")
+        return _FakeCompleted(0)
+
+    run_one = batch.make_populationsim_run_one(
+        command_prefix=("uv", "run", "populationsim"), subprocess_run=fake_run
+    )
+    run_one(str(folder))
+    assert captured["cmd"][:3] == ["uv", "run", "populationsim"]
+    assert "-w" in captured["cmd"]
+    assert str(folder) in captured["cmd"]
+    # Default cwd is the folder's parent (matches batch_run_popsim.py).
+    assert captured["cwd"] == str(folder.parent)

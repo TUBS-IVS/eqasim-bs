@@ -22,10 +22,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Sequence, Union
+from typing import Callable, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
@@ -270,3 +272,69 @@ def run_batches(
         summary.n_total, n_succeeded, n_failed, n_skipped,
     )
     return summary
+
+
+# Default PopulationSim invocation, matching popsimprep batch_run_popsim.py:
+# ``uv run populationsim -w <folder>`` with cwd = the folder's parent.
+DEFAULT_POPSIM_COMMAND = ("uv", "run", "populationsim")
+DEFAULT_POPSIM_TIMEOUT_S = 3600
+
+
+def make_populationsim_run_one(
+    *,
+    command_prefix: Sequence[str] = DEFAULT_POPSIM_COMMAND,
+    timeout_s: int = DEFAULT_POPSIM_TIMEOUT_S,
+    cwd: Optional[Union[str, Path]] = None,
+    dry_run: bool = False,
+    subprocess_run: Callable = subprocess.run,
+) -> Callable[[str], BatchResult]:
+    """Build a concrete ``run_one`` that runs PopulationSim on a batch folder.
+
+    Faithful to popsimprep ``batch_run_popsim.py``'s ``run_popsim``: a completed
+    folder (output already present) is skipped without spawning a process; the
+    command is ``[*command_prefix, "-w", <folder>]`` run with ``cwd`` defaulting to
+    the folder's parent and a hard ``timeout_s``; a non-zero exit, a missing output
+    file, a timeout, or any other exception classify the batch as ``failed``
+    (never raised, so one bad batch does not abort the run -- the run summary keeps
+    the failure visible).
+
+    ``subprocess_run`` is injectable so the runner is unit-testable without
+    PopulationSim installed. The returned callable is suitable as ``run_one`` for
+    :func:`run_batches`.
+    """
+    def run_one(folder: str) -> BatchResult:
+        folder_path = Path(folder)
+        start = time.monotonic()
+
+        if is_completed(folder_path):
+            return BatchResult(str(folder), "skipped", "already completed",
+                               time.monotonic() - start)
+        if dry_run:
+            return BatchResult(str(folder), "succeeded", "dry run",
+                               time.monotonic() - start)
+
+        command = [*command_prefix, "-w", str(folder)]
+        run_cwd = str(cwd) if cwd is not None else str(folder_path.parent)
+        try:
+            result = subprocess_run(
+                command, cwd=run_cwd, capture_output=True, text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            return BatchResult(str(folder), "failed", f"timeout after {timeout_s}s",
+                               time.monotonic() - start)
+        except Exception as error:  # surface, never abort the whole run
+            return BatchResult(str(folder), "failed", str(error),
+                               time.monotonic() - start)
+
+        if result.returncode != 0:
+            return BatchResult(str(folder), "failed",
+                               f"exit code {result.returncode}",
+                               time.monotonic() - start)
+        if not is_completed(folder_path):
+            return BatchResult(str(folder), "failed", "no output file created",
+                               time.monotonic() - start)
+        return BatchResult(str(folder), "succeeded", "completed",
+                           time.monotonic() - start)
+
+    return run_one
