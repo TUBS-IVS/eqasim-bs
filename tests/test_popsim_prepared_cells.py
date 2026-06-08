@@ -98,3 +98,34 @@ def test_select_per_cell_targets_unknown_column_raises(tmp_path):
     cells = prepared_cells.load_prepared_cells(_toy_parquet(tmp_path))
     with pytest.raises(ValueError, match="not present"):
         prepared_cells.select_per_cell_targets(cells, ["does_not_exist"])
+
+
+# ---------------------------------------------------------------------------
+# add_age_sex_band_aggregates (single-year -> banded _agg, matching the controls)
+# ---------------------------------------------------------------------------
+
+def test_add_age_sex_band_aggregates_sums_bands():
+    df = pd.DataFrame({f"M_AGE_{i}": [float(i)] for i in range(101)})
+    for i in range(101):
+        df[f"F_AGE_{i}"] = [1.0]
+    out = prepared_cells.add_age_sex_band_aggregates(df)
+    # M_AGE values are i, so band 0-9 = 0+1+...+9 = 45; 80+ = sum(80..100).
+    assert out["M_AGE_0_9_agg"][0] == sum(range(10))
+    assert out["M_AGE_10_19_agg"][0] == sum(range(10, 20))
+    assert out["M_AGE_80_plus_agg"][0] == sum(range(80, 101))
+    # F all ones: band 0-9 has 10 years -> 10; 80+ has 80..100 -> 21.
+    assert out["F_AGE_0_9_agg"][0] == 10
+    assert out["F_AGE_80_plus_agg"][0] == 21
+    # All nine bands x both sexes are created (the control_field set).
+    for label in ["0_9", "10_19", "20_29", "30_39", "40_49",
+                  "50_59", "60_69", "70_79", "80_plus"]:
+        assert f"M_AGE_{label}_agg" in out.columns
+        assert f"F_AGE_{label}_agg" in out.columns
+
+
+def test_add_age_sex_band_aggregates_handles_missing_single_years():
+    df = pd.DataFrame({"M_AGE_0": [2.0], "M_AGE_5": [3.0], "F_AGE_0": [1.0]})
+    out = prepared_cells.add_age_sex_band_aggregates(df)
+    assert out["M_AGE_0_9_agg"][0] == 5.0   # 2 + 3
+    assert out["F_AGE_0_9_agg"][0] == 1.0
+    assert out["M_AGE_10_19_agg"][0] == 0.0  # no source columns -> 0

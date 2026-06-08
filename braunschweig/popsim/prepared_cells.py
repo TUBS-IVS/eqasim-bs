@@ -44,6 +44,63 @@ _GERMAN_TRANSLITERATION = str.maketrans(
 # Geography columns attached to the cells (and excluded from control targets).
 GEO_COLUMNS = ("ZENSUS100m", "ZENSUS1km", "STAAT", "WELT")
 
+# Ten-year age bands (lower, upper_inclusive, label); the last band is open-ended.
+# These match the popsimprep control_field set (M_AGE_<label>_agg / F_AGE_...).
+AGE_SEX_BANDS = (
+    (0, 9, "0_9"),
+    (10, 19, "10_19"),
+    (20, 29, "20_29"),
+    (30, 39, "30_39"),
+    (40, 49, "40_49"),
+    (50, 59, "50_59"),
+    (60, 69, "60_69"),
+    (70, 79, "70_79"),
+    (80, None, "80_plus"),
+)
+
+
+def add_age_sex_band_aggregates(
+    df: pd.DataFrame,
+    *,
+    prefixes: Sequence[str] = ("M", "F"),
+    single_year_max: int = 100,
+) -> pd.DataFrame:
+    """Add the banded ``{sex}_AGE_<band>_agg`` columns from single-year columns.
+
+    The prepared control set references ten-year age x sex bands
+    (``M_AGE_0_9_agg`` ... ``M_AGE_80_plus_agg`` and the ``F_`` equivalents). The
+    on-disk cell parquet carries only single-year columns (``M_AGE_0`` ...
+    ``M_AGE_100`` / ``F_AGE_*``), so this derives the bands by summing the
+    single-year columns -- reproducing the ``_with_aggs`` parquet the notebook
+    config expects. A band with no source columns present yields 0.
+
+    Parameters
+    ----------
+    df:
+        Cells frame with single-year ``{prefix}_AGE_<year>`` columns.
+    prefixes:
+        Sex prefixes to aggregate (``"M"`` / ``"F"``).
+    single_year_max:
+        Highest single-year age column (the open-ended last band runs to it).
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy of ``df`` with the ``_agg`` band columns added.
+    """
+    result = df.copy()
+    for prefix in prefixes:
+        for lower, upper, label in AGE_SEX_BANDS:
+            top = single_year_max if upper is None else upper
+            source = [
+                f"{prefix}_AGE_{year}"
+                for year in range(lower, top + 1)
+                if f"{prefix}_AGE_{year}" in result.columns
+            ]
+            target = f"{prefix}_AGE_{label}_agg"
+            result[target] = result[source].sum(axis=1) if source else 0.0
+    return result
+
 
 def _transliterate(name: str) -> str:
     if _unidecode is not None:
