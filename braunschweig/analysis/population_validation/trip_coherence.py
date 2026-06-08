@@ -82,6 +82,45 @@ def purpose_distribution(trips, purpose_col="following_purpose"):
     return activity.value_counts(normalize=True).to_dict()
 
 
+def purpose_participation_by_segment(persons, trips, segment_col,
+                                     purpose_value="work",
+                                     person_id_col="person_id",
+                                     purpose_col="following_purpose"):
+    """Share of persons with at least one trip of ``purpose_value`` (eqasim
+    purpose, e.g. "work") per value of ``segment_col``. The work-by-employed
+    version is the most direct "is the matching key working" KPI. Returns
+    [segment, segment_value, n_persons, n_with_purpose, participation_rate]."""
+    has_purpose_ids = set(
+        trips.loc[trips[purpose_col] == purpose_value, person_id_col].unique())
+    df = persons[[person_id_col, segment_col]].copy()
+    df["has_purpose"] = df[person_id_col].isin(has_purpose_ids)
+    grouped = df.groupby(segment_col, dropna=False)["has_purpose"].agg(["size", "sum"])
+    grouped = grouped.reset_index().rename(
+        columns={segment_col: "segment_value", "size": "n_persons", "sum": "n_with_purpose"})
+    grouped["segment"] = segment_col
+    grouped["purpose"] = purpose_value
+    grouped["participation_rate"] = grouped["n_with_purpose"] / grouped["n_persons"]
+    return grouped[["segment", "segment_value", "purpose", "n_persons",
+                    "n_with_purpose", "participation_rate"]]
+
+
+def trips_per_person_by_segment(persons, trips, segment_col,
+                                person_id_col="person_id"):
+    """Mean number of trips per person per value of ``segment_col`` (trip
+    generation differentiation). Returns [segment, segment_value, n_persons,
+    n_trips, trips_per_person]."""
+    counts = trips.groupby(person_id_col).size().rename("n_trips")
+    df = persons[[person_id_col, segment_col]].copy()
+    df = df.merge(counts, left_on=person_id_col, right_index=True, how="left")
+    df["n_trips"] = df["n_trips"].fillna(0)
+    grouped = df.groupby(segment_col, dropna=False)["n_trips"].agg(["size", "sum"])
+    grouped = grouped.reset_index().rename(
+        columns={segment_col: "segment_value", "size": "n_persons", "sum": "n_trips"})
+    grouped["segment"] = segment_col
+    grouped["trips_per_person"] = grouped["n_trips"] / grouped["n_persons"]
+    return grouped[["segment", "segment_value", "n_persons", "n_trips", "trips_per_person"]]
+
+
 def renormalize_scored(distribution):
     """Restrict a {mid_purpose -> share} distribution to the four scored W1
     purposes and re-normalise so they sum to 1. This makes the synthetic and W1
@@ -137,8 +176,12 @@ def segment_mobility_rate(persons, trips, segment_col, person_id_col="person_id"
 
 # Default segmentation dimensions: the exogenous anchors used as matching keys
 # in optimization step (1). Only those actually present in the persons frame are
-# evaluated (urban_class is present only when the matching feature is enabled).
-DEFAULT_SEGMENT_COLS = ("employed", "urban_class", "household_size")
+# evaluated. ``is_urban_resident`` is the urbanity column written to the output
+# persons.csv; ``urban_class`` is the raw matching-frame column -- listing both
+# means the breakdown works on a finished run output and on a raw frame.
+# ``household_size`` is merged onto persons from the households frame by the
+# runner before this is called.
+DEFAULT_SEGMENT_COLS = ("employed", "is_urban_resident", "urban_class", "household_size")
 
 
 def _srmse(realized: dict, target: dict) -> float:
@@ -188,6 +231,31 @@ def build_trip_coherence_report(persons, trips, data_path,
                       columns=["segment", "segment_value", "n_persons",
                                "n_mobile", "mobility_rate"]))
 
+    # Differentiation KPIs (does the richer matching produce demographically
+    # plausible, segment-specific activity chains?). Work-trip participation and
+    # trips-per-person by each present segment, plus the headline employed gap.
+    work_frames = [
+        purpose_participation_by_segment(persons, trips, c, "work", person_id_col)
+        for c in present
+    ]
+    work_participation = (pd.concat(work_frames, ignore_index=True)
+                          if work_frames else pd.DataFrame())
+    tpp_frames = [
+        trips_per_person_by_segment(persons, trips, c, person_id_col) for c in present
+    ]
+    trips_per_person = (pd.concat(tpp_frames, ignore_index=True)
+                        if tpp_frames else pd.DataFrame())
+
+    differentiation = {"work_share_employed_gap_pp": float("nan")}
+    if "employed" in persons.columns:
+        wp = purpose_participation_by_segment(persons, trips, "employed", "work",
+                                              person_id_col)
+        by_val = {bool(v): r for v, r in
+                  zip(wp["segment_value"], wp["participation_rate"])}
+        if True in by_val and False in by_val:
+            differentiation["work_share_employed_gap_pp"] = (
+                float(by_val[True] - by_val[False]) * 100.0)
+
     return {
         "n_persons": int(len(persons)),
         "n_trips": int(len(trips)),
@@ -197,6 +265,9 @@ def build_trip_coherence_report(persons, trips, data_path,
             "abs_delta": abs(float(overall) - float(target_mob)),
         },
         "mobility_by_segment": by_segment,
+        "work_participation_by_segment": work_participation,
+        "trips_per_person_by_segment": trips_per_person,
+        "differentiation": differentiation,
         "purpose": {
             "realized": realized,
             "target": target_pur,

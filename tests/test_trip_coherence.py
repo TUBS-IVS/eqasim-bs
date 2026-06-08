@@ -30,8 +30,10 @@ from braunschweig.analysis.population_validation.trip_coherence import (  # noqa
     mid_purpose_from_eqasim,
     mobility_rate,
     purpose_distribution,
+    purpose_participation_by_segment,
     renormalize_scored,
     segment_mobility_rate,
+    trips_per_person_by_segment,
     w1_scored_target,
     p36_mobility_target,
 )
@@ -102,6 +104,54 @@ def test_segment_mobility_rate_by_employed():
     rates = dict(zip(out["segment_value"].astype(str), out["mobility_rate"]))
     assert rates["True"] == 0.5
     assert rates["False"] == 0.5
+
+
+def test_purpose_participation_by_segment_work():
+    # Share of persons with >= 1 work trip, per employed segment. This is the
+    # most direct "is the employed matching key working" KPI: employed persons
+    # should have a much higher work-trip participation than non-employed.
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "employed": [True, True, False, False],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 3],
+        "following_purpose": ["work", "shop"],  # only person 1 (employed) works
+    })
+    out = purpose_participation_by_segment(persons, trips, "employed", purpose_value="work")
+    rates = dict(zip(out["segment_value"].astype(str), out["participation_rate"]))
+    assert rates["True"] == 0.5      # 1 of 2 employed has a work trip
+    assert rates["False"] == 0.0     # 0 of 2 non-employed has a work trip
+
+
+def test_trips_per_person_by_segment():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "employed": [True, True, False, False],
+    })
+    trips = pd.DataFrame({"person_id": [1, 1, 2, 3]})  # 2,1,1,0 trips per person
+    out = trips_per_person_by_segment(persons, trips, "employed")
+    means = dict(zip(out["segment_value"].astype(str), out["trips_per_person"]))
+    assert means["True"] == 1.5      # (2 + 1) / 2
+    assert means["False"] == 0.5     # (1 + 0) / 2
+
+
+def test_report_exposes_work_employed_gap_kpi():
+    # The headline differentiation KPI: employed work-trip participation minus
+    # non-employed, in percentage points. Strongly positive = the matching gives
+    # employed persons commute diaries.
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "employed": [True, True, False, False],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "following_purpose": ["work", "work", "shop"],
+    })
+    report = build_trip_coherence_report(
+        persons, trips, DATA_PATH, segment_cols=("employed",))
+    # employed: 2/2 work -> 100%; non-employed: 0/2 -> 0%; gap = 100 pp.
+    assert report["differentiation"]["work_share_employed_gap_pp"] == 100.0
 
 
 def test_build_trip_coherence_report_structure():
