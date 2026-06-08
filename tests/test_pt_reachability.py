@@ -295,3 +295,31 @@ def test_attach_population_nearest_fallback_counted():
     assert out["ewz"].iloc[0] == 100000, \
         "station outside all polygons must be filled via nearest-Gemeinde fallback"
     assert n_fallback == 1, "one station used the nearest-neighbour fallback; count must be 1"
+
+
+def test_attach_population_preserves_all_stations_with_nonunique_index():
+    """Two DISTINCT stations that share a non-unique pandas index must both appear in output.
+
+    Regression: the old dedup used `contained.index.duplicated(keep="first")` which
+    keyed on the caller's index, not station identity.  When two stations share the same
+    index label (e.g. from a filtered/concatenated frame), the second was silently
+    dropped.  After the fix, every input row must produce exactly one output row.
+    """
+    gem = gpd.GeoDataFrame(
+        [{"ars5": "15003", "ewz": 100000, "geometry": Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])},
+         {"ars5": "15081", "ewz": 2000,   "geometry": Polygon([(20, 0), (30, 0), (30, 10), (20, 10)])}],
+        crs="EPSG:25832",
+    )
+    # Two DISTINCT stations that share a non-unique index value (e.g. from a filtered frame).
+    stations = pd.DataFrame(
+        {"source_ars5": ["15003", "15081"], "stop_id": ["A", "B"],
+         "reach": ["direct", "direct"], "x": [5.0, 25.0], "y": [5.0, 5.0]},
+        index=[0, 0],
+    )
+    out, n_fallback = attach_station_population(stations, gem)
+    assert len(out) == 2, "both distinct stations must be present in the output; one must not be dropped"
+    assert set(out["stop_id"]) == {"A", "B"}, "both stop_ids must survive"
+    assert dict(zip(out["stop_id"], out["ewz"])) == {"A": 100000.0, "B": 2000.0}, \
+        "each station must receive the ewz of its containing Gemeinde"
+    assert n_fallback == 0, "both stations match by containment; fallback count must be 0"
+    assert out["ewz"].dtype == float, "ewz must be float dtype regardless of source column dtype"

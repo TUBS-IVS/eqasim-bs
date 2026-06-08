@@ -241,15 +241,22 @@ def attach_station_population(
         ``(stations_with_ewz, n_nearest_fallback)`` where:
 
         - ``stations_with_ewz``: plain ``pd.DataFrame`` (no geometry column) preserving
-          all input columns and adding ``ewz`` (float).
+          all input columns and adding ``ewz`` (float), one row per input station in
+          input order, regardless of the caller's index.
         - ``n_nearest_fallback`` (int): number of stations that were matched via the
           nearest-Gemeinde fallback rather than by containment.  Zero means the primary
           containment join covered all stations.
     """
+    # Reset to a clean 0-based positional index so the post-join dedup keys on
+    # station identity rather than the caller's (potentially non-unique) index.
+    # The original caller index is intentionally discarded; output order matches
+    # the input row order.
+    stations_reset = stations.reset_index(drop=True)
+
     # Build a GeoDataFrame of station POINTS in EPSG:25832.
     points = gpd.GeoDataFrame(
-        stations.copy(),
-        geometry=gpd.points_from_xy(stations["x"], stations["y"]),
+        stations_reset.copy(),
+        geometry=gpd.points_from_xy(stations_reset["x"], stations_reset["y"]),
         crs="EPSG:25832",
     )
 
@@ -257,12 +264,17 @@ def attach_station_population(
     # own source_ars5 after the join.
     gem = gemeinden[["ars5", "ewz", "geometry"]].rename(columns={"ars5": "gem_ars5"})
 
-    # PRIMARY: containment join.  A station that falls strictly inside a Gemeinde
-    # polygon receives that Gemeinde's ewz.
+    # PRIMARY: containment join (predicate="within") gives each station the ewz of
+    # the Gemeinde polygon it strictly falls inside.  Note: "within" excludes the
+    # polygon boundary, so a station exactly on a shared edge matches NO polygon and
+    # falls to the nearest-Gemeinde fallback below.  The dedup here guards against
+    # the rare case of overlapping polygons, where a single station point could lie
+    # strictly inside more than one polygon simultaneously.
     contained = gpd.sjoin(points, gem, predicate="within", how="left")
 
-    # De-duplicate: a station on a shared polygon boundary can match multiple polygons.
-    # Keep only the first match per original index position.
+    # De-duplicate on the clean positional index: collapse multiple polygon matches
+    # for ONE station to a single row while preserving every DISTINCT station.
+    # This is safe because stations_reset has a unique 0-based index.
     contained = contained[~contained.index.duplicated(keep="first")]
 
     # FALLBACK: stations that matched no polygon (ewz is NaN) -> nearest Gemeinde.
@@ -272,7 +284,7 @@ def attach_station_population(
     if n_nearest_fallback > 0:
         unmatched = points[missing_mask]
         nearest = gpd.sjoin_nearest(unmatched, gem, how="left")
-        # De-duplicate nearest results the same way.
+        # De-duplicate nearest results on the same clean positional index.
         nearest = nearest[~nearest.index.duplicated(keep="first")]
         # Use a column-level assignment to avoid the pandas iloc-inplace warning.
         ewz_series = contained["ewz"].copy()
@@ -284,9 +296,12 @@ def attach_station_population(
     result = pd.DataFrame(contained.drop(columns=drop_cols))
 
     # Restore the original column order: all input columns first, then ewz.
-    original_cols = list(stations.columns)
+    original_cols = list(stations_reset.columns)
     output_cols = original_cols + ["ewz"]
     # Keep any extra join artefact columns out of the output.
     result = result[[c for c in output_cols if c in result.columns]]
+
+    # Ensure ewz is always float, regardless of the source column dtype.
+    result["ewz"] = result["ewz"].astype(float)
 
     return result, n_nearest_fallback
