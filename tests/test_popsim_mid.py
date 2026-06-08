@@ -8,6 +8,8 @@ targeted cell load. Pure logic on tiny synthetic data.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -113,3 +115,71 @@ def test_filter_zgb_cells_by_kreis_ars5():
 def test_filter_zgb_cells_missing_column_raises():
     with pytest.raises(ValueError, match="ARS"):
         mid.filter_zgb_cells(pd.DataFrame({"ZENSUS100m": ["a"]}), ["03101"])
+
+
+# ---------------------------------------------------------------------------
+# run_popsim_mid (orchestration; PopulationSim injected)
+# ---------------------------------------------------------------------------
+
+def _orchestration_inputs():
+    df_100m = pd.DataFrame(
+        {
+            "GITTER_ID_100m": [
+                "CRS3035RES100mN2689000E4337000",
+                "CRS3035RES100mN2689100E4337000",
+                "CRS3035RES100mN2690000E4341000",
+                "CRS3035RES100mN2691000E4342000",
+            ],
+            "GITTER_ID_1km": [
+                "CRS3035RES1000mN2689000E4337000",
+                "CRS3035RES1000mN2689000E4337000",
+                "CRS3035RES1000mN2690000E4341000",
+                "CRS3035RES1000mN2691000E4342000",
+            ],
+        }
+    )
+    xwalk = folders.build_geo_crosswalk(df_100m)
+    cells = xwalk.copy()
+    cells["POP"] = [1.0, 2.0, 3.0, 4.0]
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    return cells, ["POP"], controls_df, seed_hh, seed_p
+
+
+def test_run_popsim_mid_batches_runs_and_merges(tmp_path):
+    cells, base_cols, controls_df, seed_hh, seed_p = _orchestration_inputs()
+
+    def fake_run_one(folder):
+        # Simulate PopulationSim: write one expanded household per 100m cell.
+        from braunschweig.popsim import batch as b
+        xwalk = pd.read_csv(Path(folder) / "data" / "geo_cross_walk.csv", dtype=str)
+        out_dir = Path(folder) / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        xwalk.assign(H_ID=1).to_csv(out_dir / "final_expanded_household_ids.csv", index=False)
+        return b.BatchResult(str(folder), "succeeded", "ok", 0.0)
+
+    report = mid.run_popsim_mid(
+        cells, base_cols, controls_df, seed_hh, seed_p,
+        work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        max_cells=2, run_one=fake_run_one, num_workers=1,
+    )
+    # 3 parents, max_cells=2 -> at least 2 batches; merged covers all 4 cells.
+    assert report.n_loaded >= 2
+    assert report.n_cells == 4
+    assert report.n_rows == 4
+
+
+# ---------------------------------------------------------------------------
+# synpp stage contract
+# ---------------------------------------------------------------------------
+
+def test_popsim_stage_exposes_synpp_contract():
+    from braunschweig.popsim import stage
+    assert callable(stage.configure)
+    assert callable(stage.execute)
+

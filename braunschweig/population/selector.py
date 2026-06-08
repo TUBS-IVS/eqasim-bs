@@ -27,13 +27,12 @@ from braunschweig.population.methods import (
 # The existing in-house IPF producer (alias target of ``data.census.filtered``).
 SIMPLE_IPF_OPEN_PRODUCER = "braunschweig.ipf.attributed"
 
-# Planned producer stage for the PopulationSim workflows (not yet implemented).
-POPSIM_PRODUCER = "braunschweig.popsim.stage"
+# PopulationSim producer stage (implemented for popsim_mid).
+POPSIM_MID_PRODUCER = "braunschweig.popsim.stage"
 
 # Phase in which each not-yet-implemented producer lands (for the error message).
 _POPSIM_PHASE = {
-    POPSIM_MID: "Phase 5 (PopulationSim handoff + popsim_mid)",
-    POPSIM_OPEN: "Phase 5/6 (popsim_open, open ENTD seed)",
+    POPSIM_OPEN: "Phase 6 (popsim_open, open ENTD seed)",
 }
 
 
@@ -70,11 +69,13 @@ def resolve_population_producer(method: str) -> str:
         )
     if method == SIMPLE_IPF_OPEN:
         return SIMPLE_IPF_OPEN_PRODUCER
-    if method in (POPSIM_OPEN, POPSIM_MID):
+    if method == POPSIM_MID:
+        return POPSIM_MID_PRODUCER
+    if method == POPSIM_OPEN:
         raise PopulationMethodNotImplemented(
             f"population.method = {method!r} is not implemented yet "
-            f"({_POPSIM_PHASE[method]}). Use 'simple_ipf_open' for now; the "
-            "pipeline will not silently fall back to it."
+            f"({_POPSIM_PHASE[method]}). Use 'simple_ipf_open' or 'popsim_mid'; the "
+            "pipeline will not silently fall back."
         )
     # Unreachable while POPULATION_METHODS and this dispatch stay in sync.
     raise ValueError(f"No producer mapping for population method {method!r}.")

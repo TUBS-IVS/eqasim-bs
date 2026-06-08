@@ -151,11 +151,14 @@ def test_simple_ipf_open_resolves_to_existing_producer():
     )
 
 
-@pytest.mark.parametrize("method", [POPSIM_OPEN, POPSIM_MID])
-def test_popsim_producers_not_implemented_no_fallback(method):
-    """popsim_* must raise NotImplementedError, never return the IPF producer."""
+def test_popsim_mid_resolves_to_popsim_stage():
+    assert selector.resolve_population_producer(POPSIM_MID) == "braunschweig.popsim.stage"
+
+
+def test_popsim_open_not_implemented_no_fallback():
+    """popsim_open must still raise (never silently fall back to the IPF producer)."""
     with pytest.raises(selector.PopulationMethodNotImplemented):
-        selector.resolve_population_producer(method)
+        selector.resolve_population_producer(POPSIM_OPEN)
 
 
 def test_selector_rejects_unknown_method():

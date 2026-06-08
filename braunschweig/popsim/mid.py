@@ -239,3 +239,47 @@ def cell_groups(cells_subset: pd.DataFrame) -> dict[str, list[str]]:
         str(parent): group["ZENSUS100m"].astype(str).tolist()
         for parent, group in cells_subset.groupby("ZENSUS1km", sort=True)
     }
+
+
+def run_popsim_mid(
+    cells: pd.DataFrame,
+    base_cols: Sequence[str],
+    controls_df: pd.DataFrame,
+    seed_households: pd.DataFrame,
+    seed_persons: pd.DataFrame,
+    *,
+    work_dir: Union[str, Path],
+    settings_yaml: str,
+    logging_yaml: str,
+    max_cells: int,
+    run_one,
+    num_workers: int = 3,
+) -> mergemod.MergeReport:
+    """Batch the cells into PopulationSim runs, execute them, and merge the output.
+
+    Partitions the 1 km parents into batches of at most ``max_cells`` 100 m cells
+    (1 km atomic), assembles one PopulationSim folder per batch, runs them
+    concurrently via the injected ``run_one`` (``batch.make_populationsim_run_one``
+    in production; a fake in tests), and merges the cell-disjoint outputs. Returns
+    the merge report (with the combined expanded-household table).
+
+    The seed (households + persons) is shared by every batch; only the controls /
+    crosswalk are batch-specific.
+    """
+    work_dir = Path(work_dir)
+    groups = cell_groups(cells)
+    partitions = batch.partition_by_1km(groups, max_cells)
+
+    batch_folders: list[str] = []
+    for index, km_cells in enumerate(partitions):
+        subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
+        folder = work_dir / f"batch_{index:03d}"
+        assemble_batch_folder(
+            folder, subset, base_cols, controls_df,
+            seed_households, seed_persons,
+            settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+        )
+        batch_folders.append(str(folder))
+
+    batch.run_batches(batch_folders, run_one, num_workers=num_workers)
+    return mergemod.merge_batch_folders(batch_folders)
