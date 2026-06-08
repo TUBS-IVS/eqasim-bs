@@ -72,15 +72,31 @@ def modal_split_deviation(counts: pd.DataFrame, mode_target: pd.DataFrame) -> pd
 
 
 def gate_flows(agents: pd.DataFrame) -> pd.DataFrame:
-    """Agent counts per (gate, direction, mode), keeping gate coordinates.
+    """Agent counts per ACTUAL entry point (entry_x, entry_y, entry_kind, direction, mode).
 
-    The per-gate validation output: how many in/out-commuters of each mode use
-    each cordon gate (mappable). ``gate_x``/``gate_y`` are carried through.
+    Groups boundary flows by the real boarding coordinate:
+
+    - PT in-commuters are placed at their rail station (``entry_kind="rail_station"``,
+      ``entry_x/entry_y`` = station coords) so the output map shows them at the
+      Bahnhof, not on the motorway.
+    - Car agents appear at their road gate (``entry_kind="road_gate"``).
+
+    ``gate_id`` is carried through for traceability (the road gate the agent is
+    associated with for network entry / PT fallback), but it is NOT the grouping key.
+
+    The input frame is expected to have the B5 schema with columns
+    ``[entry_x, entry_y, entry_kind, direction, mode, gate_id]``.
+    Output columns: ``[entry_x, entry_y, entry_kind, direction, mode, gate_id, n]``,
+    ordered descending by ``n``.
     """
+    group_keys = ["entry_x", "entry_y", "entry_kind", "direction", "mode"]
     counts = (
-        agents.groupby(["gate_id", "direction", "mode"], sort=True)
+        agents.groupby(group_keys, sort=True)
         .size()
         .reset_index(name="n")
     )
-    coords = agents.groupby("gate_id")[["gate_x", "gate_y"]].first().reset_index()
-    return counts.merge(coords, on="gate_id", how="left")
+    # Carry gate_id for traceability (first occurrence per entry point + kind).
+    if "gate_id" in agents.columns:
+        gate_lookup = agents.groupby(group_keys)["gate_id"].first().reset_index()
+        counts = counts.merge(gate_lookup, on=group_keys, how="left")
+    return counts.sort_values("n", ascending=False).reset_index(drop=True)

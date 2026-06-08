@@ -3,9 +3,17 @@
 Emits, into ``<out_dir>``:
   - ``commuter_validation.csv`` : counts per (Kreis, direction, mode), with
     deviation vs the BA Pendler OD target when provided.
-  - ``gates.csv``               : flows per (gate, direction, mode) + gate x/y.
-  - ``gates.gpkg``              : the same as point geometry (EPSG:25832) for QGIS.
-  - ``summary.md``              : a short human digest incl. modal-split deviation.
+  - ``gates.csv``               : flows per entry point (entry_x, entry_y,
+    entry_kind, direction, mode) + gate_id for traceability.
+  - ``gates.gpkg``              : the same as point geometry (EPSG:25832) for QGIS,
+    with ``entry_kind`` so road gates and rail stations are distinguishable.
+  - ``summary.md``              : a short human digest incl. modal-split deviation
+    and car-via-road-gate vs pt-via-rail-station counts.
+
+B6 change: the gates outputs now group by the ACTUAL entry point
+(``entry_x/entry_y/entry_kind``), so PT in-commuters appear at their real rail
+station in the map, not at the A2 motorway road gate.  The geometry is built from
+``entry_x/entry_y``.
 
 Pure I/O on top of :mod:`braunschweig.data.cordon.validation`; the synpp analysis
 stage calls this so "how well did we hit reality / where does boundary traffic
@@ -29,7 +37,14 @@ from braunschweig.data.cordon.validation import (
 def write_cordon_validation(out_dir: str, agents: pd.DataFrame, od_target=None,
                             mode_target=None, sampling_rate: float = 1.0,
                             crs: str = "EPSG:25832") -> dict:
-    """Write the commuter + per-gate validation outputs; return the file paths."""
+    """Write the commuter + per-entry-point validation outputs; return the file paths.
+
+    ``agents`` must have the B5 schema: columns ``[ars5, direction, mode,
+    entry_kind, entry_x, entry_y, gate_id]``.  ``entry_kind`` is ``"rail_station"``
+    for PT in-commuters placed at a Bahnhof or ``"road_gate"`` for car agents (and
+    PT agents reassigned to car because their source Kreis has no eligible rail
+    station).
+    """
     os.makedirs(out_dir, exist_ok=True)
 
     counts = counts_by_kreis_direction_mode(agents)
@@ -45,7 +60,8 @@ def write_cordon_validation(out_dir: str, agents: pd.DataFrame, od_target=None,
     gates_gpkg = os.path.join(out_dir, "gates.gpkg")
     gdf = gpd.GeoDataFrame(
         flows,
-        geometry=gpd.points_from_xy(flows["gate_x"], flows["gate_y"]),
+        # Geometry is the ACTUAL boarding point: rail station for PT, road gate for car.
+        geometry=gpd.points_from_xy(flows["entry_x"], flows["entry_y"]),
         crs=crs,
     )
     gdf.to_file(gates_gpkg, driver="GPKG")
@@ -67,6 +83,21 @@ def _write_summary(path: str, agents: pd.DataFrame, counts: pd.DataFrame,
     lines.append(f"- Agents: {len(agents):,}")
     for direction, sub in counts.groupby("direction"):
         lines.append(f"- {direction}: {int(sub['n'].sum()):,} agents")
+
+    # Entry-kind breakdown: car via road_gate vs PT via rail_station (B6 addition).
+    # This makes the primary/fallback split from the PT placement visible in the summary.
+    if "entry_kind" in agents.columns:
+        kind_counts = agents.groupby(["entry_kind", "mode"]).size()
+        n_road_gate = int(kind_counts.get(("road_gate", "car"), 0))
+        n_rail_station = int(kind_counts.get(("rail_station", "pt"), 0))
+        # PT agents reassigned to car (fallback) also board at a road_gate.
+        n_pt_to_car = int(kind_counts.get(("road_gate", "pt"), 0))
+        lines.append(f"- car via road_gate: {n_road_gate:,}")
+        lines.append(f"- pt via rail_station: {n_rail_station:,}")
+        if n_pt_to_car:
+            lines.append(
+                f"- pt reassigned to car (no rail station): {n_pt_to_car:,}")
+
     if mode_target is not None:
         lines += ["", "## Modal split vs target (percentage points)", "",
                   "| direction | mode | share_pct | target | pp_dev |",
