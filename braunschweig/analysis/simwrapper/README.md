@@ -19,8 +19,9 @@ python -m braunschweig.analysis.simwrapper.export `
     --label      <label>
 ```
 
-All three are required. `<out>` is the eqasim CSV output directory;
-`<cache>` is the synpp cache folder containing
+`--output-dir` and `--sim-cache` are required; `--label` is optional and
+defaults to the output-directory name. `<out>` is the eqasim CSV output
+directory; `<cache>` is the synpp cache folder containing
 `matsim.simulation.run__*.cache/simulation_output/`. The dashboard is
 written into `<out>/simwrapper/`.
 
@@ -38,9 +39,10 @@ written into `<out>/simwrapper/`.
 ### Layer-1 MATSim dashboards
 
 The network-volume, link-level, and agent-level dashboards produced by
-the Java simwrapper contrib (added to `org.eqasim.braunschweig.RunSimulation`
-in a later task) live in `<cache>/matsim.simulation.run__*.cache/simulation_output/`
-and are opened separately.
+the Java simwrapper contrib (registered in `org.eqasim.braunschweig.RunSimulation`
+behind the `--simwrapper` flag) live in
+`<cache>/matsim.simulation.run__*.cache/simulation_output/` and are opened
+separately.
 
 ### Opening the dashboard
 
