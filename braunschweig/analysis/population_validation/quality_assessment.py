@@ -25,10 +25,13 @@ CAUSE_HINTS = {
         "MiD P24.1 margins are rounded to integer percent and raked across "
         "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
     "employment": (
-        "MiD P9 employed share is over the 'Personen ab 14 Jahre' basis; the "
-        "realized base is matched to age 14+ (no upper bound). A residual "
-        "deviation can reflect the synthetic employment model rather than a "
-        "base mismatch."),
+        "The synthetic employment rate is raked to the OFFICIAL GENESIS "
+        "Regionalstatistik (13111, per Gemeinde x age x sex), not to MiD P9. P9 is "
+        "shown here as a cross-check, but its per-Kreis rate is noisy (MiD sample "
+        "~900/Kreis -> 43-59% spread vs the synthetic's stable ~44-49%), so most of "
+        "this deviation is P9 survey noise plus a ~4pp GENESIS-vs-P9 definitional "
+        "level difference -- NOT a synthesis error. Raking to P9 would overfit the "
+        "survey noise and is intentionally avoided."),
     # economic_status is intentionally NOT registered as a validation control
     # (no hard Kreis target exists -- it is Bayes-modelled from hhtype x region
     # and exported spatially via geo_export instead). Its hint key was removed
