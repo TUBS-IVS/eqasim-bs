@@ -60,10 +60,14 @@ def test_build_incommuter_frames_schema_and_counts():
     # work activities carry a unique in-commuter work facility id
     work_locs = frames["locations"][frames["locations"]["activity_index"] == 1]
     assert work_locs["location_id"].str.startswith("ic_work_").all()
-    # per-agent validation record: one row per in-commuter, with gate + direction + mode
+    # per-agent validation record: one row per in-commuter, with entry_kind + direction + mode.
+    # B5: the validation frame now uses entry_kind/entry_x/entry_y instead of gate_x/gate_y.
     val = frames["validation"]
     assert len(val) == 10
-    assert list(val.columns) == ["ars5", "direction", "mode", "gate_id", "gate_x", "gate_y"]
+    expected_cols = {"ars5", "direction", "mode", "gate_id", "entry_kind",
+                     "entry_x", "entry_y"}
+    assert expected_cols <= set(val.columns), \
+        f"validation frame missing columns; got {list(val.columns)}"
     assert (val["direction"] == "ein").all()
     assert set(val["mode"]) <= {"car", "pt"}
     persons = frames["persons"]
@@ -94,9 +98,16 @@ def test_walk_and_bike_are_never_assigned_to_incommuters():
 
 
 def test_pt_agents_board_at_pt_entry_stop():
+    # B5: pt_entry_stops now requires the new schema [source_ars5, stop_id, x, y, reach, ewz].
     gates, assignment, flows, zgb_work, hp, ht = _inputs()
-    pt_stops = pd.DataFrame([("03241", "stopA", 604000.0, 5841000.0)],
-                            columns=["source_ars5", "stop_id", "x", "y"])
+    pt_stops = pd.DataFrame({
+        "source_ars5": ["03241"],
+        "stop_id": ["stopA"],
+        "x": [604000.0],
+        "y": [5841000.0],
+        "reach": ["direct"],
+        "ewz": [50000.0],
+    })
     rng = np.random.default_rng(1)
     frames = build_incommuter_frames(
         flows=flows, zgb_kreise={"03101"}, sampling_rate=0.005,
@@ -106,10 +117,14 @@ def test_pt_agents_board_at_pt_entry_stop():
         n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
         pt_entry_stops=pt_stops)
     assert (frames["trips"]["mode"] == "pt").all()
-    # home (outside) location is the PT stop, not the road gate (605000, 5840000)
+    # home (outside) location is the PT station, not the road gate (605000, 5840000)
     home_loc = frames["locations"][frames["locations"]["activity_index"] == 0].iloc[0]
     assert abs(home_loc.geometry.x - 604000.0) < 1e-6
     assert abs(home_loc.geometry.y - 5841000.0) < 1e-6
+    # validation must record entry_kind="rail_station" and coords at the rail station.
+    val = frames["validation"]
+    assert (val["entry_kind"] == "rail_station").all(), \
+        "PT agents must have entry_kind=='rail_station'"
     # car-only commuters own no vehicle here
     assert len(frames["vehicles"]) == 0
 

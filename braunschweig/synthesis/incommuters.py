@@ -8,9 +8,11 @@ demand feature. It composes the already-tested building blocks:
   - mode_reference / plans: Mikrozensus fixed mode + resident-schema plan frames.
   - gate_entry:    network-entry time at the gate (work start - in-ZGB travel).
 
-It also derives the **PT entry stops** (rail/bus) per source Kreis from the cut
-transit schedule: stops on a route that also serves a ZGB stop, i.e. a one-seat
-(no-transfer) ride into the region, where PT in-commuters board.
+PT in-commuters board at a real rail STATION (Bahnhof) drawn from their source
+Kreis's eligible entry stations via population+accessibility weighting (B2/B3/B4).
+The station frame is produced by the ``braunschweig.data.cordon_pt_gates`` stage
+(schema: ``[source_ars5, stop_id, x, y, reach, ewz]``) and consumed here.  Car
+agents continue to board at their assigned road gate (unchanged).
 
 Region-neutral; the synpp stage wires the data sources. See
 ``docs/superpowers/specs/2026-06-05-cross-cordon-external-demand-design.md``.
@@ -31,6 +33,11 @@ from braunschweig.data.cordon.plans import (
     assign_fixed_mode, build_incommuter_activities, build_incommuter_locations,
     build_incommuter_trips, extract_commute_times, sample_donors,
     select_commuter_donors, straight_line_distance_km)
+# NOTE: braunschweig.data.cordon.pt_reachability imports RAIL_LIKE_MODES from this
+# module (incommuters), which creates a circular dependency if imported at module level.
+# weight_entry_stations and sample_pt_station_per_agent are therefore imported LOCALLY
+# inside build_incommuter_frames to break the cycle.  They are pure data functions and
+# the lazy import has no performance impact at production scale (called once per run).
 
 # Transit modes that count as regional rail for in-commuter boarding-stop selection.
 # A regional-rail (or S-Bahn / regional train) station is the realistic access point
@@ -254,16 +261,28 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             rng, band_edges=MID_DISTANCE_EDGES, gate_speed_kmh=30.0,
                             detour_factor=1.3, pt_entry_stops=None,
                             commute_modes=("car", "pt"),
-                            pt_min_zgb_routes=2, pt_prefer_rail=True,
+                            pt_transfer_penalty=0.5,
                             inkar_income=None, data_path=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
-    households. Deterministic given ``rng``. Home activities are tagged ``outside``
-    (eqasim fixes their mode); PT agents board at a well-connected (regional-rail /
-    multi-line) one-seat entry stop near their gate -- ``pt_min_zgb_routes`` is the
-    multi-line threshold and ``pt_prefer_rail`` whether rail stations are preferred
-    (see :func:`_pt_home_coords`).
+    households, validation. Deterministic given ``rng``.
+
+    Home activities are tagged ``outside`` (eqasim fixes their mode).  PT agents board
+    at a real rail STATION drawn from their source Kreis's eligible stations (weighted
+    by population+accessibility from :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations`).
+    Car agents board at the road gate (unchanged).
+
+    If a PT agent's source Kreis has NO eligible rail station (the draw returns None),
+    that agent is reassigned to ``"car"`` so it boards at its already-drawn road gate.
+    This reassignment is done BEFORE trips/persons/vehicles are built, so ``mode``,
+    ``car_availability``, and the vehicle list all reflect the final (post-reassignment)
+    mode consistently.  The fallback rate is counted and logged (CLAUDE.md
+    no-silent-fallback); a rate above 5 % triggers a WARNING prefix.
+
+    ``pt_transfer_penalty`` is passed to
+    :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations` (default
+    0.5): direct rail stations are preferred over one-transfer stations.
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     agents = expand_to_agents(inbound, sampling_rate)
@@ -293,16 +312,93 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # dropped probability mass is redistributed proportionally; see restrict_to_modes).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
     restricted_reference = restrict_to_modes(mode_reference, allowed=commute_modes)
-    modes = assign_fixed_mode(
+    modes = list(assign_fixed_mode(
         dist_km, restricted_reference,
-        lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng)
+        lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng))
 
-    # 3b) PT agents board at the nearest PT entry stop of their Kreis (if any). The
-    # primary/fallback split is counted + logged inside _pt_home_coords (the returned
-    # counts are not threaded further here; the home coords drawn are unchanged).
-    home_x, home_y, _pt_home_counts = _pt_home_coords(
-        orig_ars, modes, gate_x, gate_y, pt_entry_stops,
-        min_zgb_routes=pt_min_zgb_routes, prefer_rail=pt_prefer_rail)
+    # 3b) PT agents board at a real rail STATION drawn from their source Kreis's eligible
+    # stations (population+accessibility weighted).  This decouples PT boarding from road
+    # gates: a PT in-commuter is placed at a Bahnhof, not a motorway interchange.
+    #
+    # The new schema from the cordon_pt_gates stage is [source_ars5, stop_id, x, y, reach, ewz].
+    # Guard: if pt_entry_stops is None/empty or lacks the required columns (legacy/empty
+    # frames), the whole PT group is treated as having no eligible stations -> all
+    # reassigned to car (road-gate path) with a WARNING logged.
+    home_x = np.array(gate_x, dtype=float).copy()
+    home_y = np.array(gate_y, dtype=float).copy()
+
+    _has_new_schema = (
+        pt_entry_stops is not None
+        and len(pt_entry_stops) > 0
+        and "reach" in pt_entry_stops.columns
+        and "ewz" in pt_entry_stops.columns
+    )
+
+    if _has_new_schema:
+        # Local import to avoid the circular dependency between incommuters and
+        # pt_reachability (pt_reachability imports RAIL_LIKE_MODES from this module).
+        from braunschweig.data.cordon.pt_reachability import (  # noqa: PLC0415
+            sample_pt_station_per_agent, weight_entry_stations)
+        weighted = weight_entry_stations(pt_entry_stops, transfer_penalty=pt_transfer_penalty)
+        # Build a coordinate lookup: stop_id -> (x, y) from the full pt_entry_stops table.
+        _stop_xy = dict(zip(pt_entry_stops["stop_id"], zip(
+            pt_entry_stops["x"].astype(float), pt_entry_stops["y"].astype(float))))
+    else:
+        weighted = None
+
+    # Collect PT agent indices to process.
+    pt_indices = [i for i, m in enumerate(modes) if m == "pt"]
+    n_pt = len(pt_indices)
+    n_pt_at_station = 0   # primary: placed at a real rail station
+    n_pt_to_car = 0       # fallback: reassigned to car (no station in source Kreis)
+
+    if n_pt > 0 and weighted is not None:
+        pt_orig_ars = [orig_ars[i] for i in pt_indices]
+        station_draws = sample_pt_station_per_agent(pt_orig_ars, weighted, rng)
+        for list_pos, i in enumerate(pt_indices):
+            stop_id = station_draws[list_pos]
+            if stop_id is not None and stop_id in _stop_xy:
+                # PRIMARY: place PT agent at the drawn rail station.
+                sx, sy = _stop_xy[stop_id]
+                home_x[i] = sx
+                home_y[i] = sy
+                n_pt_at_station += 1
+            else:
+                # FALLBACK: source Kreis has no eligible rail station; reassign to car so
+                # the agent boards at its already-drawn road gate.  The home coords already
+                # hold gate_x/gate_y (from the copy above), so no coordinate change needed.
+                modes[i] = "car"
+                n_pt_to_car += 1
+    elif n_pt > 0:
+        # No eligible stations at all (None, empty, or legacy frame): reassign all PT to car.
+        for i in pt_indices:
+            modes[i] = "car"
+        n_pt_to_car = n_pt
+
+    # Log the PT placement split (CLAUDE.md no-silent-fallback).
+    if n_pt > 0:
+        fallback_share = 100.0 * n_pt_to_car / n_pt
+        warn = "WARNING: " if fallback_share > 5.0 else ""
+        if n_pt_to_car > 0:
+            print(
+                f"[braunschweig.incommuters] {warn}PT station placement: "
+                f"primary (rail station) {n_pt_at_station}/{n_pt} "
+                f"({100.0 * n_pt_at_station / n_pt:.1f}%), "
+                f"fallback (reassigned to car) {n_pt_to_car}/{n_pt} "
+                f"({fallback_share:.1f}%). A high fallback rate means many PT-demand "
+                f"Kreise lack a reachable rail entry station -- check the cordon_pt_gates "
+                f"stage and the cordon_pt_max_station_distance_km setting.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[braunschweig.incommuters] PT station placement: "
+                f"all {n_pt}/{n_pt} PT agents placed at rail stations (fallback 0.0%).",
+                flush=True,
+            )
+
+    # modes is now the FINAL mode list (post PT->car reassignment where needed).
+    modes = np.asarray(modes)
 
     # 3c) OUTSIDE access distance home->gate: the non-simulated portion of the trip.
     # The agent enters the simulated network at the gate; the home->gate leg (0 for
@@ -358,11 +454,23 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                                               "hbefa_emission"])
         vehicles = _build_legacy_vehicles(person_ids, modes)
     # Per-agent validation record (one row per in-commuter): source Kreis, direction,
-    # fixed mode, and the GATE it enters through (gate coords, not the PT-moved home),
-    # for the per-run commuter_validation + gate-flow outputs.
+    # final mode (post PT->car reassignment), and the ACTUAL boarding point.
+    #
+    # entry_kind: "rail_station" for PT agents placed at a rail station;
+    #             "road_gate" for car agents (incl. PT agents reassigned to car).
+    # entry_x/entry_y: the actual boarding point coordinates -- rail station for PT,
+    #                  road gate for car.  gate_id is kept for traceability (the road
+    #                  gate the agent is assigned to for both network entry and mode-
+    #                  fallback purposes).  Task B6 will consume entry_x/entry_y/entry_kind.
+    mode_arr = np.asarray(modes)
+    entry_kind = np.where(mode_arr == "pt", "rail_station", "road_gate")
+    # entry coords: for PT -> home_x/home_y (the station); for car -> gate_x/gate_y.
+    entry_x = np.where(mode_arr == "pt", home_x, gate_x)
+    entry_y = np.where(mode_arr == "pt", home_y, gate_y)
     validation = pd.DataFrame({
-        "ars5": orig_ars, "direction": "ein", "mode": np.asarray(modes),
-        "gate_id": gate_ids, "gate_x": gate_x, "gate_y": gate_y,
+        "ars5": orig_ars, "direction": "ein", "mode": mode_arr,
+        "entry_kind": entry_kind, "entry_x": entry_x, "entry_y": entry_y,
+        "gate_id": gate_ids,
     })
     return dict(persons=persons, trips=trips, activities=activities,
                 locations=locations, vehicles=vehicles,
@@ -409,142 +517,6 @@ def _sample_workplaces(dest_ars, zgb_work, rng):
         )
     return np.array(xs, dtype=float), np.array(ys, dtype=float), ids, n_fallback
 
-
-def _nearest_index(sx, sy, x, y):
-    """Index of the (sx, sy) point nearest to (x, y) by squared Euclidean distance."""
-    return int(np.argmin((sx - x) ** 2 + (sy - y) ** 2))
-
-
-def _major_mask(sub, min_zgb_routes, prefer_rail):
-    """Boolean mask over ``sub`` rows that are "major" (well-connected) entry stops.
-
-    A stop is major when it is a regional-rail station (``is_rail``, only counted if
-    ``prefer_rail``) OR sits on at least ``min_zgb_routes`` distinct ZGB-serving routes
-    (a multi-line hub / higher frequency). If the connectivity columns are absent
-    (legacy frames built before this feature), no stop can be classed major and the
-    selection degrades to the old nearest-overall behaviour.
-    """
-    if "n_zgb_routes" not in sub.columns and "is_rail" not in sub.columns:
-        return np.zeros(len(sub), dtype=bool)
-    mask = np.zeros(len(sub), dtype=bool)
-    if prefer_rail and "is_rail" in sub.columns:
-        mask = mask | sub["is_rail"].to_numpy(dtype=bool)
-    if "n_zgb_routes" in sub.columns:
-        mask = mask | (sub["n_zgb_routes"].to_numpy(dtype=float) >= float(min_zgb_routes))
-    return mask
-
-
-def _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_entry_stops,
-                    min_zgb_routes=2, prefer_rail=True):
-    """Home coords = road gate for car; PT agents board at a REAL PT entry stop.
-
-    Each PT in-commuter's candidate pool is the one-seat-to-ZGB entry stops of its own
-    source Kreis (PRIMARY); if its Kreis has none, the pool is ALL entry stops anywhere
-    (Kreis FALLBACK -- never the road gate; PT must use real transit data). Within the
-    pool, the agent PREFERS a "major" (well-connected) stop -- a regional-rail station
-    (``is_rail``, when ``prefer_rail``) or a multi-line hub on >= ``min_zgb_routes``
-    distinct ZGB-serving routes -- and boards the NEAREST such major stop to its road
-    gate. This replaces the pure geometric nearest-stop rule, which could pick a single
-    low-frequency village bus halt over a nearby regional-rail station. If the pool has
-    NO major stop, the agent boards the nearest stop overall (still a one-seat ride into
-    ZGB -- the previous behaviour). Only if there are no PT entry stops at all (no
-    regional GTFS) does the road gate remain (WORST fallback).
-
-    Selection is fully deterministic (nearest by squared Euclidean distance, no RNG). If
-    the connectivity columns (``n_zgb_routes`` / ``is_rail``) are absent (legacy callers
-    / test frames), every stop is treated as minor and the behaviour is exactly the old
-    nearest-stop rule.
-
-    The outcomes are counted per PT agent and both the primary/fallback Kreis split and
-    the major/minor connectivity split are logged (with a "WARNING: " prefix when the
-    non-primary or minor share is high) so a systematic PT-stop key mismatch -- or a
-    surprising lack of well-connected entry stops -- is visible rather than silent
-    (CLAUDE.md "Fallback transparency").
-
-    Returns ``(home_x, home_y, counts)`` where ``counts`` is a dict with integer keys
-    ``own_kreis_stop`` (primary Kreis), ``nearest_anywhere_stop`` (Kreis fallback),
-    ``road_gate`` (worst fallback), ``major_stop`` (rail / multi-line stop chosen),
-    ``minor_stop`` (nearest-only stop chosen), and ``pt_agents`` (the PT total).
-    """
-    home_x = np.array(gate_x, dtype=float).copy()
-    home_y = np.array(gate_y, dtype=float).copy()
-    counts = {"own_kreis_stop": 0, "nearest_anywhere_stop": 0, "road_gate": 0,
-              "major_stop": 0, "minor_stop": 0, "pt_agents": 0}
-    n_pt = int(np.sum(np.asarray(modes) == "pt"))
-    counts["pt_agents"] = n_pt
-    if pt_entry_stops is None or len(pt_entry_stops) == 0:
-        # No PT entry stops at all -> every PT agent keeps the road gate (worst fallback).
-        counts["road_gate"] = n_pt
-        _log_pt_home_fallback(counts)
-        return home_x, home_y, counts
-    by_kreis = {k: sub for k, sub in pt_entry_stops.groupby("source_ars5")}
-    for i, (ars5, mode) in enumerate(zip(orig_ars, modes)):
-        if mode != "pt":
-            continue
-        sub = by_kreis.get(ars5)
-        if sub is not None:
-            counts["own_kreis_stop"] += 1
-        else:
-            sub = pt_entry_stops
-            counts["nearest_anywhere_stop"] += 1
-        sx = sub["x"].to_numpy(dtype=float)
-        sy = sub["y"].to_numpy(dtype=float)
-        major = _major_mask(sub, min_zgb_routes, prefer_rail)
-        if major.any():
-            # Prefer well-connected (rail / multi-line) stops: nearest AMONG the major ones.
-            idx = np.flatnonzero(major)
-            j = idx[_nearest_index(sx[idx], sy[idx], gate_x[i], gate_y[i])]
-            counts["major_stop"] += 1
-        else:
-            # No major stop in the pool -> nearest overall (still a one-seat ride to ZGB).
-            j = _nearest_index(sx, sy, gate_x[i], gate_y[i])
-            counts["minor_stop"] += 1
-        home_x[i] = float(sx[j]); home_y[i] = float(sy[j])
-    _log_pt_home_fallback(counts)
-    return home_x, home_y, counts
-
-
-def _log_pt_home_fallback(counts):
-    """Log the PT-boarding Kreis and connectivity splits as rates (CLAUDE.md transparency).
-
-    Two orthogonal splits are reported per PT agent:
-
-    * Kreis split: primary = boards a one-seat entry stop of its OWN source Kreis;
-      non-primary = nearest-anywhere stop fallback + road-gate (no-GTFS) worst fallback.
-      A high non-primary share means a systematic PT-stop -> source-Kreis key mismatch.
-    * Connectivity split: major = boards a regional-rail / multi-line hub; minor = no
-      major stop in the pool, so the nearest stop overall was used. A high minor share
-      means few well-connected one-seat entry stops were available (or the connectivity
-      columns were absent, e.g. a legacy frame).
-
-    A high non-primary OR minor share is prefixed "WARNING: " so either issue is visible
-    rather than silent.
-    """
-    n_pt = counts["pt_agents"]
-    if n_pt == 0:
-        return
-    primary = counts["own_kreis_stop"]
-    nearest = counts["nearest_anywhere_stop"]
-    gate = counts["road_gate"]
-    major = counts.get("major_stop", 0)
-    minor = counts.get("minor_stop", 0)
-    non_primary = nearest + gate
-    primary_share = 100.0 * primary / n_pt
-    non_primary_share = 100.0 * non_primary / n_pt
-    major_share = 100.0 * major / n_pt
-    minor_share = 100.0 * minor / n_pt
-    level = "WARNING: " if (non_primary_share > 5.0 or minor_share > 50.0) else ""
-    print(
-        f"[braunschweig.incommuters] {level}PT boarding: "
-        f"Kreis split primary {primary}/{n_pt} ({primary_share:.1f}%) own-Kreis entry "
-        f"stop, fallback {non_primary} ({non_primary_share:.1f}%) = "
-        f"{nearest} nearest-anywhere stop + {gate} road gate (no PT entry stop in their "
-        f"Kreis); connectivity split major {major} ({major_share:.1f}%) rail/multi-line "
-        f"hub, minor {minor} ({minor_share:.1f}%) nearest-only (no major stop in pool). "
-        f"A high fallback rate means a PT-stop vs source-Kreis key mismatch; a high minor "
-        f"rate means few well-connected one-seat entry stops were available.",
-        flush=True,
-    )
 
 
 def _agent_times(donors, hts_trips, person_col, dist_km, home_to_gate_km,
@@ -792,8 +764,8 @@ def _empty_frames(crs):
                                             "hbefa_cat", "hbefa_tech", "hbefa_size",
                                             "hbefa_emission"]),
         households=pd.DataFrame(columns=["household_id", "person_id"]),
-        validation=pd.DataFrame(columns=["ars5", "direction", "mode", "gate_id",
-                                         "gate_x", "gate_y"]))
+        validation=pd.DataFrame(columns=["ars5", "direction", "mode", "entry_kind",
+                                         "entry_x", "entry_y", "gate_id"]))
 
 
 def configure(context):
@@ -809,13 +781,11 @@ def configure(context):
     # keep the legacy single default-car row (OFF-equivalence).
     context.config("vehicles_method", "default")
     context.config("cordon_gate_speed_kmh", 30.0)
-    # PT in-commuter boarding-stop selection (CLAUDE.md cordon PT realism): prefer
-    # well-connected one-seat entry stops (regional rail / multi-line hubs) over the
-    # geometrically nearest stop. ``cordon_pt_min_zgb_routes`` is the multi-line
-    # threshold (>= this many distinct ZGB-serving routes -> "major"); when
-    # ``cordon_pt_prefer_rail`` is True a regional-rail station also counts as major.
-    context.config("cordon_pt_min_zgb_routes", 2)
-    context.config("cordon_pt_prefer_rail", True)
+    # PT in-commuter boarding: accessibility multiplier for one-transfer rail stations.
+    # direct stations weight 1.0; transfer stations weight ``cordon_pt_transfer_penalty``.
+    # A lower value further de-emphasises transfer stations relative to direct ones.
+    # Must be in (0, 1]; default 0.5 (transfer stations get half the weight of direct).
+    context.config("cordon_pt_transfer_penalty", 0.5)
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -854,8 +824,7 @@ def execute(context):
         rng=rng,
         gate_speed_kmh=float(context.config("cordon_gate_speed_kmh")),
         pt_entry_stops=context.stage("braunschweig.data.cordon_pt_gates"),
-        pt_min_zgb_routes=int(context.config("cordon_pt_min_zgb_routes")),
-        pt_prefer_rail=bool(context.config("cordon_pt_prefer_rail")),
+        pt_transfer_penalty=float(context.config("cordon_pt_transfer_penalty")),
         inkar_income=context.stage("braunschweig.data.inkar.household_income"),
         # data_path drives the German NDS fleet draw for the in-commuter cars
         # (Task F6); only set it when the German fleet is active so OFF keeps the
