@@ -159,6 +159,69 @@ def p36_mobility_target(data_path):
     return float(row["mobil"]) / 100.0
 
 
+def _mid_table_by_kreis(data_path, table):
+    """Load a MiD reference table and drop the ZGB-aggregate row, returning the
+    per-Kreis rows keyed by the 5-digit ``ars5``."""
+    path = f"{data_path}/braunschweig/mid/{table}.csv"
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
+    return df[df["ars5"] != "03ZGB"].copy()
+
+
+def w1_scored_target_by_kreis(data_path):
+    """MiD W1 scored four-purpose target per Kreis: {ars5 -> {purpose -> share}}."""
+    df = _mid_table_by_kreis(data_path, "mid2023_W1")
+    return {
+        row["ars5"]: renormalize_scored({p: float(row[p]) for p in SCORED_MID_PURPOSES})
+        for _, row in df.iterrows()
+    }
+
+
+def p36_mobility_target_by_kreis(data_path):
+    """MiD P36_1 mobility rate per Kreis: {ars5 -> share mobile}."""
+    df = _mid_table_by_kreis(data_path, "mid2023_P36_1")
+    return {row["ars5"]: float(row["mobil"]) / 100.0 for _, row in df.iterrows()}
+
+
+def trip_coherence_by_kreis(persons, trips, data_path, geo_col="ars5",
+                            person_id_col="person_id", purpose_col="following_purpose"):
+    """Per-Kreis trip coherence for spatial visualisation: realised mobility rate
+    and scored purpose shares per Kreis, each with its MiD per-Kreis target
+    (P36_1 / W1) and signed delta, plus work-trip participation. Returns a
+    DataFrame keyed by ``ars5`` (joinable to the Kreis polygons).
+
+    ``persons`` must carry the home ``geo_col`` (ars5)."""
+    w1 = w1_scored_target_by_kreis(data_path)
+    p36 = p36_mobility_target_by_kreis(data_path)
+    tp = trips.merge(persons[[person_id_col, geo_col]], on=person_id_col, how="left")
+
+    rows = []
+    for geo, grp in persons.groupby(geo_col, dropna=False):
+        geo_trips = tp[tp[geo_col] == geo]
+        mobile_ids = set(geo_trips[person_id_col].unique())
+        work_ids = set(geo_trips.loc[geo_trips[purpose_col] == "work", person_id_col])
+        mob = float(grp[person_id_col].isin(mobile_ids).mean())
+        realised = renormalize_scored(purpose_distribution(geo_trips, purpose_col))
+        target_mob = p36.get(geo, float("nan"))
+        target_pur = w1.get(geo, {})
+
+        row = {
+            geo_col: geo,
+            "n_persons": int(len(grp)),
+            "mobility_rate": mob,
+            "mobility_target": float(target_mob),
+            "mobility_delta_pp": (mob - target_mob) * 100.0,
+            "work_participation": float(grp[person_id_col].isin(work_ids).mean()),
+        }
+        for p in SCORED_MID_PURPOSES:
+            r = realised.get(p, float("nan"))
+            t = float(target_pur.get(p, float("nan")))
+            row[f"purpose_{p}_realised"] = r
+            row[f"purpose_{p}_w1"] = t
+            row[f"purpose_{p}_delta_pp"] = (r - t) * 100.0
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def segment_mobility_rate(persons, trips, segment_col, person_id_col="person_id"):
     """Mobility rate per value of ``segment_col`` (e.g. employed / urban_class /
     household_size). Returns a long-form DataFrame

@@ -29,12 +29,15 @@ from braunschweig.analysis.population_validation.trip_coherence import (  # noqa
     build_trip_coherence_report,
     mid_purpose_from_eqasim,
     mobility_rate,
+    p36_mobility_target_by_kreis,
     purpose_distribution,
     purpose_participation_by_segment,
     renormalize_scored,
     segment_mobility_rate,
+    trip_coherence_by_kreis,
     trips_per_person_by_segment,
     w1_scored_target,
+    w1_scored_target_by_kreis,
     p36_mobility_target,
 )
 
@@ -182,6 +185,41 @@ def test_build_trip_coherence_report_structure():
     # Segment breakdown for the requested column is present.
     seg = report["mobility_by_segment"]
     assert set(seg["segment"].unique()) == {"employed"}
+
+
+def test_per_kreis_targets_are_keyed_by_ars5():
+    w1 = w1_scored_target_by_kreis(DATA_PATH)
+    p36 = p36_mobility_target_by_kreis(DATA_PATH)
+    # The ZGB-overall aggregate row must be excluded; the ZGB Kreis 03101 present.
+    assert "03ZGB" not in w1 and "03ZGB" not in p36
+    assert "03101" in w1 and "03101" in p36
+    # Each Kreis purpose target is a normalised four-purpose distribution.
+    assert abs(sum(w1["03101"].values()) - 1.0) < 1e-9
+    assert 0.5 < p36["03101"] < 1.0
+
+
+def test_trip_coherence_by_kreis_realised_vs_target():
+    # Two Kreise; persons carry their home ars5. Per-Kreis mobility + purpose
+    # shares with the matching MiD per-Kreis targets and signed deltas.
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "ars5": ["03101", "03101", "03103", "03103"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 3],
+        "following_purpose": ["work", "shop", "leisure"],
+    })
+    out = trip_coherence_by_kreis(persons, trips, DATA_PATH)
+    by = out.set_index("ars5")
+    # 03101: persons 1,2; only person 1 is mobile -> 0.5.
+    assert by.loc["03101", "mobility_rate"] == 0.5
+    # 03103: persons 3,4; only person 3 is mobile -> 0.5.
+    assert by.loc["03103", "mobility_rate"] == 0.5
+    # Columns for mapping are present (realised, target, signed delta).
+    assert "mobility_target" in out.columns
+    assert "mobility_delta_pp" in out.columns
+    assert "purpose_freizeit_delta_pp" in out.columns
+    assert "work_participation" in out.columns
 
 
 def test_segment_cols_absent_from_persons_are_skipped():

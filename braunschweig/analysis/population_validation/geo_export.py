@@ -100,7 +100,8 @@ def _aggregate_level(persons, households, vehicles, geo_col,
 def write_geo_package(out_dir, persons, households, vehicles,
                       gemeinde_poly, kreis_poly,
                       person_spec=None, household_spec=None, vehicle_spec=None,
-                      deviation_kreis=None, deviation_gemeinde=None) -> dict:
+                      deviation_kreis=None, deviation_gemeinde=None,
+                      trip_coherence_kreis=None) -> dict:
     """Write the multi-layer GPKG + per-level CSVs.
 
     Parameters
@@ -164,6 +165,10 @@ def write_geo_package(out_dir, persons, households, vehicles,
                                  person_spec, household_spec, vehicle_spec)
     if deviation_kreis is not None:
         agg_kreis = agg_kreis.merge(deviation_kreis, on="ars5", how="left")
+    # Per-Kreis trip-coherence (realised vs MiD W1/P36 + signed deltas) so the
+    # purpose/mobility gaps are mappable alongside the demographic deviations.
+    if trip_coherence_kreis is not None:
+        agg_kreis = agg_kreis.merge(trip_coherence_kreis, on="ars5", how="left")
     kreis = kreis_poly.merge(agg_kreis, on="ars5", how="left")
     kreis.to_file(str(gpkg), layer="kreis_aggregat", driver="GPKG", mode="a")
 

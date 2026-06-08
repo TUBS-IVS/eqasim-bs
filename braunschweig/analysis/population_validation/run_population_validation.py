@@ -226,11 +226,29 @@ def run(ns) -> dict:
                 vehicles_gdf = gpd.GeoDataFrame(veh, geometry="geometry", crs=frames.homes.crs)
         kreis_poly = kreise[["ars5", "geometry"]]
         gem_poly = spatial.load_gemeinden(frames.homes.crs)[["commune_id", "geometry"]]
+
+        # Per-Kreis trip coherence (realised vs MiD W1/P36 + signed deltas), merged
+        # onto the kreis_aggregat GPKG layer so the purpose/mobility gaps are
+        # mappable next to the demographic deviations. Needs the home ars5 (on
+        # persons_geo) and the donor trips; skipped loudly if either is absent.
+        trip_coherence_kreis = None
+        if frames.trips is not None:
+            try:
+                trip_coherence_kreis = TC.trip_coherence_by_kreis(
+                    persons_geo[["person_id", "ars5"]], frames.trips, DATA_PATH)
+                trip_coherence_kreis.to_csv(
+                    out / "trip_coherence_by_kreis.csv", index=False)
+            except Exception:
+                LOGGER.exception(
+                    "Per-Kreis trip coherence failed; GPKG kreis layer without it.")
+                trip_coherence_kreis = None
+
         geo_paths = GE.write_geo_package(
             out_dir=out, persons=persons_gdf, households=households_gdf,
             vehicles=vehicles_gdf, gemeinde_poly=gem_poly, kreis_poly=kreis_poly,
             deviation_kreis=_deviation_wide(long, "kreis", "ars5"),
-            deviation_gemeinde=_deviation_wide(long, "gemeinde", "commune_id"))
+            deviation_gemeinde=_deviation_wide(long, "gemeinde", "commune_id"),
+            trip_coherence_kreis=trip_coherence_kreis)
 
     report = {
         "label": label, "source_kind": frames.source_kind,
