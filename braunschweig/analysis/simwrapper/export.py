@@ -449,3 +449,47 @@ def emit_od(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("od", emit_od))
+
+
+def emit_quality(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Quality tab with checks against MiD reference values.
+
+    CSV written: ``quality_checks.csv`` with columns ``check``, ``value``,
+    ``threshold``, ``status`` — one row per quality check present in the
+    record's ``comparisons`` sub-dict.
+
+    Currently emits rows for:
+    - Commute distance EMD vs MiD P13 (from ``comparisons.distance_distribution``)
+    - Mean commute vs MiD P13 percent deviation (from ``comparisons.commute_mean_km``)
+
+    Returns ``None`` when neither check is present in the record.
+    """
+    cmp = record.get("comparisons", {})
+    dd = cmp.get("distance_distribution")
+    cm = cmp.get("commute_mean_km")
+    if not dd and not cm:
+        return None
+    rows = []
+    if dd:
+        rows.append((
+            "Commute distance EMD vs MiD P13",
+            dd.get("emd"),
+            f"<= {dd.get('tolerance')}",
+            "OK" if dd.get("ok") else "FAIL",
+        ))
+    if cm:
+        rows.append((
+            "Mean commute vs MiD P13 (%)",
+            cm.get("diff_pct"),
+            "informational",
+            "",
+        ))
+    df = pd.DataFrame(rows, columns=["check", "value", "threshold", "status"])
+    n = w.write_csv(folder, "quality_checks.csv", df)
+    return w.dashboard(
+        "Quality", "Quality checks vs MiD reference",
+        {"table": [w.card_table("Checks", n, width=2)]},
+    )
+
+
+_REGISTRY.append(("quality", emit_quality))

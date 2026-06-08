@@ -89,7 +89,6 @@ def record() -> dict:
     }
 
 
-@pytest.mark.xfail(reason="emitters added in Tasks 4-10", strict=False)
 def test_export_run_writes_tabs(tmp_path: Path, record: dict):
     paths = ex.export_run(record, tmp_path)
     yamls = sorted(p.name for p in tmp_path.glob("dashboard-*.yaml"))
@@ -161,6 +160,15 @@ def test_emit_convergence(tmp_path, record):
     assert {"iteration", "avg_executed"}.issubset(sc.columns)
     di = pd.read_csv(tmp_path / "distance_evolution.csv")
     assert {"iteration", "avg_trip_km"}.issubset(di.columns)
+
+
+def test_emit_quality(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_quality(record, tmp_path)
+    assert board["header"]["tab"] == "Quality"
+    df = pd.read_csv(tmp_path / "quality_checks.csv")
+    assert {"check", "value", "threshold", "status"}.issubset(df.columns)
 
 
 def test_emit_od_table(tmp_path, record):
