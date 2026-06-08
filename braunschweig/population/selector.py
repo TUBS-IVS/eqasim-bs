@@ -1,0 +1,80 @@
+"""Resolve ``population.method`` to the synpp stage that produces the population.
+
+The *producer* is the stage that yields the discrete persons/households frame
+consumed by the downstream enrichment + MATSim writers. Today that frame is
+produced by the in-house IPF chain via ``braunschweig.ipf.attributed`` (aliased
+to ``data.census.filtered`` in the run configs); ``simple_ipf_open`` therefore
+resolves to that existing producer, preserving current behaviour exactly.
+
+The PopulationSim producers (``popsim_open`` / ``popsim_mid``) are introduced in
+later phases of the refactor. Until then, selecting them raises a clear
+``NotImplementedError`` -- the pipeline must NOT silently fall back to the IPF
+workflow (CLAUDE.md "Fallback transparency").
+
+This module only *resolves* the producer name; wiring it into the synpp DAG
+(swapping the ``data.census.filtered`` alias by method) is a later phase.
+"""
+
+from __future__ import annotations
+
+from braunschweig.population.methods import (
+    POPSIM_MID,
+    POPSIM_OPEN,
+    SIMPLE_IPF_OPEN,
+    is_valid_method,
+)
+
+# The existing in-house IPF producer (alias target of ``data.census.filtered``).
+SIMPLE_IPF_OPEN_PRODUCER = "braunschweig.ipf.attributed"
+
+# Planned producer stage for the PopulationSim workflows (not yet implemented).
+POPSIM_PRODUCER = "braunschweig.popsim.stage"
+
+# Phase in which each not-yet-implemented producer lands (for the error message).
+_POPSIM_PHASE = {
+    POPSIM_MID: "Phase 5 (PopulationSim handoff + popsim_mid)",
+    POPSIM_OPEN: "Phase 5/6 (popsim_open, open ENTD seed)",
+}
+
+
+class PopulationMethodNotImplemented(NotImplementedError):
+    """Raised when a recognised-but-not-yet-wired method is selected."""
+
+
+def resolve_population_producer(method: str) -> str:
+    """Return the synpp producer-stage name for ``method``.
+
+    Parameters
+    ----------
+    method:
+        A validated population method (see ``braunschweig.population.methods``).
+
+    Returns
+    -------
+    str
+        The dotted synpp stage name that produces the population frame.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not a known method (defensive; callers should validate
+        via ``braunschweig.population.config`` first).
+    PopulationMethodNotImplemented
+        If ``method`` is a recognised PopulationSim method that is not wired yet.
+        Never falls back to the IPF producer.
+    """
+    if not is_valid_method(method):
+        raise ValueError(
+            f"Unknown population method {method!r}; validate the config via "
+            "braunschweig.population.config.validate_population_config first."
+        )
+    if method == SIMPLE_IPF_OPEN:
+        return SIMPLE_IPF_OPEN_PRODUCER
+    if method in (POPSIM_OPEN, POPSIM_MID):
+        raise PopulationMethodNotImplemented(
+            f"population.method = {method!r} is not implemented yet "
+            f"({_POPSIM_PHASE[method]}). Use 'simple_ipf_open' for now; the "
+            "pipeline will not silently fall back to it."
+        )
+    # Unreachable while POPULATION_METHODS and this dispatch stay in sync.
+    raise ValueError(f"No producer mapping for population method {method!r}.")
