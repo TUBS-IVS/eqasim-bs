@@ -27,7 +27,9 @@ config:
 
   home_location_sampling: weighted
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "has_license"]
+  # Optimization step (1): richer exogenous HTS matching keys. See
+  # config_local_braunschweig_25pct.yml for the full rationale.
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- R-A: Gravity calibration (TASK-001).
   # Poisson-GLM MLE on BA Pendleratlas (α_O+γ_D+β d_ij; 939 ZGB pairs)

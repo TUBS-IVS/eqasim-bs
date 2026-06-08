@@ -87,7 +87,11 @@ config:
 
   home_location_sampling: weighted
   mode_choice: false
-  matching_attributes: ["sex", "age_class", "has_license"]
+  # Optimization step (1): richer exogenous HTS matching keys (employed,
+  # household_size_class, urban_class). See config_local_braunschweig_25pct.yml
+  # for the full rationale. urban_class target column added by
+  # braunschweig.ipf.attributed.attach_urban_class (commune_id -> RegioStaR-2).
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- Tier A3: reactivate couple / studies / socioprofessional_class person
   # attributes (see config_local_braunschweig_25pct.yml for the full rationale).

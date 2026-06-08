@@ -34,6 +34,7 @@ from braunschweig.analysis.population_validation import (
     geo_export as GE,
     population_source as PS,
     quality_assessment as QA,
+    trip_coherence as TC,
     validation_chart as VC,
 )
 
@@ -156,6 +157,61 @@ def run(ns) -> dict:
         VC.dot_and_whisker(summary, out / "validation_chart_rmse.png", whisker="rmse")
     VC.quality_plot(quality, out / "quality_by_control.png")
 
+    # Optimization step (2): trip-coherence check against MiD W1 (purpose) and
+    # P36_1 (mobility), segmented by the matching anchors. Only runs when the
+    # source carries donor activity chains (<prefix>trips.csv). A failure here is
+    # logged loudly but does not abort the control validation above.
+    trip_json = None
+    if frames.trips is not None:
+        try:
+            # Merge household_size onto persons so the trip-coherence breakdown can
+            # segment by it (it lives on the households frame, not on persons).
+            persons_for_tc = frames.persons
+            if ("household_size" not in persons_for_tc.columns
+                    and "household_size" in frames.households.columns):
+                persons_for_tc = persons_for_tc.merge(
+                    frames.households[["household_id", "household_size"]],
+                    on="household_id", how="left")
+            tc = TC.build_trip_coherence_report(persons_for_tc, frames.trips, DATA_PATH)
+            tc["mobility_by_segment"].to_csv(
+                out / "trip_coherence_mobility_by_segment.csv", index=False)
+            pur = tc["purpose"]
+            pd.DataFrame({
+                "purpose": list(pur["target"]),
+                "realized_share": [pur["realized"].get(p) for p in pur["target"]],
+                "target_share": [pur["target"][p] for p in pur["target"]],
+                "abs_delta_pp": [pur["abs_delta_pp"][p] for p in pur["target"]],
+            }).to_csv(out / "trip_coherence_purpose.csv", index=False)
+            tc["work_participation_by_segment"].to_csv(
+                out / "trip_coherence_work_participation.csv", index=False)
+            tc["trips_per_person_by_segment"].to_csv(
+                out / "trip_coherence_trips_per_person.csv", index=False)
+            trip_json = {
+                "n_trips": tc["n_trips"],
+                "mobility": tc["mobility"],
+                "purpose": {k: v for k, v in pur.items()},
+                "differentiation": tc["differentiation"],
+                "mobility_by_segment": tc["mobility_by_segment"].to_dict(orient="records"),
+                "work_participation_by_segment":
+                    tc["work_participation_by_segment"].to_dict(orient="records"),
+                "trips_per_person_by_segment":
+                    tc["trips_per_person_by_segment"].to_dict(orient="records"),
+            }
+            LOGGER.info(
+                "Trip coherence: mobility %.1f%% (P36_1 %.1f%%, |d| %.1f pp); "
+                "purpose SRMSE vs W1 %.3f",
+                100 * tc["mobility"]["overall_rate"],
+                100 * tc["mobility"]["target_rate"],
+                100 * tc["mobility"]["abs_delta"], tc["purpose"]["srmse"])
+        except Exception:
+            LOGGER.exception(
+                "Trip-coherence check failed; continuing without it.")
+            trip_json = None
+    else:
+        LOGGER.info(
+            "No %strips.csv at the source; trip-coherence check skipped "
+            "(it needs donor activity chains).", frames.prefix)
+
     geo_paths: dict = {}
     if ns.geo:
         home_geom = homes_geo[["household_id", "ars5", "commune_id", "geometry"]]
@@ -185,6 +241,7 @@ def run(ns) -> dict:
         "n_vehicles": int(len(frames.vehicles)) if frames.vehicles is not None else 0,
         "family_scores": fam.to_dict(orient="records"),
         "quality": quality.to_dict(orient="records"),
+        "trip_coherence": trip_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False),
@@ -198,6 +255,28 @@ def run(ns) -> dict:
           "## Headline quality by family", "",
           fam.to_string(index=False) if not fam.empty else "_no targets_", "",
           "## Interpretation", "", _interpretation_markdown(quality), ""]
+    if trip_json is not None:
+        m = trip_json["mobility"]
+        md += ["## Trip coherence (donor activity chains vs MiD)", "",
+               f"- Mobility rate: {100 * m['overall_rate']:.1f}% "
+               f"(MiD P36_1 {100 * m['target_rate']:.1f}%, "
+               f"|delta| {100 * m['abs_delta']:.1f} pp)",
+               f"- Purpose distribution SRMSE vs MiD W1 (4 scored purposes): "
+               f"{trip_json['purpose']['srmse']:.3f}",
+               f"- [KPI] work-trip participation gap employed - not-employed: "
+               f"{trip_json['differentiation']['work_share_employed_gap_pp']:.1f} pp "
+               f"(higher = matching gives employed persons commute diaries)", "",
+               "Scored purpose shares (realised vs W1, re-normalised over the four "
+               "unambiguous purposes):", ""]
+        pur = trip_json["purpose"]
+        for p in pur["target"]:
+            md.append(f"  - {p}: {100 * pur['realized'].get(p, float('nan')):.1f}% vs "
+                      f"{100 * pur['target'][p]:.1f}% "
+                      f"(|delta| {pur['abs_delta_pp'][p]:.1f} pp)")
+        md += ["", "_Modal split is not shown: the synthesis trips.csv carries no "
+               "transport mode (written only by the MATSim mode-choice run), and "
+               "donor-inherited modes would be French-biased - see step 3 (MiD "
+               "donor) in the matching-optimization concept._", ""]
     (out / "summary.md").write_text("\n".join(md), encoding="utf-8")
     LOGGER.info("Wrote population validation to %s", out)
     return report

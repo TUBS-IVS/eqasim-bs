@@ -692,9 +692,60 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     return repeated
 
 
+# Sentinel for synthetic persons whose home commune has no RegioStaR-7 code in
+# the regiostar reference (optimization step 1). Kept as an explicit category so
+# such persons can only relax during HTS matching instead of being silently
+# defaulted to "urban"/"rural" (CLAUDE.md: no silent fallback).
+URBAN_CLASS_UNKNOWN = "unknown"
+
+
+def attach_urban_class(df, df_regiostar):
+    """Attach an ``urban_class`` column ({urban, rural, unknown}) to the synthetic
+    population from each person's home ``commune_id`` via the RegioStaR-2 collapse
+    (commune_id -> AGS-8 -> RegioStaR-7 -> urban/rural). Communes absent from the
+    regiostar reference receive ``URBAN_CLASS_UNKNOWN``. The mapped/unmapped rate
+    is logged so a broken commune join surfaces loudly.
+
+    Used by the HTS statistical matching (optimization step 1): the synthetic
+    target needs an ``urban_class`` key that is label-comparable with the French
+    HTS unite-urbaine urban/rural split.
+    """
+    from braunschweig.data.bbsr.regiostar import urban_class_by_commune
+
+    rs7_by_ags8 = dict(zip(
+        df_regiostar["commune_id"].astype(str),
+        df_regiostar["regiostar7"].astype("Int64"),
+    ))
+    labels = urban_class_by_commune(df["commune_id"], rs7_by_ags8)
+
+    n_total = len(labels)
+    n_mapped = int(labels.notna().sum())
+    rate = 100.0 * n_mapped / max(n_total, 1)
+    print(
+        f"[braunschweig.ipf.attributed] urban_class: mapped {n_mapped:,}/{n_total:,} "
+        f"({rate:.1f}%) via commune_id -> RegioStaR-2; "
+        f"unmapped {n_total - n_mapped:,} -> '{URBAN_CLASS_UNKNOWN}'."
+    )
+    if n_total and (n_total - n_mapped) / n_total > 0.10:
+        print(
+            "[braunschweig.ipf.attributed] WARNING: urban_class unmapped rate > 10% "
+            "- the commune_id -> AGS-8 -> RegioStaR-7 join is likely broken."
+        )
+
+    df["urban_class"] = labels.fillna(URBAN_CLASS_UNKNOWN).to_numpy()
+    return df
+
+
 def configure(context):
     context.stage("braunschweig.ipf.model")
     context.config("random_seed")
+    # Optimization step (1): when ``urban_class`` is a configured HTS matching key,
+    # the synthetic target needs an ``urban_class`` column (commune_id ->
+    # RegioStaR-2). The regiostar stage is staged ONLY when the key is actually
+    # requested, so the default (key absent) keeps the legacy dependency graph and
+    # byte-identical output.
+    if "urban_class" in context.config("matching_attributes", []):
+        context.stage("braunschweig.data.bbsr.regiostar")
     context.config("braunschweig.ipf.use_household_size_margin", False)
     # Optional household-type assignment from Zensus 2022 1000A-2081
     # (commune × hh_size × hh_type, in households). Drawn after the
@@ -911,6 +962,14 @@ def execute(context):
             "[braunschweig.ipf.attributed] socioprofessional_class shares: "
             + ", ".join(f"{k}={v:.1%}" for k, v in spc_counts.items())
         )
+
+    # Optimization step (1): attach the urban/rural matching key when requested.
+    # Gated by the presence of "urban_class" in matching_attributes so the default
+    # path adds no column (byte-identical) and stages no extra dependency. The key
+    # is registered with a default in configure(); the execute context takes no
+    # default, so it is read here without one.
+    if "urban_class" in context.config("matching_attributes"):
+        df = attach_urban_class(df, context.stage("braunschweig.data.bbsr.regiostar"))
 
     return df
 

@@ -23,6 +23,10 @@ class PopulationFrames:
     source_kind: str
     source_path: str
     prefix: str
+    # Donor-derived activity chains (purpose + times). Present when a
+    # ``<prefix>trips.csv`` exists next to the population CSVs; consumed by the
+    # trip-coherence check (optimization step 2). None when absent.
+    trips: pd.DataFrame | None = None
 
 
 def _detect_prefix(directory: Path) -> str:
@@ -40,12 +44,16 @@ def _read_dir(directory: Path, prefix: str, kind: str) -> PopulationFrames:
     homes = gpd.read_file(directory / f"{prefix}homes.gpkg")
     vehicles_path = directory / f"{prefix}vehicles.csv"
     vehicles = pd.read_csv(vehicles_path, sep=";") if vehicles_path.exists() else None
+    trips_path = directory / f"{prefix}trips.csv"
+    trips = pd.read_csv(trips_path, sep=";") if trips_path.exists() else None
     LOGGER.info(
-        "Loaded population from %s (%s): persons=%d households=%d homes=%d vehicles=%s",
+        "Loaded population from %s (%s): persons=%d households=%d homes=%d vehicles=%s trips=%s",
         directory, kind, len(persons), len(households), len(homes),
         "absent" if vehicles is None else len(vehicles),
+        "absent" if trips is None else len(trips),
     )
-    return PopulationFrames(persons, households, homes, vehicles, kind, str(directory), prefix)
+    return PopulationFrames(
+        persons, households, homes, vehicles, kind, str(directory), prefix, trips)
 
 
 def _resolve_cache_dir(sim_cache: Path) -> Path:
