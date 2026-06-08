@@ -64,9 +64,10 @@ def _write_one_person(person_row, write_income_eur):
     return buffer.getvalue().decode("utf-8")
 
 
-def _write_person_with_car_trip(car_availability, remode):
+def _write_person_with_car_trip(has_car_vehicle, remode, car_availability="all"):
     """Write a person with a home->work->home plan whose first leg mode is 'car',
-    returning the XML. Used to test the carless car-leg re-mode shim."""
+    returning the XML. ``has_car_vehicle`` controls whether the person owns a "car"
+    vehicle (the re-mode shim depends on vehicle ownership, not car_availability)."""
     from shapely.geometry import Point
 
     defaults = {
@@ -89,30 +90,38 @@ def _write_person_with_car_trip(car_availability, remode):
     trip = tuple({"person_id": 1, "mode": "car", "departure_time": 28800.0,
                   "travel_time": 600.0}[f] for f in pop.TRIP_FIELDS)
 
+    def _vehicle(vehicle_id, mode):
+        return tuple({"owner_id": 1, "vehicle_id": vehicle_id, "mode": mode}[f]
+                     for f in pop.VEHICLE_FIELDS)
+    vehicles = [_vehicle("1:car_passenger", "car_passenger")]
+    if has_car_vehicle:
+        vehicles.insert(0, _vehicle("1:car", "car"))
+
     buffer = io.BytesIO()
     writer = writers.PopulationWriter(buffer)
     writer.start_population()
-    pop.add_person(writer, person, [_activity("home"), _activity("work")], [trip], [],
+    pop.add_person(writer, person, [_activity("home"), _activity("work")], [trip], vehicles,
                    enable_urban_parking=False, write_income_eur=False,
                    remode_carless_car_legs=remode)
     writer.end_population()
     return buffer.getvalue().decode("utf-8")
 
 
-def test_carless_car_leg_remoded_to_car_passenger_when_flag_on():
-    xml = _write_person_with_car_trip("none", remode=True)
+def test_car_leg_remoded_to_car_passenger_when_no_car_vehicle_and_flag_on():
+    # No "car" vehicle (carless OR non-owner of a car-owning HH) -> re-moded.
+    xml = _write_person_with_car_trip(has_car_vehicle=False, remode=True)
     assert 'mode="car_passenger"' in xml
     assert 'mode="car"' not in xml.replace('car_passenger', '')
 
 
-def test_carless_car_leg_kept_when_flag_off_byte_identical():
-    xml = _write_person_with_car_trip("none", remode=False)
+def test_car_leg_kept_when_flag_off_byte_identical():
+    xml = _write_person_with_car_trip(has_car_vehicle=False, remode=False)
     assert 'mode="car"' in xml.replace('car_passenger', 'X')
 
 
-def test_car_available_person_keeps_car_leg_with_flag_on():
-    # Only carless persons are re-moded; a car-available person still drives.
-    xml = _write_person_with_car_trip("all", remode=True)
+def test_car_owner_keeps_car_leg_with_flag_on():
+    # A person who owns a "car" vehicle still drives, even with the flag on.
+    xml = _write_person_with_car_trip(has_car_vehicle=True, remode=True)
     assert 'mode="car"' in xml.replace('car_passenger', 'X')
 
 

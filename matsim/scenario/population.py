@@ -171,6 +171,15 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
 
     writer.end_attributes()
 
+    # Whether this person owns a routable "car" vehicle. With the household fleet
+    # only the assigned car owner(s) of a car-owning household get a "car" vehicle;
+    # carless persons AND non-owner members (carAvailability "all"/"some" but not
+    # the assigned owner) own only "car_passenger". Such persons cannot route a
+    # car-DRIVER leg, so the re-mode shim below depends on vehicle ownership, not on
+    # car_availability.
+    person_has_car_vehicle = any(
+        v[VEHICLE_FIELDS.index("mode")] == "car" for v in vehicles)
+
     writer.start_plan(selected = True)
 
     for activity, trip in itertools.zip_longest(activities, trips):
@@ -210,12 +219,14 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
 
         if not trip is None:
             mode = trip[TRIP_FIELDS.index("mode")]
-            # A carless person cannot drive: re-mode an initial car-driver leg to
-            # car_passenger so the plan is routable with the household fleet (the
-            # person owns no "car" vehicle). car_availability is then still enforced
-            # by the in-loop mode choice. No-op unless the flag is on.
+            # A person who owns no "car" vehicle cannot drive: re-mode an initial
+            # car-driver leg to car_passenger so the plan is routable with the
+            # household fleet. This covers carless persons AND non-owner members of
+            # car-owning households (carAvailability "all"/"some" but no assigned
+            # car). car_availability stays enforced by the in-loop mode choice.
+            # No-op unless the flag is on.
             if (remode_carless_car_legs and mode == "car"
-                    and person[person_fields.index("car_availability")] == "none"):
+                    and not person_has_car_vehicle):
                 mode = "car_passenger"
             writer.add_leg(
                 mode = mode,
