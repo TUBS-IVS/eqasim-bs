@@ -247,7 +247,15 @@ config:
   braunschweig.inkar_year: latest
   braunschweig.home_density_weighting: true
   braunschweig.buildings_path: braunschweig/buildings
-  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+  # Cordon network source: a Germany-wide pbf clipped to the ZGB + 30 km ring
+  # (scripts/clip_osm_to_cordon_ring.py). The Geofabrik niedersachsen extract is
+  # clipped at the Niedersachsen state border, so east of ZGB (Sachsen-Anhalt:
+  # A2 Magdeburg, A39, B188 Wolfsburg, Helmstedt) there are no roads and NO eastern
+  # cordon gates are derived. The germany ring pbf reaches ~30 km beyond ZGB in every
+  # direction so whole-region gates are created. Requires the clipped pbf to exist
+  # (run scripts/clip_osm_to_cordon_ring.py first). See
+  # docs/superpowers/plans/2026-06-08-whole-region-cordon-gates-and-pt-bahnhof-entry.md.
+  osm_path_bavaria: osm/germany-latest.zgb_ring.osm.pbf
 
   # External toolchain (Linux paths - installed on PATH, see server setup).
   osmosis_binary: /usr/bin/osmosis
