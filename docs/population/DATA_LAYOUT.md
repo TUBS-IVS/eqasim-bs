@@ -31,6 +31,8 @@ eqasim-data/data/braunschweig/
       MiD2023_Personen.csv
       MiD2023_Wege.csv
       (other MiD2023_*.csv as needed)
+    buildings/                    <-- building stock tagged with 100 m cell + has_home (handoff)
+      buildings_with_households_zgb.gpkg
     seed_open/                    <-- open seed for popsim_open (e.g. ENTD-derived); see below
   mid/                            <-- EXISTING committed derived MiD aggregates (unchanged)
     mid2023_*.csv
@@ -59,6 +61,18 @@ built from it (documented + reproducible, never restricted).
 | `inputs/MiD2023/.../CSV/MiD2023_Haushalte.csv` | `popsim/mid2023_raw/MiD2023_Haushalte.csv` | RESTRICTED; PopulationSim seed (households) |
 | `inputs/MiD2023/.../CSV/MiD2023_Personen.csv` | `popsim/mid2023_raw/MiD2023_Personen.csv` | RESTRICTED; PopulationSim seed (persons) |
 | `inputs/MiD2023/.../CSV/MiD2023_Wege.csv` | `popsim/mid2023_raw/MiD2023_Wege.csv` | RESTRICTED; trip/activity source (popsim_mid) |
+| `inputs/buildings_with_households.gpkg` | `popsim/buildings/buildings_with_households_zgb.gpkg` | 7.58 M MultiPolygons, EPSG:25832; fields incl. `cell_id` (=ZENSUS100m), `has_home`, `hh_count`; the cell->building handoff target |
+
+## Controls are the prepared cell columns (popsim_mid)
+
+The 100 m cell parquet is already prepared with the binned control marginals. As in
+the popsimprep notebook (Step 2), the PopulationSim control **targets are the cell
+parquet columns themselves** (cleaned + suffixed `_ZENSUS100m` / `_ZENSUS1km`), with
+the 1 km totals aggregated from the 100 m values. The per-control **seed expression**
+(how to count that quantity on the MiD seed) is the declarative control spec. So the
+cell-column -> control-target binding is: target column name == a prepared cell
+column; no synthetic renaming. `braunschweig.popsim.control_spec` provides typed
+control definitions; the concrete target set follows the prepared parquet columns.
 
 ## Provenance (to verify)
 
