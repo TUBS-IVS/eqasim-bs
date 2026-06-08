@@ -1,0 +1,112 @@
+"""Map MiD 2023 donor attributes to the eqasim schema (popsim_mid enrichment).
+
+The synthetic popsim_mid persons/households carry their MiD donor columns; this
+module maps them to the eqasim attribute schema. All code -> meaning mappings are
+grounded in the MiD 2023 codebook (Codeplaene B1), documented inline, not invented.
+
+Covered here (the simulation-relevant attributes available from the standard MiD
+household/person tables): employment, driving licence, economic status, household
+income (EUR), number of cars, and the derived car availability. PT subscription
+and bicycle availability need additional MiD columns and are a follow-on.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+# MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment
+# (Angestellte/Arbeiter, Beamte, Selbststaendige, geringfuegig, Elternzeit-but-
+# employed, mithelfende Angehoerige, Wehr-/Freiwilligendienst); 8+ are not employed
+# (Ausbildung, Schueler, Student, Rentner, arbeitslos, ...). 99 = keine Angabe.
+EMPLOYED_TAET = frozenset({1, 2, 3, 4, 5, 6, 7})
+
+# MiD P_FSCHEIN (Fuehrerscheinbesitz ja/nein): 1 = ja, 2 = nein, 9 = keine Angabe.
+LICENSE_YES = 1
+
+# MiD oek_status (oekonomischer Status, 1..5) -> eqasim 5-class economic status.
+ECONOMIC_STATUS_BY_OEK_STATUS = {
+    1: "very_low",
+    2: "low",
+    3: "medium",
+    4: "high",
+    5: "very_high",
+}
+
+# MiD hheink_gr1 (monatliches HH-Nettoeinkommen, 15 Gruppen) -> EUR midpoint of the
+# codebook range; the open-ended top group (>7000) uses a conservative estimate.
+INCOME_GROUP_MIDPOINT_EUR = {
+    1: 250.0,    # unter 500
+    2: 700.0,    # 500 - 900
+    3: 1200.0,   # 900 - 1500
+    4: 1750.0,   # 1500 - 2000
+    5: 2300.0,   # 2000 - 2600
+    6: 2800.0,   # 2600 - 3000
+    7: 3300.0,   # 3000 - 3600
+    8: 3800.0,   # 3600 - 4000
+    9: 4300.0,   # 4000 - 4600
+    10: 4800.0,  # 4600 - 5000
+    11: 5300.0,  # 5000 - 5600
+    12: 5800.0,  # 5600 - 6000
+    13: 6300.0,  # 6000 - 6600
+    14: 6800.0,  # 6600 - 7000
+    15: 8000.0,  # mehr als 7000 (open-ended estimate)
+}
+
+# MiD H_ANZAUTO missing code (keine Angabe) -> treated as 0 cars.
+CARS_MISSING_CODE = 99
+
+
+def map_employed(persons: pd.DataFrame, *, taet_col: str = "P_TAET") -> pd.DataFrame:
+    """Add a boolean ``employed`` from MiD ``P_TAET`` (codes 1..7 = erwerbstaetig)."""
+    out = persons.copy()
+    out["employed"] = out[taet_col].isin(EMPLOYED_TAET)
+    return out
+
+
+def map_has_license(persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN") -> pd.DataFrame:
+    """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` (1 = ja)."""
+    out = persons.copy()
+    out["has_license"] = out[license_col] == LICENSE_YES
+    return out
+
+
+def map_economic_status(
+    households: pd.DataFrame, *, status_col: str = "oek_status"
+) -> pd.DataFrame:
+    """Add ``economic_status`` (very_low..very_high) from MiD ``oek_status`` (1..5)."""
+    out = households.copy()
+    out["economic_status"] = out[status_col].map(ECONOMIC_STATUS_BY_OEK_STATUS)
+    return out
+
+
+def map_household_income_eur(
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1"
+) -> pd.DataFrame:
+    """Add ``household_income_eur`` from the MiD ``hheink_gr1`` group midpoints."""
+    out = households.copy()
+    out["household_income_eur"] = out[group_col].map(INCOME_GROUP_MIDPOINT_EUR)
+    return out
+
+
+def map_number_of_cars(
+    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO"
+) -> pd.DataFrame:
+    """Add ``number_of_cars`` from MiD ``H_ANZAUTO`` (the 99 missing code -> 0)."""
+    out = households.copy()
+    cars = out[cars_col].where(out[cars_col] != CARS_MISSING_CODE, 0)
+    out["number_of_cars"] = cars.fillna(0).astype(int)
+    return out
+
+
+def derive_car_availability(n_cars: int, n_adults: int) -> str:
+    """Derive eqasim car availability {none, some, all} from cars vs. adults.
+
+    No car -> ``none``; at least as many cars as adults -> ``all`` (every adult can
+    drive); otherwise ``some``. With no adults a car still covers the household
+    (``all``).
+    """
+    if n_cars <= 0:
+        return "none"
+    if n_adults <= 0 or n_cars >= n_adults:
+        return "all"
+    return "some"
