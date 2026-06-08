@@ -161,3 +161,14 @@ def test_emit_convergence(tmp_path, record):
     assert {"iteration", "avg_executed"}.issubset(sc.columns)
     di = pd.read_csv(tmp_path / "distance_evolution.csv")
     assert {"iteration", "avg_trip_km"}.issubset(di.columns)
+
+
+def test_emit_per_kreis(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_per_kreis(record, tmp_path)
+    assert board["header"]["tab"] == "Per-Kreis"
+    df = pd.read_csv(tmp_path / "per_kreis_sim.csv")
+    assert {"ars5", "name", "mean_km", "n_trips"}.issubset(df.columns)
+    types = {c["type"] for row in board["layout"].values() for c in row}
+    assert "csv" in types and "bar" in types

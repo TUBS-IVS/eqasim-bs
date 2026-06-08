@@ -305,3 +305,47 @@ def emit_convergence(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 _REGISTRY.append(("time-of-day", emit_time_of_day))
 _REGISTRY.append(("convergence", emit_convergence))
+
+
+def emit_per_kreis(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Per-Kreis tab with a table and mean commute bar chart.
+
+    CSV written: ``per_kreis_sim.csv`` with columns ``ars5``, ``name``,
+    ``n_trips``, ``mean_km``, ``median_km``, ``car_pct``, ``pt_pct``,
+    ``bicycle_pct``, ``walk_pct`` — one row per Kreis present in the record.
+
+    Returns ``None`` when no per-Kreis data is found.
+    """
+    pk = record.get("matsim", {}).get("per_kreis_sim") or {}
+    if not pk:
+        return None
+    rows_data = []
+    for ars5, d in pk.items():
+        ms = d.get("mode_share_pct", {})
+        rows_data.append({
+            "ars5": ars5,
+            "name": d.get("name", ars5),
+            "n_trips": d.get("n_trips"),
+            "mean_km": d.get("mean_km"),
+            "median_km": d.get("median_km"),
+            "car_pct": ms.get("car"),
+            "pt_pct": ms.get("pt"),
+            "bicycle_pct": ms.get("bicycle"),
+            "walk_pct": ms.get("walk"),
+        })
+    df = pd.DataFrame(rows_data).sort_values("name")
+    n = w.write_csv(folder, "per_kreis_sim.csv", df)
+    return w.dashboard(
+        "Per-Kreis", "Per-Kreis simulation metrics (commute origin)",
+        {
+            "table": [w.card_table("Per-Kreis table", n, width=2)],
+            "mean": [w.card_bar(
+                "Mean commute distance by Kreis", n,
+                x="name", columns=["mean_km"],
+                y_axis_name="km", width=2,
+            )],
+        },
+    )
+
+
+_REGISTRY.append(("per-kreis", emit_per_kreis))
