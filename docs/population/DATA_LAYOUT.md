@@ -25,7 +25,7 @@ eqasim-data/data/braunschweig/
   popsim/                         <-- all NEW PopulationSim-workflow inputs (local-only)
     cells/                        <-- preprocessed Zensus 2022 INSPIRE grid (open data, but large)
       zensus2022_grid_1km_de_binned.parquet
-      zensus2022_grid_100m_de_binned_gender_backfill.parquet
+      zensus2022_grid_100m_de_prepared.parquet   <-- complete: binned + gender backfill + _agg age bands + RegioStaR
     mid2023_raw/                  <-- RESTRICTED MiD 2023 scientific-use microdata (popsim_mid only)
       MiD2023_Haushalte.csv
       MiD2023_Personen.csv
@@ -57,7 +57,7 @@ built from it (documented + reproducible, never restricted).
 | Original (in popsimprep `inputs/`) | Canonical (eqasim-bs) | Notes |
 |---|---|---|
 | `cells_1km_with_binneds.parquet` | `popsim/cells/zensus2022_grid_1km_de_binned.parquet` | 212,758 cells × 348 cols; EPSG:3035 INSPIRE; binned control marginals |
-| `cells_100m_with_gender_backf_binneds_happyorphans.parquet` | `popsim/cells/zensus2022_grid_100m_de_binned_gender_backfill.parquet` | 3,148,482 × 536; `is_orphan` flag; gender backfill; `scale`/`_adj` cols |
+| `cells_100m_with_gender_backf_binneds_happyorphans_with_aggs_regiostar.parquet` | `popsim/cells/zensus2022_grid_100m_de_prepared.parquet` | 3,148,482 × 570; the COMPLETE prepared table: binned + gender backfill + `is_orphan` + `scale`/`_adj` + banded `M_AGE_*_agg`/`F_AGE_*_agg` (the control_field set) + RegioStaR2..17. The base `..._happyorphans.parquet` (without `_agg`/RegioStaR) was superseded by this and deleted. |
 | `inputs/MiD2023/.../CSV/MiD2023_Haushalte.csv` | `popsim/mid2023_raw/MiD2023_Haushalte.csv` | RESTRICTED; PopulationSim seed (households) |
 | `inputs/MiD2023/.../CSV/MiD2023_Personen.csv` | `popsim/mid2023_raw/MiD2023_Personen.csv` | RESTRICTED; PopulationSim seed (persons) |
 | `inputs/MiD2023/.../CSV/MiD2023_Wege.csv` | `popsim/mid2023_raw/MiD2023_Wege.csv` | RESTRICTED; trip/activity source (popsim_mid) |
