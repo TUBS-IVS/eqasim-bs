@@ -12,6 +12,10 @@ def configure(context):
     context.config("matsim_last_iteration", 1)
     context.config("matsim_write_events_interval", 0)
     context.config("matsim_write_plans_interval", 0)
+    # Optional MATSim SimWrapper dashboards (network volumes, mode share, trips).
+    # Default off so the run is byte-identical; turning it on passes
+    # --simwrapper true to org.eqasim.braunschweig.RunSimulation.
+    context.config("simwrapper_dashboards", False)
     context.config("processes")
     # MATSim thread counts, decoupled from the (memory-bound) synthesis worker
     # count. global.numberOfThreads (routing / replanning / scoring between
@@ -50,12 +54,16 @@ def execute(context):
     # qsim.numberOfThreads (mobsim) are set explicitly here, not only baked into
     # the generated config, so the run reliably uses the intended counts. They
     # differ on purpose: the mobsim does not scale past ~4-8 threads.
-    eqasim.run(context, "org.eqasim.braunschweig.RunSimulation", [
+    simwrapper = bool(context.config("simwrapper_dashboards"))
+    run_args = [
         "--config-path", config_path,
         "--config:controler.lastIteration", str(last_iteration),
         "--config:controler.writeEventsInterval", str(write_events_interval),
         "--config:controler.writePlansInterval", str(write_plans_interval),
         "--config:global.numberOfThreads", str(global_threads),
         "--config:qsim.numberOfThreads", str(qsim_threads),
-    ])
+    ]
+    if simwrapper:
+        run_args += ["--simwrapper", "true"]
+    eqasim.run(context, "org.eqasim.braunschweig.RunSimulation", run_args)
     assert os.path.exists("%s/simulation_output/output_events.xml.gz" % context.path())
