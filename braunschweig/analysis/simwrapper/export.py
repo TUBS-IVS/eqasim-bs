@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
+
 from braunschweig.analysis.dashboard.build_dashboard import (
     REPO_ROOT,
     assemble_run_record,
@@ -51,3 +53,44 @@ def export_run(record: dict, target_dir: Path) -> list[Path]:
 
 # Filled in by Tasks 4-10. Declared here so the orchestrator imports cleanly.
 _REGISTRY: list[tuple[str, EmitFn]] = []
+
+
+def emit_overview(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a SimWrapper Overview tab with headline KPI tiles and a full KPI table.
+
+    Columns written to ``overview_kpis.csv``: ``metric``, ``value``.
+    Returns ``None`` when the eqasim sub-record is absent or unavailable.
+    """
+    eqa = record.get("eqasim", {})
+    ms = record.get("matsim", {})
+    cmp = record.get("comparisons", {})
+    if not eqa.get("available"):
+        return None
+    cm = cmp.get("commute_mean_km", {})
+    dd = cmp.get("distance_distribution", {})
+    rows = [
+        ("Persons", eqa.get("n_persons")),
+        ("Households", eqa.get("n_households")),
+        ("Trips", eqa.get("n_trips")),
+        ("Trips / person", eqa.get("trips_per_person")),
+        ("Mean trip (km)", ms.get("mean_trip_km")),
+        ("Mean commute (km)", cm.get("sim")),
+        ("Commute vs MiD (%)", cm.get("diff_pct")),
+        ("Distance EMD vs MiD", dd.get("emd")),
+        ("Final score", ms.get("score_final")),
+        ("Iterations", (ms.get("last_iteration") + 1) if ms.get("last_iteration") is not None else None),
+        ("Employed (%)", eqa.get("share_employed_pct")),
+        ("Driving licence (%)", eqa.get("share_license_pct")),
+        ("PT subscription (%)", eqa.get("share_pt_sub_pct")),
+    ]
+    df = pd.DataFrame(rows, columns=["metric", "value"])
+    name = w.write_csv(folder, "overview_kpis.csv", df)
+    return w.dashboard(
+        "Overview", f"Braunschweig run - {record.get('label', '')}",
+        {"kpis": [w.card_tile("Headline KPIs", name, width=2)],
+         "table": [w.card_table("All KPIs", name, width=2)]},
+        description="MiD 2023 ZGB as reference. Generated from the eqasim run outputs.",
+    )
+
+
+_REGISTRY.append(("overview", emit_overview))

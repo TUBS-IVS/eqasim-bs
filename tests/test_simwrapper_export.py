@@ -103,3 +103,15 @@ def test_export_run_writes_tabs(tmp_path: Path, record: dict):
             for card in row:
                 if "dataset" in card:
                     assert (tmp_path / card["dataset"]).exists(), card["dataset"]
+
+
+def test_emit_overview(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    board = ex.emit_overview(record, tmp_path)
+    assert board["header"]["tab"] == "Overview"
+    assert (tmp_path / "overview_kpis.csv").exists()
+    import pandas as pd
+    df = pd.read_csv(tmp_path / "overview_kpis.csv")
+    assert {"metric", "value"}.issubset(df.columns)
+    metrics = set(df["metric"])
+    assert "Persons" in metrics and "Mean commute (km)" in metrics
