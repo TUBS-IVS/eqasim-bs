@@ -163,6 +163,31 @@ def test_emit_convergence(tmp_path, record):
     assert {"iteration", "avg_trip_km"}.issubset(di.columns)
 
 
+def test_emit_od_table(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_od(record, tmp_path)
+    assert board["header"]["tab"] == "OD"
+    odf = pd.read_csv(tmp_path / "od_flows.csv", sep=";")
+    assert list(odf.columns)[:2] == ["origin", "destination"]
+    assert "work" in odf.columns and "home" in odf.columns
+    assert (tmp_path / "od_matrix_long.csv").exists()
+
+
+def test_emit_od_spider_real(tmp_path, record):
+    """Primary-path test: with real VG250 geometry the aggregate-od spider
+    must actually be produced (no silent fallback to table-only)."""
+    import pytest
+    from braunschweig.analysis.simwrapper import export as ex
+    from braunschweig.analysis.dashboard.build_dashboard import _load_zgb_kreise
+    if _load_zgb_kreise() is None:
+        pytest.skip("VG250 geometry not available in this environment")
+    board = ex.emit_od(record, tmp_path)
+    assert (tmp_path / "zones.shp").exists()
+    card_types = {c["type"] for row in board["layout"].values() for c in row}
+    assert "aggregate-od" in card_types
+
+
 def test_emit_per_kreis(tmp_path, record):
     from braunschweig.analysis.simwrapper import export as ex
     import pandas as pd

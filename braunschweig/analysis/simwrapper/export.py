@@ -349,3 +349,103 @@ def emit_per_kreis(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("per-kreis", emit_per_kreis))
+
+
+def _od_flows_frame(od: dict) -> pd.DataFrame:
+    """Build a flat OD flows DataFrame from the nested record structure.
+
+    Returns a DataFrame with columns ``origin``, ``destination``, and one
+    column per trip purpose. Zones include the "external" pseudo-zone when
+    present in the record.
+    """
+    zones = od["zones"]
+    purposes = od["purposes"]
+    recs = []
+    for i, o in enumerate(zones):
+        for j, d in enumerate(zones):
+            row: dict = {"origin": o, "destination": d}
+            for pur in purposes:
+                row[pur] = od["matrices"][pur][i][j]
+            recs.append(row)
+    return pd.DataFrame(recs)
+
+
+def _try_write_od_spider(record: dict, folder: Path, od: dict) -> "dict[str, Any] | None":
+    """Write zones.shp + return an aggregate-od card, or None if geometry absent.
+
+    Logs at INFO level when the spider is skipped so the absence is always
+    observable (no silent fallback to table-only).
+    """
+    try:
+        from braunschweig.analysis.dashboard.build_dashboard import _load_zgb_kreise
+        kreise = _load_zgb_kreise()
+    except Exception as exc:
+        LOGGER.info("[simwrapper] OD spider: could not load ZGB Kreise geometry: %s", exc)
+        kreise = None
+    if kreise is None:
+        LOGGER.info("[simwrapper] OD spider skipped (VG250 geometry not available)")
+        return None
+    gdf = kreise.rename(columns={"ars5": "id"})[["id", "name", "geometry"]]
+    gdf.to_file(folder / "zones.shp")
+    LOGGER.info("[simwrapper] OD spider: wrote zones.shp (%d Kreise)", len(gdf))
+    return {
+        "type": "aggregate-od",
+        "title": "Aggregate OD (spider)",
+        "width": 2,
+        "shpFile": "zones.shp",
+        "dbfFile": "zones.dbf",
+        "csvFile": "od_flows.csv",
+        "projection": "EPSG:25832",
+        "idColumn": "id",
+        "scaleFactor": int(round(1.0 / (record.get("sample_rate") or 1.0))),
+        "lineWidth": 1,
+    }
+
+
+def emit_od(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit an OD tab with a matrix table and, when VG250 geometry is available,
+    an aggregate-od spider diagram.
+
+    CSVs written:
+    - ``od_flows.csv``: semicolon-delimited (SimWrapper aggregate-od format),
+      columns ``origin``, ``destination``, one column per trip purpose.
+    - ``od_matrix_long.csv``: comma-delimited human-readable form with zone
+      name columns added for readability.
+
+    When the ZGB Kreise geometry is available the tab also includes an
+    ``aggregate-od`` spider card with ``zones.shp`` (EPSG:25832).
+
+    The spider is always attempted; its absence is logged at INFO level (not
+    silently ignored) so a missing geometry is immediately detectable.
+
+    Returns ``None`` when no OD zone data is present in the record.
+    """
+    od = record.get("matsim", {}).get("od_matrix") or {}
+    if not od.get("zones"):
+        return None
+
+    flows = _od_flows_frame(od)
+    # SimWrapper aggregate-od expects a SEMICOLON-delimited CSV.
+    flows.to_csv(folder / "od_flows.csv", sep=";", index=False, encoding="utf-8")
+
+    # Human-readable long form for the CSV table viewer (comma-delimited).
+    long = flows.copy()
+    name_map = dict(zip(od["zones"], od["zone_names"]))
+    long.insert(1, "origin_name", long["origin"].map(name_map))
+    long.insert(3, "destination_name", long["destination"].map(name_map))
+    w.write_csv(folder, "od_matrix_long.csv", long)
+
+    rows: dict[str, list] = {
+        "table": [w.card_table(
+            "OD flows (Kreis x Kreis, per purpose)",
+            "od_matrix_long.csv",
+            width=2,
+        )],
+    }
+    spider = _try_write_od_spider(record, folder, od)
+    if spider is not None:
+        rows["spider"] = [spider]
+    return w.dashboard("OD", "Origin-destination flows (ZGB Kreise)", rows)
+
+
+_REGISTRY.append(("od", emit_od))
