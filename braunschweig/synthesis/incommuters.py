@@ -187,7 +187,10 @@ def direct_ride_stop_stats(routes, stop_kreis, zgb_kreise, rail_like=RAIL_LIKE_M
 
     These quantify how well-connected each one-seat entry stop is, so a PT in-commuter
     can prefer a regional-rail station / multi-line hub over a single low-frequency bus
-    halt (see :func:`_pt_home_coords`). A stop appearing on the same physical line in
+    halt. (Legacy/debug helper: the production in-commuter PT path now places agents via
+    ``braunschweig.data.cordon.pt_reachability``; this connectivity table is retained for
+    ``scripts/extract_incommuter_pt_entry_stops.py`` and tests.) A stop appearing on the
+    same physical line in
     several route variants is counted per route entry, matching the schedule's notion of
     distinct serving routes (frequency proxy).
 

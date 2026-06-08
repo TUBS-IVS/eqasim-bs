@@ -90,13 +90,12 @@ def _write_summary(path: str, agents: pd.DataFrame, counts: pd.DataFrame,
         kind_counts = agents.groupby(["entry_kind", "mode"]).size()
         n_road_gate = int(kind_counts.get(("road_gate", "car"), 0))
         n_rail_station = int(kind_counts.get(("rail_station", "pt"), 0))
-        # PT agents reassigned to car (fallback) also board at a road_gate.
-        n_pt_to_car = int(kind_counts.get(("road_gate", "pt"), 0))
+        # Note: PT in-commuters whose source Kreis has no reachable rail station are
+        # reassigned to mode "car" upstream (braunschweig.synthesis.incommuters), so
+        # they are counted here under ("road_gate", "car"); that reassignment rate is
+        # logged at synthesis time, not separable from this post-hoc agent frame.
         lines.append(f"- car via road_gate: {n_road_gate:,}")
         lines.append(f"- pt via rail_station: {n_rail_station:,}")
-        if n_pt_to_car:
-            lines.append(
-                f"- pt reassigned to car (no rail station): {n_pt_to_car:,}")
 
     if mode_target is not None:
         lines += ["", "## Modal split vs target (percentage points)", "",
