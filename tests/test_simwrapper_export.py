@@ -130,3 +130,14 @@ def test_emit_mode_share(tmp_path, record):
     assert "iteration" in evo.columns and "car" in evo.columns
     types = {c["type"] for row in board["layout"].values() for c in row}
     assert {"bar", "line"}.issubset(types)
+
+
+def test_emit_distances(tmp_path, record):
+    from braunschweig.analysis.simwrapper import export as ex
+    import pandas as pd
+    board = ex.emit_distances(record, tmp_path)
+    assert board["header"]["tab"] == "Distances"
+    dist = pd.read_csv(tmp_path / "commute_distance_vs_mid.csv")
+    assert {"band", "sim_pct", "mid_pct"}.issubset(dist.columns)
+    mk = pd.read_csv(tmp_path / "mean_km_by_mode.csv")
+    assert {"mode", "mean_km"}.issubset(mk.columns)

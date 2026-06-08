@@ -159,3 +159,54 @@ def emit_mode_share(record: dict, folder: Path) -> "dict[str, Any] | None":
 
 
 _REGISTRY.append(("mode-share", emit_mode_share))
+
+
+def emit_distances(record: dict, folder: Path) -> "dict[str, Any] | None":
+    """Emit a Distances tab with commute distance distribution vs MiD P13 and mean km by mode.
+
+    CSVs written:
+    - ``commute_distance_vs_mid.csv``: columns ``band``, ``sim_pct``, ``mid_pct``
+      (distance band comparison against MiD P13; only when present).
+    - ``mean_km_by_mode.csv``: columns ``mode``, ``mean_km``
+      (mean trip distance per mode; only when present).
+
+    Returns ``None`` when MATSim output is absent or no distance data is present in the record.
+    """
+    ms = record.get("matsim", {})
+    cmp = record.get("comparisons", {})
+    if not ms.get("available"):
+        return None
+    rows: dict[str, list] = {}
+
+    # Commute distance distribution sim vs MiD P13 (grouped bar chart).
+    dd = cmp.get("distance_distribution")
+    if dd:
+        df = pd.DataFrame({
+            "band": dd["bands"],
+            "sim_pct": dd["sim_pct"],
+            "mid_pct": dd["mid_pct"],
+        })
+        n = w.write_csv(folder, "commute_distance_vs_mid.csv", df)
+        ok = "OK" if dd.get("ok") else "FAIL"
+        rows["dist"] = [w.card_bar(
+            f"Commute distance distribution - Sim vs MiD P13 "
+            f"(EMD {dd.get('emd')}, <={dd.get('tolerance')} {ok})",
+            n, x="band", columns=["sim_pct", "mid_pct"],
+            legend_titles=["Simulation", "MiD 2023"],
+            x_axis_name="km class", y_axis_name="%", width=2,
+        )]
+
+    # Mean trip distance by mode (bar chart).
+    mk = ms.get("mean_km_by_mode")
+    if mk:
+        df = pd.DataFrame([(m, v) for m, v in mk.items()], columns=["mode", "mean_km"])
+        n = w.write_csv(folder, "mean_km_by_mode.csv", df)
+        rows["mean_km"] = [w.card_bar(
+            "Mean distance by mode", n,
+            x="mode", columns=["mean_km"], y_axis_name="km",
+        )]
+
+    return w.dashboard("Distances", "Trip and commute distances", rows) if rows else None
+
+
+_REGISTRY.append(("distances", emit_distances))
