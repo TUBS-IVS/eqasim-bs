@@ -965,8 +965,10 @@ def execute(context):
 
     # Optimization step (1): attach the urban/rural matching key when requested.
     # Gated by the presence of "urban_class" in matching_attributes so the default
-    # path adds no column (byte-identical) and stages no extra dependency.
-    if "urban_class" in context.config("matching_attributes", []):
+    # path adds no column (byte-identical) and stages no extra dependency. The key
+    # is registered with a default in configure(); the execute context takes no
+    # default, so it is read here without one.
+    if "urban_class" in context.config("matching_attributes"):
         df = attach_urban_class(df, context.stage("braunschweig.data.bbsr.regiostar"))
 
     return df
