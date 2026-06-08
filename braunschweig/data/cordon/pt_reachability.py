@@ -207,6 +207,80 @@ def sample_pt_station_per_agent(orig_ars, weighted: pd.DataFrame,
     return out
 
 
+def apply_station_distance_cap(
+    stations: pd.DataFrame,
+    zgb_points,
+    max_km: float,
+) -> tuple:
+    """Drop candidate entry stations that are unreachably far from the ZGB region.
+
+    A station is kept iff its minimum straight-line (Euclidean) distance to ANY ZGB
+    reference point is <= ``max_km * 1000`` metres.  Stations beyond this cap are
+    dropped.
+
+    **Straight-line distance is an explicit approximation.**  True rail travel distance
+    would require a timetable-based routing query, which is unavailable at this stage
+    of the pipeline.  Straight-line distance is a lower bound on travel distance and
+    will therefore never incorrectly drop a station that is actually within reach;
+    it may however retain a few stations that are marginally over the cap by straight
+    line but further by rail.  At the default of 150 km this approximation is
+    conservative and scientifically defensible.
+
+    **ASSUMPTION: the default cap of 150 km has no committed reference source in this
+    repository.**  It is chosen to retain the typical rail-commuter catchment
+    (Magdeburg ~145 km, Hannover ~65 km, Goettingen ~100 km, Hildesheim ~50 km from
+    Braunschweig HBF) while excluding absurd topological chains (e.g. a station
+    300 km away that merely happens to share a transfer stop with a ZGB-serving line).
+    Callers MUST expose this value as a configurable parameter and document the
+    assumption.  Re-calibration against observed in-commuter origins is recommended
+    when origin data become available.
+
+    When ``zgb_points`` is empty (zero rows), the cap is inactive: all stations are
+    returned unchanged and ``n_dropped=0``.  The caller should log that the cap was
+    skipped in this case.
+
+    Args:
+        stations: DataFrame with at least ``x`` and ``y`` columns (EPSG:25832
+            projected coordinates in metres).  All other columns are preserved.
+        zgb_points: (N, 2) array-like of ZGB reference point coordinates
+            ``[[x0, y0], [x1, y1], ...]`` in EPSG:25832 metres.  Typically the
+            coordinates of the in-scope rail stops from the transit schedule.
+            May be empty (shape (0, 2)) to disable the cap.
+        max_km: Distance cap in kilometres.  Stations whose minimum straight-line
+            distance to any ZGB point exceeds ``max_km * 1000`` metres are dropped.
+
+    Returns:
+        ``(kept_stations, n_dropped)`` where:
+
+        - ``kept_stations``: plain ``pd.DataFrame`` with the same columns as
+          ``stations``, containing only rows that passed the cap.  If ``zgb_points``
+          is empty, this is a copy of ``stations`` unchanged.
+        - ``n_dropped`` (int): number of rows removed by the cap.  Zero when the
+          cap is inactive (empty ``zgb_points``) or all stations are within range.
+    """
+    pts = np.asarray(zgb_points, dtype=float)
+
+    if len(stations) == 0 or pts.shape[0] == 0:
+        # Cap inactive or no stations to filter.
+        return stations.copy(), 0
+
+    max_m = max_km * 1000.0
+    # Station coordinates as (n_stations, 2) array.
+    sx = stations["x"].to_numpy(dtype=float)
+    sy = stations["y"].to_numpy(dtype=float)
+    # zgb_points as (n_zgb, 2).  Vectorise via broadcasting to avoid a Python loop
+    # over all station-ZGB pairs.
+    # Shape: (n_stations, 1) - (1, n_zgb) -> (n_stations, n_zgb) per axis.
+    dx = sx[:, np.newaxis] - pts[:, 0][np.newaxis, :]
+    dy = sy[:, np.newaxis] - pts[:, 1][np.newaxis, :]
+    dist2 = dx ** 2 + dy ** 2
+    # For each station: minimum distance to any ZGB point.
+    min_dist = np.sqrt(dist2.min(axis=1))
+    mask = min_dist <= max_m
+    n_dropped = int((~mask).sum())
+    return stations[mask].reset_index(drop=True), n_dropped
+
+
 def attach_station_population(
     stations: pd.DataFrame,
     gemeinden: gpd.GeoDataFrame,

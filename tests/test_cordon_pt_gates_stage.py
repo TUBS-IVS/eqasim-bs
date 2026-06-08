@@ -171,3 +171,92 @@ def test_build_rail_entry_stations_source_ars5_matches_kreis():
     external_ars5 = set(df["source_ars5"].unique())
     assert external_ars5.issubset({"15003"}), \
         "all returned source_ars5 values must be external (non-ZGB) Kreise"
+
+
+# ---------------------------------------------------------------------------
+# B4b Part 3 — NaN->None hardening in _map_stop_kreis
+# ---------------------------------------------------------------------------
+
+def test_stop_outside_all_kreise_does_not_produce_nan_source_ars5():
+    """A transit stop outside every Kreis polygon must not generate a NaN source_ars5 row.
+
+    The _map_stop_kreis helper uses a left sjoin (predicate="within"), which returns
+    NaN for unmatched rows.  The B4b hardening coerces NaN -> None so the downstream
+    ``kreis not in zgb`` guard filters the stop out instead of leaking a NaN-keyed row.
+
+    We place a rail stop far outside ALL Kreis polygons (kreise cover [0,200] in x;
+    the orphan stop is at x=9999).  It serves a direct ZGB route, so without the
+    NaN->None fix it would survive the eligibility filter and appear in the output
+    with source_ars5=NaN.  After the fix it must be absent.
+    """
+    kreise = _kreise()   # external Kreis 15003 in [0,100] x [0,100], ZGB in [100,200]
+    gemeinden = _gemeinden()
+
+    # An extra stop far outside ALL Kreis polygons (x=9999, well beyond the [0,200] range).
+    stops = {
+        "RAIL_EXT":   (50.0, 50.0),    # inside external Kreis 15003
+        "RAIL_ZGB":   (150.0, 50.0),   # inside ZGB Kreis 03101
+        "ORPHAN_EXT": (9999.0, 50.0),  # outside all Kreis polygons -> must get None
+    }
+    # ORPHAN_EXT and RAIL_EXT are on a direct route into ZGB.
+    routes = [
+        ("rail", ["RAIL_EXT",   "RAIL_ZGB"]),
+        ("rail", ["ORPHAN_EXT", "RAIL_ZGB"]),
+    ]
+    df, _n_fb = build_rail_entry_stations(stops, routes, kreise, gemeinden, ZGB)
+
+    # ORPHAN_EXT's Kreis is NaN from the sjoin -> must be coerced to None -> filtered out.
+    assert "ORPHAN_EXT" not in df["stop_id"].values, \
+        "stop outside all Kreis polygons must be excluded (NaN source_ars5 must be None'd)"
+    # No NaN values must appear in source_ars5.
+    assert not df["source_ars5"].isna().any(), \
+        "source_ars5 column must never contain NaN values"
+
+
+def test_distance_cap_applied_via_build_rail_entry_stations():
+    """build_rail_entry_stations with max_station_distance_km drops far stations.
+
+    RAIL_EXT at (50, 50) is close to the ZGB stop RAIL_ZGB at (150, 50): ~100 km apart.
+    FAR_EXT at (99000, 50) is ~99 km from the nearest ZGB stop -- wait, we need it
+    actually far.  Use 300 km (300000 m) to be safely over a 150 km cap.
+    ZGB stops are used as zgb_points for the cap, so FAR_EXT must be dropped.
+    """
+    kreise_ext = gpd.GeoDataFrame(
+        {"ars5": ["15003", "99998", "03101"]},
+        geometry=[
+            box(0, 0, 100, 100),          # external Kreis 15003  (RAIL_EXT at 50,50)
+            box(290000, 0, 310000, 100),   # external Kreis 99998  (FAR_EXT at 300000,50)
+            box(100, 0, 200, 100),         # ZGB Kreis 03101
+        ],
+        crs="EPSG:25832",
+    )
+    gem_ext = gpd.GeoDataFrame(
+        {"ars5": ["15003", "99998"], "ewz": [50000.0, 10000.0]},
+        geometry=[
+            Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]),
+            Polygon([(290000, 0), (310000, 0), (310000, 100), (290000, 100)]),
+        ],
+        crs="EPSG:25832",
+    )
+    stops = {
+        "RAIL_EXT": (50.0, 50.0),
+        "RAIL_ZGB": (150.0, 50.0),
+        "FAR_EXT":  (300000.0, 50.0),
+    }
+    routes = [
+        ("rail", ["RAIL_EXT", "RAIL_ZGB"]),
+        ("rail", ["FAR_EXT",  "RAIL_ZGB"]),
+    ]
+    # Without cap both external stops appear; with cap=150 km FAR_EXT (300 km away) drops.
+    df_no_cap, _ = build_rail_entry_stations(stops, routes, kreise_ext, gem_ext, {"03101"})
+    assert "FAR_EXT" in df_no_cap["stop_id"].values, \
+        "without distance cap FAR_EXT must appear (baseline check)"
+
+    df_capped, _ = build_rail_entry_stations(
+        stops, routes, kreise_ext, gem_ext, {"03101"},
+        max_station_distance_km=150.0,
+    )
+    assert "FAR_EXT" not in df_capped["stop_id"].values, \
+        "with 150 km cap FAR_EXT (300 km from ZGB) must be dropped"
+    assert "RAIL_EXT" in df_capped["stop_id"].values, \
+        "RAIL_EXT (close to ZGB) must survive the distance cap"

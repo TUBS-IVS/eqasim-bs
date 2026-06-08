@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
@@ -37,6 +38,7 @@ from braunschweig.data.cordon.network import (
     read_transit_stops_routes,
 )
 from braunschweig.data.cordon.pt_reachability import (
+    apply_station_distance_cap,
     attach_station_population,
     eligible_rail_entry_stations,
 )
@@ -71,7 +73,16 @@ def _map_stop_kreis(stops: dict, kreise: gpd.GeoDataFrame) -> dict:
     )
     joined = gpd.sjoin(pts, kreise[["ars5", "geometry"]], predicate="within", how="left")
     joined = joined.drop_duplicates(subset="stop_id")
-    return dict(zip(joined["stop_id"], joined["ars5"]))
+    # Coerce NaN -> None so that the downstream ``kreis not in zgb`` guard (which uses
+    # ``is not None``) correctly filters unmapped stops instead of leaking NaN-keyed rows.
+    # A left sjoin against a polygon set returns NaN in the "ars5" column for stops that
+    # fall outside every polygon; ``np.nan != None`` and ``np.nan not in zgb`` is True,
+    # so without this coercion such stops would survive as NaN-source_ars5 rows -- a
+    # silent data corruption.  After coercion they match ``kreis is None`` and are dropped.
+    result = {}
+    for sid, ars5 in zip(joined["stop_id"], joined["ars5"]):
+        result[sid] = None if (ars5 is None or (isinstance(ars5, float) and ars5 != ars5)) else str(ars5)
+    return result
 
 
 def build_rail_entry_stations(
@@ -80,6 +91,7 @@ def build_rail_entry_stations(
     kreise: gpd.GeoDataFrame,
     gemeinden: gpd.GeoDataFrame,
     zgb_kreise,
+    max_station_distance_km=None,
 ) -> tuple:
     """Build the rail-only eligible entry stations frame (the testable pure core).
 
@@ -93,9 +105,19 @@ def build_rail_entry_stations(
     2. Call :func:`eligible_rail_entry_stations` to find rail-only direct/transfer
        entry stops outside ZGB (bus/tram excluded).
     3. Attach ``x, y`` coordinates from ``stops`` for each returned ``stop_id``.
-    4. Call :func:`attach_station_population` to join the population (``ewz``) of the
+    4. Optionally apply a straight-line distance cap via
+       :func:`~braunschweig.data.cordon.pt_reachability.apply_station_distance_cap`
+       to exclude stations that are farther than ``max_station_distance_km`` from
+       every ZGB rail stop.  The cap is skipped when ``max_station_distance_km`` is
+       ``None`` (default).  See :func:`apply_station_distance_cap` for the ASSUMPTION
+       note: the default value of 150 km in ``configure`` has no committed reference.
+       The drop count is logged inside this function (CLAUDE.md no-silent-drop).
+    5. Call :func:`attach_station_population` to join the population (``ewz``) of the
        containing external Gemeinde; the nearest-Gemeinde fallback count is returned so
        the caller can log the primary vs fallback rate.
+
+    The distance cap (step 4) is applied BEFORE the population sjoin (step 5) to avoid
+    unnecessary spatial work for stations that would be dropped anyway.
 
     Args:
         stops: ``{stop_id: (x, y)}`` as produced by
@@ -106,6 +128,11 @@ def build_rail_entry_stations(
             EPSG:25832) as produced by
             :func:`braunschweig.data.cordon.network.read_external_gemeinden`.
         zgb_kreise: iterable of 5-digit ZGB Kreis ARS strings.
+        max_station_distance_km: optional float.  When set, stations whose minimum
+            straight-line distance to any ZGB rail stop exceeds ``max_station_distance_km``
+            kilometres are dropped before population attachment.  ``None`` (default)
+            disables the cap and preserves the pre-B4b behaviour exactly — existing
+            callers and tests that do not pass this argument are unaffected.
 
     Returns:
         ``(df, n_nearest_fallback)`` where:
@@ -116,8 +143,9 @@ def build_rail_entry_stations(
           nearest-Gemeinde fallback rather than a containment join (CLAUDE.md
           no-silent-fallback contract: the caller logs this count).
     """
+    zgb_set = set(zgb_kreise)
     stop_kreis = _map_stop_kreis(stops, kreise)
-    stations_base = eligible_rail_entry_stations(routes, stop_kreis, zgb_kreise)
+    stations_base = eligible_rail_entry_stations(routes, stop_kreis, zgb_set)
 
     if len(stations_base) == 0:
         # Return an empty frame with all required columns including x, y, ewz.
@@ -127,6 +155,51 @@ def build_rail_entry_stations(
     # Attach x, y coordinates from the schedule stop table.
     stations_base["x"] = stations_base["stop_id"].map(lambda sid: stops[sid][0])
     stations_base["y"] = stations_base["stop_id"].map(lambda sid: stops[sid][1])
+
+    # Optional distance cap: drop stations farther than max_station_distance_km from
+    # every ZGB rail stop.  Applied BEFORE population attachment to avoid unneeded
+    # spatial work.  See apply_station_distance_cap for the ASSUMPTION note on the
+    # default value used in configure().
+    if max_station_distance_km is not None:
+        zgb_stop_coords = [
+            stops[sid]
+            for sid, kreis in stop_kreis.items()
+            if kreis is not None and kreis in zgb_set and sid in stops
+        ]
+        if zgb_stop_coords:
+            zgb_pts = np.array(zgb_stop_coords, dtype=float)
+        else:
+            zgb_pts = np.empty((0, 2))
+        n_before_cap = len(stations_base)
+        stations_base, n_distance_dropped = apply_station_distance_cap(
+            stations_base, zgb_pts, max_km=max_station_distance_km
+        )
+        # Log the drop so no station is silently removed (CLAUDE.md no-silent-drop).
+        if zgb_pts.shape[0] == 0:
+            print(
+                f"[braunschweig.data.cordon_pt_gates] distance cap ({max_station_distance_km} km) "
+                "is INACTIVE: no ZGB rail stops found to compute distances against.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[braunschweig.data.cordon_pt_gates] distance cap {max_station_distance_km} km: "
+                f"kept {n_before_cap - n_distance_dropped}/{n_before_cap} candidate stations, "
+                f"dropped {n_distance_dropped} ({100.0 * n_distance_dropped / n_before_cap:.1f}%) "
+                "as unreachable by straight-line distance (ASSUMPTION, configurable).",
+                flush=True,
+            )
+        if n_distance_dropped > 0 and n_distance_dropped == n_before_cap:
+            print(
+                "[braunschweig.data.cordon_pt_gates] WARNING: distance cap dropped ALL "
+                f"{n_before_cap} candidate stations -- check the cap value "
+                f"({max_station_distance_km} km) and the ZGB rail stop set.",
+                flush=True,
+            )
+
+    if len(stations_base) == 0:
+        empty = pd.DataFrame(columns=_NEW_COLUMNS)
+        return empty, 0
 
     # Attach population catchment from the containing external Gemeinde.
     df, n_nearest_fallback = attach_station_population(stations_base, gemeinden)
@@ -143,6 +216,15 @@ def configure(context):
     context.config("braunschweig.political_prefix")
     if context.config("cordon_enabled"):
         context.stage("matsim.scenario.supply.processed")
+        # ASSUMPTION: 150 km has no committed reference source in this repository.
+        # It is chosen to retain the typical rail-commuter catchment (Magdeburg ~145 km,
+        # Hannover ~65 km, Goettingen ~100 km, Hildesheim ~50 km from Braunschweig HBF)
+        # while excluding absurd topological chains where a station 300+ km away happens
+        # to share a transfer stop with a ZGB-serving line.  Straight-line distance is
+        # a lower bound on rail travel distance and is therefore conservative (it will
+        # never incorrectly exclude a station that is truly within reach).
+        # Re-calibrate against observed in-commuter origins when origin data are available.
+        context.config("cordon_pt_max_station_distance_km", 150.0)
 
 
 def execute(context):
@@ -162,19 +244,27 @@ def execute(context):
                                             "braunschweig.political_prefix"))
 
     zgb = {str(p) for p in context.config("braunschweig.political_prefix")}
-    df, n_fallback = build_rail_entry_stations(stops, routes, kreise, gemeinden, zgb)
+    max_km = context.config("cordon_pt_max_station_distance_km")
+    df, n_fallback = build_rail_entry_stations(
+        stops, routes, kreise, gemeinden, zgb,
+        max_station_distance_km=max_km,
+    )
 
     # --- Logging (CLAUDE.md no-silent-fallback) ---
+    # Distance cap logging is emitted by build_rail_entry_stations so the count is
+    # always visible regardless of whether execute() is the caller.
     n_total = len(df)
     n_direct = int((df["reach"] == "direct").sum()) if n_total else 0
     n_transfer = int((df["reach"] == "transfer").sum()) if n_total else 0
     n_kreise = int(df["source_ars5"].nunique()) if n_total else 0
     fallback_rate = 100.0 * n_fallback / n_total if n_total else 0.0
+    cap_label = f"{max_km} km" if max_km is not None else "disabled"
 
     print(
         f"[braunschweig.data.cordon_pt_gates] {n_total} eligible rail entry stations "
         f"across {n_kreise} source Kreise "
         f"({n_direct} direct, {n_transfer} one-transfer); "
+        f"distance cap: {cap_label}; "
         f"population-catchment fallback {n_fallback}/{n_total} "
         f"({fallback_rate:.1f}%) nearest-Gemeinde "
         f"(PRIMARY containment {n_total - n_fallback}/{n_total}).",

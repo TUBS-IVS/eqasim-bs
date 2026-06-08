@@ -297,6 +297,94 @@ def test_attach_population_nearest_fallback_counted():
     assert n_fallback == 1, "one station used the nearest-neighbour fallback; count must be 1"
 
 
+# ---------------------------------------------------------------------------
+# apply_station_distance_cap tests (B4b Part 1)
+# ---------------------------------------------------------------------------
+
+import numpy as np
+from braunschweig.data.cordon.pt_reachability import apply_station_distance_cap
+
+
+def test_distance_cap_drops_far_stations():
+    """Stations farther than max_km from every ZGB reference point are dropped.
+
+    One station 10 km from the origin (kept); one station 300 km away (dropped).
+    ZGB reference point is at the origin.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "99999"],
+        "stop_id": ["near", "far"],
+        "reach": ["transfer", "transfer"],
+        "x": [10000.0, 300000.0],
+        "y": [0.0, 0.0],
+    })
+    zgb_points = np.array([[0.0, 0.0]])
+    kept, n_dropped = apply_station_distance_cap(stations, zgb_points, max_km=150.0)
+    assert set(kept["stop_id"]) == {"near"}, "only the near station (10 km) must be kept"
+    assert n_dropped == 1, "one station must be dropped"
+
+
+def test_distance_cap_empty_zgb_points_is_noop():
+    """When zgb_points is empty the function must return the input unchanged with n_dropped=0.
+
+    This handles the edge case where the ZGB schedule has no in-scope rail stops
+    (e.g. a synthetic schedule used in unit tests).  The cap is inactive; the caller
+    logs that it was skipped.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["15003"],
+        "stop_id": ["A"],
+        "reach": ["direct"],
+        "x": [5.0],
+        "y": [5.0],
+    })
+    kept, n = apply_station_distance_cap(stations, np.empty((0, 2)), max_km=150.0)
+    assert len(kept) == 1, "all stations must be kept when zgb_points is empty"
+    assert n == 0, "n_dropped must be 0 when zgb_points is empty"
+
+
+def test_distance_cap_keeps_stations_within_threshold():
+    """All stations within max_km of ANY ZGB point are kept regardless of which ZGB point."""
+    # Two ZGB points: origin and (200km, 0).  Stations near either are kept.
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15004", "99999"],
+        "stop_id": ["near_a", "near_b", "far"],
+        "reach": ["direct", "transfer", "transfer"],
+        "x": [10000.0, 190000.0, 500000.0],
+        "y": [0.0, 0.0, 0.0],
+    })
+    zgb_points = np.array([[0.0, 0.0], [200000.0, 0.0]])
+    kept, n_dropped = apply_station_distance_cap(stations, zgb_points, max_km=50.0)
+    assert set(kept["stop_id"]) == {"near_a", "near_b"}, \
+        "stations close to any ZGB point must be kept"
+    assert n_dropped == 1
+
+
+def test_distance_cap_preserves_all_columns():
+    """The kept DataFrame must preserve all input columns (not just stop_id/x/y)."""
+    stations = pd.DataFrame({
+        "source_ars5": ["15003"],
+        "stop_id": ["S"],
+        "reach": ["direct"],
+        "x": [1000.0],
+        "y": [0.0],
+        "ewz": [99999.0],
+    })
+    zgb_points = np.array([[0.0, 0.0]])
+    kept, _ = apply_station_distance_cap(stations, zgb_points, max_km=50.0)
+    for col in ("source_ars5", "stop_id", "reach", "x", "y", "ewz"):
+        assert col in kept.columns, f"column '{col}' must be preserved by distance cap"
+
+
+def test_distance_cap_zero_stations_is_noop():
+    """An empty stations frame must pass through without error."""
+    stations = pd.DataFrame(columns=["source_ars5", "stop_id", "reach", "x", "y"])
+    zgb_points = np.array([[0.0, 0.0]])
+    kept, n = apply_station_distance_cap(stations, zgb_points, max_km=150.0)
+    assert len(kept) == 0
+    assert n == 0
+
+
 def test_attach_population_preserves_all_stations_with_nonunique_index():
     """Two DISTINCT stations that share a non-unique pandas index must both appear in output.
 
