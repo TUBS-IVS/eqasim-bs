@@ -234,3 +234,64 @@ def test_sample_pt_station_reproducible_given_seed():
     draws_a = sample_pt_station_per_agent(orig_ars, w, np.random.default_rng(7))
     draws_b = sample_pt_station_per_agent(orig_ars, w, np.random.default_rng(7))
     assert draws_a == draws_b, "same seed must produce identical draws"
+
+
+# ---------------------------------------------------------------------------
+# attach_station_population tests (B3)
+# ---------------------------------------------------------------------------
+
+import geopandas as gpd
+from shapely.geometry import Polygon
+from braunschweig.data.cordon.pt_reachability import attach_station_population
+
+
+def _gem(ars5, ewz, minx, maxx):
+    """Helper: build one Gemeinde row as a horizontal strip polygon in EPSG:25832."""
+    return {"ars5": ars5, "ewz": ewz,
+            "geometry": Polygon([(minx, 0), (maxx, 0), (maxx, 10), (minx, 10)])}
+
+
+def test_attach_population_containment_and_nearest():
+    """Stations inside a Gemeinde polygon receive that Gemeinde's ewz (primary path).
+
+    Two stations, each clearly inside its own Gemeinde polygon -> containment join
+    matches both; fallback count must be 0.  Output must contain all expected columns.
+    """
+    gem = gpd.GeoDataFrame(
+        [_gem("15003", 100000, 0, 10), _gem("15081", 2000, 20, 30)],
+        crs="EPSG:25832",
+    )
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15081"],
+        "stop_id": ["A", "B"],
+        "reach": ["direct", "transfer"],
+        "x": [5.0, 25.0],
+        "y": [5.0, 5.0],
+    })
+    out, n_fallback = attach_station_population(stations, gem)
+    ewz = dict(zip(out["stop_id"], out["ewz"]))
+    assert ewz["A"] == 100000, "station A inside 15003 polygon must get ewz 100000"
+    assert ewz["B"] == 2000, "station B inside 15081 polygon must get ewz 2000"
+    assert n_fallback == 0, "both stations match by containment; fallback count must be 0"
+    assert {"source_ars5", "stop_id", "reach", "x", "y", "ewz"} <= set(out.columns), \
+        "output must include all required columns"
+
+
+def test_attach_population_nearest_fallback_counted():
+    """A station outside all polygons must be matched to the nearest Gemeinde (fallback).
+
+    The fallback count returned must equal the number of stations that used the
+    nearest-neighbour path (i.e. 1 here).  The ewz must still be filled, not NaN.
+    """
+    gem = gpd.GeoDataFrame([_gem("15003", 100000, 0, 10)], crs="EPSG:25832")
+    stations = pd.DataFrame({
+        "source_ars5": ["15003"],
+        "stop_id": ["C"],
+        "reach": ["direct"],
+        "x": [100.0],
+        "y": [100.0],
+    })   # far outside any polygon
+    out, n_fallback = attach_station_population(stations, gem)
+    assert out["ewz"].iloc[0] == 100000, \
+        "station outside all polygons must be filled via nearest-Gemeinde fallback"
+    assert n_fallback == 1, "one station used the nearest-neighbour fallback; count must be 1"

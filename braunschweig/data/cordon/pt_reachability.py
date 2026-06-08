@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 
 from braunschweig.synthesis.incommuters import RAIL_LIKE_MODES
 
@@ -204,3 +205,88 @@ def sample_pt_station_per_agent(orig_ars, weighted: pd.DataFrame,
             stop_ids, probs = choice
             out.append(stop_ids[int(rng.choice(len(stop_ids), p=probs))])
     return out
+
+
+def attach_station_population(
+    stations: pd.DataFrame,
+    gemeinden: gpd.GeoDataFrame,
+) -> tuple:
+    """Attach the population (``ewz``) of the containing Gemeinde to each entry station.
+
+    Each station is represented as a POINT (built from ``x``, ``y`` in EPSG:25832) and
+    joined to the external Gemeinde polygons.  The PRIMARY method is a spatial
+    containment join (``predicate="within"``): a station that falls inside a Gemeinde
+    polygon receives that Gemeinde's ``ewz``.  The FALLBACK (nearest-Gemeinde join) is
+    applied only to stations that matched no polygon -- a situation that can arise for
+    stations sitting exactly on a polygon boundary or slightly outside due to projection
+    rounding.
+
+    No-silent-fallback contract (CLAUDE.md): the function returns the fallback count
+    ``n_nearest_fallback`` so the caller can log a primary-vs-fallback rate.  The caller
+    is responsible for emitting that log line.  A high fallback rate (e.g. all stations)
+    almost always indicates a CRS mismatch or a data problem and must be surfaced.
+
+    The ``ewz`` column is never silently filled with a constant; the nearest-Gemeinde
+    fallback IS the documented fallback and its count is always returned.
+
+    Args:
+        stations: DataFrame with at least columns ``[source_ars5, stop_id, reach, x, y]``.
+            ``x`` and ``y`` are projected coordinates in EPSG:25832 (metres).  Additional
+            columns are preserved unchanged in the output.
+        gemeinden: GeoDataFrame ``[ars5, ewz, geometry]`` (external Gemeinden; polygon
+            geometry; CRS EPSG:25832) as produced by
+            ``braunschweig.data.cordon.network.read_external_gemeinden``.
+
+    Returns:
+        ``(stations_with_ewz, n_nearest_fallback)`` where:
+
+        - ``stations_with_ewz``: plain ``pd.DataFrame`` (no geometry column) preserving
+          all input columns and adding ``ewz`` (float).
+        - ``n_nearest_fallback`` (int): number of stations that were matched via the
+          nearest-Gemeinde fallback rather than by containment.  Zero means the primary
+          containment join covered all stations.
+    """
+    # Build a GeoDataFrame of station POINTS in EPSG:25832.
+    points = gpd.GeoDataFrame(
+        stations.copy(),
+        geometry=gpd.points_from_xy(stations["x"], stations["y"]),
+        crs="EPSG:25832",
+    )
+
+    # Rename the Gemeinde ars5 column to avoid a column-name clash with the station's
+    # own source_ars5 after the join.
+    gem = gemeinden[["ars5", "ewz", "geometry"]].rename(columns={"ars5": "gem_ars5"})
+
+    # PRIMARY: containment join.  A station that falls strictly inside a Gemeinde
+    # polygon receives that Gemeinde's ewz.
+    contained = gpd.sjoin(points, gem, predicate="within", how="left")
+
+    # De-duplicate: a station on a shared polygon boundary can match multiple polygons.
+    # Keep only the first match per original index position.
+    contained = contained[~contained.index.duplicated(keep="first")]
+
+    # FALLBACK: stations that matched no polygon (ewz is NaN) -> nearest Gemeinde.
+    missing_mask = contained["ewz"].isna()
+    n_nearest_fallback = int(missing_mask.sum())
+
+    if n_nearest_fallback > 0:
+        unmatched = points[missing_mask]
+        nearest = gpd.sjoin_nearest(unmatched, gem, how="left")
+        # De-duplicate nearest results the same way.
+        nearest = nearest[~nearest.index.duplicated(keep="first")]
+        # Use a column-level assignment to avoid the pandas iloc-inplace warning.
+        ewz_series = contained["ewz"].copy()
+        ewz_series[missing_mask] = nearest["ewz"].values
+        contained = contained.assign(ewz=ewz_series)
+
+    # Return a plain DataFrame; drop geometry and join helper columns.
+    drop_cols = [c for c in ("geometry", "index_right") if c in contained.columns]
+    result = pd.DataFrame(contained.drop(columns=drop_cols))
+
+    # Restore the original column order: all input columns first, then ewz.
+    original_cols = list(stations.columns)
+    output_cols = original_cols + ["ewz"]
+    # Keep any extra join artefact columns out of the output.
+    result = result[[c for c in output_cols if c in result.columns]]
+
+    return result, n_nearest_fallback
