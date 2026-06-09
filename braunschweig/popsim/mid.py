@@ -208,6 +208,16 @@ MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
 )
 
+# Minimum columns required by build_trip_table / trips_stage.
+# All remaining columns are carried as extras (loaded via usecols=None -> all).
+MID_WEGE_REQUIRED_COLS = (
+    "H_ID", "P_ID", "W_ID",
+    "W_ZWECK", "hvm",
+    "W_SZS", "W_SZM",
+    "W_AZS", "W_AZM",
+    "wegkm_imp",
+)
+
 
 def load_mid_attributes(
     mid_dir: Union[str, Path],
@@ -226,6 +236,45 @@ def load_mid_attributes(
         mid_dir / "MiD2023_Personen.csv", usecols=list(MID_PERSON_ATTR_COLS)
     )
     return households, persons
+
+
+def load_mid_wege(
+    mid_dir: Union[str, Path],
+) -> pd.DataFrame:
+    """Load the MiD 2023 Wege (trip) table for the trips_stage.
+
+    MiD2023_Wege.csv uses a semicolon field separator (German locale export
+    convention, confirmed from the raw INFAS delivery). All columns are loaded
+    (no usecols filter) so that every MiD Wege extra column is available as
+    a traceability/analysis extra in the output trip table. The minimum columns
+    required by ``braunschweig.popsim.trips.build_trip_table`` are listed in
+    ``MID_WEGE_REQUIRED_COLS``; the file is validated to contain them.
+
+    Parameters
+    ----------
+    mid_dir:
+        Directory containing ``MiD2023_Wege.csv``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Full Wege table, one row per (household, person, trip).
+    """
+    mid_dir = Path(mid_dir)
+    wege_path = mid_dir / "MiD2023_Wege.csv"
+    if not wege_path.exists():
+        raise FileNotFoundError(
+            f"MiD Wege file not found: {wege_path}. "
+            "Ensure the MiD 2023 delivery is present in the configured mid_dir."
+        )
+    df = pd.read_csv(wege_path, sep=";", low_memory=False)
+    missing = [c for c in MID_WEGE_REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"MiD Wege file is missing required columns: {missing}. "
+            f"Available columns: {list(df.columns[:20])} ..."
+        )
+    return df
 
 
 # --------------------------------------------------------------------------- #
