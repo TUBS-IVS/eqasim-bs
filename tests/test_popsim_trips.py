@@ -23,7 +23,15 @@ def test_map_purpose_from_w_zweck():
 def test_map_mode_from_hvm():
     wege = pd.DataFrame({"hvm": [1, 2, 3, 4, 5, 9]})
     out = trips.map_mode(wege)
-    assert list(out["mode"]) == ["walk", "bike", "car_passenger", "car", "pt", "walk"]
+    # hvm=2 is Fahrrad -> canonical eqasim mode is "bicycle", not "bike".
+    assert list(out["mode"]) == ["walk", "bicycle", "car_passenger", "car", "pt", "walk"]
+
+
+def test_mode_bicycle_for_hvm_2():
+    """MiD hvm=2 (Fahrrad) must map to canonical eqasim mode 'bicycle'."""
+    wege = pd.DataFrame({"hvm": [2]})
+    out = trips.map_mode(wege)
+    assert out["mode"].iloc[0] == "bicycle"
 
 
 def test_expand_persons_to_trips_joins_donor_wege():
@@ -50,7 +58,7 @@ def test_expand_persons_to_trips_joins_donor_wege():
     counts = out.groupby("person_id").size().to_dict()
     assert counts == {"A_1_0_1": 2, "A_1_0_2": 1, "B_2_0_1": 1}
     assert "purpose" in out.columns and "mode" in out.columns
-    # trip_id is unique per synthetic trip.
+    # trip_id from expand_persons_to_trips is the string traceability key <person_id>_<W_ID>.
     assert out["trip_id"].is_unique
 
 
@@ -69,7 +77,8 @@ def test_mid_time_seconds_from_hours_minutes():
     assert list(out) == [8 * 3600 + 30 * 60, 17 * 3600 + 5 * 60]
 
 
-def test_build_trip_table_eqasim_schema_plus_extras():
+def _make_two_trip_persons_and_wege():
+    """Helper: one synthetic person with two sequential trips (work then home)."""
     persons = pd.DataFrame({
         "person_id": ["A_1_0_1", "A_1_0_1"],
         "H_ID": [1, 1], "P_ID": [1, 1],
@@ -83,23 +92,97 @@ def test_build_trip_table_eqasim_schema_plus_extras():
         # extras (carried through):
         "W_ZWDF": [None, None], "W_ANZBEGL": [0, 1], "W_BEGL_HH": [2, 1],
     })
+    return persons, wege
+
+
+def test_build_trip_table_eqasim_schema_plus_extras():
+    persons, wege = _make_two_trip_persons_and_wege()
     out = trips.build_trip_table(persons, wege)
-    # eqasim trip-schema columns present:
+
+    # eqasim trip-schema columns present (including trip_index added by rework):
     for col in ["person_id", "trip_id", "departure_time", "arrival_time",
                 "trip_duration", "activity_duration", "preceding_purpose",
-                "following_purpose", "is_first_trip", "is_last_trip", "mode"]:
-        assert col in out.columns
+                "following_purpose", "is_first_trip", "is_last_trip", "mode",
+                "trip_index"]:
+        assert col in out.columns, f"column '{col}' missing from build_trip_table output"
+
+    # trip_key holds the old string traceability ID (e.g. "A_1_0_1_1").
+    assert "trip_key" in out.columns
+    assert out["trip_key"].iloc[0] == "A_1_0_1_1"
+
+    # trip_id is now an integer (global 0..n-1), still unique.
+    assert pd.api.types.is_integer_dtype(out["trip_id"]), "trip_id must be integer after rework"
+    assert out["trip_id"].is_unique
+
     first = out.iloc[0]
     assert first["departure_time"] == 8 * 3600
     assert first["arrival_time"] == 8 * 3600 + 30 * 60
     assert first["trip_duration"] == 30 * 60
     assert first["mode"] == "car"
-    # preceding_purpose of trip 1 (W_ZWECK None at day start) -> home; following = work.
+    # preceding_purpose of trip 1 (diary starts at home) -> home; following = work.
     assert first["following_purpose"] == "work"
     assert first["preceding_purpose"] == "home"
     assert bool(first["is_first_trip"]) is True
     assert bool(out.iloc[-1]["is_last_trip"]) is True
     # extra MiD info carried:
     assert "wegkm" in out.columns and "W_ANZBEGL" in out.columns
-    # trip_id unique per synthetic trip:
-    assert out["trip_id"].is_unique
+
+
+def test_build_trip_table_has_integer_trip_index():
+    """trip_index must be a per-person 0-based sequential integer."""
+    persons = pd.DataFrame({
+        "person_id": ["A_1_0_1", "A_1_0_1", "B_2_0_1"],
+        "H_ID": [1, 1, 2], "P_ID": [1, 1, 2],
+    })
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2, 2],
+        "P_ID": [1, 1, 2, 2, 2],
+        "W_ID": [1, 2, 1, 2, 3],
+        "W_ZWECK": [1, 8, 4, 7, 8], "hvm": [4, 4, 5, 1, 4],
+        "W_SZS": [8, 17, 9, 12, 18], "W_SZM": [0, 0, 0, 30, 0],
+        "W_AZS": [8, 17, 9, 12, 18], "W_AZM": [30, 20, 45, 50, 30],
+        "wegkm": [12.0, 12.0, 5.0, 3.0, 8.0],
+    })
+    out = trips.build_trip_table(persons, wege)
+    for pid, grp in out.groupby("person_id"):
+        indices = sorted(grp["trip_index"].tolist())
+        expected = list(range(len(grp)))
+        assert indices == expected, (
+            f"person {pid}: trip_index {indices} != expected 0..{len(grp)-1}"
+        )
+
+
+def test_build_trip_table_midnight_repair():
+    """A trip departing near midnight and arriving after midnight must be repaired.
+
+    We encode: departure at 23:30, arrival at 00:30 (next day), which appears
+    in MiD as W_AZS=0, W_AZM=30 (raw seconds = 1800) while departure is
+    23*3600+30*60 = 84600.  This yields arrival_time < departure_time before
+    fix_trip_times; hts.fix_trip_times must shift arrival by +24h so that
+    arrival_time >= departure_time.
+    """
+    persons = pd.DataFrame({
+        "person_id": ["X_1_0_1"],
+        "H_ID": [10], "P_ID": [5],
+    })
+    # Two-trip chain: first trip (work commute 08:00–08:30), second trip crosses midnight.
+    wege = pd.DataFrame({
+        "H_ID": [10, 10], "P_ID": [5, 5], "W_ID": [1, 2],
+        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        # trip 1: 08:00 -> 08:30
+        # trip 2: 23:30 -> 00:30 (midnight crossing; arrival coded as 00:30)
+        "W_SZS": [8, 23], "W_SZM": [0, 30],
+        "W_AZS": [8, 0], "W_AZM": [30, 30],
+        "wegkm": [12.0, 12.0],
+    })
+    out = trips.build_trip_table(persons, wege)
+    trip2 = out[out["trip_index"] == 1].iloc[0]
+    # After fix_trip_times, arrival_time must be >= departure_time.
+    assert trip2["arrival_time"] >= trip2["departure_time"], (
+        f"Midnight crossing not repaired: departure={trip2['departure_time']}, "
+        f"arrival={trip2['arrival_time']}"
+    )
+    # The repair must have pushed arrival past midnight (>= 24h mark).
+    assert trip2["arrival_time"] >= 24 * 3600, (
+        f"Arrival should be pushed past midnight (>=86400s), got {trip2['arrival_time']}"
+    )

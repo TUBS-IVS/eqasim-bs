@@ -13,7 +13,13 @@ trip records produced here.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+from data.hts import hts
+
+logger = logging.getLogger(__name__)
 
 # MiD W_ZWECK (Wegezweck) -> eqasim activity type at the trip destination.
 # 1 Arbeit, 2 dienstlich -> work; 3 Ausbildung/Schule, 11 Schule, 12 Kita -> education;
@@ -35,12 +41,13 @@ PURPOSE_BY_W_ZWECK = {
 }
 DEFAULT_PURPOSE = "other"
 
-# MiD hvm (Hauptverkehrsmittel) -> eqasim mode.
-# 1 zu Fuss -> walk; 2 Fahrrad -> bike; 3 MIV-Mitfahrer -> car_passenger;
-# 4 MIV-Fahrer -> car; 5 OEPV -> pt; 9 keine Angabe -> walk (fallback).
+# MiD hvm (Hauptverkehrsmittel) -> eqasim canonical mode.
+# 1 zu Fuss -> walk; 2 Fahrrad -> bicycle (canonical eqasim mode, not "bike");
+# 3 MIV-Mitfahrer -> car_passenger; 4 MIV-Fahrer -> car; 5 OEPV -> pt;
+# 9 keine Angabe -> walk (conservative fallback).
 MODE_BY_HVM = {
     1: "walk",
-    2: "bike",
+    2: "bicycle",
     3: "car_passenger",
     4: "car",
     5: "pt",
@@ -97,12 +104,37 @@ def build_trip_table(
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
+    Mirrors ``data/hts/entd/cleaned.py`` exactly, reusing the shared helpers from
+    ``data/hts/hts.py`` in the same order as the ENTD path:
+
+    1. ``expand_persons_to_trips`` — join donor Wege onto synthetic persons, map
+       purpose and mode, produce a string ``trip_key`` (``<person_id>_<W_ID>``) for
+       traceability.
+    2. Sort by ``(person_id, trip_col)``; assign an integer global ``trip_id``
+       (0..n-1) so that ``hts.compute_first_last`` sorts trips correctly within
+       each person.
+    3. ``hts.compute_first_last`` — sorts by ``(person_id, trip_id)`` and sets
+       ``is_first_trip`` / ``is_last_trip``.
+    4. ``preceding_purpose``: per-person shift of ``following_purpose``.
+       **ASSUMPTION**: MiD travel diaries start at home, so the first trip's
+       ``preceding_purpose`` is hard-set to ``"home"``.  This is the standard
+       diary-starts-at-home convention used throughout eqasim.  A log message
+       reports the share of first-trip destinations that are NOT home as a
+       plausibility signal for the assumption.
+    5. ``departure_time`` / ``arrival_time`` in float seconds since midnight via
+       ``mid_time_seconds``.
+    6. ``hts.fix_trip_times`` — repairs negative durations (swap / +24 h midnight
+       crossing) and overlapping trips; essential for MiD diaries crossing midnight.
+    7. ``trip_duration = arrival_time - departure_time``; ``hts.compute_activity_duration``
+       (NaN on last trip of each person).
+    8. ``hts.fix_activity_types`` — enforces ``following_purpose[i] == preceding_purpose[i+1]``.
+    9. Integer per-person ``trip_index`` = 0-based cumcount (the column consumed by
+       ``synthesis/population/activities.py``).
+
     Produces one row per (synthetic person, MiD trip) with the columns listed in
-    ``EQASIM_TRIP_COLUMNS`` so that the eqasim trip-time fix/validation layer
-    (``data/hts/hts.py``) and activity-chain construction
-    (``synthesis/population/activities.py``) apply unchanged to popsim_mid trips.
-    All other MiD Wege columns (``wegkm``, ``W_ANZBEGL``, ``W_BEGL_HH``,
-    ``W_ZWDF``, ...) are carried through unchanged as extra columns for later use.
+    ``EQASIM_TRIP_COLUMNS`` (plus ``trip_key``, ``trip_index``, and all original
+    MiD Wege columns) so that the eqasim trip-time fix/validation layer and
+    activity-chain construction apply unchanged to popsim_mid trips.
 
     Parameters
     ----------
@@ -111,7 +143,7 @@ def build_trip_table(
         One row per unique synthetic person is expected; duplicates on
         ``person_id`` are dropped before the join so that each unique synthetic
         person gets exactly one copy of the donor trip chain (avoids a
-        person x wege cross-join that would produce duplicate trip_id values).
+        person x wege cross-join that would produce duplicate trip_key values).
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.  All columns are preserved.
     household_col:
@@ -120,20 +152,25 @@ def build_trip_table(
         Name of the within-household person-ID column shared by both frames.
     trip_col:
         Name of the within-person trip-sequence column in ``mid_wege`` (used to
-        build the unique ``trip_id``).
+        build the unique ``trip_key`` and to sort trips within each person).
 
     Returns
     -------
     pd.DataFrame
         One row per (synthetic person, MiD trip) sorted by ``(person_id, trip_col)``,
         containing the full eqasim trip schema (see ``EQASIM_TRIP_COLUMNS``) plus
-        all original MiD Wege columns.
+        ``trip_key`` (string traceability id), ``trip_index`` (per-person 0-based
+        integer for activities.py), and all original MiD Wege columns.
     """
     # One trip chain per unique synthetic person; avoids a person x wege cross-join
-    # that would produce duplicate trip_id values when the caller passes a persons
+    # that would produce duplicate trip_key values when the caller passes a persons
     # frame that has already been exploded (e.g. one row per household member).
     persons = persons.drop_duplicates(subset="person_id")
 
+    # Step 1: join donor Wege, map purpose and mode.
+    # expand_persons_to_trips produces a string trip_id (<person_id>_<W_ID>)
+    # which we rename to trip_key for traceability; a global integer trip_id is
+    # assigned below so hts.compute_first_last sorts correctly.
     df = expand_persons_to_trips(
         persons,
         mid_wege,
@@ -141,26 +178,63 @@ def build_trip_table(
         person_col=person_col,
         trip_col=trip_col,
     )
-    df = df.sort_values(["person_id", trip_col]).reset_index(drop=True)
 
+    # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
+    df = df.sort_values(["person_id", trip_col]).reset_index(drop=True)
+    df = df.rename(columns={"trip_id": "trip_key"})
+    df["trip_id"] = range(len(df))
+
+    # Step 3: hts.compute_first_last returns a (re-sorted) DataFrame with
+    # is_first_trip / is_last_trip set.  It sorts by (person_id, trip_id), which
+    # is correct because trip_id is now a global integer reflecting within-person
+    # order from the sort above.
+    df = hts.compute_first_last(df)
+
+    # Step 4: purpose columns.
+    # following_purpose = destination activity mapped from W_ZWECK.
+    df["following_purpose"] = df["purpose"]
+    # preceding_purpose = destination of the previous trip within the same person.
+    df["preceding_purpose"] = df.groupby("person_id")["following_purpose"].shift(1)
+    # ASSUMPTION: MiD travel diaries start at home (diary-starts-at-home convention).
+    # The first trip of each person therefore departs from home regardless of what
+    # W_ZWECK recorded.  This is standard eqasim behaviour (mirrors entd/cleaned.py).
+    df.loc[df["is_first_trip"], "preceding_purpose"] = "home"
+
+    # Plausibility log: share of first trips whose destination is NOT home.
+    # A high rate signals that many diary chains do not end with a return-home trip,
+    # which is expected (some MiD respondents end their diary mid-day), but a very
+    # high rate (>50%) would warrant investigation.
+    first_trips = df[df["is_first_trip"]]
+    n_first = len(first_trips)
+    n_not_home_dest = (first_trips["following_purpose"] != "home").sum()
+    logger.info(
+        "[popsim.trips] home-start assumption: %d first trips; %d (%.1f%%) depart toward "
+        "a destination other than 'home' (expected — MiD diaries start mid-day or at work "
+        "for some respondents).",
+        n_first,
+        n_not_home_dest,
+        100.0 * n_not_home_dest / n_first if n_first > 0 else 0.0,
+    )
+
+    # Step 5: trip times in seconds since midnight.
     df["departure_time"] = mid_time_seconds(df, "W_SZS", "W_SZM").to_numpy()
     df["arrival_time"] = mid_time_seconds(df, "W_AZS", "W_AZM").to_numpy()
+
+    # Step 6: fix_trip_times repairs negative durations (swap / +24h midnight
+    # crossing) and overlapping trips — essential for MiD diaries crossing midnight.
+    # The function mutates df in place and also returns it.
+    df = hts.fix_trip_times(df)
+
+    # Step 7: trip_duration and activity_duration (NaN on last trip of each person).
     df["trip_duration"] = df["arrival_time"] - df["departure_time"]
+    hts.compute_activity_duration(df)
 
-    grp = df.groupby("person_id", sort=False)
-    df["is_first_trip"] = grp.cumcount() == 0
-    df["is_last_trip"] = grp.cumcount(ascending=False) == 0
+    # Step 8: fix_activity_types enforces following_purpose[i] == preceding_purpose[i+1].
+    # Mutates df in place, returns None.
+    hts.fix_activity_types(df)
 
-    # activity_duration: time between arrival of this trip and departure of the next.
-    # NaN for the last trip of each person (no subsequent departure).
-    next_dep = grp["departure_time"].shift(-1)
-    df["activity_duration"] = next_dep - df["arrival_time"]
-
-    # purpose (destination activity) was mapped by expand_persons_to_trips.
-    df["following_purpose"] = df["purpose"]
-    df["preceding_purpose"] = grp["following_purpose"].shift(1)
-    # The first trip of each person departs from home.
-    df.loc[df["is_first_trip"], "preceding_purpose"] = "home"
+    # Step 9: per-person 0-based trip_index consumed by synthesis/population/activities.py.
+    df["trip_index"] = df.groupby("person_id").cumcount()
 
     return df
 
