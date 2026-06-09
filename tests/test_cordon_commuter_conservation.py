@@ -34,6 +34,7 @@ from braunschweig.data.cordon.demand import (  # noqa: E402
     select_inbound_flows,
 )
 from braunschweig.data.cordon.external_points import _largest_remainder  # noqa: E402
+from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes  # noqa: E402
 from braunschweig.data.external_workplaces import build_external_workplaces  # noqa: E402
 from braunschweig.gravity.model import _append_outbound_flows  # noqa: E402
 from braunschweig.synthesis.incommuters import build_incommuter_frames  # noqa: E402
@@ -358,3 +359,35 @@ def test_largest_remainder_conserves_total():
     z2 = _largest_remainder(10, [0, 0, 0])
     assert int(z2.sum()) == 0, \
         "_largest_remainder(total, [0,0,0]) must return all zeros (no positive weights)"
+
+
+# ---------------------------------------------------------------------------
+# Guard 7: balancer conserves global PT target when the pool suffices
+# ---------------------------------------------------------------------------
+
+def test_balancer_conserves_global_pt_target():
+    """balance_incommuter_modes yields n_pt_final == n_pt_target when pool is large enough.
+
+    Synthetic case:
+      - 8 agents, Mikrozensus assigns 3 pt
+      - 2 of those 3 cannot board PT (forced to car) -> n_forced = 2
+      - 5 car agents, 4 of them reachable (flexible) -> pool >= forced
+      - Expected: n_pt_final == 3 (target restored), residual == 0
+    """
+    modes_mikro = ["pt", "pt", "pt", "car", "car", "car", "car", "car"]
+    can_board_pt = [True, False, False, True, True, True, True, False]
+    pt_propensity = [0.8, 0.8, 0.8, 0.7, 0.6, 0.5, 0.4, 0.1]
+
+    rng = np.random.default_rng(55)
+    modes_final, stats = balance_incommuter_modes(
+        modes_mikro, can_board_pt, pt_propensity, rng)
+
+    assert stats["n_pt_final"] == stats["n_pt_target"], (
+        f"Balancer failed to conserve global PT target: "
+        f"n_pt_final={stats['n_pt_final']}, n_pt_target={stats['n_pt_target']}. "
+        "residual=" + str(stats["residual"])
+    )
+    assert stats["residual"] == 0, (
+        f"Unexpected residual {stats['residual']} when pool was sufficient."
+    )
+    assert int((modes_final == "pt").sum()) == stats["n_pt_target"]
