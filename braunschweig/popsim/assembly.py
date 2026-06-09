@@ -20,6 +20,100 @@ from braunschweig.popsim import attributes
 from braunschweig.popsim import expand
 from braunschweig.population import schema
 
+def assign_donor_surrogates(
+    persons: pd.DataFrame,
+    *,
+    donor_col: str = "H_ID",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Replace raw MiD donor ids with sequential surrogate integers.
+
+    The MiD survey data are restricted scientific-use microdata (BMDV licence).
+    Publishing the raw ``H_ID`` / ``P_ID`` values in the synthetic output would
+    allow re-identification of the survey respondent each synthetic agent was
+    derived from. This function assigns deterministic, reproducible surrogate
+    integers that reveal nothing about the real MiD respondent without the mapping.
+
+    Surrogate assignment:
+    - ``source_household_id``: ``pd.factorize(H_ID, sort=True)[0] + 1`` -- each
+      unique donor household is assigned a unique sequential integer starting at 1.
+    - ``source_person_id``: ``pd.factorize((H_ID, P_ID), sort=True)[0] + 1`` --
+      each unique donor (H_ID, P_ID) pair is assigned a unique sequential integer.
+
+    Both surrogates are deterministic because ``sort=True`` ensures the same input
+    always produces the same mapping. Using ``+ 1`` shifts the range from [0, N-1]
+    to [1, N] so surrogates are clean positive integers (``java.lang.Long`` in the
+    MATSim XML output).
+
+    The raw ``H_ID`` / ``P_ID`` columns are NOT removed; they remain on the frame
+    for the trips join (``braunschweig.popsim.trips`` needs them). They are never
+    included in any output/writer field list (verified against
+    ``matsim.scenario.population.PERSON_FIELDS`` and
+    ``synthesis.output.select_person_output_columns``).
+
+    Parameters
+    ----------
+    persons:
+        Persons frame from ``expand.expand_to_persons``; must carry ``H_ID``
+        (the donor household key) and ``P_ID`` (the donor person key).
+    donor_col:
+        Column name of the donor household key (default ``H_ID``).
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, pandas.DataFrame]
+        ``(persons, mapping)`` where ``persons`` carries the new
+        ``source_household_id`` and ``source_person_id`` columns, and
+        ``mapping`` is a DataFrame with columns
+        ``[source_person_id, source_household_id, H_ID, P_ID]`` suitable for
+        writing as the local-only pseudonym map (``work_dir/pseudonym_map.csv``).
+
+    Raises
+    ------
+    KeyError
+        If ``donor_col`` or ``P_ID`` is absent from ``persons`` (fail-fast:
+        these columns must be present after expand.expand_to_persons).
+    """
+    for col in (donor_col, "P_ID"):
+        if col not in persons.columns:
+            raise KeyError(
+                f"[popsim.assembly] Column {col!r} not found in persons frame. "
+                "assign_donor_surrogates requires H_ID and P_ID from "
+                "expand.expand_to_persons."
+            )
+
+    out = persons.copy()
+
+    # --- household surrogate ---
+    hh_codes, _ = pd.factorize(out[donor_col], sort=True)
+    out["source_household_id"] = (hh_codes + 1).astype(int)
+
+    # --- person surrogate: unique (H_ID, P_ID) pair ---
+    # Encode the pair as a single sortable key for factorize.
+    pair_key = list(zip(out[donor_col].tolist(), out["P_ID"].tolist()))
+    p_codes, unique_pairs = pd.factorize(pair_key, sort=True)
+    out["source_person_id"] = (p_codes + 1).astype(int)
+
+    # --- build the local-only mapping for re-linking ---
+    # One row per unique (source_person_id, source_household_id, H_ID, P_ID).
+    # Use the first occurrence of each person-surrogate code (all occurrences of
+    # a given pair are identical in H_ID / P_ID by construction).
+    # unique_pairs from factorize(sort=True) is sorted, so surrogate i+1 maps to
+    # unique_pairs[i].
+    n_pairs = len(unique_pairs)
+    h_ids = [pair[0] for pair in unique_pairs]
+    p_ids = [pair[1] for pair in unique_pairs]
+    # The household surrogate for each pair: factorize the H_IDs of the mapping.
+    hh_surr_codes, _ = pd.factorize(h_ids, sort=True)
+    mapping = pd.DataFrame({
+        "source_person_id":    range(1, n_pairs + 1),
+        "source_household_id": (hh_surr_codes + 1).tolist(),
+        "H_ID": h_ids,
+        "P_ID": p_ids,
+    })
+
+    return out, mapping
+
+
 # Column name of the 12-digit ARS key that the cells parquet carries and that
 # stage.py joins onto the merged PopulationSim output before calling build_persons.
 # The name is spelled with one 's' ("Schlussel") to match the parquet source column.
@@ -108,7 +202,7 @@ def build_persons(
     *,
     donor_col: str = "H_ID",
     rng=None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
     Parameters
@@ -125,15 +219,19 @@ def build_persons(
 
     Returns
     -------
-    pandas.DataFrame
-        One row per synthetic person, with ``household_id`` / ``person_id``, the
-        cell, demographics (``age`` / ``sex``), person attributes (``employed`` /
-        ``has_license``), the joined household attributes (``economic_status`` /
+    tuple[pandas.DataFrame, pandas.DataFrame]
+        ``(persons, pseudonym_map)`` where ``persons`` is one row per synthetic
+        person with ``household_id`` / ``person_id``, the cell, demographics
+        (``age`` / ``sex``), person attributes (``employed`` / ``has_license``),
+        the joined household attributes (``economic_status`` /
         ``household_income_eur`` / ``number_of_cars``), the derived
         ``car_availability``, and the schema-gap columns (``age_range``,
         ``high_income``, ``household_size``, ``is_urban_resident``,
         ``pt_subscription_type``, ``socioprofessional_class``,
-        ``source_person_id``, ``source_household_id``).
+        ``source_person_id``, ``source_household_id``);
+        and ``pseudonym_map`` is a DataFrame with columns
+        ``[source_person_id, source_household_id, H_ID, P_ID]`` for local-only
+        re-linking (write to work_dir as ``pseudonym_map.csv``; never commit).
     """
     rng = rng if rng is not None else np.random.RandomState(0)
     households = expand.assign_synthetic_household_ids(
@@ -214,10 +312,18 @@ def build_persons(
     _BS_KREIS5 = "03101"
     persons["is_urban_resident"] = persons["departement_id"] == _BS_KREIS5
 
-    # provenance IDs: preserve the MiD donor keys so every synthetic person is
-    # traceable to the survey respondent whose trips were used.
-    persons["source_person_id"] = persons["P_ID"].astype("string")
-    persons["source_household_id"] = persons[donor_col].astype("string")
+    # Pseudonymise donor ids: replace raw MiD H_ID / P_ID with sequential surrogate
+    # integers so the published output is not re-identifiable without the mapping.
+    # The surrogates are deterministic (factorize sort=True) and reproducible.
+    # The mapping (surrogate -> H_ID / P_ID) is returned as the second element of
+    # the build_persons return tuple; stage.py writes it to work_dir as a local-only
+    # pseudonym_map.csv for internal re-linking.
+    # Raw H_ID / P_ID columns remain on the frame for the trips join (trips_stage
+    # needs them) but are NOT in any output/writer field list (verified: PERSON_FIELDS
+    # in matsim/scenario/population.py and select_person_output_columns in synthesis/output.py
+    # contain only source_person_id / source_household_id via hts_id / hts_household_id,
+    # never H_ID or P_ID directly).
+    persons, donor_map = assign_donor_surrogates(persons, donor_col=donor_col)
 
     persons = attributes.map_socioprofessional_class(persons)
     persons = attributes.map_pt_subscription_type(persons, rng=rng)
@@ -230,7 +336,7 @@ def build_persons(
     persons["weight"] = 1.0
 
     schema.validate_person_columns(persons.columns)
-    return persons
+    return persons, donor_map
 
 
 def _household_availability(

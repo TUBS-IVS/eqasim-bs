@@ -3,10 +3,15 @@ from braunschweig.popsim import enriched_adapter as ea
 
 
 def _base_persons(**overrides):
-    """Return a minimal one-row persons frame, optionally overriding columns."""
+    """Return a minimal one-row persons frame, optionally overriding columns.
+
+    source_person_id / source_household_id are integer surrogates (not raw MiD ids)
+    after the data-protection fix in braunschweig.popsim.assembly.assign_donor_surrogates.
+    person_id / household_id are the synthetic integer ids assigned by sampled.
+    """
     data = {
-        "person_id": ["A_1_0_1"], "household_id": ["c_1_0"],
-        "source_person_id": ["1"], "source_household_id": ["1"],
+        "person_id": [42], "household_id": [7],
+        "source_person_id": [1], "source_household_id": [1],
         "age": [40], "sex": ["male"], "employed": [True],
         "household_income": ["3000_3600"], "high_income": [False],
         "car_availability": ["all"], "bicycle_availability": ["all"],
@@ -19,48 +24,68 @@ def _base_persons(**overrides):
 
 
 def test_adapter_fills_writer_id_fields_from_source():
+    """hts_* must be set from source_* (surrogate integers); census_* must be the
+    synthetic integer person_id / household_id (NOT the popsim embedding strings).
+
+    Design change (data-protection): census_* are ALWAYS overwritten with the
+    current integer person_id / household_id to prevent the leaking embedding strings
+    from synthesis.population.sampled from reaching the output.
+    """
     persons = _base_persons()
     out = ea.run(persons)
     for col in ["hts_id", "hts_household_id", "census_person_id", "census_household_id"]:
         assert col in out.columns and out[col].notna().all()
-    assert out.loc[0, "hts_id"] == "1"                 # from source_person_id
-    assert out.loc[0, "hts_household_id"] == "1"        # from source_household_id
-    assert out.loc[0, "census_person_id"] == "A_1_0_1"  # popsim own id
-    assert out.loc[0, "census_household_id"] == "c_1_0"
+    assert out.loc[0, "hts_id"] == 1              # from source_person_id (surrogate int)
+    assert out.loc[0, "hts_household_id"] == 1    # from source_household_id (surrogate int)
+    assert out.loc[0, "census_person_id"] == 42   # synthetic integer person_id
+    assert out.loc[0, "census_household_id"] == 7  # synthetic integer household_id
 
 
-def test_adapter_preserves_existing_census_ids():
-    """When synthesis.population.sampled has already set census_*ids, the adapter
-    must NOT overwrite them.  Only hts_id / hts_household_id should be (re-)set.
+def test_adapter_overwrites_leaking_census_ids():
+    """census_* must be OVERWRITTEN with the integer person_id / household_id even
+    when census_* were already set by synthesis.population.sampled.
 
-    Scenario: sampled sets census_person_id="orig_p" / census_household_id="orig_h"
-    for the ORIGINAL popsim ids, then reassigns person_id to a new integer "99".
-    The adapter must leave the provenance ids intact.
+    Rationale: sampled copies the popsim string ids (format ``<cell>_<H_ID>_<occ>[_<P_ID>]``)
+    to census_* BEFORE reassigning integer ids.  Those strings embed the raw MiD
+    H_ID / P_ID and must not reach the output.  The adapter overwrites census_*
+    with the current integer ids so no leaking string survives.
+
+    Note: this replaces the former 'only-if-absent' guard which was correct before
+    the pseudonymisation design change but would have preserved the leaking strings.
     """
-    # person_id="99" is the NEW reassigned integer id from sampled;
-    # census_person_id="orig_p" is the ORIGINAL popsim id preserved by sampled.
+    # Simulate post-sampled state: person_id / household_id are the new integers;
+    # census_* carry the leaking popsim embedding strings set by sampled.
     persons = _base_persons(
-        person_id=["99"],
-        household_id=["42"],
-        census_person_id=["orig_p"],
-        census_household_id=["orig_h"],
-        source_person_id=["mid_p1"],
-        source_household_id=["mid_h1"],
+        person_id=[99],
+        household_id=[42],
+        census_person_id=["A_12345_0_678"],    # embedding string with H_ID=12345, P_ID=678
+        census_household_id=["A_12345_0"],     # embedding string with H_ID=12345
+        source_person_id=[3],                  # already-pseudonymised surrogate
+        source_household_id=[2],
     )
     out = ea.run(persons)
 
-    # census ids must NOT be overwritten (sampled's original provenance is preserved).
-    assert out.loc[0, "census_person_id"] == "orig_p", (
-        f"census_person_id was overwritten: expected 'orig_p', got {out.loc[0, 'census_person_id']!r}"
+    # census ids MUST be overwritten (the embedding strings must not reach the output).
+    assert out.loc[0, "census_person_id"] == 99, (
+        f"census_person_id should be overwritten with person_id=99, "
+        f"got {out.loc[0, 'census_person_id']!r}"
     )
-    assert out.loc[0, "census_household_id"] == "orig_h", (
-        f"census_household_id was overwritten: expected 'orig_h', got {out.loc[0, 'census_household_id']!r}"
+    assert out.loc[0, "census_household_id"] == 42, (
+        f"census_household_id should be overwritten with household_id=42, "
+        f"got {out.loc[0, 'census_household_id']!r}"
+    )
+    # Verify the leaking strings are gone.
+    assert out.loc[0, "census_person_id"] != "A_12345_0_678", (
+        "census_person_id must not carry the leaking popsim embedding string"
+    )
+    assert out.loc[0, "census_household_id"] != "A_12345_0", (
+        "census_household_id must not carry the leaking popsim embedding string"
     )
 
     # hts_id / hts_household_id must always be set from source_*.
-    assert out.loc[0, "hts_id"] == "mid_p1", (
+    assert out.loc[0, "hts_id"] == 3, (
         f"hts_id not set from source_person_id: {out.loc[0, 'hts_id']!r}"
     )
-    assert out.loc[0, "hts_household_id"] == "mid_h1", (
+    assert out.loc[0, "hts_household_id"] == 2, (
         f"hts_household_id not set from source_household_id: {out.loc[0, 'hts_household_id']!r}"
     )

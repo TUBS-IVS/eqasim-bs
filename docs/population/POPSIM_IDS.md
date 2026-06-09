@@ -11,12 +11,50 @@ reads these columns by name; do not rename them without updating the writer and 
 |---|---|---|
 | `person_id` | `java.lang.Integer` (person XML `id=`) | Synthetic working id, reassigned to sequential integers by `synthesis.population.sampled` |
 | `household_id` | `java.lang.Integer` (household XML `id=`) | Synthetic working id, reassigned to sequential integers by `synthesis.population.sampled` |
-| `census_person_id` | `java.lang.Long` or `java.lang.String` (see below) | Producer record id: the ORIGINAL id BEFORE `sampled` reassigned it |
-| `census_household_id` | `java.lang.Long` or `java.lang.String` (see below) | Producer household record id: the ORIGINAL household id BEFORE reassignment |
-| `source_person_id` | internal only (not written directly) | Producer-agnostic donor key; the single source-of-truth for "where did this person come from" |
-| `source_household_id` | internal only (not written directly) | Producer-agnostic donor household key |
-| `hts_id` | `java.lang.Long` or `java.lang.String` (see below) | Written as `htsPersonId`; filled from `source_person_id` by `enriched_adapter` |
-| `hts_household_id` | `java.lang.Long` or `java.lang.String` (see below) | Written as `htsHouseholdId`; filled from `source_household_id` by `enriched_adapter` |
+| `census_person_id` | `java.lang.Long` | Synthetic integer record id set by `enriched_adapter` from `person_id` |
+| `census_household_id` | `java.lang.Long` | Synthetic integer household record id set by `enriched_adapter` from `household_id` |
+| `source_person_id` | internal only (not written directly) | Donor person surrogate (see below); single source-of-truth for "which donor person" |
+| `source_household_id` | internal only (not written directly) | Donor household surrogate (see below) |
+| `hts_id` | `java.lang.Long` | Written as `htsPersonId`; filled from `source_person_id` (surrogate integer) by `enriched_adapter` |
+| `hts_household_id` | `java.lang.Long` | Written as `htsHouseholdId`; filled from `source_household_id` (surrogate integer) by `enriched_adapter` |
+
+## Data-protection design (popsim_mid)
+
+MiD 2023 is restricted scientific-use microdata (BMDV licence). Publishing the
+raw `H_ID` / `P_ID` values in the synthetic output would allow re-identification
+of the survey respondent each synthetic agent was derived from. Two leak paths
+existed in the original design:
+
+1. `source_person_id` / `source_household_id` were set to the raw MiD `P_ID` / `H_ID`.
+2. The popsim `person_id` format `<cell>_<H_ID>_<occurrence>[_<P_ID>]` embeds both
+   ids; `synthesis.population.sampled` copied these strings to `census_*`.
+
+Both leaks are closed by:
+
+1. **Donor surrogates** (`braunschweig.popsim.assembly.assign_donor_surrogates`):
+   each unique donor household `H_ID` is assigned a sequential integer surrogate
+   (`pd.factorize(H_ID, sort=True)[0] + 1`), and each unique donor person
+   `(H_ID, P_ID)` a sequential integer surrogate. `source_person_id` and
+   `source_household_id` carry these surrogates -- they are numeric (clean
+   `java.lang.Long`) and reveal nothing about the real MiD respondent without the
+   mapping. The surrogates are deterministic (sort=True) and reproducible.
+
+2. **census_* overwrite** (`braunschweig.popsim.enriched_adapter.run`): the adapter
+   ALWAYS overwrites `census_person_id` / `census_household_id` with the current
+   integer `person_id` / `household_id` (assigned by `sampled`). For popsim_mid
+   there is no separate per-person census record, so the synthetic integer id is
+   the natural non-leaking record id. This replaces the former "only-if-absent" guard
+   which would have preserved the leaking embedding strings.
+
+3. **Local-only pseudonym map**: `braunschweig.popsim.stage` writes
+   `work_dir/pseudonym_map.csv` (columns: `source_person_id, source_household_id,
+   H_ID, P_ID`) for internal re-linking. This file is in the pipeline `work_dir`
+   (local-only, gitignored path) and must NEVER be committed or published.
+
+The raw `H_ID` / `P_ID` columns remain on the internal persons frame for the trips
+join (`braunschweig.popsim.trips` needs them) but are NOT included in any
+output/writer field list (verified: `matsim.scenario.population.PERSON_FIELDS` and
+`synthesis.output.select_person_output_columns` contain none of `H_ID`, `P_ID`).
 
 ## Long-or-String type selection (bug D2 fix)
 
@@ -24,13 +62,12 @@ reads these columns by name; do not rename them without updating the writer and 
 write time:
 
 - If `value` can be parsed as an integer -> `java.lang.Long` (default pipeline, byte-identical).
-- Otherwise -> `java.lang.String` (popsim_mid alphanumeric provenance ids).
+- Otherwise -> `java.lang.String` (fallback).
 
-This means the four id attributes (`censusHouseholdId`, `censusPersonId`,
-`htsHouseholdId`, `htsPersonId`) carry `class="java.lang.Long"` for the IPF
-pipeline and `class="java.lang.String"` for popsim_mid. The Java
-`ObjectAttributesIO` reader can handle both types for String attributes; the crash
-was caused by MATSim trying to parse an alphanumeric String as a Long at load time.
+After the pseudonymisation fix, all four id attributes (`censusHouseholdId`,
+`censusPersonId`, `htsHouseholdId`, `htsPersonId`) are integers for popsim_mid
+(as for the IPF pipeline), so they are uniformly written as `java.lang.Long`.
+The `class="java.lang.String"` path is no longer exercised by popsim_mid.
 
 ## Per-producer mapping
 
@@ -57,16 +94,16 @@ Producer: `braunschweig.popsim.assembly` -> `synthesis.population.sampled` -> `b
 |---|---|---|---|
 | `person_id` | sequential integer (0, 1, 2, ...) after `sampled` | `42` | integer |
 | `household_id` | sequential integer after `sampled` | `7` | integer |
-| `census_person_id` | original popsim person string id (before `sampled`): `<cell>_<H_ID>_<occurrence>_<P_ID>` | `"10N548_E43_1234_0_1"` | alphanumeric -> written as `java.lang.String` |
-| `census_household_id` | original popsim household string id (before `sampled`): `<cell>_<H_ID>_<occurrence>` | `"10N548_E43_1234_0"` | alphanumeric -> written as `java.lang.String` |
-| `source_person_id` | MiD `P_ID` (numeric string) | `"678"` | numeric string |
-| `source_household_id` | MiD `H_ID` (numeric string) | `"1234"` | numeric string |
-| `hts_id` | copied from `source_person_id` by `enriched_adapter` | `"678"` | numeric string -> written as `java.lang.Long` |
-| `hts_household_id` | copied from `source_household_id` by `enriched_adapter` | `"1234"` | numeric string -> written as `java.lang.Long` |
+| `census_person_id` | synthetic integer `person_id` (set by `enriched_adapter`, always overwritten) | `42` | integer -> written as `java.lang.Long` |
+| `census_household_id` | synthetic integer `household_id` (set by `enriched_adapter`, always overwritten) | `7` | integer -> written as `java.lang.Long` |
+| `source_person_id` | donor person surrogate (sequential integer, not raw `P_ID`) | `3` | integer |
+| `source_household_id` | donor household surrogate (sequential integer, not raw `H_ID`) | `2` | integer |
+| `hts_id` | copied from `source_person_id` (surrogate) by `enriched_adapter` | `3` | integer -> written as `java.lang.Long` |
+| `hts_household_id` | copied from `source_household_id` (surrogate) by `enriched_adapter` | `2` | integer -> written as `java.lang.Long` |
 
-Note: `hts_id` / `hts_household_id` are MiD `P_ID` / `H_ID` which are always
-numeric, so they continue to be written as `java.lang.Long` even in `popsim_mid`.
-Only `census_*` are alphanumeric compound popsim provenance strings.
+Note: All id attributes for `popsim_mid` are now integers so they are uniformly
+written as `java.lang.Long`. The former `java.lang.String` path for alphanumeric
+popsim embedding strings (`<cell>_<H_ID>_...`) is no longer reached.
 
 ## The `enriched_adapter` contract
 
@@ -75,10 +112,12 @@ for `popsim_mid`) is the only stage that sets `hts_id` / `hts_household_id` from
 `source_*`. Its invariants:
 
 1. `hts_id = source_person_id` and `hts_household_id = source_household_id` (always set).
-2. `census_person_id` and `census_household_id` are set only when ABSENT. They are
-   already present after `synthesis.population.sampled` (which copies the original
-   popsim string ids to `census_*` before overwriting `person_id`/`household_id`).
-   Overwriting here would destroy the popsim provenance chain.
+2. `census_person_id = person_id` and `census_household_id = household_id` (ALWAYS
+   overwritten with the current integer synthetic ids). This replaces the former
+   "only-if-absent" guard, which was intentionally changed to close the data-protection
+   leak: `synthesis.population.sampled` copies the leaking popsim embedding strings
+   (e.g. `"<cell>_<H_ID>_<occurrence>[_<P_ID>]"`) to `census_*` before reassigning
+   integer ids; the adapter overwrites them with clean integer ids.
 
 ## `synthesis.population.sampled` contract
 
@@ -88,24 +127,33 @@ for `popsim_mid`) is the only stage that sets `hts_id` / `hts_household_id` from
    BEFORE reassigning new sequential integer ids.
 2. Assigns new sequential `person_id` (0..N-1) and `household_id` (0..M-1).
 
-For `simple_ipf_open` the original ids are integers, so `census_*` are integers.
-For `popsim_mid` the original ids are alphanumeric popsim strings (set by
-`expand.py`), so `census_*` carry those strings to the writer unchanged.
+For `simple_ipf_open` the original ids are integers, so `census_*` are integers
+(the enriched_adapter for IPF does not touch `census_*`).
+For `popsim_mid` the original ids are alphanumeric embedding strings (set by
+`expand.py`), but the `enriched_adapter` always overwrites `census_*` with the
+final integer ids so no embedding string reaches the output.
 
 ## Java side compatibility note
 
-The eqasim Java side reads `censusPersonId`, `censusHouseholdId`, `htsPersonId`,
-`htsHouseholdId` via `ObjectAttributes` (MATSim population attributes XML). As of
-the current eqasim Bavaria fork these attributes are read as `Long` in the HTS
-matching code (`EqasimHtsPersonFilter`). When `popsim_mid` is used as the
-population source:
+After the pseudonymisation fix, all four id attributes written to the MATSim XML
+(`censusPersonId`, `censusHouseholdId`, `htsPersonId`, `htsHouseholdId`) are
+integers for `popsim_mid`, so they are written as `java.lang.Long` (same as the
+IPF pipeline). The former concern about `ClassCastException` on alphanumeric
+`censusPersonId` strings no longer applies. The eqasim Java `EqasimHtsPersonFilter`
+reads `htsPersonId` as `Long`; this continues to work unchanged.
 
-- `htsPersonId` / `htsHouseholdId` remain `Long` (MiD `P_ID`/`H_ID` are numeric),
-  so the Java HTS reader is unaffected.
-- `censusPersonId` / `censusHouseholdId` are `String`. If the Java code reads
-  these as `Long` it will throw a `ClassCastException`. Currently these attributes
-  are only used for traceability (not for any Java computation), so the cast is not
-  triggered. If future Java code reads `censusPersonId` as `Long` for `popsim_mid`
-  scenarios, either cast to `String` first or introduce a new `String`-typed
-  attribute name (e.g. `censusPersonIdStr`). This concern is flagged here so it is
-  not silently overlooked.
+## Internal traceability: pseudonym_map.csv
+
+To enable re-linking from surrogate back to the original MiD respondent for
+internal scientific use, `braunschweig.popsim.stage` writes a local-only file:
+
+```
+<work_dir>/pseudonym_map.csv
+```
+
+Columns: `source_person_id, source_household_id, H_ID, P_ID`
+
+This file is in the pipeline `work_dir` (local-only, gitignored path).
+It MUST NOT be committed, published, or included in any output. The surrogate
+assignment is deterministic (factorize sort=True) and reproducible without the
+file, but the file provides a convenient lookup without re-running assembly.

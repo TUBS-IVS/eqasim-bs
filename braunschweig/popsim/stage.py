@@ -123,6 +123,19 @@ def execute(context) -> pd.DataFrame:
     # join the MiD donor persons, map demographics + attributes, and validate the
     # output against the shared population schema.
     mid_households, mid_persons = mid.load_mid_attributes(mid_dir)
-    persons = assembly.build_persons(combined, mid_households, mid_persons)
+    persons, pseudonym_map = assembly.build_persons(combined, mid_households, mid_persons)
     context.set_info("popsim_n_persons", len(persons))
+
+    # Write the local-only pseudonym map so internal re-linking is possible.
+    # This file maps each surrogate source_person_id / source_household_id back
+    # to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it
+    # lives in the pipeline work_dir which is a local-only, gitignored path.
+    pseudonym_map_path = Path(work_dir) / "pseudonym_map.csv"
+    pseudonym_map.to_csv(pseudonym_map_path, index=False)
+    import logging as _logging
+    _logging.getLogger(__name__).info(
+        "[popsim.stage] Pseudonym map written to %s (%d unique donor persons).",
+        pseudonym_map_path, len(pseudonym_map),
+    )
+
     return persons

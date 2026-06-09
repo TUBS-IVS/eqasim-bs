@@ -50,7 +50,7 @@ def _mid_households():
 
 
 def test_build_persons_composes_demographics_attributes_and_household():
-    persons = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
+    persons, _map = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
     # 2 persons for donor 1 + 1 for donor 2 = 3.
     assert len(persons) == 3
     assert persons["person_id"].is_unique
@@ -69,12 +69,12 @@ def test_build_persons_composes_demographics_attributes_and_household():
 
 
 def test_build_persons_car_availability_uses_adult_count():
-    persons = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
+    persons, _map = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
     # Household A (A_1_0): 1 adult (age 40) + 1 child (age 10) -> 1 adult; 1 car -> all.
     a = persons[persons["household_id"] == "A_1_0"]
     assert (a["car_availability"] == "all").all()
 
 
 def test_build_persons_carries_home_cell():
-    persons = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
+    persons, _map = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
     assert set(persons.loc[persons["household_id"] == "A_1_0", "ZENSUS100m"]) == {"A"}

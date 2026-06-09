@@ -223,7 +223,7 @@ def _mid_households():
 
 def test_build_persons_emits_commune_id():
     """build_persons must produce a non-null commune_id equal to ars_to_ags8(ARS)."""
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_households_with_ars(), _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
@@ -236,7 +236,7 @@ def test_build_persons_emits_commune_id():
 
 def test_build_persons_emits_departement_id():
     """build_persons must produce departement_id = commune_id[:5] (Kreis prefix)."""
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_households_with_ars(), _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
@@ -249,7 +249,7 @@ def test_build_persons_emits_departement_id():
 
 def test_build_persons_emits_iris_id():
     """build_persons must produce iris_id = commune_id + '0000' (eqasim placeholder)."""
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_households_with_ars(), _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
@@ -263,7 +263,7 @@ def test_build_persons_emits_iris_id():
 
 def test_build_persons_zone_ids_consistent():
     """commune_id / departement_id / iris_id must be mutually consistent."""
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_households_with_ars(), _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
@@ -288,7 +288,7 @@ def test_build_persons_zone_ids_for_two_kreise():
         "H_ID": [1, 2],
         ARS_COLUMN: [BS_ARS, SZ_ARS],  # Braunschweig and Salzgitter
     })
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         merged, _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
@@ -373,7 +373,7 @@ def test_is_urban_resident_true_for_braunschweig_commune():
         is_urban_resident = inside_braunschweig
     where inside_braunschweig <=> departement_id == "03101" in the popsim path.
     """
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_hh_single_ars(BS_ARS, "BS"),
         _mid_hh_single(),
         _mid_persons_single(),
@@ -393,7 +393,7 @@ def test_is_urban_resident_false_for_rural_commune():
         is_urban_resident = inside_braunschweig
     where inside_braunschweig is False for any commune outside Kreis 03101.
     """
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         _merged_hh_single_ars(GF_ARS, "GF"),
         _mid_hh_single(),
         _mid_persons_single(),
@@ -436,7 +436,7 @@ def test_is_urban_resident_no_nulls():
         "H_ANZAUTO":  [1, 0],
         "H_ANZRAD":   [1, 1],
     })
-    persons = assembly.build_persons(
+    persons, _map = assembly.build_persons(
         merged, mid_hh, mid_p,
         rng=np.random.RandomState(0),
     )
