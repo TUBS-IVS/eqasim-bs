@@ -74,10 +74,35 @@ BIKES_MISSING_CODE = 99
 PT_SUBSCRIPTION_FKARTE = frozenset({3, 4, 5, 6})
 
 
-def map_employed(persons: pd.DataFrame, *, taet_col: str = "P_TAET") -> pd.DataFrame:
-    """Add a boolean ``employed`` from MiD ``P_TAET`` (codes 1..7 = erwerbstaetig)."""
+def map_employed(
+    persons: pd.DataFrame, *, taet_col: str = "P_TAET", rng=None
+) -> pd.DataFrame:
+    """Add a boolean ``employed`` from MiD ``P_TAET`` via the uniform missing policy.
+
+    MiD codebook mapping: codes 1..7 (Angestellte/Arbeiter, Beamte, Selbststaendige,
+    geringfuegig, Elternzeit, mithelfende Angehoerige, Wehrdienst) -> True; 8..16
+    (Ausbildung, Schueler, Student, Rentner, Haushalter, arbeitslos, etc.) -> False.
+    No structural design-missing codes apply (employment is asked of all respondents
+    above interviewing age). 99 (keine Angabe, item non-response) -> imputed from the
+    valid pool within the same age group (alter_gr1) when present, else global pool;
+    ``default=False`` (conservative: unknown employment treated as not employed).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = {code: (code in EMPLOYED_TAET) for code in range(1, 17)}
+    spec = missing.AttributeSpec(
+        name="employed",
+        source_col=taet_col,
+        value_map=value_map,
+        structural={},
+        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        default=False,
+    )
     out = persons.copy()
-    out["employed"] = out[taet_col].isin(EMPLOYED_TAET)
+    out["employed"], _ = missing.resolve(out, spec, rng=rng)
+    out["employed"] = out["employed"].astype(bool)
     return out
 
 
@@ -111,29 +136,88 @@ def map_has_license(
 
 
 def map_economic_status(
-    households: pd.DataFrame, *, status_col: str = "oek_status"
+    households: pd.DataFrame, *, status_col: str = "oek_status", rng=None
 ) -> pd.DataFrame:
-    """Add ``economic_status`` (very_low..very_high) from MiD ``oek_status`` (1..5)."""
-    out = households.copy()
-    out["economic_status"] = out[status_col].map(ECONOMIC_STATUS_BY_OEK_STATUS)
-    return out
+    """Add ``economic_status`` (very_low..very_high) from MiD ``oek_status`` via the uniform missing policy.
 
+    MiD codebook: 1 very_low, 2 low, 3 medium, 4 high, 5 very_high. No structural
+    design-missing codes apply to household economic status (it is derived by the MiD
+    from household income, so it is always either valid or item-nonresponse). 9 (keine
+    Angabe) -> imputed from the valid pool within the same household-size group
+    (hhgr_gr) when present, else global pool; ``default=None`` (households that cannot
+    be classified receive no status; downstream must handle None).
 
-def map_household_income_eur(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1"
-) -> pd.DataFrame:
-    """Add ``household_income_eur`` from the MiD ``hheink_gr1`` group midpoints."""
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="economic_status",
+        source_col=status_col,
+        value_map=ECONOMIC_STATUS_BY_OEK_STATUS,
+        structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        default=None,
+    )
     out = households.copy()
-    out["household_income_eur"] = out[group_col].map(INCOME_GROUP_MIDPOINT_EUR)
+    out["economic_status"], _ = missing.resolve(out, spec, rng=rng)
     return out
 
 
 def map_household_income(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1"
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
 ) -> pd.DataFrame:
-    """Add the categorical ``household_income`` class from the MiD income group."""
+    """Add the categorical ``household_income`` class from the MiD income group via the uniform missing policy.
+
+    MiD codebook: hheink_gr1 groups 1..15 map to income class labels (under_500 ..
+    over_7000). 99 (keine Angabe) -> imputed from the valid pool within the same
+    household-size group (hhgr_gr) when present, else global pool; ``default=None``
+    (households that cannot be classified receive no income class).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="household_income",
+        source_col=group_col,
+        value_map=INCOME_CLASS_BY_GROUP,
+        structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        default=None,
+    )
     out = households.copy()
-    out["household_income"] = out[group_col].map(INCOME_CLASS_BY_GROUP)
+    out["household_income"], _ = missing.resolve(out, spec, rng=rng)
+    return out
+
+
+def map_household_income_eur(
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
+) -> pd.DataFrame:
+    """Add ``household_income_eur`` from the MiD ``hheink_gr1`` group midpoints via the uniform missing policy.
+
+    MiD codebook: hheink_gr1 groups 1..15 map to EUR midpoints of the codebook range;
+    group 15 (>7000 EUR) uses a conservative estimate of 8000.0 EUR. 99 (keine Angabe)
+    -> imputed from the valid pool within the same household-size group (hhgr_gr) when
+    present, else global pool; ``default=None`` (households that cannot be classified
+    receive no EUR value).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="household_income_eur",
+        source_col=group_col,
+        value_map=INCOME_GROUP_MIDPOINT_EUR,
+        structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        default=None,
+    )
+    out = households.copy()
+    out["household_income_eur"], _ = missing.resolve(out, spec, rng=rng)
+    # Cast to float only where non-None; None remains as NaN in the object series
+    out["household_income_eur"] = pd.to_numeric(out["household_income_eur"], errors="coerce")
     return out
 
 
@@ -182,21 +266,70 @@ def derive_car_availability(n_cars: int, n_adults: int) -> str:
 
 
 def map_has_pt_subscription(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE"
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
 ) -> pd.DataFrame:
-    """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` (flatrate set)."""
+    """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` via the uniform missing policy.
+
+    MiD codebook mapping: 1 (Einzelfahrschein) -> False, 2 (Mehrfahrtenkarte) ->
+    False, 3 (Deutschlandticket) -> True, 4 (Wochen-/Monatskarte ohne Abo) -> True,
+    5 (Monatskarte im Abo / Jahreskarte) -> True, 6 (Jobticket / Semesterticket) ->
+    True, 7 (sonstiges) -> False, 8 (fahre nie mit OEPNV) -> False.
+
+    Structural design-missing codes (Handbuch Tab. 3, first-digit conventions):
+    202 (PAPI Interviewart, fragebogen-bedingt) -> False; 206 (Proxy interview) ->
+    False; 402 (Kind unter 14 Jahre, nicht befragt) -> False. These persons genuinely
+    have no PT ticket of their own.
+
+    99 (keine Angabe, item non-response) -> imputed from the valid pool within the
+    same age group (alter_gr1) when present, else global pool; ``default=False``
+    (conservative: unknown PT use treated as no subscription).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = {code: (code in PT_SUBSCRIPTION_FKARTE) for code in range(1, 9)}
+    spec = missing.AttributeSpec(
+        name="has_pt_subscription",
+        source_col=fkarte_col,
+        value_map=value_map,
+        structural={202: False, 206: False, 402: False},
+        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        default=False,
+    )
     out = persons.copy()
-    out["has_pt_subscription"] = out[fkarte_col].isin(PT_SUBSCRIPTION_FKARTE)
+    out["has_pt_subscription"], _ = missing.resolve(out, spec, rng=rng)
+    out["has_pt_subscription"] = out["has_pt_subscription"].astype(bool)
     return out
 
 
 def map_number_of_bicycles(
-    households: pd.DataFrame, *, bikes_col: str = "H_ANZRAD"
+    households: pd.DataFrame, *, bikes_col: str = "H_ANZRAD", rng=None
 ) -> pd.DataFrame:
-    """Add ``number_of_bicycles`` from MiD ``H_ANZRAD`` (the 99 missing code -> 0)."""
+    """Add ``number_of_bicycles`` from MiD ``H_ANZRAD`` via the uniform missing policy.
+
+    MiD codebook: 0..10 valid bicycle counts. 99 (keine Angabe, item non-response) ->
+    imputed from the valid pool within the same household-size group (hhgr_gr) when
+    present, else from the global valid pool. Previously, 99 was silently mapped to 0
+    (``BIKES_MISSING_CODE``); now it is imputed to avoid a systematic bias toward
+    zero-bicycle households. ``BIKES_MISSING_CODE`` is retained as a module constant
+    for any downstream code that may still reference it.
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="number_of_bicycles",
+        source_col=bikes_col,
+        value_map={i: i for i in range(0, 11)},
+        structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        default=0,
+    )
     out = households.copy()
-    bikes = out[bikes_col].where(out[bikes_col] != BIKES_MISSING_CODE, 0)
-    out["number_of_bicycles"] = bikes.fillna(0).astype(int)
+    out["number_of_bicycles"], _ = missing.resolve(out, spec, rng=rng)
+    out["number_of_bicycles"] = out["number_of_bicycles"].astype(int)
     return out
 
 

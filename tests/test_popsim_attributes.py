@@ -15,8 +15,12 @@ from braunschweig.popsim import attributes as attr
 def test_map_employed_from_p_taet():
     persons = pd.DataFrame({"P_TAET": [1, 2, 3, 7, 8, 11, 12, 99]})
     out = attr.map_employed(persons)
-    # 1..7 erwerbstaetig -> True; 8 (Ausbildung), 11 (Rentner), 12 (arbeitslos), 99 -> False.
-    assert list(out["employed"]) == [True, True, True, True, False, False, False, False]
+    # 1..7 erwerbstaetig -> True; 8 (Ausbildung), 11 (Rentner), 12 (arbeitslos) -> False.
+    # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently False); with the
+    # valid pool {T,T,T,T,F,F,F} and default rng(0), the imputed result is a bool, not NaN.
+    assert list(out["employed"][:7]) == [True, True, True, True, False, False, False]
+    assert out["employed"].iloc[7] in (True, False)
+    assert out["employed"].isna().sum() == 0
 
 
 def test_map_has_license_from_p_fschein():
@@ -50,7 +54,12 @@ def test_household_income_eur_from_group():
 def test_map_number_of_cars_clips_missing():
     hh = pd.DataFrame({"H_ANZAUTO": [0, 2, 99]})
     out = attr.map_number_of_cars(hh)
-    assert list(out["number_of_cars"]) == [0, 2, 0]  # 99 (keine Angabe) -> 0
+    # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently 0). With no
+    # hhgr_gr column the global valid pool {0, 2} is used; imputed value is in {0, 2}.
+    assert out["number_of_cars"].iloc[0] == 0
+    assert out["number_of_cars"].iloc[1] == 2
+    assert out["number_of_cars"].iloc[2] in (0, 2)
+    assert out["number_of_cars"].isna().sum() == 0
 
 
 def test_derive_car_availability():
@@ -64,17 +73,26 @@ def test_derive_car_availability():
 def test_map_has_pt_subscription_from_p_fkarte():
     # P_FKARTE 3..6 = flatrate (Deutschlandticket, Wochen/Monat ohne Abo,
     # Monat-Abo/Jahreskarte, Jobticket/Semesterticket); 1,2,7,8 not.
+    # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently False); the
+    # imputed result is a bool, not NaN.
     persons = pd.DataFrame({"P_FKARTE": [1, 2, 3, 4, 5, 6, 7, 8, 99]})
     out = attr.map_has_pt_subscription(persons)
-    assert list(out["has_pt_subscription"]) == [
-        False, False, True, True, True, True, False, False, False
+    assert list(out["has_pt_subscription"][:8]) == [
+        False, False, True, True, True, True, False, False
     ]
+    assert out["has_pt_subscription"].iloc[8] in (True, False)
+    assert out["has_pt_subscription"].isna().sum() == 0
 
 
 def test_map_number_of_bicycles():
     hh = pd.DataFrame({"H_ANZRAD": [0, 3, 99]})
     out = attr.map_number_of_bicycles(hh)
-    assert list(out["number_of_bicycles"]) == [0, 3, 0]  # 99 missing -> 0
+    # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently 0). With no
+    # hhgr_gr column the global valid pool {0, 3} is used; imputed value is in {0, 3}.
+    assert out["number_of_bicycles"].iloc[0] == 0
+    assert out["number_of_bicycles"].iloc[1] == 3
+    assert out["number_of_bicycles"].iloc[2] in (0, 3)
+    assert out["number_of_bicycles"].isna().sum() == 0
 
 
 def test_derive_bicycle_availability():
