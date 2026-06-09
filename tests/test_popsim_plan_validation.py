@@ -37,3 +37,24 @@ def test_validator_flags_overlap_with_next_trip():
     df.loc[0, "arrival_time"] = 18 * 3600
     report = pv.PlanValidator().validate_trips(df)
     assert any(i.code == "trip_overlap" for i in report.issues)
+
+
+def test_validator_flags_missing_home_closure():
+    df = _good_trips()
+    df.loc[0, "preceding_purpose"] = "work"   # day does NOT start at home
+    report = pv.PlanValidator(require_home_closure=True).validate_trips(df)
+    assert any(i.code == "no_home_start" for i in report.issues)
+
+
+def test_validator_flags_no_home_end():
+    df = _good_trips()
+    df.loc[1, "following_purpose"] = "leisure"  # day does NOT end at home
+    report = pv.PlanValidator(require_home_closure=True).validate_trips(df)
+    assert any(i.code == "no_home_end" for i in report.issues)
+
+
+def test_home_closure_check_can_be_disabled():
+    df = _good_trips()
+    df.loc[0, "preceding_purpose"] = "work"
+    report = pv.PlanValidator(require_home_closure=False).validate_trips(df)
+    assert not any(i.code in {"no_home_start", "no_home_end"} for i in report.issues)

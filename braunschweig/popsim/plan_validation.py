@@ -88,4 +88,13 @@ class PlanValidator:
             if (arr[:-1] > dep[1:]).any():
                 out.append(PlanIssue(person_id, "trip_overlap",
                                      "a trip arrives after the next trip departs"))
+        if self.require_home_closure:
+            first_origin = group.iloc[0]["preceding_purpose"]
+            last_dest = group.iloc[-1]["following_purpose"]
+            if first_origin != "home":
+                out.append(PlanIssue(person_id, "no_home_start",
+                                     "the day does not start at home"))
+            if last_dest != "home":
+                out.append(PlanIssue(person_id, "no_home_end",
+                                     "the day does not end at home"))
         return out
