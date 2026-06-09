@@ -1268,6 +1268,96 @@ def emit_behaviour(
 # export_spatial -- registry-based driver, wired into export.main()
 # ---------------------------------------------------------------------------
 
+def _load_commutes(run_output_dir: "str | None") -> "gpd.GeoDataFrame | None":
+    """Load the synthesis home->work commute LineStrings (``*commutes.gpkg``).
+
+    Returns None (logged) when the run dir or the file is absent, so the
+    commuter tab can fall back / skip without a silent failure.
+    """
+    if run_output_dir is None:
+        return None
+    import geopandas as gpd
+    path = next(Path(run_output_dir).glob("*commutes.gpkg"), None)
+    if path is None:
+        LOGGER.info("[commuters] no *commutes.gpkg in %s", run_output_dir)
+        return None
+    return gpd.read_file(path)
+
+
+def emit_commuters(
+    run_output_dir: "str | None",
+    record: "dict[str, Any] | None",
+    folder: Path,
+) -> "dict[str, Any] | None":
+    """Commuter (Pendler) tab: in-/out-/internal commuters per Kreis + top relations.
+
+    Source of the work commute Kreis x Kreis matrix, in order of preference:
+    1. **MATSim realised** work trips (``record["matsim"]["od_matrix"]``).
+    2. **Synthesis** home->work assignment (``*commutes.gpkg``) -- works even
+       without a MATSim run.
+    The active source is named in the tab title so the two are never confused.
+    Returns None (logged) when neither source is available.
+    """
+    from braunschweig.analysis.simwrapper import commuters as cm
+    from braunschweig.analysis import spatial
+
+    zm = cm.commute_matrix_from_record(record, "work") if record else None
+    source = "MATSim realised work trips"
+    if zm is None:
+        commutes = _load_commutes(run_output_dir)
+        if commutes is None:
+            LOGGER.warning(
+                "[commuters] neither MATSim work OD nor synthesis commutes.gpkg "
+                "available -- commuter tab skipped")
+            return None
+        # commutes.gpkg loses its CRS metadata after clean_gpkg(); the synthesis
+        # always writes in EPSG:25832, so set it explicitly for the spatial join.
+        if commutes.crs is None:
+            commutes = commutes.set_crs("EPSG:25832")
+        kreise = spatial.load_kreise(commutes.crs)
+        zm = cm.commute_matrix_from_synthesis(commutes, kreise)
+        source = "synthesis home->work assignment (pre-MATSim)"
+    zones, matrix = zm
+
+    balance = cm.commuter_balance(zones, matrix)
+    top = cm.top_relations(zones, matrix, n=12)
+    LOGGER.info("[commuters] %d Kreise; source: %s", len(balance), source)
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    w.write_csv(folder, "commuter_balance.csv", balance)
+    w.write_csv(folder, "commuter_top_relations.csv", top)
+
+    rows: dict[str, list[dict[str, Any]]] = {
+        "bars": [w.card_bar(
+            "In- / out- / internal commuters by Kreis",
+            "commuter_balance.csv", x="ars5",
+            columns=["einpendler_gesamt", "auspendler", "binnen"],
+            legend_titles=["Einpendler (in)", "Auspendler (out)", "Binnen (internal)"],
+            y_axis_name="commuters", width=2,
+            description=f"Work commuters per Kreis. Source: {source}.")],
+        "table": [w.card_table(
+            "Top commuter relations (Kreis -> Kreis)",
+            "commuter_top_relations.csv", width=2)],
+    }
+
+    # Net-balance choropleth (Einpendler - Auspendler), VG250 polygons in 4326.
+    try:
+        kreise4326 = spatial.load_kreise("EPSG:25832").to_crs(4326)[["ars5", "geometry"]]
+        geo = kreise4326.merge(balance, on="ars5", how="left")
+        geo.to_file(folder / "kreis_commuters.geojson", driver="GeoJSON")
+        rows["choropleth"] = [w.card_choropleth(
+            "Net commuter balance by Kreis (Einpendler - Auspendler)",
+            "kreis_commuters.geojson", "commuter_balance.csv",
+            value_col="netto", join="ars5", color_ramp="RdYlGn",
+            description=f"Positive = net in-commuting Kreis. Source: {source}.")]
+        LOGGER.info("[commuters] wrote kreis_commuters.geojson (%d Kreise)", len(geo))
+    except Exception as exc:
+        LOGGER.warning("[commuters] net-balance choropleth skipped: %s", exc)
+
+    return w.dashboard("Commuters", f"Commuters / Pendler ({source})", rows)
+
+
 def export_spatial(
     target_dir: str | Path,
     run_output_dir: str | None = None,
@@ -1334,6 +1424,9 @@ def export_spatial(
         ("socio", lambda f: emit_socio(source_dir, f) if source_dir else None),
         # Tab: behaviour (sankey + scatter)
         ("behaviour", lambda f: emit_behaviour(sim_output_dir, record, f)),
+        # Tab: commuters (Pendler in/out/internal + top relations); works in
+        # both modes (MATSim work OD, else synthesis commutes.gpkg).
+        ("commuters", lambda f: emit_commuters(source_dir, record, f)),
     ]
 
     written: list[Path] = []
