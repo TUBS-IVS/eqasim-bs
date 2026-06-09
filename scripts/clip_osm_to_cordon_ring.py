@@ -84,7 +84,10 @@ def _write_poly(geom_wgs84, path: str, name: str = "zgb_ring") -> None:
         if geom_wgs84.geom_type == "MultiPolygon"
         else [geom_wgs84]
     )
-    with open(path, "w", encoding="ascii") as fh:
+    # newline="\n" forces Unix LF endings on every platform: the osmosis/osmconvert
+    # .poly parsers expect LF and silently match NOTHING (empty clip) on CRLF, which
+    # the default Windows text mode would produce.
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
         fh.write(name + "\n")
         for i, poly in enumerate(polys, 1):
             fh.write(f"{i}\n")

@@ -54,3 +54,18 @@ def test_write_poly_coordinate_format(tmp_path):
     text = p.read_text()
     # The first coordinate must appear with exactly 7 decimal places.
     assert "  9.1234567  51.9876543" in text
+
+
+def test_write_poly_uses_unix_lf_line_endings(tmp_path):
+    """The .poly must use LF (not CRLF) on every platform.
+
+    The osmosis/osmconvert bounding-polygon parsers expect Unix LF line endings;
+    on CRLF they silently match NOTHING and produce an empty clip. On Windows the
+    default text mode would emit CRLF, so the writer must force LF explicitly.
+    """
+    poly = Polygon([(10.0, 52.0), (11.0, 52.0), (11.0, 53.0), (10.0, 53.0)])
+    p = tmp_path / "ring.poly"
+    _write_poly(poly, str(p))
+    raw = p.read_bytes()
+    assert b"\r\n" not in raw, "poly must not contain CRLF line endings"
+    assert b"\n" in raw
