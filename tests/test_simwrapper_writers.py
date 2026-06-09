@@ -34,5 +34,28 @@ def test_card_bar_shape():
 def test_card_table_and_tile():
     t = w.card_table("Headline", "kpi.csv")
     assert t["type"] == "csv" and t["dataset"] == "kpi.csv"
+    # SimWrapper Table uses ``showAllRows`` (capital R).
+    assert t["showAllRows"] is True
+    assert "showAllrows" not in t
     tile = w.card_tile("KPIs", "kpi.csv")
     assert tile["type"] == "tile" and tile["dataset"] == "kpi.csv"
+
+
+def test_card_bar_legend_name():
+    """SimWrapper Chart base class uses ``legendName`` (a list), not ``legendTitles``."""
+    card = w.card_bar("Mode share", "mode_share.csv", x="mode",
+                      columns=["sim_pct", "mid_pct"],
+                      legend_titles=["Simulation", "MiD 2023"])
+    assert "legendName" in card, "must emit legendName"
+    assert "legendTitles" not in card, "must NOT emit legendTitles"
+    assert card["legendName"] == ["Simulation", "MiD 2023"]
+
+
+def test_card_line_legend_name():
+    """card_line delegates to card_bar, so legendName must propagate."""
+    card = w.card_line("Evolution", "evo.csv", x="iteration",
+                       columns=["car", "pt"],
+                       legend_titles=["Car", "PT"])
+    assert card["type"] == "line"
+    assert card["legendName"] == ["Car", "PT"]
+    assert "legendTitles" not in card

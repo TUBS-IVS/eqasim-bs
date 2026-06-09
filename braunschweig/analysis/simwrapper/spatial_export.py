@@ -527,23 +527,26 @@ def emit_fleet(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
     ]
 
     if choropleth_available:
-        rows["choropleths"] = [
+        # Each big map card gets its own full-width row so it renders large.
+        rows["choropleth_bev"] = [
             w.card_choropleth(
                 "BEV share by Kreis (%)",
                 "kreis_fleet.geojson",
-                "kreis_fleet.csv",
                 value_col="bev_share_pct",
                 join="ars5",
                 color_ramp="Viridis",
+                height=13,
                 description="Share of battery-electric vehicles per Kreis.",
             ),
+        ]
+        rows["choropleth_power"] = [
             w.card_choropleth(
                 "Mean engine power by Kreis (kW)",
                 "kreis_fleet.geojson",
-                "kreis_fleet.csv",
                 value_col="mean_power_kw",
                 join="ars5",
                 color_ramp="Plasma",
+                height=13,
                 description="Mean engine power of vehicles per Kreis.",
             ),
         ]
@@ -754,22 +757,24 @@ def emit_spatial_demand(
     xy.to_csv(folder / "trips_xy.csv", index=False, encoding="utf-8")
     LOGGER.info("[spatial_demand] wrote trips_xy.csv (%d rows)", len(xy))
 
-    aggregations = {
-        "Trips": [
-            {"title": "Origins", "x": "origin_x", "y": "origin_y"},
-            {"title": "Destinations", "x": "destination_x", "y": "destination_y"},
-        ]
-    }
     return w.dashboard(
         "Spatial demand",
         "Trip origins & destinations (hexagon density)",
         {
+            # One big map card per row (full width) so it renders large.
             "hex": [
                 w.card_hexagons(
                     "Trip origins and destinations",
                     "trips_xy.csv",
-                    aggregations=aggregations,
+                    from_x="origin_x",
+                    from_y="origin_y",
+                    to_x="destination_x",
+                    to_y="destination_y",
+                    aggregation_name="Trips",
+                    from_title="Origins",
+                    to_title="Destinations",
                     radius=300,
+                    height=13,
                     description=(
                         "Each hexagon colour encodes trip count. "
                         "Select 'Origins' or 'Destinations' in the panel."
@@ -1081,44 +1086,42 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
 
     # Row 2: Kreis choropleths.
     if choropleth_available:
-        choropleth_cards: list[dict[str, Any]] = []
+        # Each big map card gets its own full-width row so it renders large.
         if "mean_income_eur" in agg_df.columns:
-            choropleth_cards.append(w.card_choropleth(
+            rows["choropleth_income"] = [w.card_choropleth(
                 "Mean household income by Kreis (EUR)",
                 "kreis_socio.geojson",
-                "kreis_socio.csv",
                 value_col="mean_income_eur",
                 join="ars5",
                 color_ramp="Viridis",
+                height=13,
                 description="Mean synthesised household_income_eur per Kreis (descriptive).",
-            ))
+            )]
         if "high_income_share_pct" in agg_df.columns:
-            choropleth_cards.append(w.card_choropleth(
+            rows["choropleth_high_income"] = [w.card_choropleth(
                 "High-income share by Kreis (%)",
                 "kreis_socio.geojson",
-                "kreis_socio.csv",
                 value_col="high_income_share_pct",
                 join="ars5",
                 color_ramp="Plasma",
+                height=13,
                 description="Share of high-income households per Kreis (descriptive).",
-            ))
+            )]
         if "mean_economic_status" in agg_df.columns:
-            choropleth_cards.append(w.card_choropleth(
+            rows["choropleth_status"] = [w.card_choropleth(
                 "Mean economic status by Kreis (1=very low .. 5=very high)",
                 "kreis_socio.geojson",
-                "kreis_socio.csv",
                 value_col="mean_economic_status",
                 join="ars5",
                 color_ramp="RdYlGn",
+                height=13,
                 description=(
                     "Mean ordinal economic status per Kreis (1=very_low .. 5=very_high), "
                     "synthesised per household (descriptive). Full coverage when sourced "
                     "from persons.csv; legacy vehicles.csv fallback excludes carless HHs "
                     "(see run log)."
                 ),
-            ))
-        if choropleth_cards:
-            rows["choropleths"] = choropleth_cards
+            )]
         rows["kreis_table"] = [
             w.card_table(
                 "Per-Kreis socio-economic summary",
@@ -1369,10 +1372,12 @@ def emit_commuters(
         kreise4326 = spatial.load_kreise("EPSG:25832").to_crs(4326)[["ars5", "geometry"]]
         geo = kreise4326.merge(balance, on="ars5", how="left")
         geo.to_file(folder / "kreis_commuters.geojson", driver="GeoJSON")
+        # Own full-width row so the map renders large.
         rows["choropleth"] = [w.card_choropleth(
             "Net commuter balance by Kreis (Einpendler - Auspendler)",
-            "kreis_commuters.geojson", "commuter_balance.csv",
+            "kreis_commuters.geojson",
             value_col="netto", join="ars5", color_ramp="RdYlGn",
+            height=13,
             description=f"Positive = net in-commuting Kreis. Source: {source}.")]
         LOGGER.info("[commuters] wrote kreis_commuters.geojson (%d Kreise)", len(geo))
     except Exception as exc:

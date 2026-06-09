@@ -47,7 +47,9 @@ def card_bar(title: str, dataset: str, *, x: str, columns: list[str],
     if description:
         card["description"] = description
     if legend_titles:
-        card["legendTitles"] = legend_titles
+        # The SimWrapper Chart base class uses ``legendName`` (a list), not
+        # ``legendTitles``.  The Python parameter keeps the descriptive name.
+        card["legendName"] = legend_titles
     if x_axis_name:
         card["xAxisName"] = x_axis_name
     if y_axis_name:
@@ -71,8 +73,9 @@ def card_line(title: str, dataset: str, *, x: str, columns: list[str],
 def card_table(title: str, dataset: str, *, width: int = 1,
                description: str = "") -> dict[str, Any]:
     """Build a SimWrapper CSV-table card dict."""
+    # SimWrapper Table uses ``showAllRows`` (capital R).
     card = {"type": "csv", "title": title, "dataset": dataset,
-            "width": width, "enableFilter": False, "showAllrows": True}
+            "width": width, "enableFilter": False, "showAllRows": True}
     if description:
         card["description"] = description
     return card
@@ -84,7 +87,7 @@ def card_tile(title: str, dataset: str, *, width: int = 1) -> dict[str, Any]:
 
 
 def card_xytime(title: str, file: str, *, value_label: str = "",
-                radius: int = 6, width: int = 2,
+                radius: int = 6, width: int = 2, height: int = 5,
                 description: str = "") -> dict[str, Any]:
     """Build a SimWrapper xytime point-cloud card dict.
 
@@ -97,6 +100,7 @@ def card_xytime(title: str, file: str, *, value_label: str = "",
         value_label: Optional label for the value legend.
         radius: Dot radius in pixels (default 6).
         width: Dashboard column width (1 or 2; default 2).
+        height: Card height in SimWrapper grid units (default 5).
         description: Optional description shown below the card title.
     """
     card: dict[str, Any] = {
@@ -105,6 +109,7 @@ def card_xytime(title: str, file: str, *, value_label: str = "",
         "file": file,
         "radius": radius,
         "width": width,
+        "height": height,
     }
     if value_label:
         card["valueLabel"] = value_label
@@ -113,41 +118,46 @@ def card_xytime(title: str, file: str, *, value_label: str = "",
     return card
 
 
-def card_choropleth(title: str, geojson_file: str, dataset_file: str, *,
+def card_choropleth(title: str, geojson_file: str, *,
                     value_col: str, join: str = "ars5",
-                    color_ramp: str = "Viridis", width: int = 2,
-                    description: str = "") -> dict[str, Any]:
+                    color_ramp: str = "Viridis", height: int = 13,
+                    width: int = 2, description: str = "") -> dict[str, Any]:
     """Build a SimWrapper shapefiles-plugin choropleth card dict.
 
-    Follows the verified SimWrapper shapefiles-plugin schema::
+    The value column is read **directly from the GeoJSON feature properties**
+    (the callers merge the aggregated data into the GeoJSON before writing it).
+    This avoids the SimWrapper type-coercion bug where a CSV ``ars5`` value such
+    as ``"03101"`` is parsed as the integer ``3101``, making the join fail and
+    producing a flat single colour.
 
-        shapes:   { file: x.geojson, join: id }
-        datasets: { agg: { file: data.csv } }
-        display:  { fill: { dataset: agg, join: id, columnName: col,
-                            colorRamp: { ramp: Viridis, steps: 7 } } }
+    Emitted schema (MapPlot / shapefiles plugin, verified against SimWrapper source)::
+
+        shapes:  { file: x.geojson, join: ars5 }
+        display: { fill: { columnName: col,
+                           colorRamp: { ramp: Viridis, steps: 7 } } }
+
+    No ``datasets`` key and no ``fill.dataset``/``fill.join``: the colour is
+    sourced entirely from the GeoJSON properties, bypassing the CSV join path.
 
     Args:
         title: Card title.
         geojson_file: Relative path to the GeoJSON polygon file (EPSG:4326).
-            Must contain a property matching ``join``.
-        dataset_file: Relative path to the CSV with ``join`` + ``value_col``.
-        value_col: Column name in ``dataset_file`` to use for fill colour.
-        join: Shared key between the GeoJSON ``join`` property and the CSV
-            (default ``ars5``).
+            Must contain a feature property matching ``join`` AND ``value_col``.
+        value_col: GeoJSON property name to use for fill colour.
+        join: GeoJSON property used as the zone identifier (default ``ars5``).
         color_ramp: SimWrapper colour ramp name (default ``Viridis``).
+        height: Card height in SimWrapper grid units (default 13 for big maps).
         width: Dashboard column width (default 2).
         description: Optional description.
     """
     card: dict[str, Any] = {
         "type": "map",
         "title": title,
+        "height": height,
         "width": width,
         "shapes": {"file": geojson_file, "join": join},
-        "datasets": {"agg": {"file": dataset_file}},
         "display": {
             "fill": {
-                "dataset": "agg",
-                "join": join,
                 "columnName": value_col,
                 "colorRamp": {"ramp": color_ramp, "steps": 7},
             }
@@ -158,31 +168,63 @@ def card_choropleth(title: str, geojson_file: str, dataset_file: str, *,
     return card
 
 
-def card_hexagons(title: str, file: str, *, aggregations: dict,
+def card_hexagons(title: str, file: str, *,
+                  from_x: str, from_y: str, to_x: str, to_y: str,
+                  aggregation_name: str = "Trips",
+                  from_title: str = "Origins", to_title: str = "Destinations",
                   radius: int = 150, projection: str = "EPSG:25832",
-                  width: int = 2, description: str = "") -> dict[str, Any]:
+                  height: int = 13, width: int = 2,
+                  description: str = "") -> dict[str, Any]:
     """Build a SimWrapper hexagons density-map card dict.
 
     The hexagons plugin counts points per hexagonal cell from the ``file`` CSV.
-    ``aggregations`` follows the SimWrapper hexagons schema::
+    Each aggregation entry is a **FROM-TO object** (verified against the
+    SimWrapper Hexagons contrib source)::
 
-        { "GroupName": [{ "title": "...", "x": "col", "y": "col" }, ...] }
+        aggregations:
+          <Name>:
+            title: <Name>
+            fromTitle: Origins
+            fromX: origin_x
+            fromY: origin_y
+            toTitle: Destinations
+            toX: destination_x
+            toY: destination_y
 
     Args:
         title: Card title.
-        file: Relative path to the CSV (just needs the x/y columns).
-        aggregations: SimWrapper aggregations dict defining x/y column names.
+        file: Relative path to the CSV (must contain the x/y columns).
+        from_x: Column name for origin x coordinate.
+        from_y: Column name for origin y coordinate.
+        to_x: Column name for destination x coordinate.
+        to_y: Column name for destination y coordinate.
+        aggregation_name: Top-level key for the aggregation group (default ``Trips``).
+        from_title: Label for the origin layer (default ``Origins``).
+        to_title: Label for the destination layer (default ``Destinations``).
         radius: Hexagon radius in map units (default 150).
         projection: CRS string (default ``EPSG:25832``).
+        height: Card height in SimWrapper grid units (default 13 for big maps).
         width: Dashboard column width (default 2).
         description: Optional description.
     """
+    aggregations = {
+        aggregation_name: {
+            "title": aggregation_name,
+            "fromTitle": from_title,
+            "fromX": from_x,
+            "fromY": from_y,
+            "toTitle": to_title,
+            "toX": to_x,
+            "toY": to_y,
+        }
+    }
     card: dict[str, Any] = {
         "type": "hexagons",
         "title": title,
         "file": file,
         "projection": projection,
         "radius": radius,
+        "height": height,
         "aggregations": aggregations,
         "width": width,
     }

@@ -183,7 +183,7 @@ def test_emit_od_table(tmp_path, record):
 
 
 def test_emit_od_spider_real(tmp_path, record):
-    """Primary-path test: with real VG250 geometry the aggregate-od spider
+    """Primary-path test: with real VG250 geometry the aggregate OD spider
     must actually be produced (no silent fallback to table-only)."""
     import pytest
     from braunschweig.analysis.simwrapper import export as ex
@@ -193,7 +193,9 @@ def test_emit_od_spider_real(tmp_path, record):
     board = ex.emit_od(record, tmp_path)
     assert (tmp_path / "zones.shp").exists()
     card_types = {c["type"] for row in board["layout"].values() for c in row}
-    assert "aggregate-od" in card_types
+    # SimWrapper AggregateOD uses type ``aggregate`` (not ``aggregate-od``).
+    assert "aggregate" in card_types
+    assert "aggregate-od" not in card_types
 
 
 def test_emit_per_kreis(tmp_path, record):

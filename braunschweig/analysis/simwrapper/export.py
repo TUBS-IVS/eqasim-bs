@@ -388,9 +388,11 @@ def _try_write_od_spider(record: dict, folder: Path, od: dict) -> "dict[str, Any
     gdf = kreise.rename(columns={"ars5": "id"})[["id", "name", "geometry"]]
     gdf.to_file(folder / "zones.shp")
     LOGGER.info("[simwrapper] OD spider: wrote zones.shp (%d Kreise)", len(gdf))
+    # SimWrapper AggregateOD uses type ``aggregate`` (not ``aggregate-od``).
     return {
-        "type": "aggregate-od",
+        "type": "aggregate",
         "title": "Aggregate OD (spider)",
+        "height": 13,
         "width": 2,
         "shpFile": "zones.shp",
         "dbfFile": "zones.dbf",

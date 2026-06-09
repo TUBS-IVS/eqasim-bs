@@ -189,73 +189,87 @@ class TestCardXytime:
 # ---------------------------------------------------------------------------
 
 class TestCardChoropleth:
+    """Tests verify the GeoJSON-embedded fill schema (no CSV dataset join).
+
+    Root cause of the flat-colour bug: SimWrapper parses CSV ``ars5`` = "03101"
+    as the integer 3101 while the GeoJSON property is the string "03101" ->
+    the join fails -> flat single colour.  Fix: embed the value column directly
+    in the GeoJSON properties and colour from there (no ``datasets`` key and no
+    ``fill.dataset``/``fill.join``).
+    """
+
     def test_type_is_map(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
         assert card["type"] == "map"
 
     def test_shapes_file(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
         assert card["shapes"]["file"] == "kreise.geojson"
 
     def test_shapes_join(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct", join="ars5",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct", join="ars5")
         assert card["shapes"]["join"] == "ars5"
 
-    def test_datasets_agg(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct",
+    def test_no_datasets_key(self):
+        """No ``datasets`` key: colour is sourced from GeoJSON properties only."""
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
+        assert "datasets" not in card, (
+            "datasets key must be absent to avoid the CSV string/int join mismatch"
         )
-        assert card["datasets"]["agg"]["file"] == "kreis_fleet.csv"
+
+    def test_no_fill_dataset_key(self):
+        """``fill.dataset`` must be absent (colour from GeoJSON, not CSV)."""
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
+        assert "dataset" not in card["display"]["fill"], (
+            "fill.dataset must be absent"
+        )
+
+    def test_no_fill_join_key(self):
+        """``fill.join`` must be absent (no CSV join step)."""
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
+        assert "join" not in card["display"]["fill"], (
+            "fill.join must be absent when colouring from GeoJSON properties"
+        )
 
     def test_display_fill_column_name(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
         assert card["display"]["fill"]["columnName"] == "bev_share_pct"
 
     def test_display_fill_color_ramp(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct", color_ramp="Plasma",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct", color_ramp="Plasma")
         assert card["display"]["fill"]["colorRamp"]["ramp"] == "Plasma"
 
     def test_display_fill_steps(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct",
-        )
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
         assert card["display"]["fill"]["colorRamp"]["steps"] == 7
 
-    def test_display_fill_join_matches_shapes(self):
-        card = w.card_choropleth(
-            "BEV share", "kreise.geojson", "kreis_fleet.csv",
-            value_col="bev_share_pct", join="ars5",
-        )
-        assert card["display"]["fill"]["join"] == "ars5"
-        assert card["display"]["fill"]["join"] == card["shapes"]["join"]
+    def test_height_default(self):
+        """Default height for big map cards is 13."""
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct")
+        assert card["height"] == 13
+
+    def test_height_override(self):
+        card = w.card_choropleth("BEV share", "kreise.geojson",
+                                 value_col="bev_share_pct", height=8)
+        assert card["height"] == 8
 
     def test_description(self):
-        card = w.card_choropleth(
-            "T", "g.geojson", "d.csv", value_col="col", description="desc"
-        )
+        card = w.card_choropleth("T", "g.geojson", value_col="col",
+                                 description="desc")
         assert card["description"] == "desc"
 
     def test_no_description_absent(self):
-        card = w.card_choropleth(
-            "T", "g.geojson", "d.csv", value_col="col"
-        )
+        card = w.card_choropleth("T", "g.geojson", value_col="col")
         assert "description" not in card
 
 
@@ -264,50 +278,106 @@ class TestCardChoropleth:
 # ---------------------------------------------------------------------------
 
 class TestCardHexagons:
-    def _aggs(self):
-        return {"Trips": [{"title": "Origins", "x": "origin_x", "y": "origin_y"}]}
+    """Tests verify the FROM-TO aggregation structure required by the SimWrapper
+    Hexagons contrib.  Old list-of-dicts structure was wrong; each aggregation
+    must be a single FROM-TO object with fromX/fromY/toX/toY keys."""
+
+    def _make_card(self, **kwargs):
+        defaults = dict(
+            from_x="origin_x", from_y="origin_y",
+            to_x="destination_x", to_y="destination_y",
+        )
+        defaults.update(kwargs)
+        return w.card_hexagons("Demand", "trips_xy.csv", **defaults)
 
     def test_type_is_hexagons(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert card["type"] == "hexagons"
 
     def test_file_key(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert card["file"] == "trips_xy.csv"
 
-    def test_aggregations_present(self):
-        aggs = self._aggs()
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=aggs)
-        assert card["aggregations"] == aggs
+    def test_aggregations_is_dict_not_list(self):
+        """aggregations must be a dict of FROM-TO objects, not a list."""
+        card = self._make_card()
+        assert isinstance(card["aggregations"], dict)
+        agg_name = next(iter(card["aggregations"]))
+        assert isinstance(card["aggregations"][agg_name], dict), (
+            "Each aggregation entry must be a FROM-TO dict, not a list"
+        )
+
+    def test_aggregation_has_from_to_keys(self):
+        card = self._make_card()
+        agg = next(iter(card["aggregations"].values()))
+        for key in ("title", "fromTitle", "fromX", "fromY", "toTitle", "toX", "toY"):
+            assert key in agg, f"FROM-TO aggregation must contain key '{key}'"
+
+    def test_from_xy_values(self):
+        card = self._make_card()
+        agg = next(iter(card["aggregations"].values()))
+        assert agg["fromX"] == "origin_x"
+        assert agg["fromY"] == "origin_y"
+
+    def test_to_xy_values(self):
+        card = self._make_card()
+        agg = next(iter(card["aggregations"].values()))
+        assert agg["toX"] == "destination_x"
+        assert agg["toY"] == "destination_y"
+
+    def test_aggregation_name_default(self):
+        card = self._make_card()
+        assert "Trips" in card["aggregations"]
+
+    def test_aggregation_name_override(self):
+        card = self._make_card(aggregation_name="Flows")
+        assert "Flows" in card["aggregations"]
+
+    def test_from_title_default(self):
+        card = self._make_card()
+        agg = card["aggregations"]["Trips"]
+        assert agg["fromTitle"] == "Origins"
+
+    def test_to_title_default(self):
+        card = self._make_card()
+        agg = card["aggregations"]["Trips"]
+        assert agg["toTitle"] == "Destinations"
 
     def test_radius_default(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert card["radius"] == 150
 
     def test_radius_override(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(), radius=300)
+        card = self._make_card(radius=300)
         assert card["radius"] == 300
 
     def test_projection_default(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert card["projection"] == "EPSG:25832"
 
     def test_projection_override(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(),
-                               projection="EPSG:4326")
+        card = self._make_card(projection="EPSG:4326")
         assert card["projection"] == "EPSG:4326"
 
+    def test_height_default(self):
+        """Default height for big map cards is 13."""
+        card = self._make_card()
+        assert card["height"] == 13
+
+    def test_height_override(self):
+        card = self._make_card(height=8)
+        assert card["height"] == 8
+
     def test_width_default(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert card["width"] == 2
 
     def test_description_present(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(),
-                               description="desc")
+        card = self._make_card(description="desc")
         assert card["description"] == "desc"
 
     def test_no_description_absent(self):
-        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        card = self._make_card()
         assert "description" not in card
 
 
