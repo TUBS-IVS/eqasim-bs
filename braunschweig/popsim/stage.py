@@ -19,10 +19,17 @@ when feeding the spatial / trip stages.
 Config keys (all under ``braunschweig.population.popsim.*``); defaults point at the
 canonical local-only layout (docs/population/DATA_LAYOUT.md) and the committed
 popsimprep PopulationSim config.
+
+The active donor source is controlled by ``braunschweig.population.popsim.source``
+(default ``"mid"``). The default ``"mid"`` path is byte-identical to the pre-source
+implementation. Switching to ``"entd"`` (Phase 2) will route the seed build, donor
+loading, and attribute mapping through the ENTD adapter without changing the
+structural PopulationSim orchestration.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -30,6 +37,9 @@ import pandas as pd
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import mid
+from braunschweig.popsim import sources
+
+logger = logging.getLogger(__name__)
 
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
@@ -43,6 +53,35 @@ KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_KREISE = "braunschweig.political_prefix"
+# Donor source identifier: "mid" (default) or a future registered source name.
+KEY_SOURCE = "braunschweig.population.popsim.source"
+
+
+def _resolve_source(source_name: str) -> sources.PopsimSource:
+    """Return a PopsimSource adapter for the given source name.
+
+    This thin helper is factored out of ``execute`` so it can be called and
+    tested independently without running PopulationSim.
+
+    Parameters
+    ----------
+    source_name:
+        Short lowercase source identifier, e.g. ``"mid"``.  Passed through to
+        :func:`braunschweig.popsim.sources.get_source`.
+
+    Returns
+    -------
+    PopsimSource
+        A fresh adapter instance for ``source_name``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``source_name`` is planned-but-not-yet-implemented (e.g. ``"entd"``).
+    ValueError
+        If ``source_name`` is not a known or planned source name.
+    """
+    return sources.get_source(source_name)
 
 
 def configure(context):
@@ -58,6 +97,7 @@ def configure(context):
     context.config(KEY_WORKERS, 3)
     context.config(KEY_WORK_DIR)
     context.config(KEY_KREISE)
+    context.config(KEY_SOURCE, "mid")
 
 
 def execute(context) -> pd.DataFrame:
@@ -73,6 +113,10 @@ def execute(context) -> pd.DataFrame:
     num_workers = int(context.config(KEY_WORKERS, 3))
     work_dir = context.config(KEY_WORK_DIR)
     kreise = list(context.config(KEY_KREISE))
+    source_name = context.config(KEY_SOURCE, "mid")
+
+    source = _resolve_source(source_name)
+    logger.info("[popsim.stage] active donor source: %s", source.name)
 
     controls_df = pd.read_csv(controls_path, sep=";")
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
@@ -80,7 +124,13 @@ def execute(context) -> pd.DataFrame:
     cells = mid.load_control_cells(cells_path, base_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
 
-    seed_households, seed_persons, report = mid.load_mid_seed(mid_dir)
+    # The seed build uses the source's column mapping so the PopulationSim seed
+    # schema can differ between survey sources.  For "mid" this delegates to
+    # mid.load_mid_seed (unchanged), preserving byte-identity.
+    seed_columns = source.seed_columns()
+    seed_households, seed_persons, report = mid.load_mid_seed(
+        mid_dir, columns=seed_columns
+    )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 
     run_one = batch.make_populationsim_run_one(
@@ -111,19 +161,28 @@ def execute(context) -> pd.DataFrame:
     combined = merge_report.combined.merge(cell_ars, on="ZENSUS100m", how="left")
     n_missing_ars = int(combined[ars_col].isna().sum())
     if n_missing_ars:
-        import logging
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "[popsim.stage] %d/%d households could not be matched to an ARS after "
             "the cells join (unexpected; cells used in PopulationSim must be a subset "
             "of the loaded cells frame).",
             n_missing_ars, len(combined),
         )
 
+    # Load the donor attribute tables through the active source adapter.
+    # For source="mid" this calls MidSource.load_donor -> mid.load_mid_attributes
+    # + mid.load_mid_wege, which is byte-identical to the previous direct call.
+    # The trips table is not needed at this stage (it is used by trips_stage), so
+    # we discard it here.
+    donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+
     # Expand the merged donor households into the full eqasim persons frame:
-    # join the MiD donor persons, map demographics + attributes, and validate the
+    # join the donor persons, map demographics + attributes, and validate the
     # output against the shared population schema.
-    mid_households, mid_persons = mid.load_mid_attributes(mid_dir)
-    persons, pseudonym_map = assembly.build_persons(combined, mid_households, mid_persons)
+    # NOTE: assembly.build_persons calls map_mid_person_attributes internally,
+    # which is MiD-specific.  For the current "mid" default this is correct and
+    # byte-identical to the previous code.  A future "entd" source will require
+    # a source-parameterised assembly path (Phase 2).
+    persons, pseudonym_map = assembly.build_persons(combined, donor_households, donor_persons)
     context.set_info("popsim_n_persons", len(persons))
 
     # Write the local-only pseudonym map so internal re-linking is possible.
@@ -132,8 +191,7 @@ def execute(context) -> pd.DataFrame:
     # lives in the pipeline work_dir which is a local-only, gitignored path.
     pseudonym_map_path = Path(work_dir) / "pseudonym_map.csv"
     pseudonym_map.to_csv(pseudonym_map_path, index=False)
-    import logging as _logging
-    _logging.getLogger(__name__).info(
+    logger.info(
         "[popsim.stage] Pseudonym map written to %s (%d unique donor persons).",
         pseudonym_map_path, len(pseudonym_map),
     )

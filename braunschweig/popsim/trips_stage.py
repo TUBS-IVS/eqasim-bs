@@ -170,12 +170,27 @@ def configure(context):
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
     context.config("braunschweig.population.popsim.mid_dir")
+    # Donor source identifier: must match the value configured in popsim.stage
+    # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
+    context.config("braunschweig.population.popsim.source", "mid")
 
 
 def execute(context):
-    from braunschweig.popsim import mid
+    from braunschweig.popsim import sources
 
     persons = context.stage("persons")
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    wege = mid.load_mid_wege(mid_dir)
-    return run(persons, wege, random_seed=int(context.config("random_seed")))
+    source_name = context.config("braunschweig.population.popsim.source", "mid")
+
+    source = sources.get_source(source_name)
+    logger.info("[trips_stage] active donor source: %s", source.name)
+
+    # Load donor tables through the source adapter: for "mid" this calls
+    # MidSource.load_donor -> mid.load_mid_attributes + mid.load_mid_wege,
+    # which is byte-identical to the previous direct mid.load_mid_wege call.
+    # The households and persons tables are not needed here (trips only).
+    _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
+
+    return source.build_trips(
+        persons, donor_trips, random_seed=int(context.config("random_seed"))
+    )
