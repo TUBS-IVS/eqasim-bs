@@ -9,11 +9,12 @@ process.
 
 This stage is the popsim_mid *producer*; the selector
 (``braunschweig.population.selector``) routes ``population.method == popsim_mid``
-here. The downstream expansion of these donor households into the full eqasim
-persons schema (persons + attributes + home locations + activity chains) is the
-next integration layer and is intentionally NOT done here -- see
-``braunschweig/popsim/handoff.py`` for the cell -> building assignment and
-docs/population for the harmonisation plan.
+here. After the merge it expands the donor households into the full eqasim persons
+frame (``braunschweig.popsim.assembly.build_persons``: join the MiD donor persons,
+map demographics + attributes, validate against ``braunschweig.population.schema``)
+and returns that. The home-location placement (``braunschweig.popsim.handoff``) and
+the activity-chain construction (``braunschweig.popsim.trips``) are layered on top
+when feeding the spatial / trip stages.
 
 Config keys (all under ``braunschweig.population.popsim.*``); defaults point at the
 canonical local-only layout (docs/population/DATA_LAYOUT.md) and the committed
@@ -26,6 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import mid
 
@@ -98,4 +100,11 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
-    return merge_report.combined
+
+    # Expand the merged donor households into the full eqasim persons frame:
+    # join the MiD donor persons, map demographics + attributes, and validate the
+    # output against the shared population schema.
+    mid_households, mid_persons = mid.load_mid_attributes(mid_dir)
+    persons = assembly.build_persons(merge_report.combined, mid_households, mid_persons)
+    context.set_info("popsim_n_persons", len(persons))
+    return persons

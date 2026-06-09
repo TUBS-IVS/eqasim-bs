@@ -200,6 +200,34 @@ def load_mid_seed(
     return households, persons, report
 
 
+# MiD columns needed to enrich the synthetic persons (beyond the seed control cols).
+MID_PERSON_ATTR_COLS = (
+    "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_TAET", "P_FSCHEIN", "P_FKARTE",
+)
+MID_HOUSEHOLD_ATTR_COLS = (
+    "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
+)
+
+
+def load_mid_attributes(
+    mid_dir: Union[str, Path],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load the MiD donor attribute columns (households + persons) for enrichment.
+
+    Reads only the columns the eqasim attribute mapping needs (not all MiD
+    columns); returns ``(households, persons)`` for
+    ``braunschweig.popsim.assembly.build_persons``.
+    """
+    mid_dir = Path(mid_dir)
+    households = pd.read_csv(
+        mid_dir / "MiD2023_Haushalte.csv", usecols=list(MID_HOUSEHOLD_ATTR_COLS)
+    )
+    persons = pd.read_csv(
+        mid_dir / "MiD2023_Personen.csv", usecols=list(MID_PERSON_ATTR_COLS)
+    )
+    return households, persons
+
+
 # --------------------------------------------------------------------------- #
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
