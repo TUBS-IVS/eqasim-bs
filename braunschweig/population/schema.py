@@ -5,14 +5,14 @@ household projection derived from it) that satisfies a shared **superset**
 contract:
 
 - **Required columns** -- present in EVERY workflow's output. These are the
-  structural keys, the core demographics, and the simulation-critical attributes
+  structural keys, the core demographics, the simulation-critical attributes
   that the MATSim / eqasim mode choice reads (household income, car / bicycle
-  availability, licence, PT subscription). An open workflow that lacks a native
-  source for one of these must supply an open proxy/default rather than omit it
-  (user decision 2026-06-08: "if we have hh-income mode choice we need it across
-  all").
-- **Optional columns** -- the MiD-rich extras (numeric income in EUR, ticket
-  type, economic status, housing tenure, vehicle counts, fleet attributes). The
+  availability, licence, PT subscription), plus the MiD-gap columns and popsim
+  provenance IDs that ``build_persons`` emits (Tasks 1-5). Any workflow that
+  does not have a native source for a gap column must supply an open
+  proxy/default rather than omit it (user decision 2026-06-08).
+- **Optional columns** -- the MiD-rich extras (numeric income in EUR, economic
+  status, housing tenure, vehicle counts, fleet attributes). The
   ``popsim_mid`` / IPF workflows populate as many of these as the data allows;
   the open workflows may omit them. Downstream writers already treat these as
   additive (written only when the column is present and non-empty).
@@ -28,6 +28,16 @@ is enabled (e.g. ``household_income_eur`` under income-elastic mode choice). Pas
 the relevant feature names to :func:`required_person_columns` to promote them;
 the base required set is the eqasim mode-choice input set that the pipeline
 always writes today.
+
+Schema coupling to validate_person_columns usage
+-------------------------------------------------
+As of 2026-06-09 ``validate_person_columns`` is called **exclusively** from
+``braunschweig.popsim.assembly.build_persons`` (the popsim workflow). The
+default ``simple_ipf_open`` pipeline does NOT invoke it. Therefore the
+popsim-specific provenance IDs (``source_person_id``, ``source_household_id``)
+can safely live here as required columns without breaking the default pipeline.
+If a future workflow also adopts this validator it must emit those columns (or
+supply explicit defaults).
 """
 
 from __future__ import annotations
@@ -52,9 +62,36 @@ SIMULATION_CRITICAL_COLUMNS: tuple[str, ...] = (
     "has_pt_subscription",
 )
 
+# Gap columns added by the popsim workflow (build_persons, Tasks 1-5) that
+# capture MiD-survey attributes needed for SimWrapper dashboards and downstream
+# validation.  Every workflow must emit these; open workflows supply
+# proxy/default values so the schema stays uniform.
+GAP_COLUMNS: tuple[str, ...] = (
+    "age_range",              # coarse MiD age band (string label, e.g. "30-39")
+    "high_income",            # bool: household above the MiD high-income threshold
+    "household_size",         # integer: number of persons in the household
+    "is_urban_resident",      # bool: home inside the Braunschweig core city boundary
+    "pt_subscription_type",   # categorical MiD P24.1 ticket type (e.g. "deutschlandticket")
+    "socioprofessional_class", # eqasim SPC label (employed/student/inactive/retired/…)
+)
+
+# Provenance IDs written by build_persons so every synthetic person is
+# traceable to the MiD survey respondent whose trips were used as the donor.
+# These are popsim-specific; the validator is only called on the popsim path
+# (see module docstring), so requiring them here does not affect the default
+# simple_ipf_open pipeline.
+PROVENANCE_COLUMNS: tuple[str, ...] = (
+    "source_person_id",       # MiD P_ID of the donor person
+    "source_household_id",    # MiD household key of the donor household
+)
+
 # The base required superset every workflow must produce.
 REQUIRED_PERSON_COLUMNS: tuple[str, ...] = (
-    STRUCTURAL_COLUMNS + CORE_DEMOGRAPHIC_COLUMNS + SIMULATION_CRITICAL_COLUMNS
+    STRUCTURAL_COLUMNS
+    + CORE_DEMOGRAPHIC_COLUMNS
+    + SIMULATION_CRITICAL_COLUMNS
+    + GAP_COLUMNS
+    + PROVENANCE_COLUMNS
 )
 
 # Required columns of the household projection.
@@ -66,11 +103,11 @@ REQUIRED_HOUSEHOLD_COLUMNS: tuple[str, ...] = (
 )
 
 # MiD-rich extras: populated where the data allows, optional in open workflows.
+# Note: high_income and pt_subscription_type have been promoted to GAP_COLUMNS
+# (required) and are therefore intentionally absent from this optional list.
 OPTIONAL_PERSON_COLUMNS: tuple[str, ...] = (
     "household_income_eur",
-    "high_income",
     "economic_status",
-    "pt_subscription_type",
     "license_type",
     "housing_tenure",
     "number_of_cars",
