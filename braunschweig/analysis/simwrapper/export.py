@@ -519,6 +519,10 @@ def main(argv: list[str] | None = None) -> int:
     record = assemble_run_record(label, out_dir, sim_cache, ns.sample_rate)
     target = out_dir / ns.out_subdir
     written = export_run(record, target)
+
+    from braunschweig.analysis.simwrapper import spatial_export as _sp
+    written += _sp.export_spatial(target, run_output_dir=str(out_dir))
+
     LOGGER.info("[simwrapper] open this folder in simwrapper.app: %s", target)
     return 0 if written else 1
 
