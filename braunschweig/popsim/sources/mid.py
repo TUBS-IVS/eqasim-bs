@@ -1,0 +1,138 @@
+"""MidSource: the MiD 2023 donor-source adapter.
+
+Wraps the existing ``braunschweig.popsim.mid`` I/O functions and
+``braunschweig.popsim.assembly.map_mid_person_attributes`` under the
+:class:`braunschweig.popsim.sources.base.PopsimSource` Protocol.
+
+No survey-specific logic is duplicated here: every method is a thin delegation
+to the authoritative module so the popsim_mid behaviour is preserved
+byte-identically.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Tuple, Union
+
+import pandas as pd
+
+from braunschweig.popsim import mid as mid_mod
+from braunschweig.popsim import trips_stage
+from braunschweig.popsim.assembly import map_mid_person_attributes
+from braunschweig.popsim.seed import MID_SEED_COLUMNS, SeedColumns
+
+logger = logging.getLogger(__name__)
+
+
+class MidSource:
+    """Donor-source adapter for MiD 2023 (Mobilitat in Deutschland).
+
+    Delegates to the existing popsim.mid and popsim.assembly modules;
+    no logic is duplicated.
+    """
+
+    name: str = "mid"
+
+    def seed_columns(self) -> SeedColumns:
+        """Return the canonical MiD 2023 seed column mapping.
+
+        Delegates to ``braunschweig.popsim.seed.MID_SEED_COLUMNS``; the
+        constant is defined there so both the seed module and this adapter
+        always agree on the column names.
+        """
+        return MID_SEED_COLUMNS
+
+    def load_donor(
+        self, data_dir: Union[str, Path]
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Load the MiD 2023 donor tables from data_dir.
+
+        Parameters
+        ----------
+        data_dir:
+            Directory containing ``MiD2023_Haushalte.csv``,
+            ``MiD2023_Personen.csv``, and ``MiD2023_Wege.csv``.
+
+        Returns
+        -------
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+            ``(households, persons, trips)`` where ``households`` and
+            ``persons`` come from :func:`braunschweig.popsim.mid.load_mid_attributes`
+            and ``trips`` comes from :func:`braunschweig.popsim.mid.load_mid_wege`.
+        """
+        data_dir = Path(data_dir)
+        households, persons = mid_mod.load_mid_attributes(data_dir)
+        trips = mid_mod.load_mid_wege(data_dir)
+        logger.info(
+            "[MidSource] loaded donor: %d households, %d persons, %d trips from %s",
+            len(households), len(persons), len(trips), data_dir,
+        )
+        return households, persons, trips
+
+    def map_person_attributes(
+        self,
+        persons: pd.DataFrame,
+        households: pd.DataFrame,
+        *,
+        rng=None,
+    ) -> pd.DataFrame:
+        """Map MiD donor attributes to the eqasim synthesis schema.
+
+        Delegates to :func:`braunschweig.popsim.assembly.map_mid_person_attributes`,
+        the same function that ``assembly.build_persons`` calls internally, so the
+        two code paths are byte-identical.
+
+        Parameters
+        ----------
+        persons:
+            Pre-expanded persons frame (after ``expand.map_demographics`` and
+            ``assembly.derive_zone_ids`` have been applied).
+        households:
+            MiD donor household table (from :meth:`load_donor`).
+        rng:
+            NumPy RandomState.  Defaults to ``np.random.RandomState(0)`` inside
+            ``map_mid_person_attributes``.
+
+        Returns
+        -------
+        pd.DataFrame
+            persons frame with all eqasim attribute columns appended (including
+            ``source_person_id`` / ``source_household_id`` surrogates and
+            ``weight = 1.0``).  The pseudonym map is discarded here because it
+            is an internal artefact; callers that need it should call
+            ``assembly.map_mid_person_attributes`` directly.
+        """
+        persons_out, _pseudonym_map = map_mid_person_attributes(
+            persons, households, rng=rng
+        )
+        return persons_out
+
+    def build_trips(
+        self,
+        persons: pd.DataFrame,
+        donor_trips: pd.DataFrame,
+        *,
+        random_seed: int,
+    ) -> pd.DataFrame:
+        """Build the synthesis.population.trips contract DataFrame.
+
+        Delegates to :func:`braunschweig.popsim.trips_stage.run` unchanged;
+        MidSource is a thin wrapper.
+
+        Parameters
+        ----------
+        persons:
+            Synthetic persons with ``person_id``, ``H_ID``, ``P_ID``.
+        donor_trips:
+            MiD Wege table from :meth:`load_donor`.
+        random_seed:
+            Integer seed for the per-person departure-time jitter RNG.
+
+        Returns
+        -------
+        pd.DataFrame
+            11-column synthesis.population.trips contract + ``euclidean_distance``
+            + MiD extras.
+        """
+        return trips_stage.run(persons, donor_trips, random_seed=random_seed)

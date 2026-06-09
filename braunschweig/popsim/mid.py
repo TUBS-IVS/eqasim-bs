@@ -34,6 +34,11 @@ from braunschweig.popsim import seed as seedmod
 SUFFIX_100M = "_ZENSUS100m"
 SUFFIX_1KM = "_ZENSUS1km"
 
+# Re-exported for convenience: callers that already import braunschweig.popsim.mid
+# can access the canonical MiD seed column mapping without a separate import of
+# braunschweig.popsim.seed.  The authoritative definition remains in seed.py.
+MID_SEED_COLUMNS = seedmod.MID_SEED_COLUMNS
+
 # Cell columns always loaded in addition to the control bases: the population
 # total (for parent selection / diagnostics) and the ARS key (for the ZGB filter).
 _EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS")

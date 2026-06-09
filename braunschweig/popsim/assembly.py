@@ -195,55 +195,43 @@ _HOUSEHOLD_ATTRS = [
 ]
 
 
-def build_persons(
-    merged_households: pd.DataFrame,
+def map_mid_person_attributes(
+    persons: pd.DataFrame,
     mid_households: pd.DataFrame,
-    mid_persons: pd.DataFrame,
     *,
     donor_col: str = "H_ID",
     rng=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build the synthetic persons frame with demographics + attributes.
+    """Apply the MiD attribute-mapping sequence to a pre-expanded, pre-zoned persons frame.
+
+    This function encapsulates the attribute-mapping portion of ``build_persons``
+    (everything after ``expand.map_demographics`` and ``derive_zone_ids`` have been
+    applied).  It is called by BOTH ``build_persons`` AND
+    ``braunschweig.popsim.sources.mid.MidSource.map_person_attributes`` so that
+    the two code paths are byte-identical.
 
     Parameters
     ----------
-    merged_households:
-        Merged PopulationSim output (one row per synthetic household, donor
-        ``H_ID`` + cell).
-    mid_households / mid_persons:
-        The MiD donor household / person tables.
+    persons:
+        Persons frame produced by ``expand.expand_to_persons`` +
+        ``expand.map_demographics`` + ``derive_zone_ids``.
+    mid_households:
+        The MiD donor household table (must contain the columns expected by the
+        ``attributes.*`` household mappers: ``H_ID``, ``oek_status``,
+        ``hheink_gr1``, ``H_ANZAUTO``, ``H_ANZRAD``).
+    donor_col:
+        Column name of the donor household key (default ``H_ID``).
     rng:
         Random state for stochastic attribute imputation (employment, licence,
-        PT subscription). Defaults to ``np.random.RandomState(0)`` for backward
-        compatibility; the calling stage should pass the pipeline's seeded rng.
+        PT subscription).  Defaults to ``np.random.RandomState(0)`` for backward
+        compatibility.
 
     Returns
     -------
     tuple[pandas.DataFrame, pandas.DataFrame]
-        ``(persons, pseudonym_map)`` where ``persons`` is one row per synthetic
-        person with ``household_id`` / ``person_id``, the cell, demographics
-        (``age`` / ``sex``), person attributes (``employed`` / ``has_license``),
-        the joined household attributes (``economic_status`` /
-        ``household_income_eur`` / ``number_of_cars``), the derived
-        ``car_availability``, and the schema-gap columns (``age_range``,
-        ``high_income``, ``household_size``, ``is_urban_resident``,
-        ``pt_subscription_type``, ``socioprofessional_class``,
-        ``source_person_id``, ``source_household_id``);
-        and ``pseudonym_map`` is a DataFrame with columns
-        ``[source_person_id, source_household_id, H_ID, P_ID]`` for local-only
-        re-linking (write to work_dir as ``pseudonym_map.csv``; never commit).
+        ``(persons, pseudonym_map)`` — same contract as ``build_persons``.
     """
     rng = rng if rng is not None else np.random.RandomState(0)
-    households = expand.assign_synthetic_household_ids(
-        merged_households, donor_col=donor_col
-    )
-    persons = expand.expand_to_persons(households, mid_persons, donor_col=donor_col)
-    persons = expand.map_demographics(persons)
-
-    # Derive commune_id, departement_id, iris_id from the 12-digit ARS column
-    # (joined by stage.py from the cells parquet onto the merged households).
-    # Format matches the default IPF producer exactly -- see derive_zone_ids docstring.
-    persons = derive_zone_ids(persons)
 
     persons = attributes.map_employed(persons, rng=rng)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
@@ -316,7 +304,7 @@ def build_persons(
     # integers so the published output is not re-identifiable without the mapping.
     # The surrogates are deterministic (factorize sort=True) and reproducible.
     # The mapping (surrogate -> H_ID / P_ID) is returned as the second element of
-    # the build_persons return tuple; stage.py writes it to work_dir as a local-only
+    # the return tuple; stage.py writes it to work_dir as a local-only
     # pseudonym_map.csv for internal re-linking.
     # Raw H_ID / P_ID columns remain on the frame for the trips join (trips_stage
     # needs them) but are NOT in any output/writer field list (verified: PERSON_FIELDS
@@ -334,6 +322,65 @@ def build_persons(
     # so weight=1.0 means every synthetic household is replicated exactly once before the
     # sampling_rate selection, matching the behaviour of braunschweig.ipf.attributed.
     persons["weight"] = 1.0
+
+    return persons, donor_map
+
+
+def build_persons(
+    merged_households: pd.DataFrame,
+    mid_households: pd.DataFrame,
+    mid_persons: pd.DataFrame,
+    *,
+    donor_col: str = "H_ID",
+    rng=None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build the synthetic persons frame with demographics + attributes.
+
+    Parameters
+    ----------
+    merged_households:
+        Merged PopulationSim output (one row per synthetic household, donor
+        ``H_ID`` + cell).
+    mid_households / mid_persons:
+        The MiD donor household / person tables.
+    rng:
+        Random state for stochastic attribute imputation (employment, licence,
+        PT subscription). Defaults to ``np.random.RandomState(0)`` for backward
+        compatibility; the calling stage should pass the pipeline's seeded rng.
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, pandas.DataFrame]
+        ``(persons, pseudonym_map)`` where ``persons`` is one row per synthetic
+        person with ``household_id`` / ``person_id``, the cell, demographics
+        (``age`` / ``sex``), person attributes (``employed`` / ``has_license``),
+        the joined household attributes (``economic_status`` /
+        ``household_income_eur`` / ``number_of_cars``), the derived
+        ``car_availability``, and the schema-gap columns (``age_range``,
+        ``high_income``, ``household_size``, ``is_urban_resident``,
+        ``pt_subscription_type``, ``socioprofessional_class``,
+        ``source_person_id``, ``source_household_id``);
+        and ``pseudonym_map`` is a DataFrame with columns
+        ``[source_person_id, source_household_id, H_ID, P_ID]`` for local-only
+        re-linking (write to work_dir as ``pseudonym_map.csv``; never commit).
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    households = expand.assign_synthetic_household_ids(
+        merged_households, donor_col=donor_col
+    )
+    persons = expand.expand_to_persons(households, mid_persons, donor_col=donor_col)
+    persons = expand.map_demographics(persons)
+
+    # Derive commune_id, departement_id, iris_id from the 12-digit ARS column
+    # (joined by stage.py from the cells parquet onto the merged households).
+    # Format matches the default IPF producer exactly -- see derive_zone_ids docstring.
+    persons = derive_zone_ids(persons)
+
+    # Apply the MiD attribute-mapping sequence (extracted so MidSource can call
+    # the same function and produce byte-identical output).
+    persons, donor_map = map_mid_person_attributes(
+        persons, mid_households, donor_col=donor_col, rng=rng
+    )
 
     schema.validate_person_columns(persons.columns)
     return persons, donor_map
