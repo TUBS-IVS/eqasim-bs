@@ -179,6 +179,11 @@ aliases:
   # directly from the MiD donor trips (no HTS join needed).
   synthesis.population.spatial.commute_distance: braunschweig.popsim.commute_distance
 
+  # popsim_mid secondary distance distributions: builds mode x travel-time CDFs
+  # from the German MiD 2023 Wege survey instead of the French ENTD, so secondary
+  # activities are placed at German empirical distances (bug D3 fix).
+  synthesis.population.spatial.secondary.distance_distributions: braunschweig.popsim.distance_distributions
+
   # --- All other aliases are identical to config_local_braunschweig.yml -----
   synthesis.population.income.selected: braunschweig.synthesis.income
   synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
