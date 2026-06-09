@@ -20,7 +20,8 @@ def add_household(writer, household, member_ids):
     writer.add_attribute("bicycleAvailability", "java.lang.String", household[FIELDS.index("bicycle_availability")])
     writer.add_attribute("household_income", "java.lang.String", household[FIELDS.index("household_income")]) # Bavaria update
     writer.add_attribute("high_income", "java.lang.Boolean", household[FIELDS.index("high_income")]) # Bavaria added
-    writer.add_attribute("censusId", "java.lang.Long", household[FIELDS.index("census_household_id")])
+    _census_hh_id = household[FIELDS.index("census_household_id")]
+    writer.add_attribute("censusId", writers.long_or_string_type(_census_hh_id), _census_hh_id)
     writer.end_attributes()
 
     writer.end_household()

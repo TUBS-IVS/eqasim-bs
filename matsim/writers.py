@@ -1,6 +1,34 @@
 import numpy as np
 from xml.sax.saxutils import escape
 
+
+def long_or_string_type(value):
+    """MATSim attribute type for an id: Long if it is an integer value, else String.
+
+    eqasim census/hts ids are integers in the French pipeline (Long); popsim_mid ids
+    are alphanumeric provenance strings (e.g. "ZENSUS100m_E43_1234_0_1") ->
+    String so MATSim can parse them.
+
+    Parameters
+    ----------
+    value:
+        The id value to classify. A native ``int``, a numeric string (e.g.
+        ``"12345"``), or ``0`` all resolve to ``java.lang.Long``. Anything
+        that cannot be converted to ``int`` (alphanumeric strings, ``None``,
+        compound ids) resolves to ``java.lang.String``.
+
+    Returns
+    -------
+    str
+        ``"java.lang.Long"`` or ``"java.lang.String"``.
+    """
+    try:
+        int(value)
+        return "java.lang.Long"
+    except (ValueError, TypeError):
+        return "java.lang.String"
+
+
 class XmlWriter:
     def __init__(self, writer):
         self.writer = writer

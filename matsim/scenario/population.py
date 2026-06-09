@@ -141,11 +141,19 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     writer.add_attribute("carAvailability", "java.lang.String", person[PERSON_FIELDS.index("car_availability")])
     writer.add_attribute("bicycleAvailability", "java.lang.String", person[PERSON_FIELDS.index("bicycle_availability")])
 
-    writer.add_attribute("censusHouseholdId", "java.lang.Long", person[PERSON_FIELDS.index("census_household_id")])
-    writer.add_attribute("censusPersonId", "java.lang.Long", person[PERSON_FIELDS.index("census_person_id")])
+    _census_hh_id = person[PERSON_FIELDS.index("census_household_id")]
+    writer.add_attribute("censusHouseholdId",
+                         writers.long_or_string_type(_census_hh_id), _census_hh_id)
+    _census_p_id = person[PERSON_FIELDS.index("census_person_id")]
+    writer.add_attribute("censusPersonId",
+                         writers.long_or_string_type(_census_p_id), _census_p_id)
 
-    writer.add_attribute("htsHouseholdId", "java.lang.Long", person[PERSON_FIELDS.index("hts_household_id")])
-    writer.add_attribute("htsPersonId", "java.lang.Long", person[PERSON_FIELDS.index("hts_id")])
+    _hts_hh_id = person[PERSON_FIELDS.index("hts_household_id")]
+    writer.add_attribute("htsHouseholdId",
+                         writers.long_or_string_type(_hts_hh_id), _hts_hh_id)
+    _hts_p_id = person[PERSON_FIELDS.index("hts_id")]
+    writer.add_attribute("htsPersonId",
+                         writers.long_or_string_type(_hts_p_id), _hts_p_id)
 
     writer.add_attribute("hasPtSubscription", "java.lang.Boolean", person[PERSON_FIELDS.index("has_pt_subscription")])
     writer.add_attribute("ptSubscriptionType", "java.lang.String", str(person[PERSON_FIELDS.index("pt_subscription_type")]))
