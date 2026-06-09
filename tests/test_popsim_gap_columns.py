@@ -24,11 +24,19 @@ from braunschweig.popsim import assembly
 # ---------------------------------------------------------------------------
 
 def _merged_households():
-    """Two synthetic households with two distinct MiD donors."""
+    """Two synthetic households with two distinct MiD donors.
+
+    Includes ``RegionalSchlussel_ARS``: the 12-digit ARS that stage.py joins from
+    the cells parquet onto the merged PopulationSim output before calling
+    build_persons (required for derive_zone_ids to produce commune_id /
+    departement_id / iris_id; bug D1 fix).
+    """
     return pd.DataFrame({
         "ZENSUS100m": ["A", "B"],
         "ZENSUS1km": ["KA", "KB"],
         "H_ID": [1, 2],
+        # Real Braunschweig (03101) 12-digit ARS; last 3 digits = Gemeinde suffix "000".
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
     })
 
 
@@ -133,7 +141,10 @@ def test_age_range_bins_match_enriched_py_core():
 def test_age_range_boundary_conditions():
     """Verify that age_range boundary ages map to the correct category."""
     # Build a custom merged + persons frame with boundary ages.
-    merged = pd.DataFrame({"ZENSUS100m": ["X"], "ZENSUS1km": ["KX"], "H_ID": [99]})
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["X"], "ZENSUS1km": ["KX"], "H_ID": [99],
+        "RegionalSchlussel_ARS": ["031010000000"],
+    })
     hh = pd.DataFrame({
         "H_ID": [99], "oek_status": [3], "hheink_gr1": [4],
         "H_ANZAUTO": [0], "H_ANZRAD": [0],

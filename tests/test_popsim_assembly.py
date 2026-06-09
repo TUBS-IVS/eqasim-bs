@@ -12,9 +12,15 @@ from braunschweig.popsim import assembly
 
 
 def _merged():
-    return pd.DataFrame(
-        {"ZENSUS100m": ["A", "B"], "ZENSUS1km": ["KA", "KB"], "H_ID": [1, 2]}
-    )
+    """Two synthetic households.  Includes ``RegionalSchlussel_ARS`` so
+    build_persons can derive commune_id / departement_id / iris_id (bug D1 fix)."""
+    return pd.DataFrame({
+        "ZENSUS100m": ["A", "B"],
+        "ZENSUS1km": ["KA", "KB"],
+        "H_ID": [1, 2],
+        # Real Braunschweig (03101) 12-digit ARS.
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+    })
 
 
 def _mid_persons():

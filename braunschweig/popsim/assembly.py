@@ -15,9 +15,70 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.popsim import attributes
 from braunschweig.popsim import expand
 from braunschweig.population import schema
+
+# Column name of the 12-digit ARS key that the cells parquet carries and that
+# stage.py joins onto the merged PopulationSim output before calling build_persons.
+# The name is spelled with one 's' ("Schlussel") to match the parquet source column.
+ARS_COLUMN = "RegionalSchlussel_ARS"
+
+
+def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFrame:
+    """Derive the three spatial zone IDs from the 12-digit ARS column.
+
+    Replicates the format used by the default IPF producer (braunschweig.ipf.attributed
+    lines 814-816 and braunschweig.ipf.prepare line 126):
+
+    - ``commune_id``    = 8-digit AGS string (ARS[0:5] + ARS[9:12]), e.g. "03101000".
+                          Source: braunschweig.data.bbsr.regiostar.ars_to_ags8.
+    - ``departement_id``= first 5 chars of commune_id = 5-digit Kreis string, e.g. "03101".
+                          Source: ipf/prepare.py line 126 (commune_id[:5]).
+    - ``iris_id``       = commune_id + "0000" stored as category, e.g. "031010000000".
+                          Source: ipf/attributed.py lines 815-816. For Germany there are
+                          no sub-commune IRIS zones; the "0000" suffix is the eqasim
+                          placeholder that the spatial pipeline propagates downstream.
+
+    Parameters
+    ----------
+    df:
+        Frame that carries ``ars_col`` (the 12-digit ARS from the Zensus cell parquet).
+    ars_col:
+        Name of the ARS column in ``df``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy of ``df`` with three new columns: ``commune_id``, ``departement_id``,
+        ``iris_id``.
+
+    Raises
+    ------
+    KeyError
+        If ``ars_col`` is not present in ``df`` (fail-fast: a missing ARS column
+        means stage.py did not join it; the spatial home.zones stage would crash
+        with a less informative KeyError otherwise).
+    """
+    if ars_col not in df.columns:
+        raise KeyError(
+            f"[popsim.assembly] ARS column {ars_col!r} not found in persons frame. "
+            "stage.py must join the cells ARS onto merge_report.combined before "
+            "calling build_persons (fix for spatial home.zones KeyError D1)."
+        )
+    out = df.copy()
+    # commune_id: 8-digit AGS derived from the 12-digit ARS by dropping the
+    # Verbandsgemeinde block (bytes 5-8). An 8-digit input is returned unchanged by
+    # ars_to_ags8, so the derivation is idempotent if the ARS column is already AGS.
+    out["commune_id"] = out[ars_col].astype(str).map(ars_to_ags8)
+    # departement_id: 5-digit Kreis prefix of the AGS.  Matches ipf/prepare.py:126
+    # (df_population["commune_id"].str[:5]).
+    out["departement_id"] = out["commune_id"].str[:5]
+    # iris_id: commune_id + "0000".  Matches ipf/attributed.py lines 815-816.
+    # Germany has no sub-commune IRIS zones; "0000" is the eqasim placeholder.
+    out["iris_id"] = (out["commune_id"] + "0000").astype("category")
+    return out
 
 # age_range bins and labels — MUST match synthesis/population/enriched.py lines
 # 110-114 exactly so both population workflows produce the same categorical values
@@ -80,6 +141,12 @@ def build_persons(
     )
     persons = expand.expand_to_persons(households, mid_persons, donor_col=donor_col)
     persons = expand.map_demographics(persons)
+
+    # Derive commune_id, departement_id, iris_id from the 12-digit ARS column
+    # (joined by stage.py from the cells parquet onto the merged households).
+    # Format matches the default IPF producer exactly -- see derive_zone_ids docstring.
+    persons = derive_zone_ids(persons)
+
     persons = attributes.map_employed(persons, rng=rng)
     persons = attributes.map_has_license(persons, rng=rng)
     persons = attributes.map_has_pt_subscription(persons, rng=rng)

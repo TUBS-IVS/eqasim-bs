@@ -101,10 +101,28 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
 
+    # Join the 12-digit ARS from the cells frame back onto the merged PopulationSim
+    # output.  PopulationSim writes only ZENSUS100m + H_ID to its output CSV, so the
+    # ARS column must be recovered here before assembly.build_persons can derive the
+    # commune_id / departement_id / iris_id columns required by
+    # synthesis.population.spatial.home.zones (bug D1: KeyError on missing columns).
+    ars_col = mid._ARS_COLUMN  # "RegionalSchlussel_ARS"
+    cell_ars = cells[["ZENSUS100m", ars_col]].drop_duplicates("ZENSUS100m")
+    combined = merge_report.combined.merge(cell_ars, on="ZENSUS100m", how="left")
+    n_missing_ars = int(combined[ars_col].isna().sum())
+    if n_missing_ars:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[popsim.stage] %d/%d households could not be matched to an ARS after "
+            "the cells join (unexpected; cells used in PopulationSim must be a subset "
+            "of the loaded cells frame).",
+            n_missing_ars, len(combined),
+        )
+
     # Expand the merged donor households into the full eqasim persons frame:
     # join the MiD donor persons, map demographics + attributes, and validate the
     # output against the shared population schema.
     mid_households, mid_persons = mid.load_mid_attributes(mid_dir)
-    persons = assembly.build_persons(merge_report.combined, mid_households, mid_persons)
+    persons = assembly.build_persons(combined, mid_households, mid_persons)
     context.set_info("popsim_n_persons", len(persons))
     return persons
