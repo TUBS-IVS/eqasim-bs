@@ -22,7 +22,14 @@ def test_map_employed_from_p_taet():
 def test_map_has_license_from_p_fschein():
     persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403]})
     out = attr.map_has_license(persons)
-    assert list(out["has_license"]) == [True, False, False, False]
+    # 1 -> True; 2 -> False; 403 (structural under-age) -> False.
+    # 9 (keine Angabe) is imputed from the valid pool {True, False} via missing.resolve;
+    # the result must be a bool, not the old silent False default.
+    assert out["has_license"].iloc[0] is True or out["has_license"].iloc[0] == True
+    assert out["has_license"].iloc[1] is False or out["has_license"].iloc[1] == False
+    assert out["has_license"].iloc[3] is False or out["has_license"].iloc[3] == False
+    assert out["has_license"].iloc[2] in (True, False)
+    assert out["has_license"].isna().sum() == 0
 
 
 def test_map_economic_status_from_oek_status():

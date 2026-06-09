@@ -12,7 +12,10 @@ and bicycle availability need additional MiD columns and are a follow-on.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+
+from braunschweig.popsim import missing
 
 # MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment
 # (Angestellte/Arbeiter, Beamte, Selbststaendige, geringfuegig, Elternzeit-but-
@@ -78,10 +81,32 @@ def map_employed(persons: pd.DataFrame, *, taet_col: str = "P_TAET") -> pd.DataF
     return out
 
 
-def map_has_license(persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN") -> pd.DataFrame:
-    """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` (1 = ja)."""
+def map_has_license(
+    persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None
+) -> pd.DataFrame:
+    """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
+
+    MiD codebook mapping: 1 = ja -> True, 2 = nein -> False; 202 (Interviewart /
+    structural non-applicable), 403 (under-age, structural), 404 (structural non-
+    applicable) -> False deterministically; 9 (keine Angabe, item non-response) ->
+    imputed from the valid pool within the same age band (alter_gr1) when present,
+    else from the global valid pool. The imputation is seeded via ``rng``.
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="has_license",
+        source_col=license_col,
+        value_map={1: True, 2: False},
+        structural={202: False, 403: False, 404: False},
+        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        default=False,
+    )
     out = persons.copy()
-    out["has_license"] = out[license_col] == LICENSE_YES
+    out["has_license"], _ = missing.resolve(out, spec, rng=rng)
+    out["has_license"] = out["has_license"].astype(bool)
     return out
 
 
@@ -113,12 +138,32 @@ def map_household_income(
 
 
 def map_number_of_cars(
-    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO"
+    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO", rng=None
 ) -> pd.DataFrame:
-    """Add ``number_of_cars`` from MiD ``H_ANZAUTO`` (the 99 missing code -> 0)."""
+    """Add ``number_of_cars`` from MiD ``H_ANZAUTO`` via the uniform missing policy.
+
+    MiD codebook: 0..10 valid counts; 99 (keine Angabe, item non-response) ->
+    imputed from the valid pool within the same household-size group (hhgr_gr) when
+    present, else from the global valid pool. Previously, 99 was silently mapped to
+    0 (``CARS_MISSING_CODE``); now it is imputed to avoid a systematic bias toward
+    zero-car households. ``CARS_MISSING_CODE`` is retained as a module constant for
+    any downstream code that may still reference it.
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="number_of_cars",
+        source_col=cars_col,
+        value_map={i: i for i in range(0, 11)},
+        structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        default=0,
+    )
     out = households.copy()
-    cars = out[cars_col].where(out[cars_col] != CARS_MISSING_CODE, 0)
-    out["number_of_cars"] = cars.fillna(0).astype(int)
+    out["number_of_cars"], _ = missing.resolve(out, spec, rng=rng)
+    out["number_of_cars"] = out["number_of_cars"].astype(int)
     return out
 
 
