@@ -136,31 +136,6 @@ def _vsi_path(context) -> str:
     return f"/vsizip/{archive}/{inner}"
 
 
-def _load_kreise(context) -> gpd.GeoDataFrame:
-    """Kreis polygons from the VG250-EW ``vg250_krs`` layer (UTM32N).
-
-    ``vg250_krs`` ships one row per Kreis × geometry fragment, so we
-    dissolve by the 5-digit Kreis ARS and pick the ``GF = 4`` land row
-    name (GF=4 = "Landfläche mit Strukturen").  Result: 401 Kreise.
-    """
-    df = gpd.read_file(
-        _vsi_path(context), layer="vg250_krs",
-        columns=["ARS", "GEN", "BEZ", "GF"],
-        engine="pyogrio",
-    )
-    df["ars5"] = df["ARS"].astype(str).str[:5]
-
-    # Keep land geometry (GF=4) first when selecting the Kreis name.
-    df = df.sort_values(["ars5", "GF"], ascending=[True, False])
-    names = df.groupby("ars5").agg(
-        kreis_name=("GEN", "first"),
-        bez=("BEZ", "first"),
-    ).reset_index()
-
-    df_geom = df.dissolve(by="ars5", as_index=False)[["ars5", "geometry"]]
-    return df_geom.merge(names, on="ars5", how="left")
-
-
 def _load_gemeinden(context) -> gpd.GeoDataFrame:
     """Gemeinde polygons with EWZ (population) from VG250-EW ``vg250_gem``.
 
