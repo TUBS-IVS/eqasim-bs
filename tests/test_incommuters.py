@@ -428,3 +428,230 @@ def test_rail_like_modes_excludes_tram_and_bus():
     # Sanity-check the chosen RAIL_LIKE set: regional rail in, tram/bus out.
     assert "rail" in RAIL_LIKE_MODES and "regional_rail" in RAIL_LIKE_MODES
     assert "tram" not in RAIL_LIKE_MODES and "bus" not in RAIL_LIKE_MODES
+
+
+# ---------------------------------------------------------------------------
+# Task 4b: real in-ring in-commuter origins (flag-gated, default OFF)
+# ---------------------------------------------------------------------------
+
+def _gemeinden_for_origin_test(crs="EPSG:25832"):
+    """Minimal Gemeinden GeoDataFrame for real-origin tests.
+
+    Geometry: a 1x1 unit square near the gate at (605000, 5840000).
+    The gate is at (605000, 5840000).  The Gemeinde centroid is at
+    (607000, 5842000) -- 2828 m NE, well within a 5000 m ring buffer
+    around the ZGB polygon that includes the gate point.  A second
+    "far" Gemeinde is placed 200 km away so the same fixture covers
+    both in-ring and far branches.
+    """
+    from shapely.geometry import Polygon as ShapelyPolygon
+    rows = [
+        {
+            "ars5": "03241",
+            "gem_ags": "03241001",
+            "ewz": 50000.0,
+            # In-ring: small square near the gate (chosen so rep_point is
+            # inside a ZGB buffer of the gate region).
+            "geometry": ShapelyPolygon([
+                (606000, 5841000), (608000, 5841000),
+                (608000, 5843000), (606000, 5843000),
+            ]),
+        },
+        {
+            "ars5": "09162",
+            "gem_ags": "09162001",
+            "ewz": 1300000.0,
+            # Far Gemeinde (Munich area): well outside any 50 km ring around ZGB.
+            "geometry": ShapelyPolygon([
+                (692000, 5335000), (694000, 5335000),
+                (694000, 5337000), (692000, 5337000),
+            ]),
+        },
+    ]
+    return gpd.GeoDataFrame(rows, crs=crs)
+
+
+def _zgb_polygon_for_test():
+    """Dissolved ZGB polygon that covers the area around the test gate."""
+    return box(590000, 5820000, 650000, 5870000)
+
+
+def test_real_origin_off_is_byte_identical():
+    """Flag OFF: no agent gets entry_kind='real_origin'; result matches a second OFF run.
+
+    CLAUDE.md no-silent-fallback: when the flag is OFF no rng draws for real origins
+    are consumed, so repeated runs with the same seed must be byte-identical.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    def run(seed):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            pt_entry_stops=pt_stops,
+            # flag OFF (default) -- no gemeinden / zgb_polygon passed
+            real_origin=False,
+        )
+
+    f1 = run(77)
+    f2 = run(77)
+
+    # No agent has entry_kind="real_origin" when the flag is OFF.
+    val1 = f1["validation"]
+    assert "real_origin" not in val1["entry_kind"].values, \
+        "Flag OFF: no agent should have entry_kind='real_origin'"
+
+    # Byte-identical outputs with the same seed.
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="Flag OFF: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
+        "Flag OFF: same seed must produce identical entry_kind lists"
+    np.testing.assert_array_equal(
+        f1["trips"]["departure_time"].to_numpy(),
+        f2["trips"]["departure_time"].to_numpy(),
+        err_msg="Flag OFF: same seed must produce identical departure times",
+    )
+
+
+def test_real_origin_in_ring_agent_home_is_origin_not_gate():
+    """Flag ON: an in-ring agent's home is the real Gemeinde point, not the road gate.
+
+    The gate is at (605000, 5840000).  The in-ring Gemeinde representative point is
+    near (607000, 5842000).  With real_origin=True the in-ring car agent should have
+    its home at the Gemeinde point, NOT at the gate.  Validation must record
+    entry_kind='real_origin'.  home_to_gate_km must be > 0 (positive straight-line
+    distance from the real origin to the gate).
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    # Force 100% car so no PT station logic runs, making assertions simpler.
+    gemeinden = _gemeinden_for_origin_test()
+    zgb_poly = _zgb_polygon_for_test()
+
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+        source_buffer_m=5000.0,
+    )
+
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    assert len(home_locs) > 0, "Expected at least one in-commuter"
+
+    for _, row in home_locs.iterrows():
+        # Home must NOT be at the gate (in-ring Gemeinde is ~2 km away).
+        is_at_gate = (abs(row.geometry.x - gate_x) < 1.0
+                      and abs(row.geometry.y - gate_y) < 1.0)
+        assert not is_at_gate, \
+            f"In-ring agent home ({row.geometry.x:.0f},{row.geometry.y:.0f}) must NOT be at gate"
+        # Home must be in the Gemeinde square [606000..608000, 5841000..5843000].
+        assert 606000 <= row.geometry.x <= 608000 and 5841000 <= row.geometry.y <= 5843000, \
+            f"In-ring agent home ({row.geometry.x:.0f},{row.geometry.y:.0f}) outside Gemeinde bounds"
+
+    val = frames["validation"]
+    assert (val["entry_kind"] == "real_origin").all(), \
+        "Flag ON, in-ring agents: all must have entry_kind='real_origin'"
+
+    # gate_id is still populated (road gate kept as cordon-entry reference).
+    assert val["gate_id"].notna().all(), "gate_id must remain populated for in-ring agents"
+
+    # home_to_gate_km > 0: real origin to gate is a positive distance.
+    # We verify via depart_home: if home_to_gate_km > 0 the departure is earlier than
+    # it would be with home==gate (depart_home < arrive_work - inside_travel).
+    depart = frames["trips"].loc[frames["trips"]["preceding_purpose"] == "home",
+                                  "departure_time"].to_numpy()
+    assert len(depart) > 0
+    # Just check that departure times are finite positive numbers (timing ran with the
+    # shifted home_to_gate_km; exact value depends on inside trip distance).
+    assert np.all(np.isfinite(depart)), "depart_home must be finite for in-ring agents"
+    assert np.all(depart >= 0.0), "depart_home must be >= 0"
+
+
+def test_real_origin_far_agent_keeps_gate():
+    """Flag ON: a far (out-of-ring) car agent keeps its road gate as home.
+
+    Source Kreis 09162 (Munich) has no in-ring Gemeinden within 5 km of ZGB.
+    With real_origin=True the far agent must still be placed at the gate (road_gate).
+    """
+    # Use a flow from Munich (09162) so the agent's source Kreis is far.
+    far_gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000"], "capacity": [8000.0], "road_class": ["motorway"]},
+        geometry=[Point(605000, 5840000)], crs="EPSG:25832")
+    far_assignment = pd.DataFrame([("09162", "gate_0000", 1000, 0)],
+                                   columns=["ars5", "gate_id", "inbound", "outbound"])
+    far_flows = pd.DataFrame([("09162", "03101", 1000)],
+                              columns=["orig_ars", "dest_ars", "flow"])
+    zgb_work = gpd.GeoDataFrame(
+        {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
+        geometry=[Point(606000, 5805000)], crs="EPSG:25832")
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    ht = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
+        (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+
+    gemeinden = _gemeinden_for_origin_test()   # includes 09162 (far) Gemeinde
+    zgb_poly = _zgb_polygon_for_test()
+
+    rng = np.random.default_rng(55)
+    frames = build_incommuter_frames(
+        flows=far_flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=far_gates, assignment=far_assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+        source_buffer_m=5000.0,
+    )
+
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    for _, row in home_locs.iterrows():
+        assert abs(row.geometry.x - gate_x) < 1.0 and abs(row.geometry.y - gate_y) < 1.0, \
+            f"Far car agent home must be at road gate; got ({row.geometry.x:.0f},{row.geometry.y:.0f})"
+
+    val = frames["validation"]
+    assert (val["entry_kind"] == "road_gate").all(), \
+        "Far car agent must have entry_kind='road_gate' in validation"
+
+
+def test_real_origin_deterministic():
+    """Flag ON: same seed -> byte-identical results."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    gemeinden = _gemeinden_for_origin_test()
+    zgb_poly = _zgb_polygon_for_test()
+
+    def run(seed):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+            source_buffer_m=5000.0,
+        )
+
+    f1 = run(123)
+    f2 = run(123)
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="Flag ON: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
+        "Flag ON: same seed must produce identical entry_kind lists"

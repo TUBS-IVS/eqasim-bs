@@ -266,7 +266,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             commute_modes=("car", "pt"),
                             pt_transfer_penalty=0.5,
                             pt_gravity_beta=0.0,
-                            inkar_income=None, data_path=None):
+                            inkar_income=None, data_path=None,
+                            real_origin=False, gemeinden=None,
+                            zgb_polygon=None, source_buffer_m=45000.0):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -292,6 +294,28 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations` (default
     0.0 = no gravity, backward-compatible).  The calling stage sets -0.05 (mirroring
     ``cordon_gravity_beta``) to prefer stations closer to ZGB.
+
+    ``real_origin`` (default ``False``): when ``True``, agents whose origin Kreis has
+    at least one Gemeinde representative point within ``zgb_polygon.buffer(source_buffer_m)``
+    (the source-network ring) receive a real population-weighted home point drawn from
+    those in-ring Gemeinden instead of the road gate / rail station.  The road gate
+    drawn in step 1 is PRESERVED as the cordon-entry reference for timing and the
+    network entry point; only ``home_x/home_y`` and the validation ``entry_kind`` change.
+    Far agents (no in-ring Gemeinde for their source Kreis) keep the existing gate-based
+    or station-based placement unchanged.  When ``False`` (default) the function is
+    byte-identical to the pre-4b behaviour: no additional rng draws are consumed and
+    the result is identical for the same seed.
+
+    ``gemeinden`` must be a GeoDataFrame ``[ars5, gem_ags, ewz, geometry]``
+    (external Gemeinden with population, EPSG:25832).  Required when
+    ``real_origin=True``.
+
+    ``zgb_polygon`` must be the dissolved ZGB region polygon (EPSG:25832).
+    Required when ``real_origin=True``.
+
+    ``source_buffer_m``: source-network ring radius in metres (default 45000).
+    A Gemeinde representative point is in-ring iff it lies within
+    ``zgb_polygon.buffer(source_buffer_m)``.
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     agents = expand_to_agents(inbound, sampling_rate)
@@ -410,6 +434,44 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # modes is now the FINAL mode list (post PT->car reassignment where needed).
     modes = np.asarray(modes)
 
+    # 3d) Real in-ring origin override (flag-gated, default OFF).
+    # When ON: agents whose source Kreis has at least one Gemeinde representative
+    # point within the source-network ring (zgb_polygon.buffer(source_buffer_m))
+    # get their home_x/home_y replaced by a real population-weighted Gemeinde
+    # point drawn from those in-ring Gemeinden.  The road GATE drawn in step 1
+    # is preserved (it is the cordon-entry reference for timing and network
+    # entry).  Far agents keep their existing home_x/home_y unchanged.
+    # IMPORTANT: this entire block is inside the ``if real_origin:`` branch so
+    # the rng stream is UNCHANGED when the flag is OFF (byte-identical guarantee).
+    is_in_ring = None  # None means flag is OFF; set to bool array when ON.
+    if real_origin:
+        from braunschweig.data.cordon.incommuter_origins import (  # noqa: PLC0415
+            incommuter_origin_homes)
+        # Build per-Kreis inbound flow table [ars5, flow] from the selected
+        # inbound frame (already filtered to in-ring origins above).
+        inbound_by_kreis = (
+            inbound.groupby("orig_ars", as_index=False)["flow"]
+            .sum()
+            .rename(columns={"orig_ars": "ars5"})
+        )
+        hx, hy, is_in_ring = incommuter_origin_homes(
+            orig_ars, inbound_by_kreis, gemeinden, zgb_polygon, source_buffer_m, rng)
+        # Override home coordinates for in-ring agents (both car and PT).
+        home_x = np.where(is_in_ring, hx, home_x)
+        home_y = np.where(is_in_ring, hy, home_y)
+        # Log in-ring vs far split (CLAUDE.md no-silent-fallback).
+        n_in_ring = int(is_in_ring.sum())
+        n_far = int((~is_in_ring).sum())
+        n_total = len(is_in_ring)
+        print(
+            f"[braunschweig.incommuters] real-origin override: "
+            f"in-ring primary {n_in_ring}/{n_total} "
+            f"({100.0 * n_in_ring / n_total:.1f}%), "
+            f"far gate/station fallback {n_far} "
+            f"({100.0 * n_far / n_total:.1f}%)",
+            flush=True,
+        )
+
     # 3c) OUTSIDE access distance home->gate: the non-simulated portion of the trip.
     # The agent enters the simulated network at the gate; the home->gate leg (0 for
     # car, where home == gate; the boarding-stop->gate access for PT) is teleported
@@ -466,17 +528,34 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # Per-agent validation record (one row per in-commuter): source Kreis, direction,
     # final mode (post PT->car reassignment), and the ACTUAL boarding point.
     #
-    # entry_kind: "rail_station" for PT agents placed at a rail station;
+    # entry_kind: "real_origin" for in-ring agents (real_origin=True flag, Task 4b);
+    #             "rail_station" for PT agents placed at a rail station;
     #             "road_gate" for car agents (incl. PT agents reassigned to car).
-    # entry_x/entry_y: the actual boarding point coordinates -- rail station for PT,
-    #                  road gate for car.  gate_id is kept for traceability (the road
-    #                  gate the agent is assigned to for both network entry and mode-
-    #                  fallback purposes).  Task B6 will consume entry_x/entry_y/entry_kind.
+    # entry_x/entry_y: the actual boarding point coordinates -- real origin for in-ring
+    #                  (home_x/home_y after override), rail station for far PT, road gate
+    #                  for far car.  gate_id is kept for traceability (the road gate the
+    #                  agent is assigned to for both network entry and mode-fallback
+    #                  purposes).  Task B6 will consume entry_x/entry_y/entry_kind.
     mode_arr = np.asarray(modes)
-    entry_kind = np.where(mode_arr == "pt", "rail_station", "road_gate")
-    # entry coords: for PT -> home_x/home_y (the station); for car -> gate_x/gate_y.
-    entry_x = np.where(mode_arr == "pt", home_x, gate_x)
-    entry_y = np.where(mode_arr == "pt", home_y, gate_y)
+
+    if real_origin and is_in_ring is not None:
+        # in-ring agents get "real_origin"; far agents get mode-based kind.
+        _far_kind = np.where(mode_arr == "pt", "rail_station", "road_gate")
+        entry_kind = np.where(is_in_ring, "real_origin", _far_kind)
+        # entry coords: in-ring -> home_x/home_y (real origin); far PT -> home_x/home_y
+        # (station); far car -> gate_x/gate_y.  Because home_x/home_y was already
+        # overridden for in-ring agents and is still station/gate for far agents, we
+        # can use home_x/home_y for PT/in-ring and gate_x/gate_y only for far car.
+        _far_entry_x = np.where(mode_arr == "pt", home_x, gate_x)
+        _far_entry_y = np.where(mode_arr == "pt", home_y, gate_y)
+        entry_x = np.where(is_in_ring, home_x, _far_entry_x)
+        entry_y = np.where(is_in_ring, home_y, _far_entry_y)
+    else:
+        entry_kind = np.where(mode_arr == "pt", "rail_station", "road_gate")
+        # entry coords: for PT -> home_x/home_y (the station); for car -> gate_x/gate_y.
+        entry_x = np.where(mode_arr == "pt", home_x, gate_x)
+        entry_y = np.where(mode_arr == "pt", home_y, gate_y)
+
     validation = pd.DataFrame({
         "ars5": orig_ars, "direction": "ein", "mode": mode_arr,
         "entry_kind": entry_kind, "entry_x": entry_x, "entry_y": entry_y,
@@ -806,6 +885,12 @@ def configure(context):
     # injection.  Re-calibrate against observed in-commuter PT boarding origins when data
     # are available.
     context.config("cordon_pt_gravity_beta", -0.05)
+    # Real in-ring in-commuter origin placement (Task 4b).  When True, agents whose
+    # source Kreis has at least one Gemeinde representative point within the source-
+    # network ring receive a real population-weighted origin home point drawn from those
+    # in-ring Gemeinden instead of the road gate / rail station.  Default False:
+    # byte-identical to the pre-4b behaviour; no additional rng draws are consumed.
+    context.config("cordon_incommuter_real_origin", False)
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -813,6 +898,13 @@ def configure(context):
     context.stage("braunschweig.synthesis.population.enriched")  # RAW, for n_residents
     context.stage("braunschweig.data.inkar.household_income")  # origin-Kreis income level
     context.stage("data.hts.selected", alias="hts")
+    if context.config("cordon_incommuter_real_origin"):
+        # ZGB polygon for in-ring test + VG250 config for external Gemeinden loading.
+        context.stage("data.spatial.municipalities")
+        context.config("cordon_network_source_buffer_m", 45000.0)
+        context.config(
+            "cordon_vg250_path",
+            "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
 
 
 def execute(context):
@@ -826,6 +918,45 @@ def execute(context):
     residents = context.stage("braunschweig.synthesis.population.enriched")
     _hts_households, hts_persons, hts_trips = context.stage("hts")
     rng = np.random.default_rng(int(context.config("random_seed")) + 100000)
+
+    real_origin = bool(context.config("cordon_incommuter_real_origin"))
+    gemeinden_df = None
+    zgb_polygon = None
+    source_buffer_m = 45000.0
+
+    if real_origin:
+        import os  # noqa: PLC0415
+        # Dissolve ZGB municipalities into a single polygon for the in-ring test.
+        df_muni = context.stage("data.spatial.municipalities")
+        zgb_polygon = df_muni.geometry.unary_union
+        source_buffer_m = float(context.config("cordon_network_source_buffer_m"))
+        # Load external Gemeinden with gem_ags from VG250-EW.  The same GeoPackage
+        # used by braunschweig.data.external_workplaces._load_gemeinden.
+        vg250_rel = context.config("cordon_vg250_path")
+        vg250_abs = os.path.join(context.config("data_path"), vg250_rel)
+        _vsi = (f"/vsizip/{os.path.abspath(vg250_abs)}"
+                f"/vg250-ew_12-31.utm32s.gpkg.ebenen"
+                f"/vg250-ew_ebenen_1231/DE_VG250.gpkg")
+        gem = gpd.read_file(_vsi, layer="vg250_gem",
+                            columns=["ARS", "AGS", "GEN", "GF", "EWZ"],
+                            engine="pyogrio")
+        if "GF" in gem.columns:
+            gem = gem[gem["GF"] == 4].copy()
+        gem["ars5"] = gem["ARS"].astype(str).str[:5]
+        gem["ewz"] = pd.to_numeric(gem["EWZ"], errors="coerce").fillna(0.0)
+        gem = gem[gem["ewz"] > 0].copy()
+        ags_native = gem["AGS"].astype(str).str.strip()
+        ags_from_ars = gem["ARS"].astype(str).str[:5] + gem["ARS"].astype(str).str[9:12]
+        use_native = ags_native.str.len() == 8
+        gem["gem_ags"] = ags_native.where(use_native, ags_from_ars)
+        gem = gem.to_crs(crs).copy()
+        gemeinden_df = gem[["ars5", "gem_ags", "ewz", "geometry"]].copy()
+        print(
+            f"[braunschweig.incommuters] real-origin ON: "
+            f"{len(gemeinden_df)} external Gemeinden loaded for in-ring origin draw "
+            f"(source_buffer_m={source_buffer_m:.0f} m)",
+            flush=True,
+        )
 
     frames = build_incommuter_frames(
         flows=context.stage("braunschweig.data.census.pendler"),
@@ -852,7 +983,12 @@ def execute(context):
         # legacy single default-car in-commuter rows.
         data_path=(context.config("data_path")
                    if context.config("vehicles_method") == "household"
-                   else None))
+                   else None),
+        real_origin=real_origin,
+        gemeinden=gemeinden_df,
+        zgb_polygon=zgb_polygon,
+        source_buffer_m=source_buffer_m,
+    )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
     return frames
