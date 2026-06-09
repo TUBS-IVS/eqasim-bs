@@ -26,6 +26,7 @@ import os
 import geopandas as gpd
 import pandas as pd
 
+from braunschweig.data.cordon.gate_assignment import gate_volume_summary
 from braunschweig.data.cordon.validation import (
     counts_by_kreis_direction_mode,
     deviation_vs_target,
@@ -107,3 +108,57 @@ def _write_summary(path: str, agents: pd.DataFrame, counts: pd.DataFrame,
                          f"| {r['share_pct_target']:.1f} | {r['pp_dev']:+.1f} |")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
+
+
+def write_gate_volumes(out_dir: str, gates: gpd.GeoDataFrame, assignment: pd.DataFrame,
+                       crs: str = "EPSG:25832") -> dict:
+    """Write per-gate BA in/out gravity expectation (not realized agents) to CSV + GPKG.
+
+    Computes the per-gate sum of inbound and outbound SvB commuter volumes from the
+    gravity-based Kreis->gate assignment, merges the gate point geometry, and writes:
+      - ``gate_volumes.csv``  : columns [gate_id, inbound, outbound, n_kreise, gate_x, gate_y]
+      - ``gate_volumes.gpkg`` : same data as point geometry (``crs``) for QGIS, with
+        inbound + outbound attributes so both directions are mappable per gate.
+
+    These volumes are the **gravity expectation** distributed from the BA Pendler SvB
+    data; they are NOT realized simulated agents (out-commuters are ZGB residents who
+    leave the region and are not injected into the simulation).
+
+    Args:
+        out_dir: directory to write outputs into (created if absent).
+        gates: GeoDataFrame with columns [gate_id] and point geometry.
+        assignment: DataFrame [ars5, gate_id, inbound, outbound] from the cordon-gates
+            stage (output of :func:`braunschweig.data.cordon.gate_assignment.population_gravity_gate_assignment`).
+        crs: coordinate reference system for the GPKG output (default EPSG:25832).
+
+    Returns:
+        dict with keys ``gate_volumes_csv`` and ``gate_volumes_gpkg`` (absolute paths).
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    summary = gate_volume_summary(assignment, value_cols=("inbound", "outbound"))
+
+    # Build a point-coordinate lookup from the gates GeoDataFrame.
+    gate_pts = gates[["gate_id"]].copy()
+    gate_pts["gate_x"] = gates.geometry.x.values
+    gate_pts["gate_y"] = gates.geometry.y.values
+
+    summary = summary.merge(gate_pts, on="gate_id", how="left")
+
+    csv_cols = ["gate_id", "inbound", "outbound", "n_kreise", "gate_x", "gate_y"]
+    csv_out = summary[csv_cols]
+    csv_path = os.path.join(out_dir, "gate_volumes.csv")
+    csv_out.to_csv(csv_path, index=False)
+
+    gpkg_path = os.path.join(out_dir, "gate_volumes.gpkg")
+    gdf = gpd.GeoDataFrame(
+        summary[["gate_id", "inbound", "outbound", "n_kreise", "source_kreise"]],
+        geometry=gpd.points_from_xy(summary["gate_x"], summary["gate_y"]),
+        crs=crs,
+    )
+    gdf.to_file(gpkg_path, driver="GPKG")
+
+    return {
+        "gate_volumes_csv": csv_path,
+        "gate_volumes_gpkg": gpkg_path,
+    }

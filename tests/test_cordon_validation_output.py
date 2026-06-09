@@ -10,6 +10,7 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from shapely.geometry import Point
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -90,3 +91,85 @@ def test_works_without_targets(tmp_path):
     paths = write_cordon_validation(str(tmp_path), _agents())
     assert Path(paths["gates_gpkg"]).exists()
     assert Path(paths["commuter_validation"]).exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests for write_gate_volumes (per-gate BA in/out gravity expectation)
+# ---------------------------------------------------------------------------
+
+from braunschweig.data.cordon.validation_output import write_gate_volumes  # noqa: E402
+
+
+def test_write_gate_volumes_both_directions(tmp_path):
+    """write_gate_volumes writes gate_volumes.csv and gate_volumes.gpkg
+    with per-gate inbound+outbound summed over Kreise.
+    """
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000", "gate_0001"]},
+        geometry=[Point(600000, 5790000), Point(640000, 5790000)],
+        crs="EPSG:25832",
+    )
+    assignment = pd.DataFrame({
+        "ars5":    ["03241",    "15083",    "15083"],
+        "gate_id": ["gate_0000", "gate_0001", "gate_0000"],
+        "inbound": [1000, 800, 200],
+        "outbound": [500, 900, 100],
+    })
+    paths = write_gate_volumes(str(tmp_path), gates, assignment)
+
+    # Both output files must exist.
+    assert Path(paths["gate_volumes_csv"]).exists(), "gate_volumes.csv not written"
+    assert Path(paths["gate_volumes_gpkg"]).exists(), "gate_volumes.gpkg not written"
+
+    df = pd.read_csv(paths["gate_volumes_csv"])
+    assert set(["gate_id", "inbound", "outbound", "gate_x", "gate_y"]).issubset(df.columns), \
+        f"missing columns; got {list(df.columns)}"
+
+    # gate_0000 receives inbound 1000+200=1200, outbound 500+100=600.
+    g0 = df[df["gate_id"] == "gate_0000"].iloc[0]
+    assert g0["inbound"] == 1200
+    assert g0["outbound"] == 600
+
+    # gate_0001 receives inbound 800, outbound 900.
+    g1 = df[df["gate_id"] == "gate_0001"].iloc[0]
+    assert g1["inbound"] == 800
+    assert g1["outbound"] == 900
+
+
+def test_write_gate_volumes_gpkg_has_geometry(tmp_path):
+    """gate_volumes.gpkg must carry point geometry so QGIS can map it."""
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000"]},
+        geometry=[Point(600000, 5790000)],
+        crs="EPSG:25832",
+    )
+    assignment = pd.DataFrame({
+        "ars5": ["03241"], "gate_id": ["gate_0000"],
+        "inbound": [500], "outbound": [300],
+    })
+    paths = write_gate_volumes(str(tmp_path), gates, assignment)
+    gdf = gpd.read_file(paths["gate_volumes_gpkg"])
+    assert gdf.geometry.notna().all(), "gate_volumes.gpkg has null geometries"
+    assert "inbound" in gdf.columns and "outbound" in gdf.columns
+
+
+def test_write_gate_volumes_coordinates_match_gates(tmp_path):
+    """gate_x/gate_y in the CSV must match the gate GeoDataFrame point coordinates."""
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000", "gate_0001"]},
+        geometry=[Point(600000, 5790000), Point(640000, 5810000)],
+        crs="EPSG:25832",
+    )
+    assignment = pd.DataFrame({
+        "ars5": ["03241", "15083"],
+        "gate_id": ["gate_0000", "gate_0001"],
+        "inbound": [100, 200], "outbound": [50, 80],
+    })
+    paths = write_gate_volumes(str(tmp_path), gates, assignment)
+    df = pd.read_csv(paths["gate_volumes_csv"])
+    row0 = df[df["gate_id"] == "gate_0000"].iloc[0]
+    assert abs(row0["gate_x"] - 600000) < 1.0
+    assert abs(row0["gate_y"] - 5790000) < 1.0
+    row1 = df[df["gate_id"] == "gate_0001"].iloc[0]
+    assert abs(row1["gate_x"] - 640000) < 1.0
+    assert abs(row1["gate_y"] - 5810000) < 1.0
