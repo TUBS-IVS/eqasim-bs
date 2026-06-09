@@ -859,36 +859,69 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
                 "[socio] '%s' absent in households.csv -- attribute skipped", col
             )
 
-    # --- Source economic_status from vehicles.csv (car-owning HHs only) ---
-    # economic_status is written per vehicle row; carless HHs have no row.
-    # We take the first car-mode row per household_id (all rows for the same
-    # household share the same status value from the synthesis pipeline).
-    vehicles = pop.vehicles
+    # --- Source economic_status (per-household synthesised attribute) ---------
+    # economic_status is assigned to EVERY household by the synthesis
+    # (status_from_hhtype), so its natural coverage is 100%. We therefore prefer
+    # the PRIMARY full-coverage source persons.csv (synthesis.output writes it via
+    # PERSON_OPTIONAL_OUTPUT_COLUMNS) and only FALL BACK to vehicles.csv (which
+    # covers car-owning HHs only, ~84%) for legacy outputs that predate that
+    # column -- the fallback + its partial coverage are logged loudly, never
+    # silent (CLAUDE.md no-silent-fallback).
+    n_total_hh = len(homes)
     status_col_available = False
-    if vehicles is not None and "economic_status" in vehicles.columns and "household_id" in vehicles.columns:
-        car_vehicles = vehicles[vehicles["mode"] == "car"].copy() if "mode" in vehicles.columns else vehicles.copy()
-        car_vehicles["household_id"] = (
-            pd.to_numeric(car_vehicles["household_id"], errors="coerce")
-            .astype("Int64")
-            .apply(lambda v: str(int(v)) if pd.notna(v) else None)
+    status_per_hh = None
+
+    persons = pop.persons
+    if (persons is not None and "economic_status" in persons.columns
+            and "household_id" in persons.columns):
+        sp = persons[["household_id", "economic_status"]].dropna(subset=["economic_status"]).copy()
+        sp["household_id"] = sp["household_id"].astype(str)
+        status_per_hh = sp.drop_duplicates("household_id", keep="first")
+        LOGGER.info(
+            "[socio] economic_status: PRIMARY source persons.csv -- %d / %d "
+            "households (%.1f%%, full per-household coverage)",
+            len(status_per_hh), n_total_hh,
+            100.0 * len(status_per_hh) / max(n_total_hh, 1),
         )
-        status_per_hh = (
-            car_vehicles[["household_id", "economic_status"]]
-            .dropna(subset=["household_id"])
-            .drop_duplicates("household_id", keep="first")
-            .copy()
-        )
+    else:
+        vehicles = pop.vehicles
+        if (vehicles is not None and "economic_status" in vehicles.columns
+                and "household_id" in vehicles.columns):
+            car_vehicles = vehicles[vehicles["mode"] == "car"].copy() if "mode" in vehicles.columns else vehicles.copy()
+            car_vehicles["household_id"] = (
+                pd.to_numeric(car_vehicles["household_id"], errors="coerce")
+                .astype("Int64")
+                .apply(lambda v: str(int(v)) if pd.notna(v) else None)
+            )
+            status_per_hh = (
+                car_vehicles[["household_id", "economic_status"]]
+                .dropna(subset=["household_id"])
+                .drop_duplicates("household_id", keep="first")
+                .copy()
+            )
+            LOGGER.warning(
+                "[socio] economic_status NOT in persons.csv -- FALLBACK to "
+                "vehicles.csv (car-owning HHs only): %d / %d households (%.1f%%); "
+                "carless HHs are excluded. A fresh run writes economic_status to "
+                "persons.csv for full coverage.",
+                len(status_per_hh), n_total_hh,
+                100.0 * len(status_per_hh) / max(n_total_hh, 1),
+            )
+        elif vehicles is not None:
+            LOGGER.warning(
+                "[socio] economic_status absent in persons.csv and vehicles.csv "
+                "(lean-run schema) -- economic status xyt skipped"
+            )
+        else:
+            LOGGER.warning(
+                "[socio] economic_status absent in persons.csv and no vehicles.csv "
+                "in %s -- economic status xyt skipped", run_output_dir,
+            )
+
+    if status_per_hh is not None:
+        status_per_hh = status_per_hh.copy()
         status_per_hh["economic_status_ord"] = _economic_status_ordinal(
             status_per_hh["economic_status"]
-        )
-        n_with_status = int(status_per_hh["economic_status_ord"].notna().sum())
-        n_total_hh = len(homes)
-        LOGGER.info(
-            "[socio] economic_status: sourced from vehicles.csv (mode==car), "
-            "%d / %d households (%.1f%%); carless HHs have no vehicle row "
-            "and are excluded from the status map.",
-            n_with_status, n_total_hh,
-            100.0 * n_with_status / max(n_total_hh, 1),
         )
         LOGGER.info(
             "[socio] economic_status ordinal mapping: %s",
@@ -899,21 +932,6 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
             on="household_id", how="left",
         )
         status_col_available = True
-    elif vehicles is not None and "economic_status" not in vehicles.columns:
-        LOGGER.warning(
-            "[socio] vehicles.csv present but lacks 'economic_status' column "
-            "(lean-run schema) -- economic status xyt skipped"
-        )
-    elif vehicles is None:
-        LOGGER.warning(
-            "[socio] vehicles.csv absent in %s -- economic status xyt skipped",
-            run_output_dir,
-        )
-    else:
-        LOGGER.warning(
-            "[socio] vehicles.csv present but lacks 'household_id' column "
-            "-- economic status xyt skipped (lean-run schema)"
-        )
 
     # Build GeoDataFrame: homes + all attribute columns.
     gdf_full = gpd.GeoDataFrame(
@@ -1028,9 +1046,12 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
             value_label="economic status (1=very low .. 5=very high)",
             radius=6,
             description=(
-                "Each point = one car-owning household (~84% of HHs). "
-                "Ordinal: 1=very_low, 2=low, 3=medium, 4=high, 5=very_high. "
-                "Carless households have no status and are excluded."
+                "Each point = one household at its home location. "
+                "Ordinal: 1=very_low, 2=low, 3=medium, 4=high, 5=very_high "
+                "(synthesised per household, descriptive). Primary source "
+                "persons.csv = full coverage; legacy outputs fall back to "
+                "vehicles.csv (car-owning HHs only) -- see the run log for the "
+                "actual coverage."
             ),
         ))
     if "homes_high_income.xyt.csv" in written_files:
@@ -1090,8 +1111,10 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
                 join="ars5",
                 color_ramp="RdYlGn",
                 description=(
-                    "Mean ordinal economic status per Kreis (1=very_low .. 5=very_high). "
-                    "Excludes carless households (no status assigned)."
+                    "Mean ordinal economic status per Kreis (1=very_low .. 5=very_high), "
+                    "synthesised per household (descriptive). Full coverage when sourced "
+                    "from persons.csv; legacy vehicles.csv fallback excludes carless HHs "
+                    "(see run log)."
                 ),
             ))
         if choropleth_cards:
