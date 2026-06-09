@@ -270,3 +270,48 @@ def expand_persons_to_trips(
         merged["person_id"].astype(str) + "_" + merged[trip_col].astype(str)
     )
     return merged.reset_index(drop=True)
+
+
+def build_validated_trip_table(
+    persons: pd.DataFrame,
+    mid_wege: pd.DataFrame,
+    *,
+    require_home_closure: bool = True,
+    repair: bool = True,
+    **kwargs,
+):
+    """Build the trip table, optionally repair, and return (table, ValidationReport).
+
+    Thin convenience wrapper over build_trip_table + PlanValidator. When repair is
+    True (default) the PlanValidator enforces home-end closure and logs its repair
+    rates (the rates are emitted by repair_trips itself, so they remain observable
+    even though the RepairReport is not returned here). The returned ValidationReport
+    reflects the FINAL (post-repair) table.
+
+    Parameters
+    ----------
+    persons:
+        Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``.
+    mid_wege:
+        MiD Wege keyed by ``(H_ID, P_ID)``.
+    require_home_closure:
+        If True (default) the validator enforces home-end closure.
+    repair:
+        If True (default) repair fixable issues in the trip table before validation.
+    **kwargs:
+        Passed to build_trip_table (e.g., household_col, person_col, trip_col).
+
+    Returns
+    -------
+    tuple[pd.DataFrame, ValidationReport]
+        The built (and optionally repaired) trip table and the validation report
+        reflecting the final state.
+    """
+    from braunschweig.popsim.plan_validation import PlanValidator
+
+    table = build_trip_table(persons, mid_wege, **kwargs)
+    validator = PlanValidator(require_home_closure=require_home_closure)
+    if repair:
+        table, _ = validator.repair_trips(table)
+    report = validator.validate_trips(table)
+    return table, report

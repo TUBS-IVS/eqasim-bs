@@ -186,3 +186,15 @@ def test_build_trip_table_midnight_repair():
     assert trip2["arrival_time"] >= 24 * 3600, (
         f"Arrival should be pushed past midnight (>=86400s), got {trip2['arrival_time']}"
     )
+
+
+def test_build_validated_trip_table_returns_report():
+    persons = pd.DataFrame({"person_id": ["A_1_0_1", "A_1_0_1"], "H_ID": [1, 1], "P_ID": [1, 1]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_SZS": [8, 17], "W_SZM": [0, 0], "W_AZS": [8, 17], "W_AZM": [30, 20],
+    })
+    table, report = trips.build_validated_trip_table(persons, wege, require_home_closure=True)
+    assert "departure_time" in table.columns
+    assert hasattr(report, "is_valid")
