@@ -544,6 +544,466 @@ def emit_fleet(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
 
 
 # ---------------------------------------------------------------------------
+# Pure helper functions (testable without disk I/O)
+# ---------------------------------------------------------------------------
+
+# Ordered mapping of economic_status category labels to ordinal codes 1..5.
+# These are the exact values written to the population CSVs by the synthesis
+# pipeline (braunschweig.synthesis.population.enriched).
+ECONOMIC_STATUS_ORDER = ("very_low", "low", "medium", "high", "very_high")
+_ECONOMIC_STATUS_CODE: dict[str, int] = {
+    cat: i + 1 for i, cat in enumerate(ECONOMIC_STATUS_ORDER)
+}
+
+
+def _trips_xy(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a slim DataFrame of origin/destination x/y coordinates.
+
+    Filters out:
+    - Rows where ``mode == "outside"`` (cordon marker trips with no internal geometry).
+    - Rows where ``origin_x`` is null (no valid origin coordinate).
+
+    Retains rows where ``destination_x`` is null (origin still valid; null
+    destination is written as NaN in the output CSV).
+
+    Args:
+        df: Full eqasim_trips DataFrame (sep=";").  Must contain columns
+            ``origin_x``, ``origin_y``, ``destination_x``, ``destination_y``,
+            ``mode``.
+
+    Returns:
+        DataFrame with exactly four columns:
+        ``origin_x``, ``origin_y``, ``destination_x``, ``destination_y``.
+    """
+    mask = df["mode"].ne("outside") & df["origin_x"].notna()
+    subset = df.loc[mask, ["origin_x", "origin_y", "destination_x", "destination_y"]]
+    return subset.reset_index(drop=True)
+
+
+def _purpose_to_mode(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate trip counts by (following_purpose, mode) for the sankey.
+
+    Drops rows where ``mode == "outside"`` so external cordon trips do not
+    appear in the flow diagram.
+
+    Args:
+        df: Full eqasim_trips DataFrame (sep=";").  Must contain columns
+            ``following_purpose`` and ``mode``.
+
+    Returns:
+        DataFrame with columns ``from``, ``to``, ``value`` (trip count),
+        one row per (following_purpose, mode) pair present in the data.
+        Sorted descending by ``value`` for stable output.
+    """
+    filtered = df[df["mode"].ne("outside")].copy()
+    counts = (
+        filtered.groupby(["following_purpose", "mode"], sort=True)
+        .size()
+        .reset_index(name="value")
+        .rename(columns={"following_purpose": "from", "mode": "to"})
+        .sort_values("value", ascending=False)
+        .reset_index(drop=True)
+    )
+    return counts
+
+
+def _economic_status_ordinal(series: pd.Series) -> pd.Series:
+    """Map economic_status category strings to ordinal codes 1..5.
+
+    Mapping (per CLAUDE.md BMDV classes):
+        very_low -> 1, low -> 2, medium -> 3, high -> 4, very_high -> 5
+
+    Unknown or null values map to NaN.
+
+    Args:
+        series: String series of economic_status values.
+
+    Returns:
+        Float series of ordinal codes (NaN for unknowns).
+    """
+    return series.map(_ECONOMIC_STATUS_CODE).astype(float)
+
+
+# ---------------------------------------------------------------------------
+# Tab 1: Spatial demand (hexagons)
+# ---------------------------------------------------------------------------
+
+def emit_spatial_demand(
+    sim_output_dir: Path | None,
+    folder: Path,
+) -> "dict[str, Any] | None":
+    """Write ``trips_xy.csv`` and return the Spatial demand dashboard tab.
+
+    Reads ``eqasim_trips.csv`` from ``sim_output_dir`` (the resolved
+    ``simulation_output/`` directory, e.g. as returned by
+    ``build_dashboard._find_sim_output``).  Keeps origin/destination x/y for
+    all trips except cordon ``outside`` trips.  Returns ``None`` with a
+    WARNING when the file is absent.
+
+    File written: ``<folder>/trips_xy.csv``
+    (columns: origin_x, origin_y, destination_x, destination_y).
+
+    Args:
+        sim_output_dir: Resolved path to the MATSim ``simulation_output/``
+            directory, or ``None`` when the sim output could not be located.
+        folder: SimWrapper dashboard output folder.
+
+    Returns:
+        Dashboard dict or ``None``.
+    """
+    trips_path: Path | None = None
+    if sim_output_dir is not None:
+        trips_path = Path(sim_output_dir) / "eqasim_trips.csv"
+        if not trips_path.exists():
+            trips_path = None
+
+    if trips_path is None:
+        LOGGER.warning(
+            "[spatial_demand] eqasim_trips.csv not found in %s -- "
+            "spatial demand tab skipped",
+            sim_output_dir,
+        )
+        return None
+
+    df = pd.read_csv(trips_path, sep=";")
+    xy = _trips_xy(df)
+    LOGGER.info("[spatial_demand] %d trips after filtering (mode!=outside, origin_x notna)", len(xy))
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    xy.to_csv(folder / "trips_xy.csv", index=False, encoding="utf-8")
+    LOGGER.info("[spatial_demand] wrote trips_xy.csv (%d rows)", len(xy))
+
+    aggregations = {
+        "Trips": [
+            {"title": "Origins", "x": "origin_x", "y": "origin_y"},
+            {"title": "Destinations", "x": "destination_x", "y": "destination_y"},
+        ]
+    }
+    return w.dashboard(
+        "Spatial demand",
+        "Trip origins & destinations (hexagon density)",
+        {
+            "hex": [
+                w.card_hexagons(
+                    "Trip origins and destinations",
+                    "trips_xy.csv",
+                    aggregations=aggregations,
+                    radius=300,
+                    description=(
+                        "Each hexagon colour encodes trip count. "
+                        "Select 'Origins' or 'Destinations' in the panel."
+                    ),
+                )
+            ]
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab 2: Socio home points (xytime)
+# ---------------------------------------------------------------------------
+
+def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
+    """Write xytime CSVs for home-point socio-economic attributes.
+
+    Loads the synthetic population from ``run_output_dir`` via
+    :func:`braunschweig.analysis.population_validation.population_source.load_population`,
+    joins homes geometry with household ``household_income_eur`` and
+    person-level ``economic_status`` (when present).
+
+    For each available numeric attribute one xytime CSV is written:
+    - ``homes_income.xyt.csv`` (value = ``household_income_eur``).
+    - ``homes_economic_status.xyt.csv`` (value = ordinal code 1..5 for
+      ``economic_status``; mapping logged; absent in current runs but
+      handled when added upstream).
+
+    Returns ``None`` when neither attribute can be produced (logged).
+
+    Primary/fallback rates are logged per CLAUDE.md requirement.
+
+    Args:
+        run_output_dir: eqasim run output directory.
+        folder: SimWrapper dashboard output folder.
+
+    Returns:
+        Dashboard dict with one ``card_xytime`` per written CSV, or ``None``.
+    """
+    import geopandas as gpd
+    from braunschweig.analysis.population_validation.population_source import (
+        load_population,
+    )
+
+    try:
+        pop = load_population(run_output_dir=run_output_dir)
+    except Exception as exc:
+        LOGGER.warning("[socio] could not load population from %s: %s -- tab skipped",
+                       run_output_dir, exc)
+        return None
+
+    homes = pop.homes[["household_id", "geometry"]].copy()
+    if homes.crs is None or homes.crs.to_epsg() != 25832:
+        LOGGER.warning(
+            "[socio] homes CRS is %s, expected EPSG:25832 -- tab skipped", homes.crs
+        )
+        return None
+
+    households = pop.households.copy()
+    persons = pop.persons.copy()
+
+    # --- Join household_income_eur ---
+    written_cards: dict[str, list[dict]] = {}
+    written_files: list[str] = []
+
+    if "household_income_eur" in households.columns:
+        hh_income = households[["household_id", "household_income_eur"]].copy()
+        hh_income["household_id"] = hh_income["household_id"].astype(str)
+        homes["household_id"] = homes["household_id"].astype(str)
+        gdf_income = gpd.GeoDataFrame(
+            homes.merge(hh_income, on="household_id", how="left"),
+            geometry="geometry", crs=homes.crs,
+        )
+        n_matched = int(gdf_income["household_income_eur"].notna().sum())
+        n_total = len(gdf_income)
+        LOGGER.info(
+            "[socio] household_income_eur: primary (matched) %d / %d (%.1f%%), "
+            "fallback (unmatched) %d (%.1f%%)",
+            n_matched, n_total, 100.0 * n_matched / max(n_total, 1),
+            n_total - n_matched, 100.0 * (n_total - n_matched) / max(n_total, 1),
+        )
+        if n_matched > 0:
+            write_xyt_csv(gdf_income, folder, "homes_income.xyt.csv", "household_income_eur")
+            written_files.append("homes_income.xyt.csv")
+        else:
+            LOGGER.warning("[socio] household_income_eur: no matched rows -- income xyt skipped")
+    else:
+        LOGGER.info("[socio] household_income_eur absent in households.csv -- income xyt skipped")
+
+    # --- Join economic_status (person-level -> household representative) ---
+    if "economic_status" in persons.columns:
+        LOGGER.info(
+            "[socio] economic_status ordinal mapping: %s",
+            ", ".join(f"{k}={v}" for k, v in _ECONOMIC_STATUS_CODE.items()),
+        )
+        # Take the first person per household as representative.
+        rep = (
+            persons[["household_id", "economic_status"]]
+            .drop_duplicates("household_id", keep="first")
+            .copy()
+        )
+        rep["economic_status"] = _economic_status_ordinal(rep["economic_status"])
+        rep["household_id"] = rep["household_id"].astype(str)
+        homes2 = pop.homes[["household_id", "geometry"]].copy()
+        homes2["household_id"] = homes2["household_id"].astype(str)
+        gdf_status = gpd.GeoDataFrame(
+            homes2.merge(rep, on="household_id", how="left"),
+            geometry="geometry", crs=homes.crs,
+        )
+        n_matched_s = int(gdf_status["economic_status"].notna().sum())
+        n_total_s = len(gdf_status)
+        LOGGER.info(
+            "[socio] economic_status: primary (matched) %d / %d (%.1f%%), "
+            "fallback (unmatched) %d (%.1f%%)",
+            n_matched_s, n_total_s, 100.0 * n_matched_s / max(n_total_s, 1),
+            n_total_s - n_matched_s,
+            100.0 * (n_total_s - n_matched_s) / max(n_total_s, 1),
+        )
+        if n_matched_s > 0:
+            write_xyt_csv(
+                gdf_status, folder, "homes_economic_status.xyt.csv", "economic_status"
+            )
+            written_files.append("homes_economic_status.xyt.csv")
+        else:
+            LOGGER.warning(
+                "[socio] economic_status: no matched rows -- status xyt skipped"
+            )
+    else:
+        LOGGER.info(
+            "[socio] economic_status absent in persons.csv -- "
+            "economic status xyt skipped (not yet written by synthesis pipeline)"
+        )
+
+    if not written_files:
+        LOGGER.warning(
+            "[socio] neither household_income_eur nor economic_status produced any "
+            "output -- socio tab skipped"
+        )
+        return None
+
+    cards = []
+    if "homes_income.xyt.csv" in written_files:
+        cards.append(
+            w.card_xytime(
+                "Household income by home location (EUR)",
+                "homes_income.xyt.csv",
+                value_label="EUR",
+                radius=6,
+                description="Each point = one household at its home. Value = household_income_eur.",
+            )
+        )
+    if "homes_economic_status.xyt.csv" in written_files:
+        cards.append(
+            w.card_xytime(
+                "Economic status by home location (1=very_low..5=very_high)",
+                "homes_economic_status.xyt.csv",
+                value_label="status (1-5)",
+                radius=6,
+                description=(
+                    "Each point = one household. Ordinal: "
+                    "1=very_low, 2=low, 3=medium, 4=high, 5=very_high."
+                ),
+            )
+        )
+
+    return w.dashboard(
+        "Socio",
+        "Home locations by income / economic status",
+        {"home_points": cards},
+        description="Socio-economic attributes of synthetic households at home locations (EPSG:25832).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab 3: Behaviour (sankey + scatter)
+# ---------------------------------------------------------------------------
+
+def emit_behaviour(
+    sim_output_dir: Path | None,
+    record: "dict[str, Any] | None",
+    folder: Path,
+) -> "dict[str, Any] | None":
+    """Write purpose-to-mode sankey and per-Kreis car-share scatter.
+
+    Sankey:
+        Reads ``eqasim_trips.csv`` from ``sim_output_dir``; aggregates
+        trip counts by (following_purpose, mode); writes
+        ``purpose_to_mode.csv`` (SEMICOLON-delimited).  Skipped when
+        trips file is absent.
+
+    Scatter:
+        Reads ``record["matsim"]["per_kreis_sim"]`` (sim car-share %) and
+        ``record["mid_reference"]["p12_per_kreis"]`` (MiD P12 car-share %
+        as ``auto`` column); joins on ``ars5``; writes
+        ``kreis_car_sim_vs_mid.csv``.  Skipped when either side absent.
+
+    Returns ``None`` if neither part produced output.
+
+    Args:
+        sim_output_dir: Resolved path to the MATSim ``simulation_output/``
+            directory, or ``None``.
+        record: Run record dict from ``assemble_run_record``.
+        folder: SimWrapper dashboard output folder.
+
+    Returns:
+        Dashboard dict or ``None``.
+    """
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    rows: dict[str, list[dict[str, Any]]] = {}
+
+    # --- Sankey: purpose -> mode ---
+    trips_path: Path | None = None
+    if sim_output_dir is not None:
+        trips_path = Path(sim_output_dir) / "eqasim_trips.csv"
+        if not trips_path.exists():
+            trips_path = None
+
+    if trips_path is not None:
+        df = pd.read_csv(trips_path, sep=";")
+        ptm = _purpose_to_mode(df)
+        LOGGER.info(
+            "[behaviour] sankey: %d (purpose, mode) pairs from %d trips",
+            len(ptm), len(df),
+        )
+        # SimWrapper sankey expects SEMICOLON-delimited CSV.
+        ptm.to_csv(folder / "purpose_to_mode.csv", sep=";", index=False, encoding="utf-8")
+        LOGGER.info("[behaviour] wrote purpose_to_mode.csv")
+        rows["sankey"] = [
+            w.card_sankey(
+                "Trip purpose to mode transitions",
+                "purpose_to_mode.csv",
+                sort=True,
+                width=2,
+                description=(
+                    "Flow: following_purpose (from) -> mode (to). "
+                    "Width = trip count. Cordon 'outside' trips excluded."
+                ),
+            )
+        ]
+    else:
+        LOGGER.info(
+            "[behaviour] eqasim_trips.csv not found in %s -- sankey skipped",
+            sim_output_dir,
+        )
+
+    # --- Scatter: sim car-share vs MiD P12 car-share per Kreis ---
+    per_kreis_sim = (record or {}).get("matsim", {}).get("per_kreis_sim") or {}
+    p12_per_kreis = (record or {}).get("mid_reference", {}).get("p12_per_kreis") or []
+
+    if per_kreis_sim and p12_per_kreis:
+        sim_rows = []
+        for ars5, d in per_kreis_sim.items():
+            ms = d.get("mode_share_pct", {})
+            sim_rows.append({"ars5": ars5, "sim_car_pct": ms.get("car", 0.0)})
+        sim_df = pd.DataFrame(sim_rows)
+
+        mid_rows = [
+            {"ars5": str(entry["ars5"]), "mid_car_pct": float(entry["auto"])}
+            for entry in p12_per_kreis
+            if "ars5" in entry and "auto" in entry
+        ]
+        mid_df = pd.DataFrame(mid_rows)
+
+        scatter_df = sim_df.merge(mid_df, on="ars5", how="inner")
+        LOGGER.info(
+            "[behaviour] scatter: %d Kreise matched (sim per_kreis_sim=%d, MiD p12=%d)",
+            len(scatter_df), len(sim_df), len(mid_df),
+        )
+        if not scatter_df.empty:
+            w.write_csv(folder, "kreis_car_sim_vs_mid.csv", scatter_df)
+            LOGGER.info("[behaviour] wrote kreis_car_sim_vs_mid.csv (%d rows)", len(scatter_df))
+            rows["scatter"] = [
+                w.card_scatter(
+                    "Car share per Kreis: Sim vs MiD P12.1",
+                    "kreis_car_sim_vs_mid.csv",
+                    x="mid_car_pct",
+                    y="sim_car_pct",
+                    x_axis_name="MiD 2023 P12.1 car share (%)",
+                    y_axis_name="Simulation car share (%)",
+                    width=2,
+                    description=(
+                        "Scatter of commute car mode share per Kreis: "
+                        "x = MiD 2023 reference (auto %), y = simulation. "
+                        "Points on the diagonal indicate a good fit."
+                    ),
+                )
+            ]
+        else:
+            LOGGER.warning("[behaviour] scatter: no Kreise matched between sim and MiD -- scatter skipped")
+    else:
+        missing = []
+        if not per_kreis_sim:
+            missing.append("matsim.per_kreis_sim")
+        if not p12_per_kreis:
+            missing.append("mid_reference.p12_per_kreis")
+        LOGGER.info("[behaviour] scatter skipped: missing %s", ", ".join(missing))
+
+    if not rows:
+        LOGGER.warning("[behaviour] neither sankey nor scatter produced output -- behaviour tab skipped")
+        return None
+
+    return w.dashboard(
+        "Behaviour",
+        "Mode transitions & per-Kreis fit",
+        rows,
+        description=(
+            "Left: sankey of trip purpose -> mode (all trips, excl. cordon). "
+            "Right: per-Kreis car share scatter (sim vs MiD P12.1 reference)."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # export_spatial -- registry-based driver, wired into export.main()
 # ---------------------------------------------------------------------------
 
@@ -551,20 +1011,28 @@ def export_spatial(
     target_dir: str | Path,
     run_output_dir: str | None = None,
     sim_cache: str | None = None,
+    record: "dict[str, Any] | None" = None,
     start_index: int = 9,
 ) -> list[Path]:
-    """Write spatial dashboard tabs (fleet, ...) to ``target_dir``.
+    """Write spatial dashboard tabs (fleet, spatial-demand, socio, behaviour).
 
-    Follows the same pattern as :func:`braunschweig.analysis.simwrapper.export.export_run`:
-    iterates over a registry of ``(name, emit_fn)`` pairs, writes each
+    Iterates over a registry of ``(name, emit_fn)`` pairs, writes each
     returned dashboard dict as ``dashboard-{idx}-{name}.yaml``, and skips
-    boards that return ``None`` (always logging the skip).
+    boards that return ``None`` (always logging the skip so there are no
+    silent fallbacks).
+
+    Tab order (sequential indices starting at ``start_index``):
+    1. fleet -- vehicle fleet map (all-features runs only).
+    2. spatial-demand -- trip origin/destination hexagons.
+    3. socio -- home points coloured by income / economic status.
+    4. behaviour -- purpose->mode sankey + per-Kreis car-share scatter.
 
     Args:
-        target_dir: SimWrapper dashboard output folder (same as used by
-            ``export_run``; created if absent).
-        run_output_dir: eqasim run output directory (passed to emit functions).
-        sim_cache: synpp cache directory (alternative to ``run_output_dir``).
+        target_dir: SimWrapper dashboard output folder (created if absent).
+        run_output_dir: eqasim run output directory.
+        sim_cache: synpp cache directory.
+        record: Run record dict from ``assemble_run_record`` (needed for the
+            behaviour scatter; skipped when ``None``).
         start_index: Starting dashboard index (default 9 so it follows the 8
             core tabs produced by ``export_run``).
 
@@ -581,11 +1049,30 @@ def export_spatial(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resolve the source directory for spatial loaders.
+    # Resolve the fleet / socio source directory (run_output preferred).
     source_dir = run_output_dir if run_output_dir is not None else sim_cache
 
+    # Resolve the MATSim simulation_output/ for trips-based tabs.
+    sim_output_dir: Path | None = None
+    if sim_cache is not None:
+        from braunschweig.analysis.dashboard.build_dashboard import _find_sim_output
+        sim_output_dir = _find_sim_output(Path(sim_cache))
+        if sim_output_dir is None:
+            LOGGER.info(
+                "[spatial_export] no matsim.simulation.run__*.cache found in %s "
+                "-- trips-based tabs (spatial-demand, behaviour-sankey) will be skipped",
+                sim_cache,
+            )
+
     _SPATIAL_REGISTRY: list[tuple[str, Any]] = [
+        # Tab: fleet
         ("fleet", lambda f: emit_fleet(source_dir, f)),
+        # Tab: spatial-demand (hexagons from eqasim_trips.csv)
+        ("spatial-demand", lambda f: emit_spatial_demand(sim_output_dir, f)),
+        # Tab: socio (home xytime from population)
+        ("socio", lambda f: emit_socio(source_dir, f) if source_dir else None),
+        # Tab: behaviour (sankey + scatter)
+        ("behaviour", lambda f: emit_behaviour(sim_output_dir, record, f)),
     ]
 
     written: list[Path] = []
