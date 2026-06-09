@@ -4,15 +4,20 @@
 stops with columns ``[source_ars5, stop_id, x, y, n_zgb_routes, is_rail]``.  It now
 emits RAIL-ONLY eligible entry STATIONS (Bahnhoefen) with the new schema::
 
-    [source_ars5, stop_id, x, y, reach, ewz]
+    [source_ars5, stop_id, x, y, reach, ewz, dist_to_zgb_km]
 
-- ``source_ars5`` — 5-digit ARS of the external source Kreis.
-- ``stop_id``     — MATSim transit-stop facility identifier.
-- ``x``, ``y``    — projected coordinates (EPSG:25832, metres).
-- ``reach``       — ``"direct"`` (one-seat rail route into ZGB) or
-                    ``"transfer"`` (one transfer on a second rail route into ZGB).
-- ``ewz``         — population of the containing external Gemeinde (persons), as a
-                    proxy for the station catchment; used by downstream weighting.
+- ``source_ars5``    — 5-digit ARS of the external source Kreis.
+- ``stop_id``        — MATSim transit-stop facility identifier.
+- ``x``, ``y``       — projected coordinates (EPSG:25832, metres).
+- ``reach``          — ``"direct"`` (one-seat rail route into ZGB) or
+                       ``"transfer"`` (one transfer on a second rail route into ZGB).
+- ``ewz``            — population of the containing external Gemeinde (persons), as a
+                       proxy for the station catchment; used by downstream weighting.
+- ``dist_to_zgb_km`` — minimum straight-line (Euclidean, EPSG:25832) distance in km
+                       from this station to any ZGB rail stop in the schedule.  Used
+                       by :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations`
+                       as the gravity decay term (Task PT-G).  ``NaN`` when no ZGB
+                       reference stops are available.
 
 Bus and tram stops are excluded by design: the entry point must be a rail station
 (Bahnhof) offering a realistic cross-cordon commute.  Population attachment uses the
@@ -44,7 +49,7 @@ from braunschweig.data.cordon.pt_reachability import (
 )
 
 # Columns of the empty frame returned when cordon is disabled.
-_NEW_COLUMNS = ["source_ars5", "stop_id", "x", "y", "reach", "ewz"]
+_NEW_COLUMNS = ["source_ars5", "stop_id", "x", "y", "reach", "ewz", "dist_to_zgb_km"]
 
 
 def _map_stop_kreis(stops: dict, kreise: gpd.GeoDataFrame) -> dict:
@@ -137,8 +142,13 @@ def build_rail_entry_stations(
     Returns:
         ``(df, n_nearest_fallback)`` where:
 
-        - ``df``: DataFrame ``[source_ars5, stop_id, x, y, reach, ewz]``, one row per
-          eligible external rail entry station.
+        - ``df``: DataFrame ``[source_ars5, stop_id, x, y, reach, ewz, dist_to_zgb_km]``,
+          one row per eligible external rail entry station.  ``dist_to_zgb_km`` is the
+          minimum straight-line distance (km, EPSG:25832 Euclidean) from the station to
+          any ZGB rail stop; ``NaN`` when no ZGB reference stops are found.  This column
+          feeds the gravity decay term in
+          :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations`
+          (Task PT-G).
         - ``n_nearest_fallback`` (int): stations whose population was filled via the
           nearest-Gemeinde fallback rather than a containment join (CLAUDE.md
           no-silent-fallback contract: the caller logs this count).
@@ -148,7 +158,7 @@ def build_rail_entry_stations(
     stations_base = eligible_rail_entry_stations(routes, stop_kreis, zgb_set)
 
     if len(stations_base) == 0:
-        # Return an empty frame with all required columns including x, y, ewz.
+        # Return an empty frame with all required columns including x, y, ewz, dist_to_zgb_km.
         empty = pd.DataFrame(columns=_NEW_COLUMNS)
         return empty, 0
 
@@ -156,20 +166,24 @@ def build_rail_entry_stations(
     stations_base["x"] = stations_base["stop_id"].map(lambda sid: stops[sid][0])
     stations_base["y"] = stations_base["stop_id"].map(lambda sid: stops[sid][1])
 
+    # Build the ZGB reference point array once (reused by both the distance cap and the
+    # dist_to_zgb_km column).  These are the coordinates of all schedule stops whose
+    # Kreis maps to the ZGB set -- the same set the distance cap uses.
+    zgb_stop_coords = [
+        stops[sid]
+        for sid, kreis in stop_kreis.items()
+        if kreis is not None and kreis in zgb_set and sid in stops
+    ]
+    if zgb_stop_coords:
+        zgb_pts = np.array(zgb_stop_coords, dtype=float)
+    else:
+        zgb_pts = np.empty((0, 2))
+
     # Optional distance cap: drop stations farther than max_station_distance_km from
     # every ZGB rail stop.  Applied BEFORE population attachment to avoid unneeded
     # spatial work.  See apply_station_distance_cap for the ASSUMPTION note on the
     # default value used in configure().
     if max_station_distance_km is not None:
-        zgb_stop_coords = [
-            stops[sid]
-            for sid, kreis in stop_kreis.items()
-            if kreis is not None and kreis in zgb_set and sid in stops
-        ]
-        if zgb_stop_coords:
-            zgb_pts = np.array(zgb_stop_coords, dtype=float)
-        else:
-            zgb_pts = np.empty((0, 2))
         n_before_cap = len(stations_base)
         stations_base, n_distance_dropped = apply_station_distance_cap(
             stations_base, zgb_pts, max_km=max_station_distance_km
@@ -203,6 +217,20 @@ def build_rail_entry_stations(
 
     # Attach population catchment from the containing external Gemeinde.
     df, n_nearest_fallback = attach_station_population(stations_base, gemeinden)
+
+    # Compute dist_to_zgb_km: minimum straight-line distance (EPSG:25832 metres -> km)
+    # from each station to the nearest ZGB rail stop.  This feeds the gravity decay term
+    # in weight_entry_stations (Task PT-G).  NaN when no ZGB reference stops are available.
+    if zgb_pts.shape[0] > 0:
+        sx = df["x"].to_numpy(dtype=float)
+        sy = df["y"].to_numpy(dtype=float)
+        # Vectorised: (n_stations, 1) distances to (1, n_zgb) reference points.
+        dx = sx[:, np.newaxis] - zgb_pts[:, 0][np.newaxis, :]
+        dy = sy[:, np.newaxis] - zgb_pts[:, 1][np.newaxis, :]
+        min_dist_m = np.sqrt((dx ** 2 + dy ** 2).min(axis=1))
+        df["dist_to_zgb_km"] = min_dist_m / 1000.0
+    else:
+        df["dist_to_zgb_km"] = float("nan")
 
     # Enforce the canonical column order.
     return df[_NEW_COLUMNS], n_nearest_fallback

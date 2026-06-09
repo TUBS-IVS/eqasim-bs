@@ -123,18 +123,33 @@ def eligible_rail_entry_stations(
 
 
 def weight_entry_stations(stations: pd.DataFrame,
-                          transfer_penalty: float = 0.5) -> pd.DataFrame:
-    """Per (Kreis, station) selection weight = ewz * accessibility, normalised per Kreis.
+                          transfer_penalty: float = 0.5,
+                          beta: float = 0.0) -> pd.DataFrame:
+    """Per (Kreis, station) selection weight = ewz * accessibility * decay, normalised per Kreis.
 
     The weight reflects how attractive a rail entry station is for cross-cordon PT
     in-commuters from its source Kreis: a station with a larger population catchment
-    (``ewz``) and a direct rail connection is preferred over a small or transfer-only
-    station.
+    (``ewz``), a direct rail connection, and a location closer to ZGB is preferred.
 
     - accessibility = 1.0 for ``reach == "direct"`` (no transfer needed).
     - accessibility = ``transfer_penalty`` for ``reach == "transfer"`` (one transfer
       required); must be in (0, 1] so transfer stations are downweighted but never
       excluded.
+    - decay = ``exp(beta * dist_to_zgb_km)`` when the ``stations`` frame contains a
+      ``dist_to_zgb_km`` column AND ``beta != 0.0``; otherwise ``decay = 1.0``.
+      ``beta`` should be negative so that stations closer to ZGB (smaller
+      ``dist_to_zgb_km``) receive a higher decay factor.  This mirrors the road
+      cordon gravity in ``braunschweig.data.cordon.gate_assignment.population_gravity_gate_assignment``
+      and is calibrated to break within-city ties (e.g. all Magdeburg Bahnhoefen
+      having the same ``ewz``) in favour of the geographically closest station.
+      **ASSUMPTION**: ``beta = -0.05`` per km (the default used by the calling stage)
+      mirrors the road cordon ``cordon_gravity_beta`` default and has no committed
+      calibration target in this repository.  It is tunable via the
+      ``cordon_pt_gravity_beta`` config key.  ``dist_to_zgb_km`` is a straight-line
+      (Euclidean, EPSG:25832) proxy for travel distance; the real rail travel time is
+      determined by the MATSim router after network injection.
+    - NaN ``dist_to_zgb_km`` values (arising when ZGB reference stops are unavailable)
+      are treated as ``decay = 1.0`` (no distance penalty) so no weight becomes NaN.
     - ``ewz`` is floored at 1.0 before multiplication to guard against zero or
       negative values (which would silently suppress a valid station).
     - Weights are normalised within each ``source_ars5`` so they form a proper
@@ -144,12 +159,16 @@ def weight_entry_stations(stations: pd.DataFrame,
 
     Args:
         stations: DataFrame with at least columns ``[source_ars5, stop_id, reach,
-            ewz]``.  Additional columns (e.g. ``x``, ``y``) are preserved unchanged.
-            ``ewz`` is the station population catchment (inhabitants in the Gemeinden
-            nearest to that station, set upstream).  ``reach`` must be ``"direct"``
-            or ``"transfer"``.
+            ewz]``.  Additional columns (e.g. ``x``, ``y``, ``dist_to_zgb_km``) are
+            preserved unchanged.  ``ewz`` is the station population catchment
+            (inhabitants in the Gemeinden nearest to that station, set upstream).
+            ``reach`` must be ``"direct"`` or ``"transfer"``.
         transfer_penalty: accessibility multiplier for one-transfer stations; default
             0.5.  Must be in (0, 1].
+        beta: distance-decay slope per km (should be <= 0).  Applied as
+            ``exp(beta * dist_to_zgb_km)`` when ``stations`` has a ``dist_to_zgb_km``
+            column and ``beta != 0.0``; otherwise the decay term is 1.0
+            (backward-compatible default).
 
     Returns:
         Copy of ``stations`` with an additional ``weight`` column (float).  Weights
@@ -158,7 +177,18 @@ def weight_entry_stations(stations: pd.DataFrame,
     s = stations.copy()
     s["ewz"] = s["ewz"].astype(float).clip(lower=1.0)
     access = np.where(s["reach"].to_numpy() == "direct", 1.0, float(transfer_penalty))
-    s["weight"] = s["ewz"].to_numpy() * access
+
+    # Distance-decay gravity term: exp(beta * dist_to_zgb_km).
+    # Applied only when the column exists and beta is non-zero; otherwise decay=1.0
+    # for full backward-compatibility (beta=0 default -> no change to existing weights).
+    # NaN distances are guarded: fillna(0.0) gives exp(beta*0)=1.0, the neutral value.
+    if float(beta) != 0.0 and "dist_to_zgb_km" in s.columns:
+        dist_km = s["dist_to_zgb_km"].astype(float).fillna(0.0).to_numpy()
+        decay = np.exp(float(beta) * dist_km)
+    else:
+        decay = 1.0
+
+    s["weight"] = s["ewz"].to_numpy() * access * decay
     tot = s.groupby("source_ars5")["weight"].transform("sum")
     s["weight"] = np.where(tot.to_numpy() > 0, s["weight"] / tot.to_numpy(), 0.0)
     return s

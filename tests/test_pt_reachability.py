@@ -411,3 +411,112 @@ def test_attach_population_preserves_all_stations_with_nonunique_index():
         "each station must receive the ewz of its containing Gemeinde"
     assert n_fallback == 0, "both stations match by containment; fallback count must be 0"
     assert out["ewz"].dtype == float, "ewz must be float dtype regardless of source column dtype"
+
+
+# ---------------------------------------------------------------------------
+# weight_entry_stations gravity-beta tests (Task PT-G)
+# ---------------------------------------------------------------------------
+
+def test_gravity_beta_prefers_closer_station():
+    """With beta<0, the nearer station gets a strictly higher weight; with beta=0 they are equal.
+
+    Two stations, same source_ars5, same ewz, same reach="direct", but different
+    dist_to_zgb_km (10 vs 80 km).  The gravity decay is exp(beta * dist_to_zgb_km).
+
+    With beta=0.0: decay=1 for both -> weights proportional to ewz only -> EQUAL.
+    With beta=-0.05: decay(10)=exp(-0.5) > decay(80)=exp(-4.0) -> nearer is HIGHER.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15003"],
+        "stop_id": ["near", "far"],
+        "reach": ["direct", "direct"],
+        "ewz": [10000.0, 10000.0],
+        "dist_to_zgb_km": [10.0, 80.0],
+    })
+
+    # beta=0.0 -> no decay -> weights must be equal
+    w_zero = weight_entry_stations(stations, transfer_penalty=0.5, beta=0.0)
+    w_near_zero = w_zero.loc[w_zero["stop_id"] == "near", "weight"].iloc[0]
+    w_far_zero = w_zero.loc[w_zero["stop_id"] == "far", "weight"].iloc[0]
+    assert abs(w_near_zero - w_far_zero) < 1e-9, \
+        "beta=0.0 must produce equal weights for equal-ewz equal-reach stations"
+
+    # beta=-0.05 -> nearer station must dominate
+    w_decay = weight_entry_stations(stations, transfer_penalty=0.5, beta=-0.05)
+    w_near_decay = w_decay.loc[w_decay["stop_id"] == "near", "weight"].iloc[0]
+    w_far_decay = w_decay.loc[w_decay["stop_id"] == "far", "weight"].iloc[0]
+    assert w_near_decay > w_far_decay, \
+        "beta=-0.05 must give the nearer station (10 km) a higher weight than the far one (80 km)"
+
+    # weights must still sum to 1 within the Kreis
+    for w_df in (w_zero, w_decay):
+        total = w_df.groupby("source_ars5")["weight"].sum().iloc[0]
+        assert abs(total - 1.0) < 1e-9, "weights must normalise to 1.0 within each Kreis"
+
+
+def test_gravity_no_column_or_zero_beta_unchanged():
+    """beta=0 or a missing dist_to_zgb_km column must reproduce the pre-gravity weights.
+
+    Two stations with different ewz but no dist_to_zgb_km column.  The returned
+    weights must be identical to the beta=0.0 call (purely ewz * accessibility).
+    """
+    stations_no_col = pd.DataFrame({
+        "source_ars5": ["15003", "15003"],
+        "stop_id": ["A", "B"],
+        "reach": ["direct", "transfer"],
+        "ewz": [80000.0, 20000.0],
+    })
+    # Call with no beta argument (default 0.0) and with explicit beta=0.0
+    w_default = weight_entry_stations(stations_no_col)
+    w_beta_zero = weight_entry_stations(stations_no_col, beta=0.0)
+
+    # Add a dist_to_zgb_km column but keep beta=0.0 -> must still be unchanged
+    stations_with_col = stations_no_col.copy()
+    stations_with_col["dist_to_zgb_km"] = [10.0, 50.0]
+    w_col_zero_beta = weight_entry_stations(stations_with_col, beta=0.0)
+
+    for stop_id in ("A", "B"):
+        w_d = w_default.loc[w_default["stop_id"] == stop_id, "weight"].iloc[0]
+        w_z = w_beta_zero.loc[w_beta_zero["stop_id"] == stop_id, "weight"].iloc[0]
+        w_c = w_col_zero_beta.loc[w_col_zero_beta["stop_id"] == stop_id, "weight"].iloc[0]
+        assert abs(w_d - w_z) < 1e-12, \
+            f"default beta must equal explicit beta=0.0 for stop {stop_id}"
+        assert abs(w_d - w_c) < 1e-12, \
+            f"beta=0.0 with dist column must equal no-column result for stop {stop_id}"
+
+
+def test_gravity_nan_distance_treated_as_no_decay():
+    """A NaN dist_to_zgb_km row must not produce a NaN weight; it receives decay=1.0.
+
+    When zgb_points are unavailable (e.g. an empty ZGB schedule) the dist column
+    may contain NaN.  The gravity formula must guard against this and treat NaN
+    distance as decay=1.0 (no gravity applied for that station), so the weight is
+    purely ewz * accessibility as in the pre-gravity case.
+    """
+    stations = pd.DataFrame({
+        "source_ars5": ["15003", "15003"],
+        "stop_id": ["known", "unknown"],
+        "reach": ["direct", "direct"],
+        "ewz": [10000.0, 10000.0],
+        "dist_to_zgb_km": [30.0, float("nan")],
+    })
+    w = weight_entry_stations(stations, beta=-0.05)
+
+    # No NaN weights must appear
+    assert not w["weight"].isna().any(), \
+        "NaN dist_to_zgb_km must not propagate to a NaN weight"
+
+    # The unknown-distance station must have a positive weight
+    w_unknown = w.loc[w["stop_id"] == "unknown", "weight"].iloc[0]
+    assert w_unknown > 0.0, \
+        "station with NaN dist_to_zgb_km must have a positive weight (decay treated as 1.0)"
+
+    # The NaN-distance station gets decay 1.0; the known-distance station gets
+    # decay exp(-0.05 * 30) = exp(-1.5) < 1.0 -> the NaN station has HIGHER weight.
+    w_known = w.loc[w["stop_id"] == "known", "weight"].iloc[0]
+    assert w_unknown > w_known, \
+        "station with NaN distance (decay 1.0) must outweigh a station 30 km away (decay<1)"
+
+    # Weights must still sum to 1
+    total = w.groupby("source_ars5")["weight"].sum().iloc[0]
+    assert abs(total - 1.0) < 1e-9, "weights must normalise to 1.0 even with NaN distance"

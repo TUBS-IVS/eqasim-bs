@@ -68,10 +68,10 @@ def _stops_and_routes():
 
 
 def test_build_rail_entry_stations_schema():
-    """Output DataFrame must have exactly the new schema columns."""
+    """Output DataFrame must have exactly the expected schema columns (Task PT-G adds dist_to_zgb_km)."""
     stops, routes = _stops_and_routes()
     df, _n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(), ZGB)
-    assert list(df.columns) == ["source_ars5", "stop_id", "x", "y", "reach", "ewz"], \
+    assert list(df.columns) == ["source_ars5", "stop_id", "x", "y", "reach", "ewz", "dist_to_zgb_km"], \
         f"unexpected columns: {list(df.columns)}"
 
 
@@ -159,8 +159,8 @@ def test_build_rail_entry_stations_empty_when_no_rail_routes():
     routes = [("bus", ["BUS_EXT", "BUS_ZGB"])]
     df, n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(), ZGB)
     assert len(df) == 0, "no rail routes -> no entry stations"
-    assert list(df.columns) == ["source_ars5", "stop_id", "x", "y", "reach", "ewz"], \
-        "empty result must still have the new schema columns"
+    assert list(df.columns) == ["source_ars5", "stop_id", "x", "y", "reach", "ewz", "dist_to_zgb_km"], \
+        "empty result must still have the new schema columns including dist_to_zgb_km"
     assert n_fb == 0
 
 
@@ -260,3 +260,75 @@ def test_distance_cap_applied_via_build_rail_entry_stations():
         "with 150 km cap FAR_EXT (300 km from ZGB) must be dropped"
     assert "RAIL_EXT" in df_capped["stop_id"].values, \
         "RAIL_EXT (close to ZGB) must survive the distance cap"
+
+
+# ---------------------------------------------------------------------------
+# Task PT-G: dist_to_zgb_km column in build_rail_entry_stations
+# ---------------------------------------------------------------------------
+
+def test_build_rail_entry_stations_has_dist_to_zgb_km_column():
+    """Output DataFrame must include a dist_to_zgb_km column when ZGB stops exist.
+
+    The column must be finite (not NaN) for every returned station when at least one
+    ZGB rail stop is in the schedule.
+    """
+    stops, routes = _stops_and_routes()
+    df, _n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(), ZGB)
+    assert "dist_to_zgb_km" in df.columns, \
+        "build_rail_entry_stations must add a dist_to_zgb_km column to the result"
+    assert df["dist_to_zgb_km"].notna().all(), \
+        "dist_to_zgb_km must be finite (non-NaN) for all stations when ZGB stops exist"
+
+
+def test_build_rail_entry_stations_dist_to_zgb_km_values():
+    """The dist_to_zgb_km value must reflect the straight-line distance to the nearest ZGB stop.
+
+    Fixture: RAIL_EXT at (50, 50), RAIL_ZGB at (150, 50).
+    Euclidean distance in metres = sqrt((150-50)^2 + 0^2) = 100 m -> 0.1 km.
+    """
+    stops, routes = _stops_and_routes()
+    df, _n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(), ZGB)
+    row = df[df["stop_id"] == "RAIL_EXT"].iloc[0]
+    expected_km = 0.1  # 100 m in the fixture
+    assert abs(row["dist_to_zgb_km"] - expected_km) < 1e-6, \
+        f"dist_to_zgb_km for RAIL_EXT must be ~{expected_km} km; got {row['dist_to_zgb_km']}"
+
+
+def test_build_rail_entry_stations_closer_station_has_smaller_dist():
+    """A station nearer to ZGB must have a smaller dist_to_zgb_km than a farther one.
+
+    Uses the two-external-station fixture from the direct/transfer test:
+      EXT_A at (50, 50) -> closer to ZGB stop at (150, 50): dist = 100 m.
+      EXT_B at (30, 30) -> further from ZGB stop: dist = sqrt(120^2 + 20^2) ~ 121.7 m.
+    """
+    stops = {
+        "EXT_A": (50.0, 50.0),
+        "EXT_B": (30.0, 30.0),
+        "ZGB_A": (150.0, 50.0),
+    }
+    routes = [
+        ("rail", ["EXT_A", "ZGB_A"]),
+        ("rail", ["EXT_B", "EXT_A"]),
+    ]
+    df, _n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(), ZGB)
+    dist_a = df.loc[df["stop_id"] == "EXT_A", "dist_to_zgb_km"].iloc[0]
+    dist_b = df.loc[df["stop_id"] == "EXT_B", "dist_to_zgb_km"].iloc[0]
+    assert dist_a < dist_b, \
+        "EXT_A (50,50) is closer to ZGB at (150,50) than EXT_B (30,30); dist_a must be smaller"
+
+
+def test_build_rail_entry_stations_dist_nan_when_no_zgb_stops():
+    """When there are no ZGB stops (empty zgb_points), dist_to_zgb_km must be NaN.
+
+    This happens when zgb_kreise is empty or no schedule stops fall inside the ZGB Kreise.
+    In that case the column must still be present but all values are NaN.
+    """
+    # Use an empty zgb_kreise set so no stops map into ZGB -> no ZGB reference points.
+    stops, routes = _stops_and_routes()
+    df, _n_fb = build_rail_entry_stations(stops, routes, _kreise(), _gemeinden(),
+                                          zgb_kreise=set())
+    # With no ZGB Kreise, eligible_rail_entry_stations returns an empty frame (no direct/
+    # transfer routes can be found because no stop maps to ZGB).  The empty path should
+    # return the expected schema including dist_to_zgb_km.
+    assert "dist_to_zgb_km" in df.columns, \
+        "dist_to_zgb_km column must be present even when the result is empty"

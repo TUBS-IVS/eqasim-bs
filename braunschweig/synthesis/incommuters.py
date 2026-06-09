@@ -265,6 +265,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             detour_factor=1.3, pt_entry_stops=None,
                             commute_modes=("car", "pt"),
                             pt_transfer_penalty=0.5,
+                            pt_gravity_beta=0.0,
                             inkar_income=None, data_path=None):
     """Assemble every in-commuter frame.
 
@@ -286,6 +287,11 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     ``pt_transfer_penalty`` is passed to
     :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations` (default
     0.5): direct rail stations are preferred over one-transfer stations.
+
+    ``pt_gravity_beta`` is the distance-decay slope (per km) passed to
+    :func:`~braunschweig.data.cordon.pt_reachability.weight_entry_stations` (default
+    0.0 = no gravity, backward-compatible).  The calling stage sets -0.05 (mirroring
+    ``cordon_gravity_beta``) to prefer stations closer to ZGB.
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     agents = expand_to_agents(inbound, sampling_rate)
@@ -342,7 +348,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         # pt_reachability (pt_reachability imports RAIL_LIKE_MODES from this module).
         from braunschweig.data.cordon.pt_reachability import (  # noqa: PLC0415
             sample_pt_station_per_agent, weight_entry_stations)
-        weighted = weight_entry_stations(pt_entry_stops, transfer_penalty=pt_transfer_penalty)
+        weighted = weight_entry_stations(pt_entry_stops, transfer_penalty=pt_transfer_penalty,
+                                         beta=pt_gravity_beta)
         # Build a coordinate lookup: stop_id -> (x, y) from the full pt_entry_stops table.
         _stop_xy = dict(zip(pt_entry_stops["stop_id"], zip(
             pt_entry_stops["x"].astype(float), pt_entry_stops["y"].astype(float))))
@@ -789,6 +796,16 @@ def configure(context):
     # A lower value further de-emphasises transfer stations relative to direct ones.
     # Must be in (0, 1]; default 0.5 (transfer stations get half the weight of direct).
     context.config("cordon_pt_transfer_penalty", 0.5)
+    # PT station distance-gravity: distance-decay slope (per km) applied as
+    # exp(beta * dist_to_zgb_km) in weight_entry_stations.  Should be <= 0 (closer
+    # stations preferred).  Default -0.05 mirrors ``cordon_gravity_beta`` (road cordon
+    # gravity); set to 0.0 to disable (flat within-Kreis decay).
+    # ASSUMPTION: -0.05/km is chosen to mirror the road cordon gravity and has no
+    # committed calibration target in this repository.  Straight-line distance is a
+    # proxy for travel time; actual routing is handled by the MATSim router after network
+    # injection.  Re-calibrate against observed in-commuter PT boarding origins when data
+    # are available.
+    context.config("cordon_pt_gravity_beta", -0.05)
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -828,6 +845,7 @@ def execute(context):
         gate_speed_kmh=float(context.config("cordon_gate_speed_kmh")),
         pt_entry_stops=context.stage("braunschweig.data.cordon_pt_gates"),
         pt_transfer_penalty=float(context.config("cordon_pt_transfer_penalty")),
+        pt_gravity_beta=float(context.config("cordon_pt_gravity_beta")),
         inkar_income=context.stage("braunschweig.data.inkar.household_income"),
         # data_path drives the German NDS fleet draw for the in-commuter cars
         # (Task F6); only set it when the German fleet is active so OFF keeps the
