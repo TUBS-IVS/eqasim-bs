@@ -556,6 +556,60 @@ _ECONOMIC_STATUS_CODE: dict[str, int] = {
 }
 
 
+def _socio_by_kreis(homes_df: "pd.DataFrame") -> pd.DataFrame:
+    """Aggregate socio-economic metrics per Kreis (5-digit ars5 code).
+
+    Computes per-Kreis summary statistics from a flat DataFrame of homes
+    that already has ``ars5`` attached (from
+    :func:`braunschweig.analysis.spatial.assign_geographies`).
+
+    Columns used (all optional -- missing ones are silently skipped):
+
+    - ``household_income_eur``: float, averaged as ``mean_income_eur``.
+    - ``high_income``: bool/int (1=True), averaged as ``high_income_share_pct``
+      (0-100).
+    - ``number_of_cars``: int, averaged as ``mean_cars``.
+    - ``economic_status_ord``: ordinal 1..5, averaged as
+      ``mean_economic_status`` (only over rows where the value is non-null;
+      carless households have no status and are excluded -- this is logged
+      in the calling code, not here).
+
+    Args:
+        homes_df: Flat DataFrame with ``ars5`` plus the optional attribute
+            columns listed above.  One row per household.
+
+    Returns:
+        DataFrame with ``ars5`` and whatever metric columns could be computed
+        (those whose source column was present and had at least one non-null
+        value per Kreis).  Empty DataFrame when ``ars5`` is absent.
+    """
+    if "ars5" not in homes_df.columns:
+        return pd.DataFrame()
+
+    agg_spec: dict[str, tuple[str, Any]] = {}
+    if "household_income_eur" in homes_df.columns:
+        agg_spec["mean_income_eur"] = ("household_income_eur", "mean")
+    if "high_income" in homes_df.columns:
+        agg_spec["high_income_share_pct"] = (
+            "high_income",
+            lambda s: round(100.0 * pd.to_numeric(s, errors="coerce").mean(), 2),
+        )
+    if "number_of_cars" in homes_df.columns:
+        agg_spec["mean_cars"] = ("number_of_cars", "mean")
+    if "economic_status_ord" in homes_df.columns:
+        agg_spec["mean_economic_status"] = ("economic_status_ord", "mean")
+
+    if not agg_spec:
+        return pd.DataFrame()
+
+    result = (
+        homes_df.groupby("ars5", sort=True)
+        .agg(**agg_spec)
+        .reset_index()
+    )
+    return result
+
+
 def _trips_xy(df: pd.DataFrame) -> pd.DataFrame:
     """Return a slim DataFrame of origin/destination x/y coordinates.
 
@@ -705,20 +759,34 @@ def emit_spatial_demand(
 # ---------------------------------------------------------------------------
 
 def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
-    """Write xytime CSVs for home-point socio-economic attributes.
+    """Write xytime CSVs and per-Kreis choropleth for household socio-economic attributes.
 
     Loads the synthetic population from ``run_output_dir`` via
-    :func:`braunschweig.analysis.population_validation.population_source.load_population`,
-    joins homes geometry with household ``household_income_eur`` and
-    person-level ``economic_status`` (when present).
+    :func:`braunschweig.analysis.population_validation.population_source.load_population`.
 
     For each available numeric attribute one xytime CSV is written:
+
     - ``homes_income.xyt.csv`` (value = ``household_income_eur``).
     - ``homes_economic_status.xyt.csv`` (value = ordinal code 1..5 for
-      ``economic_status``; mapping logged; absent in current runs but
-      handled when added upstream).
+      ``economic_status``; sourced from vehicles.csv; only written for the
+      ~84% of households that own a car -- carless households have no vehicle
+      row and therefore no status).
+    - ``homes_high_income.xyt.csv`` (value = ``high_income`` as 0/1).
+    - ``homes_number_of_cars.xyt.csv`` (value = ``number_of_cars``).
 
-    Returns ``None`` when neither attribute can be produced (logged).
+    Also writes a per-Kreis choropleth when VG250 is available:
+
+    - ``kreis_socio.geojson`` -- Kreis polygons (EPSG:4326) with aggregated
+      metrics.
+    - ``kreis_socio.csv`` -- per-Kreis metrics joined by ``ars5``.
+
+    Coverage note: ``economic_status`` is sourced from ``vehicles.csv``
+    (one row per vehicle, ``mode == car``; drop_duplicates on household_id).
+    Carless households have no vehicle row and therefore no status -- they
+    are excluded from the status point map and the ``mean_economic_status``
+    Kreis aggregate.  The coverage is always logged explicitly.
+
+    Returns ``None`` when no attribute can be produced (always logged).
 
     Primary/fallback rates are logged per CLAUDE.md requirement.
 
@@ -727,12 +795,13 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
         folder: SimWrapper dashboard output folder.
 
     Returns:
-        Dashboard dict with one ``card_xytime`` per written CSV, or ``None``.
+        Dashboard dict with xytime point maps + Kreis choropleth rows, or ``None``.
     """
     import geopandas as gpd
     from braunschweig.analysis.population_validation.population_source import (
         load_population,
     )
+    from braunschweig.analysis import spatial
 
     try:
         pop = load_population(run_output_dir=run_output_dir)
@@ -749,117 +818,283 @@ def emit_socio(run_output_dir: str, folder: Path) -> "dict[str, Any] | None":
         return None
 
     households = pop.households.copy()
-    persons = pop.persons.copy()
+    households["household_id"] = households["household_id"].astype(str)
+    homes["household_id"] = homes["household_id"].astype(str)
 
-    # --- Join household_income_eur ---
-    written_cards: dict[str, list[dict]] = {}
-    written_files: list[str] = []
+    # Build one wide household-attributes frame by joining all available
+    # household-level attributes onto the homes geometry.
+    hh_attrs = households[["household_id"]].copy()
 
-    if "household_income_eur" in households.columns:
-        hh_income = households[["household_id", "household_income_eur"]].copy()
-        hh_income["household_id"] = hh_income["household_id"].astype(str)
-        homes["household_id"] = homes["household_id"].astype(str)
-        gdf_income = gpd.GeoDataFrame(
-            homes.merge(hh_income, on="household_id", how="left"),
-            geometry="geometry", crs=homes.crs,
-        )
-        n_matched = int(gdf_income["household_income_eur"].notna().sum())
-        n_total = len(gdf_income)
-        LOGGER.info(
-            "[socio] household_income_eur: primary (matched) %d / %d (%.1f%%), "
-            "fallback (unmatched) %d (%.1f%%)",
-            n_matched, n_total, 100.0 * n_matched / max(n_total, 1),
-            n_total - n_matched, 100.0 * (n_total - n_matched) / max(n_total, 1),
-        )
-        if n_matched > 0:
-            write_xyt_csv(gdf_income, folder, "homes_income.xyt.csv", "household_income_eur")
-            written_files.append("homes_income.xyt.csv")
+    for col in ("household_income_eur", "high_income", "number_of_cars"):
+        if col in households.columns:
+            hh_attrs[col] = households[col].values
         else:
-            LOGGER.warning("[socio] household_income_eur: no matched rows -- income xyt skipped")
-    else:
-        LOGGER.info("[socio] household_income_eur absent in households.csv -- income xyt skipped")
+            LOGGER.info(
+                "[socio] '%s' absent in households.csv -- attribute skipped", col
+            )
 
-    # --- Join economic_status (person-level -> household representative) ---
-    if "economic_status" in persons.columns:
+    # --- Source economic_status from vehicles.csv (car-owning HHs only) ---
+    # economic_status is written per vehicle row; carless HHs have no row.
+    # We take the first car-mode row per household_id (all rows for the same
+    # household share the same status value from the synthesis pipeline).
+    vehicles = pop.vehicles
+    status_col_available = False
+    if vehicles is not None and "economic_status" in vehicles.columns and "household_id" in vehicles.columns:
+        car_vehicles = vehicles[vehicles["mode"] == "car"].copy() if "mode" in vehicles.columns else vehicles.copy()
+        car_vehicles["household_id"] = (
+            pd.to_numeric(car_vehicles["household_id"], errors="coerce")
+            .astype("Int64")
+            .apply(lambda v: str(int(v)) if pd.notna(v) else None)
+        )
+        status_per_hh = (
+            car_vehicles[["household_id", "economic_status"]]
+            .dropna(subset=["household_id"])
+            .drop_duplicates("household_id", keep="first")
+            .copy()
+        )
+        status_per_hh["economic_status_ord"] = _economic_status_ordinal(
+            status_per_hh["economic_status"]
+        )
+        n_with_status = int(status_per_hh["economic_status_ord"].notna().sum())
+        n_total_hh = len(homes)
+        LOGGER.info(
+            "[socio] economic_status: sourced from vehicles.csv (mode==car), "
+            "%d / %d households (%.1f%%); carless HHs have no vehicle row "
+            "and are excluded from the status map.",
+            n_with_status, n_total_hh,
+            100.0 * n_with_status / max(n_total_hh, 1),
+        )
         LOGGER.info(
             "[socio] economic_status ordinal mapping: %s",
             ", ".join(f"{k}={v}" for k, v in _ECONOMIC_STATUS_CODE.items()),
         )
-        # Take the first person per household as representative.
-        rep = (
-            persons[["household_id", "economic_status"]]
-            .drop_duplicates("household_id", keep="first")
-            .copy()
+        hh_attrs = hh_attrs.merge(
+            status_per_hh[["household_id", "economic_status_ord"]],
+            on="household_id", how="left",
         )
-        rep["economic_status"] = _economic_status_ordinal(rep["economic_status"])
-        rep["household_id"] = rep["household_id"].astype(str)
-        homes2 = pop.homes[["household_id", "geometry"]].copy()
-        homes2["household_id"] = homes2["household_id"].astype(str)
-        gdf_status = gpd.GeoDataFrame(
-            homes2.merge(rep, on="household_id", how="left"),
-            geometry="geometry", crs=homes.crs,
+        status_col_available = True
+    elif vehicles is not None and "economic_status" not in vehicles.columns:
+        LOGGER.warning(
+            "[socio] vehicles.csv present but lacks 'economic_status' column "
+            "(lean-run schema) -- economic status xyt skipped"
         )
-        n_matched_s = int(gdf_status["economic_status"].notna().sum())
-        n_total_s = len(gdf_status)
-        LOGGER.info(
-            "[socio] economic_status: primary (matched) %d / %d (%.1f%%), "
-            "fallback (unmatched) %d (%.1f%%)",
-            n_matched_s, n_total_s, 100.0 * n_matched_s / max(n_total_s, 1),
-            n_total_s - n_matched_s,
-            100.0 * (n_total_s - n_matched_s) / max(n_total_s, 1),
+    elif vehicles is None:
+        LOGGER.warning(
+            "[socio] vehicles.csv absent in %s -- economic status xyt skipped",
+            run_output_dir,
         )
-        if n_matched_s > 0:
-            write_xyt_csv(
-                gdf_status, folder, "homes_economic_status.xyt.csv", "economic_status"
-            )
-            written_files.append("homes_economic_status.xyt.csv")
-        else:
-            LOGGER.warning(
-                "[socio] economic_status: no matched rows -- status xyt skipped"
-            )
     else:
-        LOGGER.info(
-            "[socio] economic_status absent in persons.csv -- "
-            "economic status xyt skipped (not yet written by synthesis pipeline)"
+        LOGGER.warning(
+            "[socio] vehicles.csv present but lacks 'household_id' column "
+            "-- economic status xyt skipped (lean-run schema)"
         )
+
+    # Build GeoDataFrame: homes + all attribute columns.
+    gdf_full = gpd.GeoDataFrame(
+        homes.merge(hh_attrs, on="household_id", how="left"),
+        geometry="geometry", crs=pop.homes.crs,
+    )
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    written_files: list[str] = []
+
+    # --- Write individual xytime point CSVs ---
+    def _write_attr_xyt(col: str, filename: str, label: str) -> bool:
+        """Write one xytime CSV for ``col``; return True if written."""
+        if col not in gdf_full.columns:
+            return False
+        n_notna = int(gdf_full[col].notna().sum())
+        n_total = len(gdf_full)
+        LOGGER.info(
+            "[socio] %s: %d / %d rows non-null (%.1f%%)",
+            col, n_notna, n_total, 100.0 * n_notna / max(n_total, 1),
+        )
+        if n_notna == 0:
+            LOGGER.warning("[socio] %s: all null -- xyt skipped", col)
+            return False
+        # Cast high_income bool -> int so the xytime CSV is numeric.
+        if gdf_full[col].dtype == bool or str(gdf_full[col].dtype) == "object":
+            gdf_full[col] = pd.to_numeric(gdf_full[col], errors="coerce")
+        write_xyt_csv(gdf_full, folder, filename, col)
+        return True
+
+    if _write_attr_xyt("household_income_eur", "homes_income.xyt.csv", "EUR"):
+        written_files.append("homes_income.xyt.csv")
+    if status_col_available and _write_attr_xyt(
+        "economic_status_ord", "homes_economic_status.xyt.csv", "status (1-5)"
+    ):
+        written_files.append("homes_economic_status.xyt.csv")
+    if _write_attr_xyt("high_income", "homes_high_income.xyt.csv", "high income (0/1)"):
+        written_files.append("homes_high_income.xyt.csv")
+    if _write_attr_xyt("number_of_cars", "homes_number_of_cars.xyt.csv", "cars"):
+        written_files.append("homes_number_of_cars.xyt.csv")
 
     if not written_files:
         LOGGER.warning(
-            "[socio] neither household_income_eur nor economic_status produced any "
-            "output -- socio tab skipped"
+            "[socio] no attribute produced any output -- socio tab skipped"
         )
         return None
 
-    cards = []
-    if "homes_income.xyt.csv" in written_files:
-        cards.append(
-            w.card_xytime(
-                "Household income by home location (EUR)",
-                "homes_income.xyt.csv",
-                value_label="EUR",
-                radius=6,
-                description="Each point = one household at its home. Value = household_income_eur.",
-            )
+    # --- Per-Kreis choropleth (requires VG250; skipped gracefully if absent) ---
+    choropleth_available = False
+    try:
+        kreise = spatial.load_kreise(pop.homes.crs)
+        homes_geo = spatial.assign_geographies(
+            pop.homes[["household_id", "geometry"]].copy().assign(
+                household_id=pop.homes["household_id"].astype(str)
+            ),
+            kreise=kreise,
         )
+        # Attach ars5 to the wide attribute frame.
+        ars5_map = homes_geo[["household_id", "ars5"]].copy()
+        ars5_map["household_id"] = ars5_map["household_id"].astype(str)
+        homes_with_ars5 = gdf_full.drop(columns=["geometry"], errors="ignore").merge(
+            ars5_map, on="household_id", how="left"
+        )
+        # Include economic_status_ord only if it was produced (for the Kreis mean).
+        agg_df = _socio_by_kreis(homes_with_ars5)
+        if not agg_df.empty:
+            n_kreise_with_status = int(agg_df["mean_economic_status"].notna().sum()) if "mean_economic_status" in agg_df.columns else 0
+            LOGGER.info(
+                "[socio] per-Kreis aggregation: %d Kreise; mean_economic_status "
+                "available for %d Kreise (excludes carless HHs per column).",
+                len(agg_df), n_kreise_with_status,
+            )
+            # Write CSV with ars5 key for SimWrapper.
+            w.write_csv(folder, "kreis_socio.csv", agg_df)
+            # Write GeoJSON (EPSG:4326).
+            kreise_4326 = kreise[["ars5", "geometry"]].to_crs(epsg=4326).copy()
+            merged_geo = kreise_4326.merge(agg_df, on="ars5", how="left")
+            merged_geo.to_file(folder / "kreis_socio.geojson", driver="GeoJSON")
+            LOGGER.info(
+                "[socio] wrote kreis_socio.geojson and kreis_socio.csv (%d Kreise)",
+                len(merged_geo),
+            )
+            choropleth_available = True
+        else:
+            LOGGER.warning("[socio] per-Kreis aggregation produced no rows -- choropleth skipped")
+    except Exception as exc:
+        LOGGER.warning(
+            "[socio] per-Kreis choropleth skipped: %s (VG250 may be absent)", exc
+        )
+
+    # --- Assemble dashboard rows ---
+    rows: dict[str, list[dict[str, Any]]] = {}
+
+    # Row 1: xytime point maps (only include cards for written files).
+    point_cards: list[dict[str, Any]] = []
+    if "homes_income.xyt.csv" in written_files:
+        point_cards.append(w.card_xytime(
+            "Household income by home location (EUR)",
+            "homes_income.xyt.csv",
+            value_label="EUR",
+            radius=6,
+            description=(
+                "Each point = one household at its home location. "
+                "Value = household_income_eur (synthesised, descriptive)."
+            ),
+        ))
     if "homes_economic_status.xyt.csv" in written_files:
-        cards.append(
-            w.card_xytime(
-                "Economic status by home location (1=very_low..5=very_high)",
-                "homes_economic_status.xyt.csv",
-                value_label="status (1-5)",
-                radius=6,
+        point_cards.append(w.card_xytime(
+            "Economic status by home location (1=very low .. 5=very high)",
+            "homes_economic_status.xyt.csv",
+            value_label="economic status (1=very low .. 5=very high)",
+            radius=6,
+            description=(
+                "Each point = one car-owning household (~84% of HHs). "
+                "Ordinal: 1=very_low, 2=low, 3=medium, 4=high, 5=very_high. "
+                "Carless households have no status and are excluded."
+            ),
+        ))
+    if "homes_high_income.xyt.csv" in written_files:
+        point_cards.append(w.card_xytime(
+            "High-income households by home location",
+            "homes_high_income.xyt.csv",
+            value_label="high income (1=yes, 0=no)",
+            radius=6,
+            description=(
+                "Each point = one household. Value = 1 if high_income, 0 otherwise "
+                "(synthesised, descriptive)."
+            ),
+        ))
+    if "homes_number_of_cars.xyt.csv" in written_files:
+        point_cards.append(w.card_xytime(
+            "Number of cars by home location",
+            "homes_number_of_cars.xyt.csv",
+            value_label="number of cars",
+            radius=6,
+            description=(
+                "Each point = one household. Value = number_of_cars (0, 1, 2, ...) "
+                "(synthesised, descriptive)."
+            ),
+        ))
+    if point_cards:
+        rows["point_maps"] = point_cards
+
+    # Row 2: Kreis choropleths.
+    if choropleth_available:
+        choropleth_cards: list[dict[str, Any]] = []
+        if "mean_income_eur" in agg_df.columns:
+            choropleth_cards.append(w.card_choropleth(
+                "Mean household income by Kreis (EUR)",
+                "kreis_socio.geojson",
+                "kreis_socio.csv",
+                value_col="mean_income_eur",
+                join="ars5",
+                color_ramp="Viridis",
+                description="Mean synthesised household_income_eur per Kreis (descriptive).",
+            ))
+        if "high_income_share_pct" in agg_df.columns:
+            choropleth_cards.append(w.card_choropleth(
+                "High-income share by Kreis (%)",
+                "kreis_socio.geojson",
+                "kreis_socio.csv",
+                value_col="high_income_share_pct",
+                join="ars5",
+                color_ramp="Plasma",
+                description="Share of high-income households per Kreis (descriptive).",
+            ))
+        if "mean_economic_status" in agg_df.columns:
+            choropleth_cards.append(w.card_choropleth(
+                "Mean economic status by Kreis (1=very low .. 5=very high)",
+                "kreis_socio.geojson",
+                "kreis_socio.csv",
+                value_col="mean_economic_status",
+                join="ars5",
+                color_ramp="RdYlGn",
                 description=(
-                    "Each point = one household. Ordinal: "
-                    "1=very_low, 2=low, 3=medium, 4=high, 5=very_high."
+                    "Mean ordinal economic status per Kreis (1=very_low .. 5=very_high). "
+                    "Excludes carless households (no status assigned)."
+                ),
+            ))
+        if choropleth_cards:
+            rows["choropleths"] = choropleth_cards
+        rows["kreis_table"] = [
+            w.card_table(
+                "Per-Kreis socio-economic summary",
+                "kreis_socio.csv",
+                width=2,
+                description=(
+                    "mean_income_eur, high_income_share_pct, mean_cars, "
+                    "mean_economic_status per Kreis (descriptive). "
+                    "mean_economic_status excludes carless HHs."
                 ),
             )
-        )
+        ]
+
+    if not rows:
+        LOGGER.warning("[socio] no rows assembled -- socio tab skipped")
+        return None
 
     return w.dashboard(
         "Socio",
-        "Home locations by income / economic status",
-        {"home_points": cards},
-        description="Socio-economic attributes of synthetic households at home locations (EPSG:25832).",
+        "Household socio-economic structure (descriptive)",
+        rows,
+        description=(
+            "Spatial distribution of synthesised socio-economic attributes at home locations "
+            "(EPSG:25832). Descriptive output only -- no committed reference target."
+        ),
     )
 
 

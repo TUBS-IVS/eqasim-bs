@@ -20,6 +20,7 @@ from braunschweig.analysis.simwrapper.spatial_export import (
     _trips_xy,
     _purpose_to_mode,
     _economic_status_ordinal,
+    _socio_by_kreis,
 )
 
 
@@ -543,3 +544,90 @@ class TestEmitSpatialDemand:
 
         board = emit_spatial_demand(sim_output_dir=tmp_path / "nonexistent", folder=tmp_path / "out")
         assert board is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: _socio_by_kreis pure aggregation helper
+# ---------------------------------------------------------------------------
+
+def _make_socio_df() -> pd.DataFrame:
+    """Tiny synthetic household-level DataFrame with ars5 and socio attributes."""
+    return pd.DataFrame({
+        "household_id": ["h1", "h2", "h3", "h4", "h5", "h6"],
+        "ars5": ["03101", "03101", "03101", "03102", "03102", "03102"],
+        "household_income_eur": [3000.0, 4000.0, 5000.0, 2000.0, 2500.0, 3000.0],
+        # high_income as bool: True/False
+        "high_income": [True, False, True, False, False, False],
+        "number_of_cars": [1, 2, 0, 1, 1, 2],
+        # economic_status_ord: NaN for one household (carless-HH analogy)
+        "economic_status_ord": [3.0, 4.0, float("nan"), 2.0, 2.0, 3.0],
+    })
+
+
+class TestSocioByKreis:
+    def test_returns_dataframe(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df)
+        assert isinstance(result, pd.DataFrame)
+
+    def test_ars5_rows(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df)
+        assert set(result["ars5"].tolist()) == {"03101", "03102"}
+
+    def test_mean_income_eur(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df).set_index("ars5")
+        # 03101: (3000+4000+5000)/3 = 4000.0
+        assert abs(result.loc["03101", "mean_income_eur"] - 4000.0) < 0.01
+        # 03102: (2000+2500+3000)/3 = 2500.0
+        assert abs(result.loc["03102", "mean_income_eur"] - 2500.0) < 0.01
+
+    def test_high_income_share_pct(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df).set_index("ars5")
+        # 03101: 2 out of 3 = 66.67%
+        assert abs(result.loc["03101", "high_income_share_pct"] - round(200.0 / 3, 2)) < 0.1
+        # 03102: 0 out of 3 = 0%
+        assert abs(result.loc["03102", "high_income_share_pct"] - 0.0) < 0.01
+
+    def test_mean_cars(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df).set_index("ars5")
+        # 03101: (1+2+0)/3 = 1.0
+        assert abs(result.loc["03101", "mean_cars"] - 1.0) < 0.01
+        # 03102: (1+1+2)/3 = 4/3
+        assert abs(result.loc["03102", "mean_cars"] - 4.0 / 3) < 0.01
+
+    def test_mean_economic_status_excludes_nan(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df).set_index("ars5")
+        # 03101: only rows [3.0, 4.0] are non-null (h3 is NaN) -> mean = 3.5
+        assert abs(result.loc["03101", "mean_economic_status"] - 3.5) < 0.01
+        # 03102: [2.0, 2.0, 3.0] -> mean = 7/3
+        assert abs(result.loc["03102", "mean_economic_status"] - 7.0 / 3) < 0.01
+
+    def test_missing_ars5_returns_empty(self):
+        df = _make_socio_df().drop(columns=["ars5"])
+        result = _socio_by_kreis(df)
+        assert result.empty
+
+    def test_optional_columns_skipped_gracefully(self):
+        # Only household_income_eur; no high_income / number_of_cars / economic_status_ord.
+        df = pd.DataFrame({
+            "ars5": ["03101", "03101", "03102"],
+            "household_income_eur": [1000.0, 2000.0, 3000.0],
+        })
+        result = _socio_by_kreis(df)
+        assert "mean_income_eur" in result.columns
+        assert "high_income_share_pct" not in result.columns
+        assert "mean_cars" not in result.columns
+
+    def test_columns_present(self):
+        df = _make_socio_df()
+        result = _socio_by_kreis(df)
+        expected = {"ars5", "mean_income_eur", "high_income_share_pct",
+                    "mean_cars", "mean_economic_status"}
+        assert expected.issubset(result.columns), (
+            f"Missing columns: {expected - set(result.columns)}"
+        )
