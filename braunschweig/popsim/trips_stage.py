@@ -195,6 +195,12 @@ def configure(context):
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
     context.config("braunschweig.population.popsim.source", "mid")
 
+    source_name = context.config("braunschweig.population.popsim.source", "mid")
+    if source_name == "entd":
+        # popsim_open: the cleaned ENTD frames (including trips) come from
+        # data.hts.selected.  Alias to "hts_donor" so execute can retrieve them.
+        context.stage("data.hts.selected", alias="hts_donor")
+
 
 def execute(context):
     from braunschweig.popsim import sources
@@ -206,11 +212,19 @@ def execute(context):
     source = sources.get_source(source_name)
     logger.info("[trips_stage] active donor source: %s", source.name)
 
-    # Load donor tables through the source adapter: for "mid" this calls
-    # MidSource.load_donor -> mid.load_mid_attributes + mid.load_mid_wege,
-    # which is byte-identical to the previous direct mid.load_mid_wege call.
-    # The households and persons tables are not needed here (trips only).
-    _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
+    # Load donor tables through the source adapter.
+    # For source="mid": reads MiD CSV files from mid_dir (byte-identical).
+    # For source="entd": receives the cleaned ENTD frames from the synpp DAG
+    # (registered in configure as alias "hts_donor") and injects them.
+    if source_name == "entd":
+        hts_hh, hts_persons, hts_trips = context.stage("hts_donor")
+        _donor_households, _donor_persons, donor_trips = source.load_donor(
+            mid_dir, injected=(hts_hh, hts_persons, hts_trips)
+        )
+    else:
+        # popsim_mid (default): reads MiD CSV files directly; households and
+        # persons tables are not needed here (trips only).
+        _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
 
     return source.build_trips(
         persons, donor_trips, random_seed=int(context.config("random_seed"))

@@ -334,6 +334,7 @@ def build_persons(
     donor_col: str = "H_ID",
     rng=None,
     attribute_mapper=None,
+    pseudonymise: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -361,6 +362,21 @@ def build_persons(
         The mapper must return ``(persons_frame, pseudonym_map_or_None)``.
         If it returns a single DataFrame (no pseudonym map), ``build_persons``
         wraps it with an empty pseudonym map automatically.
+    pseudonymise:
+        When ``True`` (default, MiD path), the default ``map_mid_person_attributes``
+        mapper calls :func:`assign_donor_surrogates` internally to replace the
+        raw MiD ``H_ID`` / ``P_ID`` with sequential surrogate integers
+        (data-protection requirement for the restricted MiD scientific-use licence).
+
+        When ``False`` (ENTD / popsim_open path), the custom ``attribute_mapper``
+        (``EntdSource.map_person_attributes``) sets ``source_person_id`` and
+        ``source_household_id`` directly to the open ENTD ids; no surrogate
+        mapping is performed and the pseudonym map returned is empty.
+        Passing ``pseudonymise=False`` without also supplying a custom
+        ``attribute_mapper`` that populates ``source_*`` will raise a
+        :class:`braunschweig.population.schema.PopulationSchemaError` at the
+        final schema validation step (required columns missing) -- this is
+        intentional fail-fast behaviour.
 
     Returns
     -------
@@ -377,8 +393,20 @@ def build_persons(
         and ``pseudonym_map`` is a DataFrame with columns
         ``[source_person_id, source_household_id, H_ID, P_ID]`` for local-only
         re-linking (write to work_dir as ``pseudonym_map.csv``; never commit).
-        When an alternative mapper is used the pseudonym map may be empty.
+        When ``pseudonymise=False`` (ENTD path) or an alternative mapper is used
+        the pseudonym map may be empty.
     """
+    # Guard: pseudonymise=False without a custom mapper means the default MiD mapper
+    # will run and call assign_donor_surrogates, which contradicts the caller's intent.
+    # Catch this misuse early with a clear message (CLAUDE.md: fail-fast on bad config).
+    if not pseudonymise and attribute_mapper is None:
+        raise ValueError(
+            "[popsim.assembly] pseudonymise=False requires a custom attribute_mapper "
+            "that sets source_person_id / source_household_id directly (e.g. "
+            "EntdSource.map_person_attributes).  The default map_mid_person_attributes "
+            "always pseudonymises and is incompatible with pseudonymise=False."
+        )
+
     rng = rng if rng is not None else np.random.RandomState(0)
     households = expand.assign_synthetic_household_ids(
         merged_households, donor_col=donor_col
@@ -398,14 +426,17 @@ def build_persons(
     effective_mapper = attribute_mapper if attribute_mapper is not None else map_mid_person_attributes
 
     if attribute_mapper is None:
-        # Default MiD mapper: pass donor_col (needed for the H_ID join).
+        # Default MiD mapper (pseudonymise=True): pass donor_col (needed for the H_ID join).
+        # assign_donor_surrogates is called inside map_mid_person_attributes, so the
+        # returned pseudonym_map is populated.
         result = effective_mapper(
             persons, mid_households, donor_col=donor_col, rng=rng
         )
     else:
-        # Alternative mapper (e.g. EntdSource): does not use the MiD-specific
-        # donor_col argument; calls the PopsimSource protocol signature
-        # map_person_attributes(persons, households, *, rng).
+        # Alternative mapper (e.g. EntdSource, pseudonymise=False): does not use the
+        # MiD-specific donor_col argument; calls the PopsimSource protocol signature
+        # map_person_attributes(persons, households, *, rng).  The mapper sets
+        # source_* directly to the open ENTD ids -- no surrogate mapping is performed.
         result = effective_mapper(persons, mid_households, rng=rng)
 
     # The mapper returns either (persons, pseudonym_map) or just persons.

@@ -155,10 +155,17 @@ def test_popsim_mid_resolves_to_popsim_stage():
     assert selector.resolve_population_producer(POPSIM_MID) == "braunschweig.popsim.stage"
 
 
-def test_popsim_open_not_implemented_no_fallback():
-    """popsim_open must still raise (never silently fall back to the IPF producer)."""
-    with pytest.raises(selector.PopulationMethodNotImplemented):
-        selector.resolve_population_producer(POPSIM_OPEN)
+def test_popsim_open_resolves_to_popsim_stage():
+    """Phase 3: popsim_open is now wired and must resolve to braunschweig.popsim.stage.
+
+    Before Phase 3 this test expected PopulationMethodNotImplemented.  Now that
+    popsim_open is wired (same stage as popsim_mid, source="entd" config key), the
+    selector must return the stage name without raising.
+    """
+    producer = selector.resolve_population_producer(POPSIM_OPEN)
+    assert producer == "braunschweig.popsim.stage", (
+        f"popsim_open must resolve to 'braunschweig.popsim.stage', got {producer!r}"
+    )
 
 
 def test_selector_rejects_unknown_method():

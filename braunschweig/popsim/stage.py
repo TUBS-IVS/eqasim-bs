@@ -85,7 +85,13 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
 
 
 def configure(context):
-    """Declare the popsim_mid config keys."""
+    """Declare the popsim config keys.
+
+    When the donor source is "entd" (popsim_open workflow), an additional
+    dependency on ``data.hts.selected`` is registered so synpp wires the
+    cleaned ENTD frames into the DAG.  For source="mid" (default) the stage
+    depends only on the local config paths and no HTS stage is needed.
+    """
     context.config(KEY_CELLS)
     context.config(KEY_MID)
     context.config(KEY_CONTROLS)
@@ -98,6 +104,14 @@ def configure(context):
     context.config(KEY_WORK_DIR)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
+
+    source_name = context.config(KEY_SOURCE, "mid")
+    if source_name == "entd":
+        # popsim_open: the cleaned ENTD (households, persons, trips) come from the
+        # eqasim data.hts.selected stage (which resolves to data.hts.entd.reweighted
+        # when hts="entd" is set in config).  We alias it to "hts_donor" so execute
+        # can retrieve it under a stable name without depending on the alias logic.
+        context.stage("data.hts.selected", alias="hts_donor")
 
 
 def execute(context) -> pd.DataFrame:
@@ -169,31 +183,45 @@ def execute(context) -> pd.DataFrame:
         )
 
     # Load the donor attribute tables through the active source adapter.
-    # For source="mid" this calls MidSource.load_donor -> mid.load_mid_attributes
-    # + mid.load_mid_wege, which is byte-identical to the previous direct call.
-    # The trips table is not needed at this stage (it is used by trips_stage), so
-    # we discard it here.
-    donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+    # For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
+    # For source="entd": EntdSource.load_donor receives the frames injected from
+    # the data.hts.selected stage (no filesystem read).
+    if source_name == "entd":
+        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
+        # (registered in configure as alias "hts_donor") and inject them.
+        hts_hh, hts_persons, hts_trips = context.stage("hts_donor")
+        donor_households, donor_persons, _donor_trips = source.load_donor(
+            mid_dir, injected=(hts_hh, hts_persons, hts_trips)
+        )
+    else:
+        # popsim_mid (default): reads MiD CSV files directly from mid_dir.
+        donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
 
-    # Expand the merged donor households into the full eqasim persons frame:
-    # join the donor persons, map demographics + attributes, and validate the
-    # output against the shared population schema.
-    # NOTE: assembly.build_persons calls map_mid_person_attributes internally,
-    # which is MiD-specific.  For the current "mid" default this is correct and
-    # byte-identical to the previous code.  A future "entd" source will require
-    # a source-parameterised assembly path (Phase 2).
-    persons, pseudonym_map = assembly.build_persons(combined, donor_households, donor_persons)
+    # Expand the merged donor households into the full eqasim persons frame.
+    # pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
+    # (data-protection requirement for the restricted MiD scientific-use licence).
+    # pseudonymise=False (ENTD): source_* are set directly to the open ENTD ids
+    # by EntdSource.map_person_attributes; no surrogate mapping is needed.
+    pseudonymise = (source_name == "mid")
+    persons, pseudonym_map = assembly.build_persons(
+        combined, donor_households, donor_persons,
+        attribute_mapper=source.map_person_attributes,
+        pseudonymise=pseudonymise,
+    )
     context.set_info("popsim_n_persons", len(persons))
 
-    # Write the local-only pseudonym map so internal re-linking is possible.
+    # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
     # to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it
     # lives in the pipeline work_dir which is a local-only, gitignored path.
+    # For ENTD (pseudonymise=False) the map is empty (no surrogates were assigned)
+    # but is still written for consistency.
     pseudonym_map_path = Path(work_dir) / "pseudonym_map.csv"
     pseudonym_map.to_csv(pseudonym_map_path, index=False)
     logger.info(
-        "[popsim.stage] Pseudonym map written to %s (%d unique donor persons).",
-        pseudonym_map_path, len(pseudonym_map),
+        "[popsim.stage] Pseudonym map written to %s (%d unique donor persons; "
+        "pseudonymise=%s).",
+        pseudonym_map_path, len(pseudonym_map), pseudonymise,
     )
 
     return persons
