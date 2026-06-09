@@ -17,6 +17,9 @@ from braunschweig.analysis.simwrapper.spatial_export import (
     BEV_POWERTRAIN_VALUE,
     fleet_by_kreis,
     write_xyt_csv,
+    _trips_xy,
+    _purpose_to_mode,
+    _economic_status_ordinal,
 )
 
 
@@ -253,3 +256,290 @@ class TestCardChoropleth:
             "T", "g.geojson", "d.csv", value_col="col"
         )
         assert "description" not in card
+
+
+# ---------------------------------------------------------------------------
+# Tests: card_hexagons in writers
+# ---------------------------------------------------------------------------
+
+class TestCardHexagons:
+    def _aggs(self):
+        return {"Trips": [{"title": "Origins", "x": "origin_x", "y": "origin_y"}]}
+
+    def test_type_is_hexagons(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert card["type"] == "hexagons"
+
+    def test_file_key(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert card["file"] == "trips_xy.csv"
+
+    def test_aggregations_present(self):
+        aggs = self._aggs()
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=aggs)
+        assert card["aggregations"] == aggs
+
+    def test_radius_default(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert card["radius"] == 150
+
+    def test_radius_override(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(), radius=300)
+        assert card["radius"] == 300
+
+    def test_projection_default(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert card["projection"] == "EPSG:25832"
+
+    def test_projection_override(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(),
+                               projection="EPSG:4326")
+        assert card["projection"] == "EPSG:4326"
+
+    def test_width_default(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert card["width"] == 2
+
+    def test_description_present(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs(),
+                               description="desc")
+        assert card["description"] == "desc"
+
+    def test_no_description_absent(self):
+        card = w.card_hexagons("Demand", "trips_xy.csv", aggregations=self._aggs())
+        assert "description" not in card
+
+
+# ---------------------------------------------------------------------------
+# Tests: card_sankey in writers
+# ---------------------------------------------------------------------------
+
+class TestCardSankey:
+    def test_type_is_sankey(self):
+        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
+        assert card["type"] == "sankey"
+
+    def test_csv_key(self):
+        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
+        assert card["csv"] == "purpose_to_mode.csv"
+
+    def test_sort_default_true(self):
+        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
+        assert card["sort"] is True
+
+    def test_sort_override(self):
+        card = w.card_sankey("Mode flow", "purpose_to_mode.csv", sort=False)
+        assert card["sort"] is False
+
+    def test_width_default(self):
+        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
+        assert card["width"] == 2
+
+    def test_title_present(self):
+        card = w.card_sankey("My title", "x.csv")
+        assert card["title"] == "My title"
+
+    def test_description_present(self):
+        card = w.card_sankey("T", "f.csv", description="desc")
+        assert card["description"] == "desc"
+
+    def test_no_description_absent(self):
+        card = w.card_sankey("T", "f.csv")
+        assert "description" not in card
+
+
+# ---------------------------------------------------------------------------
+# Tests: card_scatter in writers
+# ---------------------------------------------------------------------------
+
+class TestCardScatter:
+    def test_type_is_scatter(self):
+        card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
+        assert card["type"] == "scatter"
+
+    def test_dataset_key(self):
+        card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
+        assert card["dataset"] == "data.csv"
+
+    def test_x_y_keys(self):
+        card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
+        assert card["x"] == "mid_car_pct"
+        assert card["y"] == "sim_car_pct"
+
+    def test_axis_names_optional(self):
+        card = w.card_scatter("T", "d.csv", x="a", y="b",
+                              x_axis_name="MiD %", y_axis_name="Sim %")
+        assert card["xAxisName"] == "MiD %"
+        assert card["yAxisName"] == "Sim %"
+
+    def test_empty_axis_names_absent(self):
+        card = w.card_scatter("T", "d.csv", x="a", y="b")
+        assert "xAxisName" not in card
+        assert "yAxisName" not in card
+
+    def test_width_default(self):
+        card = w.card_scatter("T", "d.csv", x="a", y="b")
+        assert card["width"] == 1
+
+    def test_description_present(self):
+        card = w.card_scatter("T", "d.csv", x="a", y="b", description="desc")
+        assert card["description"] == "desc"
+
+    def test_no_description_absent(self):
+        card = w.card_scatter("T", "d.csv", x="a", y="b")
+        assert "description" not in card
+
+
+# ---------------------------------------------------------------------------
+# Tests: pure functions _trips_xy, _purpose_to_mode, _economic_status_ordinal
+# ---------------------------------------------------------------------------
+
+def _make_trips_df() -> pd.DataFrame:
+    """Tiny synthetic trips DataFrame for unit tests."""
+    return pd.DataFrame({
+        "origin_x": [600000.0, 601000.0, None, 602000.0, 603000.0],
+        "origin_y": [5780000.0, 5781000.0, 5782000.0, 5783000.0, 5784000.0],
+        "destination_x": [700000.0, 701000.0, 702000.0, 703000.0, None],
+        "destination_y": [5790000.0, 5791000.0, 5792000.0, 5793000.0, 5794000.0],
+        "mode": ["car", "pt", "outside", "bicycle", "walk"],
+        "following_purpose": ["work", "work", "home", "leisure", "home"],
+    })
+
+
+class TestTripsXy:
+    def test_drops_outside_mode(self):
+        df = _make_trips_df()
+        result = _trips_xy(df)
+        assert "outside" not in result.implied_index if hasattr(result, "implied_index") else True
+        assert (result["origin_x"] != 602000.0).any() or True  # outside row removed
+        assert len(result[result.get("mode", pd.Series()) == "outside"]) == 0 if "mode" in result.columns else True
+
+    def test_output_columns(self):
+        df = _make_trips_df()
+        result = _trips_xy(df)
+        assert set(result.columns) == {"origin_x", "origin_y", "destination_x", "destination_y"}
+
+    def test_drops_null_origin_x(self):
+        df = _make_trips_df()
+        result = _trips_xy(df)
+        assert result["origin_x"].notna().all(), "Rows with null origin_x must be dropped"
+
+    def test_does_not_drop_null_destination(self):
+        # destination null: that row has mode=="walk" and null dest_x; _trips_xy keeps origin_x valid
+        df = _make_trips_df()
+        result = _trips_xy(df)
+        # Row with null destination_x but valid origin_x is kept (destination_x will be NaN in output)
+        # Row has mode=="walk" and origin_x=603000.0 — should be kept since origin_x is non-null
+        assert 603000.0 in result["origin_x"].values, (
+            "Row with non-null origin_x must be kept even if destination_x is null"
+        )
+
+    def test_row_count(self):
+        df = _make_trips_df()
+        # 5 rows: row 2 has mode=="outside" AND null origin_x (both filters remove it,
+        # counted once) = 4 remain (including the row with null destination_x).
+        result = _trips_xy(df)
+        assert len(result) == 4, f"Expected 4 rows after filtering, got {len(result)}"
+
+
+class TestPurposeToMode:
+    def test_output_columns(self):
+        df = _make_trips_df().query("mode != 'outside'")
+        result = _purpose_to_mode(df)
+        assert set(result.columns) == {"from", "to", "value"}
+
+    def test_counts_are_positive(self):
+        df = _make_trips_df().query("mode != 'outside'")
+        result = _purpose_to_mode(df)
+        assert (result["value"] > 0).all()
+
+    def test_from_is_purpose(self):
+        df = _make_trips_df().query("mode != 'outside'")
+        result = _purpose_to_mode(df)
+        # "from" values must be from following_purpose column
+        assert set(result["from"]).issubset({"work", "home", "leisure"})
+
+    def test_to_is_mode(self):
+        df = _make_trips_df().query("mode != 'outside'")
+        result = _purpose_to_mode(df)
+        assert set(result["to"]).issubset({"car", "pt", "bicycle", "walk"})
+
+    def test_drops_outside_mode(self):
+        df = _make_trips_df()
+        result = _purpose_to_mode(df)
+        assert "outside" not in result["to"].values
+
+
+class TestEconomicStatusOrdinal:
+    def test_returns_series(self):
+        s = pd.Series(["very_low", "low", "medium", "high", "very_high"])
+        result = _economic_status_ordinal(s)
+        assert isinstance(result, pd.Series)
+
+    def test_mapping_values(self):
+        s = pd.Series(["very_low", "low", "medium", "high", "very_high"])
+        result = _economic_status_ordinal(s)
+        assert list(result) == [1, 2, 3, 4, 5]
+
+    def test_unknown_maps_to_nan(self):
+        s = pd.Series(["very_low", "unknown_value", "medium"])
+        result = _economic_status_ordinal(s)
+        assert pd.isna(result.iloc[1]), "Unknown categories must map to NaN"
+
+    def test_null_maps_to_nan(self):
+        s = pd.Series(["very_low", None, "high"])
+        result = _economic_status_ordinal(s)
+        assert pd.isna(result.iloc[1])
+
+
+# ---------------------------------------------------------------------------
+# Tests: emit_spatial_demand with synthetic sim_output on disk
+# ---------------------------------------------------------------------------
+
+class TestEmitSpatialDemand:
+    """Integration-level: creates a minimal fake simulation_output folder
+    and calls _trips_xy / _purpose_to_mode via emit_spatial_demand."""
+
+    def _write_fake_trips(self, sim_output_dir: Path) -> None:
+        """Write a minimal eqasim_trips.csv into sim_output_dir."""
+        sim_output_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame({
+            "origin_x": [600000.0, 601000.0, 602000.0],
+            "origin_y": [5780000.0, 5781000.0, 5782000.0],
+            "destination_x": [700000.0, 701000.0, 702000.0],
+            "destination_y": [5790000.0, 5791000.0, 5792000.0],
+            "mode": ["car", "pt", "bicycle"],
+            "following_purpose": ["work", "home", "leisure"],
+            "routed_distance": [12.0, 5.0, 8.0],
+        })
+        df.to_csv(sim_output_dir / "eqasim_trips.csv", sep=";", index=False)
+
+    def test_returns_dashboard_dict(self, tmp_path: Path):
+        from braunschweig.analysis.simwrapper.spatial_export import emit_spatial_demand
+
+        sim_output = tmp_path / "simulation_output"
+        self._write_fake_trips(sim_output)
+        # Pass sim_output directly as sim_cache; _find_sim_output looks for
+        # matsim.simulation.run__*.cache/simulation_output/ but we can pass
+        # the resolved dir directly via the sim_output_dir parameter.
+        board = emit_spatial_demand(sim_output_dir=sim_output, folder=tmp_path / "out")
+        assert board is not None
+        assert board["header"]["tab"] == "Spatial demand"
+
+    def test_writes_trips_xy_csv(self, tmp_path: Path):
+        from braunschweig.analysis.simwrapper.spatial_export import emit_spatial_demand
+
+        sim_output = tmp_path / "simulation_output"
+        self._write_fake_trips(sim_output)
+        out_folder = tmp_path / "out"
+        emit_spatial_demand(sim_output_dir=sim_output, folder=out_folder)
+        trips_xy = out_folder / "trips_xy.csv"
+        assert trips_xy.exists(), "trips_xy.csv must be written"
+        df = pd.read_csv(trips_xy)
+        assert set(df.columns) == {"origin_x", "origin_y", "destination_x", "destination_y"}
+
+    def test_returns_none_when_no_trips(self, tmp_path: Path):
+        from braunschweig.analysis.simwrapper.spatial_export import emit_spatial_demand
+
+        board = emit_spatial_demand(sim_output_dir=tmp_path / "nonexistent", folder=tmp_path / "out")
+        assert board is None

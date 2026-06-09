@@ -158,6 +158,97 @@ def card_choropleth(title: str, geojson_file: str, dataset_file: str, *,
     return card
 
 
+def card_hexagons(title: str, file: str, *, aggregations: dict,
+                  radius: int = 150, projection: str = "EPSG:25832",
+                  width: int = 2, description: str = "") -> dict[str, Any]:
+    """Build a SimWrapper hexagons density-map card dict.
+
+    The hexagons plugin counts points per hexagonal cell from the ``file`` CSV.
+    ``aggregations`` follows the SimWrapper hexagons schema::
+
+        { "GroupName": [{ "title": "...", "x": "col", "y": "col" }, ...] }
+
+    Args:
+        title: Card title.
+        file: Relative path to the CSV (just needs the x/y columns).
+        aggregations: SimWrapper aggregations dict defining x/y column names.
+        radius: Hexagon radius in map units (default 150).
+        projection: CRS string (default ``EPSG:25832``).
+        width: Dashboard column width (default 2).
+        description: Optional description.
+    """
+    card: dict[str, Any] = {
+        "type": "hexagons",
+        "title": title,
+        "file": file,
+        "projection": projection,
+        "radius": radius,
+        "aggregations": aggregations,
+        "width": width,
+    }
+    if description:
+        card["description"] = description
+    return card
+
+
+def card_sankey(title: str, csv: str, *, sort: bool = True,
+                width: int = 2, description: str = "") -> dict[str, Any]:
+    """Build a SimWrapper sankey flow card dict.
+
+    The CSV must be semicolon-delimited with columns ``from``, ``to``,
+    ``value``.
+
+    Args:
+        title: Card title.
+        csv: Relative path to the semicolon-delimited CSV.
+        sort: Whether SimWrapper should sort the flows (default True).
+        width: Dashboard column width (default 2).
+        description: Optional description.
+    """
+    card: dict[str, Any] = {
+        "type": "sankey",
+        "title": title,
+        "csv": csv,
+        "sort": sort,
+        "width": width,
+    }
+    if description:
+        card["description"] = description
+    return card
+
+
+def card_scatter(title: str, dataset: str, *, x: str, y: str,
+                 x_axis_name: str = "", y_axis_name: str = "",
+                 width: int = 1, description: str = "") -> dict[str, Any]:
+    """Build a SimWrapper scatter plot card dict.
+
+    Args:
+        title: Card title.
+        dataset: Relative path to the CSV.
+        x: Column name for the x-axis.
+        y: Column name for the y-axis.
+        x_axis_name: Optional x-axis label.
+        y_axis_name: Optional y-axis label.
+        width: Dashboard column width (default 1).
+        description: Optional description.
+    """
+    card: dict[str, Any] = {
+        "type": "scatter",
+        "title": title,
+        "dataset": dataset,
+        "x": x,
+        "y": y,
+        "width": width,
+    }
+    if x_axis_name:
+        card["xAxisName"] = x_axis_name
+    if y_axis_name:
+        card["yAxisName"] = y_axis_name
+    if description:
+        card["description"] = description
+    return card
+
+
 def dashboard(tab: str, title: str, rows: dict[str, list[dict[str, Any]]],
               description: str = "") -> dict[str, Any]:
     """Build a top-level SimWrapper dashboard dict (header + layout).
