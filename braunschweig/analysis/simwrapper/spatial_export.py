@@ -159,6 +159,14 @@ def load_fleet(run_output_dir: str) -> "gpd.GeoDataFrame | None":
         n_bev, n_total, bev_share, BEV_POWERTRAIN_VALUE,
     )
 
+    # Normalise the Kreis key to a zero-padded 5-char string so it matches the
+    # VG250 ``ars5`` (e.g. "03101"). The CSV reader infers ``kreis_ags5`` as a
+    # float (3101.0), which would break the choropleth merge on the string ars5.
+    if "kreis_ags5" in vehicles.columns:
+        vehicles["kreis_ags5"] = vehicles["kreis_ags5"].map(
+            lambda v: str(int(float(v))).zfill(5) if pd.notna(v) else v
+        )
+
     # Merge with home geometry on household_id.
     gdf = vehicles.merge(homes, on="household_id", how="left")
     n_with_geom = int(gdf["geometry"].notna().sum())
