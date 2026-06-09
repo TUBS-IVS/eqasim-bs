@@ -35,13 +35,20 @@ def execute(context):
     if not context.config("cordon_enabled"):
         return None
 
-    agents = context.stage("braunschweig.synthesis.incommuters")["validation"]
+    incommuters = context.stage("braunschweig.synthesis.incommuters")
+    agents = incommuters["validation"]
+    # MiD/Mikrozensus target modal split for the "ein" direction, produced by
+    # build_incommuter_frames.  Passed to write_cordon_validation so the summary
+    # reports realized-vs-target for the in-commuter modal split (CLAUDE.md
+    # no-invented-reference-values: the target is derived from the same Mikrozensus
+    # reference the mode draw uses, labelled honestly as an aggregate proxy).
+    mode_target = incommuters.get("mode_target", None)
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
     out_dir = os.path.join(context.config("output_path"), "analysis", "cordon")
 
     paths = write_cordon_validation(
         out_dir, agents, sampling_rate=float(context.config("sampling_rate")),
-        crs="EPSG:25832")
+        mode_target=mode_target, crs="EPSG:25832")
 
     gate_paths = write_gate_volumes(
         out_dir, gate_volume["gates"], gate_volume["assignment"], crs="EPSG:25832")

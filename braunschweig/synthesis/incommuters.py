@@ -27,6 +27,7 @@ from shapely.geometry import Point
 from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
+from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon.plans import (
@@ -268,7 +269,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             pt_gravity_beta=0.0,
                             inkar_income=None, data_path=None,
                             real_origin=False, gemeinden=None,
-                            zgb_polygon=None, source_buffer_m=45000.0):
+                            zgb_polygon=None, source_buffer_m=45000.0,
+                            mode_balance=False):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -316,6 +318,18 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     ``source_buffer_m``: source-network ring radius in metres (default 45000).
     A Gemeinde representative point is in-ring iff it lies within
     ``zgb_polygon.buffer(source_buffer_m)``.
+
+    ``mode_balance`` (default ``False``): when ``True``, the Mikrozensus-drawn modes are
+    passed through :func:`~braunschweig.data.cordon.mode_balancer.balance_incommuter_modes`
+    BEFORE the PT station placement step.  The balancer enforces the hard constraint (every
+    PT agent must have ``can_board_pt=True``) while conserving the global PT count by
+    promoting an equal number of reachable car agents to PT.  This means a balanced PT
+    agent is guaranteed to find a station in the subsequent draw (no more silent PT->car
+    inside the station step).  When ``False`` (default), the legacy lossy behaviour is
+    preserved: PT agents from rail-less Kreise are silently reassigned to car at the
+    station draw step (byte-identical to the pre-balancer behaviour for the same seed).
+    The balancer logs its stats (n_pt_target, n_forced, n_promoted, residual) and warns
+    if the residual > 0 (rail access too scarce to fully restore the target).
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
     agents = expand_to_agents(inbound, sampling_rate)
@@ -345,9 +359,73 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # dropped probability mass is redistributed proportionally; see restrict_to_modes).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
     restricted_reference = restrict_to_modes(mode_reference, allowed=commute_modes)
-    modes = list(assign_fixed_mode(
-        dist_km, restricted_reference,
-        lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges), rng))
+    band_fn = lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges)
+    modes_mikro = list(assign_fixed_mode(dist_km, restricted_reference, band_fn, rng))
+
+    # 3a) Mode balancer (flag-gated, default OFF via mode_balance=False).
+    # When ON: pass Mikrozensus modes through balance_incommuter_modes so the global PT
+    # count is conserved under the rail-access constraint.  The balancer:
+    #   - Forces PT agents whose source Kreis has no rail station to car (hard constraint).
+    #   - Promotes an equal number of reachable car agents back to PT (conservation).
+    # A balanced PT agent is guaranteed can_board_pt=True, so the station draw below
+    # always finds a station (no more silent PT->car inside the station placement step).
+    # When OFF: the legacy list is used directly (byte-identical for same seed).
+    #
+    # can_board_pt: True if the agent's source Kreis has >=1 station in pt_entry_stops.
+    # pt_propensity: per-agent P(pt | distance band) from the restricted reference.
+    #   For each agent, this is the pt probability in its distance band (0.0 if the band
+    #   has no pt or if pt is not in commute_modes).  Used to weight which car agents
+    #   are promoted (higher propensity -> more likely to be promoted to PT).
+    if mode_balance:
+        _has_stations_schema = (
+            pt_entry_stops is not None
+            and len(pt_entry_stops) > 0
+            and "source_ars5" in pt_entry_stops.columns
+        )
+        if _has_stations_schema:
+            # Kreise that have at least one eligible rail station.
+            _rail_kreise = set(pt_entry_stops["source_ars5"].astype(str))
+        else:
+            _rail_kreise = set()
+
+        # Per-agent reachability: True iff source Kreis has a station.
+        can_board_pt = np.array([str(a) in _rail_kreise for a in orig_ars], dtype=bool)
+
+        # Per-agent PT propensity: P(pt | distance band) from the restricted reference.
+        pt_propensity = np.array([
+            restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
+            for d in dist_km
+        ], dtype=float)
+
+        modes_balanced, _bal_stats = balance_incommuter_modes(
+            modes_mikro, can_board_pt, pt_propensity, rng)
+
+        # Log balancer stats (CLAUDE.md no-silent-fallback).
+        _n = len(modes_balanced)
+        print(
+            f"[braunschweig.incommuters] mode balancer: "
+            f"mikrozensus_target {_bal_stats['n_pt_target']}/{_n} PT "
+            f"({100.0 * _bal_stats['n_pt_target'] / _n:.1f}%), "
+            f"forced_to_car {_bal_stats['n_forced_car']}, "
+            f"promoted {_bal_stats['n_promoted']}, "
+            f"final_pt {_bal_stats['n_pt_final']}/{_n} "
+            f"({100.0 * _bal_stats['n_pt_final'] / _n:.1f}%), "
+            f"residual {_bal_stats['residual']}",
+            flush=True,
+        )
+        if _bal_stats["residual"] > 0:
+            print(
+                f"[braunschweig.incommuters] WARNING: mode balancer residual "
+                f"{_bal_stats['residual']} -- rail access too scarce to fully restore "
+                f"the Mikrozensus PT target; realized PT count is "
+                f"{_bal_stats['n_pt_final']} vs target {_bal_stats['n_pt_target']}. "
+                f"Check cordon_pt_gates coverage for the source Kreise.",
+                flush=True,
+            )
+        modes = list(modes_balanced)
+    else:
+        # Legacy path: use the Mikrozensus draw directly (byte-identical for same seed).
+        modes = modes_mikro
 
     # 3b) PT agents board at a real rail STATION drawn from their source Kreis's eligible
     # stations (population+accessibility weighted).  This decouples PT boarding from road
@@ -561,10 +639,29 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         "entry_kind": entry_kind, "entry_x": entry_x, "entry_y": entry_y,
         "gate_id": gate_ids,
     })
+
+    # MiD/Mikrozensus target modal split for the "ein" direction:
+    # aggregate P(pt) over the actual agent distance distribution from the
+    # restricted reference (pre-balance, what the reference assigns on average).
+    # This is the honest proxy -- the balancer conserves this count exactly when
+    # the flexible pool suffices (residual == 0), so it is both the target and
+    # the expected outcome. Expressed as a [direction, mode, share_pct_target]
+    # frame consumed by write_cordon_validation's modal_split_deviation.
+    _pt_target_shares = np.array([
+        restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
+        for d in dist_km
+    ], dtype=float)
+    _pt_target_share_pct = float(100.0 * _pt_target_shares.mean()) if n > 0 else 0.0
+    _car_target_share_pct = 100.0 - _pt_target_share_pct
+    mode_target = pd.DataFrame([
+        ("ein", "pt",  _pt_target_share_pct),
+        ("ein", "car", _car_target_share_pct),
+    ], columns=["direction", "mode", "share_pct_target"])
+
     return dict(persons=persons, trips=trips, activities=activities,
                 locations=locations, vehicles=vehicles,
                 vehicle_types=vehicle_types, households=households,
-                validation=validation)
+                validation=validation, mode_target=mode_target)
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
@@ -854,7 +951,8 @@ def _empty_frames(crs):
                                             "hbefa_emission"]),
         households=pd.DataFrame(columns=["household_id", "person_id"]),
         validation=pd.DataFrame(columns=["ars5", "direction", "mode", "entry_kind",
-                                         "entry_x", "entry_y", "gate_id"]))
+                                         "entry_x", "entry_y", "gate_id"]),
+        mode_target=pd.DataFrame(columns=["direction", "mode", "share_pct_target"]))
 
 
 def configure(context):
@@ -888,9 +986,16 @@ def configure(context):
     # Real in-ring in-commuter origin placement (Task 4b).  When True, agents whose
     # source Kreis has at least one Gemeinde representative point within the source-
     # network ring receive a real population-weighted origin home point drawn from those
-    # in-ring Gemeinden instead of the road gate / rail station.  Default False:
-    # byte-identical to the pre-4b behaviour; no additional rng draws are consumed.
-    context.config("cordon_incommuter_real_origin", False)
+    # in-ring Gemeinden instead of the road gate / rail station.  Default True:
+    # the feature is active by default so it is not silently skipped; set to False to
+    # reproduce the pre-4b byte-identical behaviour (no additional rng draws consumed).
+    context.config("cordon_incommuter_real_origin", True)
+    # Mode balancer (Task B7).  When True, the Mikrozensus-drawn modes are passed through
+    # balance_incommuter_modes before the PT station placement step so the global PT count
+    # is conserved under the rail-access constraint (no net PT loss from rail-less Kreise).
+    # Default True: the feature is active by default.  Set to False to reproduce the
+    # legacy lossy PT->car reassignment (byte-identical for same rng seed).
+    context.config("cordon_incommuter_mode_balance", True)
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -925,6 +1030,7 @@ def execute(context):
     rng = np.random.default_rng(int(context.config("random_seed")) + 100000)
 
     real_origin = bool(context.config("cordon_incommuter_real_origin"))
+    mode_balance = bool(context.config("cordon_incommuter_mode_balance"))
     gemeinden_df = None
     zgb_polygon = None
     source_buffer_m = 45000.0
@@ -975,6 +1081,7 @@ def execute(context):
         gemeinden=gemeinden_df,
         zgb_polygon=zgb_polygon,
         source_buffer_m=source_buffer_m,
+        mode_balance=mode_balance,
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")

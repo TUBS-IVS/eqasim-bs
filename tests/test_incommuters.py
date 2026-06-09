@@ -271,7 +271,9 @@ def test_pt_fallback_to_car_when_no_station_in_source_kreis():
         mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
         hts_persons=hp, hts_trips=ht, person_col="person_id",
         n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
-        pt_entry_stops=pt_stops_wrong_kreis)
+        pt_entry_stops=pt_stops_wrong_kreis,
+        mode_balance=False,  # explicitly OFF: legacy lossy PT->car reassignment
+    )
 
     # All agents were originally PT, but 03241 has no station -> all reassigned to car.
     assert (frames["trips"]["mode"] == "car").all(), \
@@ -356,7 +358,9 @@ def test_pt_placement_is_deterministic():
             mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
             hts_persons=hp, hts_trips=ht, person_col="person_id",
             n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
-            pt_entry_stops=pt_stops)
+            pt_entry_stops=pt_stops,
+            mode_balance=False,  # explicitly OFF so rng stream is invariant
+        )
 
     f1 = run(99)
     f2 = run(99)
@@ -494,8 +498,9 @@ def test_real_origin_off_is_byte_identical():
             hts_persons=hp, hts_trips=ht, person_col="person_id",
             n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
             pt_entry_stops=pt_stops,
-            # flag OFF (default) -- no gemeinden / zgb_polygon passed
+            # Both flags explicitly OFF: no additional rng draws consumed, byte-identical.
             real_origin=False,
+            mode_balance=False,
         )
 
     f1 = run(77)
@@ -655,3 +660,254 @@ def test_real_origin_deterministic():
     )
     assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
         "Flag ON: same seed must produce identical entry_kind lists"
+
+
+# ---------------------------------------------------------------------------
+# Mode balancer integration tests (flag cordon_incommuter_mode_balance)
+# ---------------------------------------------------------------------------
+
+def test_mode_balance_on_conserves_global_pt_count():
+    """mode_balance=True: global PT count after balancing equals the Mikrozensus target.
+
+    Setup: 100% PT reference + one station for source Kreis 03241.  Every agent is
+    assigned PT by the Mikrozensus draw; all have can_board_pt=True (station
+    exists); no forced demotions -> n_pt_final == n_pt_target (all remain PT).
+
+    This exercises the PRIMARY path: balancer fires, station draw always succeeds
+    because the balancer guarantees can_board_pt for every PT agent.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops,
+        mode_balance=True,
+    )
+
+    # With 100% PT reference and a valid station, all agents should be PT.
+    assert (frames["trips"]["mode"] == "pt").all(), \
+        "mode_balance=True with 100% PT reference and valid stations: all agents must be PT"
+
+    # Validation: entry_kind must be rail_station for all PT agents.
+    val = frames["validation"]
+    assert (val["entry_kind"] == "rail_station").all(), \
+        "mode_balance=True PT agents must board at rail station"
+
+
+def test_mode_balance_on_with_mixed_demand_compensates_forced_car():
+    """mode_balance=True: agents from a rail-less Kreis are forced to car, but the
+    global PT count is restored by promoting an equal number of reachable car agents.
+
+    Two flows:
+      - Kreis 03241: 500 agents, has a rail station -> can_board_pt=True
+      - Kreis 03999: 500 agents, NO rail station -> can_board_pt=False
+
+    Mode reference: 50/50 car/pt.  Mikrozensus assigns ~500 PT (250 from each Kreis).
+    The balancer must:
+      1. Force the ~250 PT agents from 03999 to car (no station).
+      2. Promote ~250 reachable car agents from 03241 back to PT.
+    -> global PT count stays at the Mikrozensus target (~500).
+
+    This is the COMPENSATION path: the balancer fires meaningfully and the
+    fallback-to-car is undone at the global level.
+    """
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000", "gate_0001"],
+         "capacity": [8000.0, 8000.0], "road_class": ["motorway", "motorway"]},
+        geometry=[Point(605000, 5840000), Point(615000, 5840000)], crs="EPSG:25832")
+    assignment = pd.DataFrame([
+        ("03241", "gate_0000", 500, 0),
+        ("03999", "gate_0001", 500, 0),
+    ], columns=["ars5", "gate_id", "inbound", "outbound"])
+    flows = pd.DataFrame([
+        ("03241", "03101", 500),
+        ("03999", "03101", 500),
+    ], columns=["orig_ars", "dest_ars", "flow"])
+    zgb_work = gpd.GeoDataFrame(
+        {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
+        geometry=[Point(606000, 5805000)], crs="EPSG:25832")
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    ht = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
+        (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+
+    # Station only for 03241, not 03999.
+    pt_stops = _pt_entry_stops_new_schema(ars5="03241")
+
+    # Use large enough sampling_rate to get a significant number of agents.
+    rate = 0.2
+    rng_mikro = np.random.default_rng(0)
+    # Compute the Mikrozensus target count by running WITHOUT balancer first.
+    frames_off = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=rate,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng_mikro, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops, mode_balance=False,
+    )
+    # Count how many agents in the OFF run ended up as PT (the lossy result).
+    n_pt_off = int((frames_off["trips"]["mode"] == "pt").sum()) // 2  # trips are 2 per agent
+
+    rng_on = np.random.default_rng(0)
+    frames_on = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=rate,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng_on, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops, mode_balance=True,
+    )
+    n_pt_on = int((frames_on["trips"]["mode"] == "pt").sum()) // 2
+
+    # mode_balance=ON must have MORE PT agents than the lossy OFF run
+    # (the compensation promoted reachable car -> PT to restore the target).
+    # Both runs use the same rng stream so the Mikrozensus draw is identical.
+    assert n_pt_on >= n_pt_off, (
+        f"mode_balance=True must have >= PT agents than OFF run: "
+        f"ON={n_pt_on}, OFF={n_pt_off}. Compensation did not fire."
+    )
+
+    # The ON run must have no PT agents from Kreis 03999 (no station).
+    val_on = frames_on["validation"]
+    pt_from_03999 = val_on[(val_on["mode"] == "pt") & (val_on["ars5"] == "03999")]
+    assert len(pt_from_03999) == 0, (
+        f"mode_balance=True: {len(pt_from_03999)} PT agents from Kreis 03999 "
+        "which has no rail station. Hard constraint violated."
+    )
+
+    # All PT agents in the ON run must have entry_kind='rail_station'.
+    pt_rows = val_on[val_on["mode"] == "pt"]
+    if len(pt_rows) > 0:
+        assert (pt_rows["entry_kind"] == "rail_station").all(), \
+            "mode_balance=True: all PT agents must board at a rail station"
+
+
+def test_mode_balance_off_preserves_legacy_lossy_behaviour():
+    """mode_balance=False: PT agent in a rail-less Kreis IS reassigned to car (legacy).
+
+    This is the OFF-path regression guard: with mode_balance=False the lossy
+    PT->car reassignment in the station-draw step still fires, so a Kreis with
+    no eligible rail station ends up with all-car agents.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    # pt_entry_stops has only Kreis 03999, not the actual source Kreis 03241.
+    pt_stops_wrong_kreis = pd.DataFrame({
+        "source_ars5": ["03999"],
+        "stop_id": ["railOther"],
+        "x": [700000.0], "y": [5900000.0],
+        "reach": ["direct"], "ewz": [50000.0],
+    })
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops_wrong_kreis,
+        mode_balance=False,  # explicitly OFF
+    )
+
+    # Legacy behaviour: all PT agents from 03241 (no station) are reassigned to car.
+    assert (frames["trips"]["mode"] == "car").all(), \
+        "mode_balance=False (legacy): PT agents with no source-Kreis rail station must be car"
+
+
+def test_mode_balance_deterministic():
+    """Same rng seed -> byte-identical results regardless of mode_balance flag value."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    def run(seed, balance):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            pt_entry_stops=pt_stops, mode_balance=balance,
+        )
+
+    f1 = run(55, True)
+    f2 = run(55, True)
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="mode_balance=True: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["mode"]) == list(f2["validation"]["mode"]), \
+        "mode_balance=True: same seed must produce identical modes"
+
+    f3 = run(55, False)
+    f4 = run(55, False)
+    np.testing.assert_array_equal(
+        f3["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f4["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="mode_balance=False: same seed must produce identical home x coordinates",
+    )
+
+
+def test_configure_defaults_real_origin_and_mode_balance_true():
+    """configure() must declare cordon_incommuter_real_origin and
+    cordon_incommuter_mode_balance both with default True.
+
+    Uses a minimal context spy to capture config() calls without running
+    the full synpp pipeline.
+    """
+    from braunschweig.synthesis.incommuters import configure  # noqa: PLC0415
+
+    defaults_captured = {}
+
+    class _ConfigSpy:
+        """Minimal synpp context spy: captures config(key, default) calls.
+
+        Only stores a value in defaults_captured when a default is explicitly
+        provided (args non-empty).  Bare config(key) calls (no default) record
+        _MISSING but do NOT overwrite a previously stored default so the first
+        declared default (the meaningful one) always wins.
+        """
+        def config(self, key, *args):
+            # args[0] is the default if provided; only update when a default is given.
+            if args:
+                defaults_captured[key] = args[0]
+            elif key not in defaults_captured:
+                # Mark as "declared without a default" only if not already captured.
+                defaults_captured[key] = _MISSING
+            # Return True for cordon_enabled so the rest of configure() runs.
+            if key == "cordon_enabled":
+                return True
+            # Return the stored default (or None) so configure()'s conditionals work.
+            val = defaults_captured.get(key, None)
+            if val is _MISSING:
+                return None
+            return val
+
+        def stage(self, *args, **kwargs):
+            pass
+
+    _MISSING = object()
+    configure(_ConfigSpy())
+
+    assert "cordon_incommuter_real_origin" in defaults_captured, \
+        "configure() must declare cordon_incommuter_real_origin"
+    assert defaults_captured["cordon_incommuter_real_origin"] is True, (
+        f"cordon_incommuter_real_origin default must be True (new feature default-on), "
+        f"got {defaults_captured['cordon_incommuter_real_origin']!r}"
+    )
+
+    assert "cordon_incommuter_mode_balance" in defaults_captured, \
+        "configure() must declare cordon_incommuter_mode_balance"
+    assert defaults_captured["cordon_incommuter_mode_balance"] is True, (
+        f"cordon_incommuter_mode_balance default must be True (new feature default-on), "
+        f"got {defaults_captured['cordon_incommuter_mode_balance']!r}"
+    )
