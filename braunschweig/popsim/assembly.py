@@ -199,12 +199,20 @@ def build_persons(
     )
 
     # is_urban_resident: True when the person lives inside the Braunschweig core
-    # city (the inside_braunschweig flag is added by the handoff stage; not yet
-    # available here, so the column is provisionally set to False).
-    if "inside_braunschweig" in persons.columns:
-        persons["is_urban_resident"] = persons["inside_braunschweig"]
-    else:
-        persons["is_urban_resident"] = False
+    # city (Kreisfreie Stadt Braunschweig, AGS-5 = "03101").
+    #
+    # Replicates the DEFAULT braunschweig path exactly:
+    #   synthesis/population/enriched.py line 2785:
+    #       is_urban_resident = inside_braunschweig
+    # where ``inside_braunschweig`` is the flag set when the person's Kreis-5
+    # code equals "03101" (see INSIDE_FLAG_TO_ARS5 in enriched.py line 1275).
+    # commune_id is the 8-digit AGS (e.g. "03101000") produced by derive_zone_ids
+    # above; departement_id == commune_id[:5] is the exact equivalent predicate.
+    # Since Braunschweig is a kreisfreie Stadt (one commune, "03101000"), the
+    # predicates commune_id.startswith("03101") and departement_id == "03101"
+    # are equivalent and both faithful to the default's single-commune definition.
+    _BS_KREIS5 = "03101"
+    persons["is_urban_resident"] = persons["departement_id"] == _BS_KREIS5
 
     # provenance IDs: preserve the MiD donor keys so every synthetic person is
     # traceable to the survey respondent whose trips were used.

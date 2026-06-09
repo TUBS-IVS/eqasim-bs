@@ -307,3 +307,140 @@ def test_build_persons_zone_ids_for_two_kreise():
     assert (hh_b["departement_id"] == SZ_KREIS).all(), (
         f"Household B should have departement_id={SZ_KREIS!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests for D5: is_urban_resident derived from home commune (bug D5 fix)
+# ---------------------------------------------------------------------------
+#
+# The DEFAULT braunschweig path (synthesis/population/enriched.py line 2785):
+#   is_urban_resident = inside_braunschweig
+# where inside_braunschweig = (person's Kreis-5 == "03101"), i.e. the person
+# lives in the Kreisfreie Stadt Braunschweig.  In popsim_mid, commune_id is
+# the 8-digit AGS; departement_id (= commune_id[:5]) == "03101" is the exact
+# equivalent predicate (since BS is a kreisfreie Stadt, the only commune is
+# 03101000 and departement_id == "03101" iff commune == Braunschweig).
+#
+# These three tests define the FAILING behaviour before the fix is applied.
+
+
+def _merged_hh_single_ars(ars12: str, zensus_id: str = "X") -> pd.DataFrame:
+    """One synthetic household pinned to the given 12-digit ARS."""
+    return pd.DataFrame({
+        "ZENSUS100m": [zensus_id],
+        "ZENSUS1km": [f"K{zensus_id}"],
+        "H_ID": [1],
+        ARS_COLUMN: [ars12],
+    })
+
+
+# Gifhorn Landkreis: AGS-5 = 03151, single commune used in tests = 03151003
+# (Brome -- a real ZGB commune; 12-digit ARS = "031510030000").
+GF_ARS = "031510030000"   # Gifhorn Kreis, Gemeinde 003 (Brome)
+GF_AGS8 = "03151003"
+GF_KREIS = "03151"
+
+
+def _mid_persons_single():
+    """One MiD respondent person (donor H_ID=1)."""
+    return pd.DataFrame({
+        "H_ID":      [1],
+        "P_ID":      [1],
+        "HP_ALTER":  [35],
+        "HP_SEX":    [1],
+        "P_TAET":    [1],
+        "P_FSCHEIN": [1],
+        "P_FKARTE":  [3],
+        "P_BKAT":    [1],
+    })
+
+
+def _mid_hh_single():
+    """One MiD donor household."""
+    return pd.DataFrame({
+        "H_ID":       [1],
+        "oek_status": [3],
+        "hheink_gr1": [4],
+        "H_ANZAUTO":  [1],
+        "H_ANZRAD":   [1],
+    })
+
+
+def test_is_urban_resident_true_for_braunschweig_commune():
+    """is_urban_resident must be True when commune_id belongs to Braunschweig (03101).
+
+    Replicates the default enriched.py definition:
+        is_urban_resident = inside_braunschweig
+    where inside_braunschweig <=> departement_id == "03101" in the popsim path.
+    """
+    persons = assembly.build_persons(
+        _merged_hh_single_ars(BS_ARS, "BS"),
+        _mid_hh_single(),
+        _mid_persons_single(),
+        rng=np.random.RandomState(0),
+    )
+    assert "is_urban_resident" in persons.columns, "is_urban_resident column must be present"
+    assert persons["is_urban_resident"].all(), (
+        f"All persons with commune_id {BS_AGS8!r} (Braunschweig) must have "
+        f"is_urban_resident=True; got {persons['is_urban_resident'].tolist()}"
+    )
+
+
+def test_is_urban_resident_false_for_rural_commune():
+    """is_urban_resident must be False for a rural ZGB commune (e.g. Gifhorn, 03151).
+
+    Replicates the default enriched.py definition:
+        is_urban_resident = inside_braunschweig
+    where inside_braunschweig is False for any commune outside Kreis 03101.
+    """
+    persons = assembly.build_persons(
+        _merged_hh_single_ars(GF_ARS, "GF"),
+        _mid_hh_single(),
+        _mid_persons_single(),
+        rng=np.random.RandomState(0),
+    )
+    assert "is_urban_resident" in persons.columns, "is_urban_resident column must be present"
+    assert not persons["is_urban_resident"].any(), (
+        f"All persons with commune_id {GF_AGS8!r} (Gifhorn, rural) must have "
+        f"is_urban_resident=False; got {persons['is_urban_resident'].tolist()}"
+    )
+
+
+def test_is_urban_resident_no_nulls():
+    """is_urban_resident must contain no NaN values.
+
+    NaN would silently propagate into the MATSim isParis attribute writer and
+    the synthesis output CSV, causing downstream failures.
+    """
+    # Mix Braunschweig and Gifhorn households.
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["BS", "GF"],
+        "ZENSUS1km": ["KBS", "KGF"],
+        "H_ID": [1, 2],
+        ARS_COLUMN: [BS_ARS, GF_ARS],
+    })
+    mid_p = pd.DataFrame({
+        "H_ID":      [1,  2],
+        "P_ID":      [1,  1],
+        "HP_ALTER":  [40, 30],
+        "HP_SEX":    [1,  2],
+        "P_TAET":    [1,  1],
+        "P_FSCHEIN": [1,  1],
+        "P_FKARTE":  [3,  8],
+        "P_BKAT":    [1,  1],
+    })
+    mid_hh = pd.DataFrame({
+        "H_ID":       [1, 2],
+        "oek_status": [3, 3],
+        "hheink_gr1": [4, 4],
+        "H_ANZAUTO":  [1, 0],
+        "H_ANZRAD":   [1, 1],
+    })
+    persons = assembly.build_persons(
+        merged, mid_hh, mid_p,
+        rng=np.random.RandomState(0),
+    )
+    n_nan = int(persons["is_urban_resident"].isna().sum())
+    assert n_nan == 0, (
+        f"is_urban_resident must contain no NaN values; found {n_nan}/{len(persons)}"
+    )
