@@ -154,15 +154,17 @@ def test_kreis_recoverable_from_per_gemeinde_commune_id():
     assert int(by_kreis.loc["03241"]) == kreis_total
 
 
-def test_gravity_injection_keys_destinations_on_kreis_ars5():
-    """Confirm the gravity injection still keys EXT destinations on the Kreis.
+def test_gravity_injection_emits_per_gemeinde_destinations():
+    """After the fix, gravity emits per-Gemeinde EXT destination_ids matching the pool.
 
-    The real ``_append_outbound_flows`` derives the external ``destination_id``
-    from ``dest_ars`` (the BA Kreis), independently of the per-Gemeinde
-    ``df_external`` rows (which it consumes ONLY as the set of in-scope Kreise).
-    This pins the behaviour that produces the downstream key mismatch.
+    Before the fix, gravity emitted ``destination_id == "EXT" + dest_ars``
+    (5-digit Kreis).  After the fix it splits the Kreis flow across the per-Gemeinde
+    EXT points from ``df_external``, so each emitted ``destination_id`` matches a
+    ``commune_id`` in the work pool (``"EXT" + gem_ags``, 8-digit AGS).
     """
-    # One ZGB origin Gemeinde with an outbound flow to external Kreis 03241.
+    df_external, _ = _build_per_gemeinde_external_frame()
+    pool_commune_ids = set(df_external["commune_id"])  # {"EXT03241001", "EXT03241002"}
+
     df_population = pd.DataFrame({
         "commune_id": ["03101000"],
         "weight": [1000.0],
@@ -172,8 +174,6 @@ def test_gravity_injection_keys_destinations_on_kreis_ars5():
         "dest_ars": ["03241"],
         "flow": [500.0],
     })
-    df_external, _ = _build_per_gemeinde_external_frame()
-    # A trivial intra-origin OD row so each origin's weights can normalise.
     df_od = pd.DataFrame({
         "origin_id": ["03101000"],
         "destination_id": ["03101000"],
@@ -186,29 +186,25 @@ def test_gravity_injection_keys_destinations_on_kreis_ars5():
 
     ext = out[out["destination_id"].str.startswith("EXT")]
     assert len(ext) > 0, "no external destination injected"
-    # The injection emits the 5-digit Kreis id, regardless of how many
-    # per-Gemeinde points the work pool now has for that Kreis.
-    assert set(ext["destination_id"]) == {"EXT03241"}
+    # All emitted EXT destination_ids must be per-Gemeinde ids from the work pool.
+    assert set(ext["destination_id"]).issubset(pool_commune_ids), (
+        "gravity emitted EXT destination_ids not in work pool: "
+        f"{set(ext['destination_id']) - pool_commune_ids}"
+    )
+    # The old 5-digit Kreis id must NOT appear (it would match nothing in the pool).
+    assert "EXT03241" not in set(ext["destination_id"]), (
+        "gravity still emits the 5-digit Kreis id 'EXT03241' — fix not applied"
+    )
 
 
-@pytest.mark.xfail(
-    reason="INTEGRATION BUG (Task 2): gravity emits destination_id='EXT'+ars5 "
-           "(5-digit Kreis) at braunschweig/gravity/model.py:747, but the work "
-           "pool now carries commune_id='EXT'+gem_ags (8-digit Gemeinde). The "
-           "exact-string join in candidates.py:47 matches ZERO external "
-           "workplaces. Gravity must be updated to split outbound flow across "
-           "the per-Gemeinde EXT points (or join on Kreis), not emit one "
-           "EXT<ars5> destination.",
-    strict=True,
-)
 def test_gravity_external_destination_id_matches_work_pool_commune_id():
     """The per-person sampler joins gravity destination_id == pool commune_id.
 
     ``synthesis/population/spatial/primary/candidates.py:47`` does
     ``df_locations[df_locations["commune_id"] == destination_id]``.  For the
     external pool to be reachable, the set of EXT destination_ids emitted by
-    gravity MUST be a subset of the EXT commune_ids in the work pool.  Under
-    Task 2 they diverge (5-digit Kreis vs 8-digit Gemeinde), so this fails.
+    gravity MUST be a subset of the EXT commune_ids in the work pool.
+    After the fix (per-Gemeinde split in ``_append_outbound_flows``), this holds.
     """
     df_external, _ = _build_per_gemeinde_external_frame()
     pool_commune_ids = set(df_external["commune_id"])  # {"EXT03241001", "EXT03241002"}
@@ -234,3 +230,83 @@ def test_gravity_external_destination_id_matches_work_pool_commune_id():
         "gravity external destinations absent from work pool commune_ids: "
         f"{sorted(unmatched)} (pool has {sorted(pool_commune_ids)})"
     )
+
+
+def test_gravity_injection_preserves_kreis_outbound_total():
+    """Kreis-level outbound totals are conserved after the per-Gemeinde split.
+
+    The ``_append_outbound_flows`` function splits each origin-Kreis flow across
+    the Kreis' per-Gemeinde EXT points via employee shares (summing to 1).  After
+    summing the per-Gemeinde destination flows back up by recovered Kreis
+    (``destination_id[3:8]``) and origin, the total must equal the original
+    origin->Kreis outbound flow within float tolerance.
+
+    Note: the real caller (``execute``) passes a ``flow`` column from ``_calibrate``;
+    this test mimics that by providing ``flow`` in ``df_od``.
+    """
+    df_external, _kreis_total = _build_per_gemeinde_external_frame()
+    # Two ZGB Gemeinden with unequal populations -> unequal per-origin shares.
+    df_population = pd.DataFrame({
+        "commune_id": ["03101001", "03101002"],
+        "weight": [600.0, 400.0],
+    })
+    kreis_outbound_flow = 800.0  # BA Kreis 03101 -> Kreis 03241
+    df_pendler = pd.DataFrame({
+        "orig_ars": ["03101"],
+        "dest_ars": ["03241"],
+        "flow": [kreis_outbound_flow],
+    })
+    # df_od must use a ``flow`` column (matching _calibrate's output schema).
+    df_od = pd.DataFrame({
+        "origin_id": ["03101001", "03101002"],
+        "destination_id": ["03101001", "03101002"],
+        "flow": [200.0, 100.0],  # arbitrary intra flows
+    })
+
+    out = _append_outbound_flows(
+        df_od, df_population, df_pendler, df_external, scope=["03101"],
+    )
+
+    ext = out[out["destination_id"].str.startswith("EXT")].copy()
+    assert len(ext) > 0, "no external rows in output"
+
+    # All EXT destination_ids must belong to Kreis 03241.
+    recovered_kreise = ext["destination_id"].str[3:8]
+    assert (recovered_kreise == "03241").all(), (
+        "recovered Kreis from destination_id[3:8] is not '03241'"
+    )
+
+    # Both per-Gemeinde EXT destinations must appear (not just one Kreis row).
+    assert set(ext["destination_id"]) == {"EXT03241001", "EXT03241002"}, (
+        f"expected both EXT Gemeinde destinations, got {set(ext['destination_id'])}"
+    )
+
+    # Weights per origin sum to 1.0 (sanity check on normalisation).
+    for origin_id in ["03101001", "03101002"]:
+        total_weight = float(out[out["origin_id"] == origin_id]["weight"].sum())
+        assert abs(total_weight - 1.0) < 1e-9, (
+            f"weights for origin {origin_id} do not sum to 1: {total_weight}"
+        )
+
+    # Mass conservation: sum of per-Gemeinde external weights * (total_flow_origin)
+    # must equal origin's population-share * kreis_outbound_flow.
+    # pop shares: 03101001 = 600/1000 = 0.6; 03101002 = 400/1000 = 0.4.
+    # ext flow per origin: 0.6*800=480, 0.4*800=320.
+    # total flow per origin (intra + ext): 200+480=680, 100+320=420.
+    # Recover flow from output: weight * total_flow_origin.
+    expected_ext_flow = {"03101001": 0.6 * kreis_outbound_flow,
+                         "03101002": 0.4 * kreis_outbound_flow}
+    total_od_flow = {"03101001": 200.0 + 0.6 * kreis_outbound_flow,
+                     "03101002": 100.0 + 0.4 * kreis_outbound_flow}
+
+    for origin_id in ["03101001", "03101002"]:
+        origin_ext = out[
+            (out["origin_id"] == origin_id)
+            & out["destination_id"].str.startswith("EXT")
+        ]
+        # Recover flow from weight: weight = flow / total; flow = weight * total.
+        actual_ext_flow = float(origin_ext["weight"].sum()) * total_od_flow[origin_id]
+        assert abs(actual_ext_flow - expected_ext_flow[origin_id]) < 1e-6, (
+            f"ext flow for origin {origin_id}: "
+            f"got {actual_ext_flow:.4f}, expected {expected_ext_flow[origin_id]:.4f}"
+        )

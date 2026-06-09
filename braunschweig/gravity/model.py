@@ -718,7 +718,18 @@ def _append_outbound_flows(df_od: pd.DataFrame,
                            df_pendler: pd.DataFrame,
                            df_external: pd.DataFrame,
                            scope: list[str]) -> pd.DataFrame:
-    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``."""
+    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``.
+
+    Each outbound BA Kreis flow is split across the per-Gemeinde EXT points
+    in ``df_external`` proportional to their ``employees`` share, so the
+    emitted ``destination_id`` equals the per-Gemeinde ``commune_id``
+    (``"EXT" + gem_ags``, 8-digit AGS).  This ensures exact-string matching
+    against the work-pool ``commune_id`` in the downstream candidate sampler
+    (``synthesis/population/spatial/primary/candidates.py``).
+
+    Mass is conserved: for every (origin, Kreis) pair the sum of per-Gemeinde
+    flows equals the original Kreis-level outbound flow.
+    """
     ext_ars = set(df_external["ars5"].astype(str))
     df_out_pendler = df_pendler[
         df_pendler["orig_ars"].isin(scope)
@@ -735,16 +746,55 @@ def _append_outbound_flows(df_od: pd.DataFrame,
                             pop["pop"] / pop["kreis_total"], 0.0)
     pop = pop[pop["orig_ars"].isin(scope)]
 
+    # Build per-Gemeinde employee shares keyed by Kreis ars5, carrying commune_id.
+    # gem_share = employees / Sigma_{Gemeinde in Kreis} employees.
+    gem_emp = (
+        df_external[["ars5", "commune_id", "employees"]]
+        .copy()
+        .astype({"ars5": str, "commune_id": str, "employees": float})
+    )
+    kreis_total_emp = gem_emp.groupby("ars5")["employees"].transform("sum")
+    gem_emp["gem_share"] = np.where(
+        kreis_total_emp > 0, gem_emp["employees"] / kreis_total_emp, 0.0
+    )
+
     n_ext_rows = 0
     ext_svb = 0.0
     if df_out_pendler.empty:
         print("[braunschweig.gravity.model] no outbound flows to inject")
         df_all = df_od.copy()
     else:
+        # origin_gemeinde x dest_kreis rows, with each origin's flow share.
         df_inj = pop.merge(df_out_pendler, on="orig_ars", how="inner")
         df_inj["flow"] = df_inj["share"] * df_inj["flow"].astype(float)
         df_inj = df_inj[df_inj["flow"] > 0]
-        df_inj["destination_id"] = "EXT" + df_inj["dest_ars"].astype(str)
+        # df_inj now has columns: commune_id, orig_ars, dest_ars, flow (Kreis-level split).
+
+        # Expand each Kreis-level flow to per-Gemeinde rows via the employee share.
+        # Join on ars5 == dest_ars (many-to-many: one origin->Kreis row becomes N rows).
+        df_inj = df_inj.merge(
+            gem_emp[["ars5", "commune_id", "gem_share"]].rename(
+                columns={"commune_id": "destination_id"}
+            ),
+            left_on="dest_ars",
+            right_on="ars5",
+            how="inner",
+        )
+
+        # Guard: warn if any Kreis present in outbound had no Gemeinde points.
+        kreise_in_inj_before = set(df_out_pendler["dest_ars"].astype(str).unique())
+        kreise_expanded = set(gem_emp["ars5"].unique())
+        kreise_missing = kreise_in_inj_before - kreise_expanded
+        if kreise_missing:
+            print(
+                "WARNING: [braunschweig.gravity.model] "
+                f"{len(kreise_missing)} Kreis(e) in outbound have NO per-Gemeinde "
+                f"EXT point in df_external and their flow is lost: "
+                + ", ".join(sorted(kreise_missing))
+            )
+
+        df_inj["flow"] = df_inj["flow"] * df_inj["gem_share"]
+        df_inj = df_inj[df_inj["flow"] > 0]
         df_inj = df_inj.rename(columns={"commune_id": "origin_id"})
         df_inj = df_inj[["origin_id", "destination_id", "flow"]]
 
@@ -763,8 +813,8 @@ def _append_outbound_flows(df_od: pd.DataFrame,
     if n_ext_rows:
         print(
             "[braunschweig.gravity.model] "
-            f"injected {n_ext_rows:,} outbound rows "
-            f"({ext_svb:,.0f} synthetic SvB distributed to external Kreise)"
+            f"injected {n_ext_rows:,} outbound rows (per-Gemeinde EXT destinations) "
+            f"({ext_svb:,.0f} synthetic SvB distributed to external Gemeinden)"
         )
     return df_all[["origin_id", "destination_id", "weight"]]
 
