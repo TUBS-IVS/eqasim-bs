@@ -19,23 +19,26 @@ Registered sources
     MiD 2023 I/O and attribute-mapping functions.
 
 ``"entd"``
-    Not yet implemented (Phase 2).  Calling ``get_source("entd")`` raises
-    :class:`NotImplementedError` with a clear message.
+    :class:`braunschweig.popsim.sources.entd.EntdSource` — open ENTD donor
+    adapter (popsim_open Phase 2).  Uses canonical eqasim column names directly;
+    no pseudonymisation (open data).
 """
 
 from __future__ import annotations
 
 from braunschweig.popsim.sources.base import PopsimSource
+from braunschweig.popsim.sources.entd import EntdSource
 from braunschweig.popsim.sources.mid import MidSource
 
 # Source name -> callable that returns a PopsimSource instance.
 # Each entry is a zero-argument factory so callers always get a fresh instance.
 _REGISTRY: dict[str, type] = {
     "mid": MidSource,
+    "entd": EntdSource,
 }
 
 # Sources that are planned but not yet implemented.
-_PLANNED: set[str] = {"entd"}
+_PLANNED: set[str] = set()
 
 
 def get_source(name: str) -> PopsimSource:
@@ -44,7 +47,7 @@ def get_source(name: str) -> PopsimSource:
     Parameters
     ----------
     name:
-        Short lowercase source identifier, e.g. ``"mid"``.
+        Short lowercase source identifier, e.g. ``"mid"`` or ``"entd"``.
 
     Returns
     -------
@@ -54,7 +57,7 @@ def get_source(name: str) -> PopsimSource:
     Raises
     ------
     NotImplementedError
-        If ``name`` is a planned-but-not-yet-implemented source (``"entd"``).
+        If ``name`` is a planned-but-not-yet-implemented source.
     ValueError
         If ``name`` is not recognised at all.
     """
@@ -63,8 +66,7 @@ def get_source(name: str) -> PopsimSource:
     if name in _PLANNED:
         raise NotImplementedError(
             f"Donor source '{name}' is planned but not yet implemented. "
-            "Implement braunschweig.popsim.sources.entd.EntdSource and register "
-            "it in braunschweig.popsim.sources._REGISTRY to enable it (Phase 2)."
+            f"Register it in braunschweig.popsim.sources._REGISTRY to enable it."
         )
     raise ValueError(
         f"Unknown donor source '{name}'. "
@@ -73,4 +75,4 @@ def get_source(name: str) -> PopsimSource:
     )
 
 
-__all__ = ["PopsimSource", "MidSource", "get_source"]
+__all__ = ["PopsimSource", "MidSource", "EntdSource", "get_source"]

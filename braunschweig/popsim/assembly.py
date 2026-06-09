@@ -333,6 +333,7 @@ def build_persons(
     *,
     donor_col: str = "H_ID",
     rng=None,
+    attribute_mapper=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -347,6 +348,19 @@ def build_persons(
         Random state for stochastic attribute imputation (employment, licence,
         PT subscription). Defaults to ``np.random.RandomState(0)`` for backward
         compatibility; the calling stage should pass the pipeline's seeded rng.
+    attribute_mapper:
+        Optional callable with the same signature as
+        ``map_mid_person_attributes(persons, households, *, donor_col, rng)``
+        that maps donor-survey attributes to the eqasim schema columns.
+        When ``None`` (the default), ``map_mid_person_attributes`` is used
+        and the result is byte-identical to the pre-pluggable behaviour.
+        The popsim_open stage passes ``source.map_person_attributes`` here so
+        that the ENTD and MiD workflows share the same expand + zone derivation
+        path and differ only in attribute mapping.
+
+        The mapper must return ``(persons_frame, pseudonym_map_or_None)``.
+        If it returns a single DataFrame (no pseudonym map), ``build_persons``
+        wraps it with an empty pseudonym map automatically.
 
     Returns
     -------
@@ -363,6 +377,7 @@ def build_persons(
         and ``pseudonym_map`` is a DataFrame with columns
         ``[source_person_id, source_household_id, H_ID, P_ID]`` for local-only
         re-linking (write to work_dir as ``pseudonym_map.csv``; never commit).
+        When an alternative mapper is used the pseudonym map may be empty.
     """
     rng = rng if rng is not None else np.random.RandomState(0)
     households = expand.assign_synthetic_household_ids(
@@ -376,11 +391,33 @@ def build_persons(
     # Format matches the default IPF producer exactly -- see derive_zone_ids docstring.
     persons = derive_zone_ids(persons)
 
-    # Apply the MiD attribute-mapping sequence (extracted so MidSource can call
-    # the same function and produce byte-identical output).
-    persons, donor_map = map_mid_person_attributes(
-        persons, mid_households, donor_col=donor_col, rng=rng
-    )
+    # Apply the attribute-mapping sequence. The default mapper is
+    # map_mid_person_attributes (MiD path, byte-identical to all prior versions).
+    # An alternative mapper (e.g. EntdSource.map_person_attributes) may be
+    # supplied by the popsim_open stage.
+    effective_mapper = attribute_mapper if attribute_mapper is not None else map_mid_person_attributes
+
+    if attribute_mapper is None:
+        # Default MiD mapper: pass donor_col (needed for the H_ID join).
+        result = effective_mapper(
+            persons, mid_households, donor_col=donor_col, rng=rng
+        )
+    else:
+        # Alternative mapper (e.g. EntdSource): does not use the MiD-specific
+        # donor_col argument; calls the PopsimSource protocol signature
+        # map_person_attributes(persons, households, *, rng).
+        result = effective_mapper(persons, mid_households, rng=rng)
+
+    # The mapper returns either (persons, pseudonym_map) or just persons.
+    # Handle both forms so EntdSource (no pseudonym map) works without
+    # the caller needing to know which form was returned.
+    if isinstance(result, tuple):
+        persons, donor_map = result
+    else:
+        persons = result
+        donor_map = pd.DataFrame(
+            columns=["source_person_id", "source_household_id", "H_ID", "P_ID"]
+        )
 
     schema.validate_person_columns(persons.columns)
     return persons, donor_map

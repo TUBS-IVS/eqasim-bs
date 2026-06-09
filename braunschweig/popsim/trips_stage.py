@@ -47,6 +47,75 @@ CONTRACT = [
 DETOUR_FACTOR = 1.3
 
 
+def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:
+    """Apply the eqasim per-person departure-time jitter to a trips table.
+
+    Replicates the jitter formula from ``synthesis/population/trips.py`` exactly:
+
+      interval = min(1800.0, first_departure_time_per_person)
+      offset   = random_sample * interval * 2.0 - interval
+                 (one draw per person, repeated for every trip in the chain)
+
+    Both ``departure_time`` and ``arrival_time`` are shifted by the same offset
+    (preserving within-chain ordering) and rounded to integer seconds.
+
+    This function is factored out of :func:`run` so that the ENTD donor adapter
+    (``braunschweig.popsim.sources.entd.EntdSource.build_trips``) can apply the
+    identical jitter without duplicating the formula.
+
+    Parameters
+    ----------
+    table:
+        Trip table with at least ``person_id``, ``departure_time``,
+        ``arrival_time`` (numeric, seconds).  Should be sorted by
+        ``(person_id, departure_time)`` before calling so that ``trip_index``
+        order is preserved.
+    random_seed:
+        Integer seed for ``np.random.RandomState``.
+
+    Returns
+    -------
+    pd.DataFrame
+        The input table (modified in-place) with jittered and rounded
+        departure/arrival times.  The table is returned for chaining.
+    """
+    random = np.random.RandomState(random_seed)
+
+    person_order = table["person_id"].unique()
+
+    counts = (
+        table[["person_id"]]
+        .groupby("person_id", sort=False)
+        .size()
+        .reindex(person_order)
+        .values
+    )
+    interval = (
+        table[["person_id", "departure_time"]]
+        .groupby("person_id", sort=False)["departure_time"]
+        .min()
+        .reindex(person_order)
+        .values
+    )
+    interval = np.minimum(1800.0, interval)
+
+    per_person_raw = random.random_sample(size=(len(counts),))
+    per_person_offset = per_person_raw * interval * 2.0 - interval
+    offset = np.repeat(per_person_offset, counts)
+
+    table["departure_time"] = np.round(table["departure_time"] + offset)
+    table["arrival_time"] = np.round(table["arrival_time"] + offset)
+
+    assert (table["departure_time"] >= 0.0).all(), (
+        "departure_time must be non-negative after jitter; "
+        "check that min(1800, first_departure) clipping is correct."
+    )
+    assert (table["arrival_time"] >= 0.0).all(), (
+        "arrival_time must be non-negative after jitter."
+    )
+    return table
+
+
 def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -86,58 +155,10 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
 
     # --------------------------------------------------------------------------
     # Per-person departure-time jitter.
-    # Replicates synthesis/population/trips.py exactly:
-    #   counts  = number of trips per person (in person_id order)
-    #   interval = min(1800.0, first_departure_time) per person
-    #   offset   = random_sample * interval * 2.0 - interval  (one per person)
-    #   The offset is then REPEATED for every trip of that person.
-    # Using the same formula (random_sample, not uniform) ensures the jitter
-    # distribution is identical to the canonical HTS path.
+    # Delegates to the shared apply_per_person_jitter (factored so the ENTD
+    # adapter can call the same formula without duplication).
     # --------------------------------------------------------------------------
-    random = np.random.RandomState(random_seed)
-
-    # Persons in stable order (groupby preserves order of first occurrence when
-    # sorted=False is not available in older pandas; sort=False in groupby).
-    person_order = table["person_id"].unique()  # first-occurrence order after sort above
-
-    counts = (
-        table[["person_id"]]
-        .groupby("person_id", sort=False)
-        .size()
-        .reindex(person_order)
-        .values
-    )
-
-    interval = (
-        table[["person_id", "departure_time"]]
-        .groupby("person_id", sort=False)["departure_time"]
-        .min()
-        .reindex(person_order)
-        .values
-    )
-    interval = np.minimum(1800.0, interval)
-
-    # One random draw per person; replicate the eqasim formula verbatim.
-    per_person_raw = random.random_sample(size=(len(counts),))
-    per_person_offset = per_person_raw * interval * 2.0 - interval
-
-    # Expand to one offset per trip row (same offset for all trips of a person).
-    offset = np.repeat(per_person_offset, counts)
-
-    table["departure_time"] = table["departure_time"] + offset
-    table["arrival_time"] = table["arrival_time"] + offset
-
-    # Round to integer seconds, matching synthesis/population/trips.py.
-    table["departure_time"] = np.round(table["departure_time"])
-    table["arrival_time"] = np.round(table["arrival_time"])
-
-    assert (table["departure_time"] >= 0.0).all(), (
-        "departure_time must be non-negative after jitter; "
-        "check that min(1800, first_departure) clipping is correct."
-    )
-    assert (table["arrival_time"] >= 0.0).all(), (
-        "arrival_time must be non-negative after jitter."
-    )
+    table = apply_per_person_jitter(table, random_seed=random_seed)
 
     # --------------------------------------------------------------------------
     # Euclidean distance from MiD wegkm_imp (routed km -> straight-line metres).
