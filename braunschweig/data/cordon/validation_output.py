@@ -85,18 +85,18 @@ def _write_summary(path: str, agents: pd.DataFrame, counts: pd.DataFrame,
     for direction, sub in counts.groupby("direction"):
         lines.append(f"- {direction}: {int(sub['n'].sum()):,} agents")
 
-    # Entry-kind breakdown: car via road_gate vs PT via rail_station (B6 addition).
-    # This makes the primary/fallback split from the PT placement visible in the summary.
+    # Entry-kind breakdown: all kinds present in the agents frame (B6 addition, extended).
+    # Covers road_gate (car), rail_station (pt), real_origin (hybrid in-commuters), and any
+    # future kinds — so the summary never silently undercounts when a new kind is introduced.
     if "entry_kind" in agents.columns:
-        kind_counts = agents.groupby(["entry_kind", "mode"]).size()
-        n_road_gate = int(kind_counts.get(("road_gate", "car"), 0))
-        n_rail_station = int(kind_counts.get(("rail_station", "pt"), 0))
-        # Note: PT in-commuters whose source Kreis has no reachable rail station are
-        # reassigned to mode "car" upstream (braunschweig.synthesis.incommuters), so
-        # they are counted here under ("road_gate", "car"); that reassignment rate is
-        # logged at synthesis time, not separable from this post-hoc agent frame.
-        lines.append(f"- car via road_gate: {n_road_gate:,}")
-        lines.append(f"- pt via rail_station: {n_rail_station:,}")
+        lines.append("")
+        lines.append("## Entry points by kind")
+        by_kind = agents.groupby("entry_kind").size().sort_values(ascending=False)
+        for kind, n in by_kind.items():
+            lines.append(f"- {kind}: {int(n):,}")
+        by_kind_mode = agents.groupby(["entry_kind", "mode"]).size()
+        for (kind, mode), n in by_kind_mode.items():
+            lines.append(f"  - {kind} / {mode}: {int(n):,}")
 
     if mode_target is not None:
         lines += ["", "## Modal split vs target (percentage points)", "",

@@ -79,12 +79,31 @@ def test_gates_csv_has_entry_kind(tmp_path):
 
 
 def test_summary_contains_entry_kind_counts(tmp_path):
-    """summary.md must report car-via-road-gate vs pt-via-rail-station counts."""
-    paths = write_cordon_validation(str(tmp_path), _agents())
+    """summary.md must report all entry kinds including real_origin (no undercount)."""
+    # Build a mixed-kind agents frame: 5 real_origin, 2 road_gate, 1 rail_station.
+    rows = (
+        [("03241", "ein", "car", "real_origin",   300.0, 400.0, "g3")] * 5
+        + [("03241", "ein", "car", "road_gate",   100.0, 200.0, "g1")] * 2
+        + [("03241", "ein", "pt",  "rail_station", 50.0,  80.0, "g2")] * 1
+    )
+    agents_mixed = pd.DataFrame(rows, columns=["ars5", "direction", "mode", "entry_kind",
+                                               "entry_x", "entry_y", "gate_id"])
+    paths = write_cordon_validation(str(tmp_path), agents_mixed)
     summary = Path(paths["summary"]).read_text(encoding="utf-8")
-    # The summary must mention both entry kinds so the reader can distinguish them.
+
+    # Every entry kind must appear in the summary.
+    assert "real_origin" in summary, "summary must mention real_origin count"
     assert "road_gate" in summary, "summary must mention road_gate entry count"
     assert "rail_station" in summary, "summary must mention rail_station entry count"
+
+    # The per-kind counts embedded in the summary must match expected values.
+    assert "real_origin: 5" in summary, "real_origin count should be 5"
+    assert "road_gate: 2" in summary, "road_gate count should be 2"
+    assert "rail_station: 1" in summary, "rail_station count should be 1"
+
+    # The sum of all per-kind counts must equal the total agent count (no undercount).
+    total = len(agents_mixed)  # 8
+    assert f"Agents: {total:,}" in summary, "agent total must be in summary"
 
 
 def test_works_without_targets(tmp_path):
