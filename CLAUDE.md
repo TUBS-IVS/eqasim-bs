@@ -582,11 +582,48 @@ plugins; the choropleth GeoJSON is reprojected to EPSG:4326. Each tab is
 when MATSim has run) -- no silent skips. BEV is identified by the verified real
 `powertrain == "bev"` value.
 
+**Commuter (Pendler) tab.** `braunschweig.analysis.simwrapper.commuters` +
+`spatial_export.emit_commuters` add an in-/out-/internal-commuter analysis per
+Kreis: `commuter_balance` (Einpendler / Auspendler / Binnen / netto, plus the
+cross-cordon `einpendler_extern` from the OD "external" zone), `top_relations`
+(Kreis->Kreis flows), a per-Kreis **net-balance choropleth**
+(`kreis_commuters.geojson`) and an in/out/internal bar. It works in **both
+modes**: the work Kreis x Kreis matrix comes from the MATSim realised work OD
+(`record["matsim"]["od_matrix"]["work"]`) when MATSim has run, otherwise from
+the **synthesis** home->work assignment (`*commutes.gpkg`, classified to Kreise
+via VG250) -- the active source is named in the tab title so the two are never
+conflated. (`einpendler_extern` is 0 for the synthesis population, which lives
+entirely inside ZGB; cross-cordon Einpendler are a separate injection.)
+
+**Automatic pipeline stage + two modes.** `braunschweig.analysis.simwrapper_export`
+is a synpp stage that writes `<output_path>/simwrapper/` on **every** run (add it
+to a config's `run:` list). It always depends on `synthesis.output`; it
+additionally depends on `matsim.simulation.run` ONLY when
+`simwrapper_include_matsim: true` (an explicit flag, NOT the global default-True
+`run_matsim`, so a synthesis-only pipeline never accidentally forces a MATSim
+run). Thus: a **synthesis-only** run writes all synthesis tabs (fleet, socio,
+commuters-from-synthesis, ...) and the MATSim tabs skip with a log; a **full**
+run additionally writes all MATSim tabs. Flag-gated by `simwrapper_export_enabled`
+(default true); it only adds the `simwrapper/` subfolder, so existing run outputs
+stay byte-identical. The CLI / stage share one entry point
+`braunschweig.analysis.simwrapper.export.export_all(output_dir, sim_cache=None, ...)`
+(`sim_cache=None` => synthesis-only).
+
+**Performance.** Raw `xytime` point clouds are down-sampled to `MAX_XYT_POINTS`
+(default 150 000) with a fixed seed and an explicit log line (no silent
+truncation); aggregate maps (choropleths, hexagon density, commuter balance) use
+the full data. The Kreis key normalisation is vectorised. A 1% sample run is the
+intended fast end-to-end test vehicle (a fresh 1% pipeline run writes the full
+`synthesis.output` the export consumes).
+
 Tests: `tests/test_simwrapper_writers.py`,
 `tests/test_simwrapper_export.py` (synthetic `record` fixture per tab + a
-real-VG250 OD-spider test exercising the primary geometry path), and
+real-VG250 OD-spider test exercising the primary geometry path),
 `tests/test_simwrapper_spatial.py` (card helpers + the pure
-`_trips_xy`/`_purpose_to_mode`/`fleet_by_kreis`/economic-status-ordinal logic).
+`_trips_xy`/`_purpose_to_mode`/`fleet_by_kreis`/economic-status-ordinal logic +
+the commuter integration), `tests/test_simwrapper_commuters.py` (commuter matrix
++ balance + top-relations) and `tests/test_simwrapper_stage.py` (the synpp stage
+configure/execute in both modes).
 
 ## Language policy
 
