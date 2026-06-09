@@ -271,7 +271,7 @@ config:
   # direction so whole-region gates are created. Requires the clipped pbf to exist
   # (run scripts/clip_osm_to_cordon_ring.py first). See
   # docs/superpowers/plans/2026-06-08-whole-region-cordon-gates-and-pt-bahnhof-entry.md.
-  osm_path_bavaria: osm/germany-latest.zgb_ring.osm.pbf
+  osm_network_path: osm/germany-latest.zgb_ring.osm.pbf
 
   # External toolchain (Linux paths - installed on PATH, see server setup).
   # Use absolute paths if the binaries are not on PATH for the run user.

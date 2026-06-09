@@ -44,7 +44,7 @@ config:
   braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
   braunschweig.buildings_path: braunschweig/buildings
-  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+  osm_network_path: osm/niedersachsen-latest.osm.pbf
 
   # External OSM toolchain (Windows paths, identical to
   # config_local_braunschweig.yml). Required on the synthesis.output DAG

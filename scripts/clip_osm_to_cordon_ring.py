@@ -14,7 +14,7 @@ Usage example::
         --vg250 eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip \\
         --out eqasim-data/data/osm/germany-latest.zgb_ring.osm.pbf
 
-The ``--out`` filename must match ``osm_path_bavaria`` in the cordon-enabled
+The ``--out`` filename must match ``osm_network_path`` in the cordon-enabled
 server configs (``osm/germany-latest.zgb_ring.osm.pbf``).
 
 The .poly file is written next to the output pbf for provenance
