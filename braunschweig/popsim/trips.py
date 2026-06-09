@@ -68,6 +68,103 @@ def mid_time_seconds(wege: pd.DataFrame, hour_col: str, minute_col: str) -> pd.S
     return wege[hour_col].astype(float) * 3600.0 + wege[minute_col].astype(float) * 60.0
 
 
+# Ordered tuple of columns that constitute the eqasim trip schema subset produced by
+# build_trip_table.  Downstream stages (data/hts/hts.py fix/validate and
+# synthesis/population/activities.py) expect exactly these columns; all other MiD
+# Wege columns are carried through as extras.
+EQASIM_TRIP_COLUMNS = (
+    "person_id",
+    "trip_id",
+    "departure_time",
+    "arrival_time",
+    "trip_duration",
+    "activity_duration",
+    "preceding_purpose",
+    "following_purpose",
+    "is_first_trip",
+    "is_last_trip",
+    "mode",
+)
+
+
+def build_trip_table(
+    persons: pd.DataFrame,
+    mid_wege: pd.DataFrame,
+    *,
+    household_col: str = "H_ID",
+    person_col: str = "P_ID",
+    trip_col: str = "W_ID",
+) -> pd.DataFrame:
+    """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
+
+    Produces one row per (synthetic person, MiD trip) with the columns listed in
+    ``EQASIM_TRIP_COLUMNS`` so that the eqasim trip-time fix/validation layer
+    (``data/hts/hts.py``) and activity-chain construction
+    (``synthesis/population/activities.py``) apply unchanged to popsim_mid trips.
+    All other MiD Wege columns (``wegkm``, ``W_ANZBEGL``, ``W_BEGL_HH``,
+    ``W_ZWDF``, ...) are carried through unchanged as extra columns for later use.
+
+    Parameters
+    ----------
+    persons:
+        Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``.
+        One row per unique synthetic person is expected; duplicates on
+        ``person_id`` are dropped before the join so that each unique synthetic
+        person gets exactly one copy of the donor trip chain (avoids a
+        person x wege cross-join that would produce duplicate trip_id values).
+    mid_wege:
+        MiD Wege keyed by ``(H_ID, P_ID)``.  All columns are preserved.
+    household_col:
+        Name of the household-ID column shared by ``persons`` and ``mid_wege``.
+    person_col:
+        Name of the within-household person-ID column shared by both frames.
+    trip_col:
+        Name of the within-person trip-sequence column in ``mid_wege`` (used to
+        build the unique ``trip_id``).
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per (synthetic person, MiD trip) sorted by ``(person_id, trip_col)``,
+        containing the full eqasim trip schema (see ``EQASIM_TRIP_COLUMNS``) plus
+        all original MiD Wege columns.
+    """
+    # One trip chain per unique synthetic person; avoids a person x wege cross-join
+    # that would produce duplicate trip_id values when the caller passes a persons
+    # frame that has already been exploded (e.g. one row per household member).
+    persons = persons.drop_duplicates(subset="person_id")
+
+    df = expand_persons_to_trips(
+        persons,
+        mid_wege,
+        household_col=household_col,
+        person_col=person_col,
+        trip_col=trip_col,
+    )
+    df = df.sort_values(["person_id", trip_col]).reset_index(drop=True)
+
+    df["departure_time"] = mid_time_seconds(df, "W_SZS", "W_SZM").to_numpy()
+    df["arrival_time"] = mid_time_seconds(df, "W_AZS", "W_AZM").to_numpy()
+    df["trip_duration"] = df["arrival_time"] - df["departure_time"]
+
+    grp = df.groupby("person_id", sort=False)
+    df["is_first_trip"] = grp.cumcount() == 0
+    df["is_last_trip"] = grp.cumcount(ascending=False) == 0
+
+    # activity_duration: time between arrival of this trip and departure of the next.
+    # NaN for the last trip of each person (no subsequent departure).
+    next_dep = grp["departure_time"].shift(-1)
+    df["activity_duration"] = next_dep - df["arrival_time"]
+
+    # purpose (destination activity) was mapped by expand_persons_to_trips.
+    df["following_purpose"] = df["purpose"]
+    df["preceding_purpose"] = grp["following_purpose"].shift(1)
+    # The first trip of each person departs from home.
+    df.loc[df["is_first_trip"], "preceding_purpose"] = "home"
+
+    return df
+
+
 def expand_persons_to_trips(
     persons: pd.DataFrame,
     mid_wege: pd.DataFrame,

@@ -67,3 +67,39 @@ def test_mid_time_seconds_from_hours_minutes():
     wege = pd.DataFrame({"W_SZS": [8, 17], "W_SZM": [30, 5]})
     out = trips.mid_time_seconds(wege, "W_SZS", "W_SZM")
     assert list(out) == [8 * 3600 + 30 * 60, 17 * 3600 + 5 * 60]
+
+
+def test_build_trip_table_eqasim_schema_plus_extras():
+    persons = pd.DataFrame({
+        "person_id": ["A_1_0_1", "A_1_0_1"],
+        "H_ID": [1, 1], "P_ID": [1, 1],
+    })
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_SZS": [8, 17], "W_SZM": [0, 0],
+        "W_AZS": [8, 17], "W_AZM": [30, 20],
+        "wegkm": [12.0, 12.0],
+        # extras (carried through):
+        "W_ZWDF": [None, None], "W_ANZBEGL": [0, 1], "W_BEGL_HH": [2, 1],
+    })
+    out = trips.build_trip_table(persons, wege)
+    # eqasim trip-schema columns present:
+    for col in ["person_id", "trip_id", "departure_time", "arrival_time",
+                "trip_duration", "activity_duration", "preceding_purpose",
+                "following_purpose", "is_first_trip", "is_last_trip", "mode"]:
+        assert col in out.columns
+    first = out.iloc[0]
+    assert first["departure_time"] == 8 * 3600
+    assert first["arrival_time"] == 8 * 3600 + 30 * 60
+    assert first["trip_duration"] == 30 * 60
+    assert first["mode"] == "car"
+    # preceding_purpose of trip 1 (W_ZWECK None at day start) -> home; following = work.
+    assert first["following_purpose"] == "work"
+    assert first["preceding_purpose"] == "home"
+    assert bool(first["is_first_trip"]) is True
+    assert bool(out.iloc[-1]["is_last_trip"]) is True
+    # extra MiD info carried:
+    assert "wegkm" in out.columns and "W_ANZBEGL" in out.columns
+    # trip_id unique per synthetic trip:
+    assert out["trip_id"].is_unique
