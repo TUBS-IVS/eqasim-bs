@@ -327,3 +327,103 @@ class PlanValidator:
             unfixable_persons=unfixable_persons,
         )
         return fixed, report
+
+
+def resample_chains(
+    df_trips: pd.DataFrame,
+    unfixable_persons,
+    person_cells: dict,
+    donor_chains: dict,
+    *,
+    rng,
+    donor_weights: dict | None = None,
+) -> pd.DataFrame:
+    """Replace each unfixable person's chain with a same-cell donor's valid chain.
+
+    Every unfixable person is guaranteed to survive: either their trips are
+    replaced by a donor chain drawn from the same matching cell, or — as a
+    last-resort fallback when no same-cell donor exists — they receive a
+    minimal home-only plan (one row, preceding_purpose="home",
+    following_purpose="home").  The fallback rate is counted and logged; a
+    high rate signals cells without any valid donor chain and should be
+    treated as a bug signal (not silently accepted).
+
+    Args:
+        df_trips: Full trip table.  Rows whose ``person_id`` is in
+            ``unfixable_persons`` are removed and replaced.
+        unfixable_persons: Iterable of person_ids whose chains must be
+            resampled (typically ``RepairReport.unfixable_persons``).
+        person_cells: Mapping ``person_id -> matching-cell key`` (same cell
+            vocabulary as ``donor_chains``).
+        donor_chains: Mapping ``cell key -> list[pd.DataFrame]``, each
+            DataFrame being one donor's valid trip chain (without
+            ``person_id``).
+        rng: ``numpy.random.RandomState`` instance used for all draws.
+            Must be seeded by the caller for determinism.
+        donor_weights: Optional mapping ``cell key -> list[float]`` aligned
+            with ``donor_chains[cell]``.  When provided, donors are drawn
+            proportional to the given weights (e.g. MiD H_GEW donor weight)
+            so the resample preserves the weighted activity-pattern
+            distribution.  When ``None``, donors are drawn uniformly.
+
+    Returns:
+        A new DataFrame with the unfixable persons' rows replaced.  Row
+        order is not guaranteed; callers should sort by
+        ``(person_id, departure_time)`` if needed.
+    """
+    # Keep all trips that belong to NON-unfixable persons.
+    kept = df_trips[~df_trips["person_id"].isin(unfixable_persons)].copy()
+
+    new_rows: list[pd.DataFrame] = []
+    n_resampled = 0
+    n_home_only = 0
+
+    for person_id in unfixable_persons:
+        cell = person_cells.get(person_id)
+        pool = donor_chains.get(cell) if cell is not None else None
+
+        if not pool:
+            # No same-cell donor available.  Last-resort fallback: a single
+            # home-only "stay" row (no outgoing trip).  This is observable
+            # and counted below; a high rate signals a cell-coverage gap.
+            n_home_only += 1
+            new_rows.append(pd.DataFrame([{
+                "person_id": person_id,
+                "departure_time": float("nan"),
+                "arrival_time": float("nan"),
+                "preceding_purpose": "home",
+                "following_purpose": "home",
+                "is_first_trip": True,
+                "is_last_trip": True,
+                "mode": None,
+            }]))
+            continue
+
+        # Weighted (or uniform) draw of a donor chain index.
+        weights = None if donor_weights is None else donor_weights.get(cell)
+        if weights is not None:
+            probs = np.asarray(weights, dtype=float)
+            probs = probs / probs.sum()
+            choice = int(rng.choice(len(pool), p=probs))
+        else:
+            choice = int(rng.randint(len(pool)))
+
+        chain = pool[choice].copy()
+        chain["person_id"] = person_id
+        new_rows.append(chain)
+        n_resampled += 1
+
+    # Observable fallback rate — no silent fallback.
+    n_total = len(unfixable_persons) if not isinstance(unfixable_persons, int) else unfixable_persons
+    n_total = n_resampled + n_home_only
+    logger.info(
+        "[popsim.plan_validation] resample: %d/%d unfixable persons replaced from a "
+        "same-cell donor; %d (%.1f%%) had NO same-cell donor and fell back to a "
+        "home-only plan (a high rate signals cells without a valid donor chain).",
+        n_resampled, n_total, n_home_only,
+        100.0 * n_home_only / n_total if n_total > 0 else 0.0,
+    )
+
+    if new_rows:
+        return pd.concat([kept, *new_rows], ignore_index=True)
+    return kept

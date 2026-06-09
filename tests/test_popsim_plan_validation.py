@@ -100,3 +100,97 @@ def test_repair_report_all_valid_on_clean_home_closed_plan():
     # no extra trip should be appended
     person = fixed[fixed["person_id"] == "p"]
     assert len(person) == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 7: resample_chains tests
+# ---------------------------------------------------------------------------
+
+def test_resample_replaces_unfixable_with_same_cell_donor():
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p1"], "departure_time": [8*3600], "arrival_time": [8*3600],
+        "preceding_purpose": ["home"], "following_purpose": ["work"],
+        "is_first_trip": [True], "is_last_trip": [True], "mode": ["car"],
+    })
+    donor_chains = {
+        "X": [pd.DataFrame({
+            "departure_time": [8*3600, 17*3600], "arrival_time": [8*3600+1800, 17*3600+1200],
+            "preceding_purpose": ["home", "work"], "following_purpose": ["work", "home"],
+            "is_first_trip": [True, False], "is_last_trip": [False, True], "mode": ["pt", "pt"],
+        })],
+    }
+    person_cells = {"p1": "X"}
+    import numpy as np
+    out = pv.resample_chains(unfixable_trips, {"p1"}, person_cells, donor_chains,
+                             rng=np.random.RandomState(0))
+    p1 = out[out["person_id"] == "p1"].sort_values("departure_time")
+    assert len(p1) == 2
+    assert p1.iloc[-1]["following_purpose"] == "home"
+    assert (p1["mode"] == "pt").all()
+
+
+def test_resample_weighted_draw_is_deterministic_and_respects_weights():
+    import numpy as np
+
+    # Two donors: chain A (2-trip, all-"pt"), chain B (1-trip, all-"car").
+    chain_a = pd.DataFrame({
+        "departure_time": [8*3600, 17*3600], "arrival_time": [8*3600+1800, 17*3600+1200],
+        "preceding_purpose": ["home", "work"], "following_purpose": ["work", "home"],
+        "is_first_trip": [True, False], "is_last_trip": [False, True], "mode": ["pt", "pt"],
+    })
+    chain_b = pd.DataFrame({
+        "departure_time": [8*3600], "arrival_time": [8*3600+900],
+        "preceding_purpose": ["home"], "following_purpose": ["home"],
+        "is_first_trip": [True], "is_last_trip": [True], "mode": ["car"],
+    })
+    donor_chains = {"X": [chain_a, chain_b]}
+    # Weight: chain_a=0.0, chain_b=1.0 -> chain_a must NEVER be drawn.
+    donor_weights = {"X": [0.0, 1.0]}
+
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p1", "p2"], "departure_time": [7*3600, 7*3600],
+        "arrival_time": [7*3600, 7*3600], "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "work"], "is_first_trip": [True, True],
+        "is_last_trip": [True, True], "mode": ["walk", "walk"],
+    })
+    person_cells = {"p1": "X", "p2": "X"}
+
+    out1 = pv.resample_chains(
+        unfixable_trips, {"p1", "p2"}, person_cells, donor_chains,
+        rng=np.random.RandomState(0), donor_weights=donor_weights,
+    )
+    # Zero-weight donor (chain_a, "pt") must never appear.
+    assert (out1[out1["person_id"].isin({"p1", "p2"})]["mode"] != "pt").all(), \
+        "zero-weight donor chain_a must not be drawn"
+
+    # Determinism: fresh RandomState(0) -> identical result.
+    out2 = pv.resample_chains(
+        unfixable_trips, {"p1", "p2"}, person_cells, donor_chains,
+        rng=np.random.RandomState(0), donor_weights=donor_weights,
+    )
+    pd.testing.assert_frame_equal(
+        out1.sort_values(["person_id", "departure_time"]).reset_index(drop=True),
+        out2.sort_values(["person_id", "departure_time"]).reset_index(drop=True),
+    )
+
+
+def test_resample_home_only_fallback_when_no_donor():
+    import numpy as np
+
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p_orphan"], "departure_time": [8*3600],
+        "arrival_time": [8*3600], "preceding_purpose": ["home"],
+        "following_purpose": ["work"], "is_first_trip": [True],
+        "is_last_trip": [True], "mode": ["car"],
+    })
+    # donor_chains has no entry for the person's cell.
+    donor_chains = {}
+    person_cells = {"p_orphan": "CELL_WITH_NO_DONORS"}
+
+    out = pv.resample_chains(
+        unfixable_trips, {"p_orphan"}, person_cells, donor_chains,
+        rng=np.random.RandomState(0),
+    )
+    p_rows = out[out["person_id"] == "p_orphan"]
+    assert len(p_rows) == 1, "fallback must produce exactly one home-only row"
+    assert p_rows.iloc[0]["following_purpose"] == "home"
