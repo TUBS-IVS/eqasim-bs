@@ -216,7 +216,14 @@ config:
   # the cut network, gravity-placed, Mikrozensus mode restricted to car+PT, outside
   # home via the cutter). Validated end-to-end at 1% and at scale at 25%.
   cordon_enabled: true
-  cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
+  cordon_network_source_buffer_m: 45000     # 45 km network+schedule ring beyond ZGB:
+  # drives BOTH data/osm/cleaned (road network) AND data/gtfs/cleaned (transit schedule)
+  # via cordon.network_clip.osm_clip_geometry, so PT entry stations are derived from the
+  # same extent. 45 km (was 30 km) so Magdeburg Hbf (~35 km E of the ZGB edge, a major
+  # Sachsen-Anhalt inbound corridor) is captured as a direct PT entry + eastern road gate;
+  # Hannover Hbf (~18 km W) was already inside at 30 km. Larger ring = bigger network
+  # (more RAM/runtime). Requires the germany ring pbf for the road side (state-clipped
+  # niedersachsen pbf has no roads east of the NDS border regardless of this buffer).
   cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
 
   gtfs_path: gtfs_cordon   # Germany-wide GTFS (de_full); cut to the enlarged cordon extent

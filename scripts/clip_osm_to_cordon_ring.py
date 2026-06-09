@@ -225,12 +225,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--source-buffer-m",
         type=float,
-        default=30_000.0,
+        default=45_000.0,
         metavar="METRES",
         help=(
             "Outward buffer in metres applied to the dissolved ZGB polygon "
-            "(default: 30000 = 30 km). Must match cordon_network_source_buffer_m "
-            "in the pipeline config."
+            "(default: 45000 = 45 km, so Magdeburg Hbf is captured east). Must match "
+            "cordon_network_source_buffer_m in the pipeline config."
         ),
     )
     p.add_argument(
