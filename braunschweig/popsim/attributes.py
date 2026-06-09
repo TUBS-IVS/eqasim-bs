@@ -39,6 +39,13 @@ SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 # (Ausbildung, Schueler, Student, Rentner, arbeitslos, ...). 99 = keine Angabe.
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 5, 6, 7})
 
+# MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
+# Student): 8 = Ausbildung/Auszubildende, 9 = Schueler/in, 10 = Student/in.
+# These map to studies=True; all other codes (employment 1-7, Rentner 11+, 99 k.A.)
+# map to studies=False (conservative: unknown treated as not in education).
+# Source: MiD 2023 Codeplan B1, Frage P17.
+STUDIES_TAET = frozenset({8, 9, 10})
+
 # MiD P_FSCHEIN (Fuehrerscheinbesitz ja/nein): 1 = ja, 2 = nein, 9 = keine Angabe.
 LICENSE_YES = 1
 
@@ -138,6 +145,45 @@ def map_employed(
     out = persons.copy()
     out["employed"], _ = missing.resolve(out, spec, rng=rng)
     out["employed"] = out["employed"].astype(bool)
+    return out
+
+
+def map_studies(
+    persons: pd.DataFrame, *, taet_col: str = "P_TAET"
+) -> pd.DataFrame:
+    """Add a boolean ``studies`` column derived from MiD ``P_TAET``.
+
+    MiD codebook mapping (P_TAET = Taetigkeit der Person):
+      8  Ausbildung / Auszubildende  -> True
+      9  Schueler/in                 -> True
+      10 Student/in                  -> True
+      All other codes (1-7 employment, 11+ Rentner/arbeitslos, 99 k.A.) -> False.
+
+    99 (keine Angabe, item non-response) is conservatively treated as False
+    (not in education). P_TAET has near-complete coverage in the MiD
+    (structural design-missing codes apply only to children not interviewed,
+    who are not in the MiD respondent table).
+
+    The ``studies`` flag is used by ``map_socioprofessional_class`` as a
+    secondary signal in the broad-activity fallback path
+    (``derive_socioprofessional_class``). It must be derived before
+    ``map_socioprofessional_class`` is called.
+
+    Parameters
+    ----------
+    persons:
+        DataFrame with a ``P_TAET`` column (MiD Taetigkeit der Person).
+    taet_col:
+        Name of the MiD P_TAET column (default ``P_TAET``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy of ``persons`` with a boolean ``studies`` column added.
+    """
+    out = persons.copy()
+    taet = out[taet_col]
+    out["studies"] = taet.isin(STUDIES_TAET).astype(bool)
     return out
 
 

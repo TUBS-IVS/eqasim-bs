@@ -279,3 +279,66 @@ def test_build_persons_emits_weight_column_equal_to_one():
     assert (persons["weight"] == 1.0).all(), (
         f"All weight values must be 1.0; got: {persons['weight'].unique().tolist()}"
     )
+
+
+def test_build_persons_has_studies_column():
+    """build_persons must emit a boolean ``studies`` column derived from P_TAET.
+
+    Bug D4: studies was not derived from P_TAET, so map_socioprofessional_class
+    fallback always saw studies=False (treating all students as non-students).
+    """
+    persons = assembly.build_persons(
+        _merged_households(), _mid_households(), _mid_persons(),
+        rng=np.random.RandomState(0),
+    )
+    assert "studies" in persons.columns, (
+        "build_persons must emit a 'studies' column derived from P_TAET"
+    )
+    assert persons["studies"].dtype == bool, (
+        f"studies must be bool, got {persons['studies'].dtype}"
+    )
+
+    # P_TAET=1 (employed) -> studies=False
+    # P_TAET=9 (Schueler) -> studies=True
+    # P_TAET=8 (Ausbildung) -> studies=True
+    p_employed = persons[
+        (persons["source_household_id"] == "1") & (persons["age"] == 40)
+    ].iloc[0]
+    assert p_employed["studies"] is False or p_employed["studies"] == False, (
+        f"P_TAET=1 (employed) should give studies=False, got {p_employed['studies']}"
+    )
+
+    p_pupil = persons[
+        (persons["source_household_id"] == "1") & (persons["age"] == 10)
+    ].iloc[0]
+    assert p_pupil["studies"] is True or p_pupil["studies"] == True, (
+        f"P_TAET=9 (Schueler) should give studies=True, got {p_pupil['studies']}"
+    )
+
+
+def test_build_persons_spc_uses_p_bkat_crosswalk():
+    """When the donor has a valid P_BKAT code, SPC must come from SPC_BY_P_BKAT.
+
+    Bug D4: P_BKAT was absent from MID_PERSON_ATTR_COLS, so SPC always used
+    the broad-activity fallback. After the fix, P_BKAT=1 (Angestellte) must
+    yield CS1 6, not whatever the fallback derives from employed/age.
+
+    The _mid_persons() fixture has:
+      H_ID=1, P_ID=1, age=40, P_TAET=1 (employed), P_BKAT=1 (Angestellte) -> CS1 6
+    """
+    from braunschweig.popsim.attributes import SPC_BY_P_BKAT
+
+    persons = assembly.build_persons(
+        _merged_households(), _mid_households(), _mid_persons(),
+        rng=np.random.RandomState(0),
+    )
+    # The first person: H_ID=1, age=40, P_BKAT=1 -> CS1 6
+    row = persons[
+        (persons["source_household_id"] == "1") & (persons["age"] == 40)
+    ].iloc[0]
+    expected_spc = SPC_BY_P_BKAT[1]  # P_BKAT=1 -> 6
+    assert row["socioprofessional_class"] == expected_spc, (
+        f"P_BKAT=1 (Angestellte) should give SPC={expected_spc} (CS1 6), "
+        f"got {row['socioprofessional_class']}. "
+        "This indicates P_BKAT is not reaching the persons frame (bug D4)."
+    )

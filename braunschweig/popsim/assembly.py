@@ -148,6 +148,10 @@ def build_persons(
     persons = derive_zone_ids(persons)
 
     persons = attributes.map_employed(persons, rng=rng)
+    # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
+    # map_socioprofessional_class, which uses the studies flag in its fallback path.
+    # Bug D4: studies was absent, so the fallback treated all students as studies=False.
+    persons = attributes.map_studies(persons)
     persons = attributes.map_has_license(persons, rng=rng)
     persons = attributes.map_has_pt_subscription(persons, rng=rng)
 
