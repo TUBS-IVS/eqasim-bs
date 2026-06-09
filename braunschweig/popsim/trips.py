@@ -119,8 +119,11 @@ def build_trip_table(
        **ASSUMPTION**: MiD travel diaries start at home, so the first trip's
        ``preceding_purpose`` is hard-set to ``"home"``.  This is the standard
        diary-starts-at-home convention used throughout eqasim.  A log message
-       reports the share of first-trip destinations that are NOT home as a
-       plausibility signal for the assumption.
+       reports the COUNT of first trips this assumption is applied to (the
+       magnitude), and explicitly does NOT report a destination-based percentage
+       because a first trip almost never has home as its destination — such a
+       figure would look like validation while checking nothing about the
+       origin.
     5. ``departure_time`` / ``arrival_time`` in float seconds since midnight via
        ``mid_time_seconds``.
     6. ``hts.fix_trip_times`` — repairs negative durations (swap / +24 h midnight

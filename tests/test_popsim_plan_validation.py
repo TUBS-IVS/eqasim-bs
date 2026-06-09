@@ -194,3 +194,237 @@ def test_resample_home_only_fallback_when_no_donor():
     p_rows = out[out["person_id"] == "p_orphan"]
     assert len(p_rows) == 1, "fallback must produce exactly one home-only row"
     assert p_rows.iloc[0]["following_purpose"] == "home"
+
+
+# ---------------------------------------------------------------------------
+# CRITICAL-1: repaired frame must have finite trip_index and trip_duration
+# on the appended return-home row.
+# IMPORTANT-3: trip_id must remain globally unique after repair.
+# ---------------------------------------------------------------------------
+
+def test_repair_trip_index_and_duration_no_nan_after_home_closure():
+    """CRITICAL-1 + IMPORTANT-3: repair_trips must recompute trip_index and
+    trip_duration on the appended return-home row; trip_id must be globally unique.
+
+    A one-trip home->work person that does NOT end at home triggers the closure
+    append.  Before the fix, the appended row has NaN trip_index and NaN
+    trip_duration, breaking downstream sorts and hts.check_trip_times.
+    """
+    import numpy as np
+
+    # One person, one trip: home -> work (does NOT end at home).
+    df = pd.DataFrame({
+        "person_id": ["p"],
+        "departure_time": [8 * 3600.0],
+        "arrival_time": [8 * 3600.0 + 1800.0],
+        "preceding_purpose": ["home"],
+        "following_purpose": ["work"],
+        "is_first_trip": [True],
+        "is_last_trip": [True],
+        "mode": ["car"],
+        "trip_id": [0],
+        "trip_index": [0],
+        "trip_duration": [1800.0],
+        "activity_duration": [float("nan")],
+    })
+    validator = pv.PlanValidator(require_home_closure=True)
+    fixed, report = validator.repair_trips(df)
+
+    person_rows = fixed[fixed["person_id"] == "p"].sort_values("departure_time")
+    assert len(person_rows) == 2, "return-home trip should have been appended"
+
+    # CRITICAL-1a: trip_index must be integer dtype and have no NaN.
+    assert pd.api.types.is_integer_dtype(person_rows["trip_index"]), (
+        "trip_index must be integer dtype after repair"
+    )
+    assert not person_rows["trip_index"].isna().any(), (
+        "trip_index must not contain NaN after repair (appended row)"
+    )
+
+    # CRITICAL-1b: trip_index must be 0..n-1 per person.
+    expected_indices = list(range(len(person_rows)))
+    assert list(person_rows["trip_index"]) == expected_indices, (
+        f"trip_index must be 0..{len(person_rows)-1}; got {list(person_rows['trip_index'])}"
+    )
+
+    # CRITICAL-1c: trip_duration must be finite on every row (including the appended one).
+    assert person_rows["trip_duration"].notna().all(), (
+        "trip_duration must be finite on every row after repair"
+    )
+    assert (person_rows["trip_duration"] >= 0).all(), (
+        "trip_duration must be non-negative after repair"
+    )
+
+    # IMPORTANT-3: trip_id must be globally unique and integer.
+    assert pd.api.types.is_integer_dtype(fixed["trip_id"]), (
+        "trip_id must be integer dtype after repair"
+    )
+    assert fixed["trip_id"].is_unique, (
+        "trip_id must be globally unique after repair"
+    )
+
+
+def test_repair_trip_id_unique_multi_person():
+    """IMPORTANT-3: trip_id stays globally unique with multiple persons."""
+    import numpy as np
+
+    # Two persons each with one trip that does not end at home -> two rows appended.
+    df = pd.DataFrame({
+        "person_id": ["p1", "p2"],
+        "departure_time": [8 * 3600.0, 9 * 3600.0],
+        "arrival_time": [8 * 3600.0 + 1800.0, 9 * 3600.0 + 900.0],
+        "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "shop"],
+        "is_first_trip": [True, True],
+        "is_last_trip": [True, True],
+        "mode": ["car", "pt"],
+        "trip_id": [0, 1],
+        "trip_index": [0, 0],
+        "trip_duration": [1800.0, 900.0],
+        "activity_duration": [float("nan"), float("nan")],
+    })
+    validator = pv.PlanValidator(require_home_closure=True)
+    fixed, _ = validator.repair_trips(df)
+
+    assert fixed["trip_id"].is_unique, "trip_id must be globally unique across persons after repair"
+    assert pd.api.types.is_integer_dtype(fixed["trip_id"]), "trip_id must be integer"
+
+
+# ---------------------------------------------------------------------------
+# CRITICAL-2: resample_chains iteration order must be deterministic
+# regardless of the input container type (set vs list in different orders).
+# ---------------------------------------------------------------------------
+
+def test_resample_chains_deterministic_across_set_iteration_orders():
+    """CRITICAL-2: resample_chains must produce identical per-person results
+    when called twice with the same RNG seed even if unfixable_persons is a
+    set (whose iteration order varies with hash randomisation).
+
+    Two distinguishable donor chains (all-pt vs all-car) and TWO unfixable
+    persons in the same cell, with uniform weights.  The test calls
+    resample_chains with the set given in two different explicit orderings
+    (via sorted lists) and with the same fresh RNG seed each time, then
+    asserts each person gets the same chain in both runs.
+
+    Before CRITICAL-2 is fixed (sorting the set iteration), a set input can
+    produce different per-person chain assignments across runs because hash
+    randomisation changes the set iteration order, so person p1 consumes the
+    first RNG draw in one run and the second in another.
+    """
+    import numpy as np
+
+    chain_pt = pd.DataFrame({
+        "departure_time": [8 * 3600, 17 * 3600],
+        "arrival_time": [8 * 3600 + 1800, 17 * 3600 + 1200],
+        "preceding_purpose": ["home", "work"],
+        "following_purpose": ["work", "home"],
+        "is_first_trip": [True, False],
+        "is_last_trip": [False, True],
+        "mode": ["pt", "pt"],
+    })
+    chain_car = pd.DataFrame({
+        "departure_time": [8 * 3600],
+        "arrival_time": [8 * 3600 + 900],
+        "preceding_purpose": ["home"],
+        "following_purpose": ["home"],
+        "is_first_trip": [True],
+        "is_last_trip": [True],
+        "mode": ["car"],
+    })
+    donor_chains = {"X": [chain_pt, chain_car]}
+    person_cells = {"p1": "X", "p2": "X"}
+
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p1", "p2"],
+        "departure_time": [7 * 3600.0, 7 * 3600.0],
+        "arrival_time": [7 * 3600.0, 7 * 3600.0],
+        "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "work"],
+        "is_first_trip": [True, True],
+        "is_last_trip": [True, True],
+        "mode": ["walk", "walk"],
+    })
+
+    # Run A: unfixable_persons as sorted list ["p1", "p2"]
+    out_a = pv.resample_chains(
+        unfixable_trips, ["p1", "p2"], person_cells, donor_chains,
+        rng=np.random.RandomState(0),
+    )
+    # Run B: unfixable_persons as sorted list ["p2", "p1"] (different order)
+    # With a set, hash randomisation could give this order non-deterministically.
+    out_b = pv.resample_chains(
+        unfixable_trips, ["p2", "p1"], person_cells, donor_chains,
+        rng=np.random.RandomState(0),
+    )
+
+    # Per-person mode sequences must be IDENTICAL in both runs because
+    # sorted() inside resample_chains normalises the order.
+    for pid in ["p1", "p2"]:
+        modes_a = list(out_a[out_a["person_id"] == pid].sort_values("departure_time")["mode"])
+        modes_b = list(out_b[out_b["person_id"] == pid].sort_values("departure_time")["mode"])
+        assert modes_a == modes_b, (
+            f"person {pid}: got modes {modes_a} vs {modes_b} — "
+            "resample_chains must iterate in sorted order for determinism"
+        )
+
+
+# ---------------------------------------------------------------------------
+# IMPORTANT-5: guard against zero-sum weights in resample_chains.
+# ---------------------------------------------------------------------------
+
+def test_resample_chains_raises_on_zero_sum_weights():
+    """IMPORTANT-5: resample_chains must raise ValueError when all weights are 0."""
+    import numpy as np
+
+    chain_a = pd.DataFrame({
+        "departure_time": [8 * 3600], "arrival_time": [8 * 3600 + 900],
+        "preceding_purpose": ["home"], "following_purpose": ["home"],
+        "is_first_trip": [True], "is_last_trip": [True], "mode": ["car"],
+    })
+    donor_chains = {"X": [chain_a]}
+    donor_weights = {"X": [0.0]}  # all-zero -> sum = 0 -> invalid
+    person_cells = {"p1": "X"}
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p1"], "departure_time": [7 * 3600.0],
+        "arrival_time": [7 * 3600.0], "preceding_purpose": ["home"],
+        "following_purpose": ["work"], "is_first_trip": [True], "is_last_trip": [True],
+        "mode": ["walk"],
+    })
+    import pytest
+    with pytest.raises(ValueError, match="X"):
+        pv.resample_chains(
+            unfixable_trips, ["p1"], person_cells, donor_chains,
+            rng=np.random.RandomState(0), donor_weights=donor_weights,
+        )
+
+
+def test_resample_chains_raises_on_mismatched_weight_length():
+    """IMPORTANT-5: mismatched donor_weights length must raise ValueError."""
+    import numpy as np
+    import pytest
+
+    chain_a = pd.DataFrame({
+        "departure_time": [8 * 3600], "arrival_time": [8 * 3600 + 900],
+        "preceding_purpose": ["home"], "following_purpose": ["home"],
+        "is_first_trip": [True], "is_last_trip": [True], "mode": ["car"],
+    })
+    chain_b = pd.DataFrame({
+        "departure_time": [9 * 3600], "arrival_time": [9 * 3600 + 600],
+        "preceding_purpose": ["home"], "following_purpose": ["home"],
+        "is_first_trip": [True], "is_last_trip": [True], "mode": ["pt"],
+    })
+    donor_chains = {"Y": [chain_a, chain_b]}
+    # Only one weight for two chains -> length mismatch.
+    donor_weights = {"Y": [1.0]}
+    person_cells = {"p1": "Y"}
+    unfixable_trips = pd.DataFrame({
+        "person_id": ["p1"], "departure_time": [7 * 3600.0],
+        "arrival_time": [7 * 3600.0], "preceding_purpose": ["home"],
+        "following_purpose": ["work"], "is_first_trip": [True], "is_last_trip": [True],
+        "mode": ["walk"],
+    })
+    with pytest.raises(ValueError, match="Y"):
+        pv.resample_chains(
+            unfixable_trips, ["p1"], person_cells, donor_chains,
+            rng=np.random.RandomState(0), donor_weights=donor_weights,
+        )

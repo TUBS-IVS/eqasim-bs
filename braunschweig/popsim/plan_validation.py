@@ -285,13 +285,22 @@ class PlanValidator:
             n_closure_appended = int(needs_closure)
             fixed = _append_return_home(fixed, dwell_s)
 
-        # --- Step 4: recompute activity_duration after append -----------------
-        # compute_first_last re-derives is_first/last_trip; needs trip_id.
-        if "trip_id" not in fixed.columns:
-            fixed = fixed.sort_values(["person_id", "departure_time"])
-            fixed["trip_id"] = fixed.groupby("person_id").cumcount()
+        # --- Step 4: recompute trip_id / trip_index / trip_duration / activity_duration ----
+        # After _append_return_home the appended row has NaN trip_index and trip_duration,
+        # and the per-person max+1 trip_id can collide across persons (ENTD's trip_id is
+        # globally unique via arange(len)).  Re-derive everything on the final sorted frame.
+        fixed = fixed.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+        # Global trip_id: 0..n-1 (mirrors entd/cleaned.py and build_trip_table).
+        fixed["trip_id"] = range(len(fixed))
+        # compute_first_last re-derives is_first/last_trip from the integer trip_id.
         fixed = hts.compute_first_last(fixed)
+        # trip_duration: re-derived so the appended row gets a finite value.
+        fixed["trip_duration"] = fixed["arrival_time"] - fixed["departure_time"]
+        # activity_duration: NaN on the last trip of each person (correct and expected).
         hts.compute_activity_duration(fixed)  # modifies in-place, no return
+        # trip_index: per-person 0-based cumcount consumed by activities.py.
+        # cumcount() yields int64, so no NaN and no float promotion.
+        fixed["trip_index"] = fixed.groupby("person_id").cumcount()
 
         # --- Step 5: validate after repair ------------------------------------
         after = self.validate_trips(fixed)
@@ -378,7 +387,10 @@ def resample_chains(
     n_resampled = 0
     n_home_only = 0
 
-    for person_id in unfixable_persons:
+    # Sort the unfixable person IDs so the RNG draw order is deterministic
+    # regardless of whether the caller passes a set (whose iteration order
+    # varies with Python's hash randomisation) or a list.
+    for person_id in sorted(unfixable_persons):
         cell = person_cells.get(person_id)
         pool = donor_chains.get(cell) if cell is not None else None
 
@@ -403,6 +415,17 @@ def resample_chains(
         weights = None if donor_weights is None else donor_weights.get(cell)
         if weights is not None:
             probs = np.asarray(weights, dtype=float)
+            if len(weights) != len(pool):
+                raise ValueError(
+                    f"[popsim.plan_validation] resample_chains: donor_weights for cell "
+                    f"'{cell}' has {len(weights)} entries but donor_chains has {len(pool)} "
+                    f"chains — lengths must match."
+                )
+            if probs.sum() <= 0.0:
+                raise ValueError(
+                    f"[popsim.plan_validation] resample_chains: donor_weights for cell "
+                    f"'{cell}' sum to {probs.sum()} (must be > 0); cannot normalise."
+                )
             probs = probs / probs.sum()
             choice = int(rng.choice(len(pool), p=probs))
         else:
@@ -414,7 +437,6 @@ def resample_chains(
         n_resampled += 1
 
     # Observable fallback rate — no silent fallback.
-    n_total = len(unfixable_persons) if not isinstance(unfixable_persons, int) else unfixable_persons
     n_total = n_resampled + n_home_only
     logger.info(
         "[popsim.plan_validation] resample: %d/%d unfixable persons replaced from a "
