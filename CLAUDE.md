@@ -564,9 +564,29 @@ It also runs **default-on** inside `run_full_analysis` (disable with
 subfolder). Open `<output_dir>/simwrapper/` via "View local files" in
 simwrapper.app; the Layer-1 MATSim dashboards open from `simulation_output/`.
 
+**Spatial / fleet map tabs (`braunschweig.analysis.simwrapper.spatial_export`).**
+On top of the 8 chart/table tabs, four interactive **map** tabs are emitted from
+the per-agent geodata (reusing
+`braunschweig.analysis.population_validation.population_source.load_population`
+and `braunschweig.analysis.spatial` for the VG250 Kreis polygons -- no geo logic
+is duplicated): **Fleet** (per-vehicle `xytime` point clouds coloured by engine
+power and by BEV status, a per-Kreis BEV-share / mean-power **choropleth** on the
+VG250 GeoJSON, and a brand-mix or powertrain-mix bar -- "where are the VW / the
+E-vehicles"); **Spatial demand** (`hexagons` density of trip origins &
+destinations from `eqasim_trips.csv`); **Socio** (`xytime` home points coloured by
+`household_income_eur`); **Behaviour** (`sankey` purpose->mode + a `scatter` of the
+per-Kreis car share Sim vs MiD P12). All coordinates are EPSG:25832 for the point
+plugins; the choropleth GeoJSON is reprojected to EPSG:4326. Each tab is
+**skipped with an explicit log line** when its source columns/files are absent
+(e.g. the rich fleet exists only in the all-features run; `eqasim_trips.csv` only
+when MATSim has run) -- no silent skips. BEV is identified by the verified real
+`powertrain == "bev"` value.
+
 Tests: `tests/test_simwrapper_writers.py`,
 `tests/test_simwrapper_export.py` (synthetic `record` fixture per tab + a
-real-VG250 OD-spider test exercising the primary geometry path).
+real-VG250 OD-spider test exercising the primary geometry path), and
+`tests/test_simwrapper_spatial.py` (card helpers + the pure
+`_trips_xy`/`_purpose_to_mode`/`fleet_by_kreis`/economic-status-ordinal logic).
 
 ## Language policy
 
