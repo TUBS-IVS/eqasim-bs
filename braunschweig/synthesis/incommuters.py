@@ -902,9 +902,14 @@ def configure(context):
         # ZGB polygon for in-ring test + VG250 config for external Gemeinden loading.
         context.stage("data.spatial.municipalities")
         context.config("cordon_network_source_buffer_m", 45000.0)
+        # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
+        # so _load_gemeinden(context) can resolve the VG250-EW archive path.
         context.config(
-            "cordon_vg250_path",
+            "germany.population_path",
             "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
+        context.config(
+            "germany.population_source",
+            "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg")
 
 
 def execute(context):
@@ -925,32 +930,14 @@ def execute(context):
     source_buffer_m = 45000.0
 
     if real_origin:
-        import os  # noqa: PLC0415
+        from braunschweig.data.external_workplaces import _load_gemeinden  # noqa: PLC0415
         # Dissolve ZGB municipalities into a single polygon for the in-ring test.
         df_muni = context.stage("data.spatial.municipalities")
-        zgb_polygon = df_muni.geometry.unary_union
+        zgb_polygon = df_muni.geometry.union_all()
         source_buffer_m = float(context.config("cordon_network_source_buffer_m"))
-        # Load external Gemeinden with gem_ags from VG250-EW.  The same GeoPackage
-        # used by braunschweig.data.external_workplaces._load_gemeinden.
-        vg250_rel = context.config("cordon_vg250_path")
-        vg250_abs = os.path.join(context.config("data_path"), vg250_rel)
-        _vsi = (f"/vsizip/{os.path.abspath(vg250_abs)}"
-                f"/vg250-ew_12-31.utm32s.gpkg.ebenen"
-                f"/vg250-ew_ebenen_1231/DE_VG250.gpkg")
-        gem = gpd.read_file(_vsi, layer="vg250_gem",
-                            columns=["ARS", "AGS", "GEN", "GF", "EWZ"],
-                            engine="pyogrio")
-        if "GF" in gem.columns:
-            gem = gem[gem["GF"] == 4].copy()
-        gem["ars5"] = gem["ARS"].astype(str).str[:5]
-        gem["ewz"] = pd.to_numeric(gem["EWZ"], errors="coerce").fillna(0.0)
-        gem = gem[gem["ewz"] > 0].copy()
-        ags_native = gem["AGS"].astype(str).str.strip()
-        ags_from_ars = gem["ARS"].astype(str).str[:5] + gem["ARS"].astype(str).str[9:12]
-        use_native = ags_native.str.len() == 8
-        gem["gem_ags"] = ags_native.where(use_native, ags_from_ars)
-        gem = gem.to_crs(crs).copy()
-        gemeinden_df = gem[["ars5", "gem_ags", "ewz", "geometry"]].copy()
+        # Reuse the canonical loader (includes gem_ags length/prefix assertions).
+        gemeinden_raw = _load_gemeinden(context)
+        gemeinden_df = gemeinden_raw.to_crs(crs)[["ars5", "gem_ags", "ewz", "geometry"]].copy()
         print(
             f"[braunschweig.incommuters] real-origin ON: "
             f"{len(gemeinden_df)} external Gemeinden loaded for in-ring origin draw "
