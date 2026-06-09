@@ -219,7 +219,11 @@ config:
 
   gtfs_path: gtfs_cordon   # Germany-wide GTFS (de_full); cut to the enlarged cordon extent
   vrb_stations_path: vrb/stations.json
-  osm_path: osm
+  # Cordon network OSM source = a dedicated dir holding ONLY the pre-clipped ring pbf
+  # (scripts/clip_osm_to_cordon_ring.py writes it there). data.osm.cleaned globs this
+  # dir and filters every *.osm.pbf in it; pointing it at osm/cordon (not osm/) avoids
+  # redundantly re-filtering the raw germany-latest.osm.pbf + niedersachsen on every run.
+  osm_path: osm/cordon
 
   # --- Braunschweig region scope -----------------------------------------
   # Zweckverband Grossraum Braunschweig (ZGB) - 8 Kreise (~1.13 M EW),
