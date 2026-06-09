@@ -12,11 +12,24 @@ coordinates (``braunschweig.popsim.handoff``) are layered on top.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import attributes
 from braunschweig.popsim import expand
 from braunschweig.population import schema
+
+# age_range bins and labels — MUST match synthesis/population/enriched.py lines
+# 110-114 exactly so both population workflows produce the same categorical values
+# consumed by the spatial (education / gravity) stages. The bins correspond to:
+#   (-1, 10] = primary_school (age <= 10)
+#   (10, 14] = middle_school  (age 11-14)
+#   (14, 17] = high_school    (age 15-17)
+#   (17, inf) = higher_education (age >= 18, the default in enriched.py)
+_AGE_RANGE_BINS: list = [-1, 10, 14, 17, np.inf]
+_AGE_RANGE_LABELS: list[str] = [
+    "primary_school", "middle_school", "high_school", "higher_education"
+]
 
 # Age (completed years) from which a person counts as an adult for car availability.
 ADULT_AGE = 18
@@ -33,6 +46,7 @@ def build_persons(
     mid_persons: pd.DataFrame,
     *,
     donor_col: str = "H_ID",
+    rng=None,
 ) -> pd.DataFrame:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -43,6 +57,10 @@ def build_persons(
         ``H_ID`` + cell).
     mid_households / mid_persons:
         The MiD donor household / person tables.
+    rng:
+        Random state for stochastic attribute imputation (employment, licence,
+        PT subscription). Defaults to ``np.random.RandomState(0)`` for backward
+        compatibility; the calling stage should pass the pipeline's seeded rng.
 
     Returns
     -------
@@ -50,17 +68,21 @@ def build_persons(
         One row per synthetic person, with ``household_id`` / ``person_id``, the
         cell, demographics (``age`` / ``sex``), person attributes (``employed`` /
         ``has_license``), the joined household attributes (``economic_status`` /
-        ``household_income_eur`` / ``number_of_cars``) and the derived
-        ``car_availability``.
+        ``household_income_eur`` / ``number_of_cars``), the derived
+        ``car_availability``, and the schema-gap columns (``age_range``,
+        ``high_income``, ``household_size``, ``is_urban_resident``,
+        ``pt_subscription_type``, ``socioprofessional_class``,
+        ``source_person_id``, ``source_household_id``).
     """
+    rng = rng if rng is not None else np.random.RandomState(0)
     households = expand.assign_synthetic_household_ids(
         merged_households, donor_col=donor_col
     )
     persons = expand.expand_to_persons(households, mid_persons, donor_col=donor_col)
     persons = expand.map_demographics(persons)
-    persons = attributes.map_employed(persons)
-    persons = attributes.map_has_license(persons)
-    persons = attributes.map_has_pt_subscription(persons)
+    persons = attributes.map_employed(persons, rng=rng)
+    persons = attributes.map_has_license(persons, rng=rng)
+    persons = attributes.map_has_pt_subscription(persons, rng=rng)
 
     donor_hh = attributes.map_number_of_bicycles(
         attributes.map_number_of_cars(
@@ -86,6 +108,40 @@ def build_persons(
         persons, count_col="number_of_bicycles", adults_only=False,
         derive=attributes.derive_bicycle_availability,
     )
+
+    # --- Schema-gap columns (integration spec Section 5.1) -------------------
+    # age_range: matches synthesis/population/enriched.py lines 110-114 exactly.
+    # (-1,10] = primary_school; (10,14] = middle_school; (14,17] = high_school;
+    # (17,inf) = higher_education (the default in enriched.py, age >= 18).
+    persons["age_range"] = pd.cut(
+        persons["age"],
+        bins=_AGE_RANGE_BINS,
+        labels=_AGE_RANGE_LABELS,
+    )
+
+    # high_income: convenience flag for income-elastic analyses.
+    persons["high_income"] = persons["household_income"] == "over_7000"
+
+    # household_size: number of persons in the synthetic household.
+    persons["household_size"] = (
+        persons.groupby("household_id")["person_id"].transform("size")
+    )
+
+    # is_urban_resident: True when the person lives inside the Braunschweig core
+    # city (the inside_braunschweig flag is added by the handoff stage; not yet
+    # available here, so the column is provisionally set to False).
+    if "inside_braunschweig" in persons.columns:
+        persons["is_urban_resident"] = persons["inside_braunschweig"]
+    else:
+        persons["is_urban_resident"] = False
+
+    # provenance IDs: preserve the MiD donor keys so every synthetic person is
+    # traceable to the survey respondent whose trips were used.
+    persons["source_person_id"] = persons["P_ID"].astype("string")
+    persons["source_household_id"] = persons[donor_col].astype("string")
+
+    persons = attributes.map_socioprofessional_class(persons)
+    persons = attributes.map_pt_subscription_type(persons, rng=rng)
 
     schema.validate_person_columns(persons.columns)
     return persons

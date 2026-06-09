@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
 
@@ -87,6 +88,25 @@ BIKES_MISSING_CODE = 99
 # 4 Wochen-/Monatskarte ohne Abo, 5 Monatskarte im Abo / Jahreskarte,
 # 6 Jobticket / Firmenabo / Semesterticket. 1/2 single/multi-ride, 7 other, 8 never.
 PT_SUBSCRIPTION_FKARTE = frozenset({3, 4, 5, 6})
+
+# MiD P_FKARTE code -> categorical ticket-type string (matches PT_TICKET_CATEGORIES
+# order in braunschweig.data.mid.reference_tables). Codes 1-8 are exhaustive;
+# code 8 (fahre nie) is the never-travels category used for structural missings.
+FKARTE_TO_CATEGORY: dict[int, str] = {
+    1: "einzelfahrschein",       # single ticket
+    2: "mehrfachkarte",          # multi-ride card
+    3: "deutschlandticket",      # Deutschlandticket
+    4: "wochen_monat_ohne_abo",  # weekly/monthly without subscription
+    5: "monat_abo_jahreskarte",  # monthly subscription / annual pass
+    6: "jobticket_semesterticket",  # job ticket / semester ticket
+    7: "anderes",                # other
+    8: "fahre_nie",              # never travels by PT
+}
+
+# The never-travels category is used for structural non-applicable codes
+# (children under 14 years, proxy interviews) and as the default for
+# persons whose code cannot be resolved.
+PT_TICKET_NEVER = "fahre_nie"
 
 
 def map_employed(
@@ -315,6 +335,57 @@ def map_has_pt_subscription(
     out = persons.copy()
     out["has_pt_subscription"], _ = missing.resolve(out, spec, rng=rng)
     out["has_pt_subscription"] = out["has_pt_subscription"].astype(bool)
+    return out
+
+
+def map_pt_subscription_type(
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
+) -> pd.DataFrame:
+    """Add a categorical ``pt_subscription_type`` from MiD ``P_FKARTE`` via the uniform missing policy.
+
+    MiD codebook mapping (``FKARTE_TO_CATEGORY``):
+    1 -> ``einzelfahrschein``, 2 -> ``mehrfachkarte``, 3 -> ``deutschlandticket``,
+    4 -> ``wochen_monat_ohne_abo``, 5 -> ``monat_abo_jahreskarte``,
+    6 -> ``jobticket_semesterticket``, 7 -> ``anderes``, 8 -> ``fahre_nie``.
+
+    Structural design-missing codes (persons not surveyed about PT tickets):
+    202 (PAPI interview mode, form-dependent), 206 (proxy interview),
+    402 (child under 14, not interviewed) -> ``"fahre_nie"`` deterministically.
+    These persons genuinely have no PT ticket of their own.
+
+    99 (keine Angabe, item non-response) -> imputed from the valid pool within
+    the same age group (``alter_gr1``) when present, else global pool; categorical
+    default ``PT_TICKET_NEVER`` = ``"fahre_nie"`` (conservative: unknown PT use
+    treated as never travelling by PT).
+
+    The output category is constrained to ``PT_TICKET_CATEGORIES`` from
+    ``braunschweig.data.mid.reference_tables`` (import validated at module load).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="pt_subscription_type",
+        source_col=fkarte_col,
+        value_map=FKARTE_TO_CATEGORY,
+        structural={202: PT_TICKET_NEVER, 206: PT_TICKET_NEVER, 402: PT_TICKET_NEVER},
+        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        default=PT_TICKET_NEVER,
+    )
+    out = persons.copy()
+    out["pt_subscription_type"], _ = missing.resolve(out, spec, rng=rng)
+    # Ensure the column contains only valid PT_TICKET_CATEGORIES values.
+    invalid = ~out["pt_subscription_type"].isin(PT_TICKET_CATEGORIES)
+    if invalid.any():
+        n_invalid = int(invalid.sum())
+        raise ValueError(
+            f"[braunschweig.popsim.attributes] map_pt_subscription_type: "
+            f"{n_invalid} persons have a pt_subscription_type not in PT_TICKET_CATEGORIES: "
+            f"{sorted(out.loc[invalid, 'pt_subscription_type'].unique())}. "
+            f"Check that FKARTE_TO_CATEGORY is consistent with PT_TICKET_CATEGORIES."
+        )
+    out["pt_subscription_type"] = out["pt_subscription_type"].astype("string")
     return out
 
 
