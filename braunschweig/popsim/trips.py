@@ -200,20 +200,21 @@ def build_trip_table(
     # W_ZWECK recorded.  This is standard eqasim behaviour (mirrors entd/cleaned.py).
     df.loc[df["is_first_trip"], "preceding_purpose"] = "home"
 
-    # Plausibility log: share of first trips whose destination is NOT home.
-    # A high rate signals that many diary chains do not end with a return-home trip,
-    # which is expected (some MiD respondents end their diary mid-day), but a very
-    # high rate (>50%) would warrant investigation.
-    first_trips = df[df["is_first_trip"]]
-    n_first = len(first_trips)
-    n_not_home_dest = (first_trips["following_purpose"] != "home").sum()
+    # Make the home-start ASSUMPTION observable (no silent assumption). MiD records
+    # no per-trip origin purpose (only the destination W_ZWECK), so the first trip's
+    # origin CANNOT be validated from the data; we apply the diary-starts-at-home
+    # convention to every person's first trip. Log the magnitude (how many first
+    # trips this touches). The complementary, data-checkable quantity is the home-END
+    # closure repair rate, logged by PlanValidator (the day's end IS in the data via
+    # the W_ZWECK home codes 8/9). We deliberately do NOT report a destination-based
+    # percentage here: a first trip's destination is almost never home, so such a
+    # number would look like validation while checking nothing about the origin.
+    n_first_trips = int(df["is_first_trip"].sum())
     logger.info(
-        "[popsim.trips] home-start assumption: %d first trips; %d (%.1f%%) depart toward "
-        "a destination other than 'home' (expected — MiD diaries start mid-day or at work "
-        "for some respondents).",
-        n_first,
-        n_not_home_dest,
-        100.0 * n_not_home_dest / n_first if n_first > 0 else 0.0,
+        "[popsim.trips] home-start assumption applied to %d first trips "
+        "(MiD has no per-trip origin purpose; diary-starts-at-home convention, "
+        "mirrors entd/cleaned.py). Home-END closure is checked/repaired by PlanValidator.",
+        n_first_trips,
     )
 
     # Step 5: trip times in seconds since midnight.
