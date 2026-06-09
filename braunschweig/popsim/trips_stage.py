@@ -164,7 +164,10 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
 
 
 def configure(context):
-    context.stage("data.census.filtered", alias="persons")
+    # Read from synthesis.population.sampled (not the raw producer): sampled carries the
+    # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
+    # table is built against the already-sampled and id-remapped synthetic population.
+    context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
     context.config("braunschweig.population.popsim.mid_dir")
 

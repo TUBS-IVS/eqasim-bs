@@ -22,27 +22,39 @@ def run(persons: pd.DataFrame) -> pd.DataFrame:
     persons:
         Popsim persons frame carrying at minimum ``source_person_id``,
         ``source_household_id``, ``person_id``, and ``household_id``.
+        When called after ``synthesis.population.sampled`` the frame already
+        carries ``census_person_id`` / ``census_household_id`` (the original
+        popsim ids preserved by sampled); those must NOT be overwritten so that
+        the provenance chain remains intact.
 
     Returns
     -------
     pandas.DataFrame
-        Input frame with four additional columns:
-        ``hts_id``, ``hts_household_id``, ``census_person_id``,
-        ``census_household_id``.
+        Input frame with ``hts_id`` / ``hts_household_id`` set from
+        ``source_*`` (always), and ``census_person_id`` /
+        ``census_household_id`` set from ``person_id`` / ``household_id``
+        only when absent (i.e. not already supplied by sampled).
     """
     out = persons.copy()
-    # provenance -> writer id fields (integration spec Section 4):
-    # the MiD donor is the analog of the HTS donor; popsim's own ids
-    # stand in for the census ids.
+    # hts_id / hts_household_id: the MiD donor is the analog of the HTS donor.
+    # Always (re-)set so callers that provide custom source_* values are honoured.
     out["hts_id"] = out["source_person_id"]
     out["hts_household_id"] = out["source_household_id"]
-    out["census_person_id"] = out["person_id"].astype("string")
-    out["census_household_id"] = out["household_id"].astype("string")
+    # census_person_id / census_household_id: set only when absent.
+    # synthesis.population.sampled sets them to the ORIGINAL popsim ids before
+    # reassigning new integer ids; overwriting them here would destroy provenance.
+    if "census_person_id" not in out.columns:
+        out["census_person_id"] = out["person_id"].astype("string")
+    if "census_household_id" not in out.columns:
+        out["census_household_id"] = out["household_id"].astype("string")
     return out
 
 
 def configure(context):
-    context.stage("data.census.filtered", alias="persons")
+    # Read from synthesis.population.sampled (not the raw producer): sampled
+    # carries the reassigned integer person_id + the preserved census_* ids,
+    # so the writer receives the fully id-remapped and sampling-applied frame.
+    context.stage("synthesis.population.sampled", alias="persons")
 
 
 def execute(context):

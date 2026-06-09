@@ -143,6 +143,13 @@ def build_persons(
     persons = attributes.map_socioprofessional_class(persons)
     persons = attributes.map_pt_subscription_type(persons, rng=rng)
 
+    # weight = 1.0: popsim_mid produces an already-expanded population (each row
+    # is one synthetic person, no stochastic rounding needed). synthesis.population.sampled
+    # requires this column; it uses floor(weight) + Bernoulli(frac) to replicate households,
+    # so weight=1.0 means every synthetic household is replicated exactly once before the
+    # sampling_rate selection, matching the behaviour of braunschweig.ipf.attributed.
+    persons["weight"] = 1.0
+
     schema.validate_person_columns(persons.columns)
     return persons
 

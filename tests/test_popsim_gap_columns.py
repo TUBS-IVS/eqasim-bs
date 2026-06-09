@@ -250,3 +250,21 @@ def test_source_ids_trace_to_mid_donors():
     assert persons["source_person_id"].str.len().gt(0).all(), (
         "source_person_id contains empty strings"
     )
+
+
+def test_build_persons_emits_weight_column_equal_to_one():
+    """build_persons must emit a ``weight`` column with value 1.0 for every person.
+
+    popsim_mid is an already-expanded population (each row = one synthetic person,
+    no stochastic rounding needed).  synthesis.population.sampled requires this
+    column; with weight=1.0 every household is replicated exactly once before the
+    sampling_rate selection, matching the behaviour of braunschweig.ipf.attributed.
+    """
+    persons = assembly.build_persons(
+        _merged_households(), _mid_households(), _mid_persons(),
+        rng=np.random.RandomState(0),
+    )
+    assert "weight" in persons.columns, "build_persons must emit a 'weight' column"
+    assert (persons["weight"] == 1.0).all(), (
+        f"All weight values must be 1.0; got: {persons['weight'].unique().tolist()}"
+    )
