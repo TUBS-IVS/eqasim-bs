@@ -83,6 +83,81 @@ def card_tile(title: str, dataset: str, *, width: int = 1) -> dict[str, Any]:
     return {"type": "tile", "title": title, "dataset": dataset, "width": width}
 
 
+def card_xytime(title: str, file: str, *, value_label: str = "",
+                radius: int = 6, width: int = 2,
+                description: str = "") -> dict[str, Any]:
+    """Build a SimWrapper xytime point-cloud card dict.
+
+    The ``file`` must be a SimWrapper xytime CSV (first line ``# EPSG:...``,
+    header ``time,x,y,value``). The ``radius`` controls the rendered dot size.
+
+    Args:
+        title: Card title shown in the SimWrapper UI.
+        file: Relative path to the xytime CSV (not ``dataset``).
+        value_label: Optional label for the value legend.
+        radius: Dot radius in pixels (default 6).
+        width: Dashboard column width (1 or 2; default 2).
+        description: Optional description shown below the card title.
+    """
+    card: dict[str, Any] = {
+        "type": "xytime",
+        "title": title,
+        "file": file,
+        "radius": radius,
+        "width": width,
+    }
+    if value_label:
+        card["valueLabel"] = value_label
+    if description:
+        card["description"] = description
+    return card
+
+
+def card_choropleth(title: str, geojson_file: str, dataset_file: str, *,
+                    value_col: str, join: str = "ars5",
+                    color_ramp: str = "Viridis", width: int = 2,
+                    description: str = "") -> dict[str, Any]:
+    """Build a SimWrapper shapefiles-plugin choropleth card dict.
+
+    Follows the verified SimWrapper shapefiles-plugin schema::
+
+        shapes:   { file: x.geojson, join: id }
+        datasets: { agg: { file: data.csv } }
+        display:  { fill: { dataset: agg, join: id, columnName: col,
+                            colorRamp: { ramp: Viridis, steps: 7 } } }
+
+    Args:
+        title: Card title.
+        geojson_file: Relative path to the GeoJSON polygon file (EPSG:4326).
+            Must contain a property matching ``join``.
+        dataset_file: Relative path to the CSV with ``join`` + ``value_col``.
+        value_col: Column name in ``dataset_file`` to use for fill colour.
+        join: Shared key between the GeoJSON ``join`` property and the CSV
+            (default ``ars5``).
+        color_ramp: SimWrapper colour ramp name (default ``Viridis``).
+        width: Dashboard column width (default 2).
+        description: Optional description.
+    """
+    card: dict[str, Any] = {
+        "type": "map",
+        "title": title,
+        "width": width,
+        "shapes": {"file": geojson_file, "join": join},
+        "datasets": {"agg": {"file": dataset_file}},
+        "display": {
+            "fill": {
+                "dataset": "agg",
+                "join": join,
+                "columnName": value_col,
+                "colorRamp": {"ramp": color_ramp, "steps": 7},
+            }
+        },
+    }
+    if description:
+        card["description"] = description
+    return card
+
+
 def dashboard(tab: str, title: str, rows: dict[str, list[dict[str, Any]]],
               description: str = "") -> dict[str, Any]:
     """Build a top-level SimWrapper dashboard dict (header + layout).
