@@ -15,7 +15,22 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
+
+# MiD P_BKAT (Berufskategorie) -> eqasim/INSEE CS1 occupation class.
+# P_BKAT has 6 substantive categories; the CS1 detail is collapsed to this coarse
+# crosswalk (documented assumption: no finer occupation distinction is available in
+# the standard MiD respondent table). MiD codebook codes:
+#   1 Angestellte/Arbeiter (White+Blue collar workers, largest group) -> 6 Worker
+#   2 Beamte (Civil servants)                                         -> 5 Employee
+#   3 Selbststaendige/Freiberufler (Self-employed, liberal professions)-> 3 Science
+#   4 mithelfende Familienangehoerige (Contributing family member)    -> 4 Intermediate
+#   5 in Ausbildung (Trainee/apprenticeship, employed)                -> 4 Intermediate
+#   6 geringfuegig Beschaeftigte (Marginal employment)               -> 6 Worker
+#   7 Nicht berufstaetig (not employed)   -- NOT in map -> fallback
+#  95 Nicht zuzuordnen (unclassifiable)   -- NOT in map -> fallback
+SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 
 # MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment
 # (Angestellte/Arbeiter, Beamte, Selbststaendige, geringfuegig, Elternzeit-but-
@@ -344,3 +359,65 @@ def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
     if n_persons <= 0 or n_bikes >= n_persons:
         return "all"
     return "some"
+
+
+def map_socioprofessional_class(
+    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT"
+) -> pd.DataFrame:
+    """Add ``socioprofessional_class`` (CS1 1-8) from MiD occupation, with fallback.
+
+    Primary path: MiD ``P_BKAT`` (Berufskategorie) is mapped to the eqasim/INSEE CS1
+    code via ``SPC_BY_P_BKAT`` (codes 1..6 -> CS1 codes 3..6; ~0 % structural
+    missing in the MiD). Codes 7 (nicht berufstaetig) and 95 (nicht zuzuordnen) are
+    NOT in the map and fall through to the broad-activity fallback.
+
+    Fallback path: ``derive_socioprofessional_class(employed, age, studies)`` from
+    ``braunschweig.ipf.attributed`` is used when (a) the ``P_BKAT`` column is absent
+    entirely, or (b) the code for a given person does not resolve via ``SPC_BY_P_BKAT``
+    (i.e. code 7 or 95). This is consistent with the IPF path and re-uses the same
+    function, so both paths produce values in the same CS1 code space.
+
+    The fallback rate is printed for transparency (CLAUDE.md: no silent fallbacks).
+    ``derive_socioprofessional_class`` resets its index to 0-based internally, so the
+    returned Series is realigned to the input DataFrame's index before ``.fillna`` to
+    avoid a misaligned join.
+
+    Args:
+        persons: DataFrame with at least ``employed`` (bool) and ``age`` (int).
+            ``studies`` (bool) is used by the fallback if present; defaults to False.
+            ``bkat_col`` is optional (absent column -> all fallback).
+        bkat_col: name of the MiD Berufskategorie column (default ``P_BKAT``).
+
+    Returns:
+        A copy of ``persons`` with the integer ``socioprofessional_class`` column added.
+    """
+    out = persons.copy()
+    studies = out["studies"] if "studies" in out.columns else pd.Series(False, index=out.index)
+
+    # derive_socioprofessional_class resets the index to 0-based internally
+    # (pd.Series(...).reset_index(drop=True) at every input), so the returned Series
+    # has index 0..N-1. Realign to out.index before .fillna to prevent a silent
+    # misaligned join when the input has a non-default index.
+    fallback = derive_socioprofessional_class(out["employed"], out["age"], studies)
+    fallback = pd.Series(fallback.to_numpy(), index=out.index)
+
+    if bkat_col in out.columns:
+        mapped = out[bkat_col].map(SPC_BY_P_BKAT)
+        n_primary = int(mapped.notna().sum())
+        n_fallback = int(mapped.isna().sum())
+        n_total = len(out)
+        print(
+            f"[braunschweig.popsim.attributes] socioprofessional_class: "
+            f"primary (P_BKAT) {n_primary}/{n_total} "
+            f"({100.0 * n_primary / max(n_total, 1):.1f}%), "
+            f"fallback (broad-activity) {n_fallback}/{n_total} "
+            f"({100.0 * n_fallback / max(n_total, 1):.1f}%)."
+        )
+        out["socioprofessional_class"] = mapped.fillna(fallback).astype(int)
+    else:
+        print(
+            f"[braunschweig.popsim.attributes] socioprofessional_class: "
+            f"P_BKAT column absent -> all {len(out)} persons use the broad-activity fallback."
+        )
+        out["socioprofessional_class"] = fallback.astype(int)
+    return out
