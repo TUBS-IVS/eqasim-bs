@@ -500,8 +500,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Export a SimWrapper dashboard folder for one eqasim run.")
     ap.add_argument("--output-dir", required=True,
                     help="eqasim CSV output folder for the run.")
-    ap.add_argument("--sim-cache", required=True,
-                    help="Synpp cache folder with matsim.simulation.run__*.cache/.")
+    ap.add_argument("--sim-cache", required=False, default=None,
+                    help="Synpp cache folder with matsim.simulation.run__*.cache/. "
+                         "Omit for a synthesis-only export (MATSim tabs skip).")
     ap.add_argument("--label", default=None)
     ap.add_argument("--sample-rate", type=float, default=None)
     ap.add_argument("--out-subdir", default="simwrapper",
@@ -509,26 +510,64 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s")
-    ns = _parse_args(argv)
-    out_dir = (REPO_ROOT / ns.output_dir).resolve() if not Path(ns.output_dir).is_absolute() else Path(ns.output_dir)
-    sim_cache = (REPO_ROOT / ns.sim_cache).resolve() if not Path(ns.sim_cache).is_absolute() else Path(ns.sim_cache)
-    label = ns.label or out_dir.name
-    record = assemble_run_record(label, out_dir, sim_cache, ns.sample_rate)
-    target = out_dir / ns.out_subdir
+def export_all(
+    output_dir: "str | Path",
+    sim_cache: "str | Path | None" = None,
+    label: str | None = None,
+    sample_rate: float | None = None,
+    out_subdir: str = "simwrapper",
+) -> list[Path]:
+    """Build the FULL SimWrapper dashboard for one run into ``<output_dir>/<out_subdir>``.
+
+    Single entry point shared by the CLI and the synpp stage (DRY): it assembles
+    the run record, writes the core chart/table tabs (``export_run``) and the
+    spatial/fleet/socio map tabs (``spatial_export.export_spatial``).
+
+    ``sim_cache`` may be ``None`` for a **synthesis-only** run (no MATSim): the
+    MATSim-dependent tabs (mode share, distances, OD, convergence, time-of-day,
+    trip-density hexagons, behaviour sankey) then skip with an explicit log line,
+    while all synthesis tabs (fleet, socio, ...) are still produced.
+
+    Args:
+        output_dir: eqasim run output directory (holds the ``*_persons.csv`` etc.).
+        sim_cache: synpp cache directory containing
+            ``matsim.simulation.run__*.cache/``, or ``None`` for synthesis-only.
+        label: friendly run label (defaults to the output dir name).
+        sample_rate: sampling rate (0.01 / 0.25 / 1.0); used for OD scaling.
+        out_subdir: subfolder of ``output_dir`` to write into (default ``simwrapper``).
+
+    Returns:
+        List of written dashboard YAML :class:`pathlib.Path` objects.
+    """
+    out_dir = Path(output_dir)
+    sim_cache_path = Path(sim_cache) if sim_cache is not None else None
+    lbl = label or out_dir.name
+    record = assemble_run_record(lbl, out_dir, sim_cache_path, sample_rate)
+    target = out_dir / out_subdir
     written = export_run(record, target)
 
     from braunschweig.analysis.simwrapper import spatial_export as _sp
     written += _sp.export_spatial(
         target,
         run_output_dir=str(out_dir),
-        sim_cache=str(sim_cache),
+        sim_cache=(str(sim_cache_path) if sim_cache_path is not None else None),
         record=record,
     )
+    LOGGER.info("[simwrapper] wrote %d tab(s); open this folder in simwrapper.app: %s",
+                len(written), target)
+    return written
 
-    LOGGER.info("[simwrapper] open this folder in simwrapper.app: %s", target)
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)-7s %(name)s :: %(message)s")
+    ns = _parse_args(argv)
+    out_dir = (REPO_ROOT / ns.output_dir).resolve() if not Path(ns.output_dir).is_absolute() else Path(ns.output_dir)
+    sim_cache = None
+    if ns.sim_cache is not None:
+        sim_cache = (REPO_ROOT / ns.sim_cache).resolve() if not Path(ns.sim_cache).is_absolute() else Path(ns.sim_cache)
+    written = export_all(out_dir, sim_cache=sim_cache, label=ns.label,
+                         sample_rate=ns.sample_rate, out_subdir=ns.out_subdir)
     return 0 if written else 1
 
 
