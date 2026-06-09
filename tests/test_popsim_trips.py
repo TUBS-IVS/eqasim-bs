@@ -61,3 +61,9 @@ def test_expand_persons_to_trips_person_without_wege_is_dropped():
     wege = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ID": [1], "W_ZWECK": [1], "hvm": [4]})
     out = trips.expand_persons_to_trips(persons, wege)
     assert len(out) == 0
+
+
+def test_mid_time_seconds_from_hours_minutes():
+    wege = pd.DataFrame({"W_SZS": [8, 17], "W_SZM": [30, 5]})
+    out = trips.mid_time_seconds(wege, "W_SZS", "W_SZM")
+    assert list(out) == [8 * 3600 + 30 * 60, 17 * 3600 + 5 * 60]

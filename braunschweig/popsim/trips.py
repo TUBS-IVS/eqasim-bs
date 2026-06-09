@@ -63,6 +63,11 @@ def map_mode(wege: pd.DataFrame, *, hvm_col: str = "hvm") -> pd.DataFrame:
     return out
 
 
+def mid_time_seconds(wege: pd.DataFrame, hour_col: str, minute_col: str) -> pd.Series:
+    """Seconds since midnight from MiD hour + minute columns."""
+    return wege[hour_col].astype(float) * 3600.0 + wege[minute_col].astype(float) * 60.0
+
+
 def expand_persons_to_trips(
     persons: pd.DataFrame,
     mid_wege: pd.DataFrame,
