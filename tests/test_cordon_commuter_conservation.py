@@ -391,3 +391,27 @@ def test_balancer_conserves_global_pt_target():
         f"Unexpected residual {stats['residual']} when pool was sufficient."
     )
     assert int((modes_final == "pt").sum()) == stats["n_pt_target"]
+
+
+def test_incommuter_count_scales_linearly_with_sampling_rate():
+    """In-commuter agents scale linearly with sampling_rate (= the MATSim sample).
+
+    Guards that in-commuters and out-commuters end up at the SAME sampling_rate: the
+    in-commuter count is expand_to_agents(flow * sampling_rate) (this test), while
+    out-commuters are sampled residents (no separate scaling -- they are the
+    sampling_rate-sampled resident population by construction). A regression that
+    de-scaled in-commuters (e.g. dropped the sampling_rate factor) would inject
+    full-SvB in-commuters against a sampled resident population.
+    """
+    flows = pd.DataFrame({
+        "orig_ars": ["15083", "15003"],
+        "dest_ars": ["03101", "03101"],
+        "flow": [8000, 2000],   # total 10000
+    })
+    # np.round (banker's) on each per-row flow*rate, summed.
+    for rate, expected in [(0.01, 100), (0.05, 500), (0.25, 2500), (1.0, 10000)]:
+        n = len(expand_to_agents(flows, rate))
+        assert n == expected, f"rate {rate}: got {n} in-commuter agents, expected {expected}"
+    # Strictly increasing with the rate (monotone scaling).
+    counts = [len(expand_to_agents(flows, r)) for r in (0.01, 0.1, 0.5, 1.0)]
+    assert counts == sorted(counts) and counts[0] < counts[-1]
