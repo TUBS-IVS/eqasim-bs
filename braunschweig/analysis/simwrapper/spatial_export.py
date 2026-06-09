@@ -45,6 +45,13 @@ BEV_POWERTRAIN_VALUE = "bev"
 # powertrain bars.  Below this threshold brand data is too sparse.
 _MIN_BRAND_COVERAGE = 0.30
 
+# Maximum number of points written into an xytime point-cloud CSV. A 100% run
+# has millions of vehicles/homes; writing and rendering all of them is slow, so
+# the raw point cloud is down-sampled to this cap (deterministically, logged).
+# Aggregate maps (choropleths, hexagon density) always use the full data.
+MAX_XYT_POINTS = 150_000
+_XYT_SAMPLE_SEED = 42
+
 
 # ---------------------------------------------------------------------------
 # Loading
@@ -163,8 +170,11 @@ def load_fleet(run_output_dir: str) -> "gpd.GeoDataFrame | None":
     # VG250 ``ars5`` (e.g. "03101"). The CSV reader infers ``kreis_ags5`` as a
     # float (3101.0), which would break the choropleth merge on the string ars5.
     if "kreis_ags5" in vehicles.columns:
-        vehicles["kreis_ags5"] = vehicles["kreis_ags5"].map(
-            lambda v: str(int(float(v))).zfill(5) if pd.notna(v) else v
+        # Vectorised (no per-row apply): numeric -> Int64 -> zero-padded 5-char
+        # string, NA-safe. Matches the VG250 string ``ars5`` (e.g. "03101").
+        vehicles["kreis_ags5"] = (
+            pd.to_numeric(vehicles["kreis_ags5"], errors="coerce")
+            .astype("Int64").astype("string").str.zfill(5)
         )
 
     # Merge with home geometry on household_id.
@@ -232,12 +242,28 @@ def write_xyt_csv(gdf: "gpd.GeoDataFrame", folder: Path,
         "value": subset[value_col],
     })
 
+    # Performance / browser cap: a raw point cloud of a 100% run is millions of
+    # rows, which is slow to write and to render. Down-sample to MAX_XYT_POINTS
+    # with a FIXED seed (deterministic, reproducible) and LOG the reduction --
+    # this is an explicit, observable cap, NOT a silent truncation. Aggregate
+    # maps (choropleths, hexagon density) use the full data and are unaffected.
+    n_full = len(rows)
+    if n_full > MAX_XYT_POINTS:
+        rows = rows.sample(n=MAX_XYT_POINTS, random_state=_XYT_SAMPLE_SEED) \
+                   .sort_index().reset_index(drop=True)
+        LOGGER.info(
+            "[xytime] %s: down-sampled point cloud %d -> %d (cap MAX_XYT_POINTS=%d, "
+            "seed %d); aggregate maps use the full data",
+            name, n_full, len(rows), MAX_XYT_POINTS, _XYT_SAMPLE_SEED,
+        )
+
     out_path = folder / name
     with out_path.open("w", encoding="utf-8", newline="") as fh:
         fh.write("# EPSG:25832\n")
         rows.to_csv(fh, index=False)
 
-    LOGGER.info("[fleet] wrote xytime CSV %s (%d points)", name, len(rows))
+    LOGGER.info("[xytime] wrote xytime CSV %s (%d points%s)", name, len(rows),
+                f" of {n_full}" if n_full != len(rows) else "")
     return name
 
 
