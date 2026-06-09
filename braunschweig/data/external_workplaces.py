@@ -11,35 +11,40 @@ pool the synthetic population keeps every commuter inside ZGB-8, which
 is the main driver of the observed 8.7 km vs 20.7 km shortfall on
 MiD P13.
 
-This stage produces **one synthetic workplace entry per external Kreis**
-that has an outbound flow from ZGB above a configurable threshold
-(default 50 SvB).  Each entry is anchored at the *population-weighted*
-centroid of the Kreis: we load the VG250-EW ``vg250_gem`` layer (one
-polygon per Gemeinde with the official EWZ head-count), weight the
-Gemeinde representative points by EWZ, and reduce to a single Point
-per Kreis.  Population is used as an employment proxy — it places the
-synthetic workplace at the Kreis' urban centre (e.g. Hannover city
-inside Region Hannover, Hildesheim city inside LK Hildesheim) instead
-of the land-centroid that may fall into uninhabited forest or farmland
-for large, sparse Kreise.  If Gemeinde data is unavailable for a Kreis
-we fall back to the dissolved Kreis polygon centroid.
+This stage produces **one synthetic workplace entry per Gemeinde** of
+each external Kreis that has an outbound flow from ZGB above a
+configurable threshold (default 50 SvB).  The Kreis-level outbound SvB
+is split across the Kreis' Gemeinden in proportion to population (EWZ)
+using the largest-remainder method (exact integer apportionment), so
+each Gemeinde receives an integer employee count and the sum equals the
+Kreis flow exactly.  Each Gemeinde point is anchored at the Gemeinde
+polygon representative point (which tends to fall on the urban core,
+not farmland for large sparse Gemeinden).
 
-Each workplace gets a fabricated ``commune_id`` (``EXT<ARS5>``) so it
-cannot collide with real 8-digit German AGS codes, and carries
-``employees`` equal to the total BA outbound SvB (ZGB → this Kreis).
-Downstream, ``braunschweig.locations.work`` concatenates these rows
-onto the Bavaria work-location stage, and ``braunschweig.gravity.model``
-emits outbound flows so the sampling code picks them up.
+Population is used as an employment proxy (ASSUMPTION: commute endpoints
+concentrate at population centres; no sub-Kreis BA OD data is available
+to validate against).  This places jobs in Hannover city (not the rural
+fringe of Region Hannover), Hildesheim city, etc.
+
+Each workplace gets a fabricated ``commune_id`` (``EXT<gem_ags8>``),
+where ``gem_ags8`` is the 8-digit AGS of the Gemeinde.  The prefix
+``EXT`` guarantees no collision with real AGS codes (all-numeric).
+``commune_id[3:8]`` recovers the Kreis ARS5 (legacy convention).
+``employees`` is the population-apportioned share of the Kreis outbound.
+
+Downstream, ``braunschweig.locations.work`` concatenates these rows onto
+the ZGB work-location stage (row-count-agnostic), and
+``braunschweig.gravity.model`` emits outbound flows so the sampling code
+picks them up.
 
 Output schema (GeoDataFrame, UTM32N):
     ars5            str     5-digit Kreis ARS (e.g. ``03241``)
-    kreis_name      str     Human-readable name from VG250 (GEN field)
-    commune_id      str     Synthetic id ``EXT<ARS5>`` used downstream
-    iris_id         str     ``commune_id + '0000'`` (fake IRIS convention)
-    employees       int     BA Pendler outbound flow ZGB → this Kreis
-    ewz_total       int     Sum of Gemeinde EWZ used as placement weight
-    placement       str     ``"emp_weighted"`` or ``"kreis_centroid"``
-    geometry        Point   Population-weighted Kreis location (UTM32N)
+    gem_ags         str     8-digit Gemeinde AGS (e.g. ``03241001``)
+    commune_id      str     ``"EXT" + gem_ags`` (downstream id)
+    iris_id         str     ``commune_id + "0000"`` (fake IRIS convention)
+    employees       int     Population-apportioned Kreis outbound share
+    ewz             float   Gemeinde population (EWZ)
+    geometry        Point   Gemeinde representative point (UTM32N)
 """
 
 from __future__ import annotations
@@ -47,66 +52,63 @@ from __future__ import annotations
 import os
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
-from shapely.geometry import Point
+
+from braunschweig.data.cordon.external_points import gemeinde_external_points
 
 # Default lower bound: Kreise that attract fewer than this many SvB
 # commuters from the whole ZGB are dropped.  Keeps the synthetic
 # workplace list short enough to inspect manually.
 DEFAULT_MIN_FLOW = 50
 
-# Share of external Kreise placed at the (cruder) dissolved Kreis-polygon
-# centroid instead of the population-weighted centroid above which the
-# placement log is emitted with a ``WARNING:`` prefix.  The Kreis-centroid
-# fallback is expected to be rare (only Kreise with no usable VG250-EW
-# Gemeinde EWZ); a high share signals a data-quality problem in the
-# Gemeinde population layer that systematically biases external-workplace
-# locations toward land centroids (possibly uninhabited terrain).
-KREIS_CENTROID_FALLBACK_WARN_SHARE = 0.10
 
+def build_external_workplaces(
+    outbound: pd.DataFrame,
+    gemeinden: "gpd.GeoDataFrame",
+    min_flow: int = DEFAULT_MIN_FLOW,
+) -> "gpd.GeoDataFrame":
+    """Split per-Kreis outbound flows into per-Gemeinde synthetic workplaces.
 
-def summarise_placement_fallback(placement, total_employees, min_flow):
-    """Build the external-workplace placement log line.
-
-    Counts how many external Kreise were anchored at the
-    population-weighted Gemeinde centroid (``emp_weighted``) versus the
-    Kreis-polygon-centroid fallback (``kreis_centroid``), reports the
-    fallback as both an absolute count and a share, and prefixes the line
-    with ``WARNING:`` when the fallback share exceeds
-    :data:`KREIS_CENTROID_FALLBACK_WARN_SHARE`.
-
-    This function is pure (no side effects, no I/O): it only derives the
-    log message from the already-computed ``placement`` labels, so it does
-    not change any output value, geometry, or RNG draw.
+    This is a pure function (no I/O, no context): it reuses the Task-1
+    helper :func:`braunschweig.data.cordon.external_points.gemeinde_external_points`
+    to avoid duplicating the population-weighted apportionment logic.
 
     Parameters
     ----------
-    placement
-        Iterable / pandas Series of per-Kreis placement labels, each one of
-        ``"emp_weighted"`` or ``"kreis_centroid"``.
-    total_employees : int
-        Total outbound SvB across all external Kreise (for the log line).
-    min_flow : int
-        Configured minimum outbound flow threshold (for the log line).
+    outbound:
+        DataFrame ``[ars5, employees]`` -- BA Pendler outbound SvB per
+        external Kreis (ZGB -> external), already aggregated across ZGB
+        origins.
+    gemeinden:
+        GeoDataFrame ``[ars5, gem_ags, ewz, geometry]`` -- external Gemeinden
+        with 8-digit AGS (``gem_ags``), population (``ewz`` > 0), polygon
+        geometry (any UTM CRS).
+    min_flow:
+        Minimum outbound SvB for a Kreis to be kept (inclusive).
 
     Returns
     -------
-    str
-        The formatted log line (caller is responsible for printing it).
+    GeoDataFrame with columns:
+        ``ars5``, ``gem_ags``, ``commune_id``, ``iris_id``,
+        ``employees``, ``ewz``, ``geometry``
+
+    ``commune_id = "EXT" + gem_ags`` (8-digit AGS), so ``commune_id[3:8]``
+    recovers the Kreis ARS5 (legacy convention).
+    ``iris_id = commune_id + "0000"`` (fake IRIS id, matches convention in
+    ``data.spatial.municipalities``).
+    ``employees`` per Gemeinde sums exactly to the Kreis outbound (largest-
+    remainder apportionment).
     """
-    placement = pd.Series(list(placement), dtype=object)
-    n_total = int(len(placement))
-    n_weighted = int((placement == "emp_weighted").sum())
-    n_fallback = int((placement == "kreis_centroid").sum())
-    fallback_share = (n_fallback / n_total) if n_total > 0 else 0.0
-    prefix = "WARNING: " if fallback_share > KREIS_CENTROID_FALLBACK_WARN_SHARE else ""
-    return (
-        f"{prefix}[braunschweig.data.external_workplaces] "
-        f"{n_total} external Kreise, {total_employees:,} SvB (outbound from ZGB), "
-        f"threshold >= {min_flow}; placement: {n_weighted} emp-weighted, "
-        f"{n_fallback} Kreis-centroid fallback ({fallback_share:.1%})"
-    )
+    # Rename employees -> flow so gemeinde_external_points sees the expected schema.
+    kreis_flow = outbound.rename(columns={"employees": "flow"})[["ars5", "flow"]].copy()
+
+    result = gemeinde_external_points(kreis_flow, gemeinden, min_flow=min_flow)
+
+    # Rename flow back to employees and add iris_id.
+    result = result.rename(columns={"flow": "employees"}).copy()
+    result["iris_id"] = result["commune_id"] + "0000"
+
+    return result[["ars5", "gem_ags", "commune_id", "iris_id", "employees", "ewz", "geometry"]]
 
 
 def configure(context):
@@ -162,14 +164,27 @@ def _load_kreise(context) -> gpd.GeoDataFrame:
 def _load_gemeinden(context) -> gpd.GeoDataFrame:
     """Gemeinde polygons with EWZ (population) from VG250-EW ``vg250_gem``.
 
-    Returns one row per Gemeinde (ars5 = first 5 chars of ARS) with
-    ``ewz`` coerced to a non-negative integer.  Rows with missing or
-    non-positive EWZ are dropped because they are excluded from the
-    population-weighted centroid anyway.
+    Returns one row per Gemeinde with columns:
+        ars5      str    5-digit Kreis ARS (first 5 chars of ARS field)
+        gem_ags   str    8-digit Gemeinde AGS
+        GEN       str    Gemeinde name (human-readable, from VG250 GEN field)
+        ewz       float  Population headcount (EWZ), always > 0
+        geometry        Gemeinde polygon (UTM32N)
+
+    ``gem_ags`` is derived preferentially from the ``AGS`` field in
+    ``vg250_gem`` (if present and 8 digits).  When ``AGS`` is absent or
+    malformed the 12-digit ``ARS`` is used as a fallback:
+    ``gem_ags = ARS[:5] + ARS[9:12]``  (Kreis part + Gemeinde suffix).
+    An assertion verifies that ``gem_ags`` is always 8 chars and that
+    ``gem_ags[:5] == ars5`` (Kreis prefix consistency).
+
+    Rows with missing or non-positive EWZ are dropped because they are
+    excluded from the population-weighted apportionment anyway.
     """
+    # Read both ARS and AGS so we can pick whichever is available.
     df = gpd.read_file(
         _vsi_path(context), layer="vg250_gem",
-        columns=["ARS", "GEN", "GF", "EWZ"],
+        columns=["ARS", "AGS", "GEN", "GF", "EWZ"],
         engine="pyogrio",
     )
     # Keep only land geometries (GF=4) — water Gemeinden have EWZ=0.
@@ -177,53 +192,42 @@ def _load_gemeinden(context) -> gpd.GeoDataFrame:
     df["ars5"] = df["ARS"].astype(str).str[:5]
     df["ewz"] = pd.to_numeric(df["EWZ"], errors="coerce").fillna(0.0)
     df = df[df["ewz"] > 0].copy()
-    return df[["ars5", "GEN", "ewz", "geometry"]]
 
+    # Derive 8-digit Gemeinde AGS: prefer the native AGS field when it looks
+    # valid (8 alphanumeric chars), otherwise fall back to ARS slicing.
+    ags_native = df["AGS"].astype(str).str.strip()
+    ags_from_ars = df["ARS"].astype(str).str[:5] + df["ARS"].astype(str).str[9:12]
+    use_native = ags_native.str.len() == 8
+    df["gem_ags"] = ags_native.where(use_native, ags_from_ars)
 
-def _weighted_centroids(kreise: gpd.GeoDataFrame,
-                        gemeinden: gpd.GeoDataFrame) -> pd.DataFrame:
-    """Compute population-weighted Kreis centroids from Gemeinden.
+    # Sanity: every gem_ags must be 8 chars and share the Kreis prefix.
+    assert (df["gem_ags"].str.len() == 8).all(), \
+        "[_load_gemeinden] derived gem_ags contains entries with length != 8"
+    assert (df["gem_ags"].str[:5] == df["ars5"]).all(), \
+        "[_load_gemeinden] gem_ags[:5] != ars5 — Kreis prefix mismatch"
 
-    For every Kreis present in ``kreise`` we aggregate its Gemeinden'
-    representative points (polygon centroids) weighted by EWZ:
-
-        x̂(K) = Σ ewz_g · x_g / Σ ewz_g
-
-    Kreise without any matching Gemeinde end up with NaN coordinates —
-    the caller is expected to fall back to the Kreis-polygon centroid.
-
-    Returns a plain ``DataFrame`` with columns ``ars5, ewz_total, x, y``.
-    """
-    gem = gemeinden.copy()
-    pts = gem.geometry.representative_point()
-    gem["x"] = pts.x
-    gem["y"] = pts.y
-
-    # Weighted sums per Kreis — groupby-apply avoids an outer merge.
-    gem["wx"] = gem["x"] * gem["ewz"]
-    gem["wy"] = gem["y"] * gem["ewz"]
-
-    agg = gem.groupby("ars5", as_index=False).agg(
-        ewz_total=("ewz", "sum"),
-        wx=("wx", "sum"),
-        wy=("wy", "sum"),
-    )
-    agg["x"] = agg["wx"] / agg["ewz_total"]
-    agg["y"] = agg["wy"] / agg["ewz_total"]
-
-    # Restrict to Kreise actually on the output list.
-    return agg[agg["ars5"].isin(kreise["ars5"])][
-        ["ars5", "ewz_total", "x", "y"]
-    ].copy()
+    return df[["ars5", "gem_ags", "GEN", "ewz", "geometry"]]
 
 
 def execute(context) -> gpd.GeoDataFrame:
+    """Build per-Gemeinde synthetic workplaces for external Kreise.
+
+    Computes outbound BA Pendler flows (ZGB -> external Kreise), splits
+    each Kreis flow across its Gemeinden proportional to EWZ (population),
+    and returns one row per Gemeinde above the ``braunschweig.external_work_min_flow``
+    threshold.  Kreise with no matching Gemeinde rows (data gap) trigger a
+    WARNING log line (no-silent-fallback rule, CLAUDE.md).
+
+    Returns a GeoDataFrame with at least:
+        ``employees``, ``commune_id``, ``iris_id``, ``geometry``
+    which is all that ``braunschweig.locations.work`` requires.
+    """
     zgb = [str(p) for p in context.config("braunschweig.political_prefix")]
     min_flow = int(context.config("braunschweig.external_work_min_flow"))
 
     df_pendler = context.stage("braunschweig.data.census.pendler")
 
-    # Outbound flows ZGB → external Kreis (union over all 8 ZGB origins).
+    # Outbound flows ZGB -> external Kreis (union over all 8 ZGB origins).
     outbound = (
         df_pendler[
             df_pendler["orig_ars"].isin(zgb)
@@ -233,6 +237,8 @@ def execute(context) -> gpd.GeoDataFrame:
         .sum()
         .rename(columns={"dest_ars": "ars5", "flow": "employees"})
     )
+    # Apply threshold before passing to build_external_workplaces so the
+    # Kreis list is consistent for the zero-Gemeinde check below.
     outbound = outbound[outbound["employees"] >= min_flow].copy()
 
     if outbound.empty:
@@ -241,52 +247,34 @@ def execute(context) -> gpd.GeoDataFrame:
             "above threshold — check pendler data or threshold."
         )
 
-    # Kreis-level polygons (fallback geometry + names).
-    kreise = _load_kreise(context)
-    df = outbound.merge(kreise, on="ars5", how="left")
-
-    missing = df[df["geometry"].isna()]
-    if len(missing):
-        print(
-            "[braunschweig.data.external_workplaces] "
-            f"{len(missing)} destination Kreise without VG250 match: "
-            f"{missing['ars5'].tolist()}"
-        )
-        df = df.dropna(subset=["geometry"]).copy()
-
-    df = gpd.GeoDataFrame(df, geometry="geometry", crs=kreise.crs)
-
-    # Gemeinde-level centroids weighted by EWZ.  Any Kreis that has no
-    # matching Gemeinde (very rare; e.g. pure water-body AGS) keeps the
-    # Kreis-polygon centroid computed further down.
+    # Load Gemeinden with gem_ags column.
     gemeinden = _load_gemeinden(context)
-    weighted = _weighted_centroids(df, gemeinden)
-    df = df.merge(weighted, on="ars5", how="left")
 
-    # Kreis-centroid fallback (used when ewz_total is NaN or 0).
-    kreis_centroid = df.geometry.centroid
-    has_weight = df["ewz_total"].fillna(0.0) > 0
-    coords_x = np.where(has_weight, df["x"], kreis_centroid.x)
-    coords_y = np.where(has_weight, df["y"], kreis_centroid.y)
-    df["geometry"] = [Point(x, y) for x, y in zip(coords_x, coords_y)]
-    df["placement"] = np.where(
-        has_weight, "emp_weighted", "kreis_centroid"
+    # Build per-Gemeinde rows (population-weighted split).
+    df = build_external_workplaces(outbound, gemeinden, min_flow=min_flow)
+
+    # No-silent-fallback check (CLAUDE.md): warn if any Kreis above threshold
+    # yielded zero Gemeinde points (data gap in vg250_gem).
+    kreise_with_output = set(df["ars5"])
+    for ars5, svb in zip(outbound["ars5"], outbound["employees"]):
+        if str(ars5) not in kreise_with_output:
+            print(
+                f"WARNING: [braunschweig.data.external_workplaces] "
+                f"Kreis {ars5} has outbound {svb:,} SvB (>= threshold {min_flow}) "
+                f"but produced ZERO Gemeinde points — check vg250_gem coverage."
+            )
+
+    n_kreise = outbound["ars5"].nunique()
+    n_points = len(df)
+    total_svb = int(df["employees"].sum())
+    print(
+        f"[braunschweig.data.external_workplaces] "
+        f"{n_kreise} external Kreise above threshold {min_flow} SvB; "
+        f"{n_points} Gemeinde points emitted; "
+        f"total outbound SvB = {total_svb:,}"
     )
-    df["ewz_total"] = df["ewz_total"].fillna(0.0).astype(int)
 
-    # Fabricated commune_id / iris_id.  The ``EXT`` prefix guarantees no
-    # collision with real 8-digit German AGS codes, which are all numeric.
-    df["commune_id"] = "EXT" + df["ars5"].astype(str)
-    df["iris_id"] = df["commune_id"] + "0000"
-    df["employees"] = df["employees"].astype(int)
-
-    total = int(df["employees"].sum())
-    print(summarise_placement_fallback(df["placement"], total, min_flow))
-
-    return df[[
-        "ars5", "kreis_name", "commune_id", "iris_id",
-        "employees", "ewz_total", "placement", "geometry",
-    ]]
+    return df
 
 
 def validate(context):
