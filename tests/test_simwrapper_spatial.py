@@ -631,3 +631,33 @@ class TestSocioByKreis:
         assert expected.issubset(result.columns), (
             f"Missing columns: {expected - set(result.columns)}"
         )
+
+
+class TestEmitCommuters:
+    """Integration test for the commuter tab via the record (MATSim OD) path."""
+
+    def _record(self):
+        return {"matsim": {"od_matrix": {
+            "zones": ["03101", "03102", "external"],
+            "purposes": ["work"],
+            "matrices": {"work": [[10, 2, 1], [3, 8, 0], [1, 0, 0]]},
+        }}}
+
+    def test_emit_commuters_from_record(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        import pandas as pd
+        board = se.emit_commuters(None, self._record(), tmp_path)
+        assert board is not None
+        assert board["header"]["tab"] == "Commuters"
+        # Read ars5 as str: the file contains "03101"; pandas would otherwise
+        # infer int 3101 and drop the leading zero (a read artifact, not a bug).
+        bal = pd.read_csv(tmp_path / "commuter_balance.csv", dtype={"ars5": str})
+        # external zone never gets its own row; the two real Kreise do.
+        assert set(bal["ars5"]) == {"03101", "03102"}
+        assert {"einpendler_gesamt", "auspendler", "binnen", "netto"}.issubset(bal.columns)
+        types = {c["type"] for row in board["layout"].values() for c in row}
+        assert "bar" in types and "csv" in types
+
+    def test_emit_commuters_no_source_returns_none(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        assert se.emit_commuters(None, None, tmp_path) is None
