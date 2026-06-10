@@ -6,10 +6,15 @@ Verifies that ``derive_zone_ids`` and ``build_persons`` produce ``commune_id``,
 (``braunschweig.ipf.attributed`` lines 814-816, ``braunschweig.ipf.prepare``
 line 126).
 
-The default IPF producer format:
-  commune_id     -- 8-digit AGS string, e.g. "03101000"
+The default IPF producer format (verified against the working IPF cache and
+``data.spatial.municipalities``):
+  commune_id     -- 12-digit ARS string, e.g. "031010000000"
   departement_id -- 5-digit Kreis string = commune_id[:5], e.g. "03101"
-  iris_id        -- commune_id + "0000" as a category, e.g. "031010000000"
+  iris_id        -- commune_id + "0000" as a category, e.g. "0310100000000000"
+
+The 12-digit ARS (NOT the 8-digit AGS) is what the home-location candidates are
+keyed on; using the AGS produced an iris_id that matched no candidate and crashed
+the home-location sampling stage.
 
 This module tests the small helper ``derive_zone_ids`` directly (so it runs
 without the full pipeline) and also exercises it through ``build_persons``
@@ -22,7 +27,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.popsim import assembly
 from braunschweig.popsim.assembly import ARS_COLUMN, derive_zone_ids
 
@@ -49,8 +53,8 @@ SZ_KREIS = "03102"
 # Tests for derive_zone_ids helper
 # ---------------------------------------------------------------------------
 
-def test_derive_zone_ids_commune_id_equals_ars_to_ags8():
-    """commune_id must equal ars_to_ags8(ARS) for every row."""
+def test_derive_zone_ids_commune_id_equals_12digit_ars():
+    """commune_id must equal the 12-digit ARS (matches data.spatial.municipalities)."""
     df = pd.DataFrame({
         ARS_COLUMN: [BS_ARS, SZ_ARS],
         "other_col": [1, 2],
@@ -58,30 +62,28 @@ def test_derive_zone_ids_commune_id_equals_ars_to_ags8():
     out = derive_zone_ids(df)
 
     assert "commune_id" in out.columns, "commune_id column must be present"
-    assert out.loc[0, "commune_id"] == ars_to_ags8(BS_ARS), (
-        f"commune_id row 0: expected {ars_to_ags8(BS_ARS)!r}, "
-        f"got {out.loc[0, 'commune_id']!r}"
+    assert out.loc[0, "commune_id"] == BS_ARS, (
+        f"commune_id row 0: expected {BS_ARS!r}, got {out.loc[0, 'commune_id']!r}"
     )
-    assert out.loc[1, "commune_id"] == ars_to_ags8(SZ_ARS), (
-        f"commune_id row 1: expected {ars_to_ags8(SZ_ARS)!r}, "
-        f"got {out.loc[1, 'commune_id']!r}"
+    assert out.loc[1, "commune_id"] == SZ_ARS, (
+        f"commune_id row 1: expected {SZ_ARS!r}, got {out.loc[1, 'commune_id']!r}"
     )
 
 
-def test_derive_zone_ids_commune_id_is_8_digit_ags():
-    """commune_id must be a zero-padded 8-digit AGS string."""
+def test_derive_zone_ids_commune_id_is_12_digit_ars():
+    """commune_id must be a zero-padded 12-digit ARS string."""
     df = pd.DataFrame({ARS_COLUMN: [BS_ARS, SZ_ARS]})
     out = derive_zone_ids(df)
 
-    assert (out["commune_id"] == BS_AGS8).iloc[0], (
-        f"Expected commune_id={BS_AGS8!r}, got {out['commune_id'].iloc[0]!r}"
+    assert (out["commune_id"] == BS_ARS).iloc[0], (
+        f"Expected commune_id={BS_ARS!r}, got {out['commune_id'].iloc[0]!r}"
     )
-    assert (out["commune_id"] == SZ_AGS8).iloc[1], (
-        f"Expected commune_id={SZ_AGS8!r}, got {out['commune_id'].iloc[1]!r}"
+    assert (out["commune_id"] == SZ_ARS).iloc[1], (
+        f"Expected commune_id={SZ_ARS!r}, got {out['commune_id'].iloc[1]!r}"
     )
-    # commune_id length must be 8 for all rows
+    # commune_id length must be 12 for all rows
     lengths = out["commune_id"].str.len().unique().tolist()
-    assert lengths == [8], f"All commune_id values must be 8 chars; got lengths {lengths}"
+    assert lengths == [12], f"All commune_id values must be 12 chars; got lengths {lengths}"
 
 
 def test_derive_zone_ids_departement_id_is_kreis_prefix():
@@ -130,8 +132,8 @@ def test_derive_zone_ids_iris_id_is_commune_id_plus_four_zeros():
     out = derive_zone_ids(df)
 
     assert "iris_id" in out.columns, "iris_id column must be present"
-    expected_bs = BS_AGS8 + "0000"
-    expected_sz = SZ_AGS8 + "0000"
+    expected_bs = BS_ARS + "0000"
+    expected_sz = SZ_ARS + "0000"
     assert str(out.loc[0, "iris_id"]) == expected_bs, (
         f"iris_id row 0: expected {expected_bs!r}, got {str(out.loc[0, 'iris_id'])!r}"
     )
@@ -170,15 +172,13 @@ def test_derive_zone_ids_raises_on_missing_ars_column():
         derive_zone_ids(df)
 
 
-def test_derive_zone_ids_idempotent_for_8digit_ars_input():
-    """ars_to_ags8 is idempotent on 8-digit input; derive_zone_ids must follow."""
-    # If the ARS column already contains an 8-digit AGS (unusual but possible
-    # in synthetic test data), the result must still be a valid commune_id.
-    df = pd.DataFrame({ARS_COLUMN: [BS_AGS8]})
+def test_derive_zone_ids_preserves_12digit_ars():
+    """A proper 12-digit ARS is preserved unchanged (zfill is a no-op)."""
+    df = pd.DataFrame({ARS_COLUMN: [BS_ARS]})
     out = derive_zone_ids(df)
 
-    assert out.loc[0, "commune_id"] == BS_AGS8, (
-        f"8-digit ARS input should be returned unchanged; got {out.loc[0, 'commune_id']!r}"
+    assert out.loc[0, "commune_id"] == BS_ARS, (
+        f"12-digit ARS must be preserved; got {out.loc[0, 'commune_id']!r}"
     )
     assert out.loc[0, "departement_id"] == BS_KREIS
 
@@ -229,8 +229,8 @@ def test_build_persons_emits_commune_id():
     )
     assert "commune_id" in persons.columns, "build_persons must emit commune_id"
     assert persons["commune_id"].notna().all(), "commune_id must be non-null"
-    assert (persons["commune_id"] == BS_AGS8).all(), (
-        f"commune_id should be {BS_AGS8!r}; got {persons['commune_id'].unique().tolist()}"
+    assert (persons["commune_id"] == BS_ARS).all(), (
+        f"commune_id should be {BS_ARS!r}; got {persons['commune_id'].unique().tolist()}"
     )
 
 
@@ -255,7 +255,7 @@ def test_build_persons_emits_iris_id():
     )
     assert "iris_id" in persons.columns, "build_persons must emit iris_id"
     assert persons["iris_id"].notna().all(), "iris_id must be non-null"
-    expected_iris = BS_AGS8 + "0000"
+    expected_iris = BS_ARS + "0000"
     assert (persons["iris_id"].astype(str) == expected_iris).all(), (
         f"iris_id should be {expected_iris!r}; got {persons['iris_id'].unique().tolist()}"
     )
@@ -295,14 +295,14 @@ def test_build_persons_zone_ids_for_two_kreise():
     hh_a = persons[persons["household_id"].str.startswith("A_")]
     hh_b = persons[persons["household_id"].str.startswith("B_")]
 
-    assert (hh_a["commune_id"] == BS_AGS8).all(), (
-        f"Household A should have commune_id={BS_AGS8!r}"
+    assert (hh_a["commune_id"] == BS_ARS).all(), (
+        f"Household A should have commune_id={BS_ARS!r}"
     )
     assert (hh_a["departement_id"] == BS_KREIS).all(), (
         f"Household A should have departement_id={BS_KREIS!r}"
     )
-    assert (hh_b["commune_id"] == SZ_AGS8).all(), (
-        f"Household B should have commune_id={SZ_AGS8!r}"
+    assert (hh_b["commune_id"] == SZ_ARS).all(), (
+        f"Household B should have commune_id={SZ_ARS!r}"
     )
     assert (hh_b["departement_id"] == SZ_KREIS).all(), (
         f"Household B should have departement_id={SZ_KREIS!r}"
@@ -317,9 +317,9 @@ def test_build_persons_zone_ids_for_two_kreise():
 #   is_urban_resident = inside_braunschweig
 # where inside_braunschweig = (person's Kreis-5 == "03101"), i.e. the person
 # lives in the Kreisfreie Stadt Braunschweig.  In popsim_mid, commune_id is
-# the 8-digit AGS; departement_id (= commune_id[:5]) == "03101" is the exact
+# the 12-digit ARS; departement_id (= commune_id[:5]) == "03101" is the exact
 # equivalent predicate (since BS is a kreisfreie Stadt, the only commune is
-# 03101000 and departement_id == "03101" iff commune == Braunschweig).
+# 031010000000 and departement_id == "03101" iff commune == Braunschweig).
 #
 # These three tests define the FAILING behaviour before the fix is applied.
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.popsim import attributes
 from braunschweig.popsim import expand
 from braunschweig.popsim import income as _income_module
@@ -124,17 +123,23 @@ ARS_COLUMN = "RegionalSchlussel_ARS"
 def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFrame:
     """Derive the three spatial zone IDs from the 12-digit ARS column.
 
-    Replicates the format used by the default IPF producer (braunschweig.ipf.attributed
-    lines 814-816 and braunschweig.ipf.prepare line 126):
+    The eqasim spatial pipeline keys homes and home-location candidates on the
+    SAME ``commune_id`` / ``iris_id`` that ``data.spatial.municipalities`` and the
+    default IPF producer (braunschweig.ipf.attributed lines 814-816) use, which is
+    the **full 12-digit ARS** (NOT the 8-digit AGS). Using the AGS here produces an
+    ``iris_id`` that matches no home-location candidate, so the home-location
+    sampling stage asserts ``location_count > 0`` and crashes. The formats are:
 
-    - ``commune_id``    = 8-digit AGS string (ARS[0:5] + ARS[9:12]), e.g. "03101000".
-                          Source: braunschweig.data.bbsr.regiostar.ars_to_ags8.
+    - ``commune_id``    = the 12-digit ARS string, e.g. "031010000000" -- identical
+                          to ``data.spatial.municipalities.commune_id`` (verified
+                          against the working IPF cache). AGS8 consumers (RegioStaR)
+                          convert via ``ars_to_ags8`` themselves, which is idempotent.
     - ``departement_id``= first 5 chars of commune_id = 5-digit Kreis string, e.g. "03101".
-                          Source: ipf/prepare.py line 126 (commune_id[:5]).
-    - ``iris_id``       = commune_id + "0000" stored as category, e.g. "031010000000".
-                          Source: ipf/attributed.py lines 815-816. For Germany there are
-                          no sub-commune IRIS zones; the "0000" suffix is the eqasim
-                          placeholder that the spatial pipeline propagates downstream.
+                          Matches ipf/prepare.py line 126 (commune_id[:5]).
+    - ``iris_id``       = commune_id + "0000" stored as category, e.g. "0310100000000000".
+                          Source: ipf/attributed.py lines 815-816 (= eqasim_common
+                          .data.spatial.iris line 17). Germany has no sub-commune
+                          IRIS zones; "0000" is the eqasim placeholder.
 
     Parameters
     ----------
@@ -163,15 +168,16 @@ def derive_zone_ids(df: pd.DataFrame, *, ars_col: str = ARS_COLUMN) -> pd.DataFr
             "calling build_persons (fix for spatial home.zones KeyError D1)."
         )
     out = df.copy()
-    # commune_id: 8-digit AGS derived from the 12-digit ARS by dropping the
-    # Verbandsgemeinde block (bytes 5-8). An 8-digit input is returned unchanged by
-    # ars_to_ags8, so the derivation is idempotent if the ARS column is already AGS.
-    out["commune_id"] = out[ars_col].astype(str).map(ars_to_ags8)
-    # departement_id: 5-digit Kreis prefix of the AGS.  Matches ipf/prepare.py:126
+    # commune_id: the full 12-digit ARS (zero-padded), identical to
+    # data.spatial.municipalities.commune_id and the IPF producer. This is what the
+    # home-location candidates are keyed on; using the 8-digit AGS broke the
+    # home-location join (the popsim iris_id matched no candidate).
+    out["commune_id"] = out[ars_col].astype(str).str.zfill(12)
+    # departement_id: 5-digit Kreis prefix.  Matches ipf/prepare.py:126
     # (df_population["commune_id"].str[:5]).
     out["departement_id"] = out["commune_id"].str[:5]
-    # iris_id: commune_id + "0000".  Matches ipf/attributed.py lines 815-816.
-    # Germany has no sub-commune IRIS zones; "0000" is the eqasim placeholder.
+    # iris_id: commune_id + "0000".  Matches ipf/attributed.py lines 815-816 and
+    # eqasim_common.data.spatial.iris line 17. Germany has no sub-commune IRIS zones.
     out["iris_id"] = (out["commune_id"] + "0000").astype("category")
     return out
 

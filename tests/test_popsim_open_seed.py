@@ -381,7 +381,7 @@ def _make_combined_popsim_output(seed_households: pd.DataFrame) -> pd.DataFrame:
     - RegionalSchlussel_ARS: the 12-digit ARS (from stage.py's post-merge join)
 
     We place each seed household once in a single cell (cell "C1") in BS city
-    (ARS "031010000000" -> commune_id "03101000" -> departement_id "03101").
+    (ARS "031010000000" -> commune_id "031010000000" -> departement_id "03101").
     """
     rows = []
     for _, row in seed_households.iterrows():
@@ -486,10 +486,10 @@ class TestBuildSeedExpandBuildPersonsIntegration:
         schema.validate_person_columns(self.persons.columns)
 
     def test_commune_id_derived_from_ars(self):
-        """commune_id must be derived from the ARS (BS city = '03101000')."""
+        """commune_id must be the 12-digit ARS (BS city = '031010000000')."""
         assert "commune_id" in self.persons.columns
-        assert (self.persons["commune_id"] == "03101000").all(), (
-            f"commune_id expected '03101000' (from ARS '031010000000'), "
+        assert (self.persons["commune_id"] == "031010000000").all(), (
+            f"commune_id expected '031010000000' (the 12-digit ARS), "
             f"got: {self.persons['commune_id'].unique()}"
         )
 
