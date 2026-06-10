@@ -40,6 +40,25 @@ def test_number_of_cars_missing_is_imputed_not_silently_zero():
     assert out["number_of_cars"].iloc[2] == 2
 
 
+def test_license_adult_coverage_code_is_imputed_not_false():
+    import numpy as np, pandas as pd
+    from braunschweig.popsim import attributes
+    df = pd.DataFrame({
+        "P_FSCHEIN": [1, 1, 1, 1, 202, 404],
+        "alter_gr1": [5, 5, 5, 5, 5, 5],
+    })
+    out = attributes.map_has_license(df, rng=np.random.RandomState(0))
+    assert out["has_license"].tolist() == [True, True, True, True, True, True]
+
+
+def test_license_underage_code_403_is_false():
+    import numpy as np, pandas as pd
+    from braunschweig.popsim import attributes
+    df = pd.DataFrame({"P_FSCHEIN": [1, 403], "alter_gr1": [5, 1]})
+    out = attributes.map_has_license(df, rng=np.random.RandomState(0))
+    assert out["has_license"].tolist() == [True, False]
+
+
 def test_has_license_no_rng_backward_compatible():
     """Callers that omit rng must not raise; default rng is applied."""
     persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9]})

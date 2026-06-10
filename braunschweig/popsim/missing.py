@@ -20,8 +20,14 @@ logger = logging.getLogger(__name__)
 NONRESPONSE_CODES = frozenset({9, 99, 999, 9999, 94, 994, 9994, 95, 995, 9995})
 
 
-def classify_code(code, structural) -> str:
+def classify_code(code, structural, nonresponse=NONRESPONSE_CODES) -> str:
     """Classify a MiD code as 'structural', 'nonresponse', or 'valid_or_unknown'.
+
+    ``nonresponse`` is the effective item-nonresponse set (the global
+    ``NONRESPONSE_CODES`` by default, optionally widened by a spec's
+    ``impute_codes`` so individual attributes can mark extra codes as
+    impute-from-pool without polluting the global constant). A structural code
+    takes precedence over a nonresponse code if both sets contain it.
 
     The 'valid_or_unknown' bucket is split in ``resolve``: codes present in the
     spec's ``value_map`` are valid; any remaining code is unenumerated and raised
@@ -29,7 +35,7 @@ def classify_code(code, structural) -> str:
     """
     if code in structural:
         return "structural"
-    if code in NONRESPONSE_CODES:
+    if code in nonresponse:
         return "nonresponse"
     return "valid_or_unknown"
 
@@ -40,6 +46,11 @@ class AttributeSpec:
     source_col: str
     value_map: dict
     structural: dict = field(default_factory=dict)
+    # Extra MiD codes to treat as item non-response (impute from the valid pool)
+    # without adding them to the global NONRESPONSE_CODES constant. Used e.g. for
+    # adult coverage / interview-mode codes that are not "no licence" but must be
+    # imputed rather than forced to a deterministic value.
+    impute_codes: tuple = ()
     group_cols: tuple = ()
     default: object = None
 
@@ -66,7 +77,12 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
     """
     src = df[spec.source_col]
     structural_codes = set(spec.structural)
-    klass = src.map(lambda c: classify_code(c, structural_codes))
+    # Widen the item-nonresponse set with the spec's per-attribute impute_codes so
+    # those codes are imputed from the valid pool (and crucially classified as
+    # nonresponse BEFORE the valid_or_unknown check, so they never trigger the
+    # unenumerated raise). The global NONRESPONSE_CODES constant is left untouched.
+    nonresponse_set = NONRESPONSE_CODES | set(spec.impute_codes)
+    klass = src.map(lambda c: classify_code(c, structural_codes, nonresponse_set))
 
     valid_codes = set(spec.value_map)
     is_valid = (klass == "valid_or_unknown") & src.isin(valid_codes)

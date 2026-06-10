@@ -212,9 +212,15 @@ def map_has_license(
 ) -> pd.DataFrame:
     """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
 
-    MiD codebook mapping: 1 = ja -> True, 2 = nein -> False; 202 (Interviewart /
-    structural non-applicable), 403 (under-age, structural), 404 (structural non-
-    applicable) -> False deterministically; 9 (keine Angabe, item non-response) ->
+    MiD codebook mapping: 1 = ja -> True, 2 = nein -> False. Only 403 (under legal
+    driving age) is a legitimate deterministic structural False. The codes 202
+    (Interviewart / interview mode) and 404 (coverage / non-applicable on adults)
+    are NOT "no licence" -- they are coverage / interview-mode design-missings that
+    must be IMPUTED from comparable adult respondents, not forced to False. Forcing
+    them to False (the previous behaviour) put ~42.9 % of donor persons on the
+    deterministic-False path and depressed the licence share to ~52 % vs the ~73 %
+    P17.1 reference. They are therefore declared in ``impute_codes`` (treated as
+    item non-response). 9 (keine Angabe, item non-response) and 202/404 are all
     imputed from the valid pool within the same age band (alter_gr1) when present,
     else from the global valid pool. The imputation is seeded via ``rng``.
 
@@ -226,7 +232,8 @@ def map_has_license(
         name="has_license",
         source_col=license_col,
         value_map={1: True, 2: False},
-        structural={202: False, 403: False, 404: False},
+        structural={403: False},          # under legal age: deterministic False
+        impute_codes=(202, 404),          # interview-mode / coverage on adults: impute
         group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
         default=False,
     )
