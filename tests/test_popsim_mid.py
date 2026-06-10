@@ -185,8 +185,11 @@ def test_popsim_stage_exposes_synpp_contract():
 
 
 def test_load_mid_attributes_reads_needed_columns(tmp_path):
+    # Phase 4A: RegioStaR7 is now part of MID_HOUSEHOLD_ATTR_COLS so the fixture
+    # must include it; load_mid_attributes uses usecols=list(MID_HOUSEHOLD_ATTR_COLS).
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD\n1,3,4,1,2\n", encoding="utf-8"
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7\n1,3,4,1,2,72\n",
+        encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
     (tmp_path / "MiD2023_Personen.csv").write_text(
@@ -194,6 +197,6 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
         encoding="utf-8",
     )
     households, persons = mid.load_mid_attributes(tmp_path)
-    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD"} <= set(households.columns)
+    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "RegioStaR7"} <= set(households.columns)
     assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT"} <= set(persons.columns)
 

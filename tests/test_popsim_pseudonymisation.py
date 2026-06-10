@@ -536,6 +536,7 @@ def test_build_persons_pseudonymise_false_with_entd_source_open_ids():
         "number_of_cars":     [1],
         "number_of_bicycles": [2],
         "income_class":       [5],
+        "urban_type":         ["central_city"],  # Phase 4A: required by _HH_JOIN_COLS
     })
     p = pd.DataFrame({
         "person_id":              [100],

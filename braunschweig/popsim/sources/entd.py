@@ -171,10 +171,14 @@ _DIRECT_PERSON_COLS = [
 ]
 
 # ENTD household columns that are joined per person.
+# ``urban_type`` is included here (Phase 4A plumbing) so that Phase 4B
+# donor stratification can use the ENTD household's UU2010 urban/rural class
+# as a matching key, comparable with the MiD-side RegioStaR-7 class.
 _HH_JOIN_COLS = [
     "household_id", "household_size",
     "number_of_cars", "number_of_bicycles",
     "income_class",
+    "urban_type",   # Phase 4A: UU2010 urban/rural class for donor stratification
 ]
 
 

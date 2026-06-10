@@ -40,8 +40,9 @@ SUFFIX_1KM = "_ZENSUS1km"
 MID_SEED_COLUMNS = seedmod.MID_SEED_COLUMNS
 
 # Cell columns always loaded in addition to the control bases: the population
-# total (for parent selection / diagnostics) and the ARS key (for the ZGB filter).
-_EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS")
+# total (for parent selection / diagnostics), the ARS key (for the ZGB filter),
+# and RegioStaR7 (for Phase 4B donor stratification by urban/rural class).
+_EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS", "RegioStaR7")
 _ARS_COLUMN = "RegionalSchlussel_ARS"
 
 
@@ -182,9 +183,12 @@ def load_mid_seed(
     ``(households, persons, report)`` with the essentials + ``STAAT``.
     """
     mid_dir = Path(mid_dir)
+    # Load household id, weight, and RegioStaR7 (Phase 4A plumbing: the RS7 code
+    # is carried onto the seed households so Phase 4B donor stratification can use
+    # the cell's urban/rural class to restrict the donor pool without an extra join).
     households = pd.read_csv(
         mid_dir / "MiD2023_Haushalte.csv",
-        usecols=[columns.household_id, columns.household_weight],
+        usecols=[columns.household_id, columns.household_weight, "RegioStaR7"],
     )
     person_cols = [
         columns.person_household_id, columns.person_id, columns.person_weight,
@@ -201,7 +205,10 @@ def load_mid_seed(
         households, persons, columns,
         day_filter_values=day_filter_values or columns.day_filter_values,
     )
-    households, persons = seedmod.select_seed_columns(households, persons, columns)
+    households, persons = seedmod.select_seed_columns(
+        households, persons, columns,
+        extra_household_cols=("RegioStaR7",),
+    )
     return households, persons, report
 
 
@@ -211,6 +218,7 @@ MID_PERSON_ATTR_COLS = (
 )
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
+    "RegioStaR7",  # Phase 4A: RegioStaR-7 code for donor urban/rural stratification
 )
 
 # Minimum columns required by build_trip_table / trips_stage.

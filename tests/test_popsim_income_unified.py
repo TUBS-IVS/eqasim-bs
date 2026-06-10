@@ -471,6 +471,7 @@ def test_entd_map_person_attributes_emits_household_income_eur():
         "number_of_cars":     [1, 0],
         "number_of_bicycles": [0, 0],
         "income_class":       [5, 13],    # class 5 -> 1350.0 EUR; class 13 -> 12000.0 EUR
+        "urban_type":         ["central_city", "none"],  # Phase 4A: required by _HH_JOIN_COLS
         "departement_id":     ["03101", "03101"],
     })
     p = pd.DataFrame({
@@ -520,6 +521,7 @@ def test_entd_map_person_attributes_high_income_uses_numeric_rule():
         "number_of_cars":     [0, 0],
         "number_of_bicycles": [0, 0],
         "income_class":       [5, 13],
+        "urban_type":         ["suburb", "none"],  # Phase 4A: required by _HH_JOIN_COLS
         "departement_id":     ["03101", "03101"],
     })
     p = pd.DataFrame({

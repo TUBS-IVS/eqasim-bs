@@ -175,6 +175,7 @@ def _entd_households():
         "number_of_cars":     [1, 2, 0],
         "number_of_bicycles": [2, 1, 0],
         "income_class":       [5, 10, 13],   # ~900_1500, ~3000_3600, over_7000
+        "urban_type":         ["central_city", "suburb", "none"],  # Phase 4A
     })
 
 
