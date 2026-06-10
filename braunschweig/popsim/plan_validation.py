@@ -212,6 +212,15 @@ class PlanValidator:
         out: list = []
         dep = group["departure_time"].to_numpy()
         arr = group["arrival_time"].to_numpy()
+        # NaN times (MiD coded times 99 "keine Angabe" / 701 rbW are NaN'd by
+        # mid_time_seconds).  All NaN comparisons below are False, so without an
+        # explicit check a NaN-time person would silently pass every time check.
+        # ANY NaN time makes the whole person unfixable (a mixed-NaN chain has no
+        # reconstructible timeline), so one issue per person is sufficient.
+        if np.isnan(dep).any() or np.isnan(arr).any():
+            out.append(PlanIssue(person_id, "nan_times",
+                                 "a trip has a NaN departure or arrival time "
+                                 "(MiD coded time 99/701)"))
         if (arr < dep).any():
             out.append(PlanIssue(person_id, "departure_after_arrival",
                                  "a trip arrives before it departs"))
@@ -275,15 +284,29 @@ class PlanValidator:
         # --- Step 2: time repair via eqasim helper ----------------------------
         fixed = _eqasim_fix_trip_times(df_trips)
 
-        # --- Step 3: home-end closure -----------------------------------------
+        # --- Step 2b: identify NaN-time persons (MiD coded times 99/701) -------
+        # ANY NaN departure/arrival time makes the person unfixable: an all-NaN
+        # person crashes _append_return_home (groupby idxmax yields NaN ->
+        # df.loc[NaN] KeyError), and a mixed-NaN person would get a bogus
+        # return-home trip anchored on a partial timeline.  These persons are
+        # therefore excluded from the home-closure repair entirely; the explicit
+        # "nan_times" validation issue routes them to the unfixable set, which
+        # the caller replaces by the same-cell resample.
+        nan_time_rows = fixed["departure_time"].isna() | fixed["arrival_time"].isna()
+        nan_time_persons = set(fixed.loc[nan_time_rows, "person_id"].unique())
+
+        # --- Step 3: home-end closure (NaN-time persons excluded) --------------
         n_closure_appended = 0
         if self.require_home_closure:
+            closable = fixed[~fixed["person_id"].isin(nan_time_persons)]
+            excluded = fixed[fixed["person_id"].isin(nan_time_persons)]
             # Count persons that need closure before appending.
-            df_sorted = fixed.sort_values(["person_id", "departure_time"])
+            df_sorted = closable.sort_values(["person_id", "departure_time"])
             last_rows = df_sorted.groupby("person_id", sort=False).last()
             needs_closure = (last_rows["following_purpose"] != "home").sum()
             n_closure_appended = int(needs_closure)
-            fixed = _append_return_home(fixed, dwell_s)
+            closable = _append_return_home(closable, dwell_s)
+            fixed = pd.concat([closable, excluded], ignore_index=True)
 
         # --- Step 4: recompute trip_id / trip_index / trip_duration / activity_duration ----
         # After _append_return_home the appended row has NaN trip_index and trip_duration,
@@ -321,10 +344,13 @@ class PlanValidator:
         logger.info(
             "[popsim.plan_validation] repair: %d valid, %d repaired, %d unfixable "
             "(of %d total); home-end closure appended to %d persons "
-            "(%.1f%% of pool)",
+            "(%.1f%% of pool); %d persons (%.1f%%) have NaN trip times "
+            "(MiD coded times 99/701) and were excluded from closure repair",
             n_valid, n_repaired, n_unfixable, n_persons,
             n_closure_appended,
             100.0 * n_closure_appended / n_persons if n_persons > 0 else 0.0,
+            len(nan_time_persons),
+            100.0 * len(nan_time_persons) / n_persons if n_persons > 0 else 0.0,
         )
 
         report = RepairReport(

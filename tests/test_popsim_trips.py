@@ -224,3 +224,33 @@ def test_build_validated_trip_table_returns_report():
     table, report = trips.build_validated_trip_table(persons, wege, require_home_closure=True)
     assert "departure_time" in table.columns
     assert hasattr(report, "is_valid")
+
+
+# ---------------------------------------------------------------------------
+# Task 2.3 B: build_validated_trip_table resamples coded-time (NaN) persons
+# from same-cell donors instead of leaving NaN chains in the table.
+# ---------------------------------------------------------------------------
+
+def test_build_validated_trip_table_resamples_coded_time_persons():
+    import pandas as pd
+    from braunschweig.popsim import trips as popsim_trips
+    persons = pd.DataFrame({
+        "person_id": ["pA", "pB"], "H_ID": [1, 2], "P_ID": [1, 1],
+        "ZENSUS100m": ["c1", "c1"],
+    })
+    wege = pd.DataFrame({
+        "H_ID":   [1, 2],
+        "P_ID":   [1, 1],
+        "W_ID":   [1, 1],
+        "W_ZWECK": [1, 1],
+        "hvm_imp": [4, 4],
+        "W_SZS": [701, 8], "W_SZM": [701, 0],
+        "W_AZS": [701, 9], "W_AZM": [701, 0],
+        "wegkm_imp": [5.0, 5.0],
+    })
+    table, report = popsim_trips.build_validated_trip_table(
+        persons, wege, resample=True, resample_cell_col="ZENSUS100m",
+        random_seed=0,
+    )
+    assert set(table["person_id"].unique()) == {"pA", "pB"}
+    assert table["departure_time"].notna().all()

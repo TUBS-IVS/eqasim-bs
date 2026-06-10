@@ -304,40 +304,179 @@ def build_validated_trip_table(
     *,
     require_home_closure: bool = True,
     repair: bool = True,
+    resample: bool = False,
+    resample_cell_col: str | None = None,
+    random_seed: int | None = None,
     **kwargs,
 ):
-    """Build the trip table, optionally repair, and return (table, ValidationReport).
+    """Build the trip table, optionally repair + resample, return (table, ValidationReport).
 
     Thin convenience wrapper over build_trip_table + PlanValidator. When repair is
     True (default) the PlanValidator enforces home-end closure and logs its repair
     rates (the rates are emitted by repair_trips itself, so they remain observable
-    even though the RepairReport is not returned here). The returned ValidationReport
-    reflects the FINAL (post-repair) table.
+    even though the RepairReport is not returned here). When ``resample`` is True,
+    persons the repair classified as unfixable (e.g. NaN-time persons from the MiD
+    coded times 99/701) have their whole chain replaced by a valid donor chain
+    drawn from the SAME matching cell (``resample_cell_col``) via
+    ``plan_validation.resample_chains``; persons without any same-cell donor fall
+    back to a home-only plan (= no trips, the row is dropped) — the fallback rate
+    is logged by resample_chains. The returned ValidationReport reflects the FINAL
+    (post-repair, post-resample) table.
 
     Parameters
     ----------
     persons:
-        Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``.
+        Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``
+        (+ ``resample_cell_col`` when ``resample`` is True).
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.
     require_home_closure:
         If True (default) the validator enforces home-end closure.
     repair:
         If True (default) repair fixable issues in the trip table before validation.
+    resample:
+        If True, replace unfixable persons' chains with same-cell donor chains.
+        Requires ``repair=True`` (the unfixable classification comes from the
+        RepairReport) and a non-None ``random_seed`` (determinism is mandatory).
+    resample_cell_col:
+        Column in ``persons`` that defines the donor-matching cell (e.g.
+        ``"ZENSUS100m"``).  ``None`` means no cell information is available:
+        every unfixable person falls back to a home-only plan (logged loudly
+        by resample_chains).
+    random_seed:
+        Seed for the resample RNG (``np.random.RandomState``).
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
     Returns
     -------
     tuple[pd.DataFrame, ValidationReport]
-        The built (and optionally repaired) trip table and the validation report
-        reflecting the final state.
+        The built (and optionally repaired/resampled) trip table and the
+        validation report reflecting the final state.
     """
-    from braunschweig.popsim.plan_validation import PlanValidator
+    from braunschweig.popsim.plan_validation import PlanValidator, resample_chains
+
+    if resample and not repair:
+        raise ValueError(
+            "[popsim.trips] resample=True requires repair=True: the unfixable-person "
+            "classification that drives the resample comes from the RepairReport."
+        )
+    if resample and random_seed is None:
+        raise ValueError(
+            "[popsim.trips] resample=True requires an explicit random_seed "
+            "(deterministic donor draws are mandatory)."
+        )
+    if resample and resample_cell_col is not None and resample_cell_col not in persons.columns:
+        raise ValueError(
+            f"[popsim.trips] resample_cell_col '{resample_cell_col}' is not a column of "
+            f"the persons frame (columns: {sorted(persons.columns)}). Pass None to "
+            f"resample without cell matching (home-only fallback) or fix the column name."
+        )
 
     table = build_trip_table(persons, mid_wege, **kwargs)
     validator = PlanValidator(require_home_closure=require_home_closure)
+    repair_report = None
     if repair:
-        table, _ = validator.repair_trips(table)
+        table, repair_report = validator.repair_trips(table)
+
+    if resample and repair_report is not None and repair_report.unfixable_persons:
+        table = _resample_unfixable(
+            table,
+            persons,
+            repair_report.unfixable_persons,
+            resample_cell_col=resample_cell_col,
+            random_seed=random_seed,
+            resample_chains=resample_chains,
+        )
+
     report = validator.validate_trips(table)
     return table, report
+
+
+def _resample_unfixable(
+    table: pd.DataFrame,
+    persons: pd.DataFrame,
+    unfixable_persons,
+    *,
+    resample_cell_col: str | None,
+    random_seed: int,
+    resample_chains,
+) -> pd.DataFrame:
+    """Replace unfixable persons' chains with same-cell donor chains; rebuild ids.
+
+    Donor chains are the FINAL (post-repair) chains of the valid persons that
+    live in the same ``resample_cell_col`` cell as an unfixable person; donor
+    pools are only built for cells that actually contain unfixable persons (the
+    full population can be ~1 M persons, so materialising every cell's pool
+    would be wasteful).  Unfixable persons without any same-cell donor receive
+    resample_chains' home-only fallback row (NaN times); those rows are dropped
+    here — in the eqasim trips contract a stay-at-home person simply has no
+    trips — and the drop count is logged.
+
+    After the replacement, ``trip_id`` / ``is_first_trip`` / ``is_last_trip`` /
+    ``trip_duration`` / ``activity_duration`` / ``trip_index`` are re-derived on
+    the final sorted frame (same recompute sequence as
+    ``PlanValidator.repair_trips`` step 4) because the donor chains carry the
+    DONOR's ids, which would otherwise collide with the kept persons' rows.
+    """
+    import numpy as np
+
+    from data.hts import hts
+
+    # person -> cell mapping (one row per unique person, like build_trip_table).
+    persons_unique = persons.drop_duplicates(subset="person_id")
+    if resample_cell_col is not None:
+        person_cells = dict(
+            zip(persons_unique["person_id"], persons_unique[resample_cell_col])
+        )
+    else:
+        person_cells = {}
+
+    # Donor pools: valid persons' final chains, only for the cells that contain
+    # at least one unfixable person.  Chains are stored WITHOUT person_id
+    # (resample_chains assigns the recipient's person_id).
+    needed_cells = {
+        person_cells[p] for p in unfixable_persons if p in person_cells
+    }
+    donor_chains: dict = {cell: [] for cell in needed_cells}
+    valid_table = table[~table["person_id"].isin(set(unfixable_persons))]
+    # Sorted iteration over donor person ids for deterministic pool order.
+    for person_id, chain in valid_table.sort_values(
+        ["person_id", "departure_time"]
+    ).groupby("person_id", sort=True):
+        cell = person_cells.get(person_id)
+        if cell in donor_chains:
+            donor_chains[cell].append(chain.drop(columns=["person_id"]))
+
+    table = resample_chains(
+        table,
+        unfixable_persons,
+        person_cells,
+        donor_chains,
+        rng=np.random.RandomState(random_seed),
+    )
+
+    # Drop home-only fallback rows (NaN times): in the trips contract a person
+    # without trips simply has no rows; activities.py gives them a single home
+    # activity.  Observable, not silent.
+    nan_rows = table["departure_time"].isna() | table["arrival_time"].isna()
+    if nan_rows.any():
+        dropped_persons = table.loc[nan_rows, "person_id"].nunique()
+        logger.warning(
+            "[popsim.trips] %d resampled persons had no same-cell donor and become "
+            "trip-less (home-only) persons; their %d placeholder rows are dropped "
+            "from the trips table.",
+            dropped_persons, int(nan_rows.sum()),
+        )
+        table = table[~nan_rows]
+
+    # Re-derive ids and derived columns on the final frame (mirrors
+    # PlanValidator.repair_trips step 4): donor chains carry the donor's
+    # trip_id / trip_index, which are stale for the recipient.
+    table = table.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+    table["trip_id"] = range(len(table))
+    table = hts.compute_first_last(table)
+    table["trip_duration"] = table["arrival_time"] - table["departure_time"]
+    hts.compute_activity_duration(table)  # modifies in-place, no return
+    table["trip_index"] = table.groupby("person_id").cumcount()
+    return table

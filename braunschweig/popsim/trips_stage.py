@@ -46,6 +46,38 @@ CONTRACT = [
 # and the MiD school-distance calibration).
 DETOUR_FACTOR = 1.3
 
+MAX_PLAN_TIME_SECONDS = 36 * 3600  # eqasim plans may pass 24h; multi-day times are invalid
+
+
+def _assert_time_bound(table, *, max_seconds=MAX_PLAN_TIME_SECONDS):
+    for col in ("departure_time", "arrival_time"):
+        n_bad = int((table[col] > max_seconds).sum())
+        assert n_bad == 0, (
+            f"[trips_stage] {n_bad} rows have {col} exceeding {max_seconds}s "
+            f"(~{max_seconds/3600:.0f}h); coded times must be NaN'd + resampled.")
+
+
+def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
+    """Pick the donor-matching cell column available on the persons frame.
+
+    popsim_mid persons (from braunschweig.popsim.stage via
+    synthesis.population.sampled, which passes all columns through) carry
+    ``ZENSUS100m``; other producers may only carry ``commune_id``.  With no
+    spatial column at all, resampling falls back to home-only plans for every
+    unfixable person (logged loudly by resample_chains).  The choice is logged
+    so a silent downgrade to the coarser column is impossible.
+    """
+    for candidate in ("ZENSUS100m", "commune_id"):
+        if candidate in persons.columns:
+            logger.info("[trips_stage] resample cell column: %s", candidate)
+            return candidate
+    logger.warning(
+        "[trips_stage] persons frame carries neither ZENSUS100m nor commune_id; "
+        "unfixable persons cannot be matched to same-cell donors and will fall "
+        "back to home-only (trip-less) plans."
+    )
+    return None
+
 
 def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     """Apply the eqasim per-person departure-time jitter to a trips table.
@@ -138,7 +170,15 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
         straight-line = wegkm_imp * 1000 / DETOUR_FACTOR) when wegkm_imp is
         present, plus ``trip_key`` (traceability) and any remaining MiD extras.
     """
-    table, report = popsim_trips.build_validated_trip_table(persons, mid_wege)
+    # Resample unfixable persons (e.g. NaN-time rbW/kA records, MiD codes 701/99)
+    # from same-cell donors so no NaN time and no multi-day timestamp survives.
+    resample_cell_col = _resolve_resample_cell_col(persons)
+    table, report = popsim_trips.build_validated_trip_table(
+        persons, mid_wege,
+        resample=True,
+        resample_cell_col=resample_cell_col,
+        random_seed=random_seed,
+    )
 
     logger.info(
         "[trips_stage] trip table built: %d trips for %d persons; "
@@ -153,12 +193,27 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
     # stages (synthesis/population/activities.py uses trip_index, not trip_id).
     table = table.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
 
+    # NaN times must never reach the jitter: the resample above replaces every
+    # NaN-time (coded-time) person and drops home-only fallback placeholders.
+    for col in ("departure_time", "arrival_time"):
+        n_nan = int(table[col].isna().sum())
+        assert n_nan == 0, (
+            f"[trips_stage] {n_nan} rows have NaN {col} after resample; the "
+            f"resample in build_validated_trip_table must replace every "
+            f"coded-time person (and drop home-only fallback rows) before the jitter."
+        )
+
     # --------------------------------------------------------------------------
     # Per-person departure-time jitter.
     # Delegates to the shared apply_per_person_jitter (factored so the ENTD
     # adapter can call the same formula without duplication).
     # --------------------------------------------------------------------------
     table = apply_per_person_jitter(table, random_seed=random_seed)
+
+    # Absolute plan-time bound: midnight-crossing repairs may legitimately push
+    # times past 24h, but anything beyond MAX_PLAN_TIME_SECONDS means a coded
+    # time survived as a multi-day timestamp (a bug, not data).
+    _assert_time_bound(table)
 
     # --------------------------------------------------------------------------
     # Euclidean distance from MiD wegkm_imp (routed km -> straight-line metres).

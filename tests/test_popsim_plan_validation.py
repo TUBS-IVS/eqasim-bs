@@ -398,6 +398,54 @@ def test_resample_chains_raises_on_zero_sum_weights():
         )
 
 
+# ---------------------------------------------------------------------------
+# Task 2.3 A: NaN trip times (MiD coded times 99/701 -> NaN) must be flagged as
+# an explicit issue and classified unfixable WITHOUT crashing repair_trips.
+# ---------------------------------------------------------------------------
+
+def test_nan_times_flagged_and_unfixable_no_crash():
+    import pandas as pd, numpy as np
+    from braunschweig.popsim.plan_validation import PlanValidator
+    df = pd.DataFrame({
+        "person_id": [1, 1, 2, 2],
+        "departure_time": [np.nan, np.nan, 28800.0, 61200.0],
+        "arrival_time":   [np.nan, np.nan, 30600.0, 63000.0],
+        "preceding_purpose": ["home", "work", "home", "work"],
+        "following_purpose": ["work", "home", "work", "home"],
+        "is_first_trip": [True, False, True, False],
+        "is_last_trip":  [False, True, False, True],
+        "mode": ["car"] * 4,
+    })
+    v = PlanValidator(require_home_closure=True)
+    report = v.validate_trips(df)
+    assert report.issue_counts.get("nan_times", 0) >= 1     # person 1 flagged
+    fixed, rep = v.repair_trips(df)                          # must NOT crash (KeyError: nan today)
+    assert 1 in rep.unfixable_persons
+    assert 2 not in rep.unfixable_persons
+
+
+def test_nan_times_mixed_person_is_unfixable_and_gets_no_bogus_closure():
+    """F4: a person with SOME NaN times is treated as unfixable as a whole;
+    the home-closure repair must not append a return-home trip for them."""
+    import numpy as np
+
+    df = pd.DataFrame({
+        "person_id": ["m", "m"],
+        "departure_time": [8 * 3600.0, np.nan],
+        "arrival_time": [8 * 3600.0 + 1800.0, np.nan],
+        "preceding_purpose": ["home", "work"],
+        "following_purpose": ["work", "leisure"],
+        "is_first_trip": [True, False],
+        "is_last_trip": [False, True],
+        "mode": ["car", "car"],
+    })
+    v = pv.PlanValidator(require_home_closure=True)
+    fixed, rep = v.repair_trips(df)
+    assert "m" in rep.unfixable_persons
+    # No synthetic return-home trip may be appended to a NaN-time person.
+    assert len(fixed[fixed["person_id"] == "m"]) == 2
+
+
 def test_resample_chains_raises_on_mismatched_weight_length():
     """IMPORTANT-5: mismatched donor_weights length must raise ValueError."""
     import numpy as np
