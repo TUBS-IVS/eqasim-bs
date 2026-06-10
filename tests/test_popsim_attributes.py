@@ -23,6 +23,19 @@ def test_map_employed_from_p_taet():
     assert out["employed"].isna().sum() == 0
 
 
+def test_map_employed_handles_taet_17():
+    import numpy as np
+
+    # MiD 2023 Codeplan B1 (Personen, P_TAET): code 17 = "sonstiges" (other/
+    # miscellaneous activity) -> not employment and not education -> employed=False.
+    # The real MiD Personen table carries P_TAET=17 (~4,043 persons), so map_employed
+    # must enumerate it explicitly rather than raising on an unenumerated code.
+    df = pd.DataFrame({"P_TAET": [1, 11, 17]})
+    out = attr.map_employed(df, rng=np.random.RandomState(0))
+    # 1 (Angestellte/r) -> True; 11 (Rentner/in) -> False; 17 (sonstiges) -> False.
+    assert out["employed"].tolist() == [True, False, False]
+
+
 def test_map_has_license_from_p_fschein():
     persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403]})
     out = attr.map_has_license(persons)

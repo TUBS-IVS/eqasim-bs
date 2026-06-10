@@ -33,17 +33,27 @@ from braunschweig.popsim import missing
 #  95 Nicht zuzuordnen (unclassifiable)   -- NOT in map -> fallback
 SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 
-# MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment
-# (Angestellte/Arbeiter, Beamte, Selbststaendige, geringfuegig, Elternzeit-but-
-# employed, mithelfende Angehoerige, Wehr-/Freiwilligendienst); 8+ are not employed
-# (Ausbildung, Schueler, Student, Rentner, arbeitslos, ...). 99 = keine Angabe.
+# MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment, 8..17 are
+# not employed. Source: MiD 2023 Codeplan B1 (Personen sheet, variable P_TAET):
+#   1  Angestellte/r, Arbeiter/in (auch Zeit-/Berufssoldat/in)       -> employed
+#   2  Beamtin/Beamter                                               -> employed
+#   3  Selbststaendige/r, Freiberufler/in                            -> employed
+#   4  geringfuegig erwerbstaetig (auch 520-Euro-Job)                -> employed
+#   5  erwerbstaetig, aber momentan in Elternzeit/Pflegezeit/etc.    -> employed
+#   6  unbezahlt mithelfende/r Familienangehoerige/r im Betrieb      -> employed
+#   7  freiwilliger Wehrdienst / Bundesfreiwilligendienst (FSJ/FOEJ) -> employed
+#   8  in Ausbildung            9  Schueler/in        10 Student/in   -> not employed
+#  11  Rentner/in/Pensionaer/in 12 arbeitslos         13 Hausfrau/-mann
+#  14  dauerhaft erwerbsunfaehig 15 Kind (zu Hause)    16 Kind (Kindergarten/Tagesbetreuung)
+#  17  sonstiges (other/miscellaneous activity)                      -> not employed
+#  99  keine Angabe (item non-response)                              -> imputed
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 5, 6, 7})
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
-# Student): 8 = Ausbildung/Auszubildende, 9 = Schueler/in, 10 = Student/in.
-# These map to studies=True; all other codes (employment 1-7, Rentner 11+, 99 k.A.)
-# map to studies=False (conservative: unknown treated as not in education).
-# Source: MiD 2023 Codeplan B1, Frage P17.
+# Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
+# These map to studies=True; all other codes (employment 1-7, Rentner/arbeitslos/
+# Hausfrau 11-16, 17 sonstiges, 99 k.A.) map to studies=False (conservative: unknown
+# treated as not in education). Source: MiD 2023 Codeplan B1 (Personen, P_TAET).
 STUDIES_TAET = frozenset({8, 9, 10})
 
 # MiD P_FSCHEIN (Fuehrerscheinbesitz ja/nein): 1 = ja, 2 = nein, 9 = keine Angabe.
@@ -122,8 +132,11 @@ def map_employed(
     """Add a boolean ``employed`` from MiD ``P_TAET`` via the uniform missing policy.
 
     MiD codebook mapping: codes 1..7 (Angestellte/Arbeiter, Beamte, Selbststaendige,
-    geringfuegig, Elternzeit, mithelfende Angehoerige, Wehrdienst) -> True; 8..16
-    (Ausbildung, Schueler, Student, Rentner, Haushalter, arbeitslos, etc.) -> False.
+    geringfuegig, Elternzeit, mithelfende Angehoerige, freiwilliger Wehr-/Bundes-
+    freiwilligendienst) -> True; 8..17 (Ausbildung, Schueler, Student, Rentner,
+    arbeitslos, Hausfrau/-mann, erwerbsunfaehig, Kind, sonstiges) -> False. The full
+    substantive code range 1..17 is enumerated (the real MiD Personen table carries
+    P_TAET=17 "sonstiges" for ~4,043 persons; MiD 2023 Codeplan B1, Personen, P_TAET).
     No structural design-missing codes apply (employment is asked of all respondents
     above interviewing age). 99 (keine Angabe, item non-response) -> imputed from the
     valid pool within the same age group (alter_gr1) when present, else global pool;
@@ -133,7 +146,9 @@ def map_employed(
     callers should pass the pipeline's seeded rng to ensure reproducibility.
     """
     rng = rng if rng is not None else np.random.RandomState(0)
-    value_map = {code: (code in EMPLOYED_TAET) for code in range(1, 17)}
+    # Enumerate the full substantive P_TAET range 1..17 (range(1, 18)) so that code 17
+    # "sonstiges" is mapped explicitly to False instead of raising as unenumerated.
+    value_map = {code: (code in EMPLOYED_TAET) for code in range(1, 18)}
     spec = missing.AttributeSpec(
         name="employed",
         source_col=taet_col,
@@ -154,10 +169,15 @@ def map_studies(
     """Add a boolean ``studies`` column derived from MiD ``P_TAET``.
 
     MiD codebook mapping (P_TAET = Taetigkeit der Person):
-      8  Ausbildung / Auszubildende  -> True
-      9  Schueler/in                 -> True
+      8  in Ausbildung               -> True
+      9  Schueler/in (einschl. Vorschule) -> True
       10 Student/in                  -> True
-      All other codes (1-7 employment, 11+ Rentner/arbeitslos, 99 k.A.) -> False.
+      All other codes (1-7 employment, 11-16 Rentner/arbeitslos/Hausfrau/Kind,
+      17 sonstiges, 99 k.A.) -> False.
+
+    ``map_studies`` uses ``Series.isin(STUDIES_TAET)`` directly (not the
+    ``missing.resolve`` policy), so unenumerated codes such as 17 "sonstiges"
+    cannot raise here -- they simply evaluate to ``False``.
 
     99 (keine Angabe, item non-response) is conservatively treated as False
     (not in education). P_TAET has near-complete coverage in the MiD
