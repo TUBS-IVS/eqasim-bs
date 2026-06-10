@@ -1,9 +1,31 @@
 # Unified ID scheme for eqasim-bs population producers
 
 This document is the single source of truth for how every id column maps across
-the two supported population producers (`simple_ipf_open` and `popsim_mid`).
+the THREE population producers (`simple_ipf_open`, `popsim_mid`, `popsim_open`).
 The MATSim writer (`matsim/scenario/population.py`, `matsim/scenario/households.py`)
 reads these columns by name; do not rename them without updating the writer and this doc.
+
+## Unified provenance rule (decided 2026-06-09, "Option A")
+
+`hts_id` / `hts_household_id` are the UNIFIED "donor id" field across all three
+producers -- they always answer "which survey respondent was this synthetic agent
+derived from". The VALUE differs by the donor's data licence, and that difference is
+intentional and consistent:
+
+| Producer | Donor survey | Licence | `hts_id` value |
+|---|---|---|---|
+| `simple_ipf_open` | ENTD (French) | OPEN | the real ENTD respondent id |
+| `popsim_open` | ENTD (French) | OPEN | the real ENTD respondent id |
+| `popsim_mid` | MiD 2023 (German) | RESTRICTED (BMDV scientific-use) | a sequential SURROGATE of the MiD donor (pseudonymised; see below) |
+
+So the surrogate is NOT a "popsim" property -- it is the data-protection measure for
+the ONE restricted source (MiD). Open donors keep their real id in the output (fully
+traceable); the restricted MiD donor is pseudonymised so the published output cannot
+re-identify a real MiD respondent, while the local-only `pseudonym_map.csv` lets US
+re-link internally. `source_person_id` / `source_household_id` are the popsim-internal
+generic provenance columns that map onto `hts_*`; the IPF path fills `hts_*` directly
+from its HTS match (no `source_*`). The schema validator that requires `source_*` is
+popsim-only, so the IPF default is unaffected.
 
 ## Column definitions
 
@@ -104,6 +126,25 @@ Producer: `braunschweig.popsim.assembly` -> `synthesis.population.sampled` -> `b
 Note: All id attributes for `popsim_mid` are now integers so they are uniformly
 written as `java.lang.Long`. The former `java.lang.String` path for alphanumeric
 popsim embedding strings (`<cell>_<H_ID>_...`) is no longer reached.
+
+### `popsim_open`
+
+Producer: `braunschweig.popsim.assembly` (source = ENTD) -> `synthesis.population.sampled` -> `braunschweig.popsim.enriched_adapter`
+
+| Column | Value | Type |
+|---|---|---|
+| `person_id` | sequential integer after `sampled` | integer |
+| `household_id` | sequential integer after `sampled` | integer |
+| `census_person_id` | synthetic integer `person_id` (overwritten by `enriched_adapter`) | integer -> `java.lang.Long` |
+| `census_household_id` | synthetic integer `household_id` (overwritten by `enriched_adapter`) | integer -> `java.lang.Long` |
+| `source_person_id` | the REAL ENTD donor person id (open data, NO pseudonymisation) | integer |
+| `source_household_id` | the REAL ENTD donor household id (open data) | integer |
+| `hts_id` | copied from `source_person_id` (real ENTD id) | integer -> `java.lang.Long` |
+| `hts_household_id` | copied from `source_household_id` (real ENTD id) | integer -> `java.lang.Long` |
+
+`popsim_open` uses the open ENTD donor, so `build_persons` runs with `pseudonymise=False`
+and `source_*` carry the real ENTD ids -- identical in spirit to `simple_ipf_open`.
+Only `popsim_mid` (restricted MiD) pseudonymises.
 
 ## The `enriched_adapter` contract
 
