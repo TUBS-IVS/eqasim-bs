@@ -510,3 +510,60 @@ class TestBuildSeedExpandBuildPersonsIntegration:
         """weight must be 1.0 (already expanded population)."""
         assert "weight" in self.persons.columns
         assert (self.persons["weight"] == 1.0).all()
+
+
+# ---------------------------------------------------------------------------
+# Household-composition regression (the seed must NOT be 1-person/household)
+# ---------------------------------------------------------------------------
+#
+# The popsim_open donor must be the FULL ENTD composition (data.hts.entd.filtered,
+# multi-person households), NOT data.hts.selected (= reweighted, one person per
+# household for the IPF person-matching path). A 1-person seed silently produces
+# all-1-person synthetic households. build_seed preserves the donor composition and
+# logs a warning when the donor looks like the reduced person-matching frame.
+
+class TestSeedHouseholdComposition:
+    def test_build_seed_preserves_multi_person_households(self):
+        """A multi-person ENTD donor must yield multi-person seed households."""
+        src = EntdSource()
+        seed_hh, seed_p, _ = src.build_seed(_entd_households(), _entd_persons())
+        persons_per_hh = seed_p.groupby("H_ID").size()
+        # Fixture: hh 10 -> 2, 20 -> 2, 30 -> 1 persons (mean 5/3 = 1.67).
+        assert persons_per_hh.max() > 1, "seed collapsed to 1 person/household"
+        assert persons_per_hh.mean() > 1.2
+
+    def test_build_seed_warns_on_one_person_per_household(self, caplog):
+        """A 1-person-per-household donor (the reweighted frame symptom) must warn."""
+        import logging
+
+        hh = pd.DataFrame({
+            "household_id":     [10, 20, 30],
+            "household_weight": [1.0, 1.0, 1.0],
+            "urban_type":       ["central_city", "suburb", "none"],
+        })
+        # One person per household -> the reweighted person-matching frame symptom.
+        persons = pd.DataFrame({
+            "person_id":               [100, 200, 300],
+            "household_id":            [10, 20, 30],
+            "person_weight":           [1.0, 1.0, 1.0],
+            "age":                     [40, 25, 70],
+            "sex":                     ["male", "female", "male"],
+            "employed":                [True, True, False],
+            "studies":                 [False, False, False],
+            "has_license":             [True, True, False],
+            "has_pt_subscription":     [True, False, False],
+            "socioprofessional_class": [3, 5, 7],
+        })
+        with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.sources.entd"):
+            EntdSource().build_seed(hh, persons)
+        assert any("persons/household" in r.message for r in caplog.records), (
+            "build_seed must warn when the donor has ~1 person/household"
+        )
+
+    def test_build_seed_no_warning_on_multi_person(self, caplog):
+        """No warning when the donor has realistic multi-person households."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.sources.entd"):
+            EntdSource().build_seed(_entd_households(), _entd_persons())
+        assert not any("persons/household" in r.message for r in caplog.records)

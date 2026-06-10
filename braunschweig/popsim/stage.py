@@ -121,11 +121,18 @@ def configure(context):
 
     source_name = context.config(KEY_SOURCE, "mid")
     if source_name == "entd":
-        # popsim_open: the cleaned ENTD (households, persons, trips) come from the
-        # eqasim data.hts.selected stage (which resolves to data.hts.entd.reweighted
-        # when hts="entd" is set in config).  We alias it to "hts_donor" so execute
-        # can retrieve it under a stable name without depending on the alias logic.
-        context.stage("data.hts.selected", alias="hts_donor")
+        # popsim_open: the ENTD donor for the PopulationSim SEED + attribute/trip
+        # mapping must carry the FULL household composition (multi-person households).
+        # We deliberately use data.hts.entd.FILTERED, NOT data.hts.selected:
+        # data.hts.selected resolves (via hts="entd") to data.hts.entd.reweighted,
+        # which collapses the survey to ONE person per household for the eqasim IPF
+        # person-matching path (49283 -> 17997 persons, mean 1.0/household). Seeding
+        # PopulationSim with that would yield all-1-person synthetic households.
+        # data.hts.entd.filtered keeps the full composition (20178 hh / 49283 persons,
+        # mean 2.44) with the natural ENTD weights -- the unbiased seed PopulationSim
+        # then reweights to the German Zensus controls. (ENTD-specific because
+        # popsim_open is ENTD-only; extend this branch for another survey.)
+        context.stage("data.hts.entd.filtered", alias="hts_donor")
 
 
 def execute(context) -> pd.DataFrame:

@@ -336,6 +336,24 @@ class EntdSource:
             table_name="ENTD persons",
         )
 
+        # Defensive guard (no-silent-fallback): the PopulationSim seed must carry the
+        # FULL household composition. If the donor is accidentally the eqasim
+        # person-matching frame (data.hts.selected -> data.hts.entd.reweighted keeps
+        # ~1 person/household for IPF matching), the synthetic households would all
+        # be 1-person. Warn loudly on a near-1 persons/household mean so the wiring
+        # mistake is observable instead of producing a silently wrong population.
+        n_hh_in = households["household_id"].nunique()
+        mean_pph = len(persons) / max(n_hh_in, 1)
+        if mean_pph < 1.2:
+            logger.warning(
+                "[EntdSource.build_seed] donor has only %.2f persons/household "
+                "(%d persons / %d households) -- this looks like the reweighted "
+                "person-matching frame, NOT the full composition. The PopulationSim "
+                "seed must come from data.hts.entd.filtered (multi-person households), "
+                "or every synthetic household will have exactly one person.",
+                mean_pph, len(persons), n_hh_in,
+            )
+
         # --- Validate and map sex -> HP_SEX (1=male, 2=female) ----------------
         # This is a fail-fast guard: an unmapped value would silently produce NaN
         # in HP_SEX and break the PopulationSim sex-margin controls.

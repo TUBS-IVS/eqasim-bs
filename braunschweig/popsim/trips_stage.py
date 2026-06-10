@@ -197,9 +197,11 @@ def configure(context):
 
     source_name = context.config("braunschweig.population.popsim.source", "mid")
     if source_name == "entd":
-        # popsim_open: the cleaned ENTD frames (including trips) come from
-        # data.hts.selected.  Alias to "hts_donor" so execute can retrieve them.
-        context.stage("data.hts.selected", alias="hts_donor")
+        # popsim_open: the full-composition ENTD frames (including all trips) come
+        # from data.hts.entd.FILTERED, NOT data.hts.selected (= reweighted, which
+        # keeps one person per household for IPF matching). Must match the seed
+        # donor used in braunschweig.popsim.stage. Alias to "hts_donor".
+        context.stage("data.hts.entd.filtered", alias="hts_donor")
 
 
 def execute(context):
