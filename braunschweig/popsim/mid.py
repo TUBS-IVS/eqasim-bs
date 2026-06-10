@@ -291,6 +291,13 @@ def load_mid_seed(
     applies the complete-household (``kernwo``) filter so every kept household has
     its persons (no NaN incidence in PopulationSim), and returns
     ``(households, persons, report)`` with the essentials + ``STAAT``.
+
+    Args:
+        day_filter_values: Accepted ``kernwo`` values for the day filter.
+            ``None`` (default) selects the standard weekday default declared on
+            ``columns.day_filter_values``; ``()`` or any empty iterable DISABLES
+            the day filter (all households kept); any non-empty iterable is used
+            verbatim.
     """
     mid_dir = Path(mid_dir)
     # Load household id, weight, and RegioStaR7 (Phase 4A plumbing: the RS7 code
@@ -315,9 +322,18 @@ def load_mid_seed(
         sep=detect_csv_separator(persons_path),
     )
 
+    # `None` -> standard weekday default; explicit empty iterable -> day filter OFF
+    # (filter_complete_households treats `None` as "no day filtering"); a plain
+    # `or` here would silently resurrect the default for an empty tuple.
+    if day_filter_values is None:
+        effective_day_filter = columns.day_filter_values
+    elif len(tuple(day_filter_values)) == 0:
+        effective_day_filter = None
+    else:
+        effective_day_filter = tuple(day_filter_values)
     households, persons, report = seedmod.filter_complete_households(
         households, persons, columns,
-        day_filter_values=day_filter_values or columns.day_filter_values,
+        day_filter_values=effective_day_filter,
     )
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,

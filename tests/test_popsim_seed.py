@@ -301,3 +301,24 @@ def test_build_seed_uses_columns_default_day_filter_values(tmp_path):
     df_hh, _, report = build_seed(hh_path, p_path, SYNTHETIC_COLUMNS)
     assert df_hh["H_ID"].tolist() == [1]
     assert report.n_households_complete == 1
+
+
+def test_load_mid_seed_day_filter_disable_able(tmp_path):
+    """day_filter_values=() must DISABLE the filter (keep all households),
+    not silently fall back to the weekday default (1, 2, 3)."""
+    from braunschweig.popsim import mid
+
+    (tmp_path / "MiD2023_Haushalte.csv").write_text(
+        "H_ID,H_GEW,RegioStaR7\n1,1.0,72\n2,1.0,72\n", encoding="utf-8"
+    )
+    # The person of household 2 reported on a weekend day (kernwo=4): the default
+    # weekday filter (1, 2, 3) would drop household 2; with the filter disabled
+    # both households must be kept.
+    (tmp_path / "MiD2023_Personen.csv").write_text(
+        "H_ID,P_ID,P_GEW,HP_ALTER,HP_SEX,kernwo\n1,1,1.0,40,1,2\n2,1,1.0,30,2,4\n",
+        encoding="utf-8",
+    )
+
+    df_hh, df_p, report = mid.load_mid_seed(tmp_path, day_filter_values=())
+    assert set(df_hh[MID_SEED_COLUMNS.household_id]) == {1, 2}
+    assert report.n_households_complete == 2
