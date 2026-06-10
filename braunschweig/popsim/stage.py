@@ -137,12 +137,14 @@ def execute(context) -> pd.DataFrame:
     logging_path = context.config(KEY_LOGGING)
     popsimprep_dir = context.config(KEY_POPSIMPREP)
     uv_path = context.config(KEY_UV)
-    max_cells = int(context.config(KEY_MAX_CELLS, 3000))
-    num_workers = int(context.config(KEY_WORKERS, 3))
+    # synpp's ExecuteContext.config() takes only the key; the defaults are
+    # registered in configure() (3000 / 3 / "mid" / False) and resolved here.
+    max_cells = int(context.config(KEY_MAX_CELLS))
+    num_workers = int(context.config(KEY_WORKERS))
     work_dir = context.config(KEY_WORK_DIR)
     kreise = list(context.config(KEY_KREISE))
-    source_name = context.config(KEY_SOURCE, "mid")
-    stratify_regiostar = bool(context.config(KEY_STRATIFY, False))
+    source_name = context.config(KEY_SOURCE)
+    stratify_regiostar = bool(context.config(KEY_STRATIFY))
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)

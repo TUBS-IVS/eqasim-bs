@@ -207,7 +207,9 @@ def execute(context):
 
     persons = context.stage("persons")
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    source_name = context.config("braunschweig.population.popsim.source", "mid")
+    # synpp's ExecuteContext.config() takes only the key; the default ("mid") is
+    # registered in configure().
+    source_name = context.config("braunschweig.population.popsim.source")
 
     source = sources.get_source(source_name)
     logger.info("[trips_stage] active donor source: %s", source.name)

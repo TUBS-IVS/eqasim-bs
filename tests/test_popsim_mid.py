@@ -90,6 +90,31 @@ def test_build_control_totals_hierarchically_consistent():
     df1km = totals["ZENSUS1km"].set_index("ZENSUS1km")["POP_ZENSUS1km"]
     for parent, value in df1km.items():
         assert recon[parent] == value
+
+
+def test_build_control_totals_fills_suppressed_nan_with_zero():
+    """A Zensus-suppressed (NaN) control cell must be filled with 0, not crash.
+
+    Mirrors the real data condition (one inhabited ZGB cell carries NaN in the
+    household-size control). The cell is kept (population preserved) and the
+    control integerizes to 0 for that cell; the no-silent-fallback log records it.
+    """
+    targets, xwalk = _targets_and_xwalk()
+    targets = targets.copy()
+    targets.loc[0, "POP"] = float("nan")  # suppressed cell in parent A
+    totals = mid.build_control_totals(targets, xwalk, ["POP"])
+    df100 = totals["ZENSUS100m"].set_index("ZENSUS100m")["POP_ZENSUS100m"]
+    # The suppressed cell integerizes to 0; the other cell in parent A keeps its 3.
+    assert df100.iloc[0] == 0
+    assert df100.notna().all()
+    # Hierarchy still consistent (1km total = sum of 100m).
+    merged = totals["ZENSUS100m"].merge(
+        xwalk[["ZENSUS100m", "ZENSUS1km"]], on="ZENSUS100m"
+    )
+    recon = merged.groupby("ZENSUS1km")["POP_ZENSUS100m"].sum()
+    df1km = totals["ZENSUS1km"].set_index("ZENSUS1km")["POP_ZENSUS1km"]
+    for parent, value in df1km.items():
+        assert recon[parent] == value
     # STAAT / WELT carry only the geography key, no controls (notebook + spec).
     assert list(totals["STAAT"].columns) == ["STAAT", "WELT"]
     assert totals["STAAT"].loc[0, "STAAT"] == 1

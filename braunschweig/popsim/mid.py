@@ -49,6 +49,47 @@ _EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS", "RegioStaR
 _ARS_COLUMN = "RegionalSchlussel_ARS"
 
 
+def detect_csv_separator(path: Union[str, Path]) -> str:
+    """Detect the field separator of a MiD CSV from its header line.
+
+    The MiD 2023 scientific-use delivery has been observed with BOTH separators:
+    a comma-separated export (the ZGB regional sample used here) and a
+    semicolon-separated German-locale export. Hard-coding one separator silently
+    mis-parses the other -- the whole header collapses into a single column,
+    which then fails much later with a misleading "missing required columns"
+    error (observed for ``MiD2023_Wege.csv``). The separator is therefore
+    detected from the header rather than assumed.
+
+    Parameters
+    ----------
+    path:
+        Path to the MiD CSV file.
+
+    Returns
+    -------
+    str
+        ``","`` if the header contains at least as many commas as semicolons,
+        otherwise ``";"``.
+
+    Raises
+    ------
+    ValueError
+        If the header line contains neither ``,`` nor ``;`` (so no separator can
+        be inferred and a silent mis-parse must be avoided).
+    """
+    with open(path, "r", encoding="utf-8") as handle:
+        header = handle.readline()
+    n_comma = header.count(",")
+    n_semicolon = header.count(";")
+    if n_comma == 0 and n_semicolon == 0:
+        raise ValueError(
+            f"Cannot detect a ',' or ';' field separator in the header of {path}: "
+            f"{header[:120]!r}. The MiD CSV delivery must be comma- or "
+            "semicolon-separated."
+        )
+    return "," if n_comma >= n_semicolon else ";"
+
+
 # --------------------------------------------------------------------------- #
 # Control spec
 # --------------------------------------------------------------------------- #
@@ -147,6 +188,31 @@ def build_control_totals(
     work = per_cell_targets.copy()
     work[parent_col] = work[cell_col].map(parent_of)
 
+    # Zensus 2022 suppresses (Geheimhaltung) some per-cell aggregates: an inhabited
+    # 100 m cell can carry a NaN in a control count column. largest_remainder_round
+    # cannot integerize NaN, so the missing counts are filled with 0 (the cell
+    # contributes no recorded units of that category to the control). This is made
+    # observable per the no-silent-fallback policy: the affected cell count and rate
+    # are logged, and a high rate (> 1 %) is flagged as a likely data/load problem
+    # rather than genuine Zensus suppression.
+    n_cells = len(work)
+    for col in base_cols:
+        n_nan = int(work[col].isna().sum())
+        if n_nan:
+            rate = n_nan / n_cells if n_cells else 0.0
+            message = (
+                "[popsim.controls] control column %r has %d/%d (%.3f%%) NaN cells "
+                "(Zensus suppression); filling with 0."
+            )
+            if rate > 0.01:
+                logger.warning(
+                    message + " High rate -- check the prepared cell parquet load.",
+                    col, n_nan, n_cells, 100.0 * rate,
+                )
+            else:
+                logger.info(message, col, n_nan, n_cells, 100.0 * rate)
+            work[col] = work[col].fillna(0)
+
     df_100m = pd.DataFrame({cell_col: work[cell_col].to_numpy()})
     for col in base_cols:
         df_100m[f"{col}{SUFFIX_100M}"] = ctrl.integerize_within_parents(
@@ -189,9 +255,12 @@ def load_mid_seed(
     # Load household id, weight, and RegioStaR7 (Phase 4A plumbing: the RS7 code
     # is carried onto the seed households so Phase 4B donor stratification can use
     # the cell's urban/rural class to restrict the donor pool without an extra join).
+    households_path = mid_dir / "MiD2023_Haushalte.csv"
+    persons_path = mid_dir / "MiD2023_Personen.csv"
     households = pd.read_csv(
-        mid_dir / "MiD2023_Haushalte.csv",
+        households_path,
         usecols=[columns.household_id, columns.household_weight, "RegioStaR7"],
+        sep=detect_csv_separator(households_path),
     )
     person_cols = [
         columns.person_household_id, columns.person_id, columns.person_weight,
@@ -200,8 +269,9 @@ def load_mid_seed(
     if columns.day_filter_col:
         person_cols.append(columns.day_filter_col)
     persons = pd.read_csv(
-        mid_dir / "MiD2023_Personen.csv",
+        persons_path,
         usecols=list(dict.fromkeys(person_cols)),
+        sep=detect_csv_separator(persons_path),
     )
 
     households, persons, report = seedmod.filter_complete_households(
@@ -245,11 +315,15 @@ def load_mid_attributes(
     ``braunschweig.popsim.assembly.build_persons``.
     """
     mid_dir = Path(mid_dir)
+    households_path = mid_dir / "MiD2023_Haushalte.csv"
+    persons_path = mid_dir / "MiD2023_Personen.csv"
     households = pd.read_csv(
-        mid_dir / "MiD2023_Haushalte.csv", usecols=list(MID_HOUSEHOLD_ATTR_COLS)
+        households_path, usecols=list(MID_HOUSEHOLD_ATTR_COLS),
+        sep=detect_csv_separator(households_path),
     )
     persons = pd.read_csv(
-        mid_dir / "MiD2023_Personen.csv", usecols=list(MID_PERSON_ATTR_COLS)
+        persons_path, usecols=list(MID_PERSON_ATTR_COLS),
+        sep=detect_csv_separator(persons_path),
     )
     return households, persons
 
@@ -259,11 +333,13 @@ def load_mid_wege(
 ) -> pd.DataFrame:
     """Load the MiD 2023 Wege (trip) table for the trips_stage.
 
-    MiD2023_Wege.csv uses a semicolon field separator (German locale export
-    convention, confirmed from the raw INFAS delivery). All columns are loaded
-    (no usecols filter) so that every MiD Wege extra column is available as
-    a traceability/analysis extra in the output trip table. The minimum columns
-    required by ``braunschweig.popsim.trips.build_trip_table`` are listed in
+    The field separator is detected from the header (``detect_csv_separator``)
+    because the MiD 2023 delivery occurs in both comma- and semicolon-separated
+    variants; assuming one silently mis-parses the other into a single column.
+    All columns are loaded (no usecols filter) so that every MiD Wege extra
+    column is available as a traceability/analysis extra in the output trip
+    table. The minimum columns required by
+    ``braunschweig.popsim.trips.build_trip_table`` are listed in
     ``MID_WEGE_REQUIRED_COLS``; the file is validated to contain them.
 
     Parameters
@@ -283,7 +359,7 @@ def load_mid_wege(
             f"MiD Wege file not found: {wege_path}. "
             "Ensure the MiD 2023 delivery is present in the configured mid_dir."
         )
-    df = pd.read_csv(wege_path, sep=";", low_memory=False)
+    df = pd.read_csv(wege_path, sep=detect_csv_separator(wege_path), low_memory=False)
     missing = [c for c in MID_WEGE_REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError(
