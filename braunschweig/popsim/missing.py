@@ -21,12 +21,17 @@ NONRESPONSE_CODES = frozenset({9, 99, 999, 9999, 94, 994, 9994, 95, 995, 9995})
 
 
 def classify_code(code, structural) -> str:
-    """Classify a MiD code as 'valid', 'structural', or 'nonresponse'."""
+    """Classify a MiD code as 'structural', 'nonresponse', or 'valid_or_unknown'.
+
+    The 'valid_or_unknown' bucket is split in ``resolve``: codes present in the
+    spec's ``value_map`` are valid; any remaining code is unenumerated and raised
+    on (rather than silently becoming NaN, which ``.astype(bool)`` coerces to True).
+    """
     if code in structural:
         return "structural"
     if code in NONRESPONSE_CODES:
         return "nonresponse"
-    return "valid"
+    return "valid_or_unknown"
 
 
 @dataclass(frozen=True)
@@ -63,11 +68,22 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
     structural_codes = set(spec.structural)
     klass = src.map(lambda c: classify_code(c, structural_codes))
 
+    valid_codes = set(spec.value_map)
+    is_valid = (klass == "valid_or_unknown") & src.isin(valid_codes)
+    is_unknown = (klass == "valid_or_unknown") & ~src.isin(valid_codes)
+    if is_unknown.any():
+        bad = src[is_unknown].value_counts().to_dict()
+        raise ValueError(
+            f"[popsim.missing] {spec.name}: {int(is_unknown.sum())} rows carry "
+            f"codes that are neither in value_map, structural, nor NONRESPONSE_CODES "
+            f"(unenumerated): {bad}. Map them explicitly (no silent NaN->True)."
+        )
+
     out = pd.Series(index=df.index, dtype=object)
-    out[klass == "valid"] = src[klass == "valid"].map(spec.value_map)
+    out[is_valid] = src[is_valid].map(spec.value_map)
     out[klass == "structural"] = src[klass == "structural"].map(spec.structural)
 
-    valid_pool = out[klass == "valid"]
+    valid_pool = out[is_valid]
     nonresp_idx = out.index[klass == "nonresponse"]
     for idx in nonresp_idx:
         pool = valid_pool
@@ -82,7 +98,7 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
 
     n_struct = int((klass == "structural").sum())
     n_nonresp = int((klass == "nonresponse").sum())
-    report = MissingReport(spec.name, len(df), int((klass == "valid").sum()), n_struct, n_nonresp)
+    report = MissingReport(spec.name, len(df), int(is_valid.sum()), n_struct, n_nonresp)
     logger.info(
         "[popsim.missing] %s: %d/%d structural (deterministic), %d (%.2f%%) item-nonresponse "
         "(imputed from %s group)",
