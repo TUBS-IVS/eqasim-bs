@@ -453,7 +453,11 @@ def _execute_gravity_base(context):
     conditional probabilities.
     """
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
-    df_population = context.stage("braunschweig.ipf.attributed")
+    # data.census.filtered resolves to the configured population producer
+    # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
+    # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
+    # always come from the SAME population as the demand.
+    df_population = context.stage("data.census.filtered")
     df_employees = context.stage("braunschweig.data.census.employees")
     df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
 
@@ -562,7 +566,11 @@ IPF_TOLERANCE = 1e-3
 
 def configure(context):
     context.stage("eqasim_common.gravity.distance_matrix")
-    context.stage("braunschweig.ipf.attributed")
+    # data.census.filtered resolves to the configured population producer
+    # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
+    # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
+    # always come from the SAME population as the demand.
+    context.stage("data.census.filtered")
     context.stage("braunschweig.data.census.employees")
     context.stage("braunschweig.data.bbsr.regiostar")
     context.config("gravity_slope", DEFAULT_SLOPE)
@@ -821,7 +829,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 def execute(context):
     df_work_od, df_education_od = _execute_gravity_base(context)
-    df_population = context.stage("braunschweig.ipf.attributed")
+    # data.census.filtered resolves to the configured population producer
+    # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
+    # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
+    # always come from the SAME population as the demand.
+    df_population = context.stage("data.census.filtered")
     df_pendler = context.stage("braunschweig.data.census.pendler")
     df_employment = context.stage("braunschweig.data.census.employment")
     df_external = context.stage("braunschweig.data.external_workplaces")
