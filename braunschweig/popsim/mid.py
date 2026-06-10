@@ -329,10 +329,12 @@ def load_mid_seed(
 # MiD columns needed to enrich the synthetic persons (beyond the seed control cols).
 MID_PERSON_ATTR_COLS = (
     "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT",
+    "alter_gr1",  # conditioning column for grouped item-nonresponse imputation
 )
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
     "RegioStaR7",  # Phase 4A: RegioStaR-7 code for donor urban/rural stratification
+    "hhgr_gr",  # conditioning column for grouped item-nonresponse imputation
 )
 
 # Minimum columns required by build_trip_table / trips_stage.

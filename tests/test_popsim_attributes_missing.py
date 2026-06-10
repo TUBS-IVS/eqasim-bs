@@ -16,6 +16,12 @@ import pandas as pd
 from braunschweig.popsim import attributes as a
 
 
+def test_mid_attr_cols_include_conditioning_columns():
+    from braunschweig.popsim import mid
+    assert "alter_gr1" in mid.MID_PERSON_ATTR_COLS
+    assert "hhgr_gr" in mid.MID_HOUSEHOLD_ATTR_COLS
+
+
 def test_has_license_structural_child_is_false_nonresponse_imputed():
     persons = pd.DataFrame({
         "P_FSCHEIN": [1, 2, 403, 9],
