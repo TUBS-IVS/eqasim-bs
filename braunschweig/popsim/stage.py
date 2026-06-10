@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import assembly
@@ -111,6 +112,9 @@ def configure(context):
     context.config(KEY_WORK_DIR)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
+    # Seeded attribute imputation in build_persons; declaring the key also makes
+    # synpp invalidate the stage cache when the pipeline random_seed changes.
+    context.config("random_seed")
     # Phase 4B: RegioStaR donor stratification.  Default False = byte-identical to
     # pre-4B: each batch receives the full seed, no stratum filtering.
     context.config(KEY_STRATIFY, False)
@@ -152,6 +156,11 @@ def execute(context) -> pd.DataFrame:
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE)
     stratify_regiostar = bool(context.config(KEY_STRATIFY))
+
+    # Seeded RNG for the stochastic attribute imputation in build_persons
+    # (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
+    random_seed = int(context.config("random_seed"))
+    rng = np.random.RandomState(random_seed + 74511)
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
@@ -255,6 +264,7 @@ def execute(context) -> pd.DataFrame:
     pseudonymise = (source_name == "mid")
     persons, pseudonym_map = assembly.build_persons(
         combined, donor_households, donor_persons,
+        rng=rng,
         attribute_mapper=source.map_person_attributes,
         pseudonymise=pseudonymise,
         inkar_scale=inkar_income,
