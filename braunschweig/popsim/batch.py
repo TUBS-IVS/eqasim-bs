@@ -233,6 +233,23 @@ class RunSummary:
     results: list[BatchResult] = field(default_factory=list)
 
 
+def _error_detail(result, *, max_chars: int = 800) -> str:
+    """Summarise a failed subprocess result's stderr/stdout for the BatchResult.
+
+    PopulationSim writes its real error to stderr (and progress to stdout); the
+    subprocess result captures both. Surfacing the tail makes a batch failure
+    diagnosable instead of an opaque "exit code N" (no-silent-fallback policy).
+    """
+    stderr = (getattr(result, "stderr", "") or "").strip()
+    stdout = (getattr(result, "stdout", "") or "").strip()
+    detail = stderr if stderr else stdout
+    if not detail:
+        return "(no stderr/stdout captured)"
+    lines = detail.splitlines()[-12:]
+    joined = " | ".join(line.strip() for line in lines if line.strip())
+    return joined[-max_chars:]
+
+
 def run_batches(
     folders: Sequence[str],
     run_one: Callable[[str], BatchResult],
@@ -271,6 +288,15 @@ def run_batches(
         "[popsim.batch] ran %d batches: %d succeeded, %d failed, %d skipped",
         summary.n_total, n_succeeded, n_failed, n_skipped,
     )
+    # Surface each failure's captured error (no-silent-fallback): a swallowed
+    # PopulationSim error would otherwise only show as a downstream "missing
+    # batch outputs" / empty-merge crash.
+    for result in results:
+        if result.status == "failed":
+            logger.warning(
+                "[popsim.batch] batch failed: %s -- %s",
+                result.folder, result.message,
+            )
     return summary
 
 
@@ -329,10 +355,12 @@ def make_populationsim_run_one(
 
         if result.returncode != 0:
             return BatchResult(str(folder), "failed",
-                               f"exit code {result.returncode}",
+                               f"exit code {result.returncode}: "
+                               f"{_error_detail(result)}",
                                time.monotonic() - start)
         if not is_completed(folder_path):
-            return BatchResult(str(folder), "failed", "no output file created",
+            return BatchResult(str(folder), "failed",
+                               f"no output file created; {_error_detail(result)}",
                                time.monotonic() - start)
         return BatchResult(str(folder), "succeeded", "completed",
                            time.monotonic() - start)

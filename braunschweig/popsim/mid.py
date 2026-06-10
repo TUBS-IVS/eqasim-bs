@@ -48,6 +48,47 @@ MID_SEED_COLUMNS = seedmod.MID_SEED_COLUMNS
 _EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS", "RegioStaR7")
 _ARS_COLUMN = "RegionalSchlussel_ARS"
 
+# A PopulationSim run is only scientifically usable if (nearly) all batches
+# produced output. Some recoverable misses are tolerated, but above this fraction
+# the producer raises instead of returning a partial/empty population that would
+# crash much later with an opaque "missing ZENSUS100m" merge error
+# (no-silent-fallback policy).
+MAX_MISSING_BATCH_RATE = 0.10
+
+
+def _run_batches_and_merge(
+    batch_folders: Sequence[str], run_one, *, num_workers: int
+) -> "mergemod.MergeReport":
+    """Run every batch, merge the outputs, and fail loudly on a high miss rate.
+
+    ``batch.run_batches`` already logs each failed batch's captured PopulationSim
+    error. Here the merged report is checked: if no batch produced output, or the
+    missing fraction exceeds ``MAX_MISSING_BATCH_RATE``, a ValueError is raised
+    naming the rate (the PopulationSim step is broken -- e.g. a bad seed, an
+    environment problem, or a control mismatch -- and the result is not usable).
+    """
+    batch.run_batches(batch_folders, run_one, num_workers=num_workers)
+    report = mergemod.merge_batch_folders(batch_folders)
+    n_total = len(batch_folders)
+    n_missing = int(getattr(report, "n_missing", 0) or 0)
+    # A "missing" batch wrote no output file at all (the broken-PopulationSim
+    # signal). This is distinct from a batch that ran but produced an empty
+    # table, so the guard keys on the missing rate, not on combined content.
+    rate = n_missing / n_total if n_total else 1.0
+    if n_total == 0 or rate > MAX_MISSING_BATCH_RATE:
+        raise ValueError(
+            f"PopulationSim produced no usable output: {n_missing}/{n_total} "
+            f"batches missing ({100.0 * rate:.1f}%, threshold "
+            f"{100.0 * MAX_MISSING_BATCH_RATE:.0f}%). Check the per-batch failure "
+            "messages logged above (captured PopulationSim stderr) -- the "
+            "PopulationSim step is broken, not merely a few recoverable misses."
+        )
+    logger.info(
+        "[popsim.mid] merged %d/%d batches (%d missing, %.1f%%).",
+        n_total - n_missing, n_total, n_missing, 100.0 * rate,
+    )
+    return report
+
 
 def detect_csv_separator(path: Union[str, Path]) -> str:
     """Detect the field separator of a MiD CSV from its header line.
@@ -608,8 +649,9 @@ def run_popsim_mid(
             )
             batch_folders.append(str(folder))
 
-        batch.run_batches(batch_folders, run_one, num_workers=num_workers)
-        return mergemod.merge_batch_folders(batch_folders)
+        return _run_batches_and_merge(
+            batch_folders, run_one, num_workers=num_workers
+        )
 
     # Stratified ON path (Phase 4B).
     # Requires a source with cell_stratum and donor_stratum.
@@ -666,5 +708,6 @@ def run_popsim_mid(
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1
 
-    batch.run_batches(batch_folders_stratified, run_one, num_workers=num_workers)
-    return mergemod.merge_batch_folders(batch_folders_stratified)
+    return _run_batches_and_merge(
+        batch_folders_stratified, run_one, num_workers=num_workers
+    )

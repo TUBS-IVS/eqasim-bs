@@ -374,3 +374,38 @@ class TestStratifyOff:
         )
         # Should have run without error; one batch for the one 1km parent.
         assert len(fake_run_one_calls) == 1
+
+    def test_all_batches_missing_raises(self, tmp_path):
+        """If PopulationSim writes no output, run_popsim_mid must raise, not return
+        an empty population (no-silent-fallback: the broken step is surfaced)."""
+        cells = _cells_frame(["KM1"], [72])
+        base_cols = ["COL_A"]
+        cells["COL_A"] = 5
+        cells["STAAT"] = 1
+        cells["WELT"] = 1
+        controls_df = pd.DataFrame({
+            "target": ["COL_A_ZENSUS100m_target"],
+            "geography": ["ZENSUS100m"],
+            "control_field": ["COL_A_ZENSUS100m"],
+        })
+        hh = _mid_seed_households([72, 75])
+        persons = _mid_seed_persons(1, hh)
+
+        import braunschweig.popsim.batch as batchmod
+
+        def failing_run_one(folder: str) -> batchmod.BatchResult:
+            # No output file written -> the batch is "missing".
+            return batchmod.BatchResult(folder, "failed", "exit code 1: boom", 0.0)
+
+        with pytest.raises(ValueError, match="no usable output"):
+            run_popsim_mid(
+                cells, base_cols, controls_df, hh, persons,
+                work_dir=tmp_path,
+                settings_yaml="",
+                logging_yaml="",
+                max_cells=1000,
+                run_one=failing_run_one,
+                num_workers=1,
+                source=MidSource(),
+                stratify_regiostar=False,
+            )
