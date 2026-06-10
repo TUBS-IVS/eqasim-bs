@@ -76,8 +76,26 @@ def map_mode(wege: pd.DataFrame, *, hvm_col: str = "hvm_imp") -> pd.DataFrame:
 
 
 def mid_time_seconds(wege: pd.DataFrame, hour_col: str, minute_col: str) -> pd.Series:
-    """Seconds since midnight from MiD hour + minute columns."""
-    return wege[hour_col].astype(float) * 3600.0 + wege[minute_col].astype(float) * 60.0
+    """Seconds since midnight from MiD hour + minute columns.
+
+    The MiD Wege time fields (W_SZS/W_SZM/W_AZS/W_AZM) carry missing/design
+    codes OUTSIDE the valid clock range, audited against the raw data: 99
+    ("keine Angabe", item non-response) and 701 ("bei regelmaessigen
+    beruflichen Wegen nicht erhoben", design code for rbW summary records) in
+    BOTH the hour and the minute fields. Any out-of-range value (hour not in
+    0..23, minute not in 0..59) invalidates the time and returns NaN, so coded
+    rows are NOT converted to multi-day timestamps that survive the downstream
+    trip-time repairs; the owning person is then classified unfixable and
+    replaced by the same-cell resample. A range check is used instead of an
+    explicit code list because 9 is a VALID minute (and hour) — only values
+    outside the clock range are codes.
+    """
+    hours = wege[hour_col].astype(float)
+    minutes = wege[minute_col].astype(float)
+    coded = (~hours.between(0, 23)) | (~minutes.between(0, 59))
+    seconds = hours * 3600.0 + minutes * 60.0
+    seconds[coded] = float("nan")
+    return seconds
 
 
 # Ordered tuple of columns that constitute the eqasim trip schema subset produced by

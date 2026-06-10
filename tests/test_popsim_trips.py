@@ -79,6 +79,30 @@ def test_mid_time_seconds_from_hours_minutes():
     assert list(out) == [8 * 3600 + 30 * 60, 17 * 3600 + 5 * 60]
 
 
+def test_mid_time_seconds_nans_coded_times():
+    # Audited codes in MiD2023_Wege.csv (W_SZS/W_SZM/W_AZS/W_AZM): 99 (keine
+    # Angabe) and 701 (design code, regelmaessige berufliche Wege). Any
+    # out-of-range hour (>23) or minute (>59) must yield NaN, not a multi-day
+    # timestamp. Minute 9 is a VALID minute and must stay valid.
+    import numpy as np
+
+    w = pd.DataFrame({"h": [8, 99, 701, 8], "m": [30, 0, 0, 9]})
+    s = trips.mid_time_seconds(w, "h", "m")
+    assert s.iloc[0] == 8 * 3600 + 30 * 60
+    assert np.isnan(s.iloc[1]) and np.isnan(s.iloc[2])
+    assert s.iloc[3] == 8 * 3600 + 9 * 60
+
+
+def test_mid_time_seconds_nans_coded_minutes():
+    # Codes also occur in the MINUTE field (99/701, audited counts match the
+    # hour field row-wise); an out-of-range minute invalidates the time too.
+    import numpy as np
+
+    w = pd.DataFrame({"h": [8, 8], "m": [99, 701]})
+    s = trips.mid_time_seconds(w, "h", "m")
+    assert np.isnan(s.iloc[0]) and np.isnan(s.iloc[1])
+
+
 def _make_two_trip_persons_and_wege():
     """Helper: one synthetic person with two sequential trips (work then home)."""
     persons = pd.DataFrame({
