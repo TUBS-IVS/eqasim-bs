@@ -33,12 +33,12 @@ def _make_mid_wege(
     (walk/car/car_passenger/bicycle/pt).
 
     Columns produced:
-        H_ID, P_ID, W_ID, hvm, W_ZWECK, wegkm_imp,
+        H_ID, P_ID, W_ID, hvm_imp, W_ZWECK, wegkm_imp,
         W_SZS, W_SZM, W_AZS, W_AZM, W_GEW
     """
     rng = np.random.RandomState(seed)
 
-    # hvm -> canonical mode (from trips.MODE_BY_HVM)
+    # hvm_imp -> canonical mode (from trips.MODE_BY_HVM)
     hvm_codes = [1, 4, 3, 2, 5]  # walk, car, car_passenger, bicycle, pt
 
     rows = []
@@ -60,7 +60,7 @@ def _make_mid_wege(
                 "W_ID": 1,
                 # secondary purpose (shop=4, leisure=7, other=5) — not primary
                 "W_ZWECK": rng.choice([4, 5, 7]),
-                "hvm": hvm,
+                "hvm_imp": hvm,
                 "wegkm_imp": km,
                 "W_SZS": dep_h,
                 "W_SZM": dep_m,
@@ -165,7 +165,7 @@ class TestMidDistributionWeighting:
         for i in range(20):
             rows.append({
                 "H_ID": 1, "P_ID": i + 1, "W_ID": 1,
-                "W_ZWECK": 4, "hvm": 4,
+                "W_ZWECK": 4, "hvm_imp": 4,
                 "wegkm_imp": 0.2,
                 "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
                 "W_GEW": 1.0,
@@ -173,7 +173,7 @@ class TestMidDistributionWeighting:
         # The 5 km trip.
         rows.append({
             "H_ID": 1, "P_ID": 99, "W_ID": 1,
-            "W_ZWECK": 4, "hvm": 4,
+            "W_ZWECK": 4, "hvm_imp": 4,
             "wegkm_imp": 5.0,
             "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
             "W_GEW": 1.0,
@@ -201,7 +201,7 @@ class TestMidDistributionWeighting:
         for i in range(10):
             rows.append({
                 "H_ID": 1, "P_ID": i + 1, "W_ID": 1,
-                "W_ZWECK": 4, "hvm": 4,
+                "W_ZWECK": 4, "hvm_imp": 4,
                 "wegkm_imp": 0.1,
                 "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 5,
                 "W_GEW": 1.0,
@@ -209,7 +209,7 @@ class TestMidDistributionWeighting:
         # 1 long (50 km) car trip, weight 100 (should dominate).
         rows.append({
             "H_ID": 1, "P_ID": 99, "W_ID": 1,
-            "W_ZWECK": 4, "hvm": 4,
+            "W_ZWECK": 4, "hvm_imp": 4,
             "wegkm_imp": 50.0,
             "W_SZS": 8, "W_SZM": 0, "W_AZS": 10, "W_AZM": 0,
             "W_GEW": 100.0,
@@ -249,7 +249,7 @@ class TestMidDistributionFiltering:
             {
                 "H_ID": 1, "P_ID": 1, "W_ID": 1,
                 "W_ZWECK": 1,   # work
-                "hvm": 4,
+                "hvm_imp": 4,
                 "wegkm_imp": 30.0,  # long distance; must not appear
                 "W_SZS": 8, "W_SZM": 0, "W_AZS": 9, "W_AZM": 0,
                 "W_GEW": 1.0,
@@ -259,7 +259,7 @@ class TestMidDistributionFiltering:
             {
                 "H_ID": 1, "P_ID": 1, "W_ID": 2,
                 "W_ZWECK": 8,   # home
-                "hvm": 4,
+                "hvm_imp": 4,
                 "wegkm_imp": 30.0,  # long distance; must not appear
                 "W_SZS": 17, "W_SZM": 0, "W_AZS": 18, "W_AZM": 0,
                 "W_GEW": 1.0,
@@ -268,7 +268,7 @@ class TestMidDistributionFiltering:
             {
                 "H_ID": 1, "P_ID": 2, "W_ID": 1,
                 "W_ZWECK": 4,   # shop
-                "hvm": 4,
+                "hvm_imp": 4,
                 "wegkm_imp": 1.0,   # short; must appear
                 "W_SZS": 9, "W_SZM": 0, "W_AZS": 9, "W_AZM": 30,
                 "W_GEW": 1.0,
@@ -278,7 +278,7 @@ class TestMidDistributionFiltering:
             {
                 "H_ID": 1, "P_ID": 2, "W_ID": 2,
                 "W_ZWECK": 8,   # home
-                "hvm": 4,
+                "hvm_imp": 4,
                 "wegkm_imp": 1.0,
                 "W_SZS": 9, "W_SZM": 30, "W_AZS": 10, "W_AZM": 0,
                 "W_GEW": 1.0,

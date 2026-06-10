@@ -16,7 +16,7 @@ from braunschweig.popsim import trips_stage
 def test_trips_stage_run_returns_contract_columns_and_euclidean():
     persons = pd.DataFrame({"person_id": ["A_1_0_1"], "H_ID": [1], "P_ID": [1]})
     wege = pd.DataFrame({"H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
-                         "W_ZWECK": [1, 8], "hvm": [4, 4], "W_SZS": [8, 17], "W_SZM": [0, 0],
+                         "W_ZWECK": [1, 8], "hvm_imp": [4, 4], "W_SZS": [8, 17], "W_SZM": [0, 0],
                          "W_AZS": [8, 17], "W_AZM": [30, 20], "wegkm_imp": [12.0, 12.0]})
     out = trips_stage.run(persons, wege, random_seed=0)
     for col in ["person_id", "trip_index", "departure_time", "arrival_time",
@@ -31,7 +31,7 @@ def test_trips_stage_jitter_is_per_person_keeps_chain_ordered():
     # Two trips for one person; after jitter the within-person ordering must hold.
     persons = pd.DataFrame({"person_id": ["A_1_0_1"], "H_ID": [1], "P_ID": [1]})
     wege = pd.DataFrame({"H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
-                         "W_ZWECK": [1, 8], "hvm": [4, 4], "W_SZS": [8, 17], "W_SZM": [0, 0],
+                         "W_ZWECK": [1, 8], "hvm_imp": [4, 4], "W_SZS": [8, 17], "W_SZM": [0, 0],
                          "W_AZS": [8, 17], "W_AZM": [30, 20], "wegkm_imp": [12.0, 12.0]})
     out = trips_stage.run(persons, wege, random_seed=0).sort_values("trip_index")
     deps = out["departure_time"].tolist()

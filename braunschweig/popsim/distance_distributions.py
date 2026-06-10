@@ -96,7 +96,7 @@ PRIMARY_ACTIVITIES = frozenset(["home", "work", "education"])
 BIN_SIZE = 200
 
 # MiD columns required to build the distributions.
-REQUIRED_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "hvm",
+REQUIRED_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "hvm_imp",
                     "wegkm_imp", "W_SZS", "W_SZM", "W_AZS", "W_AZM", "W_GEW")
 
 

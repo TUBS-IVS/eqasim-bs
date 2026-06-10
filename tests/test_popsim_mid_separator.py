@@ -14,7 +14,8 @@ from braunschweig.popsim import mid as mid_module
 
 def _write_min_wege(path, sep):
     """Write a minimal MiD Wege file with all MID_WEGE_REQUIRED_COLS."""
-    cols = list(mid_module.MID_WEGE_REQUIRED_COLS) + ["W_GEW", "hvm_imp"]
+    # hvm_imp is part of MID_WEGE_REQUIRED_COLS; only W_GEW is an extra here.
+    cols = list(mid_module.MID_WEGE_REQUIRED_COLS) + ["W_GEW"]
     row = {c: 1 for c in cols}
     pd.DataFrame([row, row]).to_csv(path, sep=sep, index=False)
 

@@ -341,7 +341,7 @@ MID_HOUSEHOLD_ATTR_COLS = (
 # All remaining columns are carried as extras (loaded via usecols=None -> all).
 MID_WEGE_REQUIRED_COLS = (
     "H_ID", "P_ID", "W_ID",
-    "W_ZWECK", "hvm",
+    "W_ZWECK", "hvm_imp",
     "W_SZS", "W_SZM",
     "W_AZS", "W_AZM",
     "wegkm_imp",

@@ -205,7 +205,7 @@ def _minimal_wege():
     """Two MiD trips for person (H_ID=1, P_ID=1)."""
     return pd.DataFrame({
         "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
-        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_ZWECK": [1, 8], "hvm_imp": [4, 4],
         "W_SZS": [8, 17], "W_SZM": [0, 0],
         "W_AZS": [8, 17], "W_AZM": [30, 20],
         "wegkm_imp": [12.0, 12.0],

@@ -313,7 +313,7 @@ def _mid_wege():
         "P_ID":      [1, 1, 1, 1],
         "W_ID":      [10, 11, 20, 21],
         "W_ZWECK":   [1, 8, 1, 8],   # work; home; work; home
-        "hvm":       [4, 4, 1, 1],   # bicycle; bicycle; walk; walk
+        "hvm_imp":   [4, 4, 1, 1],   # car; car; walk; walk (4 = MIV-Fahrer)
         "W_SZS":     [8,  17, 9,  18],
         "W_SZM":     [0,   0, 0,   0],
         "W_AZS":     [8,  17, 9,  18],

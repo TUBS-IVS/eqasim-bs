@@ -125,7 +125,7 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
         Synthetic persons with ``person_id``, ``H_ID``, ``P_ID``.
     mid_wege:
         MiD 2023 Wege with at least ``H_ID``, ``P_ID``, ``W_ID``, ``W_ZWECK``,
-        ``hvm``, ``W_SZS``, ``W_SZM``, ``W_AZS``, ``W_AZM``. Optional:
+        ``hvm_imp``, ``W_SZS``, ``W_SZM``, ``W_AZS``, ``W_AZM``. Optional:
         ``wegkm_imp`` (routed km; used to derive ``euclidean_distance``).
     random_seed:
         Integer seed for the per-person departure-time jitter RNG.

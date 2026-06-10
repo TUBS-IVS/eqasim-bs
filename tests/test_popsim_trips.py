@@ -1,7 +1,7 @@
 """Tests for mapping MiD Wege (trips) to eqasim activity chains (Phase 5g.4).
 
-Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm
-(main mode). Tiny synthetic data only.
+Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
+(imputed main mode; handbook Kap. 4.2). Tiny synthetic data only.
 """
 
 from __future__ import annotations
@@ -20,16 +20,18 @@ def test_map_purpose_from_w_zweck():
     ]
 
 
-def test_map_mode_from_hvm():
-    wege = pd.DataFrame({"hvm": [1, 2, 3, 4, 5, 9]})
-    out = trips.map_mode(wege)
-    # hvm=2 is Fahrrad -> canonical eqasim mode is "bicycle", not "bike".
-    assert list(out["mode"]) == ["walk", "bicycle", "car_passenger", "car", "pt", "walk"]
+def test_map_mode_uses_hvm_imp_and_rejects_unknown():
+    import pandas as pd, pytest
+    from braunschweig.popsim import trips
+    out = trips.map_mode(pd.DataFrame({"hvm_imp": [1, 2, 3, 4, 5]}))
+    assert out["mode"].tolist() == ["walk", "bicycle", "car_passenger", "car", "pt"]
+    with pytest.raises(ValueError, match="unmapped"):
+        trips.map_mode(pd.DataFrame({"hvm_imp": [99]}))
 
 
-def test_mode_bicycle_for_hvm_2():
-    """MiD hvm=2 (Fahrrad) must map to canonical eqasim mode 'bicycle'."""
-    wege = pd.DataFrame({"hvm": [2]})
+def test_mode_bicycle_for_hvm_imp_2():
+    """MiD hvm_imp=2 (Fahrrad) must map to canonical eqasim mode 'bicycle'."""
+    wege = pd.DataFrame({"hvm_imp": [2]})
     out = trips.map_mode(wege)
     assert out["mode"].iloc[0] == "bicycle"
 
@@ -50,7 +52,7 @@ def test_expand_persons_to_trips_joins_donor_wege():
             "P_ID": [1, 1, 2, 1],
             "W_ID": [1, 2, 1, 1],
             "W_ZWECK": [1, 8, 7, 4],
-            "hvm": [4, 4, 1, 5],
+            "hvm_imp": [4, 4, 1, 5],
         }
     )
     out = trips.expand_persons_to_trips(persons, wege)
@@ -66,7 +68,7 @@ def test_expand_persons_to_trips_person_without_wege_is_dropped():
     persons = pd.DataFrame(
         {"household_id": ["A_1_0"], "person_id": ["A_1_0_9"], "H_ID": [1], "P_ID": [9]}
     )
-    wege = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ID": [1], "W_ZWECK": [1], "hvm": [4]})
+    wege = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ID": [1], "W_ZWECK": [1], "hvm_imp": [4]})
     out = trips.expand_persons_to_trips(persons, wege)
     assert len(out) == 0
 
@@ -85,7 +87,7 @@ def _make_two_trip_persons_and_wege():
     })
     wege = pd.DataFrame({
         "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
-        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_ZWECK": [1, 8], "hvm_imp": [4, 4],
         "W_SZS": [8, 17], "W_SZM": [0, 0],
         "W_AZS": [8, 17], "W_AZM": [30, 20],
         "wegkm": [12.0, 12.0],
@@ -138,7 +140,7 @@ def test_build_trip_table_has_integer_trip_index():
         "H_ID": [1, 1, 2, 2, 2],
         "P_ID": [1, 1, 2, 2, 2],
         "W_ID": [1, 2, 1, 2, 3],
-        "W_ZWECK": [1, 8, 4, 7, 8], "hvm": [4, 4, 5, 1, 4],
+        "W_ZWECK": [1, 8, 4, 7, 8], "hvm_imp": [4, 4, 5, 1, 4],
         "W_SZS": [8, 17, 9, 12, 18], "W_SZM": [0, 0, 0, 30, 0],
         "W_AZS": [8, 17, 9, 12, 18], "W_AZM": [30, 20, 45, 50, 30],
         "wegkm": [12.0, 12.0, 5.0, 3.0, 8.0],
@@ -168,7 +170,7 @@ def test_build_trip_table_midnight_repair():
     # Two-trip chain: first trip (work commute 08:00–08:30), second trip crosses midnight.
     wege = pd.DataFrame({
         "H_ID": [10, 10], "P_ID": [5, 5], "W_ID": [1, 2],
-        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_ZWECK": [1, 8], "hvm_imp": [4, 4],
         # trip 1: 08:00 -> 08:30
         # trip 2: 23:30 -> 00:30 (midnight crossing; arrival coded as 00:30)
         "W_SZS": [8, 23], "W_SZM": [0, 30],
@@ -192,7 +194,7 @@ def test_build_validated_trip_table_returns_report():
     persons = pd.DataFrame({"person_id": ["A_1_0_1", "A_1_0_1"], "H_ID": [1, 1], "P_ID": [1, 1]})
     wege = pd.DataFrame({
         "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
-        "W_ZWECK": [1, 8], "hvm": [4, 4],
+        "W_ZWECK": [1, 8], "hvm_imp": [4, 4],
         "W_SZS": [8, 17], "W_SZM": [0, 0], "W_AZS": [8, 17], "W_AZM": [30, 20],
     })
     table, report = trips.build_validated_trip_table(persons, wege, require_home_closure=True)

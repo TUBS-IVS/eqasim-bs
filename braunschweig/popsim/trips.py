@@ -41,19 +41,18 @@ PURPOSE_BY_W_ZWECK = {
 }
 DEFAULT_PURPOSE = "other"
 
-# MiD hvm (Hauptverkehrsmittel) -> eqasim canonical mode.
+# MiD hvm_imp (imputed Hauptverkehrsmittel; handbook Kap. 4.2 mandates the
+# imputed variant) -> eqasim canonical mode. hvm_imp is fully imputed (codes
+# 1..5 only); any other code is a data/contract error and raises.
 # 1 zu Fuss -> walk; 2 Fahrrad -> bicycle (canonical eqasim mode, not "bike");
-# 3 MIV-Mitfahrer -> car_passenger; 4 MIV-Fahrer -> car; 5 OEPV -> pt;
-# 9 keine Angabe -> walk (conservative fallback).
+# 3 MIV-Mitfahrer -> car_passenger; 4 MIV-Fahrer -> car; 5 OEPV -> pt.
 MODE_BY_HVM = {
     1: "walk",
     2: "bicycle",
     3: "car_passenger",
     4: "car",
     5: "pt",
-    9: "walk",
 }
-DEFAULT_MODE = "walk"
 
 
 def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK") -> pd.DataFrame:
@@ -63,10 +62,16 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK") -> pd.DataFra
     return out
 
 
-def map_mode(wege: pd.DataFrame, *, hvm_col: str = "hvm") -> pd.DataFrame:
-    """Add the eqasim ``mode`` from MiD ``hvm``."""
+def map_mode(wege: pd.DataFrame, *, hvm_col: str = "hvm_imp") -> pd.DataFrame:
+    """Add the eqasim ``mode`` from MiD imputed main mode ``hvm_imp``.
+
+    Raises on any unmapped code (no silent walk fallback)."""
     out = wege.copy()
-    out["mode"] = out[hvm_col].map(MODE_BY_HVM).fillna(DEFAULT_MODE)
+    mapped = out[hvm_col].map(MODE_BY_HVM)
+    if mapped.isna().any():
+        bad = out.loc[mapped.isna(), hvm_col].value_counts().to_dict()
+        raise ValueError(f"[popsim.trips] unmapped {hvm_col} codes: {bad}")
+    out["mode"] = mapped
     return out
 
 
