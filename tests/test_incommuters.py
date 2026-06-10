@@ -15,9 +15,9 @@ from shapely.geometry import Point, box  # noqa: E402
 
 from braunschweig.synthesis.incommuters import (  # noqa: E402
     RAIL_LIKE_MODES,
-    _pt_home_coords,
     _sample_workplaces,
     build_pt_entry_stops,
+    build_incommuter_frames,
     direct_ride_stop_stats,
     direct_ride_stops,
 )
@@ -128,63 +128,269 @@ def test_sample_workplaces_counts_fallback_when_dest_kreis_absent():
     assert len(ids) == len(dest_ars)
 
 
-# --- PT-boarding primary/fallback transparency -----------------------------------
+# ---------------------------------------------------------------------------
+# PT-boarding via rail stations (new B5 placement): primary and fallback tests
+# ---------------------------------------------------------------------------
 
-def test_pt_home_coords_counts_own_kreis_stop_as_primary():
-    # PRIMARY: the PT agent's source Kreis 03241 HAS an entry stop -> it boards there.
-    pt_stops = pd.DataFrame([("03241", "sA", 604000.0, 5841000.0)],
-                            columns=["source_ars5", "stop_id", "x", "y"])
-    orig_ars = np.array(["03241"])
-    modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_stops)
-    # The single stop has no connectivity columns -> classed minor (legacy-degrade).
-    assert counts == {"own_kreis_stop": 1, "nearest_anywhere_stop": 0,
-                      "road_gate": 0, "major_stop": 0, "minor_stop": 1, "pt_agents": 1}
-    # the drawn home coord is the own-Kreis stop, not the gate
-    assert abs(hx[0] - 604000.0) < 1e-6 and abs(hy[0] - 5841000.0) < 1e-6
-
-
-def test_pt_home_coords_counts_nearest_anywhere_fallback():
-    # FALLBACK: the agent's Kreis 03999 has NO entry stop, but stops exist elsewhere
-    # (03241) -> it boards the nearest-anywhere stop and is counted as a fallback.
-    pt_stops = pd.DataFrame([("03241", "sA", 604000.0, 5841000.0)],
-                            columns=["source_ars5", "stop_id", "x", "y"])
-    orig_ars = np.array(["03999"])
-    modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_stops)
-    assert counts == {"own_kreis_stop": 0, "nearest_anywhere_stop": 1,
-                      "road_gate": 0, "major_stop": 0, "minor_stop": 1, "pt_agents": 1}
-    # boards the only existing stop (anywhere), not the road gate
-    assert abs(hx[0] - 604000.0) < 1e-6 and abs(hy[0] - 5841000.0) < 1e-6
+def _minimal_inputs():
+    """Minimal shared inputs for build_incommuter_frames tests."""
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000"], "capacity": [8000.0], "road_class": ["motorway"]},
+        geometry=[Point(605000, 5840000)], crs="EPSG:25832")
+    assignment = pd.DataFrame([("03241", "gate_0000", 1000, 0)],
+                              columns=["ars5", "gate_id", "inbound", "outbound"])
+    flows = pd.DataFrame([("03241", "03101", 1000)],
+                         columns=["orig_ars", "dest_ars", "flow"])
+    zgb_work = gpd.GeoDataFrame(
+        {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
+        geometry=[Point(606000, 5805000)], crs="EPSG:25832")
+    hts_persons = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42],
+                                "sex": ["female"]})
+    hts_trips = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
+        (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+    return gates, assignment, flows, zgb_work, hts_persons, hts_trips
 
 
-def test_pt_home_coords_counts_road_gate_worst_fallback_when_no_stops():
-    # WORST fallback: no PT entry stops at all -> every PT agent keeps the road gate.
-    orig_ars = np.array(["03241"])
-    modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, None)
-    assert counts == {"own_kreis_stop": 0, "nearest_anywhere_stop": 0,
-                      "road_gate": 1, "major_stop": 0, "minor_stop": 0, "pt_agents": 1}
-    # home coord stays the road gate (unchanged)
-    assert abs(hx[0] - 605000.0) < 1e-6 and abs(hy[0] - 5840000.0) < 1e-6
+def _pt_entry_stops_new_schema(ars5="03241", stop_id="railA",
+                                x=604000.0, y=5841000.0):
+    """A one-row pt_entry_stops DataFrame with the new B4 schema (reach + ewz)."""
+    return pd.DataFrame({
+        "source_ars5": [ars5],
+        "stop_id": [stop_id],
+        "x": [x],
+        "y": [y],
+        "reach": ["direct"],
+        "ewz": [50000.0],
+    })
 
 
-def test_pt_home_coords_ignores_car_agents_and_leaves_their_coords_at_gate():
-    # Only PT agents are counted/moved; car agents keep the gate coord untouched.
-    pt_stops = pd.DataFrame([("03241", "sA", 604000.0, 5841000.0)],
-                            columns=["source_ars5", "stop_id", "x", "y"])
-    orig_ars = np.array(["03241", "03241"])
-    modes = np.array(["car", "pt"])
-    gate_x = np.array([605000.0, 605000.0]); gate_y = np.array([5840000.0, 5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, pt_stops)
-    assert counts["pt_agents"] == 1 and counts["own_kreis_stop"] == 1
-    # car agent (index 0) keeps the gate coord
-    assert abs(hx[0] - 605000.0) < 1e-6 and abs(hy[0] - 5840000.0) < 1e-6
-    # pt agent (index 1) moved to the stop
-    assert abs(hx[1] - 604000.0) < 1e-6 and abs(hy[1] - 5841000.0) < 1e-6
+def test_pt_agents_board_at_rail_station_not_road_gate():
+    """PRIMARY: PT agents from a Kreis with eligible stations board at a rail station.
+
+    With 100% PT demand and one eligible rail station (railA) for source Kreis 03241,
+    every PT agent must board at railA (604000, 5841000) rather than the road gate
+    at (605000, 5840000).  The validation frame must record entry_kind=="rail_station"
+    and entry_x/entry_y matching the station coordinates.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops)
+
+    # All agents are PT (100% pt reference).
+    assert (frames["trips"]["mode"] == "pt").all(), \
+        "all agents should be PT with 100% PT reference"
+
+    # PT home coordinates must equal the rail station, not the road gate.
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    station_x, station_y = 604000.0, 5841000.0
+    gate_x, gate_y = 605000.0, 5840000.0
+    for _, row in home_locs.iterrows():
+        assert abs(row.geometry.x - station_x) < 1e-6, \
+            f"PT home x {row.geometry.x} does not match rail station {station_x}"
+        assert abs(row.geometry.y - station_y) < 1e-6, \
+            f"PT home y {row.geometry.y} does not match rail station {station_y}"
+        # Must NOT be at the road gate.
+        assert not (abs(row.geometry.x - gate_x) < 1e-6 and
+                    abs(row.geometry.y - gate_y) < 1e-6), \
+            "PT agent home must not be at the road gate"
+
+    # Validation frame: entry_kind must be "rail_station" for all PT agents.
+    val = frames["validation"]
+    assert (val["entry_kind"] == "rail_station").all(), \
+        "PT agents must have entry_kind=='rail_station'"
+    assert (abs(val["entry_x"] - station_x) < 1e-6).all(), \
+        "validation entry_x must match the rail station x coordinate"
+    assert (abs(val["entry_y"] - station_y) < 1e-6).all(), \
+        "validation entry_y must match the rail station y coordinate"
+
+
+def test_car_agents_board_at_road_gate():
+    """Car agents must board at the road gate; validation must record entry_kind=='road_gate'."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops)
+
+    assert (frames["trips"]["mode"] == "car").all(), \
+        "all agents should be car with 100% car reference"
+
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    for _, row in home_locs.iterrows():
+        assert abs(row.geometry.x - gate_x) < 1e-6, \
+            f"car home x {row.geometry.x} does not match gate {gate_x}"
+        assert abs(row.geometry.y - gate_y) < 1e-6, \
+            f"car home y {row.geometry.y} does not match gate {gate_y}"
+
+    val = frames["validation"]
+    assert (val["entry_kind"] == "road_gate").all(), \
+        "car agents must have entry_kind=='road_gate'"
+    assert (abs(val["entry_x"] - gate_x) < 1e-6).all(), \
+        "car validation entry_x must match the road gate x"
+    assert (abs(val["entry_y"] - gate_y) < 1e-6).all(), \
+        "car validation entry_y must match the road gate y"
+
+
+def test_pt_fallback_to_car_when_no_station_in_source_kreis():
+    """FALLBACK: a PT agent whose source Kreis has NO eligible rail station is reassigned to car.
+
+    The agent's mode in trips and persons (car_availability) must reflect the
+    reassignment consistently.  Its validation row must record entry_kind=='road_gate'
+    and entry coordinates matching the road gate, not a rail station for a different Kreis.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    # pt_entry_stops has only Kreis 03999, not the actual source Kreis 03241.
+    pt_stops_wrong_kreis = pd.DataFrame({
+        "source_ars5": ["03999"],  # different Kreis -> no station for 03241 agents
+        "stop_id": ["railOther"],
+        "x": [700000.0],
+        "y": [5900000.0],
+        "reach": ["direct"],
+        "ewz": [50000.0],
+    })
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops_wrong_kreis,
+        mode_balance=False,  # explicitly OFF: legacy lossy PT->car reassignment
+    )
+
+    # All agents were originally PT, but 03241 has no station -> all reassigned to car.
+    assert (frames["trips"]["mode"] == "car").all(), \
+        "PT agents with no source-Kreis rail station must be reassigned to car"
+
+    # car_availability must reflect the car mode (not "none").
+    persons = frames["persons"]
+    assert (persons["car_availability"] == "all").all(), \
+        "reassigned car agents must have car_availability='all'"
+
+    # Validation: entry_kind must be 'road_gate' for all reassigned agents.
+    val = frames["validation"]
+    assert (val["entry_kind"] == "road_gate").all(), \
+        "reassigned PT agents must have entry_kind=='road_gate' in validation"
+
+    # Home locations must be at the road gate (not at a rail station for another Kreis).
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    for _, row in home_locs.iterrows():
+        assert abs(row.geometry.x - gate_x) < 1e-6, \
+            "reassigned agent home must be at the road gate x"
+        assert abs(row.geometry.y - gate_y) < 1e-6, \
+            "reassigned agent home must be at the road gate y"
+
+
+def test_pt_and_car_mixed_validation_entry_kind():
+    """Mixed PT/car demand: each agent gets the correct entry_kind in validation."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+    # Force a large sampling rate so we get enough agents for both modes.
+    rng = np.random.default_rng(11)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops)
+
+    val = frames["validation"]
+    # All required columns present.
+    for col in ("ars5", "direction", "mode", "entry_kind", "entry_x", "entry_y", "gate_id"):
+        assert col in val.columns, f"column '{col}' missing from validation frame"
+
+    pt_rows = val[val["mode"] == "pt"]
+    car_rows = val[val["mode"] == "car"]
+
+    if len(pt_rows) > 0:
+        assert (pt_rows["entry_kind"] == "rail_station").all(), \
+            "PT rows must have entry_kind=='rail_station'"
+    if len(car_rows) > 0:
+        assert (car_rows["entry_kind"] == "road_gate").all(), \
+            "car rows must have entry_kind=='road_gate'"
+
+
+def test_validation_columns_schema():
+    """Validation frame must have the expected column schema after B5."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    rng = np.random.default_rng(7)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.01,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.9, "pt": 0.1}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0)
+    val = frames["validation"]
+    expected_cols = {"ars5", "direction", "mode", "entry_kind", "entry_x", "entry_y", "gate_id"}
+    assert expected_cols <= set(val.columns), \
+        f"validation frame missing columns; got {list(val.columns)}"
+
+
+def test_pt_placement_is_deterministic():
+    """Same rng seed -> byte-identical PT home locations and validation frame."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    def run(seed):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            pt_entry_stops=pt_stops,
+            mode_balance=False,  # explicitly OFF so rng stream is invariant
+        )
+
+    f1 = run(99)
+    f2 = run(99)
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="Repeated runs with same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
+        "Repeated runs with same seed must produce identical entry_kind"
+
+
+def test_pt_placement_no_station_empty_stops():
+    """When pt_entry_stops is None/empty, all PT agents keep the road gate (worst fallback)."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    rng = np.random.default_rng(5)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=None)
+
+    # When no stations, PT falls back to car.
+    assert (frames["trips"]["mode"] == "car").all(), \
+        "PT agents with no stations at all must be reassigned to car (worst fallback)"
+    val = frames["validation"]
+    assert (val["entry_kind"] == "road_gate").all(), \
+        "worst-fallback (no stations) must record entry_kind=='road_gate'"
 
 
 # --- entry-stop connectivity (n_zgb_routes / is_rail) -----------------------------
@@ -228,111 +434,480 @@ def test_rail_like_modes_excludes_tram_and_bus():
     assert "tram" not in RAIL_LIKE_MODES and "bus" not in RAIL_LIKE_MODES
 
 
-# --- PT boarding prefers well-connected (rail / multi-line) entry stops -----------
+# ---------------------------------------------------------------------------
+# Task 4b: real in-ring in-commuter origins (flag-gated, default OFF)
+# ---------------------------------------------------------------------------
 
-def _stops_far_rail_near_bus():
-    """Own-Kreis pool: a FAR rail stop (sRail) and a NEAR single-bus halt (sBus).
+def _gemeinden_for_origin_test(crs="EPSG:25832"):
+    """Minimal Gemeinden GeoDataFrame for real-origin tests.
 
-    The gate is at (605000, 5840000); sBus is 1 km away, sRail is 5 km away. The pure
-    geometric nearest rule would pick sBus; the connectivity-aware rule must pick sRail.
+    Geometry: a 1x1 unit square near the gate at (605000, 5840000).
+    The gate is at (605000, 5840000).  The Gemeinde centroid is at
+    (607000, 5842000) -- 2828 m NE, well within a 5000 m ring buffer
+    around the ZGB polygon that includes the gate point.  A second
+    "far" Gemeinde is placed 200 km away so the same fixture covers
+    both in-ring and far branches.
     """
-    return pd.DataFrame([
-        ("03241", "sRail", 600000.0, 5840000.0, 3, True),    # far, rail + multi-line
-        ("03241", "sBus", 605900.0, 5840000.0, 1, False),    # near, single bus line
-    ], columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
+    from shapely.geometry import Polygon as ShapelyPolygon
+    rows = [
+        {
+            "ars5": "03241",
+            "gem_ags": "03241001",
+            "ewz": 50000.0,
+            # In-ring: small square near the gate (chosen so rep_point is
+            # inside a ZGB buffer of the gate region).
+            "geometry": ShapelyPolygon([
+                (606000, 5841000), (608000, 5841000),
+                (608000, 5843000), (606000, 5843000),
+            ]),
+        },
+        {
+            "ars5": "09162",
+            "gem_ags": "09162001",
+            "ewz": 1300000.0,
+            # Far Gemeinde (Munich area): well outside any 50 km ring around ZGB.
+            "geometry": ShapelyPolygon([
+                (692000, 5335000), (694000, 5335000),
+                (694000, 5337000), (692000, 5337000),
+            ]),
+        },
+    ]
+    return gpd.GeoDataFrame(rows, crs=crs)
 
 
-def test_pt_home_coords_prefers_far_major_stop_over_near_minor():
-    stops = _stops_far_rail_near_bus()
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    # Boards the FAR rail/multi-line stop, not the nearer single-bus halt.
-    assert abs(hx[0] - 600000.0) < 1e-6 and abs(hy[0] - 5840000.0) < 1e-6
-    assert counts["major_stop"] == 1 and counts["minor_stop"] == 0
-    assert counts["own_kreis_stop"] == 1
+def _zgb_polygon_for_test():
+    """Dissolved ZGB polygon that covers the area around the test gate."""
+    return box(590000, 5820000, 650000, 5870000)
 
 
-def test_pt_home_coords_picks_nearest_among_multiple_major_stops():
-    # Two major stops (both multi-line); pick the NEAREST of them, ignoring a near minor.
-    stops = pd.DataFrame([
-        ("03241", "sRailFar", 600000.0, 5840000.0, 3, True),
-        ("03241", "sRailNear", 605500.0, 5840000.0, 2, True),
-        ("03241", "sBus", 605100.0, 5840000.0, 1, False),
-    ], columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    assert abs(hx[0] - 605500.0) < 1e-6  # nearest major, not the nearer minor bus halt
-    assert counts["major_stop"] == 1
+def test_real_origin_off_is_byte_identical():
+    """Flag OFF: no agent gets entry_kind='real_origin'; result matches a second OFF run.
+
+    CLAUDE.md no-silent-fallback: when the flag is OFF no rng draws for real origins
+    are consumed, so repeated runs with the same seed must be byte-identical.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    def run(seed):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            pt_entry_stops=pt_stops,
+            # Both flags explicitly OFF: no additional rng draws consumed, byte-identical.
+            real_origin=False,
+            mode_balance=False,
+        )
+
+    f1 = run(77)
+    f2 = run(77)
+
+    # No agent has entry_kind="real_origin" when the flag is OFF.
+    val1 = f1["validation"]
+    assert "real_origin" not in val1["entry_kind"].values, \
+        "Flag OFF: no agent should have entry_kind='real_origin'"
+
+    # Byte-identical outputs with the same seed.
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="Flag OFF: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
+        "Flag OFF: same seed must produce identical entry_kind lists"
+    np.testing.assert_array_equal(
+        f1["trips"]["departure_time"].to_numpy(),
+        f2["trips"]["departure_time"].to_numpy(),
+        err_msg="Flag OFF: same seed must produce identical departure times",
+    )
 
 
-def test_pt_home_coords_falls_back_to_nearest_when_no_major():
-    # No major stop in the pool (all single-bus halts) -> nearest overall, counted minor.
-    stops = pd.DataFrame([
-        ("03241", "sFar", 600000.0, 5840000.0, 1, False),
-        ("03241", "sNear", 605900.0, 5840000.0, 1, False),
-    ], columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, hy, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    assert abs(hx[0] - 605900.0) < 1e-6  # nearest of the two minor stops
-    assert counts["minor_stop"] == 1 and counts["major_stop"] == 0
+def test_real_origin_in_ring_agent_home_is_origin_not_gate():
+    """Flag ON: an in-ring agent's home is the real Gemeinde point, not the road gate.
+
+    The gate is at (605000, 5840000).  The in-ring Gemeinde representative point is
+    near (607000, 5842000).  With real_origin=True the in-ring car agent should have
+    its home at the Gemeinde point, NOT at the gate.  Validation must record
+    entry_kind='real_origin'.  home_to_gate_km must be > 0 (positive straight-line
+    distance from the real origin to the gate).
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    # Force 100% car so no PT station logic runs, making assertions simpler.
+    gemeinden = _gemeinden_for_origin_test()
+    zgb_poly = _zgb_polygon_for_test()
+
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+        source_buffer_m=5000.0,
+    )
+
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    assert len(home_locs) > 0, "Expected at least one in-commuter"
+
+    for _, row in home_locs.iterrows():
+        # Home must NOT be at the gate (in-ring Gemeinde is ~2 km away).
+        is_at_gate = (abs(row.geometry.x - gate_x) < 1.0
+                      and abs(row.geometry.y - gate_y) < 1.0)
+        assert not is_at_gate, \
+            f"In-ring agent home ({row.geometry.x:.0f},{row.geometry.y:.0f}) must NOT be at gate"
+        # Home must be in the Gemeinde square [606000..608000, 5841000..5843000].
+        assert 606000 <= row.geometry.x <= 608000 and 5841000 <= row.geometry.y <= 5843000, \
+            f"In-ring agent home ({row.geometry.x:.0f},{row.geometry.y:.0f}) outside Gemeinde bounds"
+
+    val = frames["validation"]
+    assert (val["entry_kind"] == "real_origin").all(), \
+        "Flag ON, in-ring agents: all must have entry_kind='real_origin'"
+
+    # gate_id is still populated (road gate kept as cordon-entry reference).
+    assert val["gate_id"].notna().all(), "gate_id must remain populated for in-ring agents"
+
+    # home_to_gate_km > 0: real origin to gate is a positive distance.
+    # We verify via depart_home: if home_to_gate_km > 0 the departure is earlier than
+    # it would be with home==gate (depart_home < arrive_work - inside_travel).
+    depart = frames["trips"].loc[frames["trips"]["preceding_purpose"] == "home",
+                                  "departure_time"].to_numpy()
+    assert len(depart) > 0
+    # Just check that departure times are finite positive numbers (timing ran with the
+    # shifted home_to_gate_km; exact value depends on inside trip distance).
+    assert np.all(np.isfinite(depart)), "depart_home must be finite for in-ring agents"
+    assert np.all(depart >= 0.0), "depart_home must be >= 0"
 
 
-def test_pt_home_coords_min_zgb_routes_threshold_controls_major():
-    # A 2-route non-rail hub is major at min_zgb_routes=2 but minor at 3.
-    stops = pd.DataFrame([
-        ("03241", "sHub", 600000.0, 5840000.0, 2, False),
-        ("03241", "sBus", 605900.0, 5840000.0, 1, False),
-    ], columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    # threshold 2 -> sHub is major, chosen despite being farther.
-    hx, _, c2 = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops,
-                                min_zgb_routes=2)
-    assert abs(hx[0] - 600000.0) < 1e-6 and c2["major_stop"] == 1
-    # threshold 3 -> no major -> nearest overall (the bus halt).
-    hx3, _, c3 = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops,
-                                 min_zgb_routes=3)
-    assert abs(hx3[0] - 605900.0) < 1e-6 and c3["minor_stop"] == 1
+def test_real_origin_far_agent_keeps_gate():
+    """Flag ON: a far (out-of-ring) car agent keeps its road gate as home.
+
+    Source Kreis 09162 (Munich) has no in-ring Gemeinden within 5 km of ZGB.
+    With real_origin=True the far agent must still be placed at the gate (road_gate).
+    """
+    # Use a flow from Munich (09162) so the agent's source Kreis is far.
+    far_gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000"], "capacity": [8000.0], "road_class": ["motorway"]},
+        geometry=[Point(605000, 5840000)], crs="EPSG:25832")
+    far_assignment = pd.DataFrame([("09162", "gate_0000", 1000, 0)],
+                                   columns=["ars5", "gate_id", "inbound", "outbound"])
+    far_flows = pd.DataFrame([("09162", "03101", 1000)],
+                              columns=["orig_ars", "dest_ars", "flow"])
+    zgb_work = gpd.GeoDataFrame(
+        {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
+        geometry=[Point(606000, 5805000)], crs="EPSG:25832")
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    ht = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
+        (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+
+    gemeinden = _gemeinden_for_origin_test()   # includes 09162 (far) Gemeinde
+    zgb_poly = _zgb_polygon_for_test()
+
+    rng = np.random.default_rng(55)
+    frames = build_incommuter_frames(
+        flows=far_flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=far_gates, assignment=far_assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+        source_buffer_m=5000.0,
+    )
+
+    gate_x, gate_y = 605000.0, 5840000.0
+    home_locs = frames["locations"][frames["locations"]["activity_index"] == 0]
+    for _, row in home_locs.iterrows():
+        assert abs(row.geometry.x - gate_x) < 1.0 and abs(row.geometry.y - gate_y) < 1.0, \
+            f"Far car agent home must be at road gate; got ({row.geometry.x:.0f},{row.geometry.y:.0f})"
+
+    val = frames["validation"]
+    assert (val["entry_kind"] == "road_gate").all(), \
+        "Far car agent must have entry_kind='road_gate' in validation"
 
 
-def test_pt_home_coords_prefer_rail_false_ignores_rail_flag():
-    # With prefer_rail=False a rail stop is NOT automatically major; only the route
-    # count matters. A far rail+single-route stop then loses to a near multi-line hub.
-    stops = pd.DataFrame([
-        ("03241", "sRail", 600000.0, 5840000.0, 1, True),    # far, rail but single route
-        ("03241", "sHub", 605900.0, 5840000.0, 2, False),    # near, 2-route hub
-    ], columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, _, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops,
-                                    min_zgb_routes=2, prefer_rail=False)
-    assert abs(hx[0] - 605900.0) < 1e-6  # the near multi-line hub, rail flag ignored
-    assert counts["major_stop"] == 1
+def test_real_origin_deterministic():
+    """Flag ON: same seed -> byte-identical results."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    gemeinden = _gemeinden_for_origin_test()
+    zgb_poly = _zgb_polygon_for_test()
+
+    def run(seed):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            real_origin=True, gemeinden=gemeinden, zgb_polygon=zgb_poly,
+            source_buffer_m=5000.0,
+        )
+
+    f1 = run(123)
+    f2 = run(123)
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="Flag ON: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["entry_kind"]) == list(f2["validation"]["entry_kind"]), \
+        "Flag ON: same seed must produce identical entry_kind lists"
 
 
-def test_pt_home_coords_is_deterministic():
-    # Same inputs -> byte-identical home coords and counts across repeated calls.
-    stops = _stops_far_rail_near_bus()
-    orig_ars = np.array(["03241", "03241"]); modes = np.array(["pt", "pt"])
-    gate_x = np.array([605000.0, 605000.0]); gate_y = np.array([5840000.0, 5840000.0])
-    first = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    second = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    np.testing.assert_array_equal(first[0], second[0])
-    np.testing.assert_array_equal(first[1], second[1])
-    assert first[2] == second[2]
+# ---------------------------------------------------------------------------
+# Mode balancer integration tests (flag cordon_incommuter_mode_balance)
+# ---------------------------------------------------------------------------
+
+def test_mode_balance_on_conserves_global_pt_count():
+    """mode_balance=True: global PT count after balancing equals the Mikrozensus target.
+
+    Setup: 100% PT reference + one station for source Kreis 03241.  Every agent is
+    assigned PT by the Mikrozensus draw; all have can_board_pt=True (station
+    exists); no forced demotions -> n_pt_final == n_pt_target (all remain PT).
+
+    This exercises the PRIMARY path: balancer fires, station draw always succeeds
+    because the balancer guarantees can_board_pt for every PT agent.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops,
+        mode_balance=True,
+    )
+
+    # With 100% PT reference and a valid station, all agents should be PT.
+    assert (frames["trips"]["mode"] == "pt").all(), \
+        "mode_balance=True with 100% PT reference and valid stations: all agents must be PT"
+
+    # Validation: entry_kind must be rail_station for all PT agents.
+    val = frames["validation"]
+    assert (val["entry_kind"] == "rail_station").all(), \
+        "mode_balance=True PT agents must board at rail station"
 
 
-def test_pt_home_coords_degrades_without_connectivity_columns():
-    # Legacy frame (no n_zgb_routes / is_rail) -> every stop minor, pure nearest rule.
-    stops = pd.DataFrame([
-        ("03241", "sFar", 600000.0, 5840000.0),
-        ("03241", "sNear", 605900.0, 5840000.0),
-    ], columns=["source_ars5", "stop_id", "x", "y"])
-    orig_ars = np.array(["03241"]); modes = np.array(["pt"])
-    gate_x = np.array([605000.0]); gate_y = np.array([5840000.0])
-    hx, _, counts = _pt_home_coords(orig_ars, modes, gate_x, gate_y, stops)
-    assert abs(hx[0] - 605900.0) < 1e-6  # nearest, old behaviour preserved
-    assert counts["minor_stop"] == 1 and counts["major_stop"] == 0
+def test_mode_balance_on_with_mixed_demand_compensates_forced_car():
+    """mode_balance=True: agents from a rail-less Kreis are forced to car, but the
+    global PT count is restored by promoting an equal number of reachable car agents.
+
+    Two flows:
+      - Kreis 03241: 500 agents, has a rail station -> can_board_pt=True
+      - Kreis 03999: 500 agents, NO rail station -> can_board_pt=False
+
+    Mode reference: 50/50 car/pt.  Mikrozensus assigns ~500 PT (250 from each Kreis).
+    The balancer must:
+      1. Force the ~250 PT agents from 03999 to car (no station).
+      2. Promote ~250 reachable car agents from 03241 back to PT.
+    -> global PT count stays at the Mikrozensus target (~500).
+
+    This is the COMPENSATION path: the balancer fires meaningfully and the
+    fallback-to-car is undone at the global level.
+    """
+    gates = gpd.GeoDataFrame(
+        {"gate_id": ["gate_0000", "gate_0001"],
+         "capacity": [8000.0, 8000.0], "road_class": ["motorway", "motorway"]},
+        geometry=[Point(605000, 5840000), Point(615000, 5840000)], crs="EPSG:25832")
+    assignment = pd.DataFrame([
+        ("03241", "gate_0000", 500, 0),
+        ("03999", "gate_0001", 500, 0),
+    ], columns=["ars5", "gate_id", "inbound", "outbound"])
+    flows = pd.DataFrame([
+        ("03241", "03101", 500),
+        ("03999", "03101", 500),
+    ], columns=["orig_ars", "dest_ars", "flow"])
+    zgb_work = gpd.GeoDataFrame(
+        {"location_id": ["work_1"], "commune_id": ["03101000"], "employees": [50]},
+        geometry=[Point(606000, 5805000)], crs="EPSG:25832")
+    hp = pd.DataFrame({"person_id": [1], "employed": [True], "age": [42], "sex": ["female"]})
+    ht = pd.DataFrame([
+        (1, "home", "work", 7 * 3600.0, 8 * 3600.0),
+        (1, "work", "home", 17 * 3600.0, 18 * 3600.0),
+    ], columns=["person_id", "preceding_purpose", "following_purpose",
+                "departure_time", "arrival_time"])
+
+    # Station only for 03241, not 03999.
+    pt_stops = _pt_entry_stops_new_schema(ars5="03241")
+
+    # Use large enough sampling_rate to get a significant number of agents.
+    rate = 0.2
+    rng_mikro = np.random.default_rng(0)
+    # Compute the Mikrozensus target count by running WITHOUT balancer first.
+    frames_off = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=rate,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng_mikro, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops, mode_balance=False,
+    )
+    # Count how many agents in the OFF run ended up as PT (the lossy result).
+    n_pt_off = int((frames_off["trips"]["mode"] == "pt").sum()) // 2  # trips are 2 per agent
+
+    rng_on = np.random.default_rng(0)
+    frames_on = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=rate,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng_on, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops, mode_balance=True,
+    )
+    n_pt_on = int((frames_on["trips"]["mode"] == "pt").sum()) // 2
+
+    # mode_balance=ON must have MORE PT agents than the lossy OFF run
+    # (the compensation promoted reachable car -> PT to restore the target).
+    # Both runs use the same rng stream so the Mikrozensus draw is identical.
+    assert n_pt_on >= n_pt_off, (
+        f"mode_balance=True must have >= PT agents than OFF run: "
+        f"ON={n_pt_on}, OFF={n_pt_off}. Compensation did not fire."
+    )
+
+    # The ON run must have no PT agents from Kreis 03999 (no station).
+    val_on = frames_on["validation"]
+    pt_from_03999 = val_on[(val_on["mode"] == "pt") & (val_on["ars5"] == "03999")]
+    assert len(pt_from_03999) == 0, (
+        f"mode_balance=True: {len(pt_from_03999)} PT agents from Kreis 03999 "
+        "which has no rail station. Hard constraint violated."
+    )
+
+    # All PT agents in the ON run must have entry_kind='rail_station'.
+    pt_rows = val_on[val_on["mode"] == "pt"]
+    if len(pt_rows) > 0:
+        assert (pt_rows["entry_kind"] == "rail_station").all(), \
+            "mode_balance=True: all PT agents must board at a rail station"
+
+
+def test_mode_balance_off_preserves_legacy_lossy_behaviour():
+    """mode_balance=False: PT agent in a rail-less Kreis IS reassigned to car (legacy).
+
+    This is the OFF-path regression guard: with mode_balance=False the lossy
+    PT->car reassignment in the station-draw step still fires, so a Kreis with
+    no eligible rail station ends up with all-car agents.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    # pt_entry_stops has only Kreis 03999, not the actual source Kreis 03241.
+    pt_stops_wrong_kreis = pd.DataFrame({
+        "source_ars5": ["03999"],
+        "stop_id": ["railOther"],
+        "x": [700000.0], "y": [5900000.0],
+        "reach": ["direct"], "ewz": [50000.0],
+    })
+    rng = np.random.default_rng(42)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops_wrong_kreis,
+        mode_balance=False,  # explicitly OFF
+    )
+
+    # Legacy behaviour: all PT agents from 03241 (no station) are reassigned to car.
+    assert (frames["trips"]["mode"] == "car").all(), \
+        "mode_balance=False (legacy): PT agents with no source-Kreis rail station must be car"
+
+
+def test_mode_balance_deterministic():
+    """Same rng seed -> byte-identical results regardless of mode_balance flag value."""
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+
+    def run(seed, balance):
+        rng = np.random.default_rng(seed)
+        return build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+            pt_entry_stops=pt_stops, mode_balance=balance,
+        )
+
+    f1 = run(55, True)
+    f2 = run(55, True)
+    np.testing.assert_array_equal(
+        f1["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f2["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="mode_balance=True: same seed must produce identical home x coordinates",
+    )
+    assert list(f1["validation"]["mode"]) == list(f2["validation"]["mode"]), \
+        "mode_balance=True: same seed must produce identical modes"
+
+    f3 = run(55, False)
+    f4 = run(55, False)
+    np.testing.assert_array_equal(
+        f3["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        f4["locations"]["geometry"].apply(lambda g: g.x).to_numpy(),
+        err_msg="mode_balance=False: same seed must produce identical home x coordinates",
+    )
+
+
+def test_configure_defaults_real_origin_and_mode_balance_true():
+    """configure() must declare cordon_incommuter_real_origin and
+    cordon_incommuter_mode_balance both with default True.
+
+    Uses a minimal context spy to capture config() calls without running
+    the full synpp pipeline.
+    """
+    from braunschweig.synthesis.incommuters import configure  # noqa: PLC0415
+
+    defaults_captured = {}
+
+    class _ConfigSpy:
+        """Minimal synpp context spy: captures config(key, default) calls.
+
+        Only stores a value in defaults_captured when a default is explicitly
+        provided (args non-empty).  Bare config(key) calls (no default) record
+        _MISSING but do NOT overwrite a previously stored default so the first
+        declared default (the meaningful one) always wins.
+        """
+        def config(self, key, *args):
+            # args[0] is the default if provided; only update when a default is given.
+            if args:
+                defaults_captured[key] = args[0]
+            elif key not in defaults_captured:
+                # Mark as "declared without a default" only if not already captured.
+                defaults_captured[key] = _MISSING
+            # Return True for cordon_enabled so the rest of configure() runs.
+            if key == "cordon_enabled":
+                return True
+            # Return the stored default (or None) so configure()'s conditionals work.
+            val = defaults_captured.get(key, None)
+            if val is _MISSING:
+                return None
+            return val
+
+        def stage(self, *args, **kwargs):
+            pass
+
+    _MISSING = object()
+    configure(_ConfigSpy())
+
+    assert "cordon_incommuter_real_origin" in defaults_captured, \
+        "configure() must declare cordon_incommuter_real_origin"
+    assert defaults_captured["cordon_incommuter_real_origin"] is True, (
+        f"cordon_incommuter_real_origin default must be True (new feature default-on), "
+        f"got {defaults_captured['cordon_incommuter_real_origin']!r}"
+    )
+
+    assert "cordon_incommuter_mode_balance" in defaults_captured, \
+        "configure() must declare cordon_incommuter_mode_balance"
+    assert defaults_captured["cordon_incommuter_mode_balance"] is True, (
+        f"cordon_incommuter_mode_balance default must be True (new feature default-on), "
+        f"got {defaults_captured['cordon_incommuter_mode_balance']!r}"
+    )

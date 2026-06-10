@@ -115,7 +115,7 @@ config:
   braunschweig.buildings_path: braunschweig/buildings
 
   # Geofabrik snapshot for Niedersachsen
-  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+  osm_network_path: osm/niedersachsen-latest.osm.pbf
 
   # External toolchain (Windows paths)
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
