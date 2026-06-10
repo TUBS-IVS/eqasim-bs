@@ -155,13 +155,28 @@ def execute(context) -> pd.DataFrame:
     cells = mid.load_control_cells(cells_path, base_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
 
-    # The seed build uses the source's column mapping so the PopulationSim seed
-    # schema can differ between survey sources.  For "mid" this delegates to
-    # mid.load_mid_seed (unchanged), preserving byte-identity.
-    seed_columns = source.seed_columns()
-    seed_households, seed_persons, report = mid.load_mid_seed(
-        mid_dir, columns=seed_columns
-    )
+    # Build the PopulationSim seed.
+    # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
+    # files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
+    # For source="entd": the ENTD donor frames are transformed to MiD column
+    # schema by EntdSource.build_seed so the downstream (expand, map_demographics)
+    # runs unchanged; only map_person_attributes is ENTD-specific.
+    if source_name == "entd":
+        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
+        # (registered in configure() as alias "hts_donor") and build the seed.
+        # context.stage() is idempotent in synpp; retrieving the same alias twice
+        # returns the same cached result, so this does not re-run the stage.
+        hts_hh_seed, hts_persons_seed, _hts_trips_seed = context.stage("hts_donor")
+        seed_households, seed_persons, report = source.build_seed(
+            hts_hh_seed, hts_persons_seed
+        )
+    else:
+        # popsim_mid (default): reads MiD CSV files directly from mid_dir.
+        # This path is byte-identical to all prior versions.
+        seed_columns = source.seed_columns()
+        seed_households, seed_persons, report = mid.load_mid_seed(
+            mid_dir, columns=seed_columns
+        )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 
     run_one = batch.make_populationsim_run_one(

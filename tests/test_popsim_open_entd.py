@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.popsim import sources
-from braunschweig.popsim.sources.entd import EntdSource, ENTD_SEED_COLUMNS
+from braunschweig.popsim.sources.entd import EntdSource, ENTD_SEED_COLUMNS, ENTD_BUILT_SEED_COLUMNS
 from braunschweig.popsim.seed import SeedColumns
 from braunschweig.population import schema
 from braunschweig.popsim.trips_stage import CONTRACT
@@ -127,6 +127,19 @@ def test_entd_seed_columns_field_values():
 def test_entd_source_seed_columns_returns_constant():
     src = EntdSource()
     assert src.seed_columns() == ENTD_SEED_COLUMNS
+
+
+def test_entd_source_built_seed_columns_returns_mid_schema():
+    """built_seed_columns() returns the MiD-schema constant (H_ID, H_GEW, …).
+
+    This is the schema produced by build_seed(); filter_seed_to_stratum uses it
+    to discover the correct join key on the post-build_seed frames.
+    """
+    src = EntdSource()
+    assert src.built_seed_columns() == ENTD_BUILT_SEED_COLUMNS
+    assert src.built_seed_columns().household_id == "H_ID"
+    assert src.built_seed_columns().age == "HP_ALTER"
+    assert src.built_seed_columns().sex == "HP_SEX"
 
 
 # ---------------------------------------------------------------------------

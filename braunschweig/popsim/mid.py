@@ -518,9 +518,36 @@ def filter_seed_to_stratum(
         )
 
     # Determine the household-id join column for this source.
-    hh_id_col = source.seed_columns().household_id  # e.g. "H_ID" or "household_id"
+    # For MiD, seed_columns().household_id = "H_ID" (matches the post-load_mid_seed frame).
+    # For ENTD, build_seed() renames household_id -> "H_ID"; the post-build_seed frame
+    # therefore also uses "H_ID".  EntdSource.built_seed_columns() exposes this.
+    # Strategy: try built_seed_columns() first (post-build_seed path where column name
+    # is H_ID for both sources); if the reported column is not present in the frame,
+    # fall back to seed_columns().  This handles tests that pass pre-build_seed ENTD
+    # frames directly (those still carry "household_id", not "H_ID").
+    _built_cols = getattr(source, "built_seed_columns", None)
+    _fallback_cols = source.seed_columns()
+    if _built_cols is not None:
+        _preferred_col = _built_cols().household_id
+        _preferred_p_col = _built_cols().person_household_id
+    else:
+        _preferred_col = _fallback_cols.household_id
+        _preferred_p_col = _fallback_cols.person_household_id
+
+    if _preferred_col in filtered_hh.columns:
+        hh_id_col = _preferred_col
+        person_hh_id_col = _preferred_p_col
+    else:
+        # Frame does not carry the built-seed column (pre-build_seed test path).
+        hh_id_col = _fallback_cols.household_id
+        person_hh_id_col = _fallback_cols.person_household_id
+        logger.debug(
+            "[popsim.mid] filter_seed_to_stratum: preferred hh_id column %r not found "
+            "in seed frame; using fallback %r (likely a pre-build_seed test fixture).",
+            _preferred_col, hh_id_col,
+        )
+
     retained_hids = set(filtered_hh[hh_id_col])
-    person_hh_id_col = source.seed_columns().person_household_id
     filtered_persons = seed_persons[
         seed_persons[person_hh_id_col].isin(retained_hids)
     ].copy()

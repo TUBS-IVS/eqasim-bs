@@ -86,7 +86,12 @@ from braunschweig.popsim.attributes import (
     INCOME_CLASS_BY_GROUP,
 )
 from braunschweig.popsim import income as _income_module
-from braunschweig.popsim.seed import SeedColumns
+from braunschweig.popsim.seed import (
+    CompletenessReport,
+    SeedColumns,
+    filter_complete_households,
+    select_seed_columns,
+)
 from braunschweig.popsim.stratum import cell_urban_class_from_rs7, entd_urban_class
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
@@ -96,6 +101,13 @@ logger = logging.getLogger(__name__)
 # Seed column mapping for ENTD (canonical column names from cleaned.py)
 # ---------------------------------------------------------------------------
 
+# ENTD_SEED_COLUMNS describes the ENTD canonical column names BEFORE build_seed
+# transforms them.  This is used in tests and by seed_columns().
+# Note: build_seed() RENAMES these to MiD names (H_ID, H_GEW, HP_ALTER, HP_SEX,
+# P_GEW, P_ID) so the produced seed frames carry MiD-schema column names.
+# filter_seed_to_stratum (mid.py) and expand_to_persons (expand.py) operate on
+# the post-build_seed frames, so they need the MiD schema names.
+# ENTD_BUILT_SEED_COLUMNS describes those post-build_seed MiD-schema names.
 ENTD_SEED_COLUMNS = SeedColumns(
     household_id="household_id",
     household_weight="household_weight",
@@ -106,6 +118,26 @@ ENTD_SEED_COLUMNS = SeedColumns(
     sex="sex",
     # ENTD has no day-of-week completeness filter: cleaned.py already retains
     # only reference-day weekday trips.  Every household is always complete.
+    day_filter_col=None,
+    day_filter_values=None,
+)
+
+# ENTD_BUILT_SEED_COLUMNS describes the column schema of the seed frames
+# produced by EntdSource.build_seed().  build_seed() renames ENTD canonical
+# column names to the MiD seed names (H_ID, H_GEW, P_ID, P_GEW, HP_ALTER,
+# HP_SEX), so the downstream PopulationSim orchestration (expand_to_persons,
+# filter_seed_to_stratum) can use the same MiD-centric code for both sources.
+# This constant is used by filter_seed_to_stratum (mid.py) via the
+# EntdSource.built_seed_columns() method to discover the correct join column
+# names on the post-build_seed frames.
+ENTD_BUILT_SEED_COLUMNS = SeedColumns(
+    household_id="H_ID",
+    household_weight="H_GEW",
+    person_household_id="H_ID",
+    person_id="P_ID",
+    person_weight="P_GEW",
+    age="HP_ALTER",
+    sex="HP_SEX",
     day_filter_col=None,
     day_filter_values=None,
 )
@@ -206,6 +238,213 @@ class EntdSource:
         """
         return ENTD_SEED_COLUMNS
 
+    def built_seed_columns(self) -> SeedColumns:
+        """Return the column schema of the seed frames produced by :meth:`build_seed`.
+
+        :meth:`build_seed` renames ENTD canonical column names to the MiD seed
+        names (``H_ID``, ``H_GEW``, ``P_ID``, ``P_GEW``, ``HP_ALTER``,
+        ``HP_SEX``).  Downstream code that operates on the POST-build_seed frames
+        (e.g. :func:`braunschweig.popsim.mid.filter_seed_to_stratum`) must use
+        these MiD-schema column names to discover the household join key, not the
+        ENTD canonical names from :meth:`seed_columns`.
+
+        Returns
+        -------
+        SeedColumns
+            :data:`ENTD_BUILT_SEED_COLUMNS` (``household_id="H_ID"``, etc.).
+        """
+        return ENTD_BUILT_SEED_COLUMNS
+
+    def build_seed(
+        self,
+        households: pd.DataFrame,
+        persons: pd.DataFrame,
+    ) -> tuple:
+        """Build a PopulationSim seed in MiD control schema from ENTD donor frames.
+
+        The PopulationSim control spec (popsimprep/_prep3_controls.csv) and the
+        downstream expand/map_demographics pipeline all expect MiD column names:
+        ``H_ID``, ``H_GEW``, ``P_ID``, ``HP_ID``, ``P_GEW``, ``HP_ALTER``,
+        ``HP_SEX`` (1=male, 2=female), ``STAAT``.  This method transforms the ENTD
+        canonical column names to that schema once, at the stage boundary, so the
+        entire proven downstream (seed build, expand, map_demographics) runs
+        unchanged.
+
+        The ENTD person attributes (``employed``, ``has_license``,
+        ``has_pt_subscription``, ``socioprofessional_class``, ``urban_type``, …)
+        are retained on the transformed persons frame so that
+        :meth:`map_person_attributes` can access them after expand.
+
+        Design constraints
+        ------------------
+        - ``HP_SEX`` must be 1 (male) or 2 (female); any unmapped value raises
+          :class:`ValueError` immediately (fail-fast guard).
+        - ``HP_ID``: unique per-person integer derived as
+          ``household_id * _HP_ID_SCALE + person_id`` (where ``_HP_ID_SCALE``
+          is 10^ceil(log10(max(person_id)+1)) rounded up to the next power of 10
+          to avoid collisions across households).  If a collision is detected
+          ``np.arange`` fallback sequential ids are used and a warning is logged
+          (per-run; very large surveys could overflow int64 for this formula, but
+          the ENTD donor has ~14 000 persons so the scale is safe).
+        - Every ENTD household is considered "complete" (no day-of-week filter;
+          ``ENTD_SEED_COLUMNS.day_filter_col = None``), so
+          :func:`braunschweig.popsim.seed.filter_complete_households` is called
+          with the no-op path (drop rate 0 %, completeness_rate 1.0).
+        - :func:`braunschweig.popsim.seed.select_seed_columns` is then called to
+          add ``STAAT = 1`` and keep only the columns the control spec needs (plus
+          the ENTD attribute extras retained for :meth:`map_person_attributes`).
+
+        Parameters
+        ----------
+        households:
+            ENTD household frame from :meth:`load_donor` or injected by the stage.
+            Must carry ``household_id``, ``household_weight``, and ``urban_type``
+            (Phase 4A donor stratification key).
+        persons:
+            ENTD person frame from :meth:`load_donor` or injected by the stage.
+            Must carry ``household_id`` (foreign key), ``person_id``, ``person_weight``,
+            ``age``, and ``sex`` (``"male"``/``"female"``).
+
+        Returns
+        -------
+        tuple[pd.DataFrame, pd.DataFrame, CompletenessReport]
+            ``(seed_households, seed_persons, report)`` where:
+
+            - ``seed_households`` has columns: ``H_ID``, ``H_GEW``, ``urban_type``,
+              ``STAAT``.
+            - ``seed_persons`` has columns: ``H_ID``, ``P_ID``, ``HP_ID``,
+              ``P_GEW``, ``HP_ALTER``, ``HP_SEX``, ``STAAT``,
+              plus all ENTD attribute columns retained for downstream mapping
+              (``employed``, ``studies``, ``has_license``, ``has_pt_subscription``,
+              ``socioprofessional_class``, and any other columns present).
+            - ``report`` is a :class:`braunschweig.popsim.seed.CompletenessReport`
+              with ``completeness_rate = 1.0`` (no day filter for ENTD).
+
+        Raises
+        ------
+        ValueError
+            If ``sex`` contains values other than ``"male"`` or ``"female"``
+            (fail-fast: an unmapped sex value would silently produce NaN in
+            ``HP_SEX``, breaking the PopulationSim sex-margin controls).
+        KeyError
+            If required columns are absent from either frame.
+        """
+        _require_columns(households, ["household_id", "household_weight"], table_name="ENTD households")
+        _require_columns(
+            persons,
+            ["household_id", "person_id", "person_weight", "age", "sex"],
+            table_name="ENTD persons",
+        )
+
+        # --- Validate and map sex -> HP_SEX (1=male, 2=female) ----------------
+        # This is a fail-fast guard: an unmapped value would silently produce NaN
+        # in HP_SEX and break the PopulationSim sex-margin controls.
+        sex_map = {"male": 1, "female": 2}
+        unmapped_sex = set(persons["sex"].unique()) - set(sex_map)
+        if unmapped_sex:
+            raise ValueError(
+                f"[EntdSource.build_seed] persons 'sex' column contains unmapped "
+                f"value(s) {unmapped_sex!r}. Only 'male' and 'female' are accepted. "
+                f"Fix the ENTD person frame before building the PopulationSim seed."
+            )
+
+        # --- Rename household columns to MiD seed schema ----------------------
+        hh_seed = households.copy()
+        hh_seed = hh_seed.rename(columns={
+            "household_id": "H_ID",
+            "household_weight": "H_GEW",
+        })
+
+        # --- Rename person columns to MiD seed schema (retain ENTD attrs) -----
+        p_seed = persons.copy()
+        p_seed = p_seed.rename(columns={
+            "household_id": "H_ID",
+            "person_id": "P_ID",
+            "person_weight": "P_GEW",
+            "age": "HP_ALTER",
+        })
+        p_seed["HP_SEX"] = p_seed["sex"].map(sex_map)
+        # Retain original sex string for downstream map_demographics (eqasim uses
+        # the "sex" column; expand.map_demographics re-derives it from HP_SEX).
+        # HP_SEX is the PopulationSim-visible column; sex stays as an extra.
+
+        # --- Build HP_ID: unique integer per person ---------------------------
+        # HP_ID is the PopulationSim person id (must be a unique integer).
+        # Formula: H_ID * scale + P_ID (avoids collisions within each household's
+        # P_ID range when household ids are large ENTD integers).
+        # Scale = smallest power of 10 > max(P_ID), so ids don't overlap across
+        # households.  The ENTD donor (~14k persons) is small; overflow is impossible.
+        max_pid = int(p_seed["P_ID"].max()) if len(p_seed) > 0 else 1
+        scale = 1
+        while scale <= max_pid:
+            scale *= 10
+        hp_id_candidate = p_seed["H_ID"].astype(np.int64) * scale + p_seed["P_ID"].astype(np.int64)
+        if hp_id_candidate.duplicated().any():
+            logger.warning(
+                "[EntdSource.build_seed] HP_ID formula H_ID*%d+P_ID produced "
+                "%d duplicate(s); falling back to sequential arange(1..n).",
+                scale,
+                int(hp_id_candidate.duplicated().sum()),
+            )
+            p_seed["HP_ID"] = np.arange(1, len(p_seed) + 1, dtype=np.int64)
+        else:
+            p_seed["HP_ID"] = hp_id_candidate
+
+        # --- Apply completeness filter (no-op: ENTD has no day-of-week filter) -
+        # Using the standard filter_complete_households with the ENTD column mapping
+        # (day_filter_col=None -> every household is "complete").  This produces a
+        # CompletenessReport with completeness_rate=1.0 and drop_rate=0.0.
+        # We use a temporary SeedColumns with H_ID/H_GEW/P_ID/P_GEW/HP_ALTER/HP_SEX
+        # column names (the renamed frame) so the filter runs correctly.
+        _mid_like_cols = SeedColumns(
+            household_id="H_ID",
+            household_weight="H_GEW",
+            person_household_id="H_ID",
+            person_id="P_ID",
+            person_weight="P_GEW",
+            age="HP_ALTER",
+            sex="HP_SEX",
+            day_filter_col=None,
+            day_filter_values=None,
+        )
+        hh_seed, p_seed, report = filter_complete_households(
+            hh_seed, p_seed, _mid_like_cols, day_filter_values=None
+        )
+
+        # --- select_seed_columns: add STAAT=1, keep essentials + extras -------
+        # Extra household columns: urban_type (Phase 4B donor stratification).
+        # Extra person columns: all ENTD attribute columns present on the renamed
+        # frame (minus the essentials already selected, minus HP_SEX which is added
+        # separately in the extra_person_cols so it stays).
+        # We retain all ENTD-origin columns so map_person_attributes can use them
+        # directly without another join -- this is the key design decision.
+        hh_extra = [c for c in ("urban_type", "RegioStaR7") if c in hh_seed.columns]
+        # Person extras: HP_ID + every ENTD attribute column (after rename, these
+        # include employed, studies, has_license, has_pt_subscription,
+        # socioprofessional_class, sex (original string), number_of_trips,
+        # trip_weight, departement_id, and anything else the ENTD cleaned stage
+        # produces).  Essentials are H_ID, P_ID, P_GEW, HP_ALTER, HP_SEX.
+        essential_person_cols = {"H_ID", "P_ID", "P_GEW", "HP_ALTER", "HP_SEX"}
+        p_extra = ["HP_ID"] + [
+            c for c in p_seed.columns
+            if c not in essential_person_cols and c not in ("HP_ID", "STAAT")
+        ]
+
+        hh_seed, p_seed = select_seed_columns(
+            hh_seed, p_seed, _mid_like_cols,
+            extra_household_cols=hh_extra,
+            extra_person_cols=p_extra,
+        )
+
+        logger.info(
+            "[EntdSource.build_seed] seed built: %d households, %d persons "
+            "(completeness_rate=%.3f). "
+            "Person columns: %s.",
+            len(hh_seed), len(p_seed), report.completeness_rate,
+            list(p_seed.columns),
+        )
+        return hh_seed, p_seed, report
+
     def load_donor(
         self,
         data_dir: Union[str, Path],
@@ -272,17 +511,36 @@ class EntdSource:
     ) -> pd.DataFrame:
         """Map ENTD canonical columns to the eqasim synthesis schema.
 
+        This mapper is called by :func:`braunschweig.popsim.assembly.build_persons`
+        AFTER :func:`braunschweig.popsim.expand.expand_to_persons` and
+        :func:`braunschweig.popsim.expand.map_demographics` have been applied.
+
+        After ``build_seed`` transforms the ENTD frames to MiD schema and
+        ``expand_to_persons`` joins on ``H_ID``, the expanded persons frame carries
+        ``H_ID`` as the donor household key (the same integer that was passed to
+        PopulationSim as the seed household id).  The ``household_id`` column at
+        this point is the SYNTHETIC id (``<cell>_<H_ID>_<occurrence>``), not the
+        ENTD donor household id.
+
+        The ENTD household join therefore uses ``H_ID`` as the join key on both
+        sides.  The ``_HH_JOIN_COLS`` list maps ``household_id -> H_ID`` via a
+        rename so the merge key is unambiguous.
+
         Parameters
         ----------
         persons:
-            ENTD persons frame from ``load_donor`` (or the popsim_open expand
-            output, which carries the same ENTD-canonical columns).  Must include
-            ``person_id``, ``household_id``, and every column in
-            ``_DIRECT_PERSON_COLS``.
+            Expanded persons frame after ``expand_to_persons`` + ``map_demographics``
+            + ``derive_zone_ids`` (i.e. the frame produced inside
+            :func:`braunschweig.popsim.assembly.build_persons`).  Carries ``H_ID``
+            (donor household key, populated by ``build_seed`` rename) and ``P_ID``
+            (donor person key); also carries the ENTD attribute columns retained
+            by ``build_seed.select_seed_columns`` (``employed``, ``studies``,
+            ``has_license``, ``has_pt_subscription``, ``socioprofessional_class``,
+            etc.).
         households:
-            ENTD household frame from ``load_donor``.  Must include
-            ``household_id``, ``household_size``, ``number_of_cars``,
-            ``number_of_bicycles``, and ``income_class``.
+            ENTD household frame from ``load_donor`` (original ENTD canonical
+            schema: ``household_id``, ``household_size``, ``number_of_cars``,
+            ``number_of_bicycles``, ``income_class``).
         rng:
             Not used for ENTD (all attributes are directly available); accepted
             for interface compatibility with ``PopsimSource.map_person_attributes``.
@@ -296,18 +554,35 @@ class EntdSource:
 
         Notes
         -----
-        - ``source_person_id`` and ``source_household_id`` equal the raw ENTD
-          ids (open data, no pseudonymisation).
+        - ``source_person_id`` is set to ``P_ID`` (the ENTD donor person integer id).
+        - ``source_household_id`` is set to ``H_ID`` (the ENTD donor household integer id).
+        - Both are raw ENTD ids (open data, no pseudonymisation).
         - ``weight = 1.0`` (the popsim_open frame is already expanded).
-        - ``household_income_eur`` is set to the raw ENTD income-class midpoint
-          (``ENTD_INCOME_CLASS_MIDPOINT_EUR[income_class]``).  The INKAR
-          per-Kreis scaling is applied by ``build_persons`` AFTER this mapper
-          returns, so all sources use the same shared scaling step.
+        - ``household_income_eur`` is set to the raw ENTD income-class midpoint.
+          The INKAR per-Kreis scaling is applied by ``build_persons`` AFTER this
+          mapper returns, so all sources use the same shared scaling step.
         - ``high_income`` is a placeholder (set to False here); ``build_persons``
-          overwrites it with ``household_income_eur >= 5000 EUR`` after INKAR
-          scaling.
+          overwrites it with ``household_income_eur >= 5000 EUR`` after INKAR scaling.
         """
         out = persons.copy()
+
+        # --- Determine the donor household join key ----------------------------
+        # After build_seed + expand_to_persons the donor household key is "H_ID"
+        # (the ENTD household_id renamed to the MiD seed schema name).  The
+        # synthetic household_id is a different column ("ZENSUS100m_H_ID_occ").
+        # The ENTD households frame still carries the original "household_id" name,
+        # so we must translate: join expanded persons.H_ID onto households.household_id.
+        if "H_ID" in out.columns:
+            # Post-build_seed path: H_ID is the donor key (populated by rename in build_seed).
+            persons_donor_key = "H_ID"
+            hh_donor_key = "household_id"
+        else:
+            # Fallback: direct ENTD injection without build_seed (e.g. direct test call
+            # where persons still carry household_id as the ENTD canonical name).
+            # This path is only used by tests that call map_person_attributes directly
+            # with the raw ENTD persons frame (pre-expand), not the post-expand frame.
+            persons_donor_key = "household_id"
+            hh_donor_key = "household_id"
 
         # --- Direct copy: columns already canonical in ENTD cleaned output ---
         # Verify required direct columns are present (fail-fast).
@@ -316,11 +591,12 @@ class EntdSource:
 
         # --- Join household attributes onto persons ---
         hh_attrs = households[_HH_JOIN_COLS].copy()
-        # Rename household_id to avoid collision with the persons household_id column
-        # (both frames carry household_id as the join key -- pandas merge on= handles it).
+        # Rename the household join key on the households side to a neutral name
+        # to avoid column name collisions on the output frame.
+        hh_attrs = hh_attrs.rename(columns={hh_donor_key: "_hh_join_key"})
         out = out.merge(
-            hh_attrs.rename(columns={"household_id": "_hh_join_key"}),
-            left_on="household_id",
+            hh_attrs,
+            left_on=persons_donor_key,
             right_on="_hh_join_key",
             how="left",
             suffixes=("", "_hh"),
@@ -408,11 +684,63 @@ class EntdSource:
         ).astype("string")
 
         # --- Provenance IDs (ENTD is open data, no pseudonymisation needed) ---
-        out["source_person_id"] = out["person_id"]
-        out["source_household_id"] = out["household_id"]
+        # After build_seed + expand_to_persons:
+        #   - H_ID  = ENTD donor household_id (renamed in build_seed)
+        #   - P_ID  = ENTD donor person_id    (renamed in build_seed)
+        # In the direct-test path (no build_seed), persons still carry the
+        # original ENTD "person_id" and "household_id" column names.
+        if "H_ID" in out.columns and "P_ID" in out.columns:
+            out["source_person_id"] = out["P_ID"]
+            out["source_household_id"] = out["H_ID"]
+        else:
+            # Fallback for tests that call map_person_attributes directly with
+            # the raw ENTD persons frame (pre-expand, pre-build_seed).
+            out["source_person_id"] = out["person_id"]
+            out["source_household_id"] = out[persons_donor_key]
 
         # --- weight = 1.0 (popsim_open frame is already expanded, one row per person) ---
         out["weight"] = 1.0
+
+        # --- household_size: number of persons in each SYNTHETIC household ----
+        # Replicates map_mid_person_attributes: size is the count of persons
+        # sharing the same synthetic household_id (set by assign_synthetic_household_ids).
+        # Note: the "household_size" from the ENTD households table (donor HH size)
+        # was joined above and may be present as "household_size" from the merge.
+        # We OVERWRITE it with the synthetic household size because PopulationSim
+        # may replicate one donor household multiple times, changing the effective
+        # size.  The "household_size" column on the output must reflect the
+        # synthetic household, not the original donor.
+        if "household_id" in out.columns:
+            out["household_size"] = (
+                out.groupby("household_id")["person_id"].transform("size")
+            )
+        elif "household_size" not in out.columns:
+            # If no household_id column (unusual path), keep the joined value if present.
+            # Logged so the caller can investigate.
+            logger.warning(
+                "[EntdSource] map_person_attributes: 'household_id' not found in persons; "
+                "household_size may reflect donor household size (not synthetic size)."
+            )
+
+        # --- is_urban_resident: True when person lives in Braunschweig city ----
+        # Replicates map_mid_person_attributes exactly (see assembly.py line ~310):
+        #   is_urban_resident = (departement_id == "03101")
+        # ``departement_id`` is derived by derive_zone_ids (assembly.build_persons)
+        # from the 12-digit ARS before the mapper is called.  For persons outside
+        # the ZGB area the column is still present (derive_zone_ids is unconditional).
+        _BS_KREIS5 = "03101"
+        if "departement_id" in out.columns:
+            out["is_urban_resident"] = out["departement_id"] == _BS_KREIS5
+        else:
+            # derive_zone_ids was not called (direct-test path without ARS column).
+            # Set a placeholder so schema validation doesn't crash; callers that
+            # need a correct value must ensure derive_zone_ids runs first.
+            out["is_urban_resident"] = False
+            logger.warning(
+                "[EntdSource] map_person_attributes: 'departement_id' not found; "
+                "is_urban_resident set to False (placeholder). "
+                "Ensure derive_zone_ids ran before calling map_person_attributes."
+            )
 
         logger.info(
             "[EntdSource] map_person_attributes: %d persons mapped. "
