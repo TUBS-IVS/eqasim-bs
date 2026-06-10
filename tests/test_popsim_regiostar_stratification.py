@@ -375,6 +375,47 @@ class TestStratifyOff:
         # Should have run without error; one batch for the one 1km parent.
         assert len(fake_run_one_calls) == 1
 
+    def test_batch_folder_paths_are_absolute(self, tmp_path, monkeypatch):
+        """run_one must receive ABSOLUTE folder paths even for a relative work_dir,
+        because PopulationSim runs with cwd set to the popsimprep repo (a relative
+        path would resolve there and fail with WinError 3)."""
+        monkeypatch.chdir(tmp_path)
+        cells = _cells_frame(["KM1"], [72])
+        base_cols = ["COL_A"]
+        cells["COL_A"] = 5
+        cells["STAAT"] = 1
+        cells["WELT"] = 1
+        controls_df = pd.DataFrame({
+            "target": ["COL_A_ZENSUS100m_target"],
+            "geography": ["ZENSUS100m"],
+            "control_field": ["COL_A_ZENSUS100m"],
+        })
+        hh = _mid_seed_households([72, 75])
+        persons = _mid_seed_persons(1, hh)
+
+        import braunschweig.popsim.batch as batchmod
+        seen = []
+
+        def recording_run_one(folder: str) -> batchmod.BatchResult:
+            seen.append(folder)
+            out = Path(folder) / "output"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "final_expanded_household_ids.csv").write_text(
+                "ZENSUS100m,H_ID\n", encoding="utf-8"
+            )
+            return batchmod.BatchResult(folder, "succeeded", "ok", 0.0)
+
+        run_popsim_mid(
+            cells, base_cols, controls_df, hh, persons,
+            work_dir="rel_work",  # RELATIVE on purpose
+            settings_yaml="", logging_yaml="", max_cells=1000,
+            run_one=recording_run_one, num_workers=1,
+            source=MidSource(), stratify_regiostar=False,
+        )
+        assert seen, "run_one was never called"
+        for folder in seen:
+            assert Path(folder).is_absolute(), f"folder not absolute: {folder}"
+
     def test_all_batches_missing_raises(self, tmp_path):
         """If PopulationSim writes no output, run_popsim_mid must raise, not return
         an empty population (no-silent-fallback: the broken step is surfaced)."""

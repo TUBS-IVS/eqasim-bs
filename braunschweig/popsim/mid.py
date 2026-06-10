@@ -632,7 +632,13 @@ def run_popsim_mid(
     stratify_regiostar:
         Flag-gate.  Default False (OFF path is byte-identical).
     """
-    work_dir = Path(work_dir)
+    # Resolve to an ABSOLUTE path: PopulationSim is launched with cwd set to the
+    # popsimprep repo (not the synpp working directory), so a relative batch
+    # folder path (e.g. "eqasim-data/.../batch_000") would resolve against
+    # popsimprep and fail with "[WinError 3] path not found". The folders are
+    # written and read here, then passed verbatim as "-w <folder>" to the
+    # subprocess, so the path must be absolute to be cwd-independent.
+    work_dir = Path(work_dir).resolve()
     groups = cell_groups(cells)
 
     if not stratify_regiostar:
