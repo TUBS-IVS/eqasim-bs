@@ -935,59 +935,72 @@ class TestStructuralFindings:
     docstring: "any workflow that also adopts this validator must emit those columns
     or supply explicit defaults").
 
-    FINDING 2: simple_ipf_open emits high_income = True when household_income == "5000+"
-    (enriched.py line 898: `df_persons["high_income"] = df_persons["household_income"] == "5000+"`).
-    popsim_mid emits high_income = True when household_income == "over_7000" (assembly.py:
-    `persons["high_income"] = persons["household_income"] == "over_7000"`).
-    popsim_open emits high_income = True when income_class >= 13 (ENTD top band, >=10000 EUR/mo).
-    These thresholds are NOT identical: "5000+" (IPF) vs "over_7000" (popsim) vs income_class>=13 (ENTD).
-    This is a KNOWN DISCREPANCY between the three producers. It means the high_income flag
-    is not strictly comparable across workflows without understanding the different income scales.
-    The discrepancy is documented here; no fix is applied (fixing would change existing outputs).
+    FINDING 2 (RESOLVED): The previous income discrepancy between the three producers
+    (simple_ipf_open: "5000+" label; popsim_mid: "over_7000" label; popsim_open:
+    income_class>=13) has been FIXED by the popsim income unification
+    (braunschweig.popsim.income.apply_inkar_income_eur):
+      - popsim_mid:  high_income = (household_income_eur >= 5000 EUR), INKAR-scaled
+      - popsim_open: high_income = (household_income_eur >= 5000 EUR), INKAR-scaled
+    The simple_ipf_open path (braunschweig.synthesis.population.enriched) is NOT
+    touched; it retains its "5000+" label-based rule. The popsim paths now use the
+    INKAR-scaled EUR numeric threshold, making them mutually comparable.
     """
 
     def test_simple_ipf_open_high_income_uses_5000plus_threshold(self):
         """Document: simple_ipf_open high_income threshold is 'household_income == 5000+'.
 
-        This is the enriched.py threshold (line 898). It differs from popsim's
-        'over_7000' threshold. If this test fails, the fixture or the enriched.py
-        logic has changed; update the finding documentation accordingly.
+        This is the enriched.py threshold (line 898). It is unchanged by the popsim
+        income unification. If this test fails, the enriched.py logic has changed;
+        update this finding accordingly.
         """
         persons = _build_simple_ipf_open_persons()
-        high = persons[persons["high_income"] == True]["household_income"]
-        # In the fixture: high_income=True for household_income="over_7000" (index 2)
-        # This is correct for the popsim threshold BUT NOT for the IPF enriched threshold.
-        # The fixture here uses "over_7000" to match a plausible real income; the IPF
-        # would set high_income based on "5000+" which doesn't appear in the MiD
-        # INCOME_CLASS_BY_GROUP (that has "4600_5000", "5000_5600"). The IPF uses
-        # a DIFFERENT income label format ("5000+" comes from a legacy INKAR scale).
-        # This test simply verifies the fixture is consistent (not asserting the threshold).
+        # Verify the fixture carries high_income (not asserting the threshold mechanism,
+        # since the simple_ipf_open fixture is hand-crafted, not produced by enriched.py).
         assert "high_income" in persons.columns, "simple_ipf_open must carry high_income"
 
-    def test_popsim_mid_high_income_uses_over_7000_threshold(self):
-        """Document: popsim_mid high_income threshold is 'household_income == over_7000'.
+    def test_popsim_mid_high_income_uses_numeric_eur_rule(self):
+        """popsim_mid high_income now uses household_income_eur >= 5000 (unified rule).
 
-        This is assembly.py line 280: `persons["high_income"] = persons["household_income"] == "over_7000"`.
+        The old label-based rule (household_income == 'over_7000') has been replaced.
+        With no INKAR supplied (scale=1.0):
+          hheink_gr1=15 -> midpoint 8000.0 EUR -> high_income True (8000 >= 5000).
+          hheink_gr1=4  -> midpoint 1750.0 EUR -> high_income False (1750 < 5000).
         """
         persons = _build_popsim_mid_persons()
-        # Household 2 has hheink_gr1=15 -> "over_7000" -> high_income=True
         high = persons[persons["high_income"] == True]
         assert len(high) > 0, "Expected at least one high_income=True person in popsim_mid fixture"
-        assert (high["household_income"] == "over_7000").all(), (
-            f"popsim_mid high_income=True but household_income is not 'over_7000': "
-            f"{high['household_income'].unique()}"
+        # All high_income=True persons must have household_income_eur >= 5000
+        assert (high["household_income_eur"] >= 5000.0).all(), (
+            f"popsim_mid high_income=True but household_income_eur < 5000: "
+            f"{high['household_income_eur'].tolist()}"
+        )
+        # All high_income=False persons must have household_income_eur < 5000
+        low = persons[persons["high_income"] == False]
+        assert (low["household_income_eur"] < 5000.0).all(), (
+            f"popsim_mid high_income=False but household_income_eur >= 5000: "
+            f"{low['household_income_eur'].tolist()}"
         )
 
-    def test_popsim_open_high_income_uses_top_entd_band(self):
-        """Document: popsim_open high_income threshold is income_class >= 13 (>=10000 EUR/mo)."""
+    def test_popsim_open_high_income_uses_numeric_eur_rule(self):
+        """popsim_open high_income now uses household_income_eur >= 5000 (unified rule).
+
+        The old income_class >= 13 rule has been replaced by the numeric EUR threshold.
+        income_class=13 -> midpoint 12000 EUR -> high_income True (12000 >= 5000).
+        income_class=5  -> midpoint 1350 EUR  -> high_income False (1350 < 5000).
+        """
         persons = _build_popsim_open_persons()
-        # Household 30 has income_class=13 -> high_income=True
         high = persons[persons["high_income"] == True]
         assert len(high) > 0, "Expected at least one high_income=True person in popsim_open fixture"
-        # Verify: the high_income person maps to household_income="over_7000" (income_class=13 mapping)
-        assert (high["household_income"] == "over_7000").all(), (
-            f"popsim_open high_income=True but household_income is not 'over_7000': "
-            f"{high['household_income'].unique()}"
+        # All high_income=True persons must have household_income_eur >= 5000
+        assert (high["household_income_eur"] >= 5000.0).all(), (
+            f"popsim_open high_income=True but household_income_eur < 5000: "
+            f"{high['household_income_eur'].tolist()}"
+        )
+        # All high_income=False persons must have household_income_eur < 5000
+        low = persons[persons["high_income"] == False]
+        assert (low["household_income_eur"] < 5000.0).all(), (
+            f"popsim_open high_income=False but household_income_eur >= 5000: "
+            f"{low['household_income_eur'].tolist()}"
         )
 
     def test_schema_validator_is_popsim_only(self):

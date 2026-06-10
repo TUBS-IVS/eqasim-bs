@@ -18,6 +18,7 @@ import pandas as pd
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
 from braunschweig.popsim import attributes
 from braunschweig.popsim import expand
+from braunschweig.popsim import income as _income_module
 from braunschweig.population import schema
 
 def assign_donor_surrogates(
@@ -210,6 +211,12 @@ def map_mid_person_attributes(
     ``braunschweig.popsim.sources.mid.MidSource.map_person_attributes`` so that
     the two code paths are byte-identical.
 
+    INKAR income scaling is NOT applied here.  It is applied in ``build_persons``
+    AFTER this mapper returns, so that all sources (MiD and ENTD) go through the
+    same shared INKAR step.  The ``household_income_eur`` set here is the raw MiD
+    class midpoint (= ``INCOME_GROUP_MIDPOINT_EUR``); ``build_persons`` overwrites it
+    with ``midpoint * INKAR_scale[Kreis]`` and sets ``high_income`` accordingly.
+
     Parameters
     ----------
     persons:
@@ -276,7 +283,9 @@ def map_mid_person_attributes(
         labels=_AGE_RANGE_LABELS,
     )
 
-    # high_income: convenience flag for income-elastic analyses.
+    # high_income: interim flag set from the MiD label; will be overwritten by
+    # the INKAR scaling step in build_persons which applies the unified numeric rule.
+    # This placeholder ensures the column exists before schema validation.
     persons["high_income"] = persons["household_income"] == "over_7000"
 
     # household_size: number of persons in the synthetic household.
@@ -335,6 +344,7 @@ def build_persons(
     rng=None,
     attribute_mapper=None,
     pseudonymise: bool = True,
+    inkar_scale=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -377,6 +387,14 @@ def build_persons(
         :class:`braunschweig.population.schema.PopulationSchemaError` at the
         final schema validation step (required columns missing) -- this is
         intentional fail-fast behaviour.
+    inkar_scale:
+        Optional per-Kreis INKAR scale DataFrame from
+        ``braunschweig.data.inkar.household_income`` (columns ``ars5``, ``scale``).
+        Passed through to the attribute mapper so that ``household_income_eur`` is
+        scaled by the per-Kreis INKAR factor and ``high_income`` is set consistently
+        to ``household_income_eur >= 5000 EUR``.  When ``None`` (unit tests, or the
+        stage has not wired the INKAR dependency yet), scale=1.0 is used for all
+        persons and the absence is logged at INFO level.
 
     Returns
     -------
@@ -426,17 +444,19 @@ def build_persons(
     effective_mapper = attribute_mapper if attribute_mapper is not None else map_mid_person_attributes
 
     if attribute_mapper is None:
-        # Default MiD mapper (pseudonymise=True): pass donor_col (needed for the H_ID join).
+        # Default MiD mapper (pseudonymise=True): pass donor_col.
         # assign_donor_surrogates is called inside map_mid_person_attributes, so the
         # returned pseudonym_map is populated.
+        # INKAR scaling is applied AFTER this call (see below), not inside the mapper.
         result = effective_mapper(
-            persons, mid_households, donor_col=donor_col, rng=rng
+            persons, mid_households, donor_col=donor_col, rng=rng,
         )
     else:
         # Alternative mapper (e.g. EntdSource, pseudonymise=False): does not use the
         # MiD-specific donor_col argument; calls the PopsimSource protocol signature
         # map_person_attributes(persons, households, *, rng).  The mapper sets
         # source_* directly to the open ENTD ids -- no surrogate mapping is performed.
+        # INKAR scaling is applied AFTER this call (see below), not inside the mapper.
         result = effective_mapper(persons, mid_households, rng=rng)
 
     # The mapper returns either (persons, pseudonym_map) or just persons.
@@ -448,6 +468,21 @@ def build_persons(
         persons = result
         donor_map = pd.DataFrame(
             columns=["source_person_id", "source_household_id", "H_ID", "P_ID"]
+        )
+
+    # --- INKAR per-Kreis income scaling (shared, applied to ALL sources) --------
+    # Replicates braunschweig.synthesis.population.enriched._apply_inkar_income_scale:
+    #   household_income_eur = midpoint * INKAR_scale[departement_id]
+    #   high_income          = (household_income_eur >= 5000 EUR)
+    # Applied AFTER the source mapper so both MiD and ENTD go through the same step.
+    # The mapper has already set household_income_eur to the raw income-class midpoint
+    # (MiD: INCOME_GROUP_MIDPOINT_EUR; ENTD: ENTD_INCOME_CLASS_MIDPOINT_EUR via entd.py).
+    # build_persons overwrites it with the INKAR-scaled value.
+    # With inkar_scale=None (unit tests or stage not wired): scale=1.0 for all, logged.
+    if "household_income_eur" in persons.columns:
+        midpoint_series = persons["household_income_eur"].copy()
+        persons = _income_module.apply_inkar_income_eur(
+            persons, inkar_scale, midpoint_series=midpoint_series,
         )
 
     schema.validate_person_columns(persons.columns)

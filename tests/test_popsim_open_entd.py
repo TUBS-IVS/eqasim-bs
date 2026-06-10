@@ -216,16 +216,43 @@ def test_entd_age_range_cut_correctly():
     assert (result[result["age"] == 40]["age_range"] == "higher_education").all()
 
 
-def test_entd_high_income_threshold():
-    """high_income = True iff income_class >= 13 (the top ENTD band, >=10000 EUR/mo)."""
+def test_entd_high_income_placeholder_and_eur_midpoint():
+    """map_person_attributes sets household_income_eur and a placeholder high_income.
+
+    After the popsim income unification (braunschweig.popsim.income), the REAL
+    high_income is set by build_persons AFTER map_person_attributes returns,
+    using the unified numeric rule: high_income = (household_income_eur >= 5000).
+    The placeholder here (income_class >= ENTD_HIGH_INCOME_CLASS=13) is kept for
+    schema completeness; build_persons overwrites it.
+
+    This test verifies that:
+    - household_income_eur is set to the ENTD raw midpoint (no INKAR yet).
+    - The placeholder high_income is True for income_class=13 and False for class=5.
+    """
+    from braunschweig.popsim.income import ENTD_INCOME_CLASS_MIDPOINT_EUR
+
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
     result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
-    # Household 30 has income_class=13 -> high_income True for person 202 (age 70)
+    # household_income_eur must be present and set to the raw ENTD midpoint.
+    assert "household_income_eur" in result.columns, (
+        "map_person_attributes must emit household_income_eur"
+    )
+    # Household 30 (income_class=13) -> midpoint 12000.0 EUR (person age=70)
+    eur_70 = float(result[result["age"] == 70]["household_income_eur"].iloc[0])
+    assert abs(eur_70 - ENTD_INCOME_CLASS_MIDPOINT_EUR[13]) < 1.0, (
+        f"income_class=13 -> expected {ENTD_INCOME_CLASS_MIDPOINT_EUR[13]}, got {eur_70}"
+    )
+    # Household 10 (income_class=5) -> midpoint 1350.0 EUR (person age=40)
+    eur_40 = float(result[result["age"] == 40]["household_income_eur"].iloc[0])
+    assert abs(eur_40 - ENTD_INCOME_CLASS_MIDPOINT_EUR[5]) < 1.0, (
+        f"income_class=5 -> expected {ENTD_INCOME_CLASS_MIDPOINT_EUR[5]}, got {eur_40}"
+    )
+    # Placeholder high_income: income_class=13 -> True; income_class=5 -> False
+    # (build_persons overwrites this with the numeric rule after INKAR scaling)
     assert (result[result["age"] == 70]["high_income"] == True).all()
-    # Household 10 has income_class=5 -> high_income False
     assert (result[result["age"] == 40]["high_income"] == False).all()
 
 

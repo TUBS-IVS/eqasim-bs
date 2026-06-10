@@ -85,6 +85,7 @@ from braunschweig.popsim.attributes import (
     derive_bicycle_availability,
     INCOME_CLASS_BY_GROUP,
 )
+from braunschweig.popsim import income as _income_module
 from braunschweig.popsim.seed import SeedColumns
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
@@ -293,9 +294,13 @@ class EntdSource:
         - ``source_person_id`` and ``source_household_id`` equal the raw ENTD
           ids (open data, no pseudonymisation).
         - ``weight = 1.0`` (the popsim_open frame is already expanded).
-        - Optional columns ``economic_status``, ``household_income_eur``,
-          ``license_type``, ``housing_tenure`` are NOT set (ENTD does not provide
-          them; they are OPTIONAL in the schema).
+        - ``household_income_eur`` is set to the raw ENTD income-class midpoint
+          (``ENTD_INCOME_CLASS_MIDPOINT_EUR[income_class]``).  The INKAR
+          per-Kreis scaling is applied by ``build_persons`` AFTER this mapper
+          returns, so all sources use the same shared scaling step.
+        - ``high_income`` is a placeholder (set to False here); ``build_persons``
+          overwrites it with ``household_income_eur >= 5000 EUR`` after INKAR
+          scaling.
         """
         out = persons.copy()
 
@@ -366,7 +371,21 @@ class EntdSource:
                 100.0 * (len(out) - n_income_missing) / max(len(out), 1),
             )
 
-        # --- high_income ---
+        # --- household_income_eur (raw ENTD midpoint; INKAR scaling applied later) ---
+        # Set household_income_eur to the raw ENTD income-class midpoint.
+        # build_persons applies INKAR per-Kreis scaling AFTER this mapper returns
+        # (for all sources), so this value is overwritten there with
+        # midpoint * INKAR_scale[Kreis].  The high_income flag is also set by
+        # build_persons to the unified rule (eur >= 5000 EUR).
+        out["household_income_eur"] = pd.to_numeric(
+            out["income_class"].map(_income_module.ENTD_INCOME_CLASS_MIDPOINT_EUR),
+            errors="coerce",
+        )
+
+        # --- high_income (placeholder; overwritten by build_persons after INKAR) ---
+        # Set a placeholder here so the column exists for schema validation.
+        # build_persons overwrites this with household_income_eur >= 5000 after
+        # the INKAR scaling step.
         out["high_income"] = out["income_class"] >= ENTD_HIGH_INCOME_CLASS
 
         # --- pt_subscription_type (default: no ticket-type field in ENTD) ---

@@ -91,6 +91,11 @@ def configure(context):
     dependency on ``data.hts.selected`` is registered so synpp wires the
     cleaned ENTD frames into the DAG.  For source="mid" (default) the stage
     depends only on the local config paths and no HTS stage is needed.
+
+    The INKAR per-Kreis income scale (``braunschweig.data.inkar.household_income``)
+    is registered as a dependency for BOTH sources so that ``household_income_eur``
+    is scaled by the per-Kreis factor and ``high_income`` is set to the unified
+    numeric threshold (>= 5000 EUR) for all popsim producers.
     """
     context.config(KEY_CELLS)
     context.config(KEY_MID)
@@ -104,6 +109,10 @@ def configure(context):
     context.config(KEY_WORK_DIR)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
+
+    # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
+    # to apply the same income scaling as the IPF/enriched path.
+    context.stage("braunschweig.data.inkar.household_income", alias="inkar_income")
 
     source_name = context.config(KEY_SOURCE, "mid")
     if source_name == "entd":
@@ -197,6 +206,11 @@ def execute(context) -> pd.DataFrame:
         # popsim_mid (default): reads MiD CSV files directly from mid_dir.
         donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
 
+    # Load the per-Kreis INKAR income scale (registered in configure).
+    # Used by assembly.build_persons to scale household_income_eur and set
+    # high_income with the unified numeric rule (>= 5000 EUR) for both sources.
+    inkar_income = context.stage("inkar_income")
+
     # Expand the merged donor households into the full eqasim persons frame.
     # pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
     # (data-protection requirement for the restricted MiD scientific-use licence).
@@ -207,6 +221,7 @@ def execute(context) -> pd.DataFrame:
         combined, donor_households, donor_persons,
         attribute_mapper=source.map_person_attributes,
         pseudonymise=pseudonymise,
+        inkar_scale=inkar_income,
     )
     context.set_info("popsim_n_persons", len(persons))
 
