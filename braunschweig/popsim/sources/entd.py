@@ -494,9 +494,11 @@ class EntdSource:
         """
         if injected is not None:
             households, persons, trips = injected
+            persons = entd_persons_to_donor_schema(persons)
             logger.info(
                 "[EntdSource] using injected donor frames: "
-                "%d households, %d persons, %d trips",
+                "%d households, %d persons, %d trips (persons mapped to donor schema "
+                "H_ID/P_ID/HP_ALTER/HP_SEX)",
                 len(households), len(persons), len(trips),
             )
             return households, persons, trips
@@ -514,8 +516,10 @@ class EntdSource:
         households = pd.read_parquet(hh_path)
         persons = pd.read_parquet(p_path)
         trips = pd.read_parquet(t_path)
+        persons = entd_persons_to_donor_schema(persons)
         logger.info(
-            "[EntdSource] loaded donor: %d households, %d persons, %d trips from %s",
+            "[EntdSource] loaded donor: %d households, %d persons, %d trips from %s "
+            "(persons mapped to donor schema H_ID/P_ID/HP_ALTER/HP_SEX)",
             len(households), len(persons), len(trips), data_dir,
         )
         return households, persons, trips
@@ -933,3 +937,36 @@ def _require_columns(df: pd.DataFrame, required: list, *, table_name: str) -> No
             f"[EntdSource] {table_name} is missing required column(s) {missing}; "
             f"available: {list(df.columns)}."
         )
+
+
+def entd_persons_to_donor_schema(persons: pd.DataFrame) -> pd.DataFrame:
+    """Rename ENTD persons to the MiD donor demographic schema used by expand.
+
+    The PopulationSim output (``combined``) carries ``H_ID`` -- the ENTD
+    household_id that ``EntdSource.build_seed`` wrote as the seed household key.
+    ``braunschweig.popsim.expand.expand_to_persons`` joins the donor persons onto
+    that output by ``H_ID`` and ``expand.map_demographics`` reads ``HP_ALTER`` /
+    ``HP_SEX``. So the DONOR persons that ``assembly.build_persons`` expands must
+    use the same names (``H_ID``, ``P_ID``, ``HP_ALTER``, ``HP_SEX``), symmetric
+    with ``MidSource.load_donor`` (whose MiD persons carry those names natively).
+    All ENTD attribute columns (``employed``, ``has_license``, …) are retained so
+    ``EntdSource.map_person_attributes`` can read them after expand.
+
+    This is the donor-side counterpart of the seed transform in ``build_seed``;
+    without it ``expand_to_persons`` raises ``KeyError: 'H_ID'`` because the raw
+    ENTD donor still carries ``household_id`` / ``person_id`` / ``age`` / ``sex``.
+    """
+    out = persons.rename(columns={
+        "household_id": "H_ID",
+        "person_id": "P_ID",
+        "age": "HP_ALTER",
+    })
+    sex_map = {"male": 1, "female": 2}
+    unmapped = set(out["sex"].unique()) - set(sex_map)
+    if unmapped:
+        raise ValueError(
+            f"[EntdSource] donor persons 'sex' has unmapped value(s) {unmapped!r}; "
+            "only 'male'/'female' are accepted."
+        )
+    out["HP_SEX"] = out["sex"].map(sex_map)
+    return out

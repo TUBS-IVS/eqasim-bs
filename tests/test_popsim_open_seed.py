@@ -567,3 +567,41 @@ class TestSeedHouseholdComposition:
         with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.sources.entd"):
             EntdSource().build_seed(_entd_households(), _entd_persons())
         assert not any("persons/household" in r.message for r in caplog.records)
+
+
+class TestLoadDonorPersonSchema:
+    """load_donor must return persons in the MiD donor schema (H_ID/P_ID/HP_ALTER/HP_SEX).
+
+    The PopulationSim output carries H_ID (the seed household key), and
+    expand_to_persons joins the donor persons by H_ID + map_demographics reads
+    HP_ALTER/HP_SEX. Without this rename expand_to_persons raises KeyError: 'H_ID'.
+    """
+
+    def test_injected_donor_persons_have_mid_schema(self):
+        hh, persons, trips = EntdSource().load_donor(
+            "ignored", injected=(_entd_households(), _entd_persons(), pd.DataFrame({"person_id": []}))
+        )
+        for col in ("H_ID", "P_ID", "HP_ALTER", "HP_SEX"):
+            assert col in persons.columns, f"donor persons must carry {col}"
+        # HP_SEX must be the integer 1/2 coding.
+        assert set(persons["HP_SEX"].unique()).issubset({1, 2})
+        # ENTD attribute columns are retained for map_person_attributes.
+        for col in ("employed", "has_license", "has_pt_subscription", "socioprofessional_class"):
+            assert col in persons.columns
+        # H_ID equals the original household_id (the donor household key).
+        assert persons["H_ID"].tolist() == _entd_persons()["household_id"].tolist()
+
+    def test_load_donor_persons_match_combined_join_key(self):
+        """The donor H_ID must be joinable with a combined frame's H_ID (expand path)."""
+        from braunschweig.popsim import expand
+        _hh, persons, _t = EntdSource().load_donor(
+            "x", injected=(_entd_households(), _entd_persons(), pd.DataFrame({"person_id": []}))
+        )
+        # Minimal combined frame: one placed household per donor H_ID.
+        combined = pd.DataFrame({
+            "ZENSUS100m": ["C1", "C1", "C1"],
+            "H_ID": [10, 20, 30],
+        })
+        with_ids = expand.assign_synthetic_household_ids(combined)
+        expanded = expand.expand_to_persons(with_ids, persons, donor_col="H_ID")
+        assert len(expanded) == len(_entd_persons()), "every donor person must expand"
