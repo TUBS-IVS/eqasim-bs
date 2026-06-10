@@ -28,6 +28,7 @@ from braunschweig.popsim import batch
 from braunschweig.popsim import cells as cellmod
 from braunschweig.popsim import controls as ctrl
 from braunschweig.popsim import folders
+from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import merge as mergemod
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
@@ -284,6 +285,8 @@ def load_mid_seed(
     *,
     columns: seedmod.SeedColumns = seedmod.MID_SEED_COLUMNS,
     day_filter_values: Optional[Sequence[int]] = None,
+    complete_members: bool = False,
+    completion_rng=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -298,16 +301,37 @@ def load_mid_seed(
             ``columns.day_filter_values``; ``()`` or any empty iterable DISABLES
             the day filter (all households kept); any non-empty iterable is used
             verbatim.
+        complete_members: Opt-in (default False -> behaviour byte-identical to
+            before). When True, member-incomplete households (fewer person rows
+            than the declared ``H_GR``; 16.9 % of weekday-filtered seed
+            households) are FILLED by mirror-household sampling (decision D3;
+            see :mod:`braunschweig.popsim.member_completion`), and the person
+            frame gains the total traceability columns ``member_imputed``,
+            ``source_H_ID``, ``source_P_ID`` for the downstream trips join.
+        completion_rng: Seeded :class:`numpy.random.RandomState` driving the
+            mirror draw. REQUIRED when ``complete_members=True`` (seeded
+            randomness rule: no random process without an explicit seed).
     """
+    if complete_members and completion_rng is None:
+        raise ValueError(
+            "load_mid_seed(complete_members=True) requires completion_rng "
+            "(a seeded numpy.random.RandomState); random processes must use an "
+            "explicit seed."
+        )
     mid_dir = Path(mid_dir)
     # Load household id, weight, and RegioStaR7 (Phase 4A plumbing: the RS7 code
     # is carried onto the seed households so Phase 4B donor stratification can use
     # the cell's urban/rural class to restrict the donor pool without an extra join).
     households_path = mid_dir / "MiD2023_Haushalte.csv"
     persons_path = mid_dir / "MiD2023_Personen.csv"
+    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7"]
+    if complete_members:
+        # Member completion needs the declared household size + the mirror match
+        # keys (H_GR -> hhgr_gr -> oek_status; RegioStaR7 is already loaded).
+        household_cols.extend(("H_GR", "hhgr_gr", "oek_status"))
     households = pd.read_csv(
         households_path,
-        usecols=[columns.household_id, columns.household_weight, "RegioStaR7"],
+        usecols=list(dict.fromkeys(household_cols)),
         sep=detect_csv_separator(households_path),
     )
     person_cols = [
@@ -335,9 +359,21 @@ def load_mid_seed(
         households, persons, columns,
         day_filter_values=effective_day_filter,
     )
+    extra_person_cols: tuple[str, ...] = ()
+    if complete_members:
+        # Fill member-incomplete households AFTER the day filter (the host
+        # household must have passed it) and BEFORE the column selection (the
+        # match keys H_GR/hhgr_gr/oek_status are dropped again below, so the
+        # output household schema is unchanged).
+        households, persons, _ = completion.complete_members(
+            households, persons, rng=completion_rng,
+            household_id=columns.household_id,
+        )
+        extra_person_cols = ("member_imputed", "source_H_ID", "source_P_ID")
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=("RegioStaR7",),
+        extra_person_cols=extra_person_cols,
     )
     return households, persons, report
 
