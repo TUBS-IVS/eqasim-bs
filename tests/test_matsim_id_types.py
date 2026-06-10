@@ -58,6 +58,41 @@ def test_string_for_compound_id():
 
 
 # ---------------------------------------------------------------------------
+# Unit tests for column_java_type (per-COLUMN type decision)
+# ---------------------------------------------------------------------------
+
+def test_column_java_type_int_column_is_long():
+    import pandas as pd
+    from matsim import writers
+    assert writers.column_java_type(pd.Series([1, 2, 3])) == "java.lang.Long"
+
+
+def test_column_java_type_float_column_raises():
+    import pandas as pd, pytest
+    from matsim import writers
+    with pytest.raises(ValueError):
+        writers.column_java_type(pd.Series([1.0, float("nan"), 3.0]))
+
+
+def test_column_java_type_leading_zero_string_is_string():
+    import pandas as pd
+    from matsim import writers
+    assert writers.column_java_type(pd.Series(["03101", "03102"])) == "java.lang.String"
+
+
+def test_column_java_type_pure_digit_string_is_long():
+    import pandas as pd
+    from matsim import writers
+    assert writers.column_java_type(pd.Series(["12345", "678"])) == "java.lang.Long"
+
+
+def test_column_java_type_alnum_string_is_string():
+    import pandas as pd
+    from matsim import writers
+    assert writers.column_java_type(pd.Series(["ZENSUS100m_E43_1", "x"])) == "java.lang.String"
+
+
+# ---------------------------------------------------------------------------
 # Integration: population writer uses Long for integer census/hts ids (DEFAULT)
 # ---------------------------------------------------------------------------
 

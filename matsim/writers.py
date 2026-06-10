@@ -2,8 +2,38 @@ import numpy as np
 from xml.sax.saxutils import escape
 
 
+def column_java_type(series):
+    """MATSim attribute Java type for an id COLUMN (decided once, not per value).
+
+    int dtype -> Long. float dtype -> ValueError (an id column must never be
+    float; NaN contamination of an int column is an upstream bug and would
+    serialize as '123.0', which Java's Long.parseLong rejects). object/string ->
+    Long only if EVERY value is a pure-digit string without a leading zero
+    (a leading zero would be silently dropped by Java's parse), else String.
+    """
+    import pandas as pd
+    if pd.api.types.is_integer_dtype(series):
+        return "java.lang.Long"
+    if pd.api.types.is_float_dtype(series):
+        raise ValueError(
+            "id column has float dtype (NaN contamination or non-integer ids); "
+            "ids must be integer or string -- fix upstream.")
+
+    def _pure_long(value):
+        s = str(value)
+        return s.isdigit() and (s == "0" or not s.startswith("0"))
+
+    return "java.lang.Long" if series.map(_pure_long).all() else "java.lang.String"
+
+
 def long_or_string_type(value):
     """MATSim attribute type for an id: Long if it is an integer value, else String.
+
+    DEPRECATED for frame-driven writers: per-VALUE switching can emit mixed
+    Long/String types for the same attribute within one file (Java readers
+    crash on mixed types) and lets float-contaminated ids through as Long.
+    Use :func:`column_java_type` to decide the type once per column instead.
+    Kept for callers that classify a single standalone value.
 
     eqasim census/hts ids are integers in the French pipeline (Long); popsim_mid ids
     are alphanumeric provenance strings (e.g. "ZENSUS100m_E43_1234_0_1") ->
