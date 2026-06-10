@@ -85,6 +85,18 @@ def expand_to_persons(
         mid_persons, left_on=donor_col, right_on=person_donor_col,
         how="left", suffixes=("", "_person"),
     )
+    # The donor persons file is complete by construction; a synthetic household
+    # whose donor finds no persons would silently become a NaN ghost row, so a
+    # miss means dtype drift or corruption and must fail loudly.
+    matched_key = "P_ID" if "P_ID" in persons.columns else person_donor_col
+    unmatched = persons[persons[matched_key].isna()]
+    if len(unmatched):
+        bad = list(unmatched[donor_col].unique()[:10])
+        raise ValueError(
+            f"[popsim.expand] {unmatched[donor_col].nunique()} synthetic households "
+            f"found no donor persons (e.g. {donor_col} {bad}). The donor persons file "
+            f"must cover every donor household; a miss means dtype drift or corruption."
+        )
     if "P_ID" in persons.columns:
         persons["person_id"] = (
             persons["household_id"].astype(str) + "_" + persons["P_ID"].astype(str)

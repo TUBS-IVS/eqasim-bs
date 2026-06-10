@@ -73,6 +73,15 @@ def test_expand_to_persons_preserves_cell_and_household_link():
     assert (a["household_id"] == "A_1_0").all()
 
 
+def test_expand_to_persons_raises_on_unmatched_household():
+    households = expand.assign_synthetic_household_ids(
+        pd.DataFrame({"ZENSUS100m": ["c1"], "H_ID": [999]})
+    )
+    mid_persons = pd.DataFrame({"H_ID": [1], "P_ID": [1], "HP_ALTER": [30], "HP_SEX": [1]})
+    with pytest.raises(ValueError, match="no donor persons"):
+        expand.expand_to_persons(households, mid_persons)
+
+
 # ---------------------------------------------------------------------------
 # map_demographics
 # ---------------------------------------------------------------------------
