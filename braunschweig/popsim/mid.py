@@ -17,6 +17,7 @@ folders / seed / batch / merge / handoff) rather than re-implementing them.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence, Union
 
@@ -30,6 +31,8 @@ from braunschweig.popsim import folders
 from braunschweig.popsim import merge as mergemod
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
+
+logger = logging.getLogger(__name__)
 
 SUFFIX_100M = "_ZENSUS100m"
 SUFFIX_1KM = "_ZENSUS1km"
@@ -291,6 +294,124 @@ def load_mid_wege(
 
 
 # --------------------------------------------------------------------------- #
+# Donor stratification helpers (Phase 4B)
+# --------------------------------------------------------------------------- #
+
+def dominant_stratum_for_1km(
+    cells: pd.DataFrame,
+    source,
+) -> tuple[dict, float]:
+    """Compute the dominant stratum per 1 km parent cell by majority vote.
+
+    Each 100 m cell contributes its source-specific stratum label (via
+    ``source.cell_stratum``).  The dominant stratum for a 1 km parent is the
+    most-frequent label among its 100 m children.  Ties are broken by the
+    smallest label (sort-stable).
+
+    A 1 km cell that straddles a Gemeinde or RegioStaR boundary is assigned
+    the dominant stratum of its 100 m children; the fraction of children whose
+    stratum differs from their 1 km parent's dominant is the **border
+    approximation rate** (logged by the caller; returned here for transparency).
+
+    Parameters
+    ----------
+    cells:
+        100 m cells frame.  Must carry ``ZENSUS1km`` and ``RegioStaR7`` (or
+        whatever column the source's ``cell_stratum`` reads).
+    source:
+        Active :class:`braunschweig.popsim.sources.base.PopsimSource` instance.
+        Provides :meth:`cell_stratum` to map per-cell RS7 codes to stratum labels.
+
+    Returns
+    -------
+    tuple[dict[str, Any], float]
+        ``(dominant_map, border_rate)`` where:
+        - ``dominant_map`` maps each ``ZENSUS1km`` id to its dominant stratum.
+        - ``border_rate`` is the fraction of 100 m cells whose stratum differs
+          from their 1 km parent's dominant stratum (0.0 = all cells homogeneous).
+    """
+    cells_work = cells[["ZENSUS1km", "ZENSUS100m"]].copy()
+    cells_work["_stratum"] = source.cell_stratum(cells).values
+
+    # Count stratum occurrences per 1 km parent.
+    grouped = cells_work.groupby(["ZENSUS1km", "_stratum"], sort=True).size()
+    # For each 1 km parent, pick the stratum with the highest count; stable sort
+    # means ties resolve to the smallest label alphabetically / numerically.
+    dominant_series = grouped.groupby(level="ZENSUS1km").idxmax()
+    # idxmax returns (ZENSUS1km, _stratum) tuples as the value; extract stratum.
+    dominant_map = {km: idx[1] for km, idx in dominant_series.items()}
+
+    # Compute border rate: fraction of 100m cells whose stratum != parent dominant.
+    cells_work["_dominant"] = cells_work["ZENSUS1km"].map(dominant_map)
+    n_total = len(cells_work)
+    n_border = int((cells_work["_stratum"] != cells_work["_dominant"]).sum())
+    border_rate = n_border / n_total if n_total > 0 else 0.0
+
+    return dominant_map, border_rate
+
+
+def filter_seed_to_stratum(
+    seed_households: pd.DataFrame,
+    seed_persons: pd.DataFrame,
+    stratum_value,
+    source,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Filter the donor seed to households matching a single stratum value.
+
+    Retains only the households whose :meth:`source.donor_stratum` equals
+    ``stratum_value``, then filters ``seed_persons`` to those household ids.
+    The join key is ``source.seed_columns().household_id`` for the MiD path
+    (``"H_ID"``); for ENTD it is ``"household_id"``.
+
+    Parameters
+    ----------
+    seed_households:
+        Full donor household frame (returned by the source's ``load_donor``).
+    seed_persons:
+        Full donor person frame.
+    stratum_value:
+        The stratum label to retain (e.g. RS7 code ``72`` for MiD, or ``"urban"``
+        for ENTD).
+    source:
+        Active :class:`braunschweig.popsim.sources.base.PopsimSource` instance.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame]
+        ``(filtered_households, filtered_persons)`` retaining only the matching
+        stratum.
+
+    Raises
+    ------
+    ValueError
+        If no households match ``stratum_value`` (zero-donor guard: the caller
+        MUST NOT assemble a PopulationSim batch with an empty seed).
+    """
+    stratum_series = source.donor_stratum(seed_households)
+    mask = stratum_series == stratum_value
+    filtered_hh = seed_households[mask].copy()
+
+    if len(filtered_hh) == 0:
+        raise ValueError(
+            f"[popsim.mid] Donor stratification: no donor households found for "
+            f"stratum '{stratum_value}'. "
+            f"The donor seed contains strata: {sorted(stratum_series.unique())}. "
+            f"To disable stratification set "
+            f"'braunschweig.population.popsim.stratify_regiostar' to False."
+        )
+
+    # Determine the household-id join column for this source.
+    hh_id_col = source.seed_columns().household_id  # e.g. "H_ID" or "household_id"
+    retained_hids = set(filtered_hh[hh_id_col])
+    person_hh_id_col = source.seed_columns().person_household_id
+    filtered_persons = seed_persons[
+        seed_persons[person_hh_id_col].isin(retained_hids)
+    ].copy()
+
+    return filtered_hh, filtered_persons
+
+
+# --------------------------------------------------------------------------- #
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
 
@@ -344,6 +465,8 @@ def run_popsim_mid(
     max_cells: int,
     run_one,
     num_workers: int = 3,
+    source=None,
+    stratify_regiostar: bool = False,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -353,23 +476,119 @@ def run_popsim_mid(
     in production; a fake in tests), and merges the cell-disjoint outputs. Returns
     the merge report (with the combined expanded-household table).
 
-    The seed (households + persons) is shared by every batch; only the controls /
-    crosswalk are batch-specific.
+    When ``stratify_regiostar`` is False (default): the full seed is shared by
+    every batch; only the controls / crosswalk are batch-specific. This is
+    byte-identical to the pre-4B behaviour.
+
+    When ``stratify_regiostar`` is True: each 1 km parent is assigned its
+    dominant RegioStaR stratum (majority vote among its 100 m children); batches
+    are partitioned WITHIN each stratum (so a batch never mixes strata); and each
+    batch receives only the donor households whose stratum matches the batch's
+    stratum.  A zero-donor batch raises :class:`ValueError`.
+
+    Parameters
+    ----------
+    cells:
+        100 m cells frame (ZGB-filtered, with ``ZENSUS1km`` and ``RegioStaR7``).
+    base_cols:
+        Control base column names (without geography suffix).
+    controls_df:
+        PopulationSim controls CSV as a DataFrame.
+    seed_households:
+        Donor household frame (from :func:`load_mid_seed` or the ENTD adapter).
+    seed_persons:
+        Donor person frame.
+    work_dir:
+        Directory for batch folders.
+    settings_yaml / logging_yaml:
+        PopulationSim configuration files as strings.
+    max_cells:
+        Maximum 100 m cells per batch (soft; a single oversize 1 km parent may
+        exceed it).
+    run_one:
+        Injectable callable ``(folder: str) -> BatchResult``.
+    num_workers:
+        Thread-pool size for concurrent batch execution.
+    source:
+        Active :class:`braunschweig.popsim.sources.base.PopsimSource` instance.
+        Required when ``stratify_regiostar=True``; ignored when False.
+    stratify_regiostar:
+        Flag-gate.  Default False (OFF path is byte-identical).
     """
     work_dir = Path(work_dir)
     groups = cell_groups(cells)
-    partitions = batch.partition_by_1km(groups, max_cells)
 
-    batch_folders: list[str] = []
-    for index, km_cells in enumerate(partitions):
-        subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
-        folder = work_dir / f"batch_{index:03d}"
-        assemble_batch_folder(
-            folder, subset, base_cols, controls_df,
-            seed_households, seed_persons,
-            settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+    if not stratify_regiostar:
+        # Default OFF path: unchanged behaviour (byte-identical to pre-4B).
+        partitions = batch.partition_by_1km(groups, max_cells)
+        batch_folders: list[str] = []
+        for index, km_cells in enumerate(partitions):
+            subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
+            folder = work_dir / f"batch_{index:03d}"
+            assemble_batch_folder(
+                folder, subset, base_cols, controls_df,
+                seed_households, seed_persons,
+                settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+            )
+            batch_folders.append(str(folder))
+
+        batch.run_batches(batch_folders, run_one, num_workers=num_workers)
+        return mergemod.merge_batch_folders(batch_folders)
+
+    # Stratified ON path (Phase 4B).
+    # Requires a source with cell_stratum and donor_stratum.
+    if source is None:
+        raise ValueError(
+            "[popsim.mid] stratify_regiostar=True requires a source adapter "
+            "(pass source=<PopsimSource instance>)."
         )
-        batch_folders.append(str(folder))
 
-    batch.run_batches(batch_folders, run_one, num_workers=num_workers)
-    return mergemod.merge_batch_folders(batch_folders)
+    # (1) Compute dominant stratum per 1 km parent; log border approximation rate.
+    dominant_map, border_rate = dominant_stratum_for_1km(cells, source)
+    logger.info(
+        "[popsim.mid] RegioStaR stratification: %d 1km parents; "
+        "border approximation rate %.1f%% (fraction of 100m cells whose stratum "
+        "differs from their 1km parent's dominant).",
+        len(dominant_map), 100.0 * border_rate,
+    )
+
+    # (2) Group 1km parents by dominant stratum.
+    stratum_to_km_ids: dict = {}
+    for km_id, stratum in dominant_map.items():
+        stratum_to_km_ids.setdefault(stratum, []).append(km_id)
+
+    logger.info(
+        "[popsim.mid] strata: %s",
+        {str(s): len(ids) for s, ids in stratum_to_km_ids.items()},
+    )
+
+    # (3) Partition WITHIN each stratum + filter seed per batch.
+    batch_folders_stratified: list[str] = []
+    global_batch_index = 0
+    for stratum, km_ids in sorted(stratum_to_km_ids.items(), key=lambda x: str(x[0])):
+        # Build the per-stratum cell_groups (only 1km parents in this stratum).
+        stratum_groups = {km: groups[km] for km in km_ids if km in groups}
+        partitions_s = batch.partition_by_1km(stratum_groups, max_cells)
+
+        # Filter donor seed once per stratum; reuse across all batches of the stratum.
+        hh_stratum, p_stratum = filter_seed_to_stratum(
+            seed_households, seed_persons, stratum, source
+        )
+        logger.info(
+            "[popsim.mid] stratum %s: %d batches, %d donor households.",
+            stratum, len(partitions_s), len(hh_stratum),
+        )
+
+        for km_cells in partitions_s:
+            subset = cells[cells["ZENSUS1km"].isin(km_cells)].copy()
+            folder = work_dir / f"batch_{global_batch_index:03d}"
+            assemble_batch_folder(
+                folder, subset, base_cols, controls_df,
+                hh_stratum, p_stratum,
+                settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+            )
+            batch_folders_stratified.append(str(folder))
+            global_batch_index += 1
+
+    batch.run_batches(batch_folders_stratified, run_one, num_workers=num_workers)
+    return mergemod.merge_batch_folders(batch_folders_stratified)

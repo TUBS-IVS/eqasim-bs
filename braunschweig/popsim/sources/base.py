@@ -104,6 +104,50 @@ class PopsimSource(Protocol):
         """
         ...
 
+    def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
+        """Return the per-household stratum label for donor stratification (Phase 4B).
+
+        The stratum granularity depends on the source:
+        - MiD: RegioStaR-7 code (integer, 7 classes 71-77).
+        - ENTD: RegioStaR-2 label string (``"urban"`` / ``"rural"``).
+
+        The returned Series must use the SAME label space as :meth:`cell_stratum`
+        so that cells and donors can be matched by a simple equality check.
+
+        Parameters
+        ----------
+        seed_households:
+            Donor household frame returned by :meth:`load_donor`.
+
+        Returns
+        -------
+        pd.Series
+            Stratum label per household row, same index as ``seed_households``.
+        """
+        ...
+
+    def cell_stratum(self, cells: pd.DataFrame) -> pd.Series:
+        """Return the per-100m-cell stratum label for donor stratification (Phase 4B).
+
+        The stratum granularity depends on the source:
+        - MiD: ``cells["RegioStaR7"]`` directly (7-class).
+        - ENTD: ``cells["RegioStaR7"].map(cell_urban_class_from_rs7)`` (2-class).
+
+        The returned Series must use the SAME label space as :meth:`donor_stratum`
+        so that cells and donors can be matched by a simple equality check.
+
+        Parameters
+        ----------
+        cells:
+            100m cells frame carrying ``RegioStaR7``.
+
+        Returns
+        -------
+        pd.Series
+            Stratum label per cell row, same index as ``cells``.
+        """
+        ...
+
     def build_trips(
         self,
         persons: pd.DataFrame,

@@ -55,6 +55,8 @@ KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
+# Phase 4B: RegioStaR donor stratification flag (default OFF = byte-identical).
+KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -109,6 +111,9 @@ def configure(context):
     context.config(KEY_WORK_DIR)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
+    # Phase 4B: RegioStaR donor stratification.  Default False = byte-identical to
+    # pre-4B: each batch receives the full seed, no stratum filtering.
+    context.config(KEY_STRATIFY, False)
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -137,6 +142,7 @@ def execute(context) -> pd.DataFrame:
     work_dir = context.config(KEY_WORK_DIR)
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE, "mid")
+    stratify_regiostar = bool(context.config(KEY_STRATIFY, False))
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
@@ -161,6 +167,10 @@ def execute(context) -> pd.DataFrame:
         cwd=popsimprep_dir,
     )
 
+    logger.info(
+        "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
+        stratify_regiostar,
+    )
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
@@ -169,6 +179,8 @@ def execute(context) -> pd.DataFrame:
         max_cells=max_cells,
         run_one=run_one,
         num_workers=num_workers,
+        source=source,
+        stratify_regiostar=stratify_regiostar,
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)

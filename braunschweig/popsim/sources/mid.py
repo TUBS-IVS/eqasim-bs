@@ -21,6 +21,7 @@ from braunschweig.popsim import mid as mid_mod
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.assembly import map_mid_person_attributes
 from braunschweig.popsim.seed import MID_SEED_COLUMNS, SeedColumns
+from braunschweig.popsim.stratum import cell_urban_class_from_rs7
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,58 @@ class MidSource:
             persons, households, rng=rng
         )
         return persons_out
+
+    def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
+        """Return the per-household stratum label for donor stratification.
+
+        For MiD, the stratum is the raw RegioStaR-7 code (7-class: 71-77).
+        This is the FINE granularity mandated by Phase 4B: cells and donors are
+        matched at RS7 resolution so urban sub-types (e.g. 71 core city vs.
+        74 small town hinterland) are kept distinct.
+
+        Parameters
+        ----------
+        seed_households:
+            MiD seed household frame.  Must carry ``RegioStaR7`` (loaded by
+            :func:`braunschweig.popsim.mid.load_mid_seed`).
+
+        Returns
+        -------
+        pd.Series
+            Integer RS7 code per household row, same index as ``seed_households``.
+
+        Raises
+        ------
+        KeyError
+            If ``RegioStaR7`` is absent from ``seed_households``.
+        """
+        return seed_households["RegioStaR7"]
+
+    def cell_stratum(self, cells: pd.DataFrame) -> pd.Series:
+        """Return the per-100m-cell stratum label for donor stratification.
+
+        For MiD, the stratum is ``RegioStaR7`` directly (same label space as
+        :meth:`donor_stratum`), so urban cells draw MiD donors from the same
+        RS7 class.
+
+        Parameters
+        ----------
+        cells:
+            Cells frame.  Must carry ``RegioStaR7`` (loaded by
+            :func:`braunschweig.popsim.mid.load_control_cells` via
+            ``_EXTRA_CELL_COLUMNS``).
+
+        Returns
+        -------
+        pd.Series
+            Integer RS7 code per cell row, same index as ``cells``.
+
+        Raises
+        ------
+        KeyError
+            If ``RegioStaR7`` is absent from ``cells``.
+        """
+        return cells["RegioStaR7"]
 
     def build_trips(
         self,
