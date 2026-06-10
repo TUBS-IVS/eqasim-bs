@@ -179,12 +179,39 @@ def test_pt_subscription_structural_and_nonresponse():
     assert out["has_pt_subscription"].isna().sum() == 0
 
 
-def test_pt_subscription_structural_202_206_resolve_to_false():
-    """Structural codes 202 (PAPI) and 206 (Proxy) must resolve deterministically to False."""
-    persons = pd.DataFrame({"P_FKARTE": [5, 202, 206]})
+def test_pt_subscription_adult_coverage_codes_are_imputed_not_false():
+    """Adult interview-mode codes 202 (PAPI) and 206 (Proxy, adult >=14) are imputed.
+
+    They are NOT "no ticket" -- they are coverage / interview-mode design-missings on
+    persons of subscription age (MiD 2023 Handbuch Tab. 3, first-digit 2 = Interviewart;
+    206 = Erwachsener ab 14 Proxy/Stellvertreter). They must be imputed from comparable
+    adult respondents, not forced to False. With a valid pool of all-True donors in the
+    same age band, the imputed value is therefore True.
+    """
+    persons = pd.DataFrame({
+        "P_FKARTE": [5, 5, 5, 202, 206],
+        "alter_gr1": [5, 5, 5, 5, 5],
+    })
     out = a.map_has_pt_subscription(persons, rng=np.random.RandomState(0))
-    assert out["has_pt_subscription"].tolist() == [True, False, False]
+    # 202/206 imputed from the valid pool (all code 5 -> True) -> True, not deterministic False
+    assert out["has_pt_subscription"].tolist() == [True, True, True, True, True]
     assert out["has_pt_subscription"].isna().sum() == 0
+
+
+def test_pt_under14_floor_kept_adult_coverage_imputed():
+    import numpy as np, pandas as pd
+    from braunschweig.popsim import attributes
+    df = pd.DataFrame({
+        "P_FKARTE":  [3, 3, 3, 402, 206],
+        "alter_gr1": [5, 5, 5, 1, 5],
+    })
+    out = attributes.map_pt_subscription_type(df, rng=np.random.RandomState(0))
+    assert out["pt_subscription_type"].iloc[3] == "fahre_nie"          # under-14 floor kept
+    assert out["pt_subscription_type"].iloc[4] in attributes.FKARTE_TO_CATEGORY.values()  # imputed to a real category
+    # With an all-deutschlandticket donor pool in the same age band, the adult coverage
+    # code (206) must be imputed to that category -- not deterministically forced to
+    # "fahre_nie" (which the previous structural mapping would have done).
+    assert out["pt_subscription_type"].iloc[4] == "deutschlandticket"
 
 
 def test_pt_subscription_nonresponse_imputed():

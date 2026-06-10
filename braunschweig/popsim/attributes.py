@@ -120,9 +120,10 @@ FKARTE_TO_CATEGORY: dict[int, str] = {
     8: "fahre_nie",              # never travels by PT
 }
 
-# The never-travels category is used for structural non-applicable codes
-# (children under 14 years, proxy interviews) and as the default for
-# persons whose code cannot be resolved.
+# The never-travels category is used for the structural under-14 floor
+# (code 402, children under the MiD PT-subscription basis age, not interviewed)
+# and as the default for persons whose code cannot be resolved. Adult
+# interview-mode / proxy coverage codes (202/206) are imputed, not forced here.
 PT_TICKET_NEVER = "fahre_nie"
 
 
@@ -384,13 +385,21 @@ def map_has_pt_subscription(
     True, 7 (sonstiges) -> False, 8 (fahre nie mit OEPNV) -> False.
 
     Structural design-missing codes (Handbuch Tab. 3, first-digit conventions):
-    202 (PAPI Interviewart, fragebogen-bedingt) -> False; 206 (Proxy interview) ->
-    False; 402 (Kind unter 14 Jahre, nicht befragt) -> False. These persons genuinely
-    have no PT ticket of their own.
+    only 402 (Kind unter 14 Jahre, nicht befragt) is a legitimate deterministic
+    structural False -- it is the under-14 / PT-subscription basis-age floor (mirrors
+    the legacy ``braunschweig.minimum_age.pt_subscription`` rule): children below the
+    MiD PT-subscription basis age genuinely have no PT ticket of their own. The codes
+    202 (PAPI Interviewart, fragebogen-bedingt) and 206 (Erwachsener ab 14,
+    Proxy/Stellvertreter) are first-digit-2 interview-mode / coverage design-missings
+    on persons of subscription age; they are NOT "no ticket" and must be IMPUTED from
+    comparable adult respondents, not forced to False. Forcing them to False (the
+    previous behaviour) put adult proxy persons (P_FKARTE=206: ~24.6k MiD donors) on
+    the deterministic-False path and biased the subscription share downward. They are
+    therefore declared in ``impute_codes`` (treated as item non-response).
 
-    99 (keine Angabe, item non-response) -> imputed from the valid pool within the
-    same age group (alter_gr1) when present, else global pool; ``default=False``
-    (conservative: unknown PT use treated as no subscription).
+    99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
+    pool within the same age group (alter_gr1) when present, else global pool;
+    ``default=False`` (conservative: unknown PT use treated as no subscription).
 
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
@@ -401,7 +410,8 @@ def map_has_pt_subscription(
         name="has_pt_subscription",
         source_col=fkarte_col,
         value_map=value_map,
-        structural={202: False, 206: False, 402: False},
+        structural={402: False},          # Kind unter 14: deterministic under-14 floor
+        impute_codes=(202, 206),          # interview-mode / adult proxy coverage: impute
         group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
         default=False,
     )
@@ -421,15 +431,20 @@ def map_pt_subscription_type(
     4 -> ``wochen_monat_ohne_abo``, 5 -> ``monat_abo_jahreskarte``,
     6 -> ``jobticket_semesterticket``, 7 -> ``anderes``, 8 -> ``fahre_nie``.
 
-    Structural design-missing codes (persons not surveyed about PT tickets):
-    202 (PAPI interview mode, form-dependent), 206 (proxy interview),
-    402 (child under 14, not interviewed) -> ``"fahre_nie"`` deterministically.
-    These persons genuinely have no PT ticket of their own.
+    Structural design-missing codes: only 402 (Kind unter 14, nicht befragt) is the
+    legitimate deterministic ``"fahre_nie"`` -- the under-14 / PT-subscription basis-age
+    floor (mirrors the legacy ``braunschweig.minimum_age.pt_subscription`` rule).
+    Children below the MiD PT-subscription basis age genuinely have no PT ticket of
+    their own. The codes 202 (PAPI interview mode, form-dependent) and 206 (Erwachsener
+    ab 14, Proxy/Stellvertreter) are first-digit-2 interview-mode / coverage
+    design-missings on persons of subscription age; they are NOT "never travels" and
+    must be IMPUTED from comparable adult respondents, not forced to ``"fahre_nie"``.
+    They are therefore declared in ``impute_codes`` (treated as item non-response).
 
-    99 (keine Angabe, item non-response) -> imputed from the valid pool within
-    the same age group (``alter_gr1``) when present, else global pool; categorical
-    default ``PT_TICKET_NEVER`` = ``"fahre_nie"`` (conservative: unknown PT use
-    treated as never travelling by PT).
+    99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
+    pool within the same age group (``alter_gr1``) when present, else global pool;
+    categorical default ``PT_TICKET_NEVER`` = ``"fahre_nie"`` (conservative: unknown
+    PT use treated as never travelling by PT).
 
     The output category is constrained to ``PT_TICKET_CATEGORIES`` from
     ``braunschweig.data.mid.reference_tables`` (import validated at module load).
@@ -442,7 +457,8 @@ def map_pt_subscription_type(
         name="pt_subscription_type",
         source_col=fkarte_col,
         value_map=FKARTE_TO_CATEGORY,
-        structural={202: PT_TICKET_NEVER, 206: PT_TICKET_NEVER, 402: PT_TICKET_NEVER},
+        structural={402: PT_TICKET_NEVER},   # Kind unter 14: deterministic under-14 floor
+        impute_codes=(202, 206),             # interview-mode / adult proxy coverage: impute
         group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
         default=PT_TICKET_NEVER,
     )
