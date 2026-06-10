@@ -376,6 +376,34 @@ def test_entd_build_trips_contains_euclidean_distance():
     assert "euclidean_distance" in result.columns
 
 
+def test_entd_build_trips_derives_euclidean_from_routed():
+    """When the donor trips lack euclidean_distance (the data.hts.entd.filtered case),
+    build_trips must derive it as routed_distance / 1.3 (eqasim ENTD detour factor)."""
+    from braunschweig.popsim.sources.entd import ENTD_DETOUR_FACTOR
+
+    src = EntdSource()
+    trips = _entd_trips().drop(columns=["euclidean_distance"])  # filtered donor: only routed
+    result = src.build_trips(
+        _synthetic_persons_with_source_ids(), trips, random_seed=0
+    )
+    assert "euclidean_distance" in result.columns
+    assert result["euclidean_distance"].notna().all()
+    expected = result["routed_distance"] / ENTD_DETOUR_FACTOR
+    pd.testing.assert_series_equal(
+        result["euclidean_distance"].reset_index(drop=True),
+        expected.reset_index(drop=True),
+        check_names=False,
+    )
+
+
+def test_entd_build_trips_raises_without_any_distance():
+    """No euclidean_distance AND no routed_distance -> fail-fast (no silent zero)."""
+    src = EntdSource()
+    trips = _entd_trips().drop(columns=["euclidean_distance", "routed_distance"])
+    with pytest.raises(ValueError, match="routed_distance"):
+        src.build_trips(_synthetic_persons_with_source_ids(), trips, random_seed=0)
+
+
 def test_entd_build_trips_keyed_by_synthetic_person_id():
     """All trip rows must carry the SYNTHETIC person_id (not the ENTD donor id)."""
     src = EntdSource()

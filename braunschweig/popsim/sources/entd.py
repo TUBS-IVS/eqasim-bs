@@ -181,6 +181,11 @@ for _cls, _label in _ENTD_INCOME_CLASS_TO_LABEL.items():
 # This is the ENTD equivalent of the MiD "over_7000" class which sets high_income.
 ENTD_HIGH_INCOME_CLASS = 13
 
+# Detour factor converting a routed (network) distance to a straight-line
+# (Euclidean) distance. Matches data/hts/entd/reweighted.py:28
+# (euclidean_distance = routed_distance / 1.3) and the MiD path (wegkm_imp / 1.3).
+ENTD_DETOUR_FACTOR = 1.3
+
 # PT ticket defaults (ENTD has no ticket-type field).
 # Subscribers -> a representative flatrate category (must be in PT_TICKET_FLATRATE
 # AND PT_TICKET_CATEGORIES). Non-subscribers -> never-uses.
@@ -912,6 +917,22 @@ class EntdSource:
         # Apply per-person departure-time jitter using the shared helper from
         # trips_stage (identical formula to synthesis/population/trips.py).
         trips = apply_per_person_jitter(trips, random_seed=random_seed)
+
+        # euclidean_distance: the eqasim ENTD reweighted stage derives it as
+        # routed_distance / 1.3 (data/hts/entd/reweighted.py:28; the same 1.3 detour
+        # factor the MiD path uses, wegkm_imp/1.3). The full-composition donor
+        # (data.hts.entd.filtered) carries routed_distance but NOT euclidean_distance
+        # -- that column is only added by the reweighted stage, which we deliberately
+        # bypass for the seed (it collapses households to one person). So derive it
+        # here. Downstream (commute_distance, secondary distance distributions) needs it.
+        if "euclidean_distance" not in trips.columns:
+            if "routed_distance" not in trips.columns:
+                raise ValueError(
+                    "[EntdSource.build_trips] donor trips have neither "
+                    "'euclidean_distance' nor 'routed_distance'; cannot derive the "
+                    "Euclidean trip distance the downstream stages require."
+                )
+            trips["euclidean_distance"] = trips["routed_distance"] / ENTD_DETOUR_FACTOR
 
         # Build final column order: CONTRACT first, then euclidean_distance + extras.
         extras_ordered = [
