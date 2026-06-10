@@ -19,6 +19,7 @@ import pandas as pd
 
 # MiD sex codes (HP_SEX): 1 = male, 2 = female; others (3 "diverse", 9 "no answer").
 _SEX_LABELS = {1: "male", 2: "female"}
+_SEX_RAW_LABELS = {1: "male", 2: "female", 3: "diverse", 9: "not_specified"}
 
 
 def assign_synthetic_household_ids(
@@ -93,19 +94,40 @@ def expand_to_persons(
     return persons.reset_index(drop=True)
 
 
-def map_demographics(
-    persons: pd.DataFrame,
-    *,
-    age_col: str = "HP_ALTER",
-    sex_col: str = "HP_SEX",
-) -> pd.DataFrame:
-    """Map the MiD demographic columns to the eqasim ``age`` / ``sex`` schema.
-
-    ``age`` is the MiD completed-years column; ``sex`` maps HP_SEX 1 -> ``male``,
-    2 -> ``female``, anything else -> ``unknown`` (kept explicit rather than
-    dropped, so the population total stays consistent).
+def map_demographics(persons, *, age_col="HP_ALTER", sex_col="HP_SEX", rng=None):
+    """Map MiD demographics. ``sex`` is binary male/female (MATSim requires binary;
+    HP_SEX codes 3 'diverse' / 9 'keine Angabe' are imputed from the valid pool
+    within the same alter_gr1 band, seeded). The original category is retained in
+    ``sex_raw`` (male/female/diverse/not_specified) for analysis but is NOT written
+    to the MATSim population.
     """
+    import logging
+    import numpy as np
+    rng = rng if rng is not None else np.random.RandomState(0)
     out = persons.copy()
     out["age"] = out[age_col]
-    out["sex"] = out[sex_col].map(_SEX_LABELS).fillna("unknown")
+    out["sex_raw"] = out[sex_col].map(_SEX_RAW_LABELS).fillna("not_specified")
+    binary = out[sex_col].map(_SEX_LABELS)
+    missing_mask = binary.isna()
+    n_missing = int(missing_mask.sum())
+    if n_missing:
+        global_pool = binary[~missing_mask]
+        if "alter_gr1" in out.columns:
+            for band, idx in out.loc[missing_mask].groupby("alter_gr1").groups.items():
+                band_pool = binary[(~missing_mask) & (out["alter_gr1"] == band)]
+                draw_pool = band_pool if len(band_pool) else global_pool
+                if len(draw_pool):
+                    binary.loc[idx] = [draw_pool.iloc[rng.randint(len(draw_pool))] for _ in idx]
+                else:
+                    binary.loc[idx] = "male"
+        else:
+            if len(global_pool):
+                binary.loc[missing_mask] = [global_pool.iloc[rng.randint(len(global_pool))]
+                                            for _ in range(n_missing)]
+            else:
+                binary.loc[missing_mask] = "male"
+    out["sex"] = binary
+    logging.getLogger(__name__).info(
+        "[popsim.expand] sex: imputed %d non-binary/missing codes (3 diverse / 9 k.A.) "
+        "to binary male/female (seeded); sex_raw retains the original category.", n_missing)
     return out

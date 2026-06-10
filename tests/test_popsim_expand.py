@@ -88,7 +88,11 @@ def test_map_demographics_age_and_sex():
     assert mapped.loc[mapped["HP_SEX"] == 2, "sex"].eq("female").all()
 
 
-def test_map_demographics_unknown_sex_is_unknown():
-    persons = pd.DataFrame({"HP_ALTER": [30], "HP_SEX": [9]})
-    mapped = expand.map_demographics(persons)
-    assert mapped.loc[0, "sex"] == "unknown"
+def test_map_demographics_imputes_sex_and_keeps_raw():
+    import numpy as np, pandas as pd
+    from braunschweig.popsim import expand
+    df = pd.DataFrame({"HP_ALTER": [30, 30, 30, 30], "HP_SEX": [1, 2, 3, 9],
+                       "alter_gr1": [5, 5, 5, 5]})
+    out = expand.map_demographics(df, rng=np.random.RandomState(0))
+    assert set(out["sex"].unique()) <= {"male", "female"}        # binary, no "unknown"
+    assert out["sex_raw"].tolist() == ["male", "female", "diverse", "not_specified"]

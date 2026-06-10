@@ -436,7 +436,7 @@ def build_persons(
         merged_households, donor_col=donor_col
     )
     persons = expand.expand_to_persons(households, mid_persons, donor_col=donor_col)
-    persons = expand.map_demographics(persons)
+    persons = expand.map_demographics(persons, rng=rng)
 
     # Derive commune_id, departement_id, iris_id from the 12-digit ARS column
     # (joined by stage.py from the cells parquet onto the merged households).
