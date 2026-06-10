@@ -38,6 +38,7 @@ import pandas as pd
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import mid
+from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,12 @@ KEY_KREISE = "braunschweig.political_prefix"
 KEY_SOURCE = "braunschweig.population.popsim.source"
 # Phase 4B: RegioStaR donor stratification flag (default OFF = byte-identical).
 KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
+# Member completion (decision D3, mid source only): fill member-incomplete MiD
+# donor households by mirror-household sampling, in ONE pass on the attribute
+# donor tables that feeds BOTH the PopulationSim seed and the expansion.
+# Default ON (project rule: new features default on); False reproduces the
+# legacy load_mid_seed + load_donor path byte-identically.
+KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -118,6 +125,8 @@ def configure(context):
     # Phase 4B: RegioStaR donor stratification.  Default False = byte-identical to
     # pre-4B: each batch receives the full seed, no stratum filtering.
     context.config(KEY_STRATIFY, False)
+    # Member completion (D3). Default True; False -> legacy path (see execute()).
+    context.config(KEY_COMPLETE_MEMBERS, True)
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -156,6 +165,9 @@ def execute(context) -> pd.DataFrame:
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE)
     stratify_regiostar = bool(context.config(KEY_STRATIFY))
+    # Member completion (D3) applies to the MiD donor source only: the ENTD
+    # frames have no declared-size column and need no completion.
+    complete_members = bool(context.config(KEY_COMPLETE_MEMBERS)) and source_name == "mid"
 
     # Seeded RNG for the stochastic attribute imputation in build_persons
     # (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
@@ -177,6 +189,12 @@ def execute(context) -> pd.DataFrame:
     # For source="entd": the ENTD donor frames are transformed to MiD column
     # schema by EntdSource.build_seed so the downstream (expand, map_demographics)
     # runs unchanged; only map_person_attributes is ENTD-specific.
+    # The completed donor frames (member completion ON) are loaded here, ahead
+    # of PopulationSim, because the SEED is derived from them; they are reused
+    # verbatim as the expansion donor tables further below (ONE completion pass
+    # -> seed and expansion contain the same fillers).
+    completed_donor_households = None
+    completed_donor_persons = None
     if source_name == "entd":
         # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
         # (registered in configure() as alias "hts_donor") and build the seed.
@@ -186,9 +204,32 @@ def execute(context) -> pd.DataFrame:
         seed_households, seed_persons, report = source.build_seed(
             hts_hh_seed, hts_persons_seed
         )
+    elif complete_members:
+        # popsim_mid with member completion (D3, default ON): ONE completion pass
+        # on the attribute-bearing donor tables (day-filtered like the legacy
+        # seed), then the PopulationSim seed is projected out of the completed
+        # frames. RNG offset +74513 keeps the mirror-draw stream disjoint from
+        # the +74511 attribute-imputation stream below.
+        (
+            completed_donor_households, completed_donor_persons,
+            report, completion_report,
+        ) = mid.load_completed_donor(
+            mid_dir, completion_rng=np.random.RandomState(random_seed + 74513),
+        )
+        seed_columns = source.seed_columns()
+        seed_households, seed_persons = seedmod.select_seed_columns(
+            completed_donor_households, completed_donor_persons, seed_columns,
+            extra_household_cols=("RegioStaR7",),
+        )
+        context.set_info(
+            "member_completion_filled", completion_report.n_households_filled
+        )
+        context.set_info(
+            "member_completion_persons_added", completion_report.n_persons_added
+        )
     else:
-        # popsim_mid (default): reads MiD CSV files directly from mid_dir.
-        # This path is byte-identical to all prior versions.
+        # popsim_mid, complete_members=False: reads MiD CSV files directly from
+        # mid_dir. This path is byte-identical to all prior versions.
         seed_columns = source.seed_columns()
         seed_households, seed_persons, report = mid.load_mid_seed(
             mid_dir, columns=seed_columns
@@ -247,8 +288,20 @@ def execute(context) -> pd.DataFrame:
         donor_households, donor_persons, _donor_trips = source.load_donor(
             mid_dir, injected=(hts_hh, hts_persons, hts_trips)
         )
+    elif complete_members:
+        # Member completion ON: the completed frames ARE the donor tables.
+        # Reloading via source.load_donor would lose the fillers and their
+        # source_H_ID / source_P_ID traceability (seed/expansion inconsistency).
+        donor_households = completed_donor_households
+        donor_persons = completed_donor_persons
+        logger.info(
+            "[popsim.stage] member completion ON: expansion uses the completed "
+            "donor frames (%d households, %d persons incl. fillers).",
+            len(donor_households), len(donor_persons),
+        )
     else:
-        # popsim_mid (default): reads MiD CSV files directly from mid_dir.
+        # popsim_mid, complete_members=False (legacy): reads MiD CSV files
+        # directly from mid_dir.
         donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
 
     # Load the per-Kreis INKAR income scale (registered in configure).

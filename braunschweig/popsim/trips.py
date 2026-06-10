@@ -193,6 +193,17 @@ def build_trip_table(
     # frame that has already been exploded (e.g. one row per household member).
     persons = persons.drop_duplicates(subset="person_id")
 
+    # Member completion (braunschweig.popsim.member_completion): a filler person
+    # carries a synthetic (host H_ID, fresh P_ID) pair that does NOT exist in the
+    # MiD Wege file, so joining on it would silently give fillers no trips. The
+    # total traceability columns source_H_ID / source_P_ID reference the MIRROR
+    # donor for fillers and the own ids for regular persons, so using them as the
+    # effective join keys gives fillers the mirror's Wege and leaves everyone
+    # else unchanged. Frames without the columns (legacy path) join as before.
+    if "source_H_ID" in persons.columns and "source_P_ID" in persons.columns:
+        persons = persons.assign(**{household_col: persons["source_H_ID"],
+                                    person_col: persons["source_P_ID"]})
+
     # Step 1: join donor Wege, map purpose and mode.
     # expand_persons_to_trips produces a string trip_id (<person_id>_<W_ID>)
     # which we rename to trip_key for traceability; a global integer trip_id is

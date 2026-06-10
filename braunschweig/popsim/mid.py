@@ -8,6 +8,8 @@ small, focused, reusable functions:
 - ``filter_zgb_cells``      -- restrict the national grid to the ZGB Kreise
 - ``build_control_totals``  -- per-geography suffixed, hierarchically integerized
 - ``load_mid_seed``         -- the consistent (complete-household) MiD seed
+- ``load_completed_donor``  -- attribute donor tables, day-filtered + member-completed
+                               (the ONE completion pass feeding seed AND expansion)
 - ``assemble_batch_folder`` -- write one PopulationSim run folder
 - ``run_popsim_mid``        -- batch over 1 km parents, run, merge, handoff
 
@@ -382,11 +384,19 @@ def load_mid_seed(
 MID_PERSON_ATTR_COLS = (
     "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT",
     "alter_gr1",  # conditioning column for grouped item-nonresponse imputation
+    # P_GEW (seed person weight) + kernwo (day filter): needed so the completed
+    # donor frames (load_completed_donor) can serve BOTH the expansion AND the
+    # PopulationSim seed from ONE member-completion pass.
+    "P_GEW", "kernwo",
 )
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
     "RegioStaR7",  # Phase 4A: RegioStaR-7 code for donor urban/rural stratification
     "hhgr_gr",  # conditioning column for grouped item-nonresponse imputation
+    # H_GR (declared household size; drives member completion) + H_GEW (seed
+    # household weight): needed so the completed frames can serve BOTH the
+    # expansion AND the PopulationSim seed.
+    "H_GR", "H_GEW",
 )
 
 # Minimum columns required by build_trip_table / trips_stage.
@@ -421,6 +431,69 @@ def load_mid_attributes(
         sep=detect_csv_separator(persons_path),
     )
     return households, persons
+
+
+def load_completed_donor(
+    mid_dir: Union[str, Path],
+    *,
+    completion_rng,
+    day_filter_values: Optional[Sequence[int]] = None,
+) -> tuple[
+    pd.DataFrame, pd.DataFrame,
+    seedmod.CompletenessReport, completion.MemberCompletionReport,
+]:
+    """Load the donor attribute tables, apply the day-filter completeness rule,
+    and fill member-incomplete households (mirror-household sampling).
+
+    This is the ONE member-completion pass of the popsim_mid workflow: BOTH the
+    PopulationSim seed (via ``seed.select_seed_columns`` on the returned frames)
+    AND the expansion (``assembly.build_persons``) derive from the completed
+    frames, so seed and expansion are guaranteed to contain the SAME fillers.
+    The attribute usecols therefore include the seed columns (``P_GEW`` /
+    ``kernwo`` / ``H_GR`` / ``H_GEW``, see ``MID_PERSON_ATTR_COLS`` /
+    ``MID_HOUSEHOLD_ATTR_COLS``).
+
+    Args:
+        mid_dir: Directory with ``MiD2023_Haushalte.csv`` / ``MiD2023_Personen.csv``.
+        completion_rng: Seeded :class:`numpy.random.RandomState` driving the
+            mirror draw (REQUIRED; no random process without an explicit seed).
+        day_filter_values: Accepted ``kernwo`` values. ``None`` (default) ->
+            the standard weekday default on ``MID_SEED_COLUMNS``; an empty
+            iterable DISABLES the day filter; any non-empty iterable is used
+            verbatim (same tri-state contract as :func:`load_mid_seed`).
+
+    Returns:
+        ``(households, persons, completeness_report, completion_report)``.
+        The persons frame carries ``member_imputed`` + ``source_H_ID`` /
+        ``source_P_ID`` (total columns: regular persons reference themselves;
+        fillers reference their mirror donor for the trips join and the
+        pseudonym map).
+    """
+    if completion_rng is None:
+        raise ValueError(
+            "load_completed_donor requires completion_rng (a seeded "
+            "numpy.random.RandomState); random processes must use an explicit seed."
+        )
+    households, persons = load_mid_attributes(mid_dir)
+
+    # Same tri-state day-filter contract as load_mid_seed: `None` -> standard
+    # weekday default; explicit empty iterable -> day filter OFF; else verbatim.
+    if day_filter_values is None:
+        effective_day_filter = MID_SEED_COLUMNS.day_filter_values
+    elif len(tuple(day_filter_values)) == 0:
+        effective_day_filter = None
+    else:
+        effective_day_filter = tuple(day_filter_values)
+
+    households, persons, completeness_report = seedmod.filter_complete_households(
+        households, persons, MID_SEED_COLUMNS,
+        day_filter_values=effective_day_filter,
+    )
+    households, persons, completion_report = completion.complete_members(
+        households, persons, rng=completion_rng,
+        household_id=MID_SEED_COLUMNS.household_id,
+    )
+    return households, persons, completeness_report, completion_report
 
 
 def load_mid_wege(

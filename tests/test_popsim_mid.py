@@ -214,16 +214,20 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
     # must include it; load_mid_attributes uses usecols=list(MID_HOUSEHOLD_ATTR_COLS).
     # hhgr_gr / alter_gr1 are the conditioning columns for grouped item-nonresponse
     # imputation (bugfix wave), so the fixtures must include them.
+    # H_GR / H_GEW and P_GEW / kernwo joined the attribute usecols so the
+    # member-completed frames can serve BOTH expansion and the PopulationSim seed.
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr\n1,3,4,1,2,72,2\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW\n1,3,4,1,2,72,2,2,1.0\n",
         encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
     (tmp_path / "MiD2023_Personen.csv").write_text(
-        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1\n1,1,40,1,1,1,3,1,5\n",
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,P_GEW,kernwo\n1,1,40,1,1,1,3,1,5,1.0,1\n",
         encoding="utf-8",
     )
     households, persons = mid.load_mid_attributes(tmp_path)
-    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "RegioStaR7", "hhgr_gr"} <= set(households.columns)
-    assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1"} <= set(persons.columns)
+    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "RegioStaR7", "hhgr_gr",
+            "H_GR", "H_GEW"} <= set(households.columns)
+    assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1",
+            "P_GEW", "kernwo"} <= set(persons.columns)
 

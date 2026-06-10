@@ -39,6 +39,17 @@ def assign_donor_surrogates(
     - ``source_person_id``: ``pd.factorize((H_ID, P_ID), sort=True)[0] + 1`` --
       each unique donor (H_ID, P_ID) pair is assigned a unique sequential integer.
 
+    Member-completion traceability: when the frame carries the total columns
+    ``source_H_ID`` / ``source_P_ID`` (set by
+    ``braunschweig.popsim.member_completion``), those are PREFERRED as the
+    factorization keys.  A filler person carries a synthetic (host ``H_ID``,
+    fresh ``P_ID``) pair that corresponds to NO real MiD respondent; its
+    ``source_*`` ids reference the MIRROR donor person, so the surrogate (and
+    the pseudonym map) stays re-linkable to a real respondent.  Regular persons
+    carry their own ids in ``source_*``, so this is a no-op for them; frames
+    without the columns (legacy flag-OFF path) fall back to ``H_ID`` / ``P_ID``
+    unchanged.
+
     Both surrogates are deterministic because ``sort=True`` ensures the same input
     always produces the same mapping. Using ``+ 1`` shifts the range from [0, N-1]
     to [1, N] so surrogates are clean positive integers (``java.lang.Long`` in the
@@ -83,13 +94,23 @@ def assign_donor_surrogates(
 
     out = persons.copy()
 
+    # Prefer the member-completion traceability ids when present (see docstring):
+    # fillers then factorize to their MIRROR donor's real (H_ID, P_ID); for
+    # regular persons source_* equal the own ids, so the result is identical to
+    # the legacy keys. Without the columns (flag-OFF path) behaviour is unchanged.
+    use_source_ids = (
+        "source_H_ID" in out.columns and "source_P_ID" in out.columns
+    )
+    donor_hh_key = out["source_H_ID"] if use_source_ids else out[donor_col]
+    donor_p_key = out["source_P_ID"] if use_source_ids else out["P_ID"]
+
     # --- household surrogate ---
-    hh_codes, _ = pd.factorize(out[donor_col], sort=True)
+    hh_codes, _ = pd.factorize(donor_hh_key, sort=True)
     out["source_household_id"] = (hh_codes + 1).astype(int)
 
     # --- person surrogate: unique (H_ID, P_ID) pair ---
     # Encode the pair as a single sortable key for factorize.
-    pair_key = list(zip(out[donor_col].tolist(), out["P_ID"].tolist()))
+    pair_key = list(zip(donor_hh_key.tolist(), donor_p_key.tolist()))
     p_codes, unique_pairs = pd.factorize(pair_key, sort=True)
     out["source_person_id"] = (p_codes + 1).astype(int)
 
