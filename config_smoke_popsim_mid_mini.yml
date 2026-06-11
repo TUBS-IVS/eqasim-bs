@@ -1,0 +1,191 @@
+## Synthetic population pipeline for the Braunschweig region (ZGB-8, Niedersachsen).
+## Population method: popsim_mid (PopulationSim + restricted MiD 2023 raw microdata).
+## Sampling rate: 1% (smoke / dev iteration). Adjust sampling_rate as needed.
+##
+## This config wires the popsim_mid producer and its downstream stage aliases into
+## the synpp DAG. Everything outside the popsim-specific sections is identical to
+## config_local_braunschweig.yml. The default config is unchanged.
+##
+## LOCAL-ONLY PATHS: Several paths under braunschweig.population.popsim.* point to
+## restricted or large local-only data. Lines marked "# local-only, set to your path"
+## must be adjusted to your local layout (see docs/population/DATA_LAYOUT.md).
+## The canonical defaults follow the layout from scripts/popsim_mid_smoke.py.
+
+working_directory: eqasim-data/cache_mini_popsim_mid
+
+run:
+  - synthesis.output
+
+config:
+  processes: 8
+
+  # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
+  hts: entd
+
+  sampling_rate: 0.01
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_mini_popsim_mid
+  output_prefix: braunschweig_popsim_mid_mini_
+
+  java_memory: 32G
+
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+
+  # --- Population method: popsim_mid ----------------------------------------
+  # Selects the PopulationSim + MiD 2023 producer (braunschweig.popsim.stage).
+  # The selector (braunschweig.population.selector) maps this to the stage but
+  # does NOT wire the synpp alias; the aliases block below does that.
+  braunschweig.population.method: popsim_mid
+
+  # --- popsim_mid input paths -----------------------------------------------
+  # Zensus 2022 INSPIRE grid parquets (large; local-only, not committed).
+  # Canonical layout: eqasim-data/data/braunschweig/popsim/cells/
+  # See docs/population/DATA_LAYOUT.md for the rename mapping.
+  braunschweig.population.popsim.cells_1km_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet  # local-only, set to your path
+  braunschweig.population.popsim.cells_100m_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet  # local-only, set to your path
+
+  # MiD 2023 raw microdata directory (RESTRICTED; scientific-use licence, never committed).
+  # Must contain: MiD2023_Haushalte.csv, MiD2023_Personen.csv, MiD2023_Wege.csv
+  # Used by braunschweig.popsim.stage (KEY_MID = mid_raw_path) and
+  # braunschweig.popsim.trips_stage (mid_dir key). Both point to the same directory.
+  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # local-only, set to your path
+  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # local-only, same dir as mid_raw_path
+
+  # PopulationSim control spec and run configs from the popsimprep repo.
+  # Canonical: popsimprep/popsim/configs/
+  braunschweig.population.popsim.controls_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/_prep3_controls.csv  # local-only, set to your path
+  braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings.yaml  # local-only, set to your path
+  braunschweig.population.popsim.logging_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/logging.yaml  # local-only, set to your path
+
+  # popsimprep repo root (cwd for `uv run populationsim`).
+  braunschweig.population.popsim.popsimprep_dir: C:/Users/bienzeisler/Documents/GitHub/popsimprep  # local-only, set to your path
+
+  # uv executable (used to launch PopulationSim in its own venv).
+  braunschweig.population.popsim.uv_path: C:/Users/bienzeisler/.local/bin/uv.exe  # local-only, set to your path
+
+  # Working directory for per-batch PopulationSim folder trees.
+  braunschweig.population.popsim.work_dir: eqasim-data/cache_mini_popsim_mid/popsim_work
+
+  # Batch tuning: max 100 m cells per PopulationSim run (default 3000),
+  # and number of parallel PopulationSim subprocesses (default 3).
+  braunschweig.population.popsim.max_cells: 3000
+  braunschweig.population.popsim.num_workers: 3
+
+  # --- R-A: Gravity calibration (TASK-001).
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+
+  # --- R-A.2: Per-RegioStaR-7 slope (TASK-RS-001).
+  gravity_slope_by_regiostar7:
+    72: -0.0558   # Regiopole / Grossstadt
+    73: -0.0638   # Mittelstadt / staedt. Raum
+    74: -0.0640   # Kleinstadt / doerfl. Raum (Stadtregion)
+    75: -0.0704   # Zentrale Stadt (laendlich)
+    76: -0.0719   # Mittelstadt (laendlich)
+    77: -0.0667   # Kleinstadt / doerfl. (laendlich)
+
+  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
+  braunschweig.ipf.use_household_size_margin: true
+
+  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
+  braunschweig.ipf.use_household_type_margin: true
+
+  # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26)
+  braunschweig.ipf.use_employment_margin: true
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+
+  gtfs_path: gtfs
+  osm_path: osm
+
+  vrb_stations_path: vrb/stations.json
+
+  # --- Braunschweig region scope (ZGB-8) ------------------------------------
+  braunschweig.political_prefix:
+    - "03101"
+
+  # --- Input data paths (Braunschweig / Niedersachsen) ----------------------
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
+
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+
+  braunschweig.home_density_weighting: true
+
+  braunschweig.buildings_path: braunschweig/buildings
+
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+
+  osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
+  osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
+
+  # --- Feature flags --------------------------------------------------------
+  education_gravity_enabled: false
+
+  education_gravity_slope_by_level_rs7:
+    kindergarten: {72: -3.0000, 73: -2.0251, 74: -3.0000, 75: -3.0000, 76: -0.5167, 77: -2.8138}
+    grundschule: {72: -1.3354, 73: -0.6835, 74: -0.4507, 75: -1.0793, 76: -0.1248, 77: -0.2412}
+    sekundar_1: {72: -0.4944, 73: -0.2383, 74: -0.4303, 75: -0.5700, 76: -0.1568, 77: -0.1160}
+    oberstufe: {72: -1.5100, 73: -0.7650, 74: -3.0000, 75: -1.2588, 76: -1.2588, 77: -1.2588}
+    bbs: {72: -0.0350, 73: -0.0898, 74: -0.1524, 75: -0.0666, 76: -0.1346, 77: -3.0000}
+
+  education_bbs_share: 0.681
+
+  education_university_slope: -0.1415
+  education_university_max_radius_km: 150.0
+
+# --- Aliases ------------------------------------------------------------------
+# Same pattern as config_local_braunschweig.yml. The key difference from the
+# default config is the data.census.filtered alias, which is redirected from
+# the IPF producer (braunschweig.ipf.attributed) to the popsim_mid producer
+# (braunschweig.popsim.stage). The selector (braunschweig.population.selector)
+# only resolves the producer name; wiring the synpp alias is this config's job.
+# The trips and enriched stages are also replaced by their popsim_mid variants.
+aliases:
+  # popsim_mid producer: replaces the IPF chain for population synthesis.
+  # Default config uses: data.census.filtered: braunschweig.ipf.attributed
+  data.census.filtered: braunschweig.popsim.stage
+
+  # popsim_mid trips stage: builds the MiD Wege trip table in the
+  # synthesis.population.trips contract (departure/arrival times, mode, purpose).
+  synthesis.population.trips: braunschweig.popsim.trips_stage
+
+  # popsim_mid enriched adapter: maps source_* provenance to the writer's id
+  # fields (hts_id / hts_household_id) without an HTS matching step.
+  synthesis.population.enriched: braunschweig.popsim.enriched_adapter
+
+  # popsim_mid commute-distance stage: takes work/education commute distances
+  # directly from the MiD donor trips (no HTS join needed).
+  synthesis.population.spatial.commute_distance: braunschweig.popsim.commute_distance
+
+  # popsim_mid secondary distance distributions: builds mode x travel-time CDFs
+  # from the German MiD 2023 Wege survey instead of the French ENTD, so secondary
+  # activities are placed at German empirical distances (bug D3 fix).
+  synthesis.population.spatial.secondary.distance_distributions: braunschweig.popsim.distance_distributions
+
+  # --- All other aliases are identical to config_local_braunschweig.yml -----
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  synthesis.locations.work: braunschweig.locations.work
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: eqasim_common.data.spatial.iris
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
