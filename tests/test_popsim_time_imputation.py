@@ -170,6 +170,96 @@ def test_impute_skips_person_with_missing_wegmin(caplog):
     assert any("skipped" in record.getMessage() for record in caplog.records)
 
 
+def test_pool_excludes_late_first_departures(caplog):
+    # v_late is a VALID person (no NaN, chain within the bound) but its first
+    # departure is 25h (a midnight-shifted diary): it must NOT contribute
+    # anchors or activity durations.  v_early is then the ONLY pool
+    # contributor, so the candidate's imputed chain is fully determined by it:
+    # dep_0 = 8h (v_early's anchor) and the work dwell = v_early's 30600s.
+    rows = _valid_person("v_early", 8 * 3600.0, ["work", "home"],
+                         trip_s=600.0, activity_s=30600.0)
+    rows += _valid_person("v_late", 25 * 3600.0, ["work", "home"],
+                          trip_s=600.0, activity_s=3600.0)
+    rows += _nan_time_person("n1", ["work", "home"], [10.0, 15.0])
+    df = _base_frame(rows)
+
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.time_imputation"):
+        out, report = impute_chain_times(
+            df, {"n1"}, rng=np.random.RandomState(0),
+            max_plan_time_seconds=MAX_PLAN_S,
+        )
+
+    assert report.n_imputed == 1
+    chain = out[out["person_id"] == "n1"].sort_values("W_ID")
+    dep = chain["departure_time"].to_numpy()
+    arr = chain["arrival_time"].to_numpy()
+    # The anchor comes from v_early (the only within-day contributor), and the
+    # work dwell from v_early's pool entry, NOT from v_late's 3600s.
+    assert dep[0] == 8 * 3600.0
+    assert dep[1] - arr[0] == 30600.0
+    # The pool exclusion is logged (no silent filtering).
+    assert any("excluded" in record.getMessage() for record in caplog.records)
+
+
+def test_dwell_scaling_saves_overflowing_chain():
+    # Pools force overflow: the single anchor is 4h and the single work-dwell
+    # is 28h.  The candidate has 3 trips -> 2 drawn dwells of 28h each, so the
+    # blind reconstruction ends at ~60.5h > 36h on EVERY attempt.  The
+    # deterministic dwell-scaling pass must then shrink the dwells
+    # proportionally (floored at MIN_ACTIVITY_SECONDS) so the chain ends
+    # exactly within the bound -> the person is IMPUTED, not skipped.
+    from braunschweig.popsim.time_imputation import MIN_ACTIVITY_SECONDS
+
+    rows = _valid_person("v1", 4 * 3600.0, ["work", "home"],
+                         trip_s=600.0, activity_s=28 * 3600.0)
+    rows += _nan_time_person("n1", ["work", "work", "home"], [10.0, 10.0, 10.0])
+    df = _base_frame(rows)
+
+    out, report = impute_chain_times(
+        df, {"n1"}, rng=np.random.RandomState(0),
+        max_plan_time_seconds=MAX_PLAN_S, max_attempts=5,
+    )
+
+    assert report.n_imputed == 1
+    assert report.n_skipped == 0
+    assert report.n_dwell_scaled == 1
+
+    chain = out[out["person_id"] == "n1"].sort_values("W_ID")
+    dep = chain["departure_time"].to_numpy()
+    arr = chain["arrival_time"].to_numpy()
+    assert not np.isnan(dep).any() and not np.isnan(arr).any()
+    # The chain ends within the plan bound.
+    assert arr[-1] <= MAX_PLAN_S
+    # Trip durations stay the person's OWN wegmin_imp1.
+    assert np.allclose(arr - dep, 10.0 * 60.0)
+    # Every scaled dwell respects the 5-minute activity floor.
+    dwells = dep[1:] - arr[:-1]
+    assert (dwells >= MIN_ACTIVITY_SECONDS).all()
+
+
+def test_fixed_trip_durations_alone_exceeding_bound_still_skipped():
+    # The candidate's own trip durations sum to 40h > the 36h bound: no anchor
+    # and no dwell scaling can fit the chain -> skipped to stage B (unchanged
+    # semantics for true impossibility).
+    rows = _valid_person("v1", 8 * 3600.0, ["work", "home"])
+    rows += _nan_time_person("n1", ["work", "home"], [2000.0, 400.0])
+    df = _base_frame(rows)
+
+    out, report = impute_chain_times(
+        df, {"n1"}, rng=np.random.RandomState(0),
+        max_plan_time_seconds=MAX_PLAN_S, max_attempts=5,
+    )
+
+    assert report.n_imputed == 0
+    assert report.n_skipped == 1
+    assert report.n_dwell_scaled == 0
+    assert report.skipped_persons == {"n1"}
+    chain = out[out["person_id"] == "n1"]
+    assert chain["departure_time"].isna().all()
+    assert chain["arrival_time"].isna().all()
+
+
 def test_e2e_build_validated_trip_table_keeps_own_chain(caplog):
     # rbW-style person pA: all four time fields carry the design code 701,
     # but wegmin_imp1 is real -> stage A must KEEP pA's own chain (own
