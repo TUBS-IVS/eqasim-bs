@@ -11,6 +11,8 @@ drop-in replacement.
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -266,6 +268,14 @@ def configure(context):
     # values are pinned by default. None (not {}) so synpp flatten() keeps the
     # key; this mirrors the education_gravity_slope_by_level_rs7 None-default.
     context.config("education_bbs_share_by_age", None)
+    # CSV alternative to the inline dict above: when education_bbs_share_by_age
+    # is None, the stage loads the per-age shares from this reference CSV
+    # (regionalstatistik 21211 BBS-by-age + 21111 Oberstufe-by-age extract, see
+    # braunschweig.data.schools.bbs_share). File absent -> scalar share with an
+    # explicit log line; an inline dict config takes precedence over the CSV.
+    context.config("data_path")
+    context.config("education_bbs_share_by_age_path",
+                   "braunschweig/schools/nds_bbs_share_by_age.csv")
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("braunschweig.data.schools.kita_facilities")
     # Default mirrors the pinned calibration (Destatis MZ 2024 Hochschule mean,
@@ -279,6 +289,22 @@ def configure(context):
     # None (not {}) so synpp flatten() does not drop this key; per-RS7 dict is
     # set by the calibration script and mirrors gravity_slope_by_regiostar7.
     context.config("education_gravity_slope_by_level_rs7", None)
+
+
+def _resolve_bbs_share_by_age(context):
+    """Effective {age -> bbs_share} mapping for the 16-19 cohort.
+
+    Precedence: an inline ``education_bbs_share_by_age`` dict wins; otherwise
+    the per-age shares are loaded from the reference CSV at
+    ``education_bbs_share_by_age_path`` (None when the file is absent, with an
+    explicit log -- the scalar ``education_bbs_share`` then applies)."""
+    inline = context.config("education_bbs_share_by_age")
+    if inline:
+        return inline
+    from braunschweig.data.schools.bbs_share import load_bbs_share_by_age
+    path = os.path.join(context.config("data_path"),
+                        context.config("education_bbs_share_by_age_path"))
+    return load_bbs_share_by_age(path)
 
 
 def execute(context):
@@ -333,7 +359,7 @@ def execute(context):
         "max_iterations": context.config("education_gravity_max_iterations"),
         "tolerance": context.config("education_gravity_tolerance"),
         "bbs_share": context.config("education_bbs_share"),
-        "bbs_share_by_age": context.config("education_bbs_share_by_age"),
+        "bbs_share_by_age": _resolve_bbs_share_by_age(context),
     }
     out = assign_education_locations(
         df_persons, df_nds, df_universities, df_kita, cfg, rng)

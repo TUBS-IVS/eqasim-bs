@@ -93,3 +93,30 @@ The geocoder needs internet once (the `geocode_cache*.json` files make re-runs
 resumable; they are gitignored). Hard-coding coordinates or capacities in Python
 is prohibited — change the xlsx source or `braunschweig/data/schools/typing.py`
 and re-run the script.
+
+## Optional: age-resolved BBS share (`nds_bbs_share_by_age.csv`)
+
+The education gravity model splits age-16-19 pupils between BBS (vocational,
+long trips) and gymnasiale Oberstufe (local) by `education_bbs_share`
+(scalar 0.681 by default). To activate REAL age-resolved shares, place a CSV
+named `nds_bbs_share_by_age.csv` in this directory with schema
+
+```
+# Source: regionalstatistik.de 21211 (Berufliche Schulen, Schueler nach
+# Altersgruppen, NDS) + 21111 (Allgemeinbildende Schulen, gymnasiale
+# Oberstufe nach Alter, NDS), school year 20xx/xx.
+age,bbs_pupils,oberstufe_pupils
+16,<count>,<count>
+17,<count>,<count>
+18,<count>,<count>
+19,<count>,<count>
+```
+
+Sources: regionalstatistik.de / GENESIS statistics **21211** (berufliche
+Schulen: Schueler nach Altersgruppen) and **21111** (allgemeinbildende
+Schulen: Sek-II by age) for Niedersachsen; alternatively the LSN
+Statistische Berichte B I detail tables. The loader
+(`braunschweig.data.schools.bbs_share`) derives
+`bbs_share(age) = bbs / (bbs + oberstufe)` per age; file absent -> the scalar
+share applies (logged). An inline `education_bbs_share_by_age` config dict
+takes precedence over the CSV.
