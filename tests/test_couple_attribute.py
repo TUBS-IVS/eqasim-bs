@@ -120,6 +120,9 @@ def _cfg(reactivate):
         "braunschweig.chunking.same_sex_couple_share": 0.011,
         "braunschweig.chunking.child_parent_age_target_weight": 0.0,
         "reactivate_person_attributes": reactivate,
+        # Registered default in attributed.configure(); the stub context does
+        # not honour registered defaults, so it must be provided explicitly.
+        "matching_attributes": [],
     }
 
 

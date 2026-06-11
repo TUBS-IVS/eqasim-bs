@@ -139,6 +139,9 @@ def _base_cfg(**kw):
         "braunschweig.chunking.couple_age_weight": 1.0,
         "braunschweig.chunking.parent_child_weight": 1.0,
         "braunschweig.chunking.parent_child_gap_years": 31.0,
+        # Registered default in attributed.configure(); the stub context does
+        # not honour registered defaults, so it must be provided explicitly.
+        "matching_attributes": [],
     }
     cfg.update(kw)
     return cfg
