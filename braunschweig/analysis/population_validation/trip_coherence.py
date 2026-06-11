@@ -274,6 +274,181 @@ def w12_length_coherence(trips, data_path, *, detour_factor=DETOUR_FACTOR,
     return rows
 
 
+# -- MiD P38.2 commute-distance-band coherence (per Kreis) --------------------
+#
+# P38.2 (MiD 2023 Grossraum Braunschweig, infas 7555, Tabelle A P38.2) gives the
+# row-% distribution of the one-way commute distance ("Entfernung zur Arbeit")
+# over distance bands, per Kreis plus the ZGB aggregate ("Gesamt"). The BAND
+# SHARES are scored; the table's arithmetic ``mittel_km`` is reported only
+# descriptively and deliberately NOT scored: it is dominated by the long-distance
+# / weekly-commuter tail and the item-nonresponse column (e.g. Salzgitter
+# mittel_km = 237.6 km), which a same-day straight-line x detour synthetic
+# distance cannot and should not reproduce.
+#
+# The ``d_unplausibel_keine_angabe`` column is item non-response, not a distance
+# band; it is excluded and the remaining band shares are re-normalised to 1.
+P38_2_REGION_TO_ARS5 = {
+    "Gesamt": "03ZGB",
+    "Braunschweig": "03101",
+    "Salzgitter": "03102",
+    "Wolfsburg": "03103",
+    "Landkreis Gifhorn": "03151",
+    "Landkreis Goslar": "03153",
+    "Landkreis Helmstedt": "03154",
+    "Landkreis Peine": "03157",
+    "Landkreis Wolfenbüttel": "03158",
+}
+
+# Ordered (column, lower_km, upper_km) commute-distance bands of P38.2.
+P38_2_BANDS = (
+    ("d_unter_5km", 0.0, 5.0),
+    ("d_5_10km", 5.0, 10.0),
+    ("d_10_20km", 10.0, 20.0),
+    ("d_20_30km", 20.0, 30.0),
+    ("d_30_50km", 30.0, 50.0),
+    ("d_50_100km", 50.0, 100.0),
+    ("d_100_200km", 100.0, 200.0),
+    ("d_200_300km", 200.0, 300.0),
+    ("d_300km_plus", 300.0, float("inf")),
+)
+
+P38_2_NONRESPONSE_COL = "d_unplausibel_keine_angabe"
+
+
+def p38_2_band_target(data_path):
+    """MiD P38.2 commute-distance band shares per region.
+
+    Returns ``({ars5 -> {band_col -> share}}, {ars5 -> mittel_km})`` where the
+    band shares exclude the item-nonresponse column and are re-normalised to sum
+    to 1 per region. Regions are keyed by ars5 ("03ZGB" = the ZGB aggregate).
+    Unknown region names in the CSV raise (fail-fast, no silent drop)."""
+    path = f"{data_path}/braunschweig/mid/mid2023_P38_2_commute_distance_by_kreis.csv"
+    df = pd.read_csv(path, comment="#")
+    unknown = set(df["region"].astype(str).str.strip()) - set(P38_2_REGION_TO_ARS5)
+    if unknown:
+        raise ValueError(
+            f"P38.2 table contains unmapped region names: {sorted(unknown)}. "
+            "Extend P38_2_REGION_TO_ARS5 explicitly.")
+    shares = {}
+    means = {}
+    for _, row in df.iterrows():
+        ars5 = P38_2_REGION_TO_ARS5[str(row["region"]).strip()]
+        raw = {col: float(row[col]) for col, _, _ in P38_2_BANDS}
+        total = sum(raw.values())
+        if total <= 0:
+            raise ValueError(f"P38.2 row {row['region']!r} has no band mass.")
+        shares[ars5] = {col: v / total for col, v in raw.items()}
+        means[ars5] = float(row["mittel_km"])
+    return shares, means
+
+
+def _band_label(routed_km):
+    """Assign each routed commute km value to its P38.2 band column."""
+    bins = [lower for _, lower, _ in P38_2_BANDS] + [float("inf")]
+    labels = [col for col, _, _ in P38_2_BANDS]
+    return pd.cut(routed_km, bins=bins, labels=labels, right=False,
+                  include_lowest=True)
+
+
+def synthetic_commute_band_distribution(persons, trips, *,
+                                        detour_factor=DETOUR_FACTOR,
+                                        person_id_col="person_id",
+                                        purpose_col="following_purpose",
+                                        geo_col="ars5"):
+    """Per-region commute-distance band shares of the synthetic population.
+
+    The commute distance of a person is the distance of their FIRST work trip
+    (home->work when ``preceding_purpose`` is available, else the first trip
+    with ``following_purpose == 'work'``), converted to a routed-equivalent km
+    (``routed_distance`` preferred, else ``euclidean_distance`` x detour
+    factor; same convention as the W12 check). The universe is persons with at
+    least one work trip -- the same commuter universe P38.2 describes.
+
+    Returns ``({ars5 -> {band_col -> share}}, {ars5 -> n_commuters})``, with
+    the additional aggregate key "03ZGB" over all persons."""
+    work = trips[trips[purpose_col].astype(str) == "work"].copy()
+    if "preceding_purpose" in work.columns:
+        home_work = work[work["preceding_purpose"].astype(str) == "home"]
+        # Persons whose chain never has a direct home->work leg keep their
+        # first work trip (documented approximation, no person dropped).
+        rest = work[~work[person_id_col].isin(home_work[person_id_col])]
+        work = pd.concat([home_work, rest], ignore_index=True)
+    first = work.drop_duplicates(subset=[person_id_col], keep="first")
+
+    if "routed_distance" in first.columns:
+        routed_km = first["routed_distance"].astype(float) / 1000.0
+    else:
+        routed_km = (first["euclidean_distance"].astype(float) / 1000.0
+                     * float(detour_factor))
+    frame = pd.DataFrame({
+        person_id_col: first[person_id_col].values,
+        "band": _band_label(routed_km.reset_index(drop=True)),
+    })
+    frame = frame.merge(
+        persons[[person_id_col, geo_col]].drop_duplicates(person_id_col),
+        on=person_id_col, how="left")
+
+    def _shares(sub):
+        counts = sub["band"].value_counts()
+        total = int(counts.sum())
+        if total == 0:
+            return {col: float("nan") for col, _, _ in P38_2_BANDS}, 0
+        return ({col: float(counts.get(col, 0)) / total
+                 for col, _, _ in P38_2_BANDS}, total)
+
+    shares = {}
+    counts = {}
+    shares["03ZGB"], counts["03ZGB"] = _shares(frame)
+    for geo, sub in frame.groupby(geo_col, dropna=True):
+        shares[str(geo)], counts[str(geo)] = _shares(sub)
+    return shares, counts
+
+
+def p38_2_commute_coherence(persons, trips, data_path, *,
+                            detour_factor=DETOUR_FACTOR,
+                            person_id_col="person_id",
+                            purpose_col="following_purpose",
+                            geo_col="ars5"):
+    """P38.2 commute-distance-band coherence: per region (ZGB + Kreise) and band,
+    the synthetic realised share vs the MiD P38.2 target share with signed delta.
+
+    ``persons`` must carry the home ``geo_col`` (ars5). Returns a long DataFrame
+    [ars5, band, lower_km, upper_km, target_share, realised_share, delta_pp,
+    n_commuters, target_mean_km] (the mean km column is descriptive only, see
+    the module comment) plus a one-line srmse log per region."""
+    target, target_means = p38_2_band_target(data_path)
+    realised, n_commuters = synthetic_commute_band_distribution(
+        persons, trips, detour_factor=detour_factor,
+        person_id_col=person_id_col, purpose_col=purpose_col, geo_col=geo_col)
+
+    rows = []
+    srmse_by_region = {}
+    for ars5 in target:
+        t = target[ars5]
+        r = realised.get(ars5, {col: float("nan") for col, _, _ in P38_2_BANDS})
+        srmse_by_region[ars5] = _srmse(
+            {k: (0.0 if pd.isna(v) else v) for k, v in r.items()}, t)
+        for col, lower, upper in P38_2_BANDS:
+            t_share = float(t[col])
+            r_share = float(r.get(col, float("nan")))
+            rows.append({
+                "ars5": ars5,
+                "band": col,
+                "lower_km": lower,
+                "upper_km": upper,
+                "target_share": t_share,
+                "realised_share": r_share,
+                "delta_pp": (r_share - t_share) * 100.0,
+                "n_commuters": int(n_commuters.get(ars5, 0)),
+                "target_mean_km": float(target_means[ars5]),
+            })
+    LOGGER.info(
+        "Trip coherence P38.2 commute-distance bands (synthetic routed vs MiD), "
+        "SRMSE per region: %s",
+        ", ".join(f"{k} {v:.3f}" for k, v in sorted(srmse_by_region.items())))
+    return pd.DataFrame(rows)
+
+
 def _mid_table_by_kreis(data_path, table):
     """Load a MiD reference table and drop the ZGB-aggregate row, returning the
     per-Kreis rows keyed by the 5-digit ``ars5``."""

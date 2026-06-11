@@ -295,3 +295,73 @@ def test_segment_cols_absent_from_persons_are_skipped():
     report = build_trip_coherence_report(
         persons, trips, DATA_PATH, segment_cols=("employed", "urban_class"))
     assert set(report["mobility_by_segment"]["segment"].unique()) == {"employed"}
+
+
+# ---------------------------------------------------------------------------
+# P38.2 commute-distance-band coherence (additive per-Kreis validation).
+# ---------------------------------------------------------------------------
+
+def test_p38_2_band_target_renormalises_and_maps_regions():
+    # Uses the real committed CSV under eqasim-data/.../mid/. Every region maps
+    # to an ars5 (ZGB aggregate + the 8 Kreise); band shares exclude the
+    # item-nonresponse column and sum to 1 per region; mittel_km is descriptive.
+    shares, means = tc.p38_2_band_target(DATA_PATH)
+    expected_keys = {"03ZGB", "03101", "03102", "03103", "03151",
+                     "03153", "03154", "03157", "03158"}
+    assert set(shares) == expected_keys
+    for ars5, dist in shares.items():
+        assert set(dist) == {col for col, _, _ in tc.P38_2_BANDS}
+        assert abs(sum(dist.values()) - 1.0) < 1e-9
+    # Salzgitter mean is the long-tail outlier that motivates scoring band
+    # shares instead of means (descriptive column only).
+    assert means["03102"] > 200.0
+
+
+def test_synthetic_commute_band_distribution_bins_first_home_work_trip():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "ars5": ["03101", "03101", "03102"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 2, 3, 3],
+        "preceding_purpose": ["home", "work", "home", "shop", "home"],
+        "following_purpose": ["work", "home", "work", "work", "work"],
+        # straight-line metres; x1.3 detour -> routed km 3.9, -, 10.4, 39.0, 130.0
+        "euclidean_distance": [3000.0, 3000.0, 8000.0, 30000.0, 100000.0],
+    })
+    shares, counts = tc.synthetic_commute_band_distribution(persons, trips)
+    # Person 1: 3.9 km -> d_unter_5km; person 2: 10.4 km -> d_10_20km;
+    # person 3 has a home->work trip (130 km -> d_100_200km), which is
+    # preferred over the earlier shop->work leg.
+    assert counts["03ZGB"] == 3
+    assert abs(shares["03ZGB"]["d_unter_5km"] - 1 / 3) < 1e-9
+    assert abs(shares["03ZGB"]["d_10_20km"] - 1 / 3) < 1e-9
+    assert abs(shares["03ZGB"]["d_100_200km"] - 1 / 3) < 1e-9
+    assert counts["03101"] == 2 and counts["03102"] == 1
+    assert abs(shares["03102"]["d_100_200km"] - 1.0) < 1e-9
+
+
+def test_p38_2_commute_coherence_produces_long_frame_with_deltas():
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "ars5": ["03101", "03101"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "work"],
+        "euclidean_distance": [3000.0, 8000.0],
+    })
+    out = tc.p38_2_commute_coherence(persons, trips, DATA_PATH)
+    # One row per (region, band): 9 regions x 9 bands.
+    assert len(out) == 9 * 9
+    assert {"ars5", "band", "target_share", "realised_share",
+            "delta_pp", "n_commuters", "target_mean_km"} <= set(out.columns)
+    bs = out[(out["ars5"] == "03101") & (out["band"] == "d_unter_5km")].iloc[0]
+    assert abs(bs["realised_share"] - 0.5) < 1e-9
+    assert abs(bs["delta_pp"]
+               - (bs["realised_share"] - bs["target_share"]) * 100.0) < 1e-9
+    # Regions without synthetic commuters carry NaN realised shares (reported,
+    # never invented).
+    wob = out[(out["ars5"] == "03103")]
+    assert wob["realised_share"].isna().all()

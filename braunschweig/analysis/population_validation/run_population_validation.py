@@ -218,6 +218,30 @@ def run(ns) -> dict:
                     ", ".join(f"{r['purpose']} {r['realised_km']:.1f}/"
                               f"{r['target_km']:.1f} (d {r['delta_km']:+.1f}km)"
                               for r in length))
+
+            # P38.2 commute-distance bands per Kreis (additive validation):
+            # band shares scored against the MiD per-Kreis distribution,
+            # mittel_km carried descriptively only. Own try-block so a P38.2
+            # failure never discards the W1/P36/W12 results above.
+            try:
+                if ("routed_distance" in frames.trips.columns
+                        or "euclidean_distance" in frames.trips.columns):
+                    persons_ars5 = persons_for_tc.merge(
+                        geo[["household_id", "ars5"]],
+                        on="household_id", how="left")
+                    p38 = TC.p38_2_commute_coherence(
+                        persons_ars5[["person_id", "ars5"]],
+                        frames.trips, DATA_PATH)
+                    p38.to_csv(
+                        out / "trip_coherence_commute_bands.csv", index=False)
+                    trip_json["commute_bands"] = p38.to_dict(orient="records")
+                else:
+                    LOGGER.info(
+                        "P38.2 commute-band check skipped: trips carry neither "
+                        "'routed_distance' nor 'euclidean_distance'.")
+            except Exception:
+                LOGGER.exception(
+                    "P38.2 commute-band check failed; continuing without it.")
         except Exception:
             LOGGER.exception(
                 "Trip-coherence check failed; continuing without it.")
