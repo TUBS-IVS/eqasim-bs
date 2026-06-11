@@ -44,6 +44,27 @@ MODES_MAP = [
 def convert_time(x):
     return np.dot(np.array(x.split(":"), dtype = float), [3600.0, 60.0, 1.0])
 
+def _report_default_fallback(label, matched, raw_values, default_value):
+    """Log the primary-vs-fallback rate of a prefix-map with a default value.
+
+    Rows whose raw code matches no map prefix silently keep the default
+    (inherited upstream behaviour) -- per the project no-silent-fallback rule
+    this rate must be observable. Logging only; values are not changed."""
+    n_total = len(matched)
+    n_fallback = int((~matched).sum())
+    if n_total == 0:
+        return
+    if n_fallback == 0:
+        print("[entd.cleaned] %s: primary %d/%d (100.0%%), no default fallback" % (
+            label, n_total, n_total))
+        return
+    top_codes = raw_values[~matched].value_counts().head(5).to_dict()
+    print("[entd.cleaned] %s: primary %d/%d (%.1f%%), fallback to %r %d (%.1f%%); "
+          "top unmapped codes: %s" % (
+              label, n_total - n_fallback, n_total,
+              100.0 * (n_total - n_fallback) / n_total,
+              default_value, n_fallback, 100.0 * n_fallback / n_total, top_codes))
+
 def execute(context):
     df_individu, df_tcm_individu, df_menage, df_tcm_menage, df_deploc = context.stage("data.hts.entd.raw")
 
@@ -166,29 +187,50 @@ def execute(context):
     df_households.loc[df_households["TrancheRevenuMensuel"].str.startswith("10 000"), "income_class"] = 13
     df_households["income_class"] = df_households["income_class"].astype(int)
 
-    # Trip purpose
+    # Trip purpose. Codes matching no PURPOSE_MAP prefix keep the "other"
+    # default -- that is a FALLBACK (distinct from codes 3/4/6 that map to
+    # "other" explicitly), so its rate is counted and logged per the project
+    # no-silent-fallback rule. Values are unchanged (logging only).
     df_trips["following_purpose"] = "other"
     df_trips["preceding_purpose"] = "other"
 
-    for prefix, activity_type in PURPOSE_MAP:
-        df_trips.loc[
-            df_trips["V2_MMOTIFDES"].astype(str).str.startswith(prefix), "following_purpose"
-        ] = activity_type
+    raw_destination = df_trips["V2_MMOTIFDES"].astype(str)
+    raw_origin = df_trips["V2_MMOTIFORI"].astype(str)
+    matched_destination = pd.Series(False, index=df_trips.index)
+    matched_origin = pd.Series(False, index=df_trips.index)
 
-        df_trips.loc[
-            df_trips["V2_MMOTIFORI"].astype(str).str.startswith(prefix), "preceding_purpose"
-        ] = activity_type
+    for prefix, activity_type in PURPOSE_MAP:
+        f_destination = raw_destination.str.startswith(prefix)
+        df_trips.loc[f_destination, "following_purpose"] = activity_type
+        matched_destination |= f_destination
+
+        f_origin = raw_origin.str.startswith(prefix)
+        df_trips.loc[f_origin, "preceding_purpose"] = activity_type
+        matched_origin |= f_origin
+
+    _report_default_fallback(
+        "purpose (V2_MMOTIFDES -> following_purpose)", matched_destination,
+        raw_destination, default_value="other")
+    _report_default_fallback(
+        "purpose (V2_MMOTIFORI -> preceding_purpose)", matched_origin,
+        raw_origin, default_value="other")
 
     df_trips["following_purpose"] = df_trips["following_purpose"].astype("category")
     df_trips["preceding_purpose"] = df_trips["preceding_purpose"].astype("category")
 
-    # Trip mode
+    # Trip mode. Same rule: codes matching no MODES_MAP prefix silently kept
+    # the "pt" default before; the fallback rate is now counted and logged.
     df_trips["mode"] = "pt"
 
+    raw_mode = df_trips["V2_MTP"].astype(str)
+    matched_mode = pd.Series(False, index=df_trips.index)
     for prefix, mode in MODES_MAP:
-        df_trips.loc[
-            df_trips["V2_MTP"].astype(str).str.startswith(prefix), "mode"
-        ] = mode
+        f_mode = raw_mode.str.startswith(prefix)
+        df_trips.loc[f_mode, "mode"] = mode
+        matched_mode |= f_mode
+
+    _report_default_fallback(
+        "mode (V2_MTP -> mode)", matched_mode, raw_mode, default_value="pt")
 
     df_trips["mode"] = df_trips["mode"].astype("category")
 
