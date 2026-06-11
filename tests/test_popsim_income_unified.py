@@ -491,8 +491,9 @@ def test_entd_map_person_attributes_emits_household_income_eur():
     })
 
     src = EntdSource()
-    # Without inkar_scale: should use scale=1.0
-    out = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    # Without inkar_scale: should use scale=1.0. Unified mapper contract:
+    # (persons, pseudonym_map); ENTD's map is empty.
+    out, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     assert "household_income_eur" in out.columns, (
         "EntdSource.map_person_attributes must now emit household_income_eur"
@@ -541,7 +542,8 @@ def test_entd_map_person_attributes_high_income_uses_numeric_rule():
     })
 
     src = EntdSource()
-    out = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    # Unified mapper contract: (persons, pseudonym_map); ENTD's map is empty.
+    out, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # class 5 (1350 EUR) -> high_income False
     assert not out[out["age"] == 40].iloc[0]["high_income"], (

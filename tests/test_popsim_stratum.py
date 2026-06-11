@@ -247,7 +247,8 @@ def test_entd_map_person_attributes_carries_urban_type():
     })
 
     src = EntdSource()
-    out = src.map_person_attributes(persons, households)
+    # Unified mapper contract: (persons, pseudonym_map); ENTD's map is empty.
+    out, _pseudonym_map = src.map_person_attributes(persons, households)
 
     assert "urban_type" in out.columns, (
         "map_person_attributes must forward urban_type from households to persons; "
