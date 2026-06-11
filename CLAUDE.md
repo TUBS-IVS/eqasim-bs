@@ -861,6 +861,37 @@ default-when-data-absent, except/try recovery, etc.):
 This applies to existing fallbacks too: when you touch a stage, add the rate
 instrumentation if it is missing.
 
+## No invented reference values; convergence is not validation — MANDATORY
+
+Two related failure modes are strictly forbidden because they silently fabricate
+scientific claims:
+
+1. **Never invent or assert "target" / "reference" / "ground-truth" values.**
+   A reference value (a modal split, a mean distance, a rate to compare against)
+   may only be stated if it is traceable to a committed source in the repo (a
+   pinned CSV under `eqasim-data/.../`, a documented table in CLAUDE.md, a cited
+   external publication with the figure). If no such source exists, say so
+   explicitly and label the number as an **assumption** ("ASSUMPTION: ...", with
+   the reasoning) -- never as an established target. Do not carry numbers from
+   chat / prompt context into a results report as if they were validated
+   references. Comparing model output to a made-up target and calling the fit
+   "excellent" is a fabricated result and is unacceptable.
+
+2. **Convergence (stability) is NOT the same as validation (matching reality).**
+   The eqasim mode-share termination criterion (`eqasim:termination`,
+   `ModeShareTracker`) stops the MATSim run when the modal split **stops changing**
+   between iterations (smoothed change `< threshold`, default 0.001) -- it has
+   **no real-world reference shares** and says **nothing** about whether the
+   equilibrium matches observed travel behaviour. Report it precisely: "the run
+   converged (mode shares stabilised, change below threshold)". Never phrase a
+   stabilised equilibrium as "hit the target" / "calibrated to the data" unless
+   the realised shares were actually compared to a committed observed reference.
+
+When unsure whether a number is a real reference or an assumption, treat it as an
+assumption and flag it. Cautious, honest, traceable reporting always wins over a
+confident-sounding but unsupported claim (see "Research reporting", "Do not
+overstate results").
+
 ## Tests
 
 Add tests for non trivial logic.
