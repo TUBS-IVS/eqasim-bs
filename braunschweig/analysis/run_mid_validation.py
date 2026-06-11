@@ -469,8 +469,9 @@ def _mode_share_table(
 # Routed/straight-line detour factor used to convert the MiD Tabelle 43 routed
 # targets to a straight-line equivalent. Kept equal to the calibration default
 # in scripts/calibrate_education_slopes.py so the post-sim validation compares
-# against the same target the slopes were fitted to.
-_EDU_DETOUR_FACTOR = 1.3
+# against the same target the slopes were fitted to. Canonical project-wide
+# constant (braunschweig.constants); alias kept.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the

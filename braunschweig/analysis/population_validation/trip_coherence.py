@@ -37,11 +37,10 @@ LOGGER = logging.getLogger("braunschweig.analysis.population_validation.trip_coh
 # Straight-line -> routed detour factor. The synthetic trips table carries
 # ``euclidean_distance`` (straight-line, metres) while MiD W12 ``mittel_km`` is a
 # ROUTED trip length. To compare fairly the synthetic straight-line distance is
-# multiplied by this factor (the same ``DETOUR_FACTOR = 1.3`` the synthesis
-# pipeline uses in braunschweig/popsim/trips_stage.py and
-# synthesis/population/trips.py). If the trips table carries a ``routed_distance``
-# column it is preferred directly (already routed -> no detour multiply).
-DETOUR_FACTOR = 1.3
+# multiplied by the project-wide canonical factor (braunschweig.constants;
+# the same factor the synthesis pipeline divides by). If the trips table
+# carries a ``routed_distance`` column it is preferred directly.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 
 # eqasim activity purpose -> MiD W1 Zweck. The four scored purposes plus two
 # explicit non-W1 categories (return-home trips, residual other).
