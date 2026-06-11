@@ -180,6 +180,10 @@ aliases:
   synthesis.population.income.selected: braunschweig.synthesis.income
   synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
   synthesis.locations.home.locations: braunschweig.locations.home
+  # popsim cell->building handoff: place each household in a building INSIDE its
+  # real Zensus 2022 100 m cell (ZENSUS100m, EPSG:3035) instead of the legacy
+  # Gemeinde-level sampling. Replaces the FINAL home-point stage.
+  synthesis.population.spatial.home.locations: braunschweig.synthesis.locations.home_cell
   synthesis.locations.education: eqasim_common.locations.education
   synthesis.locations.secondary: braunschweig.locations.secondary
   synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
