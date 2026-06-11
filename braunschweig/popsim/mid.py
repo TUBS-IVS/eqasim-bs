@@ -407,6 +407,11 @@ MID_WEGE_REQUIRED_COLS = (
     "W_SZS", "W_SZM",
     "W_AZS", "W_AZM",
     "wegkm_imp",
+    # MiD-imputed trip duration in MINUTES; fully populated and code-free for
+    # all rbW (time code 701) rows.  Consumed by the stage A time imputation
+    # (braunschweig.popsim.time_imputation) — never use raw wegmin, which
+    # carries the code 70701 on those rows.
+    "wegmin_imp1",
 )
 
 

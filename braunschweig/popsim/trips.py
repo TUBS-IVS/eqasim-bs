@@ -326,13 +326,22 @@ def build_validated_trip_table(
     True (default) the PlanValidator enforces home-end closure and logs its repair
     rates (the rates are emitted by repair_trips itself, so they remain observable
     even though the RepairReport is not returned here). When ``resample`` is True,
-    persons the repair classified as unfixable (e.g. NaN-time persons from the MiD
-    coded times 99/701) have their whole chain replaced by a valid donor chain
-    drawn from the SAME matching cell (``resample_cell_col``) via
-    ``plan_validation.resample_chains``; persons without any same-cell donor fall
-    back to a home-only plan (= no trips, the row is dropped) — the fallback rate
-    is logged by resample_chains. The returned ValidationReport reflects the FINAL
-    (post-repair, post-resample) table.
+    unfixable persons go through a two-stage cascade:
+
+    - Stage A (``time_imputation.impute_chain_times``): persons with the
+      ``nan_times`` issue (MiD coded times 99/701 — the 701 rbW group are
+      systematically REGULAR COMMUTERS) and a complete, code-free own
+      ``wegmin_imp1`` keep their OWN chain (purposes/modes/distances are real)
+      and only the times are imputed from empirical same-purpose pools; the
+      affected persons are then re-repaired (home-end closure now applies).
+    - Stage B (``plan_validation.resample_chains``): persons still unfixable
+      after stage A have their whole chain replaced by a valid donor chain
+      drawn from the SAME matching cell (``resample_cell_col``); persons
+      without any same-cell donor fall back to a home-only plan (= no trips,
+      the row is dropped) — the fallback rate is logged by resample_chains.
+
+    The returned ValidationReport reflects the FINAL (post-repair, post-impute,
+    post-resample) table.
 
     Parameters
     ----------
@@ -390,6 +399,17 @@ def build_validated_trip_table(
     if repair:
         table, repair_report = validator.repair_trips(table)
 
+    # Cascade stage A: time imputation for coded-time (nan_times) persons with a
+    # complete own wegmin_imp1.  Runs AFTER the first repair (the nan_times
+    # classification comes from its RepairReport) and BEFORE the resample; the
+    # helper re-runs repair_trips on the imputed table so the now-timed chains
+    # receive home-end closure, and returns the updated RepairReport whose
+    # unfixable set drives stage B (the existing same-cell resample).
+    if resample and repair_report is not None and repair_report.unfixable_persons:
+        table, repair_report = _impute_nan_time_unfixable(
+            table, repair_report, validator, random_seed=random_seed
+        )
+
     if resample and repair_report is not None and repair_report.unfixable_persons:
         table = _resample_unfixable(
             table,
@@ -402,6 +422,83 @@ def build_validated_trip_table(
 
     report = validator.validate_trips(table)
     return table, report
+
+
+def _impute_nan_time_unfixable(
+    table: pd.DataFrame,
+    repair_report,
+    validator,
+    *,
+    random_seed: int,
+):
+    """Cascade stage A: keep coded-time persons' own chains, impute only the times.
+
+    Sequencing (documented because the order is load-bearing):
+
+    1. Runs AFTER the first ``repair_trips`` because the ``nan_times``
+       classification (which persons have MiD coded times 99/701) is derived
+       from its output — a person is a stage A candidate iff they are in the
+       unfixable set AND still carry a NaN departure/arrival time (the exact
+       condition PlanValidator flags as ``nan_times``).
+    2. ``impute_chain_times`` writes times only for persons whose ``wegmin_imp1``
+       is complete and code-free on every trip; everyone else stays NaN.
+    3. The FULL table is then re-repaired: the imputed persons were excluded
+       from the first home-end closure pass (NaN times), so the second pass
+       closes their chains, recomputes trip_id/first-last/durations/trip_index
+       globally, and re-classifies.  Re-repairing the full table (instead of a
+       subset) is safe because repair_trips is a no-op for already-repaired
+       chains (fix_trip_times leaves consistent times unchanged, closure only
+       appends for non-home-ending persons, the recompute step is idempotent)
+       and it avoids a fragile subset-concat-recompute sequence.
+    4. The second RepairReport's unfixable set (imputation-skipped persons,
+       plus any chain the closure append pushed past the plan bound) flows to
+       stage B, the existing same-cell resample, unchanged.
+
+    The stage A RNG is a child stream of the caller's ``random_seed``
+    (``RandomState(random_seed + TIME_IMPUTATION_SEED_OFFSET)``) so the
+    imputation draws are decorrelated from the resample and jitter streams,
+    which both consume ``RandomState(random_seed)`` directly.
+    """
+    import numpy as np
+
+    from braunschweig.popsim.time_imputation import (
+        TIME_IMPUTATION_SEED_OFFSET,
+        impute_chain_times,
+    )
+
+    nan_rows = table["departure_time"].isna() | table["arrival_time"].isna()
+    nan_time_persons = (
+        set(table.loc[nan_rows, "person_id"].unique()) & repair_report.unfixable_persons
+    )
+    if not nan_time_persons:
+        return table, repair_report
+
+    if "wegmin_imp1" not in table.columns:
+        # The MiD delivery always carries wegmin_imp1 (MID_WEGE_REQUIRED_COLS);
+        # other donor sources (e.g. ENTD) do not.  Without it stage A cannot
+        # run — observable, then the legacy stage B resample handles everyone.
+        logger.warning(
+            "[popsim.trips] stage A time imputation unavailable: column "
+            "'wegmin_imp1' is missing from the trip table; %d nan-time persons "
+            "go straight to the stage B resample.",
+            len(nan_time_persons),
+        )
+        return table, repair_report
+
+    rng = np.random.RandomState(random_seed + TIME_IMPUTATION_SEED_OFFSET)
+    table, imputation_report = impute_chain_times(
+        table,
+        nan_time_persons,
+        rng=rng,
+        max_plan_time_seconds=validator.max_plan_time_seconds,
+    )
+
+    if imputation_report.n_imputed == 0:
+        # Nothing changed; keep the first report (and skip a redundant repair).
+        return table, repair_report
+
+    table, second_report = validator.repair_trips(table)
+    return table, second_report
 
 
 def _resample_unfixable(
