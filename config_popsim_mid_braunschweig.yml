@@ -100,7 +100,9 @@ config:
   braunschweig.ipf.use_employment_margin: true
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
-  gtfs_path: gtfs
+  # Germany-wide GTFS (de_full), cut to the enlarged cordon extent (required with
+  # cordon_enabled; same value as config_local_braunschweig_25pct_allfeat.yml).
+  gtfs_path: gtfs_cordon
   osm_path: osm
 
   vrb_stations_path: vrb/stations.json
@@ -141,7 +143,10 @@ config:
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
   # --- Feature flags --------------------------------------------------------
-  education_gravity_enabled: false
+  # Education gravity over the real NDS school/Kita/Hochschule registers
+  # (ON per the default-ON rule; calibrated slopes below are copied from
+  # config_local_braunschweig_25pct_allfeat.yml).
+  education_gravity_enabled: true
 
   education_gravity_slope_by_level_rs7:
     kindergarten: {72: -3.0000, 73: -2.0251, 74: -3.0000, 75: -3.0000, 76: -0.5167, 77: -2.8138}
@@ -154,6 +159,53 @@ config:
 
   education_university_slope: -0.1415
   education_university_max_radius_km: 150.0
+
+  # --- Feature parity with config_local_braunschweig_25pct_allfeat.yml -------
+  # Project rule: flag-gated model features default ON in run configs so they
+  # are not forgotten. Values copied 1:1 from the validated all-features run.
+
+  # Household vehicle fleet (real NDS fleet sampling + HSN/TSN attributes).
+  vehicles_method: household
+  fleet_model_enabled: true
+  fleet_model_brands: true
+  fleet_hsn_tsn_attributes: true
+  fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
+
+  # Urban parking (3 EUR/h for non-resident car trips into the BS inner ring).
+  enable_urban_parking: true
+
+  # Household fleet routing-consistency: re-mode the initial car-driver legs of
+  # carless persons (0-car households own no "car" vehicle) to car_passenger
+  # before MATSim's pre-loop routing. Required with vehicles_method=household.
+  remode_carless_car_legs: true
+
+  # Secondary-location chain solving: parallelised (seeded per shard ->
+  # reproducible for a fixed worker count).
+  braunschweig.chainsolvers.parallel: true
+  braunschweig.chainsolvers.processes: 8
+
+  # Cross-cordon external demand (einpendler injection). Enlarges the OSM
+  # network clip, cuts the prepared scenario at the cordon, and injects
+  # in-commuter agents at the terminal MATSim writers (see the
+  # braunschweig.matsim.scenario.* aliases below -- without them this flag
+  # does nothing).
+  cordon_enabled: true
+  cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
+  cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
+
+  # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module) -
+  # REQUIRED for the cordon scenario cutter (org.eqasim.braunschweig.* +
+  # RunScenarioCutter).
+  eqasim_source_path: ../eqasim-java-bs
+
+  # Legacy-IPF-only flags intentionally absent (popsim replaces the enriched
+  # stage: synthesis.population.enriched -> braunschweig.popsim.enriched_adapter
+  # and data.census.filtered -> braunschweig.popsim.stage, so these would be
+  # dead keys here): reactivate_person_attributes, status_from_hhtype,
+  # consistent_car_availability, cars_income_aware, income_eur_from_distribution,
+  # synthesise_housing_tenure, pt_subscription_conditioned,
+  # braunschweig.ipf.use_joint_age_size_margin,
+  # braunschweig.ipf.age_aware_chunking, braunschweig.chunking.sex_aware_couples.
 
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_braunschweig.yml. The key difference from the
@@ -197,3 +249,10 @@ aliases:
   data.spatial.codes: eqasim_common.spatial.entd_codes
   synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+
+  # Cross-cordon einpendler injection: terminal injection at the MATSim writers
+  # (no-op when cordon_enabled=false). Resident synthesis chain untouched.
+  matsim.scenario.population: braunschweig.matsim.scenario.population
+  matsim.scenario.households: braunschweig.matsim.scenario.households
+  matsim.scenario.vehicles: braunschweig.matsim.scenario.vehicles
+  matsim.scenario.facilities: braunschweig.matsim.scenario.facilities
