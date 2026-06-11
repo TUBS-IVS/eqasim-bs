@@ -1,0 +1,11 @@
+# Source: MiD 2023 Grossraum Braunschweig (infas 7555), Tabelle A P38.2 (page 205 / 0-indexed 204). Row% of total commute distance bands + arithmetic mean (km).
+region,d_unter_5km,d_5_10km,d_10_20km,d_20_30km,d_30_50km,d_50_100km,d_100_200km,d_200_300km,d_300km_plus,d_unplausibel_keine_angabe,mittel_km
+Gesamt,14,10,13,11,13,14,6,4,3,13,66.1
+Braunschweig,22,3,11,25,6,15,6,2,2,7,48.8
+Wolfsburg,12,14,3,17,11,8,2,6,4,23,90.4
+Salzgitter,14,17,25,5,10,7,1,0,11,10,237.6
+Landkreis Gifhorn,18,5,15,4,19,24,4,0,0,11,36.5
+Landkreis Peine,6,7,14,8,7,13,5,1,8,30,89.3
+Landkreis Helmstedt,10,13,22,5,19,16,9,5,0,2,43.8
+Landkreis Wolfenbüttel,14,8,5,6,11,18,10,6,0,22,64.5
+Landkreis Goslar,14,16,13,12,15,4,7,7,3,9,52.6
