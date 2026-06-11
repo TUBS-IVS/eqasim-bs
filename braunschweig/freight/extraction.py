@@ -97,10 +97,13 @@ def execute(context):
 
     # The Java tool runs with cwd = the stage cache dir (java.run default), so the
     # input plans/network must be ABSOLUTE paths (the data stage returns them
-    # relative to the repo root). study_area.shp and the output stay relative
-    # because they live in the cwd.
+    # relative to the repo root). The OUTPUT must also carry a directory
+    # component: the tool calls output.getParent() and NPEs on a bare filename
+    # (ExtractRelevantFreightTrips.java:217, observed on the real run).
+    # study_area.shp stays relative because it lives in the cwd.
     plans_path = os.path.abspath(paths["plans_path"])
     network_path = os.path.abspath(paths["network_path"])
+    output_path = os.path.abspath("%s/%s" % (context.path(), OUTPUT_NAME))
 
     eqasim.run(context, "org.eqasim.braunschweig.scenario.RunExtractFreightTrips", [
         plans_path,
@@ -118,10 +121,9 @@ def execute(context):
         # wrong option name).
         "--LegMode", "truck",
         "--tripType", "ALL",
-        "--output", OUTPUT_NAME,
+        "--output", output_path,
     ])
 
-    output_path = "%s/%s" % (context.path(), OUTPUT_NAME)
     assert os.path.exists(output_path), "freight extraction did not write %s" % OUTPUT_NAME
 
     persons, counts = count_trip_types(output_path)
