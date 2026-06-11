@@ -446,6 +446,32 @@ def test_nan_times_mixed_person_is_unfixable_and_gets_no_bogus_closure():
     assert len(fixed[fixed["person_id"] == "m"]) == 2
 
 
+def test_times_exceeding_bound_flagged_and_unfixable():
+    """Times beyond MAX_PLAN_TIME_SECONDS (36h) mark the person unfixable.
+
+    Chains crossing midnight may legitimately pass 24h via the +24h shift in
+    hts.fix_trip_times, but beyond 36h a chain is pathological and must be
+    routed to the same-cell resample instead of surviving into the jitter."""
+    import pandas as pd
+    from braunschweig.popsim.plan_validation import PlanValidator
+    df = pd.DataFrame({
+        "person_id": [1, 1, 2, 2],
+        "departure_time": [28800.0, 140000.0, 28800.0, 61200.0],   # person 1: 2nd trip ~38.9h
+        "arrival_time":   [30600.0, 141000.0, 30600.0, 63000.0],
+        "preceding_purpose": ["home", "work", "home", "work"],
+        "following_purpose": ["work", "home", "work", "home"],
+        "is_first_trip": [True, False, True, False],
+        "is_last_trip":  [False, True, False, True],
+        "mode": ["car"] * 4,
+    })
+    v = PlanValidator(require_home_closure=True)
+    report = v.validate_trips(df)
+    assert report.issue_counts.get("time_exceeds_bound", 0) >= 1
+    fixed, rep = v.repair_trips(df)
+    assert 1 in rep.unfixable_persons
+    assert 2 not in rep.unfixable_persons
+
+
 def test_resample_chains_raises_on_mismatched_weight_length():
     """IMPORTANT-5: mismatched donor_weights length must raise ValueError."""
     import numpy as np

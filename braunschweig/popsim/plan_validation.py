@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 # Represents the minimum dwell time at the last activity before heading home.
 HOME_CLOSURE_DWELL_S = 3600.0
 
+# Absolute plan-time bound (seconds).  Chains crossing midnight may legitimately
+# pass 24h via the +24h shift in hts.fix_trip_times, but beyond 36h a chain is
+# pathological (very late / multi-shift repaired chains) and is resampled from a
+# same-cell donor instead.  This is the authoritative constant; trips_stage
+# imports it for its final backstop assertion.
+MAX_PLAN_TIME_SECONDS = 36 * 3600
+
 
 @dataclass(frozen=True)
 class RepairReport:
@@ -185,11 +192,16 @@ class PlanValidator:
     - ``negative_activity_duration``: gap to the next trip is non-negative;
     - ``trip_overlap``: a trip does not arrive after the next trip departs;
     - ``not_time_sorted``: departure times are non-decreasing;
+    - ``time_exceeds_bound``: no departure/arrival time exceeds
+      ``max_plan_time_seconds`` (post-midnight-shift chains beyond ~36h are
+      pathological and routed to the resample);
     - (optional) ``home_closure``: the day starts and ends at home (Task 4).
     """
 
-    def __init__(self, *, require_home_closure: bool = True):
+    def __init__(self, *, require_home_closure: bool = True,
+                 max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS):
         self.require_home_closure = require_home_closure
+        self.max_plan_time_seconds = max_plan_time_seconds
 
     def validate_trips(self, df_trips: pd.DataFrame) -> ValidationReport:
         issues: list = []
@@ -221,6 +233,14 @@ class PlanValidator:
             out.append(PlanIssue(person_id, "nan_times",
                                  "a trip has a NaN departure or arrival time "
                                  "(MiD coded time 99/701)"))
+        # Times beyond the absolute plan bound: the +24h midnight shift in
+        # hts.fix_trip_times is legitimate, but a chain past 36h is pathological
+        # (very late / multi-shift) and must be resampled.  NaN compares False,
+        # so NaN-time persons are flagged by "nan_times" above, not here.
+        if (dep > self.max_plan_time_seconds).any() or (arr > self.max_plan_time_seconds).any():
+            out.append(PlanIssue(person_id, "time_exceeds_bound",
+                                 f"a trip time exceeds the {self.max_plan_time_seconds:.0f}s "
+                                 f"(~{self.max_plan_time_seconds / 3600.0:.0f}h) plan bound"))
         if (arr < dep).any():
             out.append(PlanIssue(person_id, "departure_after_arrival",
                                  "a trip arrives before it departs"))
@@ -295,11 +315,27 @@ class PlanValidator:
         nan_time_rows = fixed["departure_time"].isna() | fixed["arrival_time"].isna()
         nan_time_persons = set(fixed.loc[nan_time_rows, "person_id"].unique())
 
-        # --- Step 3: home-end closure (NaN-time persons excluded) --------------
+        # --- Step 2c: identify persons whose POST-repair times exceed the bound.
+        # hts.fix_trip_times legitimately shifts midnight-crossing trips by +24h,
+        # but very late / multi-shift chains can end beyond MAX_PLAN_TIME_SECONDS
+        # (~36h).  Such chains are pathological-but-real repaired chains, not
+        # coded-time leaks (those are NaN'd upstream).  Like NaN-time persons
+        # they are excluded from the home-closure append (a return-home trip
+        # anchored on a >36h arrival would only extend the broken timeline) and
+        # flow to the unfixable set via the "time_exceeds_bound" validation
+        # issue, which the caller replaces by the same-cell resample.
+        bound_rows = (
+            (fixed["departure_time"] > self.max_plan_time_seconds)
+            | (fixed["arrival_time"] > self.max_plan_time_seconds)
+        )
+        bound_persons = set(fixed.loc[bound_rows, "person_id"].unique())
+        closure_excluded_persons = nan_time_persons | bound_persons
+
+        # --- Step 3: home-end closure (NaN-time / out-of-bound persons excluded)
         n_closure_appended = 0
         if self.require_home_closure:
-            closable = fixed[~fixed["person_id"].isin(nan_time_persons)]
-            excluded = fixed[fixed["person_id"].isin(nan_time_persons)]
+            closable = fixed[~fixed["person_id"].isin(closure_excluded_persons)]
+            excluded = fixed[fixed["person_id"].isin(closure_excluded_persons)]
             # Count persons that need closure before appending.
             df_sorted = closable.sort_values(["person_id", "departure_time"])
             last_rows = df_sorted.groupby("person_id", sort=False).last()
@@ -330,8 +366,11 @@ class PlanValidator:
         persons_with_issues_after = {i.person_id for i in after.issues}
 
         # --- Step 6: classify per person --------------------------------------
+        # valid subtracts issues_after as well: a person can be clean BEFORE
+        # repair yet pushed over the plan-time bound BY the +24h midnight shifts
+        # in fix_trip_times; such a person is unfixable, not valid.
         all_persons = set(df_trips["person_id"].unique())
-        valid_persons = all_persons - persons_with_issues_before
+        valid_persons = all_persons - persons_with_issues_before - persons_with_issues_after
         repaired_persons = persons_with_issues_before - persons_with_issues_after
         unfixable_persons = persons_with_issues_after
 
@@ -345,12 +384,17 @@ class PlanValidator:
             "[popsim.plan_validation] repair: %d valid, %d repaired, %d unfixable "
             "(of %d total); home-end closure appended to %d persons "
             "(%.1f%% of pool); %d persons (%.1f%%) have NaN trip times "
-            "(MiD coded times 99/701) and were excluded from closure repair",
+            "(MiD coded times 99/701) and %d persons (%.1f%%) exceed the "
+            "%.0fh plan-time bound after the midnight-shift repair; both groups "
+            "were excluded from closure repair and routed to the resample",
             n_valid, n_repaired, n_unfixable, n_persons,
             n_closure_appended,
             100.0 * n_closure_appended / n_persons if n_persons > 0 else 0.0,
             len(nan_time_persons),
             100.0 * len(nan_time_persons) / n_persons if n_persons > 0 else 0.0,
+            len(bound_persons),
+            100.0 * len(bound_persons) / n_persons if n_persons > 0 else 0.0,
+            self.max_plan_time_seconds / 3600.0,
         )
 
         report = RepairReport(

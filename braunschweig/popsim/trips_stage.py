@@ -22,6 +22,10 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import trips as popsim_trips
+# Authoritative plan-time bound lives in plan_validation (where bound-exceeding
+# persons are classified unfixable + resampled); re-exported here for the final
+# backstop assertion and for tests referencing trips_stage.MAX_PLAN_TIME_SECONDS.
+from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +49,6 @@ CONTRACT = [
 # Source: eqasim ENTD processing (same constant as used in synthesis/population/trips.py
 # and the MiD school-distance calibration).
 DETOUR_FACTOR = 1.3
-
-MAX_PLAN_TIME_SECONDS = 36 * 3600  # eqasim plans may pass 24h; multi-day times are invalid
-
 
 def _assert_time_bound(table, *, max_seconds=MAX_PLAN_TIME_SECONDS):
     for col in ("departure_time", "arrival_time"):
@@ -210,9 +211,10 @@ def run(persons: pd.DataFrame, mid_wege: pd.DataFrame, *, random_seed: int) -> p
     # --------------------------------------------------------------------------
     table = apply_per_person_jitter(table, random_seed=random_seed)
 
-    # Absolute plan-time bound: midnight-crossing repairs may legitimately push
-    # times past 24h, but anything beyond MAX_PLAN_TIME_SECONDS means a coded
-    # time survived as a multi-day timestamp (a bug, not data).
+    # Absolute plan-time bound (final backstop): midnight-crossing repairs may
+    # legitimately push times past 24h, but PlanValidator classifies any person
+    # exceeding MAX_PLAN_TIME_SECONDS as unfixable and the resample above
+    # replaces them — anything still beyond the bound here is a bug.
     _assert_time_bound(table)
 
     # --------------------------------------------------------------------------
