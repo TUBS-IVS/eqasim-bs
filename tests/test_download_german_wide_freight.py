@@ -4,6 +4,21 @@ from pathlib import Path
 from scripts.download_german_wide_freight import (
     BASE_URL, FILES, plan_downloads, write_readme,
 )
+from scripts.download_german_wide_freight import MIN_SIZES, is_truncated
+
+
+def test_is_truncated_below_floor():
+    assert is_truncated(5, 10) is True
+
+
+def test_is_truncated_at_or_above_floor():
+    assert is_truncated(10, 10) is False
+    assert is_truncated(100, 10) is False
+
+
+def test_min_sizes_cover_all_files():
+    from scripts.download_german_wide_freight import FILES
+    assert set(MIN_SIZES) == set(FILES)
 
 
 def test_plan_downloads_builds_url_and_target_pairs(tmp_path):
