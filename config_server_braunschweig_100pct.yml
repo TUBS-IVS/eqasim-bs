@@ -31,6 +31,16 @@ config:
   sampling_rate: 1.0
   random_seed: 1234
 
+  # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022,
+  # doi:10.1016/j.procs.2022.03.080). Inputs are local-only; fetch with
+  # scripts/download_german_wide_freight.py. Agents are sampled at
+  # freight_sampling_rate (null = sampling_rate) and merged as subpopulation
+  # "freight", mode "truck".
+  freight_enabled: true
+  freight_sampling_rate: null
+  freight_truck_pce: 3.5
+  freight_truck_max_velocity_kmh: 80.0
+
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_100pct
   output_prefix: braunschweig_100pct_
