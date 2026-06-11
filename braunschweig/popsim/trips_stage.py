@@ -59,14 +59,16 @@ def _assert_time_bound(table, *, max_seconds=MAX_PLAN_TIME_SECONDS):
 
 
 def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
-    """Pick the donor-matching cell column available on the persons frame.
+    """Pick the cell column for the LEGACY same-cell resample fallback.
 
-    popsim_mid persons (from braunschweig.popsim.stage via
-    synthesis.population.sampled, which passes all columns through) carry
-    ``ZENSUS100m``; other producers may only carry ``commune_id``.  With no
-    spatial column at all, resampling falls back to home-only plans for every
-    unfixable person (logged loudly by resample_chains).  The choice is logged
-    so a silent downgrade to the coarser column is impossible.
+    Stage B (build_validated_trip_table) replaces unfixable persons by
+    ATTRIBUTE-matched donor chains and only falls back to the legacy same-cell
+    resample when the persons frame carries no ``sex`` column; this cell
+    column parameterises that fallback path.  popsim_mid persons (from
+    braunschweig.popsim.stage via synthesis.population.sampled, which passes
+    all columns through) carry ``ZENSUS100m``; other producers may only carry
+    ``commune_id``.  The choice is logged so a silent downgrade to the coarser
+    column is impossible.
     """
     for candidate in ("ZENSUS100m", "commune_id"):
         if candidate in persons.columns:
@@ -74,8 +76,8 @@ def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
             return candidate
     logger.warning(
         "[trips_stage] persons frame carries neither ZENSUS100m nor commune_id; "
-        "unfixable persons cannot be matched to same-cell donors and will fall "
-        "back to home-only (trip-less) plans."
+        "should the legacy same-cell resample fallback be taken (persons frame "
+        "without 'sex'), unfixable persons would become home-only (trip-less)."
     )
     return None
 

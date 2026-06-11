@@ -265,21 +265,22 @@ CHAIN_MATCHING_COLUMNS = [
     "household_size_class",
 ]
 
-# Age-class bin edges replicated from the legacy matching stage
-# (synthesis/population/matched.py, execute(): the local AGE_BOUNDARIES used
-# with np.digitize(..., right=True)). Replicated here because the legacy value
-# is a function-local variable, not an importable constant.
-CHAIN_MATCHING_AGE_BOUNDARIES = [14, 29, 44, 59, 74, 1000]
+# Age-class bins and the minimum-observations default are shared with the
+# popsim_mid stage B matched chain replacement (braunschweig.popsim.trips);
+# single-sourced in braunschweig.popsim.chain_matching (re-exported here for
+# backward compatibility of the module-level names).
+from braunschweig.popsim.chain_matching import (  # noqa: E402 (kept near use)
+    CHAIN_MATCHING_AGE_BOUNDARIES,
+    CHAIN_MATCHING_MINIMUM_OBSERVATIONS,
+    derive_age_class,
+    effective_minimum_observations,
+)
 
 # Continuous matching columns derived from a differently-named raw column.
 _CHAIN_MATCHING_SOURCE_COLUMN = {
     "age_class": "age",
     "household_size_class": "household_size",
 }
-
-# Default minimum donor-cell size, identical to the legacy stage default
-# (synthesis/population/matched.py, "matching_minimum_observations").
-CHAIN_MATCHING_MINIMUM_OBSERVATIONS = 20
 
 
 def _derive_chain_matching_frame(persons: pd.DataFrame):
@@ -303,10 +304,8 @@ def _derive_chain_matching_frame(persons: pd.DataFrame):
             )
             continue
         if column == "age_class":
-            # Same binning as the legacy matching stage (see constant above).
-            out["age_class"] = np.digitize(
-                out["age"], CHAIN_MATCHING_AGE_BOUNDARIES, right=True
-            )
+            # Same binning as the legacy matching stage (shared helper).
+            out["age_class"] = derive_age_class(out["age"])
         elif column == "household_size_class":
             # Shared 1..5(+) binning imported from the legacy matching stage.
             out["household_size_class"] = household_size_class(out["household_size"])
@@ -370,11 +369,9 @@ def _match_trip_less_persons_to_diary_donors(
         return empty
 
     # Small pools (mini smokes / tests) may be below the legacy default of 20
-    # donors per cell; cap the minimum at half the pool size (floor 1) so the
-    # matching is still possible while large real pools keep the legacy 20.
-    minimum_observations = min(
-        CHAIN_MATCHING_MINIMUM_OBSERVATIONS, max(1, len(pool) // 2)
-    )
+    # donors per cell; the shared helper caps the minimum at half the pool size
+    # (floor 1) while large real pools keep the legacy 20.
+    minimum_observations = effective_minimum_observations(len(pool))
 
     # Feasibility pre-filter on the FIRST key: match_donors never relaxes it,
     # and a single infeasible target would raise RuntimeError for the whole

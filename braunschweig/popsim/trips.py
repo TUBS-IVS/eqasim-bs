@@ -334,11 +334,20 @@ def build_validated_trip_table(
       ``wegmin_imp1`` keep their OWN chain (purposes/modes/distances are real)
       and only the times are imputed from empirical same-purpose pools; the
       affected persons are then re-repaired (home-end closure now applies).
-    - Stage B (``plan_validation.resample_chains``): persons still unfixable
-      after stage A have their whole chain replaced by a valid donor chain
-      drawn from the SAME matching cell (``resample_cell_col``); persons
-      without any same-cell donor fall back to a home-only plan (= no trips,
-      the row is dropped) — the fallback rate is logged by resample_chains.
+    - Stage B (``_match_unfixable``): persons still unfixable after stage A
+      have their whole chain replaced by the chain of an ATTRIBUTE-MATCHED
+      valid donor (hierarchical-relaxation matching via
+      ``synthesis.population.matched.match_donors`` on sex, age_class,
+      employed, socioprofessional_class[, RegioStaR7]); behavioural
+      similarity beats 100 m proximity (the legacy same-cell pool held only
+      1-3 donors at 1 % sampling and 31.8 % of persons found none). The
+      replaced rows carry ``chain_donor_id`` (the donor's person_id) for
+      traceability. Persons that cannot be matched (no donor shares their
+      ``sex``, the never-relaxed first key) become trip-less home-only
+      persons — the rate is logged loudly and expected to be ~0. Persons
+      frames without a ``sex`` column (minimal fixtures) fall back to the
+      legacy same-cell resample (``plan_validation.resample_chains``) with a
+      loud warning.
 
     The returned ValidationReport reflects the FINAL (post-repair, post-impute,
     post-resample) table.
@@ -355,16 +364,19 @@ def build_validated_trip_table(
     repair:
         If True (default) repair fixable issues in the trip table before validation.
     resample:
-        If True, replace unfixable persons' chains with same-cell donor chains.
-        Requires ``repair=True`` (the unfixable classification comes from the
+        If True, replace unfixable persons' chains via the stage A/B cascade
+        (time imputation, then attribute-matched donor chains).  Requires
+        ``repair=True`` (the unfixable classification comes from the
         RepairReport) and a non-None ``random_seed`` (determinism is mandatory).
     resample_cell_col:
         Column in ``persons`` that defines the donor-matching cell (e.g.
-        ``"ZENSUS100m"``).  ``None`` means no cell information is available:
-        every unfixable person falls back to a home-only plan (logged loudly
-        by resample_chains).
+        ``"ZENSUS100m"``).  Only used by the LEGACY same-cell resample path,
+        which stage B falls back to when the persons frame carries no ``sex``
+        column; on that path ``None`` means every unfixable person falls back
+        to a home-only plan (logged loudly by resample_chains).
     random_seed:
-        Seed for the resample RNG (``np.random.RandomState``).
+        Seed for the stage A/B RNG streams (``np.random.RandomState``; see
+        ``TIME_IMPUTATION_SEED_OFFSET`` / ``MATCHED_REPLACEMENT_SEED_OFFSET``).
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -411,7 +423,7 @@ def build_validated_trip_table(
         )
 
     if resample and repair_report is not None and repair_report.unfixable_persons:
-        table = _resample_unfixable(
+        table = _match_unfixable(
             table,
             persons,
             repair_report.unfixable_persons,
@@ -501,6 +513,227 @@ def _impute_nan_time_unfixable(
     return table, second_report
 
 
+# Matching keys for the stage B attribute-matched chain replacement, in
+# priority order: match_donors relaxes keys FROM THE END of this list, so the
+# order encodes priority and the FIRST key (sex) is never relaxed.  Mirrors the
+# ENTD diary-donor chain matching (braunschweig.popsim.sources.entd).  Keys
+# missing from the persons frame are dropped with a logged warning (the stage
+# path lacks RegioStaR7: the PopulationSim output only carries ZENSUS100m).
+MATCHED_REPLACEMENT_COLUMNS = [
+    "sex", "age_class", "employed", "socioprofessional_class", "RegioStaR7",
+]
+
+# Continuous matching columns derived from a differently-named raw column.
+_MATCHED_REPLACEMENT_SOURCE_COLUMN = {"age_class": "age"}
+
+# Child-stream offset for the stage B matching RNG: match_donors consumes
+# RandomState(random_seed + MATCHED_REPLACEMENT_SEED_OFFSET), decorrelated from
+# the jitter / legacy-resample streams (RandomState(random_seed)) and the
+# stage A imputation stream (random_seed + TIME_IMPUTATION_SEED_OFFSET = 4159).
+MATCHED_REPLACEMENT_SEED_OFFSET = 7211
+
+
+def _recompute_chain_ids(table: pd.DataFrame) -> pd.DataFrame:
+    """Re-derive trip_id / first-last / durations / trip_index on the final frame.
+
+    Same recompute sequence as ``PlanValidator.repair_trips`` step 4: replaced
+    donor chains carry the DONOR's stale ``trip_id`` / ``trip_index``, which
+    would otherwise collide with the kept persons' rows.
+    """
+    from data.hts import hts
+
+    table = table.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+    table["trip_id"] = range(len(table))
+    table = hts.compute_first_last(table)
+    table["trip_duration"] = table["arrival_time"] - table["departure_time"]
+    hts.compute_activity_duration(table)  # modifies in-place, no return
+    table["trip_index"] = table.groupby("person_id").cumcount()
+    return table
+
+
+def _match_unfixable(
+    table: pd.DataFrame,
+    persons: pd.DataFrame,
+    unfixable_persons,
+    *,
+    resample_cell_col: str | None,
+    random_seed: int,
+    resample_chains,
+) -> pd.DataFrame:
+    """Cascade stage B: replace unfixable persons' chains by attribute matching.
+
+    Each unfixable person is matched to a VALID-chain donor person (post
+    stage A) via the reusable hierarchical-relaxation matcher
+    ``synthesis.population.matched.match_donors`` on
+    ``MATCHED_REPLACEMENT_COLUMNS`` and inherits the matched donor's FULL
+    final (post-repair) chain; the copied rows carry ``chain_donor_id`` (the
+    donor's person_id) for traceability, consistent with the ENTD diary-donor
+    chain matching convention (``braunschweig.popsim.sources.entd``).
+
+    Replaces the legacy same-cell (``resample_cell_col``) draw: at 1 % sampling
+    31.8 % of unfixable persons had NO same-cell donor (pool of 1-3 chains) and
+    fell back to home-only plans — attribute similarity over the whole valid
+    pool is both better-covered and behaviourally closer.  Home-only (=
+    trip-less, no rows in the table) remains ONLY as the loudly-logged catch
+    for match failures: persons whose ``sex`` value (the never-relaxed first
+    key) has fewer donors than ``minimum_observations``, or — belt-and-braces —
+    a ``RuntimeError`` from full-relaxation failure.
+
+    Fallback transparency: when the persons frame carries no ``sex`` column at
+    all (minimal unit-test fixtures), the matching is impossible and the
+    legacy same-cell resample (``resample_chains``) handles everyone — logged
+    loudly, never silent.
+
+    Determinism: ``match_donors`` is seeded with
+    ``random_seed + MATCHED_REPLACEMENT_SEED_OFFSET`` (see the constant's
+    comment for the stream layout).
+    """
+    # Reusing the legacy statistical-matching machinery from the shared
+    # synthesis tree is established practice in this package (see
+    # braunschweig.popsim.sources.entd, which wraps the same helper).
+    from braunschweig.popsim.chain_matching import (
+        derive_age_class,
+        effective_minimum_observations,
+    )
+    from synthesis.population.matched import match_donors
+
+    unfixable = set(unfixable_persons)
+    n_unfixable = len(unfixable)
+
+    # One attribute row per unique synthetic person (like build_trip_table).
+    persons_unique = persons.drop_duplicates(subset="person_id").copy()
+
+    if "sex" not in persons_unique.columns:
+        logger.warning(
+            "[popsim.trips] stage B: persons frame carries no 'sex' column, so "
+            "attribute-matched chain replacement is impossible; falling back to "
+            "the legacy same-cell resample for all %d unfixable persons.",
+            n_unfixable,
+        )
+        return _resample_unfixable(
+            table, persons, unfixable_persons,
+            resample_cell_col=resample_cell_col,
+            random_seed=random_seed,
+            resample_chains=resample_chains,
+        )
+
+    # Matching keys actually available on the persons frame; missing keys are
+    # dropped with a logged warning (never silently).
+    columns = []
+    for column in MATCHED_REPLACEMENT_COLUMNS:
+        source_column = _MATCHED_REPLACEMENT_SOURCE_COLUMN.get(column, column)
+        if source_column not in persons_unique.columns:
+            logger.warning(
+                "[popsim.trips] stage B matching: key '%s' dropped because "
+                "column '%s' is missing on the persons frame.",
+                column, source_column,
+            )
+            continue
+        if column == "age_class":
+            persons_unique["age_class"] = derive_age_class(persons_unique["age"])
+        columns.append(column)
+
+    # Pool = persons with VALID chains after stage A (rows kept in the table
+    # and not classified unfixable); one row per person, weight 1.0 (the
+    # synthetic frame is already expanded), hts_id = their person_id.
+    valid_table = table[~table["person_id"].isin(unfixable)]
+    valid_chain_persons = set(valid_table["person_id"].unique())
+    pool = persons_unique[
+        persons_unique["person_id"].isin(valid_chain_persons)
+    ].copy()
+    pool = pool.rename(columns={"person_id": "hts_id"})
+    pool["weight"] = 1.0
+
+    targets = persons_unique[persons_unique["person_id"].isin(unfixable)]
+
+    assignment = pd.DataFrame(columns=["person_id", "hts_id"])
+    if len(pool) == 0:
+        logger.warning(
+            "[popsim.trips] stage B matching: the valid-chain donor pool is "
+            "EMPTY; all %d unfixable persons become trip-less (home-only). "
+            "This signals a broken trip table, not a tolerable fallback.",
+            n_unfixable,
+        )
+    else:
+        minimum_observations = effective_minimum_observations(len(pool))
+
+        # Feasibility pre-filter on the FIRST key: match_donors never relaxes
+        # it, and a single infeasible target would raise RuntimeError for the
+        # whole call. Targets whose first-key value has too few donors are
+        # left trip-less individually (logged below) instead of aborting all.
+        first_key = columns[0]
+        donor_counts = pool[first_key].value_counts()
+        feasible_values = set(
+            donor_counts[donor_counts >= minimum_observations].index
+        )
+        feasible = targets[first_key].isin(feasible_values)
+        n_infeasible = int((~feasible).sum())
+        if n_infeasible > 0:
+            logger.warning(
+                "[popsim.trips] stage B matching: %d/%d unfixable persons are "
+                "unmatchable (their '%s' value has < %d valid-chain donors) "
+                "and become trip-less (home-only). A high rate signals a "
+                "broken donor pool, not a tolerable fallback.",
+                n_infeasible, n_unfixable, first_key, minimum_observations,
+            )
+        targets = targets.loc[feasible]
+
+        if len(targets) > 0:
+            try:
+                assignment = match_donors(
+                    targets[["person_id"] + columns],
+                    pool[["hts_id", "weight"] + columns],
+                    matching_columns=columns,
+                    minimum_observations=minimum_observations,
+                    random_seed=random_seed + MATCHED_REPLACEMENT_SEED_OFFSET,
+                )
+            except RuntimeError:
+                # Belt-and-braces: the pre-filter above should prevent this;
+                # if it fires anyway, leave the remaining persons trip-less
+                # and report loudly rather than crashing the trips build.
+                logger.error(
+                    "[popsim.trips] stage B matching: match_donors failed at "
+                    "full relaxation for %d unfixable persons; they become "
+                    "trip-less (home-only). Investigate the donor pool.",
+                    len(targets),
+                )
+
+    # Matched persons inherit the matched donor's FULL final chain; the donor
+    # is recorded per trip row as chain_donor_id (entd.py convention).
+    replacement_rows = None
+    if len(assignment) > 0:
+        replacement_rows = valid_table.merge(
+            assignment.rename(columns={"person_id": "_target_person_id"}),
+            left_on="person_id",
+            right_on="hts_id",
+            how="inner",
+        )
+        replacement_rows["chain_donor_id"] = replacement_rows["hts_id"]
+        replacement_rows["person_id"] = replacement_rows["_target_person_id"]
+        replacement_rows = replacement_rows.drop(
+            columns=["_target_person_id", "hts_id"]
+        )
+
+    n_matched = int(assignment["person_id"].nunique())
+    n_home_only = n_unfixable - n_matched
+    log = logger.warning if n_home_only > 0 else logger.info
+    log(
+        "[popsim.trips] stage B: %d unfixable persons -> %d matched chains, "
+        "%d home-only (trip-less persons without trip rows; expected ~0).",
+        n_unfixable, n_matched, n_home_only,
+    )
+
+    if replacement_rows is not None:
+        table = pd.concat([valid_table, replacement_rows],
+                          ignore_index=True, sort=False)
+    else:
+        # Everyone unmatched: only the valid persons keep rows (home-only
+        # persons are trip-less by the eqasim stay-home convention).
+        table = valid_table
+
+    return _recompute_chain_ids(table)
+
+
 def _resample_unfixable(
     table: pd.DataFrame,
     persons: pd.DataFrame,
@@ -528,8 +761,6 @@ def _resample_unfixable(
     DONOR's ids, which would otherwise collide with the kept persons' rows.
     """
     import numpy as np
-
-    from data.hts import hts
 
     # person -> cell mapping (one row per unique person, like build_trip_table).
     persons_unique = persons.drop_duplicates(subset="person_id")
@@ -578,13 +809,6 @@ def _resample_unfixable(
         )
         table = table[~nan_rows]
 
-    # Re-derive ids and derived columns on the final frame (mirrors
-    # PlanValidator.repair_trips step 4): donor chains carry the donor's
-    # trip_id / trip_index, which are stale for the recipient.
-    table = table.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
-    table["trip_id"] = range(len(table))
-    table = hts.compute_first_last(table)
-    table["trip_duration"] = table["arrival_time"] - table["departure_time"]
-    hts.compute_activity_duration(table)  # modifies in-place, no return
-    table["trip_index"] = table.groupby("person_id").cumcount()
-    return table
+    # Re-derive ids and derived columns on the final frame: donor chains carry
+    # the donor's trip_id / trip_index, which are stale for the recipient.
+    return _recompute_chain_ids(table)
