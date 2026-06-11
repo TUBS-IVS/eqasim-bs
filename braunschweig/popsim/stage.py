@@ -132,6 +132,16 @@ def configure(context):
     # to apply the same income scaling as the IPF/enriched path.
     context.stage("braunschweig.data.inkar.household_income", alias="inkar_income")
 
+    # housing_tenure parity (legacy enriched feature, parity gap P2): sample the
+    # completeness attribute per household from P(tenure | income_bracket,
+    # raumtyp) using the SAME _apply_housing_tenure implementation as the
+    # IPF/enriched path (no duplicated logic; dedicated RNG offset +83947).
+    # Default ON; False -> column absent, byte-identical to the pre-parity output.
+    context.config("synthesise_housing_tenure", True)
+    if context.config("synthesise_housing_tenure", True):
+        context.config("data_path")
+        context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
+
     source_name = context.config(KEY_SOURCE, "mid")
     if source_name == "entd":
         # popsim_open: the ENTD donor for the PopulationSim SEED + attribute/trip
@@ -386,6 +396,27 @@ def execute(context) -> pd.DataFrame:
         inkar_scale=inkar_income,
     )
     context.set_info("popsim_n_persons", len(persons))
+
+    # housing_tenure parity (P2): reuse the enriched-path implementation on the
+    # popsim persons frame (household_id / household_income_eur / commune_id are
+    # all present after build_persons). The function samples per household from
+    # the MiD Bayes P(tenure | bracket, raumtyp) with its own RNG offset
+    # (+83947) and logs the primary/fallback rate (no-silent-fallback rule).
+    if context.config("synthesise_housing_tenure"):
+        from braunschweig.data.mid.tenure_by_income import (
+            load_tenure_by_income_bundesland,
+            load_tenure_by_income_raumtyp,
+        )
+        from braunschweig.synthesis.population.enriched import _apply_housing_tenure
+
+        data_path = context.config("data_path")
+        persons = _apply_housing_tenure(
+            persons,
+            load_tenure_by_income_bundesland(data_path),
+            load_tenure_by_income_raumtyp(data_path),
+            context.stage("regiostar_tenure"),
+            random_seed,
+        )
 
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
