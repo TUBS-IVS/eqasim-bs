@@ -33,10 +33,16 @@ the rest exceeded the 36 h bound after redraws), and the remaining unfixable
 persons get an ATTRIBUTE-matched donor chain via `match_donors`
 (stage B: 64/64 matched, **0 home-only** — was 31.8 % home-only with the old
 same-cell resample). trips/person popsim_mid recovered 2.58 -> 2.80; the
-commuter selection bias of the plain resample is removed. RegioStaR7 as a
-stage-B matching key is currently inactive (column not on the stage persons
-frame; warn-logged) — wiring the cells' RS7 onto the PopulationSim output would
-activate it.
+commuter selection bias of the plain resample is removed.
+
+FOLLOW-UP 2 (commits 86d3339/a3d9bab): (a) the cells' `RegioStaR7` is now joined
+onto the synthetic persons (136,636 households, 0 missing in the 1 % smoke), so
+the spatial stage-B matching key is ACTIVE (the warn-logged drop is gone; the
+donor household's RS7 is kept separately as `donor_RegioStaR7`); (b) stage-A
+anchor pools are restricted to within-bound, same-day reporters and a
+proportional dwell-scaling pass replaces the blind skip — imputation success
+rose 81.6 % -> **100 %** (283/283; 49 chains = 17.3 % saved by dwell scaling,
+floor 5 min/activity, logged). Stage B: 63/63 matched, 0 home-only.
 
 ## Intentional result changes (by design, user-approved)
 
