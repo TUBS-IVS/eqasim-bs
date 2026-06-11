@@ -37,7 +37,14 @@ def execute(context):
 
     # Finish up
     df_households = df_households[hts.HOUSEHOLD_COLUMNS + ["urban_type", "income_class"]]
-    df_persons = df_persons[hts.PERSON_COLUMNS]
+    # ENTD records a travel diary for only ONE selected person per household
+    # (is_kish=True; set in data.hts.entd.cleaned). popsim_open needs is_kish on
+    # the donor persons so the diary-donor chain matching can build a pool of ALL
+    # diary respondents (mobile + immobile) and reproduce immobility instead of
+    # forcing every matched non-diary person to be mobile. It is retained as an
+    # ENTD-specific extra (like urban_type/income_class above) rather than added
+    # to the shared hts.PERSON_COLUMNS, because no other HTS source produces it.
+    df_persons = df_persons[hts.PERSON_COLUMNS + ["is_kish"]]
     df_trips = df_trips[hts.TRIP_COLUMNS + ["routed_distance"]]
 
     hts.check(df_households, df_persons, df_trips)

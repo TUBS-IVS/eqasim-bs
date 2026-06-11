@@ -320,15 +320,42 @@ def _match_trip_less_persons_to_diary_donors(
     *,
     random_seed: int,
 ) -> pd.DataFrame:
-    """Match trip-less synthetic persons to ENTD diary donors.
+    """Match non-diary synthetic persons to ENTD diary donors.
+
+    ENTD records a travel diary for only ONE selected person per household
+    (``is_kish=True``). A diary respondent is EITHER mobile (has trips) OR
+    genuinely immobile (``is_kish=True`` with 0 trips). A non-diary member
+    (``is_kish=False``) has NO travel information and must inherit a chain.
+
+    Targets and pool (is_kish-aware path, preferred)
+    ------------------------------------------------
+    - ``targets`` = persons with ``is_kish=False`` AND no direct trips (these
+      need a chain).  Genuinely-immobile diary respondents (``is_kish=True``,
+      0 trips) are NOT targets: they stay trip-less by themselves.
+    - ``pool`` = ALL diary respondents (``is_kish=True``), deduplicated on
+      ``source_person_id``, weight 1.0 -- INCLUDING the immobile ones.  This is
+      the crucial point: the pool represents the diary population's true
+      mobile:immobile mix, so a target matched to an immobile donor naturally
+      inherits ZERO trips (the downstream ``donor_trips.merge(... on hts_id)``
+      yields no rows for an immobile donor's hts_id) and correctly stays home.
+      No special handling is needed for immobility beyond including those
+      donors in the pool.
+
+    Fallback (no ``is_kish`` column on the frame)
+    ---------------------------------------------
+    If the persons frame carries no ``is_kish`` column (e.g. the MiD path, or
+    tests with minimal fixtures), the legacy behaviour is used: ``pool`` =
+    persons WITH trips, ``targets`` = persons WITHOUT trips. This is logged
+    loudly (no silent fallback) because on the real ENTD path it would force
+    every matched person to be mobile and erase immobility.
 
     The donor pool is built from the SYNTHETIC persons frame itself: every
-    synthetic person carries its donor's mapped attributes, so the persons that
-    DID inherit trips (``persons_with_trips``) provide the per-donor attribute
-    rows after deduplication on ``source_person_id``. This guarantees an
-    identical attribute vocabulary on both sides and avoids re-loading ENTD
-    tables. Donor weight is 1.0 each (the frame is already expanded; after
-    deduplication every diary donor is one equally-weighted pool row).
+    synthetic person carries its donor's mapped attributes, so the diary
+    respondents provide the per-donor attribute rows after deduplication on
+    ``source_person_id``. This guarantees an identical attribute vocabulary on
+    both sides and avoids re-loading ENTD tables. Donor weight is 1.0 each (the
+    frame is already expanded; after deduplication every diary donor is one
+    equally-weighted pool row).
 
     Returns a DataFrame ``[person_id, hts_id]`` (synthetic person -> diary
     donor person_id); persons that cannot be matched are absent from the
@@ -339,15 +366,42 @@ def _match_trip_less_persons_to_diary_donors(
     empty = pd.DataFrame(columns=["person_id", "hts_id"])
 
     has_trips = frame["person_id"].isin(persons_with_trips)
-    targets = frame.loc[~has_trips]
-    # Note: replicates of the same donor share all donor attributes except the
-    # synthetic household_size (overwritten per synthetic household by
-    # map_person_attributes); keep="first" makes the pool row deterministic.
-    pool = (
-        frame.loc[has_trips]
-        .drop_duplicates(subset="source_person_id", keep="first")
-        .rename(columns={"source_person_id": "hts_id"})
-    )
+
+    if "is_kish" in frame.columns:
+        # is_kish-aware path (real ENTD): the pool is ALL diary respondents
+        # (mobile + genuinely immobile), so the matched non-diary persons
+        # inherit the diary population's true mobile:immobile mix. A person
+        # matched to an immobile diary donor inherits zero trips downstream.
+        is_diary = frame["is_kish"].fillna(False).astype(bool)
+        # Non-diary members without direct trips are the ones needing a chain.
+        targets = frame.loc[(~is_diary) & (~has_trips)]
+        pool = (
+            frame.loc[is_diary]
+            .drop_duplicates(subset="source_person_id", keep="first")
+            .rename(columns={"source_person_id": "hts_id"})
+        )
+    else:
+        # Legacy fallback (no is_kish on the frame, e.g. MiD path or minimal
+        # test fixtures): pool = persons WITH trips. Logged loudly because on
+        # the real ENTD path this would force 100% mobility (no immobile
+        # diary donors in the pool) -- a high reliance on this path is a bug
+        # signal (CLAUDE.md no-silent-fallback).
+        logger.warning(
+            "[EntdSource] chain matching: no 'is_kish' column on the synthetic "
+            "persons frame; falling back to the legacy pool (persons WITH trips). "
+            "On the real ENTD path this would erase immobility (matched persons "
+            "are forced mobile) -- verify is_kish reached the persons frame.",
+        )
+        targets = frame.loc[~has_trips]
+        # Note: replicates of the same donor share all donor attributes except
+        # the synthetic household_size (overwritten per synthetic household by
+        # map_person_attributes); keep="first" makes the pool row deterministic.
+        pool = (
+            frame.loc[has_trips]
+            .drop_duplicates(subset="source_person_id", keep="first")
+            .rename(columns={"source_person_id": "hts_id"})
+        )
+
     pool["weight"] = 1.0
 
     if len(targets) == 0:
@@ -1179,7 +1233,8 @@ class EntdSource:
             how="inner",
         )
 
-        n_persons_with_trips = trips["synthetic_person_id"].nunique()
+        persons_with_direct_trips = set(trips["synthetic_person_id"].unique())
+        n_persons_with_trips = len(persons_with_direct_trips)
         n_persons_total = len(persons)
         n_persons_without_trips = n_persons_total - n_persons_with_trips
         logger.info(
@@ -1190,24 +1245,37 @@ class EntdSource:
             n_persons_without_trips,
         )
 
-        # --- Diary-donor chain matching for trip-less persons -----------------
+        # --- Diary-donor chain matching for non-diary persons -----------------
         # ENTD diaries cover only ONE selected person per household, so most
-        # synthetic persons have no direct donor trips. Match them to diary
-        # donors via the legacy statistical matching and copy that chain.
-        n_persons_matched_chain = 0
+        # synthetic persons have no direct donor trips. Match the NON-DIARY
+        # members (is_kish=False, no trips) to a diary donor via the legacy
+        # statistical matching and copy that chain. The donor pool includes the
+        # genuinely IMMOBILE diary respondents, so a person matched to one of
+        # them inherits ZERO trips (the inner merge below finds no rows for the
+        # immobile donor's hts_id) and correctly stays home -- this reproduces
+        # the diary population's mobile:immobile mix instead of forcing 100%
+        # mobility.
+        n_persons_matched_total = 0       # non-diary persons matched to a diary donor
+        n_persons_matched_with_trips = 0  # ... of which matched to a MOBILE donor (got trips)
         if n_persons_without_trips > 0:
             df_chain = _match_trip_less_persons_to_diary_donors(
                 persons,
-                set(trips["synthetic_person_id"].unique()),
+                persons_with_direct_trips,
                 random_seed=random_seed,
             )
             if len(df_chain) > 0:
-                n_persons_matched_chain = df_chain["person_id"].nunique()
+                n_persons_matched_total = df_chain["person_id"].nunique()
                 matched_trips = donor_trips.merge(
                     df_chain.rename(columns={"person_id": "synthetic_person_id"}),
                     left_on="person_id",
                     right_on="hts_id",
                     how="inner",
+                )
+                # Persons matched to an IMMOBILE diary donor have no rows here
+                # (the immobile donor's hts_id has no trips) -> they stay home.
+                n_persons_matched_with_trips = (
+                    matched_trips["synthetic_person_id"].nunique()
+                    if len(matched_trips) > 0 else 0
                 )
                 # Traceability: the HTS chain provenance of these rows differs
                 # from the person's attribute donor (source_person_id). The
@@ -1225,24 +1293,64 @@ class EntdSource:
                 trips = pd.concat([trips, matched_trips], ignore_index=True, sort=False)
                 logger.info(
                     "[EntdSource] build_trips: chain matching attached %d trips to "
-                    "%d trip-less persons; their HTS chain provenance "
+                    "%d non-diary persons (%d matched to a mobile donor, %d matched "
+                    "to an immobile donor -> stay home); their HTS chain provenance "
                     "(chain_donor_id) differs from the attribute donor "
                     "(source_person_id).",
-                    len(matched_trips), n_persons_matched_chain,
+                    len(matched_trips), n_persons_matched_total,
+                    n_persons_matched_with_trips,
+                    n_persons_matched_total - n_persons_matched_with_trips,
                 )
 
-        n_persons_still_trip_less = (
-            n_persons_total - n_persons_with_trips - n_persons_matched_chain
+        # Mobility breakdown (CLAUDE.md no-silent-fallback: all rates logged).
+        # A person is MOBILE iff it ends up with at least one trip:
+        #   direct-mobile (own diary chain) + matched-to-mobile (got a chain).
+        # A person stays HOME iff it has no trips. The stay-home group splits
+        # into:
+        #   - genuinely-immobile diary respondents (is_kish=True with 0 direct
+        #     trips; never a match target -> trip-less by themselves);
+        #   - matched-to-immobile non-diary persons (matched to an immobile
+        #     diary donor -> inherited an empty chain);
+        #   - unmatchable non-diary persons left trip-less (logged separately by
+        #     the matching helper).
+        n_persons_matched_to_immobile = (
+            n_persons_matched_total - n_persons_matched_with_trips
+        )
+        n_persons_mobile = n_persons_with_trips + n_persons_matched_with_trips
+        n_persons_stay_home = n_persons_total - n_persons_mobile
+        # Genuinely-immobile diary respondents = persons with is_kish=True that
+        # had no direct trips (they are never match targets). When is_kish is
+        # absent (legacy fallback path) this category does not exist.
+        if "is_kish" in persons.columns:
+            is_diary = persons["is_kish"].fillna(False).astype(bool)
+            n_persons_genuinely_immobile_diary = int(
+                (is_diary & ~persons["person_id"].isin(persons_with_direct_trips)).sum()
+            )
+        else:
+            n_persons_genuinely_immobile_diary = 0
+        n_persons_unmatched_non_diary = (
+            n_persons_stay_home
+            - n_persons_matched_to_immobile
+            - n_persons_genuinely_immobile_diary
         )
         logger.info(
-            "[EntdSource] build_trips coverage: direct donor chain %d/%d (%.1f%%), "
-            "matched diary chain %d (%.1f%%), still trip-less %d (%.1f%%).",
+            "[EntdSource] build_trips coverage: direct-mobile %d/%d (%.1f%%), "
+            "matched-to-mobile %d (%.1f%%), matched-to-immobile (stay home) %d "
+            "(%.1f%%), genuinely-immobile diary (stay home) %d (%.1f%%), "
+            "unmatched non-diary (stay home) %d (%.1f%%); resulting mobility "
+            "share %.1f%% mobile / %.1f%% stay home.",
             n_persons_with_trips, n_persons_total,
             100.0 * n_persons_with_trips / max(n_persons_total, 1),
-            n_persons_matched_chain,
-            100.0 * n_persons_matched_chain / max(n_persons_total, 1),
-            n_persons_still_trip_less,
-            100.0 * n_persons_still_trip_less / max(n_persons_total, 1),
+            n_persons_matched_with_trips,
+            100.0 * n_persons_matched_with_trips / max(n_persons_total, 1),
+            n_persons_matched_to_immobile,
+            100.0 * n_persons_matched_to_immobile / max(n_persons_total, 1),
+            n_persons_genuinely_immobile_diary,
+            100.0 * n_persons_genuinely_immobile_diary / max(n_persons_total, 1),
+            max(0, n_persons_unmatched_non_diary),
+            100.0 * max(0, n_persons_unmatched_non_diary) / max(n_persons_total, 1),
+            100.0 * n_persons_mobile / max(n_persons_total, 1),
+            100.0 * n_persons_stay_home / max(n_persons_total, 1),
         )
 
         # Replace the ENTD person_id with the synthetic person_id.

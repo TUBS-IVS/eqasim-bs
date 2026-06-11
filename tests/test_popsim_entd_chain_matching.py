@@ -122,3 +122,119 @@ def test_unmatchable_person_left_trip_less_loudly(caplog):
     assert set(out["person_id"].unique()) == {1}
     assert any("trip-less" in rec.message or "unmatch" in rec.message.lower()
                for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# is_kish-aware diary-donor pool (immobility reproduction; correctness fix)
+# ---------------------------------------------------------------------------
+#
+# ENTD records a travel diary for only ONE selected person per household
+# (is_kish=True). A diary respondent is EITHER mobile (has trips) OR genuinely
+# immobile (is_kish=True, 0 trips). Non-diary members (is_kish=False) have no
+# travel information and must be matched to a diary donor.
+#
+# The pool MUST include the immobile diary donors so that the matched
+# population inherits the diary population's true mobile:immobile mix instead of
+# forcing 100% mobility. A person matched to an immobile donor naturally
+# inherits ZERO trips (no donor_trips rows for that hts_id) -> stays home.
+
+
+def _persons_with_is_kish():
+    """Three synthetic persons:
+
+    - person 1 / donor 10: is_kish=True, MOBILE  (has a 2-trip diary chain).
+    - person 2 / donor 20: is_kish=True, IMMOBILE (diary respondent, 0 trips) ->
+      a genuinely-immobile diary respondent. NOT a target; stays home by itself.
+    - person 3 / donor 30: is_kish=False, NO trips -> a non-diary member that
+      must be matched (a target). Same attributes as both diary donors.
+    """
+    return pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "source_person_id": [10, 20, 30],
+        "source_household_id": [100, 200, 300],
+        "sex": pd.Categorical(["male", "male", "male"]),
+        "age": [35, 35, 35],
+        "employed": [True, True, True],
+        "socioprofessional_class": [3, 3, 3],
+        "household_size": [2, 2, 2],
+        "is_kish": [True, True, False],
+    })
+
+
+def test_immobile_diary_donor_in_pool_yields_stay_home():
+    """A non-diary target whose ONLY available diary donor is immobile must be
+    matched to it and end up trip-less (stays home), not forced mobile.
+
+    The pool contains exactly one diary donor and it is immobile -> the matched
+    non-diary person inherits zero trips."""
+    persons = _persons_with_is_kish()
+    # Pool must contain only the IMMOBILE diary donor (person 2 / donor 20).
+    # Drop the mobile diary donor (person 1 / donor 10) so the only possible
+    # match for the non-diary target (person 3) is the immobile donor.
+    persons = persons[persons["person_id"].isin([2, 3])].reset_index(drop=True)
+
+    out = EntdSource().build_trips(persons, _donor_trips(), random_seed=0)
+
+    # The non-diary target was matched to the immobile diary donor and inherited
+    # ZERO trips -> it has no rows in the output (stays home).
+    assert 3 not in set(out["person_id"].unique())
+    # The immobile diary respondent (person 2) also has no trips.
+    assert 2 not in set(out["person_id"].unique())
+    # No mobile donor existed; the whole output is empty.
+    assert len(out) == 0
+
+
+def test_immobile_diary_person_not_matched(caplog):
+    """A person with is_kish=True and 0 trips is genuinely immobile: it stays
+    trip-less BY ITSELF and is NOT treated as a match target."""
+    persons = _persons_with_is_kish()
+
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.sources.entd"):
+        out = EntdSource().build_trips(persons, _donor_trips(), random_seed=0)
+
+    # Person 2 (is_kish=True, 0 trips) is immobile: no trips in the output.
+    assert 2 not in set(out["person_id"].unique())
+    # The coverage log must account for it as genuinely-immobile diary, not as a
+    # matched person.
+    assert any("genuinely-immobile" in rec.message or "immobile diary" in rec.message.lower()
+               for rec in caplog.records)
+
+
+def test_non_diary_person_matched_to_mobile_donor_gets_chain():
+    """A non-diary target whose ONLY feasible diary donor is mobile inherits the
+    chain (existing matched-to-mobile behaviour preserved).
+
+    The pool deliberately contains both a mobile (donor 10) and an immobile
+    (donor 20) diary donor with IDENTICAL attributes; were they distinguishable
+    the matcher could not prefer one. To assert the matched-to-mobile path we
+    make the only feasible donor the mobile one: drop the immobile diary donor
+    (person 2) so the non-diary target (person 3) must match donor 10."""
+    persons = _persons_with_is_kish()
+    persons = persons[persons["person_id"].isin([1, 3])].reset_index(drop=True)
+    out = EntdSource().build_trips(persons, _donor_trips(), random_seed=0)
+
+    # Person 1 has its own direct chain; person 3 (non-diary) is matched to the
+    # mobile diary donor (donor 10) and inherits the 2-trip chain.
+    p3 = out[out["person_id"] == 3]
+    assert len(p3) == 2
+    assert (p3["chain_donor_id"] == 10).all()
+    # Person 1 keeps its direct chain (no chain_donor_id).
+    p1 = out[out["person_id"] == 1]
+    assert len(p1) == 2
+    assert "chain_donor_id" not in p1.dropna(axis=1).columns or p1["chain_donor_id"].isna().all()
+
+
+def test_is_kish_absent_falls_back_with_warning(caplog):
+    """Frames WITHOUT an is_kish column fall back to the legacy pool
+    (persons-with-trips), warn-logged, so the MiD path and existing minimal
+    fixtures are unaffected."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.sources.entd"):
+        out = EntdSource().build_trips(_persons(), _donor_trips(), random_seed=0)
+
+    # Legacy behaviour: the trip-less person (donor 20) is matched to the
+    # mobile diary donor (donor 10).
+    assert set(out["person_id"].unique()) == {1, 2}
+    assert any("is_kish" in rec.message and "fall" in rec.message.lower()
+               for rec in caplog.records)
