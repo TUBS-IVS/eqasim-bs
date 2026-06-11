@@ -95,6 +95,12 @@ from braunschweig.popsim.seed import (
 from braunschweig.popsim.stratum import cell_urban_class_from_rs7, entd_urban_class
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
+# Legacy EUR-class -> 5-class economic status map (the status_from_hhtype=False
+# fallback semantics). No circular import: braunschweig.synthesis never imports
+# from braunschweig.popsim (verified), and this package already imports from the
+# shared synthesis tree (synthesis.population.matched below).
+from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_BY_INCOME_CLASS
+
 # Reusing the legacy statistical-matching machinery from the upstream-shared
 # synthesis tree is established practice in this package (see
 # braunschweig.popsim.stratum, which imports URBAN_TYPE_TO_URBAN_CLASS from the
@@ -181,6 +187,56 @@ for _cls, _label in _ENTD_INCOME_CLASS_TO_LABEL.items():
         raise AssertionError(
             f"[EntdSource] ENTD income class {_cls} -> {_label!r} is not in "
             f"INCOME_CLASS_BY_GROUP. Fix _ENTD_INCOME_CLASS_TO_LABEL."
+        )
+
+# ---------------------------------------------------------------------------
+# Economic status bridge: MiD income label -> legacy H4 EUR-class key
+#
+# APPROXIMATION: ENTD has no native economic-status field, so popsim_open derives
+# ``economic_status`` from the (ENTD -> MiD-mapped) categorical ``household_income``
+# via the legacy inverse map ECONOMIC_STATUS_BY_INCOME_CLASS (exactly the
+# ``status_from_hhtype=False`` fallback semantics; the MiD Bayes hhtype x region
+# machinery is NOT applied). The legacy map is keyed by the five H4 quintile
+# EUR-class labels ("0-500", "1500-2000", "2600-3000", "3600-4500", "5000+"),
+# while the ENTD mapper emits the MiD 15-class labels (INCOME_CLASS_BY_GROUP),
+# so an explicit bridge is required. Each MiD label is assigned to the H4
+# quintile class whose representative EUR band contains (or is nearest to) the
+# MiD band: very_low <900, low 900-2000, medium 2000-3600, high 3600-5000,
+# very_high >=5000. The partition is monotone in EUR and contains each H4
+# representative band inside its assigned group. Unmapped non-NaN labels raise
+# (vocabulary-drift guard, no silent NaN).
+# ---------------------------------------------------------------------------
+_H4_INCOME_CLASS_BY_MID_LABEL: dict[str, str] = {
+    "under_500": "0-500",       # very_low
+    "500_900":   "0-500",       # very_low
+    "900_1500":  "1500-2000",   # low
+    "1500_2000": "1500-2000",   # low
+    "2000_2600": "2600-3000",   # medium
+    "2600_3000": "2600-3000",   # medium
+    "3000_3600": "2600-3000",   # medium
+    "3600_4000": "3600-4500",   # high
+    "4000_4600": "3600-4500",   # high
+    "4600_5000": "3600-4500",   # high
+    "5000_5600": "5000+",       # very_high
+    "5600_6000": "5000+",       # very_high
+    "6000_6600": "5000+",       # very_high
+    "6600_7000": "5000+",       # very_high
+    "over_7000": "5000+",       # very_high
+}
+
+# Import-time vocabulary-drift guards: the bridge must cover EVERY MiD income
+# label and every bridge target must be a legacy H4 EUR-class key.
+for _label in _valid_income_labels:
+    if _label not in _H4_INCOME_CLASS_BY_MID_LABEL:
+        raise AssertionError(
+            f"[EntdSource] MiD income label {_label!r} (INCOME_CLASS_BY_GROUP) is "
+            f"missing from _H4_INCOME_CLASS_BY_MID_LABEL. Extend the bridge."
+        )
+for _label, _h4_class in _H4_INCOME_CLASS_BY_MID_LABEL.items():
+    if _h4_class not in ECONOMIC_STATUS_BY_INCOME_CLASS:
+        raise AssertionError(
+            f"[EntdSource] bridge target {_h4_class!r} (for MiD label {_label!r}) is "
+            f"not a key of ECONOMIC_STATUS_BY_INCOME_CLASS. Fix _H4_INCOME_CLASS_BY_MID_LABEL."
         )
 
 # high_income threshold: income_class >= 13 (>=10000 EUR/mo, the top ENTD band).
@@ -771,6 +827,10 @@ class EntdSource:
           mapper returns, so all sources use the same shared scaling step.
         - ``high_income`` is a placeholder (set to False here); ``build_persons``
           overwrites it with ``household_income_eur >= 5000 EUR`` after INKAR scaling.
+        - ``economic_status`` is an APPROXIMATION: ENTD has no native status
+          field, so it is derived from the categorical ``household_income`` via
+          ``_H4_INCOME_CLASS_BY_MID_LABEL`` + ``ECONOMIC_STATUS_BY_INCOME_CLASS``
+          (legacy ``status_from_hhtype=False`` semantics); NaN income -> NaN status.
         """
         out = persons.copy()
 
@@ -859,6 +919,40 @@ class EntdSource:
                 n_income_missing, len(out),
                 100.0 * (len(out) - n_income_missing) / max(len(out), 1),
             )
+
+        # --- economic_status (APPROXIMATION: derived from the income class) ---
+        # ENTD has no native economic-status field. Derive the 5-class BMDV
+        # status from the MiD-mapped household_income label via the bridge +
+        # the legacy inverse map (status_from_hhtype=False fallback semantics;
+        # the MiD Bayes hhtype x region machinery is NOT applied). NaN income
+        # (ENTD income_class -1) stays NaN -- economic_status is schema-optional
+        # and a missing income must not invent a status.
+        status = (
+            out["household_income"]
+            .map(_H4_INCOME_CLASS_BY_MID_LABEL)
+            .map(ECONOMIC_STATUS_BY_INCOME_CLASS)
+        )
+        unmapped_income = out["household_income"].notna() & status.isna()
+        if unmapped_income.any():
+            unmapped_labels = sorted(out.loc[unmapped_income, "household_income"].unique())
+            raise ValueError(
+                f"[EntdSource] map_person_attributes: household_income label(s) "
+                f"{unmapped_labels!r} have no economic_status mapping "
+                f"(_H4_INCOME_CLASS_BY_MID_LABEL / ECONOMIC_STATUS_BY_INCOME_CLASS). "
+                f"The income vocabulary drifted; extend the bridge instead of "
+                f"silently producing NaN."
+            )
+        out["economic_status"] = status
+        n_status_missing = int(status.isna().sum())
+        logger.info(
+            "[EntdSource] map_person_attributes: economic_status derived from the "
+            "income class (APPROXIMATION, no native ENTD status) for %d/%d persons "
+            "(%.1f%%); %d (%.1f%%) stay NaN (missing ENTD income).",
+            len(out) - n_status_missing, len(out),
+            100.0 * (len(out) - n_status_missing) / max(len(out), 1),
+            n_status_missing,
+            100.0 * n_status_missing / max(len(out), 1),
+        )
 
         # --- household_income_eur (raw ENTD midpoint; INKAR scaling applied later) ---
         # Set household_income_eur to the raw ENTD income-class midpoint.

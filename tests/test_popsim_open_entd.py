@@ -285,6 +285,56 @@ def test_entd_household_income_mapped():
     )
 
 
+def test_popsim_open_derives_economic_status_from_income_class():
+    """ENTD has no native status; it is derived from the income class via the
+    legacy inverse map (approximation, logged)."""
+    src = EntdSource()
+    hh = _entd_households()
+    p = _entd_persons()
+    persons, _ = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+
+    assert "economic_status" in persons.columns
+    valid = persons["economic_status"].dropna()
+    assert len(valid) > 0
+    assert set(valid) <= {"very_low", "low", "medium", "high", "very_high"}
+
+
+def test_popsim_open_economic_status_nan_for_missing_income():
+    """Households with ENTD income_class -1 (missing) have household_income=NaN
+    and must keep economic_status=NaN (no invented status; schema-optional)."""
+    src = EntdSource()
+    hh = _entd_households()
+    hh["income_class"] = [-1, 10, 13]
+    p = _entd_persons()
+    persons, _ = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+
+    # Household 10 (income_class=-1): persons age 40 and 10 -> NaN status.
+    missing = persons[persons["source_household_id"] == 10]["economic_status"]
+    assert missing.isna().all(), (
+        f"NaN household_income must yield NaN economic_status, got {missing.values}"
+    )
+    # The other households still receive a valid status.
+    present = persons[persons["source_household_id"] != 10]["economic_status"]
+    assert present.notna().all()
+
+
+def test_popsim_open_economic_status_bridge_covers_full_mid_vocabulary():
+    """The MiD-label -> H4-class bridge must cover EVERY INCOME_CLASS_BY_GROUP
+    label (vocabulary-drift guard) and resolve to a valid 5-class status."""
+    from braunschweig.popsim.attributes import INCOME_CLASS_BY_GROUP
+    from braunschweig.popsim.sources.entd import _H4_INCOME_CLASS_BY_MID_LABEL
+    from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_BY_INCOME_CLASS
+
+    for label in INCOME_CLASS_BY_GROUP.values():
+        assert label in _H4_INCOME_CLASS_BY_MID_LABEL, (
+            f"MiD income label {label!r} missing from the economic-status bridge"
+        )
+        h4_class = _H4_INCOME_CLASS_BY_MID_LABEL[label]
+        assert h4_class in ECONOMIC_STATUS_BY_INCOME_CLASS, (
+            f"Bridge target {h4_class!r} is not an ECONOMIC_STATUS_BY_INCOME_CLASS key"
+        )
+
+
 def test_entd_pt_subscription_type_defaults():
     """pt_subscription_type default: has_pt_subscription True -> wochen_monat_ohne_abo;
     False -> fahre_nie. Both must be in PT_TICKET_CATEGORIES."""
