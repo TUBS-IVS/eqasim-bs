@@ -34,12 +34,23 @@ TRIP_COLUMNS = (
     "destination_x", "destination_y", "departure_time", "trip_type",
 )
 FREIGHT_CRS = "EPSG:25832"
+# The extraction tool tags each person with its category under this attribute
+# name (matsim application contrib ExtractRelevantFreightTrips: constant
+# GEOGRAPHICAL_TRIP_TYPE); older variants used "trip_type". Both are accepted.
+TRIP_TYPE_ATTRIBUTES = ("trip_type", "geographical_Trip_Type")
 
 
 def _seconds_of_day(clock):
-    """'HH:MM:SS' -> seconds. MATSim activity end_time is a 24h+ clock string."""
-    hours, minutes, seconds = (int(part) for part in clock.split(":"))
-    return hours * 3600 + minutes * 60 + seconds
+    """Parse a MATSim activity end_time into seconds.
+
+    MATSim writes times as an 'HH:MM:SS' (24h+) clock string; accept a plain
+    float seconds value too, in case a writer emits the raw double.
+    """
+    text = str(clock)
+    if ":" in text:
+        hours, minutes, seconds = (int(part) for part in text.split(":"))
+        return hours * 3600 + minutes * 60 + seconds
+    return int(float(text))
 
 
 def parse_freight_trips(plans_path):
@@ -64,7 +75,7 @@ def parse_freight_trips(plans_path):
                 attributes = element.find("attributes")
                 if attributes is not None:
                     for attribute in attributes.findall("attribute"):
-                        if attribute.get("name") == "trip_type":
+                        if attribute.get("name") in TRIP_TYPE_ATTRIBUTES:
                             trip_type = attribute.text
                             break
                 end_time = start.get("end_time")

@@ -95,16 +95,29 @@ def execute(context):
     study_area = _study_area(context)
     study_area.to_file("%s/study_area.shp" % context.path())
 
+    # The Java tool runs with cwd = the stage cache dir (java.run default), so the
+    # input plans/network must be ABSOLUTE paths (the data stage returns them
+    # relative to the repo root). study_area.shp and the output stay relative
+    # because they live in the cwd.
+    plans_path = os.path.abspath(paths["plans_path"])
+    network_path = os.path.abspath(paths["network_path"])
+
     eqasim.run(context, "org.eqasim.braunschweig.scenario.RunExtractFreightTrips", [
-        paths["plans_path"],
-        "--network", paths["network_path"],
+        plans_path,
+        "--network", network_path,
         "--shp", "study_area.shp",
         "--shp-crs", crs,
         "--input-crs", crs,
         "--target-crs", crs,
         "--cut-on-boundary",
-        "--legMode", "truck",
-        "--subpopulation", "freight",
+        # NOTE: this contrib build (matsim 2025.0-PR3568) exposes "--LegMode"
+        # (capital L) and has no "--subpopulation" option; the per-trip category
+        # is written as the person attribute "geographical_Trip_Type" (values
+        # transit/incoming/outgoing/internal). "--tripType ALL" keeps every
+        # ZGB-relevant category. Verified against the tool's --help (exit 2 on a
+        # wrong option name).
+        "--LegMode", "truck",
+        "--tripType", "ALL",
         "--output", OUTPUT_NAME,
     ])
 

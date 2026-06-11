@@ -38,6 +38,11 @@ config:
   output_path: eqasim-data/output_bs
   output_prefix: braunschweig_1pct_
 
+  # Build our editable Java project (eqasim-java-bs braunschweig module) instead
+  # of cloning upstream. Required because the freight injection (default-on, see
+  # below) and the Braunschweig mode-choice classes live only in this fork.
+  eqasim_source_path: ../eqasim-java-bs
+
   java_memory: 32G
 
   home_location_sampling: weighted
