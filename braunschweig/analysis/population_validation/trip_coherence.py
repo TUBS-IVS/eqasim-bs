@@ -27,8 +27,21 @@ unambiguous purposes are scored against W1; the rest are reported descriptively.
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
+
+LOGGER = logging.getLogger("braunschweig.analysis.population_validation.trip_coherence")
+
+# Straight-line -> routed detour factor. The synthetic trips table carries
+# ``euclidean_distance`` (straight-line, metres) while MiD W12 ``mittel_km`` is a
+# ROUTED trip length. To compare fairly the synthetic straight-line distance is
+# multiplied by this factor (the same ``DETOUR_FACTOR = 1.3`` the synthesis
+# pipeline uses in braunschweig/popsim/trips_stage.py and
+# synthesis/population/trips.py). If the trips table carries a ``routed_distance``
+# column it is preferred directly (already routed -> no detour multiply).
+DETOUR_FACTOR = 1.3
 
 # eqasim activity purpose -> MiD W1 Zweck. The four scored purposes plus two
 # explicit non-W1 categories (return-home trips, residual other).
@@ -159,6 +172,108 @@ def p36_mobility_target(data_path):
     return float(row["mobil"]) / 100.0
 
 
+# -- MiD W12 mean-trip-length-by-purpose coherence ---------------------------
+#
+# W12 (MiD 2023 Grossraum Braunschweig, infas 7555, Tabelle A W12) gives the
+# arithmetic MEAN routed trip length (km, ``mittel_km``) per MiD Hauptwegezweck.
+# Only the FOUR unambiguous eqasim<->MiD purposes are scored, the same subset as
+# the W1 purpose-distribution check above (SCORED_MID_PURPOSES): the MiD purposes
+# ``dienstlich`` (business), ``Erledigung`` (errands) and ``Begleitung``
+# (escort/accompanying) crosswalk ambiguously onto eqasim ``work``/``other`` and
+# are therefore excluded so the comparison stays apples-to-apples. There is no
+# per-Kreis / ZGB-aggregate row in W12 -- one row per MiD purpose.
+W12_PURPOSE_BY_MID = {
+    "Arbeit": "work",
+    "Ausbildung": "education",
+    "Einkauf": "shop",
+    "Freizeit": "leisure",
+}
+
+# The four eqasim purposes scored against W12 (the values of W12_PURPOSE_BY_MID).
+W12_SCORED_PURPOSES = tuple(W12_PURPOSE_BY_MID.values())
+
+
+def w12_mean_length_target(data_path):
+    """MiD W12 mean ROUTED trip length (km) per scored eqasim purpose.
+
+    Reads ``mid2023_W12_triplength_by_purpose.csv`` (a ``# Source:`` comment line
+    precedes the header) and maps the four unambiguous MiD Hauptwegezwecke onto
+    their eqasim purpose. Returns {eqasim_purpose -> mittel_km}, e.g.
+    {work: 15.2, education: 5.7, shop: 5.2, leisure: 15.0}. The km are MiD routed
+    trip lengths, compared against the synthetic detour-inflated straight-line
+    distance (see ``synthetic_mean_length_by_purpose``)."""
+    path = f"{data_path}/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv"
+    df = pd.read_csv(path, comment="#")
+    by_mid = dict(zip(df["hauptwegezweck"].astype(str), df["mittel_km"].astype(float)))
+    missing = set(W12_PURPOSE_BY_MID) - set(by_mid)
+    if missing:
+        raise ValueError(f"W12 table is missing scored purposes: {sorted(missing)}")
+    return {eqasim: float(by_mid[mid]) for mid, eqasim in W12_PURPOSE_BY_MID.items()}
+
+
+def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
+                                     purpose_col="following_purpose"):
+    """Mean ROUTED trip length (km) per scored eqasim purpose of the synthetic
+    trips, comparable to the MiD W12 ``mittel_km``.
+
+    The synthetic trips carry ``euclidean_distance`` (straight-line, metres). It
+    is converted to a routed-equivalent by ``routed_km = euclidean_distance / 1000
+    * detour_factor`` (DETOUR_FACTOR = 1.3, the pipeline's factor). If the trips
+    table instead carries a ``routed_distance`` column (metres, already routed),
+    that is used directly (no detour multiply). NaN distances are skipped so they
+    never propagate into a purpose mean.
+
+    Returns {eqasim_purpose -> mean routed km} over the four scored purposes; a
+    purpose with no trips (or only NaN distances) yields NaN."""
+    if "routed_distance" in trips.columns:
+        routed_km = trips["routed_distance"].astype(float) / 1000.0
+    else:
+        routed_km = trips["euclidean_distance"].astype(float) / 1000.0 * float(detour_factor)
+    work = pd.DataFrame({
+        "purpose": trips[purpose_col].astype(str).values,
+        "routed_km": routed_km.values,
+    })
+    result = {}
+    for purpose in W12_SCORED_PURPOSES:
+        sub = work.loc[work["purpose"] == purpose, "routed_km"].dropna()
+        result[purpose] = float(sub.mean()) if len(sub) else float("nan")
+    return result
+
+
+def w12_length_coherence(trips, data_path, *, detour_factor=DETOUR_FACTOR,
+                         purpose_col="following_purpose"):
+    """W12 mean-trip-length coherence: per scored eqasim purpose, the synthetic
+    realised mean routed km vs the MiD W12 target, with signed deltas.
+
+    Returns a list of dicts (one per scored purpose) with keys
+    ``purpose, target_km, realised_km, delta_km, rel_delta`` (delta = realised -
+    target, rel_delta = delta / target). Logs a one-line info summary in the same
+    style as the W1/P36 trip-coherence logging."""
+    target = w12_mean_length_target(data_path)
+    realised = synthetic_mean_length_by_purpose(
+        trips, detour_factor=detour_factor, purpose_col=purpose_col)
+    rows = []
+    for purpose in W12_SCORED_PURPOSES:
+        t = float(target[purpose])
+        r = float(realised.get(purpose, float("nan")))
+        delta = r - t
+        rel = delta / t if t else float("nan")
+        rows.append({
+            "purpose": purpose,
+            "target_km": t,
+            "realised_km": r,
+            "delta_km": delta,
+            "rel_delta": rel,
+        })
+    summary = ", ".join(
+        f"{row['purpose']} {row['realised_km']:.1f}/{row['target_km']:.1f}km "
+        f"(d {row['delta_km']:+.1f})" for row in rows)
+    LOGGER.info(
+        "Trip coherence W12 mean trip length per purpose (synthetic routed vs MiD): %s",
+        summary)
+    return rows
+
+
 def _mid_table_by_kreis(data_path, table):
     """Load a MiD reference table and drop the ZGB-aggregate row, returning the
     per-Kreis rows keyed by the 5-digit ``ars5``."""
@@ -273,6 +388,9 @@ def build_trip_coherence_report(persons, trips, data_path,
         present in ``persons``
       - ``purpose``: {realized, target, abs_delta_pp, srmse} over the four scored
         W1 purposes (re-normalised on both sides)
+      - ``length``: list of per-scored-purpose dicts {purpose, target_km,
+        realised_km, delta_km, rel_delta} comparing the synthetic mean routed
+        trip length (detour-inflated straight-line) against MiD W12 ``mittel_km``
       - ``n_persons``, ``n_trips``
     """
     overall = mobility_rate(persons, trips, person_id_col)
@@ -319,9 +437,21 @@ def build_trip_coherence_report(persons, trips, data_path,
             differentiation["work_share_employed_gap_pp"] = (
                 float(by_val[True] - by_val[False]) * 100.0)
 
+    # W12 mean-trip-length coherence. Needs a distance column on the trips frame
+    # (``routed_distance`` preferred, else detour-inflated ``euclidean_distance``).
+    # Absent on some narrow run-output schemas -> reported as None, not invented.
+    length = None
+    if "routed_distance" in trips.columns or "euclidean_distance" in trips.columns:
+        length = w12_length_coherence(trips, data_path, purpose_col=purpose_col)
+    else:
+        LOGGER.info(
+            "Trip coherence W12 length check skipped: trips carry neither "
+            "'routed_distance' nor 'euclidean_distance'.")
+
     return {
         "n_persons": int(len(persons)),
         "n_trips": int(len(trips)),
+        "length": length,
         "mobility": {
             "overall_rate": float(overall),
             "target_rate": float(target_mob),

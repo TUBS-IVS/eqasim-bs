@@ -25,6 +25,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from braunschweig.analysis.population_validation import trip_coherence as tc  # noqa: E402
 from braunschweig.analysis.population_validation.trip_coherence import (  # noqa: E402
     build_trip_coherence_report,
     mid_purpose_from_eqasim,
@@ -34,8 +35,11 @@ from braunschweig.analysis.population_validation.trip_coherence import (  # noqa
     purpose_participation_by_segment,
     renormalize_scored,
     segment_mobility_rate,
+    synthetic_mean_length_by_purpose,
     trip_coherence_by_kreis,
     trips_per_person_by_segment,
+    w12_length_coherence,
+    w12_mean_length_target,
     w1_scored_target,
     w1_scored_target_by_kreis,
     p36_mobility_target,
@@ -220,6 +224,66 @@ def test_trip_coherence_by_kreis_realised_vs_target():
     assert "mobility_delta_pp" in out.columns
     assert "purpose_freizeit_delta_pp" in out.columns
     assert "work_participation" in out.columns
+
+
+def test_w12_mean_trip_length_target_loads_scored_purposes():
+    # uses the real committed CSV under eqasim-data/.../mid/
+    target = tc.w12_mean_length_target(DATA_PATH)
+    # four scored eqasim purposes -> routed mean km (straight from W12 mittel_km)
+    assert set(target) == {"work", "education", "shop", "leisure"}
+    assert target["work"] == 15.2 and target["education"] == 5.7
+    assert target["shop"] == 5.2 and target["leisure"] == 15.0
+
+
+def test_w12_synthetic_mean_length_uses_detour_factor():
+    # one work trip, straight-line 10 km -> routed 13 km via the 1.3 detour factor
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],  # metres
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_synthetic_mean_length_prefers_routed_distance_column():
+    # When a routed_distance column exists, it is used directly (km, no detour
+    # multiply): 13 km routed -> 13 km, ignoring the euclidean_distance column.
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],  # metres (would give 13 km via detour)
+        "routed_distance": [13000.0],     # metres routed (used directly -> 13 km)
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_synthetic_mean_length_is_nan_safe():
+    # NaN distances are skipped, not propagated into the mean.
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "following_purpose": ["work", "work"],
+        "euclidean_distance": [10000.0, float("nan")],
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_length_coherence_combines_target_and_realised():
+    # one work trip (10 km straight-line -> 13 km routed) vs W12 target 15.2 km.
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],
+    })
+    rows = w12_length_coherence(trips, DATA_PATH)
+    by = {r["purpose"]: r for r in rows}
+    assert set(by) == {"work", "education", "shop", "leisure"}
+    assert abs(by["work"]["target_km"] - 15.2) < 1e-9
+    assert abs(by["work"]["realised_km"] - 13.0) < 1e-6
+    assert abs(by["work"]["delta_km"] - (13.0 - 15.2)) < 1e-6
+    assert abs(by["work"]["rel_delta"] - (13.0 - 15.2) / 15.2) < 1e-6
 
 
 def test_segment_cols_absent_from_persons_are_skipped():
