@@ -25,12 +25,18 @@ docs/superpowers/specs/2026-06-10-popsim-bugfix-wave-design.md (local-only).
 | employed | 41.6 % | 57.1 % -> 52.8 % | 43.4 % |
 | high_income (hh) | 19.7 % | 31.4 % -> 32.6 % | 8.7 % |
 
-*popsim_mid trips/person reflects the rbW time-code handling: 13.1 % of donor
-persons carry non-collected times (code 701) and are resampled from same-cell
-donors; in the 1 % mini smoke 31.8 % of those found no same-cell donor and fell
-back to a home-only plan (loudly logged). At higher sampling rates the same-cell
-donor pools grow and this rate falls; a commune-level fallback cascade is a
-known candidate improvement.
+*popsim_mid trips/person reflects the rbW time-code handling. FOLLOW-UP (same
+day, user-approved cascade A->B, commits bb42f4c/1324782/+backstop): coded-time
+persons now KEEP their own chain with times imputed from their own `wegmin_imp1`
+durations + empirical anchors (stage A: 231/283 = 81.6 % in the 1 % smoke;
+the rest exceeded the 36 h bound after redraws), and the remaining unfixable
+persons get an ATTRIBUTE-matched donor chain via `match_donors`
+(stage B: 64/64 matched, **0 home-only** — was 31.8 % home-only with the old
+same-cell resample). trips/person popsim_mid recovered 2.58 -> 2.80; the
+commuter selection bias of the plain resample is removed. RegioStaR7 as a
+stage-B matching key is currently inactive (column not on the stage persons
+frame; warn-logged) — wiring the cells' RS7 onto the PopulationSim output would
+activate it.
 
 ## Intentional result changes (by design, user-approved)
 
