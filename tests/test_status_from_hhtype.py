@@ -68,11 +68,38 @@ def test_raumtyp_has_seven_rs7_regions():
     assert df["region"].nunique() == 7
 
 
-def test_extract_script_logs_coercion_counts():
+_MID_DIR = Path(DATA_PATH) / "braunschweig" / "mid"
+_STATUS_XLSX = (
+    _MID_DIR / "mid2023_status_by_hhtype_raumtyp.xlsx",
+    _MID_DIR / "mid2023_status_by_hhtype_bundesland.xlsx",
+)
+
+
+@pytest.mark.skipif(
+    not all(path.exists() for path in _STATUS_XLSX),
+    reason="MiD status xlsx exports are local-only; skipped when absent",
+)
+def test_extract_script_logs_coercion_counts(tmp_path):
     """Re-running the extractor logs explicit coercion counts (suppression vs
-    numeric), proving symbol coercion is observable (no silent fallback)."""
+    numeric), proving symbol coercion is observable (no silent fallback).
+
+    The script is run against a tmp_path copy of the xlsx sources (via its
+    --data-path argument) so the committed CSVs in eqasim-data are never
+    touched by the test run.
+    """
+    import shutil
+
+    tmp_mid = tmp_path / "braunschweig" / "mid"
+    tmp_mid.mkdir(parents=True)
+    for xlsx in _STATUS_XLSX:
+        shutil.copy2(xlsx, tmp_mid / xlsx.name)
+
     result = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "extract_mid_status_by_hhtype.py")],
+        [
+            sys.executable,
+            str(REPO / "scripts" / "extract_mid_status_by_hhtype.py"),
+            "--data-path", str(tmp_path),
+        ],
         cwd=str(REPO),
         capture_output=True,
         text=True,
@@ -83,6 +110,9 @@ def test_extract_script_logs_coercion_counts():
     assert "suppression-token=" in out
     # The bundesland file carries '-' suppression cells -> > 0 coerced.
     assert "suppression-token=17" in out or "suppression-token=" in out
+    # The CSVs were written to the tmp tree, not the committed data tree.
+    assert (tmp_mid / "mid2023_status_by_hhtype_raumtyp.csv").exists()
+    assert (tmp_mid / "mid2023_status_by_hhtype_bundesland.csv").exists()
 
 
 # --------------------------------------------------------------------------- #

@@ -109,13 +109,23 @@ VEHICLE_FIELDS = [
 
 def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
                write_income_eur = False, person_fields = None,
-               remode_carless_car_legs = False):
+               remode_carless_car_legs = False, id_attribute_types = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
     # attributes (e.g. housing_tenure) can be emitted only when present.
     if person_fields is None:
         person_fields = PERSON_FIELDS
+
+    def _id_type(column, value):
+        # Java type for a census/hts id attribute. When the caller provides
+        # ``id_attribute_types`` (decided ONCE per column from the pandas dtype,
+        # see writers.column_java_type), use it -- this guarantees a single
+        # consistent type per attribute across the whole file. Per-value fallback
+        # only for legacy callers that pass bare tuples without frame context.
+        if id_attribute_types is not None:
+            return id_attribute_types[column]
+        return writers.long_or_string_type(value)
     writer.start_person(person[person_fields.index("person_id")])
 
     writer.start_attributes()
@@ -141,11 +151,19 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     writer.add_attribute("carAvailability", "java.lang.String", person[PERSON_FIELDS.index("car_availability")])
     writer.add_attribute("bicycleAvailability", "java.lang.String", person[PERSON_FIELDS.index("bicycle_availability")])
 
-    writer.add_attribute("censusHouseholdId", "java.lang.Long", person[PERSON_FIELDS.index("census_household_id")])
-    writer.add_attribute("censusPersonId", "java.lang.Long", person[PERSON_FIELDS.index("census_person_id")])
+    _census_hh_id = person[PERSON_FIELDS.index("census_household_id")]
+    writer.add_attribute("censusHouseholdId",
+                         _id_type("census_household_id", _census_hh_id), _census_hh_id)
+    _census_p_id = person[PERSON_FIELDS.index("census_person_id")]
+    writer.add_attribute("censusPersonId",
+                         _id_type("census_person_id", _census_p_id), _census_p_id)
 
-    writer.add_attribute("htsHouseholdId", "java.lang.Long", person[PERSON_FIELDS.index("hts_household_id")])
-    writer.add_attribute("htsPersonId", "java.lang.Long", person[PERSON_FIELDS.index("hts_id")])
+    _hts_hh_id = person[PERSON_FIELDS.index("hts_household_id")]
+    writer.add_attribute("htsHouseholdId",
+                         _id_type("hts_household_id", _hts_hh_id), _hts_hh_id)
+    _hts_p_id = person[PERSON_FIELDS.index("hts_id")]
+    writer.add_attribute("htsPersonId",
+                         _id_type("hts_id", _hts_p_id), _hts_p_id)
 
     writer.add_attribute("hasPtSubscription", "java.lang.Boolean", person[PERSON_FIELDS.index("has_pt_subscription")])
     writer.add_attribute("ptSubscriptionType", "java.lang.String", str(person[PERSON_FIELDS.index("pt_subscription_type")]))
@@ -276,6 +294,16 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             person_fields = list(df_persons.columns)
             remode_carless_car_legs = bool(context.config("remode_carless_car_legs"))
 
+            # Java type per id COLUMN, decided ONCE from the pandas dtype so the
+            # whole file emits a single consistent type per attribute (mixed
+            # Long/String within one attribute crashes Java readers; float
+            # contamination raises here instead of producing unparseable '123.0').
+            id_attribute_types = {
+                column: writers.column_java_type(df_persons[column])
+                for column in ("census_household_id", "census_person_id", "hts_household_id", "hts_id")
+                if column in df_persons.columns
+            }
+
             with context.progress(total = len(df_persons), label = "Writing population ...") as progress:
                 for person in df_persons.itertuples(index = False):
                     person_id = person[person_fields.index("person_id")]
@@ -321,7 +349,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                     add_person(writer, person, activities, trips, vehicles,
                                enable_urban_parking, write_income_eur,
                                person_fields=person_fields,
-                               remode_carless_car_legs=remode_carless_car_legs)
+                               remode_carless_car_legs=remode_carless_car_legs,
+                               id_attribute_types=id_attribute_types)
                     progress.update()
 
             writer.end_population()

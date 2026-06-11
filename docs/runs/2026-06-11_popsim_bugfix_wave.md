@@ -1,0 +1,94 @@
+# Popsim bugfix wave — validation summary (2026-06-11)
+
+Branch: `feature/population-method-workflows` (after merging `main`/cordon).
+Scope: all 12 verified bugs from the 2026-06-10 review (docs/codebase/CONCERNS.md),
+the 4 red main tests, and feature-parity flags for the popsim configs.
+28 commits, 55 files, ~+3.1k/-0.3k lines. Design doc:
+docs/superpowers/specs/2026-06-10-popsim-bugfix-wave-design.md (local-only).
+
+## Validation results
+
+1. **Fast test suite: 1504 passed, 0 failed, 27 skipped** (baseline before the
+   wave: 5-6 failed). Local-only-data tests now skip with a reason when the
+   gitignored input is absent.
+2. **Three 1 % mini smokes all EXIT 0**: simple_ipf (regression, unchanged),
+   popsim_mid_mini (16/16 stages), popsim_open_mini. No `braunschweig.ipf.*`
+   stage executes in the popsim DAGs anymore (gravity reads the
+   `data.census.filtered` alias).
+3. **Three-case comparability (1 % smoke outputs, BS city cells only):**
+
+| metric | simple_ipf_open | popsim_mid (before -> after) | popsim_open (before -> after) |
+|---|---|---|---|
+| has_driving_license | 72.9 % | 52.2 % -> **80.9 %** | 70.8 % (unchanged) |
+| trips/person | 3.14 | 3.03 -> 2.58* | 1.48 -> **3.68** |
+| persons | 11,474 | 2,548 -> 2,831 (member completion, D3) | 2,557 |
+| employed | 41.6 % | 57.1 % -> 52.8 % | 43.4 % |
+| high_income (hh) | 19.7 % | 31.4 % -> 32.6 % | 8.7 % |
+
+*popsim_mid trips/person reflects the rbW time-code handling. FOLLOW-UP (same
+day, user-approved cascade A->B, commits bb42f4c/1324782/+backstop): coded-time
+persons now KEEP their own chain with times imputed from their own `wegmin_imp1`
+durations + empirical anchors (stage A: 231/283 = 81.6 % in the 1 % smoke;
+the rest exceeded the 36 h bound after redraws), and the remaining unfixable
+persons get an ATTRIBUTE-matched donor chain via `match_donors`
+(stage B: 64/64 matched, **0 home-only** — was 31.8 % home-only with the old
+same-cell resample). trips/person popsim_mid recovered 2.58 -> 2.80; the
+commuter selection bias of the plain resample is removed.
+
+FOLLOW-UP 2 (commits 86d3339/a3d9bab): (a) the cells' `RegioStaR7` is now joined
+onto the synthetic persons (136,636 households, 0 missing in the 1 % smoke), so
+the spatial stage-B matching key is ACTIVE (the warn-logged drop is gone; the
+donor household's RS7 is kept separately as `donor_RegioStaR7`); (b) stage-A
+anchor pools are restricted to within-bound, same-day reporters and a
+proportional dwell-scaling pass replaces the blind skip — imputation success
+rose 81.6 % -> **100 %** (283/283; 49 chains = 17.3 % saved by dwell scaling,
+floor 5 min/activity, logged). Stage B: 63/63 matched, 0 home-only.
+
+## Intentional result changes (by design, user-approved)
+
+- Licence share popsim_mid rises to the P17.1-plausible range (adult coverage
+  codes 202/404 imputed instead of forced False).
+- popsim_open persons all carry chains (trip-less persons matched to ENTD diary
+  donors; coverage log line reports direct/matched/trip-less shares).
+- popsim_mid households are member-complete (16.9 % of seed households filled by
+  mirror-household sampling; fillers carry `member_imputed` + `source_*` keys
+  and inherit the mirror donor's Wege).
+- Business trips (W_ZWECK=2) no longer set the commute distance (first home-leg
+  + seeded CDF imputation).
+- sex is binary for MATSim; `sex_raw` (male/female/diverse/not_specified)
+  retained in the synthesis output.
+
+## Mobility quota (share of persons leaving home) vs MiD 2023 P36_1
+
+The MiD P36_1 ZGB reference (committed `mid2023_P36_1.csv`) is ~80 % mobile /
+19 % immobile / 1 % unknown. After the popsim_open immobility fix (commit
+76586ef: the diary-donor matching pool now includes immobile diary respondents,
+and `is_kish` distinguishes genuinely-immobile diary persons from non-diary
+members — `is_kish` was being dropped at `data/hts/entd/filtered.py:41`, now
+retained as an ENTD-specific extra):
+
+| workflow | mobile (1 % smoke) | note |
+|---|---|---|
+| simple_ipf_open | 86.7 % | ENTD statistical matching (carries immobile donors) |
+| popsim_mid | 76.4 % | immobile persons fall out of the inner Wege join (correct) |
+| popsim_open | 100 % -> **85.4 %** | was forcing every non-diary person onto a mobile donor |
+
+All three are now in the realistic band around the MiD ~80 %. The committed
+per-Kreis comparison lives in
+`braunschweig.analysis.population_validation.trip_coherence` (mobility_rate vs
+P36_1, already wired into run_population_validation); `validate_three_cases.py`
+surfaces the raw share for the quick smoke read. NOTE: reproducing the ENTD/MiD
+donor mobility mix is not the same as calibrating to the P36_1 quota — if a
+future validation shows a systematic gap, an age-group donor reweighting toward
+P36_1 would be the calibration lever (not a PopulationSim control: mobility is
+behaviour, carried on the trips, not a demographic count margin).
+
+## Known remaining (next wave: PopulationSim controls)
+
+- employed_share and high_income_share for popsim_mid still reflect the MiD
+  donor skew — to be constrained via Kreis-level employment and MiD-H4×Zensus
+  income count controls (proposal in the 2026-06-10 session report).
+- handoff (100 m cell -> building home locations) still unwired; housing_tenure
+  for popsim paths still absent.
+- Cordon × popsim and fleet × popsim are flag-enabled but not yet e2e-tested on
+  a real run (config parity commit bccb21f lists the honest caveats).

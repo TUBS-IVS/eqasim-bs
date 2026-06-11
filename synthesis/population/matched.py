@@ -306,6 +306,75 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
 
     return df_target, assigned_levels
 
+class _NullProgress:
+    """No-op progress sink so the reusable entry point ``match_donors`` can call
+    ``statistical_matching`` outside a synpp pipeline context (which provides a
+    real progress object with the same ``update`` interface)."""
+
+    def update(self, n = 1):
+        pass
+
+
+def match_donors(df_target, df_source, *, matching_columns, minimum_observations,
+                 random_seed, weight_column = "weight"):
+    """Reusable hierarchical-relaxation donor matching (public API).
+
+    Thin wrapper around the single-process core ``statistical_matching`` used by
+    this stage, so other stages (e.g. assigning activity chains to popsim_open
+    persons whose donor has no travel diary) can reuse the exact same algorithm
+    without going through the synpp stage machinery.
+
+    Algorithm (relaxation semantics): targets and donors are grouped into cells
+    by ``matching_columns``. Matching starts on the full key tuple and relaxes by
+    dropping keys FROM THE END of the list, one level at a time, whenever a
+    target's cell has fewer than ``minimum_observations`` donors -- so the order
+    of ``matching_columns`` encodes priority (first = never relaxed). Within a
+    cell, one donor is drawn per target with probability proportional to the
+    donor's survey weight (shared-CDF draw).
+
+    Parameters
+    ----------
+    df_target : pd.DataFrame
+        Synthetic persons; must contain ``person_id`` and all
+        ``matching_columns``. Column dtypes must be directly comparable to the
+        donor side (same categories / value domain per key).
+    df_source : pd.DataFrame
+        Donor (HTS) persons; must contain ``hts_id``, ``weight_column`` (a
+        positive numeric survey weight) and all ``matching_columns``.
+    matching_columns : list of str
+        Matching keys in priority order (relaxed from the end).
+    minimum_observations : int
+        Minimum donor count for a cell to be used at a given relaxation level.
+    random_seed : int
+        Seed for the internal ``np.random.RandomState``; the assignment is fully
+        deterministic for fixed inputs and seed.
+    weight_column : str, default ``"weight"``
+        Name of the donor survey-weight column (the stage itself uses
+        ``person_weight``).
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per target person with columns ``[person_id, hts_id]``. Row
+        order follows the internal sort by ``matching_columns``, not the input
+        order.
+
+    Raises
+    ------
+    RuntimeError
+        If any target cannot be matched even at full relaxation (i.e. its value
+        of the FIRST matching key has fewer than ``minimum_observations``
+        donors). This mirrors the stage behaviour: unmatched targets are never
+        returned silently.
+    """
+    df_assignment, _levels = statistical_matching(
+        _NullProgress(), df_source, "hts_id", weight_column,
+        df_target, "person_id", list(matching_columns),
+        random_seed = random_seed, minimum_observations = minimum_observations)
+
+    return df_assignment
+
+
 def _run_parallel_statistical_matching(context, args):
     # Pass arguments
     df_target, random_seed = args
