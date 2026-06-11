@@ -41,6 +41,22 @@ def configure(context):
         context.config("cordon_network_buffer_fraction", 0.10)
         context.stage("data.spatial.municipalities")
 
+    # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022).
+    # Default ON; requires the local-only v3 inputs (the data stage fails early
+    # with the download command when they are missing). The trips stage (and the
+    # extraction it depends on) is sampling-rate independent (cached); sampling
+    # happens here in the hook and the Java injector just writes the CSV.
+    context.config("freight_enabled", True)
+    if context.config("freight_enabled"):
+        context.stage("braunschweig.freight.trips")
+        context.config("freight_sampling_rate", None)
+        # ASSUMPTION: PCE 3.5 (common MATSim freight practice, e.g. the
+        # matsim-duesseldorf freight vehicle type); max speed 80 km/h is the
+        # statutory German HGV limit (StVO 3). Both configurable, not calibrated.
+        context.config("freight_truck_pce", 3.5)
+        context.config("freight_truck_max_velocity_kmh", 80.0)
+        context.config("random_seed")
+
 def execute(context):
     result = delegate.execute(context)
 
@@ -58,6 +74,12 @@ def execute(context):
     # prefixed scenario files in place with their cut versions.
     if context.config("cordon_enabled"):
         result = _cut_to_cordon(context)
+
+    # Inject sampled freight agents LAST: after the cordon cut, so the eqasim
+    # cutter never rewrites freight agents (they have no households/facilities and
+    # their boundary trimming was already done by the extraction).
+    if context.config("freight_enabled"):
+        _inject_freight(context, result)
 
     return result
 
@@ -100,3 +122,60 @@ def _cut_to_cordon(context):
     cut_config = "%sconfig.xml" % prefix
     assert os.path.exists("%s/%s" % (context.path(), cut_config)), "cutter did not write the cut config"
     return cut_config
+
+
+def _inject_freight(context, config_name):
+    """Sample the ZGB-relevant freight trips and inject them into the scenario.
+
+    The trips stage returns the full ZGB-relevant trips DataFrame. Here we
+    Bernoulli-sample it at the pipeline sampling rate (seeded -- required because
+    the generated qsim flowCapacityFactor scales with the global sampling rate),
+    write a flat ``freight_trips_sampled.csv``, and delegate the MATSim scenario
+    surgery to org.eqasim.braunschweig.scenario.RunInjectFreight (rewrites
+    population/vehicles/network/config in place). Per-category total vs sampled
+    counts are logged (no-silent-fallback).
+    """
+    import numpy as np
+
+    rate = context.config("freight_sampling_rate")
+    if rate is None:
+        rate = context.config("sampling_rate")
+    rate = float(rate)
+
+    df = context.stage("braunschweig.freight.trips")
+
+    # Deterministic Bernoulli sample. Offset the seed so freight sampling is
+    # independent of any other seeded draw in the pipeline.
+    seed = int(context.config("random_seed")) + 81247
+    rng = np.random.default_rng(seed)
+    mask = rng.random(len(df)) < rate
+    sampled = df.loc[mask]
+
+    # Observability: total vs sampled per trip type (no silent thinning).
+    totals = df["trip_type"].value_counts().to_dict()
+    taken = sampled["trip_type"].value_counts().to_dict()
+    for trip_type in sorted(totals):
+        print("[freight.injection] trip type %s: total %d, sampled %d"
+              % (trip_type, totals[trip_type], taken.get(trip_type, 0)))
+    print("[freight.injection] sampled %d / %d trips at rate %s"
+          % (len(sampled), len(df), rate))
+
+    csv_name = "freight_trips_sampled.csv"
+    columns = ["person_id", "origin_x", "origin_y",
+               "destination_x", "destination_y", "departure_time", "trip_type"]
+    sampled[columns].to_csv("%s/%s" % (context.path(), csv_name), sep=";", index=False)
+
+    summary_name = "freight_injection_summary.csv"
+    eqasim.run(context, "org.eqasim.braunschweig.scenario.RunInjectFreight", [
+        "--config-path", config_name,
+        "--freight-csv-path", csv_name,
+        "--truck-pce", context.config("freight_truck_pce"),
+        "--truck-max-velocity-kmh", context.config("freight_truck_max_velocity_kmh"),
+        "--summary-path", summary_name,
+    ])
+
+    summary_path = "%s/%s" % (context.path(), summary_name)
+    assert os.path.exists(summary_path), "freight injection did not write its summary"
+    with open(summary_path, encoding="utf-8") as f:
+        for line in f.read().strip().splitlines():
+            print("[freight.injection] %s" % line)
