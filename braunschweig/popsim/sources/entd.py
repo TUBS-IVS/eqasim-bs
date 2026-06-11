@@ -95,6 +95,12 @@ from braunschweig.popsim.seed import (
 from braunschweig.popsim.stratum import cell_urban_class_from_rs7, entd_urban_class
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
+# Reusing the legacy statistical-matching machinery from the upstream-shared
+# synthesis tree is established practice in this package (see
+# braunschweig.popsim.stratum, which imports URBAN_TYPE_TO_URBAN_CLASS from the
+# same module, and braunschweig.popsim.trips, which imports data.hts.hts).
+from synthesis.population.matched import household_size_class, match_donors
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -185,6 +191,176 @@ ENTD_HIGH_INCOME_CLASS = 13
 # (Euclidean) distance. Matches data/hts/entd/reweighted.py:28
 # (euclidean_distance = routed_distance / 1.3) and the MiD path (wegkm_imp / 1.3).
 ENTD_DETOUR_FACTOR = 1.3
+
+# ---------------------------------------------------------------------------
+# Diary-donor chain matching (trip-less persons)
+# ---------------------------------------------------------------------------
+# ENTD records a travel diary for ONE selected person per household, while
+# popsim_open expands FULL households -- so only ~40% of the synthetic persons
+# inherit a trip chain from their attribute donor. The remaining persons are
+# matched against the DIARY-donor pool (donors that have trips) with the legacy
+# hierarchical-relaxation statistical matching (synthesis.population.matched.
+# match_donors) and copy the matched donor's chain.
+#
+# Matching keys in priority order: match_donors relaxes keys FROM THE END of
+# this list, so the order encodes priority and the FIRST key is never relaxed.
+CHAIN_MATCHING_COLUMNS = [
+    "sex", "age_class", "employed", "socioprofessional_class",
+    "household_size_class",
+]
+
+# Age-class bin edges replicated from the legacy matching stage
+# (synthesis/population/matched.py, execute(): the local AGE_BOUNDARIES used
+# with np.digitize(..., right=True)). Replicated here because the legacy value
+# is a function-local variable, not an importable constant.
+CHAIN_MATCHING_AGE_BOUNDARIES = [14, 29, 44, 59, 74, 1000]
+
+# Continuous matching columns derived from a differently-named raw column.
+_CHAIN_MATCHING_SOURCE_COLUMN = {
+    "age_class": "age",
+    "household_size_class": "household_size",
+}
+
+# Default minimum donor-cell size, identical to the legacy stage default
+# (synthesis/population/matched.py, "matching_minimum_observations").
+CHAIN_MATCHING_MINIMUM_OBSERVATIONS = 20
+
+
+def _derive_chain_matching_frame(persons: pd.DataFrame):
+    """Derive the matching-key columns for the diary-donor chain matching.
+
+    Returns ``(frame, columns)``: a copy of ``persons`` extended with the
+    derived ``age_class`` / ``household_size_class`` columns, and the list of
+    matching keys that are actually available on the frame. Missing keys are
+    dropped from the list with a logged warning (no silent narrowing).
+    """
+    out = persons.copy()
+    columns = []
+
+    for column in CHAIN_MATCHING_COLUMNS:
+        source_column = _CHAIN_MATCHING_SOURCE_COLUMN.get(column, column)
+        if source_column not in out.columns:
+            logger.warning(
+                "[EntdSource] chain matching: key '%s' dropped because column "
+                "'%s' is missing on the synthetic persons frame.",
+                column, source_column,
+            )
+            continue
+        if column == "age_class":
+            # Same binning as the legacy matching stage (see constant above).
+            out["age_class"] = np.digitize(
+                out["age"], CHAIN_MATCHING_AGE_BOUNDARIES, right=True
+            )
+        elif column == "household_size_class":
+            # Shared 1..5(+) binning imported from the legacy matching stage.
+            out["household_size_class"] = household_size_class(out["household_size"])
+        columns.append(column)
+
+    return out, columns
+
+
+def _match_trip_less_persons_to_diary_donors(
+    persons: pd.DataFrame,
+    persons_with_trips: set,
+    *,
+    random_seed: int,
+) -> pd.DataFrame:
+    """Match trip-less synthetic persons to ENTD diary donors.
+
+    The donor pool is built from the SYNTHETIC persons frame itself: every
+    synthetic person carries its donor's mapped attributes, so the persons that
+    DID inherit trips (``persons_with_trips``) provide the per-donor attribute
+    rows after deduplication on ``source_person_id``. This guarantees an
+    identical attribute vocabulary on both sides and avoids re-loading ENTD
+    tables. Donor weight is 1.0 each (the frame is already expanded; after
+    deduplication every diary donor is one equally-weighted pool row).
+
+    Returns a DataFrame ``[person_id, hts_id]`` (synthetic person -> diary
+    donor person_id); persons that cannot be matched are absent from the
+    result (they stay trip-less, eqasim stay-home convention) and their count
+    is logged loudly.
+    """
+    frame, columns = _derive_chain_matching_frame(persons)
+    empty = pd.DataFrame(columns=["person_id", "hts_id"])
+
+    has_trips = frame["person_id"].isin(persons_with_trips)
+    targets = frame.loc[~has_trips]
+    # Note: replicates of the same donor share all donor attributes except the
+    # synthetic household_size (overwritten per synthetic household by
+    # map_person_attributes); keep="first" makes the pool row deterministic.
+    pool = (
+        frame.loc[has_trips]
+        .drop_duplicates(subset="source_person_id", keep="first")
+        .rename(columns={"source_person_id": "hts_id"})
+    )
+    pool["weight"] = 1.0
+
+    if len(targets) == 0:
+        return empty
+    if len(pool) == 0:
+        logger.warning(
+            "[EntdSource] chain matching: diary-donor pool is EMPTY; all %d "
+            "trip-less persons stay trip-less. The donor trips table is likely "
+            "disconnected from the synthetic persons (check source_person_id).",
+            len(targets),
+        )
+        return empty
+    if not columns:
+        logger.warning(
+            "[EntdSource] chain matching: NO matching keys available on the "
+            "persons frame; all %d trip-less persons stay trip-less.",
+            len(targets),
+        )
+        return empty
+
+    # Small pools (mini smokes / tests) may be below the legacy default of 20
+    # donors per cell; cap the minimum at half the pool size (floor 1) so the
+    # matching is still possible while large real pools keep the legacy 20.
+    minimum_observations = min(
+        CHAIN_MATCHING_MINIMUM_OBSERVATIONS, max(1, len(pool) // 2)
+    )
+
+    # Feasibility pre-filter on the FIRST key: match_donors never relaxes it,
+    # and a single infeasible target would raise RuntimeError for the whole
+    # call. Targets whose first-key value has too few diary donors are left
+    # trip-less individually (logged loudly) instead of aborting everyone.
+    first_key = columns[0]
+    donor_counts = pool[first_key].value_counts()
+    feasible_values = set(donor_counts[donor_counts >= minimum_observations].index)
+    feasible = targets[first_key].isin(feasible_values)
+    n_infeasible = int((~feasible).sum())
+    if n_infeasible > 0:
+        logger.warning(
+            "[EntdSource] chain matching: %d/%d trip-less persons are "
+            "unmatchable (their '%s' value has < %d diary donors) and stay "
+            "trip-less (stay-home plans). A high rate signals a broken donor "
+            "pool, not a tolerable fallback.",
+            n_infeasible, len(targets), first_key, minimum_observations,
+        )
+    targets = targets.loc[feasible]
+    if len(targets) == 0:
+        return empty
+
+    try:
+        return match_donors(
+            targets[["person_id"] + columns],
+            pool[["hts_id", "weight"] + columns],
+            matching_columns=columns,
+            minimum_observations=minimum_observations,
+            random_seed=random_seed,
+        )
+    except RuntimeError:
+        # Belt-and-braces: match_donors raises when a target is unmatched even
+        # at full relaxation. The pre-filter above should prevent this; if it
+        # fires anyway, leave ALL remaining trip-less persons without chains
+        # and report it loudly rather than crashing the trips stage.
+        logger.error(
+            "[EntdSource] chain matching: match_donors failed at full "
+            "relaxation for %d trip-less persons; they stay trip-less. "
+            "Investigate the diary-donor pool composition.",
+            len(targets),
+        )
+        return empty
 
 # PT ticket defaults (ENTD has no ticket-type field).
 # Subscribers -> a representative flatrate category (must be in PT_TICKET_FLATRATE
@@ -866,6 +1042,17 @@ class EntdSource:
         ``source_person_id`` on the synthetic persons frame (set by
         ``map_person_attributes`` to the ENTD ``person_id``).
 
+        ENTD records a travel diary only for ONE selected person per household,
+        so the direct join covers only ~40% of the synthetic persons.  Persons
+        WITHOUT donor trips are matched to a DIARY donor (a donor that has
+        trips) via the legacy hierarchical-relaxation statistical matching
+        (``synthesis.population.matched.match_donors``) on
+        ``CHAIN_MATCHING_COLUMNS`` and inherit that donor's full chain; those
+        trip rows carry the diary donor as ``chain_donor_id`` while
+        ``source_person_id`` keeps the person's attribute donor.  Persons that
+        cannot be matched even at full relaxation stay trip-less (eqasim
+        stay-home convention); all rates are logged.
+
         Parameters
         ----------
         persons:
@@ -910,6 +1097,61 @@ class EntdSource:
             len(trips), n_persons_with_trips, n_persons_total,
             100.0 * n_persons_with_trips / max(n_persons_total, 1),
             n_persons_without_trips,
+        )
+
+        # --- Diary-donor chain matching for trip-less persons -----------------
+        # ENTD diaries cover only ONE selected person per household, so most
+        # synthetic persons have no direct donor trips. Match them to diary
+        # donors via the legacy statistical matching and copy that chain.
+        n_persons_matched_chain = 0
+        if n_persons_without_trips > 0:
+            df_chain = _match_trip_less_persons_to_diary_donors(
+                persons,
+                set(trips["synthetic_person_id"].unique()),
+                random_seed=random_seed,
+            )
+            if len(df_chain) > 0:
+                n_persons_matched_chain = df_chain["person_id"].nunique()
+                matched_trips = donor_trips.merge(
+                    df_chain.rename(columns={"person_id": "synthetic_person_id"}),
+                    left_on="person_id",
+                    right_on="hts_id",
+                    how="inner",
+                )
+                # Traceability: the HTS chain provenance of these rows differs
+                # from the person's attribute donor (source_person_id). The
+                # diary donor whose chain was copied is recorded per trip row
+                # as chain_donor_id; the persons frame itself is NOT modified.
+                matched_trips["chain_donor_id"] = matched_trips["hts_id"]
+                matched_trips = matched_trips.drop(columns=["hts_id"])
+                matched_trips = matched_trips.merge(
+                    persons[["person_id", "source_person_id"]].rename(
+                        columns={"person_id": "synthetic_person_id"}
+                    ),
+                    on="synthetic_person_id",
+                    how="left",
+                )
+                trips = pd.concat([trips, matched_trips], ignore_index=True, sort=False)
+                logger.info(
+                    "[EntdSource] build_trips: chain matching attached %d trips to "
+                    "%d trip-less persons; their HTS chain provenance "
+                    "(chain_donor_id) differs from the attribute donor "
+                    "(source_person_id).",
+                    len(matched_trips), n_persons_matched_chain,
+                )
+
+        n_persons_still_trip_less = (
+            n_persons_total - n_persons_with_trips - n_persons_matched_chain
+        )
+        logger.info(
+            "[EntdSource] build_trips coverage: direct donor chain %d/%d (%.1f%%), "
+            "matched diary chain %d (%.1f%%), still trip-less %d (%.1f%%).",
+            n_persons_with_trips, n_persons_total,
+            100.0 * n_persons_with_trips / max(n_persons_total, 1),
+            n_persons_matched_chain,
+            100.0 * n_persons_matched_chain / max(n_persons_total, 1),
+            n_persons_still_trip_less,
+            100.0 * n_persons_still_trip_less / max(n_persons_total, 1),
         )
 
         # Replace the ENTD person_id with the synthetic person_id.
