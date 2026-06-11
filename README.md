@@ -380,6 +380,13 @@ behaviour is preserved unless a change is explicitly enabled:
   the Zensus-2022 100 m grid from complete donor households (open ENTD or
   restricted MiD 2023 seed) — see
   [Population synthesis workflows](#population-synthesis-workflows).
+- **Cell-accurate popsim home locations.** The PopulationSim workflows place
+  each household in an area-weighted ALKIS building INSIDE its own Zensus-2022
+  100 m cell (`braunschweig.synthesis.locations.home_cell`), preserving the grid
+  precision PopulationSim produces instead of re-sampling anywhere in the
+  municipality (~97 % cell-accurate on the smoke; the rest fall back to a
+  commune draw where the cell has no mapped building, logged). The legacy/IPF
+  workflows keep the Gemeinde-level home sampler.
 - **Cross-cordon commuter injection (flag-gated).** `cordon_enabled` adds in-
   and out-commuters from BA Pendleratlas Kreis flows: road gates and rail entry
   stations are derived from the network ∩ cordon polygon, agents get
@@ -444,9 +451,6 @@ determinism tests are opt-in via `EQASIM_BS_RUN_PIPELINE=1`).
   the grid level; employment and income are donor-carried, not yet controlled —
   the popsim workflows therefore inherit some MiD donor skew in those margins
   (Kreis-level employment / income count controls are planned).
-- Popsim home locations are currently sampled at Gemeinde granularity by the
-  legacy home stages; wiring the 100 m cell→building handoff into the DAG is
-  open work.
 - The Java MATSim package is still `org.eqasim.bavaria.*`; renaming is
   out of scope for this refactor (Decision D-1c).
 
