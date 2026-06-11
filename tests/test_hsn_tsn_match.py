@@ -36,6 +36,14 @@ from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E40
 
 DATA_PATH = str(DATA)
 
+# The HSN/TSN lookup is local-only (gitignored, scraped from hsn-tsn.de);
+# without it every test in this module would fail on import of the lookup.
+_HSN_TSN_LOOKUP = DATA / "braunschweig" / "kba" / "hsn_tsn_lookup.csv"
+pytestmark = pytest.mark.skipif(
+    not _HSN_TSN_LOOKUP.exists(),
+    reason="HSN/TSN lookup is local-only (run scripts/scrape_hsn_tsn.py); skipped when absent",
+)
+
 #: The five additive columns the matcher attaches.
 HSN_TSN_COLUMNS = [
     "engine_power_kw", "engine_power_ps", "displacement_ccm",
