@@ -148,6 +148,79 @@ def configure(context):
         context.stage("data.hts.entd.filtered", alias="hts_donor")
 
 
+def join_cell_attributes(
+    combined: pd.DataFrame,
+    cells: pd.DataFrame,
+    *,
+    ars_col: str = mid._ARS_COLUMN,
+) -> pd.DataFrame:
+    """Join the per-cell attributes onto the merged PopulationSim output.
+
+    PopulationSim writes only ``ZENSUS100m`` + ``H_ID`` to its output CSV, so
+    everything the downstream assembly needs per SYNTHETIC HOME cell must be
+    recovered here from the loaded cells frame:
+
+    - the 12-digit ARS (``RegionalSchlussel_ARS``): required by
+      ``assembly.derive_zone_ids`` for commune_id / departement_id / iris_id
+      (bug D1: spatial home.zones KeyError without it);
+    - ``RegioStaR7`` (when the cells parquet carries it): the synthetic home's
+      urban/rural class. ``assembly.build_persons`` expands it onto every
+      synthetic person, where it serves as the SPATIAL stage-B matching key
+      (``braunschweig.popsim.trips.MATCHED_REPLACEMENT_COLUMNS``). Note this is
+      deliberately the CELL's RS7, not the MiD donor household's survey RS7:
+      the donor frame's ``RegioStaR7`` is never merged onto persons (it is not
+      part of ``assembly._HOUSEHOLD_ATTRS``), so no collision can occur.
+
+    Parameters
+    ----------
+    combined:
+        Merged PopulationSim output (one row per synthetic household, with
+        ``ZENSUS100m``).
+    cells:
+        Loaded (ZGB-filtered) cells frame from ``mid.load_control_cells``.
+    ars_col:
+        Name of the 12-digit ARS column on the cells frame.
+
+    Returns
+    -------
+    pandas.DataFrame
+        ``combined`` with ``ars_col`` (always) and ``RegioStaR7`` (when
+        available on ``cells``) joined per 100 m cell.
+    """
+    join_cols = ["ZENSUS100m", ars_col]
+    has_rs7 = "RegioStaR7" in cells.columns
+    if has_rs7:
+        join_cols.append("RegioStaR7")
+    else:
+        logger.info(
+            "[popsim.stage] cells frame carries no 'RegioStaR7' column (older "
+            "parquet); synthetic persons get no home-cell RS7 and stage-B chain "
+            "matching falls back to the non-spatial key list."
+        )
+
+    cell_attributes = cells[join_cols].drop_duplicates("ZENSUS100m")
+    combined = combined.merge(cell_attributes, on="ZENSUS100m", how="left")
+
+    n_missing_ars = int(combined[ars_col].isna().sum())
+    if n_missing_ars:
+        logger.warning(
+            "[popsim.stage] %d/%d households could not be matched to an ARS after "
+            "the cells join (unexpected; cells used in PopulationSim must be a subset "
+            "of the loaded cells frame).",
+            n_missing_ars, len(combined),
+        )
+
+    if has_rs7:
+        n_missing_rs7 = int(combined["RegioStaR7"].isna().sum())
+        logger.info(
+            "[popsim.stage] cell RegioStaR7 joined onto %d households "
+            "(%d missing -> NaN).",
+            len(combined), n_missing_rs7,
+        )
+
+    return combined
+
+
 def execute(context) -> pd.DataFrame:
     """Run popsim_mid and return the merged expanded-household table."""
     cells_path = context.config(KEY_CELLS)
@@ -260,22 +333,12 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
 
-    # Join the 12-digit ARS from the cells frame back onto the merged PopulationSim
-    # output.  PopulationSim writes only ZENSUS100m + H_ID to its output CSV, so the
-    # ARS column must be recovered here before assembly.build_persons can derive the
-    # commune_id / departement_id / iris_id columns required by
-    # synthesis.population.spatial.home.zones (bug D1: KeyError on missing columns).
-    ars_col = mid._ARS_COLUMN  # "RegionalSchlussel_ARS"
-    cell_ars = cells[["ZENSUS100m", ars_col]].drop_duplicates("ZENSUS100m")
-    combined = merge_report.combined.merge(cell_ars, on="ZENSUS100m", how="left")
-    n_missing_ars = int(combined[ars_col].isna().sum())
-    if n_missing_ars:
-        logger.warning(
-            "[popsim.stage] %d/%d households could not be matched to an ARS after "
-            "the cells join (unexpected; cells used in PopulationSim must be a subset "
-            "of the loaded cells frame).",
-            n_missing_ars, len(combined),
-        )
+    # Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
+    # from the cells frame back onto the merged PopulationSim output: the ARS
+    # feeds assembly.derive_zone_ids (commune/departement/iris ids, bug D1) and
+    # the cell RS7 becomes the spatial stage-B chain-matching key on every
+    # expanded synthetic person (see join_cell_attributes).
+    combined = join_cell_attributes(merge_report.combined, cells)
 
     # Load the donor attribute tables through the active source adapter.
     # For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).

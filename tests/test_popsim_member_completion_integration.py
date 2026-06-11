@@ -259,6 +259,95 @@ def test_build_persons_keeps_completion_columns_and_mirror_surrogate():
 
 
 # ---------------------------------------------------------------------------
+# 3c. cell RegioStaR7 join: the stage carries the SYNTHETIC HOME's RS7 onto
+#     every expanded person (stage-B spatial matching key), and the DONOR
+#     household's RegioStaR7 must never shadow it.
+# ---------------------------------------------------------------------------
+
+def _rs7_fixture(cell_rs7: bool):
+    """Cells + merged PopulationSim output + donor frames; donor households
+    carry RegioStaR7=77 (rural) while the cells carry 71 (metropolis), so any
+    donor-RS7 leak onto the persons frame is detectable."""
+    cells = {
+        "ZENSUS100m": ["C1", "C2"],
+        "ZENSUS1km": ["K1", "K1"],
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP": [1.0, 1.0],
+    }
+    if cell_rs7:
+        cells["RegioStaR7"] = [71, 71]
+    cells = pd.DataFrame(cells)
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["C1", "C2"],
+        "H_ID": ["A", "B"],
+    })
+    mid_persons = pd.DataFrame({
+        "H_ID":      ["A", "B"],
+        "P_ID":      [1, 1],
+        "HP_ALTER":  [40, 38],
+        "HP_SEX":    [1, 2],
+        "P_TAET":    [1, 1],
+        "P_FSCHEIN": [1, 1],
+        "P_FKARTE":  [3, 8],
+    })
+    mid_households = pd.DataFrame({
+        "H_ID": ["A", "B"],
+        "oek_status": [3, 3],
+        "hheink_gr1": [4, 4],
+        "H_ANZAUTO": [1, 1],
+        "H_ANZRAD": [2, 2],
+        # The DONOR's home-region RS7 (MID_HOUSEHOLD_ATTR_COLS): deliberately
+        # DIFFERENT from the cell value so a leak onto persons is detectable.
+        "RegioStaR7": [77, 77],
+    })
+    return cells, merged, mid_households, mid_persons
+
+
+def test_cell_regiostar7_joined_onto_persons_beats_donor_rs7(caplog):
+    """The persons frame's RegioStaR7 must be the SYNTHETIC HOME's cell value
+    (71), not the donor household's survey value (77)."""
+    import logging
+
+    from braunschweig.popsim import stage
+
+    cells, merged, mid_households, mid_persons = _rs7_fixture(cell_rs7=True)
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.stage"):
+        combined = stage.join_cell_attributes(merged, cells)
+
+    assert "RegioStaR7" in combined.columns
+    assert combined["RegioStaR7"].tolist() == [71, 71]
+    assert combined["RegionalSchlussel_ARS"].notna().all()
+    assert any(
+        "cell RegioStaR7 joined" in record.getMessage() for record in caplog.records
+    )
+
+    persons, _ = assembly.build_persons(combined, mid_households, mid_persons)
+    # Every expanded person carries the CELL's RS7, never the donor's 77.
+    assert (persons["RegioStaR7"] == 71).all()
+
+
+def test_join_cell_attributes_without_regiostar7_is_graceful(caplog):
+    """Cells frames without RegioStaR7 (older parquets) must not crash: the
+    join is info-logged and the persons frame simply has no RegioStaR7, so
+    stage-B matching falls back to the 4-key list (existing warn path)."""
+    import logging
+
+    from braunschweig.popsim import stage
+
+    cells, merged, mid_households, mid_persons = _rs7_fixture(cell_rs7=False)
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.stage"):
+        combined = stage.join_cell_attributes(merged, cells)
+
+    assert "RegioStaR7" not in combined.columns
+    assert any("RegioStaR7" in record.getMessage() for record in caplog.records)
+
+    persons, _ = assembly.build_persons(combined, mid_households, mid_persons)
+    assert "RegioStaR7" not in persons.columns
+
+
+# ---------------------------------------------------------------------------
 # 4. stage flag wiring (source-text check, like test_popsim_stage_seed.py)
 # ---------------------------------------------------------------------------
 

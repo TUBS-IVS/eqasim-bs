@@ -180,6 +180,18 @@ def load_control_cells(
         if raw is not None and raw not in raw_needed:
             raw_needed.append(raw)
 
+    # RegioStaR7 is optional (graceful): older prepared-cell parquets do not
+    # carry it. Without it the stage-B chain matching loses its spatial key and
+    # falls back to the 4-key attribute list, so the absence is logged (info,
+    # not warn -- the load itself is fully usable).
+    if "RegioStaR7" not in clean_to_raw:
+        logger.info(
+            "[popsim.mid] cells parquet %s carries no 'RegioStaR7' column; "
+            "proceeding without it (synthetic persons get no home-cell RS7; "
+            "stage-B chain matching falls back to the non-spatial key list).",
+            parquet_path,
+        )
+
     df = pd.read_parquet(parquet_path, columns=raw_needed)
     df.columns = [prepared_cells.clean_col_name(c) for c in df.columns]
     df = df.rename(columns={prepared_cells.clean_col_name(id_raw): "ZENSUS100m"})

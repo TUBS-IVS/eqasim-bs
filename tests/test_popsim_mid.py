@@ -209,6 +209,47 @@ def test_popsim_stage_exposes_synpp_contract():
     assert callable(stage.execute)
 
 
+# ---------------------------------------------------------------------------
+# load_control_cells: RegioStaR7 read from the parquet (graceful when absent)
+# ---------------------------------------------------------------------------
+
+def _write_cells_parquet(tmp_path, *, with_regiostar7: bool):
+    """Tiny prepared-cells parquet: grid id first column + control base + ARS."""
+    data = {
+        "GITTER_ID_100m": [
+            "CRS3035RES100mN2689000E4337000",
+            "CRS3035RES100mN2689100E4337000",
+        ],
+        "POP": [3.0, 5.0],
+        "POP_TOTAL_100m_adj": [3.0, 5.0],
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+    }
+    if with_regiostar7:
+        data["RegioStaR7"] = [71, 72]
+    path = tmp_path / "cells.parquet"
+    pd.DataFrame(data).to_parquet(path)
+    return path
+
+
+def test_load_control_cells_reads_regiostar7_when_present(tmp_path):
+    path = _write_cells_parquet(tmp_path, with_regiostar7=True)
+    cells = mid.load_control_cells(path, ["POP"])
+    assert "RegioStaR7" in cells.columns
+    assert sorted(cells["RegioStaR7"].tolist()) == [71, 72]
+
+
+def test_load_control_cells_without_regiostar7_logs_info(tmp_path, caplog):
+    """Older cell parquets without RegioStaR7 must keep working (info-logged)."""
+    import logging
+
+    path = _write_cells_parquet(tmp_path, with_regiostar7=False)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.mid"):
+        cells = mid.load_control_cells(path, ["POP"])
+    assert "RegioStaR7" not in cells.columns
+    assert "POP" in cells.columns  # the load itself succeeded
+    assert any("RegioStaR7" in record.getMessage() for record in caplog.records)
+
+
 def test_load_mid_attributes_reads_needed_columns(tmp_path):
     # Phase 4A: RegioStaR7 is now part of MID_HOUSEHOLD_ATTR_COLS so the fixture
     # must include it; load_mid_attributes uses usecols=list(MID_HOUSEHOLD_ATTR_COLS).

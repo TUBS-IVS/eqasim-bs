@@ -286,6 +286,14 @@ def map_mid_person_attributes(
             )
         )
     )
+    # RegioStaR7 collision guard: the donor household frame ALSO carries a
+    # 'RegioStaR7' column (the DONOR's survey home region, MID_HOUSEHOLD_ATTR_COLS,
+    # used upstream for Phase 4B donor stratification). It is deliberately NOT
+    # part of _HOUSEHOLD_ATTRS, so this merge never brings it onto the persons
+    # frame -- the persons frame's 'RegioStaR7' is the SYNTHETIC HOME's cell
+    # value (joined by stage.join_cell_attributes onto the merged households and
+    # carried through the expansion), which is the spatial stage-B matching key.
+    # If the donor RS7 is ever needed on persons, merge it as 'donor_RegioStaR7'.
     persons = persons.merge(
         donor_hh[[donor_col, *_HOUSEHOLD_ATTRS]],
         on=donor_col, how="left", suffixes=("", "_hh"),

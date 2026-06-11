@@ -517,8 +517,11 @@ def _impute_nan_time_unfixable(
 # priority order: match_donors relaxes keys FROM THE END of this list, so the
 # order encodes priority and the FIRST key (sex) is never relaxed.  Mirrors the
 # ENTD diary-donor chain matching (braunschweig.popsim.sources.entd).  Keys
-# missing from the persons frame are dropped with a logged warning (the stage
-# path lacks RegioStaR7: the PopulationSim output only carries ZENSUS100m).
+# missing from the persons frame are dropped with a logged warning.
+# RegioStaR7 is the SYNTHETIC HOME's cell RS7, joined onto the merged
+# PopulationSim output by braunschweig.popsim.stage.join_cell_attributes and
+# expanded onto every person; older cell parquets without the column trigger
+# the logged drop and the matching falls back to the non-spatial key list.
 MATCHED_REPLACEMENT_COLUMNS = [
     "sex", "age_class", "employed", "socioprofessional_class", "RegioStaR7",
 ]
