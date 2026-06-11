@@ -15,6 +15,12 @@ FREIGHT_PERSON_PREFIX = "freight_"
 
 def drop_freight_agents(df, person_column="person_id", label="trips"):
     if person_column not in df.columns:
+        # No-silent-fallback rule: if the person column disappears (e.g. an
+        # upstream rename), freight agents would silently leak into every KPI.
+        # Warn loudly instead of skipping quietly.
+        logger.warning(
+            "[%s] column '%s' not found -- freight agents NOT filtered from this table",
+            label, person_column)
         return df
     mask = df[person_column].astype(str).str.startswith(FREIGHT_PERSON_PREFIX)
     excluded = int(mask.sum())

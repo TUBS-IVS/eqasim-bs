@@ -160,10 +160,13 @@ def _inject_freight(context, config_name):
     print("[freight.injection] sampled %d / %d trips at rate %s"
           % (len(sampled), len(df), rate))
 
+    # Column order is the cross-language contract: the Java injector validates
+    # the header verbatim against its EXPECTED_HEADER (RunInjectFreight.java).
+    # TRIP_COLUMNS is the single source of truth, pinned by a regression test.
+    from braunschweig.freight.trips import TRIP_COLUMNS
+
     csv_name = "freight_trips_sampled.csv"
-    columns = ["person_id", "origin_x", "origin_y",
-               "destination_x", "destination_y", "departure_time", "trip_type"]
-    sampled[columns].to_csv("%s/%s" % (context.path(), csv_name), sep=";", index=False)
+    sampled[list(TRIP_COLUMNS)].to_csv("%s/%s" % (context.path(), csv_name), sep=";", index=False)
 
     summary_name = "freight_injection_summary.csv"
     eqasim.run(context, "org.eqasim.braunschweig.scenario.RunInjectFreight", [

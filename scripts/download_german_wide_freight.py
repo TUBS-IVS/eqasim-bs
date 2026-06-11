@@ -153,7 +153,7 @@ def main(argv=None):
         size = target.stat().st_size
         if is_truncated(size, MIN_SIZES[name]):
             print(
-                "ERROR %s size %d < %d; download truncated?"
+                "ERROR %s size %d < %d; download truncated? Re-run with --force."
                 % (name, size, MIN_SIZES[name]),
                 file=sys.stderr,
             )
