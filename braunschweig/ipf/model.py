@@ -70,6 +70,154 @@ def _build_group_indices(df_model, key_columns):
     return normalised
 
 
+def _build_iteration_blocks(selectors, targets, selector_blocks, n_rows):
+    """Prepare the batched representation of each mutually-disjoint selector block.
+
+    A "block" is a (start, end) range into ``selectors`` produced by one margin
+    (e.g. all commune x sex x age cells of the population margin). Because every
+    df_model row belongs to exactly one cell of a margin, the selectors within a
+    block are mutually disjoint, so the sequential per-selector update order
+    within the block cannot influence the result -- updating cell A's rows never
+    changes cell B's current-weight sum. That is the mathematical precondition
+    for replacing the per-selector ``np.sum``/scatter loop with one
+    ``np.bincount`` + one vectorised multiply per block.
+
+    Disjointness is VERIFIED here (total appended row count must equal the
+    number of distinctly labelled rows); a block that fails the check -- e.g. a
+    margin table with duplicated keys -- falls back to the sequential
+    per-selector path, so batching can never silently double-update a row.
+
+    Returns a list of ``(kind, start, end, data)`` tuples where ``kind`` is
+    ``"batched"`` (data = (member_rows, member_codes, target_array)) or
+    ``"sequential"`` (data = None).
+    """
+    blocks = []
+    for start, end in selector_blocks:
+        if end - start <= 1:
+            blocks.append(("sequential", start, end, None))
+            continue
+        labels = np.full(n_rows, -1, dtype=np.int64)
+        total_rows = 0
+        for j in range(start, end):
+            rows = selectors[j][0]
+            total_rows += len(rows)
+            labels[rows] = j - start
+        if total_rows != int(np.count_nonzero(labels >= 0)):
+            # Overlapping selectors within the block: not a partition.
+            blocks.append(("sequential", start, end, None))
+            continue
+        member_rows = np.flatnonzero(labels >= 0)
+        member_codes = labels[member_rows]
+        target_array = np.asarray(targets[start:end], dtype=float)
+        blocks.append(("batched", start, end, (member_rows, member_codes, target_array)))
+    return blocks
+
+
+def run_ipf_iterations(selectors, targets, weights, *, max_iterations, tolerance,
+                       selector_blocks=None, batched=False, log=print):
+    """Run the IPF update loop, optionally batching disjoint selector blocks.
+
+    Sequential mode (``batched=False``) is the verbatim legacy loop: one
+    ``np.sum`` gather + one scatter-multiply per selector per iteration --
+    byte-identical to all prior runs.
+
+    Batched mode computes, per disjoint block, all cell sums in ONE
+    ``np.bincount`` pass and applies all update factors in ONE vectorised
+    multiply. The per-row multiplication is the identical operation (each row
+    is multiplied exactly once by its cell's factor); only the SUM accumulation
+    order differs (bincount accumulates sequentially, ``np.sum`` pairwise), so
+    results agree to floating-point round-off (~1e-15 relative) but are NOT
+    bit-identical -- enabling this is a deliberate re-baseline of the seeded
+    synthesis. Blocks that fail the runtime disjointness check (and the
+    single-selector zero constraints) always use the sequential update.
+
+    Returns ``(weights, iteration, converged, iteration_factors)``.
+    """
+    if batched:
+        if selector_blocks is None:
+            raise ValueError(
+                "[braunschweig.ipf.model] batched=True requires selector_blocks "
+                "(the (start, end) ranges of the margin blocks)."
+            )
+        covered = sum(end - start for start, end in selector_blocks)
+        if covered != len(selectors):
+            raise ValueError(
+                f"[braunschweig.ipf.model] selector_blocks cover {covered} of "
+                f"{len(selectors)} selectors; the block bookkeeping is out of "
+                "sync with the constraint generation."
+            )
+        blocks = _build_iteration_blocks(selectors, targets, selector_blocks, len(weights))
+        n_batched = sum(1 for kind, *_ in blocks if kind == "batched")
+        log(
+            f"[braunschweig.ipf.model] batched IPF iteration: "
+            f"{n_batched}/{len(blocks)} blocks batched (disjointness verified), "
+            f"{len(blocks) - n_batched} sequential."
+        )
+    else:
+        blocks = [("sequential", 0, len(selectors), None)]
+
+    iteration = 0
+    converged = False
+    iteration_factors = []
+
+    while iteration < max_iterations:
+        iteration_factors = []
+
+        for kind, start, end, data in blocks:
+            if kind == "sequential":
+                for j in range(start, end):
+                    f = selectors[j]
+                    target_weight = targets[j]
+                    current_weight = np.sum(weights[f])
+
+                    if current_weight > 0:
+                        update_factor = target_weight / current_weight
+                        weights[f] *= update_factor
+                        iteration_factors.append(update_factor)
+                    elif target_weight > 0:
+                        # Cell has zero current weight but a positive target:
+                        # re-seed with a tiny epsilon to allow recovery (see
+                        # the hh-size hard zero interaction at small communes).
+                        weights[f] = 1e-9
+                        iteration_factors.append(target_weight / np.sum(weights[f]))
+            else:
+                member_rows, member_codes, target_array = data
+                sums = np.bincount(
+                    member_codes, weights=weights[member_rows],
+                    minlength=end - start,
+                )
+                positive = sums > 0
+                factors = np.zeros(end - start)
+                factors[positive] = target_array[positive] / sums[positive]
+                apply_mask = positive[member_codes]
+                rows_apply = member_rows[apply_mask]
+                weights[rows_apply] *= factors[member_codes[apply_mask]]
+                iteration_factors.extend(factors[positive].tolist())
+                # Zero-current, positive-target cells: epsilon re-seed (rare).
+                for j in np.flatnonzero(~positive & (target_array > 0)):
+                    f = selectors[start + int(j)]
+                    weights[f] = 1e-9
+                    iteration_factors.append(target_array[j] / np.sum(weights[f]))
+
+        if iteration % 50 == 0 or iteration == max_iterations - 1:
+            log(
+                "Iteration: {} factors: {} mean: {} min: {} max: {}".format(
+                    iteration, len(iteration_factors),
+                    np.mean(iteration_factors),
+                    np.min(iteration_factors), np.max(iteration_factors),
+                )
+            )
+
+        if np.max(iteration_factors) - 1 < tolerance:
+            if np.min(iteration_factors) > 1 - tolerance:
+                converged = True
+                break
+
+        iteration += 1
+
+    return weights, iteration, converged, iteration_factors
+
+
 def configure(context):
     context.stage("braunschweig.ipf.prepare")
     context.config("braunschweig.minimum_age.employment", 16)
@@ -88,6 +236,13 @@ def configure(context):
                        list(DEFAULT_AGE_GROUP_BOUNDS))
     context.config("braunschweig.ipf.max_iterations", 1500)
     context.config("braunschweig.ipf.tolerance", 1e-2)
+    # Batched IPF iteration: compute each disjoint margin block's cell sums in
+    # one np.bincount pass instead of one np.sum per selector (the per-selector
+    # call overhead dominates at ~30k selectors x 1500 iterations). Results
+    # agree to FP round-off but are NOT bit-identical to the sequential loop
+    # (bincount accumulates sequentially, np.sum pairwise) -- enabling this is
+    # a deliberate re-baseline. False restores the byte-identical legacy loop.
+    context.config("braunschweig.ipf.batched_iteration", True)
     # TASK-010 — additional 4-way (Kreis × hh_size × employed) joint
     # margin sourced from a Kreis-level cross-tab (e.g. Zensus 2022
     # 13111-06-02-4 reshaped to long form). Requires
@@ -231,8 +386,17 @@ def execute(context):
     # floating-point summation (groupby-sum is NOT bit-identical to Series.sum).
     selectors = []
     targets = []
+    # Block bookkeeping for the batched IPF iteration: each entry is a
+    # (start, end) range into ``selectors`` whose members come from ONE margin
+    # and are therefore expected to be mutually disjoint (a margin partitions
+    # df_model). Disjointness is re-verified at runtime in
+    # _build_iteration_blocks; failing blocks fall back to the sequential
+    # per-selector update. Single-selector zero constraints are their own
+    # (trivially sequential) blocks.
+    selector_blocks = []
 
     # Population constraints (commune x sex x population-age-class).
+    _block_start = len(selectors)
     population_indices = _build_group_indices(
         df_model, ["commune_index", "sex", "age_class_population"])
     combinations = list(itertools.product(unique_communes, unique_sexes, population_age_classes))
@@ -246,9 +410,12 @@ def execute(context):
         target_weight = df_population.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
+    selector_blocks.append((_block_start, len(selectors)))
+
     # Employment constraints (departement x sex x employment-age-class, employed only).
     # The legacy ``& df_model["employed"]`` filter is folded into the groupby key
     # so the (..., True) sub-key holds exactly the employed rows of each cell.
+    _block_start = len(selectors)
     employment_indices = _build_group_indices(
         df_model, ["departement_index", "sex", "age_class_employment", "employed"])
     combinations = list(itertools.product(unique_departements, unique_sexes, employment_age_classes))
@@ -264,13 +431,17 @@ def execute(context):
         target_weight = df_employment.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
+    selector_blocks.append((_block_start, len(selectors)))
+
     # Minimum employment age (single condition, cheap: kept as a boolean mask).
     f_model = df_model["combined_age_class"] < minimum_employment_age
     f_model &= df_model["employed"]
     selectors.append(f_model)
     targets.append(0.0)
+    selector_blocks.append((len(selectors) - 1, len(selectors)))
 
     # License country constraints (sex x license-age-class, license owners only).
+    _block_start = len(selectors)
     license_country_indices = _build_group_indices(
         df_model, ["sex", "age_class_license", "license"])
     combinations = list(itertools.product(unique_sexes, license_age_classes))
@@ -284,7 +455,10 @@ def execute(context):
         target_weight = df_licenses_country.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
 
+    selector_blocks.append((_block_start, len(selectors)))
+
     # License Kreis constraints (departement, license owners only).
+    _block_start = len(selectors)
     license_kreis_indices = _build_group_indices(
         df_model, ["departement_index", "license"])
     for departement_index in context.progress(unique_departements, total = len(unique_departements), label = "Generating license constraints per Kreis"):
@@ -295,6 +469,8 @@ def execute(context):
 
         target_weight = df_licenses_kreis.loc[f_reference, "weight"].sum()
         targets.append(target_weight)
+
+    selector_blocks.append((_block_start, len(selectors)))
 
     # Household-size constraints (commune × hh_size).
     # Adds one selector per (commune, hh_size) cell with target = persons
@@ -319,6 +495,7 @@ def execute(context):
         )
         hh_size_indices = _build_group_indices(
             df_model, ["commune_index", "hh_size"])
+        _block_start = len(selectors)
         for combination in context.progress(
             hh_combinations, total=len(hh_combinations),
             label="Generating household-size constraints",
@@ -326,6 +503,7 @@ def execute(context):
             target_weight = hh_targets.get(combination, 0.0)
             selectors.append(hh_size_indices.get(tuple(combination), _EMPTY_SELECTOR))
             targets.append(float(target_weight))
+        selector_blocks.append((_block_start, len(selectors)))
 
         # Hard zero: persons younger than ``minimum_age_one_person_household``
         # cannot live in a 1-person household.
@@ -336,6 +514,7 @@ def execute(context):
         f_model &= df_model["hh_size"] == "1"
         selectors.append(f_model)
         targets.append(0.0)
+        selector_blocks.append((len(selectors) - 1, len(selectors)))
 
     # Joint age × household-size constraints (departement × age_group × hh_size).
     # Sourced from the Kreis-level raked joint (braunschweig.ipf.joint_age_size),
@@ -360,6 +539,7 @@ def execute(context):
         dj["departement_index"] = dj["departement_index"].astype(int)
         joint_indices = _build_group_indices(
             df_model, ["departement_index", "age_group", "hh_size"])
+        _block_start = len(selectors)
         for _, row in context.progress(
             list(dj.iterrows()), total=len(dj),
             label="Generating joint age x hh_size constraints",
@@ -368,6 +548,7 @@ def execute(context):
                    row["hh_size"])
             selectors.append(joint_indices.get(key, _EMPTY_SELECTOR))
             targets.append(float(row["weight"]))
+        selector_blocks.append((_block_start, len(selectors)))
 
     # TASK-010 — optional Kreis × hh_size × employed joint margin.
     # Sourced from a long-form CSV with columns
@@ -466,6 +647,7 @@ def execute(context):
 
         emp_margin_indices = _build_group_indices(
             df_model, ["departement_index", "hh_size", "employed"])
+        _block_start = len(selectors)
         for _, row in context.progress(
             list(emp_targets_long.iterrows()),
             total=len(emp_targets_long),
@@ -474,6 +656,7 @@ def execute(context):
             key = (int(row["departement_index"]), row["hh_size"], bool(row["employed"]))
             selectors.append(emp_margin_indices.get(key, _EMPTY_SELECTOR))
             targets.append(float(row["weight"]))
+        selector_blocks.append((_block_start, len(selectors)))
 
     # Transform to index-based. Vectorised constraint groups already appended
     # ``(ascending_int64_index_array,)`` tuples (the exact representation of
@@ -484,47 +667,19 @@ def execute(context):
         s if isinstance(s, tuple) else np.nonzero(s.values)
         for s in selectors
     ]
-    
+
     # Perform IPF
-    iteration = 0
-    converged = False
     weights = df_model["weight"].values
 
     max_iterations = context.config("braunschweig.ipf.max_iterations")
     tolerance = context.config("braunschweig.ipf.tolerance")
+    batched = bool(context.config("braunschweig.ipf.batched_iteration"))
 
-    while iteration < max_iterations:
-        iteration_factors = []
-    
-        for f, target_weight in zip(selectors, targets):
-            current_weight = np.sum(weights[f])
-    
-            if current_weight > 0:
-                update_factor = target_weight / current_weight
-                weights[f] *= update_factor
-                iteration_factors.append(update_factor)
-            elif target_weight > 0:
-                # Cell has zero current weight but a positive target: this
-                # would be infeasible. Re-seed with a tiny epsilon to allow
-                # the IPF to recover. Happens with the hh-size hard zero
-                # interaction at very small communes.
-                weights[f] = 1e-9
-                iteration_factors.append(target_weight / np.sum(weights[f]))
-
-        if iteration % 50 == 0 or iteration == max_iterations - 1:
-            print(
-                "Iteration:", iteration,
-                "factors:", len(iteration_factors),
-                "mean:", np.mean(iteration_factors),
-                "min:", np.min(iteration_factors),
-                "max:", np.max(iteration_factors))
-        
-        if np.max(iteration_factors) - 1 < tolerance:
-            if np.min(iteration_factors) > 1 - tolerance:
-                converged = True
-                break
-    
-        iteration += 1
+    weights, iteration, converged, iteration_factors = run_ipf_iterations(
+        selectors, targets, weights,
+        max_iterations=max_iterations, tolerance=tolerance,
+        selector_blocks=selector_blocks, batched=batched,
+    )
 
     df_model["weight"] = weights
 
