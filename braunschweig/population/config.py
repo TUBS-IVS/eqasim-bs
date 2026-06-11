@@ -201,20 +201,3 @@ def _check_exists(
             "Missing population inputs for method "
             f"{method!r}:\n  - " + "\n  - ".join(problems)
         )
-
-
-def validate_from_context(context) -> PopulationConfig:
-    """Read + validate the population config from a synpp ``context``.
-
-    Helper for the synpp stage layer. Reads each known key via
-    ``context.config(key, default)`` into a flat dict and delegates to
-    :func:`validate_population_config`.
-    """
-    flat = {
-        KEY_METHOD: context.config(KEY_METHOD, DEFAULT_POPULATION_METHOD),
-        KEY_CELLS_1KM: context.config(KEY_CELLS_1KM, None),
-        KEY_CELLS_100M: context.config(KEY_CELLS_100M, None),
-        KEY_MID_RAW: context.config(KEY_MID_RAW, None),
-        KEY_OPEN_SEED: context.config(KEY_OPEN_SEED, None),
-    }
-    return validate_population_config(flat)
