@@ -616,11 +616,14 @@ def build_comparisons(eqa: dict, ms: dict, mid: dict) -> dict[str, Any]:
 def assemble_run_record(
     label: str,
     output_dir: Path,
-    sim_cache: Path,
+    sim_cache: Path | None,
     sample_rate: float | None,
     notes: str = "",
 ) -> dict[str, Any]:
-    sim_output = _find_sim_output(sim_cache)
+    # sim_cache may be None for a synthesis-only run (no MATSim). In that case
+    # there is no simulation_output and the MATSim metrics stay "available: False",
+    # so the MATSim-dependent dashboard tabs skip (no silent failure).
+    sim_output = _find_sim_output(sim_cache) if sim_cache is not None else None
     eqa = metrics_eqasim(output_dir, sample_rate)
     ms = metrics_matsim(sim_output) if sim_output else {"available": False}
     mid = load_mid_reference()

@@ -111,3 +111,11 @@ def test_main_skips_population_validation_when_disabled(tmp_path, monkeypatch):
 
     assert rc == 0
     assert "pop" not in called, "population validation must NOT be called when disabled"
+
+
+def test_full_analysis_simwrapper_flag_default_on():
+    from braunschweig.analysis.run_full_analysis import _parse_args
+    ns = _parse_args(["--output-dir", "x", "--sim-cache", "y"])
+    assert ns.simwrapper is True
+    ns2 = _parse_args(["--output-dir", "x", "--sim-cache", "y", "--no-simwrapper"])
+    assert ns2.simwrapper is False

@@ -9,9 +9,14 @@ working_directory: eqasim-data/cache_bs
 run:
   - synthesis.output
   - matsim.output
+  - braunschweig.analysis.simwrapper_export    # auto-write SimWrapper dashboard into <output_path>/simwrapper/
 
 config:
   processes: 8
+
+  # SimWrapper dashboard: this run includes MATSim (matsim.output), so include the
+  # MATSim tabs (mode share, OD, convergence, ...) next to the synthesis tabs.
+  simwrapper_include_matsim: true
 
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
   hts: entd
