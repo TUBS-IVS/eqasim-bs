@@ -50,12 +50,21 @@ CONTRACT = [
 # and the MiD school-distance calibration).
 DETOUR_FACTOR = 1.3
 
-def _assert_time_bound(table, *, max_seconds=MAX_PLAN_TIME_SECONDS):
+# Maximum forward shift of the per-person departure-time jitter (interval is
+# min(1800, first_departure), offset in [-interval, +interval)). The PlanValidator
+# enforces MAX_PLAN_TIME_SECONDS BEFORE the jitter, so a chain ending just below
+# the bound may legitimately cross it by up to this margin after jittering; the
+# post-jitter backstop therefore asserts against bound + margin.
+JITTER_MAX_SECONDS = 1800.0
+
+
+def _assert_time_bound(table, *, max_seconds=MAX_PLAN_TIME_SECONDS + JITTER_MAX_SECONDS):
     for col in ("departure_time", "arrival_time"):
         n_bad = int((table[col] > max_seconds).sum())
         assert n_bad == 0, (
             f"[trips_stage] {n_bad} rows have {col} exceeding {max_seconds}s "
-            f"(~{max_seconds/3600:.0f}h); coded times must be NaN'd + resampled.")
+            f"(~{max_seconds/3600:.1f}h, = {MAX_PLAN_TIME_SECONDS}s validator bound "
+            f"+ {JITTER_MAX_SECONDS}s jitter margin); coded times must be NaN'd + resampled.")
 
 
 def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
