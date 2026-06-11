@@ -12,6 +12,8 @@ coordinates (``braunschweig.popsim.handoff``) are layered on top.
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 import pandas as pd
 
@@ -387,18 +389,23 @@ def build_persons(
         PT subscription). Defaults to ``np.random.RandomState(0)`` for backward
         compatibility; the calling stage should pass the pipeline's seeded rng.
     attribute_mapper:
-        Optional callable with the same signature as
-        ``map_mid_person_attributes(persons, households, *, donor_col, rng)``
-        that maps donor-survey attributes to the eqasim schema columns.
+        Optional callable with the signature
+        ``mapper(persons, households, *, rng)`` that maps donor-survey
+        attributes to the eqasim schema columns.
         When ``None`` (the default), ``map_mid_person_attributes`` is used
-        and the result is byte-identical to the pre-pluggable behaviour.
-        The popsim_open stage passes ``source.map_person_attributes`` here so
+        (with ``donor_col`` bound via ``functools.partial``) and the result is
+        byte-identical to the pre-pluggable behaviour.
+        The popsim stage passes ``source.map_person_attributes`` here so
         that the ENTD and MiD workflows share the same expand + zone derivation
         path and differ only in attribute mapping.
 
-        The mapper must return ``(persons_frame, pseudonym_map_or_None)``.
-        If it returns a single DataFrame (no pseudonym map), ``build_persons``
-        wraps it with an empty pseudonym map automatically.
+        Contract: EVERY mapper must return the 2-tuple
+        ``(persons_frame, pseudonym_map)``.  The pseudonym map may be empty
+        (open-data sources like ENTD that need no surrogates) but must be
+        explicit.  A non-tuple return raises :class:`TypeError` -- silently
+        substituting an empty map would lose the re-linking map for a
+        pseudonymisation-required source (the file would still be written,
+        just empty: "it ran").
     pseudonymise:
         When ``True`` (default, MiD path), the default ``map_mid_person_attributes``
         mapper calls :func:`assign_donor_surrogates` internally to replace the
@@ -464,38 +471,32 @@ def build_persons(
     # Format matches the default IPF producer exactly -- see derive_zone_ids docstring.
     persons = derive_zone_ids(persons)
 
-    # Apply the attribute-mapping sequence. The default mapper is
-    # map_mid_person_attributes (MiD path, byte-identical to all prior versions).
-    # An alternative mapper (e.g. EntdSource.map_person_attributes) may be
-    # supplied by the popsim_open stage.
-    effective_mapper = attribute_mapper if attribute_mapper is not None else map_mid_person_attributes
+    # Apply the attribute-mapping sequence through ONE unified signature
+    # mapper(persons, households, *, rng). The default mapper is
+    # map_mid_person_attributes (MiD path, byte-identical to all prior versions);
+    # the MiD-specific donor_col is bound here via functools.partial so the call
+    # site is identical for every mapper. An alternative mapper (e.g.
+    # EntdSource.map_person_attributes) may be supplied by the popsim stage.
+    # INKAR scaling is applied AFTER this call (see below), not inside the mapper.
+    effective_mapper = (
+        attribute_mapper
+        if attribute_mapper is not None
+        else functools.partial(map_mid_person_attributes, donor_col=donor_col)
+    )
+    result = effective_mapper(persons, mid_households, rng=rng)
 
-    if attribute_mapper is None:
-        # Default MiD mapper (pseudonymise=True): pass donor_col.
-        # assign_donor_surrogates is called inside map_mid_person_attributes, so the
-        # returned pseudonym_map is populated.
-        # INKAR scaling is applied AFTER this call (see below), not inside the mapper.
-        result = effective_mapper(
-            persons, mid_households, donor_col=donor_col, rng=rng,
+    # Contract: every mapper returns (persons, pseudonym_map); the map may be
+    # empty (open-data sources) but must be explicit. Silently substituting an
+    # empty map here would lose the re-linking map for a pseudonymisation-
+    # required source (the file would still be written, just empty: "it ran").
+    if type(result) is not tuple or len(result) != 2:
+        raise TypeError(
+            "[popsim.assembly] attribute_mapper must return (persons, pseudonym_map) "
+            "-- the pseudonym map may be empty but must be explicit, so a "
+            "pseudonymisation-required source can never silently lose it. "
+            f"Got {type(result).__name__} from {getattr(effective_mapper, '__name__', effective_mapper)!r}."
         )
-    else:
-        # Alternative mapper (e.g. EntdSource, pseudonymise=False): does not use the
-        # MiD-specific donor_col argument; calls the PopsimSource protocol signature
-        # map_person_attributes(persons, households, *, rng).  The mapper sets
-        # source_* directly to the open ENTD ids -- no surrogate mapping is performed.
-        # INKAR scaling is applied AFTER this call (see below), not inside the mapper.
-        result = effective_mapper(persons, mid_households, rng=rng)
-
-    # The mapper returns either (persons, pseudonym_map) or just persons.
-    # Handle both forms so EntdSource (no pseudonym map) works without
-    # the caller needing to know which form was returned.
-    if isinstance(result, tuple):
-        persons, donor_map = result
-    else:
-        persons = result
-        donor_map = pd.DataFrame(
-            columns=["source_person_id", "source_household_id", "H_ID", "P_ID"]
-        )
+    persons, donor_map = result
 
     # --- INKAR per-Kreis income scaling (shared, applied to ALL sources) --------
     # Replicates braunschweig.synthesis.population.enriched._apply_inkar_income_scale:

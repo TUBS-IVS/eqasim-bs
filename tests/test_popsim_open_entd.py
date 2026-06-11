@@ -166,7 +166,7 @@ def test_entd_map_attributes_emits_required_schema():
     hh = _entd_households()
     p = _entd_persons()
     rng = np.random.RandomState(42)
-    result = src.map_person_attributes(p, hh, rng=rng)
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=rng)
 
     # All required columns except is_urban_resident (added by build_persons).
     required_here = [
@@ -200,7 +200,7 @@ def test_entd_car_availability_derived_correctly():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # Household 10: 1 car, adults = persons age>=18: person 100 (age 40) -> 1 adult.
     # derive_car_availability(1, 1) = "all"
@@ -219,7 +219,7 @@ def test_entd_age_range_cut_correctly():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # age 10 -> primary_school (bin (-1, 10])
     assert (result[result["age"] == 10]["age_range"] == "primary_school").all()
@@ -247,7 +247,7 @@ def test_entd_high_income_placeholder_and_eur_midpoint():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # household_income_eur must be present and set to the raw ENTD midpoint.
     assert "household_income_eur" in result.columns, (
@@ -275,7 +275,7 @@ def test_entd_household_income_mapped():
     valid_labels = set(INCOME_CLASS_BY_GROUP.values())
 
     src = EntdSource()
-    result = src.map_person_attributes(
+    result, _pseudonym_map = src.map_person_attributes(
         _entd_persons(), _entd_households(), rng=np.random.RandomState(0)
     )
     invalid = ~result["household_income"].isin(valid_labels)
@@ -293,7 +293,7 @@ def test_entd_pt_subscription_type_defaults():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # Persons with has_pt_subscription=True
     sub_true = result[result["has_pt_subscription"] == True]["pt_subscription_type"]
@@ -316,7 +316,7 @@ def test_entd_source_provenance_ids_equal_donor_ids():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # source_person_id must match the ENTD person_id on the joined result
     pd.testing.assert_series_equal(
@@ -341,7 +341,7 @@ def test_entd_household_size_joined_from_households():
     src = EntdSource()
     hh = _entd_households()
     p = _entd_persons()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, _pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
     # HH 10 has household_size=2 -> both persons (age 40, 10) must have 2
     hh10_sizes = result[result["source_household_id"] == 10]["household_size"]

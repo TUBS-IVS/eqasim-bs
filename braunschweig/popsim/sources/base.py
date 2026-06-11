@@ -21,13 +21,19 @@ load_donor(data_dir) -> (households, persons, trips):
     the donor household table, the donor person table, and the donor trip table
     (MiD Wege / ENTD Deplacements).  The caller owns the returned objects.
 
-map_person_attributes(persons, households, *, rng) -> persons:
+map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
     Map survey-specific person and household columns to the eqasim synthesis
     schema attributes (``employed``, ``has_license``, ``economic_status``, …).
     ``persons`` is the pre-expanded frame produced by
     ``braunschweig.popsim.expand`` (demographic mapping already applied).
     ``households`` is the donor household table from ``load_donor``.
-    Returns the persons frame with all attribute columns appended.
+    Returns the 2-tuple ``(persons, pseudonym_map)``: the persons frame with
+    all attribute columns appended, and the pseudonym map
+    (``[source_person_id, source_household_id, H_ID, P_ID]``) for local-only
+    re-linking of pseudonymised donor ids.  The map may be EMPTY (open-data
+    sources like ENTD) but must always be returned explicitly --
+    ``assembly.build_persons`` raises :class:`TypeError` on a non-tuple return
+    so a pseudonymisation-required source can never silently lose its map.
 
 build_trips(persons, donor_trips, *, random_seed) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
@@ -84,7 +90,7 @@ class PopsimSource(Protocol):
         households: pd.DataFrame,
         *,
         rng,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Map donor attributes to the eqasim synthesis schema.
 
         Parameters
@@ -99,8 +105,12 @@ class PopsimSource(Protocol):
 
         Returns
         -------
-        pd.DataFrame
-            persons frame with all attribute columns appended.
+        tuple[pd.DataFrame, pd.DataFrame]
+            ``(persons, pseudonym_map)``: the persons frame with all attribute
+            columns appended, and the pseudonym map
+            (``[source_person_id, source_household_id, H_ID, P_ID]``).
+            The map may be empty (open-data sources) but must be explicit;
+            ``assembly.build_persons`` raises TypeError on a non-tuple return.
         """
         ...
 

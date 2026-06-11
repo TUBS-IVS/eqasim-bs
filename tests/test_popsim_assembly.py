@@ -78,3 +78,35 @@ def test_build_persons_car_availability_uses_adult_count():
 def test_build_persons_carries_home_cell():
     persons, _map = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
     assert set(persons.loc[persons["household_id"] == "A_1_0", "ZENSUS100m"]) == {"A"}
+
+
+# ---------------------------------------------------------------------------
+# Mapper contract: every attribute_mapper returns (persons, pseudonym_map)
+# ---------------------------------------------------------------------------
+
+def test_mapper_contract_no_isinstance_sniff():
+    """build_persons must not sniff the mapper return value with
+    ``isinstance(result, tuple)`` and silently substitute an empty pseudonym
+    map -- that would lose the re-linking map for a pseudonymisation-required
+    source (the file would still be written, just empty: "it ran")."""
+    import inspect
+
+    src = inspect.getsource(assembly.build_persons)
+    assert "isinstance(result, tuple)" not in src
+
+
+def test_mapper_returning_frame_only_raises():
+    """A mapper that returns only a frame (no pseudonym map) must raise, not
+    silently substitute an empty map (which would lose re-linking for a
+    pseudonymisation-required source)."""
+    import pytest
+
+    def bad_mapper(persons, households, *, rng):
+        return persons  # missing the pseudonym map
+
+    with pytest.raises(TypeError, match="pseudonym"):
+        assembly.build_persons(
+            _merged(), _mid_households(), _mid_persons(),
+            attribute_mapper=bad_mapper, pseudonymise=False,
+            inkar_scale=None,
+        )

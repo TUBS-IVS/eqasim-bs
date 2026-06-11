@@ -207,7 +207,8 @@ def _build_popsim_open_persons():
     build_persons.
     """
     src = EntdSource()
-    persons = src.map_person_attributes(
+    # Unified mapper contract: (persons, pseudonym_map); ENTD's map is empty.
+    persons, _pseudonym_map = src.map_person_attributes(
         _entd_persons(), _entd_households(), rng=np.random.RandomState(42)
     )
     # Simulate the build_persons is_urban_resident derivation (all in BS core city).

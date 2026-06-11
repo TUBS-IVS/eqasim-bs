@@ -397,7 +397,11 @@ def _minimal_entd_mapper(source_id_100, source_id_200):
         # Schema requires these but schema.validate_person_columns checks columns only.
         out["economic_status"] = "medium"
         out["household_income_eur"] = 2300.0
-        return out  # single DataFrame (no pseudonym map)
+        # Unified mapper contract: (persons, pseudonym_map); empty map for open ids.
+        empty_map = pd.DataFrame(
+            columns=["source_person_id", "source_household_id", "H_ID", "P_ID"]
+        )
+        return out, empty_map
     return _mapper
 
 
@@ -521,13 +525,13 @@ def test_build_persons_pseudonymise_false_with_entd_source_open_ids():
     Note: after expand.expand_to_persons the household_id column is the SYNTHETIC
     household id (a string like "A_10_0"), not the ENTD integer.
     EntdSource.map_person_attributes must join on this synthetic id.
-    This test therefore uses the simple custom mapper (like the other tests) but
-    verifies that the EntdSource returns a single DataFrame (no pseudonym_map),
-    confirming the no-pseudonymisation contract.
+    This test verifies that the EntdSource returns the unified mapper contract
+    (persons, pseudonym_map) with an EMPTY pseudonym map, confirming the
+    no-pseudonymisation behaviour for open ENTD data.
     """
     from braunschweig.popsim.sources.entd import EntdSource
 
-    # Verify EntdSource.map_person_attributes returns a DataFrame (not a tuple).
+    # Verify EntdSource.map_person_attributes returns (persons, empty pseudonym map).
     # Use a minimal persons frame that mimics the expand output.
     hh = pd.DataFrame({
         "household_id":       ["syn_hh_1"],
@@ -555,12 +559,17 @@ def test_build_persons_pseudonymise_false_with_entd_source_open_ids():
     })
 
     src = EntdSource()
-    result = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
+    result, pseudonym_map = src.map_person_attributes(p, hh, rng=np.random.RandomState(0))
 
-    # EntdSource returns a single DataFrame (no pseudonym map tuple).
+    # Unified mapper contract: (persons, pseudonym_map); the map is EMPTY for
+    # ENTD (open data, no surrogates) but must be explicit.
     assert isinstance(result, pd.DataFrame), (
-        "EntdSource.map_person_attributes must return a DataFrame (no pseudonym map), "
+        "EntdSource.map_person_attributes must return a persons DataFrame first, "
         f"got {type(result).__name__}"
+    )
+    assert isinstance(pseudonym_map, pd.DataFrame) and len(pseudonym_map) == 0, (
+        "EntdSource.map_person_attributes must return an explicit EMPTY pseudonym map "
+        "(open data, no surrogates)"
     )
 
     # source_person_id must equal person_id (open ENTD data, no surrogate).

@@ -77,7 +77,7 @@ class MidSource:
         households: pd.DataFrame,
         *,
         rng=None,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Map MiD donor attributes to the eqasim synthesis schema.
 
         Delegates to :func:`braunschweig.popsim.assembly.map_mid_person_attributes`,
@@ -97,17 +97,17 @@ class MidSource:
 
         Returns
         -------
-        pd.DataFrame
+        tuple[pd.DataFrame, pd.DataFrame]
+            ``(persons, pseudonym_map)`` per the unified mapper contract: the
             persons frame with all eqasim attribute columns appended (including
             ``source_person_id`` / ``source_household_id`` surrogates and
-            ``weight = 1.0``).  The pseudonym map is discarded here because it
-            is an internal artefact; callers that need it should call
-            ``assembly.map_mid_person_attributes`` directly.
+            ``weight = 1.0``), and the POPULATED pseudonym map
+            (``[source_person_id, source_household_id, H_ID, P_ID]``) required
+            for local-only re-linking of the pseudonymised MiD donor ids.
+            Discarding the map here would silently break the re-linking file
+            written by the stage (data-protection requirement).
         """
-        persons_out, _pseudonym_map = map_mid_person_attributes(
-            persons, households, rng=rng
-        )
-        return persons_out
+        return map_mid_person_attributes(persons, households, rng=rng)
 
     def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
         """Return the per-household stratum label for donor stratification.

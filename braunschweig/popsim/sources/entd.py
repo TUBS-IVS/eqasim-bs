@@ -535,7 +535,7 @@ class EntdSource:
         households: pd.DataFrame,
         *,
         rng=None,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Map ENTD canonical columns to the eqasim synthesis schema.
 
         This mapper is called by :func:`braunschweig.popsim.assembly.build_persons`
@@ -574,10 +574,15 @@ class EntdSource:
 
         Returns
         -------
-        pd.DataFrame
-            persons frame extended with all required schema columns except
-            ``is_urban_resident`` (added later by ``build_persons`` from the
-            home commune).
+        tuple[pd.DataFrame, pd.DataFrame]
+            ``(persons, pseudonym_map)`` per the unified mapper contract.
+            ``persons`` is the frame extended with all required schema columns
+            except ``is_urban_resident`` (added later by ``build_persons`` from
+            the home commune).  ``pseudonym_map`` is EMPTY (columns
+            ``[source_person_id, source_household_id, H_ID, P_ID]``) because
+            ENTD is open data and no surrogate ids are assigned; it is explicit
+            so ``build_persons`` can enforce the tuple contract instead of
+            silently substituting an empty map.
 
         Notes
         -----
@@ -779,7 +784,14 @@ class EntdSource:
             int((~out["has_pt_subscription"]).sum()),
         )
 
-        return out
+        # Unified mapper contract: return (persons, pseudonym_map). ENTD is open
+        # data, so no surrogates are assigned and the map is empty -- but it is
+        # returned EXPLICITLY so build_persons can enforce the tuple contract
+        # (a pseudonymisation-required source can never silently lose its map).
+        empty_pseudonym_map = pd.DataFrame(
+            columns=["source_person_id", "source_household_id", "H_ID", "P_ID"]
+        )
+        return out, empty_pseudonym_map
 
     def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
         """Return the per-household stratum label for donor stratification.

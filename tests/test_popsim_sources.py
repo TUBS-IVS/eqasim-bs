@@ -110,7 +110,7 @@ def test_mid_source_map_person_attributes_yields_same_columns_as_build_persons()
     persons_demog = expand.map_demographics(persons_expanded)
     persons_zoned = assembly.derive_zone_ids(persons_demog)
 
-    result = MidSource().map_person_attributes(
+    result, _pseudonym_map = MidSource().map_person_attributes(
         persons_zoned, mid_hh, rng=np.random.RandomState(42)
     )
 
@@ -164,7 +164,7 @@ def test_mid_source_map_person_attributes_produces_same_result_as_build_persons(
     persons_demog = expand.map_demographics(persons_expanded)
     persons_zoned = assembly.derive_zone_ids(persons_demog)
 
-    result = MidSource().map_person_attributes(
+    result, _pseudonym_map = MidSource().map_person_attributes(
         persons_zoned, mid_hh.copy(), rng=np.random.RandomState(7)
     )
 
@@ -186,6 +186,35 @@ def test_mid_source_map_person_attributes_produces_same_result_as_build_persons(
             check_names=False,
             obj=f"column '{col}' differs between build_persons and MidSource.map_person_attributes",
         )
+
+
+def test_mid_source_mapper_via_build_persons_keeps_pseudonym_map_populated():
+    """build_persons with attribute_mapper=MidSource().map_person_attributes
+    (the exact wiring of stage.py for source='mid') must return the POPULATED
+    pseudonym map -- not a silently substituted empty one.
+
+    This pins the empty-pseudonym_map.csv bug: MidSource.map_person_attributes
+    used to discard the map, build_persons sniffed the non-tuple return and
+    substituted an empty map, and stage.py wrote an empty (useless) re-linking
+    file for the pseudonymisation-REQUIRED MiD source.
+    """
+    from braunschweig.popsim import assembly
+
+    persons, pseudonym_map = assembly.build_persons(
+        _merged_households(), _mid_households(), _mid_persons(),
+        rng=np.random.RandomState(7),
+        attribute_mapper=MidSource().map_person_attributes,
+        pseudonymise=True,
+    )
+    assert len(pseudonym_map) > 0, (
+        "pseudonym map is empty: the MidSource mapper return was silently "
+        "replaced by an empty map (re-linking lost)"
+    )
+    # The map must re-link every surrogate on the persons frame to a raw donor id.
+    assert set(persons["source_person_id"]) <= set(pseudonym_map["source_person_id"])
+    assert {"source_person_id", "source_household_id", "H_ID", "P_ID"} <= set(
+        pseudonym_map.columns
+    )
 
 
 # ---------------------------------------------------------------------------
