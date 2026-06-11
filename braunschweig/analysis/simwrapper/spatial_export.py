@@ -30,6 +30,7 @@ import pandas as pd
 if TYPE_CHECKING:
     import geopandas as gpd
 
+from braunschweig.analysis.freight_filter import drop_freight_agents
 from braunschweig.analysis.simwrapper import writers as w
 
 LOGGER = logging.getLogger("braunschweig.analysis.simwrapper.spatial")
@@ -749,6 +750,7 @@ def emit_spatial_demand(
         return None
 
     df = pd.read_csv(trips_path, sep=";")
+    df = drop_freight_agents(df, label="spatial_demand")
     xy = _trips_xy(df)
     LOGGER.info("[spatial_demand] %d trips after filtering (mode!=outside, origin_x notna)", len(xy))
 
@@ -1197,6 +1199,7 @@ def emit_behaviour(
 
     if trips_path is not None:
         df = pd.read_csv(trips_path, sep=";")
+        df = drop_freight_agents(df, label="behaviour")
         ptm = _purpose_to_mode(df)
         LOGGER.info(
             "[behaviour] sankey: %d (purpose, mode) pairs from %d trips",
