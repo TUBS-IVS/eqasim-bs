@@ -58,6 +58,31 @@ floor 5 min/activity, logged). Stage B: 63/63 matched, 0 home-only.
 - sex is binary for MATSim; `sex_raw` (male/female/diverse/not_specified)
   retained in the synthesis output.
 
+## Mobility quota (share of persons leaving home) vs MiD 2023 P36_1
+
+The MiD P36_1 ZGB reference (committed `mid2023_P36_1.csv`) is ~80 % mobile /
+19 % immobile / 1 % unknown. After the popsim_open immobility fix (commit
+76586ef: the diary-donor matching pool now includes immobile diary respondents,
+and `is_kish` distinguishes genuinely-immobile diary persons from non-diary
+members — `is_kish` was being dropped at `data/hts/entd/filtered.py:41`, now
+retained as an ENTD-specific extra):
+
+| workflow | mobile (1 % smoke) | note |
+|---|---|---|
+| simple_ipf_open | 86.7 % | ENTD statistical matching (carries immobile donors) |
+| popsim_mid | 76.4 % | immobile persons fall out of the inner Wege join (correct) |
+| popsim_open | 100 % -> **85.4 %** | was forcing every non-diary person onto a mobile donor |
+
+All three are now in the realistic band around the MiD ~80 %. The committed
+per-Kreis comparison lives in
+`braunschweig.analysis.population_validation.trip_coherence` (mobility_rate vs
+P36_1, already wired into run_population_validation); `validate_three_cases.py`
+surfaces the raw share for the quick smoke read. NOTE: reproducing the ENTD/MiD
+donor mobility mix is not the same as calibrating to the P36_1 quota — if a
+future validation shows a systematic gap, an age-group donor reweighting toward
+P36_1 would be the calibration lever (not a PopulationSim control: mobility is
+behaviour, carried on the trips, not a demographic count margin).
+
 ## Known remaining (next wave: PopulationSim controls)
 
 - employed_share and high_income_share for popsim_mid still reflect the MiD
