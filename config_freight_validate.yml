@@ -1,15 +1,23 @@
-## Synthetic population pipeline for the Braunschweig region (ZGB-8, Niedersachsen).
-## Sampling rate: 1% (smoke / dev iteration).
-## Forked stages live in `braunschweig/` and `eqasim_common/`; the remaining
-## bavaria.* stages still referenced are inherited utilities pending Phase 4.
-## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+## Freight-only validation config: runs JUST the german-wide-freight extraction
+## + trips stages (braunschweig.freight.trips and its dependencies) against the
+## shared cache_bs working directory. Use this to (re-)build or inspect the
+## ZGB freight demand without touching the rest of the pipeline:
+##
+##   python -m synpp config_freight_validate.yml        (eqasim conda env)
+##
+## Outputs land in the stage caches: freight_extraction_summary.csv (per-category
+## counts incl. transit/through-traffic) and freight_trips.gpkg (inspectable O/D
+## points). Derived from config_local_braunschweig.yml -- keep the config: block
+## value-identical to it so the synpp cache is SHARED with the real 1% run (the
+## expensive ~45 min routing is reused; do not change java_memory etc. here
+## without changing it there).
+## Requires the local-only v3 inputs (scripts/download_german_wide_freight.py)
+## and maven_binary for the non-interactive Java build.
 
 working_directory: eqasim-data/cache_bs
 
 run:
-  - synthesis.output
-  - matsim.output
-  - braunschweig.analysis.simwrapper_export    # auto-write SimWrapper dashboard into <output_path>/simwrapper/
+  - braunschweig.freight.trips
 
 config:
   processes: 8
@@ -35,8 +43,6 @@ config:
   freight_truck_max_velocity_kmh: 80.0
 
   data_path: eqasim-data/data
-  # Maven for the non-interactive Java build (mvn is not on PATH for
-  # background/headless runs; matsim.runtime.maven resolves via shutil.which).
   maven_binary: C:/Users/bienzeisler/tools/apache-maven-3.9.9/bin/mvn.cmd
   output_path: eqasim-data/output_bs
   output_prefix: braunschweig_1pct_
