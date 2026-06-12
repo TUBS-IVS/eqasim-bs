@@ -1,28 +1,56 @@
-## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 10% sample
-## incl. MATSim outputs. Derived from config_local_braunschweig.yml; only the
-## sampling rate, the output prefix/folder and the `run` section differ.
-## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+## Freight-only validation config: runs JUST the german-wide-freight extraction
+## + trips stages (braunschweig.freight.trips and its dependencies) against the
+## shared cache_bs working directory. Use this to (re-)build or inspect the
+## ZGB freight demand without touching the rest of the pipeline:
+##
+##   python -m synpp config_freight_validate.yml        (eqasim conda env)
+##
+## Outputs land in the stage caches: freight_extraction_summary.csv (per-category
+## counts incl. transit/through-traffic) and freight_trips.gpkg (inspectable O/D
+## points). Derived from config_local_braunschweig.yml -- keep the config: block
+## value-identical to it so the synpp cache is SHARED with the real 1% run (the
+## expensive ~45 min routing is reused; do not change java_memory etc. here
+## without changing it there).
+## Requires the local-only v3 inputs (scripts/download_german_wide_freight.py)
+## and maven_binary for the non-interactive Java build.
 
-working_directory: eqasim-data/cache_bs_10pct
+working_directory: eqasim-data/cache_bs
 
 run:
-  - synthesis.output
-  - matsim.output
+  - braunschweig.freight.trips
 
 config:
   processes: 8
 
+  # SimWrapper dashboard: this run includes MATSim (matsim.output), so include the
+  # MATSim tabs (mode share, OD, convergence, ...) next to the synthesis tabs.
+  simwrapper_include_matsim: true
+
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
   hts: entd
 
-  sampling_rate: 0.1
+  sampling_rate: 0.01
   random_seed: 1234
 
-  freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
+  # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022,
+  # doi:10.1016/j.procs.2022.03.080). Inputs are local-only; fetch with
+  # scripts/download_german_wide_freight.py. Agents are sampled at
+  # freight_sampling_rate (null = sampling_rate) and merged as subpopulation
+  # "freight", mode "truck".
+  freight_enabled: true
+  freight_sampling_rate: null
+  freight_truck_pce: 3.5
+  freight_truck_max_velocity_kmh: 80.0
 
   data_path: eqasim-data/data
-  output_path: eqasim-data/output_bs_10pct
-  output_prefix: braunschweig_10pct_
+  maven_binary: C:/Users/bienzeisler/tools/apache-maven-3.9.9/bin/mvn.cmd
+  output_path: eqasim-data/output_bs
+  output_prefix: braunschweig_1pct_
+
+  # Build our editable Java project (eqasim-java-bs braunschweig module) instead
+  # of cloning upstream. Required because the freight injection (default-on, see
+  # below) and the Braunschweig mode-choice classes live only in this fork.
+  eqasim_source_path: ../eqasim-java-bs
 
   java_memory: 32G
 
@@ -33,37 +61,54 @@ config:
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- R-A: Gravity calibration (TASK-001).
-  # Poisson-GLM MLE on BA Pendleratlas (939 ZGB pairs) → β=−0.065
-  # (log-L +82 % vs default −0.18). Note: braunschweig.gravity.model
-  # post-IPFs Gemeinde flows against BA Kreis totals, so β affects only
-  # sub-Kreis distribution. commute_distance KPI is MiD-P13-overridden
-  # (see commute_distance.py) and therefore independent of β.
+  # Poisson-GLM MLE on BA Pendleratlas (α_O+γ_D+β d_ij; 939 ZGB pairs)
+  # → β=−0.065 ± 0.0002, log-L +82 % vs default −0.18.
+  # Note: braunschweig.gravity.model post-IPFs Gemeinde flows against
+  # BA Kreis totals, so β affects only sub-Kreis distribution
+  # (commute_distance KPI is MiD-P13-overridden, see commute_distance.py).
   gravity_slope: -0.065
   gravity_constant: -2.4
   gravity_diagonal: 1.0
+
+  # --- R-A.2: Per-RegioStaR-7 slope (TASK-RS-001).
+  # Origin-Gemeinde distance-decay slope keyed by the BMV/BBSR RegioStaR-7
+  # class (71..77); origins whose code is not listed fall back to
+  # ``gravity_slope`` above. Values are an identified full-panel Poisson GLM
+  # (origin FE + dest FE + RS7 x distance) on the 225 km ring around ZGB
+  # (141 anchor Kreise), rescaled so the flow-weighted mean over the ZGB codes
+  # equals ``gravity_slope``. Direction: urban (72) flatter -> longer commutes,
+  # rural region (75-77) steeper -> shorter. See CLAUDE.md "Gravity model" and
+  # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
   gravity_slope_by_regiostar7:
-    # Identified full-panel GLM on the 225 km ring; see
-    # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
-    72: -0.0558
-    73: -0.0638
-    74: -0.0640
-    75: -0.0704
-    76: -0.0719
-    77: -0.0667
+    72: -0.0558   # Regiopole / Grossstadt
+    73: -0.0638   # Mittelstadt / staedt. Raum
+    74: -0.0640   # Kleinstadt / doerfl. Raum (Stadtregion)
+    75: -0.0704   # Zentrale Stadt (laendlich)
+    76: -0.0719   # Mittelstadt (laendlich)
+    77: -0.0667   # Kleinstadt / doerfl. (laendlich)
 
   # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
-  # Adds ``hh_size`` as a fifth IPF margin so the synthetic population
-  # reproduces the strong urban–rural gradient in 1P-HH share that
-  # 5000H-2001 alone (regions-aggregated) cannot capture.
   braunschweig.ipf.use_household_size_margin: true
 
+  # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
+  # Draws one Familien-Haushaltstyp per household within its
+  # (commune_id, hh_size) bucket. No cell-explosion in the IPF itself.
+  braunschweig.ipf.use_household_type_margin: true
+
   # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26) ----------------------
+  # 4-way IPF (sex × age × hh_size × employment) with Dirichlet
+  # smoothing. Outer-product proxy when no external CSV is supplied.
   braunschweig.ipf.use_employment_margin: true
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs
-  vrb_stations_path: vrb/stations.json
   osm_path: osm
+
+  # VRB tariff zones (Verkehrsverbund Region Braunschweig).
+  # Built by scripts/build_vrb_stations_json.py from GTFS stops + VRB Waben
+  # polygons; consumed by braunschweig.data.vrb.zones (analogue of the
+  # MVG stage). See DOWNLOAD_CHECKLIST_BS.md entry D3.
+  vrb_stations_path: vrb/stations.json
 
   # --- Braunschweig region scope -----------------------------------------
   # Zweckverband Großraum Braunschweig (ZGB) — 8 Kreise (~1.13 M EW),
@@ -110,7 +155,9 @@ config:
   braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
   braunschweig.inkar_year: latest
 
-  # TASK-003: Density-weighted home sampling (Zensus 2022 100m).
+  # TASK-003: Density-weighted home sampling. Multiplies per-building
+  # area weight by spatially-joined Zensus 2022 100m population, then
+  # normalises per Gemeinde so inter-Gemeinde totals stay pinned.
   braunschweig.home_density_weighting: true
 
   # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
@@ -123,6 +170,40 @@ config:
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
+  # --- Feature flags -----------------------------------------------------------
+  # OFF (false, default): education locations come from the OSM per-person
+  # sampler (eqasim_common.locations.synthesis.education) -> byte-identical to
+  # the legacy replacement stage. ON: capacity-constrained gravity model
+  # (braunschweig.synthesis.locations.education_gravity, NDS school register).
+  education_gravity_enabled: false
+
+  # Per-(RegioStaR-7, level) education decay slopes, calibrated against MiD 2023
+  # Tabelle 43 (school-trip length by raumtyp x age group) on the 25% synthesis
+  # via scripts/calibrate_education_slopes.py (detour factor 1.3). Unset (None)
+  # -> fall back to the scalar education_gravity_slope_by_level. Re-run the
+  # calibration script and paste its YAML to update; do not hand-tune.
+  # Note: sekundar_2 rural cells (74/77) sit at the -3.0 floor (sparse rural
+  # Oberstufe/BBS -> nearest school already ~10 km; see calibration_summary.md).
+  education_gravity_slope_by_level_rs7:
+    kindergarten: {72: -3.0000, 73: -2.0251, 74: -3.0000, 75: -3.0000, 76: -0.5167, 77: -2.8138}
+    grundschule: {72: -1.3354, 73: -0.6835, 74: -0.4507, 75: -1.0793, 76: -0.1248, 77: -0.2412}
+    sekundar_1: {72: -0.4944, 73: -0.2383, 74: -0.4303, 75: -0.5700, 76: -0.1568, 77: -0.1160}
+    oberstufe: {72: -1.5100, 73: -0.7650, 74: -3.0000, 75: -1.2588, 76: -1.2588, 77: -1.2588}
+    bbs: {72: -0.0350, 73: -0.0898, 74: -0.1524, 75: -0.0666, 76: -0.1346, 77: -3.0000}
+
+  # Share of upper-secondary (age 16-19) pupils assigned to berufsbildende
+  # Schulen (BBS); the rest go to academic Oberstufe. NDS enrollment ~0.681.
+  education_bbs_share: 0.681
+
+  # University (Hochschule) students (age 20+): singly-constrained distance-decay
+  # over real LSN-enrollment campus points (braunschweig.data.schools.university_
+  # facilities). Slope calibrated so the mean ZGB student commute matches the
+  # Destatis MZ 2024 Hochschule mean (~15.2 km straight-line); ~91% study locally
+  # (TU BS/Ostfalia/Clausthal/HBK), ~9% commute to Hildesheim/Hannover/Harz/
+  # Magdeburg/Goettingen.
+  education_university_slope: -0.1415
+  education_university_max_radius_km: 150.0
+
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.
@@ -134,6 +215,9 @@ aliases:
   synthesis.locations.home.locations: braunschweig.locations.home
   synthesis.locations.education: eqasim_common.locations.education
   synthesis.locations.secondary: braunschweig.locations.secondary
+  # Phase 2 (TASK-CS01, 2026-04-26): chainsolvers carla solver as a
+  # drop-in replacement for the legacy RDA secondary-location stage.
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
   # Work-locations: Bavaria ALKIS/OSM pool for ZGB-8 + one synthetic
   # workplace per external Kreis derived from BA Pendler outbound.
   # Required so ~28% of ZGB commuters can reach workplaces outside the
@@ -145,7 +229,7 @@ aliases:
   data.od.weighted: braunschweig.gravity.model
   data.spatial.iris: eqasim_common.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
-  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
   # Enriched-population stage: point directly to the Braunschweig fork so
   # synpp's single-step alias resolution picks it up (synpp.resolve_stage
   # substitutes once, so aliasing via the intermediate bavaria.* entry below

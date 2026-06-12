@@ -24,9 +24,27 @@ config:
   sampling_rate: 0.01
   random_seed: 1234
 
+  # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022,
+  # doi:10.1016/j.procs.2022.03.080). Inputs are local-only; fetch with
+  # scripts/download_german_wide_freight.py. Agents are sampled at
+  # freight_sampling_rate (null = sampling_rate) and merged as subpopulation
+  # "freight", mode "truck".
+  freight_enabled: true
+  freight_sampling_rate: null
+  freight_truck_pce: 3.5
+  freight_truck_max_velocity_kmh: 80.0
+
   data_path: eqasim-data/data
+  # Maven for the non-interactive Java build (mvn is not on PATH for
+  # background/headless runs; matsim.runtime.maven resolves via shutil.which).
+  maven_binary: C:/Users/bienzeisler/tools/apache-maven-3.9.9/bin/mvn.cmd
   output_path: eqasim-data/output_bs
   output_prefix: braunschweig_1pct_
+
+  # Build our editable Java project (eqasim-java-bs braunschweig module) instead
+  # of cloning upstream. Required because the freight injection (default-on, see
+  # below) and the Braunschweig mode-choice classes live only in this fork.
+  eqasim_source_path: ../eqasim-java-bs
 
   java_memory: 32G
 

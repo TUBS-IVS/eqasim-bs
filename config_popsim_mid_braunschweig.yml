@@ -26,6 +26,8 @@ config:
   sampling_rate: 0.01
   random_seed: 1234
 
+  freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
+
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_popsim_mid
   output_prefix: braunschweig_popsim_mid_1pct_

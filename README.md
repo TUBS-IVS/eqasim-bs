@@ -69,6 +69,13 @@ produces:
   enter through network gates / rail stations chosen by a population-gravity
   model, and are injected into the MATSim scenario as a fixed-mode
   `incommuter` subpopulation, with per-gate validation outputs.
+- **Long-haul freight injection (flag-gated, default on)** — heavy-goods-vehicle
+  traffic from the open VSP **german-wide-freight v3** model (Lu et al. 2022) is
+  classified into internal / incoming / outgoing / **through (transit)** trips by
+  routing on the German-wide network, sampled to the run's rate, and injected as
+  a fixed-mode `truck` `freight` subpopulation — so the ZGB motorways (A2, A39…)
+  carry realistic through-traffic. An inspectable `freight_trips.gpkg` is written
+  for traceability.
 - **Household vehicle fleet model (flag-gated)** — household cars are
   instantiated as a realistic fleet (KBA brand mix, HSN/TSN engine attributes,
   electric-share tilt) instead of generic default vehicles.
@@ -294,6 +301,34 @@ of these are **local-only** (never committed); the paths are configured under
 | **MiD 2023 B1 Datensatzpaket** (faktisch anonymisierte CSV: Haushalte, Personen, Wege) — `popsim_mid` only | restricted scientific-use file, BMDV / infas | `mid_raw_path` (dir with `MiD2023_{Haushalte,Personen,Wege}.csv`) |
 | **PopulationSim environment** (runs as a `uv` subprocess in its own env) | [activitysim/populationsim](https://activitysim.github.io/populationsim/) | `popsimprep_dir`, `uv_path`, `controls_path`, `settings_path` |
 
+### G. Long-haul freight inputs (only with `freight_enabled: true`, default on)
+
+The freight injection adds long-haul road freight (heavy goods vehicles) to the
+MATSim scenario from the open **VSP german-wide-freight v3** model (TU Berlin).
+Two large files are needed; they are **local-only** (gitignored) and fetched by
+a one-line script:
+
+```bash
+python scripts/download_german_wide_freight.py
+# -> eqasim-data/data/braunschweig/freight/german-wide-freight-v3/
+```
+
+| Input | Where | Target path |
+|-------|-------|-------------|
+| **german_freight.100pct.plans.xml.gz** (≈72 MB — one agent per long-haul freight trip/day) | [VSP public SVN `german-wide-freight/v3`](https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/german-wide-freight/v3/) | `braunschweig/freight/german-wide-freight-v3/german_freight.100pct.plans.xml.gz` |
+| **germany-europe-network.xml.gz** (≈61 MB — the German-European routing network, EPSG:25832) | same SVN directory | `braunschweig/freight/german-wide-freight-v3/germany-europe-network.xml.gz` |
+
+The model and data are documented in **Lu, C., Martins-Turner, K., Nagel, K.
+(2022): _Creating an agent-based long-haul freight transport model for
+Germany_. Procedia Computer Science 201, 614–620,
+[doi:10.1016/j.procs.2022.03.080](https://doi.org/10.1016/j.procs.2022.03.080)**
+(open access, CC BY-NC-ND). The demand is the BMVI _Verkehrsprognose 2030_
+NUTS-3 goods-flow forecast divided into daily truck trips (≈13 t average load)
+and calibrated against BASt heavy-goods-vehicle counts. The download script
+writes a provenance README + sha256 log next to the files; the data licence is
+the VSP/MATSim open-data licence (see the SVN directory). See
+[`CLAUDE.md`](CLAUDE.md) ("Long-haul freight injection") for the full pipeline.
+
 Licences span dl-de/by-2-0 (BKG, Statistische Ämter, BA, BBSR, BMV),
 dl-de/zero-2-0 (LGLN ALKIS/ATKIS), and ODbL 1.0 (OSM); some inputs carry
 stricter terms — check each dataset before reuse. The MiD 2023 B1 microdata is
@@ -318,6 +353,7 @@ flowchart LR
     SEC --> OUT[CSV / Parquet output]
     OUT --> MATSIM[MATSim scenario<br/>network, schedule, plans,<br/>household fleet]
     CORD[Cross-cordon commuters<br/>BA Pendleratlas + gates] --> MATSIM
+    FREIGHT[Long-haul freight<br/>german-wide-freight v3<br/>internal/in/out/transit] --> MATSIM
     MATSIM --> SW[SimWrapper dashboard]
 ```
 
@@ -397,6 +433,18 @@ behaviour is preserved unless a change is explicitly enabled:
   instantiates per-household vehicle fleets with KBA brand mix and HSN/TSN
   engine attributes, with an electric-share calibration per Kreis/Gemeinde;
   `remode_carless_car_legs` keeps plans consistent with the fleet.
+- **Long-haul freight injection (flag-gated, default on).** `freight_enabled`
+  adds heavy-goods-vehicle traffic from the open VSP **german-wide-freight v3**
+  model (Lu et al. 2022). The published matsim application-contrib tool routes
+  every freight trip on the German-wide network and classifies it internal /
+  incoming / outgoing / **through (transit)** — through-traffic is the dominant
+  share and needs real routing, not an origin/destination test. The trips are
+  written to an inspectable `freight_trips.gpkg`, sampled to `sampling_rate`
+  (seeded), and injected as a fixed-mode `truck` `freight` subpopulation
+  (`heavy_truck` vehicle type, PCE 3.5). Freight is excluded from every
+  person-travel KPI; off (`freight_enabled: false`) is byte-identical. See
+  [`CLAUDE.md`](CLAUDE.md) ("Long-haul freight injection") and section G of the
+  [Input data](#input-data--what-to-download) guide.
 - **Urban parking cost (flag-gated).** `enable_urban_parking` marks inner-city
   residents so the Java mode-choice applies parking cost inside the BS inner
   ring.

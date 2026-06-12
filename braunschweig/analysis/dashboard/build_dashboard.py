@@ -455,6 +455,8 @@ def metrics_matsim(sim_output: Path) -> dict[str, Any]:
     # eqasim_trips — distance distribution + per-mode mean km, per-purpose mean km
     et = _safe_read_csv(sim_output / "eqasim_trips.csv", sep=";")
     if et is not None and len(et):
+        from braunschweig.analysis.freight_filter import drop_freight_agents
+        et = drop_freight_agents(et, label="dashboard")
         et = et[et["routed_distance"].notna()].copy()
         # Drop cordon out-of-scope legs: "outside" is not a real transport mode but
         # the eqasim marker for the portion of a trip beyond the cordon (set by the
