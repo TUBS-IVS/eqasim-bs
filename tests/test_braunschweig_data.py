@@ -315,7 +315,15 @@ class TestHouseholdDistributions:
 # ---------------------------------------------------------------------------
 
 class TestExternalWorkplaces:
-    """``braunschweig.data.external_workplaces`` output schema + totals."""
+    """``braunschweig.data.external_workplaces`` output schema + totals.
+
+    Validates the per-Gemeinde schema introduced by the whole-region gates
+    upgrade (commit 7a45e64): one row per external Gemeinde with
+    ``commune_id = "EXT" + gem_ags`` instead of one centroid per Kreis.
+    The detailed allocation logic is unit-tested in
+    ``test_external_workplaces.py``; this check only guards the real
+    on-disk cache (schema, ZGB exclusion, plausible totals).
+    """
 
     def test_cache_has_expected_schema(self):
         path = _latest_cache("braunschweig.data.external_workplaces__*.p")
@@ -324,27 +332,26 @@ class TestExternalWorkplaces:
         with open(path, "rb") as fh:
             df = pickle.load(fh)
 
-        for col in ("ars5", "kreis_name", "commune_id",
-                    "iris_id", "employees", "ewz_total",
-                    "placement", "geometry"):
+        for col in ("ars5", "gem_ags", "commune_id",
+                    "iris_id", "employees", "ewz", "geometry"):
             assert col in df.columns, f"Missing column: {col}"
 
         assert df["commune_id"].str.startswith("EXT").all()
         assert df["iris_id"].str.startswith("EXT").all()
         assert (df["employees"] > 0).all()
+        assert (df["ewz"] > 0).all()
         assert df["ars5"].str.fullmatch(r"\d{5}").all()
-        assert df["ars5"].is_unique, "Duplicate external Kreise"
+        assert df["gem_ags"].str.fullmatch(r"\d{8}").all()
+        assert (df["gem_ags"].str[:5] == df["ars5"]).all(), \
+            "gem_ags Kreis prefix must match ars5"
+        assert df["gem_ags"].is_unique, "Duplicate external Gemeinden"
+        assert (df["commune_id"] == "EXT" + df["gem_ags"]).all(), \
+            "commune_id must be 'EXT' + 8-digit Gemeinde AGS"
         assert not df["ars5"].isin(ZGB_KREISE).any(), \
             "External pool should not contain ZGB Kreise"
 
-        # Placement: the vast majority should be employment-weighted
-        # (only tiny Kreise without EWZ fall back to the land centroid).
-        assert set(df["placement"].unique()) <= {
-            "emp_weighted", "kreis_centroid",
-        }
-        assert (df["placement"] == "emp_weighted").mean() > 0.9, \
-            "Most external workplaces should be employment-weighted"
-
+        # The per-Gemeinde split (largest remainder) preserves the
+        # per-Kreis outbound flow, so the Kreis-level total bound holds.
         total = int(df["employees"].sum())
         assert 40_000 <= total <= 80_000, \
             f"External SvB {total} outside plausible 40k..80k range"
