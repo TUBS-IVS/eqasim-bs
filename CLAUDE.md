@@ -510,24 +510,38 @@ extraction tool is used rather than re-implementing the classification.
 
 The injection is a **three-stage hybrid** (flag-gated; see below):
 
-1. **Java extraction (cached, 100%).** `braunschweig.freight.extraction` runs
-   the published matsim application-contrib tool `RunExtractFreightTrips`
+1. **Java extraction (cached, 100%, one run per category).**
+   `braunschweig.freight.extraction` runs the published matsim
+   application-contrib tool `RunExtractFreightTrips`
    (`ExtractRelevantFreightTrips`) against the dissolved ZGB study-area polygon
    (the union of the in-scope municipalities, plus the cordon buffer when
    `cordon_enabled`) on the German-wide network. The tool routes every freight
-   trip, classifies it INTERNAL/INCOMING/OUTGOING/TRANSIT, trims each plan at
-   the study-area boundary, and writes a 100 % ZGB-relevant plans file. This
-   stage is **sampling-rate independent** (it operates on the full freight
-   population and is cached by synpp), so the expensive routing runs once and is
-   reused across sampling rates. The local-only inputs are validated up front by
-   `braunschweig.data.freight.german_wide`, which fails early with the download
-   command when a file is absent.
+   trip, classifies it, trims each plan at the study-area boundary and shifts
+   the departure time by the access travel time. The matsim **2025.0-PR3568**
+   build writes **no category attribute** on the output persons (the
+   `geographical_Trip_Type` attribute only exists in later matsim-libs
+   versions -- verified on the real output: all 49 758 extracted trips came
+   back `unknown`), so the stage runs the **unmodified tool once per category**
+   (`--tripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each) and returns
+   `{category: plans_file}` -- the exact published classification, no geometric
+   heuristic (trimmed endpoints lie on network nodes *inside* the polygon, so a
+   point-in-polygon test cannot recover the category). Further verified CLI
+   quirks of this build: the option is `--LegMode` (capital L), there is no
+   `--subpopulation` option (it hard-codes `freight`), and plans/network/output
+   paths must be absolute (the tool NPEs on a bare `--output` filename). This
+   stage is **sampling-rate independent** (cached by synpp), so the expensive
+   routing runs once and is reused across sampling rates. The local-only inputs
+   are validated up front by `braunschweig.data.freight.german_wide`, which
+   fails early with the download command when a file is absent.
 
-2. **Python trips stage.** `braunschweig.freight.trips` parses the extracted
-   plans with a streaming `xml.etree` reader (deliberately **not** matsim-tools:
-   the repo-local `matsim` package shadows the PyPI `matsim-tools` import, so the
-   tooling reader is unavailable here), writes an inspectable
-   `freight_trips.gpkg`, and returns a tidy trips DataFrame.
+2. **Python trips stage.** `braunschweig.freight.trips` parses the four
+   per-category plans files with a streaming `xml.etree` reader (deliberately
+   **not** matsim-tools: the repo-local `matsim` package shadows the PyPI
+   `matsim-tools` import, so the tooling reader is unavailable here), labels
+   each trip with its extraction category, rewrites the per-file person ids to
+   the collision-free, self-documenting `freight_<category>_<n>` (each
+   per-category tool run renumbers from `freight_0`), writes an inspectable
+   `freight_trips.gpkg`, and returns one tidy trips DataFrame.
 
 3. **Injection hook.** `braunschweig/matsim/simulation/prepare.py`
    (`_inject_freight`) runs **after** the cordon cut. It Bernoulli-samples the

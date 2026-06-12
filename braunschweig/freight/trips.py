@@ -53,14 +53,18 @@ def _seconds_of_day(clock):
     return int(float(text))
 
 
-def parse_freight_trips(plans_path):
+def parse_freight_trips(plans_path, default_trip_type=None, allow_empty=False):
     """Stream the plans file into a tidy one-row-per-trip DataFrame.
 
     Each freight person has exactly two activities (start/end) and one leg. The
-    start activity carries the departure ``end_time``; the ``trip_type`` person
-    attribute is the extraction category (INTERNAL/INCOMING/OUTGOING/TRANSIT).
-    Raises when the file holds no freight trips (extraction failure must not pass
-    silently).
+    start activity carries the departure ``end_time``. The trip category comes
+    from a person attribute when present (newer tool versions); for the
+    per-category extraction outputs (matsim 2025.0-PR3568 writes no category
+    attribute) the caller passes ``default_trip_type`` -- the category the file
+    was extracted with. Without either, rows are labelled ``unknown`` and a
+    warning is emitted (fallback-transparency rule). Raises on an empty file
+    unless ``allow_empty`` (a single extraction category may legitimately be
+    empty; the caller decides).
     """
     records = []
     opener = gzip.open if str(plans_path).endswith(".gz") else open
@@ -86,10 +90,10 @@ def parse_freight_trips(plans_path):
                     "destination_x": float(end.get("x")),
                     "destination_y": float(end.get("y")),
                     "departure_time": _seconds_of_day(end_time) if end_time else 0,
-                    "trip_type": trip_type or "unknown",
+                    "trip_type": trip_type or default_trip_type or "unknown",
                 })
             element.clear()
-    if not records:
+    if not records and not allow_empty:
         raise RuntimeError("no freight trips parsed from %s" % plans_path)
     df = pd.DataFrame.from_records(records, columns=list(TRIP_COLUMNS))
     unknown = int((df["trip_type"] == "unknown").sum())
@@ -104,10 +108,34 @@ def configure(context):
 
 
 def execute(context):
-    extraction_name = context.stage("braunschweig.freight.extraction")
-    plans_path = "%s/%s" % (context.path("braunschweig.freight.extraction"), extraction_name)
+    # The extraction stage runs the tool once per category and returns
+    # {category: plans_filename}. Each per-category run renumbers persons from
+    # freight_0, so the ids collide across files -- rewrite them to
+    # freight_<category>_<n> (unique AND self-documenting in every downstream
+    # table, events file and analysis).
+    outputs = context.stage("braunschweig.freight.extraction")
+    extraction_path = context.path("braunschweig.freight.extraction")
 
-    df = parse_freight_trips(plans_path)
+    frames = []
+    for category, plans_name in outputs.items():
+        df_category = parse_freight_trips(
+            "%s/%s" % (extraction_path, plans_name),
+            default_trip_type=category, allow_empty=True)
+        if len(df_category) == 0:
+            logger.warning("[freight.trips] category %s is empty", category)
+            continue
+        df_category["person_id"] = [
+            "freight_%s_%s" % (category, person_id.removeprefix("freight_"))
+            for person_id in df_category["person_id"]
+        ]
+        frames.append(df_category)
+
+    if not frames:
+        raise RuntimeError("no freight trips parsed from any extraction category")
+    df = pd.concat(frames, ignore_index=True)
+
+    if df["person_id"].duplicated().any():
+        raise RuntimeError("duplicate freight person ids after category merge")
     logger.info("[freight.trips] %d ZGB-relevant freight trips; by type: %s",
                 len(df), df["trip_type"].value_counts().to_dict())
 

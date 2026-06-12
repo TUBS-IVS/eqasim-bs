@@ -10,9 +10,17 @@ Runs the published matsim application-contrib extraction
 - the tool routes every freight trip on the Germany-Europe network,
   classifies it (INTERNAL / INCOMING / OUTGOING / TRANSIT), trims routes at
   the boundary and shifts departure times by the access travel time;
-- output is a 100% plans file with leg mode ``truck`` and subpopulation
-  ``freight`` -- sampling to the pipeline rate happens later. This stage is
-  sampling-rate independent and therefore cached across sampling-rate changes.
+- the tool is run ONCE PER CATEGORY (``--tripType INTERNAL/...``) because the
+  matsim 2025.0-PR3568 build does not tag persons with their category (the
+  ``geographical_Trip_Type`` attribute only exists in later matsim-libs
+  versions, verified on the real output). Four unmodified-tool runs give the
+  exact published classification without inventing a geometric heuristic --
+  trimmed endpoints lie on network nodes INSIDE the polygon, so an in/out
+  point test cannot recover the category reliably.
+- output is one 100% plans file per category with leg mode ``truck`` and
+  subpopulation ``freight`` -- sampling to the pipeline rate happens later.
+  This stage is sampling-rate independent and therefore cached across
+  sampling-rate changes (~4 x 45 min one-time routing cost).
 
 CRS: ``freight_crs`` (default EPSG:25832, the v3 network CRS).
 """
@@ -27,9 +35,12 @@ import matsim.runtime.eqasim as eqasim
 
 logger = logging.getLogger(__name__)
 
-OUTPUT_NAME = "zgb_freight.100pct.plans.xml.gz"
+# The four geographic trip categories of the published extraction (partition of
+# the ZGB-relevant trips). Lowercase keys are our canonical labels; the tool's
+# --tripType option takes them uppercase.
+TRIP_CATEGORIES = ("internal", "incoming", "outgoing", "transit")
+OUTPUT_TEMPLATE = "zgb_freight.%s.100pct.plans.xml.gz"
 SUMMARY_NAME = "freight_extraction_summary.csv"
-TRIP_TYPE_ATTRIBUTES = ("trip_type", "geographical_Trip_Type")
 
 
 def configure(context):
@@ -43,35 +54,15 @@ def configure(context):
     context.config("freight_crs", "EPSG:25832")
 
 
-def count_trip_types(plans_path):
-    """Count persons per trip-type attribute in a (gzipped) MATSim plans file.
-
-    Streaming parse, so the 100% file never sits in memory. Raises when the
-    file contains no persons (extraction failure must not pass silently);
-    persons without a recognised trip-type attribute are counted as
-    ``unknown`` and reported (fallback-transparency rule).
-    """
-    counts = {}
+def count_persons(plans_path):
+    """Count persons in a (gzipped) MATSim plans file via a streaming parse."""
     persons = 0
     with gzip.open(plans_path, "rb") as f:
         for _event, element in ET.iterparse(f, events=("end",)):
-            if element.tag != "person":
-                continue
-            persons += 1
-            trip_type = None
-            for attribute in element.iter("attribute"):
-                if attribute.get("name") in TRIP_TYPE_ATTRIBUTES:
-                    trip_type = attribute.text
-                    break
-            counts[trip_type or "unknown"] = counts.get(trip_type or "unknown", 0) + 1
+            if element.tag == "person":
+                persons += 1
             element.clear()
-    if persons == 0:
-        raise RuntimeError("extracted freight plans contain no persons: %s" % plans_path)
-    if counts.get("unknown", 0) > 0:
-        logger.warning(
-            "[freight.extraction] %d/%d persons carry no recognised trip-type attribute %s",
-            counts["unknown"], persons, TRIP_TYPE_ATTRIBUTES)
-    return persons, counts
+    return persons
 
 
 def _study_area(context):
@@ -103,35 +94,51 @@ def execute(context):
     # study_area.shp stays relative because it lives in the cwd.
     plans_path = os.path.abspath(paths["plans_path"])
     network_path = os.path.abspath(paths["network_path"])
-    output_path = os.path.abspath("%s/%s" % (context.path(), OUTPUT_NAME))
 
-    eqasim.run(context, "org.eqasim.braunschweig.scenario.RunExtractFreightTrips", [
-        plans_path,
-        "--network", network_path,
-        "--shp", "study_area.shp",
-        "--shp-crs", crs,
-        "--input-crs", crs,
-        "--target-crs", crs,
-        "--cut-on-boundary",
-        # NOTE: this contrib build (matsim 2025.0-PR3568) exposes "--LegMode"
-        # (capital L) and has no "--subpopulation" option; the per-trip category
-        # is written as the person attribute "geographical_Trip_Type" (values
-        # transit/incoming/outgoing/internal). "--tripType ALL" keeps every
-        # ZGB-relevant category. Verified against the tool's --help (exit 2 on a
-        # wrong option name).
-        "--LegMode", "truck",
-        "--tripType", "ALL",
-        "--output", output_path,
-    ])
+    outputs = {}
+    counts = {}
+    for category in TRIP_CATEGORIES:
+        output_name = OUTPUT_TEMPLATE % category
+        output_path = os.path.abspath("%s/%s" % (context.path(), output_name))
 
-    assert os.path.exists(output_path), "freight extraction did not write %s" % OUTPUT_NAME
+        eqasim.run(context, "org.eqasim.braunschweig.scenario.RunExtractFreightTrips", [
+            plans_path,
+            "--network", network_path,
+            "--shp", "study_area.shp",
+            "--shp-crs", crs,
+            "--input-crs", crs,
+            "--target-crs", crs,
+            "--cut-on-boundary",
+            # NOTE: this contrib build (matsim 2025.0-PR3568) exposes "--LegMode"
+            # (capital L) and has no "--subpopulation" option (it hard-codes
+            # subpopulation "freight"). Verified against the tool's --help.
+            "--LegMode", "truck",
+            "--tripType", category.upper(),
+            "--output", output_path,
+        ])
 
-    persons, counts = count_trip_types(output_path)
-    logger.info("[freight.extraction] %d ZGB-relevant freight agents: %s", persons, counts)
+        assert os.path.exists(output_path), \
+            "freight extraction did not write %s" % output_name
+
+        counts[category] = count_persons(output_path)
+        outputs[category] = output_name
+        logger.info("[freight.extraction] category %s: %d trips", category, counts[category])
+
+    total = sum(counts.values())
+    if total == 0:
+        raise RuntimeError(
+            "freight extraction produced 0 trips across all categories -- "
+            "study area / network / plans inputs are inconsistent")
+    if counts["transit"] == 0:
+        # A2 and A39 cross ZGB; zero through-traffic is implausible and almost
+        # certainly signals a broken run (no-silent-fallback rule).
+        logger.warning("[freight.extraction] 0 TRANSIT trips -- implausible for ZGB "
+                       "(A2/A39); inspect the study area and tool output")
+    logger.info("[freight.extraction] %d ZGB-relevant freight trips: %s", total, counts)
 
     with open("%s/%s" % (context.path(), SUMMARY_NAME), "w", encoding="utf-8") as f:
         f.write("trip_type;count\n")
-        for trip_type in sorted(counts):
-            f.write("%s;%d\n" % (trip_type, counts[trip_type]))
+        for category in TRIP_CATEGORIES:
+            f.write("%s;%d\n" % (category, counts[category]))
 
-    return OUTPUT_NAME
+    return outputs

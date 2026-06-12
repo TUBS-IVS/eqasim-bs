@@ -81,3 +81,34 @@ def test_parse_freight_trips_reads_geographical_trip_type_and_float_seconds(tmp_
     row = rows.iloc[0]
     assert row["trip_type"] == "transit"
     assert row["departure_time"] == 23400
+
+
+# The matsim 2025.0-PR3568 extraction writes NO category attribute at all; the
+# stage runs the tool once per category and labels rows via default_trip_type.
+NO_ATTRIBUTE_PLANS_XML = """<?xml version="1.0" encoding="utf-8"?>
+<population>
+  <person id="freight_0">
+    <attributes>
+      <attribute name="subpopulation" class="java.lang.String">freight</attribute>
+    </attributes>
+    <plan selected="yes">
+      <activity type="freight_start" x="600000.0" y="5800000.0" end_time="06:30:00"></activity>
+      <leg mode="truck"></leg>
+      <activity type="freight_end" x="610000.0" y="5810000.0"></activity>
+    </plan>
+  </person>
+</population>
+"""
+
+
+def test_parse_freight_trips_uses_default_trip_type_when_attribute_missing(tmp_path):
+    rows = parse_freight_trips(_write(tmp_path, NO_ATTRIBUTE_PLANS_XML),
+                               default_trip_type="transit")
+    assert rows.iloc[0]["trip_type"] == "transit"
+
+
+def test_parse_freight_trips_allow_empty_returns_empty_frame(tmp_path):
+    empty = '<?xml version="1.0"?><population></population>'
+    rows = parse_freight_trips(_write(tmp_path, empty), allow_empty=True)
+    assert len(rows) == 0
+    assert list(rows.columns) == list(TRIP_COLUMNS)

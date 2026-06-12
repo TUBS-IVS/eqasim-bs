@@ -1,27 +1,19 @@
 import gzip
-import pytest
 
-from braunschweig.freight.extraction import count_trip_types
+from braunschweig.freight.extraction import count_persons, TRIP_CATEGORIES, OUTPUT_TEMPLATE
 
 PLANS_XML = """<?xml version="1.0" encoding="utf-8"?>
 <population>
   <person id="freight_1">
     <attributes>
       <attribute name="subpopulation" class="java.lang.String">freight</attribute>
-      <attribute name="trip_type" class="java.lang.String">TRANSIT</attribute>
     </attributes>
     <plan selected="yes"></plan>
   </person>
   <person id="freight_2">
-    <attributes>
-      <attribute name="trip_type" class="java.lang.String">INCOMING</attribute>
-    </attributes>
     <plan selected="yes"></plan>
   </person>
   <person id="freight_3">
-    <attributes>
-      <attribute name="trip_type" class="java.lang.String">TRANSIT</attribute>
-    </attributes>
     <plan selected="yes"></plan>
   </person>
 </population>
@@ -35,21 +27,21 @@ def _write_plans(tmp_path, text=PLANS_XML):
     return str(path)
 
 
-def test_count_trip_types(tmp_path):
-    persons, counts = count_trip_types(_write_plans(tmp_path))
-    assert persons == 3
-    assert counts == {"TRANSIT": 2, "INCOMING": 1}
+def test_count_persons(tmp_path):
+    assert count_persons(_write_plans(tmp_path)) == 3
 
 
-def test_count_trip_types_raises_on_empty_population(tmp_path):
-    persons_xml = '<?xml version="1.0"?><population></population>'
-    with pytest.raises(RuntimeError, match="no persons"):
-        count_trip_types(_write_plans(tmp_path, persons_xml))
+def test_count_persons_zero_on_empty_population(tmp_path):
+    empty = '<?xml version="1.0"?><population></population>'
+    assert count_persons(_write_plans(tmp_path, empty)) == 0
 
 
-def test_count_trip_types_warns_unknown_attribute(tmp_path, caplog):
-    xml = PLANS_XML.replace("trip_type", "some_other_attribute")
-    persons, counts = count_trip_types(_write_plans(tmp_path, xml))
-    assert persons == 3
-    assert counts == {"unknown": 3}
-    assert any("trip-type attribute" in r.message for r in caplog.records)
+def test_trip_categories_cover_the_published_partition():
+    # The four categories of Lu et al. (2022) partition the ZGB-relevant trips;
+    # the extraction runs the unmodified tool once per category.
+    assert TRIP_CATEGORIES == ("internal", "incoming", "outgoing", "transit")
+
+
+def test_output_template_is_category_unique():
+    names = {OUTPUT_TEMPLATE % category for category in TRIP_CATEGORIES}
+    assert len(names) == len(TRIP_CATEGORIES)
