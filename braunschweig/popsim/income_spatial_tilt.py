@@ -122,11 +122,28 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
     sums = df.groupby("k").agg(base_sum=("base", "sum"), tilt_sum=("tilted", "sum"))
     scale = df["k"].map((sums["base_sum"] / sums["tilt_sum"]).replace([np.inf, -np.inf], 1.0)).fillna(1.0).to_numpy()
     out[income_col] = tilted * scale
+    # Per-Kreis mean-preservation check.
+    # The re-normalization restores per-Kreis SUMS exactly, so the residual between
+    # mean_tilted_k and mean_base_k is ~machine-epsilon-scaled (~1e-9 or smaller).
+    # We use a RELATIVE tolerance (max |dev| / max(|base_mean_k|, 1.0) < 1e-9) so
+    # the check scales gracefully with income magnitude and stays honest even when
+    # one Kreis drifts up while another drifts down by the same amount (which a
+    # global-mean check would falsely pass).
+    tilted_final = pd.to_numeric(out[income_col], errors="coerce").to_numpy()
+    df_check = pd.DataFrame({"k": out[kreis_col].to_numpy(), "base": base, "tilted": tilted_final})
+    per_k = df_check.groupby("k").agg(base_mean=("base", "mean"), tilted_mean=("tilted", "mean"))
+    abs_devs = (per_k["tilted_mean"] - per_k["base_mean"]).abs()
+    rel_devs = abs_devs / per_k["base_mean"].abs().clip(lower=1.0)
+    max_kreis_mean_abs_dev = float(abs_devs.max())
+    max_kreis_mean_rel_dev = float(rel_devs.max())
+    kreis_mean_preserved = bool(max_kreis_mean_rel_dev < 1e-9)
     diag = {
         "clipped_fraction": clipped_fraction,
-        "kreis_mean_preserved": bool(abs(out[income_col].mean() - float(np.nanmean(base))) < 1e-6),
+        "kreis_mean_preserved": kreis_mean_preserved,
+        "max_kreis_mean_abs_dev": max_kreis_mean_abs_dev,
         "beta_clip": clip,
     }
-    logger.info("[income_spatial_tilt] applied: clipped=%.1f%%, kreis_mean_preserved=%s",
-                100 * clipped_fraction, diag["kreis_mean_preserved"])
+    logger.info("[income_spatial_tilt] applied: clipped=%.1f%%, kreis_mean_preserved=%s, "
+                "max_kreis_mean_abs_dev=%.2e",
+                100 * clipped_fraction, kreis_mean_preserved, max_kreis_mean_abs_dev)
     return out, diag

@@ -163,7 +163,8 @@ def test_apply_tilt_preserves_kreis_mean_and_clips() -> None:
     inc = out.set_index("household_id")["household_income_eur"]
     assert inc[1] < 2000.0 < inc[3]
     # clip honored: no household moves more than 30% before re-normalization bookkeeping.
-    assert diag["clipped_fraction"] >= 0.0
+    # With indices [0.5, 1.5] and clip=0.30, clipping *does* fire — pin that it occurs.
+    assert diag["clipped_fraction"] > 0.0
     assert "kreis_mean_preserved" in diag
 
 
@@ -203,7 +204,13 @@ def test_apply_tilt_multi_kreis_each_mean_preserved() -> None:
             f"Kreis {kreis}: expected mean 3000.0, got {mean_k}"
         )
 
-    assert diag["kreis_mean_preserved"]
+    # Corrected per-Kreis diagnostic must confirm mean is preserved and deviation is tiny.
+    assert diag["kreis_mean_preserved"] is True
+    assert "max_kreis_mean_abs_dev" in diag
+    # Re-normalization restores per-Kreis sums exactly; residual must be ~machine epsilon.
+    assert diag["max_kreis_mean_abs_dev"] < 1e-6, (
+        f"max per-Kreis mean abs dev too large: {diag['max_kreis_mean_abs_dev']:.2e}"
+    )
 
 
 def test_apply_tilt_tenure_routing_renter_vs_owner() -> None:
