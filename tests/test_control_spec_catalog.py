@@ -1,7 +1,11 @@
+"""Tests for CatalogControl and its per-seed expression dispatch."""
+
+from __future__ import annotations
+
 from braunschweig.popsim import control_spec as cs
 
 
-def test_controldef_carries_per_seed_expressions_and_geo_constants():
+def test_catalogcontrol_carries_per_seed_expressions_and_geo_constants() -> None:
     # New geography constants exist for the multi-geo tiers.
     assert cs.GEO_KREIS == "KREIS"
     assert cs.GEO_GEMEINDE == "GEMEINDE"
@@ -17,3 +21,4 @@ def test_controldef_carries_per_seed_expressions_and_geo_constants():
     assert cd.expression_for("mid") == "(households.H_GR == 1)"
     assert cd.expression_for("entd") == "(households.H_GR == 1)"
     assert cd.expression_for("ipf") is None
+    assert cd.expression_for("unknown") is None

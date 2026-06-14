@@ -111,16 +111,19 @@ class CatalogControl:
     boolean expression for that seed, or ``None`` when the seed cannot express the
     control. ``census_source`` names the prepared-cell marginal column(s) (the control
     target before geography suffixing).
+
+    The dataclass is frozen for declarative use, but must NOT be used as a dict key
+    or set member because the ``seed_expressions`` dict field is unhashable.
     """
 
     name: str
     geography: str
     seed_table: str
     importance: int
-    census_source: tuple
-    seed_expressions: dict
+    census_source: tuple[str, ...]
+    seed_expressions: dict[str, str | None]
 
-    def expression_for(self, seed: str):
+    def expression_for(self, seed: str) -> str | None:
         """Return this control's expression for ``seed``, or ``None`` if inexpressible."""
         return self.seed_expressions.get(seed)
 
