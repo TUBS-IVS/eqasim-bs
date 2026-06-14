@@ -121,6 +121,37 @@ Controls are MiD-only (`entd=None`); `controls_for_seed` logs a WARNING and drop
 
 ---
 
+## Task 9 — Tier-2 tenure (owner / renter, MiD H_MIETE) — 2026-06-14
+
+### Census column binding
+
+Census theme: `Rechtsverhältnis der Bewohner am Wohngebäude` (tenure, 100m grid).
+Universe: private households with a classifiable tenure status.
+
+| catalog control name                 | census_source column                     | seed_expression (MiD)              |
+|--------------------------------------|------------------------------------------|------------------------------------|
+| `EigentuemerHH_Tenure_100m_Gitter`   | `EigentuemerHH_Tenure_100m_Gitter`       | `(households.H_MIETE == 2)`        |
+| `MieterHH_Tenure_100m_Gitter`        | `MieterHH_Tenure_100m_Gitter`            | `(households.H_MIETE == 1)`        |
+
+ENTD: `None` (not expressible; dropped with WARNING by `controls_for_seed`).
+
+### MiD H_MIETE crosswalk
+
+| H_MIETE value | MiD label       | Zensus mapping              |
+|---------------|-----------------|-----------------------------|
+| 1             | Mieter (renter) | `MieterHH_Tenure_100m_Gitter`  |
+| 2             | Eigentuemer (owner) | `EigentuemerHH_Tenure_100m_Gitter` |
+| 3 / 9 / 309   | Sonstige / N/A  | Excluded (contribute 0 to both controls) |
+
+Wiring: `load_mid_seed` in `braunschweig.popsim.mid` loads `H_MIETE` unconditionally
+alongside `H_GR` in `household_cols`, and adds `"H_MIETE"` to `extra_household_cols`
+in `select_seed_columns`. Controls are Tier-2 MiD-only; `controls_for_seed` logs a
+WARNING and drops them for the ENTD workflow.
+
+Geography: 2 census columns × 2 geographies (ZENSUS100m + ZENSUS1km) = 4 controls.
+
+---
+
 ## Tier-1 measure-gain gate — 2026-06-14
 
 **Status: DONE_WITH_CONCERNS**

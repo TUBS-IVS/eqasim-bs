@@ -342,7 +342,12 @@ def load_mid_seed(
     # control expression ``(households.H_GR == N)`` can be evaluated by
     # PopulationSim. H_GR was previously loaded only when complete_members=True;
     # the Tier-7 addition makes it unconditionally required in the seed.
-    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR"]
+    # Always load H_MIETE (tenure flag: 1=renter, 2=owner) so the Tier-2 tenure
+    # control expressions ``(households.H_MIETE == 1/2)`` can be evaluated by
+    # PopulationSim. Values 3/9/309 (ambiguous) are kept in the seed column;
+    # the control expressions simply do not match them (they contribute 0 to
+    # either tenure control, which is the correct treatment for excluded codes).
+    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR", "H_MIETE"]
     if complete_members:
         # Member completion additionally needs the mirror match keys
         # (hhgr_gr -> oek_status; RegioStaR7 and H_GR are already loaded above).
@@ -407,7 +412,7 @@ def load_mid_seed(
 
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5"),
+        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE"),
         extra_person_cols=extra_person_cols,
     )
     return households, persons, report

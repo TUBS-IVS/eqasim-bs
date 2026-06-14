@@ -561,6 +561,55 @@ def tier1_controls() -> List[CatalogControl]:
     return catalog
 
 
+# Tier-2 tenure census column bases.
+# Each entry is (census_base, mid_expression) where mid_expression is the
+# pandas-style boolean string for the MiD households seed table.
+# H_MIETE coding: 1 = renter (Mieter), 2 = owner (Eigentuemer); 3/9/309 excluded.
+_TIER2_TENURE_ENTRIES: Sequence[tuple] = (
+    ("EigentuemerHH_Tenure_100m_Gitter", "(households.H_MIETE == 2)"),
+    ("MieterHH_Tenure_100m_Gitter",      "(households.H_MIETE == 1)"),
+)
+
+
+def tier2_controls() -> List[CatalogControl]:
+    """Build the Tier-2 catalog: owner / renter tenure controls.
+
+    Tenure: 2 categories (owner, renter) × 2 geographies = 4 controls.
+    MiD-only: ENTD does not carry a reliable tenure flag (``entd=None``); the
+    control is dropped for ENTD by :func:`controls_for_seed` with a WARNING.
+
+    The census source columns are the Zensus 2022 100m grid tenure counts:
+
+    - ``EigentuemerHH_Tenure_100m_Gitter`` -- owner-occupied household count
+    - ``MieterHH_Tenure_100m_Gitter``       -- renter household count
+
+    The MiD mapping uses the H_MIETE flag on the households table:
+
+    - H_MIETE == 2 -> Eigentuemer (owner)
+    - H_MIETE == 1 -> Mieter      (renter)
+    - H_MIETE in {3, 9, 309}     -> excluded (neither owner nor renter)
+
+    Returns
+    -------
+    list[CatalogControl]
+        4 Tier-2 controls (2 tenure categories × 2 geographies).
+    """
+    catalog: List[CatalogControl] = []
+    for geography in (GEO_100M, GEO_1KM):
+        for census_base, mid_expr in _TIER2_TENURE_ENTRIES:
+            catalog.append(
+                CatalogControl(
+                    name=census_base,
+                    geography=geography,
+                    seed_table=SEED_TABLE_HOUSEHOLDS,
+                    importance=1000,
+                    census_source=(census_base,),
+                    seed_expressions={"mid": mid_expr, "entd": None},
+                )
+            )
+    return catalog
+
+
 def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
@@ -568,7 +617,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
     ----------
     include_tiers:
         Tiers to include. ``"tier0"`` is always included when present (backbone
-        Zensus controls). ``"tier1"`` adds the 12 household-size controls.
+        Zensus controls). ``"tier1"`` adds the 22 household-size + household-type
+        controls. ``"tier2"`` adds the 4 tenure (owner/renter) controls.
         Default ``("tier0",)`` reproduces the pre-Tier-7 baseline exactly.
 
     Returns
@@ -581,6 +631,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
         catalog.extend(tier0_backbone_catalog())
     if "tier1" in include_tiers:
         catalog.extend(tier1_controls())
+    if "tier2" in include_tiers:
+        catalog.extend(tier2_controls())
     return catalog
 
 

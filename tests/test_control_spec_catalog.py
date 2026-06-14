@@ -122,3 +122,20 @@ def test_tier1_household_type_is_mid_only() -> None:
     for b in bases:
         assert b in mid          # MiD can express household type
         assert b not in entd     # ENTD drops it (composition differs)
+
+
+# ---------------------------------------------------------------------------
+# Task 9: Tier-2 tenure (owner / renter, MiD H_MIETE) — MiD-only
+# ---------------------------------------------------------------------------
+
+
+def test_tier2_tenure_is_mid_only() -> None:
+    catalog = cs.full_catalog(include_tiers=("tier0", "tier1", "tier2"))
+    mid = {c.name for c in cs.controls_for_seed(catalog, "mid")}
+    entd = {c.name for c in cs.controls_for_seed(catalog, "entd")}
+    for b in ("EigentuemerHH_Tenure_100m_Gitter", "MieterHH_Tenure_100m_Gitter"):
+        assert b in mid and b not in entd
+
+
+def test_default_catalog_has_no_tenure() -> None:
+    assert all("Tenure" not in c.name for c in cs.full_catalog())
