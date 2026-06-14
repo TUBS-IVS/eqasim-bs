@@ -48,6 +48,14 @@ CONTROLS_CSV_COLUMNS: Sequence[str] = (
 SEED_TABLE_HOUSEHOLDS = "households"
 SEED_TABLE_PERSONS = "persons"
 
+# Geography levels. The first two are the existing per-cell IPU levels; KREIS and
+# GEMEINDE are the multi-geography levels used by the Tier-3 (employment/education)
+# controls. Must stay in sync with braunschweig.popsim.folders geography handling.
+GEO_100M = "ZENSUS100m"
+GEO_1KM = "ZENSUS1km"
+GEO_KREIS = "KREIS"
+GEO_GEMEINDE = "GEMEINDE"
+
 # Nine ten-year age bands as (label, lower_bound, upper_bound). ``None`` marks an
 # open edge: the first band has no lower bound, the last band no upper bound.
 AGE_BANDS: Sequence[tuple] = (
@@ -93,6 +101,28 @@ class ControlDef:
     importance: int
     control_field: str
     expression: str
+
+
+@dataclass(frozen=True)
+class CatalogControl:
+    """A catalog control with a per-seed expression and its census source column(s).
+
+    ``seed_expressions`` maps a seed name ("mid" / "entd" / "ipf") to the pandas-style
+    boolean expression for that seed, or ``None`` when the seed cannot express the
+    control. ``census_source`` names the prepared-cell marginal column(s) (the control
+    target before geography suffixing).
+    """
+
+    name: str
+    geography: str
+    seed_table: str
+    importance: int
+    census_source: tuple
+    seed_expressions: dict
+
+    def expression_for(self, seed: str):
+        """Return this control's expression for ``seed``, or ``None`` if inexpressible."""
+        return self.seed_expressions.get(seed)
 
 
 def _age_expression(age_col: str, lower: int | None, upper: int | None) -> str:
