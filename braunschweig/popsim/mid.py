@@ -396,7 +396,9 @@ def load_mid_seed(
     # This must happen BEFORE select_seed_columns so hh_type5 can be retained as
     # an extra_household_col; it uses the raw MiD column names (H_ID / HP_ALTER).
     hh_type5_series = seedmod.derive_hh_type5(
-        persons, household_id_col=columns.person_household_id
+        persons,
+        household_id_col=columns.person_household_id,
+        age_col=columns.age,
     )
     households = households.join(
         hh_type5_series.rename("hh_type5"),

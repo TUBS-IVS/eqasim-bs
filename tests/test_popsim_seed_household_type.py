@@ -196,3 +196,71 @@ def test_select_seed_columns_retains_hh_type5() -> None:
     hh_map = seed_hh.set_index("H_ID")["hh_type5"].to_dict()
     assert hh_map[101] == "einpersonen"
     assert hh_map[102] == "paar_mit_kind"
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION: derive_hh_type5 must work with REAL MiD column names (H_ID / HP_ALTER)
+# ---------------------------------------------------------------------------
+
+def test_derive_hh_type5_with_real_mid_column_names() -> None:
+    """Regression: derive_hh_type5 must NOT raise with the real MiD persons frame.
+
+    At the production call site (load_mid_seed in braunschweig/popsim/mid.py),
+    the persons frame has raw MiD column names: H_ID (household id) and
+    HP_ALTER (person age).  Before the fix, derive_hh_type5 only renamed the
+    household_id column but NOT the age column, so map_households_to_hhtype
+    raised KeyError: ['age'] not in index.
+
+    This test builds a minimal persons frame using the REAL MiD column names
+    (H_ID, HP_ALTER) and asserts correct hh_type5 values without any exception.
+    It reproduces the exact column names present on the persons frame at the
+    load_mid_seed call site.
+    """
+    # Minimal persons frame using real MiD column names:
+    #   H_ID  = household identifier (columns.person_household_id = "H_ID")
+    #   HP_ALTER = person age in completed years (columns.age = "HP_ALTER")
+    persons_mid = pd.DataFrame({
+        "H_ID": [
+            # HH 101: single 40-year-old -> einpersonen
+            101,
+            # HH 102: couple (35, 33) + child (4) -> paar_mit_kind
+            102, 102, 102,
+            # HH 103: single parent (30) + child (8) -> alleinerziehend
+            103, 103,
+        ],
+        "HP_ALTER": [
+            40,
+            35, 33, 4,
+            30, 8,
+        ],
+    })
+
+    # Must not raise KeyError (the production crash before the fix).
+    result = derive_hh_type5(
+        persons_mid,
+        household_id_col="H_ID",  # real MiD household id column
+        age_col="HP_ALTER",        # real MiD age column
+    )
+
+    assert result[101] == "einpersonen", f"HH 101: expected einpersonen, got {result[101]!r}"
+    assert result[102] == "paar_mit_kind", f"HH 102: expected paar_mit_kind, got {result[102]!r}"
+    assert result[103] == "alleinerziehend", f"HH 103: expected alleinerziehend, got {result[103]!r}"
+
+
+def test_derive_hh_type5_real_mid_names_does_not_mutate_input() -> None:
+    """derive_hh_type5 must not mutate the caller's persons frame.
+
+    With the age_col rename fix, the rename is applied on a copy so the
+    original frame retains its raw MiD column names (HP_ALTER, not age).
+    """
+    persons_mid = pd.DataFrame({
+        "H_ID": [201, 201],
+        "HP_ALTER": [45, 43],
+    })
+    original_cols = list(persons_mid.columns)
+
+    derive_hh_type5(persons_mid, household_id_col="H_ID", age_col="HP_ALTER")
+
+    assert list(persons_mid.columns) == original_cols, (
+        f"Input frame was mutated: columns changed from {original_cols} to {list(persons_mid.columns)}"
+    )

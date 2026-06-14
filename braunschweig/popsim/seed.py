@@ -474,7 +474,11 @@ _MID11_TO_HH_TYPE5: dict = {
 }
 
 
-def derive_hh_type5(df_persons: "pd.DataFrame", household_id_col: str = "household_id") -> "pd.Series":
+def derive_hh_type5(
+    df_persons: "pd.DataFrame",
+    household_id_col: str = "household_id",
+    age_col: str = "HP_ALTER",
+) -> "pd.Series":
     """Derive the per-household ``hh_type5`` label for MiD seed households.
 
     Applies :func:`braunschweig.data.mid.status_by_hhtype.map_households_to_hhtype`
@@ -486,11 +490,14 @@ def derive_hh_type5(df_persons: "pd.DataFrame", household_id_col: str = "househo
     Parameters
     ----------
     df_persons:
-        Person frame with at least ``household_id_col`` and ``age`` columns.
+        Person frame with at least ``household_id_col`` and ``age_col`` columns.
         The ``hh_type`` column is optional (used by map_households_to_hhtype
         as a tie-breaker for single-parent detection).
     household_id_col:
         Name of the household identifier column (default ``"household_id"``).
+    age_col:
+        Name of the person age column (default ``"HP_ALTER"`` -- the raw MiD
+        column name used at the real call site in ``load_mid_seed``).
 
     Returns
     -------
@@ -500,16 +507,20 @@ def derive_hh_type5(df_persons: "pd.DataFrame", household_id_col: str = "househo
     """
     from braunschweig.data.mid.status_by_hhtype import map_households_to_hhtype
 
-    # map_households_to_hhtype expects 'household_id' and 'age' columns.
-    # Rename if the caller uses a different household_id column name.
-    work = df_persons.copy()
+    # map_households_to_hhtype requires 'household_id' and 'age' columns.
+    # Rename on a copy so the caller's frame is never mutated.
+    rename_map = {}
     if household_id_col != "household_id":
-        work = work.rename(columns={household_id_col: "household_id"})
+        rename_map[household_id_col] = "household_id"
+    if age_col != "age":
+        rename_map[age_col] = "age"
+    work = df_persons.rename(columns=rename_map).copy() if rename_map else df_persons.copy()
 
     per_person_mid11 = map_households_to_hhtype(work)  # pd.Series aligned to work.index
 
-    # Aggregate to one label per household (all persons share the same label;
-    # take the first non-null value per group for safety).
+    # Aggregate to one label per household. All persons in a household share the
+    # same hh_type5 key, so .first() is equivalent to any() here; keep it for
+    # robustness against edge-case NaN propagation from not_classifiable households.
     work_with_key = work[["household_id"]].copy()
     work_with_key["_mid11"] = per_person_mid11.values
     per_hh_mid11 = (
