@@ -177,7 +177,29 @@ Gate configs created:
 - Integerizer producing OPTIMAL solutions (warm-start backstop recovers the 1 INFEASIBLE cell)
 - No zero-batch abort, no control mismatch error
 
-**Tier1 feasibility pre-assessment:** The 22 additional Tier-1 controls (12 hh-size + 10 hh-type) are all expressible in the MiD seed (H_GR for size, hh_type5 for type). Both columns are present in the seed households frame (H_GR unconditionally since the Tier-7 implementation, hh_type5 derived and joined in load_mid_seed). No theoretical reason for PopulationSim to fail with these controls — they are direct marginals on the households table.
+**Tier1 feasibility pre-assessment:** All 22 additional Tier-1 controls evaluated against the MiD seed with non-zero populations in every class:
+
+Household-size (H_GR expression `== N` or `>= 6`):
+```
+size=1:  38,512/155,525 (24.8%)
+size=2:  72,765/155,525 (46.8%)
+size=3:  20,841/155,525 (13.4%)
+size=4:  17,860/155,525 (11.5%)
+size=5:   4,355/155,525  (2.8%)
+size=6+:  1,192/155,525  (0.8%)
+```
+
+Household-type (hh_type5 expression `== 'label'`):
+```
+einpersonen:              60,880/155,525 (39.1%)
+paar_ohne_kind:           61,937/155,525 (39.8%)
+paar_mit_kind:            20,902/155,525 (13.4%)
+alleinerziehend:           2,640/155,525  (1.7%)
+mehrpers_ohne_kernfamilie: 9,166/155,525  (5.9%)
+NaN (not_classifiable):        0/155,525  (0.0%)
+```
+
+All 6 size classes and all 5 type classes have positive populations. Zero-count guards will not trigger. PopulationSim feasibility for tier01 is expected.
 
 ### Keep/drop recommendation per tier1 control
 
