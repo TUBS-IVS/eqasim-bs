@@ -521,6 +521,130 @@ def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
     return "some"
 
 
+def map_housing_tenure(
+    households: pd.DataFrame, *, miete_col: str = "H_MIETE"
+) -> pd.DataFrame:
+    """Add ``housing_tenure`` (owner/renter/unknown) from MiD ``H_MIETE``.
+
+    MiD H_MIETE codebook (MiD 2023, Codeplan B1, Haushalte):
+      1 -> Mieter   (renter, incl. Untermiete, genossenschaftliches Wohnen)
+      2 -> Eigentuemer (owner-occupier)
+      3, 9, 309 -> ambiguous / keine Angabe -> "unknown" (not assigned to either
+                   control; consistent with the Tier-2 control expressions which
+                   match only H_MIETE == 1 and H_MIETE == 2)
+    The column is absent for ENTD frames (no tenure flag); the function then
+    skips derivation and returns the frame unchanged with no column added.
+    Missing rate is logged for transparency (no silent fallback).
+
+    Parameters
+    ----------
+    households:
+        MiD donor households frame with at least ``miete_col`` when available.
+    miete_col:
+        Name of the MiD tenure column (default ``H_MIETE``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy with ``housing_tenure`` column added if ``miete_col`` is present.
+        Absent column -> returned unchanged (ENTD path; no column added).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    out = households.copy()
+    if miete_col not in out.columns:
+        logger.info(
+            "[popsim.attributes] map_housing_tenure: %r absent from households "
+            "(ENTD path?); housing_tenure not derived.", miete_col,
+        )
+        return out
+
+    val = pd.to_numeric(out[miete_col], errors="coerce")
+    tenure = pd.Series("unknown", index=out.index, dtype=object)
+    tenure[val == 2] = "owner"
+    tenure[val == 1] = "renter"
+    out["housing_tenure"] = tenure
+
+    n_unknown = int((tenure == "unknown").sum())
+    n_total = len(out)
+    if n_unknown:
+        logger.info(
+            "[popsim.attributes] map_housing_tenure: %d/%d households have "
+            "housing_tenure='unknown' (H_MIETE not in {1, 2}; excluded from "
+            "tenure control but present on frame for reference).",
+            n_unknown, n_total,
+        )
+    return out
+
+
+# MiD haustyp -> building_type_3class label.
+# Coding (MiD 2023 Codeplan B1, Haushalte, haustyp):
+#   1  Ein-/Zweifamilienhaus (EFH/ZFH, freistehend/DHH/Reihenhaus) -> ein_zweifamilienhaus
+#   2  Mehrfamilienhaus (3-12 Wohnungen)                            -> mehrfamilienhaus
+#   3  Geschosswohnungsbau (13+ Wohnungen, grouped with MFH)        -> mehrfamilienhaus
+#   4  Sonstiges / gemischte Nutzung                                -> sonstiges
+#  95  nicht zutreffend (n.z.)                                      -> None/NaN (excluded)
+BUILDING_TYPE_3CLASS_BY_HAUSTYP = {
+    1: "ein_zweifamilienhaus",
+    2: "mehrfamilienhaus",
+    3: "mehrfamilienhaus",
+    4: "sonstiges",
+    # 95 intentionally absent -> NaN in map() -> excluded from all three classes
+}
+
+
+def map_building_type_3class(
+    households: pd.DataFrame, *, haustyp_col: str = "haustyp"
+) -> pd.DataFrame:
+    """Add ``building_type_3class`` (3-class Zensus Gebaeudetyp) from MiD ``haustyp``.
+
+    Collapses the MiD 4-code building-type flag to the 3 popsim control classes:
+      ein_zweifamilienhaus, mehrfamilienhaus, sonstiges.
+    Code 95 (nicht zutreffend) yields NaN and is excluded from all three classes
+    (consistent with the Tier-2 control expressions: no haustyp==95 row matches
+    any building_type expression).
+    Missing rate is logged for transparency (no silent fallback).
+    The column is absent for ENTD frames; the function then returns the frame
+    unchanged.
+
+    Parameters
+    ----------
+    households:
+        MiD donor households frame with at least ``haustyp_col`` when available.
+    haustyp_col:
+        Name of the MiD building-type column (default ``haustyp``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy with ``building_type_3class`` column added if ``haustyp_col`` is present.
+        Absent column -> returned unchanged (ENTD path; no column added).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    out = households.copy()
+    if haustyp_col not in out.columns:
+        logger.info(
+            "[popsim.attributes] map_building_type_3class: %r absent from households "
+            "(ENTD path?); building_type_3class not derived.", haustyp_col,
+        )
+        return out
+
+    out["building_type_3class"] = out[haustyp_col].map(BUILDING_TYPE_3CLASS_BY_HAUSTYP)
+    n_nan = int(out["building_type_3class"].isna().sum())
+    n_total = len(out)
+    if n_nan:
+        logger.info(
+            "[popsim.attributes] map_building_type_3class: %d/%d households have "
+            "building_type_3class=NaN (haustyp=95 'nicht zutreffend'; excluded from "
+            "all three building_type control classes).",
+            n_nan, n_total,
+        )
+    return out
+
+
 def map_socioprofessional_class(
     persons: pd.DataFrame, *, bkat_col: str = "P_BKAT"
 ) -> pd.DataFrame:

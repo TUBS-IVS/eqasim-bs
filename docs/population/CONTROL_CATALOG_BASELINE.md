@@ -387,3 +387,79 @@ ENTD: all 6 building_type controls dropped with WARNING (entd=None).
 | `test_popsim_seed_building_type.py` | 1 (haustyp survives select_seed_columns) | PASS |
 | `test_popsim_building_type_integration.py` | 4 (build_control_totals with 10 source cols + 3 derived) | PASS |
 | Regression suite (36 tests) | baseline guard 36/36 | PASS |
+
+---
+
+## Popsim Control-Fit Validation (`braunschweig.analysis.popsim_validation`) — 2026-06-14
+
+### Motivation
+
+After PopulationSim fits the synthetic population to the census marginals, the
+control-fit validation compares the REALIZED synthetic distributions (counts
+from the expanded persons/households frame) against the TARGET census marginals.
+This is separate from the existing `population_validation` module which compares
+against DESTATIS/MiD reference tables.
+
+### Synthetic Population Attributes Added (STEP 1)
+
+Three new attributes are now carried from the MiD donor households onto the
+synthetic persons frame via `assembly.map_mid_person_attributes`:
+
+| Attribute              | Source      | Derivation                                         |
+|------------------------|:-----------:|:---|
+| `housing_tenure`       | `H_MIETE`   | `attributes.map_housing_tenure` → owner/renter/unknown |
+| `building_type_3class` | `haustyp`   | `attributes.map_building_type_3class` → 3-class label |
+| `hh_type5`             | persons ages | `seed.derive_hh_type5` called on expanded persons  |
+
+`H_MIETE` and `haustyp` are added to `MID_HOUSEHOLD_ATTR_COLS` in `mid.py`.
+The join is conditional on column presence (`available_attrs` filter in `assembly.py`):
+absent columns (ENTD path, legacy test fixtures) are silently skipped.
+
+### Control Registry (`build_registry`)
+
+| Control name      | Family           | Categories                     | Realized extractor        |
+|-------------------|:----------------:|:------------------------------:|:--|
+| `household_size`  | popsim_hh        | 1–5, 6+                        | bucket on `household_size` (per-HH) |
+| `household_type`  | popsim_hh        | 5 Familientyp classes          | `hh_type5` per-HH, drops NaN |
+| `tenure`          | popsim_hh        | owner, renter                  | `housing_tenure`, excludes "unknown" |
+| `building_type`   | popsim_hh        | 3 building classes             | `building_type_3class`, drops NaN (95 n.z.) |
+| `age_male`        | popsim_backbone  | 9 bands: 0-9 … 80+             | persons with sex=="male" |
+| `age_female`      | popsim_backbone  | 9 bands: 0-9 … 80+             | persons with sex=="female" |
+| `seniorenstatus`  | popsim_reference | mit_senioren, ohne_senioren    | age≥65 per household (reference only) |
+
+All controls use `geography="kreis"` (5-digit ARS from the 12-digit parquet ARS column).
+
+### Target Loaders
+
+All target loaders read the prepared parquet and aggregate to Kreis level via
+`_multi_col_kreis_target`. Geography: ars5 (first 5 chars of the 12-digit ARS
+after `clean_col_name` transliteration). Key column mappings:
+
+- `household_size`: 6 size columns → `Insgesamt_Haushalte_Groesse..._adj` as total
+- `household_type`: 5 Familie columns → `Insgesamt_Haushalte_Typ_priv_HH_Familie..` as total
+- `tenure`: `EigentuemerHH_Tenure_100m_Gitter` + `MieterHH_Tenure_100m_Gitter`
+- `building_type`: derived `building_type_{3 classes}` from `add_aggregated_controls`
+- `age_male`/`age_female`: `M_AGE_*_agg` / `F_AGE_*_agg` → `M_TOTAL` / `F_TOTAL` as totals
+- `seniorenstatus`: `OhneeSenioren_..._adj` + `MitSenioren_..._adj` → `Insgesamt_Haushalte_Seniorenstatus..._adj`
+
+### Entry Point
+
+```powershell
+$env:PYTHONUTF8=1
+python -m braunschweig.analysis.popsim_validation.run_popsim_control_validation `
+    --run-output-dir eqasim-data/output_popsim_25pct `
+    --label popsim_25pct
+```
+
+Outputs in `<source>/analysis/popsim_validation/`:
+`controls_long.csv`, `controls_summary.csv`, `quality_summary.csv`,
+`quality_by_family.csv`, `summary.md`, `report.json`.
+
+### Test Coverage (2026-06-14)
+
+| Test file | Tests | Status |
+|-----------|-------|--------|
+| `test_popsim_control_attributes.py` | 17 (map_housing_tenure: 5, map_building_type_3class: 5, assembly carry-through: 5, hh_type5: 2) | PASS |
+| `test_popsim_validation_controls.py` | 20 (target aggregation: 4, realized extractors: 13, E2E: 1) | PASS |
+| Baseline guard `test_simple_ipf_open_baseline.py` | 9/9 | PASS |
+| Full affected test suite (assembly + attributes + gap_columns) | 88/88 | PASS |

@@ -440,6 +440,12 @@ MID_HOUSEHOLD_ATTR_COLS = (
     # household weight): needed so the completed frames can serve BOTH the
     # expansion AND the PopulationSim seed.
     "H_GR", "H_GEW",
+    # Tier-2 popsim control attributes: carried from the MiD donor table onto the
+    # synthetic persons frame so the popsim control-fit validation can compare
+    # realized vs. target distributions.
+    # H_MIETE: tenure flag (1=renter/Mieter, 2=owner/Eigentuemer; 3/9/309=excluded).
+    # haustyp: building type (1=EFH/ZFH, 2=MFH 3-12Wohn., 3=Geschosswohn. 13+, 4=sonstiges, 95=n.z.).
+    "H_MIETE", "haustyp",
 )
 
 # Minimum columns required by build_trip_table / trips_stage.
