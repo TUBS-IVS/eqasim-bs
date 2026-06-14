@@ -124,7 +124,7 @@ Controls are MiD-only (`entd=None`); `controls_for_seed` logs a WARNING and drop
 ## Tier-1 measure-gain gate — 2026-06-14
 
 **Status: DONE_WITH_CONCERNS**
-Phase A binding: PASS. Phase B mini e2e: PARTIAL — tier0 baseline run started and PopulationSim batches converging (no crash, optimal solutions); tier01 run not yet started in this agent session due to PopulationSim cold-run time (estimated 60 min/run). Partial evidence only; full KPI delta requires follow-up.
+Phase A binding: PASS. Phase B mini e2e: PARTIAL — both tier0 and tier01 gate runs started in parallel (PIDs 40232 and 22360) and running as of 17:08; PopulationSim batches converging (OPTIMAL, no crash). Full KPI delta requires completion of both cold runs (~60 min each). See Follow-up section.
 
 ### Phase A — catalog binding check (all 66 controls)
 
@@ -169,7 +169,7 @@ Gate configs created:
 
 **Tier0 baseline run (config_gate_tier0_mini.yml):** Started at 16:47:47. PopulationSim batches (2 batches: 86 + 74 ZENSUS1km zones) launched at 16:51:33. After 18 minutes: batch_000 at 26/86 zones, batch_001 at 20/74 zones. Both producing OPTIMAL solutions (5 INFEASIBLE vs 121 OPTIMAL integerizer results in batch_000, all backstopped with smart-rounding). No crash, no abort. Feasibility confirmed. Run estimated to complete in ~60 min total.
 
-**Tier01 run (config_gate_tier01_mini.yml):** Not yet started in this agent session (tier0 run still in progress). Sequential run required to avoid resource contention.
+**Tier01 run (config_gate_tier01_mini.yml):** Started in parallel at 17:08:31 (PID 22360). Uses separate cache dir `cache_gate_tier01_mini` and output dir `output_gate_tier01_mini`. Logging to `gate_tier01_mini.log` / `gate_tier01_mini_err.log`.
 
 **Observed facts from tier0 in-flight:**
 - PopulationSim accepted the catalog-rendered controls.csv (44 controls) without error
@@ -216,7 +216,24 @@ Concerns:
 
 ### Follow-up actions required
 
-- Complete the tier0 gate run (est. finish 17:50), capture: `popsim_n_households`, `popsim_n_cells`, household-size distribution from `synthesis.output`
-- Run tier01 gate (est. 60 min), capture same KPIs
-- Compute delta: household_size MAE (tier01 vs tier0) and household_type share (tier01 vs Zensus reference)
-- If MAE improvement > 5% or household_type distribution within 2pp MAE of Zensus: KEEP both tier1 controls
+Both runs are in-flight (started 2026-06-14 16:47 / 17:08, cold-cache, estimated 60-90 min each). Complete the gate KPI comparison:
+
+```python
+# After both runs finish, compute household-size distribution KPIs:
+# Load synthesis output persons frames from both runs, then:
+from braunschweig.popsim import mid
+import pandas as pd
+
+# Per-run: load households from synthesis.output persons parquet
+# then compute household_size distribution and compare vs Zensus 100m marginals
+# Measure MAE = mean(|model_share - zensus_share|) over 6 size classes
+
+# Threshold for KEEP: MAE(tier01) < MAE(tier0) - 0.5pp
+# Threshold for DROP concern: household_type distribution within 5pp MAE of Zensus reference
+```
+
+Specific files to check after runs finish:
+- `eqasim-data/output_gate_tier0_mini/gate_tier0_persons.parquet`
+- `eqasim-data/output_gate_tier01_mini/gate_tier01_persons.parquet`
+- Popsim info: `popsim_n_households`, `popsim_n_cells` in synpp pipeline.json
+- PopulationSim summary: `cache_gate_tier0*_mini/popsim_work/batch_*/output/timing_log.csv`
