@@ -270,7 +270,7 @@ def test_apply_tilt_unknown_tenure_uses_renter_index() -> None:
         "tenure": ["unknown", "unknown"],
         "household_income_eur": [2000.0, 2000.0],
     })
-    out = ist.maybe_apply_income_tilt(
+    out, _diag = ist.maybe_apply_income_tilt(
         hh, cell_index, enabled=True,
         cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
         unknown_neutral=False,
@@ -307,7 +307,7 @@ def test_apply_tilt_unknown_tenure_neutral_when_unknown_neutral_true() -> None:
         "tenure": ["renter", "owner", "unknown"],
         "household_income_eur": [2000.0, 2000.0, 2000.0],
     })
-    out = ist.maybe_apply_income_tilt(
+    out, _diag = ist.maybe_apply_income_tilt(
         hh, cell_index, enabled=True,
         cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
         unknown_neutral=True,
@@ -331,9 +331,10 @@ def test_tilt_off_path_returns_income_unchanged() -> None:
     })
     cell_index = pd.DataFrame({"cell_id": ["a", "b"], "ars5": ["03101", "03101"],
                                "renter_income_index": [0.5, 1.5], "owner_income_index": [0.9, 1.1]})
-    out = ist.maybe_apply_income_tilt(hh, cell_index, enabled=False, cell_col="cell_id",
-                                      kreis_col="ars5", tenure_col="tenure")
+    out, diag = ist.maybe_apply_income_tilt(hh, cell_index, enabled=False, cell_col="cell_id",
+                                             kreis_col="ars5", tenure_col="tenure")
     pd.testing.assert_frame_equal(out, hh)  # OFF -> unchanged (byte-identical)
+    assert diag == {}  # OFF path returns empty diag
 
 
 def test_apply_tilt_effective_dev_reported_on_asymmetric_kreis() -> None:
@@ -384,3 +385,60 @@ def test_apply_tilt_effective_dev_reported_on_asymmetric_kreis() -> None:
         f"expected max_effective_dev > {clip} (nominal clip), got {diag['max_effective_dev']:.6f}; "
         "asymmetric Kreis should demonstrate realized deviation exceeds pre-renorm bound"
     )
+
+
+# ---------------------------------------------------------------------------
+# I-1: NaN-income shielding (no crash on baseline-tolerated NaN income)
+# ---------------------------------------------------------------------------
+
+def test_tilt_shields_nan_income_no_crash() -> None:
+    """NaN-income households must not crash the tilt and must stay NaN unchanged.
+
+    Setup: one Kreis with 2 normal renter households + 1 household with NaN income.
+    The NaN household is shielded: its income stays NaN, it is excluded from the
+    per-Kreis re-normalization, and the two normal households' per-Kreis (person/row)
+    mean over the non-NaN rows is preserved.
+    """
+    cell_index = pd.DataFrame({
+        "cell_id": ["x", "y"],
+        "ars5": ["03101", "03101"],
+        "renter_income_index": [0.7, 1.3],   # cheap and expensive cells
+        "owner_income_index": [1.0, 1.0],
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2, 3],
+        "cell_id": ["x", "y", "x"],
+        "ars5": ["03101", "03101", "03101"],
+        "tenure": ["renter", "renter", "renter"],
+        "household_income_eur": [2000.0, 2000.0, float("nan")],
+    })
+
+    # Must not raise.
+    out, diag = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True,
+        cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        income_col="household_income_eur", clip=0.30, unknown_neutral=True,
+    )
+
+    # The NaN row must still be NaN (shielded, byte-unchanged).
+    assert pd.isna(out.loc[2, "household_income_eur"]), (
+        "NaN-income row should remain NaN after shielding"
+    )
+
+    # The two normal rows must have been tilted (different cells -> different indices).
+    normal_mask = out["household_id"].isin([1, 2])
+    normal_inc = out.loc[normal_mask, "household_income_eur"]
+    assert not normal_inc.isna().any(), "Normal rows must not be NaN after tilt"
+
+    # The per-Kreis (row) mean over the NON-NaN rows is preserved exactly.
+    # Base mean of rows 1+2 = 2000.0; after tilt the re-normalization restores it.
+    mean_normal = float(normal_inc.mean())
+    assert abs(mean_normal - 2000.0) < 1e-6, (
+        f"Per-Kreis mean of non-NaN rows should be preserved (2000.0), got {mean_normal}"
+    )
+
+    # The tilt must still have tilted the two normal rows differently
+    # (cell x: renter_index=0.7 -> down; cell y: renter_index=1.3 -> up).
+    inc = out.set_index("household_id")["household_income_eur"]
+    assert inc[1] < 2000.0, f"Renter in cheap cell should be tilted down, got {inc[1]}"
+    assert inc[2] > 2000.0, f"Renter in expensive cell should be tilted up, got {inc[2]}"

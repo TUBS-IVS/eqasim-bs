@@ -42,6 +42,7 @@ from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
+from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 logger = logging.getLogger(__name__)
 
@@ -513,17 +514,20 @@ def execute(context) -> pd.DataFrame:
     income_tilt_clip = float(context.config(KEY_INCOME_TILT_CLIP))
 
     if income_tilt_enabled:
-        # NaN income guard: after apply_inkar_income_eur the income column must be
-        # all-positive floats (missing income class -> 0.0 by convention, not NaN).
-        # A NaN would silently corrupt per-Kreis sums in apply_spatial_income_tilt.
-        # Raise fast with a clear message (CLAUDE.md no-silent-fallback rule).
+        # NaN income guard: unclassifiable households (MiD map_household_income_eur
+        # default=None; ENTD class -1 midpoint=None) may carry NaN household_income_eur.
+        # apply_inkar_income_eur preserves these NaNs intentionally (high_income uses
+        # .fillna(0.0) but the eur column itself stays NaN for missing income class).
+        # We log the count for fallback-transparency (CLAUDE.md no-silent-fallback rule)
+        # and rely on maybe_apply_income_tilt to shield NaN-income rows from the tilt.
         n_nan = int(persons["household_income_eur"].isna().sum())
         if n_nan > 0:
-            raise ValueError(
-                f"[popsim.stage] income_spatial_tilt: found {n_nan}/{len(persons)} "
-                "NaN values in household_income_eur before spatial tilt. "
-                "apply_inkar_income_eur should have filled these to 0.0; "
-                "check the income derivation step."
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: %d/%d persons (%.1f%%) have "
+                "NaN household_income_eur (unclassifiable income class); these rows "
+                "will be shielded from the spatial tilt (income stays NaN, excluded "
+                "from per-Kreis re-normalization).",
+                n_nan, len(persons), 100.0 * n_nan / max(len(persons), 1),
             )
 
         # Load the tilt-specific cell columns (rent + eigentümerquote) from the
@@ -538,6 +542,11 @@ def execute(context) -> pd.DataFrame:
         #     "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
         _TILT_RENT_COL = "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
         _TILT_QUOTE_COL = "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
+        # Suppression-ADJUSTED household totals are the correct weight: the raw cell
+        # totals suppress small cells (NaN), making them 0-weight and biasing the
+        # Kreis-mean normalization toward large dense cells only. The _adj column
+        # fills suppressed cells with the cleancensus imputed estimates so every cell
+        # carries a proper (non-zero) weight in the index normalization.
         _TILT_HH_COL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
         _TILT_ARS_COL = "RegionalSchlussel_ARS"
 
@@ -664,7 +673,7 @@ def execute(context) -> pd.DataFrame:
                 _PERSONS_TENURE_COL,
             )
         else:
-            persons = _ist.maybe_apply_income_tilt(
+            persons, _tilt_diag = _ist.maybe_apply_income_tilt(
                 persons, _cell_index,
                 enabled=True,
                 cell_col=_PERSONS_CELL_COL,
@@ -675,14 +684,16 @@ def execute(context) -> pd.DataFrame:
                 unknown_neutral=True,
             )
             # Update high_income from the tilted income values using the unified rule.
-            from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
             persons["high_income"] = (
                 persons["household_income_eur"].fillna(0.0) >= HIGH_INCOME_THRESHOLD_EUR
             ).astype(bool)
             logger.info(
                 "[popsim.stage] income_spatial_tilt applied (beta=%.2f, clip=%.2f); "
-                "high_income re-derived from tilted income.",
+                "high_income re-derived from tilted income. "
+                "max_effective_dev=%.4f, kreis_mean_preserved=%s.",
                 income_tilt_beta, income_tilt_clip,
+                _tilt_diag.get("max_effective_dev", float("nan")),
+                _tilt_diag.get("kreis_mean_preserved", "n/a"),
             )
 
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.

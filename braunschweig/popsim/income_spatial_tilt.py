@@ -117,7 +117,19 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
     the mean-preservation guarantee, so instead the worst realized deviation from 1.0
     is reported as ``diag["max_effective_dev"]`` and must be monitored by the caller.
     For well-normalized Task-1 inputs (Kreis-weighted index mean == 1) this deviation is
-    negligible, but the diagnostic makes any unexpected drift observable."""
+    negligible, but the diagnostic makes any unexpected drift observable.
+
+    Per-capita (person-weighted) preservation note
+    -----------------------------------------------
+    When ``frame`` is the PERSONS frame (one row per synthetic person, with income
+    repeated per person in the household), the quantity preserved by the per-Kreis
+    re-normalization is the **PERSON-weighted (per-capita) per-Kreis income mean** —
+    NOT the household-weighted mean.  This is intentional and correct: it matches the
+    INKAR "Durchschnittliches Haushaltseinkommen je Einwohner" per-capita anchor and
+    the canonical IPF/enriched path which also applies INKAR scaling per person.
+    It can shift the HOUSEHOLD-weighted Kreis mean when household size correlates with
+    cell rent within a Kreis (bounded by the within-Kreis household-size × rent
+    covariance); this covariance is expected to be small in practice."""
     out = frame.copy()
     idx = cell_index.set_index(cell_col)
     renter_idx = out[cell_col].map(idx["renter_income_index"]).fillna(1.0).to_numpy()
@@ -178,7 +190,7 @@ def maybe_apply_income_tilt(
     income_col: str = "household_income_eur",
     clip: float = DEFAULT_CLIP,
     unknown_neutral: bool = True,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict]:
     """Apply the spatial income tilt when ``enabled``; otherwise return ``frame`` UNCHANGED.
 
     Parameters
@@ -192,8 +204,8 @@ def maybe_apply_income_tilt(
         ``build_owner_income_index``) with columns ``cell_col``, ``kreis_col``,
         ``renter_income_index``, ``owner_income_index``.
     enabled:
-        When ``False``, return ``frame`` byte-identical (no copy). This is the
-        OFF-gate: callers can flip the flag without any other change.
+        When ``False``, return ``(frame, {})`` with ``frame`` byte-identical (no copy).
+        This is the OFF-gate: callers can flip the flag without any other change.
     cell_col / kreis_col / tenure_col / income_col / clip:
         Forwarded verbatim to :func:`apply_spatial_income_tilt`.
     unknown_neutral:
@@ -201,6 +213,12 @@ def maybe_apply_income_tilt(
         shielded from the tilt: they receive factor 1.0 and are excluded from the
         per-Kreis re-normalization sums.  This prevents "unknown" (no information)
         from silently inheriting the renter downward tilt.
+
+        NaN-income rows are ALWAYS shielded regardless of this flag: their income
+        is left unchanged (NaN) and they are excluded from the per-Kreis
+        re-normalization so they cannot corrupt other households' Kreis sums.
+        The count and fraction of shielded NaN-income rows is logged at WARNING
+        level (fallback-transparency, CLAUDE.md no-silent-fallback rule).
 
         When ``False``, unknown-tenure rows are treated as renters (the
         ``apply_spatial_income_tilt`` default); this is strictly less correct but
@@ -218,15 +236,33 @@ def maybe_apply_income_tilt(
 
     Returns
     -------
-    pandas.DataFrame
-        ``frame`` unchanged when ``enabled=False``; tilted copy otherwise.
+    tuple[pandas.DataFrame, dict]
+        ``(frame, {})`` when ``enabled=False`` (frame byte-identical, empty diag);
+        ``(tilted_frame, diag)`` otherwise, where ``diag`` is the diagnostics dict
+        from :func:`apply_spatial_income_tilt` (keys: ``clipped_fraction``,
+        ``kreis_mean_preserved``, ``max_kreis_mean_abs_dev``, ``beta_clip``,
+        ``max_effective_dev``).
     """
     if not enabled:
-        return frame
+        return frame, {}
+
+    # Build the "active" mask: rows that will actually receive the tilt.
+    # NaN-income rows are always shielded (no signal, cannot re-normalize safely).
+    has_income = frame[income_col].notna()
+    n_nan_income = int((~has_income).sum())
+    if n_nan_income > 0:
+        logger.warning(
+            "[income_spatial_tilt] shielding %d/%d rows (%.1f%%) with NaN %r "
+            "from the spatial tilt; income stays NaN and these rows are excluded "
+            "from per-Kreis re-normalization.",
+            n_nan_income, len(frame), 100.0 * n_nan_income / max(len(frame), 1),
+            income_col,
+        )
 
     if unknown_neutral and tenure_col in frame.columns:
-        known_mask = frame[tenure_col].astype(str).isin(("owner", "renter"))
-        n_unknown = int((~known_mask).sum())
+        known_tenure = frame[tenure_col].astype(str).isin(("owner", "renter"))
+        active_mask = has_income & known_tenure
+        n_unknown = int((has_income & ~known_tenure).sum())
         if n_unknown > 0:
             logger.info(
                 "[income_spatial_tilt] unknown_neutral=True: shielding %d/%d rows "
@@ -234,21 +270,25 @@ def maybe_apply_income_tilt(
                 "tilt applied only to 'owner' / 'renter' rows.",
                 n_unknown, len(frame),
             )
-        # Apply the tilt to known-tenure rows only; leave unknown rows untouched.
-        if known_mask.any():
-            tilted_known, _diag = apply_spatial_income_tilt(
-                frame[known_mask].copy(), cell_index,
-                cell_col=cell_col, kreis_col=kreis_col, tenure_col=tenure_col,
-                income_col=income_col, clip=clip,
-            )
-            out = frame.copy()
-            out.loc[known_mask, income_col] = tilted_known[income_col].values
-            return out
-        else:
-            # All rows are "unknown": tilt has no effect; return unchanged.
-            return frame
+    else:
+        active_mask = has_income
 
-    out, _diag = apply_spatial_income_tilt(
-        frame, cell_index, cell_col=cell_col, kreis_col=kreis_col,
-        tenure_col=tenure_col, income_col=income_col, clip=clip)
-    return out
+    # Apply the tilt to active rows only; leave shielded rows (NaN income or unknown
+    # tenure) byte-unchanged. Their income values are returned as-is.
+    if active_mask.any():
+        tilted_active, diag = apply_spatial_income_tilt(
+            frame[active_mask].copy(), cell_index,
+            cell_col=cell_col, kreis_col=kreis_col, tenure_col=tenure_col,
+            income_col=income_col, clip=clip,
+        )
+        out = frame.copy()
+        out.loc[active_mask, income_col] = tilted_active[income_col].values
+        return out, diag
+    else:
+        # All rows are shielded (all NaN income or all unknown tenure):
+        # tilt has no effect; return unchanged with an empty diag.
+        logger.info(
+            "[income_spatial_tilt] no active rows to tilt (all rows shielded); "
+            "returning frame unchanged.",
+        )
+        return frame, {}
