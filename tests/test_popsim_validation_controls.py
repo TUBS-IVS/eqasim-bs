@@ -415,3 +415,63 @@ def test_end_to_end_evaluate_assess(monkeypatch):
     fam = QA.family_scores(quality)
     assert not fam.empty
     assert "popsim_hh" in fam["family"].values
+
+
+# ---------------------------------------------------------------------------
+# 9. seniorenstatus_target — column name regression guard
+# ---------------------------------------------------------------------------
+
+def test_seniorenstatus_target_non_empty(monkeypatch):
+    """seniorenstatus_target must return non-empty target shares for mit/ohne_senioren.
+
+    Uses a synthetic cells frame with the real cleaned column names so that a
+    rename in the parquet (or a typo in the target loader) is caught immediately.
+    """
+    _COL_OHNE  = "HH_ohneSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_MIT   = "HH_mitSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_NUR   = "HH_nurSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_TOTAL = "Insgesamt_Haushalte_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter_adj"
+
+    synthetic_cells = pd.DataFrame({
+        "ars5":      ["03101", "03101", "03102"],
+        _COL_OHNE:   [60.0,   40.0,   80.0],
+        _COL_MIT:    [20.0,   30.0,   10.0],
+        _COL_NUR:    [10.0,    5.0,    5.0],
+        _COL_TOTAL:  [90.0,   75.0,   95.0],
+    })
+
+    # Patch _load_cells to return the synthetic frame without touching the filesystem.
+    monkeypatch.setattr(C, "_load_cells", lambda data_path: synthetic_cells)
+
+    out = C.seniorenstatus_target("/fake/data_path")
+
+    assert not out.empty, "seniorenstatus_target returned an empty DataFrame"
+    assert set(out.columns) == {"geo_id", "category", "target_share"}, (
+        f"Unexpected columns: {set(out.columns)}"
+    )
+    cats = set(out["category"])
+    assert cats == {"mit_senioren", "ohne_senioren"}, (
+        f"Expected exactly {{mit_senioren, ohne_senioren}}, got {cats}"
+    )
+
+    # Shares must be in [0, 1] and sum to <=1 per geo (<=1 because total_col is adj total).
+    for geo, grp in out.groupby("geo_id"):
+        for _, row in grp.iterrows():
+            assert 0.0 <= row["target_share"] <= 1.0, (
+                f"target_share out of [0,1] for geo={geo}, category={row['category']}: "
+                f"{row['target_share']}"
+            )
+
+    # Spot-check: for 03101, ohne_senioren count = 60+40=100, mit_senioren = 20+30+10+5=65,
+    # total = 90+75=165. Shares: ohne=100/165, mit=65/165.
+    row_ohne = out[(out["geo_id"] == "03101") & (out["category"] == "ohne_senioren")]
+    row_mit  = out[(out["geo_id"] == "03101") & (out["category"] == "mit_senioren")]
+    assert len(row_ohne) == 1 and len(row_mit) == 1
+    expected_ohne = 100.0 / 165.0
+    expected_mit  = 65.0 / 165.0
+    assert abs(row_ohne["target_share"].iloc[0] - expected_ohne) < 1e-6, (
+        f"ohne_senioren share mismatch: {row_ohne['target_share'].iloc[0]} != {expected_ohne}"
+    )
+    assert abs(row_mit["target_share"].iloc[0] - expected_mit) < 1e-6, (
+        f"mit_senioren share mismatch: {row_mit['target_share'].iloc[0]} != {expected_mit}"
+    )

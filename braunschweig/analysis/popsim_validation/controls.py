@@ -30,8 +30,10 @@ Column names use the cleaned notation (``-`` → ``_``; umlauts transliterated b
   1_Person_Groesse_des_privaten_Haushalts_100m_Gitter                 (size 1)
   EigentuemerHH_Tenure_100m_Gitter                                   (owner)
   building_type_ein_zweifamilienhaus                                  (derived)
-  Insgesamt_Haushalte_Seniorenstatus_100m_Gitter_adj                  (senior total)
-  Mit_Senioren_Seniorenstatus_100m_Gitter_adj                        (with senior)
+  Insgesamt_Haushalte_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter_adj  (senior total)
+  HH_mitSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter           (with seniors)
+  HH_nurSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter           (only seniors)
+  HH_ohneSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter          (without seniors)
 """
 from __future__ import annotations
 
@@ -98,32 +100,6 @@ def _load_cells(data_path: str) -> pd.DataFrame:
     return df
 
 
-def _cells_to_kreis_target(
-    cells: pd.DataFrame,
-    *,
-    count_col: str,
-    total_col: str | None,
-) -> pd.DataFrame:
-    """Aggregate per-cell counts to Kreis level and return target shares.
-
-    Parameters
-    ----------
-    cells:
-        Prepared cells frame with ``ars5`` column.
-    count_col:
-        Column with the count of the category in each cell.
-    total_col:
-        Column with the total count per cell (denominator). When ``None``, the
-        denominator is the sum of all ``count_col`` values within the Kreis.
-
-    Returns
-    -------
-    pandas.DataFrame
-        ``[geo_id, category, target_share]`` — one row per (ars5, category_label).
-    """
-    raise NotImplementedError("use _multi_col_kreis_target instead")
-
-
 def _multi_col_kreis_target(
     cells: pd.DataFrame,
     col_category_map: dict[str, str],
@@ -162,7 +138,6 @@ def _multi_col_kreis_target(
     # Aggregate each category column to Kreis level.
     kreis_counts: dict[str, pd.Series] = {}
     for col, cat in present.items():
-        col_num = pd.to_numeric(cells[col], errors="coerce").fillna(0.0)
         kreis_counts[cat] = cells.groupby("ars5")[col].apply(lambda s: pd.to_numeric(s, errors="coerce").fillna(0.0).sum())
 
     # Compute totals.
@@ -292,17 +267,51 @@ def age_sex_target(data_path: str, sex: str) -> pd.DataFrame:
 def seniorenstatus_target(data_path: str) -> pd.DataFrame:
     """Per-Kreis Seniorenstatus target (REFERENCE only, not a popsim control).
 
-    The Seniorenstatus columns are not a PopulationSim Tier-0/1/2 control but are
-    used as a validation-only reference control to check whether the synthetic
-    household composition matches the census senior-presence distribution.
+    The census provides three Seniorenstatus categories:
+      - HH_ohneSenioren  (no member aged >= 65)
+      - HH_mitSenioren   (some members aged >= 65, not all)
+      - HH_nurSenioren   (all members aged >= 65)
+
+    The realized extractor (_realized_seniorenstatus) classifies households into
+    two classes based on whether any person is aged >= 65:
+      - "ohne_senioren"  (no senior present)
+      - "mit_senioren"   (at least one senior present)
+
+    To match the two realized categories, nurSenioren and mitSenioren are merged
+    into "mit_senioren" here, so realized and target category labels align.
+
+    Column names after clean_col_name (``-`` → ``_``):
+      HH_ohneSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter
+      HH_mitSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter
+      HH_nurSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter
+      Insgesamt_Haushalte_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter_adj
     """
     cells = _load_cells(data_path)
+
+    _COL_OHNE = "HH_ohneSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_MIT = "HH_mitSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_NUR = "HH_nurSenioren_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter"
+    _COL_TOTAL = "Insgesamt_Haushalte_Seniorenstatus_eines_privaten_Haushalts_100m_Gitter_adj"
+
+    # Merge nurSenioren + mitSenioren into a single "mit_senioren" column so that
+    # category labels match the realized extractor (2-class: mit / ohne).
+    for col in (_COL_MIT, _COL_NUR):
+        if col not in cells.columns:
+            LOGGER.warning(
+                "[popsim_validation] seniorenstatus target column %r absent from prepared "
+                "cells; mit_senioren share will be underestimated.", col,
+            )
+    # Build merged column (sum of mit + nur, coercing missing to 0).
+    mit_series = pd.to_numeric(cells.get(_COL_MIT, 0), errors="coerce").fillna(0.0)
+    nur_series = pd.to_numeric(cells.get(_COL_NUR, 0), errors="coerce").fillna(0.0)
+    cells = cells.copy()
+    cells["_mit_senioren_merged"] = mit_series + nur_series
+
     col_cat = {
-        "OhneeSenioren_Seniorenstatus_100m_Gitter_adj":  "ohne_senioren",
-        "MitSenioren_Seniorenstatus_100m_Gitter_adj":    "mit_senioren",
+        "_mit_senioren_merged":  "mit_senioren",
+        _COL_OHNE:               "ohne_senioren",
     }
-    total_col = "Insgesamt_Haushalte_Seniorenstatus_100m_Gitter_adj"
-    return _multi_col_kreis_target(cells, col_cat, total_col=total_col)
+    return _multi_col_kreis_target(cells, col_cat, total_col=_COL_TOTAL)
 
 
 # ---------------------------------------------------------------------------

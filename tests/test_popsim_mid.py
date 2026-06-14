@@ -258,7 +258,7 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
     # H_GR / H_GEW and P_GEW / kernwo joined the attribute usecols so the
     # member-completed frames can serve BOTH expansion and the PopulationSim seed.
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW\n1,3,4,1,2,72,2,2,1.0\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n1,3,4,1,2,72,2,2,1.0,1,1\n",
         encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
