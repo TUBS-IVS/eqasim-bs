@@ -388,9 +388,24 @@ def load_mid_seed(
             household_id=columns.household_id,
         )
         extra_person_cols = ("member_imputed", "source_H_ID", "source_P_ID")
+
+    # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
+    # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
+    # (11-class) then collapses to the 5 Zensus Familientyp labels.  The result
+    # is a per-household Series indexed by H_ID that is merged onto households.
+    # This must happen BEFORE select_seed_columns so hh_type5 can be retained as
+    # an extra_household_col; it uses the raw MiD column names (H_ID / HP_ALTER).
+    hh_type5_series = seedmod.derive_hh_type5(
+        persons, household_id_col=columns.person_household_id
+    )
+    households = households.join(
+        hh_type5_series.rename("hh_type5"),
+        on=columns.household_id,
+    )
+
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7", "H_GR"),
+        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5"),
         extra_person_cols=extra_person_cols,
     )
     return households, persons, report

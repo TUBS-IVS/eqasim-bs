@@ -93,3 +93,28 @@ Contrast with the 7-class `Lebensform` topic (`_Typ_priv_HH_Lebensform_`, has `_
 Verification result: per-cell max |cat_sum − Insgesamt| = 141.0 (structural gap, not FP noise) — the 5 categories sum to 37,954,651 vs Insgesamt = 39,615,530 (diff ≈ 1.66M). This reflects a known Zensus 2022 suppression pattern where the Insgesamt is populated for cells where individual categories are suppressed to zero. The category marginals are the correct PopulationSim targets; the Insgesamt is NOT a reliable sum-of-categories total. **DONE_WITH_CONCERNS — see note.**
 
 > **Note for Tasks 7-8:** Use the 5 `_Typ_priv_HH_Familie_` category columns directly as `census_source`. Do NOT use `Insgesamt_Haushalte_Typ_priv_HH_Familie_100m_Gitter` as a control marginal (it is over-counted relative to the category sum). The reconciled all-HH `_adj` anchor for this topic should reference `Insgesamt_Haushalte_Typ_priv_HH_Lebensform_100m_Gitter_adj` (40.2M, same universe as HH-size `_adj`) — but that is for the HH-total control only, not for the 5-class marginals.
+
+## Task 8 — MiD seed `hh_type5` column (11-class -> 5-class collapse, implemented 2026-06-14)
+
+Implemented in `braunschweig.popsim.seed.derive_hh_type5` via `_MID11_TO_HH_TYPE5` dict.
+The MiD function `map_households_to_hhtype` (in `braunschweig.data.mid.status_by_hhtype`)
+produces 11-class Haushaltstyp keys from the persons frame (`household_id` + `age`).
+
+| MiD 11-class key             | hh_type5 label              | Rationale                                              |
+|------------------------------|-----------------------------|--------------------------------------------------------|
+| `single_18_29`               | `einpersonen`               | Single-person HH regardless of age                    |
+| `single_30_59`               | `einpersonen`               | Single-person HH regardless of age                    |
+| `single_60_plus`             | `einpersonen`               | Single-person HH regardless of age                    |
+| `couple_youngest_18_29`      | `paar_ohne_kind`            | 2-adult HH, no children (age of youngest adult bands) |
+| `couple_youngest_30_59`      | `paar_ohne_kind`            | 2-adult HH, no children                               |
+| `couple_youngest_60_plus`    | `paar_ohne_kind`            | 2-adult HH, no children                               |
+| `child_under_6`              | `paar_mit_kind`             | Couple + youngest child <6                             |
+| `child_under_14`             | `paar_mit_kind`             | Couple + youngest child 6-13                           |
+| `child_under_18`             | `paar_mit_kind`             | Couple + youngest child 14-17                          |
+| `single_parent`              | `alleinerziehend`           | 1 adult + child(ren)                                   |
+| `three_plus_adults`          | `mehrpers_ohne_kernfamilie` | 3+ adults, no children = multi-person w/o core family  |
+| `not_classifiable`           | `None` (NaN)                | Cannot be placed; excluded from this control           |
+
+Wiring: `load_mid_seed` in `braunschweig.popsim.mid` calls `derive_hh_type5(persons, household_id_col="H_ID")`,
+joins the result onto the households frame, and adds `"hh_type5"` to `extra_household_cols` in `select_seed_columns`.
+Controls are MiD-only (`entd=None`); `controls_for_seed` logs a WARNING and drops them for the ENTD workflow.

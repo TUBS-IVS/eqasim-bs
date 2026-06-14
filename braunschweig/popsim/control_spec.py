@@ -484,22 +484,51 @@ _TIER1_HH_SIZE_ENTRIES: Sequence[tuple] = (
     ("6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter", 6, ">="),
 )
 
+# Tier-1 household-type (Zensus 'Typ privater Haushalte nach Familientyp', 5-class).
+# Each entry is (census_base, hh_type5_class).
+# census_source = (census_base,) -- the prepared-cell marginal column (no _adj suffix
+# for this topic; the 5 category columns are used directly as PopulationSim targets).
+# seed_expressions: MiD only (entd=None because ENTD composition cannot express the
+# German Familie 5-class breakdown; controls_for_seed drops ENTD with a WARNING).
+#
+# MiD collapse: map_households_to_hhtype (11-class) -> hh_type5 (5-class):
+#   single_18_29, single_30_59, single_60_plus       -> einpersonen
+#   couple_youngest_18_29 .. couple_youngest_60_plus  -> paar_ohne_kind
+#   child_under_6, child_under_14, child_under_18     -> paar_mit_kind
+#   single_parent                                     -> alleinerziehend
+#   three_plus_adults                                 -> mehrpers_ohne_kernfamilie
+#   not_classifiable                                  -> None (seed column is NaN/dropped)
+_TIER1_HH_TYPE_ENTRIES: Sequence[tuple] = (
+    ("EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter",    "einpersonen"),
+    ("Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter",         "paar_ohne_kind"),
+    ("Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter",          "paar_mit_kind"),
+    ("Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter",       "alleinerziehend"),
+    ("MehrpersHHohneKernfam_Typ_priv_HH_Familie_100m_Gitter",  "mehrpers_ohne_kernfamilie"),
+)
+
 
 def tier1_controls() -> List[CatalogControl]:
-    """Build the Tier-1 catalog: 6 household-size categories × 2 geographies = 12 controls.
+    """Build the Tier-1 catalog: household-size + household-type controls.
 
-    Each control targets one of the 6 census household-size categories
-    (1 person, 2 persons, …, 6+ persons) at both the 100 m and 1 km geography
-    levels.  The seed expressions use the ``H_GR`` column on the seed
-    households table (present in both the MiD and ENTD seeds after the Tier-7
-    implementation adds it).
+    Household-size: 6 categories × 2 geographies = 12 controls (MiD + ENTD).
+    Household-type: 5 Zensus Familie classes × 2 geographies = 10 controls (MiD-only).
+
+    The household-size controls use the ``H_GR`` column on the seed households table
+    (present in both the MiD and ENTD seeds after the Tier-7 implementation adds it).
+
+    The household-type controls use the ``hh_type5`` column on the MiD seed households
+    table, carrying one of five collapsed labels derived from
+    ``braunschweig.data.mid.status_by_hhtype.map_households_to_hhtype``. ENTD is
+    ``None`` (inexpressible) and is dropped by :func:`controls_for_seed` with a WARNING.
 
     Returns
     -------
     list[CatalogControl]
-        12 Tier-1 controls (6 size categories × 2 geographies).
+        22 Tier-1 controls (12 household-size + 10 household-type).
     """
     catalog: List[CatalogControl] = []
+
+    # --- Household-size (Task 7) ---
     for geography in (GEO_100M, GEO_1KM):
         for census_base, h_gr_value, op in _TIER1_HH_SIZE_ENTRIES:
             expr = f"(households.H_GR {op} {h_gr_value})"
@@ -513,6 +542,22 @@ def tier1_controls() -> List[CatalogControl]:
                     seed_expressions={"mid": expr, "entd": expr},
                 )
             )
+
+    # --- Household-type / Lebensform Familie 5-class (Task 8) ---
+    for geography in (GEO_100M, GEO_1KM):
+        for census_base, hh_type5_class in _TIER1_HH_TYPE_ENTRIES:
+            mid_expr = f"(households.hh_type5 == '{hh_type5_class}')"
+            catalog.append(
+                CatalogControl(
+                    name=census_base,
+                    geography=geography,
+                    seed_table=SEED_TABLE_HOUSEHOLDS,
+                    importance=1000,
+                    census_source=(census_base,),
+                    seed_expressions={"mid": mid_expr, "entd": None},
+                )
+            )
+
     return catalog
 
 
