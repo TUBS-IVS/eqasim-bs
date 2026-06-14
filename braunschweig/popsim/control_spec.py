@@ -570,9 +570,57 @@ _TIER2_TENURE_ENTRIES: Sequence[tuple] = (
     ("MieterHH_Tenure_100m_Gitter",      "(households.H_MIETE == 1)"),
 )
 
+# Tier-2 building_type (3-class) census source columns and MiD seed expressions.
+#
+# Census crosswalk (Zensus 2022 Wohnung Gebaeudetyp, cleaned column names):
+#   ein_zweifamilienhaus = SUM of 6 Ein-/Zweifamilienhaus columns
+#   mehrfamilienhaus     = SUM of 3 MFH columns
+#   sonstiges            = AndererGebaeudetyp column (1 source)
+#
+# MiD haustyp coding (MiD2023_Haushalte.csv):
+#   1 = Ein-/Zweifamilienhaus (EFH/ZFH, freistehend/DHH/Reihenhaus)
+#   2 = Mehrfamilienhaus (3-12 Wohnungen)
+#   3 = Geschosswohnungsbau (13+ Wohnungen) -> grouped with MFH
+#   4 = Sonstiges
+#  95 = nicht zutreffend (excluded: controls_for_seed drops entd=None;
+#       haustyp==95 households do not match any expression)
+#
+# MiD-only: ENTD does not carry a building-type flag; entd=None causes
+# controls_for_seed to drop all 6 building_type controls for ENTD with WARNING.
+_TIER2_BUILDING_TYPE_ENTRIES: Sequence[tuple] = (
+    (
+        "building_type_ein_zweifamilienhaus",
+        (
+            "FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "EFH_DHH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "EFH_Reihenhaus_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "Freist_ZFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "ZFH_DHH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "ZFH_Reihenhaus_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        ),
+        "(households.haustyp == 1)",
+    ),
+    (
+        "building_type_mehrfamilienhaus",
+        (
+            "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "MFH_7bis12Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "MFH_13undmehrWohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        ),
+        "(households.haustyp.isin([2, 3]))",
+    ),
+    (
+        "building_type_sonstiges",
+        (
+            "AndererGebaeudetyp_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        ),
+        "(households.haustyp == 4)",
+    ),
+)
+
 
 def tier2_controls() -> List[CatalogControl]:
-    """Build the Tier-2 catalog: owner / renter tenure controls.
+    """Build the Tier-2 catalog: tenure (owner/renter) + building_type (3-class) controls.
 
     Tenure: 2 categories (owner, renter) × 2 geographies = 4 controls.
     MiD-only: ENTD does not carry a reliable tenure flag (``entd=None``); the
@@ -589,12 +637,29 @@ def tier2_controls() -> List[CatalogControl]:
     - H_MIETE == 1 -> Mieter      (renter)
     - H_MIETE in {3, 9, 309}     -> excluded (neither owner nor renter)
 
+    Building type: 3 classes (Ein-/Zweifamilienhaus, Mehrfamilienhaus, Sonstiges) ×
+    2 geographies = 6 controls.  MiD-only (ENTD has no building-type flag).
+
+    The building_type controls use MULTI-COLUMN census_source: the derived marginal
+    column (e.g. ``building_type_ein_zweifamilienhaus``) is the row-sum of multiple
+    Zensus 2022 Gebaeudetyp category columns.  The name is a NEW derived name (not
+    a raw parquet column); :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls`
+    must be called to materialise the derived column before :func:`build_control_totals`.
+
+    MiD haustyp coding (MiD2023_Haushalte.csv):
+    - 1  -> ein_zweifamilienhaus
+    - 2,3 -> mehrfamilienhaus
+    - 4  -> sonstiges
+    - 95 -> n.z. (excluded; does not match any expression)
+
     Returns
     -------
     list[CatalogControl]
-        4 Tier-2 controls (2 tenure categories × 2 geographies).
+        10 Tier-2 controls: 4 tenure + 6 building_type (both × 2 geographies).
     """
     catalog: List[CatalogControl] = []
+
+    # --- Tenure (existing) ---
     for geography in (GEO_100M, GEO_1KM):
         for census_base, mid_expr in _TIER2_TENURE_ENTRIES:
             catalog.append(
@@ -607,6 +672,21 @@ def tier2_controls() -> List[CatalogControl]:
                     seed_expressions={"mid": mid_expr, "entd": None},
                 )
             )
+
+    # --- Building type (new, multi-column census_source) ---
+    for geography in (GEO_100M, GEO_1KM):
+        for derived_name, source_cols, mid_expr in _TIER2_BUILDING_TYPE_ENTRIES:
+            catalog.append(
+                CatalogControl(
+                    name=derived_name,
+                    geography=geography,
+                    seed_table=SEED_TABLE_HOUSEHOLDS,
+                    importance=1000,
+                    census_source=source_cols,
+                    seed_expressions={"mid": mid_expr, "entd": None},
+                )
+            )
+
     return catalog
 
 
@@ -634,6 +714,67 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
     if "tier2" in include_tiers:
         catalog.extend(tier2_controls())
     return catalog
+
+
+def build_aggregation_map(controls: Iterable[CatalogControl]) -> dict[str, tuple[str, ...]]:
+    """Build the aggregation map for controls whose name differs from their census_source.
+
+    Returns ``{control.name: control.census_source}`` for controls that need
+    multi-column aggregation, i.e. where the derived column name is NOT already
+    identical to a single census_source column.
+
+    Single-source controls where ``census_source == (control.name,)`` are the
+    identity case (name == raw parquet column) and are excluded from the map;
+    they need no aggregation step.
+
+    The returned map is consumed by
+    :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls`.
+
+    Parameters
+    ----------
+    controls:
+        Seed-filtered controls (output of :func:`controls_for_seed`).
+
+    Returns
+    -------
+    dict[str, tuple[str, ...]]
+        ``{derived_name: source_cols}`` for controls that require aggregation.
+        Empty dict when all controls are single-source identity (tier0-only default).
+    """
+    agg_map: dict[str, tuple[str, ...]] = {}
+    for control in controls:
+        is_identity = (
+            len(control.census_source) == 1
+            and control.census_source[0] == control.name
+        )
+        if not is_identity:
+            agg_map[control.name] = control.census_source
+    return agg_map
+
+
+def source_columns_union(controls: Iterable[CatalogControl]) -> list[str]:
+    """Return the union of all census_source columns for the given controls.
+
+    This is the set of RAW parquet columns that must be loaded (the union of each
+    control's ``census_source`` tuple).  For single-source identity controls
+    (``census_source == (control.name,)``) this equals ``control.name``.
+    For multi-source controls the individual source columns are returned.
+
+    Parameters
+    ----------
+    controls:
+        Seed-filtered controls (output of :func:`controls_for_seed`).
+
+    Returns
+    -------
+    list[str]
+        Ordered, deduplicated list of raw census column names to load.
+    """
+    seen: dict[str, None] = {}
+    for control in controls:
+        for col in control.census_source:
+            seen.setdefault(col, None)
+    return list(seen)
 
 
 def controls_for_seed(catalog: Iterable[CatalogControl], seed: str) -> List[CatalogControl]:

@@ -347,7 +347,12 @@ def load_mid_seed(
     # PopulationSim. Values 3/9/309 (ambiguous) are kept in the seed column;
     # the control expressions simply do not match them (they contribute 0 to
     # either tenure control, which is the correct treatment for excluded codes).
-    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR", "H_MIETE"]
+    # Always load haustyp (building type: 1=EFH/ZFH, 2=MFH, 3=Geschosswohnung,
+    # 4=sonstiges, 95=n.z.) so the Tier-2 building_type control expressions
+    # can be evaluated by PopulationSim. Code 95 (n.z.) does not match any
+    # building_type expression and is therefore silently excluded from all three
+    # building_type controls (correct behaviour, no fabricated assignments).
+    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR", "H_MIETE", "haustyp"]
     if complete_members:
         # Member completion additionally needs the mirror match keys
         # (hhgr_gr -> oek_status; RegioStaR7 and H_GR are already loaded above).
@@ -412,7 +417,7 @@ def load_mid_seed(
 
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE"),
+        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
         extra_person_cols=extra_person_cols,
     )
     return households, persons, report

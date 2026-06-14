@@ -268,3 +268,122 @@ Specific files to check after runs finish:
 - `eqasim-data/output_gate_tier01_mini/gate_tier01_persons.parquet`
 - Popsim info: `popsim_n_households`, `popsim_n_cells` in synpp pipeline.json
 - PopulationSim summary: `cache_gate_tier0*_mini/popsim_work/batch_*/output/timing_log.csv`
+
+---
+
+## Task 10 — Tier-2 building_type (3-class, multi-column census aggregation) — 2026-06-14
+
+### Overview
+
+Extends the Tier-2 catalog with a 3-class building-type control (Ein-/Zweifamilienhaus,
+Mehrfamilienhaus, Sonstiges).  Introduces a NEW multi-column census aggregation capability:
+control marginals whose name is a DERIVED identifier (not a raw parquet column) are computed
+as the row-sum of multiple Zensus 2022 source columns via
+`braunschweig.popsim.prepared_cells.add_aggregated_controls`.
+
+### Multi-column aggregation mechanism
+
+`CatalogControl.census_source` now holds a tuple of RAW parquet column names for every
+control.  For single-source controls (tier0, tier1, tenure) `census_source == (control.name,)` —
+the sum of one column is the identity, so the existing behaviour is byte-identical.
+
+For multi-source controls (building_type), `len(census_source) > 1` and `control.name` is a
+NEW derived name (e.g. `building_type_ein_zweifamilienhaus`) that does not exist in the raw
+parquet.  The stage build path:
+
+1. Calls `control_spec.source_columns_union(active_controls)` to get the union of all raw
+   census_source columns to LOAD from the parquet.
+2. Calls `prepared_cells.add_aggregated_controls(cells, aggregation_map)` where
+   `aggregation_map = {derived_name: source_cols}` for controls whose name is not a raw
+   parquet column (from `control_spec.build_aggregation_map`).
+3. Passes `base_cols = control_base_columns(controls_df, "ZENSUS100m")` (= derived names) to
+   `build_control_totals`.  The derived columns exist on the cells frame after step 2.
+
+For tier0-only (default): `aggregation_map` is empty, `add_aggregated_controls` returns
+`cells` unchanged, and `load_cols == base_cols`.  **Byte-identical to pre-Task-10.**
+
+### Census column binding
+
+Census theme: `Gebäudetyp und Gebäudegröße der Wohnungen` (Wohnung topic, 100m grid).
+Universe: occupied dwellings / Wohnungen (not households).
+
+#### ein_zweifamilienhaus — 6 source columns
+
+| Derived control name | Source column (cleaned) |
+|----------------------|------------------------|
+| `building_type_ein_zweifamilienhaus` | `FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `EFH_DHH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `EFH_Reihenhaus_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `Freist_ZFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `ZFH_DHH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `ZFH_Reihenhaus_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+
+#### mehrfamilienhaus — 3 source columns
+
+| Derived control name | Source column (cleaned) |
+|----------------------|------------------------|
+| `building_type_mehrfamilienhaus` | `MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `MFH_7bis12Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+| | `MFH_13undmehrWohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+
+#### sonstiges — 1 source column (single-source, derived name differs from raw column)
+
+| Derived control name | Source column (cleaned) |
+|----------------------|------------------------|
+| `building_type_sonstiges` | `AndererGebaeudetyp_Wohnung_Gebaeudetyp_Groesse_100m_Gitter` |
+
+### MiD haustyp crosswalk
+
+`haustyp` is loaded from `MiD2023_Haushalte.csv` alongside `H_GR`, `H_MIETE`, `RegioStaR7`.
+
+| haustyp value | MiD label | Zensus class | Seed expression |
+|---------------|-----------|--------------|-----------------|
+| 1 | Ein-/Zweifamilienhaus | `ein_zweifamilienhaus` | `(households.haustyp == 1)` |
+| 2 | Mehrfamilienhaus (3-12 Wohnungen) | `mehrfamilienhaus` | `(households.haustyp.isin([2, 3]))` |
+| 3 | Geschosswohnungsbau (13+ Wohnungen) | `mehrfamilienhaus` | (same expression, grouped with 2) |
+| 4 | Sonstiges | `sonstiges` | `(households.haustyp == 4)` |
+| 95 | nicht zutreffend (n.z.) | excluded | (does not match any expression) |
+
+MiD sample sizes (full MiD2023_Haushalte.csv, DE-wide):
+- haustyp == 1: 138,466 households
+- haustyp == 2: 39,373
+- haustyp == 3: 5,752
+- haustyp == 4: 26,187
+- haustyp == 95: 8,323
+
+### Wiring summary
+
+- `control_spec.py`: `_TIER2_BUILDING_TYPE_ENTRIES` (3 entries with name, source_cols tuple,
+  mid_expr); `tier2_controls()` now returns 10 controls (4 tenure + 6 building_type).
+  Added `build_aggregation_map()` and `source_columns_union()` helpers.
+- `prepared_cells.py`: `add_aggregated_controls(cells, aggregation_map)` sums source cols
+  into derived names; logs WARNING for missing source cols (partial sum); empty map = no-op.
+- `mid.py`: `load_mid_seed` loads `"haustyp"` alongside `H_GR`, `H_MIETE`; adds `"haustyp"`
+  to `extra_household_cols` in `select_seed_columns`.
+- `stage.py`: `execute` uses `build_source_columns` + `build_aggregation_map` to load raw
+  source cols and then derive aggregated cols before `run_popsim_mid`.
+  The `complete_members=True` seed path also gains `"H_MIETE"` and `"haustyp"` in
+  `extra_household_cols` (was missing from the completed-donor path).
+
+### Controls count
+
+| Tier | Controls |
+|------|----------|
+| tier0 | 44 (unchanged) |
+| tier1 | 22 (unchanged) |
+| tier2 (tenure) | 4 (unchanged) |
+| tier2 (building_type) | 6 (NEW: 3 classes × 2 geographies) |
+| **tier0+tier2** | **54** |
+| **tier0+tier1+tier2** | **76** |
+
+ENTD: all 6 building_type controls dropped with WARNING (entd=None).
+
+### Test coverage (2026-06-14)
+
+| Test file | Tests | Status |
+|-----------|-------|--------|
+| `test_popsim_prepared_cells_aggregation.py` | 7 (add_aggregated_controls: sums, partial-sum warn, identity, empty-map) | PASS |
+| `test_popsim_control_spec_building_type.py` | 10 (catalog: presence, geo, sources, expressions, mid-only) | PASS |
+| `test_popsim_seed_building_type.py` | 1 (haustyp survives select_seed_columns) | PASS |
+| `test_popsim_building_type_integration.py` | 4 (build_control_totals with 10 source cols + 3 derived) | PASS |
+| Regression suite (36 tests) | baseline guard 36/36 | PASS |

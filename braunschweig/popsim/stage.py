@@ -38,6 +38,7 @@ import pandas as pd
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import mid
+from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
 
@@ -118,6 +119,47 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
         catalog = cs.full_catalog(include_tiers=tiers)
         return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     raise ValueError(f"unknown controls_source {controls_source!r}")
+
+
+def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+    """Return the multi-column aggregation map for the active controls.
+
+    For ``controls_source="catalog"``: derives the aggregation map from the typed
+    catalog -- maps ``{derived_name: source_cols}`` for controls whose name is NOT
+    a raw parquet column (i.e. multi-source / derived names like
+    ``building_type_ein_zweifamilienhaus``).  Empty dict for tier0-only (all controls
+    are single-source identity -> no aggregation needed).
+
+    For ``controls_source="csv"``: returns an empty dict (the CSV hand-edited file
+    does not carry census_source metadata; caller handles no aggregation).
+
+    The returned map is consumed by
+    :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls`.
+    """
+    if controls_source != "catalog":
+        return {}
+    from braunschweig.popsim import control_spec as cs
+    catalog = cs.full_catalog(include_tiers=tiers)
+    active = cs.controls_for_seed(catalog, seed)
+    return cs.build_aggregation_map(active)
+
+
+def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid", tiers=("tier0",)):
+    """Return the RAW census parquet columns to load for the active controls.
+
+    For ``controls_source="catalog"``: returns the union of all census_source columns
+    of the active seed-filtered controls.  For single-source identity controls
+    (tier0) this equals the current ``control_base_columns`` output exactly.
+
+    For ``controls_source="csv"``: returns None (caller uses control_base_columns as
+    today).
+    """
+    if controls_source != "catalog":
+        return None
+    from braunschweig.popsim import control_spec as cs
+    catalog = cs.full_catalog(include_tiers=tiers)
+    active = cs.controls_for_seed(catalog, seed)
+    return cs.source_columns_union(active)
 
 
 def configure(context):
@@ -283,16 +325,38 @@ def execute(context) -> pd.DataFrame:
     # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
     control_tiers_str = context.config(KEY_CONTROL_TIERS)
     control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
+    controls_source = context.config(KEY_CONTROLS_SOURCE)
     controls_df = build_controls_df(
-        controls_source=context.config(KEY_CONTROLS_SOURCE),
+        controls_source=controls_source,
         controls_path=controls_path,
         seed=source_name,
         tiers=control_tiers,
     )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
-    cells = mid.load_control_cells(cells_path, base_cols)
+    # For catalog-based controls with multi-column census sources (e.g. building_type),
+    # load the raw source columns from the parquet (union of all census_source tuples)
+    # rather than the derived control names.  For tier0-only or CSV-based controls,
+    # source_cols == base_cols == current behaviour -> byte-identical.
+    source_cols_override = build_source_columns(
+        controls_source=controls_source,
+        seed=source_name,
+        tiers=control_tiers,
+    )
+    load_cols = source_cols_override if source_cols_override is not None else base_cols
+
+    cells = mid.load_control_cells(cells_path, load_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
+
+    # Derive the multi-column aggregated control columns (e.g. building_type_*).
+    # For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
+    # unchanged -> byte-identical.
+    agg_map = build_aggregation_map(
+        controls_source=controls_source,
+        seed=source_name,
+        tiers=control_tiers,
+    )
+    cells = prepared_cells.add_aggregated_controls(cells, agg_map)
 
     # Build the PopulationSim seed.
     # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -330,7 +394,7 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         seed_households, seed_persons = seedmod.select_seed_columns(
             completed_donor_households, completed_donor_persons, seed_columns,
-            extra_household_cols=("RegioStaR7", "H_GR"),
+            extra_household_cols=("RegioStaR7", "H_GR", "H_MIETE", "haustyp"),
         )
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled
