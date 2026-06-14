@@ -20,23 +20,50 @@ DEFAULT_CLIP = 0.30
 
 
 def _normalize_mean_one(index: pd.Series, kreis: pd.Series, weight: pd.Series) -> pd.Series:
-    """Scale ``index`` within each Kreis so the weighted mean is exactly 1.0."""
-    df = pd.DataFrame({"index": index.to_numpy(float), "kreis": kreis.to_numpy(),
-                       "weight": weight.to_numpy(float)})
-    means = df.groupby("kreis").apply(
-        lambda g: np.average(g["index"], weights=g["weight"]) if g["weight"].sum() > 0 else 1.0
+    """Scale ``index`` within each Kreis so the weighted mean is exactly 1.0.
+
+    Degenerate Kreise (total household weight == 0) are left unscaled (scale 1.0)
+    and a warning is emitted; this is the single, explicit handling point for that case.
+    """
+    idx_vals = index.to_numpy(float)
+    kreis_vals = kreis.to_numpy()
+    weight_vals = weight.to_numpy(float)
+
+    # Vectorized per-Kreis household-weighted mean via transform.
+    s_kreis = pd.Series(kreis_vals)
+    s_weight = pd.Series(weight_vals)
+    s_index = pd.Series(idx_vals)
+
+    wsum = s_weight.groupby(s_kreis).transform("sum").to_numpy()
+    wmean = (
+        (s_index * s_weight).groupby(s_kreis).transform("sum").to_numpy() / np.where(wsum > 0, wsum, 1.0)
     )
-    scale = df["kreis"].map(means).to_numpy()
-    scale = np.where(scale == 0, 1.0, scale)
-    return pd.Series(df["index"].to_numpy() / scale, index=index.index)
+
+    # Identify degenerate Kreise (zero total weight) and warn once.
+    zero_mask = wsum == 0
+    if zero_mask.any():
+        n_cells = int(zero_mask.sum())
+        bad_kreise = pd.unique(s_kreis.to_numpy()[zero_mask])
+        logger.warning(
+            "[income_spatial_tilt] %d cell(s) in %d Kreis(e) have zero total household weight "
+            "-> skipping normalization (scale 1.0) for: %s",
+            n_cells, len(bad_kreise), bad_kreise,
+        )
+        wmean = np.where(zero_mask, 1.0, wmean)
+
+    scale = np.where(wmean == 0, 1.0, wmean)
+    return pd.Series(idx_vals / scale, index=index.index)
 
 
 def build_renter_rent_index(cells: pd.DataFrame, *, rent_col: str, kreis_col: str,
                             weight_col: str, beta: float = DEFAULT_BETA) -> pd.DataFrame:
     """Per-cell renter income index = (rent/median_Kreis(rent))**beta, Kreis-mean-1 normalized.
 
-    Cells with missing/non-positive rent get a neutral raw index of 1.0 (no tilt). The
-    returned frame is ``cells`` plus a ``renter_income_index`` column.
+    Cells with missing/non-positive rent get a neutral raw index of 1.0 (no tilt). Note that
+    1.0 is the *raw* pre-normalization value; after Kreis-mean-1 normalization a neutral cell
+    in a mixed Kreis (containing cells with real rent data) is rescaled slightly away from 1.0
+    — this is correct and preserves the per-Kreis household-weighted-mean == 1 invariant.
+    The returned frame is ``cells`` plus a ``renter_income_index`` column.
     """
     out = cells.copy()
     rent = pd.to_numeric(out[rent_col], errors="coerce")
@@ -58,8 +85,10 @@ def build_owner_income_index(cells: pd.DataFrame, *, quote_col: str, kreis_col: 
     """Per-cell owner income index = (quote/median_Kreis(quote))**beta, Kreis-mean-1 normalized.
 
     Cells with missing/non-positive Eigentuemerquote get a neutral raw index of 1.0 (no tilt).
-    Higher ownership share -> more affluent area -> index > 1. The returned frame is ``cells``
-    plus an ``owner_income_index`` column.
+    Note that 1.0 is the *raw* pre-normalization value; after Kreis-mean-1 normalization a
+    neutral cell in a mixed Kreis is rescaled slightly away from 1.0 — this preserves the
+    per-Kreis household-weighted-mean == 1 invariant. Higher ownership share -> more affluent
+    area -> index > 1. The returned frame is ``cells`` plus an ``owner_income_index`` column.
     """
     out = cells.copy()
     q = pd.to_numeric(out[quote_col], errors="coerce")
