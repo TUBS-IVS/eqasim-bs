@@ -309,7 +309,8 @@ def test_load_mid_seed_day_filter_disable_able(tmp_path):
     from braunschweig.popsim import mid
 
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,H_GEW,RegioStaR7\n1,1.0,72\n2,1.0,72\n", encoding="utf-8"
+        "H_ID,H_GEW,RegioStaR7,H_GR,H_MIETE,haustyp\n1,1.0,72,1,1,1\n2,1.0,72,1,2,2\n",
+        encoding="utf-8",
     )
     # The person of household 2 reported on a weekend day (kernwo=4): the default
     # weekday filter (1, 2, 3) would drop household 2; with the filter disabled
