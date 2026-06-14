@@ -695,6 +695,15 @@ def execute(context) -> pd.DataFrame:
                 _tilt_diag.get("max_effective_dev", float("nan")),
                 _tilt_diag.get("kreis_mean_preserved", "n/a"),
             )
+            # Attach the tilt diagnostics to the persons frame so they survive pickling
+            # in the synpp cache and can be read back by the gate harness without
+            # re-running the tilt.  pandas DataFrame.attrs is preserved through pickle.
+            # Only scalars and bools are stored (no numpy types) for JSON-safety.
+            persons.attrs["income_tilt_diag"] = {
+                k: (bool(v) if isinstance(v, (bool, np.bool_)) else float(v))
+                for k, v in _tilt_diag.items()
+                if v is not None
+            }
 
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back

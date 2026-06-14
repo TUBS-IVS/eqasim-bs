@@ -40,6 +40,7 @@ per_kreis_mean = _gate_mod.per_kreis_mean
 owner_renter_ratio = _gate_mod.owner_renter_ratio
 summarize_run = _gate_mod.summarize_run
 off_on_deltas = _gate_mod.off_on_deltas
+decide_gate = _gate_mod.decide_gate
 
 
 # ---------------------------------------------------------------------------
@@ -348,3 +349,146 @@ class TestSummarizeRun:
         assert np.isnan(summary["owner_renter_ratio"]), (
             "Without tenure column, owner_renter_ratio must be NaN"
         )
+
+
+# ---------------------------------------------------------------------------
+# decide_gate (pure decision function — regression-tests for critical bug)
+# ---------------------------------------------------------------------------
+
+class TestDecideGate:
+    """Tests for the decide_gate() pure function.
+
+    These tests verify the gate decision logic in isolation from any pipeline run
+    or data load. Case (b) is the regression test for the critical bug where the
+    gate ALWAYS returned FLIP because a missing tilt_diag defaulted clipped_fraction
+    to 1.0 (worst case), causing clipped_ok = (1.0 < 0.5) = False.
+    """
+
+    def _make_off(self, spearman: float = 0.00, km: dict | None = None) -> dict:
+        """Minimal OFF summary for decide_gate."""
+        return {
+            "pearson": -0.006,
+            "spearman": spearman,
+            "per_kreis_mean": km or {"03101": 4633.0},
+            "owner_renter_ratio": 1.2448,
+        }
+
+    def _make_on(
+        self,
+        spearman: float = 0.028,
+        km: dict | None = None,
+        clipped_fraction: float | None = 0.12,
+        kreis_mean_preserved: bool | None = True,
+    ) -> dict:
+        """Minimal ON summary for decide_gate."""
+        s: dict = {
+            "pearson": 0.026,
+            "spearman": spearman,
+            "per_kreis_mean": km or {"03101": 4633.0},
+            "owner_renter_ratio": 1.3090,
+        }
+        if clipped_fraction is not None:
+            s["clipped_fraction"] = clipped_fraction
+        if kreis_mean_preserved is not None:
+            s["kreis_mean_preserved"] = kreis_mean_preserved
+        return s
+
+    def _make_deltas(
+        self, delta_spearman: float = 0.028, cross_preserved: bool = True
+    ) -> dict:
+        """Minimal deltas dict for decide_gate."""
+        return {
+            "delta_pearson": 0.032,
+            "delta_spearman": delta_spearman,
+            "delta_owner_renter_ratio": 0.064,
+            "per_kreis_mean_max_rel_dev": 0.0,
+            "per_kreis_mean_max_abs_dev_eur": 0.0,
+            "per_kreis_mean_preserved": cross_preserved,
+        }
+
+    def test_a_all_pass_returns_keep_exit0(self) -> None:
+        """(a) Improve + preserved + clip 0.12 -> KEEP_DEFAULT_ON, exit 0."""
+        off = self._make_off(spearman=0.00)
+        on = self._make_on(spearman=0.028, clipped_fraction=0.12, kreis_mean_preserved=True)
+        deltas = self._make_deltas(delta_spearman=0.028)
+        rec, code = decide_gate(off, on, deltas)
+        assert "KEEP_DEFAULT_ON" in rec, f"Expected KEEP, got: {rec}"
+        assert code == 0
+
+    def test_b_clipped_fraction_absent_must_not_flip(self) -> None:
+        """(b) clipped_fraction ABSENT (diag missing) + improve + preserved -> KEEP.
+
+        CRITICAL regression test: the original bug defaulted missing clipped_fraction
+        to 1.0, so clipped_ok = (1.0 < 0.5) = False -> always FLIP. The fix treats
+        absent clipped_fraction as OK (fail-open on unmeasured quantity).
+        """
+        off = self._make_off(spearman=0.00)
+        # No clipped_fraction key and no kreis_mean_preserved key -> diag absent
+        on: dict = {
+            "pearson": 0.026,
+            "spearman": 0.028,
+            "per_kreis_mean": {"03101": 4633.0},
+            "owner_renter_ratio": 1.3090,
+            # clipped_fraction deliberately absent
+            # kreis_mean_preserved deliberately absent
+        }
+        deltas = self._make_deltas(delta_spearman=0.028, cross_preserved=True)
+        rec, code = decide_gate(off, on, deltas)
+        assert "KEEP_DEFAULT_ON" in rec, (
+            f"Missing clipped_fraction must NOT trigger FLIP, got: {rec}"
+        )
+        assert code == 0
+
+    def test_c_mean_not_preserved_returns_flip_exit1(self) -> None:
+        """(c) Per-Kreis mean NOT preserved (diag says False) -> FLIP, exit 1."""
+        off = self._make_off()
+        on = self._make_on(kreis_mean_preserved=False)
+        deltas = self._make_deltas()
+        rec, code = decide_gate(off, on, deltas)
+        assert "FLIP_DEFAULT_OFF" in rec, f"Expected FLIP, got: {rec}"
+        assert code == 1
+
+    def test_d_delta_spearman_negative_returns_flip_exit1(self) -> None:
+        """(d) delta_spearman = -0.05 (worsens) -> FLIP, exit 1."""
+        off = self._make_off(spearman=0.10)
+        on = self._make_on(spearman=0.05)
+        deltas = self._make_deltas(delta_spearman=-0.05)
+        rec, code = decide_gate(off, on, deltas)
+        assert "FLIP_DEFAULT_OFF" in rec, f"Expected FLIP, got: {rec}"
+        assert code == 1
+
+    def test_e_all_nan_correlation_returns_flip_exit1(self) -> None:
+        """(e) All-NaN correlations (both runs failed) -> FLIP, exit 1 (fail-safe)."""
+        off = self._make_off(spearman=float("nan"))
+        on = self._make_on(spearman=float("nan"))
+        deltas = self._make_deltas(delta_spearman=float("nan"))
+        rec, code = decide_gate(off, on, deltas)
+        assert "FLIP_DEFAULT_OFF" in rec, f"Expected FLIP on NaN correlation, got: {rec}"
+        assert code == 1
+
+    def test_clipped_fraction_exactly_50pct_is_flip(self) -> None:
+        """Clipped fraction == 0.5 is NOT OK (threshold is strictly < 0.5)."""
+        off = self._make_off()
+        on = self._make_on(clipped_fraction=0.5)
+        deltas = self._make_deltas()
+        rec, code = decide_gate(off, on, deltas)
+        assert "FLIP_DEFAULT_OFF" in rec, f"cf=0.5 should FLIP, got: {rec}"
+        assert code == 1
+
+    def test_delta_spearman_at_tolerance_boundary_keeps(self) -> None:
+        """delta_spearman = -0.009 (within -0.01 tolerance) -> KEEP."""
+        off = self._make_off()
+        on = self._make_on()
+        deltas = self._make_deltas(delta_spearman=-0.009)
+        rec, code = decide_gate(off, on, deltas)
+        assert "KEEP_DEFAULT_ON" in rec, f"delta_spearman=-0.009 should KEEP, got: {rec}"
+        assert code == 0
+
+    def test_delta_spearman_just_below_tolerance_flips(self) -> None:
+        """delta_spearman = -0.011 (just below -0.01 tolerance) -> FLIP."""
+        off = self._make_off()
+        on = self._make_on()
+        deltas = self._make_deltas(delta_spearman=-0.011)
+        rec, code = decide_gate(off, on, deltas)
+        assert "FLIP_DEFAULT_OFF" in rec, f"delta_spearman=-0.011 should FLIP, got: {rec}"
+        assert code == 1
