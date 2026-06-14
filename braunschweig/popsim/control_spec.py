@@ -317,6 +317,161 @@ def validate_controls(controls: Iterable[ControlDef]) -> List[ControlDef]:
     return materialized
 
 
+def _backbone_age_expression(band_label: str, lower: int | None, upper: int | None, sex_value: int) -> str:
+    """Build the age+sex expression for one backbone catalog age-band control.
+
+    Reproduces the exact production fixture expression format:
+    - First band (lower=None): ``(persons.HP_ALTER < upper)&(persons.HP_SEX==sex)``
+    - Last band (upper=None): ``(persons.HP_ALTER > lower-1)&(persons.HP_SEX==sex)``
+    - Interior bands: ``(persons.HP_ALTER > lower-1)&(persons.HP_ALTER < upper)&(persons.HP_SEX==sex)``
+
+    There is one deliberate quirk preserved from the production fixture: the male
+    20-29 band uses ``>19`` (no space after ``>``) while every other interior lower
+    clause uses ``> N`` (with space). This is reproduced by special-casing
+    ``band_label == "20_29"`` and ``sex_value == 1``.
+    """
+    sex_clause = f"(persons.HP_SEX=={sex_value})"
+    if lower is None:
+        # First band: only upper bound.
+        return f"(persons.HP_ALTER < {upper})&{sex_clause}"
+    if upper is None:
+        # Last band: only lower bound, using > lower-1.
+        return f"(persons.HP_ALTER > {lower - 1})&{sex_clause}"
+    # Interior band: > lower-1 and < upper.
+    # Special quirk: male 20-29 has no space after ">".
+    lower_val = lower - 1
+    if band_label == "20_29" and sex_value == 1:
+        lower_clause = f"(persons.HP_ALTER >{lower_val})"
+    else:
+        lower_clause = f"(persons.HP_ALTER > {lower_val})"
+    return f"{lower_clause}&(persons.HP_ALTER < {upper})&{sex_clause}"
+
+
+def tier0_backbone_catalog() -> List[CatalogControl]:
+    """Build the Tier-0 backbone catalog: hh/pop totals + 9 age bands x 2 sexes + M/F totals.
+
+    The backbone catalog spans two geographies (ZENSUS100m and ZENSUS1km) and
+    produces 22 controls per geography = 44 total. All controls have both ``mid``
+    and ``entd`` seed expressions (the MiD and ENTD built tables share the same
+    column names HP_ALTER / HP_SEX / H_GEW / P_GEW).
+
+    Control-field naming follows the production baseline exactly:
+    - Household total base: ``Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj``
+    - Population total base: ``POP_TOTAL_100m_adj``
+    - Male age bands: ``M_AGE_{band_label}_agg``
+    - Female age bands: ``F_AGE_{band_label}_agg``
+    - Male total: ``M_TOTAL``
+    - Female total: ``F_TOTAL``
+
+    The base name is the same for both geographies; the geography suffix is appended
+    by :func:`render_catalog_csv`.
+
+    Returns
+    -------
+    list[CatalogControl]
+        44 backbone controls (22 per geography).
+    """
+    HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
+
+    HH_TOTAL_EXPR = "(households.H_GEW > 0) & (households.H_GEW < np.inf)"
+    POP_TOTAL_EXPR = "(persons.P_GEW > 0) & (persons.P_GEW < np.inf)"
+
+    catalog: List[CatalogControl] = []
+
+    for geography in (GEO_100M, GEO_1KM):
+        # Household total.
+        catalog.append(
+            CatalogControl(
+                name=HH_TOTAL_BASE,
+                geography=geography,
+                seed_table=SEED_TABLE_HOUSEHOLDS,
+                importance=1000,
+                census_source=(HH_TOTAL_BASE,),
+                seed_expressions={"mid": HH_TOTAL_EXPR, "entd": HH_TOTAL_EXPR},
+            )
+        )
+        # Population total.
+        catalog.append(
+            CatalogControl(
+                name=POP_TOTAL_BASE,
+                geography=geography,
+                seed_table=SEED_TABLE_PERSONS,
+                importance=1000,
+                census_source=(POP_TOTAL_BASE,),
+                seed_expressions={"mid": POP_TOTAL_EXPR, "entd": POP_TOTAL_EXPR},
+            )
+        )
+        # 9 male age bands then 9 female age bands.
+        for sex_prefix, sex_value in (("M", 1), ("F", 2)):
+            for band_label, lower, upper in AGE_BANDS:
+                name = f"{sex_prefix}_AGE_{band_label}_agg"
+                expr = _backbone_age_expression(band_label, lower, upper, sex_value)
+                catalog.append(
+                    CatalogControl(
+                        name=name,
+                        geography=geography,
+                        seed_table=SEED_TABLE_PERSONS,
+                        importance=1000,
+                        census_source=(name,),
+                        seed_expressions={"mid": expr, "entd": expr},
+                    )
+                )
+        # Male and female totals.
+        for sex_prefix, sex_value in (("M", 1), ("F", 2)):
+            name = f"{sex_prefix}_TOTAL"
+            expr = f"(persons.HP_SEX=={sex_value})"
+            catalog.append(
+                CatalogControl(
+                    name=name,
+                    geography=geography,
+                    seed_table=SEED_TABLE_PERSONS,
+                    importance=1000,
+                    census_source=(name,),
+                    seed_expressions={"mid": expr, "entd": expr},
+                )
+            )
+
+    return catalog
+
+
+def render_catalog_csv(controls: Iterable[CatalogControl], seed: str) -> pd.DataFrame:
+    """Render seed-filtered catalog controls to the PopulationSim ``controls.csv`` layout.
+
+    For each :class:`CatalogControl` the renderer:
+    - Sets ``control_field`` = ``f"{control.name}_{control.geography}"``
+    - Sets ``target`` = ``f"{control_field}_target"``
+    - Resolves ``expression`` via :meth:`CatalogControl.expression_for`
+
+    Parameters
+    ----------
+    controls:
+        Already seed-filtered controls (output of :func:`controls_for_seed`).
+    seed:
+        The seed name used to resolve each control's expression.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per control with columns matching :data:`CONTROLS_CSV_COLUMNS`.
+    """
+    rows = []
+    for control in controls:
+        control_field = f"{control.name}_{control.geography}"
+        target = f"{control_field}_target"
+        rows.append(
+            {
+                "target": target,
+                "geography": control.geography,
+                "seed_table": control.seed_table,
+                "importance": control.importance,
+                "control_field": control_field,
+                "expression": control.expression_for(seed),
+            }
+        )
+    return pd.DataFrame(rows, columns=list(CONTROLS_CSV_COLUMNS))
+
+
 def controls_for_seed(catalog: Iterable[CatalogControl], seed: str) -> List[CatalogControl]:
     """Return the catalog controls the given seed can express.
 

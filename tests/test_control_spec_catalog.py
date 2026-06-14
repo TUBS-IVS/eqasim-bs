@@ -58,3 +58,19 @@ def test_controls_for_seed_filters_and_warns_on_drop(caplog) -> None:
     # ENTD drops building_type_mfh -> exactly one WARNING naming the control + seed.
     drops = [r for r in caplog.records if "building_type_mfh" in r.message and "entd" in r.message]
     assert len(drops) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 4: tier0_backbone_catalog + render_catalog_csv
+# ---------------------------------------------------------------------------
+
+
+def test_tier0_render_reproduces_production_baseline() -> None:
+    import pandas as pd
+    baseline = pd.read_csv("tests/fixtures/prep3_controls_baseline.csv", sep=";")
+    catalog = cs.tier0_backbone_catalog()
+    rendered = cs.render_catalog_csv(cs.controls_for_seed(catalog, "mid"), "mid")
+    key = ["target", "geography", "seed_table", "importance", "control_field", "expression"]
+    left = baseline[key].sort_values(key).reset_index(drop=True)
+    right = rendered[key].sort_values(key).reset_index(drop=True)
+    pd.testing.assert_frame_equal(left, right, check_dtype=False)
