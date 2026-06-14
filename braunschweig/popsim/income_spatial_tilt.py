@@ -98,3 +98,35 @@ def build_owner_income_index(cells: pd.DataFrame, *, quote_col: str, kreis_col: 
     raw = pd.Series(raw, index=out.index).fillna(1.0)
     out["owner_income_index"] = _normalize_mean_one(raw, out[kreis_col], out[weight_col])
     return out
+
+
+def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
+                               cell_col: str, kreis_col: str, tenure_col: str,
+                               income_col: str = "household_income_eur",
+                               clip: float = DEFAULT_CLIP) -> tuple[pd.DataFrame, dict]:
+    """Apply the per-cell income index to ``frame`` (renter vs owner index by tenure),
+    clipped to [1-clip, 1+clip], then re-normalized within each Kreis so the weighted mean
+    income per Kreis is exactly unchanged. Returns (tilted_frame, diagnostics)."""
+    out = frame.copy()
+    idx = cell_index.set_index(cell_col)
+    renter_idx = out[cell_col].map(idx["renter_income_index"]).fillna(1.0).to_numpy()
+    owner_idx = out[cell_col].map(idx["owner_income_index"]).fillna(1.0).to_numpy()
+    is_owner = (out[tenure_col].astype(str) == "owner").to_numpy()
+    factor = np.where(is_owner, owner_idx, renter_idx)
+    clipped = np.clip(factor, 1.0 - clip, 1.0 + clip)
+    clipped_fraction = float(np.mean(clipped != factor))
+    base = pd.to_numeric(out[income_col], errors="coerce").to_numpy()
+    tilted = base * clipped
+    # Re-normalize within Kreis to restore the exact pre-tilt weighted mean (weight = 1/hh).
+    df = pd.DataFrame({"k": out[kreis_col].to_numpy(), "base": base, "tilted": tilted})
+    sums = df.groupby("k").agg(base_sum=("base", "sum"), tilt_sum=("tilted", "sum"))
+    scale = df["k"].map((sums["base_sum"] / sums["tilt_sum"]).replace([np.inf, -np.inf], 1.0)).fillna(1.0).to_numpy()
+    out[income_col] = tilted * scale
+    diag = {
+        "clipped_fraction": clipped_fraction,
+        "kreis_mean_preserved": bool(abs(out[income_col].mean() - float(np.nanmean(base))) < 1e-6),
+        "beta_clip": clip,
+    }
+    logger.info("[income_spatial_tilt] applied: clipped=%.1f%%, kreis_mean_preserved=%s",
+                100 * clipped_fraction, diag["kreis_mean_preserved"])
+    return out, diag

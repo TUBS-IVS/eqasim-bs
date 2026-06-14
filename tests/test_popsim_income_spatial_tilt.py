@@ -134,3 +134,104 @@ def test_normalize_zero_weight_kreis_no_crash_emits_warning(caplog: pytest.LogCa
     k2 = out[out["ars5"] == "03102"]
     w2 = k2["n_households"].to_numpy()
     assert abs(float(np.average(k2["renter_income_index"], weights=w2)) - 1.0) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Task 2: apply_spatial_income_tilt
+# ---------------------------------------------------------------------------
+
+def test_apply_tilt_preserves_kreis_mean_and_clips() -> None:
+    # 2 cells, 1 Kreis; renter index strongly differs; clip caps the deviation.
+    cell_index = pd.DataFrame({
+        "cell_id": ["a", "b"], "ars5": ["03101", "03101"],
+        "renter_income_index": [0.5, 1.5], "owner_income_index": [0.9, 1.1],
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2, 3, 4],
+        "cell_id": ["a", "a", "b", "b"],
+        "ars5": ["03101"] * 4,
+        "tenure": ["renter", "owner", "renter", "owner"],
+        "household_income_eur": [2000.0, 2000.0, 2000.0, 2000.0],
+    })
+    out, diag = ist.apply_spatial_income_tilt(
+        hh, cell_index, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", income_col="household_income_eur", clip=0.30,
+    )
+    # Kreis mean income is exactly preserved.
+    assert abs(out["household_income_eur"].mean() - 2000.0) < 1e-6
+    # renter in cheap cell a is tilted down, renter in expensive b up.
+    inc = out.set_index("household_id")["household_income_eur"]
+    assert inc[1] < 2000.0 < inc[3]
+    # clip honored: no household moves more than 30% before re-normalization bookkeeping.
+    assert diag["clipped_fraction"] >= 0.0
+    assert "kreis_mean_preserved" in diag
+
+
+def test_apply_tilt_multi_kreis_each_mean_preserved() -> None:
+    """Each Kreis's mean income is preserved independently, not just the global mean."""
+    # Kreis 03101: rent index [0.6, 1.4]; Kreis 03102: rent index [0.8, 1.2].
+    # All base incomes 3000 EUR; all renters so we exercise the renter index path.
+    cell_index = pd.DataFrame({
+        "cell_id": ["k1a", "k1b", "k2a", "k2b"],
+        "ars5": ["03101", "03101", "03102", "03102"],
+        "renter_income_index": [0.6, 1.4, 0.8, 1.2],
+        "owner_income_index": [1.0, 1.0, 1.0, 1.0],
+    })
+    # 2 households per cell, all renters.
+    rows = []
+    for hid, (cell, kreis) in enumerate(
+        [("k1a", "03101"), ("k1a", "03101"),
+         ("k1b", "03101"), ("k1b", "03101"),
+         ("k2a", "03102"), ("k2a", "03102"),
+         ("k2b", "03102"), ("k2b", "03102")],
+        start=1,
+    ):
+        rows.append({"household_id": hid, "cell_id": cell, "ars5": kreis,
+                     "tenure": "renter", "household_income_eur": 3000.0})
+    hh = pd.DataFrame(rows)
+
+    out, diag = ist.apply_spatial_income_tilt(
+        hh, cell_index, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", income_col="household_income_eur", clip=0.30,
+    )
+
+    # Each Kreis mean must be exactly 3000.
+    for kreis in ["03101", "03102"]:
+        mask = out["ars5"] == kreis
+        mean_k = out.loc[mask, "household_income_eur"].mean()
+        assert abs(mean_k - 3000.0) < 1e-6, (
+            f"Kreis {kreis}: expected mean 3000.0, got {mean_k}"
+        )
+
+    assert diag["kreis_mean_preserved"]
+
+
+def test_apply_tilt_tenure_routing_renter_vs_owner() -> None:
+    """Renters and owners in the same cell use their respective indices.
+
+    Cell 'x': renter_income_index=0.7 (cheap), owner_income_index=1.3 (wealthy area).
+    Both start at 2500 EUR. After tilt the renter must go down and the owner must go up.
+    """
+    cell_index = pd.DataFrame({
+        "cell_id": ["x"],
+        "ars5": ["03101"],
+        "renter_income_index": [0.7],
+        "owner_income_index": [1.3],
+    })
+    hh = pd.DataFrame({
+        "household_id": [10, 20],
+        "cell_id": ["x", "x"],
+        "ars5": ["03101", "03101"],
+        "tenure": ["renter", "owner"],
+        "household_income_eur": [2500.0, 2500.0],
+    })
+    out, _diag = ist.apply_spatial_income_tilt(
+        hh, cell_index, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", income_col="household_income_eur", clip=0.30,
+    )
+    inc = out.set_index("household_id")["household_income_eur"]
+    # Renter index (0.7) < 1 -> tilted down; owner index (1.3) > 1 -> tilted up.
+    assert inc[10] < 2500.0, f"Renter should be tilted down, got {inc[10]}"
+    assert inc[20] > 2500.0, f"Owner should be tilted up, got {inc[20]}"
+    # Kreis mean still preserved.
+    assert abs(out["household_income_eur"].mean() - 2500.0) < 1e-6
