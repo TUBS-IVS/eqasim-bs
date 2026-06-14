@@ -165,3 +165,90 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
                 100 * clipped_fraction, kreis_mean_preserved, max_kreis_mean_abs_dev,
                 max_effective_dev)
     return out, diag
+
+
+def maybe_apply_income_tilt(
+    frame: pd.DataFrame,
+    cell_index: pd.DataFrame,
+    *,
+    enabled: bool,
+    cell_col: str,
+    kreis_col: str,
+    tenure_col: str,
+    income_col: str = "household_income_eur",
+    clip: float = DEFAULT_CLIP,
+    unknown_neutral: bool = True,
+) -> pd.DataFrame:
+    """Apply the spatial income tilt when ``enabled``; otherwise return ``frame`` UNCHANGED.
+
+    Parameters
+    ----------
+    frame:
+        Household (or person) frame with at least ``cell_col``, ``kreis_col``,
+        ``tenure_col`` (values: ``"owner"`` / ``"renter"`` / ``"unknown"``),
+        and ``income_col``.
+    cell_index:
+        Per-cell index frame (output of ``build_renter_rent_index`` +
+        ``build_owner_income_index``) with columns ``cell_col``, ``kreis_col``,
+        ``renter_income_index``, ``owner_income_index``.
+    enabled:
+        When ``False``, return ``frame`` byte-identical (no copy). This is the
+        OFF-gate: callers can flip the flag without any other change.
+    cell_col / kreis_col / tenure_col / income_col / clip:
+        Forwarded verbatim to :func:`apply_spatial_income_tilt`.
+    unknown_neutral:
+        When ``True`` (default), rows whose ``tenure_col`` is ``"unknown"`` are
+        shielded from the tilt: they receive factor 1.0 and are excluded from the
+        per-Kreis re-normalization sums.  This prevents "unknown" (no information)
+        from silently inheriting the renter downward tilt.
+
+        When ``False``, unknown-tenure rows are treated as renters (the
+        ``apply_spatial_income_tilt`` default); this is strictly less correct but
+        provided as an escape hatch.
+
+    Policy rationale (unknown_neutral=True default)
+    -----------------------------------------------
+    ``map_housing_tenure`` emits ``"unknown"`` for MiD ``H_MIETE`` codes 3 / 9 / 309
+    (ambiguous / no answer). We have no spatial signal for these households. Assigning
+    them the renter index would impose a downward tilt on households that might
+    actually be owners. The honest policy is NEUTRAL (factor = 1.0): the household's
+    INKAR-scaled income is unchanged, and only "owner" / "renter" households are
+    redistributed within the Kreis. For well-calibrated data (small "unknown" fraction)
+    the per-Kreis mean deviation from neutrality is negligible.
+
+    Returns
+    -------
+    pandas.DataFrame
+        ``frame`` unchanged when ``enabled=False``; tilted copy otherwise.
+    """
+    if not enabled:
+        return frame
+
+    if unknown_neutral and tenure_col in frame.columns:
+        known_mask = frame[tenure_col].astype(str).isin(("owner", "renter"))
+        n_unknown = int((~known_mask).sum())
+        if n_unknown > 0:
+            logger.info(
+                "[income_spatial_tilt] unknown_neutral=True: shielding %d/%d rows "
+                "with tenure='unknown' from the spatial tilt (factor=1.0); "
+                "tilt applied only to 'owner' / 'renter' rows.",
+                n_unknown, len(frame),
+            )
+        # Apply the tilt to known-tenure rows only; leave unknown rows untouched.
+        if known_mask.any():
+            tilted_known, _diag = apply_spatial_income_tilt(
+                frame[known_mask].copy(), cell_index,
+                cell_col=cell_col, kreis_col=kreis_col, tenure_col=tenure_col,
+                income_col=income_col, clip=clip,
+            )
+            out = frame.copy()
+            out.loc[known_mask, income_col] = tilted_known[income_col].values
+            return out
+        else:
+            # All rows are "unknown": tilt has no effect; return unchanged.
+            return frame
+
+    out, _diag = apply_spatial_income_tilt(
+        frame, cell_index, cell_col=cell_col, kreis_col=kreis_col,
+        tenure_col=tenure_col, income_col=income_col, clip=clip)
+    return out

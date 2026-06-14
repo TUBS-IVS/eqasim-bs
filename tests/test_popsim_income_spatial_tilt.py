@@ -244,6 +244,98 @@ def test_apply_tilt_tenure_routing_renter_vs_owner() -> None:
     assert abs(out["household_income_eur"].mean() - 2500.0) < 1e-6
 
 
+def test_apply_tilt_unknown_tenure_uses_renter_index() -> None:
+    """With unknown_neutral=False (legacy), unknown tenure falls through to the renter index.
+
+    This pins the contract of apply_spatial_income_tilt: any tenure that is NOT "owner"
+    (including "unknown") gets the renter index. When unknown_neutral=False is passed to
+    maybe_apply_income_tilt, this behaviour is forwarded unchanged.
+
+    Setup: two cells in one Kreis. Cell A has a cheap-area renter index (0.6); cell B
+    has an expensive-area renter index (1.4). An "unknown"-tenure household in cell A
+    should receive a LOWER income than the one in cell B (because it is treated as a
+    renter and rented the cheaper cell). The per-Kreis re-normalization restores the
+    mean, but the relative ordering must reflect the renter-index difference.
+    """
+    cell_index = pd.DataFrame({
+        "cell_id": ["cheap", "expensive"],
+        "ars5": ["03101", "03101"],
+        "renter_income_index": [0.6, 1.4],   # cheap cell low, expensive cell high
+        "owner_income_index": [1.0, 1.0],    # neutral owner index (not used here)
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2],
+        "cell_id": ["cheap", "expensive"],
+        "ars5": ["03101", "03101"],
+        "tenure": ["unknown", "unknown"],
+        "household_income_eur": [2000.0, 2000.0],
+    })
+    out = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True,
+        cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        unknown_neutral=False,
+    )
+    inc = out.set_index("household_id")["household_income_eur"]
+    # With unknown_neutral=False, "unknown" is treated as renter.
+    # Cheap-cell household gets renter_index=0.6 -> should have LOWER income than expensive cell.
+    assert inc[1] < inc[2], (
+        f"With unknown_neutral=False, unknown-tenure in cheap cell ({inc[1]:.1f}) "
+        f"should have lower income than expensive cell ({inc[2]:.1f})"
+    )
+    # Per-Kreis mean must still be preserved by apply_spatial_income_tilt.
+    assert abs(out["household_income_eur"].mean() - 2000.0) < 1e-6, (
+        "Per-Kreis mean should be preserved by the re-normalization"
+    )
+
+
+def test_apply_tilt_unknown_tenure_neutral_when_unknown_neutral_true() -> None:
+    """With unknown_neutral=True (default), unknown-tenure rows are not tilted.
+
+    Their income must remain exactly unchanged (factor 1.0), while known-tenure
+    rows in the same Kreis receive the spatial adjustment.
+    """
+    cell_index = pd.DataFrame({
+        "cell_id": ["x"],
+        "ars5": ["03101"],
+        "renter_income_index": [0.7],   # renter gets a downward tilt
+        "owner_income_index": [1.3],    # owner gets an upward tilt
+    })
+    hh = pd.DataFrame({
+        "household_id": [1, 2, 3],
+        "cell_id": ["x", "x", "x"],
+        "ars5": ["03101", "03101", "03101"],
+        "tenure": ["renter", "owner", "unknown"],
+        "household_income_eur": [2000.0, 2000.0, 2000.0],
+    })
+    out = ist.maybe_apply_income_tilt(
+        hh, cell_index, enabled=True,
+        cell_col="cell_id", kreis_col="ars5", tenure_col="tenure",
+        unknown_neutral=True,
+    )
+    inc = out.set_index("household_id")["household_income_eur"]
+    # renter is tilted down (renter index 0.7 < 1).
+    assert inc[1] < 2000.0, f"Renter should be tilted down, got {inc[1]}"
+    # owner is tilted up (owner index 1.3 > 1).
+    assert inc[2] > 2000.0, f"Owner should be tilted up, got {inc[2]}"
+    # unknown is NEUTRAL: income unchanged.
+    assert inc[3] == 2000.0, (
+        f"Unknown-tenure household should be unaffected (neutral factor), got {inc[3]}"
+    )
+
+
+def test_tilt_off_path_returns_income_unchanged() -> None:
+    """When enabled=False, maybe_apply_income_tilt returns the frame BYTE-IDENTICAL."""
+    hh = pd.DataFrame({
+        "household_id": [1, 2], "cell_id": ["a", "b"], "ars5": ["03101", "03101"],
+        "tenure": ["renter", "owner"], "household_income_eur": [1500.0, 3000.0],
+    })
+    cell_index = pd.DataFrame({"cell_id": ["a", "b"], "ars5": ["03101", "03101"],
+                               "renter_income_index": [0.5, 1.5], "owner_income_index": [0.9, 1.1]})
+    out = ist.maybe_apply_income_tilt(hh, cell_index, enabled=False, cell_col="cell_id",
+                                      kreis_col="ars5", tenure_col="tenure")
+    pd.testing.assert_frame_equal(out, hh)  # OFF -> unchanged (byte-identical)
+
+
 def test_apply_tilt_effective_dev_reported_on_asymmetric_kreis() -> None:
     """Realized per-household effective multiplier can exceed the nominal clip band.
 
