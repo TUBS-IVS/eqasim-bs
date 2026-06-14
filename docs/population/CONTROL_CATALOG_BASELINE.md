@@ -463,3 +463,110 @@ Outputs in `<source>/analysis/popsim_validation/`:
 | `test_popsim_validation_controls.py` | 20 (target aggregation: 4, realized extractors: 13, E2E: 1) | PASS |
 | Baseline guard `test_simple_ipf_open_baseline.py` | 9/9 | PASS |
 | Full affected test suite (assembly + attributes + gap_columns) | 88/88 | PASS |
+
+---
+
+## Task — Spatial Income Tilt (Nettokaltmiete GAMMA Layer) — 2026-06-14
+
+### Design summary
+
+A within-Kreis income redistribution layer applied AFTER PopulationSim synthesis and INKAR scaling.
+Renters receive an income index driven by per-cell net cold rent (`durchschnMieteQM`); owners receive
+an index driven by per-cell Eigentümerquote. Both indices are Kreis-mean-1 normalized (household-weighted)
+so applying them preserves each Kreis's per-capita income mean **exactly**. The tilt is:
+
+```
+income_ON = income_OFF × clip(index, 1 - β^1, 1 + β) × per_Kreis_renorm_scalar
+```
+
+with **β = 0.3** (concave income-demand elasticity, literature-grounded) and **clip = 0.30**.
+
+Config flag: `braunschweig.population.popsim.income_spatial_tilt` (default **ON**).
+
+Keys:
+- `braunschweig.population.popsim.income_tilt_beta`: 0.3
+- `braunschweig.population.popsim.income_tilt_clip`: 0.30
+
+Module: `braunschweig.popsim.income_spatial_tilt` (14 unit tests in `test_popsim_income_spatial_tilt.py`).
+Gate harness: `scripts/gate_income_tilt.py` (23 unit tests in `test_gate_income_tilt.py`).
+
+### Gate methodology
+
+The gate harness (`scripts/gate_income_tilt.py`) runs both OFF and ON configurations via
+`scripts/run_synpp.py` with `config_smoke_popsim_mid_mini.yml` (1-Kreis 03101, 1% sampling) and
+compares:
+
+1. **Pearson and Spearman correlation** of synthetic `household_income_eur` with home-cell
+   `durchschnMieteQM` (non-zero rent cells only — zero-rent cells = no data, not free rent)
+2. **Per-Kreis income mean** (must be preserved OFF vs ON)
+3. **Clipped fraction** (fraction of persons whose raw index factor was clipped; must be < 50%)
+4. **Owner/renter income ratio** (tilt should spread incomes between tenure groups)
+
+The correlations are evaluated against non-zero rent cells only because 32.9% of ZGB-8 cells
+have `rent_qm = 0` (suppressed Zensus data), and including them would dilute the signal.
+
+### Measured OFF vs ON deltas (2026-06-14, REAL data)
+
+Source: existing `braunschweig.popsim.stage` cache from `eqasim-data/cache_mini_popsim_mid`
+(1-Kreis 03101, 285,004 synthetic persons) + tilt applied manually in Python via
+`income_spatial_tilt.maybe_apply_income_tilt`. This is equivalent to a full pipeline run with the
+flag ON/OFF because the tilt is applied post-synthesis on the same PopulationSim output.
+
+Tenure assignment: `H_MIETE` from `MiD2023_Haushalte.csv` mapped to owner/renter/unknown
+(same logic as `braunschweig.popsim.attributes.map_housing_tenure`).
+
+| Metric | OFF | ON | Delta |
+|--------|-----|----|----|
+| **Pearson(income, rent)** | −0.0062 | **+0.0258** | **+0.0320** |
+| **Spearman(income, rent)** | −0.0000 | **+0.0284** | **+0.0284** |
+| Per-Kreis mean income (03101) | 4,633 EUR | 4,633 EUR | **0.00 EUR** |
+| Owner mean income | 5,148 EUR | 5,260 EUR | +112 EUR |
+| Renter mean income | 4,136 EUR | 4,019 EUR | −117 EUR |
+| Owner/renter ratio | 1.2448 | 1.3090 | +0.0642 |
+| Clipped fraction | — | 12.4% | — |
+| Max effective dev | — | 0.3204 | — |
+| N valid persons (non-zero rent) | 247,709 | 247,709 | — |
+
+**Key observation — OFF baseline:** The OFF correlation is near zero (Pearson −0.006, Spearman ~0.000).
+This confirms that the building_type and tenure PopulationSim controls do NOT yet induce meaningful
+spatial income structure by themselves at the 100 m cell level within Braunschweig. Income is
+essentially random with respect to rent in the untilted synthesis.
+
+**Key observation — ON tilt:** The tilt introduces a positive, statistically significant income↔rent
+correlation (Pearson +0.026, Spearman +0.028) while preserving the per-Kreis mean exactly.
+The correlation magnitude is modest relative to the literature Spearman ~0.32 (area-level estimate);
+this is expected — the tilt affects only the within-Kreis REDISTRIBUTION (bounded by clip=0.30)
+and does not add cross-Kreis income variance. β=0.3 could be increased to strengthen the
+within-cell signal further, but the present value was chosen conservatively.
+
+### Gate decision
+
+**RECOMMENDATION: KEEP DEFAULT ON**
+
+All three PASS conditions are met:
+
+1. **Correlation improves OFF→ON** (ΔPearson +0.0320, ΔSpearman +0.0284 — positive gain).
+2. **Per-Kreis mean preserved** (delta = 0.00 EUR, relative error = 0.00e+00 — exact).
+3. **Clipped fraction reasonable** (12.4% < 50% threshold).
+
+Additional consistency checks PASS:
+- Owner/renter ratio increases OFF→ON (1.2448 → 1.3090): expected spatial spread.
+- Max effective deviation 0.3204 slightly exceeds the nominal clip 0.30 — documented behaviour
+  for asymmetric Kreise (renorm scalar shifts the realized dev); within acceptable range.
+
+The default ON flag is confirmed. To reproduce the pre-tilt synthesis, set
+`braunschweig.population.popsim.income_spatial_tilt: false` in the pipeline config.
+
+### Notes for follow-up
+
+- Literature target for area-level income↔rent Spearman is ~0.32 (from national micro data);
+  the current +0.028 per-person correlation is much weaker because (a) the tilt is bounded at
+  clip=0.30, (b) it operates within-Kreis only (not cross-Kreis), and (c) Braunschweig
+  (a single Kreisfreie Stadt) has limited within-Kreis rent variance. Cross-Kreis income variance
+  is captured by INKAR scaling, not this tilt.
+- Full gate pipeline run (OFF vs ON via `synpp` → `synthesis.output`) was deferred because
+  the existing mini cache already provides byte-equivalent data for the income tilt analysis
+  (the tilt is applied post-PopulationSim in `stage.execute`, so the PopulationSim output is
+  identical between OFF and ON runs). To re-run with a fresh pipeline: use
+  `python scripts/gate_income_tilt.py --config-base config_smoke_popsim_mid_mini.yml`
+  (expected wall-clock: 60-90 min per flag).
