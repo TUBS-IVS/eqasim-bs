@@ -65,6 +65,10 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Default ON (project rule: new features default on); False reproduces the
 # legacy load_mid_seed + load_donor path byte-identically.
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# Controls source: "csv" (default, byte-identical, reads the external hand-edited
+# file at KEY_CONTROLS) or "catalog" (renders from the typed control catalog via
+# control_spec; Task 5 of the control-catalog plan).
+KEY_CONTROLS_SOURCE = "braunschweig.population.popsim.controls_source"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -92,6 +96,22 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
         If ``source_name`` is not a known or planned source name.
     """
     return sources.get_source(source_name)
+
+
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid"):
+    """Return the PopulationSim controls.csv frame.
+
+    controls_source="csv": read the external hand-edited file at controls_path (today's
+    behaviour, byte-identical). controls_source="catalog": render the seed-filtered
+    catalog via control_spec (the new source of truth).
+    """
+    if controls_source == "csv":
+        return pd.read_csv(controls_path, sep=";")
+    if controls_source == "catalog":
+        from braunschweig.popsim import control_spec as cs
+        catalog = cs.tier0_backbone_catalog()  # later tiers appended in Task 7
+        return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
+    raise ValueError(f"unknown controls_source {controls_source!r}")
 
 
 def configure(context):
@@ -127,6 +147,8 @@ def configure(context):
     context.config(KEY_STRATIFY, False)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
+    context.config(KEY_CONTROLS_SOURCE, "csv")
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -250,7 +272,11 @@ def execute(context) -> pd.DataFrame:
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
 
-    controls_df = pd.read_csv(controls_path, sep=";")
+    controls_df = build_controls_df(
+        controls_source=context.config(KEY_CONTROLS_SOURCE),
+        controls_path=controls_path,
+        seed=source_name,
+    )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
     cells = mid.load_control_cells(cells_path, base_cols)
