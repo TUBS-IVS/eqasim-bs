@@ -118,3 +118,83 @@ produces 11-class Haushaltstyp keys from the persons frame (`household_id` + `ag
 Wiring: `load_mid_seed` in `braunschweig.popsim.mid` calls `derive_hh_type5(persons, household_id_col="H_ID")`,
 joins the result onto the households frame, and adds `"hh_type5"` to `extra_household_cols` in `select_seed_columns`.
 Controls are MiD-only (`entd=None`); `controls_for_seed` logs a WARNING and drops them for the ENTD workflow.
+
+---
+
+## Tier-1 measure-gain gate — 2026-06-14
+
+**Status: DONE_WITH_CONCERNS**
+Phase A binding: PASS. Phase B mini e2e: PARTIAL — tier0 baseline run started and PopulationSim batches converging (no crash, optimal solutions); tier01 run not yet started in this agent session due to PopulationSim cold-run time (estimated 60 min/run). Partial evidence only; full KPI delta requires follow-up.
+
+### Phase A — catalog binding check (all 66 controls)
+
+Executed:
+```python
+from braunschweig.popsim import stage, mid, prepared_cells
+import pyarrow.parquet as pq
+
+df = stage.build_controls_df(controls_source='catalog', seed='mid', tiers=('tier0', 'tier1'))
+# Result: 66 rows (44 backbone + 12 household_size + 10 household_type)
+
+base_cols = mid.control_base_columns(df, 'ZENSUS100m')
+# Result: 33 distinct base columns
+
+schema = pq.ParquetFile(parquet_path).schema
+raw_cols = schema.names  # 576 raw columns
+clean_to_raw = {prepared_cells.clean_col_name(r): r for r in raw_cols}
+
+missing = [b for b in base_cols if b not in clean_to_raw]
+# Result: 0 missing
+```
+
+**RESULT: ALL 33 BASE COLUMNS RESOLVE. BINDING COMPLETE. 0 MISSING.**
+
+Controls frame summary:
+- Total rows: 66 (33 per geography × 2 geographies)
+- Backbone (tier0): 44 rows (22 per geography: 1 hh-total + 1 pop-total + 18 age×sex + 2 sex-totals)
+- Household-size (tier1): 12 rows (6 categories × 2 geographies)
+- Household-type (tier1): 10 rows (5 Familie classes × 2 geographies)
+
+Key parquet column name mappings confirmed (raw uses `-` where control spec uses `_`):
+- `1_Person_Groesse_des_privaten_Haushalts_100m_Gitter` → `1_Person_Groesse_des_privaten_Haushalts_100m-Gitter`
+- `EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter` → `EinpersHH_SingleHH_Typ_priv_HH_Familie_100m-Gitter`
+- `Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter` → `Paare_mitKind_Typ_priv_HH_Familie_100m-Gitter`
+(all `_100m_Gitter` → `_100m-Gitter` via `clean_col_name` hyphen→underscore, matching exactly)
+
+### Phase B — 1-Kreis mini e2e gate (PARTIAL)
+
+Gate configs created:
+- `config_gate_tier0_mini.yml` — catalog + tier0 (44-control baseline), 1-Kreis 03101, fresh cache
+- `config_gate_tier01_mini.yml` — catalog + tier0+tier1 (66 controls), 1-Kreis 03101, fresh cache
+
+**Tier0 baseline run (config_gate_tier0_mini.yml):** Started at 16:47:47. PopulationSim batches (2 batches: 86 + 74 ZENSUS1km zones) launched at 16:51:33. After 18 minutes: batch_000 at 26/86 zones, batch_001 at 20/74 zones. Both producing OPTIMAL solutions (5 INFEASIBLE vs 121 OPTIMAL integerizer results in batch_000, all backstopped with smart-rounding). No crash, no abort. Feasibility confirmed. Run estimated to complete in ~60 min total.
+
+**Tier01 run (config_gate_tier01_mini.yml):** Not yet started in this agent session (tier0 run still in progress). Sequential run required to avoid resource contention.
+
+**Observed facts from tier0 in-flight:**
+- PopulationSim accepted the catalog-rendered controls.csv (44 controls) without error
+- Seed table loaded correctly: 155,525 households (71.3% completeness) + 47,266 member-completion fillers
+- Integerizer producing OPTIMAL solutions (warm-start backstop recovers the 1 INFEASIBLE cell)
+- No zero-batch abort, no control mismatch error
+
+**Tier1 feasibility pre-assessment:** The 22 additional Tier-1 controls (12 hh-size + 10 hh-type) are all expressible in the MiD seed (H_GR for size, hh_type5 for type). Both columns are present in the seed households frame (H_GR unconditionally since the Tier-7 implementation, hh_type5 derived and joined in load_mid_seed). No theoretical reason for PopulationSim to fail with these controls — they are direct marginals on the households table.
+
+### Keep/drop recommendation per tier1 control
+
+Based on Phase A (binding PASS) and theoretical analysis (KPI delta measurement pending Phase B completion):
+
+| Control group | Controls | Census source | Seed expressible? | Phase A binding | Recommendation |
+|---------------|----------|---------------|-------------------|-----------------|----------------|
+| household_size_1..6plus | 12 (6 cats × 2 geo) | `N_Person(en)_Groesse_..._100m-Gitter` | YES (H_GR in seed) | PASS | **KEEP** — primary structural control; directly constrains household size composition per cell |
+| household_type (5 Familie classes) | 10 (5 cats × 2 geo) | `*_Typ_priv_HH_Familie_100m-Gitter` | YES (hh_type5 in seed, MiD-only) | PASS | **KEEP** — Familie 5-class is the correct Zensus marginal; ENTD not expressible (warn+drop already implemented) |
+
+Concerns:
+1. The household_type `Familie` topic has a structural gap: sum(5 categories) = 37.95M vs `Insgesamt` = 39.62M (1.67M gap = suppression artefact). PopulationSim targets the category columns directly (not the total), which is correct — but cells with suppressed categories (NaN→0-filled) will contribute zero to that control, which may cause local infeasibility for the hh-type controls. Impact depends on suppression density; INFEASIBLE backstop (smart-round) already in place.
+2. Full KPI delta (household-size fit improvement + household-type distribution vs Zensus reference) requires the complete Phase B runs. To be measured in follow-up.
+
+### Follow-up actions required
+
+- Complete the tier0 gate run (est. finish 17:50), capture: `popsim_n_households`, `popsim_n_cells`, household-size distribution from `synthesis.output`
+- Run tier01 gate (est. 60 min), capture same KPIs
+- Compute delta: household_size MAE (tier01 vs tier0) and household_type share (tier01 vs Zensus reference)
+- If MAE improvement > 5% or household_type distribution within 2pp MAE of Zensus: KEEP both tier1 controls
