@@ -106,7 +106,18 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
                                clip: float = DEFAULT_CLIP) -> tuple[pd.DataFrame, dict]:
     """Apply the per-cell income index to ``frame`` (renter vs owner index by tenure),
     clipped to [1-clip, 1+clip], then re-normalized within each Kreis so the weighted mean
-    income per Kreis is exactly unchanged. Returns (tilted_frame, diagnostics)."""
+    income per Kreis is exactly unchanged. Returns (tilted_frame, diagnostics).
+
+    The ``clip`` parameter bounds the factor BEFORE per-Kreis re-normalization. After
+    re-normalization (which guarantees exact per-Kreis mean preservation), each Kreis is
+    scaled by ``scale = base_sum / tilt_sum``. When a Kreis's clipped index mean departs
+    from 1.0 (e.g. because many cells were clipped in the same direction), this scalar
+    can push the realized per-household effective multiplier (``clipped * scale``) outside
+    the nominal [1-clip, 1+clip] band. Re-clipping after re-normalization would break
+    the mean-preservation guarantee, so instead the worst realized deviation from 1.0
+    is reported as ``diag["max_effective_dev"]`` and must be monitored by the caller.
+    For well-normalized Task-1 inputs (Kreis-weighted index mean == 1) this deviation is
+    negligible, but the diagnostic makes any unexpected drift observable."""
     out = frame.copy()
     idx = cell_index.set_index(cell_col)
     renter_idx = out[cell_col].map(idx["renter_income_index"]).fillna(1.0).to_numpy()
@@ -122,6 +133,11 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
     sums = df.groupby("k").agg(base_sum=("base", "sum"), tilt_sum=("tilted", "sum"))
     scale = df["k"].map((sums["base_sum"] / sums["tilt_sum"]).replace([np.inf, -np.inf], 1.0)).fillna(1.0).to_numpy()
     out[income_col] = tilted * scale
+    # Realized effective multiplier per household = clipped factor * per-Kreis renorm scalar.
+    # This can exceed the nominal [1-clip, 1+clip] band when the Kreis clipped-index mean
+    # departs from 1.0; we report the worst deviation but do NOT re-clip (see docstring).
+    eff = clipped * scale
+    max_effective_dev = float(np.nanmax(np.abs(eff - 1.0)))
     # Per-Kreis mean-preservation check.
     # The re-normalization restores per-Kreis SUMS exactly, so the residual between
     # mean_tilted_k and mean_base_k is ~machine-epsilon-scaled (~1e-9 or smaller).
@@ -142,8 +158,10 @@ def apply_spatial_income_tilt(frame: pd.DataFrame, cell_index: pd.DataFrame, *,
         "kreis_mean_preserved": kreis_mean_preserved,
         "max_kreis_mean_abs_dev": max_kreis_mean_abs_dev,
         "beta_clip": clip,
+        "max_effective_dev": max_effective_dev,
     }
     logger.info("[income_spatial_tilt] applied: clipped=%.1f%%, kreis_mean_preserved=%s, "
-                "max_kreis_mean_abs_dev=%.2e",
-                100 * clipped_fraction, kreis_mean_preserved, max_kreis_mean_abs_dev)
+                "max_kreis_mean_abs_dev=%.2e, max_effective_dev=%.4f",
+                100 * clipped_fraction, kreis_mean_preserved, max_kreis_mean_abs_dev,
+                max_effective_dev)
     return out, diag

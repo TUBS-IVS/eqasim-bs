@@ -242,3 +242,53 @@ def test_apply_tilt_tenure_routing_renter_vs_owner() -> None:
     assert inc[20] > 2500.0, f"Owner should be tilted up, got {inc[20]}"
     # Kreis mean still preserved.
     assert abs(out["household_income_eur"].mean() - 2500.0) < 1e-6
+
+
+def test_apply_tilt_effective_dev_reported_on_asymmetric_kreis() -> None:
+    """Realized per-household effective multiplier can exceed the nominal clip band.
+
+    When a Kreis is dominated by clipped-UP cells (index values hitting the upper clip),
+    the per-Kreis re-normalization scalar (base_sum / tilt_sum) is < 1, which scales
+    EVERYONE down — including the already-clipped-up cells.  The net realized deviation
+    (clipped * scale - 1) for those cells can thus exceed the nominal clip.
+
+    This test pins that documented behaviour:
+      - per-Kreis mean income is still EXACTLY preserved (kreis_mean_preserved is True),
+      - diag["max_effective_dev"] is present and GREATER than clip (0.30),
+        demonstrating the realized deviation can exceed the nominal pre-renorm bound.
+    """
+    clip = 0.30
+    # 4 cells: 3 with high index (will be clipped UP to 1+clip=1.30), 1 with low index.
+    # Equal weights and equal base incomes so renorm arithmetic is transparent.
+    cell_index = pd.DataFrame({
+        "cell_id":            ["a",  "b",  "c",  "d"],
+        "ars5":               ["03101"] * 4,
+        "renter_income_index": [1.5, 1.5, 1.5, 0.5],
+        "owner_income_index":  [1.0, 1.0, 1.0, 1.0],
+    })
+    hh = pd.DataFrame({
+        "household_id":       [1, 2, 3, 4],
+        "cell_id":            ["a", "b", "c", "d"],
+        "ars5":               ["03101"] * 4,
+        "tenure":             ["renter"] * 4,
+        "household_income_eur": [2000.0] * 4,
+    })
+    out, diag = ist.apply_spatial_income_tilt(
+        hh, cell_index, cell_col="cell_id", kreis_col="ars5",
+        tenure_col="tenure", income_col="household_income_eur", clip=clip,
+    )
+
+    # 1. Per-Kreis mean income must be exactly preserved.
+    assert diag["kreis_mean_preserved"] is True, (
+        "per-Kreis mean preservation failed"
+    )
+    assert abs(out["household_income_eur"].mean() - 2000.0) < 1e-6, (
+        f"global mean not preserved: {out['household_income_eur'].mean()}"
+    )
+
+    # 2. max_effective_dev must be present and EXCEED the nominal clip.
+    assert "max_effective_dev" in diag, "diag missing 'max_effective_dev'"
+    assert diag["max_effective_dev"] > clip, (
+        f"expected max_effective_dev > {clip} (nominal clip), got {diag['max_effective_dev']:.6f}; "
+        "asymmetric Kreis should demonstrate realized deviation exceeds pre-renorm bound"
+    )
