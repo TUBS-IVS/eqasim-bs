@@ -484,6 +484,15 @@ class TestDecideGate:
         assert "KEEP_DEFAULT_ON" in rec, f"delta_spearman=-0.009 should KEEP, got: {rec}"
         assert code == 0
 
+    def test_delta_spearman_exactly_at_tolerance_keeps(self) -> None:
+        """delta_spearman = -0.01 (exactly at tolerance boundary) -> KEEP (>= -0.01)."""
+        off = self._make_off()
+        on = self._make_on()
+        deltas = self._make_deltas(delta_spearman=-0.01)
+        rec, code = decide_gate(off, on, deltas)
+        assert "KEEP_DEFAULT_ON" in rec, f"delta_spearman=-0.01 should KEEP (>=), got: {rec}"
+        assert code == 0
+
     def test_delta_spearman_just_below_tolerance_flips(self) -> None:
         """delta_spearman = -0.011 (just below -0.01 tolerance) -> FLIP."""
         off = self._make_off()

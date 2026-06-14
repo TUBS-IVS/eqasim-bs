@@ -312,8 +312,9 @@ def decide_gate(
 
     # 1. Correlation not materially worsened (expected to weakly increase).
     # Tolerance -0.01: allows tiny numerical noise, fails on genuine worsening.
+    # Exactly -0.01 is tolerated (>=); only values below -0.01 trigger FLIP.
     correlation_not_worsened = (
-        not np.isnan(delta_spearman) and delta_spearman > -0.01
+        not np.isnan(delta_spearman) and delta_spearman >= -0.01
     )
 
     # 2. Per-Kreis mean preservation — prefer the authoritative within-run diag
@@ -432,12 +433,11 @@ def _load_tilt_cells(cells_100m_path: str) -> pd.DataFrame:
 
     schema_names = _pq.ParquetFile(cells_100m_path).schema.names
     # The raw column names use hyphens; we work with the raw names here.
+    # Only id/rent/quote are actually consumed by the gate analysis.
     wanted_raw = {
         "id": schema_names[0],
         "rent": "durchschnMieteQM_Durchschn_Nettokaltmiete_100m-Gitter",
         "quote": "Eigentuemerquote_Eigentuemerquote_100m-Gitter",
-        "ars": "RegionalSchlüssel_ARS",
-        "hh_total": "Insgesamt_Haushalte_Grösse_des_privaten_Haushalts_100m-Gitter_adj",
     }
     cols_to_load = [v for v in wanted_raw.values() if v in schema_names]
     cells_raw = pd.read_parquet(cells_100m_path, columns=cols_to_load)
@@ -448,8 +448,6 @@ def _load_tilt_cells(cells_100m_path: str) -> pd.DataFrame:
         rename[wanted_raw["rent"]] = "durchschnMieteQM"
     if wanted_raw["quote"] in cells_raw.columns:
         rename[wanted_raw["quote"]] = "eigentuemerquote"
-    if wanted_raw.get("ars") in cells_raw.columns:
-        rename[wanted_raw["ars"]] = "ars12"
     cells_raw = cells_raw.rename(columns=rename)
     return cells_raw
 

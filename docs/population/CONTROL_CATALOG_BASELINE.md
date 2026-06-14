@@ -476,10 +476,11 @@ an index driven by per-cell Eigentümerquote. Both indices are Kreis-mean-1 norm
 so applying them preserves each Kreis's per-capita income mean **exactly**. The tilt is:
 
 ```
-income_ON = income_OFF × clip(index, 1 - β^1, 1 + β) × per_Kreis_renorm_scalar
+income_ON = income_OFF × clip(index, 1 - clip, 1 + clip) × per_Kreis_renorm_scalar
 ```
 
-with **β = 0.3** (concave income-demand elasticity, literature-grounded) and **clip = 0.30**.
+with **β = 0.3** (concave income-demand elasticity, literature-grounded) and **clip = 0.30**
+(so bounds are [0.70, 1.30]; β appears only in the power `(rent/median)**β` that drives `index`).
 
 Config flag: `braunschweig.population.popsim.income_spatial_tilt` (default **ON**).
 
@@ -545,8 +546,8 @@ within-cell signal further, but the present value was chosen conservatively.
 
 All three PASS conditions are met:
 
-1. **Correlation does not materially worsen OFF→ON** (ΔSpearman > -0.01 threshold; expected to
-   weakly increase; tolerance allows up to −0.01 Spearman drift before triggering FLIP).
+1. **Correlation does not materially worsen OFF→ON** (ΔSpearman >= -0.01 threshold; expected to
+   weakly increase; tolerance allows exactly −0.01 Spearman drift before triggering FLIP).
 2. **Per-Kreis mean preserved** per the authoritative within-run tilt diagnostics
    (`kreis_mean_preserved=True`, `max_kreis_mean_abs_dev` ≈ machine epsilon).
 3. **Clipped fraction reasonable** (< 50% threshold; or absent diag = treated as OK).
