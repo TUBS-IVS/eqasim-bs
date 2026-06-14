@@ -69,6 +69,9 @@ KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
 # file at KEY_CONTROLS) or "catalog" (renders from the typed control catalog via
 # control_spec; Task 5 of the control-catalog plan).
 KEY_CONTROLS_SOURCE = "braunschweig.population.popsim.controls_source"
+# Control tiers: comma-separated tier names included when controls_source="catalog".
+# Default "tier0" = byte-identical to the pre-Task-7 baseline.
+KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -98,18 +101,21 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
     return sources.get_source(source_name)
 
 
-def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid"):
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
     behaviour, byte-identical). controls_source="catalog": render the seed-filtered
     catalog via control_spec (the new source of truth).
+
+    tiers: tuple of tier names to include when controls_source="catalog". Default
+    ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
     """
     if controls_source == "csv":
         return pd.read_csv(controls_path, sep=";")
     if controls_source == "catalog":
         from braunschweig.popsim import control_spec as cs
-        catalog = cs.tier0_backbone_catalog()  # later tiers appended in Task 7
+        catalog = cs.full_catalog(include_tiers=tiers)
         return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
@@ -149,6 +155,8 @@ def configure(context):
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
+    # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
+    context.config(KEY_CONTROL_TIERS, "tier0")
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -272,10 +280,14 @@ def execute(context) -> pd.DataFrame:
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
 
+    # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
+    control_tiers_str = context.config(KEY_CONTROL_TIERS)
+    control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
     controls_df = build_controls_df(
         controls_source=context.config(KEY_CONTROLS_SOURCE),
         controls_path=controls_path,
         seed=source_name,
+        tiers=control_tiers,
     )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
@@ -318,7 +330,7 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         seed_households, seed_persons = seedmod.select_seed_columns(
             completed_donor_households, completed_donor_persons, seed_columns,
-            extra_household_cols=("RegioStaR7",),
+            extra_household_cols=("RegioStaR7", "H_GR"),
         )
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled

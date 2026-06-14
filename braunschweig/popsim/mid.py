@@ -338,11 +338,15 @@ def load_mid_seed(
     # the cell's urban/rural class to restrict the donor pool without an extra join).
     households_path = mid_dir / "MiD2023_Haushalte.csv"
     persons_path = mid_dir / "MiD2023_Personen.csv"
-    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7"]
+    # Always load H_GR (declared household size) so the Tier-1 household_size
+    # control expression ``(households.H_GR == N)`` can be evaluated by
+    # PopulationSim. H_GR was previously loaded only when complete_members=True;
+    # the Tier-7 addition makes it unconditionally required in the seed.
+    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR"]
     if complete_members:
-        # Member completion needs the declared household size + the mirror match
-        # keys (H_GR -> hhgr_gr -> oek_status; RegioStaR7 is already loaded).
-        household_cols.extend(("H_GR", "hhgr_gr", "oek_status"))
+        # Member completion additionally needs the mirror match keys
+        # (hhgr_gr -> oek_status; RegioStaR7 and H_GR are already loaded above).
+        household_cols.extend(("hhgr_gr", "oek_status"))
     households = pd.read_csv(
         households_path,
         usecols=list(dict.fromkeys(household_cols)),
@@ -386,7 +390,7 @@ def load_mid_seed(
         extra_person_cols = ("member_imputed", "source_H_ID", "source_P_ID")
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7",),
+        extra_household_cols=("RegioStaR7", "H_GR"),
         extra_person_cols=extra_person_cols,
     )
     return households, persons, report

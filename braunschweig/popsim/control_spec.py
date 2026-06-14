@@ -472,6 +472,73 @@ def render_catalog_csv(controls: Iterable[CatalogControl], seed: str) -> pd.Data
     return pd.DataFrame(rows, columns=list(CONTROLS_CSV_COLUMNS))
 
 
+# Tier-1 household-size bases (census column name bases) and their H_GR values.
+# Each entry is (census_base, h_gr_value, expression_op) where expression_op
+# is either "==" or ">=" for the seed expression.
+_TIER1_HH_SIZE_ENTRIES: Sequence[tuple] = (
+    ("1_Person_Groesse_des_privaten_Haushalts_100m_Gitter", 1, "=="),
+    ("2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter", 2, "=="),
+    ("3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter", 3, "=="),
+    ("4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter", 4, "=="),
+    ("5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter", 5, "=="),
+    ("6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter", 6, ">="),
+)
+
+
+def tier1_controls() -> List[CatalogControl]:
+    """Build the Tier-1 catalog: 6 household-size categories × 2 geographies = 12 controls.
+
+    Each control targets one of the 6 census household-size categories
+    (1 person, 2 persons, …, 6+ persons) at both the 100 m and 1 km geography
+    levels.  The seed expressions use the ``H_GR`` column on the seed
+    households table (present in both the MiD and ENTD seeds after the Tier-7
+    implementation adds it).
+
+    Returns
+    -------
+    list[CatalogControl]
+        12 Tier-1 controls (6 size categories × 2 geographies).
+    """
+    catalog: List[CatalogControl] = []
+    for geography in (GEO_100M, GEO_1KM):
+        for census_base, h_gr_value, op in _TIER1_HH_SIZE_ENTRIES:
+            expr = f"(households.H_GR {op} {h_gr_value})"
+            catalog.append(
+                CatalogControl(
+                    name=census_base,
+                    geography=geography,
+                    seed_table=SEED_TABLE_HOUSEHOLDS,
+                    importance=1000,
+                    census_source=(census_base,),
+                    seed_expressions={"mid": expr, "entd": expr},
+                )
+            )
+    return catalog
+
+
+def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogControl]:
+    """Build the combined catalog for the requested tier set.
+
+    Parameters
+    ----------
+    include_tiers:
+        Tiers to include. ``"tier0"`` is always included when present (backbone
+        Zensus controls). ``"tier1"`` adds the 12 household-size controls.
+        Default ``("tier0",)`` reproduces the pre-Tier-7 baseline exactly.
+
+    Returns
+    -------
+    list[CatalogControl]
+        All controls from the requested tiers, in tier order.
+    """
+    catalog: List[CatalogControl] = []
+    if "tier0" in include_tiers:
+        catalog.extend(tier0_backbone_catalog())
+    if "tier1" in include_tiers:
+        catalog.extend(tier1_controls())
+    return catalog
+
+
 def controls_for_seed(catalog: Iterable[CatalogControl], seed: str) -> List[CatalogControl]:
     """Return the catalog controls the given seed can express.
 

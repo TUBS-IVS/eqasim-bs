@@ -717,14 +717,24 @@ class EntdSource:
             hh_seed, p_seed, _mid_like_cols, day_filter_values=None
         )
 
+        # --- Compute H_GR: persons per household (Tier-1 household_size control) --
+        # H_GR is derived as the count of persons per (renamed) H_ID on the
+        # post-completeness-filter seed frames. This is the DONOR household size.
+        # PopulationSim evaluates the Tier-1 expression ``(households.H_GR == N)``
+        # on the seed households frame, so H_GR must be present here.
+        hgr = p_seed["H_ID"].value_counts().rename("H_GR")
+        hh_seed = hh_seed.merge(hgr, left_on="H_ID", right_index=True, how="left")
+        hh_seed["H_GR"] = hh_seed["H_GR"].fillna(0).astype(int)
+
         # --- select_seed_columns: add STAAT=1, keep essentials + extras -------
-        # Extra household columns: urban_type (Phase 4B donor stratification).
+        # Extra household columns: urban_type (Phase 4B donor stratification),
+        # H_GR (Tier-1 household-size control; Task 7).
         # Extra person columns: all ENTD attribute columns present on the renamed
         # frame (minus the essentials already selected, minus HP_SEX which is added
         # separately in the extra_person_cols so it stays).
         # We retain all ENTD-origin columns so map_person_attributes can use them
         # directly without another join -- this is the key design decision.
-        hh_extra = [c for c in ("urban_type", "RegioStaR7") if c in hh_seed.columns]
+        hh_extra = [c for c in ("urban_type", "RegioStaR7", "H_GR") if c in hh_seed.columns]
         # Person extras: HP_ID + every ENTD attribute column (after rename, these
         # include employed, studies, has_license, has_pt_subscription,
         # socioprofessional_class, sex (original string), number_of_trips,

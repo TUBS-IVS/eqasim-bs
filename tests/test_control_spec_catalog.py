@@ -74,3 +74,30 @@ def test_tier0_render_reproduces_production_baseline() -> None:
     left = baseline[key].sort_values(key).reset_index(drop=True)
     right = rendered[key].sort_values(key).reset_index(drop=True)
     pd.testing.assert_frame_equal(left, right, check_dtype=False)
+
+
+def test_tier1_household_size_present_for_both_seeds() -> None:
+    catalog = cs.full_catalog(include_tiers=("tier0", "tier1"))
+    mid = {c.name for c in cs.controls_for_seed(catalog, "mid")}
+    entd = {c.name for c in cs.controls_for_seed(catalog, "entd")}
+    bases = [
+        "1_Person_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "2_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "3_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "4_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "5_Personen_Groesse_des_privaten_Haushalts_100m_Gitter",
+        "6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter",
+    ]
+    for b in bases:
+        assert b in mid and b in entd
+
+
+def test_default_catalog_is_tier0_only() -> None:
+    default = cs.full_catalog()
+    # Tier-1 names follow the pattern "<N>_Person(en)_Groesse_des_privaten_Haushalts_100m_Gitter"
+    # (no "_adj" suffix, no "Insgesamt_Haushalte_" prefix).  The Tier-0 household
+    # total "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    # must NOT be confused with a Tier-1 control; the discriminator is the leading
+    # digit (1-6) in Tier-1 names.
+    tier1_names = {c.name for c in cs.tier1_controls()}
+    assert not any(c.name in tier1_names for c in default)
