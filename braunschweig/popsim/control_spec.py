@@ -29,8 +29,11 @@ Assumptions
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 
@@ -312,3 +315,21 @@ def validate_controls(controls: Iterable[ControlDef]) -> List[ControlDef]:
             f"following control(s) have a blank expression: {sorted(offenders)}."
         )
     return materialized
+
+
+def controls_for_seed(catalog: Iterable[CatalogControl], seed: str) -> List[CatalogControl]:
+    """Return the catalog controls the given seed can express.
+
+    A control with ``seed_expressions[seed] is None`` is DROPPED for this seed and a
+    single WARNING is logged naming the control and seed (no silent fallback).
+    """
+    kept: List[CatalogControl] = []
+    for control in catalog:
+        expression = control.expression_for(seed)
+        if expression is None:
+            logger.warning(
+                f"Control {control.name!r} dropped for seed {seed!r}: not expressible by this seed."
+            )
+            continue
+        kept.append(control)
+    return kept
