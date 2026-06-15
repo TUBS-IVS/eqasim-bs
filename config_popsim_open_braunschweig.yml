@@ -223,6 +223,17 @@ config:
   # RunScenarioCutter).
   eqasim_source_path: ../eqasim-java-bs
 
+  # --- Spatial income tilt (Nettokaltmiete GAMMA layer) -----------------------
+  # Within-Kreis income redistribution guided by per-cell net cold rent (renters)
+  # and Eigentümerquote (owners). Default ON (project rule). Preserves per-Kreis
+  # income mean exactly. Set to false to reproduce the pre-tilt income distribution.
+  # NOTE for popsim_open (ENTD source): housing_tenure is absent on the ENTD path
+  # (ENTD has no H_MIETE equivalent); the tilt is silently skipped when tenure is
+  # absent. Set to false explicitly to make the skip intention visible.
+  braunschweig.population.popsim.income_spatial_tilt: true
+  braunschweig.population.popsim.income_tilt_beta: 0.3
+  braunschweig.population.popsim.income_tilt_clip: 0.30
+
   # Legacy-IPF-only flags intentionally absent (popsim replaces the enriched
   # stage: synthesis.population.enriched -> braunschweig.popsim.enriched_adapter
   # and data.census.filtered -> braunschweig.popsim.stage, so these would be

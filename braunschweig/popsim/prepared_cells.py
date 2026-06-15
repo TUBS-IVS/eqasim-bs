@@ -20,12 +20,15 @@ cell columns themselves -- there is no synthetic renaming.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
 from braunschweig.popsim import cells as _cells
+
+logger = logging.getLogger(__name__)
 
 # ``unidecode`` is a popsimprep dependency but is not part of the eqasim pipeline
 # environment, so it is used only when available; otherwise a German
@@ -159,6 +162,63 @@ def load_prepared_cells(
     df["STAAT"] = 1
     df["WELT"] = 1
     return df
+
+
+def add_aggregated_controls(
+    cells: pd.DataFrame,
+    aggregation_map: Mapping[str, Tuple[str, ...]],
+) -> pd.DataFrame:
+    """Derive multi-source aggregated control columns by row-summing census source columns.
+
+    For each ``(derived_name, source_cols)`` pair in ``aggregation_map``:
+    - Finds which source columns are present in ``cells`` (logs a WARNING for each
+      missing source column; no silent fallback).
+    - Sets ``cells[derived_name] = cells[present_source_cols].sum(axis=1)``.
+    - A single-source entry (len==1) is an identity: if the source already exists
+      as ``derived_name`` it is overwritten with itself (no-op).
+    - An empty ``aggregation_map`` returns the cells frame unchanged (tier0-only
+      path stays byte-identical).
+
+    Parameters
+    ----------
+    cells:
+        Cells frame (output of :func:`load_prepared_cells` or a synthetic frame).
+        Must include at least the geography columns and the source control columns.
+    aggregation_map:
+        Mapping ``{derived_column_name: tuple_of_source_column_names}``.
+        Passed by the stage from the active catalog's multi-source controls.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy of ``cells`` with the derived columns added (source columns
+        preserved; existing columns overwritten only if derived_name == source_name,
+        which is the single-source identity case).
+    """
+    if not aggregation_map:
+        return cells
+
+    result = cells.copy()
+    for derived_name, source_cols in aggregation_map.items():
+        present = [c for c in source_cols if c in result.columns]
+        missing = [c for c in source_cols if c not in result.columns]
+        for col in missing:
+            logger.warning(
+                "[popsim.prepared_cells] Source column %r for derived control %r "
+                "is not present in the cells frame and will be skipped (partial sum).",
+                col, derived_name,
+            )
+        if present:
+            result[derived_name] = result[present].sum(axis=1)
+        else:
+            # All sources missing: derived column is 0 (no contributing units).
+            logger.warning(
+                "[popsim.prepared_cells] All source columns for derived control %r "
+                "are missing from the cells frame; setting column to 0.",
+                derived_name,
+            )
+            result[derived_name] = 0.0
+    return result
 
 
 def select_per_cell_targets(

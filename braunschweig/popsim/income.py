@@ -217,8 +217,11 @@ def apply_inkar_income_eur(
             )
 
     # --- Compute household_income_eur ----------------------------------------
-    # midpoint_series may contain None (ENTD class -1 = missing income)
-    # -> fill with 0.0 so NaN does not propagate into the scale product.
+    # midpoint_series may contain None (ENTD class -1 = missing income; MiD
+    # map_household_income_eur default=None). NaN midpoints are intentionally
+    # PRESERVED as NaN in household_income_eur — the caller (income_spatial_tilt)
+    # shields these rows from the tilt, and high_income uses .fillna(0.0) below so
+    # those households are correctly classified False.  Do NOT fill NaN to 0.0 here.
     midpoint_float = pd.to_numeric(midpoint_series, errors="coerce").reindex(out.index)
     # Round to nearest integer EUR (matches enriched.py line 2689).
     out["household_income_eur"] = (midpoint_float * scale).round(0)

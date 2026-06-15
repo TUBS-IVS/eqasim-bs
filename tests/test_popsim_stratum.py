@@ -139,6 +139,9 @@ class TestSeedCarriesRegioStar7:
             "H_ID": range(1, n + 1),
             "H_GEW": [100.0] * n,
             "RegioStaR7": ([72, 75] * (n // 2))[:n],  # alternating urban/rural
+            "H_GR": [2] * n,
+            "H_MIETE": [1] * n,
+            "haustyp": [1] * n,
         })
         p = tmp_path / "MiD2023_Haushalte.csv"
         df.to_csv(p, index=False)

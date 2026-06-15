@@ -71,9 +71,9 @@ def _write_mid_fixture(tmp_path):
     # household B is a complete 4-person mirror. All persons report on a
     # weekday (kernwo=1) so the day filter keeps both households.
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,H_GEW,RegioStaR7,H_GR,hhgr_gr,oek_status\n"
-        "A,1.0,73,4,4,3\n"
-        "B,1.0,73,4,4,3\n",
+        "H_ID,H_GEW,RegioStaR7,H_GR,hhgr_gr,oek_status,H_MIETE,haustyp\n"
+        "A,1.0,73,4,4,3,1,1\n"
+        "B,1.0,73,4,4,3,2,2\n",
         encoding="utf-8",
     )
     (tmp_path / "MiD2023_Personen.csv").write_text(
@@ -104,8 +104,11 @@ def test_load_mid_seed_with_completion_fills_and_keeps_traceability(tmp_path):
     regular = persons[~persons["member_imputed"]]
     assert (regular["source_H_ID"] == regular["H_ID"]).all()
     assert (regular["source_P_ID"] == regular["P_ID"]).all()
-    # Household frame keeps the legacy output schema (no completion columns).
-    assert list(households.columns) == ["H_ID", "H_GEW", "RegioStaR7", "STAAT"]
+    # Household frame keeps the output schema (no completion columns).
+    # H_GR, hh_type5, H_MIETE, haustyp are now unconditionally included in the seed.
+    assert list(households.columns) == [
+        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp", "STAAT",
+    ]
 
 
 def test_load_mid_seed_completion_requires_rng(tmp_path):
@@ -117,8 +120,11 @@ def test_load_mid_seed_completion_requires_rng(tmp_path):
 def test_load_mid_seed_default_is_unchanged(tmp_path):
     _write_mid_fixture(tmp_path)
     households, persons, report = mid.load_mid_seed(tmp_path)
-    # Default OFF path: columns byte-identical to the pre-completion behaviour.
-    assert list(households.columns) == ["H_ID", "H_GEW", "RegioStaR7", "STAAT"]
+    # Default OFF path (complete_members=False): no completion columns on persons.
+    # H_GR, hh_type5, H_MIETE, haustyp are now unconditionally included in households.
+    assert list(households.columns) == [
+        "H_ID", "H_GEW", "RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp", "STAAT",
+    ]
     assert list(persons.columns) == [
         "H_ID", "P_ID", "P_GEW", "HP_ALTER", "HP_SEX", "STAAT",
     ]

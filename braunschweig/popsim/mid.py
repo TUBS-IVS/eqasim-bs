@@ -338,11 +338,25 @@ def load_mid_seed(
     # the cell's urban/rural class to restrict the donor pool without an extra join).
     households_path = mid_dir / "MiD2023_Haushalte.csv"
     persons_path = mid_dir / "MiD2023_Personen.csv"
-    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7"]
+    # Always load H_GR (declared household size) so the Tier-1 household_size
+    # control expression ``(households.H_GR == N)`` can be evaluated by
+    # PopulationSim. H_GR was previously loaded only when complete_members=True;
+    # the Tier-7 addition makes it unconditionally required in the seed.
+    # Always load H_MIETE (tenure flag: 1=renter, 2=owner) so the Tier-2 tenure
+    # control expressions ``(households.H_MIETE == 1/2)`` can be evaluated by
+    # PopulationSim. Values 3/9/309 (ambiguous) are kept in the seed column;
+    # the control expressions simply do not match them (they contribute 0 to
+    # either tenure control, which is the correct treatment for excluded codes).
+    # Always load haustyp (building type: 1=EFH/ZFH, 2=MFH, 3=Geschosswohnung,
+    # 4=sonstiges, 95=n.z.) so the Tier-2 building_type control expressions
+    # can be evaluated by PopulationSim. Code 95 (n.z.) does not match any
+    # building_type expression and is therefore silently excluded from all three
+    # building_type controls (correct behaviour, no fabricated assignments).
+    household_cols = [columns.household_id, columns.household_weight, "RegioStaR7", "H_GR", "H_MIETE", "haustyp"]
     if complete_members:
-        # Member completion needs the declared household size + the mirror match
-        # keys (H_GR -> hhgr_gr -> oek_status; RegioStaR7 is already loaded).
-        household_cols.extend(("H_GR", "hhgr_gr", "oek_status"))
+        # Member completion additionally needs the mirror match keys
+        # (hhgr_gr -> oek_status; RegioStaR7 and H_GR are already loaded above).
+        household_cols.extend(("hhgr_gr", "oek_status"))
     households = pd.read_csv(
         households_path,
         usecols=list(dict.fromkeys(household_cols)),
@@ -384,9 +398,26 @@ def load_mid_seed(
             household_id=columns.household_id,
         )
         extra_person_cols = ("member_imputed", "source_H_ID", "source_P_ID")
+
+    # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
+    # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
+    # (11-class) then collapses to the 5 Zensus Familientyp labels.  The result
+    # is a per-household Series indexed by H_ID that is merged onto households.
+    # This must happen BEFORE select_seed_columns so hh_type5 can be retained as
+    # an extra_household_col; it uses the raw MiD column names (H_ID / HP_ALTER).
+    hh_type5_series = seedmod.derive_hh_type5(
+        persons,
+        household_id_col=columns.person_household_id,
+        age_col=columns.age,
+    )
+    households = households.join(
+        hh_type5_series.rename("hh_type5"),
+        on=columns.household_id,
+    )
+
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7",),
+        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
         extra_person_cols=extra_person_cols,
     )
     return households, persons, report
@@ -409,6 +440,12 @@ MID_HOUSEHOLD_ATTR_COLS = (
     # household weight): needed so the completed frames can serve BOTH the
     # expansion AND the PopulationSim seed.
     "H_GR", "H_GEW",
+    # Tier-2 popsim control attributes: carried from the MiD donor table onto the
+    # synthetic persons frame so the popsim control-fit validation can compare
+    # realized vs. target distributions.
+    # H_MIETE: tenure flag (1=renter/Mieter, 2=owner/Eigentuemer; 3/9/309=excluded).
+    # haustyp: building type (1=EFH/ZFH, 2=MFH 3-12Wohn., 3=Geschosswohn. 13+, 4=sonstiges, 95=n.z.).
+    "H_MIETE", "haustyp",
 )
 
 # Minimum columns required by build_trip_table / trips_stage.

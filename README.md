@@ -334,6 +334,84 @@ dl-de/zero-2-0 (LGLN ALKIS/ATKIS), and ODbL 1.0 (OSM); some inputs carry
 stricter terms — check each dataset before reuse. The MiD 2023 B1 microdata is
 a restricted scientific-use file and must never be redistributed.
 
+## Census input data (cleancensus)
+
+The prepared Zensus 2022 grid that this project consumes as PopulationSim
+control marginals is produced by a separate upstream repository,
+**[cleancensus](https://github.com/TUBS-IVS/cleancensus)**, developed in
+parallel at TUBS-IVS.
+
+### What cleancensus provides
+
+cleancensus runs an 11-stage raw → final pipeline over the German Zensus 2022
+INSPIRE grids and produces:
+
+- **Harmonized 100 m / 1 km grids** (`zensus2022_grid_{100m|1km}_de_*`) with
+  `_adj`-reconciled topic totals: household size
+  (`Groesse_des_privaten_Haushalts`), Lebensform / Familientyp, building type
+  (`Whg_Gebaeudetyp`), born-abroad / citizenship, Seniorenstatus, and more
+  (production scope: Tier 1 + 2 = 9 topics). Sanity invariant:
+  `sum(categories) == _adj` per cell.
+- **Tenure and vacancy stages** — Eigentuemerquote × `HH_adj` (national owner
+  rate ≈ 0.423 ≈ official 0.43; vacancy ≈ 4.26 % ≈ official 4.3 %).
+- **Gemeinde-level employment and education control tables** —
+  `erwerbsstatus` / `schulabschluss` / `berufl_abschluss` extracted from the
+  census at Gemeinde resolution (with Kreis-level fallback for suppressed
+  Gemeinden).
+
+### How cleancensus feeds this model
+
+The `_adj` columns of the cleancensus output **are** the PopulationSim control
+targets. The cell-column → control-target binding is direct: the cleancensus
+output column name is the `census_source` key in each `ControlDef`; no
+synthetic renaming.
+
+For the full control catalog (candidate controls, tiers, per-seed
+expressibility, and geography handling), see:
+[`docs/superpowers/specs/2026-06-14-popsim-control-catalog-two-workflows-design.md`](docs/superpowers/specs/2026-06-14-popsim-control-catalog-two-workflows-design.md)
+
+For the canonical file layout of the cleancensus-derived parquets, the rename
+mapping, and the data-protection policy for these files, see:
+[`docs/population/DATA_LAYOUT.md`](docs/population/DATA_LAYOUT.md)
+
+The seed (German MiD 2023 or open French ENTD 2008) provides per-household and
+per-person attributes via donor-inheritance; cleancensus supplies the aggregate
+marginals these are fitted to.
+
+### Where the files land (local-only)
+
+```
+eqasim-data/data/braunschweig/popsim/cells/
+  zensus2022_grid_100m_de_prepared.parquet   # 3.1 M cells × 570 cols
+  zensus2022_grid_1km_de_binned.parquet      # 212 K cells × 348 cols
+```
+
+These paths are **gitignored**. cleancensus is the source of record — re-run
+the cleancensus pipeline to regenerate them. See
+[`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md)
+for the distribution step.
+
+### The two control workflows
+
+Both workflows are controlled to the same cleancensus marginals where the seed
+can express them:
+
+| Workflow | Seed | Control catalog |
+|----------|------|-----------------|
+| `popsim_mid` | German MiD 2023 (scientific-use, restricted) | Full catalog: demographic backbone + household_size, household_type, building_type, tenure, migration (Tier 1–2) + employment, education (Tier 3) |
+| `popsim_open` | French ENTD 2008 (open, already in repo) | Backbone + household_size only; remaining controls are mid-only and dropped with a logged WARNING |
+
+`popsim_open` is the open-data reproducibility twin of `popsim_mid`, thinner
+by construction: no raw MiD data is required.
+
+### Cross-repo map
+
+| Repository | Role |
+|-----------|------|
+| **[cleancensus](https://github.com/TUBS-IVS/cleancensus)** | Census input producer — harmonizes Zensus 2022 raw tables into the `_adj`-reconciled grid parquets this repo consumes |
+| **popsimprep** | PopulationSim environment and notebook origin — the Jupyter-based prototype from which the popsim stage architecture derives; local at `../popsimprep` |
+| **eqasim-java-bs** | MATSim / Java fork — the `org.eqasim.bavaria.*` Java package that reads eqasim-bs output plans and runs the agent-based simulation; local at `../eqasim-java-bs` |
+
 ## Pipeline architecture
 
 ```mermaid

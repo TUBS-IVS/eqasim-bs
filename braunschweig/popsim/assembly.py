@@ -222,6 +222,13 @@ ADULT_AGE = 18
 _HOUSEHOLD_ATTRS = [
     "economic_status", "household_income", "household_income_eur",
     "number_of_cars", "number_of_bicycles",
+    # Tier-2 popsim control attributes: housing_tenure and building_type_3class are
+    # derived from H_MIETE / haustyp in attributes.map_housing_tenure /
+    # map_building_type_3class and joined from donor_hh onto the persons frame so
+    # the popsim control-fit validation can compare realized vs. census target.
+    # Absent when the donor lacks the column (ENTD path); the categorical_household_control
+    # extractor logs a WARNING and skips the control when the column is absent.
+    "housing_tenure", "building_type_3class",
 ]
 
 
@@ -277,11 +284,15 @@ def map_mid_person_attributes(
     persons = attributes.map_has_license(persons, rng=rng)
     persons = attributes.map_has_pt_subscription(persons, rng=rng)
 
-    donor_hh = attributes.map_number_of_bicycles(
-        attributes.map_number_of_cars(
-            attributes.map_household_income(
-                attributes.map_household_income_eur(
-                    attributes.map_economic_status(mid_households)
+    donor_hh = attributes.map_building_type_3class(
+        attributes.map_housing_tenure(
+            attributes.map_number_of_bicycles(
+                attributes.map_number_of_cars(
+                    attributes.map_household_income(
+                        attributes.map_household_income_eur(
+                            attributes.map_economic_status(mid_households)
+                        )
+                    )
                 )
             )
         )
@@ -294,8 +305,15 @@ def map_mid_person_attributes(
     # value (joined by stage.join_cell_attributes onto the merged households and
     # carried through the expansion), which is the spatial stage-B matching key.
     # If the donor RS7 is ever needed on persons, merge it as 'donor_RegioStaR7'.
+    # Select only the household-attribute columns that are actually present on
+    # donor_hh (the new Tier-2 columns housing_tenure / building_type_3class are
+    # absent when the donor lacks H_MIETE / haustyp, e.g. on the ENTD path or in
+    # existing test fixtures that pre-date the Tier-2 addition). The core attrs
+    # (economic_status, household_income, household_income_eur, number_of_cars,
+    # number_of_bicycles) are always present after the attribute mappers above.
+    available_attrs = [a for a in _HOUSEHOLD_ATTRS if a in donor_hh.columns]
     persons = persons.merge(
-        donor_hh[[donor_col, *_HOUSEHOLD_ATTRS]],
+        donor_hh[[donor_col, *available_attrs]],
         on=donor_col, how="left", suffixes=("", "_hh"),
     )
     persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
@@ -310,6 +328,21 @@ def map_mid_person_attributes(
         derive=attributes.derive_bicycle_availability,
     )
 
+    # --- Popsim control-fit attributes ----------------------------------------
+    # hh_type5: 5-class Zensus Familientyp per synthetic household, derived from
+    # the expanded persons' ages. Uses the same derive_hh_type5 function called
+    # at seed-build time so realized and target use the same classification logic.
+    # ``age`` is always present after expand.map_demographics; ``household_id``
+    # after expand.assign_synthetic_household_ids. The result is a per-household
+    # Series (index = household_id values); broadcast to every person via map().
+    if "age" in persons.columns and "household_id" in persons.columns:
+        from braunschweig.popsim import seed as _seedmod
+        hh_type5_series = _seedmod.derive_hh_type5(
+            persons,
+            household_id_col="household_id",
+            age_col="age",
+        )
+        persons["hh_type5"] = persons["household_id"].map(hh_type5_series)
     # --- Schema-gap columns (integration spec Section 5.1) -------------------
     # age_range: matches synthesis/population/enriched.py lines 110-114 exactly.
     # (-1,10] = primary_school; (10,14] = middle_school; (14,17] = high_school;

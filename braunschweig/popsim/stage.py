@@ -37,9 +37,12 @@ import pandas as pd
 
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
+from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import mid
+from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
+from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,20 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Default ON (project rule: new features default on); False reproduces the
 # legacy load_mid_seed + load_donor path byte-identically.
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# Controls source: "csv" (default, byte-identical, reads the external hand-edited
+# file at KEY_CONTROLS) or "catalog" (renders from the typed control catalog via
+# control_spec; Task 5 of the control-catalog plan).
+KEY_CONTROLS_SOURCE = "braunschweig.population.popsim.controls_source"
+# Control tiers: comma-separated tier names included when controls_source="catalog".
+# Default "tier0" = byte-identical to the pre-Task-7 baseline.
+KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
+# Spatial income tilt (Nettokaltmiete GAMMA layer): default ON per project rule.
+# When ON, applies a within-Kreis income redistribution scaled by the per-cell
+# net cold rent index (renters) or Eigentümerquote index (owners), preserving the
+# per-Kreis income mean exactly. When OFF, the income frame is unchanged (byte-identical).
+KEY_INCOME_TILT = "braunschweig.population.popsim.income_spatial_tilt"
+KEY_INCOME_TILT_BETA = "braunschweig.population.popsim.income_tilt_beta"
+KEY_INCOME_TILT_CLIP = "braunschweig.population.popsim.income_tilt_clip"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -92,6 +109,66 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
         If ``source_name`` is not a known or planned source name.
     """
     return sources.get_source(source_name)
+
+
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+    """Return the PopulationSim controls.csv frame.
+
+    controls_source="csv": read the external hand-edited file at controls_path (today's
+    behaviour, byte-identical). controls_source="catalog": render the seed-filtered
+    catalog via control_spec (the new source of truth).
+
+    tiers: tuple of tier names to include when controls_source="catalog". Default
+    ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
+    """
+    if controls_source == "csv":
+        return pd.read_csv(controls_path, sep=";")
+    if controls_source == "catalog":
+        from braunschweig.popsim import control_spec as cs
+        catalog = cs.full_catalog(include_tiers=tiers)
+        return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
+    raise ValueError(f"unknown controls_source {controls_source!r}")
+
+
+def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+    """Return the multi-column aggregation map for the active controls.
+
+    For ``controls_source="catalog"``: derives the aggregation map from the typed
+    catalog -- maps ``{derived_name: source_cols}`` for controls whose name is NOT
+    a raw parquet column (i.e. multi-source / derived names like
+    ``building_type_ein_zweifamilienhaus``).  Empty dict for tier0-only (all controls
+    are single-source identity -> no aggregation needed).
+
+    For ``controls_source="csv"``: returns an empty dict (the CSV hand-edited file
+    does not carry census_source metadata; caller handles no aggregation).
+
+    The returned map is consumed by
+    :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls`.
+    """
+    if controls_source != "catalog":
+        return {}
+    from braunschweig.popsim import control_spec as cs
+    catalog = cs.full_catalog(include_tiers=tiers)
+    active = cs.controls_for_seed(catalog, seed)
+    return cs.build_aggregation_map(active)
+
+
+def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid", tiers=("tier0",)):
+    """Return the RAW census parquet columns to load for the active controls.
+
+    For ``controls_source="catalog"``: returns the union of all census_source columns
+    of the active seed-filtered controls.  For single-source identity controls
+    (tier0) this equals the current ``control_base_columns`` output exactly.
+
+    For ``controls_source="csv"``: returns None (caller uses control_base_columns as
+    today).
+    """
+    if controls_source != "catalog":
+        return None
+    from braunschweig.popsim import control_spec as cs
+    catalog = cs.full_catalog(include_tiers=tiers)
+    active = cs.controls_for_seed(catalog, seed)
+    return cs.source_columns_union(active)
 
 
 def configure(context):
@@ -127,6 +204,16 @@ def configure(context):
     context.config(KEY_STRATIFY, False)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
+    context.config(KEY_CONTROLS_SOURCE, "csv")
+    # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
+    context.config(KEY_CONTROL_TIERS, "tier0")
+    # Spatial income tilt (Task 3). Default ON (project rule: features default on).
+    # When OFF, the income frame is unchanged (byte-identical); no cells parquet
+    # re-read occurs.
+    context.config(KEY_INCOME_TILT, True)
+    context.config(KEY_INCOME_TILT_BETA, 0.3)
+    context.config(KEY_INCOME_TILT_CLIP, 0.30)
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -260,11 +347,41 @@ def execute(context) -> pd.DataFrame:
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
 
-    controls_df = pd.read_csv(controls_path, sep=";")
+    # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
+    control_tiers_str = context.config(KEY_CONTROL_TIERS)
+    control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
+    controls_source = context.config(KEY_CONTROLS_SOURCE)
+    controls_df = build_controls_df(
+        controls_source=controls_source,
+        controls_path=controls_path,
+        seed=source_name,
+        tiers=control_tiers,
+    )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
-    cells = mid.load_control_cells(cells_path, base_cols)
+    # For catalog-based controls with multi-column census sources (e.g. building_type),
+    # load the raw source columns from the parquet (union of all census_source tuples)
+    # rather than the derived control names.  For tier0-only or CSV-based controls,
+    # source_cols == base_cols == current behaviour -> byte-identical.
+    source_cols_override = build_source_columns(
+        controls_source=controls_source,
+        seed=source_name,
+        tiers=control_tiers,
+    )
+    load_cols = source_cols_override if source_cols_override is not None else base_cols
+
+    cells = mid.load_control_cells(cells_path, load_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
+
+    # Derive the multi-column aggregated control columns (e.g. building_type_*).
+    # For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
+    # unchanged -> byte-identical.
+    agg_map = build_aggregation_map(
+        controls_source=controls_source,
+        seed=source_name,
+        tiers=control_tiers,
+    )
+    cells = prepared_cells.add_aggregated_controls(cells, agg_map)
 
     # Build the PopulationSim seed.
     # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -302,7 +419,7 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         seed_households, seed_persons = seedmod.select_seed_columns(
             completed_donor_households, completed_donor_persons, seed_columns,
-            extra_household_cols=("RegioStaR7",),
+            extra_household_cols=("RegioStaR7", "H_GR", "H_MIETE", "haustyp"),
         )
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled
@@ -397,12 +514,22 @@ def execute(context) -> pd.DataFrame:
     )
     context.set_info("popsim_n_persons", len(persons))
 
-    # housing_tenure parity (P2): reuse the enriched-path implementation on the
-    # popsim persons frame (household_id / household_income_eur / commune_id are
-    # all present after build_persons). The function samples per household from
-    # the MiD Bayes P(tenure | bracket, raumtyp) with its own RNG offset
-    # (+83947) and logs the primary/fallback rate (no-silent-fallback rule).
-    if context.config("synthesise_housing_tenure"):
+    # housing_tenure parity (P2): main wired the enriched-path tenure sampler
+    # (braunschweig.synthesis.population.enriched._apply_housing_tenure, categories
+    # rent/own/other, RNG offset +83947) into the popsim stage. On THIS branch the
+    # popsim build_persons ALREADY derives ``housing_tenure`` directly from the MiD
+    # donor flag H_MIETE via attributes.map_housing_tenure (categories
+    # owner/renter/unknown) -- that donor-derived column is the AUTHORITATIVE tenure
+    # source consumed by (a) the Tier-2 tenure CONTROL catalog (control_spec, which
+    # matches owner/renter) and (b) the spatial income tilt below (which routes on
+    # tenure == "owner" / "renter"). Letting _apply_housing_tenure run
+    # unconditionally would OVERWRITE owner/renter/unknown with rent/own/other,
+    # silently turning the income tilt into a no-op (no row would equal "owner"/
+    # "renter") and changing the control-aligned attribute vocabulary. We therefore
+    # keep main's mechanism only as a FALLBACK: run it solely when build_persons did
+    # NOT already provide housing_tenure (e.g. the ENTD path, where H_MIETE is
+    # absent). When the donor column is present (MiD path) it is preserved verbatim.
+    if context.config("synthesise_housing_tenure") and "housing_tenure" not in persons.columns:
         from braunschweig.data.mid.tenure_by_income import (
             load_tenure_by_income_bundesland,
             load_tenure_by_income_raumtyp,
@@ -417,6 +544,207 @@ def execute(context) -> pd.DataFrame:
             context.stage("regiostar_tenure"),
             random_seed,
         )
+
+    # --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
+    # Applies a within-Kreis income redistribution guided by per-cell net cold rent
+    # (renters) and Eigentümerquote (owners), preserving each Kreis's income mean
+    # exactly.  Controlled by KEY_INCOME_TILT (default ON per project rule).
+    # When OFF, the income frame is byte-identical.
+    income_tilt_enabled = bool(context.config(KEY_INCOME_TILT))
+    income_tilt_beta = float(context.config(KEY_INCOME_TILT_BETA))
+    income_tilt_clip = float(context.config(KEY_INCOME_TILT_CLIP))
+
+    if income_tilt_enabled:
+        # NaN income guard: unclassifiable households (MiD map_household_income_eur
+        # default=None; ENTD class -1 midpoint=None) may carry NaN household_income_eur.
+        # apply_inkar_income_eur preserves these NaNs intentionally (high_income uses
+        # .fillna(0.0) but the eur column itself stays NaN for missing income class).
+        # We log the count for fallback-transparency (CLAUDE.md no-silent-fallback rule)
+        # and rely on maybe_apply_income_tilt to shield NaN-income rows from the tilt.
+        n_nan = int(persons["household_income_eur"].isna().sum())
+        if n_nan > 0:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: %d/%d persons (%.1f%%) have "
+                "NaN household_income_eur (unclassifiable income class); these rows "
+                "will be shielded from the spatial tilt (income stays NaN, excluded "
+                "from per-Kreis re-normalization).",
+                n_nan, len(persons), 100.0 * n_nan / max(len(persons), 1),
+            )
+
+        # Load the tilt-specific cell columns (rent + eigentümerquote) from the
+        # 100 m parquet. These are NOT part of the PopulationSim control columns
+        # and are NOT loaded by load_control_cells, so we read them separately.
+        # The column names are the cleaned versions of the raw parquet names:
+        #   raw: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m-Gitter"
+        #     -> clean: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
+        #   raw: "Eigentuemerquote_Eigentuemerquote_100m-Gitter"
+        #     -> clean: "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
+        #   HH weight column (always present in cells from load_control_cells):
+        #     "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+        _TILT_RENT_COL = "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
+        _TILT_QUOTE_COL = "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
+        # Suppression-ADJUSTED household totals are the correct weight: the raw cell
+        # totals suppress small cells (NaN), making them 0-weight and biasing the
+        # Kreis-mean normalization toward large dense cells only. The _adj column
+        # fills suppressed cells with the cleancensus imputed estimates so every cell
+        # carries a proper (non-zero) weight in the index normalization.
+        _TILT_HH_COL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+        _TILT_ARS_COL = "RegionalSchlussel_ARS"
+
+        # Load only the columns needed for the tilt from the raw parquet.
+        # We cannot assume they are present in the already-loaded cells frame,
+        # so we do a targeted partial-column read here. The cells frame itself
+        # is ZGB-filtered; we replicate that by filtering on ZENSUS100m membership.
+        import pyarrow.parquet as _pq
+
+        _raw_schema_names = _pq.ParquetFile(cells_path).schema.names
+        _clean_to_raw: dict[str, str] = {}
+        for _rn in _raw_schema_names:
+            _clean_to_raw.setdefault(prepared_cells.clean_col_name(_rn), _rn)
+
+        _tilt_cols_needed = [
+            _TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL, _TILT_ARS_COL,
+        ]
+        _id_raw = _raw_schema_names[0]
+        _raw_tilt = [_id_raw]
+        for _clean in _tilt_cols_needed:
+            _r = _clean_to_raw.get(_clean)
+            if _r is not None and _r not in _raw_tilt:
+                _raw_tilt.append(_r)
+
+        _tilt_cells_raw = pd.read_parquet(cells_path, columns=_raw_tilt)
+        _tilt_cells_raw.columns = [
+            prepared_cells.clean_col_name(c) for c in _tilt_cells_raw.columns
+        ]
+        _tilt_cells_raw = _tilt_cells_raw.rename(
+            columns={prepared_cells.clean_col_name(_id_raw): "ZENSUS100m"}
+        )
+        # Filter to ZGB cells (same membership as the cells frame used by PopulationSim).
+        _zgb_cell_ids = set(cells["ZENSUS100m"].tolist())
+        _zgb_cells_mask = _tilt_cells_raw["ZENSUS100m"].isin(_zgb_cell_ids)
+        _tilt_cells = _tilt_cells_raw[_zgb_cells_mask].copy()
+
+        # Derive 5-digit Kreis ARS from the 12-digit ARS column.
+        if _TILT_ARS_COL in _tilt_cells.columns:
+            _tilt_cells["_ars5"] = _tilt_cells[_TILT_ARS_COL].astype(str).str[:5]
+        else:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: ARS column %r absent from "
+                "tilt cells; cannot derive Kreis code. Skipping tilt.",
+                _TILT_ARS_COL,
+            )
+            income_tilt_enabled = False
+
+    if income_tilt_enabled:
+        _hh_weight_col = _TILT_HH_COL if _TILT_HH_COL in _tilt_cells.columns else None
+        if _hh_weight_col is None:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: HH weight column %r absent "
+                "from tilt cells; using uniform weight (n_households=1).",
+                _TILT_HH_COL,
+            )
+            _tilt_cells = _tilt_cells.copy()
+            _tilt_cells["_hh_weight"] = 1.0
+            _hh_weight_col = "_hh_weight"
+
+        # Build a working frame with all needed columns renamed for the index builders.
+        _work = _tilt_cells.rename(columns={"_ars5": "ars5"}).copy()
+
+        # Build the renter rent index from the per-cell net cold rent column.
+        if _TILT_RENT_COL in _work.columns:
+            _work = _ist.build_renter_rent_index(
+                _work,
+                rent_col=_TILT_RENT_COL,
+                kreis_col="ars5",
+                weight_col=_hh_weight_col,
+                beta=income_tilt_beta,
+            )
+        else:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: rent column %r absent "
+                "from tilt cells; renter_income_index set to 1.0 (neutral).",
+                _TILT_RENT_COL,
+            )
+            _work["renter_income_index"] = 1.0
+
+        # Build the owner income index from the per-cell Eigentümerquote column.
+        if _TILT_QUOTE_COL in _work.columns:
+            _work = _ist.build_owner_income_index(
+                _work,
+                quote_col=_TILT_QUOTE_COL,
+                kreis_col="ars5",
+                weight_col=_hh_weight_col,
+                beta=income_tilt_beta,
+            )
+        else:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: eigentuemerquote column %r absent "
+                "from tilt cells; owner_income_index set to 1.0 (neutral).",
+                _TILT_QUOTE_COL,
+            )
+            _work["owner_income_index"] = 1.0
+
+        # The cell_index needs only: ZENSUS100m, ars5, renter_income_index, owner_income_index.
+        _cell_index = _work[["ZENSUS100m", "ars5", "renter_income_index", "owner_income_index"]]
+
+        # Determine tenure and cell columns on the persons frame.
+        # ZENSUS100m: always present (joined by join_cell_attributes via expand).
+        # housing_tenure: present for MiD (map_housing_tenure runs on H_MIETE);
+        #   absent on ENTD path (map_housing_tenure skips when H_MIETE absent).
+        _PERSONS_CELL_COL = "ZENSUS100m"
+        _PERSONS_KREIS_COL = "departement_id"
+        _PERSONS_TENURE_COL = "housing_tenure"
+
+        if _PERSONS_CELL_COL not in persons.columns:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: '%s' absent from persons "
+                "frame; cannot apply spatial tilt. Skipping.",
+                _PERSONS_CELL_COL,
+            )
+        elif _PERSONS_KREIS_COL not in persons.columns:
+            logger.warning(
+                "[popsim.stage] income_spatial_tilt: '%s' absent from persons "
+                "frame; cannot apply spatial tilt. Skipping.",
+                _PERSONS_KREIS_COL,
+            )
+        elif _PERSONS_TENURE_COL not in persons.columns:
+            logger.info(
+                "[popsim.stage] income_spatial_tilt: '%s' absent from persons "
+                "frame (ENTD path?); skipping spatial tilt (no tenure signal).",
+                _PERSONS_TENURE_COL,
+            )
+        else:
+            persons, _tilt_diag = _ist.maybe_apply_income_tilt(
+                persons, _cell_index,
+                enabled=True,
+                cell_col=_PERSONS_CELL_COL,
+                kreis_col=_PERSONS_KREIS_COL,
+                tenure_col=_PERSONS_TENURE_COL,
+                income_col="household_income_eur",
+                clip=income_tilt_clip,
+                unknown_neutral=True,
+            )
+            # Update high_income from the tilted income values using the unified rule.
+            persons["high_income"] = (
+                persons["household_income_eur"].fillna(0.0) >= HIGH_INCOME_THRESHOLD_EUR
+            ).astype(bool)
+            logger.info(
+                "[popsim.stage] income_spatial_tilt applied (beta=%.2f, clip=%.2f); "
+                "high_income re-derived from tilted income. "
+                "max_effective_dev=%.4f, kreis_mean_preserved=%s.",
+                income_tilt_beta, income_tilt_clip,
+                _tilt_diag.get("max_effective_dev", float("nan")),
+                _tilt_diag.get("kreis_mean_preserved", "n/a"),
+            )
+            # Attach the tilt diagnostics to the persons frame so they survive pickling
+            # in the synpp cache and can be read back by the gate harness without
+            # re-running the tilt.  pandas DataFrame.attrs is preserved through pickle.
+            # Only scalars and bools are stored (no numpy types) for JSON-safety.
+            persons.attrs["income_tilt_diag"] = {
+                k: (bool(v) if isinstance(v, (bool, np.bool_)) else float(v))
+                for k, v in _tilt_diag.items()
+                if v is not None
+            }
 
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
