@@ -33,12 +33,10 @@ def main(argv=None) -> int:
     if not argv:
         print("usage: python scripts/run_synpp.py <config.yml>", file=sys.stderr)
         return 1
-    logging.basicConfig(
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S",
-        level=logging.INFO,
-        force=True,
-    )
+    from braunschweig.logging_setup import setup_logging
+
+    log_path = setup_logging(level="INFO")
+    logging.getLogger("braunschweig").info("Run log: %s", log_path)
     synpp.run_from_yaml(argv[0])
     return 0
 

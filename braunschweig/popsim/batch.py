@@ -25,6 +25,8 @@ import logging
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+from braunschweig.progress import progress_parallel
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence, Union
@@ -271,7 +273,8 @@ def run_batches(
     """
     results: list[BatchResult] = []
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        for result in executor.map(run_one, folders):
+        futures = [executor.submit(run_one, f) for f in folders]
+        for result in progress_parallel(futures, "popsim batches", total=len(folders)):
             results.append(result)
 
     n_succeeded = sum(1 for r in results if r.status == "succeeded")
