@@ -85,3 +85,41 @@ def income_class_from_eur(eur_values, class_midpoint_eur: dict[str, float]) -> n
     edges = (mids_sorted[:-1] + mids_sorted[1:]) / 2.0
     idx = np.searchsorted(edges, np.asarray(eur_values, dtype=float), side="right")
     return np.asarray(labels_sorted, dtype=object)[idx]
+
+
+def build_kreis_income_targets(
+    inkar_df: pd.DataFrame,
+    kreis_stats_df: pd.DataFrame,
+    in_scope_ars5,
+    *,
+    hhsize_correct: bool = True,
+) -> dict[str, float]:
+    """Per-Kreis relative income factor rf_k, household-count-weighted, normalized to
+    mean 1 over the in-scope Kreise.
+
+    rf_k_raw = INKAR scale[k] * (mean_size[k] if hhsize_correct else 1)
+    rf_k     = rf_k_raw / weighted_mean_k(rf_k_raw), weight = hh_count[k].
+
+    Region-relative on purpose: imposing only the BETWEEN-Kreis relativity preserves
+    the region-wide income level set by the MiD draw. Single Kreis -> rf_k == 1 (no-op).
+    """
+    scope = [str(a) for a in in_scope_ars5]
+    scale = dict(zip(inkar_df["ars5"].astype(str), inkar_df["scale"].astype(float)))
+    mean_size = dict(zip(kreis_stats_df["ars5"].astype(str),
+                         kreis_stats_df["mean_size"].astype(float)))
+    hh_count = dict(zip(kreis_stats_df["ars5"].astype(str),
+                        kreis_stats_df["hh_count"].astype(float)))
+
+    raw, weight = {}, {}
+    for k in scope:
+        s = scale.get(k, 1.0)
+        sz = mean_size.get(k, 1.0) if hhsize_correct else 1.0
+        raw[k] = s * sz
+        weight[k] = hh_count.get(k, 1.0)
+
+    wsum = sum(weight[k] for k in scope) or 1.0
+    wmean = sum(raw[k] * weight[k] for k in scope) / wsum
+    if wmean <= 0:
+        logger.warning("[income_kreis_control] degenerate target mean <= 0; rf=1 for all.")
+        return {k: 1.0 for k in scope}
+    return {k: raw[k] / wmean for k in scope}

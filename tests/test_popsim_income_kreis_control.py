@@ -31,3 +31,36 @@ def test_income_class_from_eur_is_monotone():
     assert labels[0] == "under_500"
     assert labels[1] == "5000_5600"
     assert labels[2] == "over_7000"
+
+
+def test_build_kreis_income_targets_mean_one_and_hhsize_correction():
+    import pandas as pd
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({
+        "ars5": ["03102", "03103"],
+        "hh_count": [100.0, 100.0],
+        "mean_size": [1.8, 2.1],
+    })
+    rf = kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=True)
+    # household-count-weighted mean of rf == 1.0
+    assert (rf["03102"] + rf["03103"]) / 2 == pytest.approx(1.0)
+    # Wolfsburg richer per-EW AND larger HH -> rf > Salzgitter
+    assert rf["03103"] > rf["03102"]
+
+
+def test_build_kreis_income_targets_single_kreis_is_noop():
+    import pandas as pd
+    inkar = pd.DataFrame({"ars5": ["03101"], "scale": [1.003]})
+    stats = pd.DataFrame({"ars5": ["03101"], "hh_count": [100.0], "mean_size": [2.0]})
+    rf = kic.build_kreis_income_targets(inkar, stats, ["03101"])
+    assert rf["03101"] == pytest.approx(1.0)
+
+
+def test_build_kreis_income_targets_hhsize_off_uses_per_ew():
+    import pandas as pd
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102", "03103"], "hh_count": [100.0, 100.0],
+                          "mean_size": [1.8, 2.1]})
+    rf = kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=False)
+    # per-EW only: rf proportional to scale, mean-1
+    assert rf["03103"] / rf["03102"] == pytest.approx(1.091 / 0.882)
