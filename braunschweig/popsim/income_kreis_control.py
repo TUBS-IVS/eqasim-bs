@@ -20,7 +20,6 @@ from braunschweig.data.mid.income_by_size import (
     INCOME_BRACKET_CATEGORIES,
     INCOME_BRACKET_BOUNDS_EUR,
     RS7_TO_RAUMTYP_KEY,
-    SIZE_CATEGORIES,
     income_bracket_probabilities,
 )
 from braunschweig.data.mid.income_by_status import (
