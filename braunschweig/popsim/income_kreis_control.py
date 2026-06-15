@@ -29,6 +29,13 @@ from braunschweig.data.mid.income_by_status import (
     combine_size_status_bracket_pmf,
 )
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
+# The popsim income-class vocabulary (label) + its EUR midpoints, so the re-derived
+# household_income label stays in the SAME vocabulary the donor mappers use. No
+# circular import: attributes imports only reference_tables / ipf.attributed / popsim.missing.
+from braunschweig.popsim.attributes import (
+    INCOME_CLASS_BY_GROUP,
+    INCOME_GROUP_MIDPOINT_EUR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,8 @@ DEFAULT_DRAW_METHOD = "combined"
 def bracket_expected_eur() -> np.ndarray:
     """Per-bracket expected income e_b over INCOME_BRACKET_CATEGORIES (the mean the
     within-bracket draw realizes): closed -> (max(low, INCOME_MIN_EUR)+high)/2,
-    open-top -> 7000*(1+exp_mean). Used as the support points of the max-ent tilt."""
+    open-top -> low*(1 + INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION). Used as the support
+    points of the max-ent tilt."""
     e = np.empty(len(INCOME_BRACKET_CATEGORIES), dtype=float)
     for i, b in enumerate(INCOME_BRACKET_CATEGORIES):
         low, high = INCOME_BRACKET_BOUNDS_EUR[b]
@@ -58,18 +66,15 @@ def bracket_expected_eur() -> np.ndarray:
 
 def build_class_midpoint_eur() -> dict[str, float]:
     """Label -> midpoint EUR for the popsim income-class vocabulary, built from the
-    attribute mappers so the re-derived label stays in the SAME vocabulary popsim uses."""
-    from braunschweig.popsim.attributes import (
-        INCOME_CLASS_BY_GROUP,
-        INCOME_GROUP_MIDPOINT_EUR,
-    )
+    attribute mappers so the re-derived label stays in the SAME vocabulary popsim uses.
+    Key order is not significant; income_class_from_eur sorts by midpoint internally."""
     return {
         INCOME_CLASS_BY_GROUP[code]: float(INCOME_GROUP_MIDPOINT_EUR[code])
         for code in INCOME_CLASS_BY_GROUP
     }
 
 
-def income_class_from_eur(eur_values, class_midpoint_eur) -> np.ndarray:
+def income_class_from_eur(eur_values, class_midpoint_eur: dict[str, float]) -> np.ndarray:
     """Nearest-midpoint classifier (1-D, monotone). Mirrors enriched._income_class_from_eur
     but kept local so enriched is not imported/touched."""
     labels = list(class_midpoint_eur.keys())

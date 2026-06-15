@@ -10,8 +10,8 @@ def test_bracket_expected_eur_shape_and_values():
     assert e_b.shape == (len(INCOME_BRACKET_CATEGORIES),)
     # under_500 floored at INCOME_MIN_EUR=100 -> (100+500)/2 = 300
     assert e_b[0] == pytest.approx(300.0)
-    # 2000_3000 -> (2000+3000)/2 = 2500
-    assert e_b[4] == pytest.approx(2500.0)
+    # 2000_3000 -> (2000+3000)/2 = 2500 (look up by name, robust to bracket reorder)
+    assert e_b[INCOME_BRACKET_CATEGORIES.index("2000_3000")] == pytest.approx(2500.0)
     # open top -> 7000*(1+0.4) = 9800
     assert e_b[-1] == pytest.approx(9800.0)
     # strictly increasing
