@@ -333,3 +333,31 @@ def test_draw_open_top_exponential_fallback_still_works():
     idx = np.array([9, 9, 9])  # open-top index
     draws = kic.draw_income_within_bracket(idx, rng, open_top_pareto=False)
     assert (draws >= 7000.0).all() and (draws <= kic.INCOME_OPEN_TOP_MAX_EUR).all()
+
+
+def test_add_per_capita_income():
+    import pandas as pd
+    df = pd.DataFrame({
+        "household_id": [1, 1, 2],
+        "household_income_eur": [3000.0, 3000.0, 5000.0],
+        "household_size": [2, 2, 1],
+    })
+    out = kic.add_per_capita_income(df)
+    pc = out["household_income_per_capita_eur"].to_numpy()
+    assert pc[0] == 1500.0 and pc[1] == 1500.0  # 3000 / 2
+    assert pc[2] == 5000.0                        # 5000 / 1
+    # per-household column untouched
+    assert (out["household_income_eur"] == df["household_income_eur"]).all()
+
+
+def test_add_per_capita_income_handles_nan_and_zero_size():
+    import numpy as np
+    import pandas as pd
+    df = pd.DataFrame({
+        "household_income_eur": [np.nan, 4000.0],
+        "household_size": [2, 0],  # zero size floored to 1
+    })
+    out = kic.add_per_capita_income(df)
+    pc = out["household_income_per_capita_eur"].to_numpy()
+    assert np.isnan(pc[0])   # NaN income -> NaN per-capita
+    assert pc[1] == 4000.0   # size 0 floored to 1

@@ -821,6 +821,13 @@ def execute(context) -> pd.DataFrame:
                 if v is not None
             }
 
+    # Per-capita income view alongside the per-household household_income_eur.
+    # Computed on the FINAL income (after Kreis-Income-Control + spatial tilt) so both
+    # the per-household construct (household_income_eur) and the per-capita construct
+    # (≈ INKAR income-je-Einwohner ordering) are available downstream.
+    if {"household_income_eur", "household_size"}.issubset(persons.columns):
+        persons = _kic.add_per_capita_income(persons)
+
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
     # to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it

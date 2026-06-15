@@ -456,3 +456,29 @@ def apply_kreis_income_control(
                 region_mean, len(in_scope), 100 * pmf_diag["fallback_rate"],
                 {k: v for k, v in kreis_clamped.items() if v})
     return out, diag
+
+
+def add_per_capita_income(
+    persons: pd.DataFrame,
+    *,
+    income_col: str = "household_income_eur",
+    size_col: str = "household_size",
+    out_col: str = "household_income_per_capita_eur",
+) -> pd.DataFrame:
+    """Add a per-CAPITA income column = household income / household size.
+
+    A second, per-person view alongside the per-HOUSEHOLD ``household_income_eur``.
+    The per-household value is construct-correct for a household quantity but its
+    between-Kreis ordering is per-household (large-household rural Kreise rank high);
+    dividing by household size recovers the per-capita ordering (≈ the INKAR
+    income-je-Einwohner ranking). Both constructs then coexist so downstream models
+    can pick either. Computed on the FINAL income, so call AFTER the Kreis-Income-
+    Control and the within-Kreis spatial tilt. NaN income → NaN per-capita; household
+    size is floored at 1 to avoid division by zero. Returns a copy with ``out_col``.
+    """
+    out = persons.copy()
+    size = pd.to_numeric(out[size_col], errors="coerce")
+    out[out_col] = (
+        pd.to_numeric(out[income_col], errors="coerce") / size.where(size > 0, 1.0)
+    ).round(0)
+    return out
