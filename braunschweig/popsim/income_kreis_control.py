@@ -299,8 +299,9 @@ def draw_brackets(pmf_rows: np.ndarray, uniforms: np.ndarray) -> np.ndarray:
 
 
 def draw_income_within_bracket(bracket_idx: np.ndarray, rng) -> np.ndarray:
-    """Continuous EUR within each sampled bracket: uniform [max(low,100), high) for
-    closed brackets, 7000*(1+Exp(0.4)) capped at 18000 for the open top."""
+    """Continuous EUR within each sampled bracket: uniform [max(low, INCOME_MIN_EUR), high)
+    for closed brackets, low*(1 + Exp(INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION)) capped at
+    INCOME_OPEN_TOP_MAX_EUR for the open top."""
     low = _BRACKET_LOW[bracket_idx]
     high = _BRACKET_HIGH[bracket_idx]
     eur = np.empty(len(bracket_idx), dtype=float)
