@@ -134,6 +134,25 @@ class TestIncomeRentCorrelation:
         # c_no_data left-join gives NaN rent -> excluded
         assert result["n_valid"] == 2, f"expected 2 valid rows, got {result['n_valid']}"
 
+    def test_zero_rent_cells_excluded(self) -> None:
+        """rent_qm == 0 cells (suppressed Zensus, NOT free rent) are excluded.
+
+        ~33% of ZGB 100m cells are zero-rent; including them lets the owner-index
+        tilt (which raises income in high-ownership, low/zero-rent cells) spuriously
+        drag the income-rent correlation negative — the confound that once mis-read a
+        KEEP (+0.026 on rent>0) as a FLIP (-0.15 over all cells). Count rent>0 only.
+        """
+        persons = _make_persons(
+            [1000.0, 2000.0, 3000.0, 4000.0],
+            ["c0", "c1", "z0", "z1"],
+            ["03101"] * 4,
+        )
+        cells = _make_cells(["c0", "c1", "z0", "z1"], [5.0, 10.0, 0.0, 0.0])
+        result = income_rent_correlation(persons, cells)
+        assert result["n_valid"] == 2, (
+            f"zero-rent cells must be excluded; expected 2 valid rows, got {result['n_valid']}"
+        )
+
     def test_too_few_valid_rows_returns_nan(self) -> None:
         """< 3 valid rows -> all results NaN (scipy correlation undefined)."""
         persons = _make_persons([1000.0], ["c0"], ["03101"])

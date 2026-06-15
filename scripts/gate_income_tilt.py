@@ -106,6 +106,13 @@ def income_rent_correlation(
     rent = cells[[cell_join_col, rent_col]].copy()
     merged = persons[[cell_join_col, income_col]].merge(rent, on=cell_join_col, how="left")
     valid = merged[[income_col, rent_col]].replace([np.inf, -np.inf], np.nan).dropna()
+    # Exclude zero-rent cells. ~33% of ZGB-8 100m cells have rent_qm=0 (suppressed
+    # Zensus data, NOT free rent). Including them conflates the owner-index tilt (which
+    # raises income in high-Eigentuemerquote, low/zero-rent suburban cells) into a
+    # SPURIOUS negative income-rent correlation, the exact confound the documented
+    # methodology excludes ("non-zero rent cells only"). Without this filter the gate
+    # mis-read a KEEP (+0.026 on rent>0) as a FLIP (-0.15 over all cells).
+    valid = valid[valid[rent_col] > 0]
     n = len(valid)
     if n < 3:
         return {

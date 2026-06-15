@@ -544,6 +544,13 @@ within-cell signal further, but the present value was chosen conservatively.
 
 **RECOMMENDATION: KEEP DEFAULT ON**
 
+> **Correction (2026-06-15):** `income_rent_correlation` originally did NOT exclude `rent==0`
+> cells (contrary to the methodology above), so an all-cells run mis-read income↔rent as
+> OFF −0.06 → ON −0.15 (a false FLIP) — the owner-index raises income in high-Eigentümerquote,
+> low/zero-rent cells, which drags the correlation negative when zero-rent cells are included.
+> Fixed with a `rent>0` filter + regression test `test_zero_rent_cells_excluded`; the harness
+> now reproduces the non-zero-rent KEEP (ΔPearson +0.032, n=247,709) shown above.
+
 All three PASS conditions are met:
 
 1. **Correlation does not materially worsen OFF→ON** (ΔSpearman >= -0.01 threshold; expected to
