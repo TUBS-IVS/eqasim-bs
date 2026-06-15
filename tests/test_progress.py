@@ -20,3 +20,14 @@ def test_progress_iter_without_total(monkeypatch, capsys):
     out = list(P.progress_iter(iter([10, 20]), "noseq", min_interval=0.0))
     assert out == [10, 20]
     assert "2 items" in capsys.readouterr().out
+
+
+def test_progress_parallel_yields_results_and_prints(monkeypatch, capsys):
+    import concurrent.futures as cf
+    monkeypatch.setattr(P, "_stdout_is_tty", lambda: False)
+    with cf.ThreadPoolExecutor(max_workers=2) as ex:
+        futures = [ex.submit(lambda x=x: x * 2) for x in range(4)]
+        got = sorted(P.progress_parallel(futures, "batches", total=4))
+    assert got == [0, 2, 4, 6]
+    printed = capsys.readouterr().out
+    assert "[batches]" in printed and "100%" in printed and "(4/4)" in printed

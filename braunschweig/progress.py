@@ -116,3 +116,39 @@ def progress_iter(iterable: Iterable[T], label: str, *,
         sys.stdout.flush()
     else:
         _plain_line(label, i, total, t_start, True)
+
+
+def progress_parallel(futures, label: str, *, total: int | None = None):
+    """Yield each future's result as it completes, drawing the same progress as
+    progress_iter. ``futures`` is an iterable of concurrent.futures.Future. ``total``
+    should be the future count (so pct/ETA are shown)."""
+    from concurrent.futures import as_completed
+
+    t_start = time.perf_counter()
+    t_last = t_start
+    tty = _stdout_is_tty()
+    i = 0
+    if tty:
+        _tty_draw(label, 0, total, t_start, False, 0)
+    else:
+        _plain_line(label, 0, total, t_start, False)
+    for fut in as_completed(list(futures)):
+        result = fut.result()
+        i += 1
+        yield result
+        now = time.perf_counter()
+        if tty:
+            is_last = total is not None and total > 0 and i >= total
+            if now - t_last >= 0.066 or is_last:
+                _tty_draw(label, i, total, t_start, False, i)
+                t_last = now
+        else:
+            if now - t_last >= 5.0 or (total and i >= total):
+                _plain_line(label, i, total, t_start, False)
+                t_last = now
+    if tty:
+        _tty_draw(label, i, total, t_start, True, i)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    else:
+        _plain_line(label, i, total, t_start, True)
