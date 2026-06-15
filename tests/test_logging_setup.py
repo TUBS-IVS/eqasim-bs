@@ -24,9 +24,10 @@ def test_setup_logging_idempotent_and_writes_utf8_file(tmp_path):
     ls.setup_logging(level="INFO", color=False, log_dir=str(tmp_path), log_file="t.log")
     ls.setup_logging(level="INFO", color=False, log_dir=str(tmp_path), log_file="t.log")
     root = logging.getLogger()
-    streams = [h for h in root.handlers if isinstance(h, logging.StreamHandler)
-               and not isinstance(h, logging.FileHandler)]
-    files = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
+    # Count only OUR tagged handlers (pytest 9 attaches its own NUL FileHandler to
+    # the root logger for the whole session; we only assert about eqasim handlers).
+    streams = [h for h in root.handlers if getattr(h, "_eqasim_console", False)]
+    files = [h for h in root.handlers if getattr(h, "_eqasim_file", False)]
     assert len(files) == 1 and len(streams) == 1  # no duplicate handlers on 2nd call
     logging.getLogger("braunschweig.x").info("ümlaut ✓")
     files[0].flush()
