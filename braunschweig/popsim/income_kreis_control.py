@@ -123,3 +123,80 @@ def build_kreis_income_targets(
         logger.warning("[income_kreis_control] degenerate target mean <= 0; rf=1 for all.")
         return {k: 1.0 for k in scope}
     return {k: raw[k] / wmean for k in scope}
+
+
+def _size_key(n) -> str:
+    """Map an integer household size onto the income_by_size SIZE_CATEGORIES bins."""
+    try:
+        k = int(n)
+    except (TypeError, ValueError):
+        return ""
+    return "5+" if k >= 5 else str(k)
+
+
+def _raumtyp_key(rs7):
+    if rs7 is None or (isinstance(rs7, float) and np.isnan(rs7)):
+        return None
+    try:
+        return RS7_TO_RAUMTYP_KEY.get(int(rs7))
+    except (TypeError, ValueError):
+        return None
+
+
+def household_base_pmf_matrix(
+    households_df: pd.DataFrame,
+    income_tables: dict,
+    *,
+    method: str = DEFAULT_DRAW_METHOD,
+    size_col: str = "household_size",
+    status_col: str = "economic_status",
+    raumtyp_col: str = "RegioStaR7",
+) -> tuple[np.ndarray, dict]:
+    """Per-household base bracket pmf matrix (n_hh x 10), ordered like
+    INCOME_BRACKET_CATEGORIES. Builds one pmf per UNIQUE (size, status, raumtyp) cell
+    via combine_size_status_bracket_pmf and maps it back to households.
+
+    method='combined' uses size x status; method='size_only' uses size alone.
+    Households whose size-cell is absent fall back to a uniform pmf (counted)."""
+    n = len(households_df)
+    n_brackets = len(INCOME_BRACKET_CATEGORIES)
+    uniform = np.full(n_brackets, 1.0 / n_brackets)
+    size_bl = income_tables["size_bl"]
+    size_rt = income_tables["size_rt"]
+    status_bl = income_tables["status_bl"]
+    status_rt = income_tables["status_rt"]
+
+    sizes = households_df[size_col].map(_size_key).to_numpy()
+    statuses = (households_df[status_col].astype(str).to_numpy()
+                if status_col in households_df.columns else np.array([None] * n))
+    rts = (households_df[raumtyp_col].map(_raumtyp_key).to_numpy()
+           if raumtyp_col in households_df.columns else np.array([None] * n))
+
+    cache: dict[tuple, np.ndarray] = {}
+    n_fallback = 0
+    mat = np.empty((n, n_brackets), dtype=float)
+    for i in range(n):
+        key = (sizes[i], statuses[i] if method == "combined" else None, rts[i])
+        pmf = cache.get(key)
+        if pmf is None:
+            pmf = _cell_pmf(size_bl, size_rt, status_bl, status_rt, key[0], key[1], key[2], method)
+            if pmf is None:
+                pmf = uniform
+                n_fallback += 1
+            cache[key] = pmf
+        mat[i] = pmf
+    return mat, {"fallback_rate": (n_fallback / n) if n else 0.0,
+                 "fallback_count": n_fallback}
+
+
+def _cell_pmf(size_bl, size_rt, status_bl, status_rt, size_key, status_key, rt_key, method):
+    p_size = income_bracket_probabilities(size_bl, size_rt, size_key, rt_key)
+    if p_size is None:
+        return None
+    if method != "combined" or status_key is None:
+        return p_size
+    p_status = income_bracket_probabilities_by_status(status_bl, status_rt, status_key, rt_key)
+    p_overall = overall_bracket_pmf(status_bl, status_rt, rt_key)
+    if p_status is None or p_overall is None:
+        return p_size
+    return combine_size_status_bracket_pmf(p_size, p_status, p_overall)

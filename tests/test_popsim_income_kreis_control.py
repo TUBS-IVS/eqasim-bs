@@ -79,3 +79,72 @@ def test_build_kreis_income_targets_hhsize_off_uses_per_ew():
     rf = kic.build_kreis_income_targets(inkar, stats, ["03102", "03103"], hhsize_correct=False)
     # per-EW only: rf proportional to scale, mean-1
     assert rf["03103"] / rf["03102"] == pytest.approx(1.091 / 0.882)
+
+
+def _toy_income_tables():
+    # 10-bracket toy NDS-only tables (raumtyp tables empty -> NDS base used).
+    import pandas as pd
+    from braunschweig.data.mid.income_by_size import INCOME_BRACKET_CATEGORIES
+    brackets = list(INCOME_BRACKET_CATEGORIES)
+    def size_rows(size, weights):
+        return [{"region": "niedersachsen", "hh_size": size, "income_bracket": b,
+                 "share_pct": w, "base_weighted": 100.0} for b, w in zip(brackets, weights)]
+    def status_rows(status, weights):
+        return [{"region": "niedersachsen", "status": status, "income_bracket": b,
+                 "share_pct": w, "base_weighted": 100.0} for b, w in zip(brackets, weights)]
+    low = [40, 25, 15, 8, 6, 3, 1, 1, 1, 0]
+    high = [2, 3, 5, 8, 15, 22, 20, 12, 7, 6]
+    size_bl = pd.DataFrame(size_rows("1", low) + size_rows("2", high))
+    status_bl = pd.DataFrame(status_rows("very_low", low) + status_rows("very_high", high))
+    empty_size = pd.DataFrame(columns=["region", "hh_size", "income_bracket", "share_pct", "base_weighted"])
+    empty_status = pd.DataFrame(columns=["region", "status", "income_bracket", "share_pct", "base_weighted"])
+    return {"size_bl": size_bl, "size_rt": empty_size,
+            "status_bl": status_bl, "status_rt": empty_status}
+
+
+def test_household_base_pmf_matrix_combined_rows_sum_to_one():
+    import pandas as pd
+    tables = _toy_income_tables()
+    hh = pd.DataFrame({
+        "household_id": [1, 2],
+        "household_size": ["1", "2"],
+        "economic_status": ["very_low", "very_high"],
+        "RegioStaR7": [73, 73],
+    })
+    mat, diag = kic.household_base_pmf_matrix(hh, tables, method="combined")
+    assert mat.shape == (2, 10)
+    assert np.allclose(mat.sum(axis=1), 1.0)
+    # very_low+size1 household leans low; very_high+size2 leans high
+    assert mat[0, :3].sum() > mat[0, 7:].sum()
+    assert mat[1, 7:].sum() > mat[1, :3].sum()
+    assert diag["fallback_rate"] == 0.0
+
+
+def test_household_base_pmf_matrix_size_only_method():
+    import pandas as pd
+    tables = _toy_income_tables()
+    hh = pd.DataFrame({
+        "household_id": [1],
+        "household_size": ["1"],
+        "economic_status": ["very_high"],  # ignored in size_only
+        "RegioStaR7": [73],
+    })
+    mat, diag = kic.household_base_pmf_matrix(hh, tables, method="size_only")
+    assert np.allclose(mat.sum(axis=1), 1.0)
+    # size_only uses the size-1 (low) distribution regardless of status
+    assert mat[0, :3].sum() > mat[0, 7:].sum()
+
+
+def test_household_base_pmf_matrix_missing_size_falls_back_uniform():
+    import pandas as pd
+    tables = _toy_income_tables()
+    hh = pd.DataFrame({
+        "household_id": [1],
+        "household_size": ["4"],  # absent from toy size table -> uniform fallback
+        "economic_status": ["very_low"],
+        "RegioStaR7": [73],
+    })
+    mat, diag = kic.household_base_pmf_matrix(hh, tables, method="combined")
+    assert np.allclose(mat.sum(axis=1), 1.0)
+    assert np.allclose(mat[0], 1.0 / 10)
+    assert diag["fallback_rate"] == 1.0
