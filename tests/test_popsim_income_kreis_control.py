@@ -148,3 +148,45 @@ def test_household_base_pmf_matrix_missing_size_falls_back_uniform():
     assert np.allclose(mat.sum(axis=1), 1.0)
     assert np.allclose(mat[0], 1.0 / 10)
     assert diag["fallback_rate"] == 1.0
+
+
+def test_solve_kreis_lambda_recovers_target_mean():
+    e_b = kic.bracket_expected_eur()
+    rng = np.random.RandomState(0)
+    pmf = rng.dirichlet(np.ones(10), size=200)  # 200 households
+    base = float((kic.tilt_pmf_rows(pmf, e_b, 0.0) * e_b[None, :]).sum(axis=1).mean())
+    target = base * 1.08  # ask for +8%
+    lam, clamped = kic.solve_kreis_lambda(pmf, e_b, target)
+    realized = float((kic.tilt_pmf_rows(pmf, e_b, lam) * e_b[None, :]).sum(axis=1).mean())
+    assert not clamped
+    assert realized == pytest.approx(target, rel=1e-4)
+
+
+def test_solve_kreis_lambda_lower_target_gives_negative_lambda():
+    e_b = kic.bracket_expected_eur()
+    rng = np.random.RandomState(1)
+    pmf = rng.dirichlet(np.ones(10), size=200)
+    base = float((kic.tilt_pmf_rows(pmf, e_b, 0.0) * e_b[None, :]).sum(axis=1).mean())
+    lam, _ = kic.solve_kreis_lambda(pmf, e_b, base * 0.9)
+    assert lam < 0
+
+
+def test_solve_kreis_lambda_unreachable_target_clamps():
+    e_b = kic.bracket_expected_eur()
+    pmf = np.tile(np.eye(10)[0], (5, 1))  # all mass on lowest bracket
+    lam, clamped = kic.solve_kreis_lambda(pmf, e_b, e_b.max() * 2)  # impossible
+    assert clamped
+
+
+def test_tilt_pmf_rows_preserves_rows_sum_to_one():
+    e_b = kic.bracket_expected_eur()
+    pmf = np.random.RandomState(2).dirichlet(np.ones(10), size=10)
+    tilted = kic.tilt_pmf_rows(pmf, e_b, 0.0005)
+    assert np.allclose(tilted.sum(axis=1), 1.0)
+
+
+def test_tilt_pmf_rows_lambda_zero_is_identity():
+    e_b = kic.bracket_expected_eur()
+    pmf = np.random.RandomState(3).dirichlet(np.ones(10), size=10)
+    tilted = kic.tilt_pmf_rows(pmf, e_b, 0.0)
+    assert np.allclose(tilted, pmf)

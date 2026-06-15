@@ -200,3 +200,73 @@ def _cell_pmf(size_bl, size_rt, status_bl, status_rt, size_key, status_key, rt_k
     if p_status is None or p_overall is None:
         return p_size
     return combine_size_status_bracket_pmf(p_size, p_status, p_overall)
+
+
+def tilt_pmf_rows(pmf_rows: np.ndarray, e_b: np.ndarray, lam: float) -> np.ndarray:
+    """Exponential tilt q*exp(lam*e_b) renormalized per row. Numerically stabilized by
+    subtracting max(lam*e_b) before exp (cancels in the renormalization)."""
+    z = lam * e_b
+    z = z - z.max()
+    w = pmf_rows * np.exp(z)[None, :]
+    row = w.sum(axis=1, keepdims=True)
+    row = np.where(row > 0, row, 1.0)
+    return w / row
+
+
+def _tilted_mean(pmf_rows, e_b, lam) -> float:
+    tilted = tilt_pmf_rows(pmf_rows, e_b, lam)
+    return float((tilted * e_b[None, :]).sum(axis=1).mean())
+
+
+def solve_kreis_lambda(
+    pmf_rows: np.ndarray,
+    e_b: np.ndarray,
+    target_mean: float,
+    *,
+    max_expand: int = 80,
+    max_iter: int = 100,
+    tol: float = 1e-6,
+) -> tuple[float, bool]:
+    """Solve lambda so the household-averaged tilted mean equals target_mean. The mean
+    is strictly increasing in lambda, bounded by [min(e_b), max(e_b)]; an unreachable
+    target is clamped just inside the support and the clamp is flagged + logged."""
+    emin, emax = float(e_b.min()), float(e_b.max())
+    span = emax - emin
+    lo_t = emin + 1e-9 * span
+    hi_t = emax - 1e-9 * span
+    target = min(max(target_mean, lo_t), hi_t)
+    clamped = abs(target - target_mean) > 1e-9 * max(abs(target_mean), 1.0)
+
+    base = _tilted_mean(pmf_rows, e_b, 0.0)
+    if abs(base - target) <= tol * max(abs(target), 1.0):
+        return 0.0, clamped
+
+    if base < target:
+        lo, hi = 0.0, 1e-9
+        for _ in range(max_expand):
+            if _tilted_mean(pmf_rows, e_b, hi) >= target:
+                break
+            lo, hi = hi, hi * 2.0
+        else:
+            logger.warning("[income_kreis_control] lambda upper bracket not found; clamping.")
+            return hi, True
+    else:
+        lo, hi = -1e-9, 0.0
+        for _ in range(max_expand):
+            if _tilted_mean(pmf_rows, e_b, lo) <= target:
+                break
+            lo, hi = lo * 2.0, lo
+        else:
+            logger.warning("[income_kreis_control] lambda lower bracket not found; clamping.")
+            return lo, True
+
+    for _ in range(max_iter):
+        mid = 0.5 * (lo + hi)
+        m = _tilted_mean(pmf_rows, e_b, mid)
+        if abs(m - target) <= tol * max(abs(target), 1.0):
+            return mid, clamped
+        if m < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi), clamped
