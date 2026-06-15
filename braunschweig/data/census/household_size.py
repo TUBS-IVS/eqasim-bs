@@ -100,6 +100,47 @@ def _load_region_distribution(path: str, scope_prefixes):
     return counts
 
 
+def kreis_household_stats(path: str, scope) -> pd.DataFrame:
+    """Per-Kreis household count + mean household size from Zensus 2022 5000H-2001.
+
+    Mirrors the region-wide aggregation in execute() but grouped by 5-digit Kreis
+    (ars5 = Gemeinde-ARS[:5]). Returns a DataFrame with columns
+    [ars5, hh_count, mean_size]; mean_size uses the SIZE_BINS representative
+    persons-per-HH weights (1,2,3,4,5,6.5)."""
+    scope = [str(p) for p in scope]
+    usecols = [
+        "1_variable_attribute_code", "2_variable_attribute_code",
+        "2_variable_attribute_label", "3_variable_attribute_code", "value",
+    ]
+    df = pd.read_csv(path, sep=";", dtype=str, usecols=usecols)
+    df = df.rename(columns={
+        "1_variable_attribute_code": "ars12",
+        "2_variable_attribute_label": "size_label",
+        "2_variable_attribute_code": "size_code",
+        "3_variable_attribute_code": "type_code",
+    })
+    df["ars5"] = df["ars12"].str[:5]
+    df = df[df["ars5"].isin(scope)]
+    df = df[
+        df["type_code"].isna()
+        & df["size_code"].notna()
+        & df["size_label"].ne("Insgesamt")
+    ]
+    df["count"] = pd.to_numeric(df["value"], errors="coerce").fillna(0.0)
+
+    label_to_persons = {lbl: persons for _, labels, persons in SIZE_BINS for lbl in labels}
+    df["persons_per_hh"] = df["size_label"].map(label_to_persons)
+    df = df.dropna(subset=["persons_per_hh"])
+    df["person_weight"] = df["count"] * df["persons_per_hh"]
+
+    grp = df.groupby("ars5").agg(
+        hh_count=("count", "sum"),
+        person_total=("person_weight", "sum"),
+    ).reset_index()
+    grp["mean_size"] = grp["person_total"] / grp["hh_count"].where(grp["hh_count"] > 0, 1.0)
+    return grp[["ars5", "hh_count", "mean_size"]]
+
+
 def execute(context) -> pd.DataFrame:
     scope = [str(p) for p in context.config("braunschweig.political_prefix")]
     hh_counts = _load_region_distribution(_path(context), scope)
