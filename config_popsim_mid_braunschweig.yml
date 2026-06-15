@@ -215,6 +215,11 @@ config:
   braunschweig.population.popsim.income_kreis_control: true
   braunschweig.population.popsim.income_draw_method: combined
   braunschweig.population.popsim.income_kreis_control_hhsize_correct: true
+  # Open-top (>7000 EUR) income tail: truncated Pareto (alpha ~3.0 for German net-HH
+  # income; Bach/Corneo/Steiner 2013, Toda et al. 2020) instead of the exponential
+  # fallback. Default ON.
+  braunschweig.population.popsim.income_open_top_pareto: true
+  braunschweig.population.popsim.income_open_top_pareto_alpha: 3.0
 
   # Legacy-IPF-only flags intentionally absent (popsim replaces the enriched
   # stage: synthesis.population.enriched -> braunschweig.popsim.enriched_adapter

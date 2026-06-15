@@ -100,6 +100,8 @@ KEY_INCOME_TILT_CLIP = "braunschweig.population.popsim.income_tilt_clip"
 KEY_INCOME_KC = "braunschweig.population.popsim.income_kreis_control"
 KEY_INCOME_KC_METHOD = "braunschweig.population.popsim.income_draw_method"
 KEY_INCOME_KC_HHSIZE = "braunschweig.population.popsim.income_kreis_control_hhsize_correct"
+KEY_INCOME_KC_PARETO = "braunschweig.population.popsim.income_open_top_pareto"
+KEY_INCOME_KC_PARETO_ALPHA = "braunschweig.population.popsim.income_open_top_pareto_alpha"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -236,6 +238,8 @@ def configure(context):
     context.config(KEY_INCOME_KC, True)
     context.config(KEY_INCOME_KC_METHOD, "combined")
     context.config(KEY_INCOME_KC_HHSIZE, True)
+    context.config(KEY_INCOME_KC_PARETO, True)
+    context.config(KEY_INCOME_KC_PARETO_ALPHA, 3.0)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -597,6 +601,8 @@ def execute(context) -> pd.DataFrame:
             enabled=True,
             method=str(context.config(KEY_INCOME_KC_METHOD)),
             hhsize_correct=bool(context.config(KEY_INCOME_KC_HHSIZE)),
+            open_top_pareto=bool(context.config(KEY_INCOME_KC_PARETO)),
+            pareto_alpha=float(context.config(KEY_INCOME_KC_PARETO_ALPHA)),
             random_seed=random_seed,
         )
         persons.attrs["kreis_income_control_diag"] = {

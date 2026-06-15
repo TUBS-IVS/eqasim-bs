@@ -21,3 +21,18 @@ def test_configure_registers_kreis_control_defaults():
     assert seen[stage.KEY_INCOME_KC] is True
     assert seen[stage.KEY_INCOME_KC_METHOD] == "combined"
     assert seen[stage.KEY_INCOME_KC_HHSIZE] is True
+
+
+def test_configure_registers_pareto_defaults():
+    seen = {}
+
+    class FakeContext:
+        def config(self, key, default=None):
+            seen[key] = default
+            return default
+        def stage(self, *a, **k):
+            return None
+
+    stage.configure(FakeContext())
+    assert seen[stage.KEY_INCOME_KC_PARETO] is True
+    assert seen[stage.KEY_INCOME_KC_PARETO_ALPHA] == 3.0

@@ -43,6 +43,16 @@ INCOME_MIN_EUR = 100.0
 INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION = 0.4
 INCOME_OPEN_TOP_MAX_EUR = 18000.0
 
+# Open-top income tail shape. Pareto (power-law) is the standard model for the top
+# income tail (the exponential fallback decays too fast). alpha for the GERMAN
+# NET-HOUSEHOLD upper tail is ~3.0 -- thinner than the gross-individual top-income
+# tail (Pareto alpha ~2; Bach, Corneo & Steiner 2013, German Economic Review)
+# because net income + household pooling + taxation compress the very top, and
+# close to German LABOR-income estimates (alpha ~3.1-3.7 in the 2010s; Toda et al.
+# 2020, "Capital and Labor Income Pareto Exponents across Time and Space",
+# arXiv:2006.03441). Draw is a Pareto truncated to [7000, INCOME_OPEN_TOP_MAX_EUR].
+INCOME_OPEN_TOP_PARETO_ALPHA = 3.0
+
 # Dedicated RNG offset so this draw is reproducible and independent of other streams.
 INCOME_KC_RNG_OFFSET = 91237
 DEFAULT_DRAW_METHOD = "combined"
@@ -58,16 +68,38 @@ _BRACKET_HIGH = np.array(
 )
 
 
-def bracket_expected_eur() -> np.ndarray:
+def _truncated_pareto_mean(xm: float, xM: float, alpha: float) -> float:
+    """Mean of a Pareto(scale=xm, shape=alpha) truncated to [xm, xM] (alpha != 1)."""
+    num = (xm ** (1.0 - alpha) - xM ** (1.0 - alpha)) / (alpha - 1.0)
+    den = (xm ** (-alpha) - xM ** (-alpha)) / alpha
+    return num / den
+
+
+def _draw_truncated_pareto(n: int, xm: float, xM: float, alpha: float, rng) -> np.ndarray:
+    """Inverse-CDF draw from Pareto(scale=xm, shape=alpha) truncated to [xm, xM]."""
+    u = rng.random_sample(n)
+    return xm / (1.0 - u * (1.0 - (xm / xM) ** alpha)) ** (1.0 / alpha)
+
+
+def bracket_expected_eur(
+    *,
+    open_top_pareto: bool = True,
+    pareto_alpha: float = INCOME_OPEN_TOP_PARETO_ALPHA,
+) -> np.ndarray:
     """Per-bracket expected income e_b over INCOME_BRACKET_CATEGORIES (the mean the
-    within-bracket draw realizes): closed -> (max(low, INCOME_MIN_EUR)+high)/2,
-    open-top -> low*(1 + INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION). Used as the support
-    points of the max-ent tilt."""
+    within-bracket draw realizes): closed -> (max(low, INCOME_MIN_EUR)+high)/2;
+    open-top -> truncated-Pareto mean on [low, INCOME_OPEN_TOP_MAX_EUR] when
+    open_top_pareto (default), else the exponential-tail mean low*(1+exp_mean).
+    The open-top value MUST match draw_income_within_bracket's open-top draw so the
+    max-entropy Kreis calibration stays exact."""
     e = np.empty(len(INCOME_BRACKET_CATEGORIES), dtype=float)
     for i, b in enumerate(INCOME_BRACKET_CATEGORIES):
         low, high = INCOME_BRACKET_BOUNDS_EUR[b]
         if high is None:
-            e[i] = low * (1.0 + INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION)
+            if open_top_pareto:
+                e[i] = _truncated_pareto_mean(low, INCOME_OPEN_TOP_MAX_EUR, pareto_alpha)
+            else:
+                e[i] = low * (1.0 + INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION)
         else:
             e[i] = (max(low, INCOME_MIN_EUR) + high) / 2.0
     return e
@@ -297,10 +329,17 @@ def draw_brackets(pmf_rows: np.ndarray, uniforms: np.ndarray) -> np.ndarray:
     return np.clip(idx, 0, pmf_rows.shape[1] - 1)
 
 
-def draw_income_within_bracket(bracket_idx: np.ndarray, rng) -> np.ndarray:
+def draw_income_within_bracket(
+    bracket_idx: np.ndarray,
+    rng,
+    *,
+    open_top_pareto: bool = True,
+    pareto_alpha: float = INCOME_OPEN_TOP_PARETO_ALPHA,
+) -> np.ndarray:
     """Continuous EUR within each sampled bracket: uniform [max(low, INCOME_MIN_EUR), high)
-    for closed brackets, low*(1 + Exp(INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION)) capped at
-    INCOME_OPEN_TOP_MAX_EUR for the open top."""
+    for closed brackets; for the open top a truncated Pareto on [low, INCOME_OPEN_TOP_MAX_EUR]
+    when open_top_pareto (default), else low*(1 + Exp(INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION))
+    capped at INCOME_OPEN_TOP_MAX_EUR."""
     low = _BRACKET_LOW[bracket_idx]
     high = _BRACKET_HIGH[bracket_idx]
     eur = np.empty(len(bracket_idx), dtype=float)
@@ -311,8 +350,13 @@ def draw_income_within_bracket(bracket_idx: np.ndarray, rng) -> np.ndarray:
         low_draw = np.maximum(low[closed], INCOME_MIN_EUR)
         eur[closed] = low_draw + u * (high[closed] - low_draw)
     if is_open.any():
-        exp_draw = rng.exponential(scale=INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION, size=int(is_open.sum()))
-        eur[is_open] = np.minimum(low[is_open] * (1.0 + exp_draw), INCOME_OPEN_TOP_MAX_EUR)
+        n_open = int(is_open.sum())
+        if open_top_pareto:
+            eur[is_open] = _draw_truncated_pareto(
+                n_open, float(low[is_open][0]), INCOME_OPEN_TOP_MAX_EUR, pareto_alpha, rng)
+        else:
+            exp_draw = rng.exponential(scale=INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION, size=n_open)
+            eur[is_open] = np.minimum(low[is_open] * (1.0 + exp_draw), INCOME_OPEN_TOP_MAX_EUR)
     return np.maximum(eur, INCOME_MIN_EUR)
 
 
@@ -326,6 +370,8 @@ def apply_kreis_income_control(
     random_seed: int,
     method: str = DEFAULT_DRAW_METHOD,
     hhsize_correct: bool = True,
+    open_top_pareto: bool = True,
+    pareto_alpha: float = INCOME_OPEN_TOP_PARETO_ALPHA,
     kreis_col: str = "departement_id",
     hh_col: str = "household_id",
     size_col: str = "household_size",
@@ -343,7 +389,7 @@ def apply_kreis_income_control(
     if not enabled:
         return persons, {}
 
-    e_b = bracket_expected_eur()
+    e_b = bracket_expected_eur(open_top_pareto=open_top_pareto, pareto_alpha=pareto_alpha)
     # Household-level frame (income is a household quantity: one draw per household).
     hh = persons.sort_values(hh_col).groupby(hh_col, sort=True).first().reset_index()
     in_scope = sorted(hh[kreis_col].astype(str).unique())
@@ -377,7 +423,7 @@ def apply_kreis_income_control(
 
     uniforms = rng.random_sample(n_hh)
     brackets = draw_brackets(tilted, uniforms)
-    eur = np.round(draw_income_within_bracket(brackets, rng), 0)
+    eur = np.round(draw_income_within_bracket(brackets, rng, open_top_pareto=open_top_pareto, pareto_alpha=pareto_alpha), 0)
 
     eur_by_hh = dict(zip(hh[hh_col].to_numpy(), eur))
     out = persons.copy()
@@ -402,6 +448,8 @@ def apply_kreis_income_control(
         "pmf_fallback_count": pmf_diag["fallback_count"],
         "method": method,
         "hhsize_correct": hhsize_correct,
+        "open_top_pareto": open_top_pareto,
+        "pareto_alpha": pareto_alpha,
     }
     logger.info("[income_kreis_control] applied: region_mean=%.0f, kreise=%d, "
                 "pmf_fallback=%.1f%%, clamped=%s",

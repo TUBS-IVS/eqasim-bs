@@ -12,8 +12,11 @@ def test_bracket_expected_eur_shape_and_values():
     assert e_b[0] == pytest.approx(300.0)
     # 2000_3000 -> (2000+3000)/2 = 2500 (look up by name, robust to bracket reorder)
     assert e_b[INCOME_BRACKET_CATEGORIES.index("2000_3000")] == pytest.approx(2500.0)
-    # open top -> 7000*(1+0.4) = 9800
-    assert e_b[-1] == pytest.approx(9800.0)
+    # open top: exponential fallback -> 7000*(1+0.4) = 9800
+    e_exp = kic.bracket_expected_eur(open_top_pareto=False)
+    assert e_exp[-1] == pytest.approx(9800.0)
+    # open top: Pareto (default) -> truncated-Pareto mean on [7000, 18000], alpha=3
+    assert e_b[-1] == pytest.approx(9469.0, abs=2.0)
     # strictly increasing
     assert np.all(np.diff(e_b) > 0)
 
@@ -307,3 +310,26 @@ def test_apply_on_path_income_is_per_household_consistent():
         enabled=True, random_seed=1234)
     hh1 = out.loc[out.household_id == 1, "household_income_eur"].unique()
     assert len(hh1) == 1  # both persons in HH 1 share one income
+
+
+def test_truncated_pareto_mean_matches_analytic():
+    # alpha=3 on [7000, 18000] -> ~9469
+    m = kic._truncated_pareto_mean(7000.0, 18000.0, 3.0)
+    assert m == pytest.approx(9469.0, abs=2.0)
+
+
+def test_draw_open_top_pareto_consistency_with_e_b():
+    # The realized open-top draw mean must match e_b[open] (calibration support point).
+    rng = np.random.RandomState(0)
+    idx = np.full(20000, len(kic.bracket_expected_eur()) - 1)  # all open-top
+    draws = kic.draw_income_within_bracket(idx, rng, open_top_pareto=True, pareto_alpha=3.0)
+    assert draws.min() >= 7000.0 and draws.max() <= kic.INCOME_OPEN_TOP_MAX_EUR
+    e_b = kic.bracket_expected_eur(open_top_pareto=True, pareto_alpha=3.0)
+    assert draws.mean() == pytest.approx(e_b[-1], rel=0.03)
+
+
+def test_draw_open_top_exponential_fallback_still_works():
+    rng = np.random.RandomState(1)
+    idx = np.array([9, 9, 9])  # open-top index
+    draws = kic.draw_income_within_bracket(idx, rng, open_top_pareto=False)
+    assert (draws >= 7000.0).all() and (draws <= kic.INCOME_OPEN_TOP_MAX_EUR).all()
