@@ -22,6 +22,8 @@ from typing import Mapping, Sequence
 
 import pandas as pd
 
+from braunschweig.progress import progress_iter
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,7 +126,9 @@ def assign_households_to_buildings(
     n_households_assigned = 0
     n_households_orphan = 0
 
-    for cell_id, household_ids in hh_by_cell.items():
+    for cell_id, household_ids in progress_iter(
+        hh_by_cell.items(), "home handoff", total=len(hh_by_cell)
+    ):
         cell_id = str(cell_id)
         building_rows = cell_to_rows.get(cell_id)
         if not building_rows:
