@@ -81,7 +81,7 @@ config:
   braunschweig.population.popsim.uv_path: C:/Users/bienzeisler/.local/bin/uv.exe  # local-only, set to your path
 
   # Working directory for per-batch PopulationSim folder trees.
-  braunschweig.population.popsim.work_dir: eqasim-data/cache_bs_popsim_mid/popsim_work
+  braunschweig.population.popsim.work_dir: eqasim-data/cache_bs_popsim_allfeatures/popsim_work
 
   # Batch tuning: max 100 m cells per PopulationSim run (default 3000),
   # and number of parallel PopulationSim subprocesses (default 3).
