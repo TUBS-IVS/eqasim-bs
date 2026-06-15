@@ -48,6 +48,16 @@ INCOME_OPEN_TOP_MAX_EUR = 18000.0
 INCOME_KC_RNG_OFFSET = 91237
 DEFAULT_DRAW_METHOD = "combined"
 
+# Per-bracket lower / upper EUR bounds, ordered like INCOME_BRACKET_CATEGORIES.
+# Upper is NaN for the open-top bracket (high is None in INCOME_BRACKET_BOUNDS_EUR).
+_BRACKET_LOW = np.array(
+    [INCOME_BRACKET_BOUNDS_EUR[b][0] for b in INCOME_BRACKET_CATEGORIES], dtype=float
+)
+_BRACKET_HIGH = np.array(
+    [np.nan if INCOME_BRACKET_BOUNDS_EUR[b][1] is None else INCOME_BRACKET_BOUNDS_EUR[b][1]
+     for b in INCOME_BRACKET_CATEGORIES], dtype=float
+)
+
 
 def bracket_expected_eur() -> np.ndarray:
     """Per-bracket expected income e_b over INCOME_BRACKET_CATEGORIES (the mean the
@@ -270,3 +280,29 @@ def solve_kreis_lambda(
         else:
             hi = mid
     return 0.5 * (lo + hi), clamped
+
+
+def draw_brackets(pmf_rows: np.ndarray, uniforms: np.ndarray) -> np.ndarray:
+    """Inverse-CDF bracket sample per row: one uniform per household."""
+    cdf = np.cumsum(pmf_rows, axis=1)
+    cdf[:, -1] = 1.0  # guard rounding
+    idx = (uniforms[:, None] > cdf).sum(axis=1)
+    return np.clip(idx, 0, pmf_rows.shape[1] - 1)
+
+
+def draw_income_within_bracket(bracket_idx: np.ndarray, rng) -> np.ndarray:
+    """Continuous EUR within each sampled bracket: uniform [max(low,100), high) for
+    closed brackets, 7000*(1+Exp(0.4)) capped at 18000 for the open top."""
+    low = _BRACKET_LOW[bracket_idx]
+    high = _BRACKET_HIGH[bracket_idx]
+    eur = np.empty(len(bracket_idx), dtype=float)
+    is_open = np.isnan(high)
+    closed = ~is_open
+    if closed.any():
+        u = rng.random_sample(int(closed.sum()))
+        low_draw = np.maximum(low[closed], INCOME_MIN_EUR)
+        eur[closed] = low_draw + u * (high[closed] - low_draw)
+    if is_open.any():
+        exp_draw = rng.exponential(scale=INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION, size=int(is_open.sum()))
+        eur[is_open] = np.minimum(low[is_open] * (1.0 + exp_draw), INCOME_OPEN_TOP_MAX_EUR)
+    return np.maximum(eur, INCOME_MIN_EUR)

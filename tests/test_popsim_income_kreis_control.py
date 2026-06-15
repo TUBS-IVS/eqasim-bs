@@ -190,3 +190,28 @@ def test_tilt_pmf_rows_lambda_zero_is_identity():
     pmf = np.random.RandomState(3).dirichlet(np.ones(10), size=10)
     tilted = kic.tilt_pmf_rows(pmf, e_b, 0.0)
     assert np.allclose(tilted, pmf)
+
+
+def test_draw_brackets_inverse_cdf_deterministic():
+    pmf = np.tile(np.eye(10)[3], (4, 1))  # all mass -> bracket index 3
+    idx = kic.draw_brackets(pmf, np.array([0.1, 0.5, 0.9, 0.999]))
+    assert (idx == 3).all()
+
+
+def test_draw_income_within_bracket_bounds():
+    rng = np.random.RandomState(0)
+    # closed bracket 2000_3000 (index 4) and open top (index 9) and under_500 (index 0)
+    idx = np.array([4, 9, 0])
+    eur = kic.draw_income_within_bracket(idx, rng)
+    assert 2000.0 <= eur[0] < 3000.0
+    assert eur[1] >= 7000.0 and eur[1] <= kic.INCOME_OPEN_TOP_MAX_EUR
+    assert eur[2] >= kic.INCOME_MIN_EUR  # under_500 floored at 100
+
+
+def test_draw_brackets_respects_distribution():
+    rng = np.random.RandomState(1)
+    pmf = np.tile(np.array([0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0.5]), (2000, 1))
+    idx = kic.draw_brackets(pmf, rng.random_sample(2000))
+    frac_low = (idx == 0).mean()
+    assert 0.45 < frac_low < 0.55  # ~50/50 between bracket 0 and 9
+    assert set(np.unique(idx)).issubset({0, 9})
