@@ -150,6 +150,22 @@ def test_household_base_pmf_matrix_missing_size_falls_back_uniform():
     assert diag["fallback_rate"] == 1.0
 
 
+def test_household_base_pmf_fallback_rate_is_per_household_not_per_cell():
+    # Many households share ONE missing cell -> the rate must reflect the household
+    # share (here 100%), not the unique-cell count (which caching would make ~tiny).
+    import pandas as pd
+    tables = _toy_income_tables()
+    hh = pd.DataFrame({
+        "household_id": list(range(10)),
+        "household_size": ["4"] * 10,  # all share the same missing size cell
+        "economic_status": ["very_low"] * 10,
+        "RegioStaR7": [73] * 10,
+    })
+    mat, diag = kic.household_base_pmf_matrix(hh, tables, method="combined")
+    assert diag["fallback_count"] == 10  # per household, not 1 (per unique cell)
+    assert diag["fallback_rate"] == 1.0
+
+
 def test_solve_kreis_lambda_recovers_target_mean():
     e_b = kic.bracket_expected_eur()
     rng = np.random.RandomState(0)

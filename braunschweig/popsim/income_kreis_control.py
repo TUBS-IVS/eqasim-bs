@@ -167,7 +167,10 @@ def household_base_pmf_matrix(
     via combine_size_status_bracket_pmf and maps it back to households.
 
     method='combined' uses size x status; method='size_only' uses size alone.
-    Households whose size-cell is absent fall back to a uniform pmf (counted)."""
+    Households whose size-cell is absent fall back to a uniform pmf. fallback_count /
+    fallback_rate are counted PER HOUSEHOLD (not per unique cell), so a single missing
+    cell shared by many households is reported at its true household share -- the
+    no-silent-fallback rule needs the real fraction, not the unique-cell count."""
     n = len(households_df)
     n_brackets = len(INCOME_BRACKET_CATEGORIES)
     uniform = np.full(n_brackets, 1.0 / n_brackets)
@@ -182,18 +185,23 @@ def household_base_pmf_matrix(
     rts = (households_df[raumtyp_col].map(_raumtyp_key).to_numpy()
            if raumtyp_col in households_df.columns else np.array([None] * n))
 
-    cache: dict[tuple, np.ndarray] = {}
+    # Cache one (pmf, is_fallback) per unique cell; count fallback PER HOUSEHOLD below.
+    cache: dict[tuple, tuple[np.ndarray, bool]] = {}
     n_fallback = 0
     mat = np.empty((n, n_brackets), dtype=float)
     for i in range(n):
         key = (sizes[i], statuses[i] if method == "combined" else None, rts[i])
-        pmf = cache.get(key)
-        if pmf is None:
+        entry = cache.get(key)
+        if entry is None:
             pmf = _cell_pmf(size_bl, size_rt, status_bl, status_rt, key[0], key[1], key[2], method)
-            if pmf is None:
+            is_fallback = pmf is None
+            if is_fallback:
                 pmf = uniform
-                n_fallback += 1
-            cache[key] = pmf
+            entry = (pmf, is_fallback)
+            cache[key] = entry
+        pmf, is_fallback = entry
+        if is_fallback:
+            n_fallback += 1
         mat[i] = pmf
     return mat, {"fallback_rate": (n_fallback / n) if n else 0.0,
                  "fallback_count": n_fallback}
@@ -346,7 +354,12 @@ def apply_kreis_income_control(
         hh, income_tables, method=method,
         size_col=size_col, status_col=status_col, raumtyp_col=raumtyp_col)
 
-    # Region-wide base mean (household-weighted) -> region mean preserved by rf mean-1.
+    # Region-wide base mean (household-weighted over THIS synthetic population).
+    # Targets are region_mean * rf_k with rf household-count-weighted mean-1, so the
+    # INKAR between-Kreis relativity is imposed exactly. The region-wide realized mean
+    # is preserved EXACTLY only when the synthetic per-Kreis household shares match the
+    # census hh_count shares used to normalize rf; when they differ it can drift by the
+    # share mismatch. This is intended: we anchor relativity, not INKAR's absolute level.
     region_mean = float((base_mat * e_b[None, :]).sum(axis=1).mean())
 
     rng = np.random.RandomState(int(random_seed) + INCOME_KC_RNG_OFFSET)
@@ -386,6 +399,7 @@ def apply_kreis_income_control(
         "kreis_clamped": kreis_clamped,
         "kreis_realized_mean": realized,
         "pmf_fallback_rate": pmf_diag["fallback_rate"],
+        "pmf_fallback_count": pmf_diag["fallback_count"],
         "method": method,
         "hhsize_correct": hhsize_correct,
     }
