@@ -447,9 +447,10 @@ def execute(context) -> pd.DataFrame:
             mid_dir, completion_rng=np.random.RandomState(random_seed + 74513),
         )
         seed_columns = source.seed_columns()
-        seed_households, seed_persons = seedmod.select_seed_columns(
+        # project_completed_seed derives hh_type5 (Tier-1 household_type) like
+        # load_mid_seed does, so the seed carries it for the household_type control.
+        seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
-            extra_household_cols=("RegioStaR7", "H_GR", "H_MIETE", "haustyp"),
         )
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled

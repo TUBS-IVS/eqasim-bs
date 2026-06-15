@@ -423,6 +423,34 @@ def load_mid_seed(
     return households, persons, report
 
 
+def project_completed_seed(households, persons, columns):
+    """Project completed-donor frames onto the PopulationSim seed, deriving the
+    Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
+
+    The complete_members=True path (stage.py) builds the seed from the completed
+    donor frames; without this it called ``select_seed_columns`` WITHOUT deriving
+    ``hh_type5``, so the per-batch seed CSV lacked the column and PopulationSim
+    crashed (``'DataFrame' object has no attribute 'hh_type5'``) once the Tier-1
+    household_type control was enabled. This mirrors load_mid_seed's projection:
+    derive hh_type5 from the persons frame, join it onto households, then select the
+    seed columns retaining the raw control cols (H_GR / H_MIETE / haustyp) plus
+    hh_type5 and RegioStaR7.
+    """
+    hh_type5_series = seedmod.derive_hh_type5(
+        persons,
+        household_id_col=columns.person_household_id,
+        age_col=columns.age,
+    )
+    households = households.join(
+        hh_type5_series.rename("hh_type5"),
+        on=columns.household_id,
+    )
+    return seedmod.select_seed_columns(
+        households, persons, columns,
+        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
+    )
+
+
 # MiD columns needed to enrich the synthetic persons (beyond the seed control cols).
 MID_PERSON_ATTR_COLS = (
     "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT",
