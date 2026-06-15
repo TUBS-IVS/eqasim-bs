@@ -30,13 +30,24 @@ structural PopulationSim orchestration.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.census.household_size import kreis_household_stats
+from braunschweig.data.mid.income_by_size import (
+    load_income_by_size_bundesland,
+    load_income_by_size_raumtyp,
+)
+from braunschweig.data.mid.income_by_status import (
+    load_income_by_status_bundesland,
+    load_income_by_status_raumtyp,
+)
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
+from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
@@ -82,6 +93,13 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 KEY_INCOME_TILT = "braunschweig.population.popsim.income_spatial_tilt"
 KEY_INCOME_TILT_BETA = "braunschweig.population.popsim.income_tilt_beta"
 KEY_INCOME_TILT_CLIP = "braunschweig.population.popsim.income_tilt_clip"
+# Kreis-Income-Control: real MiD income draw + max-entropy per-Kreis calibration.
+# Default ON (project rule). When ON it OVERWRITES the apply_inkar_income_eur output
+# (build_persons) with a real continuous draw reshaped to the per-Kreis INKAR target.
+# When OFF, build_persons' midpoint x INKAR_scale output is left byte-identical.
+KEY_INCOME_KC = "braunschweig.population.popsim.income_kreis_control"
+KEY_INCOME_KC_METHOD = "braunschweig.population.popsim.income_draw_method"
+KEY_INCOME_KC_HHSIZE = "braunschweig.population.popsim.income_kreis_control_hhsize_correct"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -214,6 +232,14 @@ def configure(context):
     context.config(KEY_INCOME_TILT, True)
     context.config(KEY_INCOME_TILT_BETA, 0.3)
     context.config(KEY_INCOME_TILT_CLIP, 0.30)
+    # Kreis-Income-Control (default ON; OFF = byte-identical midpoint x INKAR_scale).
+    context.config(KEY_INCOME_KC, True)
+    context.config(KEY_INCOME_KC_METHOD, "combined")
+    context.config(KEY_INCOME_KC_HHSIZE, True)
+    if context.config(KEY_INCOME_KC, True):
+        context.config("data_path")  # MiD income tables + Zensus household file
+        context.config("braunschweig.zensus_households_path",
+                       "braunschweig/5000H-2001_de_flat.csv")
 
     # INKAR per-Kreis household income scale: used by both popsim_mid and popsim_open
     # to apply the same income scaling as the IPF/enriched path.
@@ -543,6 +569,49 @@ def execute(context) -> pd.DataFrame:
             load_tenure_by_income_raumtyp(data_path),
             context.stage("regiostar_tenure"),
             random_seed,
+        )
+
+    # --- Kreis-Income-Control (real MiD draw + max-entropy per-Kreis calibration) ---
+    # Replaces the build_persons midpoint x INKAR_scale income with a real continuous
+    # draw reshaped per Kreis to the construct-corrected INKAR target. Runs BEFORE the
+    # within-Kreis spatial tilt (which is Kreis-mean-preserving and layers on top).
+    if bool(context.config(KEY_INCOME_KC)):
+        _kc_data_path = context.config("data_path")
+        _kc_scope = [str(p) for p in context.config(KEY_KREISE)]
+        _income_tables = {
+            "size_bl": load_income_by_size_bundesland(_kc_data_path),
+            "size_rt": load_income_by_size_raumtyp(_kc_data_path),
+            "status_bl": load_income_by_status_bundesland(_kc_data_path),
+            "status_rt": load_income_by_status_raumtyp(_kc_data_path),
+        }
+        _kreis_stats = kreis_household_stats(
+            os.path.join(_kc_data_path,
+                         context.config("braunschweig.zensus_households_path")),
+            _kc_scope,
+        )
+        persons, _kc_diag = _kic.apply_kreis_income_control(
+            persons,
+            inkar_df=inkar_income,
+            kreis_stats_df=_kreis_stats,
+            income_tables=_income_tables,
+            enabled=True,
+            method=str(context.config(KEY_INCOME_KC_METHOD)),
+            hhsize_correct=bool(context.config(KEY_INCOME_KC_HHSIZE)),
+            random_seed=random_seed,
+        )
+        persons.attrs["kreis_income_control_diag"] = {
+            "region_mean": float(_kc_diag["region_mean"]),
+            "pmf_fallback_rate": float(_kc_diag["pmf_fallback_rate"]),
+            "kreis_realized_mean": {k: float(v) for k, v in _kc_diag["kreis_realized_mean"].items()},
+            "kreis_target_factor": {k: float(v) for k, v in _kc_diag["kreis_target_factor"].items()},
+            "any_clamped": bool(any(_kc_diag["kreis_clamped"].values())),
+        }
+        logger.info(
+            "[popsim.stage] Kreis-Income-Control applied (method=%s, hhsize_correct=%s); "
+            "household_income_eur + label + high_income re-derived from the real draw. "
+            "Realized per-Kreis means: %s",
+            context.config(KEY_INCOME_KC_METHOD), context.config(KEY_INCOME_KC_HHSIZE),
+            persons.attrs["kreis_income_control_diag"]["kreis_realized_mean"],
         )
 
     # --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
