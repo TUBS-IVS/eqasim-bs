@@ -77,6 +77,12 @@ config:
   braunschweig.population.popsim.max_cells: 3000
   braunschweig.population.popsim.num_workers: 3
 
+  # Kreis-Income-Control: real MiD income draw + max-entropy per-Kreis calibration.
+  # Default ON; OFF reproduces the legacy class-midpoint x INKAR_scale income byte-identically.
+  braunschweig.population.popsim.income_kreis_control: true
+  braunschweig.population.popsim.income_draw_method: combined
+  braunschweig.population.popsim.income_kreis_control_hhsize_correct: true
+
   # --- R-A: Gravity calibration (TASK-001).
   gravity_slope: -0.065
   gravity_constant: -2.4
