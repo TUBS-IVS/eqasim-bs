@@ -159,6 +159,10 @@ python scripts/verify_braunschweig_inputs.py --matsim
 python -m synpp config_local_braunschweig.yml
 ```
 
+> Tip: run via `python scripts/run_synpp.py <config>.yml` for coloured live progress
+> (PopulationSim batches + cell→building handoff) and a clean UTF-8 run log under
+> `logs/`. `python -m synpp <config>` still works, just without colour.
+
 A 0.1 % CI dry run (`config_dryrun_braunschweig.yml`) is available for
 smoke-testing without producing artefacts. Seed is fixed at `1234` and
 gravity slope at `-0.065` across all configs — see
