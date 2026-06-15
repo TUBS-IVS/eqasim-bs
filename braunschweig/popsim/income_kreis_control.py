@@ -306,3 +306,91 @@ def draw_income_within_bracket(bracket_idx: np.ndarray, rng) -> np.ndarray:
         exp_draw = rng.exponential(scale=INCOME_OPEN_TOP_EXP_MEAN_EUR_FRACTION, size=int(is_open.sum()))
         eur[is_open] = np.minimum(low[is_open] * (1.0 + exp_draw), INCOME_OPEN_TOP_MAX_EUR)
     return np.maximum(eur, INCOME_MIN_EUR)
+
+
+def apply_kreis_income_control(
+    persons: pd.DataFrame,
+    *,
+    inkar_df: pd.DataFrame,
+    kreis_stats_df: pd.DataFrame,
+    income_tables: dict,
+    enabled: bool,
+    random_seed: int,
+    method: str = DEFAULT_DRAW_METHOD,
+    hhsize_correct: bool = True,
+    kreis_col: str = "departement_id",
+    hh_col: str = "household_id",
+    size_col: str = "household_size",
+    status_col: str = "economic_status",
+    raumtyp_col: str = "RegioStaR7",
+    income_col: str = "household_income_eur",
+    class_col: str = "household_income",
+) -> tuple[pd.DataFrame, dict]:
+    """Draw real income + apply the max-entropy per-Kreis calibration.
+
+    OFF (enabled=False): returns (persons, {}) UNCHANGED (byte-identical).
+    ON: per household, build the base bracket pmf, solve per-Kreis lambda to the target,
+    tilt + sample a bracket, draw the continuous EUR, broadcast to persons; re-derive
+    household_income (label) + high_income from the EUR. economic_status is untouched."""
+    if not enabled:
+        return persons, {}
+
+    e_b = bracket_expected_eur()
+    # Household-level frame (income is a household quantity: one draw per household).
+    hh = persons.sort_values(hh_col).groupby(hh_col, sort=True).first().reset_index()
+    in_scope = sorted(hh[kreis_col].astype(str).unique())
+    rf = build_kreis_income_targets(inkar_df, kreis_stats_df, in_scope,
+                                    hhsize_correct=hhsize_correct)
+
+    base_mat, pmf_diag = household_base_pmf_matrix(
+        hh, income_tables, method=method,
+        size_col=size_col, status_col=status_col, raumtyp_col=raumtyp_col)
+
+    # Region-wide base mean (household-weighted) -> region mean preserved by rf mean-1.
+    region_mean = float((base_mat * e_b[None, :]).sum(axis=1).mean())
+
+    rng = np.random.RandomState(int(random_seed) + INCOME_KC_RNG_OFFSET)
+    n_hh = len(hh)
+    tilted = np.empty_like(base_mat)
+    kreis_lambda, kreis_clamped = {}, {}
+    kreis_vals = hh[kreis_col].astype(str).to_numpy()
+    for k in in_scope:
+        mask = kreis_vals == k
+        target = region_mean * rf.get(k, 1.0)
+        lam, clamped = solve_kreis_lambda(base_mat[mask], e_b, target)
+        tilted[mask] = tilt_pmf_rows(base_mat[mask], e_b, lam)
+        kreis_lambda[k] = lam
+        kreis_clamped[k] = clamped
+
+    uniforms = rng.random_sample(n_hh)
+    brackets = draw_brackets(tilted, uniforms)
+    eur = np.round(draw_income_within_bracket(brackets, rng), 0)
+
+    eur_by_hh = dict(zip(hh[hh_col].to_numpy(), eur))
+    out = persons.copy()
+    out[income_col] = out[hh_col].map(eur_by_hh).astype(float)
+
+    class_midpoint = build_class_midpoint_eur()
+    out[class_col] = income_class_from_eur(out[income_col].to_numpy(), class_midpoint)
+    out["high_income"] = (out[income_col].fillna(0.0) >= HIGH_INCOME_THRESHOLD_EUR).astype(bool)
+
+    realized = {}
+    for k in in_scope:
+        m = kreis_vals == k
+        realized[k] = float(eur[m].mean()) if m.any() else float("nan")
+
+    diag = {
+        "region_mean": region_mean,
+        "kreis_target_factor": rf,
+        "kreis_lambda": kreis_lambda,
+        "kreis_clamped": kreis_clamped,
+        "kreis_realized_mean": realized,
+        "pmf_fallback_rate": pmf_diag["fallback_rate"],
+        "method": method,
+        "hhsize_correct": hhsize_correct,
+    }
+    logger.info("[income_kreis_control] applied: region_mean=%.0f, kreise=%d, "
+                "pmf_fallback=%.1f%%, clamped=%s",
+                region_mean, len(in_scope), 100 * pmf_diag["fallback_rate"],
+                {k: v for k, v in kreis_clamped.items() if v})
+    return out, diag

@@ -215,3 +215,79 @@ def test_draw_brackets_respects_distribution():
     frac_low = (idx == 0).mean()
     assert 0.45 < frac_low < 0.55  # ~50/50 between bracket 0 and 9
     assert set(np.unique(idx)).issubset({0, 9})
+
+
+def _persons_two_kreise(n_per=400):
+    import pandas as pd
+    rng = np.random.RandomState(7)
+    rows = []
+    hid = 0
+    for kreis, status_mix in [("03102", 0.7), ("03103", 0.3)]:  # SZ poorer status mix
+        for _ in range(n_per):
+            hid += 1
+            status = "very_low" if rng.random() < status_mix else "very_high"
+            size = "1" if status == "very_low" else "2"
+            rows.append({"household_id": hid, "departement_id": kreis,
+                         "household_size": size, "economic_status": status,
+                         "RegioStaR7": 73, "household_income_eur": 2500.0,
+                         "household_income": "2000_2600", "high_income": False})
+    return pd.DataFrame(rows)
+
+
+def test_apply_off_path_is_byte_identical():
+    import pandas as pd
+    df = _persons_two_kreise()
+    out, diag = kic.apply_kreis_income_control(
+        df, inkar_df=pd.DataFrame(), kreis_stats_df=pd.DataFrame(),
+        income_tables={}, enabled=False, random_seed=1234)
+    pd.testing.assert_frame_equal(out, df, check_exact=True)
+    assert diag == {}
+
+
+def test_apply_on_path_reshapes_and_hits_targets():
+    import pandas as pd
+    df = _persons_two_kreise()
+    tables = _toy_income_tables()
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102", "03103"], "hh_count": [400.0, 400.0],
+                          "mean_size": [1.8, 2.1]})
+    out, diag = kic.apply_kreis_income_control(
+        df, inkar_df=inkar, kreis_stats_df=stats, income_tables=tables,
+        enabled=True, method="combined", random_seed=1234)
+    sz = out.loc[out.departement_id == "03102", "household_income_eur"].mean()
+    wob = out.loc[out.departement_id == "03103", "household_income_eur"].mean()
+    # Salzgitter mean below Wolfsburg (between-Kreis relativity imposed)
+    assert sz < wob
+    # economic_status untouched
+    pd.testing.assert_series_equal(out["economic_status"], df["economic_status"])
+    # label + high_income re-derived from EUR (consistent with the value)
+    assert (out["high_income"] == (out["household_income_eur"] >= 5000.0)).all()
+    # per-Kreis realized mean tracks the target factor
+    assert diag["kreis_realized_mean"]["03102"] < diag["kreis_realized_mean"]["03103"]
+    assert "03102" in diag["kreis_lambda"]
+
+
+def test_apply_on_path_income_is_per_household_consistent():
+    import pandas as pd
+    # All persons in a household must share the same drawn household_income_eur.
+    rows = [
+        {"household_id": 1, "departement_id": "03102", "household_size": "2",
+         "economic_status": "very_low", "RegioStaR7": 73,
+         "household_income_eur": 2500.0, "household_income": "2000_2600", "high_income": False},
+        {"household_id": 1, "departement_id": "03102", "household_size": "2",
+         "economic_status": "very_low", "RegioStaR7": 73,
+         "household_income_eur": 2500.0, "household_income": "2000_2600", "high_income": False},
+        {"household_id": 2, "departement_id": "03103", "household_size": "1",
+         "economic_status": "very_high", "RegioStaR7": 73,
+         "household_income_eur": 2500.0, "household_income": "2000_2600", "high_income": False},
+    ]
+    df = pd.DataFrame(rows)
+    tables = _toy_income_tables()
+    inkar = pd.DataFrame({"ars5": ["03102", "03103"], "scale": [0.882, 1.091]})
+    stats = pd.DataFrame({"ars5": ["03102", "03103"], "hh_count": [1.0, 1.0],
+                          "mean_size": [2.0, 1.0]})
+    out, _ = kic.apply_kreis_income_control(
+        df, inkar_df=inkar, kreis_stats_df=stats, income_tables=tables,
+        enabled=True, random_seed=1234)
+    hh1 = out.loc[out.household_id == 1, "household_income_eur"].unique()
+    assert len(hh1) == 1  # both persons in HH 1 share one income
