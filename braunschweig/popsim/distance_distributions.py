@@ -83,8 +83,9 @@ from braunschweig.popsim.trips import map_mode, map_purpose, mid_time_seconds
 logger = logging.getLogger(__name__)
 
 # Straight-line detour factor: routed_km / straight-line_km.
-# Source: eqasim ENTD processing; used consistently throughout the project.
-DETOUR_FACTOR = 1.3
+# Canonical project-wide constant (braunschweig.constants); local alias kept
+# for the existing references.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 
 # Primary activity types — trips where BOTH ends are primary are excluded.
 # Matches the default stage exactly (synthesis/population/spatial/secondary/

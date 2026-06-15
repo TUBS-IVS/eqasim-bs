@@ -35,12 +35,23 @@ The pipeline is implemented as a content-hashed
 produces:
 
 1. A synthetic population (households, persons, daily activity chains,
-   trips) at 1 %, 10 %, or 25 % sampling rate.
+   trips) at 1 %, 10 %, 25 %, or 100 % sampling rate.
 2. A MATSim scenario (network, transit schedule, vehicle definitions,
    plans) ready for `matsim-{plans|main}` runs.
+3. Optionally, a [SimWrapper](https://simwrapper.github.io/) dashboard
+   bundle for interactive result inspection.
 
 ### Highlights
 
+- **Three selectable population-synthesis workflows** — one config switch
+  (`braunschweig.population.method`) chooses between the in-house IPF with the
+  open French ENTD 2008 trip donor (`simple_ipf_open`), a
+  [PopulationSim](https://activitysim.github.io/populationsim/)-based synthesis
+  at the Zensus-2022 100 m grid with the open ENTD seed (`popsim_open`), or the
+  same PopulationSim machinery seeded with the restricted **MiD 2023** raw
+  microdata (`popsim_mid`) — the highest-fidelity variant, in which every
+  synthetic person carries a real German donor's attributes **and** travel-day
+  chain. See [Population synthesis workflows](#population-synthesis-workflows).
 - **Real German open data end to end** — population, employment, commuting,
   households, income, buildings, and land use are all sourced from
   authoritative federal / Niedersachsen registers (no synthetic proxies).
@@ -53,6 +64,24 @@ produces:
   DESTATIS Mikrozensus 2024. See the education sections in
   [`CLAUDE.md`](CLAUDE.md) and sections E/F of
   [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).
+- **Cross-cordon commuter injection (flag-gated)** — in- and out-commuters
+  crossing the ZGB boundary are generated from BA Pendleratlas Kreis flows,
+  enter through network gates / rail stations chosen by a population-gravity
+  model, and are injected into the MATSim scenario as a fixed-mode
+  `incommuter` subpopulation, with per-gate validation outputs.
+- **Long-haul freight injection (flag-gated, default on)** — heavy-goods-vehicle
+  traffic from the open VSP **german-wide-freight v3** model (Lu et al. 2022) is
+  classified into internal / incoming / outgoing / **through (transit)** trips by
+  routing on the German-wide network, sampled to the run's rate, and injected as
+  a fixed-mode `truck` `freight` subpopulation — so the ZGB motorways (A2, A39…)
+  carry realistic through-traffic. An inspectable `freight_trips.gpkg` is written
+  for traceability.
+- **Household vehicle fleet model (flag-gated)** — household cars are
+  instantiated as a realistic fleet (KBA brand mix, HSN/TSN engine attributes,
+  electric-share tilt) instead of generic default vehicles.
+- **SimWrapper dashboards** — a synpp export stage writes a multi-tab
+  SimWrapper bundle (demographics, mode shares, choropleths, commuter flows)
+  for any run output.
 - **Privacy-conscious, fully documented data** — for data-protection reasons
   this repository hosts **no** third-party statistical registers. Only a small set
   of derived **aggregate reference tables** is committed; every other input is
@@ -134,6 +163,46 @@ A 0.1 % CI dry run (`config_dryrun_braunschweig.yml`) is available for
 smoke-testing without producing artefacts. Seed is fixed at `1234` and
 gravity slope at `-0.065` across all configs — see
 [`AGENTS.md`](AGENTS.md) for the rules around changing those.
+
+## Population synthesis workflows
+
+Population generation is a **selectable workflow** behind one config switch,
+`braunschweig.population.method`. All three methods produce the same unified
+persons/households/trips schema and feed the SAME downstream location-choice
+and MATSim stages, so results are directly comparable:
+
+| `population.method` | Synthesizer | Microdata seed | Activity chains | Geography |
+|---|---|---|---|---|
+| `simple_ipf_open` *(default)* | in-house IPF (4–6 margins, age-aware household composition) | none — census margins only | ENTD 2008 donor via statistical matching, MiD 2023 CDF overrides | Gemeinde / Kreis |
+| `popsim_open` | [PopulationSim](https://activitysim.github.io/populationsim/) | **open** ENTD 2008 households (full composition) | ENTD diary chains; non-diary members matched to diary donors (immobility preserved via the diary flag) | Zensus-2022 100 m / 1 km grid |
+| `popsim_mid` | PopulationSim | **MiD 2023 B1** raw microdata (restricted, local-only) | the donor's own MiD travel-day chain (Wege), validated + repaired | Zensus-2022 100 m / 1 km grid |
+
+Key properties of the PopulationSim workflows:
+
+- **Complete donor households** are expanded against age × sex grid controls
+  (1 km batches, cell-disjoint merge); member-incomplete MiD seed households
+  (~17 %) are filled by mirror-household sampling so household sizes match the
+  declared `H_GR`.
+- **MiD missing-data policy** — every donor attribute goes through one uniform,
+  logged policy (structural design codes mapped deterministically, item
+  non-response imputed within age/household-size groups, unenumerated codes
+  fail fast). Times that MiD does not collect for regular commute trips
+  (code 701, ~10 % of Wege) are imputed from the person's own `wegmin_imp1`
+  durations plus empirical anchors, so real commuter chains are preserved;
+  structurally broken chains are replaced by attribute-matched donor chains.
+- **Mobility quota** (share of persons leaving home) is reproduced from the
+  donors and validated against MiD 2023 P36_1 (~80 % mobile in the ZGB).
+- **Data protection** — `popsim_mid` requires the restricted MiD 2023 B1 CSV
+  package locally (never committed); raw donor ids are pseudonymised to
+  numeric surrogates before any output, and the surrogate↔raw map stays in the
+  local work directory. `popsim_open` is provably MiD-free (the MiD path is
+  only read when `popsim_mid` is selected).
+
+Run configs: [`config_popsim_mid_braunschweig.yml`](config_popsim_mid_braunschweig.yml),
+[`config_popsim_open_braunschweig.yml`](config_popsim_open_braunschweig.yml);
+1 % smoke twins `config_smoke_{simple_ipf,popsim_mid,popsim_open}[_mini].yml`
+plus the read-only three-case comparator
+[`validate_three_cases.py`](validate_three_cases.py).
 
 ## Input data — what to download
 
@@ -218,9 +287,52 @@ and `DATA_FLOW.md` for the full provenance.
 | **DESTATIS Mikrozensus 2024** — school-trip distance by school type | [destatis.de](https://www.destatis.de) — Mikrozensus Pendler tables | `scripts/seed_mikrozensus_school_distance.py` → `mikrozensus/mikrozensus2024_*.csv` |
 | **MiD 2023 Tabelle 43** — school distance by RegioStaR-7 × age | **committed** (`mid/mid2023_T43_school_distance_by_rs7.csv`) | `scripts/seed_mid_t43_school_distance.py` |
 
+### F. PopulationSim workflow inputs (only for `popsim_open` / `popsim_mid`)
+
+The PopulationSim workflows additionally need the prepared Zensus-2022 grid
+cell tables and (for `popsim_mid` only) the restricted MiD 2023 microdata. All
+of these are **local-only** (never committed); the paths are configured under
+`braunschweig.population.popsim.*` — see
+[`docs/population/DATA_LAYOUT.md`](docs/population/DATA_LAYOUT.md).
+
+| Input | Where | Target (config key) |
+|-------|-------|---------------------|
+| **Zensus 2022 grid cells, 100 m + 1 km** (prepared parquet with age × sex bands, household controls, RegioStaR) | derived from [ergebnisse.zensus2022.de](https://ergebnisse.zensus2022.de) grid downloads | `cells_100m_path`, `cells_1km_path` |
+| **MiD 2023 B1 Datensatzpaket** (faktisch anonymisierte CSV: Haushalte, Personen, Wege) — `popsim_mid` only | restricted scientific-use file, BMDV / infas | `mid_raw_path` (dir with `MiD2023_{Haushalte,Personen,Wege}.csv`) |
+| **PopulationSim environment** (runs as a `uv` subprocess in its own env) | [activitysim/populationsim](https://activitysim.github.io/populationsim/) | `popsimprep_dir`, `uv_path`, `controls_path`, `settings_path` |
+
+### G. Long-haul freight inputs (only with `freight_enabled: true`, default on)
+
+The freight injection adds long-haul road freight (heavy goods vehicles) to the
+MATSim scenario from the open **VSP german-wide-freight v3** model (TU Berlin).
+Two large files are needed; they are **local-only** (gitignored) and fetched by
+a one-line script:
+
+```bash
+python scripts/download_german_wide_freight.py
+# -> eqasim-data/data/braunschweig/freight/german-wide-freight-v3/
+```
+
+| Input | Where | Target path |
+|-------|-------|-------------|
+| **german_freight.100pct.plans.xml.gz** (≈72 MB — one agent per long-haul freight trip/day) | [VSP public SVN `german-wide-freight/v3`](https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/german-wide-freight/v3/) | `braunschweig/freight/german-wide-freight-v3/german_freight.100pct.plans.xml.gz` |
+| **germany-europe-network.xml.gz** (≈61 MB — the German-European routing network, EPSG:25832) | same SVN directory | `braunschweig/freight/german-wide-freight-v3/germany-europe-network.xml.gz` |
+
+The model and data are documented in **Lu, C., Martins-Turner, K., Nagel, K.
+(2022): _Creating an agent-based long-haul freight transport model for
+Germany_. Procedia Computer Science 201, 614–620,
+[doi:10.1016/j.procs.2022.03.080](https://doi.org/10.1016/j.procs.2022.03.080)**
+(open access, CC BY-NC-ND). The demand is the BMVI _Verkehrsprognose 2030_
+NUTS-3 goods-flow forecast divided into daily truck trips (≈13 t average load)
+and calibrated against BASt heavy-goods-vehicle counts. The download script
+writes a provenance README + sha256 log next to the files; the data licence is
+the VSP/MATSim open-data licence (see the SVN directory). See
+[`CLAUDE.md`](CLAUDE.md) ("Long-haul freight injection") for the full pipeline.
+
 Licences span dl-de/by-2-0 (BKG, Statistische Ämter, BA, BBSR, BMV),
 dl-de/zero-2-0 (LGLN ALKIS/ATKIS), and ODbL 1.0 (OSM); some inputs carry
-stricter terms — check each dataset before reuse.
+stricter terms — check each dataset before reuse. The MiD 2023 B1 microdata is
+a restricted scientific-use file and must never be redistributed.
 
 ## Census input data (cleancensus)
 
@@ -304,28 +416,39 @@ by construction: no raw MiD data is required.
 
 ```mermaid
 flowchart LR
-    A[Federal + NDS<br/>statistical inputs] --> IPF[Iterative<br/>Proportional Fitting<br/>Gemeinde × HH-size × age × sex × employment]
+    A[Federal + NDS<br/>statistical inputs] --> SEL{population.method}
+    SEL -->|simple_ipf_open| IPF[Iterative<br/>Proportional Fitting<br/>Gemeinde × HH-size × age × sex × employment]
+    SEL -->|popsim_open / popsim_mid| PS[PopulationSim<br/>Zensus-2022 100 m grid<br/>ENTD or MiD 2023 seed]
     IPF --> POP[Synthetic<br/>households + persons]
-    POP --> ENR[Enrichment<br/>income, licence, RegioStaR]
+    PS --> POP
+    POP --> ENR[Enrichment / donor attributes<br/>income, licence, PT, RegioStaR]
     POP --> HOME[Home zones<br/>ALKIS + Zensus 100 m]
     HOME --> GRAV[Gravity model<br/>BA Pendleratlas calibrated]
     GRAV --> WORK[Work / education<br/>locations]
-    ENR --> CHAIN[Activity chains<br/>ENTD 2008 donor + MiD CDFs]
+    ENR --> CHAIN[Activity chains<br/>ENTD donor matching or<br/>own MiD Wege + MiD CDFs]
     WORK --> CHAIN
     CHAIN --> SEC[Secondary locations<br/>ALKIS / ATKIS / OSM]
     SEC --> OUT[CSV / Parquet output]
-    OUT --> MATSIM[MATSim scenario<br/>network, schedule, plans]
+    OUT --> MATSIM[MATSim scenario<br/>network, schedule, plans,<br/>household fleet]
+    CORD[Cross-cordon commuters<br/>BA Pendleratlas + gates] --> MATSIM
+    FREIGHT[Long-haul freight<br/>german-wide-freight v3<br/>internal/in/out/transit] --> MATSIM
+    MATSIM --> SW[SimWrapper dashboard]
 ```
 
 Region-neutral building blocks live under
 [`eqasim_common/`](eqasim_common/); region overrides under
-[`braunschweig/`](braunschweig/). The former `bavaria/` tree of
+[`braunschweig/`](braunschweig/) (incl. the population-method selector in
+`braunschweig/population/`, the PopulationSim workflow in
+`braunschweig/popsim/`, the cordon machinery in `braunschweig/data/cordon/` +
+`braunschweig/synthesis/incommuters.py`, and the SimWrapper export in
+`braunschweig/analysis/simwrapper/`). The former `bavaria/` tree of
 inherited upstream modules has been removed; the few utilities still
 needed were migrated into `eqasim_common/` and `braunschweig/`.
 
-For the synpp DAG and stage layout, see
-[`docs/codebase/ARCHITECTURE.md`](docs/codebase/ARCHITECTURE.md) and
-[`docs/codebase/STRUCTURE.md`](docs/codebase/STRUCTURE.md).
+The authoritative module-level documentation for the calibrated subsystems is
+[`CLAUDE.md`](CLAUDE.md); workflow-specific docs live in
+[`docs/population/`](docs/population) (popsim data layout, id scheme) and
+[`docs/runs/`](docs/runs) (run monitors and validation summaries).
 
 ## How eqasim-bs differs from eqasim-bavaria
 
@@ -366,6 +489,50 @@ behaviour is preserved unless a change is explicitly enabled:
   `has_license`) are derived from the categorical attributes.
 - **Commute-distance override.** ZGB residents' commute distances are sampled
   from MiD 2023 P13 Kreis-level CDFs, overriding the ENTD-derived distances.
+- **PopulationSim workflows (flag-selected).** Beside the IPF, two
+  PopulationSim-based synthesis workflows generate the population directly at
+  the Zensus-2022 100 m grid from complete donor households (open ENTD or
+  restricted MiD 2023 seed) — see
+  [Population synthesis workflows](#population-synthesis-workflows).
+- **Cell-accurate popsim home locations.** The PopulationSim workflows place
+  each household in an area-weighted ALKIS building INSIDE its own Zensus-2022
+  100 m cell (`braunschweig.synthesis.locations.home_cell`), preserving the grid
+  precision PopulationSim produces instead of re-sampling anywhere in the
+  municipality (~97 % cell-accurate on the smoke; the rest fall back to a
+  commune draw where the cell has no mapped building, logged). The legacy/IPF
+  workflows keep the Gemeinde-level home sampler.
+- **Cross-cordon commuter injection (flag-gated).** `cordon_enabled` adds in-
+  and out-commuters from BA Pendleratlas Kreis flows: road gates and rail entry
+  stations are derived from the network ∩ cordon polygon, agents get
+  donor-timed home–work–home plans and enter MATSim as a fixed-mode
+  `incommuter` subpopulation; counts scale linearly with `sampling_rate` and a
+  validation stage writes per-gate CSV/GPKG reports.
+- **Household vehicle fleet (flag-gated).** `vehicles_method: household`
+  instantiates per-household vehicle fleets with KBA brand mix and HSN/TSN
+  engine attributes, with an electric-share calibration per Kreis/Gemeinde;
+  `remode_carless_car_legs` keeps plans consistent with the fleet.
+- **Long-haul freight injection (flag-gated, default on).** `freight_enabled`
+  adds heavy-goods-vehicle traffic from the open VSP **german-wide-freight v3**
+  model (Lu et al. 2022). The published matsim application-contrib tool routes
+  every freight trip on the German-wide network and classifies it internal /
+  incoming / outgoing / **through (transit)** — through-traffic is the dominant
+  share and needs real routing, not an origin/destination test. The trips are
+  written to an inspectable `freight_trips.gpkg`, sampled to `sampling_rate`
+  (seeded), and injected as a fixed-mode `truck` `freight` subpopulation
+  (`heavy_truck` vehicle type, PCE 3.5). Freight is excluded from every
+  person-travel KPI; off (`freight_enabled: false`) is byte-identical. See
+  [`CLAUDE.md`](CLAUDE.md) ("Long-haul freight injection") and section G of the
+  [Input data](#input-data--what-to-download) guide.
+- **Urban parking cost (flag-gated).** `enable_urban_parking` marks inner-city
+  residents so the Java mode-choice applies parking cost inside the BS inner
+  ring.
+- **MiD economic-status and income models.** `economic_status` is sampled from
+  the MiD Haushaltstyp × Region distribution (Bayes), household income from
+  empirical MiD distributions with INKAR per-Kreis scaling — consistent across
+  all three population workflows (`high_income` = ≥ 5000 EUR/month uniformly).
+- **SimWrapper export.** A synpp stage (`braunschweig.analysis.simwrapper_export`)
+  writes a multi-tab SimWrapper dashboard (demographics, mode shares,
+  choropleths, commuter tab) from any run output.
 - **Reference values as CSV tables, not Python literals.** All survey / census
   reference numbers live as versioned CSV tables and are regenerated only via
   dedicated seed scripts. For data-protection reasons only the small derived
@@ -374,8 +541,7 @@ behaviour is preserved unless a change is explicitly enabled:
   [`CLAUDE.md`](CLAUDE.md) and the
   [Input data](#input-data--what-to-download) guide.
 - **Repository hygiene.** The inherited `bavaria/` tree was removed (its few
-  still-needed utilities migrated into `eqasim_common/` / `braunschweig/`), and
-  the codebase was documented under [`docs/codebase/`](docs/codebase).
+  still-needed utilities migrated into `eqasim_common/` / `braunschweig/`).
 
 ## Calibration & validation
 
@@ -384,35 +550,47 @@ behaviour is preserved unless a change is explicitly enabled:
 - The household-size IPF margin is taken directly from Zensus 2022.
 - Commute distance CDFs are sampled from MiD 2023 P13 (Kreis-level)
   and override the ENTD-derived distances for ZGB residents.
-- Validation harness (10 % run): [`scripts/validate_bs_10pct.py`](scripts/validate_bs_10pct.py).
+- Run-level validation: `python -m braunschweig.analysis.run_full_analysis`
+  (dashboard + MiD validation) and the PopulationSim-style control validation
+  in `braunschweig/analysis/population_validation/` (incl. mobility quota vs
+  MiD P36_1, trip purposes vs W1, per-Kreis controls).
+- Three-workflow comparability: [`validate_three_cases.py`](validate_three_cases.py)
+  reads the three smoke outputs side by side (demographics, licence/PT shares,
+  mobility quota).
 - Quality-playbook protocols: [`quality/QUALITY.md`](quality/QUALITY.md),
   [`quality/RUN_FUNCTIONAL_TESTS.md`](quality/RUN_FUNCTIONAL_TESTS.md),
   [`quality/RUN_INTEGRATION_TESTS.md`](quality/RUN_INTEGRATION_TESTS.md),
   [`quality/RUN_CODE_REVIEW.md`](quality/RUN_CODE_REVIEW.md),
   [`quality/RUN_SPEC_AUDIT.md`](quality/RUN_SPEC_AUDIT.md).
 
-Test gate: `pytest tests/ -q` → 171 tests collected (smoke / pipeline /
+Test gate: `pytest tests/ -q -k "not test_pipeline and not test_simulation and
+not test_determinism and not smoke"` → ~1 500 tests green (smoke / pipeline /
 determinism tests are opt-in via `EQASIM_BS_RUN_PIPELINE=1`).
 
 ## Known limitations
 
-- The activity-chain donor is still ENTD 2008 (French HTS); a German
-  HTS replacement is open work.
-- 11 documented bugs from the upstream Bavaria pipeline remain tracked
-  in [`docs/codebase/CONCERNS.md`](docs/codebase/CONCERNS.md). Per
-  Decision D-5 (see [`AGENTS.md`](AGENTS.md)), the refactor is
-  behaviour-preserving; only bugs that actively block the BS pipeline
-  are fixed inline.
+- The `simple_ipf_open` and `popsim_open` workflows still use the ENTD 2008
+  (French HTS) as the trip donor; only `popsim_mid` carries native German
+  (MiD 2023) activity chains — and it requires the restricted MiD B1 microdata
+  locally.
+- PopulationSim controls currently constrain age × sex (+ household totals) at
+  the grid level; employment and income are donor-carried, not yet controlled —
+  the popsim workflows therefore inherit some MiD donor skew in those margins
+  (Kreis-level employment / income count controls are planned).
 - The Java MATSim package is still `org.eqasim.bavaria.*`; renaming is
   out of scope for this refactor (Decision D-1c).
 
 ## Documentation
 
 - [`AGENTS.md`](AGENTS.md) — single-page bootstrap for AI / human contributors.
-- [`docs/codebase/`](docs/codebase) — architecture, stack, conventions, integrations, testing, concerns.
+- [`CLAUDE.md`](CLAUDE.md) — authoritative module guide for the calibrated
+  subsystems (MiD reference tables, gravity, education, status/income models).
+- [`docs/population/`](docs/population) — popsim workflow docs (data layout,
+  id scheme, POPSIM_MID).
+- [`docs/runs/`](docs/runs) — run monitors and validation summaries (incl. the
+  2026-06-11 popsim bugfix-wave summary).
 - [`docs/population.md`](docs/population.md) — upstream Bavaria population doc, partially applicable.
 - [`docs/simulation.md`](docs/simulation.md) — upstream MATSim run doc, partially applicable.
-- [`plan/refactor-eqasim-bs.md`](plan/refactor-eqasim-bs.md) — current refactor phase plan.
 - [`quality/QUALITY.md`](quality/QUALITY.md) — fitness-to-purpose scenarios.
 
 ## Citation

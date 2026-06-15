@@ -219,6 +219,16 @@ def configure(context):
     # to apply the same income scaling as the IPF/enriched path.
     context.stage("braunschweig.data.inkar.household_income", alias="inkar_income")
 
+    # housing_tenure parity (legacy enriched feature, parity gap P2): sample the
+    # completeness attribute per household from P(tenure | income_bracket,
+    # raumtyp) using the SAME _apply_housing_tenure implementation as the
+    # IPF/enriched path (no duplicated logic; dedicated RNG offset +83947).
+    # Default ON; False -> column absent, byte-identical to the pre-parity output.
+    context.config("synthesise_housing_tenure", True)
+    if context.config("synthesise_housing_tenure", True):
+        context.config("data_path")
+        context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
+
     source_name = context.config(KEY_SOURCE, "mid")
     if source_name == "entd":
         # popsim_open: the ENTD donor for the PopulationSim SEED + attribute/trip
@@ -503,6 +513,37 @@ def execute(context) -> pd.DataFrame:
         inkar_scale=inkar_income,
     )
     context.set_info("popsim_n_persons", len(persons))
+
+    # housing_tenure parity (P2): main wired the enriched-path tenure sampler
+    # (braunschweig.synthesis.population.enriched._apply_housing_tenure, categories
+    # rent/own/other, RNG offset +83947) into the popsim stage. On THIS branch the
+    # popsim build_persons ALREADY derives ``housing_tenure`` directly from the MiD
+    # donor flag H_MIETE via attributes.map_housing_tenure (categories
+    # owner/renter/unknown) -- that donor-derived column is the AUTHORITATIVE tenure
+    # source consumed by (a) the Tier-2 tenure CONTROL catalog (control_spec, which
+    # matches owner/renter) and (b) the spatial income tilt below (which routes on
+    # tenure == "owner" / "renter"). Letting _apply_housing_tenure run
+    # unconditionally would OVERWRITE owner/renter/unknown with rent/own/other,
+    # silently turning the income tilt into a no-op (no row would equal "owner"/
+    # "renter") and changing the control-aligned attribute vocabulary. We therefore
+    # keep main's mechanism only as a FALLBACK: run it solely when build_persons did
+    # NOT already provide housing_tenure (e.g. the ENTD path, where H_MIETE is
+    # absent). When the donor column is present (MiD path) it is preserved verbatim.
+    if context.config("synthesise_housing_tenure") and "housing_tenure" not in persons.columns:
+        from braunschweig.data.mid.tenure_by_income import (
+            load_tenure_by_income_bundesland,
+            load_tenure_by_income_raumtyp,
+        )
+        from braunschweig.synthesis.population.enriched import _apply_housing_tenure
+
+        data_path = context.config("data_path")
+        persons = _apply_housing_tenure(
+            persons,
+            load_tenure_by_income_bundesland(data_path),
+            load_tenure_by_income_raumtyp(data_path),
+            context.stage("regiostar_tenure"),
+            random_seed,
+        )
 
     # --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
     # Applies a within-Kreis income redistribution guided by per-cell net cold rent

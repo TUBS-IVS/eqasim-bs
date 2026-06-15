@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig.constants import ROUTED_DETOUR_FACTOR
 from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
@@ -263,7 +264,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             zgb_work, mode_reference, hts_persons,
                             hts_trips, person_col, n_residents, n_resident_households,
                             rng, band_edges=MID_DISTANCE_EDGES, gate_speed_kmh=30.0,
-                            detour_factor=1.3, pt_entry_stops=None,
+                            detour_factor=ROUTED_DETOUR_FACTOR, pt_entry_stops=None,
                             commute_modes=("car", "pt"),
                             pt_transfer_penalty=0.5,
                             pt_gravity_beta=0.0,

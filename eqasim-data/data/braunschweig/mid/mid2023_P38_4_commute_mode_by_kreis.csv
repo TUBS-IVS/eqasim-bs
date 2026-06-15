@@ -1,0 +1,11 @@
+# Source: MiD 2023 Grossraum Braunschweig (infas 7555), Tabelle A P38.4 (pages 209+211 / 0-indexed 208+210). Row% of predominantly used transport mode on regular commute trips.
+region,zu_fuss,elektrofahrrad_pedelec,fahrrad,moped_mofa,privater_pkw,gewerblicher_pkw,lkw_bis_3_5t,lkw_ueber_3_5t,sattelzug_zugmaschine,kleinbus_max_9_sitze,bus_ueber_9_sitze,bahn_strassenbahn_sbahn,flugzeug,anderes_verkehrsmittel,keine_angabe
+Gesamt,18,3,4,1,36,22,3,1,1,3,2,4,0,1,2
+Braunschweig,20,10,9,0,20,20,3,0,0,5,3,5,0,3,1
+Wolfsburg,21,7,5,1,21,27,4,1,0,0,3,1,0,2,6
+Salzgitter,19,3,4,0,37,30,0,0,0,2,0,0,1,0,4
+Landkreis Gifhorn,23,0,5,0,32,23,4,0,0,3,2,1,0,4,2
+Landkreis Peine,18,0,3,2,26,23,3,3,6,1,4,10,0,0,1
+Landkreis Helmstedt,14,0,2,0,39,33,4,0,0,3,1,2,0,0,2
+Landkreis Wolfenbüttel,8,0,3,0,65,14,0,1,0,7,3,0,0,0,0
+Landkreis Goslar,18,3,2,2,40,19,2,2,0,0,1,7,0,0,3

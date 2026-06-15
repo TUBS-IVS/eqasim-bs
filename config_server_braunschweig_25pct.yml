@@ -25,6 +25,8 @@ config:
   sampling_rate: 0.25
   random_seed: 1234
 
+  freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
+
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_25pct
   output_prefix: braunschweig_25pct_
@@ -194,11 +196,14 @@ config:
   # heaviest synthesis stage on the 64-core server. Each shard is seeded
   # deterministically from (random_seed, shard_index), so a run is fully
   # reproducible for a fixed worker count -- hence the count is pinned here.
-  # Decoupled from `processes` so the chain solve can use more cores than the
-  # memory-bound MATSim mobsim. Default OFF elsewhere keeps the serial path
-  # byte-identical.
+  # 56 uses most of the 64-core box (RAM peak ~9 GB at 25% showed large
+  # headroom). NOTE: changing the worker count changes the shard seeding and
+  # therefore the solve results -- the 32 -> 56 raise is a deliberate
+  # re-baseline before the next run. Decoupled from `processes` so the chain
+  # solve can use more cores than the memory-bound MATSim mobsim. Default OFF
+  # elsewhere keeps the serial path byte-identical.
   braunschweig.chainsolvers.parallel: true
-  braunschweig.chainsolvers.processes: 32
+  braunschweig.chainsolvers.processes: 56
 
   # --- Cross-cordon external demand (Einpendler injection) at 25% ---------------
   # Enlarge the OSM network clip by cordon_network_source_buffer_m so motorways reach

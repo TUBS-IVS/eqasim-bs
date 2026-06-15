@@ -57,6 +57,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run the PopulationSim-style control validation + geo export as part "
              "of the default analysis output (default: on).",
     )
+    ap.add_argument(
+        "--simwrapper",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also export a SimWrapper dashboard folder into "
+             "<output-dir>/simwrapper/ (read-only; default: on).",
+    )
     ns = ap.parse_args(argv)
     if not ns.skip_dashboard and ns.sim_cache is None:
         ap.error("--sim-cache is required unless --skip-dashboard is set")
@@ -104,6 +111,16 @@ def main(argv: list[str] | None = None) -> int:
             LOGGER.info("Wrote outside-free modestats: %s, %s", csv_path, png_path)
         except FileNotFoundError:
             LOGGER.info("No modestats.csv under %s; skipping outside-free modestats.", sim_output)
+
+    if ns.simwrapper and ns.sim_cache is not None:
+        from braunschweig.analysis.simwrapper import export as _sw
+        LOGGER.info("Exporting SimWrapper dashboard for %s", output_dir)
+        _sw.main([
+            "--output-dir", str(output_dir),
+            "--sim-cache", str(Path(ns.sim_cache).resolve()),
+            *(["--label", ns.label] if ns.label else []),
+            *(["--sample-rate", str(ns.sample_rate)] if ns.sample_rate else []),
+        ])
 
     if not ns.skip_mid:
         LOGGER.info("Running MiD validation for %s", output_dir)

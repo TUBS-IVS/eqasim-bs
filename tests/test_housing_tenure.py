@@ -318,3 +318,49 @@ def test_writer_emits_housing_tenure_only_when_present():
     pop.add_person(w_off, _person_row(pop.PERSON_FIELDS), [activity], [], [],
                    person_fields=pop.PERSON_FIELDS)
     assert "housingTenure" not in w_off.attrs
+
+
+# ---------------------------------------------------------------------------
+# popsim parity (P2): the SAME _apply_housing_tenure runs on the popsim
+# persons frame (12-digit ARS commune_id), wired in braunschweig/popsim/stage.py.
+# ---------------------------------------------------------------------------
+
+def test_apply_housing_tenure_on_popsim_shaped_frame():
+    """The enriched-path helper must work unchanged on a popsim persons frame:
+    12-digit ARS commune_id (ars_to_ags8 conversion), household broadcast,
+    fallback counters on attrs."""
+    from braunschweig.synthesis.population.enriched import _apply_housing_tenure
+
+    df_b = load_tenure_by_income_bundesland(DATA_PATH)
+    df_r = load_tenure_by_income_raumtyp(DATA_PATH)
+    regiostar = pd.DataFrame({
+        "commune_id": ["03101000"],
+        "regiostar7": [71],
+    })
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "household_id": [10, 10, 11, 12],
+        "commune_id": ["031010000000"] * 4,   # popsim 12-digit ARS
+        "household_income_eur": [1200.0, 1200.0, 3500.0, 8000.0],
+    })
+    out = _apply_housing_tenure(persons.copy(), df_b, df_r, regiostar, 42)
+
+    assert "housing_tenure" in out.columns
+    assert set(out["housing_tenure"].unique()) <= set(TENURE_CATEGORIES)
+    # Household broadcast: both members of household 10 share one tenure.
+    hh10 = out.loc[out["household_id"] == 10, "housing_tenure"].unique()
+    assert len(hh10) == 1
+    # Known raumtyp (RS7 71) -> primary path for every household, no fallback.
+    assert out.attrs["housing_tenure_fallback_count"] == 0
+    assert out.attrs["housing_tenure_primary_count"] == 3
+    # Seeded: same seed reproduces the same draw.
+    again = _apply_housing_tenure(persons.copy(), df_b, df_r, regiostar, 42)
+    assert list(out["housing_tenure"]) == list(again["housing_tenure"])
+
+
+def test_popsim_stage_wires_housing_tenure():
+    import pathlib
+    src = pathlib.Path("braunschweig/popsim/stage.py").read_text(encoding="utf-8")
+    assert 'context.config("synthesise_housing_tenure", True)' in src
+    assert "_apply_housing_tenure" in src
+    assert "regiostar_tenure" in src

@@ -19,8 +19,12 @@ run:
   - synthesis.output
   - matsim.output
   - braunschweig.analysis.cordon_validation   # per-run commuter_validation + gate flows (cordon)
+  - braunschweig.analysis.simwrapper_export    # auto-write SimWrapper dashboard into <output_path>/simwrapper/
 
 config:
+  # SimWrapper dashboard: this run includes MATSim, so include the MATSim tabs too.
+  simwrapper_include_matsim: true
+
   # Synthesis still forms households on the FULL population at 1%, so keep the
   # memory-safe 32 workers (mirrors 25%/100%); chainsolvers parallelises separately.
   processes: 32
@@ -29,6 +33,8 @@ config:
 
   sampling_rate: 0.01
   random_seed: 1234
+
+  freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
 
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_1pct

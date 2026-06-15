@@ -485,6 +485,119 @@ Tests: `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_kita_facilities.py`, `tests/test_calibrate_education_slopes.py`,
 `tests/test_regiostar_fill.py` (the `ars_to_ags8` helper).
 
+## Long-haul freight injection (german-wide-freight v3)
+
+Long-haul road freight (heavy goods vehicles) is injected into the MATSim
+scenario from the VSP **german-wide-freight v3** model (Lu, Martins-Turner,
+Nagel 2022, *A simple, calibrated, agent-based, German-wide freight transport
+model*, doi:10.1016/j.procs.2022.03.080). The freight plans and the
+Germany-wide road network are **local-only** (large, not committed; the
+`eqasim-data` tree is gitignored) and are fetched by
+`scripts/download_german_wide_freight.py`, which prints the exact download
+command when an input is missing. All freight geometry is processed in
+**EPSG:25832** (the project-wide metric CRS).
+
+Relative to the ZGB study area each freight trip is one of four categories:
+**INTERNAL** (origin and destination both inside ZGB), **INCOMING**
+(destination inside, origin outside), **OUTGOING** (origin inside,
+destination outside) and **TRANSIT** (through-traffic: both endpoints outside
+ZGB but the routed path crosses the study area). Determining the TRANSIT share
+correctly requires **routing each freight trip on the German-wide road
+network** and testing the route against the study-area polygon -- a
+straight-line OD test would miss exactly the through-traffic that uses the ZGB
+motorways (A2, A7, A39). This is why the published, peer-reviewed Java
+extraction tool is used rather than re-implementing the classification.
+
+The injection is a **three-stage hybrid** (flag-gated; see below):
+
+1. **Java extraction (cached, 100%, one run per category).**
+   `braunschweig.freight.extraction` runs the published matsim
+   application-contrib tool `RunExtractFreightTrips`
+   (`ExtractRelevantFreightTrips`) against the dissolved ZGB study-area polygon
+   (the union of the in-scope municipalities, plus the cordon buffer when
+   `cordon_enabled`) on the German-wide network. The tool routes every freight
+   trip, classifies it, trims each plan at the study-area boundary and shifts
+   the departure time by the access travel time. The matsim **2025.0-PR3568**
+   build writes **no category attribute** on the output persons (the
+   `geographical_Trip_Type` attribute only exists in later matsim-libs
+   versions -- verified on the real output: all 49 758 extracted trips came
+   back `unknown`), so the stage runs the **unmodified tool once per category**
+   (`--tripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each) and returns
+   `{category: plans_file}` -- the exact published classification, no geometric
+   heuristic (trimmed endpoints lie on network nodes *inside* the polygon, so a
+   point-in-polygon test cannot recover the category). Further verified CLI
+   quirks of this build: the option is `--LegMode` (capital L), there is no
+   `--subpopulation` option (it hard-codes `freight`), and plans/network/output
+   paths must be absolute (the tool NPEs on a bare `--output` filename). This
+   stage is **sampling-rate independent** (cached by synpp), so the expensive
+   routing runs once and is reused across sampling rates. The local-only inputs
+   are validated up front by `braunschweig.data.freight.german_wide`, which
+   fails early with the download command when a file is absent.
+
+2. **Python trips stage.** `braunschweig.freight.trips` parses the four
+   per-category plans files with a streaming `xml.etree` reader (deliberately
+   **not** matsim-tools: the repo-local `matsim` package shadows the PyPI
+   `matsim-tools` import, so the tooling reader is unavailable here), labels
+   each trip with its extraction category, rewrites the per-file person ids to
+   the collision-free, self-documenting `freight_<category>_<n>` (each
+   per-category tool run renumbers from `freight_0`), writes an inspectable
+   `freight_trips.gpkg`, and returns one tidy trips DataFrame.
+
+3. **Injection hook.** `braunschweig/matsim/simulation/prepare.py`
+   (`_inject_freight`) runs **after** the cordon cut. It Bernoulli-samples the
+   trips DataFrame at `freight_sampling_rate` (`None` => `sampling_rate`; seeded
+   RNG, offset `+81247`) and writes `freight_trips_sampled.csv`. Sampling the
+   freight to the run's sampling rate is **required** because the global qsim
+   `flowCapacityFactor` is scaled to the sampling rate -- injecting 100 % freight
+   into a 25 % scenario would overload the links. It then runs the Java tool
+   `RunInjectFreight`, which builds one freight agent per sampled row
+   (subpopulation `freight`, single `truck` leg, vehicle type `heavy_truck`),
+   adds `truck` to the car links' allowed modes, adapts the config, and writes
+   the population / vehicles / network / config in place.
+
+**Discrete-mode-choice isolation.** Freight agents must not participate in the
+person mode choice: `BraunschweigModeAvailability` returns only `{truck}` for
+subpopulation `freight`, and a constant-zero `FreightTruckUtilityEstimator` is
+bound so the truck leg carries no behavioural utility (freight routes are fixed,
+not re-chosen).
+
+**Analysis exclusion.** Injected freight agents are person-trip artefacts, not
+synthetic residents, so they are excluded from every person-travel analysis:
+`braunschweig.analysis.freight_filter.drop_freight_agents` removes the
+`freight_`-prefixed agents at every `eqasim_trips.csv` read (dashboard,
+mid_validation, spatial-demand and behaviour tabs). With freight off the filter
+is a no-op.
+
+**Assumptions (both configurable, neither calibrated).** Two parameters are
+explicit ASSUMPTIONS, not validated references: `freight_truck_pce` (passenger-
+car equivalent **3.5**) and `freight_truck_max_velocity_kmh` (**80 km/h**, the
+German StVO speed limit for HGVs > 7.5 t). They are exposed as config keys so a
+later calibration can override them.
+
+Config keys (registered in `prepare.configure`): `freight_enabled` (default
+**true**), `freight_sampling_rate` (default `None` => `sampling_rate`),
+`freight_truck_pce` (3.5), `freight_truck_max_velocity_kmh` (80.0); the
+extraction stage additionally reads `freight_crs` (default EPSG:25832),
+`freight_plans_path` and `freight_network_path` (defaults under
+`braunschweig/freight/german-wide-freight-v3/`). The **OFF path**
+(`freight_enabled: false`) is byte-identical to the pre-feature pipeline: no
+freight stages are requested, no injection runs, and the analysis filter is a
+no-op. The committed run configs reflect this -- the two real-data run configs
+(`config_local_braunschweig.yml`, `config_server_braunschweig_100pct.yml`) set
+`freight_enabled: true`; every other `config_*.yml` (dryrun, smoke, popsim,
+intermediate sampling rates) sets `freight_enabled: false` so they never require
+the local-only freight inputs.
+
+A possible follow-up (NOT done) is to **calibrate the injected freight against
+BASt automatic HGV counts** at the ZGB counting stations (Dauerzaehlstellen), so
+the truck volumes on the ZGB motorways are validated against observed counts
+rather than taken as-is from the german-wide-freight model.
+
+Tests: `tests/test_download_german_wide_freight.py`,
+`tests/test_freight_data.py`, `tests/test_freight_extraction.py`,
+`tests/test_freight_trips.py`, `tests/test_freight_injection_wiring.py`,
+`tests/test_freight_filter.py`.
+
 ## Run analysis (post-simulation)
 
 The validation notebook `braunschweig/analysis/validation_mid2023.ipynb`
@@ -520,6 +633,110 @@ python -m braunschweig.analysis.run_full_analysis `
 
 Tests: `tests/test_run_mid_validation.py` covers the helpers
 (`band_share`, `_bool_share`, markdown rendering, CLI parser).
+
+### SimWrapper dashboards
+
+The run analytics can additionally be exported as a self-contained
+**SimWrapper** dashboard project (https://simwrapper.app), so the whole
+dashboard is viewable inside the MATSim/SimWrapper ecosystem. There are two
+complementary, flag-gated layers:
+
+**Layer 1 - MATSim simwrapper contrib (Java).** The `braunschweig` module
+(`../eqasim-java-bs`) depends on `org.matsim.contrib:simwrapper` (pinned to the
+active MATSim version `2025.0-PR3568`, verified present on `repo.matsim.org`).
+`RunSimulation` registers `SimWrapperModule` behind a `--simwrapper`
+CommandLine flag, so MATSim writes its standard dashboards (network volumes,
+mode share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. The
+pipeline (`matsim/simulation/run.py`) passes `--simwrapper true` only when the
+config key `simwrapper_dashboards` is set (**default `False`** -> a standard run
+is byte-identical).
+
+**Layer 2 - Python emitter (`braunschweig.analysis.simwrapper`).** Converts the
+existing `record` dict from
+`braunschweig.analysis.dashboard.build_dashboard.assemble_run_record` (the same
+metrics that drive the interactive HTML dashboard - **no scientific logic is
+duplicated**) into SimWrapper-native CSV + `dashboard-*.yaml` written to
+`<output_dir>/simwrapper/`. It rebuilds the full HTML dashboard as 8 tabs:
+Overview (KPI tiles), Mode share (final / commute-vs-MiD P12_1 / iteration
+evolution), Distances (commute distribution vs MiD P13 + mean km by mode),
+Time of day, Convergence (score + distance evolution), Per-Kreis (table + bar),
+OD (matrix table + a real **aggregate-od spider** built from the 8 ZGB Kreis
+zones, VG250 EPSG:25832, written as `zones.shp`), and Quality (EMD vs MiD).
+Tabs whose source data is absent are skipped with an explicit log line (no
+silent fallback). Regenerate standalone:
+
+```powershell
+python -m braunschweig.analysis.simwrapper.export `
+    --output-dir eqasim-data/output_bs_25pct `
+    --sim-cache  eqasim-data/cache_bs_25pct `
+    --label      "25pct"
+```
+
+It also runs **default-on** inside `run_full_analysis` (disable with
+`--no-simwrapper`; it is read-only and writes only into the new `simwrapper/`
+subfolder). Open `<output_dir>/simwrapper/` via "View local files" in
+simwrapper.app; the Layer-1 MATSim dashboards open from `simulation_output/`.
+
+**Spatial / fleet map tabs (`braunschweig.analysis.simwrapper.spatial_export`).**
+On top of the 8 chart/table tabs, four interactive **map** tabs are emitted from
+the per-agent geodata (reusing
+`braunschweig.analysis.population_validation.population_source.load_population`
+and `braunschweig.analysis.spatial` for the VG250 Kreis polygons -- no geo logic
+is duplicated): **Fleet** (per-vehicle `xytime` point clouds coloured by engine
+power and by BEV status, a per-Kreis BEV-share / mean-power **choropleth** on the
+VG250 GeoJSON, and a brand-mix or powertrain-mix bar -- "where are the VW / the
+E-vehicles"); **Spatial demand** (`hexagons` density of trip origins &
+destinations from `eqasim_trips.csv`); **Socio** (`xytime` home points coloured by
+`household_income_eur`); **Behaviour** (`sankey` purpose->mode + a `scatter` of the
+per-Kreis car share Sim vs MiD P12). All coordinates are EPSG:25832 for the point
+plugins; the choropleth GeoJSON is reprojected to EPSG:4326. Each tab is
+**skipped with an explicit log line** when its source columns/files are absent
+(e.g. the rich fleet exists only in the all-features run; `eqasim_trips.csv` only
+when MATSim has run) -- no silent skips. BEV is identified by the verified real
+`powertrain == "bev"` value.
+
+**Commuter (Pendler) tab.** `braunschweig.analysis.simwrapper.commuters` +
+`spatial_export.emit_commuters` add an in-/out-/internal-commuter analysis per
+Kreis: `commuter_balance` (Einpendler / Auspendler / Binnen / netto, plus the
+cross-cordon `einpendler_extern` from the OD "external" zone), `top_relations`
+(Kreis->Kreis flows), a per-Kreis **net-balance choropleth**
+(`kreis_commuters.geojson`) and an in/out/internal bar. It works in **both
+modes**: the work Kreis x Kreis matrix comes from the MATSim realised work OD
+(`record["matsim"]["od_matrix"]["work"]`) when MATSim has run, otherwise from
+the **synthesis** home->work assignment (`*commutes.gpkg`, classified to Kreise
+via VG250) -- the active source is named in the tab title so the two are never
+conflated. (`einpendler_extern` is 0 for the synthesis population, which lives
+entirely inside ZGB; cross-cordon Einpendler are a separate injection.)
+
+**Automatic pipeline stage + two modes.** `braunschweig.analysis.simwrapper_export`
+is a synpp stage that writes `<output_path>/simwrapper/` on **every** run (add it
+to a config's `run:` list). It always depends on `synthesis.output`; it
+additionally depends on `matsim.simulation.run` ONLY when
+`simwrapper_include_matsim: true` (an explicit flag, NOT the global default-True
+`run_matsim`, so a synthesis-only pipeline never accidentally forces a MATSim
+run). Thus: a **synthesis-only** run writes all synthesis tabs (fleet, socio,
+commuters-from-synthesis, ...) and the MATSim tabs skip with a log; a **full**
+run additionally writes all MATSim tabs. Flag-gated by `simwrapper_export_enabled`
+(default true); it only adds the `simwrapper/` subfolder, so existing run outputs
+stay byte-identical. The CLI / stage share one entry point
+`braunschweig.analysis.simwrapper.export.export_all(output_dir, sim_cache=None, ...)`
+(`sim_cache=None` => synthesis-only).
+
+**Performance.** Raw `xytime` point clouds are down-sampled to `MAX_XYT_POINTS`
+(default 150 000) with a fixed seed and an explicit log line (no silent
+truncation); aggregate maps (choropleths, hexagon density, commuter balance) use
+the full data. The Kreis key normalisation is vectorised. A 1% sample run is the
+intended fast end-to-end test vehicle (a fresh 1% pipeline run writes the full
+`synthesis.output` the export consumes).
+
+Tests: `tests/test_simwrapper_writers.py`,
+`tests/test_simwrapper_export.py` (synthetic `record` fixture per tab + a
+real-VG250 OD-spider test exercising the primary geometry path),
+`tests/test_simwrapper_spatial.py` (card helpers + the pure
+`_trips_xy`/`_purpose_to_mode`/`fleet_by_kreis`/economic-status-ordinal logic +
+the commuter integration), `tests/test_simwrapper_commuters.py` (commuter matrix
++ balance + top-relations) and `tests/test_simwrapper_stage.py` (the synpp stage
+configure/execute in both modes).
 
 ## Language policy
 
@@ -860,6 +1077,37 @@ default-when-data-absent, except/try recovery, etc.):
 
 This applies to existing fallbacks too: when you touch a stage, add the rate
 instrumentation if it is missing.
+
+## No invented reference values; convergence is not validation — MANDATORY
+
+Two related failure modes are strictly forbidden because they silently fabricate
+scientific claims:
+
+1. **Never invent or assert "target" / "reference" / "ground-truth" values.**
+   A reference value (a modal split, a mean distance, a rate to compare against)
+   may only be stated if it is traceable to a committed source in the repo (a
+   pinned CSV under `eqasim-data/.../`, a documented table in CLAUDE.md, a cited
+   external publication with the figure). If no such source exists, say so
+   explicitly and label the number as an **assumption** ("ASSUMPTION: ...", with
+   the reasoning) -- never as an established target. Do not carry numbers from
+   chat / prompt context into a results report as if they were validated
+   references. Comparing model output to a made-up target and calling the fit
+   "excellent" is a fabricated result and is unacceptable.
+
+2. **Convergence (stability) is NOT the same as validation (matching reality).**
+   The eqasim mode-share termination criterion (`eqasim:termination`,
+   `ModeShareTracker`) stops the MATSim run when the modal split **stops changing**
+   between iterations (smoothed change `< threshold`, default 0.001) -- it has
+   **no real-world reference shares** and says **nothing** about whether the
+   equilibrium matches observed travel behaviour. Report it precisely: "the run
+   converged (mode shares stabilised, change below threshold)". Never phrase a
+   stabilised equilibrium as "hit the target" / "calibrated to the data" unless
+   the realised shares were actually compared to a committed observed reference.
+
+When unsure whether a number is a real reference or an assumption, treat it as an
+assumption and flag it. Cautious, honest, traceable reporting always wins over a
+confident-sounding but unsupported claim (see "Research reporting", "Do not
+overstate results").
 
 ## Tests
 

@@ -575,8 +575,23 @@ def _household_availability(
     else:
         members = persons.groupby("household_id").size()
     counts = persons.groupby("household_id")[count_col].first()
-    availability = {
-        household_id: derive(int(counts[household_id]), int(members[household_id]))
-        for household_id in counts.index
+
+    # `derive` is a pure function of (count, members), so it only needs to run
+    # once per unique pair (a handful of combinations) instead of once per
+    # household (~600k at 100%, where the old per-household dict comprehension
+    # with scalar .__getitem__ lookups dominated). Result is value-identical.
+    pairs = pd.DataFrame({
+        "count": counts.to_numpy(),
+        "members": members.reindex(counts.index).to_numpy(),
+    }, index=counts.index)
+    unique_pairs = pairs.drop_duplicates()
+    pair_value = {
+        (int(count), int(n_members)): derive(int(count), int(n_members))
+        for count, n_members in unique_pairs.itertuples(index=False, name=None)
     }
+    availability = pd.Series(
+        [pair_value[(int(c), int(m))] for c, m in
+         zip(pairs["count"].to_numpy(), pairs["members"].to_numpy())],
+        index=pairs.index,
+    )
     return persons["household_id"].map(availability)

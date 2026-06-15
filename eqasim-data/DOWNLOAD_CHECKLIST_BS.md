@@ -210,6 +210,33 @@ all other inputs are kept local. Check each dataset's own terms before reuse.
 
 ---
 
+## H. Long-haul freight inputs (only with `freight_enabled: true`, default on)
+
+Adds heavy-goods-vehicle traffic from the open VSP **german-wide-freight v3**
+model. Both files are large and **local-only** (gitignored); fetch them with the
+committed download script (writes a provenance README + sha256 log next to them):
+
+```bash
+python scripts/download_german_wide_freight.py
+```
+
+| # | Dataset | Source | Target path | Licence |
+|---|---------|--------|-------------|---------|
+| H1 | **german_freight.100pct.plans.xml.gz** (~72 MB; one agent per long-haul freight trip per average workday) | [VSP public SVN `matsim/scenarios/countries/de/german-wide-freight/v3`](https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/german-wide-freight/v3/) | `braunschweig/freight/german-wide-freight-v3/german_freight.100pct.plans.xml.gz` | VSP/MATSim open data (see SVN) |
+| H2 | **germany-europe-network.xml.gz** (~61 MB; German-European routing network, EPSG:25832) | same SVN directory | `braunschweig/freight/german-wide-freight-v3/germany-europe-network.xml.gz` | VSP/MATSim open data |
+
+Provenance: **Lu, C., Martins-Turner, K., Nagel, K. (2022): _Creating an
+agent-based long-haul freight transport model for Germany_. Procedia Computer
+Science 201, 614–620, [doi:10.1016/j.procs.2022.03.080](https://doi.org/10.1016/j.procs.2022.03.080)**
+(CC BY-NC-ND). Demand = BMVI _Verkehrsprognose 2030_ NUTS-3 goods flows → daily
+truck trips (≈13 t average load), calibrated against BASt HGV counts. The data
+never enters the synthetic-resident model; it is routed + classified
+(internal / incoming / outgoing / transit) by the published matsim
+application-contrib tool and injected as a `truck` `freight` subpopulation. See
+[`CLAUDE.md`](../CLAUDE.md) ("Long-haul freight injection") for the pipeline.
+
+---
+
 ## Bounding box (ARS 031xx, eight ZGB Kreise)
 
 - AGS prefixes: `03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158`

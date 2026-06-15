@@ -705,3 +705,160 @@ def test_fallback_accounting_handles_zero_problems():
     assert "primary (carla) placed 0/0 problems (100.0%)" in line
     assert "fallback placed 0/0 (0.0%)" in line
     assert "WARNING" not in line
+
+
+# ---------------------------------------------------------------------------
+# _build_plans_df columnar build: value-identical to the legacy list-of-dicts
+# build (same loop structure -> same per-leg RNG draw order), incl. dtypes.
+# ---------------------------------------------------------------------------
+
+def _build_plans_df_reference(problems, distributions, leisure_correction_factor,
+                              random):
+    """Pre-columnar reference implementation of _build_plans_df (verbatim)."""
+    rows = []
+    problem_meta = []
+    unbounded_idx = []
+
+    for prob_idx, problem in enumerate(problems):
+        if problem["origin"] is None or problem["destination"] is None:
+            unbounded_idx.append(prob_idx)
+            continue
+
+        legs = sc._problem_legs(problem)
+        n_legs = len(legs)
+        person_id = problem["person_id"]
+        problem_meta.append({
+            "person_id": person_id,
+            "problem_idx": prob_idx,
+            "activity_index": problem["activity_index"],
+            "n_secondary": problem["size"],
+            "n_legs": n_legs,
+        })
+
+        origin_xy = (
+            (float(problem["origin"][0, 0]), float(problem["origin"][0, 1]))
+            if problem["origin"] is not None else (np.nan, np.nan)
+        )
+        dest_xy = (
+            (float(problem["destination"][0, 0]),
+             float(problem["destination"][0, 1]))
+            if problem["destination"] is not None else (np.nan, np.nan)
+        )
+
+        for leg in legs:
+            li = leg["leg_index"]
+            to_act_type = leg["to_act_type"]
+            distance_m = sc._sample_leg_distance(
+                distributions, leg["mode"], leg["travel_time"],
+                to_act_type if to_act_type in sc.SECONDARY_PURPOSES else "other",
+                leisure_correction_factor, random,
+            )
+            if li == 0:
+                from_x, from_y = origin_xy
+            else:
+                from_x, from_y = (np.nan, np.nan)
+            if li == n_legs - 1 and dest_xy[0] == dest_xy[0]:
+                to_x, to_y = dest_xy
+            else:
+                to_x, to_y = (np.nan, np.nan)
+            rows.append({
+                "unique_person_id": f"{person_id}#{prob_idx}",
+                "unique_leg_id": f"{person_id}#{prob_idx}#{li}",
+                "to_act_type": (
+                    to_act_type if to_act_type != "__fixed__" else "home"
+                ),
+                "distance_meters": distance_m,
+                "from_x": from_x,
+                "from_y": from_y,
+                "to_x": to_x,
+                "to_y": to_y,
+                "_leg_index": li,
+                "_problem_idx": prob_idx,
+            })
+
+    return pd.DataFrame.from_records(rows), problem_meta, unbounded_idx
+
+
+def _bounded_problems(n_problems=12, seed=11):
+    """Bounded multi-leg problems (plus interleaved unbounded ones)."""
+    rng = np.random.RandomState(seed)
+    problems = []
+    for i in range(n_problems):
+        if i % 4 == 3:
+            problems.append({
+                "person_id": 1000 + i, "activity_index": 1, "size": 1,
+                "purposes": ["other"], "modes": ["walk"],
+                "travel_times": np.array([300.0]),
+                "origin": None, "destination": None,
+            })
+            continue
+        size = int(rng.randint(1, 4))
+        purposes = [["shop", "leisure", "other"][rng.randint(3)] for _ in range(size)]
+        modes = [["car", "pt", "walk", "bicycle"][rng.randint(4)] for _ in range(size + 1)]
+        problems.append({
+            "person_id": 1000 + i,
+            "activity_index": int(rng.randint(0, 5)),
+            "size": size,
+            "purposes": purposes,
+            "modes": modes,
+            "travel_times": rng.uniform(120.0, 1200.0, size=size + 1),
+            "origin": rng.uniform(0.0, 2000.0, size=(1, 2)),
+            "destination": rng.uniform(0.0, 2000.0, size=(1, 2)),
+        })
+    return problems
+
+
+def test_build_plans_df_columnar_matches_reference():
+    problems = _bounded_problems()
+    distributions = _flat_distribution()
+
+    ref_df, ref_meta, ref_unbounded = _build_plans_df_reference(
+        problems, distributions, 2.0, np.random.RandomState(5))
+    new_df, new_meta, new_unbounded = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(5))
+
+    assert ref_meta == new_meta
+    assert ref_unbounded == new_unbounded
+    pd.testing.assert_frame_equal(new_df, ref_df)  # values, dtypes, order
+
+
+def test_build_plans_df_empty_keeps_legacy_shape():
+    # All problems unbounded -> legacy from_records([]) frame (no columns).
+    problems = [p for p in _bounded_problems() if p["origin"] is None]
+    new_df, meta, unbounded = sc._build_plans_df(
+        problems, _flat_distribution(), 2.0, np.random.RandomState(0))
+    assert len(new_df) == 0 and len(new_df.columns) == 0
+    assert meta == [] and unbounded == list(range(len(problems)))
+
+
+# ---------------------------------------------------------------------------
+# _person_row_ranges: contiguous slices must reproduce the groupby sub-frames.
+# ---------------------------------------------------------------------------
+
+def test_person_row_ranges_match_groupby_subframes():
+    problems = _bounded_problems()
+    plans_df, _, _ = sc._build_plans_df(
+        problems, _flat_distribution(), 2.0, np.random.RandomState(5))
+    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
+
+    ranges = sc._person_row_ranges(plans_for_cs)
+    assert ranges is not None
+    uid_order, starts, ends = ranges
+    assert np.array_equal(uid_order, np.asarray(unique_persons, dtype=object))
+
+    by_person = dict(tuple(plans_for_cs.groupby("unique_person_id", sort=False)))
+    for i, uid in enumerate(unique_persons):
+        sliced = plans_for_cs.iloc[starts[i]:ends[i]]
+        pd.testing.assert_frame_equal(sliced, by_person[uid])
+
+    # A chunk of consecutive persons == the legacy per-person concat.
+    chunk_uids = unique_persons[1:4]
+    legacy_chunk = pd.concat([by_person[u] for u in chunk_uids], ignore_index=True)
+    sliced_chunk = plans_for_cs.iloc[starts[1]:ends[3]].reset_index(drop=True)
+    pd.testing.assert_frame_equal(sliced_chunk, legacy_chunk)
+
+
+def test_person_row_ranges_rejects_non_contiguous_rows():
+    df = pd.DataFrame({"unique_person_id": ["a", "a", "b", "a"], "x": [1, 2, 3, 4]})
+    assert sc._person_row_ranges(df) is None

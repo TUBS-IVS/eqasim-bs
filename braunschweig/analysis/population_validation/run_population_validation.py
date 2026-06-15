@@ -186,10 +186,18 @@ def run(ns) -> dict:
                 out / "trip_coherence_work_participation.csv", index=False)
             tc["trips_per_person_by_segment"].to_csv(
                 out / "trip_coherence_trips_per_person.csv", index=False)
+            # W12 mean trip length per purpose: synthetic mean routed km
+            # (detour-inflated straight-line) vs MiD W12 mittel_km, four scored
+            # purposes. None when the trips frame carries no distance column.
+            length = tc.get("length")
+            if length is not None:
+                pd.DataFrame(length).to_csv(
+                    out / "trip_coherence_length.csv", index=False)
             trip_json = {
                 "n_trips": tc["n_trips"],
                 "mobility": tc["mobility"],
                 "purpose": {k: v for k, v in pur.items()},
+                "length": length,
                 "differentiation": tc["differentiation"],
                 "mobility_by_segment": tc["mobility_by_segment"].to_dict(orient="records"),
                 "work_participation_by_segment":
@@ -203,6 +211,37 @@ def run(ns) -> dict:
                 100 * tc["mobility"]["overall_rate"],
                 100 * tc["mobility"]["target_rate"],
                 100 * tc["mobility"]["abs_delta"], tc["purpose"]["srmse"])
+            if length is not None:
+                LOGGER.info(
+                    "[trip-coherence] W12 mean trip length per purpose "
+                    "(synthetic routed km vs MiD): %s",
+                    ", ".join(f"{r['purpose']} {r['realised_km']:.1f}/"
+                              f"{r['target_km']:.1f} (d {r['delta_km']:+.1f}km)"
+                              for r in length))
+
+            # P38.2 commute-distance bands per Kreis (additive validation):
+            # band shares scored against the MiD per-Kreis distribution,
+            # mittel_km carried descriptively only. Own try-block so a P38.2
+            # failure never discards the W1/P36/W12 results above.
+            try:
+                if ("routed_distance" in frames.trips.columns
+                        or "euclidean_distance" in frames.trips.columns):
+                    persons_ars5 = persons_for_tc.merge(
+                        geo[["household_id", "ars5"]],
+                        on="household_id", how="left")
+                    p38 = TC.p38_2_commute_coherence(
+                        persons_ars5[["person_id", "ars5"]],
+                        frames.trips, DATA_PATH)
+                    p38.to_csv(
+                        out / "trip_coherence_commute_bands.csv", index=False)
+                    trip_json["commute_bands"] = p38.to_dict(orient="records")
+                else:
+                    LOGGER.info(
+                        "P38.2 commute-band check skipped: trips carry neither "
+                        "'routed_distance' nor 'euclidean_distance'.")
+            except Exception:
+                LOGGER.exception(
+                    "P38.2 commute-band check failed; continuing without it.")
         except Exception:
             LOGGER.exception(
                 "Trip-coherence check failed; continuing without it.")
@@ -291,6 +330,15 @@ def run(ns) -> dict:
             md.append(f"  - {p}: {100 * pur['realized'].get(p, float('nan')):.1f}% vs "
                       f"{100 * pur['target'][p]:.1f}% "
                       f"(|delta| {pur['abs_delta_pp'][p]:.1f} pp)")
+        length = trip_json.get("length")
+        if length is not None:
+            md += ["", "Mean trip length per purpose (synthetic routed km vs MiD "
+                   "W12 mittel_km; synthetic straight-line x 1.3 detour factor, "
+                   "four scored purposes work/education/shop/leisure):", ""]
+            for r in length:
+                md.append(f"  - {r['purpose']}: {r['realised_km']:.1f} km vs "
+                          f"{r['target_km']:.1f} km "
+                          f"(delta {r['delta_km']:+.1f} km, {100 * r['rel_delta']:+.1f}%)")
         md += ["", "_Modal split is not shown: the synthesis trips.csv carries no "
                "transport mode (written only by the MATSim mode-choice run), and "
                "donor-inherited modes would be French-biased - see step 3 (MiD "

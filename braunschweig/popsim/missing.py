@@ -82,11 +82,17 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
     # nonresponse BEFORE the valid_or_unknown check, so they never trigger the
     # unenumerated raise). The global NONRESPONSE_CODES constant is left untouched.
     nonresponse_set = NONRESPONSE_CODES | set(spec.impute_codes)
-    klass = src.map(lambda c: classify_code(c, structural_codes, nonresponse_set))
+
+    # Vectorised classification, same precedence as classify_code (structural
+    # wins over nonresponse). isin matches the `code in set` semantics of
+    # classify_code (NaN -> neither set -> valid_or_unknown bucket).
+    is_structural = src.isin(structural_codes)
+    is_nonresponse = ~is_structural & src.isin(nonresponse_set)
+    is_valid_or_unknown = ~is_structural & ~is_nonresponse
 
     valid_codes = set(spec.value_map)
-    is_valid = (klass == "valid_or_unknown") & src.isin(valid_codes)
-    is_unknown = (klass == "valid_or_unknown") & ~src.isin(valid_codes)
+    is_valid = is_valid_or_unknown & src.isin(valid_codes)
+    is_unknown = is_valid_or_unknown & ~src.isin(valid_codes)
     if is_unknown.any():
         bad = src[is_unknown].value_counts().to_dict()
         raise ValueError(
@@ -97,23 +103,48 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
 
     out = pd.Series(index=df.index, dtype=object)
     out[is_valid] = src[is_valid].map(spec.value_map)
-    out[klass == "structural"] = src[klass == "structural"].map(spec.structural)
+    out[is_structural] = src[is_structural].map(spec.structural)
 
     valid_pool = out[is_valid]
-    nonresp_idx = out.index[klass == "nonresponse"]
-    for idx in nonresp_idx:
+    nonresp_idx = out.index[is_nonresponse]
+
+    # Pre-group the valid pool ONCE per conditioning key instead of rebuilding an
+    # O(n_valid) boolean mask per nonresponse row (the old loop was
+    # O(n_nonresponse x n_valid), minutes per attribute on the full MiD frame).
+    # Semantics are identical to the per-row equality mask: groupby(dropna=True)
+    # excludes NaN-keyed valid rows (NaN == x is always False), empty groups are
+    # skipped (-> global-pool fallback), and within-group order is the original
+    # valid_pool order, so the same rng draw selects the same donor value.
+    grouped_pools: dict = {}
+    if len(nonresp_idx) > 0 and spec.group_cols:
+        group_cols = list(spec.group_cols)
+        valid_keys = df.loc[valid_pool.index, group_cols]
+        # Group by the column name (not a 1-list) to avoid the pandas 2.x
+        # FutureWarning about length-1 list groupers; keys are normalised to
+        # tuples either way so the per-row lookup below is uniform.
+        grouper = group_cols[0] if len(group_cols) == 1 else group_cols
+        for key, group in valid_keys.groupby(grouper, sort=False, dropna=True):
+            if len(group) > 0:
+                key_tuple = key if isinstance(key, tuple) else (key,)
+                grouped_pools[key_tuple] = valid_pool.loc[group.index]
+
+    if len(nonresp_idx) > 0 and spec.group_cols:
+        nonresp_keys = list(
+            df.loc[nonresp_idx, list(spec.group_cols)].itertuples(index=False, name=None)
+        )
+    else:
+        nonresp_keys = [None] * len(nonresp_idx)
+
+    for idx, key in zip(nonresp_idx, nonresp_keys):
         pool = valid_pool
         if spec.group_cols:
-            mask = pd.Series(True, index=valid_pool.index)
-            for col in spec.group_cols:
-                mask &= df.loc[valid_pool.index, col].values == df.at[idx, col]
-            grouped = valid_pool[mask.values]
-            if len(grouped) > 0:
+            grouped = grouped_pools.get(key)
+            if grouped is not None:
                 pool = grouped
         out.at[idx] = pool.iloc[rng.randint(len(pool))] if len(pool) > 0 else spec.default
 
-    n_struct = int((klass == "structural").sum())
-    n_nonresp = int((klass == "nonresponse").sum())
+    n_struct = int(is_structural.sum())
+    n_nonresp = int(is_nonresponse.sum())
     report = MissingReport(spec.name, len(df), int(is_valid.sum()), n_struct, n_nonresp)
     logger.info(
         "[popsim.missing] %s: %d/%d structural (deterministic), %d (%.2f%%) item-nonresponse "

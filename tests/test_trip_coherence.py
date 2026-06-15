@@ -25,6 +25,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+from braunschweig.analysis.population_validation import trip_coherence as tc  # noqa: E402
 from braunschweig.analysis.population_validation.trip_coherence import (  # noqa: E402
     build_trip_coherence_report,
     mid_purpose_from_eqasim,
@@ -34,8 +35,11 @@ from braunschweig.analysis.population_validation.trip_coherence import (  # noqa
     purpose_participation_by_segment,
     renormalize_scored,
     segment_mobility_rate,
+    synthetic_mean_length_by_purpose,
     trip_coherence_by_kreis,
     trips_per_person_by_segment,
+    w12_length_coherence,
+    w12_mean_length_target,
     w1_scored_target,
     w1_scored_target_by_kreis,
     p36_mobility_target,
@@ -222,6 +226,66 @@ def test_trip_coherence_by_kreis_realised_vs_target():
     assert "work_participation" in out.columns
 
 
+def test_w12_mean_trip_length_target_loads_scored_purposes():
+    # uses the real committed CSV under eqasim-data/.../mid/
+    target = tc.w12_mean_length_target(DATA_PATH)
+    # four scored eqasim purposes -> routed mean km (straight from W12 mittel_km)
+    assert set(target) == {"work", "education", "shop", "leisure"}
+    assert target["work"] == 15.2 and target["education"] == 5.7
+    assert target["shop"] == 5.2 and target["leisure"] == 15.0
+
+
+def test_w12_synthetic_mean_length_uses_detour_factor():
+    # one work trip, straight-line 10 km -> routed 13 km via the 1.3 detour factor
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],  # metres
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_synthetic_mean_length_prefers_routed_distance_column():
+    # When a routed_distance column exists, it is used directly (km, no detour
+    # multiply): 13 km routed -> 13 km, ignoring the euclidean_distance column.
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],  # metres (would give 13 km via detour)
+        "routed_distance": [13000.0],     # metres routed (used directly -> 13 km)
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_synthetic_mean_length_is_nan_safe():
+    # NaN distances are skipped, not propagated into the mean.
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "following_purpose": ["work", "work"],
+        "euclidean_distance": [10000.0, float("nan")],
+    })
+    realised = synthetic_mean_length_by_purpose(trips)
+    assert abs(realised["work"] - 13.0) < 1e-6
+
+
+def test_w12_length_coherence_combines_target_and_realised():
+    # one work trip (10 km straight-line -> 13 km routed) vs W12 target 15.2 km.
+    trips = pd.DataFrame({
+        "person_id": [1],
+        "following_purpose": ["work"],
+        "euclidean_distance": [10000.0],
+    })
+    rows = w12_length_coherence(trips, DATA_PATH)
+    by = {r["purpose"]: r for r in rows}
+    assert set(by) == {"work", "education", "shop", "leisure"}
+    assert abs(by["work"]["target_km"] - 15.2) < 1e-9
+    assert abs(by["work"]["realised_km"] - 13.0) < 1e-6
+    assert abs(by["work"]["delta_km"] - (13.0 - 15.2)) < 1e-6
+    assert abs(by["work"]["rel_delta"] - (13.0 - 15.2) / 15.2) < 1e-6
+
+
 def test_segment_cols_absent_from_persons_are_skipped():
     # urban_class is only present when the matching feature is enabled; a request
     # for it on a frame that lacks it must be silently skipped (not raise), while
@@ -231,3 +295,73 @@ def test_segment_cols_absent_from_persons_are_skipped():
     report = build_trip_coherence_report(
         persons, trips, DATA_PATH, segment_cols=("employed", "urban_class"))
     assert set(report["mobility_by_segment"]["segment"].unique()) == {"employed"}
+
+
+# ---------------------------------------------------------------------------
+# P38.2 commute-distance-band coherence (additive per-Kreis validation).
+# ---------------------------------------------------------------------------
+
+def test_p38_2_band_target_renormalises_and_maps_regions():
+    # Uses the real committed CSV under eqasim-data/.../mid/. Every region maps
+    # to an ars5 (ZGB aggregate + the 8 Kreise); band shares exclude the
+    # item-nonresponse column and sum to 1 per region; mittel_km is descriptive.
+    shares, means = tc.p38_2_band_target(DATA_PATH)
+    expected_keys = {"03ZGB", "03101", "03102", "03103", "03151",
+                     "03153", "03154", "03157", "03158"}
+    assert set(shares) == expected_keys
+    for ars5, dist in shares.items():
+        assert set(dist) == {col for col, _, _ in tc.P38_2_BANDS}
+        assert abs(sum(dist.values()) - 1.0) < 1e-9
+    # Salzgitter mean is the long-tail outlier that motivates scoring band
+    # shares instead of means (descriptive column only).
+    assert means["03102"] > 200.0
+
+
+def test_synthetic_commute_band_distribution_bins_first_home_work_trip():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "ars5": ["03101", "03101", "03102"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 2, 3, 3],
+        "preceding_purpose": ["home", "work", "home", "shop", "home"],
+        "following_purpose": ["work", "home", "work", "work", "work"],
+        # straight-line metres; x1.3 detour -> routed km 3.9, -, 10.4, 39.0, 130.0
+        "euclidean_distance": [3000.0, 3000.0, 8000.0, 30000.0, 100000.0],
+    })
+    shares, counts = tc.synthetic_commute_band_distribution(persons, trips)
+    # Person 1: 3.9 km -> d_unter_5km; person 2: 10.4 km -> d_10_20km;
+    # person 3 has a home->work trip (130 km -> d_100_200km), which is
+    # preferred over the earlier shop->work leg.
+    assert counts["03ZGB"] == 3
+    assert abs(shares["03ZGB"]["d_unter_5km"] - 1 / 3) < 1e-9
+    assert abs(shares["03ZGB"]["d_10_20km"] - 1 / 3) < 1e-9
+    assert abs(shares["03ZGB"]["d_100_200km"] - 1 / 3) < 1e-9
+    assert counts["03101"] == 2 and counts["03102"] == 1
+    assert abs(shares["03102"]["d_100_200km"] - 1.0) < 1e-9
+
+
+def test_p38_2_commute_coherence_produces_long_frame_with_deltas():
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "ars5": ["03101", "03101"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "work"],
+        "euclidean_distance": [3000.0, 8000.0],
+    })
+    out = tc.p38_2_commute_coherence(persons, trips, DATA_PATH)
+    # One row per (region, band): 9 regions x 9 bands.
+    assert len(out) == 9 * 9
+    assert {"ars5", "band", "target_share", "realised_share",
+            "delta_pp", "n_commuters", "target_mean_km"} <= set(out.columns)
+    bs = out[(out["ars5"] == "03101") & (out["band"] == "d_unter_5km")].iloc[0]
+    assert abs(bs["realised_share"] - 0.5) < 1e-9
+    assert abs(bs["delta_pp"]
+               - (bs["realised_share"] - bs["target_share"]) * 100.0) < 1e-9
+    # Regions without synthetic commuters carry NaN realised shares (reported,
+    # never invented).
+    wob = out[(out["ars5"] == "03103")]
+    assert wob["realised_share"].isna().all()

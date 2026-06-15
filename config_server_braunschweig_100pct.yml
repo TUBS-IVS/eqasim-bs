@@ -31,6 +31,16 @@ config:
   sampling_rate: 1.0
   random_seed: 1234
 
+  # Long-haul freight injection (german-wide-freight v3, Lu et al. 2022,
+  # doi:10.1016/j.procs.2022.03.080). Inputs are local-only; fetch with
+  # scripts/download_german_wide_freight.py. Agents are sampled at
+  # freight_sampling_rate (null = sampling_rate) and merged as subpopulation
+  # "freight", mode "truck".
+  freight_enabled: true
+  freight_sampling_rate: null
+  freight_truck_pce: 3.5
+  freight_truck_max_velocity_kmh: 80.0
+
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_100pct
   output_prefix: braunschweig_100pct_
@@ -201,13 +211,15 @@ config:
   # heaviest synthesis stage into a near-linear speed-up -- essential at 100%
   # (~1.13 M persons). Each shard is seeded deterministically from (random_seed,
   # shard_index), so a run is fully reproducible for a fixed worker count, which
-  # is therefore pinned here. 32 mirrors the `processes` memory budget (each
-  # worker holds a copy of the secondary-locations table); raise toward 48 if a
-  # run shows headroom. Decoupled from `processes` so the chain solve can use a
-  # different core count than the memory-bound MATSim mobsim. Default OFF
-  # elsewhere keeps the serial path byte-identical.
+  # is therefore pinned here. 56 uses most of the 64-core box (RAM peak ~9 GB at
+  # 25% showed large headroom; leave ~8 cores for driver/OS). NOTE: changing the
+  # worker count changes the shard seeding and therefore the solve results --
+  # the 32 -> 56 raise is a deliberate re-baseline before the next full run.
+  # Decoupled from `processes` so the chain solve can use a different core count
+  # than the memory-bound MATSim mobsim. Default OFF elsewhere keeps the serial
+  # path byte-identical.
   braunschweig.chainsolvers.parallel: true
-  braunschweig.chainsolvers.processes: 32
+  braunschweig.chainsolvers.processes: 56
 
   # --- Cross-cordon external demand (Einpendler injection) at 100% --------------
   # Enlarge the OSM network clip by cordon_network_source_buffer_m so motorways reach

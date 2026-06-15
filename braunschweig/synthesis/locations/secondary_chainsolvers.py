@@ -266,7 +266,23 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     problems (tail / head / floating chains) are excluded — carla needs
     both endpoints anchored. They are placed by ``_fallback_place``.
     """
-    rows: List[Dict[str, Any]] = []
+    # Columnar accumulators: one typed list per output column instead of one
+    # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
+    # hundreds of MB of dict overhead alive before from_records copied it all
+    # again; the per-column lists build the same frame at a fraction of the
+    # memory. The loop structure (and therefore the per-leg RNG draw order of
+    # _sample_leg_distance) is unchanged, so the result is value-identical.
+    col_uid: List[str] = []
+    col_leg_id: List[str] = []
+    col_act: List[str] = []
+    col_dist: List[float] = []
+    col_from_x: List[float] = []
+    col_from_y: List[float] = []
+    col_to_x: List[float] = []
+    col_to_y: List[float] = []
+    col_leg_index: List[int] = []
+    col_prob_idx: List[int] = []
+
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
 
@@ -323,22 +339,34 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             else:
                 to_x, to_y = (np.nan, np.nan)
 
-            rows.append({
-                "unique_person_id": f"{person_id}#{prob_idx}",
-                "unique_leg_id": f"{person_id}#{prob_idx}#{li}",
-                "to_act_type": (
-                    to_act_type if to_act_type != "__fixed__" else "home"
-                ),
-                "distance_meters": distance_m,
-                "from_x": from_x,
-                "from_y": from_y,
-                "to_x": to_x,
-                "to_y": to_y,
-                "_leg_index": li,
-                "_problem_idx": prob_idx,
-            })
+            col_uid.append(f"{person_id}#{prob_idx}")
+            col_leg_id.append(f"{person_id}#{prob_idx}#{li}")
+            col_act.append(to_act_type if to_act_type != "__fixed__" else "home")
+            col_dist.append(distance_m)
+            col_from_x.append(from_x)
+            col_from_y.append(from_y)
+            col_to_x.append(to_x)
+            col_to_y.append(to_y)
+            col_leg_index.append(li)
+            col_prob_idx.append(prob_idx)
 
-    plans_df = pd.DataFrame.from_records(rows)
+    if not col_uid:
+        # Preserve the legacy empty-frame shape (from_records([]) has NO
+        # columns) so the no-bounded-legs early return behaves identically.
+        return pd.DataFrame.from_records([]), problem_meta, unbounded_idx
+
+    plans_df = pd.DataFrame({
+        "unique_person_id": col_uid,
+        "unique_leg_id": col_leg_id,
+        "to_act_type": col_act,
+        "distance_meters": col_dist,
+        "from_x": col_from_x,
+        "from_y": col_from_y,
+        "to_x": col_to_x,
+        "to_y": col_to_y,
+        "_leg_index": col_leg_index,
+        "_problem_idx": col_prob_idx,
+    })
     return plans_df, problem_meta, unbounded_idx
 
 
@@ -709,6 +737,33 @@ def _empty_chain_result_df() -> pd.DataFrame:
     return pd.DataFrame(columns=_CHAIN_RESULT_COLUMNS)
 
 
+def _person_row_ranges(plans_df: pd.DataFrame, uid_col: str = "unique_person_id"):
+    """Per-person contiguous row ranges of ``plans_df``, in appearance order.
+
+    ``plans_df`` is built problem-by-problem, so all rows of one
+    ``unique_person_id`` are adjacent. This computes ``(uid_order, starts,
+    ends)`` so person/chunk/shard sub-frames can be taken as contiguous
+    ``iloc`` slices instead of materialising every person's sub-frame at once
+    via ``dict(tuple(groupby))`` (a memory spike at 100%: every sub-frame plus
+    the dict alive simultaneously).
+
+    Returns ``None`` when some person's rows are NOT contiguous (run count !=
+    unique count) -- callers then fall back to the groupby dict, so slicing can
+    never silently mix persons.
+    """
+    values = plans_df[uid_col].to_numpy()
+    if len(values) == 0:
+        empty = np.array([], dtype=np.int64)
+        return values, empty, empty
+    change = np.flatnonzero(values[1:] != values[:-1]) + 1
+    starts = np.concatenate(([0], change))
+    ends = np.concatenate((change, [len(values)]))
+    uid_order = values[starts]
+    if len(uid_order) != pd.unique(values).size:
+        return None
+    return uid_order, starts, ends
+
+
 def _make_person_shards(unique_persons: List[Any], n_workers: int) -> List[Tuple[int, List[Any]]]:
     """Split the person list into ``n_workers`` contiguous, balanced shards.
 
@@ -760,20 +815,42 @@ def _solve_person_shard(task):
         rng_seed=int(shard_seed),
     )
 
-    by_person = dict(tuple(shard_df.groupby("unique_person_id", sort=False)))
+    # Person sub-frames are contiguous iloc slices of shard_df (rows are built
+    # problem-by-problem), verified at runtime; the groupby dict is only the
+    # fallback for a non-contiguous frame. A chunk of consecutive persons is
+    # one contiguous block whose reset_index(drop=True) is identical (rows,
+    # order, RangeIndex) to the legacy per-person concat.
+    ranges = _person_row_ranges(shard_df)
+    use_slices = (
+        ranges is not None
+        and np.array_equal(ranges[0], np.asarray(shard_uids, dtype=object))
+    )
+    if use_slices:
+        _, row_starts, row_ends = ranges
+    else:
+        by_person = dict(tuple(shard_df.groupby("unique_person_id", sort=False)))
+
     result_chunks: List[pd.DataFrame] = []
     failed_problem_idx: List[int] = []
 
     for start in range(0, len(shard_uids), _CHAIN_CHUNK_SIZE):
         chunk_uids = shard_uids[start:start + _CHAIN_CHUNK_SIZE]
-        chunk_df = pd.concat([by_person[u] for u in chunk_uids], ignore_index=True)
+        if use_slices:
+            chunk_df = shard_df.iloc[
+                row_starts[start]:row_ends[start + len(chunk_uids) - 1]
+            ].reset_index(drop=True)
+        else:
+            chunk_df = pd.concat([by_person[u] for u in chunk_uids], ignore_index=True)
         try:
             res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=chunk_df)
             result_chunks.append(res_df)
         except Exception:
             # Retry per-person to isolate the failures.
-            for uid in chunk_uids:
-                person_chunk = by_person[uid]
+            for offset, uid in enumerate(chunk_uids):
+                person_chunk = (
+                    shard_df.iloc[row_starts[start + offset]:row_ends[start + offset]]
+                    if use_slices else by_person[uid]
+                )
                 try:
                     res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=person_chunk)
                     result_chunks.append(res_df)
@@ -793,16 +870,37 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
     """Solve all person chains across ``n_workers`` processes and recombine
     deterministically (results concatenated in shard-index order)."""
     shards = _make_person_shards(unique_persons, n_workers)
-    by_person = dict(tuple(plans_for_cs.groupby("unique_person_id", sort=False)))
-    tasks = [
-        (
-            shard_index,
-            shard_uids,
-            pd.concat([by_person[u] for u in shard_uids], ignore_index=True),
+
+    # Shards are consecutive slices of unique_persons (appearance order), and
+    # person rows are contiguous in plans_for_cs, so each shard frame is one
+    # contiguous iloc block -- identical (rows, order, fresh RangeIndex) to the
+    # legacy per-person concat, without holding every person's sub-frame alive
+    # at once. Verified at runtime; groupby dict is the fallback.
+    ranges = _person_row_ranges(plans_for_cs)
+    use_slices = (
+        ranges is not None
+        and np.array_equal(ranges[0], np.asarray(unique_persons, dtype=object))
+    )
+    if not use_slices:
+        by_person = dict(tuple(plans_for_cs.groupby("unique_person_id", sort=False)))
+
+    tasks = []
+    uid_pos = 0
+    for shard_index, shard_uids in shards:
+        if use_slices:
+            _, row_starts, row_ends = ranges
+            shard_frame = plans_for_cs.iloc[
+                row_starts[uid_pos]:row_ends[uid_pos + len(shard_uids) - 1]
+            ].reset_index(drop=True)
+        else:
+            shard_frame = pd.concat(
+                [by_person[u] for u in shard_uids], ignore_index=True
+            )
+        tasks.append((
+            shard_index, shard_uids, shard_frame,
             _derive_shard_seed(base_seed, shard_index),
-        )
-        for shard_index, shard_uids in shards
-    ]
+        ))
+        uid_pos += len(shard_uids)
 
     results_by_index: Dict[int, pd.DataFrame] = {}
     failed_problem_idx: List[int] = []

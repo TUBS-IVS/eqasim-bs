@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.analysis import spatial
+from braunschweig.analysis.freight_filter import drop_freight_agents
 from braunschweig.data.mid.school_distance import build_target_table
 
 LOGGER = logging.getLogger("braunschweig.analysis.mid_validation")
@@ -262,7 +263,9 @@ def _find_sim_trips(sim_cache: Path | None) -> pd.DataFrame | None:
         trips_path = cache_dir / "simulation_output" / "eqasim_trips.csv"
         if trips_path.exists():
             LOGGER.info("Reading realised trip modes from %s", trips_path)
-            return pd.read_csv(trips_path, sep=";")
+            df_trips = pd.read_csv(trips_path, sep=";")
+            df_trips = drop_freight_agents(df_trips, label="mid_validation")
+            return df_trips
     LOGGER.warning(
         "No simulation_output/eqasim_trips.csv under %s; modal-split block skipped.",
         sim_cache,
@@ -469,8 +472,9 @@ def _mode_share_table(
 # Routed/straight-line detour factor used to convert the MiD Tabelle 43 routed
 # targets to a straight-line equivalent. Kept equal to the calibration default
 # in scripts/calibrate_education_slopes.py so the post-sim validation compares
-# against the same target the slopes were fitted to.
-_EDU_DETOUR_FACTOR = 1.3
+# against the same target the slopes were fitted to. Canonical project-wide
+# constant (braunschweig.constants); alias kept.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the

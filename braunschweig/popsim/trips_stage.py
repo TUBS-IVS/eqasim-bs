@@ -46,9 +46,9 @@ CONTRACT = [
 ]
 
 # ENTD straight-line detour factor: routed distance / straight-line distance.
-# Source: eqasim ENTD processing (same constant as used in synthesis/population/trips.py
-# and the MiD school-distance calibration).
-DETOUR_FACTOR = 1.3
+# Canonical project-wide constant (braunschweig.constants); local alias kept
+# for the existing references.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 
 # Maximum forward shift of the per-person departure-time jitter (interval is
 # min(1800, first_departure), offset in [-interval, +interval)). The PlanValidator

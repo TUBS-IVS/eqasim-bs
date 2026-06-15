@@ -246,7 +246,8 @@ ENTD_HIGH_INCOME_CLASS = 13
 # Detour factor converting a routed (network) distance to a straight-line
 # (Euclidean) distance. Matches data/hts/entd/reweighted.py:28
 # (euclidean_distance = routed_distance / 1.3) and the MiD path (wegkm_imp / 1.3).
-ENTD_DETOUR_FACTOR = 1.3
+# Canonical project-wide constant (braunschweig.constants); alias kept.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as ENTD_DETOUR_FACTOR
 
 # ---------------------------------------------------------------------------
 # Diary-donor chain matching (trip-less persons)
