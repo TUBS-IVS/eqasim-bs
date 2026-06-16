@@ -10,27 +10,20 @@ Ported from cleancensus/logsetup.py (raw ANSI, zero new deps).
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 from pathlib import Path
 
-_LEVEL_COLOR = {
-    "DEBUG": "\x1b[2m", "INFO": "\x1b[32m", "WARNING": "\x1b[33m",
-    "ERROR": "\x1b[31m", "CRITICAL": "\x1b[1;31m",
-}
-_DIM, _ACCENT, _RESET = "\x1b[2m", "\x1b[36m", "\x1b[0m"
+from braunschweig import theme
+
 _PREFIXES = ("braunschweig.", "synthesis.", "matsim.", "data.", "synpp.")
 _FILE_FMT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _FILE_DATEFMT = "%Y-%m-%dT%H:%M:%S"
 
 
-def _want_color(color) -> bool:
-    if color == "auto" or color is None:
-        if os.environ.get("NO_COLOR"):
-            return False
-        return bool(getattr(sys.stderr, "isatty", lambda: False)())
-    return bool(color)
+def _want_color(color="auto") -> bool:
+    """Back-compat shim; the canonical decision lives in theme.want_color."""
+    return theme.want_color(color)
 
 
 def _short_stage(name: str) -> str:
@@ -45,7 +38,7 @@ class ColorFormatter(logging.Formatter):
 
     def __init__(self, color="auto"):
         super().__init__()
-        self.color = _want_color(color)
+        self.color = theme.want_color(color)
 
     def format(self, record: logging.LogRecord) -> str:
         ts = self.formatTime(record, "%H:%M:%S")
@@ -55,9 +48,11 @@ class ColorFormatter(logging.Formatter):
         if record.exc_info:
             msg = msg + "\n" + self.formatException(record.exc_info)
         if self.color:
-            lc = _LEVEL_COLOR.get(level, "")
-            return (f"{_DIM}{ts}{_RESET} {_DIM}│{_RESET} {lc}{level:<7}{_RESET} "
-                    f"{_DIM}│{_RESET} {_ACCENT}{stage:<16}{_RESET} {_DIM}│{_RESET} {msg}")
+            lc = theme.LEVEL_COLOR.get(level, "")
+            sc = theme.stage_color(stage)
+            d, r = theme.DIM, theme.RESET
+            return (f"{d}{ts}{r} {d}│{r} {lc}{level:<7}{r} "
+                    f"{d}│{r} {sc}{stage:<16}{r} {d}│{r} {msg}")
         return f"{ts} │ {level:<7} │ {stage:<16} │ {msg}"
 
 
@@ -116,4 +111,4 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def color_enabled(color="auto") -> bool:
-    return _want_color(color)
+    return theme.want_color(color)
