@@ -84,12 +84,12 @@ config:
   braunschweig.population.popsim.work_dir: eqasim-data/cache_bs_popsim_allfeatures/popsim_work
 
   # Batch tuning: with the heavy tier1/2 + stratify control set, big batches were
-  # killed by the 1h timeout. SMALLER batches (max_cells 1500) converge faster per
-  # batch, and a HIGHER timeout (4h) gives any remaining big batch room to finish
-  # on its own -> no false "failed (timeout)" flags, guaranteed convergence.
+  # killed by the 1h timeout. batch_timeout_s: 0 DISABLES the timeout entirely -> each
+  # batch runs to FULL convergence, no matter how long. Smaller batches (max_cells 1500)
+  # still converge faster per batch and keep the run progressing visibly.
   braunschweig.population.popsim.max_cells: 1500
   braunschweig.population.popsim.num_workers: 3
-  braunschweig.population.popsim.batch_timeout_s: 14400
+  braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- R-A: Gravity calibration (TASK-001).
   gravity_slope: -0.065

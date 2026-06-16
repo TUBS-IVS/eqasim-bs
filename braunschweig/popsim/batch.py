@@ -312,7 +312,7 @@ DEFAULT_POPSIM_TIMEOUT_S = 3600
 def make_populationsim_run_one(
     *,
     command_prefix: Sequence[str] = DEFAULT_POPSIM_COMMAND,
-    timeout_s: int = DEFAULT_POPSIM_TIMEOUT_S,
+    timeout_s: Optional[int] = DEFAULT_POPSIM_TIMEOUT_S,
     cwd: Optional[Union[str, Path]] = None,
     dry_run: bool = False,
     subprocess_run: Callable = subprocess.run,
@@ -330,7 +330,13 @@ def make_populationsim_run_one(
     ``subprocess_run`` is injectable so the runner is unit-testable without
     PopulationSim installed. The returned callable is suitable as ``run_one`` for
     :func:`run_batches`.
+
+    ``timeout_s <= 0`` (or ``None``) disables the per-batch timeout entirely: the
+    PopulationSim subprocess runs to completion no matter how long it takes (use this
+    for heavy control sets where convergence matters more than wall-clock).
     """
+    effective_timeout = timeout_s if (timeout_s is None or timeout_s > 0) else None
+
     def run_one(folder: str) -> BatchResult:
         folder_path = Path(folder)
         start = time.monotonic()
@@ -347,7 +353,7 @@ def make_populationsim_run_one(
         try:
             result = subprocess_run(
                 command, cwd=run_cwd, capture_output=True, text=True,
-                timeout=timeout_s,
+                timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired:
             return BatchResult(str(folder), "failed", f"timeout after {timeout_s}s",
