@@ -368,10 +368,20 @@ def load_mid_seed(
     ]
     if columns.day_filter_col:
         person_cols.append(columns.day_filter_col)
+    # Tier-3 raw control inputs (P_TAET / bildung1 / bildung2) for the employment/
+    # education controls -- read + retained on the seed only when present (real MiD has
+    # them; some fixtures don't), so tier0-2 + fixtures stay unaffected.
+    _persons_sep = detect_csv_separator(persons_path)
+    _persons_header = pd.read_csv(persons_path, sep=_persons_sep, nrows=0).columns
+    _tier3_seed_cols = tuple(
+        c for c in ("P_TAET", "bildung1", "bildung2")
+        if c in _persons_header and c not in person_cols
+    )
+    person_cols.extend(_tier3_seed_cols)
     persons = pd.read_csv(
         persons_path,
         usecols=list(dict.fromkeys(person_cols)),
-        sep=detect_csv_separator(persons_path),
+        sep=_persons_sep,
     )
 
     # `None` -> standard weekday default; explicit empty iterable -> day filter OFF
@@ -418,7 +428,7 @@ def load_mid_seed(
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
-        extra_person_cols=extra_person_cols,
+        extra_person_cols=extra_person_cols + _tier3_seed_cols,
     )
     return households, persons, report
 
@@ -448,6 +458,9 @@ def project_completed_seed(households, persons, columns):
     return seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
+        extra_person_cols=tuple(
+            c for c in ("P_TAET", "bildung1", "bildung2") if c in persons.columns
+        ),
     )
 
 
@@ -460,6 +473,9 @@ MID_PERSON_ATTR_COLS = (
     # PopulationSim seed from ONE member-completion pass.
     "P_GEW", "kernwo",
 )
+# Tier-3 education control inputs: present in the real MiD person table, absent in some
+# small test fixtures -> loaded only when present (load_mid_attributes / load_mid_seed).
+MID_PERSON_OPTIONAL_COLS = ("bildung1", "bildung2")
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
     "RegioStaR7",  # Phase 4A: RegioStaR-7 code for donor urban/rural stratification
@@ -508,9 +524,13 @@ def load_mid_attributes(
         households_path, usecols=list(MID_HOUSEHOLD_ATTR_COLS),
         sep=detect_csv_separator(households_path),
     )
+    _persons_sep = detect_csv_separator(persons_path)
+    _persons_header = pd.read_csv(persons_path, sep=_persons_sep, nrows=0).columns
     persons = pd.read_csv(
-        persons_path, usecols=list(MID_PERSON_ATTR_COLS),
-        sep=detect_csv_separator(persons_path),
+        persons_path,
+        usecols=list(MID_PERSON_ATTR_COLS)
+        + [c for c in MID_PERSON_OPTIONAL_COLS if c in _persons_header],
+        sep=_persons_sep,
     )
     return households, persons
 

@@ -19,3 +19,16 @@ def test_full_catalog_includes_tier3():
     base = {c.name for c in full_catalog(("tier0",))}
     with3 = {c.name for c in full_catalog(("tier0", "tier3"))}
     assert "employed" in with3 and "employed" not in base
+
+
+def test_tier3_expressions_use_raw_seed_columns():
+    # Control expressions must reference RAW MiD cols (retained on the seed), not derived
+    # attributes -- PopulationSim evaluates them over seed_persons (P_TAET/bildung1/bildung2).
+    exprs = " ".join(c.expression_for("mid") for c in tier3_controls())
+    assert "persons.P_TAET" in exprs
+    assert "persons.bildung1" in exprs
+    assert "persons.bildung2" in exprs
+    # No derived-attribute references (those won't exist on the seed):
+    assert "schulabschluss" not in exprs
+    assert "beruflabschluss" not in exprs
+    assert "persons.employed" not in exprs
