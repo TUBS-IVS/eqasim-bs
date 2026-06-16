@@ -697,27 +697,34 @@ def tier2_controls() -> List[CatalogControl]:
 # seed persons -- exactly like tier2's raw households.H_MIETE / haustyp. The seed-build
 # (mid.load_mid_seed / project_completed_seed) retains these raw cols via
 # select_seed_columns(extra_person_cols=...), so no seed-side derivation/imputation is
-# needed. The code groupings MIRROR the PROVISIONAL crosswalk in attributes.py
-# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2) and the census_source class sums; confirm
-# all three together vs the MiD Codeplan B1 (plan Task 2.0). employed uses P_TAET 1..7
-# (Erwerbstätige; 7=freiwilliger Wehrdienst is the open Task 2.3 call -- drop to 1..6 to
-# exclude it). The derived schulabschluss/beruflabschluss attributes are output-only
-# (assembly, for validation), not used by the control mechanism.
+# needed. The code groupings + census_source class sums are confirmed vs the MiD 2023
+# Codeplan B1 (sheet Personen) and mirror the maps in attributes.py
+# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET 1..6 (Erwerbs-
+# tätige) -- 7 (freiwilliger Wehrdienst / Bundesfreiwilligendienst / FSJ/FÖJ) is
+# EXCLUDED: it is not an ILO-Erwerbstätigkeit (Taschengeld, no wage), so it must not
+# count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
+# 3->mid / 4->high; census low = __21+__22 only (POS ≈0 in West-German BS). __3 (ohne
+# allgemeinbildenden Abschluss) is intentionally DROPPED from low so both sides measure
+# the same completed-qualification universe -- MiD bildung1 cannot cleanly isolate
+# "ohne" (code 1 mixes it with all <15 kids + current pupils). beruflabschluss: bildung2
+# 1->vocational / {2,3}->tertiary (both carry a Hochschulabschluss) / 5->none; code 4
+# (anderer) has no Zensus pendant and is not counted. The derived schulabschluss/
+# beruflabschluss attributes are output-only (assembly, validation), not used here.
 _TIER3_ENTRIES: Sequence[tuple] = (
     # (name, census_source cols, mid expression over the RAW seed-persons cols)
-    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6, 7]))"),
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))"),
     ("schulabschluss_low",
-     ("SCHULABS_STP__21", "SCHULABS_STP__22", "SCHULABS_STP__3"),
-     "(persons.bildung1.isin([1, 2, 5]))"),
+     ("SCHULABS_STP__21", "SCHULABS_STP__22"),
+     "(persons.bildung1 == 2)"),
     ("schulabschluss_mid", ("SCHULABS_STP__23",), "(persons.bildung1 == 3)"),
     ("schulabschluss_high", ("SCHULABS_STP__24",), "(persons.bildung1 == 4)"),
     ("beruflabschluss_none", ("BERUFABS_AUSF_STP__2",), "(persons.bildung2 == 5)"),
     ("beruflabschluss_vocational",
      ("BERUFABS_AUSF_STP__11", "BERUFABS_AUSF_STP__12", "BERUFABS_AUSF_STP__13"),
-     "(persons.bildung2.isin([1, 2]))"),
+     "(persons.bildung2 == 1)"),
     ("beruflabschluss_tertiary",
      ("BERUFABS_AUSF_STP__14", "BERUFABS_AUSF_STP__15", "BERUFABS_AUSF_STP__16", "BERUFABS_AUSF_STP__17"),
-     "(persons.bildung2.isin([3, 4]))"),
+     "(persons.bildung2.isin([2, 3]))"),
 )
 
 
