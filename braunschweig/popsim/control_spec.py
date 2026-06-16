@@ -693,21 +693,31 @@ def tier2_controls() -> List[CatalogControl]:
 # Tier-3 person-level controls at KREIS geography (MiD-only; ENTD=None -> dropped).
 # census_source names the imported Kreis-table columns (the cleancensus kreis_* tables);
 # the multi-column classes are materialised via build_aggregation_map at sourcing time.
+# Tier-3 expressions use RAW MiD codes (P_TAET / bildung1 / bildung2) evaluated on the
+# seed persons -- exactly like tier2's raw households.H_MIETE / haustyp. The seed-build
+# (mid.load_mid_seed / project_completed_seed) retains these raw cols via
+# select_seed_columns(extra_person_cols=...), so no seed-side derivation/imputation is
+# needed. The code groupings MIRROR the PROVISIONAL crosswalk in attributes.py
+# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2) and the census_source class sums; confirm
+# all three together vs the MiD Codeplan B1 (plan Task 2.0). employed uses P_TAET 1..7
+# (Erwerbstätige; 7=freiwilliger Wehrdienst is the open Task 2.3 call -- drop to 1..6 to
+# exclude it). The derived schulabschluss/beruflabschluss attributes are output-only
+# (assembly, for validation), not used by the control mechanism.
 _TIER3_ENTRIES: Sequence[tuple] = (
-    # (name, census_source cols, mid expression over the persons seed)
-    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.employed == True)"),
+    # (name, census_source cols, mid expression over the RAW seed-persons cols)
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6, 7]))"),
     ("schulabschluss_low",
      ("SCHULABS_STP__21", "SCHULABS_STP__22", "SCHULABS_STP__3"),
-     "(persons.schulabschluss == 'low')"),
-    ("schulabschluss_mid", ("SCHULABS_STP__23",), "(persons.schulabschluss == 'mid')"),
-    ("schulabschluss_high", ("SCHULABS_STP__24",), "(persons.schulabschluss == 'high')"),
-    ("beruflabschluss_none", ("BERUFABS_AUSF_STP__2",), "(persons.beruflabschluss == 'none')"),
+     "(persons.bildung1.isin([1, 2, 5]))"),
+    ("schulabschluss_mid", ("SCHULABS_STP__23",), "(persons.bildung1 == 3)"),
+    ("schulabschluss_high", ("SCHULABS_STP__24",), "(persons.bildung1 == 4)"),
+    ("beruflabschluss_none", ("BERUFABS_AUSF_STP__2",), "(persons.bildung2 == 5)"),
     ("beruflabschluss_vocational",
      ("BERUFABS_AUSF_STP__11", "BERUFABS_AUSF_STP__12", "BERUFABS_AUSF_STP__13"),
-     "(persons.beruflabschluss == 'vocational')"),
+     "(persons.bildung2.isin([1, 2]))"),
     ("beruflabschluss_tertiary",
      ("BERUFABS_AUSF_STP__14", "BERUFABS_AUSF_STP__15", "BERUFABS_AUSF_STP__16", "BERUFABS_AUSF_STP__17"),
-     "(persons.beruflabschluss == 'tertiary')"),
+     "(persons.bildung2.isin([3, 4]))"),
 )
 
 
