@@ -785,6 +785,62 @@ def filter_seed_to_stratum(
 
 
 # --------------------------------------------------------------------------- #
+# Tier-3 KREIS control table (imported cleancensus kreis_* tables)
+# --------------------------------------------------------------------------- #
+
+_KREIS_CONTROL_FILES = (
+    "kreis_erwerbsstatus.parquet",
+    "kreis_schulabschluss.parquet",
+    "kreis_berufl_abschluss.parquet",
+)
+
+
+def merge_kreis_control_tables(
+    tables: Sequence[pd.DataFrame], *, key: str = "ARS_kreis"
+) -> pd.DataFrame:
+    """Merge the cleancensus per-topic kreis_* tables into one keyed by ``key``.
+
+    Each topic table (erwerbsstatus / schulabschluss / berufl_abschluss) carries
+    ``ARS_kreis`` + a label column (Name) + its STP source columns. They are
+    outer-joined on ``key``; duplicate non-key columns (e.g. Name) are kept once.
+    """
+    if not tables:
+        raise ValueError("merge_kreis_control_tables: no tables given.")
+    merged = tables[0].copy()
+    for table in tables[1:]:
+        dup = [c for c in table.columns if c != key and c in merged.columns]
+        merged = merged.merge(table.drop(columns=dup), on=key, how="outer")
+    return merged
+
+
+def load_kreis_control_table(
+    kreis_dir: Union[str, Path],
+    *,
+    files: Sequence[str] = _KREIS_CONTROL_FILES,
+) -> pd.DataFrame:
+    """Load + merge the imported Tier-3 kreis_* control tables from ``kreis_dir``.
+
+    Reads the per-topic parquets (employment / school / vocational education) and
+    merges them on ``ARS_kreis`` (re-padded to the 5-digit zero-padded string that
+    matches the crosswalk's KREIS = ARS[:5]) into one table whose columns are the
+    census_source classes the Tier-3 controls sum.
+    """
+    base = Path(kreis_dir)
+    tables: list[pd.DataFrame] = []
+    for name in files:
+        path = base / name
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Tier-3 kreis control table not found: {path}. Import the cleancensus "
+                "gemeinde_controls/kreis_* parquets into this directory first."
+            )
+        table = pd.read_parquet(path)
+        table["ARS_kreis"] = table["ARS_kreis"].astype(str).str.zfill(5)
+        tables.append(table)
+    return merge_kreis_control_tables(tables)
+
+
+# --------------------------------------------------------------------------- #
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
 

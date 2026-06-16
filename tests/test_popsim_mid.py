@@ -248,6 +248,23 @@ def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
     assert not (tmp_path / "b0" / "data" / "control_totals_KREIS.csv").exists()
 
 
+def test_merge_kreis_control_tables_joins_topics_on_ars():
+    # The three cleancensus kreis_* topic tables (erwerb/schul/berufl) merge into one
+    # table keyed by ARS_kreis carrying all STP source columns; duplicate label cols
+    # (Name) collapse to one.
+    erwerb = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                           "ERWERBSTAT_KURZ_STP__11": [10.0, 20.0]})
+    schul = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                          "SCHULABS_STP__21": [1.0, 2.0]})
+    berufl = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                           "BERUFABS_AUSF_STP__2": [3.0, 4.0]})
+    merged = mid.merge_kreis_control_tables([erwerb, schul, berufl])
+    assert list(merged["ARS_kreis"]) == ["03101", "03102"]
+    for col in ["ERWERBSTAT_KURZ_STP__11", "SCHULABS_STP__21", "BERUFABS_AUSF_STP__2"]:
+        assert col in merged.columns
+    assert list(merged.columns).count("Name") == 1
+
+
 # ---------------------------------------------------------------------------
 # synpp stage contract
 # ---------------------------------------------------------------------------
