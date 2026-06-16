@@ -68,6 +68,10 @@ KEY_UV = "braunschweig.population.popsim.uv_path"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
+# Hard per-batch PopulationSim wall-clock limit (seconds). A batch exceeding this is
+# killed and flagged "failed (timeout)". Heavy control sets (tier1/2 + stratify) make
+# big batches slow; raise this so they finish + converge cleanly instead of being killed.
+KEY_BATCH_TIMEOUT = "braunschweig.population.popsim.batch_timeout_s"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
@@ -214,6 +218,7 @@ def configure(context):
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
     context.config(KEY_WORK_DIR)
+    context.config(KEY_BATCH_TIMEOUT, batch.DEFAULT_POPSIM_TIMEOUT_S)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
     # Seeded attribute imputation in build_persons; declaring the key also makes
@@ -470,6 +475,7 @@ def execute(context) -> pd.DataFrame:
     run_one = batch.make_populationsim_run_one(
         command_prefix=(str(uv_path), "run", "--no-sync", "populationsim"),
         cwd=popsimprep_dir,
+        timeout_s=int(context.config(KEY_BATCH_TIMEOUT)),
     )
 
     logger.info(
