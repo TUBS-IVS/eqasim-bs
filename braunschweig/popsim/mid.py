@@ -785,6 +785,62 @@ def filter_seed_to_stratum(
 
 
 # --------------------------------------------------------------------------- #
+# Tier-3 KREIS control table (imported cleancensus kreis_* tables)
+# --------------------------------------------------------------------------- #
+
+_KREIS_CONTROL_FILES = (
+    "kreis_erwerbsstatus.parquet",
+    "kreis_schulabschluss.parquet",
+    "kreis_berufl_abschluss.parquet",
+)
+
+
+def merge_kreis_control_tables(
+    tables: Sequence[pd.DataFrame], *, key: str = "ARS_kreis"
+) -> pd.DataFrame:
+    """Merge the cleancensus per-topic kreis_* tables into one keyed by ``key``.
+
+    Each topic table (erwerbsstatus / schulabschluss / berufl_abschluss) carries
+    ``ARS_kreis`` + a label column (Name) + its STP source columns. They are
+    outer-joined on ``key``; duplicate non-key columns (e.g. Name) are kept once.
+    """
+    if not tables:
+        raise ValueError("merge_kreis_control_tables: no tables given.")
+    merged = tables[0].copy()
+    for table in tables[1:]:
+        dup = [c for c in table.columns if c != key and c in merged.columns]
+        merged = merged.merge(table.drop(columns=dup), on=key, how="outer")
+    return merged
+
+
+def load_kreis_control_table(
+    kreis_dir: Union[str, Path],
+    *,
+    files: Sequence[str] = _KREIS_CONTROL_FILES,
+) -> pd.DataFrame:
+    """Load + merge the imported Tier-3 kreis_* control tables from ``kreis_dir``.
+
+    Reads the per-topic parquets (employment / school / vocational education) and
+    merges them on ``ARS_kreis`` (re-padded to the 5-digit zero-padded string that
+    matches the crosswalk's KREIS = ARS[:5]) into one table whose columns are the
+    census_source classes the Tier-3 controls sum.
+    """
+    base = Path(kreis_dir)
+    tables: list[pd.DataFrame] = []
+    for name in files:
+        path = base / name
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Tier-3 kreis control table not found: {path}. Import the cleancensus "
+                "gemeinde_controls/kreis_* parquets into this directory first."
+            )
+        table = pd.read_parquet(path)
+        table["ARS_kreis"] = table["ARS_kreis"].astype(str).str.zfill(5)
+        tables.append(table)
+    return merge_kreis_control_tables(tables)
+
+
+# --------------------------------------------------------------------------- #
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
 
@@ -798,13 +854,40 @@ def assemble_batch_folder(
     *,
     settings_yaml: str,
     logging_yaml: str,
+    kreis_table: pd.DataFrame | None = None,
+    kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
+    ars_col: str = _ARS_COLUMN,
+    kreis_weight_col: str = "POP_TOTAL_100m_adj",
 ) -> dict[str, Path]:
-    """Assemble one PopulationSim run folder for a subset of cells."""
+    """Assemble one PopulationSim run folder for a subset of cells.
+
+    When ``kreis_table`` and ``kreis_controls_map`` are given (Tier-3 active), an
+    additional KREIS control geography is built: the geo crosswalk gains a KREIS
+    column (resolved to one dominant Kreis per 1 km parent so WELT>STAAT>KREIS>
+    1km>100m nests strictly), and ``control_totals_KREIS.csv`` is written from the
+    per-Kreis census table. Without them the folder is the tier0-2 baseline
+    (byte-identical: no KREIS column, no KREIS control file).
+    """
+    tier3 = kreis_table is not None and bool(kreis_controls_map)
+    if tier3 and ars_col not in cells_subset.columns:
+        raise ValueError(
+            f"Tier-3 KREIS controls requested but cells carry no ARS column "
+            f"{ars_col!r}; cannot build the KREIS geography."
+        )
     geo_crosswalk = folders.build_geo_crosswalk(
-        cells_subset, id_col_100m="ZENSUS100m", parent_col="ZENSUS1km"
+        cells_subset,
+        id_col_100m="ZENSUS100m",
+        parent_col="ZENSUS1km",
+        ars_col=(ars_col if tier3 else None),
+        resolve_parent_kreis=tier3,
+        kreis_weight_col=(kreis_weight_col if tier3 else None),
     )
     targets = cells_subset[["ZENSUS100m", *base_cols]].copy()
     control_totals = build_control_totals(targets, geo_crosswalk, base_cols)
+    if tier3:
+        control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
+            kreis_table, geo_crosswalk, controls_map=kreis_controls_map,
+        )
     return folders.write_popsim_folder(
         folder,
         geo_crosswalk=geo_crosswalk,
@@ -840,6 +923,8 @@ def run_popsim_mid(
     num_workers: int = 3,
     source=None,
     stratify_regiostar: bool = False,
+    kreis_table: pd.DataFrame | None = None,
+    kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -908,6 +993,7 @@ def run_popsim_mid(
                 folder, subset, base_cols, controls_df,
                 seed_households, seed_persons,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+                kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
             )
             batch_folders.append(str(folder))
 
@@ -966,6 +1052,7 @@ def run_popsim_mid(
                 folder, subset, base_cols, controls_df,
                 hh_stratum, p_stratum,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
+                kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

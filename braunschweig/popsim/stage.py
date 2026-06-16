@@ -90,6 +90,10 @@ KEY_CONTROLS_SOURCE = "braunschweig.population.popsim.controls_source"
 # Control tiers: comma-separated tier names included when controls_source="catalog".
 # Default "tier0" = byte-identical to the pre-Task-7 baseline.
 KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
+# Tier-3 KREIS controls: directory holding the imported cleancensus kreis_* tables
+# (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
+# "tier3" is among control_tiers (catalog source); ignored otherwise.
+KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Spatial income tilt (Nettokaltmiete GAMMA layer): default ON per project rule.
 # When ON, applies a within-Kreis income redistribution scaled by the per-cell
 # net cold rent index (renters) or Eigentümerquote index (owners), preserving the
@@ -233,6 +237,8 @@ def configure(context):
     context.config(KEY_CONTROLS_SOURCE, "csv")
     # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
     context.config(KEY_CONTROL_TIERS, "tier0")
+    # Tier-3 KREIS controls directory. Default "" = not configured (no Tier-3).
+    context.config(KEY_KREIS_CONTROLS, "")
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
     # When OFF, the income frame is unchanged (byte-identical); no cells parquet
     # re-read occurs.
@@ -394,6 +400,29 @@ def execute(context) -> pd.DataFrame:
     )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
+    # Tier-3 KREIS controls (employment / education): when active, load the imported
+    # per-Kreis census table and derive the {control_name: census_source} map from the
+    # catalog's KREIS-geography controls expressible by the active seed. Passed to
+    # run_popsim_mid, which builds control_totals_KREIS.csv per batch. When tier3 is
+    # absent both stay None -> the tier0-2 folder is byte-identical.
+    kreis_table = None
+    kreis_controls_map = None
+    if "tier3" in control_tiers and controls_source == "catalog":
+        from braunschweig.popsim import control_spec as _cs
+        tier3 = [c for c in _cs.tier3_controls() if c.expression_for(source_name) is not None]
+        kreis_controls_map = {c.name: tuple(c.census_source) for c in tier3}
+        kreis_dir = context.config(KEY_KREIS_CONTROLS)
+        if not kreis_dir:
+            raise ValueError(
+                "control_tiers includes 'tier3' but "
+                f"{KEY_KREIS_CONTROLS} is not set; cannot source the KREIS controls."
+            )
+        kreis_table = mid.load_kreis_control_table(kreis_dir)
+        logger.info(
+            "[popsim.stage] Tier-3 KREIS controls active: %d controls, kreis table %d rows from %s",
+            len(kreis_controls_map), len(kreis_table), kreis_dir,
+        )
+
     # For catalog-based controls with multi-column census sources (e.g. building_type),
     # load the raw source columns from the parquet (union of all census_source tuples)
     # rather than the derived control names.  For tier0-only or CSV-based controls,
@@ -492,6 +521,8 @@ def execute(context) -> pd.DataFrame:
         num_workers=num_workers,
         source=source,
         stratify_regiostar=stratify_regiostar,
+        kreis_table=kreis_table,
+        kreis_controls_map=kreis_controls_map,
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)

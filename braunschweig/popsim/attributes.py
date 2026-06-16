@@ -645,15 +645,21 @@ def map_building_type_3class(
     return out
 
 
-# PROVISIONAL crosswalk — confirm vs MiD Codeplan B1 (plan Task 2.0).
-# MiD bildung1 (Schulabschluss) -> 3-class {low, mid, high}; 9 (k.A.) -> NaN.
-SCHULABS_BY_BILDUNG1 = {1: "low", 2: "low", 3: "mid", 4: "high", 5: "low"}
+# MiD bildung1 (Schulabschluss zusammengefasst) -> 3-class {low, mid, high}. Codes
+# confirmed vs MiD 2023 Codeplan B1, sheet Personen: 1=(noch) ohne Abschluss,
+# 2=niedrig, 3=mittel, 4=hoch, 5=anderer Abschluss, 9=k.A. Only the completed
+# allgemeinbildender Abschluss levels map: 2->low, 3->mid, 4->high. Code 1
+# ((noch) ohne; carries ALL <15 children + current pupils -- bildung1 has no 402
+# structural code), code 5 (anderer Abschluss; no Zensus pendant) and 9 (k.A.)
+# -> NaN (excluded, mirrors Zensus __1 sitting outside the 3 classes).
+SCHULABS_BY_BILDUNG1 = {2: "low", 3: "mid", 4: "high"}
 
 
 def map_schulabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     """Add a 3-class ``schulabschluss`` {low, mid, high} from MiD ``bildung1``.
 
-    k.A. (9) -> NaN (handled by the item-nonresponse imputation policy downstream).
+    bildung1 1 ((noch) ohne Abschluss), 5 (anderer Abschluss) and 9 (k.A.) -> NaN
+    (excluded from the completed-qualification universe; floated/imputed downstream).
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -668,18 +674,21 @@ def map_schulabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-# PROVISIONAL crosswalk — confirm vs MiD Codeplan B1 (plan Task 2.0).
-# MiD bildung2 (berufl. Abschluss) -> 3-class {none, vocational, tertiary}. Structural
-# 206 (proxy) / 402 (children) and 9 (k.A.) -> NaN (excluded from the 15+ universe / imputed).
-BERUFABS_BY_BILDUNG2 = {1: "vocational", 2: "vocational", 3: "tertiary",
-                        4: "tertiary", 5: "none"}
+# MiD bildung2 (Berufs- oder Hochschulabschluss) -> 3-class {none, vocational,
+# tertiary}. Codes confirmed vs MiD 2023 Codeplan B1, sheet Personen: 1=ja Berufs-
+# abschluss, 2=ja Hochschulabschluss, 3=ja Berufs- UND Hochschulabschluss, 4=ja
+# anderer, 5=nein, 9=k.A., 206=Proxy, 402=Kind<14. 1 -> vocational; 2 and 3 (both
+# carry a Hochschulabschluss) -> tertiary; 5 -> none. Code 4 (anderer; no Zensus
+# pendant -- census berufl. partitions fully into __11-13/voc, __14-17/tert, __2/none)
+# and 9/206/402 (k.A./structural) -> NaN (excluded / imputed downstream).
+BERUFABS_BY_BILDUNG2 = {1: "vocational", 2: "tertiary", 3: "tertiary", 5: "none"}
 
 
 def map_beruflabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     """Add a 3-class ``beruflabschluss`` {none, vocational, tertiary} from MiD ``bildung2``.
 
-    Structural codes 206/402 and k.A. 9 -> NaN (excluded from the 15+ control universe
-    / imputed downstream).
+    bildung2 4 (anderer), 9 (k.A.) and structural 206/402 -> NaN (excluded from the
+    15+ control universe / imputed downstream).
     """
     import logging
     logger = logging.getLogger(__name__)

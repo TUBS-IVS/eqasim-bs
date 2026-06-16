@@ -1,0 +1,92 @@
+## Gate run: tier0+tier3 (catalog source) — 1-Kreis (03101 Braunschweig) mini.
+## Purpose: validate the Tier-3 KREIS controls (employment + education) machinery
+## end-to-end: KREIS geography hierarchy (WELT>STAAT>KREIS>1km>100m), control_totals_KREIS,
+## and the measure-gain fit. Target data.census.filtered (population only; no heavy
+## location/trip synthesis). OWN work_dir (never reuse popsim_work). Conda eqasim env.
+
+working_directory: eqasim-data/cache_gate_tier3_mini
+
+run:
+  - data.census.filtered
+
+config:
+  processes: 8
+  hts: entd
+  sampling_rate: 0.01
+  random_seed: 1234
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_gate_tier3_mini
+  output_prefix: gate_tier3_
+
+  java_memory: 32G
+  home_location_sampling: weighted
+  mode_choice: false
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+
+  braunschweig.population.method: popsim_mid
+
+  braunschweig.population.popsim.cells_1km_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet
+  braunschweig.population.popsim.cells_100m_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet
+  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw
+  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw
+
+  braunschweig.population.popsim.controls_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/_prep3_controls.csv
+  braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings_tier3.yaml
+  braunschweig.population.popsim.logging_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/logging.yaml
+  braunschweig.population.popsim.popsimprep_dir: C:/Users/bienzeisler/Documents/GitHub/popsimprep
+  braunschweig.population.popsim.uv_path: C:/Users/bienzeisler/.local/bin/uv.exe
+  braunschweig.population.popsim.work_dir: eqasim-data/cache_gate_tier3_mini/popsim_work
+
+  braunschweig.population.popsim.max_cells: 3000
+  braunschweig.population.popsim.num_workers: 3
+
+  # GATE: catalog source, tier0 (backbone) + tier3 (employment + education, KREIS geography)
+  braunschweig.population.popsim.controls_source: catalog
+  braunschweig.population.popsim.control_tiers: "tier0,tier3"
+  # Tier-3 KREIS control tables (imported cleancensus kreis_* parquets; local-only)
+  braunschweig.population.popsim.kreis_controls_dir: eqasim-data/data/braunschweig/popsim/kreis_controls
+
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    72: -0.0558
+    73: -0.0638
+    74: -0.0640
+    75: -0.0704
+    76: -0.0719
+    77: -0.0667
+
+  braunschweig.ipf.use_household_size_margin: true
+  braunschweig.ipf.use_household_type_margin: true
+  braunschweig.ipf.use_employment_margin: true
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+
+  gtfs_path: gtfs
+  osm_path: osm
+  vrb_stations_path: vrb/stations.json
+
+  braunschweig.political_prefix:
+    - "03101"
+
+  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+  braunschweig.work_flow_path: braunschweig/pendler_ni.xlsx
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+  braunschweig.home_density_weighting: true
+  braunschweig.buildings_path: braunschweig/buildings
+  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
+  osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
+  osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
+
+  education_gravity_enabled: false
+
+aliases:
+  data.census.filtered: braunschweig.popsim.stage

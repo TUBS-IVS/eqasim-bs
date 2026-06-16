@@ -200,6 +200,72 @@ def test_run_popsim_mid_batches_runs_and_merges(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# assemble_batch_folder: Tier-3 KREIS controls (optional branch)
+# ---------------------------------------------------------------------------
+
+def _kreis_batch_inputs():
+    cells_subset = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2", "c3"],
+        "ZENSUS1km":  ["p", "p", "q"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [10.0, 10.0, 5.0],
+        "POP": [1.0, 2.0, 3.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    return cells_subset, ["POP"], controls_df, seed_hh, seed_p
+
+
+def test_assemble_batch_folder_writes_kreis_controls_when_given(tmp_path):
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]})
+    written = mid.assemble_batch_folder(
+        tmp_path / "b", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+    )
+    kreis_csv = tmp_path / "b" / "data" / "control_totals_KREIS.csv"
+    assert kreis_csv.is_file()
+    assert "control_totals_KREIS.csv" in written
+    df = pd.read_csv(kreis_csv, dtype={"KREIS": str})  # preserve the zero-padded 5-digit Kreis key
+    assert list(df["KREIS"]) == ["03101", "03153"]   # crosswalk Kreise, deduped+sorted
+    assert list(df["employed"]) == [100.0, 200.0]
+
+
+def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
+    # No kreis_table -> tier0-2 path: no KREIS control file (byte-identical baseline).
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    mid.assemble_batch_folder(
+        tmp_path / "b0", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+    )
+    assert not (tmp_path / "b0" / "data" / "control_totals_KREIS.csv").exists()
+
+
+def test_merge_kreis_control_tables_joins_topics_on_ars():
+    # The three cleancensus kreis_* topic tables (erwerb/schul/berufl) merge into one
+    # table keyed by ARS_kreis carrying all STP source columns; duplicate label cols
+    # (Name) collapse to one.
+    erwerb = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                           "ERWERBSTAT_KURZ_STP__11": [10.0, 20.0]})
+    schul = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                          "SCHULABS_STP__21": [1.0, 2.0]})
+    berufl = pd.DataFrame({"ARS_kreis": ["03101", "03102"], "Name": ["A", "B"],
+                           "BERUFABS_AUSF_STP__2": [3.0, 4.0]})
+    merged = mid.merge_kreis_control_tables([erwerb, schul, berufl])
+    assert list(merged["ARS_kreis"]) == ["03101", "03102"]
+    for col in ["ERWERBSTAT_KURZ_STP__11", "SCHULABS_STP__21", "BERUFABS_AUSF_STP__2"]:
+        assert col in merged.columns
+    assert list(merged.columns).count("Name") == 1
+
+
+# ---------------------------------------------------------------------------
 # synpp stage contract
 # ---------------------------------------------------------------------------
 
