@@ -93,3 +93,15 @@ def test_grid_source_columns_baseline_unchanged():
     # geography filter must not drop any grid-geography control).
     src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0",))
     assert len(src) == 22
+
+
+def test_tier3_kreis_control_totals_columns_match_controls_csv_control_field():
+    # PopulationSim looks up each KREIS control by its controls.csv control_field
+    # (name_KREIS). The control_totals_KREIS.csv column names == the kreis_controls_map
+    # keys, so those keys MUST equal the rendered control_fields -- else PopulationSim
+    # errors "<field> not in index" (the 1-Kreis mini-run failure).
+    from braunschweig.popsim.control_spec import render_catalog_csv
+    active = controls_for_seed(tier3_controls(), "mid")
+    expected_fields = set(render_catalog_csv(active, "mid")["control_field"])
+    kmap = stage._kreis_controls_map(active)
+    assert set(kmap) == expected_fields
