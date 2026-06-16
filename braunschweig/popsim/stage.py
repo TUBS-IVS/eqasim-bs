@@ -158,6 +158,19 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
 
+def _grid_geography_controls(controls, cs):
+    """Keep only controls sourced from the GRID parquet (ZENSUS100m / ZENSUS1km).
+
+    The grid column load + aggregation read columns from the prepared 100m parquet.
+    KREIS-geography Tier-3 controls (employment/education) carry census_source columns
+    that live in the imported kreis table, NOT the grid -- including them here would
+    request Kreis-census columns from the grid (spurious WARNINGs + bogus all-zero
+    columns). Their KREIS totals are built separately via folders.build_kreis_control_totals.
+    """
+    grid_geos = (cs.GEO_100M, cs.GEO_1KM)
+    return [c for c in controls if c.geography in grid_geos]
+
+
 def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
     """Return the multi-column aggregation map for the active controls.
 
@@ -177,7 +190,7 @@ def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mi
         return {}
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.build_aggregation_map(active)
 
 
@@ -195,7 +208,7 @@ def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid",
         return None
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.source_columns_union(active)
 
 
