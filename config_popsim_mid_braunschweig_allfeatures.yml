@@ -88,7 +88,10 @@ config:
   # batch runs to FULL convergence, no matter how long. Smaller batches (max_cells 1500)
   # still converge faster per batch and keep the run progressing visibly.
   braunschweig.population.popsim.max_cells: 1500
-  braunschweig.population.popsim.num_workers: 3
+  # Laptop: 22 cores -> 8 parallel PopulationSim batches. On the SERVER raise this
+  # further (e.g. ~half the core count). Pair with a per-worker thread cap
+  # (NUMEXPR_MAX_THREADS / OMP_NUM_THREADS) in the launch env to avoid oversubscription.
+  braunschweig.population.popsim.num_workers: 8
   braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- R-A: Gravity calibration (TASK-001).
