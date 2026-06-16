@@ -57,6 +57,39 @@ def test_geo_crosswalk_omits_kreis_when_no_ars():
     assert "KREIS" not in xwalk.columns
 
 
+def test_geo_crosswalk_resolves_parent_kreis_to_dominant():
+    # A 1km parent whose 100m cells straddle two Kreise must collapse to the dominant
+    # Kreis (by population weight) so WELT>STAAT>KREIS>1km>100m nests strictly.
+    df = pd.DataFrame({
+        "GITTER_ID_100m": ["a", "b", "c", "d"],
+        "GITTER_ID_1km":  ["P1", "P1", "P1", "P2"],
+        "ARS":            ["031010000000", "031010000000", "031530000000", "031530000000"],
+        "EW":             [40, 40, 5, 7],   # P1: 03101=80 vs 03153=5 -> dominant 03101
+    })
+    xwalk = folders.build_geo_crosswalk(
+        df, id_col_100m="GITTER_ID_100m", parent_col="GITTER_ID_1km",
+        ars_col="ARS", resolve_parent_kreis=True, kreis_weight_col="EW",
+    )
+    # cell c is reassigned from 03153 to the parent's dominant Kreis 03101
+    assert set(xwalk.loc[xwalk["ZENSUS1km"] == "P1", "KREIS"]) == {"03101"}
+    assert set(xwalk.loc[xwalk["ZENSUS1km"] == "P2", "KREIS"]) == {"03153"}
+    # strict nesting: every 1km parent maps to exactly one Kreis
+    assert (xwalk.groupby("ZENSUS1km")["KREIS"].nunique() == 1).all()
+
+
+def test_geo_crosswalk_raw_kreis_without_resolution():
+    # Default (no resolution): raw per-cell KREIS = ARS[:5]; a 1km parent may straddle.
+    df = pd.DataFrame({
+        "GITTER_ID_100m": ["a", "b"],
+        "GITTER_ID_1km":  ["P1", "P1"],
+        "ARS":            ["031010000000", "031530000000"],
+    })
+    xwalk = folders.build_geo_crosswalk(
+        df, id_col_100m="GITTER_ID_100m", parent_col="GITTER_ID_1km", ars_col="ARS",
+    )
+    assert list(xwalk["KREIS"]) == ["03101", "03153"]
+
+
 def _toy_kreis_xwalk():
     return pd.DataFrame(
         {
@@ -224,6 +257,32 @@ def test_write_popsim_folder_creates_expected_files(tmp_path):
     # Round-trip a written CSV to confirm content.
     back = pd.read_csv(base / "data/geo_cross_walk.csv", dtype=str)
     assert list(back.columns) == ["ZENSUS100m", "ZENSUS1km", "STAAT", "WELT"]
+
+
+def test_write_popsim_folder_writes_kreis_only_when_present(tmp_path):
+    # KREIS is written iff present in control_totals: tier0-2 (no KREIS) stays
+    # byte-identical (no extra file); tier3 adds control_totals_KREIS.csv.
+    xwalk = folders.build_geo_crosswalk(_toy_100m())
+    totals = folders.build_control_totals(
+        _toy_targets(), xwalk, target_cols=["total_population"]
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"HP_ID": [1], "P_ID": [1], "STAAT": [1]})
+
+    folders.write_popsim_folder(
+        tmp_path / "no_kreis", geo_crosswalk=xwalk, control_totals=totals,
+        controls_csv=pd.DataFrame(), seed_households=seed_hh, seed_persons=seed_p,
+    )
+    assert not (tmp_path / "no_kreis" / "data" / "control_totals_KREIS.csv").exists()
+
+    totals_k = dict(totals)
+    totals_k["KREIS"] = pd.DataFrame({"KREIS": ["03101"], "employed": [123]})
+    written = folders.write_popsim_folder(
+        tmp_path / "with_kreis", geo_crosswalk=xwalk, control_totals=totals_k,
+        controls_csv=pd.DataFrame(), seed_households=seed_hh, seed_persons=seed_p,
+    )
+    assert (tmp_path / "with_kreis" / "data" / "control_totals_KREIS.csv").is_file()
+    assert "control_totals_KREIS.csv" in written
 
 
 def test_write_popsim_folder_requires_all_control_geographies(tmp_path):
