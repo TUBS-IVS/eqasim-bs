@@ -33,7 +33,12 @@ config:
   output_path: eqasim-data/output_bs_popsim_allfeatures
   output_prefix: braunschweig_popsim_allfeatures_
 
-  # === ALL FEATURES ON ========================================================
+  # === ALL POPULATION-SYNTHESIS FEATURES ON ===================================
+  # Scope: this config validates the full POPULATION feature set (run target
+  # data.census.filtered). The MATSim-side flags further below (cordon / fleet /
+  # parking; freight is off because it needs the local-only german-wide-freight
+  # inputs) are set for parity / not-forgotten but are NOT exercised by this run
+  # target -- they only take effect in a full MATSim simulation run.
   # Fit the full catalog: tier0 backbone + tier1 (household_size + household_type)
   # + tier2 (tenure + building_type). Default csv/tier0 fits only backbone+HH-total.
   braunschweig.population.popsim.controls_source: catalog

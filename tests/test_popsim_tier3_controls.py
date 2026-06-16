@@ -1,5 +1,6 @@
 import pandas as pd
 
+from braunschweig.popsim import stage
 from braunschweig.popsim.control_spec import (
     tier3_controls, full_catalog, controls_for_seed, GEO_KREIS,
 )
@@ -70,3 +71,37 @@ def test_tier3_schulabschluss_low_census_source_excludes_ohne():
     # census class measure the same thing.
     by = {c.name: c for c in tier3_controls()}
     assert by["schulabschluss_low"].census_source == ("SCHULABS_STP__21", "SCHULABS_STP__22")
+
+
+def test_tier3_kreis_controls_excluded_from_grid_source_and_aggregation():
+    # Tier-3 controls live at KREIS geography; their census_source columns come from the
+    # kreis table, NOT the grid parquet. They must not leak into the grid column load
+    # (build_source_columns) or the grid aggregation_map (build_aggregation_map) -- else
+    # the stage would request Kreis-census cols from the grid (spurious WARNINGs + bogus
+    # all-zero grid columns).
+    src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0", "tier3"))
+    agg = stage.build_aggregation_map(controls_source="catalog", seed="mid", tiers=("tier0", "tier3"))
+    leaked_cols = [c for c in src if any(k in c for k in ("ERWERBSTAT", "SCHULABS", "BERUFABS"))]
+    assert leaked_cols == [], f"Kreis-census cols leaked into grid load: {leaked_cols}"
+    tier3_names = {"employed", "schulabschluss_low", "schulabschluss_mid", "schulabschluss_high",
+                   "beruflabschluss_none", "beruflabschluss_vocational", "beruflabschluss_tertiary"}
+    assert tier3_names.isdisjoint(agg), f"tier3 names leaked into grid aggregation_map: {tier3_names & set(agg)}"
+
+
+def test_grid_source_columns_baseline_unchanged():
+    # Sanity: tier0-only grid load is the 22 backbone single-source columns (the
+    # geography filter must not drop any grid-geography control).
+    src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0",))
+    assert len(src) == 22
+
+
+def test_tier3_kreis_control_totals_columns_match_controls_csv_control_field():
+    # PopulationSim looks up each KREIS control by its controls.csv control_field
+    # (name_KREIS). The control_totals_KREIS.csv column names == the kreis_controls_map
+    # keys, so those keys MUST equal the rendered control_fields -- else PopulationSim
+    # errors "<field> not in index" (the 1-Kreis mini-run failure).
+    from braunschweig.popsim.control_spec import render_catalog_csv
+    active = controls_for_seed(tier3_controls(), "mid")
+    expected_fields = set(render_catalog_csv(active, "mid")["control_field"])
+    kmap = stage._kreis_controls_map(active)
+    assert set(kmap) == expected_fields

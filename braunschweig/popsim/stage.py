@@ -75,7 +75,9 @@ KEY_BATCH_TIMEOUT = "braunschweig.population.popsim.batch_timeout_s"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
-# Phase 4B: RegioStaR donor stratification flag (default OFF = byte-identical).
+# RegioStaR donor stratification (Phase 4B). Default ON (project rule: new features
+# default on); set False for the byte-identical pre-4B path (full seed per batch,
+# still supported + unit-tested).
 KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
@@ -158,6 +160,32 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
 
+def _kreis_controls_map(controls):
+    """Map each KREIS control to its census_source columns, keyed by the column name
+    the control_totals_KREIS.csv must carry.
+
+    The key is the control_field ``f"{name}_{geography}"`` (e.g. ``employed_KREIS``) --
+    the SAME name render_catalog_csv writes into controls.csv, and what PopulationSim
+    looks up in the control-totals table. The grid path achieves this via the geography
+    column suffix (build_control_totals); the KREIS path must mirror it here, else
+    PopulationSim errors ``<field> not in index``.
+    """
+    return {f"{c.name}_{c.geography}": tuple(c.census_source) for c in controls}
+
+
+def _grid_geography_controls(controls, cs):
+    """Keep only controls sourced from the GRID parquet (ZENSUS100m / ZENSUS1km).
+
+    The grid column load + aggregation read columns from the prepared 100m parquet.
+    KREIS-geography Tier-3 controls (employment/education) carry census_source columns
+    that live in the imported kreis table, NOT the grid -- including them here would
+    request Kreis-census columns from the grid (spurious WARNINGs + bogus all-zero
+    columns). Their KREIS totals are built separately via folders.build_kreis_control_totals.
+    """
+    grid_geos = (cs.GEO_100M, cs.GEO_1KM)
+    return [c for c in controls if c.geography in grid_geos]
+
+
 def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
     """Return the multi-column aggregation map for the active controls.
 
@@ -177,7 +205,7 @@ def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mi
         return {}
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.build_aggregation_map(active)
 
 
@@ -195,7 +223,7 @@ def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid",
         return None
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.source_columns_union(active)
 
 
@@ -228,9 +256,9 @@ def configure(context):
     # Seeded attribute imputation in build_persons; declaring the key also makes
     # synpp invalidate the stage cache when the pipeline random_seed changes.
     context.config("random_seed")
-    # Phase 4B: RegioStaR donor stratification.  Default False = byte-identical to
-    # pre-4B: each batch receives the full seed, no stratum filtering.
-    context.config(KEY_STRATIFY, False)
+    # RegioStaR donor stratification (Phase 4B): default ON (project rule: features
+    # default on). Set False for the byte-identical pre-4B path (full seed per batch).
+    context.config(KEY_STRATIFY, True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
@@ -410,7 +438,7 @@ def execute(context) -> pd.DataFrame:
     if "tier3" in control_tiers and controls_source == "catalog":
         from braunschweig.popsim import control_spec as _cs
         tier3 = [c for c in _cs.tier3_controls() if c.expression_for(source_name) is not None]
-        kreis_controls_map = {c.name: tuple(c.census_source) for c in tier3}
+        kreis_controls_map = _kreis_controls_map(tier3)
         kreis_dir = context.config(KEY_KREIS_CONTROLS)
         if not kreis_dir:
             raise ValueError(
