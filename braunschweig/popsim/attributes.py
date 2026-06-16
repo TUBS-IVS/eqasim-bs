@@ -650,7 +650,7 @@ def map_building_type_3class(
 SCHULABS_BY_BILDUNG1 = {1: "low", 2: "low", 3: "mid", 4: "high", 5: "low"}
 
 
-def map_schulabschluss(persons):
+def map_schulabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     """Add a 3-class ``schulabschluss`` {low, mid, high} from MiD ``bildung1``.
 
     k.A. (9) -> NaN (handled by the item-nonresponse imputation policy downstream).
@@ -659,10 +659,12 @@ def map_schulabschluss(persons):
     logger = logging.getLogger(__name__)
     out = persons.copy()
     out["schulabschluss"] = out["bildung1"].map(SCHULABS_BY_BILDUNG1)
-    logger.info(
-        "schulabschluss: %d/%d persons unmapped (k.A.) -> imputed downstream",
-        int(out["schulabschluss"].isna().sum()), len(out),
-    )
+    n_unmapped = int(out["schulabschluss"].isna().sum())
+    if n_unmapped:
+        logger.info(
+            "[popsim.attributes] schulabschluss: %d/%d persons unmapped (k.A.) -> imputed downstream",
+            n_unmapped, len(out),
+        )
     return out
 
 
@@ -673,7 +675,7 @@ BERUFABS_BY_BILDUNG2 = {1: "vocational", 2: "vocational", 3: "tertiary",
                         4: "tertiary", 5: "none"}
 
 
-def map_beruflabschluss(persons):
+def map_beruflabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     """Add a 3-class ``beruflabschluss`` {none, vocational, tertiary} from MiD ``bildung2``.
 
     Structural codes 206/402 and k.A. 9 -> NaN (excluded from the 15+ control universe
@@ -683,10 +685,12 @@ def map_beruflabschluss(persons):
     logger = logging.getLogger(__name__)
     out = persons.copy()
     out["beruflabschluss"] = out["bildung2"].map(BERUFABS_BY_BILDUNG2)
-    logger.info(
-        "beruflabschluss: %d/%d unmapped (k.A./structural 206/402) -> excluded/imputed",
-        int(out["beruflabschluss"].isna().sum()), len(out),
-    )
+    n_unmapped = int(out["beruflabschluss"].isna().sum())
+    if n_unmapped:
+        logger.info(
+            "[popsim.attributes] beruflabschluss: %d/%d unmapped (k.A./structural 206/402) -> excluded/imputed",
+            n_unmapped, len(out),
+        )
     return out
 
 

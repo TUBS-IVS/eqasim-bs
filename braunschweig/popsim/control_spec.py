@@ -691,7 +691,7 @@ def tier2_controls() -> List[CatalogControl]:
 
 
 # Tier-3 person-level controls at KREIS geography (MiD-only; ENTD=None -> dropped).
-# census_source names the imported Kreis-table columns (cleancensus gemeinde_controls);
+# census_source names the imported Kreis-table columns (the cleancensus kreis_* tables);
 # the multi-column classes are materialised via build_aggregation_map at sourcing time.
 _TIER3_ENTRIES: Sequence[tuple] = (
     # (name, census_source cols, mid expression over the persons seed)
