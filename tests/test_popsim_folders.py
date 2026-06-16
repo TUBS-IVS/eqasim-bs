@@ -42,6 +42,21 @@ def test_geo_crosswalk_columns_and_constants():
     assert (xwalk["WELT"] == 1).all()
 
 
+def test_geo_crosswalk_adds_kreis_from_ars():
+    # Tier-3 KREIS level: each 100 m cell -> its Kreis = ARS[:5].
+    df = _toy_100m()
+    df["RegionalSchlussel_ARS"] = ["031010000000", "031010000001", "031530001001"]
+    xwalk = folders.build_geo_crosswalk(df, ars_col="RegionalSchlussel_ARS")
+    assert "KREIS" in xwalk.columns
+    assert list(xwalk["KREIS"]) == ["03101", "03101", "03153"]
+
+
+def test_geo_crosswalk_omits_kreis_when_no_ars():
+    # Additive contract: existing 4-column output is unchanged when ars_col is absent.
+    xwalk = folders.build_geo_crosswalk(_toy_100m())
+    assert "KREIS" not in xwalk.columns
+
+
 def test_geo_crosswalk_maps_each_cell_to_its_parent():
     xwalk = folders.build_geo_crosswalk(_toy_100m()).set_index("ZENSUS100m")
     assert (

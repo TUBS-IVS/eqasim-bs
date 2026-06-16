@@ -35,6 +35,7 @@ from braunschweig.popsim import cells, controls
 # PopulationSim settings.yaml geographies for this workflow.
 GEO_WELT = "WELT"
 GEO_STAAT = "STAAT"
+GEO_KREIS = "KREIS"  # Tier-3 control geography (employment/education); ARS[:5]
 GEO_1KM = "ZENSUS1km"
 GEO_100M = "ZENSUS100m"
 
@@ -46,6 +47,7 @@ def build_geo_crosswalk(
     *,
     id_col_100m: str = "GITTER_ID_100m",
     parent_col: str = "GITTER_ID_1km",
+    ars_col: str | None = None,
 ) -> pd.DataFrame:
     """Build the PopulationSim geo crosswalk for the given 100 m cells.
 
@@ -54,24 +56,35 @@ def build_geo_crosswalk(
     single national / world seed geography). The 1 km parent is taken from the
     explicit parent column when present, else derived from the 100 m id.
 
+    When ``ars_col`` is given (and present), an additional ``KREIS`` column is
+    appended: each 100 m cell maps unambiguously to its Kreis = the first 5 digits
+    of the cell's Amtlicher Regionalschluessel (ARS). This is the Tier-3
+    (employment/education) control geography. Omitted when ``ars_col`` is None, so
+    the default 4-column output is unchanged.
+
     Parameters
     ----------
     df_100m:
-        Frame of 100 m cells (must carry ``id_col_100m``; ``parent_col`` optional).
+        Frame of 100 m cells (must carry ``id_col_100m``; ``parent_col`` optional;
+        ``ars_col`` optional, needed only for the KREIS level).
     id_col_100m / parent_col:
         Source column names in ``df_100m``.
+    ars_col:
+        Optional source column holding the cell's 12-digit ARS; when present a
+        ``KREIS`` column (ARS[:5]) is added.
 
     Returns
     -------
     pandas.DataFrame
-        Columns ``[ZENSUS100m, ZENSUS1km, STAAT, WELT]``.
+        Columns ``[ZENSUS100m, ZENSUS1km, STAAT, WELT]`` (plus ``KREIS`` when
+        ``ars_col`` is given).
     """
     if parent_col in df_100m.columns:
         parent = df_100m[parent_col].astype(str)
     else:
         parent = df_100m[id_col_100m].map(cells.derive_1km_parent_id)
 
-    return pd.DataFrame(
+    xwalk = pd.DataFrame(
         {
             GEO_100M: df_100m[id_col_100m].astype(str).to_numpy(),
             GEO_1KM: parent.to_numpy(),
@@ -79,6 +92,11 @@ def build_geo_crosswalk(
             GEO_WELT: 1,
         }
     )
+    # Optional KREIS level for Tier-3 controls: each 100 m cell maps unambiguously
+    # to its Kreis = the first 5 digits of the cell's ARS.
+    if ars_col is not None and ars_col in df_100m.columns:
+        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+    return xwalk
 
 
 def build_control_totals(
