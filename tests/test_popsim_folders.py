@@ -42,6 +42,58 @@ def test_geo_crosswalk_columns_and_constants():
     assert (xwalk["WELT"] == 1).all()
 
 
+def test_geo_crosswalk_adds_kreis_from_ars():
+    # Tier-3 KREIS level: each 100 m cell -> its Kreis = ARS[:5].
+    df = _toy_100m()
+    df["RegionalSchlussel_ARS"] = ["031010000000", "031010000001", "031530001001"]
+    xwalk = folders.build_geo_crosswalk(df, ars_col="RegionalSchlussel_ARS")
+    assert "KREIS" in xwalk.columns
+    assert list(xwalk["KREIS"]) == ["03101", "03101", "03153"]
+
+
+def test_geo_crosswalk_omits_kreis_when_no_ars():
+    # Additive contract: existing 4-column output is unchanged when ars_col is absent.
+    xwalk = folders.build_geo_crosswalk(_toy_100m())
+    assert "KREIS" not in xwalk.columns
+
+
+def _toy_kreis_xwalk():
+    return pd.DataFrame(
+        {
+            "ZENSUS100m": ["c1", "c2", "c3"],
+            "ZENSUS1km": ["p", "p", "q"],
+            "STAAT": 1, "WELT": 1,
+            "KREIS": ["03101", "03101", "03153"],
+        }
+    )
+
+
+def test_build_kreis_control_totals_sums_sources_per_kreis():
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153", "09999"],
+            "E11": [100.0, 200.0, 9.0],
+            "S_a": [10.0, 20.0, 1.0],
+            "S_b": [5.0, 7.0, 1.0],
+        }
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"employed": ("E11",), "schul_low": ("S_a", "S_b")},
+    )
+    assert list(totals["KREIS"]) == ["03101", "03153"]   # only crosswalk Kreise, deduped+sorted
+    assert list(totals["employed"]) == [100.0, 200.0]
+    assert list(totals["schul_low"]) == [15.0, 27.0]      # S_a + S_b (multi-column class)
+
+
+def test_build_kreis_control_totals_raises_on_missing_kreis():
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "E11": [1.0]})  # missing 03153
+    with pytest.raises(ValueError):
+        folders.build_kreis_control_totals(
+            kreis_table, _toy_kreis_xwalk(), controls_map={"employed": ("E11",)},
+        )
+
+
 def test_geo_crosswalk_maps_each_cell_to_its_parent():
     xwalk = folders.build_geo_crosswalk(_toy_100m()).set_index("ZENSUS100m")
     assert (

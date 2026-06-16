@@ -35,6 +35,7 @@ from braunschweig.popsim import cells, controls
 # PopulationSim settings.yaml geographies for this workflow.
 GEO_WELT = "WELT"
 GEO_STAAT = "STAAT"
+GEO_KREIS = "KREIS"  # Tier-3 control geography (employment/education); ARS[:5]
 GEO_1KM = "ZENSUS1km"
 GEO_100M = "ZENSUS100m"
 
@@ -46,6 +47,7 @@ def build_geo_crosswalk(
     *,
     id_col_100m: str = "GITTER_ID_100m",
     parent_col: str = "GITTER_ID_1km",
+    ars_col: str | None = None,
 ) -> pd.DataFrame:
     """Build the PopulationSim geo crosswalk for the given 100 m cells.
 
@@ -54,24 +56,35 @@ def build_geo_crosswalk(
     single national / world seed geography). The 1 km parent is taken from the
     explicit parent column when present, else derived from the 100 m id.
 
+    When ``ars_col`` is given (and present), an additional ``KREIS`` column is
+    appended: each 100 m cell maps unambiguously to its Kreis = the first 5 digits
+    of the cell's Amtlicher Regionalschluessel (ARS). This is the Tier-3
+    (employment/education) control geography. Omitted when ``ars_col`` is None, so
+    the default 4-column output is unchanged.
+
     Parameters
     ----------
     df_100m:
-        Frame of 100 m cells (must carry ``id_col_100m``; ``parent_col`` optional).
+        Frame of 100 m cells (must carry ``id_col_100m``; ``parent_col`` optional;
+        ``ars_col`` optional, needed only for the KREIS level).
     id_col_100m / parent_col:
         Source column names in ``df_100m``.
+    ars_col:
+        Optional source column holding the cell's 12-digit ARS; when present a
+        ``KREIS`` column (ARS[:5]) is added.
 
     Returns
     -------
     pandas.DataFrame
-        Columns ``[ZENSUS100m, ZENSUS1km, STAAT, WELT]``.
+        Columns ``[ZENSUS100m, ZENSUS1km, STAAT, WELT]`` (plus ``KREIS`` when
+        ``ars_col`` is given).
     """
     if parent_col in df_100m.columns:
         parent = df_100m[parent_col].astype(str)
     else:
         parent = df_100m[id_col_100m].map(cells.derive_1km_parent_id)
 
-    return pd.DataFrame(
+    xwalk = pd.DataFrame(
         {
             GEO_100M: df_100m[id_col_100m].astype(str).to_numpy(),
             GEO_1KM: parent.to_numpy(),
@@ -79,6 +92,11 @@ def build_geo_crosswalk(
             GEO_WELT: 1,
         }
     )
+    # Optional KREIS level for Tier-3 controls: each 100 m cell maps unambiguously
+    # to its Kreis = the first 5 digits of the cell's ARS.
+    if ars_col is not None and ars_col in df_100m.columns:
+        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+    return xwalk
 
 
 def build_control_totals(
@@ -145,6 +163,69 @@ def build_control_totals(
     df_welt = pd.DataFrame([{GEO_WELT: 1, **national}])
 
     return {GEO_100M: df_100m, GEO_1KM: df_1km, GEO_STAAT: df_staat, GEO_WELT: df_welt}
+
+
+def build_kreis_control_totals(
+    kreis_table: pd.DataFrame,
+    geo_crosswalk: pd.DataFrame,
+    *,
+    controls_map: Mapping[str, Sequence[str]],
+    ars_col: str = "ARS_kreis",
+) -> pd.DataFrame:
+    """Build the KREIS control-totals table from an imported per-Kreis census table.
+
+    Unlike :func:`build_control_totals` (which integerizes + aggregates CELL columns
+    up the hierarchy), Tier-3 marginals (employment / education) do not live in the
+    grid cells; they come from a separate per-Kreis census table (the cleancensus
+    ``kreis_*`` tables). For each Kreis present in ``geo_crosswalk[KREIS]`` (deduped,
+    sorted), look up its row in ``kreis_table`` (keyed by ``ars_col``) and set each
+    control target to the row-sum of its census-source columns (a coarse class = the
+    sum of its category columns). Suppressed (NaN) components are treated as 0 by the
+    row-sum.
+
+    Parameters
+    ----------
+    kreis_table:
+        Per-Kreis census marginals (one row per Kreis; ``ars_col`` + the source
+        category columns).
+    geo_crosswalk:
+        The crosswalk from :func:`build_geo_crosswalk` built with ``ars_col`` so it
+        carries a ``KREIS`` column.
+    controls_map:
+        ``{control_name: census_source_cols}`` (e.g. the catalog's tier3 entries).
+    ars_col:
+        The Kreis-key column in ``kreis_table`` (default ``"ARS_kreis"``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``[KREIS, <control_name>...]``, one row per distinct crosswalk Kreis.
+
+    Raises
+    ------
+    ValueError
+        If a crosswalk Kreis is absent from ``kreis_table`` or a source column is
+        missing (fail-fast: no silently under-constrained control).
+    """
+    kreise = sorted(pd.Series(geo_crosswalk[GEO_KREIS].astype(str).unique()))
+    table = kreis_table.copy()
+    table[ars_col] = table[ars_col].astype(str)
+    table = table.set_index(ars_col)
+
+    missing_kreise = [k for k in kreise if k not in table.index]
+    if missing_kreise:
+        raise ValueError(
+            f"kreis_table is missing Kreis rows present in the crosswalk: {missing_kreise[:5]}"
+        )
+    all_sources = {col for cols in controls_map.values() for col in cols}
+    missing_cols = sorted(c for c in all_sources if c not in table.columns)
+    if missing_cols:
+        raise ValueError(f"kreis_table is missing source column(s): {missing_cols}")
+
+    out: dict[str, object] = {GEO_KREIS: kreise}
+    for name, source_cols in controls_map.items():
+        out[name] = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+    return pd.DataFrame(out)
 
 
 def write_popsim_folder(
