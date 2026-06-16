@@ -690,6 +690,49 @@ def tier2_controls() -> List[CatalogControl]:
     return catalog
 
 
+# Tier-3 person-level controls at KREIS geography (MiD-only; ENTD=None -> dropped).
+# census_source names the imported Kreis-table columns (cleancensus gemeinde_controls);
+# the multi-column classes are materialised via build_aggregation_map at sourcing time.
+_TIER3_ENTRIES: Sequence[tuple] = (
+    # (name, census_source cols, mid expression over the persons seed)
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.employed == True)"),
+    ("schulabschluss_low",
+     ("SCHULABS_STP__21", "SCHULABS_STP__22", "SCHULABS_STP__3"),
+     "(persons.schulabschluss == 'low')"),
+    ("schulabschluss_mid", ("SCHULABS_STP__23",), "(persons.schulabschluss == 'mid')"),
+    ("schulabschluss_high", ("SCHULABS_STP__24",), "(persons.schulabschluss == 'high')"),
+    ("beruflabschluss_none", ("BERUFABS_AUSF_STP__2",), "(persons.beruflabschluss == 'none')"),
+    ("beruflabschluss_vocational",
+     ("BERUFABS_AUSF_STP__11", "BERUFABS_AUSF_STP__12", "BERUFABS_AUSF_STP__13"),
+     "(persons.beruflabschluss == 'vocational')"),
+    ("beruflabschluss_tertiary",
+     ("BERUFABS_AUSF_STP__14", "BERUFABS_AUSF_STP__15", "BERUFABS_AUSF_STP__16", "BERUFABS_AUSF_STP__17"),
+     "(persons.beruflabschluss == 'tertiary')"),
+)
+
+
+def tier3_controls() -> List[CatalogControl]:
+    """Tier-3: employment + education controls at KREIS geography (MiD-only).
+
+    7 controls (1 employed + 3 schulabschluss + 3 beruflabschluss), each at GEO_KREIS,
+    persons table. ENTD cannot express them (entd=None -> dropped by controls_for_seed).
+    Multi-column census_source classes are materialised via build_aggregation_map.
+    """
+    catalog: List[CatalogControl] = []
+    for name, source_cols, mid_expr in _TIER3_ENTRIES:
+        catalog.append(
+            CatalogControl(
+                name=name,
+                geography=GEO_KREIS,
+                seed_table=SEED_TABLE_PERSONS,
+                importance=1000,
+                census_source=source_cols,
+                seed_expressions={"mid": mid_expr, "entd": None},
+            )
+        )
+    return catalog
+
+
 def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
@@ -699,6 +742,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
         Tiers to include. ``"tier0"`` is always included when present (backbone
         Zensus controls). ``"tier1"`` adds the 22 household-size + household-type
         controls. ``"tier2"`` adds the 4 tenure (owner/renter) controls.
+        ``"tier3"`` adds the 7 employment/education controls at KREIS geography
+        (MiD-only; ENTD drops all via controls_for_seed).
         Default ``("tier0",)`` reproduces the pre-Tier-7 baseline exactly.
 
     Returns
@@ -713,6 +758,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
         catalog.extend(tier1_controls())
     if "tier2" in include_tiers:
         catalog.extend(tier2_controls())
+    if "tier3" in include_tiers:
+        catalog.extend(tier3_controls())
     return catalog
 
 

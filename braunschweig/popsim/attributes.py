@@ -645,6 +645,51 @@ def map_building_type_3class(
     return out
 
 
+# PROVISIONAL crosswalk — confirm vs MiD Codeplan B1 (plan Task 2.0).
+# MiD bildung1 (Schulabschluss) -> 3-class {low, mid, high}; 9 (k.A.) -> NaN.
+SCHULABS_BY_BILDUNG1 = {1: "low", 2: "low", 3: "mid", 4: "high", 5: "low"}
+
+
+def map_schulabschluss(persons):
+    """Add a 3-class ``schulabschluss`` {low, mid, high} from MiD ``bildung1``.
+
+    k.A. (9) -> NaN (handled by the item-nonresponse imputation policy downstream).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    out = persons.copy()
+    out["schulabschluss"] = out["bildung1"].map(SCHULABS_BY_BILDUNG1)
+    logger.info(
+        "schulabschluss: %d/%d persons unmapped (k.A.) -> imputed downstream",
+        int(out["schulabschluss"].isna().sum()), len(out),
+    )
+    return out
+
+
+# PROVISIONAL crosswalk — confirm vs MiD Codeplan B1 (plan Task 2.0).
+# MiD bildung2 (berufl. Abschluss) -> 3-class {none, vocational, tertiary}. Structural
+# 206 (proxy) / 402 (children) and 9 (k.A.) -> NaN (excluded from the 15+ universe / imputed).
+BERUFABS_BY_BILDUNG2 = {1: "vocational", 2: "vocational", 3: "tertiary",
+                        4: "tertiary", 5: "none"}
+
+
+def map_beruflabschluss(persons):
+    """Add a 3-class ``beruflabschluss`` {none, vocational, tertiary} from MiD ``bildung2``.
+
+    Structural codes 206/402 and k.A. 9 -> NaN (excluded from the 15+ control universe
+    / imputed downstream).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    out = persons.copy()
+    out["beruflabschluss"] = out["bildung2"].map(BERUFABS_BY_BILDUNG2)
+    logger.info(
+        "beruflabschluss: %d/%d unmapped (k.A./structural 206/402) -> excluded/imputed",
+        int(out["beruflabschluss"].isna().sum()), len(out),
+    )
+    return out
+
+
 def map_socioprofessional_class(
     persons: pd.DataFrame, *, bkat_col: str = "P_BKAT"
 ) -> pd.DataFrame:
