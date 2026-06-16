@@ -684,24 +684,25 @@ def map_socioprofessional_class(
     # misaligned join when the input has a non-default index.
     fallback = derive_socioprofessional_class(out["employed"], out["age"], studies)
     fallback = pd.Series(fallback.to_numpy(), index=out.index)
+    import logging
+    logger = logging.getLogger(__name__)
 
     if bkat_col in out.columns:
         mapped = out[bkat_col].map(SPC_BY_P_BKAT)
         n_primary = int(mapped.notna().sum())
         n_fallback = int(mapped.isna().sum())
         n_total = len(out)
-        print(
-            f"[braunschweig.popsim.attributes] socioprofessional_class: "
-            f"primary (P_BKAT) {n_primary}/{n_total} "
-            f"({100.0 * n_primary / max(n_total, 1):.1f}%), "
-            f"fallback (broad-activity) {n_fallback}/{n_total} "
-            f"({100.0 * n_fallback / max(n_total, 1):.1f}%)."
+        logger.info(
+            "socioprofessional_class: primary (P_BKAT) %d/%d (%.1f%%), "
+            "fallback (broad-activity) %d/%d (%.1f%%).",
+            n_primary, n_total, 100.0 * n_primary / max(n_total, 1),
+            n_fallback, n_total, 100.0 * n_fallback / max(n_total, 1),
         )
         out["socioprofessional_class"] = mapped.fillna(fallback).astype(int)
     else:
-        print(
-            f"[braunschweig.popsim.attributes] socioprofessional_class: "
-            f"P_BKAT column absent -> all {len(out)} persons use the broad-activity fallback."
+        logger.info(
+            "socioprofessional_class: P_BKAT column absent -> all %d persons "
+            "use the broad-activity fallback.", len(out),
         )
         out["socioprofessional_class"] = fallback.astype(int)
     return out

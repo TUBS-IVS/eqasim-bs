@@ -6,22 +6,22 @@ wraps concurrent.futures for the batch runner. Zero new deps (raw ANSI).
 """
 from __future__ import annotations
 
-import os
 import sys
 import time
 from typing import Iterable, Iterator, TypeVar
+
+from braunschweig import theme
+from braunschweig.theme import want_color
 
 T = TypeVar("T")
 
 _PARTIALS = "▏▎▍▌▋▊▉"
 _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-_CYAN, _DIM, _BOLD, _RESET = "\x1b[36m", "\x1b[2m", "\x1b[1m", "\x1b[0m"
+_CYAN, _DIM, _BOLD, _RESET = theme.ACCENT, theme.DIM, theme.BOLD, theme.RESET
 
 
 def _stdout_is_tty() -> bool:
-    if os.environ.get("NO_COLOR"):
-        return False
-    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+    return want_color("auto", stream=sys.stdout)
 
 
 def _bar(frac: float, width: int = 22) -> str:
@@ -43,24 +43,40 @@ def format_duration(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
 
 
+def format_rate(rate: float) -> str | None:
+    """Human-friendly throughput, or None when there's nothing meaningful to show
+    (ported from cleancensus/progress.py — keep in sync)."""
+    if rate <= 0:
+        return None
+    if rate >= 1.0:
+        return f"{rate:.1f}/s"
+    per_min = rate * 60.0
+    if per_min >= 1.0:
+        return f"{per_min:.1f}/min"
+    return f"~{format_duration(1.0 / rate)}/it"
+
+
 def _plain_line(label: str, i: int, total: int | None, t_start: float, final: bool) -> None:
     elapsed = time.perf_counter() - t_start
     rate = i / elapsed if elapsed > 0 else 0.0
+    rate_str = format_rate(rate)
+    rate_tok = (" | " + rate_str.replace("/s", " it/s").replace("/min", " it/min")) if rate_str else ""
     if total is not None and total > 0:
         pct = 100 if final else int(100 * i / total)
         remaining = (total - i) / rate if (rate > 0 and not final) else 0.0
         eta = "0:00" if final else format_duration(remaining)
         print(f"[{label}] {pct}% ({i}/{total}) | elapsed {format_duration(elapsed)} "
-              f"| ETA {eta} | {rate:.1f} it/s", flush=True)
+              f"| ETA {eta}{rate_tok}", flush=True)
     else:
-        print(f"[{label}] {i} items | elapsed {format_duration(elapsed)} "
-              f"| {rate:.1f} it/s", flush=True)
+        print(f"[{label}] {i} items | elapsed {format_duration(elapsed)}{rate_tok}", flush=True)
 
 
 def _tty_draw(label: str, i: int, total: int | None, t_start: float,
               final: bool, spin_i: int) -> None:
     elapsed = time.perf_counter() - t_start
     rate = i / elapsed if elapsed > 0 else 0.0
+    rate_str = format_rate(rate)
+    rate_tok = (" · " + rate_str) if rate_str else ""
     spin = " " if final else _SPIN[spin_i % len(_SPIN)]
     if total is not None and total > 0:
         pct = 100 if final else int(100 * i / total)
@@ -69,10 +85,10 @@ def _tty_draw(label: str, i: int, total: int | None, t_start: float,
         line = (f"{_CYAN}{spin}{_RESET} {_DIM}{label}{_RESET} "
                 f"{_DIM}│{_RESET}{_bar(1.0 if final else i / total)}{_DIM}│{_RESET} "
                 f"{_BOLD}{pct:3d}%{_RESET} {_DIM}({i}/{total}) · "
-                f"{format_duration(elapsed)} · ETA {eta} · {rate:.1f}/s{_RESET}")
+                f"{format_duration(elapsed)} · ETA {eta}{rate_tok}{_RESET}")
     else:
         line = (f"{_CYAN}{spin}{_RESET} {_DIM}{label}{_RESET} {_BOLD}{i}{_RESET} "
-                f"{_DIM}items · {format_duration(elapsed)} · {rate:.1f}/s{_RESET}")
+                f"{_DIM}items · {format_duration(elapsed)}{rate_tok}{_RESET}")
     sys.stdout.write("\r\x1b[2K" + line)
     sys.stdout.flush()
 
