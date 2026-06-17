@@ -99,6 +99,67 @@ def _raw_cell_employment(cells, rates, *, sex_prefix, kreis_col, single_year_max
     return raw
 
 
+def select_load_columns(
+    load_cols,
+    available_parquet_cols,
+    *,
+    computed_cols,
+    min_age: int = MIN_EMPLOYMENT_AGE,
+    single_year_max: int = 100,
+):
+    """Adjust the parquet load set for the employment-grid control.
+
+    The two employment-grid targets (``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg``) are
+    COMPUTED per cell by :func:`per_cell_employment_targets`; they are not stored in
+    the prepared-cell parquet, so they must be removed from ``load_cols`` (loading
+    them would raise / yield bogus columns). In their place the single-year
+    ``{M,F}_AGE_<year>`` input columns (the age SHAPE denominator) for
+    ``min_age..single_year_max`` are added when present in ``available_parquet_cols``.
+
+    Parameters
+    ----------
+    load_cols:
+        The columns the stage would otherwise load from the parquet (typically
+        ``source_cols_override or base_cols``), possibly containing the computed names.
+    available_parquet_cols:
+        The cleaned column names actually present in the parquet schema.
+    computed_cols:
+        Set of computed target names to strip out (``{"EMPLOYED_M_agg",
+        "EMPLOYED_F_agg"}``).
+    min_age, single_year_max:
+        Inclusive single-year range whose ``{M,F}_AGE_<year>`` columns are added.
+
+    Returns
+    -------
+    list[str]
+        De-duplicated, order-preserving list: the kept ``load_cols`` (computed names
+        removed) first, then the added single-year input columns.
+    """
+    computed = set(computed_cols)
+    available = set(available_parquet_cols)
+
+    result: list[str] = []
+    seen: set[str] = set()
+
+    def _add(col: str) -> None:
+        if col not in seen:
+            seen.add(col)
+            result.append(col)
+
+    for col in load_cols:
+        if col in computed:
+            continue
+        _add(col)
+
+    for prefix in ("M", "F"):
+        for year in range(min_age, single_year_max + 1):
+            col = f"{prefix}_AGE_{year}"
+            if col in available:
+                _add(col)
+
+    return result
+
+
 def per_cell_employment_targets(
     cells: pd.DataFrame,
     svb: pd.DataFrame,

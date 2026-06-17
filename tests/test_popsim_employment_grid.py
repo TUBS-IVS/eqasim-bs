@@ -103,6 +103,40 @@ def test_per_cell_targets_zero_census_level_yields_zero_column():
     assert out["EMPLOYED_F_agg"].sum() == 0.0
 
 
+def test_select_load_columns_strips_computed_and_adds_single_year_inputs():
+    load_cols = ["HH..", "EMPLOYED_M_agg", "EMPLOYED_F_agg"]
+    available = ["M_AGE_15", "M_AGE_16", "M_AGE_40", "F_AGE_30", "M_AGE_0_9_agg"]
+    result = eg.select_load_columns(
+        load_cols, available, computed_cols={"EMPLOYED_M_agg", "EMPLOYED_F_agg"}
+    )
+    # Computed targets removed; below-min-age single-year col excluded.
+    assert "EMPLOYED_M_agg" not in result
+    assert "EMPLOYED_F_agg" not in result
+    assert "M_AGE_15" not in result            # below min_age=16
+    assert "M_AGE_0_9_agg" not in result       # not a single-year input col
+    # Existing keeper preserved, available single-year inputs added.
+    assert "HH.." in result
+    assert "M_AGE_16" in result
+    assert "M_AGE_40" in result
+    assert "F_AGE_30" in result
+    # Order: existing load_cols (minus computed) first, then the added inputs.
+    assert result[0] == "HH.."
+    # De-duplicated.
+    assert len(result) == len(set(result))
+
+
+def test_select_load_columns_no_duplicate_when_input_already_present():
+    load_cols = ["HH..", "M_AGE_40", "EMPLOYED_M_agg"]
+    available = ["M_AGE_40", "M_AGE_50"]
+    result = eg.select_load_columns(
+        load_cols, available, computed_cols={"EMPLOYED_M_agg"}
+    )
+    assert result.count("M_AGE_40") == 1
+    assert "M_AGE_50" in result
+    assert "EMPLOYED_M_agg" not in result
+    assert result[:2] == ["HH..", "M_AGE_40"]   # existing order preserved
+
+
 def test_per_cell_targets_rescale_is_per_kreis_no_bleed():
     """Per-Kreis×sex rescale must not bleed census levels between Kreise.
 
