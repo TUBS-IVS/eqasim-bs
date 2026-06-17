@@ -447,36 +447,53 @@ def assign_homes_typed(
     _has_footprint = "footprint" in buildings.columns
 
     if _has_footprint:
-        # Reproject footprint polygons to EPSG:3035 for grid-aligned intersection.
-        fp_series_3035 = gpd.GeoSeries(
-            buildings["footprint"].values, crs=buildings.crs
+        # Vectorized footprint→cell membership via a single spatial join (STRtree-backed).
+        # Replaces the per-building reproject + bbox-loop + .intersects() inner loop that
+        # took ~50 min for a full Kreis (~44k footprints).
+
+        # Step 1: reproject ALL footprints to EPSG:3035 in one call.
+        fp3035 = gpd.GeoSeries(
+            list(buildings["footprint"].values), crs=buildings.crs
         ).to_crs(ZENSUS_CRS)
 
-        fps_by_cell: dict[str, list[int]] = {}  # cell_id -> list of integer row indices
-        for row_idx, fp_3035 in zip(buildings.index, fp_series_3035):
-            if fp_3035 is None or fp_3035.is_empty:
-                # Fall back to centroid cell for degenerate footprints (e.g. placeholders).
-                cid = buildings.at[row_idx, "_cell_id"]
-                fps_by_cell.setdefault(cid, []).append(row_idx)
+        # Step 2: build cell-square polygons for every unique cell that appears in `cells`.
+        # Only these cells have census signals, so there is no point matching outside them.
+        unique_cell_ids = cells["ZENSUS100m"].unique()
+        cell_sq_geoms = []
+        cell_sq_ids = []
+        for cid in unique_cell_ids:
+            try:
+                _, n_sw, e_sw = _parse_inspire_id(str(cid))
+            except Exception:
                 continue
-            minx, miny, maxx, maxy = fp_3035.bounds
-            # Enumerate all 100 m cells whose SW corner falls within the footprint's bbox.
-            e_start = int(math.floor(minx / CELL_SIZE_M) * CELL_SIZE_M)
-            n_start = int(math.floor(miny / CELL_SIZE_M) * CELL_SIZE_M)
-            e_end = int(math.floor(maxx / CELL_SIZE_M) * CELL_SIZE_M)
-            n_end = int(math.floor(maxy / CELL_SIZE_M) * CELL_SIZE_M)
-            e_cur = e_start
-            while e_cur <= e_end:
-                n_cur = n_start
-                while n_cur <= n_end:
-                    # Quick intersection check: does the footprint actually intersect
-                    # this 100 m cell square?
-                    cell_square = _shapely_box(e_cur, n_cur, e_cur + CELL_SIZE_M, n_cur + CELL_SIZE_M)
-                    if fp_3035.intersects(cell_square):
-                        cid = f"CRS3035RES100mN{n_cur}E{e_cur}"
-                        fps_by_cell.setdefault(cid, []).append(row_idx)
-                    n_cur += CELL_SIZE_M
-                e_cur += CELL_SIZE_M
+            cell_sq_geoms.append(_shapely_box(e_sw, n_sw, e_sw + CELL_SIZE_M, n_sw + CELL_SIZE_M))
+            cell_sq_ids.append(str(cid))
+        cell_squares = gpd.GeoDataFrame(
+            {"ZENSUS100m": cell_sq_ids},
+            geometry=cell_sq_geoms,
+            crs=ZENSUS_CRS,
+        )
+
+        # Step 3: spatial join footprints → cell squares (STRtree, "intersects").
+        # Handle degenerate (None/empty) footprints: replace with centroid point so
+        # they still participate (a point always intersects the cell containing it).
+        cent3035_arr = cent3035.values  # already computed above in EPSG:3035
+        fp3035_clean = [
+            (fp if (fp is not None and not fp.is_empty) else cent3035_arr[i])
+            for i, fp in enumerate(fp3035)
+        ]
+        fp_gdf = gpd.GeoDataFrame(
+            {"bld_row_idx": buildings.index.tolist()},
+            geometry=fp3035_clean,
+            crs=ZENSUS_CRS,
+        )
+        joined = gpd.sjoin(fp_gdf, cell_squares, predicate="intersects", how="inner")
+        # joined columns: bld_row_idx (building integer index), ZENSUS100m (cell id)
+
+        # Step 4: build cell -> building row-indices dict.
+        fps_by_cell: dict[str, list[int]] = {}
+        for cell_id_j, row_idx_j in zip(joined["ZENSUS100m"], joined["bld_row_idx"]):
+            fps_by_cell.setdefault(str(cell_id_j), []).append(int(row_idx_j))
 
         # Convert row-index lists to sub-DataFrames for compatibility with the cell loop.
         fps_by_cell_df = {
