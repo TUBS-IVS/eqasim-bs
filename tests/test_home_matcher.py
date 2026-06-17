@@ -1,4 +1,4 @@
-﻿"""Tests for braunschweig/synthesis/locations/home_matcher.py"""
+"""Tests for braunschweig/synthesis/locations/home_matcher.py"""
 import braunschweig.synthesis.locations.home_matcher as hm
 
 
@@ -15,6 +15,16 @@ def test_solve_type_flow_overflow_penalty():
     assert flow[("efh_zfh", "efh_zfh")] == 1
     # overflow goes somewhere; total must cover 3 households
     assert sum(flow.values()) == 3
+
+
+def test_type_flow_prefers_matching_type_then_cheapest_substitute():
+    # 3 EFH HH, 2 MFH HH; capacity: 2 EFH slots, 3 MFH slots
+    flow = hm.solve_type_flow({"efh_zfh": 3, "mfh": 2, "sonst": 0},
+                              {"efh_zfh": 2, "mfh": 3, "sonst": 0})
+    assert flow[("efh_zfh", "efh_zfh")] == 2     # fill matching first
+    assert flow[("mfh", "mfh")] == 2
+    assert flow[("efh_zfh", "mfh")] == 1         # leftover EFH HH -> MFH
+    assert sum(flow.values()) == 5
 
 
 def test_match_cell_type_fidelity_and_assortative_size():

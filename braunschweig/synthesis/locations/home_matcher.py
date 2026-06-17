@@ -1,6 +1,7 @@
 # braunschweig/synthesis/locations/home_matcher.py
 """Lexicographic per-cell home matcher: type (primary) then size (secondary)."""
 from __future__ import annotations
+from dataclasses import dataclass
 import numpy as np, pandas as pd
 from shapely.geometry import Point
 
@@ -31,9 +32,6 @@ def solve_type_flow(hh_by_type: dict, cap_by_type: dict) -> dict:
             hh[src] -= m
             cap[dst] -= m
     return flow
-
-
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -74,8 +72,9 @@ def match_cell(households: pd.DataFrame, slots: pd.DataFrame, rng):
     n_over = 0
     leftover = [hid for t in TYPES for hid in hh_q[t]]
     if leftover:
+        hh_btype = hh.set_index("household_id")["btype"]
         for hid in leftover:
-            t = hh.set_index("household_id").loc[hid, "btype"]
+            t = hh_btype.loc[hid]
             pool = slots[slots.btype == t]
             if pool.empty:
                 pool = slots
