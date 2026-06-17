@@ -154,3 +154,28 @@ def test_typed_intersection_join_rescues_boundary_cell():
     assert n_A <= home_A_3035.y <= n_A + 100, (
         f"hh_A home y={home_A_3035.y:.2f} outside cell A north range [{n_A}, {n_A+100}]"
     )
+
+
+def test_typed_uses_height_for_capacity():
+    import numpy as np, pandas as pd, geopandas as gpd
+    from shapely.geometry import Point
+    from braunschweig.synthesis.locations import home_cell
+    # one cell, two MFH-typed footprints same area; one tall (height) one flat
+    rows = [(0, 200.0, 30.0, 2689100, 4337000), (1, 200.0, float("nan"), 2689100, 4337000)]
+    pts = [Point(e + 50, n + 50) for (_, _, _, n, e) in rows]
+    b = gpd.GeoDataFrame({"building_id": [r[0] for r in rows], "weight": [r[1] for r in rows],
+                          "area_m2": [r[1] for r in rows], "height_m": [r[2] for r in rows],
+                          "commune_id": ["031010000000"] * 2},
+                         geometry=pts, crs="EPSG:3035").to_crs("EPSG:25832")
+    cells = pd.DataFrame([{"ZENSUS100m": "CRS3035RES100mN2689100E4337000",
+        "MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 10.0,
+        "BewohntWhg_Leerstand_100m_Gitter": 10.0,
+        "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter": 10.0}])
+    hh = pd.DataFrame({"household_id": [f"h{i}" for i in range(10)], "commune_id": ["031010000000"] * 10,
+                       "ZENSUS100m": ["CRS3035RES100mN2689100E4337000"] * 10,
+                       "building_type_3class": ["mehrfamilienhaus"] * 10, "household_size": [2] * 10})
+    out, _ = home_cell.assign_homes_typed(hh, b, cells, random_seed=1)
+    # the tall building (id 0) hosts MORE households than the flat one (id 1)
+    vc = out["home_location_id"].value_counts()
+    assert vc.get(0, 0) > vc.get(1, 0)
