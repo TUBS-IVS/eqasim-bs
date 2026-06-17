@@ -38,9 +38,26 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
     # target occupied dwellings per type = dwelling-mix share * occupied total
     tot_whg = sum(max(0.0, float(whg_by_type.get(c, 0.0))) for c in ("efh_zfh", "mfh", "sonst"))
     occ = float(occupied) if occupied and occupied > 0 else tot_whg
-    for cls in ("efh_zfh", "mfh", "sonst"):
-        share = (max(0.0, whg_by_type.get(cls, 0.0)) / tot_whg) if tot_whg > 0 else 0.0
-        n = int(round(occ * share))
+    # --- Hamilton (largest-remainder) apportionment ---
+    # guarantees sum(n_i) == T = round(occ) regardless of share fractions
+    CLASSES = ("efh_zfh", "mfh", "sonst")
+    T = int(round(occ))
+    if tot_whg > 0:
+        shares = [max(0.0, float(whg_by_type.get(c, 0.0))) / tot_whg for c in CLASSES]
+    else:
+        shares = [0.0] * len(CLASSES)
+    exacts = [occ * s for s in shares]
+    floors = [int(e) for e in exacts]
+    remainders = [e - f for e, f in zip(exacts, floors)]
+    leftover = T - sum(floors)
+    # distribute leftover to types with largest fractional remainders
+    order_rem = sorted(range(len(CLASSES)), key=lambda i: remainders[i], reverse=True)
+    ns = list(floors)
+    for i in range(leftover):
+        ns[order_rem[i]] += 1
+    type_n = {cls: ns[idx] for idx, cls in enumerate(CLASSES)}
+    for cls in CLASSES:
+        n = type_n[cls]
         b = typed[typed["btype"] == cls]
         if n <= 0 or len(b) == 0:
             continue

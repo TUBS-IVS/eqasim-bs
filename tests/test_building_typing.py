@@ -24,8 +24,6 @@ def test_all_zero_counts_default_to_efh():
 
 
 def test_build_slots_capacity_and_assortative_size():
-    import numpy as np
-    from braunschweig.synthesis.locations import building_typing as bt
     rng = np.random.RandomState(0)
     typed = pd.DataFrame({"building_id": [0, 1, 2], "area_m2": [80.0, 90.0, 1000.0],
                           "btype": ["efh_zfh", "efh_zfh", "mfh"]})
@@ -38,3 +36,28 @@ def test_build_slots_capacity_and_assortative_size():
     # assortative: the two largest dwellings (130) go to the EFH slots
     efh_sizes = sorted(slots[slots.btype == "efh_zfh"]["size"].tolist())
     assert efh_sizes == [130.0, 130.0]
+
+
+def test_build_slots_total_equals_occupied_with_unbalanced_shares():
+    """Hamilton apportionment guarantees len(slots) == round(occupied).
+
+    With equal shares (1/3 each) and occupied=10, naive independent rounding gives
+    int(round(10/3)) + int(round(10/3)) + int(round(10/3)) = 3+3+3 = 9, not 10.
+    The fix must produce exactly 10 slots.
+    """
+    rng = np.random.RandomState(0)
+    # one building of each type
+    typed = pd.DataFrame({
+        "building_id": [0, 1, 2],
+        "area_m2": [100.0, 200.0, 150.0],
+        "btype": ["efh_zfh", "mfh", "sonst"],
+    })
+    size_hist = [(60.0, 10.0)]  # 10 dwellings at 60 m²
+    slots = bt.build_slots(
+        typed,
+        whg_by_type={"efh_zfh": 1, "mfh": 1, "sonst": 1},
+        occupied=10,
+        size_hist=size_hist,
+        rng=rng,
+    )
+    assert len(slots) == 10, f"expected 10 slots, got {len(slots)}"
