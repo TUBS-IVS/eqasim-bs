@@ -46,3 +46,16 @@ def test_match_cell_type_fidelity_and_assortative_size():
     # assortative: largest HH (a, size 5) -> largest dwelling (140 @ building 10)
     assert by["a"] == 10 and by["b"] == 11
     assert rep.n_overcapacity == 0
+
+
+def test_random_point_in_cell_lands_in_the_cell_square():
+    import numpy as np
+    import geopandas as gpd
+    from shapely.geometry import Point
+    from braunschweig.synthesis.locations import home_matcher as hm
+    rng = np.random.RandomState(3)
+    cell = "CRS3035RES100mN2689100E4337000"
+    p = hm.random_point_in_cell(cell, rng)
+    back = gpd.GeoSeries([p], crs="EPSG:25832").to_crs("EPSG:3035").iloc[0]
+    assert 4337000 <= back.x <= 4337100
+    assert 2689100 <= back.y <= 2689100 + 100

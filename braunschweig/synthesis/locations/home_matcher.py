@@ -83,3 +83,15 @@ def match_cell(households: pd.DataFrame, slots: pd.DataFrame, rng):
     out = pd.DataFrame({"household_id": hh["household_id"]})
     out["building_id"] = out["household_id"].map(assign)
     return out, MatchReport(n_households=n, n_type_match=n_type_match, n_overcapacity=n_over)
+
+
+import geopandas as gpd
+from braunschweig.popsim.cells import parse_inspire_id
+
+
+def random_point_in_cell(cell_id: str, rng) -> Point:
+    res, north, east = parse_inspire_id(cell_id)   # EPSG:3035 SW corner, res metres
+    x = east + float(rng.uniform(0, res))
+    y = north + float(rng.uniform(0, res))
+    p3035 = gpd.GeoSeries([Point(x, y)], crs="EPSG:3035")
+    return p3035.to_crs("EPSG:25832").iloc[0]
