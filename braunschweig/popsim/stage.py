@@ -96,6 +96,12 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 # (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
 # "tier3" is among control_tiers (catalog source); ignored otherwise.
 KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
+# Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
+# seed. "default" -> (1,2,3) Mo-Fr (legacy: weekend / kernwo=4 households dropped).
+# "off"/"all" -> keep ALL reporting days (no day filter). The reporting day is a
+# trip-modelling concern, irrelevant to the population's employment/education/HH
+# composition; "off" enlarges the donor pool (reduces IPU weight concentration).
+KEY_SEED_DAY_FILTER = "braunschweig.population.popsim.seed_day_filter"
 # Spatial income tilt (Nettokaltmiete GAMMA layer): default ON per project rule.
 # When ON, applies a within-Kreis income redistribution scaled by the per-cell
 # net cold rent index (renters) or Eigentümerquote index (owners), preserving the
@@ -267,6 +273,8 @@ def configure(context):
     context.config(KEY_CONTROL_TIERS, "tier0")
     # Tier-3 KREIS controls directory. Default "" = not configured (no Tier-3).
     context.config(KEY_KREIS_CONTROLS, "")
+    # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
+    context.config(KEY_SEED_DAY_FILTER, "default")
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
     # When OFF, the income frame is unchanged (byte-identical); no cells parquet
     # re-read occurs.
@@ -419,6 +427,10 @@ def execute(context) -> pd.DataFrame:
     # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
     control_tiers_str = context.config(KEY_CONTROL_TIERS)
     control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
+    # Seed reporting-day filter: "off"/"all" -> keep all kernwo (no day filter, ()),
+    # else None -> the loader's default (1,2,3) Mo-Fr.
+    _day_filter_cfg = str(context.config(KEY_SEED_DAY_FILTER)).strip().lower()
+    seed_day_filter = () if _day_filter_cfg in ("off", "all", "none", "") else None
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     controls_df = build_controls_df(
         controls_source=controls_source,
@@ -507,6 +519,7 @@ def execute(context) -> pd.DataFrame:
             report, completion_report,
         ) = mid.load_completed_donor(
             mid_dir, completion_rng=np.random.RandomState(random_seed + 74513),
+            day_filter_values=seed_day_filter,
         )
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
@@ -525,7 +538,7 @@ def execute(context) -> pd.DataFrame:
         # mid_dir. This path is byte-identical to all prior versions.
         seed_columns = source.seed_columns()
         seed_households, seed_persons, report = mid.load_mid_seed(
-            mid_dir, columns=seed_columns
+            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 

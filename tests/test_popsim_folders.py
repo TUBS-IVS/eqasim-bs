@@ -127,6 +127,65 @@ def test_build_kreis_control_totals_raises_on_missing_kreis():
         )
 
 
+def test_build_kreis_control_totals_apportions_by_weight():
+    # Each Kreis's controls are scaled by its apportion weight (the batch's
+    # population share of that Kreis). This is the per-batch target so a Kreis
+    # split across batches no longer over-targets the FULL marginal in every batch.
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153"],
+            "E11": [100.0, 200.0],
+            "S_a": [10.0, 20.0],
+            "S_b": [5.0, 7.0],
+        }
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"employed": ("E11",), "schul_low": ("S_a", "S_b")},
+        apportion_weights={"03101": 0.6, "03153": 0.4},
+    )
+    assert list(totals["KREIS"]) == ["03101", "03153"]
+    # employed: full 100/200 scaled by 0.6/0.4
+    assert list(totals["employed"]) == [60.0, 80.0]
+    # schul_low: (10+5)=15 * 0.6, (20+7)=27 * 0.4
+    assert totals["schul_low"].tolist() == pytest.approx([9.0, 10.8])
+
+
+def test_build_kreis_control_totals_weight_defaults_to_one_for_missing_kreis():
+    # A Kreis absent from apportion_weights keeps its full marginal (weight 1.0).
+    kreis_table = pd.DataFrame(
+        {"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]}
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"employed": ("E11",)},
+        apportion_weights={"03101": 0.25},  # 03153 omitted -> weight 1.0
+    )
+    assert list(totals["employed"]) == [25.0, 200.0]
+
+
+def test_build_kreis_control_totals_none_weights_is_legacy_byte_identical():
+    # apportion_weights=None must reproduce the legacy full-marginal output exactly
+    # (byte-identical) so single-batch / pre-Tier-3 callers are unchanged.
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153", "09999"],
+            "E11": [100.0, 200.0, 9.0],
+            "S_a": [10.0, 20.0, 1.0],
+            "S_b": [5.0, 7.0, 1.0],
+        }
+    )
+    cmap = {"employed": ("E11",), "schul_low": ("S_a", "S_b")}
+    legacy = folders.build_kreis_control_totals(kreis_table, _toy_kreis_xwalk(), controls_map=cmap)
+    explicit_none = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(), controls_map=cmap, apportion_weights=None
+    )
+    pd.testing.assert_frame_equal(legacy, explicit_none)
+    # And it is the full marginal (no scaling).
+    assert list(legacy["employed"]) == [100.0, 200.0]
+    assert list(legacy["schul_low"]) == [15.0, 27.0]
+
+
 def test_geo_crosswalk_maps_each_cell_to_its_parent():
     xwalk = folders.build_geo_crosswalk(_toy_100m()).set_index("ZENSUS100m")
     assert (

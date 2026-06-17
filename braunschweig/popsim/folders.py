@@ -220,6 +220,7 @@ def build_kreis_control_totals(
     *,
     controls_map: Mapping[str, Sequence[str]],
     ars_col: str = "ARS_kreis",
+    apportion_weights: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
     """Build the KREIS control-totals table from an imported per-Kreis census table.
 
@@ -231,6 +232,19 @@ def build_kreis_control_totals(
     control target to the row-sum of its census-source columns (a coarse class = the
     sum of its category columns). Suppressed (NaN) components are treated as 0 by the
     row-sum.
+
+    Per-batch apportionment
+    -----------------------
+    RegioStaR stratification can split ONE Kreis across MULTIPLE batches (a batch is a
+    cell-disjoint sub-region). Each such batch must target only ITS share of the Kreis
+    marginal, not the full Kreis marginal -- otherwise every batch holding a fraction
+    of the Kreis targets the whole count, and (summed over batches) PopulationSim is
+    constrained to N times the true marginal, saturating the control. ``apportion_weights``
+    is ``{kreis: share}`` (the batch's population fraction of that Kreis); each control's
+    per-Kreis value is multiplied by that share. A Kreis absent from the map (or a
+    ``None`` map) keeps weight ``1.0`` = the full marginal. When the map gives every
+    batch its population share of the Kreis, the per-Kreis targets sum (across batches)
+    to exactly the full marginal.
 
     Parameters
     ----------
@@ -244,6 +258,11 @@ def build_kreis_control_totals(
         ``{control_name: census_source_cols}`` (e.g. the catalog's tier3 entries).
     ars_col:
         The Kreis-key column in ``kreis_table`` (default ``"ARS_kreis"``).
+    apportion_weights:
+        Optional ``{kreis: float share}`` to scale each Kreis's controls (the batch's
+        population share of the Kreis). ``None`` (default) -> full marginal, legacy
+        behaviour byte-identical (so single-batch / pre-Tier-3 callers are unchanged).
+        A Kreis missing from the map defaults to ``1.0`` (full marginal).
 
     Returns
     -------
@@ -273,7 +292,13 @@ def build_kreis_control_totals(
 
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
-        out[name] = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        if apportion_weights is not None:
+            weights = np.array(
+                [float(apportion_weights.get(k, 1.0)) for k in kreise], dtype=float
+            )
+            values = values * weights
+        out[name] = values
     return pd.DataFrame(out)
 
 

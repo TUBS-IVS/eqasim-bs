@@ -67,6 +67,41 @@ _PARQUET_SUBPATH = "braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.p
 # ARS column name in the prepared parquet (after clean_col_name transliteration of ü→u).
 _ARS_COLUMN_CLEAN = "RegionalSchlussel_ARS"
 
+# --- Tier-3 (employment + education) constants ---------------------------------
+# Kreis controls dir (GENESIS per-Kreis marginals) relative to the data root.
+_KREIS_CONTROLS_SUBPATH = "braunschweig/popsim/kreis_controls"
+
+# Employment seed predicate: P_TAET in {1..6} (matches control_spec's "employed"
+# expression). NOT attributes.EMPLOYED_TAET, which also includes 7 (Wehr-/
+# Bundesfreiwilligendienst/FSJ) -- 7 is excluded from the ILO-employed control.
+_EMPLOYED_PTAET = frozenset({1, 2, 3, 4, 5, 6})
+
+# Census-source column groups in the merged kreis control table (raw GENESIS
+# columns). Mirror control_spec._TIER3_ENTRIES + the ERWERBSTAT universe (children
+# are counted as Nichterwerbspersonen __2, so the universe ~= total population).
+_EMP_EMPLOYED_COL = "ERWERBSTAT_KURZ_STP__11"   # Erwerbstaetige (employed)
+_EMP_TOTAL_COL = "ERWERBSTAT_KURZ_STP"          # Insgesamt (= __11 + __12 + __2)
+_SCHULABS_SOURCE = {
+    "low": ("SCHULABS_STP__21", "SCHULABS_STP__22"),
+    "mid": ("SCHULABS_STP__23",),
+    "high": ("SCHULABS_STP__24",),
+}
+_BERUFABS_SOURCE = {
+    "none": ("BERUFABS_AUSF_STP__2",),
+    "vocational": ("BERUFABS_AUSF_STP__11", "BERUFABS_AUSF_STP__12", "BERUFABS_AUSF_STP__13"),
+    "tertiary": ("BERUFABS_AUSF_STP__14", "BERUFABS_AUSF_STP__15",
+                 "BERUFABS_AUSF_STP__16", "BERUFABS_AUSF_STP__17"),
+}
+
+
+def _load_kreis_control_table(data_path: str) -> pd.DataFrame:
+    """Load the merged per-Kreis control table (erwerbsstatus + schulabschluss +
+    berufl_abschluss) -- the SAME GENESIS marginals the Tier-3 KREIS controls were
+    fitted to. ARS_kreis is a 5-digit zero-padded string (400 Kreise)."""
+    from braunschweig.popsim.mid import load_kreis_control_table
+    kreis_dir = Path(data_path) / _KREIS_CONTROLS_SUBPATH
+    return load_kreis_control_table(str(kreis_dir))
+
 
 def _load_cells(data_path: str) -> pd.DataFrame:
     """Load and clean the prepared 100 m cell parquet (cached per data_path call).
@@ -315,6 +350,68 @@ def seniorenstatus_target(data_path: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Tier-3 target loaders (merged kreis control table -> per-Kreis shares)
+# ---------------------------------------------------------------------------
+
+def _kreis_share_target(kt: pd.DataFrame, source: dict, total_col: str | None = None) -> pd.DataFrame:
+    """[geo_id, category, target_share] from per-Kreis census-source column groups.
+
+    share = sum(source cols) / denom; denom = ``total_col`` if given, else the
+    row-wise sum of all category counts (so shares sum to 1 per Kreis). geo_id is
+    the 5-digit ARS_kreis. Suppressed (NaN) census cells are summed as 0 -- the
+    same convention as ``folders.build_kreis_control_totals``.
+    """
+    ars = kt["ARS_kreis"].astype(str).str.zfill(5).to_numpy()
+    counts: dict[str, np.ndarray] = {}
+    for cat, cols in source.items():
+        s = None
+        for c in cols:
+            col = pd.to_numeric(kt[c], errors="coerce").fillna(0.0)
+            s = col if s is None else s + col
+        counts[cat] = s.to_numpy()
+    if total_col is not None:
+        denom = pd.to_numeric(kt[total_col], errors="coerce").fillna(0.0).to_numpy()
+    else:
+        denom = np.sum(list(counts.values()), axis=0)
+    rows = []
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for cat in source:
+            share = np.where(denom > 0, counts[cat] / denom, 0.0)
+            for g, sh in zip(ars, share):
+                rows.append({"geo_id": str(g), "category": cat, "target_share": float(sh)})
+    return pd.DataFrame(rows, columns=["geo_id", "category", "target_share"])
+
+
+def employed_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis employment target (Tier-3), 2-class {employed, not_employed} over
+    the census Erwerbsstatus universe (~= total population). employed share =
+    ERWERBSTAT_KURZ_STP__11 / ERWERBSTAT_KURZ_STP; not_employed = 1 - that."""
+    kt = _load_kreis_control_table(data_path)
+    ars = kt["ARS_kreis"].astype(str).str.zfill(5).to_numpy()
+    emp = pd.to_numeric(kt[_EMP_EMPLOYED_COL], errors="coerce").fillna(0.0).to_numpy()
+    total = pd.to_numeric(kt[_EMP_TOTAL_COL], errors="coerce").fillna(0.0).to_numpy()
+    rows = []
+    with np.errstate(divide="ignore", invalid="ignore"):
+        emp_share = np.where(total > 0, emp / total, 0.0)
+    for g, es in zip(ars, emp_share):
+        rows.append({"geo_id": str(g), "category": "employed", "target_share": float(es)})
+        rows.append({"geo_id": str(g), "category": "not_employed", "target_share": float(1.0 - es)})
+    return pd.DataFrame(rows, columns=["geo_id", "category", "target_share"])
+
+
+def schulabschluss_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis Schulabschluss target (Tier-3, 3-class low/mid/high). Shares over
+    the 'mit Schulabschluss' universe (low+mid+high == SCHULABS_STP__2)."""
+    return _kreis_share_target(_load_kreis_control_table(data_path), _SCHULABS_SOURCE)
+
+
+def beruflabschluss_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis Berufsabschluss target (Tier-3, 3-class none/vocational/tertiary).
+    Shares over the full BERUFABS_AUSF_STP universe (none+vocational+tertiary)."""
+    return _kreis_share_target(_load_kreis_control_table(data_path), _BERUFABS_SOURCE)
+
+
+# ---------------------------------------------------------------------------
 # Realized extractors for popsim-specific attributes
 # ---------------------------------------------------------------------------
 
@@ -417,6 +514,64 @@ def _realized_seniorenstatus(frames: "PopulationFrames", geo: pd.DataFrame) -> p
 
 
 # ---------------------------------------------------------------------------
+# Tier-3 realized extractors (person-level; key on the person's own cell ARS)
+# ---------------------------------------------------------------------------
+
+def _persons_ars5(frames: "PopulationFrames", value_col: str) -> pd.DataFrame:
+    """Lean [ars5, val] frame: Kreis from the person's own 12-digit
+    RegionalSchlussel_ARS (the authoritative cell ARS the KREIS control was applied
+    at -- not the homes-sjoin geo, which drops the ~258 null-Kreis cells)."""
+    persons = frames.persons
+    ars = persons["RegionalSchlussel_ARS"].astype(str).str.zfill(12).str[:5]
+    return pd.DataFrame({"ars5": ars.to_numpy(),
+                         "val": pd.to_numeric(persons[value_col], errors="coerce").to_numpy()})
+
+
+def _realized_employed(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
+    """Realized employment (Tier-3): per Kreis, persons with P_TAET in {1..6} are
+    'employed', all others 'not_employed' (over the whole synthetic population)."""
+    persons = frames.persons
+    if "P_TAET" not in persons.columns or "RegionalSchlussel_ARS" not in persons.columns:
+        LOGGER.warning("P_TAET/RegionalSchlussel_ARS absent; employed control skipped.")
+        return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+    p = _persons_ars5(frames, "P_TAET")
+    p["category"] = np.where(p["val"].isin(_EMPLOYED_PTAET), "employed", "not_employed")
+    out = p.groupby(["ars5", "category"]).size().rename("synthetic_count").reset_index()
+    return out.rename(columns={"ars5": "geo_id"})
+
+
+def _realized_schulabschluss(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
+    """Realized Schulabschluss (Tier-3): bildung1 2/3/4 -> low/mid/high per Kreis;
+    codes 1,5,9 (NaN) excluded -- mirrors attributes.SCHULABS_BY_BILDUNG1."""
+    persons = frames.persons
+    if "bildung1" not in persons.columns or "RegionalSchlussel_ARS" not in persons.columns:
+        LOGGER.warning("bildung1/RegionalSchlussel_ARS absent; schulabschluss control skipped.")
+        return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+    from braunschweig.popsim.attributes import SCHULABS_BY_BILDUNG1
+    p = _persons_ars5(frames, "bildung1")
+    p["category"] = p["val"].astype("Int64").map(SCHULABS_BY_BILDUNG1)
+    p = p.dropna(subset=["category"])
+    out = p.groupby(["ars5", "category"]).size().rename("synthetic_count").reset_index()
+    return out.rename(columns={"ars5": "geo_id"})
+
+
+def _realized_beruflabschluss(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
+    """Realized Berufsabschluss (Tier-3): bildung2 1->vocational, 2/3->tertiary,
+    5->none per Kreis; codes 4,9 (+ structural 206/402) excluded -- mirrors
+    attributes.BERUFABS_BY_BILDUNG2."""
+    persons = frames.persons
+    if "bildung2" not in persons.columns or "RegionalSchlussel_ARS" not in persons.columns:
+        LOGGER.warning("bildung2/RegionalSchlussel_ARS absent; beruflabschluss control skipped.")
+        return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+    from braunschweig.popsim.attributes import BERUFABS_BY_BILDUNG2
+    p = _persons_ars5(frames, "bildung2")
+    p["category"] = p["val"].astype("Int64").map(BERUFABS_BY_BILDUNG2)
+    p = p.dropna(subset=["category"])
+    out = p.groupby(["ars5", "category"]).size().rename("synthetic_count").reset_index()
+    return out.rename(columns={"ars5": "geo_id"})
+
+
+# ---------------------------------------------------------------------------
 # Registry builder
 # ---------------------------------------------------------------------------
 
@@ -512,6 +667,36 @@ def build_registry(data_path: str) -> list[Control]:
         categories=("mit_senioren", "ohne_senioren"),
         realized=_realized_seniorenstatus,
         target=seniorenstatus_target,
+    ))
+
+    # --- Tier-3: employment (KREIS control) ---
+    reg.append(Control(
+        name="employed",
+        family="popsim_tier3",
+        geography="kreis",
+        categories=("employed", "not_employed"),
+        realized=_realized_employed,
+        target=employed_target,
+    ))
+
+    # --- Tier-3: education / Schulabschluss (KREIS control) ---
+    reg.append(Control(
+        name="schulabschluss",
+        family="popsim_tier3",
+        geography="kreis",
+        categories=("low", "mid", "high"),
+        realized=_realized_schulabschluss,
+        target=schulabschluss_target,
+    ))
+
+    # --- Tier-3: education / Berufsabschluss (KREIS control) ---
+    reg.append(Control(
+        name="beruflabschluss",
+        family="popsim_tier3",
+        geography="kreis",
+        categories=("none", "vocational", "tertiary"),
+        realized=_realized_beruflabschluss,
+        target=beruflabschluss_target,
     ))
 
     return reg

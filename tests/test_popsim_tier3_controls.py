@@ -89,10 +89,12 @@ def test_tier3_kreis_controls_excluded_from_grid_source_and_aggregation():
 
 
 def test_grid_source_columns_baseline_unchanged():
-    # Sanity: tier0-only grid load is the 22 backbone single-source columns (the
-    # geography filter must not drop any grid-geography control).
+    # Sanity: after the lossless reduction, the tier0-only grid load is the 19
+    # backbone single-source columns: HH_TOTAL + 18 age x sex bands (all 100m).
+    # POP_TOTAL and M_TOTAL / F_TOTAL are dropped (derivable sums of the bands); the
+    # 1km backbone is HH_TOTAL only, so POP_TOTAL is no longer in the source union.
     src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0",))
-    assert len(src) == 22
+    assert len(src) == 19
 
 
 def test_tier3_kreis_control_totals_columns_match_controls_csv_control_field():
