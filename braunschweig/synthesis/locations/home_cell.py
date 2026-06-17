@@ -47,7 +47,26 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.prepared_cells import load_prepared_cells
+from braunschweig.synthesis.locations import building_typing as bt
+from braunschweig.synthesis.locations import cell_building_signals as cbs
+from braunschweig.synthesis.locations import home_matcher as hm
+
 logger = logging.getLogger(__name__)
+
+# Config key selecting the home-matching mode: "typed" (ALKIS type-aware, default)
+# or "legacy" (the area-weighted cell draw, byte-identical to the prior behaviour).
+KEY_HOME_MATCHING = "braunschweig.home_matching"
+
+# Config key for the prepared 100 m cell parquet (shared with the popsim stage).
+KEY_CELLS_100M = "braunschweig.population.popsim.cells_100m_path"
+
+# MiD ``building_type_3class`` label -> the matcher's 3-class building type.
+_BTYPE_MAP = {
+    "ein_zweifamilienhaus": "efh_zfh",
+    "mehrfamilienhaus": "mfh",
+    "sonstiges": "sonst",
+}
 
 # CRS of the Zensus INSPIRE grid (LAEA Europe). Building centroids are reprojected
 # here to compute their 100 m cell id.
@@ -285,10 +304,166 @@ def assign_homes_to_cell_buildings(
     return result, report
 
 
+@dataclass(frozen=True)
+class TypedHomeReport:
+    """Outcome of the ALKIS-typed, census-calibrated home placement.
+
+    Attributes
+    ----------
+    n_households:
+        Total households to place.
+    in_cell_rate:
+        Fraction of households whose 100 m cell contained at least one building
+        (so they were matched against in-cell typed slots rather than the
+        in-cell random-point fallback).
+    type_match_rate:
+        Fraction of households assigned a building whose 3-class type equals the
+        household's preferred type (``btype``); the primary objective of the
+        lexicographic matcher.
+    n_zero_building_cells:
+        Households whose 100 m cell had no building footprint at all; placed at a
+        random point inside the cell (never relocated to another cell/commune).
+    n_overcapacity:
+        Households the matcher had to over-occupy an existing building for (more
+        households than typed dwelling slots in the cell).
+    """
+
+    n_households: int
+    in_cell_rate: float
+    type_match_rate: float
+    n_zero_building_cells: int
+    n_overcapacity: int
+
+
+def assign_homes_typed(
+    households: pd.DataFrame,
+    buildings: gpd.GeoDataFrame,
+    cells: pd.DataFrame,
+    *,
+    random_seed: int,
+    cell_col: str = "ZENSUS100m",
+    commune_col: str = "commune_id",
+    household_id_col: str = "household_id",
+) -> tuple[gpd.GeoDataFrame, TypedHomeReport]:
+    """Place each household in a type- and size-matched building of its 100 m cell.
+
+    Per 100 m cell: type the cell's ALKIS footprints from the census 3-class
+    building-count signal (:func:`building_typing.assign_building_types`), build
+    capacitated dwelling slots from the dwelling-count + occupancy + dwelling-size
+    signals (:func:`building_typing.build_slots`), then lexicographically match the
+    cell's households to slots on type (primary) and size (secondary)
+    (:func:`home_matcher.match_cell`). The chosen ``building_id`` maps to that
+    building's centroid (EPSG:25832). Households in a cell with NO building are
+    placed at a random point inside the cell (:func:`home_matcher.random_point_in_cell`),
+    never silently relocated.
+
+    Parameters
+    ----------
+    households:
+        One row per household with ``household_id_col``, ``commune_col``,
+        ``cell_col`` (100 m INSPIRE id), ``building_type_3class`` (MiD label) and
+        ``household_size``.
+    buildings:
+        Building GeoDataFrame from ``braunschweig.data.buildings`` (``building_id``,
+        ``area_m2``, geometry in EPSG:25832). The per-building 100 m cell id is
+        computed here from the reprojected centroid.
+    cells:
+        Prepared 100 m cell frame (from ``load_prepared_cells``) carrying the
+        Gebaeudetyp / Wohnung / occupancy / dwelling-size columns the signal
+        extractor reads.
+    random_seed:
+        Base seed; the effective seed is ``random_seed + RANDOM_SEED_OFFSET``.
+
+    Returns
+    -------
+    tuple[geopandas.GeoDataFrame, TypedHomeReport]
+        The ``[household_id, commune_id, home_location_id, geometry]`` frame (CRS
+        EPSG:25832, one row per household) and the placement report.
+    """
+    rng = np.random.RandomState(int(random_seed) + RANDOM_SEED_OFFSET)
+    buildings = buildings.reset_index(drop=True).copy()
+    cent3035 = buildings.geometry.to_crs(ZENSUS_CRS)
+    buildings["_cell_id"] = [building_cell_id(north_m=g.y, east_m=g.x) for g in cent3035]
+    # building_id -> its centroid Point in the buildings' native CRS (EPSG:25832).
+    bcent = buildings.geometry.centroid
+    geom_by_bid = dict(zip(buildings["building_id"], bcent))
+    fps_by_cell = {c: g for c, g in buildings.groupby("_cell_id", sort=False)}
+    sig = cbs.cell_signals(cells).set_index("ZENSUS100m")
+
+    hh = households.copy()
+    hh["btype"] = hh["building_type_3class"].map(_BTYPE_MAP).fillna("efh_zfh")
+    rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
+    n_match = n_zero = n_over = n_in_cell = 0
+    for cell_id, grp in hh.groupby(cell_col, sort=False):
+        fps = fps_by_cell.get(str(cell_id))
+        if fps is None or len(fps) == 0:
+            for r in grp.itertuples(index=False):
+                rec_id.append(getattr(r, household_id_col))
+                rec_comm.append(getattr(r, commune_col))
+                rec_bid.append(pd.NA)
+                rec_geom.append(hm.random_point_in_cell(str(cell_id), rng))
+            n_zero += len(grp)
+            continue
+        n_in_cell += len(grp)
+        s = sig.loc[str(cell_id)] if str(cell_id) in sig.index else None
+        geb = {c: float(s.get(f"geb_{c}", 0)) if s is not None else 0.0
+               for c in cbs.THREE_CLASSES}
+        whg = {c: float(s.get(f"whg_{c}", 0)) if s is not None else 0.0
+               for c in cbs.THREE_CLASSES}
+        occ = float(s["occupied"]) if s is not None else float(len(grp))
+        size_hist = s["size_hist"] if s is not None else []
+        typed = bt.assign_building_types(fps[["building_id", "area_m2"]], geb, rng)
+        slots = bt.build_slots(typed, whg, max(occ, len(grp)), size_hist, rng)
+        cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
+            columns={household_id_col: "household_id"})
+        amap, rep = hm.match_cell(cell_hh, slots, rng)
+        n_match += rep.n_type_match
+        n_over += rep.n_overcapacity
+        bid_by_hh = dict(zip(amap["household_id"], amap["building_id"]))
+        for r in grp.itertuples(index=False):
+            hid = getattr(r, household_id_col)
+            bid = bid_by_hh.get(hid)
+            rec_id.append(hid)
+            rec_comm.append(getattr(r, commune_col))
+            rec_bid.append(bid)
+            rec_geom.append(
+                geom_by_bid.get(bid) if pd.notna(bid)
+                else hm.random_point_in_cell(str(cell_id), rng)
+            )
+
+    n = len(hh)
+    report = TypedHomeReport(
+        n_households=n,
+        in_cell_rate=(n_in_cell / n if n else 0.0),
+        type_match_rate=(n_match / n if n else 0.0),
+        n_zero_building_cells=n_zero,
+        n_overcapacity=n_over,
+    )
+    log = logger.warning if (n_zero or n_over) else logger.info
+    log(
+        "[home_typed] %d HH: in-cell %.1f%%, type-match %.1f%%, %d zero-building, "
+        "%d over-capacity", n, report.in_cell_rate * 100, report.type_match_rate * 100,
+        n_zero, n_over,
+    )
+    result = gpd.GeoDataFrame(
+        {"household_id": rec_id, "commune_id": rec_comm,
+         "home_location_id": rec_bid, "geometry": rec_geom},
+        crs=buildings.crs,
+    )
+    if result.crs is not None and result.crs.to_epsg() != 25832:
+        result = result.to_crs(BUILDINGS_CRS)
+    return result[["household_id", "commune_id", "home_location_id", "geometry"]], report
+
+
 def configure(context):
     context.stage("braunschweig.data.buildings")
     context.stage("synthesis.population.sampled")
     context.config("random_seed")
+    # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
+    context.config(KEY_HOME_MATCHING, "typed")
+    # Prepared 100 m cell parquet path (only read on the typed path, but declared
+    # here so the stage's config dependency is explicit).
+    context.config(KEY_CELLS_100M)
 
 
 def execute(context):
@@ -303,13 +478,33 @@ def execute(context):
             "IPF/open workflows."
         )
 
-    households = (
-        df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
-        .drop_duplicates("household_id")
-        .reset_index(drop=True)
-    )
+    mode = context.config(KEY_HOME_MATCHING, "typed")
+    if mode == "legacy":
+        households = (
+            df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
+            .drop_duplicates("household_id")
+            .reset_index(drop=True)
+        )
+        result, _ = assign_homes_to_cell_buildings(
+            households, buildings, random_seed=context.config("random_seed"),
+        )
+        return result[["household_id", "commune_id", "home_location_id", "geometry"]]
 
-    result, _ = assign_homes_to_cell_buildings(
-        households, buildings, random_seed=context.config("random_seed"),
+    # Typed path: type- and size-matched placement against ALKIS footprints,
+    # calibrated by the prepared 100 m cell signals.
+    typed_cols = ["household_id", "ZENSUS100m", "commune_id",
+                  "building_type_3class", "household_size"]
+    missing = [c for c in typed_cols if c not in df_sampled.columns]
+    if missing:
+        raise ValueError(
+            f"[home_cell] typed home matching needs column(s) {missing} on "
+            f"synthesis.population.sampled; available: {list(df_sampled.columns)}. "
+            "Set braunschweig.home_matching='legacy' for workflows whose sampled "
+            "frame lacks building_type_3class / household_size."
+        )
+    cells = load_prepared_cells(context.config(KEY_CELLS_100M))
+    households = df_sampled[typed_cols].drop_duplicates("household_id").reset_index(drop=True)
+    result, _ = assign_homes_typed(
+        households, buildings, cells, random_seed=context.config("random_seed"),
     )
     return result[["household_id", "commune_id", "home_location_id", "geometry"]]
