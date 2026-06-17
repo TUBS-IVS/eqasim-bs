@@ -25,3 +25,21 @@ def test_tiles_for_region_intersect():
     ]}
     hit = L.tiles_for_region(index, box(0.5, 0.5, 5, 5))
     assert [t["tile_id"] for t in hit] == ["A"]
+
+
+def test_download_tiles_skips_existing_and_retries(tmp_path):
+    calls = {"n": 0}
+    def fake_dl(url, dest):
+        calls["n"] += 1
+        if "FAILONCE" in url and calls["n"] == 1:
+            raise IOError("transient")
+        open(dest, "w").write("x")
+    # pre-create one tile so it is skipped
+    (tmp_path / "A.zip").write_text("already")
+    tiles = [{"tile_id": "A", "shp": "http://x/A"},
+             {"tile_id": "B", "shp": "http://x/B"},
+             {"tile_id": "C", "shp": "http://x/FAILONCE"}]
+    ok, failed = L.download_tiles(tiles, str(tmp_path), downloader=fake_dl, max_workers=1, retries=2)
+    assert (tmp_path / "A.zip").read_text() == "already"     # not re-downloaded
+    assert sorted(p.split("/")[-1] for p in ok) == ["A.zip", "B.zip", "C.zip"]
+    assert failed == []                                       # C succeeded on retry

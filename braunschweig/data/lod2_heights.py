@@ -33,3 +33,41 @@ def tiles_for_region(index: dict, region_4326) -> list[dict]:
         if shape(f["geometry"]).intersects(region_4326):
             hits.append(f["properties"])
     return hits
+
+
+import os, time, logging, urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logger = logging.getLogger(__name__)
+
+
+def download_tiles(tiles, cache_dir, *, downloader=urllib.request.urlretrieve,
+                   max_workers=8, retries=3):
+    os.makedirs(cache_dir, exist_ok=True)
+    ok, failed = [], []
+
+    def fetch(t):
+        dest = os.path.join(cache_dir, f"{t['tile_id']}.zip")
+        dest_fwd = dest.replace(os.sep, "/")
+        if os.path.exists(dest) and os.path.getsize(dest) > 0:
+            return ("ok", dest_fwd)                   # resume: skip existing
+        for attempt in range(retries):
+            try:
+                downloader(t["shp"], dest)
+                return ("ok", dest_fwd)
+            except Exception as exc:                  # transient network/IO
+                if attempt == retries - 1:
+                    return ("fail", t["tile_id"])
+                time.sleep(0.5 * (attempt + 1))
+        return ("fail", t["tile_id"])
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(fetch, t) for t in tiles]
+        for i, fut in enumerate(as_completed(futures), 1):
+            status, val = fut.result()
+            (ok if status == "ok" else failed).append(val)
+            if i % 100 == 0:
+                logger.info("[lod2] downloaded %d/%d tiles (%d failed)", i, len(tiles), len(failed))
+    if failed:
+        logger.warning("[lod2] %d/%d tiles FAILED to download: %s", len(failed), len(tiles), failed[:10])
+    return ok, failed
