@@ -13,13 +13,16 @@ from braunschweig.data import lod2_heights as L
 
 INDEX_URL = ("https://arcgis-geojson.s3.eu-de.cloud-object-storage.appdomain.cloud/"
              "lod2/lgln-opengeodata-lod2.geojson")
-ZGB_PREFIXES = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 
 
 def _pyogrio_reader(zip_path: str) -> pd.DataFrame:
     import pyogrio, zipfile
-    shp = [n for n in zipfile.ZipFile(zip_path).namelist() if n.endswith(".shp")][0]
-    return pyogrio.read_dataframe(f"/vsizip/{zip_path}/{shp}",
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+    shps = [n for n in names if n.endswith(".shp")]
+    if not shps:
+        raise ValueError(f"no .shp in {zip_path}")
+    return pyogrio.read_dataframe(f"/vsizip/{zip_path}/{shps[0]}",
                                   columns=["gml_id", "externRef", "measHeight", "roofType"],
                                   read_geometry=False)
 
@@ -45,6 +48,8 @@ def build_heights_parquet(index, region_4326, cache_dir, out_path, *,
 
 
 def _region_from_alkis(alkis_parquet):
+    # Scope = the (already-ZGB-clipped) ALKIS footprint extent; bbox is slightly
+    # over-inclusive at corners — harmless, those tiles join to no footprints.
     g = gpd.read_parquet(alkis_parquet)
     return gpd.GeoSeries([box(*g.total_bounds)], crs="EPSG:25832").to_crs("EPSG:4326").iloc[0]
 
@@ -63,7 +68,8 @@ def main(argv=None):
     if idx_local.startswith("http"):
         dst = os.path.join(a.cache_dir, "_index.geojson"); os.makedirs(a.cache_dir, exist_ok=True)
         urllib.request.urlretrieve(a.index_url, dst); idx_local = dst
-    index = json.load(open(idx_local, encoding="utf-8"))
+    with open(idx_local, encoding="utf-8") as fh:
+        index = json.load(fh)
     region = _region_from_alkis(a.alkis)
     meta = build_heights_parquet(index, region, a.cache_dir, a.out, max_workers=a.workers)
     print(f"LoD2 heights: {meta}")
