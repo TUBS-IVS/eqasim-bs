@@ -63,6 +63,27 @@ def test_build_slots_efh_not_overstacked_when_dwellings_exceed_footprints():
     assert counts.get(0, 0) >= counts.get(1, 0), f"area ordering violated: {counts.to_dict()}"
 
 
+def test_assign_building_types_zero_footprints():
+    """Zero-footprint frame must return an empty DataFrame with a 'btype' column (no crash)."""
+    rng = np.random.RandomState(0)
+    empty_fp = pd.DataFrame({"building_id": pd.Series(dtype=int), "area_m2": pd.Series(dtype=float)})
+    out = bt.assign_building_types(empty_fp, {"efh_zfh": 3, "mfh": 1, "sonst": 0}, rng)
+    assert "btype" in out.columns, "Output frame missing 'btype' column"
+    assert len(out) == 0, f"Expected 0 rows, got {len(out)}"
+
+
+def test_assign_building_types_fewer_footprints_than_census():
+    """2 footprints but census counts sum to 8 buildings.
+    Must return exactly 2 rows; every 'btype' is a known class; no exception."""
+    rng = np.random.RandomState(0)
+    fp = _fp([100.0, 200.0])
+    out = bt.assign_building_types(fp, {"efh_zfh": 4, "mfh": 4, "sonst": 0}, rng)
+    assert len(out) == 2, f"Expected 2 rows, got {len(out)}"
+    valid_btypes = {"efh_zfh", "mfh", "sonst"}
+    bad = set(out["btype"].unique()) - valid_btypes
+    assert not bad, f"Unknown btype values: {bad}"
+
+
 def test_build_slots_total_equals_occupied_with_unbalanced_shares():
     """Hamilton apportionment guarantees len(slots) == round(occupied).
 

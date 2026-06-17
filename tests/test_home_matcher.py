@@ -48,6 +48,66 @@ def test_match_cell_type_fidelity_and_assortative_size():
     assert rep.n_overcapacity == 0
 
 
+def test_match_cell_over_capacity_places_all_and_counts():
+    """Over-capacity: 5 EFH/ZFH households, only 2 efh_zfh slots.
+    All 5 must receive a non-NA building_id; the 3 extras count as n_overcapacity;
+    each over-capacity household is placed on an efh_zfh building (same-type pool)."""
+    import numpy as np, pandas as pd
+    rng = np.random.RandomState(0)
+    households = pd.DataFrame({
+        "household_id": ["a", "b", "c", "d", "e"],
+        "btype": ["efh_zfh"] * 5,
+        "household_size": [5, 4, 3, 2, 1],
+    })
+    slots = pd.DataFrame({
+        "slot_id": [0, 1], "building_id": [10, 11],
+        "btype": ["efh_zfh", "efh_zfh"], "size": [140.0, 80.0],
+    })
+    out, rep = hm.match_cell(households, slots, rng)
+    # All households must be placed (no NA building_id)
+    assert out["building_id"].notna().all(), "Some households left unplaced (NA building_id)"
+    assert rep.n_overcapacity == 3, f"Expected 3 overcapacity, got {rep.n_overcapacity}"
+    # Determine which households were placed via over-capacity (not in the flow slots)
+    # The first 2 (largest) get the normal flow slots; the remaining 3 are over-capacity
+    by = out.set_index("household_id")["building_id"]
+    # All over-capacity must be placed on an efh_zfh building (ids 10 or 11)
+    efh_building_ids = {10, 11}
+    for hid in ["c", "d", "e"]:
+        assert by[hid] in efh_building_ids, (
+            f"Overcapacity household {hid!r} placed on unexpected building {by[hid]!r}"
+        )
+
+
+def test_match_cell_cross_type_substitution_assigns_other_type_building():
+    """Cross-type substitution: 3 efh_zfh households, 1 efh_zfh slot + 2 mfh slots.
+    1 household gets the efh_zfh building; 2 get mfh building_ids (cross-type realized
+    in actual building assignment, not just flow dict). n_type_match==1, n_overcapacity==0."""
+    import numpy as np, pandas as pd
+    rng = np.random.RandomState(0)
+    households = pd.DataFrame({
+        "household_id": ["x", "y", "z"],
+        "btype": ["efh_zfh", "efh_zfh", "efh_zfh"],
+        "household_size": [5, 3, 1],
+    })
+    slots = pd.DataFrame({
+        "slot_id": [0, 1, 2], "building_id": [10, 20, 21],
+        "btype": ["efh_zfh", "mfh", "mfh"], "size": [120.0, 90.0, 70.0],
+    })
+    out, rep = hm.match_cell(households, slots, rng)
+    by = out.set_index("household_id")["building_id"]
+    # Exactly 1 household on the efh_zfh building
+    assert (by == 10).sum() == 1, f"Expected 1 household on efh_zfh building 10, got {(by==10).sum()}"
+    # The other 2 households are on mfh buildings
+    mfh_bids = {20, 21}
+    for hid in ["x", "y", "z"]:
+        if by[hid] != 10:
+            assert by[hid] in mfh_bids, (
+                f"Cross-type household {hid!r} placed on unexpected building {by[hid]!r}"
+            )
+    assert rep.n_type_match == 1, f"Expected n_type_match==1, got {rep.n_type_match}"
+    assert rep.n_overcapacity == 0, f"Expected n_overcapacity==0, got {rep.n_overcapacity}"
+
+
 def test_random_point_in_cell_lands_in_the_cell_square():
     import numpy as np
     import geopandas as gpd

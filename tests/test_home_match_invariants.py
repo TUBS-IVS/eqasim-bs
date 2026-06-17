@@ -100,3 +100,31 @@ def test_marginal_identity_household_set_unchanged():
     out, _ = home_cell.assign_homes_typed(hh, b, cells, random_seed=5)
     assert set(out["household_id"]) == set(hh["household_id"])
     assert len(out) == len(hh) and out["household_id"].is_unique
+
+
+def test_typed_path_is_deterministic_same_seed():
+    """Two calls with the same seed must produce identical home_location_id and geometry
+    for every household, including the zero-building cell-B fallback (random_point_in_cell
+    determinism is exercised by the cell-B household 'c')."""
+    hh, b, cells = _setup()
+    out1, _ = home_cell.assign_homes_typed(hh, b, cells, random_seed=5)
+    out2, _ = home_cell.assign_homes_typed(hh, b, cells, random_seed=5)
+
+    h1 = out1.set_index("household_id").to_crs("EPSG:3035")
+    h2 = out2.set_index("household_id").to_crs("EPSG:3035")
+
+    for hid in hh["household_id"]:
+        bid1 = h1.loc[hid, "home_location_id"]
+        bid2 = h2.loc[hid, "home_location_id"]
+        both_na = pd.isna(bid1) and pd.isna(bid2)
+        assert both_na or (not pd.isna(bid1) and not pd.isna(bid2) and bid1 == bid2), (
+            f"household {hid!r}: building_id mismatch ({bid1!r} vs {bid2!r})"
+        )
+        g1 = h1.loc[hid, "geometry"]
+        g2 = h2.loc[hid, "geometry"]
+        assert abs(g1.x - g2.x) < 1e-6, (
+            f"household {hid!r}: geometry x mismatch ({g1.x} vs {g2.x})"
+        )
+        assert abs(g1.y - g2.y) < 1e-6, (
+            f"household {hid!r}: geometry y mismatch ({g1.y} vs {g2.y})"
+        )

@@ -387,6 +387,22 @@ def assign_homes_typed(
     buildings = buildings.reset_index(drop=True).copy()
     cent3035 = buildings.geometry.to_crs(ZENSUS_CRS)
     buildings["_cell_id"] = [building_cell_id(north_m=g.y, east_m=g.x) for g in cent3035]
+
+    # Sanity-check: household ZENSUS100m ids must use the INSPIRE 100 m format.
+    # A mismatch here almost certainly means a wrong CRS or misjoined column,
+    # which would silently yield zero matches — better to fail loudly.
+    _INSPIRE_PREFIX = "CRS3035RES100m"
+    if len(households) > 0:
+        _sample = households[cell_col].dropna().iloc[:5]
+        _bad = _sample[~_sample.astype(str).str.startswith(_INSPIRE_PREFIX)]
+        if not _bad.empty:
+            raise ValueError(
+                f"[home_typed] household '{cell_col}' values do not start with "
+                f"'{_INSPIRE_PREFIX}' (expected INSPIRE 100m format). "
+                f"Offending value: {_bad.iloc[0]!r}. "
+                "Check that the ZENSUS100m column was joined correctly."
+            )
+
     # building_id -> its centroid Point in the buildings' native CRS (EPSG:25832).
     bcent = buildings.geometry.centroid
     geom_by_bid = dict(zip(buildings["building_id"], bcent))
