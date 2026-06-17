@@ -81,7 +81,7 @@ def test_per_cell_targets_apply_shape_and_rescale_to_census_level():
         "ERWERBSTAT_KURZ_STP__11_M": [240.0],   # census LEVEL (males)
         "ERWERBSTAT_KURZ_STP__11_W": [120.0],   # census LEVEL (females)
     })
-    out = per = eg.per_cell_employment_targets(cells, svb, census_levels)
+    out = eg.per_cell_employment_targets(cells, svb, census_levels)
     # Male target sums to census level 240, split by cell male population (100:300 = 1:3).
     assert round(out["EMPLOYED_M_agg"].sum(), 6) == 240.0
     m = out.set_index("ZENSUS100m")["EMPLOYED_M_agg"]
@@ -101,3 +101,49 @@ def test_per_cell_targets_zero_census_level_yields_zero_column():
     out = eg.per_cell_employment_targets(cells, svb, census)
     assert out["EMPLOYED_M_agg"].sum() == 0.0
     assert out["EMPLOYED_F_agg"].sum() == 0.0
+
+
+def test_per_cell_targets_rescale_is_per_kreis_no_bleed():
+    """Per-Kreis×sex rescale must not bleed census levels between Kreise.
+
+    Two Kreise ("03102", "03103"), each with two cells.  The census EMPLOYED_M
+    levels differ (240 vs 480).  After per_cell_employment_targets the sum of
+    EMPLOYED_M_agg inside each Kreis must equal that Kreis's census level exactly,
+    and the two totals must be distinct (i.e. no blending has occurred).
+    """
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2", "c3", "c4"],
+        "KREIS":      ["03102", "03102", "03103", "03103"],
+        # Kreis 03102: 100 + 300 = 400 working-age men; Kreis 03103: 200 + 200 = 400
+        "M_AGE_40":   [100, 300, 200, 200],
+        "F_AGE_40":   [50,  50,  100, 100],
+    })
+    svb = pd.DataFrame({
+        "departement_id": ["03102", "03102", "03103", "03103"],
+        "age_class":      [30,      30,      30,      30],
+        "sex":            ["male",  "female","male",  "female"],
+        "weight":         [200,     80,      300,     120],
+    })
+    census_levels = pd.DataFrame({
+        "ARS_kreis":                  ["03102", "03103"],
+        "ERWERBSTAT_KURZ_STP__11_M":  [240.0,   480.0],   # deliberately different
+        "ERWERBSTAT_KURZ_STP__11_W":  [60.0,    120.0],
+    })
+    out = eg.per_cell_employment_targets(cells, svb, census_levels)
+
+    # Attach Kreis for grouping assertions
+    out = out.copy()
+    out["KREIS"] = cells["KREIS"].values
+
+    kreis_m = out.groupby("KREIS")["EMPLOYED_M_agg"].sum()
+    kreis_f = out.groupby("KREIS")["EMPLOYED_F_agg"].sum()
+
+    # Each Kreis must sum exactly to its own census level
+    assert round(kreis_m["03102"], 6) == 240.0, f"Kreis 03102 male: {kreis_m['03102']}"
+    assert round(kreis_m["03103"], 6) == 480.0, f"Kreis 03103 male: {kreis_m['03103']}"
+    assert round(kreis_f["03102"], 6) == 60.0,  f"Kreis 03102 female: {kreis_f['03102']}"
+    assert round(kreis_f["03103"], 6) == 120.0, f"Kreis 03103 female: {kreis_f['03103']}"
+
+    # Totals must be distinct — confirms no cross-Kreis blending
+    assert kreis_m["03102"] != kreis_m["03103"]
+    assert kreis_f["03102"] != kreis_f["03103"]
