@@ -121,7 +121,7 @@ def test_employed_25_64_band_rate_is_reported():
     import pandas as pd
     from braunschweig.analysis.popsim_validation import controls as vc
     persons = pd.DataFrame({
-        "RegionalSchlussel_ARS": ["03102000000"] * 4,
+        "RegionalSchlussel_ARS": ["031020000000"] * 4,
         "HP_ALTER": [30, 40, 50, 70],
         "P_TAET": [1, 11, 1, 1],   # ages 30,50 employed (in band); 40 not; 70 employed but out of band
     })
