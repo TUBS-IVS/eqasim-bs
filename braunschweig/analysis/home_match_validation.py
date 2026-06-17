@@ -135,9 +135,18 @@ def derive_buildings_btype(
         typed = assign_building_types(fps, geb, rng)
         slots = build_slots(typed, whg, max(occ, len(grp)), size_hist, rng)
 
-        # Per-building mean slot size
+        # Per-building mean slot size.
+        # If slots have a degenerate (all-zero / constant) size column — which
+        # happens when size_hist is empty and build_slots falls back to 0.0 —
+        # substitute each building's own area_m2 as a size proxy so that
+        # size_assortativity has genuine cross-building variation to correlate.
         if not slots.empty:
             mean_size = slots.groupby("building_id")["size"].mean().rename("size")
+            # Detect degenerate: all slot sizes identical (typically 0.0).
+            if mean_size.nunique() <= 1:
+                # Fallback: use building area_m2 as a proportional size proxy.
+                area_ser = grp.set_index("building_id")["area_m2"]
+                mean_size = area_ser.rename("size").astype(float)
         else:
             mean_size = pd.Series(dtype=float, name="size")
 

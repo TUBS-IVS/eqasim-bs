@@ -168,6 +168,73 @@ def test_home_match_report_missing_vacant_col():
 # test_compare_typed_vs_legacy
 # ---------------------------------------------------------------------------
 
+def test_size_assortativity_non_nan_with_varying_sizes():
+    """size_assortativity must be finite (not nan) and positive when larger
+    households are in larger dwellings, even when the cells frame has no
+    size-bin histogram columns (size_hist is empty → degenerate slot sizes).
+
+    This exercises the area_m2 fallback in derive_buildings_btype so that
+    cross-building size variation is always present.
+    """
+    cell_id = "CRS3035RES100mN2689100E4337000"
+
+    # Four buildings: two small EFH (area 80 m², 100 m²) + two large MFH (300 m², 600 m²)
+    # Centroids in EPSG:3035 inside the cell (N=2689100..2689200, E=4337000..4337100)
+    pts_3035 = [
+        Point(4337020, 2689150),
+        Point(4337040, 2689130),
+        Point(4337060, 2689170),
+        Point(4337080, 2689140),
+    ]
+    bids   = [1, 2, 3, 4]
+    areas  = [80.0, 100.0, 300.0, 600.0]
+
+    gdf = gpd.GeoDataFrame(
+        {"building_id": bids, "area_m2": areas},
+        geometry=pts_3035, crs="EPSG:3035",
+    ).to_crs("EPSG:25832")
+
+    # Cells WITHOUT size-bin histogram columns → size_hist will be empty → slot sizes = 0
+    cells = pd.DataFrame([{
+        "ZENSUS100m": cell_id,
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 2.0,
+        "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 4.0,
+        "BewohntWhg_Leerstand_100m_Gitter": 6.0,
+        # deliberately NO size-bin columns (e.g. "90bis99_Flaeche_der_Wohnung_...")
+    }])
+
+    bld_btype = v.derive_buildings_btype(gdf, cells, random_seed=0)
+    assert bld_btype["size"].nunique() > 1, (
+        "buildings must have varying sizes (area_m2 fallback); got constant size — "
+        f"unique values: {bld_btype['size'].unique()}"
+    )
+
+    # Six households: larger ones paired with EFH (bigger area) → positive assortativity
+    # EFH buildings (bids 1, 2 — small area) and MFH (bids 3, 4 — large area)
+    # Match: big HH (size 4,5) in MFH (bigger area), small HH (size 1,2) in EFH (smaller area)
+    placed = pd.DataFrame({
+        "household_id": [10, 11, 12, 13, 14, 15],
+        "building_type_3class": [
+            "mehrfamilienhaus", "mehrfamilienhaus", "mehrfamilienhaus",
+            "ein_zweifamilienhaus", "ein_zweifamilienhaus", "ein_zweifamilienhaus",
+        ],
+        "household_size": [4, 5, 3, 1, 2, 1],
+        # Large-area buildings (3,4) → big HH; small-area buildings (1,2) → small HH
+        "home_location_id": [3, 4, 3, 1, 2, 1],
+    })
+
+    metrics = v.home_match_metrics(placed, bld_btype)
+    assert math.isfinite(metrics["size_assortativity"]), (
+        f"size_assortativity must be finite (not nan/inf), got {metrics['size_assortativity']}"
+    )
+    assert metrics["size_assortativity"] > 0, (
+        f"size_assortativity should be positive (bigger HH in bigger buildings), "
+        f"got {metrics['size_assortativity']}"
+    )
+
+
 def test_compare_typed_vs_legacy():
     """Typed (all matching) should score higher than legacy (half mismatched)."""
     bld = pd.DataFrame({

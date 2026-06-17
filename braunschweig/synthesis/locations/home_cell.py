@@ -447,58 +447,85 @@ def assign_homes_typed(
     _has_footprint = "footprint" in buildings.columns
 
     if _has_footprint:
-        # Vectorized footprint→cell membership via a single spatial join (STRtree-backed).
-        # Replaces the per-building reproject + bbox-loop + .intersects() inner loop that
-        # took ~50 min for a full Kreis (~44k footprints).
+        # Orphan-only intersection mode.
+        #
+        # PRIMARY rule: a building's home cell is the cell containing its CENTROID
+        # (``_cell_id`` computed above from the EPSG:3035 centroid).  Normal cells
+        # use ONLY their centroid-resident buildings — each building has exactly ONE
+        # type, in exactly ONE cell, and normal cells are byte-identical to the
+        # centroid path.
+        #
+        # ORPHAN rule: a cell is an orphan when it has households but ZERO
+        # centroid-resident buildings.  Only for these cells we fall back to a
+        # vectorized footprint→cell sjoin to find INTERSECTING buildings whose
+        # polygon reaches into the orphan cell (common for boundary footprints).
+        # The household home point is clamped into the orphan cell's own square.
+        #
+        # A cell with neither centroid-resident NOR intersecting buildings stays a
+        # true zero-building cell → existing random_point_in_cell fallback.
 
-        # Step 1: reproject ALL footprints to EPSG:3035 in one call.
-        fp3035 = gpd.GeoSeries(
-            list(buildings["footprint"].values), crs=buildings.crs
-        ).to_crs(ZENSUS_CRS)
-
-        # Step 2: build cell-square polygons for every unique cell that appears in `cells`.
-        # Only these cells have census signals, so there is no point matching outside them.
-        unique_cell_ids = cells["ZENSUS100m"].unique()
-        cell_sq_geoms = []
-        cell_sq_ids = []
-        for cid in unique_cell_ids:
-            try:
-                _, n_sw, e_sw = _parse_inspire_id(str(cid))
-            except Exception:
-                continue
-            cell_sq_geoms.append(_shapely_box(e_sw, n_sw, e_sw + CELL_SIZE_M, n_sw + CELL_SIZE_M))
-            cell_sq_ids.append(str(cid))
-        cell_squares = gpd.GeoDataFrame(
-            {"ZENSUS100m": cell_sq_ids},
-            geometry=cell_sq_geoms,
-            crs=ZENSUS_CRS,
-        )
-
-        # Step 3: spatial join footprints → cell squares (STRtree, "intersects").
-        # Handle degenerate (None/empty) footprints: replace with centroid point so
-        # they still participate (a point always intersects the cell containing it).
-        cent3035_arr = cent3035.values  # already computed above in EPSG:3035
-        fp3035_clean = [
-            (fp if (fp is not None and not fp.is_empty) else cent3035_arr[i])
-            for i, fp in enumerate(fp3035)
-        ]
-        fp_gdf = gpd.GeoDataFrame(
-            {"bld_row_idx": buildings.index.tolist()},
-            geometry=fp3035_clean,
-            crs=ZENSUS_CRS,
-        )
-        joined = gpd.sjoin(fp_gdf, cell_squares, predicate="intersects", how="inner")
-        # joined columns: bld_row_idx (building integer index), ZENSUS100m (cell id)
-
-        # Step 4: build cell -> building row-indices dict.
-        fps_by_cell: dict[str, list[int]] = {}
-        for cell_id_j, row_idx_j in zip(joined["ZENSUS100m"], joined["bld_row_idx"]):
-            fps_by_cell.setdefault(str(cell_id_j), []).append(int(row_idx_j))
-
-        # Convert row-index lists to sub-DataFrames for compatibility with the cell loop.
-        fps_by_cell_df = {
-            cid: buildings.iloc[idxs] for cid, idxs in fps_by_cell.items()
+        # Step 1: centroid-based cell → building mapping (primary, unchanged).
+        fps_by_cell_df: dict[str, object] = {
+            c: g for c, g in buildings.groupby("_cell_id", sort=False)
         }
+
+        # Step 2: determine which cells in the households frame are orphans
+        # (have households but NO centroid-resident building).
+        hh_cells = set(households[cell_col].dropna().astype(str).unique())
+        orphan_cells = hh_cells - set(fps_by_cell_df.keys())
+
+        if orphan_cells:
+            # Step 3: reproject ALL footprints to EPSG:3035 in one call.
+            fp3035 = gpd.GeoSeries(
+                list(buildings["footprint"].values), crs=buildings.crs
+            ).to_crs(ZENSUS_CRS)
+
+            # Step 4: build cell-square polygons ONLY for orphan cells.
+            cell_sq_geoms = []
+            cell_sq_ids = []
+            for cid in orphan_cells:
+                try:
+                    _, n_sw, e_sw = _parse_inspire_id(str(cid))
+                except Exception:
+                    continue
+                cell_sq_geoms.append(
+                    _shapely_box(e_sw, n_sw, e_sw + CELL_SIZE_M, n_sw + CELL_SIZE_M)
+                )
+                cell_sq_ids.append(str(cid))
+
+            if cell_sq_geoms:
+                cell_squares = gpd.GeoDataFrame(
+                    {"ZENSUS100m": cell_sq_ids},
+                    geometry=cell_sq_geoms,
+                    crs=ZENSUS_CRS,
+                )
+
+                # Step 5: spatial join footprints → orphan cell squares.
+                # Handle degenerate (None/empty) footprints: replace with centroid.
+                cent3035_arr = cent3035.values  # already computed above in EPSG:3035
+                fp3035_clean = [
+                    (fp if (fp is not None and not fp.is_empty) else cent3035_arr[i])
+                    for i, fp in enumerate(fp3035)
+                ]
+                fp_gdf = gpd.GeoDataFrame(
+                    {"bld_row_idx": buildings.index.tolist()},
+                    geometry=fp3035_clean,
+                    crs=ZENSUS_CRS,
+                )
+                joined = gpd.sjoin(fp_gdf, cell_squares, predicate="intersects", how="inner")
+
+                # Step 6: add intersecting buildings to orphan cells ONLY.
+                for cell_id_j, row_idx_j in zip(joined["ZENSUS100m"], joined["bld_row_idx"]):
+                    cid_str = str(cell_id_j)
+                    if cid_str in orphan_cells:
+                        # Accumulate row indices; convert to DataFrame after loop.
+                        existing = fps_by_cell_df.get(cid_str)
+                        if existing is None:
+                            fps_by_cell_df[cid_str] = buildings.iloc[[int(row_idx_j)]]
+                        else:
+                            fps_by_cell_df[cid_str] = pd.concat(
+                                [existing, buildings.iloc[[int(row_idx_j)]]]
+                            ).drop_duplicates(subset="building_id")
     else:
         # Centroid fallback: byte-identical to the original behaviour.
         fps_by_cell_df = {c: g for c, g in buildings.groupby("_cell_id", sort=False)}
