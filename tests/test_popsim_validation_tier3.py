@@ -115,3 +115,16 @@ def test_tier3_end_to_end(monkeypatch):
     assert "delta_pp" in long.columns
     q = QA.assess(long)
     assert set(q["control"]) == {"employed", "schulabschluss", "beruflabschluss"}
+
+
+def test_employed_25_64_band_rate_is_reported():
+    import pandas as pd
+    from braunschweig.analysis.popsim_validation import controls as vc
+    persons = pd.DataFrame({
+        "RegionalSchlussel_ARS": ["03102000000"] * 4,
+        "HP_ALTER": [30, 40, 50, 70],
+        "P_TAET": [1, 11, 1, 1],   # ages 30,50 employed (in band); 40 not; 70 employed but out of band
+    })
+    rate = vc.employed_25_64_rate(persons)
+    # band 25-64 = ages 30,40,50 -> 2 of 3 employed
+    assert round(rate["03102"], 3) == round(2 / 3, 3)
