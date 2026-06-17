@@ -200,8 +200,12 @@ def execute(context) -> gpd.GeoDataFrame:
         "[braunschweig.data.buildings] {:,} candidate dwellings after GFK+area filter".format(len(df))
     )
 
-    # 3) Weight by area, take centroid.
+    # 3) Weight by area; store the original footprint polygon BEFORE replacing
+    #    the active geometry with the centroid. This allows downstream stages
+    #    (e.g. assign_homes_typed) to use intersection-based cell membership so
+    #    that footprints straddling a 100 m cell boundary are not false orphans.
     df["weight"] = df["area_m2"].astype(float)
+    df["footprint"] = df.geometry  # original polygon in EPSG:25832
     df["geometry"] = df.geometry.centroid
     df["building_id"] = np.arange(len(df))
 
@@ -221,7 +225,7 @@ def execute(context) -> gpd.GeoDataFrame:
 
     df = df[df["commune_id"].notna()].copy()
 
-    df_combined = df[["building_id", "weight", "area_m2", "commune_id", "iris_id", "geometry"]]
+    df_combined = df[["building_id", "weight", "area_m2", "commune_id", "iris_id", "geometry", "footprint"]]
     df_combined = gpd.GeoDataFrame(df_combined, crs=df.crs)
 
     # 5) Fill Gemeinden that ended up with zero buildings (should be rare
@@ -249,6 +253,9 @@ def execute(context) -> gpd.GeoDataFrame:
         df_missing["building_id"] = np.arange(len(df_missing)) + len(df_combined)
         df_missing["weight"] = 1.0
         df_missing["area_m2"] = 1.0  # placeholder; no real footprint (zone-centroid fallback)
+        # For zone-centroid placeholders, footprint = the point itself (no polygon
+        # available). This ensures the column has no None holes in df_combined.
+        df_missing["footprint"] = df_missing["geometry"]
         df_combined = gpd.GeoDataFrame(
             pd.concat([df_combined, df_missing], ignore_index=True),
             crs=df_combined.crs,

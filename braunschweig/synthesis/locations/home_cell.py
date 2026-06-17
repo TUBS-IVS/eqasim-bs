@@ -46,7 +46,9 @@ from dataclasses import dataclass
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import Point, box as _shapely_box
 
+from braunschweig.popsim.cells import parse_inspire_id as _parse_inspire_id
 from braunschweig.popsim.prepared_cells import load_prepared_cells
 from braunschweig.synthesis.locations import building_typing as bt
 from braunschweig.synthesis.locations import cell_building_signals as cbs
@@ -430,7 +432,85 @@ def assign_homes_typed(
     # building_id -> its centroid Point in the buildings' native CRS (EPSG:25832).
     bcent = buildings.geometry.centroid
     geom_by_bid = dict(zip(buildings["building_id"], bcent))
-    fps_by_cell = {c: g for c, g in buildings.groupby("_cell_id", sort=False)}
+
+    # Build cell -> building-rows mapping.
+    # INTERSECTION mode (preferred): when the buildings frame carries a ``footprint``
+    # polygon column (EPSG:25832), reproject each footprint to EPSG:3035, enumerate
+    # the 100 m INSPIRE cells it intersects via bbox + actual geometry check, and add
+    # the building row to EACH of those cells.  This ensures that a footprint
+    # straddling a cell boundary is a candidate in BOTH cells rather than only the
+    # one containing its centroid, eliminating false zero-building orphans.
+    #
+    # CENTROID mode (backward-compatible fallback): if no ``footprint`` column is
+    # present (e.g. legacy callers, unit tests without footprint data), fall back to
+    # the centroid-based groupby — byte-identical to the previous behaviour.
+    _has_footprint = "footprint" in buildings.columns
+
+    if _has_footprint:
+        # Reproject footprint polygons to EPSG:3035 for grid-aligned intersection.
+        fp_series_3035 = gpd.GeoSeries(
+            buildings["footprint"].values, crs=buildings.crs
+        ).to_crs(ZENSUS_CRS)
+
+        fps_by_cell: dict[str, list[int]] = {}  # cell_id -> list of integer row indices
+        for row_idx, fp_3035 in zip(buildings.index, fp_series_3035):
+            if fp_3035 is None or fp_3035.is_empty:
+                # Fall back to centroid cell for degenerate footprints (e.g. placeholders).
+                cid = buildings.at[row_idx, "_cell_id"]
+                fps_by_cell.setdefault(cid, []).append(row_idx)
+                continue
+            minx, miny, maxx, maxy = fp_3035.bounds
+            # Enumerate all 100 m cells whose SW corner falls within the footprint's bbox.
+            e_start = int(math.floor(minx / CELL_SIZE_M) * CELL_SIZE_M)
+            n_start = int(math.floor(miny / CELL_SIZE_M) * CELL_SIZE_M)
+            e_end = int(math.floor(maxx / CELL_SIZE_M) * CELL_SIZE_M)
+            n_end = int(math.floor(maxy / CELL_SIZE_M) * CELL_SIZE_M)
+            e_cur = e_start
+            while e_cur <= e_end:
+                n_cur = n_start
+                while n_cur <= n_end:
+                    # Quick intersection check: does the footprint actually intersect
+                    # this 100 m cell square?
+                    cell_square = _shapely_box(e_cur, n_cur, e_cur + CELL_SIZE_M, n_cur + CELL_SIZE_M)
+                    if fp_3035.intersects(cell_square):
+                        cid = f"CRS3035RES100mN{n_cur}E{e_cur}"
+                        fps_by_cell.setdefault(cid, []).append(row_idx)
+                    n_cur += CELL_SIZE_M
+                e_cur += CELL_SIZE_M
+
+        # Convert row-index lists to sub-DataFrames for compatibility with the cell loop.
+        fps_by_cell_df = {
+            cid: buildings.iloc[idxs] for cid, idxs in fps_by_cell.items()
+        }
+    else:
+        # Centroid fallback: byte-identical to the original behaviour.
+        fps_by_cell_df = {c: g for c, g in buildings.groupby("_cell_id", sort=False)}
+
+    # For intersection mode: home point for an HH placed in cell `c` on building `b`
+    # = b's centroid clamped into c's 100 m square (EPSG:3035), then reprojected to
+    # EPSG:25832.  This guarantees the home lies inside the household's own cell even
+    # when b's centroid sits in a neighbouring cell (the common case for boundary
+    # footprints).  For buildings already inside c, clamping is a no-op.
+    def _home_point_for_cell(bid: int, cell_id: str) -> object:
+        """Return the home point (EPSG:25832) for building ``bid`` placed in ``cell_id``."""
+        pt_25832 = geom_by_bid.get(bid)
+        if pt_25832 is None:
+            return hm.random_point_in_cell(cell_id, rng)
+        if not _has_footprint:
+            return pt_25832
+        # Clamp the centroid into the cell's 100 m square (EPSG:3035).
+        _, n_sw, e_sw = _parse_inspire_id(cell_id)
+        # Reproject centroid to 3035, clamp, reproject back.
+        pt_3035_gs = gpd.GeoSeries([pt_25832], crs=buildings.crs).to_crs(ZENSUS_CRS)
+        cx, cy = pt_3035_gs.iloc[0].x, pt_3035_gs.iloc[0].y
+        cx_c = max(float(e_sw), min(float(e_sw + CELL_SIZE_M), cx))
+        cy_c = max(float(n_sw), min(float(n_sw + CELL_SIZE_M), cy))
+        clamped = gpd.GeoSeries(
+            [Point(cx_c, cy_c)],
+            crs=ZENSUS_CRS,
+        ).to_crs(buildings.crs)
+        return clamped.iloc[0]
+
     sig = cbs.cell_signals(cells).set_index("ZENSUS100m")
 
     hh = households.copy()
@@ -438,7 +518,7 @@ def assign_homes_typed(
     rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
     n_match = n_zero = n_over = n_in_cell = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
-        fps = fps_by_cell.get(str(cell_id))
+        fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
             for r in grp.itertuples(index=False):
                 rec_id.append(getattr(r, household_id_col))
@@ -470,7 +550,7 @@ def assign_homes_typed(
             rec_comm.append(getattr(r, commune_col))
             rec_bid.append(bid)
             rec_geom.append(
-                geom_by_bid.get(bid) if pd.notna(bid)
+                _home_point_for_cell(bid, str(cell_id)) if pd.notna(bid)
                 else hm.random_point_in_cell(str(cell_id), rng)
             )
 
