@@ -85,16 +85,22 @@ _SEX_SPEC = (
 
 def _raw_cell_employment(cells, rates, *, sex_prefix, kreis_col, single_year_max):
     """Per-cell raw expected employed = Σ_year cell_pop[year] × rate[band(year)]."""
-    rate_lookup = {(r.KREIS, r.age_class): r.rate for r in rates.itertuples()}
+    rates_by_band: dict[int, dict[str, float]] = {}
+    for r in rates.itertuples():
+        rates_by_band.setdefault(int(r.age_class), {})[str(r.KREIS)] = float(r.rate)
+
     raw = pd.Series(0.0, index=cells.index)
     for age_class, lo, hi in GENESIS_EMPLOYMENT_BANDS:
         top = single_year_max if hi is None else hi - 1
-        cols = [f"{sex_prefix}_AGE_{y}" for y in range(lo, top + 1)
-                if f"{sex_prefix}_AGE_{y}" in cells.columns]
+        cols = [
+            f"{sex_prefix}_AGE_{y}"
+            for y in range(lo, top + 1)
+            if f"{sex_prefix}_AGE_{y}" in cells.columns
+        ]
         if not cols:
             continue
         band_pop = cells[cols].sum(axis=1)
-        rate = cells[kreis_col].map(lambda k, _ac=age_class: rate_lookup.get((k, _ac), 0.0))
+        rate = cells[kreis_col].map(rates_by_band.get(age_class, {})).fillna(0.0)
         raw = raw + band_pop * rate
     return raw
 
