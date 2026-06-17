@@ -34,7 +34,7 @@ RESIDENTIAL_ACTIVITIES = {"residential", "unknown"}
 # Hausumringe pipeline.  40 m² eliminates garages/sheds, 400 m² eliminates
 # apartment complexes that would otherwise dominate sampling.
 AREA_MIN = 40.0
-AREA_MAX = 400.0
+INCLUDE_LARGE_BUILDINGS = True   # the matcher uses capacity, so big MFH blocks are kept
 
 
 # Fallback-rate thresholds (CLAUDE.md "Fallback transparency"). Both building
@@ -57,6 +57,22 @@ COMMUNE_AGS_FALLBACK_WARN_THRESHOLD = 0.01
 #     whole communes are missing real residential footprints (an ALKIS coverage
 #     gap), not just a couple of tiny exclaves. 1 % of required communes.
 ZERO_BUILDING_COMMUNE_WARN_THRESHOLD = 0.01
+
+
+def filter_residential_buildings(df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Keep only residential (and unknown) activity buildings above AREA_MIN.
+
+    Extracted from ``execute()`` so it can be unit-tested in isolation.
+    The upper 400 m² cap has been removed — large MFH footprints are kept
+    because the matcher uses per-building capacity, not flat sampling.
+    """
+    df = df.copy()
+    df["activity"] = df["activity"].astype(str)
+    df = df[df["activity"].isin(RESIDENTIAL_ACTIVITIES)].copy()
+    if "area_m2" not in df.columns:
+        df["area_m2"] = df.geometry.area.astype("float32")
+    df = df[df["area_m2"] >= AREA_MIN].copy()   # lower cap only; large blocks kept
+    return df
 
 
 def impute_commune_with_ags_fallback(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
@@ -177,18 +193,8 @@ def execute(context) -> gpd.GeoDataFrame:
     if df_zones.crs != df_alkis.crs:
         df_zones = df_zones.to_crs(df_alkis.crs)
 
-    df = df_alkis.copy()
-    df["activity"] = df["activity"].astype(str)
-
-    # 1) Keep residential & unknown activities, drop garages & other
-    #    ancillary footprints outright.
-    df = df[df["activity"].isin(RESIDENTIAL_ACTIVITIES)].copy()
-
-    # 2) Area filter (40–400 m²).  ``area_m2`` already exists from the
-    #    preprocessing step; recompute if missing as a defensive fallback.
-    if "area_m2" not in df.columns:
-        df["area_m2"] = df.geometry.area.astype("float32")
-    df = df[(df["area_m2"] >= AREA_MIN) & (df["area_m2"] < AREA_MAX)].copy()
+    # 1+2) Keep residential/unknown activities, lower area cap only (no upper cap).
+    df = filter_residential_buildings(df_alkis)
 
     print(
         "[braunschweig.data.buildings] {:,} candidate dwellings after GFK+area filter".format(len(df))
@@ -215,7 +221,7 @@ def execute(context) -> gpd.GeoDataFrame:
 
     df = df[df["commune_id"].notna()].copy()
 
-    df_combined = df[["building_id", "weight", "commune_id", "iris_id", "geometry"]]
+    df_combined = df[["building_id", "weight", "area_m2", "commune_id", "iris_id", "geometry"]]
     df_combined = gpd.GeoDataFrame(df_combined, crs=df.crs)
 
     # 5) Fill Gemeinden that ended up with zero buildings (should be rare
@@ -242,6 +248,7 @@ def execute(context) -> gpd.GeoDataFrame:
         df_missing["geometry"] = df_missing["geometry"].centroid
         df_missing["building_id"] = np.arange(len(df_missing)) + len(df_combined)
         df_missing["weight"] = 1.0
+        df_missing["area_m2"] = 1.0  # placeholder; no real footprint (zone-centroid fallback)
         df_combined = gpd.GeoDataFrame(
             pd.concat([df_combined, df_missing], ignore_index=True),
             crs=df_combined.crs,
