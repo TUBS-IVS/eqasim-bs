@@ -41,8 +41,10 @@ def home_match_metrics(placed: pd.DataFrame, buildings_btype: pd.DataFrame) -> d
     df = placed.merge(buildings_btype, left_on="home_location_id", right_on="building_id", how="inner")
     hh_btype = df["building_type_3class"].map(_BTYPE_MAP)
     match = (hh_btype == df["btype"]).mean() if len(df) else float("nan")
-    if len(df) >= 3 and df["size"].nunique() > 1 and df["household_size"].nunique() > 1:
-        rho = spearmanr(df["household_size"], df["size"]).correlation
+    finite_mask = df["household_size"].notna() & df["size"].notna() & (df["size"] > 0)
+    df_fin = df[finite_mask]
+    if len(df_fin) >= 3 and df_fin["size"].nunique() > 1 and df_fin["household_size"].nunique() > 1:
+        rho = spearmanr(df_fin["household_size"], df_fin["size"]).correlation
     else:
         rho = float("nan")
     return {"type_match_share": float(match), "size_assortativity": float(rho),

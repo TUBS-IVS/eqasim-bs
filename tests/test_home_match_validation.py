@@ -235,6 +235,63 @@ def test_size_assortativity_non_nan_with_varying_sizes():
     )
 
 
+def test_size_assortativity_ignores_nan_sizes():
+    """size_assortativity must be finite and > 0 when some buildings have size=NaN
+    but the finite rows have a monotone household_size <-> size relationship.
+    This is the regression test for the bug where spearmanr over NaN-containing
+    arrays returned nan even with real variation in the finite rows."""
+    n = 15
+    n_nan = 3
+    n_finite = n - n_nan
+
+    # Finite rows: strictly monotone (hh_size 1..12 paired with size 100..1200)
+    hh_sizes = list(range(1, n_finite + 1)) + [1] * n_nan
+    sizes = [float(s * 100) for s in range(1, n_finite + 1)] + [np.nan] * n_nan
+    building_ids = list(range(n))
+
+    placed = pd.DataFrame({
+        "household_id": list(range(n)),
+        "home_location_id": building_ids,
+        "building_type_3class": ["ein_zweifamilienhaus"] * n,
+        "household_size": hh_sizes,
+    })
+    buildings_btype = pd.DataFrame({
+        "building_id": building_ids,
+        "btype": ["efh_zfh"] * n,
+        "size": sizes,
+    })
+
+    m = v.home_match_metrics(placed, buildings_btype)
+
+    assert math.isfinite(m["size_assortativity"]), (
+        f"Expected finite size_assortativity when NaN rows present but finite rows vary; "
+        f"got {m['size_assortativity']}"
+    )
+    assert m["size_assortativity"] > 0, (
+        f"Expected positive correlation (monotone finite data), got {m['size_assortativity']}"
+    )
+
+
+def test_size_assortativity_nan_when_all_sizes_nan():
+    """size_assortativity must be nan when ALL buildings have size=NaN (genuinely degenerate)."""
+    placed = pd.DataFrame({
+        "household_id": [0, 1, 2],
+        "home_location_id": [0, 1, 2],
+        "building_type_3class": ["ein_zweifamilienhaus"] * 3,
+        "household_size": [1, 2, 3],
+    })
+    buildings_btype = pd.DataFrame({
+        "building_id": [0, 1, 2],
+        "btype": ["efh_zfh"] * 3,
+        "size": [np.nan, np.nan, np.nan],
+    })
+
+    m = v.home_match_metrics(placed, buildings_btype)
+    assert not math.isfinite(m["size_assortativity"]), (
+        f"Expected nan when all sizes are NaN, got {m['size_assortativity']}"
+    )
+
+
 def test_compare_typed_vs_legacy():
     """Typed (all matching) should score higher than legacy (half mismatched)."""
     bld = pd.DataFrame({
