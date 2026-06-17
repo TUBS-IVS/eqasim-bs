@@ -3,6 +3,16 @@ from __future__ import annotations
 import numpy as np, pandas as pd
 from braunschweig.synthesis.locations.cell_building_signals import THREE_CLASSES
 
+FLOOR_HEIGHT_M = 3.0
+
+
+def building_volume(area_m2, height_m, floor_height=FLOOR_HEIGHT_M):
+    a = float(area_m2) if area_m2 == area_m2 else 0.0
+    floors = 1
+    if height_m == height_m and height_m and height_m > 0:   # not NaN, positive
+        floors = max(1, int(round(float(height_m) / floor_height)))
+    return a * floors
+
 
 def assign_building_types(footprints: pd.DataFrame, geb_counts: dict, rng) -> pd.DataFrame:
     out = footprints.copy().reset_index(drop=True)
@@ -63,11 +73,14 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
         b = typed[typed["btype"] == cls]
         if n <= 0 or len(b) == 0:
             continue
-        w = b["area_m2"].fillna(0).to_numpy().astype(float)
+        if "height_m" in b.columns:
+            w = np.array([building_volume(ar, hm) for ar, hm in zip(b["area_m2"].to_numpy(), b["height_m"].to_numpy())], float)
+        else:
+            w = b["area_m2"].fillna(0).to_numpy().astype(float)
         w = w / w.sum() if w.sum() > 0 else np.ones(len(b)) / len(b)
         caps = np.maximum(1, np.round(w * n)).astype(int)
-        # trim/extend caps to exactly n (largest-area buildings absorb the remainder)
-        order = b["area_m2"].fillna(0).to_numpy().argsort()[::-1]
+        # trim/extend caps to exactly n (largest-volume/area buildings absorb the remainder)
+        order = w.argsort()[::-1]
         bid = b["building_id"].to_numpy()
         slot_bids = []
         for j in order:

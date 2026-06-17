@@ -102,6 +102,19 @@ def test_build_slots_handles_suppressed_dwelling_types():
     assert (slots["btype"] == "efh_zfh").all(), "expected all slots on efh_zfh footprints"
 
 
+def test_build_slots_volume_weights_tall_building():
+    import numpy as np, pandas as pd
+    from braunschweig.synthesis.locations import building_typing as bt
+    # two MFH footprints, equal area; one is tall (height 30 -> 10 floors), one flat (NaN)
+    typed = pd.DataFrame({"building_id": [0, 1], "area_m2": [200.0, 200.0],
+                          "btype": ["mfh", "mfh"], "height_m": [30.0, float("nan")]})
+    slots = bt.build_slots(typed, {"efh_zfh": 0, "mfh": 11, "sonst": 0}, occupied=11,
+                           size_hist=[(60.0, 11.0)], rng=np.random.RandomState(0))
+    cap = slots.groupby("building_id").size()
+    assert cap[0] > cap[1]            # tall building gets MORE dwellings than the flat one
+    assert len(slots) == 11           # total preserved
+
+
 def test_build_slots_total_equals_occupied_with_unbalanced_shares():
     """Hamilton apportionment guarantees len(slots) == round(occupied).
 
