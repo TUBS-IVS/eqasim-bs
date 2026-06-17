@@ -392,3 +392,23 @@ def test_full_catalog_appends_employment_grid_only_when_requested():
     names_on = {c.name for c in on}
     assert {"EMPLOYED_M_agg", "EMPLOYED_F_agg"} <= names_on
     assert len(on) == len(base) + 2
+
+
+def test_build_controls_df_employment_grid_flag_adds_two_controls():
+    # stage.py imports cleanly under the test .venv (no yaml dependency), so the
+    # build_controls_df flag is exercised directly here.
+    from braunschweig.popsim.stage import build_controls_df
+
+    off = build_controls_df(
+        controls_source="catalog", tiers=("tier0",), employment_grid=False
+    )
+    fields_off = set(off["control_field"])
+    assert "EMPLOYED_M_agg_ZENSUS100m" not in fields_off
+    assert "EMPLOYED_F_agg_ZENSUS100m" not in fields_off
+
+    on = build_controls_df(
+        controls_source="catalog", tiers=("tier0",), employment_grid=True
+    )
+    fields_on = set(on["control_field"])
+    assert "EMPLOYED_M_agg_ZENSUS100m" in fields_on
+    assert "EMPLOYED_F_agg_ZENSUS100m" in fields_on

@@ -147,7 +147,7 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
     return sources.get_source(source_name)
 
 
-def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",), employment_grid=False):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -156,12 +156,16 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
 
     tiers: tuple of tier names to include when controls_source="catalog". Default
     ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
+
+    employment_grid: when True (catalog source only), append the two age x sex-resolved
+    100m employment controls (EMPLOYED_M_agg / EMPLOYED_F_agg) to the catalog. Default
+    False = byte-identical to the pre-employment-grid catalog.
     """
     if controls_source == "csv":
         return pd.read_csv(controls_path, sep=";")
     if controls_source == "catalog":
         from braunschweig.popsim import control_spec as cs
-        catalog = cs.full_catalog(include_tiers=tiers)
+        catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid)
         return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
