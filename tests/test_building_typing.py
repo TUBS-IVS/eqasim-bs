@@ -115,6 +115,15 @@ def test_build_slots_volume_weights_tall_building():
     assert len(slots) == 11           # total preserved
 
 
+def test_building_volume_height_fallbacks():
+    """None/NaN/0/negative height all fall back to 1 floor; valid height scales correctly."""
+    assert bt.building_volume(100.0, None) == 100.0
+    assert bt.building_volume(100.0, float("nan")) == 100.0
+    assert bt.building_volume(100.0, 0) == 100.0
+    assert bt.building_volume(100.0, -5) == 100.0
+    assert bt.building_volume(100.0, 30.0) == 1000.0   # 30 / 3.0 = 10 floors
+
+
 def test_build_slots_total_equals_occupied_with_unbalanced_shares():
     """Hamilton apportionment guarantees len(slots) == round(occupied).
 

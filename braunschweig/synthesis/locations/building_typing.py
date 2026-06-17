@@ -9,7 +9,7 @@ FLOOR_HEIGHT_M = 3.0
 def building_volume(area_m2, height_m, floor_height=FLOOR_HEIGHT_M):
     a = float(area_m2) if area_m2 == area_m2 else 0.0
     floors = 1
-    if height_m == height_m and height_m and height_m > 0:   # not NaN, positive
+    if height_m is not None and height_m == height_m and height_m > 0:   # not None, not NaN, positive
         floors = max(1, int(round(float(height_m) / floor_height)))
     return a * floors
 
