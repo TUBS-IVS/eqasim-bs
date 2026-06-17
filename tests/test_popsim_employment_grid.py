@@ -137,6 +137,38 @@ def test_select_load_columns_no_duplicate_when_input_already_present():
     assert result[:2] == ["HH..", "M_AGE_40"]   # existing order preserved
 
 
+def test_add_employment_grid_columns_attaches_targets_to_cells_copy():
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2"],
+        "KREIS": ["03102", "03102"],
+        "M_AGE_40": [100, 300],
+        "F_AGE_40": [100, 100],
+        "OTHER": [7, 8],   # must survive untouched
+    })
+    svb = pd.DataFrame({
+        "departement_id": ["03102", "03102"],
+        "age_class": [30, 30],
+        "sex": ["male", "female"],
+        "weight": [200, 100],
+    })
+    census_levels = pd.DataFrame({
+        "ARS_kreis": ["03102"],
+        "ERWERBSTAT_KURZ_STP__11_M": [240.0],
+        "ERWERBSTAT_KURZ_STP__11_W": [120.0],
+    })
+    out = eg.add_employment_grid_columns(cells, svb, census_levels)
+    # New columns present; original columns preserved.
+    assert "EMPLOYED_M_agg" in out.columns
+    assert "EMPLOYED_F_agg" in out.columns
+    assert list(out["OTHER"]) == [7, 8]
+    # Targets match per_cell_employment_targets (240 male split 100:300).
+    m = out.set_index("ZENSUS100m")["EMPLOYED_M_agg"]
+    assert round(m["c1"], 6) == 60.0
+    assert round(m["c2"], 6) == 180.0
+    # Input cells frame is not mutated (copy semantics).
+    assert "EMPLOYED_M_agg" not in cells.columns
+
+
 def test_per_cell_targets_rescale_is_per_kreis_no_bleed():
     """Per-Kreis×sex rescale must not bleed census levels between Kreise.
 

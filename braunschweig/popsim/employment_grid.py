@@ -191,3 +191,49 @@ def per_cell_employment_targets(
         scaled[mask] = raw[mask] / raw_by_kreis[mask] * target_level[mask]
         out[f"EMPLOYED_{prefix}_agg"] = scaled.to_numpy()
     return out
+
+
+def add_employment_grid_columns(
+    cells: pd.DataFrame,
+    svb: pd.DataFrame,
+    census_levels: pd.DataFrame,
+    *,
+    kreis_col: str = "KREIS",
+    single_year_max: int = 100,
+) -> pd.DataFrame:
+    """Return a copy of ``cells`` with ``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg`` added.
+
+    Thin wrapper over :func:`per_cell_employment_targets` for the stage wiring: it
+    computes the two per-cell employment targets (GENESIS SvB age-shape rescaled per
+    Kreis x sex to the census Erwerbstaetige level) and attaches them as columns,
+    aligned on the (preserved) ``cells`` index. The targets frame is index-aligned to
+    ``cells`` by :func:`per_cell_employment_targets`, so the assignment is positional-safe.
+
+    Parameters
+    ----------
+    cells:
+        Prepared cells frame carrying ``ZENSUS100m``, a Kreis column (``kreis_col``)
+        and single-year ``{M,F}_AGE_<year>`` columns.
+    svb:
+        GENESIS SvB frame ``[departement_id, age_class, sex, weight]`` (the age SHAPE).
+    census_levels:
+        Per-Kreis sex-split Erwerbstaetige levels: ``ARS_kreis`` +
+        ``ERWERBSTAT_KURZ_STP__11_M`` / ``ERWERBSTAT_KURZ_STP__11_W`` (the LEVEL).
+    kreis_col:
+        Name of the Kreis column on ``cells`` (5-digit ARS).
+    single_year_max:
+        Top single-year age included in the open-ended (65+) band.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of ``cells`` with ``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg`` columns added.
+    """
+    targets = per_cell_employment_targets(
+        cells, svb, census_levels,
+        kreis_col=kreis_col, single_year_max=single_year_max,
+    )
+    out = cells.copy()
+    out["EMPLOYED_M_agg"] = targets["EMPLOYED_M_agg"].to_numpy()
+    out["EMPLOYED_F_agg"] = targets["EMPLOYED_F_agg"].to_numpy()
+    return out
