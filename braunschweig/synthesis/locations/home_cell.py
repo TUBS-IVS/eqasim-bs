@@ -86,6 +86,13 @@ CELL_SIZE_M = 100
 # independent of every other ``random_seed``-derived stream in the pipeline.
 RANDOM_SEED_OFFSET = 91207
 
+# Upper area cap (m^2) applied ONLY in the legacy area-weighted draw.
+# The shared buildings stage is now uncapped so the typed path can use large
+# MFH blocks (it bounds via capacity). Legacy has no capacity mechanism, so a
+# large footprint would dominate the area-weighted lottery -> restore the
+# pre-branch 400 m^2 guard here only.
+LEGACY_AREA_MAX = 400.0
+
 
 def building_cell_id(north_m: float, east_m: float) -> str:
     """Return the 100 m INSPIRE cell id (``CRS3035RES100m...``) of a 3035 point.
@@ -149,6 +156,23 @@ def _weighted_choice(rng: np.random.RandomState, row_indices: np.ndarray,
         return int(rng.choice(row_indices))
     probabilities = weights / total
     return int(rng.choice(row_indices, p=probabilities))
+
+
+def _legacy_capped_buildings(buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Re-apply the pre-branch <400 m^2 cap for the capacity-free legacy draw.
+
+    The shared buildings stage is now uncapped (typed path uses large blocks);
+    legacy has no capacity mechanism so a large footprint would dominate its
+    area-weighted draw -> restore the cap here only.
+
+    If ``area_m2`` is absent (should not happen after the shared-stage refactor
+    but guarded defensively), the frame is returned unchanged.
+    """
+    if "area_m2" not in buildings.columns:
+        return buildings
+    capped = buildings[buildings["area_m2"] < LEGACY_AREA_MAX].copy().reset_index(drop=True)
+    capped["building_id"] = np.arange(len(capped))
+    return capped
 
 
 def assign_homes_to_cell_buildings(
@@ -505,7 +529,8 @@ def execute(context):
             .reset_index(drop=True)
         )
         result, _ = assign_homes_to_cell_buildings(
-            households, buildings, random_seed=context.config("random_seed"),
+            households, _legacy_capped_buildings(buildings),
+            random_seed=context.config("random_seed"),
         )
         return result[["household_id", "commune_id", "home_location_id", "geometry"]]
 
