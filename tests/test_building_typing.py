@@ -158,3 +158,37 @@ def test_assign_building_types_ranks_by_volume_when_tall():
     out = bt.assign_building_types(fp, {"efh_zfh": 1, "mfh": 1, "sonst": 0}, np.random.RandomState(0))
     typ = out.set_index("building_id")["btype"]
     assert typ[0] == "mfh"        # the tall small footprint is the MFH (by volume), not the big flat one
+
+
+def test_build_slots_all_nan_height_equals_area():
+    """All-NaN height_m column must produce byte-identical results to no height_m column.
+
+    Pins the contract: when height data is present but entirely missing, build_slots
+    must fall through to area-only weighting, not diverge due to NaN arithmetic.
+    """
+    rng_a = np.random.RandomState(42)
+    rng_b = np.random.RandomState(42)
+    areas = [80.0, 120.0, 200.0, 95.0, 150.0]
+    whg = {"efh_zfh": 0, "mfh": 12, "sonst": 0}
+    size_hist = [(60.0, 12.0)]
+
+    typed_with_nan = pd.DataFrame({
+        "building_id": list(range(len(areas))),
+        "area_m2": areas,
+        "btype": ["mfh"] * len(areas),
+        "height_m": [float("nan")] * len(areas),
+    })
+    typed_no_col = pd.DataFrame({
+        "building_id": list(range(len(areas))),
+        "area_m2": areas,
+        "btype": ["mfh"] * len(areas),
+    })
+
+    slots_with_nan = bt.build_slots(typed_with_nan, whg, occupied=12, size_hist=size_hist, rng=rng_a)
+    slots_no_col = bt.build_slots(typed_no_col, whg, occupied=12, size_hist=size_hist, rng=rng_b)
+
+    pd.testing.assert_frame_equal(
+        slots_with_nan.reset_index(drop=True),
+        slots_no_col.reset_index(drop=True),
+        check_like=False,
+    )

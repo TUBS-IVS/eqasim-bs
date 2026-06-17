@@ -1,9 +1,16 @@
 """Pure helpers for the LoD2 height preprocessing: parse 3D-Shape DBF attributes
 into OI->height, and select tiles intersecting a region."""
 from __future__ import annotations
+import os
 import re
+import time
+import logging
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from shapely.geometry import shape
+
+logger = logging.getLogger(__name__)
 
 OI_RE = re.compile(r"DENIAL[0-9A-Za-z]+")
 
@@ -33,12 +40,6 @@ def tiles_for_region(index: dict, region_4326) -> list[dict]:
         if shape(f["geometry"]).intersects(region_4326):
             hits.append(f["properties"])
     return hits
-
-
-import os, time, logging, urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-logger = logging.getLogger(__name__)
 
 
 def download_tiles(tiles, cache_dir, *, downloader=urllib.request.urlretrieve,
