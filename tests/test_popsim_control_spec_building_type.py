@@ -62,24 +62,27 @@ def test_tier2_building_type_is_mid_only() -> None:
         assert name not in entd_names, f"{name} incorrectly present in entd controls"
 
 
-def test_tier2_building_type_six_controls_total() -> None:
-    """3 classes × 2 geographies = 6 building_type controls in the catalog."""
+def test_tier2_building_type_three_controls_total() -> None:
+    """LOSSLESS reduction: 3 classes × 1 geography (100m only) = 3 building_type controls.
+
+    The 1km building_type controls were dropped: they aggregate exactly from the
+    100m controls under nested sub_balancing, adding no independent constraint.
+    """
     bt_controls = [
         c for c in cs.tier2_controls()
         if "building_type" in c.name
     ]
-    assert len(bt_controls) == 6, (
-        f"Expected 6 building_type controls (3 × 2 geo), got {len(bt_controls)}"
+    assert len(bt_controls) == 3, (
+        f"Expected 3 building_type controls (3 × 1 geo, 100m only), got {len(bt_controls)}"
     )
 
 
-def test_tier2_building_type_covers_both_geographies() -> None:
-    """Each building_type class appears at both GEO_100M and GEO_1KM."""
+def test_tier2_building_type_is_100m_only() -> None:
+    """Each building_type class appears at GEO_100M only (1km dropped, lossless)."""
     bt_controls = [c for c in cs.tier2_controls() if "building_type" in c.name]
     for base_name in _EXPECTED_BUILDING_TYPE_NAMES:
         geos = {c.geography for c in bt_controls if c.name == base_name}
-        assert cs.GEO_100M in geos, f"{base_name} missing GEO_100M"
-        assert cs.GEO_1KM in geos, f"{base_name} missing GEO_1KM"
+        assert geos == {cs.GEO_100M}, f"{base_name} geographies should be {{GEO_100M}}, got {geos}"
 
 
 def test_tier2_building_type_census_sources_ein_zweifamilienhaus() -> None:

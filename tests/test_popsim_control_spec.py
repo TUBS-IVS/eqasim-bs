@@ -20,6 +20,17 @@ from braunschweig.popsim.control_spec import (
     default_zensus_controls,
     render_controls_csv,
     validate_controls,
+    tier0_backbone_catalog,
+    tier1_controls,
+    tier2_controls,
+    tier3_controls,
+    full_catalog,
+    controls_for_seed,
+    render_catalog_csv,
+    AGE_BANDS,
+    GEO_100M,
+    GEO_1KM,
+    GEO_KREIS,
 )
 
 
@@ -212,3 +223,140 @@ def test_validate_controls_raises_on_empty_expression() -> None:
     )
     with pytest.raises(ValueError):
         validate_controls([bad])
+
+
+# ===========================================================================
+# Lossless control-catalog reduction (over-controlling fix).
+#
+# The catalog (tier0_backbone_catalog / tier1_controls / tier2_controls) is the
+# production source of truth (default_zensus_controls is a separate legacy
+# ControlDef factory and is NOT part of this reduction). These tests pin the
+# reduced structure precisely.
+# ===========================================================================
+
+_HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+_POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
+
+# The 18 backbone age x sex control names (M/F x 9 ten-year bands).
+_AGE_BAND_NAMES = [
+    f"{sex}_AGE_{label}_agg"
+    for sex in ("M", "F")
+    for label, _lo, _hi in AGE_BANDS
+]
+
+
+def _names_by_geo(controls):
+    by_geo: dict[str, set] = {}
+    for c in controls:
+        by_geo.setdefault(c.geography, set()).add(c.name)
+    return by_geo
+
+
+def test_tier0_backbone_catalog_is_20_controls() -> None:
+    catalog = tier0_backbone_catalog()
+    assert len(catalog) == 20
+
+
+def test_tier0_backbone_geography_split_is_19_100m_and_1_1km() -> None:
+    catalog = tier0_backbone_catalog()
+    counts = {}
+    for c in catalog:
+        counts[c.geography] = counts.get(c.geography, 0) + 1
+    assert counts == {GEO_100M: 19, GEO_1KM: 1}
+
+
+def test_tier0_pop_total_absent_everywhere() -> None:
+    # POP_TOTAL = exact sum of the 18 age x sex bands -> dropped at 100m AND 1km
+    # (lossless). It is NOT kept as a 1km anchor: build_control_totals emits one shared
+    # 100m source set, so a 1km-only POP source column would be missing (KeyError).
+    by_geo = _names_by_geo(tier0_backbone_catalog())
+    assert _POP_TOTAL_BASE not in by_geo[GEO_100M]
+    assert _POP_TOTAL_BASE not in by_geo.get(GEO_1KM, set())
+
+
+def test_tier0_m_f_totals_absent_everywhere() -> None:
+    catalog = tier0_backbone_catalog()
+    all_names = {c.name for c in catalog}
+    assert "M_TOTAL" not in all_names
+    assert "F_TOTAL" not in all_names
+
+
+def test_tier0_hh_total_present_at_both_geographies() -> None:
+    by_geo = _names_by_geo(tier0_backbone_catalog())
+    assert _HH_TOTAL_BASE in by_geo[GEO_100M]
+    assert _HH_TOTAL_BASE in by_geo[GEO_1KM]
+
+
+def test_tier0_eighteen_age_bands_only_at_100m() -> None:
+    by_geo = _names_by_geo(tier0_backbone_catalog())
+    # All 18 bands present at 100m...
+    for name in _AGE_BAND_NAMES:
+        assert name in by_geo[GEO_100M], name
+        # ...and none of them at 1km.
+        assert name not in by_geo[GEO_1KM], name
+
+
+def test_tier0_lossless_100m_set_is_hh_total_plus_18_bands() -> None:
+    # LOSSLESS property: the dropped 100m totals (POP_TOTAL = sum of 18 bands;
+    # M_TOTAL/F_TOTAL = per-sex sums) are exactly reconstructible from the kept
+    # 100m set. We pin that the kept 100m set is exactly {HH_TOTAL} + the 18 bands.
+    by_geo = _names_by_geo(tier0_backbone_catalog())
+    assert by_geo[GEO_100M] == {_HH_TOTAL_BASE, *_AGE_BAND_NAMES}
+    # And the kept 1km set is exactly the single HH_TOTAL anchor.
+    assert by_geo[GEO_1KM] == {_HH_TOTAL_BASE}
+
+
+def test_tier1_is_10_controls_100m_only_no_einpersonen() -> None:
+    catalog = tier1_controls()
+    assert len(catalog) == 10
+    # 100m only.
+    assert {c.geography for c in catalog} == {GEO_100M}
+    names = {c.name for c in catalog}
+    # einpersonen entry dropped (single-person count stays pinned via household_size==1).
+    assert "EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter" not in names
+    # 6 household-size + 4 household-type.
+    size_names = {n for n in names if "Groesse_des_privaten_Haushalts" in n}
+    type_names = {n for n in names if "Typ_priv_HH_Familie" in n}
+    assert len(size_names) == 6
+    assert len(type_names) == 4
+
+
+def test_tier2_is_5_controls_100m_only() -> None:
+    catalog = tier2_controls()
+    assert len(catalog) == 5
+    assert {c.geography for c in catalog} == {GEO_100M}
+    tenure = [c for c in catalog if "Tenure" in c.name]
+    building = [c for c in catalog if "building_type" in c.name]
+    assert len(tenure) == 2
+    assert len(building) == 3
+
+
+def test_tier3_is_7_controls_kreis_unchanged() -> None:
+    catalog = tier3_controls()
+    assert len(catalog) == 7
+    assert {c.geography for c in catalog} == {GEO_KREIS}
+
+
+def test_full_catalog_reduced_counts() -> None:
+    assert len(full_catalog(("tier0",))) == 20
+    assert len(full_catalog(("tier0", "tier1", "tier2"))) == 35
+    assert len(full_catalog(("tier0", "tier1", "tier2", "tier3"))) == 42
+
+
+def test_render_catalog_csv_full_reduced_catalog_42_rows() -> None:
+    catalog = full_catalog(("tier0", "tier1", "tier2", "tier3"))
+    active = controls_for_seed(catalog, "mid")
+    frame = render_catalog_csv(active, "mid")
+    assert list(frame.columns) == [
+        "target",
+        "geography",
+        "seed_table",
+        "importance",
+        "control_field",
+        "expression",
+    ]
+    # MiD expresses every reduced control (tier1 type / tier2 / tier3 are MiD-only
+    # but MiD-expressible; only ENTD would drop them).
+    assert len(frame) == 42
+    # Geographies present in the rendered controls.csv.
+    assert set(frame["geography"]) == {GEO_100M, GEO_1KM, GEO_KREIS}
