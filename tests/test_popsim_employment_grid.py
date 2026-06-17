@@ -60,3 +60,44 @@ def test_employment_rates_zero_population_is_zero_rate():
     pop = pd.DataFrame({"KREIS": ["03102"], "age_class": [65], "pop": [0.0]})
     out = eg.employment_rates(svb, pop, sex="female")
     assert out.loc[0, "rate"] == 0.0
+
+
+def test_per_cell_targets_apply_shape_and_rescale_to_census_level():
+    # One Kreis, two cells. Males all age 40 (band 30); GENESIS gives a rate via SvB/pop.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2"],
+        "KREIS": ["03102", "03102"],
+        "M_AGE_40": [100, 300],   # cell c2 has 3x the working-age men of c1
+        "F_AGE_40": [100, 100],
+    })
+    svb = pd.DataFrame({
+        "departement_id": ["03102", "03102"],
+        "age_class": [30, 30],
+        "sex": ["male", "female"],
+        "weight": [200, 100],     # SvB shape (level is overridden by census below)
+    })
+    census_levels = pd.DataFrame({
+        "ARS_kreis": ["03102"],
+        "ERWERBSTAT_KURZ_STP__11_M": [240.0],   # census LEVEL (males)
+        "ERWERBSTAT_KURZ_STP__11_W": [120.0],   # census LEVEL (females)
+    })
+    out = per = eg.per_cell_employment_targets(cells, svb, census_levels)
+    # Male target sums to census level 240, split by cell male population (100:300 = 1:3).
+    assert round(out["EMPLOYED_M_agg"].sum(), 6) == 240.0
+    m = out.set_index("ZENSUS100m")["EMPLOYED_M_agg"]
+    assert round(m["c1"], 6) == 60.0    # 240 * 100/400
+    assert round(m["c2"], 6) == 180.0   # 240 * 300/400
+    # Female target sums to census level 120 (100:100 split -> 60 each).
+    assert round(out["EMPLOYED_F_agg"].sum(), 6) == 120.0
+    f = out.set_index("ZENSUS100m")["EMPLOYED_F_agg"]
+    assert round(f["c1"], 6) == 60.0
+
+
+def test_per_cell_targets_zero_census_level_yields_zero_column():
+    cells = pd.DataFrame({"ZENSUS100m": ["c1"], "KREIS": ["03102"], "M_AGE_40": [100], "F_AGE_40": [0]})
+    svb = pd.DataFrame({"departement_id": ["03102"], "age_class": [30], "sex": ["male"], "weight": [50]})
+    census = pd.DataFrame({"ARS_kreis": ["03102"], "ERWERBSTAT_KURZ_STP__11_M": [0.0],
+                           "ERWERBSTAT_KURZ_STP__11_W": [0.0]})
+    out = eg.per_cell_employment_targets(cells, svb, census)
+    assert out["EMPLOYED_M_agg"].sum() == 0.0
+    assert out["EMPLOYED_F_agg"].sum() == 0.0

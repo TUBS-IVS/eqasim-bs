@@ -75,3 +75,58 @@ def employment_rates(svb: pd.DataFrame, pop: pd.DataFrame, *, sex: str) -> pd.Da
     mask = merged["pop"] > 0
     merged.loc[mask, "rate"] = merged.loc[mask, "weight"] / merged.loc[mask, "pop"]
     return merged[["KREIS", "age_class", "rate"]]
+
+
+_SEX_SPEC = (
+    ("M", "male", "ERWERBSTAT_KURZ_STP__11_M"),
+    ("F", "female", "ERWERBSTAT_KURZ_STP__11_W"),
+)
+
+
+def _raw_cell_employment(cells, rates, *, sex_prefix, kreis_col, single_year_max):
+    """Per-cell raw expected employed = Σ_year cell_pop[year] × rate[band(year)]."""
+    rate_lookup = {(r.KREIS, r.age_class): r.rate for r in rates.itertuples()}
+    raw = pd.Series(0.0, index=cells.index)
+    for age_class, lo, hi in GENESIS_EMPLOYMENT_BANDS:
+        top = single_year_max if hi is None else hi - 1
+        cols = [f"{sex_prefix}_AGE_{y}" for y in range(lo, top + 1)
+                if f"{sex_prefix}_AGE_{y}" in cells.columns]
+        if not cols:
+            continue
+        band_pop = cells[cols].sum(axis=1)
+        rate = cells[kreis_col].map(lambda k: rate_lookup.get((k, age_class), 0.0))
+        raw = raw + band_pop * rate
+    return raw
+
+
+def per_cell_employment_targets(
+    cells: pd.DataFrame,
+    svb: pd.DataFrame,
+    census_levels: pd.DataFrame,
+    *,
+    kreis_col: str = "KREIS",
+    single_year_max: int = 100,
+) -> pd.DataFrame:
+    """Per-cell EMPLOYED_M_agg / EMPLOYED_F_agg, rescaled per Kreis×sex to census level."""
+    out = pd.DataFrame({"ZENSUS100m": cells["ZENSUS100m"].to_numpy()}, index=cells.index)
+    levels = census_levels.copy()
+    levels["ARS_kreis"] = levels["ARS_kreis"].astype(str)
+    levels = levels.set_index("ARS_kreis")
+    for prefix, sex, level_col in _SEX_SPEC:
+        pop = employable_population_by_kreis(
+            cells, sex_prefix=prefix, kreis_col=kreis_col, single_year_max=single_year_max
+        )
+        rates = employment_rates(svb, pop, sex=sex)
+        raw = _raw_cell_employment(
+            cells, rates, sex_prefix=prefix, kreis_col=kreis_col,
+            single_year_max=single_year_max,
+        )
+        raw_by_kreis = raw.groupby(cells[kreis_col]).transform("sum")
+        target_level = cells[kreis_col].map(
+            lambda k: float(levels.loc[k, level_col]) if k in levels.index else 0.0
+        )
+        scaled = pd.Series(0.0, index=cells.index)
+        mask = raw_by_kreis > 0
+        scaled[mask] = raw[mask] / raw_by_kreis[mask] * target_level[mask]
+        out[f"EMPLOYED_{prefix}_agg"] = scaled.to_numpy()
+    return out
