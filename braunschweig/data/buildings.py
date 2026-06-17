@@ -19,6 +19,8 @@ mapping is incomplete).  Garages, sheds and other ancillary buildings
 
 from __future__ import annotations
 
+import os
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -180,6 +182,19 @@ def _log_zero_building_commune_rate(real_commune_count: int, placeholder_commune
         print(message)
 
 
+def join_lod2_heights(buildings, heights):
+    """LEFT-join LoD2 height onto footprints by OI. Non-destructive: every footprint
+    and every existing column is kept; only `height_m` is added (NaN where no LoD2 match)."""
+    if "OI" not in buildings.columns:
+        out = buildings.copy(); out["height_m"] = float("nan"); return out
+    h = heights[["OI", "height_m"]].drop_duplicates("OI")
+    out = buildings.merge(h, on="OI", how="left")
+    cov = out["height_m"].notna().mean() if len(out) else 0.0
+    print(f"[braunschweig.data.buildings] LoD2 height coverage: {cov:.1%} "
+          f"({int(out['height_m'].notna().sum())}/{len(out)} footprints)")
+    return out
+
+
 def configure(context):
     context.stage("braunschweig.data.alkis")
     context.stage("eqasim_common.data.spatial.iris")
@@ -225,7 +240,10 @@ def execute(context) -> gpd.GeoDataFrame:
 
     df = df[df["commune_id"].notna()].copy()
 
-    df_combined = df[["building_id", "weight", "area_m2", "commune_id", "iris_id", "geometry", "footprint"]]
+    keep_cols = ["building_id", "weight", "area_m2", "commune_id", "iris_id", "geometry", "footprint"]
+    if "OI" in df.columns:
+        keep_cols = ["building_id", "weight", "area_m2", "OI", "commune_id", "iris_id", "geometry", "footprint"]
+    df_combined = df[keep_cols]
     df_combined = gpd.GeoDataFrame(df_combined, crs=df.crs)
 
     # 5) Fill Gemeinden that ended up with zero buildings (should be rare
@@ -266,6 +284,14 @@ def execute(context) -> gpd.GeoDataFrame:
             len(df_combined), df_combined["commune_id"].nunique()
         )
     )
+
+    heights_path = os.path.join(context.config("data_path"),
+                                "braunschweig/preprocessed/lod2_heights.parquet")
+    if os.path.exists(heights_path):
+        df_combined = join_lod2_heights(df_combined, pd.read_parquet(heights_path))
+    else:
+        df_combined["height_m"] = float("nan")
+
     return df_combined
 
 
