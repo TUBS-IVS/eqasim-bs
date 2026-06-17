@@ -564,7 +564,7 @@ def execute(context) -> pd.DataFrame:
                 f"{mid._ARS_COLUMN!r} column; cannot derive the Kreis code."
             )
         cells = cells.copy()
-        cells[_folders.GEO_KREIS] = cells[mid._ARS_COLUMN].astype(str).str[:5]
+        cells[_folders.GEO_KREIS] = cells[mid._ARS_COLUMN].astype(str).str.zfill(12).str[:5]
 
         cells = _eg.add_employment_grid_columns(
             cells, _eg_svb, _eg_census_levels, kreis_col=_folders.GEO_KREIS,
