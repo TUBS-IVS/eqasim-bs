@@ -61,12 +61,9 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
         b = typed[typed["btype"] == cls]
         if n <= 0 or len(b) == 0:
             continue
-        if cls == "efh_zfh":
-            caps = np.ones(len(b), dtype=int)            # ~1 dwelling per EFH/ZFH building
-        else:
-            w = b["area_m2"].fillna(0).to_numpy().astype(float)
-            w = w / w.sum() if w.sum() > 0 else np.ones(len(b)) / len(b)
-            caps = np.maximum(1, np.round(w * n)).astype(int)
+        w = b["area_m2"].fillna(0).to_numpy().astype(float)
+        w = w / w.sum() if w.sum() > 0 else np.ones(len(b)) / len(b)
+        caps = np.maximum(1, np.round(w * n)).astype(int)
         # trim/extend caps to exactly n (largest-area buildings absorb the remainder)
         order = b["area_m2"].fillna(0).to_numpy().argsort()[::-1]
         bid = b["building_id"].to_numpy()

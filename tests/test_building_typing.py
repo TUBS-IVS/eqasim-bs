@@ -38,6 +38,31 @@ def test_build_slots_capacity_and_assortative_size():
     assert efh_sizes == [130.0, 130.0]
 
 
+def test_build_slots_efh_not_overstacked_when_dwellings_exceed_footprints():
+    """Regression: EFH capacity must spread proportionally to area, not dump all
+    excess onto the single largest footprint (old code gave 6 slots on an 85 m² house)."""
+    rng = np.random.RandomState(0)
+    typed = pd.DataFrame({
+        "building_id": [0, 1, 2],
+        "area_m2": [85.0, 44.0, 82.0],
+        "btype": ["efh_zfh", "efh_zfh", "efh_zfh"],
+    })
+    size_hist = [(70.0, 8.0)]  # 8 dwellings at 70 m²
+    slots = bt.build_slots(
+        typed,
+        whg_by_type={"efh_zfh": 8, "mfh": 0, "sonst": 0},
+        occupied=8,
+        size_hist=size_hist,
+        rng=rng,
+    )
+    assert len(slots) == 8, f"expected 8 slots, got {len(slots)}"
+    counts = slots.groupby("building_id").size()
+    # No single EFH building should absorb more than 4 slots (old code gave 6)
+    assert counts.max() <= 4, f"over-stacked: {counts.to_dict()}"
+    # Largest-area footprint (id 0, 85 m²) should get at least as many slots as smallest (id 1, 44 m²)
+    assert counts.get(0, 0) >= counts.get(1, 0), f"area ordering violated: {counts.to_dict()}"
+
+
 def test_build_slots_total_equals_occupied_with_unbalanced_shares():
     """Hamilton apportionment guarantees len(slots) == round(occupied).
 
