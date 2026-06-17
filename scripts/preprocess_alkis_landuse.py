@@ -56,6 +56,8 @@ import pyogrio
 # 'ancillary' (garages, sheds) which is explicitly excluded from sampling.
 # ---------------------------------------------------------------------------
 
+ALKIS_READ_COLUMNS = ["AGS", "OI", "GFK"]
+
 GFK_ACTIVITY = {
     # Pure residential (31001_1xxx)
     "31001_1000": "residential",   # Wohngebäude
@@ -188,7 +190,7 @@ def preprocess_alkis(raw_root: Path, out_root: Path, prefixes: list[str], compre
     path_vsi = f"/vsizip/{raw_zip.as_posix()}/gebaeude-ni.shp"
     df = pyogrio.read_dataframe(
         path_vsi,
-        columns=["AGS", "GFK"],
+        columns=ALKIS_READ_COLUMNS,
         where=where,
     )
     df = gpd.GeoDataFrame(df, crs="EPSG:25832")
@@ -198,6 +200,7 @@ def preprocess_alkis(raw_root: Path, out_root: Path, prefixes: list[str], compre
     df["area_m2"] = df.geometry.area.astype("float32")
     df["activity"] = df["GFK"].map(GFK_ACTIVITY).fillna("unknown").astype("category")
     df["AGS"] = df["AGS"].astype("category")
+    df["OI"] = df["OI"].astype("category")
     df["GFK"] = df["GFK"].astype("category")
 
     out_root.mkdir(parents=True, exist_ok=True)
