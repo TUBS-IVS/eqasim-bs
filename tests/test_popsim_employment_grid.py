@@ -34,3 +34,29 @@ def test_employable_population_by_kreis_sums_single_years_into_bands():
     assert got[("03102", 30)] == 10  # 5+5
     assert got[("03102", 65)] == 2   # 1+1
     assert ("03102", 20) not in got or got[("03102", 20)] == 0
+
+
+def test_employment_rates_divide_svb_by_population():
+    svb = pd.DataFrame({
+        "departement_id": ["03102", "03102"],
+        "age_class": [25, 30],
+        "sex": ["male", "male"],
+        "weight": [400, 900],
+    })
+    pop = pd.DataFrame({
+        "KREIS": ["03102", "03102"],
+        "age_class": [25, 30],
+        "pop": [500.0, 1000.0],
+    })
+    out = eg.employment_rates(svb, pop, sex="male")
+    got = {(r.KREIS, r.age_class): round(r.rate, 3) for r in out.itertuples()}
+    assert got[("03102", 25)] == 0.8   # 400/500
+    assert got[("03102", 30)] == 0.9   # 900/1000
+
+
+def test_employment_rates_zero_population_is_zero_rate():
+    svb = pd.DataFrame({"departement_id": ["03102"], "age_class": [65],
+                        "sex": ["female"], "weight": [10]})
+    pop = pd.DataFrame({"KREIS": ["03102"], "age_class": [65], "pop": [0.0]})
+    out = eg.employment_rates(svb, pop, sex="female")
+    assert out.loc[0, "rate"] == 0.0

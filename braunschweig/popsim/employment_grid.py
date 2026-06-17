@@ -61,3 +61,17 @@ def employable_population_by_kreis(
         for kreis, pop in grouped.items():
             rows.append({"KREIS": kreis, "age_class": age_class, "pop": float(pop)})
     return pd.DataFrame(rows, columns=["KREIS", "age_class", "pop"])
+
+
+def employment_rates(svb: pd.DataFrame, pop: pd.DataFrame, *, sex: str) -> pd.DataFrame:
+    """Rate = SvB / population per (Kreis, age_class) for one sex; 0 where pop==0."""
+    s = svb[svb["sex"] == sex].copy()
+    s["KREIS"] = s["departement_id"].astype(str)
+    merged = pop.merge(
+        s[["KREIS", "age_class", "weight"]], on=["KREIS", "age_class"], how="left"
+    )
+    merged["weight"] = merged["weight"].fillna(0.0)
+    merged["rate"] = 0.0
+    mask = merged["pop"] > 0
+    merged.loc[mask, "rate"] = merged.loc[mask, "weight"] / merged.loc[mask, "pop"]
+    return merged[["KREIS", "age_class", "rate"]]
