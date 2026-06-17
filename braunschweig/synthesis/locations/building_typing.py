@@ -28,7 +28,11 @@ def assign_building_types(footprints: pd.DataFrame, geb_counts: dict, rng) -> pd
     n_sonst = int(round(k * max(0.0, geb_counts.get("sonst", 0.0)) / total))
     n_mfh = min(n_mfh, k)
     n_sonst = min(n_sonst, k - n_mfh)
-    order = out["area_m2"].fillna(0).to_numpy().argsort()[::-1]  # largest first
+    if "area_m2" in out.columns and "height_m" in out.columns:
+        key = np.array([building_volume(a, h) for a, h in zip(out["area_m2"].to_numpy(), out["height_m"].to_numpy())], float)
+    else:
+        key = out["area_m2"].fillna(0).to_numpy()
+    order = key.argsort()[::-1]   # largest volume first -> MFH
     btype = np.array(["efh_zfh"] * k, dtype=object)
     btype[order[:n_mfh]] = "mfh"                 # largest -> MFH
     btype[order[k - n_sonst:]] = "sonst"         # smallest -> sonstiges

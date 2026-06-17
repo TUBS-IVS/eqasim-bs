@@ -147,3 +147,14 @@ def test_build_slots_total_equals_occupied_with_unbalanced_shares():
         rng=rng,
     )
     assert len(slots) == 10, f"expected 10 slots, got {len(slots)}"
+
+
+def test_assign_building_types_ranks_by_volume_when_tall():
+    import numpy as np, pandas as pd
+    from braunschweig.synthesis.locations import building_typing as bt
+    # small footprint that is very tall vs a larger flat one; census says 1 MFH building
+    fp = pd.DataFrame({"building_id": [0, 1], "area_m2": [120.0, 300.0],
+                       "height_m": [30.0, 4.0]})   # vol: 0=120*10=1200, 1=300*1=300
+    out = bt.assign_building_types(fp, {"efh_zfh": 1, "mfh": 1, "sonst": 0}, np.random.RandomState(0))
+    typ = out.set_index("building_id")["btype"]
+    assert typ[0] == "mfh"        # the tall small footprint is the MFH (by volume), not the big flat one
