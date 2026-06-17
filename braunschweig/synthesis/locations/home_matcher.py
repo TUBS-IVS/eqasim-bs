@@ -3,7 +3,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np, pandas as pd
+import geopandas as gpd
 from shapely.geometry import Point
+from braunschweig.popsim.cells import parse_inspire_id
 
 TYPES = ("efh_zfh", "mfh", "sonst")
 _PEN = {("efh_zfh", "efh_zfh"): 0, ("mfh", "mfh"): 0, ("sonst", "sonst"): 0,
@@ -84,9 +86,6 @@ def match_cell(households: pd.DataFrame, slots: pd.DataFrame, rng):
     out["building_id"] = out["household_id"].map(assign)
     return out, MatchReport(n_households=n, n_type_match=n_type_match, n_overcapacity=n_over)
 
-
-import geopandas as gpd
-from braunschweig.popsim.cells import parse_inspire_id
 
 
 def random_point_in_cell(cell_id: str, rng) -> Point:
