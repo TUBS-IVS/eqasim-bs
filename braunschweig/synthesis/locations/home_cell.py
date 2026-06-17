@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 # or "legacy" (the area-weighted cell draw, byte-identical to the prior behaviour).
 KEY_HOME_MATCHING = "braunschweig.home_matching"
 
+# Default value for the home-matching mode config key.
+_DEFAULT_HOME_MATCHING = "typed"
+
 # Config key for the prepared 100 m cell parquet (shared with the popsim stage).
 KEY_CELLS_100M = "braunschweig.population.popsim.cells_100m_path"
 
@@ -460,7 +463,7 @@ def configure(context):
     context.stage("synthesis.population.sampled")
     context.config("random_seed")
     # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
-    context.config(KEY_HOME_MATCHING, "typed")
+    context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
     # Prepared 100 m cell parquet path (only read on the typed path, but declared
     # here so the stage's config dependency is explicit).
     context.config(KEY_CELLS_100M)
@@ -478,7 +481,7 @@ def execute(context):
             "IPF/open workflows."
         )
 
-    mode = context.config(KEY_HOME_MATCHING, "typed")
+    mode = context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
     if mode == "legacy":
         households = (
             df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
