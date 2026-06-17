@@ -844,6 +844,58 @@ def load_kreis_control_table(
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
 
+
+def _kreis_pop_from_crosswalk(
+    cells_subset: pd.DataFrame,
+    geo_crosswalk: pd.DataFrame,
+    *,
+    weight_col: str = "POP_TOTAL_100m_adj",
+) -> dict[str, float]:
+    """Sum ``weight_col`` per RESOLVED dominant Kreis for the given cells.
+
+    Joins ``cells_subset`` (carrying ``ZENSUS100m`` + ``weight_col``) to the crosswalk's
+    resolved ``KREIS`` (one dominant Kreis per 1 km parent) and sums the weight per Kreis.
+    Keying on the crosswalk's resolved KREIS -- NOT raw ``ARS[:5]`` -- keeps this aligned
+    with :func:`folders.build_kreis_control_totals` (which keys on the same resolved
+    Kreis), so a boundary cell reassigned to its parent's dominant Kreis contributes its
+    population to that SAME Kreis here. Because the dominant Kreis is resolved per 1 km
+    parent and a parent is atomic to one batch, summing these per-batch dicts over all
+    batches reproduces the region-wide per-Kreis total exactly.
+    """
+    kreis_of = geo_crosswalk.set_index(folders.GEO_100M)[folders.GEO_KREIS]
+    work = pd.DataFrame(
+        {
+            folders.GEO_KREIS: cells_subset["ZENSUS100m"].astype(str).map(kreis_of),
+            "_w": pd.to_numeric(cells_subset[weight_col], errors="coerce").fillna(0.0).to_numpy(),
+        }
+    )
+    grouped = work.groupby(folders.GEO_KREIS, sort=False)["_w"].sum()
+    return {str(k): float(v) for k, v in grouped.items()}
+
+
+def _batch_kreis_apportion_weights(
+    cells_subset: pd.DataFrame,
+    geo_crosswalk: pd.DataFrame,
+    kreis_total_pop: Mapping[str, float],
+    *,
+    weight_col: str = "POP_TOTAL_100m_adj",
+) -> dict[str, float]:
+    """This batch's population share of each Kreis (for KREIS-marginal apportionment).
+
+    ``weight = batch_kreis_pop / kreis_total_pop`` per Kreis; a Kreis with zero (or
+    missing) region-wide total gets weight 0 (guard divide-by-zero -- no population
+    means no share to target). Summed over batches these shares equal 1 per Kreis
+    (the batch pops partition the region-wide total), so the apportioned KREIS
+    marginals reproduce the full marginal.
+    """
+    batch_pop = _kreis_pop_from_crosswalk(cells_subset, geo_crosswalk, weight_col=weight_col)
+    weights: dict[str, float] = {}
+    for kreis, pop in batch_pop.items():
+        total = float(kreis_total_pop.get(kreis, 0.0))
+        weights[kreis] = (pop / total) if total > 0 else 0.0
+    return weights
+
+
 def assemble_batch_folder(
     folder: Union[str, Path],
     cells_subset: pd.DataFrame,
@@ -858,6 +910,7 @@ def assemble_batch_folder(
     kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
     ars_col: str = _ARS_COLUMN,
     kreis_weight_col: str = "POP_TOTAL_100m_adj",
+    kreis_total_pop: Mapping[str, float] | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -867,6 +920,23 @@ def assemble_batch_folder(
     1km>100m nests strictly), and ``control_totals_KREIS.csv`` is written from the
     per-Kreis census table. Without them the folder is the tier0-2 baseline
     (byte-identical: no KREIS column, no KREIS control file).
+
+    Per-batch Kreis apportionment
+    -----------------------------
+    A single Kreis can be split across several batches (RegioStaR stratification cuts
+    the region into cell-disjoint strata). If every such batch targeted the FULL Kreis
+    marginal, PopulationSim would be over-constrained N-fold and saturate the control
+    (the observed 98.5% employment inflation in multi-Kreis runs). ``kreis_total_pop``
+    is the total ``kreis_weight_col`` (POP_TOTAL_100m_adj) per resolved dominant Kreis
+    over the WHOLE region, computed once by the caller. Given it, this batch's per-Kreis
+    population (summed from THIS batch's cells, keyed by the SAME resolved dominant Kreis
+    the geo crosswalk uses) is divided by the region-wide total to obtain the batch's
+    population share of each Kreis; those shares are passed as ``apportion_weights`` to
+    :func:`folders.build_kreis_control_totals`. Because the dominant Kreis is resolved
+    per 1 km parent and parents are atomic to a batch, the shares sum to exactly 1 across
+    batches, so the apportioned marginals reproduce the full Kreis marginal. When
+    ``kreis_total_pop`` is None (single-batch / legacy), no apportionment is applied
+    (full marginal).
     """
     tier3 = kreis_table is not None and bool(kreis_controls_map)
     if tier3 and ars_col not in cells_subset.columns:
@@ -885,8 +955,15 @@ def assemble_batch_folder(
     targets = cells_subset[["ZENSUS100m", *base_cols]].copy()
     control_totals = build_control_totals(targets, geo_crosswalk, base_cols)
     if tier3:
+        apportion_weights = None
+        if kreis_total_pop is not None:
+            apportion_weights = _batch_kreis_apportion_weights(
+                cells_subset, geo_crosswalk, kreis_total_pop,
+                weight_col=kreis_weight_col,
+            )
         control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
             kreis_table, geo_crosswalk, controls_map=kreis_controls_map,
+            apportion_weights=apportion_weights,
         )
     return folders.write_popsim_folder(
         folder,
@@ -982,6 +1059,32 @@ def run_popsim_mid(
     work_dir = Path(work_dir).resolve()
     groups = cell_groups(cells)
 
+    # Tier-3 per-batch KREIS apportionment basis: the region-wide population per
+    # RESOLVED dominant Kreis, computed ONCE over ALL cells. A Kreis split across
+    # batches must target only each batch's share of its marginal (not the full
+    # marginal in every batch), so each batch divides its own per-Kreis population
+    # by this region-wide total. Built from a full-region geo crosswalk
+    # (resolve_parent_kreis=True) so the Kreis assignment matches each batch's
+    # crosswalk exactly (dominant Kreis is per-1km-parent; parents are atomic to a
+    # batch, so the batch pops partition this total). None for tier0-2 (no KREIS).
+    tier3 = kreis_table is not None and bool(kreis_controls_map)
+    kreis_total_pop: dict[str, float] | None = None
+    if tier3:
+        if _ARS_COLUMN not in cells.columns:
+            raise ValueError(
+                f"Tier-3 KREIS controls requested but cells carry no ARS column "
+                f"{_ARS_COLUMN!r}; cannot compute the region-wide Kreis population."
+            )
+        full_xwalk = folders.build_geo_crosswalk(
+            cells,
+            id_col_100m="ZENSUS100m",
+            parent_col="ZENSUS1km",
+            ars_col=_ARS_COLUMN,
+            resolve_parent_kreis=True,
+            kreis_weight_col="POP_TOTAL_100m_adj",
+        )
+        kreis_total_pop = _kreis_pop_from_crosswalk(cells, full_xwalk)
+
     if not stratify_regiostar:
         # Default OFF path: unchanged behaviour (byte-identical to pre-4B).
         partitions = batch.partition_by_1km(groups, max_cells)
@@ -994,6 +1097,7 @@ def run_popsim_mid(
                 seed_households, seed_persons,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
+                kreis_total_pop=kreis_total_pop,
             )
             batch_folders.append(str(folder))
 
@@ -1053,6 +1157,7 @@ def run_popsim_mid(
                 hh_stratum, p_stratum,
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
+                kreis_total_pop=kreis_total_pop,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1

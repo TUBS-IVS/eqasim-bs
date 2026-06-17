@@ -238,6 +238,134 @@ def test_assemble_batch_folder_writes_kreis_controls_when_given(tmp_path):
     assert list(df["employed"]) == [100.0, 200.0]
 
 
+def test_assemble_batch_folder_apportions_kreis_by_pop_share(tmp_path):
+    # A Kreis split across batches: this batch holds a POP share of the Kreis, so its
+    # KREIS marginal target is the full marginal * (batch Kreis pop / full Kreis pop).
+    # cells_subset (this batch) holds parent "p" of Kreis 03101 with POP_TOTAL 20;
+    # the FULL Kreis 03101 pop is 50 -> weight 0.4 -> employed_KREIS = 100*0.4 = 40.
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]})
+    written = mid.assemble_batch_folder(
+        tmp_path / "ba", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+        kreis_total_pop={"03101": 50.0, "03153": 5.0},
+    )
+    df = pd.read_csv(tmp_path / "ba" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    by = df.set_index("KREIS")["employed"]
+    # 03101: cells_subset pop = 10+10 = 20; full = 50 -> 0.4 -> 100*0.4 = 40
+    assert by["03101"] == pytest.approx(40.0)
+    # 03153: cells_subset pop = 5; full = 5 -> 1.0 -> 200*1.0 = 200
+    assert by["03153"] == pytest.approx(200.0)
+
+
+def test_assemble_batch_folder_kreis_total_pop_none_is_full_marginal(tmp_path):
+    # kreis_total_pop=None -> legacy full marginal (no apportionment), unchanged.
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]})
+    mid.assemble_batch_folder(
+        tmp_path / "bn", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+        kreis_total_pop=None,
+    )
+    df = pd.read_csv(tmp_path / "bn" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    assert df.set_index("KREIS")["employed"].tolist() == [100.0, 200.0]
+
+
+def test_kreis_apportionment_cross_batch_sum_invariant(tmp_path):
+    # The core invariant: a single Kreis split across two batches by population
+    # (60% in batch A, 40% in batch B). Each batch's apportioned employed_KREIS is
+    # its share of the full marginal, and A + B == the full Kreis marginal.
+    # One Kreis (03101), two 1km parents pA / pB; pA pop = 60, pB pop = 40 -> total 100.
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "E11": [1000.0]})
+    full_pop = {"03101": 100.0}
+
+    def _batch_cells(parent, pop):
+        return pd.DataFrame({
+            "ZENSUS100m": [f"{parent}_c1"],
+            "ZENSUS1km": [parent],
+            "STAAT": 1, "WELT": 1,
+            "RegionalSchlussel_ARS": ["031010000000"],
+            "POP_TOTAL_100m_adj": [pop],
+            "POP": [pop],
+        })
+
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+
+    def _emp(folder):
+        df = pd.read_csv(Path(folder) / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+        return df.set_index("KREIS")["employed"]["03101"]
+
+    mid.assemble_batch_folder(
+        tmp_path / "A", _batch_cells("pA", 60.0), ["POP"], controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+        kreis_total_pop=full_pop,
+    )
+    mid.assemble_batch_folder(
+        tmp_path / "B", _batch_cells("pB", 40.0), ["POP"], controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+        kreis_total_pop=full_pop,
+    )
+    emp_a, emp_b = _emp(tmp_path / "A"), _emp(tmp_path / "B")
+    assert emp_a == pytest.approx(600.0)   # 1000 * 60/100
+    assert emp_b == pytest.approx(400.0)   # 1000 * 40/100
+    assert emp_a + emp_b == pytest.approx(1000.0)   # cross-batch sum == full marginal
+
+
+def test_run_popsim_mid_tier3_apportions_kreis_across_batches(tmp_path):
+    # End-to-end through run_popsim_mid: one Kreis spread over two 1km parents,
+    # forced into two batches (max_cells=1). The merged-across-batches employed_KREIS
+    # target must equal the FULL Kreis marginal (apportionment sums to 1).
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["pA_c1", "pB_c1"],
+        "ZENSUS1km": ["pA", "pB"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP_TOTAL_100m_adj": [60.0, 40.0],
+        "POP": [60.0, 40.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "E11": [1000.0]})
+
+    captured: list[float] = []
+
+    def fake_run_one(folder):
+        from braunschweig.popsim import batch as b
+        kpath = Path(folder) / "data" / "control_totals_KREIS.csv"
+        df = pd.read_csv(kpath, dtype={"KREIS": str})
+        captured.append(float(df.set_index("KREIS")["employed"]["03101"]))
+        xwalk = pd.read_csv(Path(folder) / "data" / "geo_cross_walk.csv", dtype=str)
+        out_dir = Path(folder) / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        xwalk.assign(H_ID=1).to_csv(out_dir / "final_expanded_household_ids.csv", index=False)
+        return b.BatchResult(str(folder), "succeeded", "ok", 0.0)
+
+    mid.run_popsim_mid(
+        cells, ["POP"], controls_df, seed_hh, seed_p,
+        work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        max_cells=1, run_one=fake_run_one, num_workers=1,
+        kreis_table=kreis_table, kreis_controls_map={"employed": ("E11",)},
+    )
+    assert len(captured) == 2  # two batches (one per 1km parent)
+    assert sum(captured) == pytest.approx(1000.0)  # apportioned targets sum to full marginal
+    assert sorted(captured) == pytest.approx([400.0, 600.0])
+
+
 def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
     # No kreis_table -> tier0-2 path: no KREIS control file (byte-identical baseline).
     cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
