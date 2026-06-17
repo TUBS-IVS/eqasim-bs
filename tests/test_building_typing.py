@@ -21,3 +21,20 @@ def test_all_zero_counts_default_to_efh():
     rng = np.random.RandomState(0)
     out = bt.assign_building_types(_fp([100, 200]), {"efh_zfh": 0, "mfh": 0, "sonst": 0}, rng)
     assert (out["btype"] == "efh_zfh").all()
+
+
+def test_build_slots_capacity_and_assortative_size():
+    import numpy as np
+    from braunschweig.synthesis.locations import building_typing as bt
+    rng = np.random.RandomState(0)
+    typed = pd.DataFrame({"building_id": [0, 1, 2], "area_m2": [80.0, 90.0, 1000.0],
+                          "btype": ["efh_zfh", "efh_zfh", "mfh"]})
+    # 2 EFH dwellings, 8 MFH dwellings, 10 occupied; sizes: 2x130, 8x60
+    slots = bt.build_slots(typed, {"efh_zfh": 2, "mfh": 8, "sonst": 0}, occupied=10.0,
+                           size_hist=[(130.0, 2.0), (60.0, 8.0)], rng=rng)
+    assert len(slots) == 10
+    assert (slots[slots.btype == "mfh"]["building_id"] == 2).all()      # all MFH on the block
+    assert (slots[slots.btype == "efh_zfh"]).shape[0] == 2
+    # assortative: the two largest dwellings (130) go to the EFH slots
+    efh_sizes = sorted(slots[slots.btype == "efh_zfh"]["size"].tolist())
+    assert efh_sizes == [130.0, 130.0]
