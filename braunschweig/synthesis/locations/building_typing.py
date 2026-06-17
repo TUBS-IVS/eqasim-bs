@@ -44,6 +44,8 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
     T = int(round(occ))
     if tot_whg > 0:
         shares = [max(0.0, float(whg_by_type.get(c, 0.0))) / tot_whg for c in CLASSES]
+    elif len(typed) > 0:
+        shares = [(typed["btype"] == c).sum() / len(typed) for c in CLASSES]
     else:
         shares = [0.0] * len(CLASSES)
     exacts = [occ * s for s in shares]
@@ -54,7 +56,7 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
     order_rem = sorted(range(len(CLASSES)), key=lambda i: remainders[i], reverse=True)
     ns = list(floors)
     for i in range(leftover):
-        ns[order_rem[i]] += 1
+        ns[order_rem[i % len(order_rem)]] += 1
     type_n = {cls: ns[idx] for idx, cls in enumerate(CLASSES)}
     for cls in CLASSES:
         n = type_n[cls]

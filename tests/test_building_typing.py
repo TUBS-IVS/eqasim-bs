@@ -84,6 +84,24 @@ def test_assign_building_types_fewer_footprints_than_census():
     assert not bad, f"Unknown btype values: {bad}"
 
 
+def test_build_slots_handles_suppressed_dwelling_types():
+    """Regression: when all whg_by_type counts are zero (census suppression),
+    build_slots must not crash and must place T slots on the real footprints."""
+    rng = np.random.RandomState(0)
+    typed = pd.DataFrame({
+        "building_id": [0, 1],
+        "area_m2": [80.0, 120.0],
+        "btype": ["efh_zfh", "efh_zfh"],
+    })
+    whg_by_type = {"efh_zfh": 0, "mfh": 0, "sonst": 0}  # all-zero suppression case
+    size_hist = [(70.0, 6.0)]  # 6 dwellings available
+    slots = bt.build_slots(typed, whg_by_type=whg_by_type, occupied=5,
+                           size_hist=size_hist, rng=rng)
+    assert len(slots) == 5, f"expected 5 slots, got {len(slots)}"
+    assert slots["building_id"].isin({0, 1}).all(), "slots placed on wrong buildings"
+    assert (slots["btype"] == "efh_zfh").all(), "expected all slots on efh_zfh footprints"
+
+
 def test_build_slots_total_equals_occupied_with_unbalanced_shares():
     """Hamilton apportionment guarantees len(slots) == round(occupied).
 
