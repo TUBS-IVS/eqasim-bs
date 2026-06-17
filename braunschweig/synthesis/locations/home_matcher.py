@@ -31,3 +31,56 @@ def solve_type_flow(hh_by_type: dict, cap_by_type: dict) -> dict:
             hh[src] -= m
             cap[dst] -= m
     return flow
+
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class MatchReport:
+    n_households: int
+    n_type_match: int
+    n_overcapacity: int
+
+
+def match_cell(households: pd.DataFrame, slots: pd.DataFrame, rng):
+    hh = households.reset_index(drop=True).copy()
+    n = len(hh)
+    if slots is None or slots.empty:
+        # no buildings in the cell at all -> caller handles the in-cell random point
+        return pd.DataFrame({"household_id": hh["household_id"], "building_id": pd.NA}), \
+            MatchReport(n_households=n, n_type_match=0, n_overcapacity=n)
+    slots = slots.reset_index(drop=True).copy()
+    hh_by_type = hh.groupby("btype").size().to_dict()
+    cap_by_type = slots.groupby("btype").size().to_dict()
+    flow = solve_type_flow(hh_by_type, cap_by_type)
+
+    # queues of HH ids per type, sorted by size desc (largest HH first)
+    hh_q = {t: hh[hh.btype == t].sort_values("household_size", ascending=False)["household_id"].tolist()
+            for t in TYPES}
+    # queues of slots per type, sorted by size desc (largest dwelling first)
+    sl_q = {t: slots[slots.btype == t].sort_values("size", ascending=False).to_dict("records")
+            for t in TYPES}
+    assign = {}
+    n_type_match = 0
+    for (src, dst), m in flow.items():
+        for _ in range(m):
+            hid = hh_q[src].pop(0)
+            slot = sl_q[dst].pop(0)
+            assign[hid] = slot["building_id"]
+            if src == dst:
+                n_type_match += 1
+    # over-capacity: HH left with no slot -> over-occupy a same-type (else any) building
+    n_over = 0
+    leftover = [hid for t in TYPES for hid in hh_q[t]]
+    if leftover:
+        for hid in leftover:
+            t = hh.set_index("household_id").loc[hid, "btype"]
+            pool = slots[slots.btype == t]
+            if pool.empty:
+                pool = slots
+            assign[hid] = pool.sort_values("size", ascending=False).iloc[0]["building_id"]
+            n_over += 1
+    out = pd.DataFrame({"household_id": hh["household_id"]})
+    out["building_id"] = out["household_id"].map(assign)
+    return out, MatchReport(n_households=n, n_type_match=n_type_match, n_overcapacity=n_over)
