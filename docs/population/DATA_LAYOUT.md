@@ -70,10 +70,12 @@ The 100 m cell parquet is already prepared with the binned control marginals. As
 the popsimprep notebook (Step 2), the PopulationSim control **targets are the cell
 parquet columns themselves** (cleaned + suffixed `_ZENSUS100m` / `_ZENSUS1km`), with
 the 1 km totals aggregated from the 100 m values. The per-control **seed expression**
-(how to count that quantity on the MiD seed) is the declarative control spec. So the
-cell-column -> control-target binding is: target column name == a prepared cell
-column; no synthetic renaming. `braunschweig.popsim.control_spec` provides typed
-control definitions; the concrete target set follows the prepared parquet columns.
+(how to count that quantity on the MiD seed) lives in the hand-edited PopulationSim
+controls CSV. So the cell-column -> control-target binding is: target column name ==
+a prepared cell column; no synthetic renaming. (A speculative typed control-spec
+module, `braunschweig.popsim.control_spec`, was removed 2026-06-11 as dead code --
+the real controls always came from the CSV; resurrect from git history if the
+declarative-controls wave wants it.)
 
 ## Provenance
 

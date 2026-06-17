@@ -46,8 +46,32 @@ from dataclasses import dataclass
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import Point, box as _shapely_box
+
+from braunschweig.popsim.cells import parse_inspire_id as _parse_inspire_id
+from braunschweig.popsim.prepared_cells import load_prepared_cells
+from braunschweig.synthesis.locations import building_typing as bt
+from braunschweig.synthesis.locations import cell_building_signals as cbs
+from braunschweig.synthesis.locations import home_matcher as hm
 
 logger = logging.getLogger(__name__)
+
+# Config key selecting the home-matching mode: "typed" (ALKIS type-aware, default)
+# or "legacy" (the area-weighted cell draw, byte-identical to the prior behaviour).
+KEY_HOME_MATCHING = "braunschweig.home_matching"
+
+# Default value for the home-matching mode config key.
+_DEFAULT_HOME_MATCHING = "typed"
+
+# Config key for the prepared 100 m cell parquet (shared with the popsim stage).
+KEY_CELLS_100M = "braunschweig.population.popsim.cells_100m_path"
+
+# MiD ``building_type_3class`` label -> the matcher's 3-class building type.
+_BTYPE_MAP = {
+    "ein_zweifamilienhaus": "efh_zfh",
+    "mehrfamilienhaus": "mfh",
+    "sonstiges": "sonst",
+}
 
 # CRS of the Zensus INSPIRE grid (LAEA Europe). Building centroids are reprojected
 # here to compute their 100 m cell id.
@@ -63,6 +87,13 @@ CELL_SIZE_M = 100
 # Deterministic seed offset for the home-cell draw, so this stage's RNG stream is
 # independent of every other ``random_seed``-derived stream in the pipeline.
 RANDOM_SEED_OFFSET = 91207
+
+# Upper area cap (m^2) applied ONLY in the legacy area-weighted draw.
+# The shared buildings stage is now uncapped so the typed path can use large
+# MFH blocks (it bounds via capacity). Legacy has no capacity mechanism, so a
+# large footprint would dominate the area-weighted lottery -> restore the
+# pre-branch 400 m^2 guard here only.
+LEGACY_AREA_MAX = 400.0
 
 
 def building_cell_id(north_m: float, east_m: float) -> str:
@@ -127,6 +158,23 @@ def _weighted_choice(rng: np.random.RandomState, row_indices: np.ndarray,
         return int(rng.choice(row_indices))
     probabilities = weights / total
     return int(rng.choice(row_indices, p=probabilities))
+
+
+def _legacy_capped_buildings(buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Re-apply the pre-branch <400 m^2 cap for the capacity-free legacy draw.
+
+    The shared buildings stage is now uncapped (typed path uses large blocks);
+    legacy has no capacity mechanism so a large footprint would dominate its
+    area-weighted draw -> restore the cap here only.
+
+    If ``area_m2`` is absent (should not happen after the shared-stage refactor
+    but guarded defensively), the frame is returned unchanged.
+    """
+    if "area_m2" not in buildings.columns:
+        return buildings
+    capped = buildings[buildings["area_m2"] < LEGACY_AREA_MAX].copy().reset_index(drop=True)
+    capped["building_id"] = np.arange(len(capped))
+    return capped
 
 
 def assign_homes_to_cell_buildings(
@@ -285,10 +333,304 @@ def assign_homes_to_cell_buildings(
     return result, report
 
 
+@dataclass(frozen=True)
+class TypedHomeReport:
+    """Outcome of the ALKIS-typed, census-calibrated home placement.
+
+    Attributes
+    ----------
+    n_households:
+        Total households to place.
+    in_cell_rate:
+        Fraction of households whose 100 m cell contained at least one building
+        (so they were matched against in-cell typed slots rather than the
+        in-cell random-point fallback).
+    type_match_rate:
+        Fraction of households assigned a building whose 3-class type equals the
+        household's preferred type (``btype``); the primary objective of the
+        lexicographic matcher.
+    n_zero_building_cells:
+        Households whose 100 m cell had no building footprint at all; placed at a
+        random point inside the cell (never relocated to another cell/commune).
+    n_overcapacity:
+        Households the matcher had to over-occupy an existing building for (more
+        households than typed dwelling slots in the cell).
+    """
+
+    n_households: int
+    in_cell_rate: float
+    type_match_rate: float
+    n_zero_building_cells: int
+    n_overcapacity: int
+
+
+def assign_homes_typed(
+    households: pd.DataFrame,
+    buildings: gpd.GeoDataFrame,
+    cells: pd.DataFrame,
+    *,
+    random_seed: int,
+    cell_col: str = "ZENSUS100m",
+    commune_col: str = "commune_id",
+    household_id_col: str = "household_id",
+) -> tuple[gpd.GeoDataFrame, TypedHomeReport]:
+    """Place each household in a type- and size-matched building of its 100 m cell.
+
+    Per 100 m cell: type the cell's ALKIS footprints from the census 3-class
+    building-count signal (:func:`building_typing.assign_building_types`), build
+    capacitated dwelling slots from the dwelling-count + occupancy + dwelling-size
+    signals (:func:`building_typing.build_slots`), then lexicographically match the
+    cell's households to slots on type (primary) and size (secondary)
+    (:func:`home_matcher.match_cell`). The chosen ``building_id`` maps to that
+    building's centroid (EPSG:25832). Households in a cell with NO building are
+    placed at a random point inside the cell (:func:`home_matcher.random_point_in_cell`),
+    never silently relocated.
+
+    Parameters
+    ----------
+    households:
+        One row per household with ``household_id_col``, ``commune_col``,
+        ``cell_col`` (100 m INSPIRE id), ``building_type_3class`` (MiD label) and
+        ``household_size``.
+    buildings:
+        Building GeoDataFrame from ``braunschweig.data.buildings`` (``building_id``,
+        ``area_m2``, geometry in EPSG:25832). The per-building 100 m cell id is
+        computed here from the reprojected centroid.
+    cells:
+        Prepared 100 m cell frame (from ``load_prepared_cells``) carrying the
+        Gebaeudetyp / Wohnung / occupancy / dwelling-size columns the signal
+        extractor reads.
+    random_seed:
+        Base seed; the effective seed is ``random_seed + RANDOM_SEED_OFFSET``.
+
+    Returns
+    -------
+    tuple[geopandas.GeoDataFrame, TypedHomeReport]
+        The ``[household_id, commune_id, home_location_id, geometry]`` frame (CRS
+        EPSG:25832, one row per household) and the placement report.
+    """
+    rng = np.random.RandomState(int(random_seed) + RANDOM_SEED_OFFSET)
+    buildings = buildings.reset_index(drop=True).copy()
+    cent3035 = buildings.geometry.to_crs(ZENSUS_CRS)
+    buildings["_cell_id"] = [building_cell_id(north_m=g.y, east_m=g.x) for g in cent3035]
+
+    # Sanity-check: household ZENSUS100m ids must use the INSPIRE 100 m format.
+    # A mismatch here almost certainly means a wrong CRS or misjoined column,
+    # which would silently yield zero matches — better to fail loudly.
+    _INSPIRE_PREFIX = "CRS3035RES100m"
+    if len(households) > 0:
+        _sample = households[cell_col].dropna().iloc[:5]
+        _bad = _sample[~_sample.astype(str).str.startswith(_INSPIRE_PREFIX)]
+        if not _bad.empty:
+            raise ValueError(
+                f"[home_typed] household '{cell_col}' values do not start with "
+                f"'{_INSPIRE_PREFIX}' (expected INSPIRE 100m format). "
+                f"Offending value: {_bad.iloc[0]!r}. "
+                "Check that the ZENSUS100m column was joined correctly."
+            )
+
+    # building_id -> its centroid Point in the buildings' native CRS (EPSG:25832).
+    bcent = buildings.geometry.centroid
+    geom_by_bid = dict(zip(buildings["building_id"], bcent))
+
+    # Build cell -> building-rows mapping.
+    # INTERSECTION mode (preferred): when the buildings frame carries a ``footprint``
+    # polygon column (EPSG:25832), reproject each footprint to EPSG:3035, enumerate
+    # the 100 m INSPIRE cells it intersects via bbox + actual geometry check, and add
+    # the building row to EACH of those cells.  This ensures that a footprint
+    # straddling a cell boundary is a candidate in BOTH cells rather than only the
+    # one containing its centroid, eliminating false zero-building orphans.
+    #
+    # CENTROID mode (backward-compatible fallback): if no ``footprint`` column is
+    # present (e.g. legacy callers, unit tests without footprint data), fall back to
+    # the centroid-based groupby — byte-identical to the previous behaviour.
+    _has_footprint = "footprint" in buildings.columns
+
+    if _has_footprint:
+        # Orphan-only intersection mode.
+        #
+        # PRIMARY rule: a building's home cell is the cell containing its CENTROID
+        # (``_cell_id`` computed above from the EPSG:3035 centroid).  Normal cells
+        # use ONLY their centroid-resident buildings — each building has exactly ONE
+        # type, in exactly ONE cell, and normal cells are byte-identical to the
+        # centroid path.
+        #
+        # ORPHAN rule: a cell is an orphan when it has households but ZERO
+        # centroid-resident buildings.  Only for these cells we fall back to a
+        # vectorized footprint→cell sjoin to find INTERSECTING buildings whose
+        # polygon reaches into the orphan cell (common for boundary footprints).
+        # The household home point is clamped into the orphan cell's own square.
+        #
+        # A cell with neither centroid-resident NOR intersecting buildings stays a
+        # true zero-building cell → existing random_point_in_cell fallback.
+
+        # Step 1: centroid-based cell → building mapping (primary, unchanged).
+        fps_by_cell_df: dict[str, object] = {
+            c: g for c, g in buildings.groupby("_cell_id", sort=False)
+        }
+
+        # Step 2: determine which cells in the households frame are orphans
+        # (have households but NO centroid-resident building).
+        hh_cells = set(households[cell_col].dropna().astype(str).unique())
+        orphan_cells = hh_cells - set(fps_by_cell_df.keys())
+
+        if orphan_cells:
+            # Step 3: reproject ALL footprints to EPSG:3035 in one call.
+            fp3035 = gpd.GeoSeries(
+                list(buildings["footprint"].values), crs=buildings.crs
+            ).to_crs(ZENSUS_CRS)
+
+            # Step 4: build cell-square polygons ONLY for orphan cells.
+            cell_sq_geoms = []
+            cell_sq_ids = []
+            for cid in orphan_cells:
+                try:
+                    _, n_sw, e_sw = _parse_inspire_id(str(cid))
+                except Exception:
+                    continue
+                cell_sq_geoms.append(
+                    _shapely_box(e_sw, n_sw, e_sw + CELL_SIZE_M, n_sw + CELL_SIZE_M)
+                )
+                cell_sq_ids.append(str(cid))
+
+            if cell_sq_geoms:
+                cell_squares = gpd.GeoDataFrame(
+                    {"ZENSUS100m": cell_sq_ids},
+                    geometry=cell_sq_geoms,
+                    crs=ZENSUS_CRS,
+                )
+
+                # Step 5: spatial join footprints → orphan cell squares.
+                # Handle degenerate (None/empty) footprints: replace with centroid.
+                cent3035_arr = cent3035.values  # already computed above in EPSG:3035
+                fp3035_clean = [
+                    (fp if (fp is not None and not fp.is_empty) else cent3035_arr[i])
+                    for i, fp in enumerate(fp3035)
+                ]
+                fp_gdf = gpd.GeoDataFrame(
+                    {"bld_row_idx": buildings.index.tolist()},
+                    geometry=fp3035_clean,
+                    crs=ZENSUS_CRS,
+                )
+                joined = gpd.sjoin(fp_gdf, cell_squares, predicate="intersects", how="inner")
+
+                # Step 6: add intersecting buildings to orphan cells ONLY.
+                for cell_id_j, row_idx_j in zip(joined["ZENSUS100m"], joined["bld_row_idx"]):
+                    cid_str = str(cell_id_j)
+                    if cid_str in orphan_cells:
+                        # Accumulate row indices; convert to DataFrame after loop.
+                        existing = fps_by_cell_df.get(cid_str)
+                        if existing is None:
+                            fps_by_cell_df[cid_str] = buildings.iloc[[int(row_idx_j)]]
+                        else:
+                            fps_by_cell_df[cid_str] = pd.concat(
+                                [existing, buildings.iloc[[int(row_idx_j)]]]
+                            ).drop_duplicates(subset="building_id")
+    else:
+        # Centroid fallback: byte-identical to the original behaviour.
+        fps_by_cell_df = {c: g for c, g in buildings.groupby("_cell_id", sort=False)}
+
+    # For intersection mode: home point for an HH placed in cell `c` on building `b`
+    # = b's centroid clamped into c's 100 m square (EPSG:3035), then reprojected to
+    # EPSG:25832.  This guarantees the home lies inside the household's own cell even
+    # when b's centroid sits in a neighbouring cell (the common case for boundary
+    # footprints).  For buildings already inside c, clamping is a no-op.
+    def _home_point_for_cell(bid: int, cell_id: str) -> object:
+        """Return the home point (EPSG:25832) for building ``bid`` placed in ``cell_id``."""
+        pt_25832 = geom_by_bid.get(bid)
+        if pt_25832 is None:
+            return hm.random_point_in_cell(cell_id, rng)
+        if not _has_footprint:
+            return pt_25832
+        # Clamp the centroid into the cell's 100 m square (EPSG:3035).
+        _, n_sw, e_sw = _parse_inspire_id(cell_id)
+        # Reproject centroid to 3035, clamp, reproject back.
+        pt_3035_gs = gpd.GeoSeries([pt_25832], crs=buildings.crs).to_crs(ZENSUS_CRS)
+        cx, cy = pt_3035_gs.iloc[0].x, pt_3035_gs.iloc[0].y
+        cx_c = max(float(e_sw), min(float(e_sw + CELL_SIZE_M), cx))
+        cy_c = max(float(n_sw), min(float(n_sw + CELL_SIZE_M), cy))
+        clamped = gpd.GeoSeries(
+            [Point(cx_c, cy_c)],
+            crs=ZENSUS_CRS,
+        ).to_crs(buildings.crs)
+        return clamped.iloc[0]
+
+    sig = cbs.cell_signals(cells).set_index("ZENSUS100m")
+
+    hh = households.copy()
+    hh["btype"] = hh["building_type_3class"].map(_BTYPE_MAP).fillna("efh_zfh")
+    rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
+    n_match = n_zero = n_over = n_in_cell = 0
+    for cell_id, grp in hh.groupby(cell_col, sort=False):
+        fps = fps_by_cell_df.get(str(cell_id))
+        if fps is None or len(fps) == 0:
+            for r in grp.itertuples(index=False):
+                rec_id.append(getattr(r, household_id_col))
+                rec_comm.append(getattr(r, commune_col))
+                rec_bid.append(pd.NA)
+                rec_geom.append(hm.random_point_in_cell(str(cell_id), rng))
+            n_zero += len(grp)
+            continue
+        n_in_cell += len(grp)
+        s = sig.loc[str(cell_id)] if str(cell_id) in sig.index else None
+        geb = {c: float(s.get(f"geb_{c}", 0)) if s is not None else 0.0
+               for c in cbs.THREE_CLASSES}
+        whg = {c: float(s.get(f"whg_{c}", 0)) if s is not None else 0.0
+               for c in cbs.THREE_CLASSES}
+        occ = float(s["occupied"]) if s is not None else float(len(grp))
+        size_hist = s["size_hist"] if s is not None else []
+        typed = bt.assign_building_types(fps[["building_id", "area_m2"]], geb, rng)
+        slots = bt.build_slots(typed, whg, max(occ, len(grp)), size_hist, rng)
+        cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
+            columns={household_id_col: "household_id"})
+        amap, rep = hm.match_cell(cell_hh, slots, rng)
+        n_match += rep.n_type_match
+        n_over += rep.n_overcapacity
+        bid_by_hh = dict(zip(amap["household_id"], amap["building_id"]))
+        for r in grp.itertuples(index=False):
+            hid = getattr(r, household_id_col)
+            bid = bid_by_hh.get(hid)
+            rec_id.append(hid)
+            rec_comm.append(getattr(r, commune_col))
+            rec_bid.append(bid)
+            rec_geom.append(
+                _home_point_for_cell(bid, str(cell_id)) if pd.notna(bid)
+                else hm.random_point_in_cell(str(cell_id), rng)
+            )
+
+    n = len(hh)
+    report = TypedHomeReport(
+        n_households=n,
+        in_cell_rate=(n_in_cell / n if n else 0.0),
+        type_match_rate=(n_match / n if n else 0.0),
+        n_zero_building_cells=n_zero,
+        n_overcapacity=n_over,
+    )
+    log = logger.warning if (n_zero or n_over) else logger.info
+    log(
+        "[home_typed] %d HH: in-cell %.1f%%, type-match %.1f%%, %d zero-building, "
+        "%d over-capacity", n, report.in_cell_rate * 100, report.type_match_rate * 100,
+        n_zero, n_over,
+    )
+    result = gpd.GeoDataFrame(
+        {"household_id": rec_id, "commune_id": rec_comm,
+         "home_location_id": rec_bid, "geometry": rec_geom},
+        crs=buildings.crs,
+    )
+    if result.crs is not None and result.crs.to_epsg() != 25832:
+        result = result.to_crs(BUILDINGS_CRS)
+    return result[["household_id", "commune_id", "home_location_id", "geometry"]], report
+
+
 def configure(context):
     context.stage("braunschweig.data.buildings")
     context.stage("synthesis.population.sampled")
     context.config("random_seed")
+    # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
+    context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
+    # Prepared 100 m cell parquet path (only read on the typed path, but declared
+    # here so the stage's config dependency is explicit).
+    context.config(KEY_CELLS_100M)
 
 
 def execute(context):
@@ -303,13 +645,34 @@ def execute(context):
             "IPF/open workflows."
         )
 
-    households = (
-        df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
-        .drop_duplicates("household_id")
-        .reset_index(drop=True)
-    )
+    mode = context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
+    if mode == "legacy":
+        households = (
+            df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
+            .drop_duplicates("household_id")
+            .reset_index(drop=True)
+        )
+        result, _ = assign_homes_to_cell_buildings(
+            households, _legacy_capped_buildings(buildings),
+            random_seed=context.config("random_seed"),
+        )
+        return result[["household_id", "commune_id", "home_location_id", "geometry"]]
 
-    result, _ = assign_homes_to_cell_buildings(
-        households, buildings, random_seed=context.config("random_seed"),
+    # Typed path: type- and size-matched placement against ALKIS footprints,
+    # calibrated by the prepared 100 m cell signals.
+    typed_cols = ["household_id", "ZENSUS100m", "commune_id",
+                  "building_type_3class", "household_size"]
+    missing = [c for c in typed_cols if c not in df_sampled.columns]
+    if missing:
+        raise ValueError(
+            f"[home_cell] typed home matching needs column(s) {missing} on "
+            f"synthesis.population.sampled; available: {list(df_sampled.columns)}. "
+            "Set braunschweig.home_matching='legacy' for workflows whose sampled "
+            "frame lacks building_type_3class / household_size."
+        )
+    cells = load_prepared_cells(context.config(KEY_CELLS_100M))
+    households = df_sampled[typed_cols].drop_duplicates("household_id").reset_index(drop=True)
+    result, _ = assign_homes_typed(
+        households, buildings, cells, random_seed=context.config("random_seed"),
     )
     return result[["household_id", "commune_id", "home_location_id", "geometry"]]
