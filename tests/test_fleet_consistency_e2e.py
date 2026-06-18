@@ -8,7 +8,7 @@ Two test groups:
 2. v2 consistency validation: sample_fleet + attach_hsn_tsn in v2 mode on
    real data must satisfy the Plan-1 acceptance invariants:
    - 0 powertrain/fuel_detail contradictions
-   - top-fingerprint share < 3% (old global-median bug put 5.3% on ONE pair)
+   - top-fingerprint share < 5% (old global-median bug put 5.3% on ONE pair)
    - brand-empty rate == 0
    - per-Kreis BEV share within abs 0.01 of FZ 27.15
 """
@@ -158,6 +158,20 @@ def test_v2_no_degenerate_single_fingerprint(v2_output_with_hsn):
     assert top_share < 0.05, (
         f"top fingerprint share {top_share:.4f} >= 0.05 (old global-median bug: 0.053); "
         f"likely a global-median fallback is dominating"
+    )
+
+    # Sub-assertion: the top fingerprint must NOT be dominated by the global-median
+    # fallback tier.  A legitimate popular engine matches at exact/model tier; a
+    # fallback collapse concentrates global-tier assignments onto a single pair.
+    top_pair = fp.idxmax()
+    top_mask = (
+        (out["engine_power_kw"] == top_pair[0])
+        & (out["displacement_ccm"] == top_pair[1])
+    )
+    global_frac = float((out.loc[top_mask, "hsn_tsn_match_tier"] == "global").mean())
+    assert global_frac < 0.10, (
+        f"top engine fingerprint {top_pair} is {global_frac:.1%} global-median "
+        f"fallback -- looks like a fallback collapse, not a real popular engine"
     )
 
 
