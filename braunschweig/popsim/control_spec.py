@@ -726,10 +726,10 @@ def tier2_controls() -> List[CatalogControl]:
 # select_seed_columns(extra_person_cols=...), so no seed-side derivation/imputation is
 # needed. The code groupings + census_source class sums are confirmed vs the MiD 2023
 # Codeplan B1 (sheet Personen) and mirror the maps in attributes.py
-# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET 1..6 (Erwerbs-
-# tätige) -- 7 (freiwilliger Wehrdienst / Bundesfreiwilligendienst / FSJ/FÖJ) is
-# EXCLUDED: it is not an ILO-Erwerbstätigkeit (Taschengeld, no wage), so it must not
-# count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
+# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET ∈ {1,2,3,4,6,8}
+# = MiD `erwerb` definition (incl. 8 Auszubildende; excl. 5 Elternzeit and 7 FSJ/
+# freiwilliger Dienst): 7 is not an ILO-Erwerbstätigkeit (Taschengeld, no wage) so it
+# must not count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
 # 3->mid / 4->high; census low = __21+__22 only (POS ≈0 in West-German BS). __3 (ohne
 # allgemeinbildenden Abschluss) is intentionally DROPPED from low so both sides measure
 # the same completed-qualification universe -- MiD bildung1 cannot cleanly isolate

@@ -52,6 +52,7 @@ from braunschweig.analysis.population_validation.controls import (
     categorical_person_control,
     _geo_col,
 )
+from braunschweig.popsim.zensus_employment_age import AGE_GROUPS as _AGE_GROUPS3
 
 if TYPE_CHECKING:
     from braunschweig.analysis.population_validation.population_source import PopulationFrames
@@ -528,8 +529,9 @@ def _persons_ars5(frames: "PopulationFrames", value_col: str) -> pd.DataFrame:
 
 
 def _realized_employed(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
-    """Realized employment (Tier-3): per Kreis, persons with P_TAET in {1..6} are
-    'employed', all others 'not_employed' (over the whole synthetic population)."""
+    """Realized employment (Tier-3): per Kreis, persons with P_TAET in {1,2,3,4,6,8}
+    (= the ``_EMPLOYED_PTAET`` constant; MiD ``erwerb`` definition) are 'employed',
+    all others 'not_employed' (over the whole synthetic population)."""
     persons = frames.persons
     if "P_TAET" not in persons.columns or "RegionalSchlussel_ARS" not in persons.columns:
         LOGGER.warning("P_TAET/RegionalSchlussel_ARS absent; employed control skipped.")
@@ -578,10 +580,6 @@ def employed_25_64_rate(persons):
     band["is_emp"] = band["P_TAET"].isin(_EMPLOYED_PTAET)
     grp = band.groupby("KREIS")["is_emp"]
     return (grp.sum() / grp.count()).to_dict()
-
-
-# 3 coarse age groups matching the Zensus 2000S-2001 / employment_grid convention.
-_AGE_GROUPS3 = (("young", 16, 29), ("prime", 30, 59), ("old", 60, 200))
 
 
 def employed_by_age_group(persons):
