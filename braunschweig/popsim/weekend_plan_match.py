@@ -241,6 +241,16 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     donor_kernwo = real_persons.set_index([household_id, "P_ID"])["kernwo"]
     src_idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
     src_kernwo = pd.Series(donor_kernwo.reindex(src_idx).to_numpy(), index=persons.index)
+    # Defense-in-depth (no silent fallback): a plan-source MUST resolve to a real donor
+    # person. A NaN here means a person points at a source absent from the donor frame
+    # (upstream corruption / a dropped donor); such a person would be silently skipped by
+    # the weekend-source sweep below, so surface it loudly rather than hide it.
+    n_unresolved = int(src_kernwo.isna().sum())
+    if n_unresolved:
+        logger.warning(
+            "[weekend_plan_match] %d person(s) have a plan-source that does not resolve "
+            "to a real donor person; they are not swept and may carry an inconsistent "
+            "plan. This indicates upstream donor/source corruption.", n_unresolved)
     sweep_mask = src_kernwo.isin(WEEKEND_KERNWO)
     n_swept = 0
     for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
