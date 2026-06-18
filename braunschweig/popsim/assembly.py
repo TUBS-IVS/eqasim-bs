@@ -111,8 +111,13 @@ def assign_donor_surrogates(
     out["source_household_id"] = (hh_codes + 1).astype(int)
 
     # --- person surrogate: unique (H_ID, P_ID) pair ---
-    # Encode the pair as a single sortable key for factorize.
-    pair_key = list(zip(donor_hh_key.tolist(), donor_p_key.tolist()))
+    # Encode the pair as a single sortable key for factorize. pandas >= 2.x requires
+    # an array-like (not a bare list); wrap the tuples in a 1-D object Index
+    # (tupleize_cols=False keeps each pair a single element, not a MultiIndex) so the
+    # sort order and surrogate assignment are identical to the pre-2.x behaviour.
+    pair_key = pd.Index(
+        list(zip(donor_hh_key.tolist(), donor_p_key.tolist())), tupleize_cols=False
+    )
     p_codes, unique_pairs = pd.factorize(pair_key, sort=True)
     out["source_person_id"] = (p_codes + 1).astype(int)
 
@@ -126,7 +131,8 @@ def assign_donor_surrogates(
     h_ids = [pair[0] for pair in unique_pairs]
     p_ids = [pair[1] for pair in unique_pairs]
     # The household surrogate for each pair: factorize the H_IDs of the mapping.
-    hh_surr_codes, _ = pd.factorize(h_ids, sort=True)
+    # (pandas >= 2.x: pass an array-like, not a bare list.)
+    hh_surr_codes, _ = pd.factorize(pd.Index(h_ids), sort=True)
     mapping = pd.DataFrame({
         "source_person_id":    range(1, n_pairs + 1),
         "source_household_id": (hh_surr_codes + 1).tolist(),
