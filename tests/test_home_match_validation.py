@@ -84,6 +84,26 @@ def test_derive_buildings_btype_reproduces_types():
     assert large_btype == "mfh", f"large building should be mfh, got {large_btype!r}"
 
 
+def test_derive_buildings_btype_uses_height_in_no_census_signal_cell():
+    """No census building-type counts + a tall LoD2 footprint -> the derived ground-truth
+    types it mfh, MIRRORING the matcher (which also height-types no-signal cells).
+    Regression: derive_buildings_btype must carry height_m through to assign_building_types;
+    if it strips it, the cell is forced all-EFH and the metric unfairly penalises the
+    matcher's height-based MFH placements."""
+    cell_id = "CRS3035RES100mN2689100E4337000"
+    pts_3035 = [Point(4337050, 2689150), Point(4337060, 2689130)]
+    gdf = gpd.GeoDataFrame(
+        {"building_id": [1, 2], "area_m2": [100.0, 100.0], "height_m": [3.0, 30.0]},
+        geometry=pts_3035, crs="EPSG:3035",
+    ).to_crs("EPSG:25832")
+    # no-signal cell: zero building-type counts (suppression)
+    cells = _make_cells(cell_id, n_efh_geb=0, n_mfh_geb=0)
+    result = v.derive_buildings_btype(gdf, cells, random_seed=42)
+    btype = result.set_index("building_id")["btype"]
+    assert btype[2] == "mfh"      # 30 m (~10 floors) footprint -> MFH via height
+    assert btype[1] == "efh_zfh"  # 3 m (~1 floor) -> EFH
+
+
 # ---------------------------------------------------------------------------
 # test_home_match_report_metrics
 # ---------------------------------------------------------------------------

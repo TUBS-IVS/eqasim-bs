@@ -121,7 +121,11 @@ def derive_buildings_btype(
 
     result_rows: list[dict] = []
     for cell_id, grp in buildings.groupby("_cell_id", sort=False):
-        fps = grp[["building_id", "area_m2"]].copy()
+        # Carry height_m through (when present) so the derived ground-truth uses the
+        # SAME volume / no-signal height typing as the matcher; else the metric would
+        # penalise the matcher's height-based MFH placements as mismatches.
+        _typecols = ["building_id", "area_m2"] + (["height_m"] if "height_m" in grp.columns else [])
+        fps = grp[_typecols].copy()
         s = sig_df.loc[str(cell_id)] if str(cell_id) in sig_df.index else None
         geb = {
             c: float(s[f"geb_{c}"]) if s is not None and f"geb_{c}" in s.index else 0.0
