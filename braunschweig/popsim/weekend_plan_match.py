@@ -115,7 +115,9 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
         "age_band": _age_band(persons["HP_ALTER"]),
         "sex": persons["HP_SEX"].to_numpy(),
         "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
-        "employed": persons["P_TAET"].between(1, 7).to_numpy(),
+        # P_TAET 1..6 = employed (MiD codeplan); 7 = Wehr-/Bundesfreiwilligendienst/FSJ
+        # is NOT ILO-employment, consistent with the Tier-3 employment control.
+        "employed": persons["P_TAET"].between(1, 6).to_numpy(),
         "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES).to_numpy(),
     }, index=persons.index)
 
