@@ -31,6 +31,7 @@ from braunschweig.analysis import spatial
 from braunschweig.analysis.population_validation import (
     control_validation as CV,
     controls as C,
+    fleet_age_status as FAS,
     geo_export as GE,
     population_source as PS,
     quality_assessment as QA,
@@ -250,6 +251,12 @@ def run(ns) -> dict:
         LOGGER.info(
             "No %strips.csv at the source; trip-coherence check skipped "
             "(it needs donor activity chains).", frames.prefix)
+
+    # Feature B: vehicle age × economic-status validation panel.
+    # Data-absent-safe: skips gracefully when vehicles is None or lacks columns.
+    fleet_age_panel = FAS.build_panel(frames.vehicles, DATA_PATH)
+    if not fleet_age_panel.empty:
+        fleet_age_panel.to_csv(out / "fleet_age_status_panel.csv", index=False)
 
     geo_paths: dict = {}
     if ns.geo:
