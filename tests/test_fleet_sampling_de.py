@@ -395,3 +395,82 @@ def test_provenance_columns_absent_on_off_path(sampled_v2_off):
     df_spec, _ = sampled_v2_off
     assert "brand_source" not in df_spec.columns
     assert "powertrain_feasibility" not in df_spec.columns
+
+
+# --------------------------------------------------------------------------- #
+# Task 8 review fix — household.py keep_tier gate
+# --------------------------------------------------------------------------- #
+def _make_minimal_df_spec(with_provenance: bool) -> pd.DataFrame:
+    """Synthetic df_spec frame with the columns attach_hsn_tsn requires.
+
+    ``with_provenance=True`` adds ``brand_source`` + ``powertrain_feasibility``
+    to simulate the consistency_v2 ON path; without them we simulate the OFF
+    path (consistency_v2=False).  The ``segment`` column is omitted so the
+    segment tier is skipped (unit test environment, no data_path).
+    """
+    from braunschweig.data.kba import hsn_tsn as hst
+
+    # Build a tiny 4-row HSN/TSN lookup in-memory (no data_path required).
+    lookup_df = pd.DataFrame([
+        {"brand": "VW", "hsn": "0603", "tsn": "ABC",
+         "model": "VW Golf", "power_ps": 115, "power_kw": 85,
+         "displacement_ccm": 1968, "fuel": "Diesel"},
+        {"brand": "BMW", "hsn": "0005", "tsn": "XYZ",
+         "model": "BMW 3er", "power_ps": 184, "power_kw": 135,
+         "displacement_ccm": 1998, "fuel": "Benzin"},
+    ])
+    lookup = hst.HsnTsnLookup.from_frame(lookup_df)
+
+    df = pd.DataFrame([
+        {"brand": "VW", "model": "VW Golf", "powertrain": "diesel",
+         "household_id": 1, "owner_id": 101, "vehicle_id": "101:car:0",
+         "mode": "car", "economic_status": "medium",
+         "kreis_ags5": "03101", "gemeinde": "BRAUNSCHWEIG", "raumtyp": 71},
+        {"brand": "BMW", "model": "BMW 3er", "powertrain": "petrol",
+         "household_id": 2, "owner_id": 201, "vehicle_id": "201:car:0",
+         "mode": "car", "economic_status": "high",
+         "kreis_ags5": "03101", "gemeinde": "BRAUNSCHWEIG", "raumtyp": 71},
+    ])
+    if with_provenance:
+        df["brand_source"] = "kba_model"
+        df["powertrain_feasibility"] = "model_constrained"
+
+    # Run attach_hsn_tsn using the in-memory lookup (no data_path).
+    keep_tier = "brand_source" in df.columns   # the gate under test
+    df = hst.attach_hsn_tsn(df, lookup=lookup, keep_tier=keep_tier)
+    return df
+
+
+def test_household_off_path_no_hsn_tsn_match_tier():
+    """OFF path (no brand_source on df_spec): keep_tier=False -> no tier column.
+
+    Verifies the gate ``keep_tier = "brand_source" in df_spec.columns`` in
+    household.execute() so df_vehicles stays byte-identical for existing columns
+    when consistency_v2=False.
+    """
+    df = _make_minimal_df_spec(with_provenance=False)
+    assert "hsn_tsn_match_tier" not in df.columns, (
+        "OFF path must NOT have hsn_tsn_match_tier; found columns: "
+        + str(list(df.columns))
+    )
+    # Engine attribute columns must still be present (the attach ran).
+    for col in ("engine_power_kw", "engine_power_ps", "displacement_ccm",
+                "fuel_detail", "hsn", "tsn"):
+        assert col in df.columns, f"expected engine column '{col}' missing"
+
+
+def test_household_v2_path_all_three_provenance_columns():
+    """v2 path (brand_source present): keep_tier=True -> all three provenance
+    columns survive to df_vehicles.
+
+    Verifies the three columns travel together: brand_source,
+    powertrain_feasibility, and hsn_tsn_match_tier.
+    """
+    df = _make_minimal_df_spec(with_provenance=True)
+    for col in ("brand_source", "powertrain_feasibility", "hsn_tsn_match_tier"):
+        assert col in df.columns, (
+            f"v2 path must have '{col}'; found columns: {list(df.columns)}"
+        )
+    # Verify tier values are non-empty strings.
+    assert df["hsn_tsn_match_tier"].notna().all()
+    assert (df["hsn_tsn_match_tier"].str.len() > 0).all()
