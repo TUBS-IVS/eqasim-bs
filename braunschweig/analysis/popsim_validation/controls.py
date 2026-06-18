@@ -71,10 +71,10 @@ _ARS_COLUMN_CLEAN = "RegionalSchlussel_ARS"
 # Kreis controls dir (GENESIS per-Kreis marginals) relative to the data root.
 _KREIS_CONTROLS_SUBPATH = "braunschweig/popsim/kreis_controls"
 
-# Employment seed predicate: P_TAET in {1..6} (matches control_spec's "employed"
-# expression). NOT attributes.EMPLOYED_TAET, which also includes 7 (Wehr-/
-# Bundesfreiwilligendienst/FSJ) -- 7 is excluded from the ILO-employed control.
-_EMPLOYED_PTAET = frozenset({1, 2, 3, 4, 5, 6})
+# Employment seed predicate: MiD official `erwerb` definition (P_TAET in {1,2,3,4,6,8}).
+# Includes Auszubildende (8); excludes 5 (Elternzeit) and 7 (FSJ/Wehrdienst).
+# Consistent with attributes.EMPLOYED_TAET and the Tier-3 control expressions.
+_EMPLOYED_PTAET = frozenset({1, 2, 3, 4, 6, 8})
 
 # Census-source column groups in the merged kreis control table (raw GENESIS
 # columns). Mirror control_spec._TIER3_ENTRIES + the ERWERBSTAT universe (children
