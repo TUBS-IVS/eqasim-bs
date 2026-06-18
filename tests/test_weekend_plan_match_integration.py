@@ -30,6 +30,7 @@ def _make_households():
         "oek_status": [2, 2],
         "RegioStaR7": [71, 71],
         "H_ANZAUTO": [1, 1],
+        "H_GEW": [1.0, 1.0],
     })
 
 
@@ -48,6 +49,7 @@ def _make_persons():
         "source_P_ID": [1, 1],
         "member_imputed": [False, False],
         "person_id": ["c_1_1", "c_2_1"],
+        "P_GEW": [1.0, 1.0],
     })
 
 

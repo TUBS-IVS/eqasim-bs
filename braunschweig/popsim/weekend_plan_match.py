@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.sampling import weighted_choice
+
 logger = logging.getLogger(__name__)
 
 PT_SUBSCRIPTION_CODES = frozenset({3, 4, 5, 6})  # see attributes.map_has_pt_subscription
@@ -43,6 +45,7 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     feats.index.name = "H_ID"
     feats["any_license"] = has_lic.reindex(feats.index).fillna(False).to_numpy()
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
+    feats["H_GEW"] = households.set_index("H_ID")["H_GEW"].reindex(feats.index).to_numpy()
     return feats
 
 
@@ -67,10 +70,11 @@ def match_household(target_id, target_feats, weekday_feats, *, rng):
         if len(narrowed) > 0:
             ids = sorted(narrowed.index.tolist())
             level = len(SOFT_KEYS_BY_PRIORITY) - len(active)
-            return ids[int(rng.randint(len(ids)))], level
+            return weighted_choice(ids, narrowed.loc[ids, "H_GEW"].to_numpy(), rng=rng), level
         if not active:
-            ids = sorted(pool.index.tolist())  # size-only fallback
-            return ids[int(rng.randint(len(ids)))], len(SOFT_KEYS_BY_PRIORITY)
+            ids = sorted(pool.index.tolist())  # size + RegioStaR only
+            return (weighted_choice(ids, pool.loc[ids, "H_GEW"].to_numpy(), rng=rng),
+                    len(SOFT_KEYS_BY_PRIORITY))
         active.pop()  # drop the lowest-priority remaining soft key
 
 
@@ -111,7 +115,9 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
         "age_band": _age_band(persons["HP_ALTER"]),
         "sex": persons["HP_SEX"].to_numpy(),
         "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
-        "employed": persons["P_TAET"].between(1, 7).to_numpy(),
+        # P_TAET 1..6 = employed (MiD codeplan); 7 = Wehr-/Bundesfreiwilligendienst/FSJ
+        # is NOT ILO-employment, consistent with the Tier-3 employment control.
+        "employed": persons["P_TAET"].between(1, 6).to_numpy(),
         "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES).to_numpy(),
     }, index=persons.index)
 
@@ -129,16 +135,17 @@ def match_person(target_row, weekday_persons, *, rng):
         pool = weekday_persons[mask]
         if len(pool) > 0:
             level = len(PERSON_KEYS_BY_PRIORITY) - len(active)
-            chosen = pool.sort_values(["H_ID", "P_ID"]).iloc[int(rng.randint(len(pool)))]
-            return chosen["H_ID"], chosen["P_ID"], level
+            h, p = weighted_choice(list(zip(pool["H_ID"], pool["P_ID"])),
+                                   pool["P_GEW"].to_numpy(), rng=rng)
+            return h, p, level
         if not active:
-            chosen = weekday_persons.sort_values(["H_ID", "P_ID"]).iloc[
-                int(rng.randint(len(weekday_persons)))]
+            h, p = weighted_choice(list(zip(weekday_persons["H_ID"], weekday_persons["P_ID"])),
+                                   weekday_persons["P_GEW"].to_numpy(), rng=rng)
             logger.debug(
                 "[weekend_plan_match] match_person hit the whole-pool size-only "
                 "fallback (all person keys dropped); drew weekday (%s, %s).",
-                chosen["H_ID"], chosen["P_ID"])
-            return chosen["H_ID"], chosen["P_ID"], len(PERSON_KEYS_BY_PRIORITY)
+                h, p)
+            return h, p, len(PERSON_KEYS_BY_PRIORITY)
         active.pop()
 
 

@@ -60,6 +60,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.sampling import weighted_choice
+
 logger = logging.getLogger(__name__)
 
 # Relaxation hierarchy AFTER the hard equal-size (H_GR) condition: each key
@@ -104,9 +106,10 @@ def _select_mirror(
     """Pick one mirror household id from the complete equal-size candidates.
 
     Progressively narrows the pool by each key in :data:`MIRROR_MATCH_KEYS`
-    (only while at least one candidate remains), then draws uniformly with the
-    supplied seeded RNG from the id-sorted final pool (deterministic given the
-    RNG state).
+    (only while at least one candidate remains), then draws one mirror
+    **proportional to its ``H_GEW`` survey weight** via
+    :func:`braunschweig.popsim.sampling.weighted_choice` (deterministic given the
+    RNG state; a uniform fallback fires only if all candidate weights are invalid).
     """
     pool = candidates
     for key in MIRROR_MATCH_KEYS:
@@ -116,7 +119,8 @@ def _select_mirror(
         if len(narrowed) > 0:
             pool = narrowed
     ids = sorted(pool[household_id].tolist())
-    return ids[int(rng.randint(len(ids)))]
+    weights = pool.set_index(household_id)["H_GEW"].reindex(ids).to_numpy()
+    return weighted_choice(ids, weights, rng=rng)
 
 
 def _match_present_members(
@@ -168,7 +172,8 @@ def complete_members(
             ``HP_ALTER``, ``HP_SEX`` (plus arbitrary extra columns that are
             copied verbatim onto fillers).
         rng: Seeded :class:`numpy.random.RandomState` (mandatory seeded
-            randomness; the mirror draw is the only stochastic step).
+            randomness; the mirror draw is the only stochastic step, and it is
+            drawn proportional to the candidate ``H_GEW`` survey weight).
         household_id: Household id column name (default ``H_ID``).
         size_col: Declared household size column name (default ``H_GR``).
         kernwo_col: Column carrying the MiD core-week reporting-day code

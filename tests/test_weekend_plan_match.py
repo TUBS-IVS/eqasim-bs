@@ -14,6 +14,7 @@ def _households():
         "oek_status": [3, 2],
         "RegioStaR7": [71, 77],
         "H_ANZAUTO": [2, 0],
+        "H_GEW": [1.0, 1.0],
     })
 
 
@@ -43,6 +44,7 @@ def test_match_household_prefers_zero_relaxation():
         "size": [2, 2], "hh_type5": ["couple", "couple"], "oek_status": [3, 9],
         "regiostar7": [71, 71], "car_class": ["2plus", "0"],
         "any_license": [True, False], "any_pt": [False, False],
+        "H_GEW": [1.0, 1.0],
     }, index=pd.Index([100, 101], name="H_ID"))
     target = pd.Series({
         "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
@@ -58,6 +60,7 @@ def test_match_household_relaxes_until_pool_nonempty():
     weekday = pd.DataFrame({
         "size": [2], "hh_type5": ["single"], "oek_status": [1], "regiostar7": [71],
         "car_class": ["0"], "any_license": [False], "any_pt": [True],
+        "H_GEW": [1.0],
     }, index=pd.Index([200], name="H_ID"))
     target = pd.Series({
         "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
@@ -108,6 +111,7 @@ def test_match_person_exact_then_relaxes():
         "H_ID": [50, 51], "P_ID": [1, 1],
         "HP_ALTER": [40, 9], "HP_SEX": [1, 2],
         "P_FSCHEIN": [1, 2], "P_TAET": [1, 11], "P_FKARTE": [1, 1],
+        "P_GEW": [1.0, 1.0],
     })
     target = pd.Series({
         "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
@@ -126,6 +130,7 @@ def test_reassign_hh_match_remaps_weekend_household():
     households = pd.DataFrame({
         "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
         "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+        "H_GEW": [1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
@@ -134,6 +139,7 @@ def test_reassign_hh_match_remaps_weekend_household():
         "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -151,6 +157,7 @@ def test_reassign_person_fallback_when_no_equal_size_weekday_hh():
     households = pd.DataFrame({
         "H_ID": [1, 2], "H_GR": [1, 2], "hh_type5": ["single", "couple"],
         "oek_status": [2, 3], "RegioStaR7": [77, 71], "H_ANZAUTO": [0, 2],
+        "H_GEW": [1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID": [1, 2, 2], "P_ID": [1, 1, 2],
@@ -159,6 +166,7 @@ def test_reassign_person_fallback_when_no_equal_size_weekday_hh():
         "kernwo": [2, 6, 6],            # weekday single HH 1; weekend couple HH 2 (size 2)
         "source_H_ID": [1, 2, 2], "source_P_ID": [1, 1, 2],
         "member_imputed": [False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -174,6 +182,7 @@ def test_reassign_is_deterministic_given_rng():
         "H_ID": [1, 2, 3], "H_GR": [2, 2, 2],
         "hh_type5": ["couple"] * 3, "oek_status": [3, 3, 3],
         "RegioStaR7": [71, 71, 71], "H_ANZAUTO": [1, 1, 1],
+        "H_GEW": [1.0, 1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID": [1, 1, 2, 2, 3, 3], "P_ID": [1, 2, 1, 2, 1, 2],
@@ -183,6 +192,7 @@ def test_reassign_is_deterministic_given_rng():
         "kernwo": [2, 2, 2, 2, 6, 6],   # HH3 weekend
         "source_H_ID": [1, 1, 2, 2, 3, 3], "source_P_ID": [1, 2, 1, 2, 1, 2],
         "member_imputed": [False] * 6,
+        "P_GEW": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     })
     a, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
     b, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
@@ -195,6 +205,7 @@ def test_reassign_derives_hh_type5_when_absent():
     households = pd.DataFrame({
         "H_ID": [1, 2], "H_GR": [2, 2],
         "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+        "H_GEW": [1.0, 1.0],
         # NB: no hh_type5 column
     })
     persons = pd.DataFrame({
@@ -204,6 +215,7 @@ def test_reassign_derives_hh_type5_when_absent():
         "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     assert "hh_type5" not in households.columns
     out, trace, report = wpm.reassign_weekend_plan_sources(
@@ -226,6 +238,7 @@ def test_reassign_no_silent_gap_when_donor_undersized():
         "hh_type5": ["couple", "single", "couple"],
         "oek_status": [3, 2, 3], "RegioStaR7": [71, 77, 71],
         "H_ANZAUTO": [2, 0, 2],
+        "H_GEW": [1.0, 1.0, 1.0],
     })
     persons = pd.DataFrame({
         # HH 1: weekday, declares size 2 but only 1 person row (undersized donor)
@@ -237,6 +250,7 @@ def test_reassign_no_silent_gap_when_donor_undersized():
         "kernwo": [2, 2, 6, 6],
         "source_H_ID": [1, 2, 3, 3], "source_P_ID": [1, 1, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -254,6 +268,7 @@ def test_every_weekend_person_is_resolved_no_silent_gap():
     households = pd.DataFrame({
         "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
         "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+        "H_GEW": [1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
@@ -262,6 +277,7 @@ def test_every_weekend_person_is_resolved_no_silent_gap():
         "kernwo": [2, 2, 6, 6],
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False] * 4,
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, _ = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0))
     weekend = trace[trace["donor_day_type"] == "weekend"]
@@ -287,6 +303,7 @@ def test_reassign_sweeps_weekend_member_of_mixed_household():
         "H_ID": [10, 20], "H_GR": [2, 4],
         "hh_type5": ["couple", "couple"],
         "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+        "H_GEW": [1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID":          [10, 10,  20,  20,  20,  20],
@@ -302,6 +319,7 @@ def test_reassign_sweeps_weekend_member_of_mixed_household():
         "source_H_ID":   [10, 10,  20,  20,  20,  20],
         "source_P_ID":   [ 1,  2,   1,   2,   3,   4],
         "member_imputed": [False] * 6,
+        "P_GEW":         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     })
 
     out, trace, report = wpm.reassign_weekend_plan_sources(
@@ -327,6 +345,58 @@ def test_reassign_sweeps_weekend_member_of_mixed_household():
         f"Expected 'mixed_person_sweep', got '{swept_row['resolution']}'"
     )
     assert report.n_swept >= 1, f"Expected n_swept >= 1, got {report.n_swept}"
+
+
+def test_build_hh_features_carries_h_gew():
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+        "H_GEW": [2.5, 10.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
+        "HP_ALTER": [40, 38, 41, 39], "HP_SEX": [1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1], "P_FKARTE": [1, 1, 1, 1],
+    })
+    feats = wpm.build_hh_features(households, persons)
+    assert feats.loc[1, "H_GEW"] == 2.5 and feats.loc[2, "H_GEW"] == 10.0
+
+
+def test_match_household_draws_proportional_to_h_gew():
+    # two equally-matching weekday HHs; HH 200 has ~9x the weight of HH 100
+    weekday = pd.DataFrame({
+        "size": [2, 2], "hh_type5": ["couple", "couple"], "oek_status": [3, 3],
+        "regiostar7": [71, 71], "car_class": ["2plus", "2plus"],
+        "any_license": [True, True], "any_pt": [False, False],
+        "H_GEW": [1.0, 9.0],
+    }, index=pd.Index([100, 200], name="H_ID"))
+    target = pd.Series({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": "2plus", "any_license": True, "any_pt": False,
+    })
+    rng = np.random.RandomState(0)
+    counts = {100: 0, 200: 0}
+    for _ in range(2000):
+        mid, _ = wpm.match_household(7, target, weekday, rng=rng)
+        counts[mid] += 1
+    assert counts[200] > counts[100] * 3  # heavy HH dominates
+
+
+def test_match_person_draws_proportional_to_p_gew():
+    # two persons share the (highest-priority) keys; person (50,1) has 9x the weight
+    weekday = pd.DataFrame({
+        "H_ID": [50, 60], "P_ID": [1, 1],
+        "HP_ALTER": [40, 40], "HP_SEX": [1, 1],
+        "P_FSCHEIN": [1, 1], "P_TAET": [1, 1], "P_FKARTE": [1, 1],
+        "P_GEW": [9.0, 1.0],
+    })
+    target = pd.Series({"HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1})
+    rng = np.random.RandomState(0)
+    counts = {50: 0, 60: 0}
+    for _ in range(2000):
+        h, _p, _l = wpm.match_person(target, weekday, rng=rng)
+        counts[h] += 1
+    assert counts[50] > counts[60] * 3  # heavy person dominates
 
 
 def test_fallback_pool_excludes_weekend_reporting_persons():

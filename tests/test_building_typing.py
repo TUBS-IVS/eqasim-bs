@@ -23,6 +23,43 @@ def test_all_zero_counts_default_to_efh():
     assert (out["btype"] == "efh_zfh").all()
 
 
+def test_no_census_signal_types_tall_buildings_as_mfh_via_height():
+    """When the census carries NO building-type counts for a cell (suppression),
+    use LoD2 height: >= MFH_MIN_FLOORS (4) floors -> MFH, else EFH. (Without height
+    the cell would be forced all-EFH, mis-typing the tall MFH blocks that stand there.)"""
+    rng = np.random.RandomState(0)
+    fp = pd.DataFrame({"building_id": [0, 1, 2], "area_m2": [100.0, 100.0, 100.0],
+                       "height_m": [12.0, 3.0, 30.0]})  # floors ~ 4, 1, 10
+    out = bt.assign_building_types(fp, {"efh_zfh": 0, "mfh": 0, "sonst": 0}, rng)
+    typ = out.set_index("building_id")["btype"]
+    assert typ[0] == "mfh"      # 12 m ~ 4 floors -> MFH
+    assert typ[1] == "efh_zfh"  # 3 m ~ 1 floor  -> EFH
+    assert typ[2] == "mfh"      # 30 m ~ 10 floors -> MFH
+
+
+def test_no_census_signal_floor_threshold_boundary():
+    """Pin the MFH_MIN_FLOORS boundary exactly: 3 floors -> EFH, 4 floors -> MFH.
+    Guards against an off-by-one regression if `>=` or the constant is changed."""
+    rng = np.random.RandomState(0)
+    fp = pd.DataFrame({"building_id": [0, 1], "area_m2": [100.0, 100.0],
+                       "height_m": [9.0, 12.0]})  # 9/3=3 floors vs 12/3=4 floors
+    out = bt.assign_building_types(fp, {"efh_zfh": 0, "mfh": 0, "sonst": 0}, rng)
+    typ = out.set_index("building_id")["btype"]
+    assert bt.MFH_MIN_FLOORS == 4               # boundary this test pins
+    assert typ[0] == "efh_zfh"  # 3 floors  < 4 -> EFH
+    assert typ[1] == "mfh"      # 4 floors >= 4 -> MFH
+
+
+def test_no_census_signal_all_nan_height_stays_all_efh():
+    """Contract: no census counts AND no usable height -> byte-identical all-EFH
+    fallback (preserves the pre-height behaviour for height-less / all-NaN cells)."""
+    rng = np.random.RandomState(0)
+    fp = pd.DataFrame({"building_id": [0, 1], "area_m2": [100.0, 200.0],
+                       "height_m": [float("nan"), float("nan")]})
+    out = bt.assign_building_types(fp, {"efh_zfh": 0, "mfh": 0, "sonst": 0}, rng)
+    assert (out["btype"] == "efh_zfh").all()
+
+
 def test_build_slots_capacity_and_assortative_size():
     rng = np.random.RandomState(0)
     typed = pd.DataFrame({"building_id": [0, 1, 2], "area_m2": [80.0, 90.0, 1000.0],

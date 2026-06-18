@@ -4,6 +4,12 @@ import numpy as np, pandas as pd
 from braunschweig.synthesis.locations.cell_building_signals import THREE_CLASSES
 
 FLOOR_HEIGHT_M = 3.0
+# In cells with NO census building-type counts (suppression), a footprint of at
+# least this many floors is typed MFH from its LoD2 height alone. =4 floors (~10.5 m)
+# is the classic MFH-block cutoff; it was the single-peaked optimum (type-fidelity max,
+# over-capacity min) in the Salzgitter real-population sweep (scripts/lod2_height_sweep.py),
+# beating both lower thresholds (which mislabel 2-storey EFH as MFH) and higher ones.
+MFH_MIN_FLOORS = 4
 
 
 def building_volume(area_m2, height_m, floor_height=FLOOR_HEIGHT_M):
@@ -22,7 +28,18 @@ def assign_building_types(footprints: pd.DataFrame, geb_counts: dict, rng) -> pd
         return out
     total = sum(max(0.0, float(geb_counts.get(c, 0.0))) for c in THREE_CLASSES)
     if total <= 0:
-        out["btype"] = "efh_zfh"
+        # No census building-type counts for this cell (suppression). Fall back to
+        # LoD2 height as the sole typing signal: a footprint of >= MFH_MIN_FLOORS
+        # floors is typed MFH, everything else EFH. `sonst` is intentionally NOT
+        # produced here -- without census signal there is nothing to distinguish a
+        # "sonstiges" building from an MFH by geometry alone. When height is absent
+        # (no column) or entirely missing (all-NaN), this reduces to the original
+        # byte-identical all-EFH fallback, since building_volume(1.0, NaN/None) == 1.
+        if "height_m" in out.columns and out["height_m"].notna().any():
+            floors = np.array([building_volume(1.0, h) for h in out["height_m"].to_numpy()])
+            out["btype"] = np.where(floors >= MFH_MIN_FLOORS, "mfh", "efh_zfh").astype(object)
+        else:
+            out["btype"] = "efh_zfh"
         return out
     n_mfh = int(round(k * max(0.0, geb_counts.get("mfh", 0.0)) / total))
     n_sonst = int(round(k * max(0.0, geb_counts.get("sonst", 0.0)) / total))

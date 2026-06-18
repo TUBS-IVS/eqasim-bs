@@ -41,3 +41,23 @@ def test_hh_match_level_funnel_counts_levels():
     assert counts[2] == 1
     # person_fallback (level 1) is NOT in the hh_match funnel
     assert 1 not in counts
+
+
+def test_behavioural_sanity_fails_loud_without_donor_day_type():
+    import pytest
+    persons = pd.DataFrame({"person_id": ["a", "b"]})  # no donor_day_type
+    trips = pd.DataFrame({"person_id": ["a", "a", "b"]})
+    with pytest.raises(ValueError, match="donor_day_type"):
+        wpv.behavioural_sanity(persons, trips)
+
+
+def test_behavioural_sanity_computes_trips_per_person_per_cohort():
+    persons = pd.DataFrame({
+        "person_id": ["a", "b", "c"],
+        "donor_day_type": ["weekday", "weekend", "weekend"],
+    })
+    trips = pd.DataFrame({"person_id": ["a", "a", "b"]})  # a:2, b:1, c:0
+    out = wpv.behavioural_sanity(persons, trips)
+    tpp = dict(zip(out["donor_day_type"], out["trips_per_person"]))
+    assert tpp["weekday"] == 2.0
+    assert tpp["weekend"] == 0.5  # (1 + 0) / 2

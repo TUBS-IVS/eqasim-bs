@@ -7,9 +7,12 @@ distorted weekday mobility.
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def resolution_funnel(trace: pd.DataFrame) -> pd.DataFrame:
@@ -48,6 +51,15 @@ def _assert_no_ids(name: str, frame: pd.DataFrame) -> None:
 
 
 def behavioural_sanity(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
+    # Requires `persons` to carry `donor_day_type` (joined from the weekend_plan_match
+    # trace via the pseudonym_map: trace raw (H_ID,P_ID) -> surrogate person_id). The
+    # production persons frame does NOT carry it by default, so fail loud rather than a
+    # cryptic KeyError if a caller passes an un-joined frame.
+    if "donor_day_type" not in persons.columns:
+        raise ValueError(
+            "behavioural_sanity requires a `donor_day_type` column on `persons` "
+            "(join it from the weekend_plan_match trace via pseudonym_map first); "
+            "it is not present on the default expanded persons frame.")
     trips_per_person = (
         trips.groupby("person_id").size().rename("n_trips").reset_index())
     merged = persons.merge(trips_per_person, on="person_id", how="left")
@@ -74,7 +86,16 @@ def main(trace_path, persons_path, trips_path, out_dir):
     if persons_path and trips_path:
         persons = pd.read_parquet(persons_path)
         trips = pd.read_parquet(trips_path)
-        exports["behavioural_sanity.csv"] = behavioural_sanity(persons, trips)
+        # behavioural_sanity needs persons.donor_day_type (joined from the trace via
+        # pseudonym_map). Skip with a loud note rather than crash if it is absent --
+        # the resolution/source/level funnels above are the working donor-level overview.
+        if "donor_day_type" in persons.columns:
+            exports["behavioural_sanity.csv"] = behavioural_sanity(persons, trips)
+        else:
+            logger.warning(
+                "[weekend_plan_validation] persons frame has no `donor_day_type`; "
+                "skipping behavioural_sanity.csv (join the trace's day_type onto the "
+                "population via pseudonym_map to enable it).")
     # Defensive: analysis outputs carry NO raw MiD ids (the id-keyed trace stays a
     # restricted work_dir artifact, same tier as pseudonym_map.csv). Fail loud if a
     # future change tries to export ids.
