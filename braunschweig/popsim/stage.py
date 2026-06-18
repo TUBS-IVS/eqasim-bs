@@ -96,10 +96,11 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 # (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
 # "tier3" is among control_tiers (catalog source); ignored otherwise.
 KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
-# Employment grid control (Task 5): when "on", activates the two age x sex-resolved
-# 100m employment controls (EMPLOYED_M_agg / EMPLOYED_F_agg). The targets are computed
-# per cell from the GENESIS SvB age-shape rescaled to the census Erwerbstaetige Kreis
-# level (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
+# Employment grid control (Task 5): when "on", activates the six age-group x sex-resolved
+# 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg). The targets are
+# computed per cell from the Zensus 2000S-2001 employment-by-age SHAPE rescaled per
+# Kreis x sex x group to the census Erwerbstaetige Kreis level
+# (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
 # Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
 # seed. "default" -> (1,2,3) Mo-Fr (legacy: weekend / kernwo=4 households dropped).
@@ -162,9 +163,9 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     tiers: tuple of tier names to include when controls_source="catalog". Default
     ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
 
-    employment_grid: when True (catalog source only), append the two age x sex-resolved
-    100m employment controls (EMPLOYED_M_agg / EMPLOYED_F_agg) to the catalog. Default
-    False = byte-identical to the pre-employment-grid catalog.
+    employment_grid: when True (catalog source only), append the six age-group x
+    sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
+    catalog. Default False = byte-identical to the pre-employment-grid catalog.
     """
     if controls_source == "csv":
         return pd.read_csv(controls_path, sep=";")
@@ -285,11 +286,14 @@ def configure(context):
     # Employment grid control (Task 5). Default "off" = byte-identical to today.
     context.config(KEY_EMPLOYMENT_GRID, "off")
     # When the employment grid control is ON, the per-cell employment targets are
-    # built from the GENESIS SvB age-shape (braunschweig.data.census.employment, a
-    # synpp stage emitting [departement_id, age_class, sex, weight]). Register it as
-    # a dependency only in that case so the default-OFF DAG is unchanged.
+    # built from the Zensus 2000S-2001 employment-by-age SHAPE (a committed reference
+    # CSV under data_path; see braunschweig.popsim.zensus_employment_age) rescaled per
+    # Kreis×sex×group to the census Erwerbstaetige Kreis level. No synpp stage
+    # dependency is needed (the former GENESIS SvB stage dependency is gone). We only
+    # ensure data_path is declared so the reference CSV can be located; this is a
+    # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
     if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
-        context.stage("braunschweig.data.census.employment", alias="employment_svb")
+        context.config("data_path")
     # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
     context.config(KEY_SEED_DAY_FILTER, "default")
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
@@ -494,10 +498,11 @@ def execute(context) -> pd.DataFrame:
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
-    # Employment grid control (Task 5): the two EMPLOYED_*_agg targets are COMPUTED
-    # per cell (not stored in the parquet), so strip them from the parquet load set and
-    # add the single-year {M,F}_AGE_<year> input columns (the age SHAPE denominator)
-    # that ARE present in the parquet. When OFF, load_cols is untouched (byte-identical).
+    # Employment grid control (Task 5): the six EMPLOYED_{M,F}_{young,prime,old}_agg
+    # targets are COMPUTED per cell (not stored in the parquet), so strip them from the
+    # parquet load set and add the single-year {M,F}_AGE_<year> input columns (the age
+    # SHAPE denominator, y>=16) that ARE present in the parquet. When OFF, load_cols is
+    # untouched (byte-identical).
     if employment_grid_on:
         from braunschweig.popsim import employment_grid as _eg
         import pyarrow.parquet as _pq_eg
@@ -506,7 +511,10 @@ def execute(context) -> pd.DataFrame:
         _eg_available = [prepared_cells.clean_col_name(_n) for _n in _eg_raw_names]
         load_cols = _eg.select_load_columns(
             load_cols, _eg_available,
-            computed_cols={"EMPLOYED_M_agg", "EMPLOYED_F_agg"},
+            computed_cols={
+                "EMPLOYED_M_young_agg", "EMPLOYED_M_prime_agg", "EMPLOYED_M_old_agg",
+                "EMPLOYED_F_young_agg", "EMPLOYED_F_prime_agg", "EMPLOYED_F_old_agg",
+            },
         )
 
     cells = mid.load_control_cells(cells_path, load_cols)
@@ -522,12 +530,16 @@ def execute(context) -> pd.DataFrame:
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
 
-    # Employment grid control (Task 5): inject the per-cell EMPLOYED_M_agg /
-    # EMPLOYED_F_agg target columns. They are computed from the GENESIS SvB age-shape
-    # (employment_svb stage) rescaled per Kreis x sex to the census Erwerbstaetige level
-    # (kreis_erwerbsstatus.parquet). When OFF, none of this runs -> byte-identical.
+    # Employment grid control (Task 5): inject the six per-cell
+    # EMPLOYED_{M,F}_{young,prime,old}_agg target columns. The age SHAPE comes from the
+    # committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
+    # load_age_shares; exact for the kreisfreie Staedte, national fallback for the
+    # Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
+    # Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
+    # dependency is no longer used. When OFF, none of this runs -> byte-identical.
     if employment_grid_on:
         from braunschweig.popsim import employment_grid as _eg
+        from braunschweig.popsim import zensus_employment_age as _za
         from braunschweig.popsim import folders as _folders
 
         # Census LEVEL: the sex-split Erwerbstaetige Kreis totals. Sourced from the
@@ -552,10 +564,6 @@ def execute(context) -> pd.DataFrame:
             ["ARS_kreis", "ERWERBSTAT_KURZ_STP__11_M", "ERWERBSTAT_KURZ_STP__11_W"]
         ].copy()
 
-        # SHAPE: GENESIS SvB by (Kreis, age_class, sex) -> [departement_id, age_class,
-        # sex, weight]. Retrieved from the synpp DAG (registered in configure()).
-        _eg_svb = context.stage("employment_svb")
-
         # Derive the 5-digit Kreis on the cells frame from the 12-digit ARS column,
         # matching folders.GEO_KREIS = ARS[:5].
         if mid._ARS_COLUMN not in cells.columns:
@@ -566,13 +574,30 @@ def execute(context) -> pd.DataFrame:
         cells = cells.copy()
         cells[_folders.GEO_KREIS] = cells[mid._ARS_COLUMN].astype(str).str[:5]
 
+        # SHAPE: Zensus 2000S-2001 employment-by-age-group shares per Kreis, loaded from
+        # the committed reference CSV under data_path. Built once per distinct Kreis on
+        # the cells frame (exact for 03101/02/03, national fallback for the Landkreise).
+        _eg_data_path = context.config("data_path")
+        _eg_ref = os.path.join(
+            _eg_data_path, "braunschweig/popsim/zensus2022_employment_by_age_ref.csv"
+        )
+        if not os.path.exists(_eg_ref):
+            raise FileNotFoundError(
+                f"employment grid control requires the Zensus age-share reference "
+                f"{_eg_ref}; import zensus2022_employment_by_age_ref.csv into "
+                "data/braunschweig/popsim/."
+            )
+        _eg_kreise = sorted(cells[_folders.GEO_KREIS].astype(str).unique())
+        _eg_age_shares = {k: _za.load_age_shares(_eg_ref, k) for k in _eg_kreise}
+
         cells = _eg.add_employment_grid_columns(
-            cells, _eg_svb, _eg_census_levels, kreis_col=_folders.GEO_KREIS,
+            cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
         )
         logger.info(
-            "[popsim.stage] employment grid control ON: injected EMPLOYED_M_agg / "
-            "EMPLOYED_F_agg per-cell targets (census levels from %s, %d Kreise).",
-            _eg_levels_path, _eg_census_levels["ARS_kreis"].nunique(),
+            "[popsim.stage] employment grid control ON: injected 6 "
+            "EMPLOYED_{M,F}_{young,prime,old}_agg per-cell targets (census levels from "
+            "%s, age shape from %s, %d Kreise).",
+            _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
         )
 
     # Build the PopulationSim seed.
