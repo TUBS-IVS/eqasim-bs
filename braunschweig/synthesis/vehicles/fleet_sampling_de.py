@@ -52,6 +52,7 @@ from braunschweig.data.kba.feasible_fuels import FeasibleFuels
 from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
 from braunschweig.ipf.joint_age_size import rake_2d
 from braunschweig.synthesis.vehicles import hbefa
+from braunschweig.synthesis.vehicles.age_income import AgeIncomeModel
 from braunschweig.synthesis.vehicles.segment import SegmentModel
 
 logger = logging.getLogger(__name__)
@@ -675,7 +676,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  size_map: Optional[Mapping[str, str]] = None,
                  sampler: Optional[FleetSampler] = None,
                  model_brands: bool = True,
-                 consistency_v2: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 consistency_v2: bool = True,
+                 age_income_coupling: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -703,6 +705,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         segments, proportional to ``segment_share``. This ensures no emitted
         vehicle carries ``sonstige`` / an empty brand. When ``False``, the legacy
         behaviour is preserved (``sonstige`` can appear with an empty brand).
+    age_income_coupling : when ``True`` (default) AND ``consistency_v2=True``,
+        the per-car age PMF is multiplied by the MiD income-age tilt from
+        :class:`~braunschweig.synthesis.vehicles.age_income.AgeIncomeModel`
+        before the Euro-consistency draw. The tilt is built once per call and
+        indexed by ``(segment, economic_status)``. When ``False`` OR when
+        ``consistency_v2=False``, the unmodified ``P(age | powertrain)`` is used
+        (byte-identical to the pre-Feature-B behaviour).
 
     Returns
     -------
@@ -781,6 +790,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     # brand_source_list: per-row marker ("kba_model" | "sonstige_redistributed").
     # Task 8 hook: promoted to a df_spec column in the v2 assembly block.
     brand_source_list: list[str] = ["kba_model"] * n
+
+    # Feature B (Task 3): income-age tilt model — built once per call, used only
+    # in the v2 age draw when age_income_coupling=True.
+    age_model: Optional[AgeIncomeModel] = None
+    if consistency_v2 and age_income_coupling:
+        age_model = AgeIncomeModel.from_data_path(data_path)
 
     # Task 6 (consistency_v2): model-feasible powertrain mask (Bug 2).
     # When the HSN/TSN-derived feasible-fuels model is available we draw the
@@ -881,6 +896,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # final (raked) powertrain, so they stay internally consistent.
         car_kreis: list[str] = [""] * n
         car_segment: list[str] = [""] * n
+        car_status: list[str] = [""] * n
         car_brand: list[str] = [""] * n
         car_model: list[str] = [""] * n
         car_pmf: list[np.ndarray] = [None] * n  # type: ignore[list-item]
@@ -946,6 +962,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
 
             car_kreis[i] = kreis
             car_segment[i] = segment
+            car_status[i] = status
             car_brand[i] = brand
             car_model[i] = model
             car_pmf[i] = pt_pmf
@@ -995,7 +1012,17 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         for i in range(n):
             pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pmf)
-            euro_class, age_band = _draw_euro_age(powertrain)
+            # Feature B (Task 3): income-age tilt. Applied ONLY in the v2 path
+            # when age_income_coupling=True; the euro draw is unaffected.
+            euro_pmf = sampler.euro_given_powertrain[powertrain]
+            euro_class = _draw_categorical(
+                rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+            age_pmf = sampler.age_given_powertrain[powertrain]
+            if age_model is not None:
+                tilt = age_model.age_tilt(car_segment[i], car_status[i])
+                age_pmf = age_pmf * tilt   # multiplicative; _draw_age renormalises
+            age_band = _draw_age_consistent_with_euro(
+                rng, age_pmf, euro_class, powertrain)
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
                 car_brand[i], car_model[i])
@@ -1025,6 +1052,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
 
     # Fallback observability (project no-silent-fallback rule).
     sampler.powertrain_model.log_fallback_rate()
+    if age_model is not None:
+        age_model.log_fallback_rate()
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
     if model_brands:
         _log_simple_fallback("brand/model draw", brand_model_fallback, n)
