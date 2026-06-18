@@ -2,7 +2,7 @@
 
 Two test groups:
 1. OFF-path byte-identical regression: sample_fleet(..., consistency_v2=False)
-   must match a committed golden fixture produced from the pre-plan main output.
+   must match a committed golden fixture generated on this feature branch.
    Guards against unintended drift of the legacy path.
 
 2. v2 consistency validation: sample_fleet + attach_hsn_tsn in v2 mode on
@@ -85,7 +85,12 @@ def v2_output_with_hsn(sampler):
 def test_off_path_byte_identical(sampler):
     """consistency_v2=False output must match the committed golden fixture exactly.
 
-    The golden was produced from the pre-plan main head (before Task 1) by:
+    The golden was generated on this feature branch by running
+    ``sample_fleet(..., consistency_v2=False)`` — it is NOT a snapshot from the
+    pre-feature main head.  The OFF==pre-feature-main equivalence rests on the
+    legacy code path being a verbatim copy of the original loop, which was
+    verified during task reviews.  The generation command was:
+
         python -c \"
         import numpy as np, pandas as pd, sys; sys.path.insert(0,'.')
         from braunschweig.data.kba import fleet_tables as ft
@@ -98,6 +103,7 @@ def test_off_path_byte_identical(sampler):
                                 random_seed=42, consistency_v2=False)
         df.to_parquet('tests/fixtures/fleet_v1_golden.parquet', index=False)
         \"
+
     The golden is committed to tests/fixtures/fleet_v1_golden.parquet.
     """
     df_cars = _make_cars()

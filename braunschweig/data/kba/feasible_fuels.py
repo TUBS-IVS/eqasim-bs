@@ -146,9 +146,12 @@ class FeasibleFuels:
             family_powertrains.setdefault((brand_s, family), set()).add(powertrain)
 
         if unmapped_fuels:
-            logger.debug(
-                "[feasible_fuels] %d HSN/TSN fuel string(s) not mapped to a "
-                "powertrain and ignored for feasibility: %s",
+            logger.warning(
+                "[feasible_fuels] %d HSN/TSN fuel string(s) not in "
+                "FUEL_STRING_TO_POWERTRAIN (inverse of POWERTRAIN_TO_FUEL_GROUP) "
+                "and ignored for feasibility — each unmapped string NARROWS the "
+                "feasible powertrain set for affected models; extend the map if "
+                "a re-scrape introduced new fuel spellings: %s",
                 len(unmapped_fuels), ", ".join(sorted(unmapped_fuels)),
             )
 
