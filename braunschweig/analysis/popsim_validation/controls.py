@@ -571,6 +571,15 @@ def _realized_beruflabschluss(frames: "PopulationFrames", geo: pd.DataFrame) -> 
     return out.rename(columns={"ars5": "geo_id"})
 
 
+def employed_25_64_rate(persons):
+    """Employment rate within the 25-64 age band, per Kreis (ARS[:5], zero-padded)."""
+    band = persons[(persons["HP_ALTER"] >= 25) & (persons["HP_ALTER"] <= 64)].copy()
+    band["KREIS"] = band["RegionalSchlussel_ARS"].astype(str).str.zfill(12).str[:5]
+    band["is_emp"] = band["P_TAET"].isin(_EMPLOYED_PTAET)
+    grp = band.groupby("KREIS")["is_emp"]
+    return (grp.sum() / grp.count()).to_dict()
+
+
 # ---------------------------------------------------------------------------
 # Registry builder
 # ---------------------------------------------------------------------------

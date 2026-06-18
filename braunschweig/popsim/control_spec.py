@@ -777,7 +777,30 @@ def tier3_controls() -> List[CatalogControl]:
     return catalog
 
 
-def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogControl]:
+def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
+    """Two 100m age×sex-resolved employment controls (sex-split). MiD-only.
+
+    census_source is the per-cell target column injected by employment_grid into the
+    cells frame (EMPLOYED_M_agg / EMPLOYED_F_agg). ENTD cannot express P_TAET -> None.
+    """
+    out: List[CatalogControl] = []
+    for prefix, sex_value in (("M", 1), ("F", 2)):
+        name = f"EMPLOYED_{prefix}_agg"
+        expr = f"(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))&(persons.HP_SEX=={sex_value})"
+        out.append(
+            CatalogControl(
+                name=name,
+                geography=GEO_100M,
+                seed_table=SEED_TABLE_PERSONS,
+                importance=importance,
+                census_source=(name,),
+                seed_expressions={"mid": expr, "entd": None},
+            )
+        )
+    return out
+
+
+def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -805,6 +828,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
         catalog.extend(tier2_controls())
     if "tier3" in include_tiers:
         catalog.extend(tier3_controls())
+    if include_employment_grid:
+        catalog.extend(employment_grid_controls())
     return catalog
 
 
