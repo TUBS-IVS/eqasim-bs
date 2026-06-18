@@ -128,3 +128,93 @@ def match_person(target_row, weekday_persons, *, rng):
                 int(rng.randint(len(weekday_persons)))]
             return chosen["H_ID"], chosen["P_ID"], len(PERSON_KEYS_BY_PRIORITY)
         active.pop()
+
+
+@dataclass(frozen=True)
+class WeekendMatchReport:
+    n_weekend_households: int
+    n_hh_matched: int
+    n_person_fallback_households: int
+    n_persons_remapped: int
+    hh_match_level_counts: dict
+
+
+def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID"):
+    from braunschweig.popsim import day_type as _dt
+
+    persons = persons.copy()
+    hh_dt = _dt.household_day_type(persons, household_id=household_id)
+    feats = build_hh_features(households, persons)
+
+    weekday_ids = hh_dt.index[hh_dt == "weekday"]
+    weekend_ids = hh_dt.index[hh_dt == "weekend"]
+    weekday_feats = feats.loc[feats.index.isin(weekday_ids)]
+    weekday_persons = persons[persons[household_id].isin(weekday_ids)].copy()
+
+    persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
+    # default trace row = own plan (correct for weekday + filler bookkeeping below)
+    resolution = pd.Series("own_plan", index=persons.index)
+    match_level = pd.Series(np.nan, index=persons.index)
+    resolution[persons["member_imputed"].to_numpy()] = "member_completion_filler"
+
+    n_hh_matched = 0
+    n_person_fallback = 0
+    n_remapped = 0
+    level_counts: dict = {}
+
+    for hid in sorted(weekend_ids):
+        target_members = persons_by_hh[hid].reset_index()  # keeps original index in 'index'
+        matched_id, level = match_household(
+            hid, feats.loc[hid], weekday_feats, rng=rng)
+        if matched_id is not None:
+            donor_members = persons_by_hh[matched_id].reset_index(drop=True)
+            for tpos, dpos in align_members(target_members, donor_members):
+                ridx = target_members.loc[tpos, "index"]
+                persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
+                persons.loc[ridx, "source_P_ID"] = donor_members.loc[dpos, "source_P_ID"]
+                resolution[ridx] = "hh_match"
+                match_level[ridx] = level
+                n_remapped += 1
+            n_hh_matched += 1
+            level_counts[level] = level_counts.get(level, 0) + 1
+        else:
+            for tpos in range(len(target_members)):
+                ridx = target_members.loc[tpos, "index"]
+                trow = target_members.loc[tpos]
+                sh, sp, plevel = match_person(trow, weekday_persons, rng=rng)
+                persons.loc[ridx, "source_H_ID"] = sh
+                persons.loc[ridx, "source_P_ID"] = sp
+                resolution[ridx] = "person_fallback"
+                match_level[ridx] = plevel
+                n_remapped += 1
+            n_person_fallback += 1
+
+    donor_dt = persons[household_id].map(hh_dt)
+    trace = pd.DataFrame({
+        "H_ID": persons[household_id].to_numpy(),
+        "P_ID": persons["P_ID"].to_numpy(),
+        "donor_day_type": donor_dt.to_numpy(),
+        "resolution": resolution.to_numpy(),
+        "match_level": match_level.to_numpy(),
+        "plan_source_H_ID": persons["source_H_ID"].to_numpy(),
+        "plan_source_P_ID": persons["source_P_ID"].to_numpy(),
+    })
+    report = WeekendMatchReport(
+        n_weekend_households=len(weekend_ids),
+        n_hh_matched=n_hh_matched,
+        n_person_fallback_households=n_person_fallback,
+        n_persons_remapped=n_remapped,
+        hh_match_level_counts=level_counts,
+    )
+    logger.info(
+        "[weekend_plan_match] %d weekend households: %d HH-matched, %d via "
+        "person-fallback; %d persons remapped. HH match-level counts: %s",
+        report.n_weekend_households, report.n_hh_matched,
+        report.n_person_fallback_households, report.n_persons_remapped,
+        report.hh_match_level_counts,
+    )
+    if len(weekend_ids) and report.n_hh_matched == 0:
+        logger.warning(
+            "[weekend_plan_match] no weekend household matched at HH level; all "
+            "%d fell back to person-level matching.", len(weekend_ids))
+    return persons, trace, report

@@ -103,3 +103,50 @@ def test_match_person_raises_on_empty_pool():
     target = pd.Series({"HP_ALTER": 30, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1})
     with pytest.raises(ValueError, match="empty weekday person pool"):
         wpm.match_person(target, pd.DataFrame(columns=["H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE"]), rng=np.random.RandomState(0))
+
+
+def test_reassign_hh_match_remaps_weekend_household():
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
+        "HP_ALTER": [40, 38, 41, 39], "HP_SEX": [1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1], "P_TAET": [1, 1, 1, 1], "P_FKARTE": [1, 1, 1, 1],
+        "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
+        "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
+        "member_imputed": [False, False, False, False],
+    })
+    out, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0))
+    # weekday HH 1 untouched
+    w1 = out[out["H_ID"] == 1]
+    assert (w1["source_H_ID"] == w1["H_ID"]).all()
+    # weekend HH 2 now points at the weekday donor (HH 1)
+    w2 = out[out["H_ID"] == 2]
+    assert (w2["source_H_ID"] == 1).all()
+    assert report.n_weekend_households == 1 and report.n_hh_matched == 1
+    assert set(trace["resolution"]) == {"own_plan", "hh_match"}
+
+
+def test_reassign_person_fallback_when_no_equal_size_weekday_hh():
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [1, 2], "hh_type5": ["single", "couple"],
+        "oek_status": [2, 3], "RegioStaR7": [77, 71], "H_ANZAUTO": [0, 2],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 2, 2], "P_ID": [1, 1, 2],
+        "HP_ALTER": [25, 41, 39], "HP_SEX": [2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1], "P_TAET": [1, 1, 1], "P_FKARTE": [1, 1, 1],
+        "kernwo": [2, 6, 6],            # weekday single HH 1; weekend couple HH 2 (size 2)
+        "source_H_ID": [1, 2, 2], "source_P_ID": [1, 1, 2],
+        "member_imputed": [False, False, False],
+    })
+    out, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0))
+    # no equal-size (2) weekday HH -> both weekend persons go to person fallback (HH 1 person)
+    w2 = out[out["H_ID"] == 2]
+    assert (w2["source_H_ID"] == 1).all()
+    assert report.n_hh_matched == 0 and report.n_person_fallback_households == 1
+    assert "person_fallback" in set(trace["resolution"])
