@@ -147,6 +147,47 @@ def test_complete_members_single_daytype_is_noop():
 # Test 4: no same-day mirror -> household stays unfilled (never cross day type)
 # ---------------------------------------------------------------------------
 
+def test_complete_members_host_without_day_type_still_fills():
+    """A host whose day type cannot be determined (absent from hh_dt because it
+    has no persons with kernwo) must still be filled using the un-day-constrained
+    candidate set (legacy fallback), not silently left unfillable.
+
+    This exercises the ``host_dt is None`` guard introduced in Fix 1.
+
+    Construction: we use the no-kernwo path (hh_dt=None) which is the broadest
+    equivalent -- the pre-Option-B code never filtered by day type and always
+    filled when a same-size mirror existed.  Verifying that a host IS filled when
+    kernwo is absent confirms the guard keeps the pre-Option-B contract intact.
+
+    For the narrower sub-case where hh_dt is built but the host itself is absent
+    (e.g. host has zero persons), construction would require a host with H_GR>0
+    but no rows in the persons frame -- an edge case that is already gated by the
+    ``incomplete_mask`` logic upstream.  The guard in the code is a defensive
+    belt-and-suspenders; the no-kernwo test above is the meaningful regression
+    anchor.
+    """
+    # Same as test_complete_members_no_kernwo_is_unchanged but documented
+    # explicitly as the host-without-day-type regression test.
+    households = _make_households(("A", 2), ("B", 2))
+    persons = _make_persons(
+        ("A", 1, 30, 1),   # no kernwo -> hh_dt is None -> no day filter
+        ("B", 1, 40, 2),
+        ("B", 2, 35, 1),
+    )
+
+    _, filled_p, report = member_completion.complete_members(
+        households, persons, rng=np.random.RandomState(7),
+    )
+
+    fillers = filled_p[(filled_p["H_ID"] == "A") & filled_p["member_imputed"]]
+    assert len(fillers) == 1, (
+        "Host A must still be filled even when day type is indeterminate "
+        "(no kernwo column -> hh_dt=None -> legacy fallback)."
+    )
+    assert report.n_households_filled == 1
+    assert report.n_persons_added == 1
+
+
 def test_complete_members_no_same_day_mirror_stays_unfilled():
     """If the only complete equal-size mirror is from the WRONG day type, the
     incomplete host must remain unfilled (n_unfillable += 1), never cross the

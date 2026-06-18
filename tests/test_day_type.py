@@ -49,8 +49,12 @@ def test_household_day_type_resolves_mixed_by_majority(caplog):
     assert out.loc[10] == "weekday"
     assert out.loc[20] == "weekend"
 
-    # A warning must be emitted reporting the count of mixed households.
-    assert any("mixed reporting day" in r.getMessage() for r in caplog.records)
+    # A warning must be emitted reporting the count of mixed households (2).
+    warning_messages = [r.getMessage() for r in caplog.records if "mixed reporting day" in r.getMessage()]
+    assert warning_messages, "Expected a warning about mixed reporting day."
+    assert any("2 household" in msg for msg in warning_messages), (
+        f"Warning must contain '2 household' (count of mixed HHs); got: {warning_messages}"
+    )
 
     # Tie-breaking: 1 weekday + 1 weekend -> resolves to "weekday".
     persons_tie = pd.DataFrame({"H_ID": [10, 10], "kernwo": [2, 6]})

@@ -50,5 +50,7 @@ def household_day_type(persons, *, household_id="H_ID", kernwo_col="kernwo") -> 
         )
         # Resolve per household by majority; mode() returns sorted values so
         # ties resolve deterministically to "weekday" (alphabetically first).
-        return by_hh.agg(lambda s: s.mode().iat[0])
+        result = by_hh.agg(lambda s: s.mode().iat[0])
+        result.index.name = household_id  # match index.name of the non-mixed path
+        return result
     return by_hh.first()

@@ -234,9 +234,16 @@ def complete_members(
         candidates = complete[complete[size_col] == row[size_col]]
         # Day-type filter: when active, restrict mirrors to the same day type
         # as the host household (hard filter, same priority as equal size).
+        # Guard: only apply when BOTH hh_dt is available AND the host has a
+        # determinable day type (host_dt is not None).  A host with zero
+        # present persons is absent from hh_dt; filtering on None would empty
+        # the candidate set and silently make the household unfillable -- a
+        # regression vs. the pre-Option-B behaviour.  When host_dt is None we
+        # fall back to the un-day-constrained candidate set (legacy path).
         if hh_dt is not None:
             host_dt = hh_dt.get(host_id)
-            candidates = candidates[candidates[household_id].map(hh_dt) == host_dt]
+            if host_dt is not None:
+                candidates = candidates[candidates[household_id].map(hh_dt) == host_dt]
         if len(candidates) == 0:
             n_unfillable += 1
             continue
