@@ -1,22 +1,27 @@
 """Build a per-cell, age×sex-resolved employment target for a 100m PopulationSim control.
 
-SHAPE  = GENESIS 13111 SvB employment counts by age-class×sex×Kreis
-         (braunschweig.data.census.employment).
+SHAPE  = Zensus 2000S-2001 Erwerbstätige by age-group×Kreis (young 16-29 / prime 30-59 / old 60+),
+         loaded via braunschweig.popsim.zensus_employment_age.
 LEVEL  = cleancensus Erwerbstaetige Kreis×sex totals (kreis_erwerbsstatus parquet).
-DENOM  = the prepared cells' single-year {M,F}_AGE_<year> columns, summed to Kreis.
+DENOM  = the prepared cells' single-year {M,F}_AGE_<year> columns, summed to Kreis×group.
 
 The per-cell employed target binds employment at the 100m grid (where the final
 household weights are set) instead of only at KREIS, and respects each cell's age
-composition. It rescales per Kreis×sex to the census Erwerbstaetige level, so the
-SvB (narrower) source is used only for the age SHAPE; the absolute LEVEL is census.
+composition. It rescales per Kreis×sex×group to census_level × age_share, so the
+Zensus 2001 source is used only for the age SHAPE; the absolute LEVEL is census.
+
+Produces 6 control columns: EMPLOYED_{M,F}_{young,prime,old}_agg.
 """
 from __future__ import annotations
 
 import pandas as pd
 
+from braunschweig.popsim.zensus_employment_age import AGE_GROUPS
+
 MIN_EMPLOYMENT_AGE = 16
 
 # (age_class, lo_inclusive, hi_exclusive_or_None) -- GENESIS 13111 bands, floored at 16.
+# Kept for backward compatibility with band_for_age (used by some callers).
 GENESIS_EMPLOYMENT_BANDS: tuple[tuple[int, int, int | None], ...] = (
     (0, 16, 20),
     (20, 20, 25),
@@ -38,65 +43,15 @@ def band_for_age(age: int) -> int | None:
     return None
 
 
-def employable_population_by_kreis(
-    cells: pd.DataFrame,
-    *,
-    sex_prefix: str,
-    kreis_col: str = "KREIS",
-    single_year_max: int = 100,
-) -> pd.DataFrame:
-    """Kreis population per GENESIS band from single-year ``{sex_prefix}_AGE_<year>`` cols."""
-    rows = []
-    for age_class, lo, hi in GENESIS_EMPLOYMENT_BANDS:
-        top = single_year_max if hi is None else hi - 1
-        cols = [
-            f"{sex_prefix}_AGE_{year}"
-            for year in range(lo, top + 1)
-            if f"{sex_prefix}_AGE_{year}" in cells.columns
-        ]
-        if not cols:
-            continue
-        band_pop = cells[cols].sum(axis=1)
-        grouped = band_pop.groupby(cells[kreis_col]).sum()
-        for kreis, pop in grouped.items():
-            rows.append({"KREIS": kreis, "age_class": age_class, "pop": float(pop)})
-    return pd.DataFrame(rows, columns=["KREIS", "age_class", "pop"])
+_SEX = (("M", "ERWERBSTAT_KURZ_STP__11_M"), ("F", "ERWERBSTAT_KURZ_STP__11_W"))
 
 
-def employment_rates(svb: pd.DataFrame, pop: pd.DataFrame, *, sex: str) -> pd.DataFrame:
-    """Rate = SvB / population per (Kreis, age_class) for one sex; 0 where pop==0."""
-    s = svb[svb["sex"] == sex].copy()
-    s["KREIS"] = s["departement_id"].astype(str)
-    merged = pop.merge(
-        s[["KREIS", "age_class", "weight"]], on=["KREIS", "age_class"], how="left"
-    )
-    merged["weight"] = merged["weight"].fillna(0.0)
-    merged["rate"] = 0.0
-    mask = merged["pop"] > 0
-    merged.loc[mask, "rate"] = merged.loc[mask, "weight"] / merged.loc[mask, "pop"]
-    return merged[["KREIS", "age_class", "rate"]]
-
-
-_SEX_SPEC = (
-    ("M", "male", "ERWERBSTAT_KURZ_STP__11_M"),
-    ("F", "female", "ERWERBSTAT_KURZ_STP__11_W"),
-)
-
-
-def _raw_cell_employment(cells, rates, *, sex_prefix, kreis_col, single_year_max):
-    """Per-cell raw expected employed = Σ_year cell_pop[year] × rate[band(year)]."""
-    rate_lookup = {(r.KREIS, r.age_class): r.rate for r in rates.itertuples()}
-    raw = pd.Series(0.0, index=cells.index)
-    for age_class, lo, hi in GENESIS_EMPLOYMENT_BANDS:
-        top = single_year_max if hi is None else hi - 1
-        cols = [f"{sex_prefix}_AGE_{y}" for y in range(lo, top + 1)
-                if f"{sex_prefix}_AGE_{y}" in cells.columns]
-        if not cols:
-            continue
-        band_pop = cells[cols].sum(axis=1)
-        rate = cells[kreis_col].map(lambda k, _ac=age_class: rate_lookup.get((k, _ac), 0.0))
-        raw = raw + band_pop * rate
-    return raw
+def _group_cell_pop(cells, prefix, lo, hi, min_age, single_year_max):
+    """Sum single-year columns for one sex prefix and one age group [lo, hi]."""
+    top = single_year_max if hi >= single_year_max else hi
+    cols = [f"{prefix}_AGE_{y}" for y in range(max(lo, min_age), top + 1)
+            if f"{prefix}_AGE_{y}" in cells.columns]
+    return cells[cols].sum(axis=1) if cols else pd.Series(0.0, index=cells.index)
 
 
 def select_load_columns(
@@ -109,7 +64,7 @@ def select_load_columns(
 ):
     """Adjust the parquet load set for the employment-grid control.
 
-    The two employment-grid targets (``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg``) are
+    The six employment-grid targets (``EMPLOYED_{M,F}_{young,prime,old}_agg``) are
     COMPUTED per cell by :func:`per_cell_employment_targets`; they are not stored in
     the prepared-cell parquet, so they must be removed from ``load_cols`` (loading
     them would raise / yield bogus columns). In their place the single-year
@@ -124,8 +79,7 @@ def select_load_columns(
     available_parquet_cols:
         The cleaned column names actually present in the parquet schema.
     computed_cols:
-        Set of computed target names to strip out (``{"EMPLOYED_M_agg",
-        "EMPLOYED_F_agg"}``).
+        Set of computed target names to strip out (the 6 ``EMPLOYED_*_agg`` names).
     min_age, single_year_max:
         Inclusive single-year range whose ``{M,F}_AGE_<year>`` columns are added.
 
@@ -162,78 +116,99 @@ def select_load_columns(
 
 def per_cell_employment_targets(
     cells: pd.DataFrame,
-    svb: pd.DataFrame,
     census_levels: pd.DataFrame,
+    age_shares_by_kreis: dict,
     *,
     kreis_col: str = "KREIS",
+    min_age: int = 16,
     single_year_max: int = 100,
 ) -> pd.DataFrame:
-    """Per-cell EMPLOYED_M_agg / EMPLOYED_F_agg, rescaled per Kreis×sex to census level."""
-    out = pd.DataFrame({"ZENSUS100m": cells["ZENSUS100m"].to_numpy()}, index=cells.index)
-    levels = census_levels.copy()
-    levels["ARS_kreis"] = levels["ARS_kreis"].astype(str)
-    levels = levels.set_index("ARS_kreis")
-    for prefix, sex, level_col in _SEX_SPEC:
-        pop = employable_population_by_kreis(
-            cells, sex_prefix=prefix, kreis_col=kreis_col, single_year_max=single_year_max
-        )
-        rates = employment_rates(svb, pop, sex=sex)
-        raw = _raw_cell_employment(
-            cells, rates, sex_prefix=prefix, kreis_col=kreis_col,
-            single_year_max=single_year_max,
-        )
-        raw_by_kreis = raw.groupby(cells[kreis_col]).transform("sum")
-        target_level = cells[kreis_col].map(
-            lambda k, _lc=level_col: float(levels.loc[k, _lc]) if k in levels.index else 0.0
-        )
-        scaled = pd.Series(0.0, index=cells.index)
-        mask = raw_by_kreis > 0
-        scaled[mask] = raw[mask] / raw_by_kreis[mask] * target_level[mask]
-        out[f"EMPLOYED_{prefix}_agg"] = scaled.to_numpy()
-    return out
+    """Per-cell EMPLOYED_{M,F}_{young,prime,old}_agg, rescaled per Kreis×sex×group.
 
-
-def add_employment_grid_columns(
-    cells: pd.DataFrame,
-    svb: pd.DataFrame,
-    census_levels: pd.DataFrame,
-    *,
-    kreis_col: str = "KREIS",
-    single_year_max: int = 100,
-) -> pd.DataFrame:
-    """Return a copy of ``cells`` with ``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg`` added.
-
-    Thin wrapper over :func:`per_cell_employment_targets` for the stage wiring: it
-    computes the two per-cell employment targets (GENESIS SvB age-shape rescaled per
-    Kreis x sex to the census Erwerbstaetige level) and attaches them as columns,
-    aligned on the (preserved) ``cells`` index. The targets frame is index-aligned to
-    ``cells`` by :func:`per_cell_employment_targets`, so the assignment is positional-safe.
+    For each Kreis k, sex s, group g:
+        sum_cells(EMPLOYED_{s}_{g}_agg) == census_Erwerbstätige[k,s] × age_share[k,g]
 
     Parameters
     ----------
     cells:
         Prepared cells frame carrying ``ZENSUS100m``, a Kreis column (``kreis_col``)
         and single-year ``{M,F}_AGE_<year>`` columns.
-    svb:
-        GENESIS SvB frame ``[departement_id, age_class, sex, weight]`` (the age SHAPE).
     census_levels:
         Per-Kreis sex-split Erwerbstaetige levels: ``ARS_kreis`` +
         ``ERWERBSTAT_KURZ_STP__11_M`` / ``ERWERBSTAT_KURZ_STP__11_W`` (the LEVEL).
+    age_shares_by_kreis:
+        Dict mapping Kreis string -> dict[group_name, share] where shares sum to 1.0
+        (from zensus_employment_age.load_age_shares).
     kreis_col:
         Name of the Kreis column on ``cells`` (5-digit ARS).
-    single_year_max:
-        Top single-year age included in the open-ended (65+) band.
+    min_age, single_year_max:
+        Age bounds for single-year column summation.
 
     Returns
     -------
     pandas.DataFrame
-        Copy of ``cells`` with ``EMPLOYED_M_agg`` / ``EMPLOYED_F_agg`` columns added.
+        Frame with ``ZENSUS100m`` + 6 columns: EMPLOYED_{M,F}_{young,prime,old}_agg.
     """
-    targets = per_cell_employment_targets(
-        cells, svb, census_levels,
-        kreis_col=kreis_col, single_year_max=single_year_max,
-    )
-    out = cells.copy()
-    out["EMPLOYED_M_agg"] = targets["EMPLOYED_M_agg"].to_numpy()
-    out["EMPLOYED_F_agg"] = targets["EMPLOYED_F_agg"].to_numpy()
+    out = pd.DataFrame({"ZENSUS100m": cells["ZENSUS100m"].to_numpy()}, index=cells.index)
+    lv = census_levels.copy()
+    lv["ARS_kreis"] = lv["ARS_kreis"].astype(str)
+    lv = lv.set_index("ARS_kreis")
+
+    for prefix, level_col in _SEX:
+        for gname, glo, ghi in AGE_GROUPS:
+            pop = _group_cell_pop(cells, prefix, glo, ghi, min_age, single_year_max)
+            pop_by_kreis = pop.groupby(cells[kreis_col]).transform("sum")
+            level = cells[kreis_col].map(
+                lambda k, _lc=level_col, _g=gname: (
+                    float(lv.loc[k, _lc]) * age_shares_by_kreis.get(k, {}).get(_g, 0.0)
+                    if k in lv.index else 0.0
+                )
+            )
+            scaled = pd.Series(0.0, index=cells.index)
+            mask = pop_by_kreis > 0
+            scaled[mask] = pop[mask] / pop_by_kreis[mask] * level[mask]
+            out[f"EMPLOYED_{prefix}_{gname}_agg"] = scaled.to_numpy()
     return out
+
+
+def add_employment_grid_columns(
+    cells: pd.DataFrame,
+    census_levels: pd.DataFrame,
+    age_shares_by_kreis: dict,
+    *,
+    kreis_col: str = "KREIS",
+    min_age: int = 16,
+    single_year_max: int = 100,
+) -> pd.DataFrame:
+    """Return a copy of ``cells`` with the 6 employment-grid columns added.
+
+    Thin wrapper over :func:`per_cell_employment_targets` for the stage wiring: it
+    computes the six per-cell employment targets (Zensus 2001 age-shape rescaled per
+    Kreis×sex×group to the census Erwerbstaetige level) and attaches them via merge
+    on ZENSUS100m.
+
+    Parameters
+    ----------
+    cells:
+        Prepared cells frame carrying ``ZENSUS100m``, a Kreis column (``kreis_col``)
+        and single-year ``{M,F}_AGE_<year>`` columns.
+    census_levels:
+        Per-Kreis sex-split Erwerbstaetige levels: ``ARS_kreis`` +
+        ``ERWERBSTAT_KURZ_STP__11_M`` / ``ERWERBSTAT_KURZ_STP__11_W`` (the LEVEL).
+    age_shares_by_kreis:
+        Dict mapping Kreis string -> dict[group_name, share] (from load_age_shares).
+    kreis_col:
+        Name of the Kreis column on ``cells`` (5-digit ARS).
+    min_age, single_year_max:
+        Age bounds for single-year column summation.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of ``cells`` with 6 columns EMPLOYED_{M,F}_{young,prime,old}_agg added.
+    """
+    t = per_cell_employment_targets(
+        cells, census_levels, age_shares_by_kreis,
+        kreis_col=kreis_col, min_age=min_age, single_year_max=single_year_max,
+    )
+    return cells.merge(t, on="ZENSUS100m", how="left")
