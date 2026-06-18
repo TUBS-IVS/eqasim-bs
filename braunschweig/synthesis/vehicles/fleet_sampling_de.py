@@ -48,6 +48,8 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.data.kba import fleet_tables as ft
+from braunschweig.data.kba.feasible_fuels import FeasibleFuels
+from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
 from braunschweig.ipf.joint_age_size import rake_2d
 from braunschweig.synthesis.vehicles import hbefa
 from braunschweig.synthesis.vehicles.segment import SegmentModel
@@ -511,6 +513,10 @@ class FleetSampler:
     age_given_powertrain: dict[str, np.ndarray]
     model_given_segment: dict[str, pd.DataFrame]
     size_map: dict[str, str]
+    # Task 6: model-feasible powertrain sets (Bug 2). Built from the HSN/TSN
+    # lookup, which is local-only / gitignored; ``None`` when the CSV is absent
+    # (then the feasibility mask is simply not applied — OFF-safe).
+    feasible_fuels: Optional[FeasibleFuels] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -518,6 +524,16 @@ class FleetSampler:
         segment_model = SegmentModel.from_data_path(data_path)
         powertrain_model = PowertrainModel.from_data_path(
             data_path, segment_model.segments)
+        # Task 6: build the feasible-fuels model from the HSN/TSN lookup when the
+        # (local-only) CSV is present; absence only disables the feasibility mask.
+        feasible_fuels: Optional[FeasibleFuels] = None
+        try:
+            feasible_fuels = FeasibleFuels.from_data_path(data_path)
+        except FileNotFoundError:
+            logger.info(
+                "[fleet_de] HSN/TSN lookup absent; model-feasible powertrain "
+                "mask (Bug 2) disabled (consistency_v2 keeps the unmasked pmf)."
+            )
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -525,6 +541,7 @@ class FleetSampler:
             age_given_powertrain=_age_given_powertrain(data_path),
             model_given_segment=_model_given_segment(data_path),
             size_map=dict(size_map) if size_map is not None else {},
+            feasible_fuels=feasible_fuels,
         )
 
 
@@ -669,6 +686,18 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     # Task 8 will promote this to a DataFrame column.
     brand_source_list: list[str] = ["drawn"] * n
 
+    # Task 6 (consistency_v2): model-feasible powertrain mask (Bug 2).
+    # When the HSN/TSN-derived feasible-fuels model is available we draw the
+    # model BEFORE the powertrain and mask the powertrain pmf to the model's
+    # feasible powertrain set. powertrain_feasibility_list carries per-row
+    # provenance ("model_constrained" | "segment_fallback") for the Task 8 hook;
+    # _feasibility_fallback counts cars whose mask zeroed the whole pmf (no
+    # overlap) so the unmasked pmf was kept.
+    _feasible_fuels = sampler.feasible_fuels if consistency_v2 else None
+    powertrain_feasibility_list: list[str] = ["segment_fallback"] * n
+    _feasibility_fallback = 0
+    _powertrain_idx = {p: i for i, p in enumerate(POWERTRAINS)}
+
     records = df_cars.to_dict(orient="records")
     for i, car in enumerate(records):
         status = car["economic_status"]
@@ -689,31 +718,79 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             brand_source_list[i] = "sonstige_redistributed"
             sonstige_redistributed_count += 1
 
-        # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
-        pt_pmf = sampler.powertrain_model.powertrain_probabilities(
-            segment, kreis, gemeinde)
-        powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
+        if not consistency_v2:
+            # ---- LEGACY ORDER (consistency_v2=False): byte-identical to before.
+            # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
+            pt_pmf = sampler.powertrain_model.powertrain_probabilities(
+                segment, kreis, gemeinde)
+            powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
 
-        # 3. euro_class <- P(euro | powertrain).
-        euro_pmf = sampler.euro_given_powertrain[powertrain]
-        euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+            # 3. euro_class <- P(euro | powertrain).
+            euro_pmf = sampler.euro_given_powertrain[powertrain]
+            euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
 
-        # 4. age band <- P(age | powertrain), consistent with the Euro class.
-        age_pmf = sampler.age_given_powertrain[powertrain]
-        age_band = _draw_age_consistent_with_euro(
-            rng, age_pmf, euro_class, powertrain)
+            # 4. age band <- P(age | powertrain), consistent with the Euro class.
+            age_pmf = sampler.age_given_powertrain[powertrain]
+            age_band = _draw_age_consistent_with_euro(
+                rng, age_pmf, euro_class, powertrain)
 
-        # 5. brand + model <- P(model | segment) (isolated, guarded, additive).
-        # Skipped entirely when fleet_model_brands is off (brand/model stay empty);
-        # this never touches the emissions-relevant chain above.
-        if model_brands:
-            brand, model = _draw_brand_model(rng, sampler, segment)
-            if not model:
-                brand_model_fallback += 1
+            # 5. brand + model <- P(model | segment) (isolated, guarded, additive).
+            if model_brands:
+                brand, model = _draw_brand_model(rng, sampler, segment)
+                if not model:
+                    brand_model_fallback += 1
+            else:
+                brand, model = "", ""
         else:
-            brand, model = "", ""
+            # ---- CONSISTENCY_V2 ORDER (Bug 2): model BEFORE powertrain so the
+            # powertrain pmf can be masked to the drawn model's feasible fuels.
+            # 2. brand + model <- P(model | segment) (isolated, guarded, additive).
+            if model_brands:
+                brand, model = _draw_brand_model(rng, sampler, segment)
+                if not model:
+                    brand_model_fallback += 1
+            else:
+                brand, model = "", ""
 
-        # 6. HBEFA VehicleType.
+            # 3. feasible-fuels mask: derive the powertrain set this model can
+            # carry (from the HSN/TSN lookup). None -> unknown model -> no mask.
+            pt_pmf = sampler.powertrain_model.powertrain_probabilities(
+                segment, kreis, gemeinde)
+            feasible = None
+            if _feasible_fuels is not None and model:
+                feasible = _feasible_fuels.model_feasible_powertrains(
+                    brand, model_family(canonical_brand(brand) or "", model))
+            if feasible is not None:
+                mask = np.array(
+                    [1.0 if p in feasible else 0.0 for p in POWERTRAINS],
+                    dtype=float,
+                )
+                pt_pmf_masked = pt_pmf * mask
+                if pt_pmf_masked.sum() > 0:
+                    pt_pmf = pt_pmf_masked
+                    powertrain_feasibility_list[i] = "model_constrained"
+                else:
+                    # No overlap between the segment pmf and the model's feasible
+                    # fuels: keep the UNMASKED pmf and count the fallback.
+                    _feasibility_fallback += 1
+                    powertrain_feasibility_list[i] = "segment_fallback"
+            # else: unknown model -> keep unmasked pmf (powertrain_feasibility
+            # stays "segment_fallback").
+
+            # 4. powertrain <- (masked) P(powertrain | segment, kreis).
+            powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
+
+            # 5. euro_class <- P(euro | powertrain)  (MUST stay after powertrain).
+            euro_pmf = sampler.euro_given_powertrain[powertrain]
+            euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+
+            # 6. age band <- P(age | powertrain), consistent with the Euro class
+            #    (MUST stay after powertrain).
+            age_pmf = sampler.age_given_powertrain[powertrain]
+            age_band = _draw_age_consistent_with_euro(
+                rng, age_pmf, euro_class, powertrain)
+
+        # 7. HBEFA VehicleType.
         vt = hbefa.vehicle_type_for(
             powertrain, euro_class, segment,
             size_map=sampler.size_map,
@@ -765,9 +842,25 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             sonstige_redistributed_count, n, 100.0 * rate,
         )
 
+    # Task 6: model-feasible powertrain mask observability (consistency_v2).
+    if consistency_v2 and _feasible_fuels is not None:
+        n_constrained = sum(
+            1 for s in powertrain_feasibility_list if s == "model_constrained")
+        c_rate = n_constrained / n if n else 0.0
+        logger.info(
+            "[fleet_de] model-feasible powertrain mask (consistency_v2, Bug 2): "
+            "%d/%d vehicles (%.1f%%) model-constrained; %d (%.1f%%) "
+            "no-overlap fallbacks (unmasked pmf kept).",
+            n_constrained, n, 100.0 * c_rate,
+            _feasibility_fallback,
+            100.0 * (_feasibility_fallback / n if n else 0.0),
+        )
+
     # Task 8 hook: brand_source_list carries per-row provenance
-    # ("drawn" | "sonstige_redistributed").  Task 8 will add this as a
-    # df_spec column ("brand_source") and surface it in the output schema.
+    # ("drawn" | "sonstige_redistributed"); powertrain_feasibility_list carries
+    # per-row powertrain feasibility provenance ("model_constrained" |
+    # "segment_fallback"). Task 8 will add both as df_spec columns
+    # ("brand_source", "powertrain_feasibility") and surface them in the schema.
 
     return df_spec, df_vehicle_types
 
