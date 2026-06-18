@@ -806,8 +806,7 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
         model = row["model"]
         powertrain = row["powertrain"]
         seg = segment_values[i]
-        seg_str = str(seg) if seg is not None and not (
-            isinstance(seg, float) and np.isnan(seg)) else None
+        seg_str = None if pd.isna(seg) else str(seg)
         family = model_family(canonical_brand(brand) or "", model)
         # Include segment in cache key so different segments don't share a cache entry.
         key = (str(brand), str(family), str(powertrain), str(seg_str))

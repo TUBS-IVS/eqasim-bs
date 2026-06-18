@@ -193,8 +193,8 @@ def test_match_tier_rate_above_floor(lookup, fleet_spec, caplog):
 
 
 def test_attach_drops_internal_tier_column_by_default(lookup, fleet_spec):
-    """The diagnostic ``hsn_tsn_match_tier`` column is opt-in; when keep_tier=False
-    it is dropped and only the five engine columns are present."""
+    """The diagnostic ``hsn_tsn_match_tier`` column is kept by default; when
+    ``keep_tier=False`` it is dropped and only the five engine columns are present."""
     out = hsn_tsn.attach_hsn_tsn(fleet_spec, lookup=lookup, keep_tier=False)
     assert "hsn_tsn_match_tier" not in out.columns
     assert "_hsn_tsn_match_tier" not in out.columns

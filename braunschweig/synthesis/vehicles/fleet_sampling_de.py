@@ -751,6 +751,9 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     # brand_source_list collects per-row provenance for Task 8 to surface.
     _modelled_segments: list[str] = []
     _modelled_seg_pmf: Optional[np.ndarray] = None
+    # consistency_v2 relies on drawing brand/model; disable it when model_brands=False.
+    if consistency_v2 and not model_brands:
+        consistency_v2 = False
     if consistency_v2:
         df_seg_share = ft.load_segment_powertrain(data_path)
         seg_share_map = (
