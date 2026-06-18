@@ -272,3 +272,39 @@ def test_gemeinde_tilt_raises_local_bev_share():
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())
     assert bev_tilt > bev_base, (bev_base, bev_tilt, top["ratio"])
+
+
+# --------------------------------------------------------------------------- #
+# Task 5 — sonstige redistribution (consistency_v2).
+# --------------------------------------------------------------------------- #
+@pytest.fixture(scope="module")
+def sampled_v2(sampler):
+    """sample_fleet with consistency_v2=True (default)."""
+    df_cars = _make_cars()
+    df_spec, df_types = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
+    return df_spec, df_types
+
+
+@pytest.fixture(scope="module")
+def sampled_v2_off(sampler):
+    """sample_fleet with consistency_v2=False (legacy path)."""
+    df_cars = _make_cars()
+    df_spec, df_types = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=False)
+    return df_spec, df_types
+
+
+def test_no_sonstige_segment_in_output(sampled_v2):
+    """After redistribution, no vehicle carries segment=='sonstige'."""
+    df_spec, _ = sampled_v2
+    assert (df_spec["segment"] == "sonstige").sum() == 0
+    assert (df_spec["brand"].astype(str).str.strip() == "").mean() < 0.001
+
+
+def test_sonstige_off_keeps_old_behaviour(sampled_v2_off):
+    """With consistency_v2=False, sonstige can appear (legacy path unchanged)."""
+    df_spec, _ = sampled_v2_off
+    # sonstige is ~2.3% of fleet; with n=4000*num_kreise it must appear at least
+    # once (statistical near-certainty).
+    assert (df_spec["segment"] == "sonstige").sum() > 0

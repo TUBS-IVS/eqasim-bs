@@ -561,7 +561,8 @@ def _draw_age_consistent_with_euro(rng: np.random.Generator,
 def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  size_map: Optional[Mapping[str, str]] = None,
                  sampler: Optional[FleetSampler] = None,
-                 model_brands: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 model_brands: bool = True,
+                 consistency_v2: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -583,6 +584,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         are not drawn (the ``brand``/``model`` columns are left empty); the
         emissions-relevant segment->powertrain->euro->HBEFA chain is unchanged.
         Driven by the ``fleet_model_brands`` config key (default ``True``).
+    consistency_v2 : when ``True`` (default), vehicles whose segment draw lands on
+        ``"sonstige"`` are redistributed: a replacement segment is redrawn from
+        the KBA segment marginal restricted to the modelled (model-bearing)
+        segments, proportional to ``segment_share``. This ensures no emitted
+        vehicle carries ``sonstige`` / an empty brand. When ``False``, the legacy
+        behaviour is preserved (``sonstige`` can appear with an empty brand).
 
     Returns
     -------
@@ -626,6 +633,42 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     size_fallback_counter: dict[str, int] = {}
     brand_model_fallback = 0
 
+    # Task 5: precompute the redistribution pmf (modelled segments only) once.
+    # Modelled = those present in sampler.model_given_segment (have FZ 12.1 rows).
+    # brand_source_list collects per-row provenance for Task 8 to surface.
+    _modelled_segments: list[str] = []
+    _modelled_seg_pmf: Optional[np.ndarray] = None
+    if consistency_v2:
+        df_seg_share = ft.load_segment_powertrain(data_path)
+        seg_share_map = (
+            df_seg_share.set_index("segment")["segment_share"]
+            .to_dict()
+        )
+        _modelled_segments = [
+            s for s in segments
+            if s in sampler.model_given_segment and s != "sonstige"
+        ]
+        if _modelled_segments:
+            raw = np.array(
+                [seg_share_map.get(s, 0.0) for s in _modelled_segments],
+                dtype=float,
+            )
+            total = raw.sum()
+            _modelled_seg_pmf = raw / total if total > 0 else (
+                np.ones(len(_modelled_segments)) / len(_modelled_segments)
+            )
+        else:
+            logger.warning(
+                "[fleet_de] consistency_v2: no modelled segments found; "
+                "sonstige redistribution disabled."
+            )
+            _modelled_seg_pmf = None
+
+    sonstige_redistributed_count = 0
+    # brand_source_list: per-row marker ("drawn" | "sonstige_redistributed").
+    # Task 8 will promote this to a DataFrame column.
+    brand_source_list: list[str] = ["drawn"] * n
+
     records = df_cars.to_dict(orient="records")
     for i, car in enumerate(records):
         status = car["economic_status"]
@@ -639,6 +682,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # 1. segment <- income-coupled segment IPF.
         seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
         segment = _draw_categorical(rng, segments, seg_pmf)
+
+        # Task 5 (consistency_v2): if sonstige drawn, redraw from modelled segs.
+        if consistency_v2 and segment == "sonstige" and _modelled_seg_pmf is not None:
+            segment = _draw_categorical(rng, _modelled_segments, _modelled_seg_pmf)
+            brand_source_list[i] = "sonstige_redistributed"
+            sonstige_redistributed_count += 1
 
         # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
         pt_pmf = sampler.powertrain_model.powertrain_probabilities(
@@ -708,6 +757,17 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
     if model_brands:
         _log_simple_fallback("brand/model draw", brand_model_fallback, n)
+    if consistency_v2 and sonstige_redistributed_count:
+        rate = sonstige_redistributed_count / n if n else 0.0
+        logger.info(
+            "[fleet_de] sonstige redistribution (consistency_v2): "
+            "%d/%d vehicles (%.1f%%) redistributed to modelled segments.",
+            sonstige_redistributed_count, n, 100.0 * rate,
+        )
+
+    # Task 8 hook: brand_source_list carries per-row provenance
+    # ("drawn" | "sonstige_redistributed").  Task 8 will add this as a
+    # df_spec column ("brand_source") and surface it in the output schema.
 
     return df_spec, df_vehicle_types
 
