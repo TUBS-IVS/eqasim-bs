@@ -778,9 +778,9 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             _modelled_seg_pmf = None
 
     sonstige_redistributed_count = 0
-    # brand_source_list: per-row marker ("drawn" | "sonstige_redistributed").
-    # Task 8 will promote this to a DataFrame column.
-    brand_source_list: list[str] = ["drawn"] * n
+    # brand_source_list: per-row marker ("kba_model" | "sonstige_redistributed").
+    # Task 8 hook: promoted to a df_spec column in the v2 assembly block.
+    brand_source_list: list[str] = ["kba_model"] * n
 
     # Task 6 (consistency_v2): model-feasible powertrain mask (Bug 2).
     # When the HSN/TSN-derived feasible-fuels model is available we draw the
@@ -1013,6 +1013,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     df_spec["hbefa_tech"] = out_tech
     df_spec["hbefa_size"] = out_size
     df_spec["hbefa_emission"] = out_emission
+    # Task 8: surface provenance columns only in the v2 path (OFF path stays
+    # byte-identical for all existing columns; do NOT add them there).
+    if consistency_v2:
+        df_spec["brand_source"] = brand_source_list
+        df_spec["powertrain_feasibility"] = powertrain_feasibility_list
 
     df_vehicle_types = pd.DataFrame.from_records(
         [vt.as_record() for vt in vehicle_types.values()]
@@ -1044,12 +1049,6 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             _feasibility_fallback,
             100.0 * (_feasibility_fallback / n if n else 0.0),
         )
-
-    # Task 8 hook: brand_source_list carries per-row provenance
-    # ("drawn" | "sonstige_redistributed"); powertrain_feasibility_list carries
-    # per-row powertrain feasibility provenance ("model_constrained" |
-    # "segment_fallback"). Task 8 will add both as df_spec columns
-    # ("brand_source", "powertrain_feasibility") and surface them in the schema.
 
     return df_spec, df_vehicle_types
 

@@ -365,3 +365,33 @@ def test_recalibration_deterministic_given_seed():
     a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
     b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
     pd.testing.assert_frame_equal(a, b)
+
+
+# --------------------------------------------------------------------------- #
+# Task 8 — provenance columns (Feature P).
+# --------------------------------------------------------------------------- #
+def test_provenance_columns_present(sampled):
+    """brand_source and powertrain_feasibility must be present on df_spec (v2).
+
+    brand_source ∈ {"kba_model", "sonstige_redistributed"};
+    powertrain_feasibility ∈ {"model_constrained", "segment_fallback"}.
+    (The fixture ``sampled`` uses consistency_v2=True, the default.)
+    """
+    df_spec, _ = sampled
+    for col, domain in [
+        ("brand_source", {"kba_model", "sonstige_redistributed"}),
+        ("powertrain_feasibility", {"model_constrained", "segment_fallback"}),
+    ]:
+        assert col in df_spec.columns, f"column '{col}' missing from df_spec"
+        assert set(df_spec[col].unique()) <= domain, (
+            f"column '{col}' has unexpected values: "
+            f"{set(df_spec[col].unique()) - domain}"
+        )
+
+
+def test_provenance_columns_absent_on_off_path(sampled_v2_off):
+    """consistency_v2=False (OFF path) must NOT add the provenance columns so
+    the existing output columns stay byte-identical."""
+    df_spec, _ = sampled_v2_off
+    assert "brand_source" not in df_spec.columns
+    assert "powertrain_feasibility" not in df_spec.columns

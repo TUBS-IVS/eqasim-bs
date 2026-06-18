@@ -362,7 +362,7 @@ def execute(context):
                 "HSN/TSN attach (no engine attributes written).")
         else:
             df_spec = hsn_tsn.attach_hsn_tsn(
-                df_spec, data_path=fleet_data_path, keep_tier=False)
+                df_spec, data_path=fleet_data_path, keep_tier=True)
 
     # The current vehicles writer consumes critair/technology/age/euro per
     # vehicle (synthesis.vehicles.vehicles + matsim.scenario.vehicles). The
