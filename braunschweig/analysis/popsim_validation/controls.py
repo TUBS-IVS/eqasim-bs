@@ -580,6 +580,29 @@ def employed_25_64_rate(persons):
     return (grp.sum() / grp.count()).to_dict()
 
 
+# 3 coarse age groups matching the Zensus 2000S-2001 / employment_grid convention.
+_AGE_GROUPS3 = (("young", 16, 29), ("prime", 30, 59), ("old", 60, 200))
+
+
+def employed_by_age_group(persons):
+    """Employment rate per Kreis × age group (young 16-29 / prime 30-59 / old 60+).
+
+    Uses the module-level ``_EMPLOYED_PTAET`` (MiD erwerb definition: P_TAET in
+    {1,2,3,4,6,8}).  Returns a dict keyed by ``(kreis5, group_name)`` where
+    kreis5 is the 5-digit ARS prefix (``RegionalSchlussel_ARS[:5]``).
+    """
+    df = persons.copy()
+    df["K"] = df["RegionalSchlussel_ARS"].astype(str).str[:5]
+    df["is_emp"] = df["P_TAET"].isin(_EMPLOYED_PTAET)
+    out = {}
+    for g, lo, hi in _AGE_GROUPS3:
+        sub = df[(df["HP_ALTER"] >= lo) & (df["HP_ALTER"] <= hi)]
+        grp = sub.groupby("K")["is_emp"]
+        for k, rate in (grp.sum() / grp.count()).items():
+            out[(k, g)] = rate
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Registry builder
 # ---------------------------------------------------------------------------

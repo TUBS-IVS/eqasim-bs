@@ -136,3 +136,14 @@ def test_employed_25_64_uses_erwerb_definition():
     persons = pd.DataFrame({"RegionalSchlussel_ARS": ["03102000000"]*3,
                             "HP_ALTER": [30, 30, 40], "P_TAET": [8, 5, 1]})
     assert round(vc.employed_25_64_rate(persons)["03102"], 3) == round(2/3, 3)
+
+
+def test_employed_by_age_group():
+    import pandas as pd
+    from braunschweig.analysis.popsim_validation import controls as vc
+    persons = pd.DataFrame({"RegionalSchlussel_ARS": ["03102000000"]*4,
+                            "HP_ALTER": [20, 25, 40, 70], "P_TAET": [1, 8, 1, 1]})
+    r = vc.employed_by_age_group(persons)
+    assert round(r[("03102","young")], 3) == 1.0     # ages 20,25 both employed (1,8)
+    assert round(r[("03102","prime")], 3) == 1.0     # age 40 employed
+    assert round(r[("03102","old")], 3) == 1.0       # age 70 employed
