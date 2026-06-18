@@ -575,6 +575,102 @@ def _draw_age_consistent_with_euro(rng: np.random.Generator,
     return _draw_categorical(rng, bands, masked)
 
 
+# --------------------------------------------------------------------------- #
+# Task 7: per-Kreis electric-mass recalibration on the feasible support (Bug 2)
+# --------------------------------------------------------------------------- #
+def _electric_rake_factors(
+    pmfs: np.ndarray, kreis_target_share: dict[str, float],
+    electric_idx: dict[str, int], max_iterations: int = 50,
+    tolerance: float = 1e-9,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Per-electric-powertrain multiplicative scale factors for ONE Kreis.
+
+    Task 6 masks every car's powertrain pmf to its model-feasible set, which
+    systematically removes bev/phev mass from combustion-only models and so
+    drives the per-Kreis electric share BELOW the FZ 27.15 target. This computes,
+    for each electric powertrain ``e`` (bev, phev), a scale factor ``alpha_e``
+    such that scaling every car's ``pmf_i[e]`` by ``alpha_e`` and renormalising
+    makes the EXPECTED per-Kreis count of ``e`` equal the FZ 27.15 target
+    (``N_kreis * share_e``).
+
+    Feasibility is preserved by construction: scaling only re-weights cars that
+    already carry nonzero feasible mass on ``e`` (a combustion-only car has
+    ``pmf_i[e] == 0`` and stays 0 under any finite scale). bev and phev are
+    coupled (raising one steals renormalised mass from the other), so the two
+    factors are found by a small fixed-point iteration.
+
+    Parameters
+    ----------
+    pmfs : (n_cars, n_powertrains) array of the per-car *masked* powertrain pmfs
+        for the cars of this Kreis (each row sums to 1).
+    kreis_target_share : {powertrain -> FZ 27.15 share} for this Kreis (the
+        electric entries are the rake targets).
+    electric_idx : {electric powertrain -> column index in ``pmfs``}.
+
+    Returns
+    -------
+    (factors, residuals) :
+        ``factors`` is a length-``n_powertrains`` vector of multiplicative scale
+        factors (1.0 for every non-electric powertrain); ``residuals`` maps each
+        electric powertrain to ``achieved_share - target_share`` AFTER raking
+        (≈0 when reachable; the signed unreachable residual otherwise). When an
+        electric target is UNREACHABLE (too little feasible mass: the maximum
+        achievable share — all feasible mass forced onto ``e`` — is below the
+        target) the factor is driven high and the residual is reported negative
+        so the caller can log a no-silent-fallback WARNING.
+    """
+    n_cars, n_pt = pmfs.shape
+    factors = np.ones(n_pt, dtype=float)
+    residuals: dict[str, float] = {}
+    if n_cars == 0:
+        return factors, {e: 0.0 for e in electric_idx}
+
+    electric_cols = list(electric_idx.values())
+    targets = np.array(
+        [kreis_target_share.get(e, 0.0) for e in electric_idx], dtype=float)
+    cols = np.array(electric_cols, dtype=int)
+
+    # Fixed-point iteration on the electric scale factors. After each update we
+    # renormalise every car's pmf with the current factors and measure the mean
+    # electric shares; we then nudge each factor by target/achieved. Because the
+    # electric columns couple only through the (shared) renormalisation
+    # denominator, this converges in a handful of iterations.
+    alpha = np.ones(len(cols), dtype=float)
+    for _ in range(max_iterations):
+        scaled = pmfs.copy()
+        scaled[:, cols] *= alpha
+        denom = scaled.sum(axis=1, keepdims=True)
+        # A car whose whole pmf is zero cannot happen (masked pmfs sum to 1), but
+        # guard anyway so a degenerate row contributes nothing.
+        np.divide(scaled, denom, out=scaled, where=denom > 0)
+        achieved = scaled[:, cols].mean(axis=0)
+        # Update factors towards the target; clip the denominator so a Kreis with
+        # zero feasible mass for an electric powertrain does not divide by zero.
+        ratio = np.divide(
+            targets, achieved,
+            out=np.full_like(targets, 1.0), where=achieved > 0,
+        )
+        if np.all(np.abs(achieved - targets) <= tolerance):
+            alpha = alpha * ratio  # final nudge (no-op at tolerance)
+            break
+        alpha = alpha * ratio
+        # Cars with zero feasible mass for e keep achieved==0 forever -> ratio
+        # stays 1 there and the target is simply unreachable (handled below).
+        alpha = np.clip(alpha, 0.0, 1e12)
+
+    # Final measured shares with the converged factors.
+    scaled = pmfs.copy()
+    scaled[:, cols] *= alpha
+    denom = scaled.sum(axis=1, keepdims=True)
+    np.divide(scaled, denom, out=scaled, where=denom > 0)
+    achieved = scaled[:, cols].mean(axis=0)
+
+    for j, e in enumerate(electric_idx):
+        factors[cols[j]] = alpha[j]
+        residuals[e] = float(achieved[j] - targets[j])
+    return factors, residuals
+
+
 def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  size_map: Optional[Mapping[str, str]] = None,
                  sampler: Optional[FleetSampler] = None,
@@ -699,27 +795,59 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     _powertrain_idx = {p: i for i, p in enumerate(POWERTRAINS)}
 
     records = df_cars.to_dict(orient="records")
-    for i, car in enumerate(records):
-        status = car["economic_status"]
-        kreis = str(car["kreis_ags5"])
-        gemeinde = car.get("gemeinde")
-        if pd.isna(gemeinde):
-            gemeinde = None
-        raumtyp = car.get("raumtyp")
-        raumtyp = int(raumtyp) if pd.notna(raumtyp) else None
 
-        # 1. segment <- income-coupled segment IPF.
-        seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
-        segment = _draw_categorical(rng, segments, seg_pmf)
+    def _finalize_spec(i: int, segment: str, powertrain: str, euro_class: str,
+                       age_band: str, brand: str, model: str) -> None:
+        """Map the (powertrain, euro, segment) triple to HBEFA and store row i."""
+        vt = hbefa.vehicle_type_for(
+            powertrain, euro_class, segment,
+            size_map=sampler.size_map,
+            fallback_counter=size_fallback_counter,
+        )
+        vehicle_types.setdefault(vt.type_id, vt)
+        out_segment[i] = segment
+        out_powertrain[i] = powertrain
+        out_euro[i] = euro_class
+        out_age_band[i] = age_band
+        out_age[i] = AGE_BAND_MIDPOINT_YEARS[age_band]
+        out_brand[i] = brand
+        out_model[i] = model
+        out_type_id[i] = vt.type_id
+        out_cat[i] = vt.hbefa_category
+        out_tech[i] = vt.hbefa_technology
+        out_size[i] = vt.hbefa_size
+        out_emission[i] = vt.hbefa_emission
 
-        # Task 5 (consistency_v2): if sonstige drawn, redraw from modelled segs.
-        if consistency_v2 and segment == "sonstige" and _modelled_seg_pmf is not None:
-            segment = _draw_categorical(rng, _modelled_segments, _modelled_seg_pmf)
-            brand_source_list[i] = "sonstige_redistributed"
-            sonstige_redistributed_count += 1
+    def _draw_euro_age(powertrain: str) -> tuple[str, str]:
+        """Re-derive euro_class + age_band consistently for a powertrain.
 
-        if not consistency_v2:
-            # ---- LEGACY ORDER (consistency_v2=False): byte-identical to before.
+        euro and age both depend ONLY on the powertrain (FZ 27.4 / FZ 27.7), so
+        on any powertrain change (Task 7 electric rake) re-running this restores
+        internal consistency; the age draw is additionally masked to bands
+        consistent with the euro stage.
+        """
+        euro_pmf = sampler.euro_given_powertrain[powertrain]
+        euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+        age_pmf = sampler.age_given_powertrain[powertrain]
+        age_band = _draw_age_consistent_with_euro(
+            rng, age_pmf, euro_class, powertrain)
+        return euro_class, age_band
+
+    if not consistency_v2:
+        # ===== LEGACY PATH (consistency_v2=False): byte-identical to before. =====
+        for i, car in enumerate(records):
+            status = car["economic_status"]
+            kreis = str(car["kreis_ags5"])
+            gemeinde = car.get("gemeinde")
+            if pd.isna(gemeinde):
+                gemeinde = None
+            raumtyp = car.get("raumtyp")
+            raumtyp = int(raumtyp) if pd.notna(raumtyp) else None
+
+            # 1. segment <- income-coupled segment IPF.
+            seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
+            segment = _draw_categorical(rng, segments, seg_pmf)
+
             # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
             pt_pmf = sampler.powertrain_model.powertrain_probabilities(
                 segment, kreis, gemeinde)
@@ -741,9 +869,46 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                     brand_model_fallback += 1
             else:
                 brand, model = "", ""
-        else:
-            # ---- CONSISTENCY_V2 ORDER (Bug 2): model BEFORE powertrain so the
-            # powertrain pmf can be masked to the drawn model's feasible fuels.
+
+            _finalize_spec(i, segment, powertrain, euro_class, age_band, brand, model)
+    else:
+        # ===== CONSISTENCY_V2 PATH (Bug 2 + Task 7 calibration). =================
+        # PASS 1: per car draw segment (+ sonstige redistribution) and brand/model,
+        # then build the model-feasibility-MASKED powertrain pmf (Task 6). The
+        # powertrain itself is NOT drawn yet: Task 7 first rakes the per-Kreis
+        # electric mass on these masked pmfs so the masking no longer drifts the
+        # FZ 27.15 bev/phev share. euro/age/HBEFA are derived in PASS 2 from the
+        # final (raked) powertrain, so they stay internally consistent.
+        car_kreis: list[str] = [""] * n
+        car_segment: list[str] = [""] * n
+        car_brand: list[str] = [""] * n
+        car_model: list[str] = [""] * n
+        car_pmf: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        # Unmasked (but Gemeinde-tilted) pmf -- the rake target so the rake undoes
+        # ONLY the feasibility-masking electric deficit and PRESERVES the FZ 27.17
+        # Gemeinde tilt (the tilt is already in this pmf). Its per-Kreis mean
+        # electric mass equals the FZ 27.15 share for the no-tilt case.
+        car_unmasked_pmf: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        for i, car in enumerate(records):
+            status = car["economic_status"]
+            kreis = str(car["kreis_ags5"])
+            gemeinde = car.get("gemeinde")
+            if pd.isna(gemeinde):
+                gemeinde = None
+            raumtyp = car.get("raumtyp")
+            raumtyp = int(raumtyp) if pd.notna(raumtyp) else None
+
+            # 1. segment <- income-coupled segment IPF.
+            seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
+            segment = _draw_categorical(rng, segments, seg_pmf)
+
+            # Task 5: if sonstige drawn, redraw from modelled segments.
+            if segment == "sonstige" and _modelled_seg_pmf is not None:
+                segment = _draw_categorical(
+                    rng, _modelled_segments, _modelled_seg_pmf)
+                brand_source_list[i] = "sonstige_redistributed"
+                sonstige_redistributed_count += 1
+
             # 2. brand + model <- P(model | segment) (isolated, guarded, additive).
             if model_brands:
                 brand, model = _draw_brand_model(rng, sampler, segment)
@@ -752,10 +917,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             else:
                 brand, model = "", ""
 
-            # 3. feasible-fuels mask: derive the powertrain set this model can
-            # carry (from the HSN/TSN lookup). None -> unknown model -> no mask.
+            # 3. feasible-fuels mask (Task 6): derive the powertrain set this model
+            # can carry. None -> unknown model -> no mask.
             pt_pmf = sampler.powertrain_model.powertrain_probabilities(
                 segment, kreis, gemeinde)
+            unmasked_pmf = pt_pmf.copy()  # Task 7 rake target (tilt-preserving).
             feasible = None
             if _feasible_fuels is not None and model:
                 feasible = _feasible_fuels.model_feasible_powertrains(
@@ -770,46 +936,69 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                     pt_pmf = pt_pmf_masked
                     powertrain_feasibility_list[i] = "model_constrained"
                 else:
-                    # No overlap between the segment pmf and the model's feasible
-                    # fuels: keep the UNMASKED pmf and count the fallback.
+                    # No overlap: keep the UNMASKED pmf and count the fallback.
                     _feasibility_fallback += 1
                     powertrain_feasibility_list[i] = "segment_fallback"
-            # else: unknown model -> keep unmasked pmf (powertrain_feasibility
-            # stays "segment_fallback").
+            # Normalise so the stored pmf is a proper distribution for the rake.
+            s = pt_pmf.sum()
+            pt_pmf = (pt_pmf / s) if s > 0 else (
+                np.ones(len(POWERTRAINS)) / len(POWERTRAINS))
 
-            # 4. powertrain <- (masked) P(powertrain | segment, kreis).
-            powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
+            car_kreis[i] = kreis
+            car_segment[i] = segment
+            car_brand[i] = brand
+            car_model[i] = model
+            car_pmf[i] = pt_pmf
+            car_unmasked_pmf[i] = unmasked_pmf
 
-            # 5. euro_class <- P(euro | powertrain)  (MUST stay after powertrain).
-            euro_pmf = sampler.euro_given_powertrain[powertrain]
-            euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+        # Task 7: per-Kreis electric-mass rake on the feasible support. For each
+        # Kreis, scale every car's masked bev/phev mass so the EXPECTED per-Kreis
+        # electric share equals the per-Kreis mean of the UNMASKED (Gemeinde-
+        # tilted) pmf -- i.e. undo ONLY the feasibility-masking deficit and
+        # preserve the FZ 27.17 tilt. For the no-tilt case the unmasked per-Kreis
+        # mean electric mass equals the FZ 27.15 share exactly (the PowertrainModel
+        # rake guarantees it), so the per-Kreis bev/phev share returns to FZ 27.15.
+        # Feasibility is preserved (a combustion-only car has 0 electric mass and
+        # stays 0 under any finite scale).
+        electric_idx = {e: _powertrain_idx[e] for e in ELECTRIC_POWERTRAINS}
+        kreis_factors: dict[str, np.ndarray] = {}
+        rows_by_kreis: dict[str, list[int]] = {}
+        for i in range(n):
+            rows_by_kreis.setdefault(car_kreis[i], []).append(i)
+        for kreis, rows in rows_by_kreis.items():
+            pmfs = np.array([car_pmf[i] for i in rows], dtype=float)
+            unmasked = np.array([car_unmasked_pmf[i] for i in rows], dtype=float)
+            # Target electric share = mean unmasked (tilted) electric mass.
+            target = {
+                e: float(unmasked[:, idx].mean())
+                for e, idx in electric_idx.items()
+            }
+            factors, residuals = _electric_rake_factors(
+                pmfs, target, electric_idx)
+            kreis_factors[kreis] = factors
+            for e, resid in residuals.items():
+                # Unreachable: too little feasible electric mass to meet the
+                # target (achieved < target after forcing all feasible mass onto
+                # e). No silent fallback -- log a WARNING with the residual.
+                if resid < -0.01:
+                    logger.warning(
+                        "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
+                        "%s UNREACHABLE -- target %.4f, max achievable %.4f "
+                        "(residual %.4f); too few electric-capable cars.",
+                        kreis, e, target.get(e, 0.0),
+                        target.get(e, 0.0) + resid, resid,
+                    )
 
-            # 6. age band <- P(age | powertrain), consistent with the Euro class
-            #    (MUST stay after powertrain).
-            age_pmf = sampler.age_given_powertrain[powertrain]
-            age_band = _draw_age_consistent_with_euro(
-                rng, age_pmf, euro_class, powertrain)
-
-        # 7. HBEFA VehicleType.
-        vt = hbefa.vehicle_type_for(
-            powertrain, euro_class, segment,
-            size_map=sampler.size_map,
-            fallback_counter=size_fallback_counter,
-        )
-        vehicle_types.setdefault(vt.type_id, vt)
-
-        out_segment[i] = segment
-        out_powertrain[i] = powertrain
-        out_euro[i] = euro_class
-        out_age_band[i] = age_band
-        out_age[i] = AGE_BAND_MIDPOINT_YEARS[age_band]
-        out_brand[i] = brand
-        out_model[i] = model
-        out_type_id[i] = vt.type_id
-        out_cat[i] = vt.hbefa_category
-        out_tech[i] = vt.hbefa_technology
-        out_size[i] = vt.hbefa_size
-        out_emission[i] = vt.hbefa_emission
+        # PASS 2: apply the per-Kreis rake factor, draw the powertrain, then
+        # re-derive euro/age from the FINAL powertrain (internal consistency) and
+        # map to HBEFA.
+        for i in range(n):
+            pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
+            powertrain = _draw_categorical(rng, list(POWERTRAINS), pmf)
+            euro_class, age_band = _draw_euro_age(powertrain)
+            _finalize_spec(
+                i, car_segment[i], powertrain, euro_class, age_band,
+                car_brand[i], car_model[i])
 
     df_spec = df_cars.copy()
     df_spec["segment"] = out_segment

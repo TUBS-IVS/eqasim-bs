@@ -308,3 +308,60 @@ def test_sonstige_off_keeps_old_behaviour(sampled_v2_off):
     # sonstige is ~2.3% of fleet; with n=4000*num_kreise it must appear at least
     # once (statistical near-certainty).
     assert (df_spec["segment"] == "sonstige").sum() > 0
+
+
+# --------------------------------------------------------------------------- #
+# Task 7 — per-Kreis BEV/PHEV recalibration on the feasible support (Bug 2).
+# --------------------------------------------------------------------------- #
+def test_every_electric_car_is_electric_capable(sampled, sampler):
+    """Feasibility preserved post-recalibration: every BEV/PHEV the v2 chain
+    emits must be assigned to an electric-CAPABLE model (its HSN/TSN feasible set
+    includes that powertrain). The Task 7 rake only RE-WEIGHTS feasible electric
+    mass, so it can never create a petrol-only BEV.
+    """
+    from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
+
+    ff = sampler.feasible_fuels
+    if ff is None:
+        pytest.skip("HSN/TSN lookup absent; feasibility mask disabled.")
+    df_spec, _ = sampled
+    electric = df_spec[df_spec["powertrain"].isin(["bev", "phev"])]
+    violations = 0
+    checked = 0
+    for _, car in electric.iterrows():
+        brand = str(car["brand"])
+        model = str(car["model"])
+        if not brand or not model:
+            continue
+        feasible = ff.model_feasible_powertrains(
+            brand, model_family(canonical_brand(brand) or "", model))
+        if feasible is None:
+            # Unknown model -> unmasked pmf was kept; no feasibility claim.
+            continue
+        checked += 1
+        if car["powertrain"] not in feasible:
+            violations += 1
+    assert checked > 0, "no model-constrained electric cars to verify"
+    assert violations == 0, f"{violations}/{checked} electric cars not capable"
+
+
+def test_euro_age_consistent_after_recalibration(sampled):
+    """Internal consistency preserved post-recalibration: euro/age are re-derived
+    from the FINAL (raked) powertrain, so every combustion car still satisfies the
+    age<->euro rule and no BEV carries a combustion Euro concept.
+    """
+    df_spec, _ = sampled
+    combustion = df_spec[df_spec["powertrain"].isin(["petrol", "diesel", "gas"])]
+    for _, car in combustion.iterrows():
+        assert fs._age_consistent_with_euro(
+            car["age_band"], car["euro_class"], car["powertrain"]), car.to_dict()
+    bev = df_spec[df_spec["powertrain"] == "bev"]
+    assert (bev["hbefa_emission"] == "PC BEV").all()
+
+
+def test_recalibration_deterministic_given_seed():
+    """Same seed -> identical raked output (the Task 7 rake uses no fresh rng)."""
+    df_cars = _make_cars(n_per_kreis=400)
+    a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    pd.testing.assert_frame_equal(a, b)
