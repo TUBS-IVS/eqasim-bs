@@ -464,6 +464,8 @@ def execute(context) -> pd.DataFrame:
             mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
         )
         if weekend_plan_match_on:
+            # completion_rng is DELIBERATELY shared with member-completion above:
+            # the two draws form one entangled seeded stream -- do NOT reseed it.
             completed_donor_persons, _weekend_trace, _weekend_report = (
                 weekend_plan_match.reassign_weekend_plan_sources(
                     completed_donor_households, completed_donor_persons,

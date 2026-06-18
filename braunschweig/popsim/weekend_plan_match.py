@@ -19,7 +19,7 @@ PT_SUBSCRIPTION_CODES = frozenset({3, 4, 5, 6})  # see attributes.map_has_pt_sub
 SOFT_KEYS_BY_PRIORITY = ("car_class", "any_license", "any_pt", "hh_type5", "oek_status", "regiostar7")
 
 
-def _car_class(n_cars: pd.Series) -> pd.Series:
+def _car_class(n_cars: pd.Series) -> np.ndarray:
     n = pd.to_numeric(n_cars, errors="raise").astype(int)
     return np.where(n <= 0, "0", np.where(n == 1, "1", "2plus"))
 
@@ -126,6 +126,10 @@ def match_person(target_row, weekday_persons, *, rng):
         if not active:
             chosen = weekday_persons.sort_values(["H_ID", "P_ID"]).iloc[
                 int(rng.randint(len(weekday_persons)))]
+            logger.debug(
+                "[weekend_plan_match] match_person hit the whole-pool size-only "
+                "fallback (all person keys dropped); drew weekday (%s, %s).",
+                chosen["H_ID"], chosen["P_ID"])
             return chosen["H_ID"], chosen["P_ID"], len(PERSON_KEYS_BY_PRIORITY)
         active.pop()
 
@@ -141,9 +145,19 @@ class WeekendMatchReport:
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID"):
     from braunschweig.popsim import day_type as _dt
+    from braunschweig.popsim import seed as _seed
 
     persons = persons.copy()
     hh_dt = _dt.household_day_type(persons, household_id=household_id)
+    # completed_donor_households (load_completed_donor) do NOT carry hh_type5 --
+    # it is derived later in mid.project_completed_seed, which runs AFTER this
+    # remap. Derive it here on a LOCAL copy using the same helper, so build_hh_features
+    # never hits a KeyError. Behaviour is identical when hh_type5 is already present.
+    if "hh_type5" not in households.columns:
+        hh_type5 = _seed.derive_hh_type5(
+            persons, household_id_col=household_id, age_col="HP_ALTER")
+        households = households.join(
+            hh_type5.rename("hh_type5"), on=household_id)
     feats = build_hh_features(households, persons)
 
     weekday_ids = hh_dt.index[hh_dt == "weekday"]
@@ -168,7 +182,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             hid, feats.loc[hid], weekday_feats, rng=rng)
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
-            for tpos, dpos in align_members(target_members, donor_members):
+            paired = align_members(target_members, donor_members)
+            for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
                 persons.loc[ridx, "source_P_ID"] = donor_members.loc[dpos, "source_P_ID"]
@@ -177,6 +192,23 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 n_remapped += 1
             n_hh_matched += 1
             level_counts[level] = level_counts.get(level, 0) + 1
+            # An UNFILLABLE donor keeps H_GR larger than its real person count, so
+            # align_members can run out of donor members and leave surplus weekend
+            # persons unpaired. They would otherwise silently keep their WEEKEND
+            # source (no-silent-fallback violation); route each to the person-level
+            # fallback so no weekend plan leaks into the weekday population.
+            paired_tpos = {tpos for tpos, _ in paired}
+            for tpos in range(len(target_members)):
+                if tpos in paired_tpos:
+                    continue
+                ridx = target_members.loc[tpos, "index"]
+                trow = target_members.loc[tpos]
+                sh, sp, plevel = match_person(trow, weekday_persons, rng=rng)
+                persons.loc[ridx, "source_H_ID"] = sh
+                persons.loc[ridx, "source_P_ID"] = sp
+                resolution[ridx] = "person_fallback"
+                match_level[ridx] = plevel
+                n_remapped += 1
         else:
             for tpos in range(len(target_members)):
                 ridx = target_members.loc[tpos, "index"]

@@ -172,6 +172,67 @@ def test_reassign_is_deterministic_given_rng():
     pd.testing.assert_frame_equal(a, b)
 
 
+def test_reassign_derives_hh_type5_when_absent():
+    # Real load_completed_donor households do NOT carry hh_type5 (it is derived
+    # later, in project_completed_seed). reassign must derive it itself, not crash.
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [2, 2],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+        # NB: no hh_type5 column
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
+        "HP_ALTER": [40, 38, 41, 39], "HP_SEX": [1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1], "P_TAET": [1, 1, 1, 1], "P_FKARTE": [1, 1, 1, 1],
+        "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
+        "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
+        "member_imputed": [False, False, False, False],
+    })
+    assert "hh_type5" not in households.columns
+    out, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0))
+    # the weekend HH still gets remapped to the weekday donor (no KeyError)
+    w2 = out[out["H_ID"] == 2]
+    assert (w2["source_H_ID"] == 1).all()
+    assert report.n_weekend_households == 1
+    # caller's frame was not mutated with an hh_type5 column
+    assert "hh_type5" not in households.columns
+
+
+def test_reassign_no_silent_gap_when_donor_undersized():
+    # Weekday donor HH 1 declares H_GR==2 but has only ONE actual person row
+    # (an unfillable household). A size-2 weekend HH matched to it would leave
+    # one weekend person unpaired -> it must route to the person fallback, never
+    # keep its own weekend source.
+    households = pd.DataFrame({
+        "H_ID": [1, 2, 3], "H_GR": [2, 1, 2],
+        "hh_type5": ["couple", "single", "couple"],
+        "oek_status": [3, 2, 3], "RegioStaR7": [71, 77, 71],
+        "H_ANZAUTO": [2, 0, 2],
+    })
+    persons = pd.DataFrame({
+        # HH 1: weekday, declares size 2 but only 1 person row (undersized donor)
+        # HH 2: weekday single (extra weekday person available for fallback)
+        # HH 3: weekend, size 2
+        "H_ID": [1, 2, 3, 3], "P_ID": [1, 1, 1, 2],
+        "HP_ALTER": [40, 30, 41, 39], "HP_SEX": [1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1], "P_TAET": [1, 1, 1, 1], "P_FKARTE": [1, 1, 1, 1],
+        "kernwo": [2, 2, 6, 6],
+        "source_H_ID": [1, 2, 3, 3], "source_P_ID": [1, 1, 1, 2],
+        "member_imputed": [False, False, False, False],
+    })
+    out, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0))
+    w3 = out[out["H_ID"] == 3]
+    # both weekend persons sourced from a WEEKDAY household (1 or 2), none keeps HH 3
+    assert (w3["source_H_ID"].isin([1, 2])).all()
+    assert (w3["source_H_ID"] != 3).all()
+    we = trace[trace["donor_day_type"] == "weekend"]
+    assert we["resolution"].isin({"hh_match", "person_fallback"}).all()
+    # one matched at HH level, the surplus routed to person fallback
+    assert "person_fallback" in set(we["resolution"])
+
+
 def test_every_weekend_person_is_resolved_no_silent_gap():
     households = pd.DataFrame({
         "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
