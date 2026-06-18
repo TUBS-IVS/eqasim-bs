@@ -106,9 +106,10 @@ def _select_mirror(
     """Pick one mirror household id from the complete equal-size candidates.
 
     Progressively narrows the pool by each key in :data:`MIRROR_MATCH_KEYS`
-    (only while at least one candidate remains), then draws uniformly with the
-    supplied seeded RNG from the id-sorted final pool (deterministic given the
-    RNG state).
+    (only while at least one candidate remains), then draws one mirror
+    **proportional to its ``H_GEW`` survey weight** via
+    :func:`braunschweig.popsim.sampling.weighted_choice` (deterministic given the
+    RNG state; a uniform fallback fires only if all candidate weights are invalid).
     """
     pool = candidates
     for key in MIRROR_MATCH_KEYS:
@@ -171,7 +172,8 @@ def complete_members(
             ``HP_ALTER``, ``HP_SEX`` (plus arbitrary extra columns that are
             copied verbatim onto fillers).
         rng: Seeded :class:`numpy.random.RandomState` (mandatory seeded
-            randomness; the mirror draw is the only stochastic step).
+            randomness; the mirror draw is the only stochastic step, and it is
+            drawn proportional to the candidate ``H_GEW`` survey weight).
         household_id: Household id column name (default ``H_ID``).
         size_col: Declared household size column name (default ``H_GR``).
         kernwo_col: Column carrying the MiD core-week reporting-day code
