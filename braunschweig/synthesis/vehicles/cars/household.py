@@ -297,6 +297,11 @@ def configure(context):
     # mask + per-Kreis electric rake). When False the legacy path is used, which
     # is byte-identical to the pre-plan output for every existing column.
     context.config("fleet_consistency_v2", True)
+    # Task 4 (Plan-2): income->age tilt flag. When True (default) the v2 path
+    # applies the economic_status -> age gradient (Feature B); False -> no tilt,
+    # byte-identical to pre-Feature-B. Only active when consistency_v2 is also
+    # True (the tilt lives inside the v2 block of sample_fleet).
+    context.config("fleet_age_income_coupling", True)
     context.config("fleet_electric_calibration", "kreis_mix_gemeinde_bev_tilt")
     # Optional override for the KBA derived-CSV directory. Default None -> the
     # readers (braunschweig.data.kba.fleet_tables) resolve the tables under
@@ -319,6 +324,7 @@ def execute(context):
     model_brands = bool(context.config("fleet_model_brands"))
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
     consistency_v2 = bool(context.config("fleet_consistency_v2"))
+    age_income_coupling = bool(context.config("fleet_age_income_coupling"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -353,7 +359,8 @@ def execute(context):
     # Attach the full KBA/HBEFA spec to every household car (F4 chain).
     df_spec, df_vehicle_types = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
-        model_brands=model_brands, consistency_v2=consistency_v2)
+        model_brands=model_brands, consistency_v2=consistency_v2,
+        age_income_coupling=age_income_coupling)
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the

@@ -29,6 +29,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
+FIXTURES = REPO / "tests" / "fixtures"
 sys.path.insert(0, str(REPO))
 
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
@@ -36,6 +37,13 @@ from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E40
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 
 DATA_PATH = str(DATA)
+
+
+def _load_golden(name: str) -> pd.DataFrame:
+    path = FIXTURES / name
+    if not path.exists():
+        pytest.skip(f"golden fixture not found: {path}")
+    return pd.read_parquet(path)
 
 
 # --------------------------------------------------------------------------- #
@@ -474,3 +482,238 @@ def test_household_v2_path_all_three_provenance_columns():
     # Verify tier values are non-empty strings.
     assert df["hsn_tsn_match_tier"].notna().all()
     assert (df["hsn_tsn_match_tier"].str.len() > 0).all()
+
+
+# --------------------------------------------------------------------------- #
+# Feature B — income-age tilt in sample_fleet (Task 3).
+# --------------------------------------------------------------------------- #
+
+def _make_cars_multi_status(n_per_status: int = 3000, seed: int = 99) -> pd.DataFrame:
+    """Cars with EQUAL numbers of each economic_status across ZGB Kreise.
+
+    Using a single Kreis (03101) with n_per_status cars per status gives a
+    balanced frame large enough for a stable income-age gradient.
+    """
+    rng = np.random.default_rng(seed)
+    statuses = list(ft.STATUS_LABELS)
+    rows = []
+    kreis = ft.ZGB_KREISE_AGS5[0]   # Braunschweig Kreis
+    for status in statuses:
+        for _ in range(n_per_status):
+            rows.append({
+                "economic_status": status,
+                "kreis_ags5": kreis,
+                "gemeinde": np.nan,
+                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
+            })
+    return pd.DataFrame(rows)
+
+
+def test_income_age_gradient_in_output():
+    """With age_income_coupling=True, very_low status has clearly older cars
+    than very_high status (income->age signal is observable in the output).
+
+    Today (pre-Feature-B) the age column is flat ~6.7 across all statuses.
+    After applying the MiD tilt, very_low households drive older cars.
+    """
+    df_cars = _make_cars_multi_status(n_per_status=3000)
+    df_spec, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True,
+        age_income_coupling=True,
+    )
+    mean_age_by_status = df_spec.groupby("economic_status")["age"].mean()
+    age_very_low = mean_age_by_status["very_low"]
+    age_very_high = mean_age_by_status["very_high"]
+    # Very_low status should have meaningfully older cars than very_high.
+    # The MiD tilt shifts the distribution by ~1-3 years; assert at least 0.5
+    # years gap so this is robust to sampling noise at n=3000.
+    assert age_very_low > age_very_high + 0.5, (
+        f"Expected age(very_low)={age_very_low:.3f} > age(very_high)={age_very_high:.3f} + 0.5 "
+        f"(flat pre-tilt ~6.7 → gradient expected post-tilt)"
+    )
+
+
+def test_age_income_off_unchanged():
+    """age_income_coupling=False must produce age columns byte-identical to the
+    committed golden fixture (``tests/fixtures/feature_b_age_off_golden.parquet``).
+
+    The golden was generated on this feature branch by running
+    ``sample_fleet(_make_cars_multi_status(n_per_status=500), ...,
+    random_seed=42, consistency_v2=True, age_income_coupling=False)``
+    and taking the [\"age\", \"age_band\"] columns. Analytically, coupling=False is
+    byte-identical to pre-Feature-B because the tilt block is guarded by
+    ``if age_model is not None`` and the model is only built when
+    ``consistency_v2=True AND age_income_coupling=True``.
+
+    The generation command was::
+
+        python -c "
+        import numpy as np, pandas as pd, sys; sys.path.insert(0, '.')
+        from braunschweig.data.kba import fleet_tables as ft
+        from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+        rng = np.random.default_rng(99)
+        statuses = list(ft.STATUS_LABELS)
+        kreis = ft.ZGB_KREISE_AGS5[0]
+        rows = []
+        for status in statuses:
+            for _ in range(500):
+                rows.append({'economic_status': status, 'kreis_ags5': kreis,
+                             'gemeinde': float('nan'),
+                             'raumtyp': int(rng.choice([71,72,73,74,75,76,77]))})
+        df_cars = pd.DataFrame(rows)
+        df_spec, _ = fs.sample_fleet(df_cars, 'eqasim-data/data',
+                                     random_seed=42, consistency_v2=True,
+                                     age_income_coupling=False)
+        df_spec[['age', 'age_band']].to_parquet(
+            'tests/fixtures/feature_b_age_off_golden.parquet', index=False)
+        "
+
+    The golden is committed to tests/fixtures/feature_b_age_off_golden.parquet.
+    """
+    golden = _load_golden("feature_b_age_off_golden.parquet")
+
+    # Reproduce exactly the same input as used during golden generation.
+    rng_input = np.random.default_rng(99)
+    statuses = list(ft.STATUS_LABELS)
+    kreis = ft.ZGB_KREISE_AGS5[0]
+    rows = []
+    for status in statuses:
+        for _ in range(500):
+            rows.append({
+                "economic_status": status,
+                "kreis_ags5": kreis,
+                "gemeinde": float("nan"),
+                "raumtyp": int(rng_input.choice([71, 72, 73, 74, 75, 76, 77])),
+            })
+    df_cars = pd.DataFrame(rows)
+
+    df_spec, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=False)
+
+    # Byte-identical assertion against the frozen baseline.
+    pd.testing.assert_frame_equal(
+        df_spec[["age", "age_band"]].reset_index(drop=True),
+        golden.reset_index(drop=True),
+        check_like=False,
+        obj="coupling=False age vs golden",
+    )
+
+    # Also verify the coupling=True run produces DIFFERENT ages (tilt is active).
+    df_spec_on, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=True)
+    # With n=2500 cars the age distribution must differ somewhere.
+    assert not df_spec["age"].equals(df_spec_on["age"]), (
+        "coupling=True and coupling=False produced identical age columns; "
+        "the tilt is not being applied"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Task 5 (final) — age×status validation panel + MiD-match e2e.
+# --------------------------------------------------------------------------- #
+
+def test_synthetic_age_status_matches_mid():
+    """Validation panel: Feature B income-age gradient checks (three assertions).
+
+    Uses a representative fleet built with age_income_coupling=True (Feature B
+    fully active) and consistency_v2=True.  The validation panel module is
+    exercised end-to-end: build_panel computes both synthetic and MiD reference
+    values.  Three assertions, in order of scientific importance:
+
+    (a) Synthetic mean-age-by-status is MONOTONE DECREASING (very_low → very_high).
+        This is the primary gradient-direction check.
+
+    (b) The income GRADIENT SPREAD of the synthetic ``under_5`` share matches the
+        MiD spread within ±0.10.  Feature B injects the MiD income gradient (not
+        the absolute level), so this is the scientifically correct coupling check.
+        Measured values: syn_spread ~0.197, MiD_spread ~0.252, diff ~0.055 → passes.
+
+    (c) Loose GROSS-FAILURE SENTINEL: every status's synthetic ``under_5`` share
+        stays within ±0.20 (abs) of MiD.  The synthetic level is systematically
+        +5-11pp above MiD BY DESIGN — the absolute age level is anchored to KBA
+        P(age|powertrain), not to the MiD marginal.  This bound catches only
+        catastrophic failures (e.g. the tilt is inverted or disabled entirely);
+        it is NOT a scientific match assertion.
+    """
+    from braunschweig.analysis.population_validation import fleet_age_status as FAS
+
+    # Build a representative fleet with balanced statuses.
+    df_cars = _make_cars_multi_status(n_per_status=3000)
+    df_spec, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=True,
+    )
+
+    panel = FAS.build_panel(df_spec, DATA_PATH)
+
+    # (a) Panel must have one row per status, in order.
+    assert list(panel["economic_status"]) == list(FAS.STATUS_ORDER), (
+        f"Panel status order mismatch: {list(panel['economic_status'])}"
+    )
+
+    # (b) Synthetic mean_age MONOTONE DECREASING: very_low > ... > very_high.
+    mean_ages = panel.set_index("economic_status")["synthetic_mean_age_yr"]
+    for lo, hi in zip(FAS.STATUS_ORDER, FAS.STATUS_ORDER[1:]):
+        assert mean_ages[lo] > mean_ages[hi], (
+            f"Monotone violated: mean_age({lo})={mean_ages[lo]:.3f} <= "
+            f"mean_age({hi})={mean_ages[hi]:.3f} -- income-age gradient missing"
+        )
+
+    # (b2) Income-gradient SPREAD in under_5 share matches MiD spread (Feature B
+    #      injects only the GRADIENT, not the absolute KBA-anchored level).
+    syn_spread = panel["synthetic_under_5_share"].max() - panel["synthetic_under_5_share"].min()
+    mid_spread = panel["mid_under_5_share"].max() - panel["mid_under_5_share"].min()
+    assert abs(syn_spread - mid_spread) <= 0.10, (
+        f"income-age gradient spread {syn_spread:.3f} differs from MiD {mid_spread:.3f} "
+        f"by more than 0.10 -- the coupling strength is off"
+    )
+
+    # (c) LOOSE GROSS-FAILURE SENTINEL — NOT a scientific match.
+    # Feature B anchors the ABSOLUTE age level to KBA P(age|powertrain), so the
+    # synthetic under_5 share is structurally +5-11pp above the MiD marginal at
+    # every status.  Tolerance 0.20 catches only catastrophic failures (inverted
+    # or disabled tilt); a tighter bound would be a false negative.
+    SENTINEL_TOLERANCE = 0.20  # absolute — loose sentinel only, NOT scientific match
+    for _, row in panel.iterrows():
+        status = row["economic_status"]
+        syn = row["synthetic_under_5_share"]
+        ref = row["mid_under_5_share"]
+        if pd.isna(ref):
+            continue  # no MiD reference for this status — skip
+        delta = abs(syn - ref)
+        assert delta <= SENTINEL_TOLERANCE, (
+            f"GROSS FAILURE: under_5 share for {status}: "
+            f"synthetic={syn:.3f}, MiD={ref:.3f}, |delta|={delta:.3f} "
+            f"exceeds sentinel tolerance {SENTINEL_TOLERANCE} "
+            f"(KBA-anchored level offset is +5-11pp by design; this bound "
+            f"catches only catastrophic failures)"
+        )
+
+
+def test_fleet_age_panel_data_absent_safe():
+    """build_panel returns an empty DataFrame (correct columns) when the
+    vehicles frame is None or missing the required columns."""
+    from braunschweig.analysis.population_validation import fleet_age_status as FAS
+
+    # None frame.
+    panel = FAS.build_panel(None, DATA_PATH)
+    assert panel.empty
+    assert set(FAS.PANEL_COLUMNS) == set(panel.columns)
+
+    # Frame present but no 'age' column.
+    df_no_age = pd.DataFrame({
+        "economic_status": ["medium", "high"],
+        "some_other_col": [1, 2],
+    })
+    panel2 = FAS.build_panel(df_no_age, DATA_PATH)
+    assert panel2.empty
+
+    # Frame present but no 'economic_status' column.
+    df_no_status = pd.DataFrame({
+        "age": [5.0, 10.0],
+    })
+    panel3 = FAS.build_panel(df_no_status, DATA_PATH)
+    assert panel3.empty
