@@ -201,3 +201,30 @@ def test_powertrain_fuel_group():
     assert hsn_tsn.powertrain_to_fuel_group("bev") == "Elektro"
     # An unmapped/unknown powertrain returns None (no fuel refinement).
     assert hsn_tsn.powertrain_to_fuel_group("hydrogen") in {None, "Wasserstoff/Elektro"}
+
+
+# --------------------------------------------------------------------------- #
+# Task 1: fuel-conditioned brand/global medians (Bug 3 – lookup side)
+# --------------------------------------------------------------------------- #
+def test_lookup_brand_tier_respects_fuel_group():
+    """A diesel powertrain must never receive a petrol brand/global median.
+
+    We build a frame where petrol is the DOMINANT fuel (3 Benzin vs 1 Diesel)
+    so the fuel-agnostic brand median picks Benzin. The fuel-conditioned brand
+    median for Diesel must be returned instead when powertrain='diesel'.
+    """
+    df = pd.DataFrame({
+        "brand": ["VW", "VW", "VW", "VW"],
+        "hsn": ["0603", "0603", "0603", "0603"],
+        "tsn": ["AAA", "BBB", "CCC", "DDD"],
+        "model": ["VW Golf", "VW Golf", "VW Golf", "VW Passat"],
+        "power_ps": [110.0, 120.0, 130.0, 190.0],
+        "power_kw": [81.0, 88.0, 96.0, 140.0],
+        "displacement_ccm": [1598.0, 1598.0, 1598.0, 1968.0],
+        "fuel": ["Benzin", "Benzin", "Benzin", "Diesel"],
+    })
+    lk = hsn_tsn.HsnTsnLookup.from_frame(df)
+    # Fuel-agnostic brand median: Benzin dominates (3 vs 1). With the fix,
+    # a diesel powertrain must prefer the Diesel fuel-conditioned brand record.
+    rec, tier = lk.lookup("VW", "nonexistent", "diesel")
+    assert rec.fuel_detail == "Diesel", f"got {rec.fuel_detail} for a diesel car"

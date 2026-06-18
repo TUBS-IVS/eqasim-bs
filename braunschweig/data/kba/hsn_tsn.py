@@ -302,6 +302,8 @@ class HsnTsnLookup:
     brand_model_records: dict[tuple[str, str], EngineRecord]
     brand_records: dict[str, EngineRecord]
     global_record: EngineRecord
+    brand_fuel_records: dict[tuple[str, str], EngineRecord] = field(default_factory=dict)
+    global_fuel_records: dict[str, EngineRecord] = field(default_factory=dict)
     # Diagnostic counters (no-silent-fallback rule).
     _tier_counts: Counter = field(default_factory=Counter)
     _unmapped_brands: Counter = field(default_factory=Counter)
@@ -349,11 +351,23 @@ class HsnTsnLookup:
                         _aggregate(fuel_group)
 
         global_record = _aggregate(df)
+
+        brand_fuel: dict[tuple[str, str], EngineRecord] = {}
+        for brand, brand_group in df.groupby("brand"):
+            for fuel, fuel_group in brand_group.groupby("fuel"):
+                brand_fuel[(str(brand), str(fuel))] = _aggregate(fuel_group)
+        global_fuel: dict[str, EngineRecord] = {
+            str(fuel): _aggregate(fuel_group)
+            for fuel, fuel_group in df.groupby("fuel")
+        }
+
         return cls(
             brand_model_fuel_records=brand_model_fuel,
             brand_model_records=brand_model,
             brand_records=brand_recs,
             global_record=global_record,
+            brand_fuel_records=brand_fuel,
+            global_fuel_records=global_fuel,
         )
 
     def lookup(self, fleet_brand: str, family: str,
@@ -368,14 +382,18 @@ class HsnTsnLookup:
         variant in the HSN/TSN file still gets its combustion median).
         """
         brand = canonical_brand(fleet_brand)
+        fuel_group = powertrain_to_fuel_group(powertrain)
         if brand is None:
             if fleet_brand:
                 self._unmapped_brands[str(fleet_brand)] += 1
             self._tier_counts["global"] += 1
+            if fuel_group is not None:
+                rec = self.global_fuel_records.get(fuel_group)
+                if rec is not None:
+                    return rec, "global"
             return self.global_record, "global"
 
         if family:
-            fuel_group = powertrain_to_fuel_group(powertrain)
             if fuel_group is not None:
                 rec = self.brand_model_fuel_records.get((brand, family, fuel_group))
                 if rec is not None:
@@ -386,11 +404,23 @@ class HsnTsnLookup:
                 self._tier_counts["model"] += 1
                 return rec, "model"
 
+        # BRAND tier, fuel-conditioned first.
+        if fuel_group is not None:
+            rec = self.brand_fuel_records.get((brand, fuel_group))
+            if rec is not None:
+                self._tier_counts["brand"] += 1
+                return rec, "brand"
         rec = self.brand_records.get(brand)
         if rec is not None:
             self._tier_counts["brand"] += 1
             return rec, "brand"
 
+        # GLOBAL tier, fuel-conditioned first.
+        if fuel_group is not None:
+            rec = self.global_fuel_records.get(fuel_group)
+            if rec is not None:
+                self._tier_counts["global"] += 1
+                return rec, "global"
         self._tier_counts["global"] += 1
         return self.global_record, "global"
 
