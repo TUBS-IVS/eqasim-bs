@@ -84,3 +84,22 @@ def test_align_members_pairs_by_age_band_then_sex():
     pairs = wpm.align_members(target, donor)
     # adult target (pos 0) -> adult donor (pos 1); child target (pos 1) -> child donor (pos 0)
     assert sorted(pairs) == [(0, 1), (1, 0)]
+
+
+def test_match_person_exact_then_relaxes():
+    weekday = pd.DataFrame({
+        "H_ID": [50, 51], "P_ID": [1, 1],
+        "HP_ALTER": [40, 9], "HP_SEX": [1, 2],
+        "P_FSCHEIN": [1, 2], "P_TAET": [1, 11], "P_FKARTE": [1, 1],
+    })
+    target = pd.Series({
+        "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
+    })
+    h, p, level = wpm.match_person(target, weekday, rng=np.random.RandomState(0))
+    assert (h, p) == (50, 1) and level == 0
+
+
+def test_match_person_raises_on_empty_pool():
+    target = pd.Series({"HP_ALTER": 30, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1})
+    with pytest.raises(ValueError, match="empty weekday person pool"):
+        wpm.match_person(target, pd.DataFrame(columns=["H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE"]), rng=np.random.RandomState(0))

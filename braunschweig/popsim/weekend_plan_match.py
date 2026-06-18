@@ -93,3 +93,38 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
                 used[cand[0]] = True
                 break
     return pairs
+
+
+PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
+
+
+def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame({
+        "age_band": _age_band(persons["HP_ALTER"]),
+        "sex": persons["HP_SEX"].to_numpy(),
+        "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
+        "employed": persons["P_TAET"].between(1, 7).to_numpy(),
+        "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES).to_numpy(),
+    }, index=persons.index)
+
+
+def match_person(target_row, weekday_persons, *, rng):
+    if len(weekday_persons) == 0:
+        raise ValueError("empty weekday person pool; cannot match weekend person")
+    keys = _person_keys(weekday_persons)
+    tkeys = _person_keys(pd.DataFrame([target_row])).iloc[0]
+    active = list(PERSON_KEYS_BY_PRIORITY)
+    while True:
+        mask = pd.Series(True, index=weekday_persons.index)
+        for key in active:
+            mask &= keys[key] == tkeys[key]
+        pool = weekday_persons[mask]
+        if len(pool) > 0:
+            level = len(PERSON_KEYS_BY_PRIORITY) - len(active)
+            chosen = pool.sort_values(["H_ID", "P_ID"]).iloc[int(rng.randint(len(pool)))]
+            return chosen["H_ID"], chosen["P_ID"], level
+        if not active:
+            chosen = weekday_persons.sort_values(["H_ID", "P_ID"]).iloc[
+                int(rng.randint(len(weekday_persons)))]
+            return chosen["H_ID"], chosen["P_ID"], len(PERSON_KEYS_BY_PRIORITY)
+        active.pop()
