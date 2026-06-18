@@ -65,13 +65,26 @@ def test_age_tilt_makes_low_income_older(model):
 # Test 2: unknown segment falls back to ~all-ones (brief case b)
 # ---------------------------------------------------------------------------
 
-def test_unknown_cell_falls_back_to_ones(model):
-    """An entirely unknown segment returns a tilt that sums to ~len(AGE_BAND_LABELS)
-    (i.e., all-ones vector -- no income signal)."""
+def test_unknown_segment_known_status_uses_status_pool(model):
+    """An unknown segment with a known status exercises the (status)-only pool
+    fallback (level 2): no direct cell, but the status pool is valid and provides
+    the tilt (vs. the all-ones leaf)."""
     tilt = model.age_tilt("nonexistent_seg", "very_low")
     np.testing.assert_allclose(
         tilt.sum(), len(ft.AGE_BAND_LABELS), rtol=0.5,
-        err_msg="unknown segment should fall back to all-ones tilt"
+        err_msg="unknown segment + known status should use status pool fallback"
+    )
+    assert tilt.shape == (len(ft.AGE_BAND_LABELS),)
+
+
+def test_unknown_segment_and_status_falls_back_to_ones(model):
+    """An unknown segment with an unknown status exercises the all-ones leaf
+    (level 3): no direct cell, no status pool → returns pure all-ones vector
+    (KBA-only, no MiD income signal)."""
+    tilt = model.age_tilt("nonexistent_seg", "nonexistent_status")
+    np.testing.assert_allclose(
+        tilt, np.ones(len(ft.AGE_BAND_LABELS)),
+        err_msg="unknown segment + unknown status should return all-ones"
     )
     assert tilt.shape == (len(ft.AGE_BAND_LABELS),)
 
