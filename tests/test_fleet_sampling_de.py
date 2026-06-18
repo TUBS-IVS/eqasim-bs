@@ -29,6 +29,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
+FIXTURES = REPO / "tests" / "fixtures"
 sys.path.insert(0, str(REPO))
 
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
@@ -36,6 +37,13 @@ from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E40
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 
 DATA_PATH = str(DATA)
+
+
+def _load_golden(name: str) -> pd.DataFrame:
+    path = FIXTURES / name
+    if not path.exists():
+        pytest.skip(f"golden fixture not found: {path}")
+    return pd.read_parquet(path)
 
 
 # --------------------------------------------------------------------------- #
@@ -527,31 +535,77 @@ def test_income_age_gradient_in_output():
 
 
 def test_age_income_off_unchanged():
-    """age_income_coupling=False must produce the SAME age column as a run that
-    never applies the tilt at all (byte-identical for the same seed).
+    """age_income_coupling=False must produce age columns byte-identical to the
+    committed golden fixture (``tests/fixtures/feature_b_age_off_golden.parquet``).
 
-    We verify this by running the same seed twice — once with coupling off and
-    once with the default (off) baseline — and asserting the age columns agree.
-    The test also checks the existing Euro-consistency is preserved.
+    The golden was generated on this feature branch by running
+    ``sample_fleet(_make_cars_multi_status(n_per_status=500), ...,
+    random_seed=42, consistency_v2=True, age_income_coupling=False)``
+    and taking the [\"age\", \"age_band\"] columns. Analytically, coupling=False is
+    byte-identical to pre-Feature-B because the tilt block is guarded by
+    ``if age_model is not None`` and the model is only built when
+    ``consistency_v2=True AND age_income_coupling=True``.
+
+    The generation command was::
+
+        python -c "
+        import numpy as np, pandas as pd, sys; sys.path.insert(0, '.')
+        from braunschweig.data.kba import fleet_tables as ft
+        from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+        rng = np.random.default_rng(99)
+        statuses = list(ft.STATUS_LABELS)
+        kreis = ft.ZGB_KREISE_AGS5[0]
+        rows = []
+        for status in statuses:
+            for _ in range(500):
+                rows.append({'economic_status': status, 'kreis_ags5': kreis,
+                             'gemeinde': float('nan'),
+                             'raumtyp': int(rng.choice([71,72,73,74,75,76,77]))})
+        df_cars = pd.DataFrame(rows)
+        df_spec, _ = fs.sample_fleet(df_cars, 'eqasim-data/data',
+                                     random_seed=42, consistency_v2=True,
+                                     age_income_coupling=False)
+        df_spec[['age', 'age_band']].to_parquet(
+            'tests/fixtures/feature_b_age_off_golden.parquet', index=False)
+        "
+
+    The golden is committed to tests/fixtures/feature_b_age_off_golden.parquet.
     """
-    df_cars = _make_cars_multi_status(n_per_status=500)
-    # Two runs with coupling=False and the same seed must be identical.
-    a, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=77,
-        consistency_v2=True, age_income_coupling=False)
-    b, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=77,
-        consistency_v2=True, age_income_coupling=False)
-    pd.testing.assert_series_equal(a["age"], b["age"], check_names=True)
+    golden = _load_golden("feature_b_age_off_golden.parquet")
 
-    # Also verify the coupling=False run produces DIFFERENT ages from coupling=True
-    # (if they were identical the tilt would be doing nothing, and the gradient
-    # test above would have already caught it — but let's be explicit).
-    c, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=77,
+    # Reproduce exactly the same input as used during golden generation.
+    rng_input = np.random.default_rng(99)
+    statuses = list(ft.STATUS_LABELS)
+    kreis = ft.ZGB_KREISE_AGS5[0]
+    rows = []
+    for status in statuses:
+        for _ in range(500):
+            rows.append({
+                "economic_status": status,
+                "kreis_ags5": kreis,
+                "gemeinde": float("nan"),
+                "raumtyp": int(rng_input.choice([71, 72, 73, 74, 75, 76, 77])),
+            })
+    df_cars = pd.DataFrame(rows)
+
+    df_spec, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=False)
+
+    # Byte-identical assertion against the frozen baseline.
+    pd.testing.assert_frame_equal(
+        df_spec[["age", "age_band"]].reset_index(drop=True),
+        golden.reset_index(drop=True),
+        check_like=False,
+        obj="coupling=False age vs golden",
+    )
+
+    # Also verify the coupling=True run produces DIFFERENT ages (tilt is active).
+    df_spec_on, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True, age_income_coupling=True)
-    # With n=500*5=2500 cars the age distribution should differ at least somewhere.
-    assert not a["age"].equals(c["age"]), (
+    # With n=2500 cars the age distribution must differ somewhere.
+    assert not df_spec["age"].equals(df_spec_on["age"]), (
         "coupling=True and coupling=False produced identical age columns; "
         "the tilt is not being applied"
     )

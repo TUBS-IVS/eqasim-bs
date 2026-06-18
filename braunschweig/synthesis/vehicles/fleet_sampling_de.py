@@ -836,21 +836,6 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         out_size[i] = vt.hbefa_size
         out_emission[i] = vt.hbefa_emission
 
-    def _draw_euro_age(powertrain: str) -> tuple[str, str]:
-        """Re-derive euro_class + age_band consistently for a powertrain.
-
-        euro and age both depend ONLY on the powertrain (FZ 27.4 / FZ 27.7), so
-        on any powertrain change (Task 7 electric rake) re-running this restores
-        internal consistency; the age draw is additionally masked to bands
-        consistent with the euro stage.
-        """
-        euro_pmf = sampler.euro_given_powertrain[powertrain]
-        euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
-        age_pmf = sampler.age_given_powertrain[powertrain]
-        age_band = _draw_age_consistent_with_euro(
-            rng, age_pmf, euro_class, powertrain)
-        return euro_class, age_band
-
     if not consistency_v2:
         # ===== LEGACY PATH (consistency_v2=False): byte-identical to before. =====
         for i, car in enumerate(records):
