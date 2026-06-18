@@ -253,16 +253,36 @@ def build_fleet_evaluation(vehicles, out_dir: Path, data_path) -> dict:
         ax_pt.set_ylabel("Fleet share (%)")
         ax_pt.set_title("Powertrain mix")
 
-        # Panel 4: Fuel consistency (contradiction count per powertrain).
-        bar_colors = ["tomato" if v > 0 else "mediumseagreen" for v in consistency_values]
-        ax_cons.bar(range(len(consistency_labels)), consistency_values, color=bar_colors)
-        ax_cons.set_xticks(range(len(consistency_labels)))
-        ax_cons.set_xticklabels(consistency_labels, rotation=25, ha="right", fontsize=8)
-        ax_cons.set_ylabel("Contradiction count")
-        ax_cons.set_title(
-            f"Fuel/powertrain consistency  (total contradictions: {contradiction_count})"
-        )
-        ax_cons.axhline(0, color="black", linewidth=0.5)
+        # Panel 4: Fuel consistency. With zero contradictions a bar chart of
+        # all-zero bars is uninformative, so show a clear pass annotation; only
+        # draw bars when there is something to show.
+        ax_cons.set_title("Fuel/powertrain consistency")
+        fp_txt = (f"top engine fingerprint: {top_fingerprint_share * 100:.1f}%"
+                  if top_fingerprint_share == top_fingerprint_share else "")
+        if contradiction_count == 0:
+            ax_cons.text(
+                0.5, 0.58,
+                f"{len(df):,} / {len(df):,} cars consistent",
+                ha="center", va="center", fontsize=15, fontweight="bold",
+                color="seagreen", transform=ax_cons.transAxes,
+            )
+            ax_cons.text(
+                0.5, 0.40,
+                f"0 powertrain <-> fuel contradictions\n{fp_txt}",
+                ha="center", va="center", fontsize=10, color="dimgray",
+                transform=ax_cons.transAxes,
+            )
+            ax_cons.axis("off")
+        else:
+            bar_colors = ["tomato" if v > 0 else "mediumseagreen" for v in consistency_values]
+            ax_cons.bar(range(len(consistency_labels)), consistency_values, color=bar_colors)
+            ax_cons.set_xticks(range(len(consistency_labels)))
+            ax_cons.set_xticklabels(consistency_labels, rotation=25, ha="right", fontsize=8)
+            ax_cons.set_ylabel("Contradiction count")
+            ax_cons.set_title(
+                f"Fuel/powertrain consistency  ({contradiction_count} contradictions)"
+            )
+            ax_cons.axhline(0, color="black", linewidth=0.5)
 
         fig.suptitle(
             f"Fleet evaluation  |  n={len(df):,} cars", fontsize=12, fontweight="bold"

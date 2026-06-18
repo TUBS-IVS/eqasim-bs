@@ -83,7 +83,11 @@ def _mid_reference(data_path: str) -> pd.DataFrame:
         weighted_mean_age = 0.0
         weighted_under5 = 0.0
 
-        for (seg,), grp in sub.groupby(["segment"]):
+        # Single string key (not a 1-element list): a list-key groupby yields a
+        # scalar key on pandas 1.5.x (the eqasim runtime) and a 1-tuple on 2.x/3.x,
+        # so the tuple-unpack `(seg,)` raises ValueError at runtime. The string form
+        # yields a scalar on every version.
+        for seg, grp in sub.groupby("segment"):
             # Each segment has one row per age_band; pivot to a share dict.
             shares = grp.set_index("age_band")["share"]
             bw = float(grp["base_weighted"].iloc[0])
