@@ -53,8 +53,10 @@ def test_match_household_prefers_zero_relaxation():
 
 
 def test_match_household_relaxes_until_pool_nonempty():
+    # Same size + same RegioStaR (the hard keys) but every SOFT key differs ->
+    # the matcher must relax all soft keys and still return the candidate.
     weekday = pd.DataFrame({
-        "size": [2], "hh_type5": ["single"], "oek_status": [1], "regiostar7": [77],
+        "size": [2], "hh_type5": ["single"], "oek_status": [1], "regiostar7": [71],
         "car_class": ["0"], "any_license": [False], "any_pt": [True],
     }, index=pd.Index([200], name="H_ID"))
     target = pd.Series({
@@ -63,6 +65,21 @@ def test_match_household_relaxes_until_pool_nonempty():
     })
     mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
     assert mid == 200 and level == len(wpm.SOFT_KEYS_BY_PRIORITY)  # all soft keys dropped
+
+
+def test_match_household_never_crosses_regiostar():
+    # A weekday HH identical in size and EVERY soft key but a different RegioStaR
+    # must NOT be matched (RegioStaR is a hard key) -> falls through to (None, None).
+    weekday = pd.DataFrame({
+        "size": [2], "hh_type5": ["couple"], "oek_status": [3], "regiostar7": [77],
+        "car_class": ["2plus"], "any_license": [True], "any_pt": [False],
+    }, index=pd.Index([200], name="H_ID"))
+    target = pd.Series({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": "2plus", "any_license": True, "any_pt": False,
+    })
+    mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
+    assert mid is None and level is None
 
 
 def test_match_household_returns_none_when_no_equal_size():

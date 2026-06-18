@@ -14,9 +14,13 @@ logger = logging.getLogger(__name__)
 
 PT_SUBSCRIPTION_CODES = frozenset({3, 4, 5, 6})  # see attributes.map_has_pt_subscription
 
-# Soft keys ordered HIGH→LOW priority (dropped from the END first); ``size`` is a
-# separate HARD key (equal size always required so role alignment is feasible).
-SOFT_KEYS_BY_PRIORITY = ("car_class", "any_license", "any_pt", "hh_type5", "oek_status", "regiostar7")
+# Soft keys ordered HIGH→LOW priority (dropped from the END first). ``size`` AND
+# ``regiostar7`` are separate HARD keys (always required): equal size so the
+# person-to-person role alignment is feasible, equal RegioStaR so the borrowed
+# weekday plan comes from the SAME spatial type (distances / mode choice depend
+# strongly on urbanity) -- user decision 2026-06-18.
+SOFT_KEYS_BY_PRIORITY = ("car_class", "any_license", "any_pt", "hh_type5", "oek_status")
+HARD_KEYS = ("size", "regiostar7")
 
 
 def _car_class(n_cars: pd.Series) -> np.ndarray:
@@ -43,12 +47,16 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
 
 
 def match_household(target_id, target_feats, weekday_feats, *, rng):
-    """Find a weekday household of EQUAL size, matching as many soft keys as
-    possible (drop the lowest-priority soft key first). Returns
-    ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no equal-size
-    weekday household exists (caller then uses the person-level fallback).
+    """Find a weekday household of EQUAL size AND EQUAL RegioStaR (the hard keys),
+    matching as many soft keys as possible (drop the lowest-priority soft key
+    first). Returns ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no
+    weekday household shares the target's size and RegioStaR (caller then uses the
+    person-level fallback). The match never crosses spatial type.
     """
-    pool = weekday_feats[weekday_feats["size"] == target_feats["size"]]
+    pool = weekday_feats[
+        (weekday_feats["size"] == target_feats["size"])
+        & (weekday_feats["regiostar7"] == target_feats["regiostar7"])
+    ]
     if len(pool) == 0:
         return None, None
     active = list(SOFT_KEYS_BY_PRIORITY)
