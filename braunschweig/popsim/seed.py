@@ -127,6 +127,10 @@ MID_SEED_COLUMNS = SeedColumns(
     day_filter_values=(1, 2, 3),
 )
 
+# kernwo value sets (MiD 2023 core-week flag): single source of truth.
+WEEKDAY_KERNWO = (1, 2, 3)
+ALL_REPORTING_KERNWO = (1, 2, 3, 4, 5, 6, 7)
+
 
 @dataclass(frozen=True)
 class CompletenessReport:
