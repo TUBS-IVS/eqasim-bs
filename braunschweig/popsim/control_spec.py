@@ -739,7 +739,7 @@ def tier2_controls() -> List[CatalogControl]:
 # beruflabschluss attributes are output-only (assembly, validation), not used here.
 _TIER3_ENTRIES: Sequence[tuple] = (
     # (name, census_source cols, mid expression over the RAW seed-persons cols)
-    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))"),
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))"),
     ("schulabschluss_low",
      ("SCHULABS_STP__21", "SCHULABS_STP__22"),
      "(persons.bildung1 == 2)"),
@@ -778,25 +778,33 @@ def tier3_controls() -> List[CatalogControl]:
 
 
 def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
-    """Two 100m age×sex-resolved employment controls (sex-split). MiD-only.
+    """Six 100m age-group×sex employment controls (3 groups × 2 sexes). MiD-only.
 
+    Age groups: young (16-29), prime (30-59), old (60+).
     census_source is the per-cell target column injected by employment_grid into the
-    cells frame (EMPLOYED_M_agg / EMPLOYED_F_agg). ENTD cannot express P_TAET -> None.
+    cells frame (EMPLOYED_{M,F}_{young,prime,old}_agg). ENTD cannot express P_TAET -> None.
+    Employed definition: P_TAET ∈ {1,2,3,4,6,8} (MiD erwerb; incl. Azubi, excl. Elternzeit/FSJ).
     """
+    groups = {
+        "young": "(persons.HP_ALTER>15)&(persons.HP_ALTER<30)",
+        "prime": "(persons.HP_ALTER>29)&(persons.HP_ALTER<60)",
+        "old":   "(persons.HP_ALTER>59)",
+    }
     out: List[CatalogControl] = []
-    for prefix, sex_value in (("M", 1), ("F", 2)):
-        name = f"EMPLOYED_{prefix}_agg"
-        expr = f"(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))&(persons.HP_SEX=={sex_value})"
-        out.append(
-            CatalogControl(
-                name=name,
-                geography=GEO_100M,
-                seed_table=SEED_TABLE_PERSONS,
-                importance=importance,
-                census_source=(name,),
-                seed_expressions={"mid": expr, "entd": None},
+    for prefix, sex in (("M", 1), ("F", 2)):
+        for g, ageclause in groups.items():
+            name = f"EMPLOYED_{prefix}_{g}_agg"
+            expr = f"(persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX=={sex})&{ageclause}"
+            out.append(
+                CatalogControl(
+                    name=name,
+                    geography=GEO_100M,
+                    seed_table=SEED_TABLE_PERSONS,
+                    importance=importance,
+                    census_source=(name,),
+                    seed_expressions={"mid": expr, "entd": None},
+                )
             )
-        )
     return out
 
 
