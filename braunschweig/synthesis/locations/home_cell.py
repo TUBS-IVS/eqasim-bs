@@ -411,6 +411,11 @@ def assign_homes_typed(
     """
     rng = np.random.RandomState(int(random_seed) + RANDOM_SEED_OFFSET)
     buildings = buildings.reset_index(drop=True).copy()
+    # Guard: if the buildings frame has no height_m column, default to NaN so
+    # the area-only fallback path in assign_building_types / build_slots holds
+    # and existing tests without LoD2 height data stay green.
+    if "height_m" not in buildings.columns:
+        buildings["height_m"] = float("nan")
     cent3035 = buildings.geometry.to_crs(ZENSUS_CRS)
     buildings["_cell_id"] = [building_cell_id(north_m=g.y, east_m=g.x) for g in cent3035]
 
@@ -579,7 +584,7 @@ def assign_homes_typed(
                for c in cbs.THREE_CLASSES}
         occ = float(s["occupied"]) if s is not None else float(len(grp))
         size_hist = s["size_hist"] if s is not None else []
-        typed = bt.assign_building_types(fps[["building_id", "area_m2"]], geb, rng)
+        typed = bt.assign_building_types(fps[["building_id", "area_m2", "height_m"]], geb, rng)
         slots = bt.build_slots(typed, whg, max(occ, len(grp)), size_hist, rng)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})

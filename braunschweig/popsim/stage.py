@@ -53,6 +53,7 @@ from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
+from braunschweig.popsim import weekend_plan_match
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,12 @@ KEY_INCOME_KC_METHOD = "braunschweig.population.popsim.income_draw_method"
 KEY_INCOME_KC_HHSIZE = "braunschweig.population.popsim.income_kreis_control_hhsize_correct"
 KEY_INCOME_KC_PARETO = "braunschweig.population.popsim.income_open_top_pareto"
 KEY_INCOME_KC_PARETO_ALPHA = "braunschweig.population.popsim.income_open_top_pareto_alpha"
+# Weekend-plan match: include weekend-surveyed MiD households in the seed by
+# relaxing the day filter to ALL_REPORTING_KERNWO and remapping their
+# source_H_ID/source_P_ID to a matched weekday household.  Default ON
+# (project rule: new features default on).  When OFF, the donor build is
+# byte-identical to today (weekday (1,2,3) filter only, no remap).
+KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -287,6 +294,8 @@ def configure(context):
     context.config(KEY_INCOME_KC_HHSIZE, True)
     context.config(KEY_INCOME_KC_PARETO, True)
     context.config(KEY_INCOME_KC_PARETO_ALPHA, 3.0)
+    # Weekend-plan match (default ON; OFF = byte-identical to pre-feature donor build).
+    context.config(KEY_WEEKEND_PLAN_MATCH, True)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -514,13 +523,31 @@ def execute(context) -> pd.DataFrame:
         # seed), then the PopulationSim seed is projected out of the completed
         # frames. RNG offset +74513 keeps the mirror-draw stream disjoint from
         # the +74511 attribute-imputation stream below.
+        weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
+        # Weekend-plan match needs weekend reporters in the donor, so it forces ALL
+        # kernwo days (overriding seed_day_filter). When OFF we defer to main's
+        # configurable seed_day_filter (default None -> loader default (1,2,3) Mo-Fr).
+        day_filter = (
+            seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
+        )
+        completion_rng = np.random.RandomState(random_seed + 74513)
         (
             completed_donor_households, completed_donor_persons,
             report, completion_report,
         ) = mid.load_completed_donor(
-            mid_dir, completion_rng=np.random.RandomState(random_seed + 74513),
-            day_filter_values=seed_day_filter,
+            mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
         )
+        if weekend_plan_match_on:
+            # completion_rng is DELIBERATELY shared with member-completion above:
+            # the two draws form one entangled seeded stream -- do NOT reseed it.
+            completed_donor_persons, _weekend_trace, _weekend_report = (
+                weekend_plan_match.reassign_weekend_plan_sources(
+                    completed_donor_households, completed_donor_persons,
+                    rng=completion_rng,
+                )
+            )
+            _weekend_trace.to_parquet(Path(work_dir) / "weekend_plan_match_trace.parquet")
+            logger.info("[popsim.stage] weekend_plan_match: %s", _weekend_report)
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
         # load_mid_seed does, so the seed carries it for the household_type control.

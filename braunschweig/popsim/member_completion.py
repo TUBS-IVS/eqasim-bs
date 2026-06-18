@@ -154,6 +154,7 @@ def complete_members(
     rng: np.random.RandomState,
     household_id: str = "H_ID",
     size_col: str = "H_GR",
+    kernwo_col: str = "kernwo",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, MemberCompletionReport]:
     """Fill member-incomplete households by mirror-household sampling.
 
@@ -170,6 +171,11 @@ def complete_members(
             randomness; the mirror draw is the only stochastic step).
         household_id: Household id column name (default ``H_ID``).
         size_col: Declared household size column name (default ``H_GR``).
+        kernwo_col: Column carrying the MiD core-week reporting-day code
+            (default ``kernwo``). When present, mirror selection is
+            constrained to the same day type (weekday/weekend) as the
+            incomplete host. If absent or if the data contains only one
+            day type, the behaviour is identical to the legacy path.
 
     Returns:
         ``(households, persons_filled, MemberCompletionReport)``. The household
@@ -177,10 +183,33 @@ def complete_members(
         ``member_imputed``, ``source_H_ID``, ``source_P_ID`` and one appended
         row per filled member.
     """
+    from braunschweig.popsim import day_type as _dt
+
     persons = persons.copy()
     persons["member_imputed"] = False
     persons["source_H_ID"] = persons[household_id]
     persons["source_P_ID"] = persons["P_ID"]
+
+    # --- Day-type awareness (day-type-aware mirror selection) ---
+    # When kernwo is present, compute per-household day_type so that weekday
+    # hosts only receive weekday mirrors and vice versa.  When kernwo is absent
+    # or all households share one day type, hh_dt is None and the candidate
+    # set is IDENTICAL to the legacy path (byte-identical draw).
+    hh_dt = None
+    if kernwo_col in persons.columns:
+        member_dt = _dt.person_day_type(persons[kernwo_col])
+        hh_dt_raw = member_dt.groupby(persons[household_id]).agg(
+            lambda s: s.mode().iat[0]
+        )
+        if hh_dt_raw.nunique() <= 1:
+            hh_dt = None  # single day type -> filter is a NO-OP, keep legacy path
+        else:
+            hh_dt = hh_dt_raw
+            logger.info(
+                "[popsim.member_completion] kernwo-aware mode active: "
+                "mirror selection is constrained to the same day type "
+                "(weekday/weekend) as each incomplete host household."
+            )
 
     person_counts = persons.groupby(household_id).size()
     counts = households[household_id].map(person_counts).fillna(0).astype(int)
@@ -203,6 +232,18 @@ def complete_members(
     for _, row in incomplete.sort_values(household_id).iterrows():
         host_id = row[household_id]
         candidates = complete[complete[size_col] == row[size_col]]
+        # Day-type filter: when active, restrict mirrors to the same day type
+        # as the host household (hard filter, same priority as equal size).
+        # Guard: only apply when BOTH hh_dt is available AND the host has a
+        # determinable day type (host_dt is not None).  A host with zero
+        # present persons is absent from hh_dt; filtering on None would empty
+        # the candidate set and silently make the household unfillable -- a
+        # regression vs. the pre-Option-B behaviour.  When host_dt is None we
+        # fall back to the un-day-constrained candidate set (legacy path).
+        if hh_dt is not None:
+            host_dt = hh_dt.get(host_id)
+            if host_dt is not None:
+                candidates = candidates[candidates[household_id].map(hh_dt) == host_dt]
         if len(candidates) == 0:
             n_unfillable += 1
             continue
