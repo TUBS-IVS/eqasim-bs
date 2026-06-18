@@ -150,3 +150,43 @@ def test_reassign_person_fallback_when_no_equal_size_weekday_hh():
     assert (w2["source_H_ID"] == 1).all()
     assert report.n_hh_matched == 0 and report.n_person_fallback_households == 1
     assert "person_fallback" in set(trace["resolution"])
+
+
+def test_reassign_is_deterministic_given_rng():
+    households = pd.DataFrame({
+        "H_ID": [1, 2, 3], "H_GR": [2, 2, 2],
+        "hh_type5": ["couple"] * 3, "oek_status": [3, 3, 3],
+        "RegioStaR7": [71, 71, 71], "H_ANZAUTO": [1, 1, 1],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2, 3, 3], "P_ID": [1, 2, 1, 2, 1, 2],
+        "HP_ALTER": [40, 38, 40, 38, 41, 39], "HP_SEX": [1, 2, 1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1, 1, 1], "P_TAET": [1, 1, 1, 1, 1, 1],
+        "P_FKARTE": [1, 1, 1, 1, 1, 1],
+        "kernwo": [2, 2, 2, 2, 6, 6],   # HH3 weekend
+        "source_H_ID": [1, 1, 2, 2, 3, 3], "source_P_ID": [1, 2, 1, 2, 1, 2],
+        "member_imputed": [False] * 6,
+    })
+    a, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
+    b, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_every_weekend_person_is_resolved_no_silent_gap():
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [2, 2], "hh_type5": ["couple", "couple"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2], "P_ID": [1, 2, 1, 2],
+        "HP_ALTER": [40, 38, 41, 39], "HP_SEX": [1, 2, 1, 2],
+        "P_FSCHEIN": [1, 1, 1, 1], "P_TAET": [1, 1, 1, 1], "P_FKARTE": [1, 1, 1, 1],
+        "kernwo": [2, 2, 6, 6],
+        "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
+        "member_imputed": [False] * 4,
+    })
+    out, trace, _ = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0))
+    weekend = trace[trace["donor_day_type"] == "weekend"]
+    # every weekend person resolved to a weekday source (here HH 1)
+    assert (weekend["plan_source_H_ID"] == 1).all()
+    assert weekend["resolution"].isin({"hh_match", "person_fallback"}).all()
