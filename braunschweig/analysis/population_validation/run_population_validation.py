@@ -258,6 +258,16 @@ def run(ns) -> dict:
     if not fleet_age_panel.empty:
         fleet_age_panel.to_csv(out / "fleet_age_status_panel.csv", index=False)
 
+    # Fleet evaluation (Feature B + C): brand mix, powertrain, age×income, consistency.
+    _fe_paths: dict = {}
+    try:
+        from braunschweig.analysis.population_validation import fleet_evaluation as FE
+        _fe_paths = FE.build_fleet_evaluation(
+            getattr(frames, "vehicles", None), out, DATA_PATH
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("fleet_evaluation skipped: %s", exc)
+
     geo_paths: dict = {}
     if ns.geo:
         home_geom = homes_geo[["household_id", "ars5", "commune_id", "geometry"]]
@@ -307,6 +317,7 @@ def run(ns) -> dict:
         "quality": quality.to_dict(orient="records"),
         "trip_coherence": trip_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
+        "fleet_evaluation": _fe_paths,
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False),
                                      encoding="utf-8")
