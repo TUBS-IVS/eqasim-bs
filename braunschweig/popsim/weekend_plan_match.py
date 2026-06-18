@@ -40,3 +40,27 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     feats["any_license"] = has_lic.reindex(feats.index).fillna(False).to_numpy()
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
     return feats
+
+
+def match_household(target_id, target_feats, weekday_feats, *, rng):
+    """Find a weekday household of EQUAL size, matching as many soft keys as
+    possible (drop the lowest-priority soft key first). Returns
+    ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no equal-size
+    weekday household exists (caller then uses the person-level fallback).
+    """
+    pool = weekday_feats[weekday_feats["size"] == target_feats["size"]]
+    if len(pool) == 0:
+        return None, None
+    active = list(SOFT_KEYS_BY_PRIORITY)
+    while True:
+        narrowed = pool
+        for key in active:
+            narrowed = narrowed[narrowed[key] == target_feats[key]]
+        if len(narrowed) > 0:
+            ids = sorted(narrowed.index.tolist())
+            level = len(SOFT_KEYS_BY_PRIORITY) - len(active)
+            return ids[int(rng.randint(len(ids)))], level
+        if not active:
+            ids = sorted(pool.index.tolist())  # size-only fallback
+            return ids[int(rng.randint(len(ids)))], len(SOFT_KEYS_BY_PRIORITY)
+        active.pop()  # drop the lowest-priority remaining soft key

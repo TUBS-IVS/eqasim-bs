@@ -36,3 +36,43 @@ def test_build_hh_features_columns_and_values():
     assert bool(feats.loc[1, "any_license"]) is True   # P1 has licence
     assert bool(feats.loc[1, "any_pt"]) is False        # neither has a sub code
     assert bool(feats.loc[2, "any_pt"]) is True         # P_FKARTE 4 is a sub
+
+
+def test_match_household_prefers_zero_relaxation():
+    weekday = pd.DataFrame({
+        "size": [2, 2], "hh_type5": ["couple", "couple"], "oek_status": [3, 9],
+        "regiostar7": [71, 71], "car_class": ["2plus", "0"],
+        "any_license": [True, False], "any_pt": [False, False],
+    }, index=pd.Index([100, 101], name="H_ID"))
+    target = pd.Series({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": "2plus", "any_license": True, "any_pt": False,
+    })
+    mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
+    assert mid == 100 and level == 0
+
+
+def test_match_household_relaxes_until_pool_nonempty():
+    weekday = pd.DataFrame({
+        "size": [2], "hh_type5": ["single"], "oek_status": [1], "regiostar7": [77],
+        "car_class": ["0"], "any_license": [False], "any_pt": [True],
+    }, index=pd.Index([200], name="H_ID"))
+    target = pd.Series({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": "2plus", "any_license": True, "any_pt": False,
+    })
+    mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
+    assert mid == 200 and level == len(wpm.SOFT_KEYS_BY_PRIORITY)  # all soft keys dropped
+
+
+def test_match_household_returns_none_when_no_equal_size():
+    weekday = pd.DataFrame({
+        "size": [3], "hh_type5": ["couple"], "oek_status": [3], "regiostar7": [71],
+        "car_class": ["2plus"], "any_license": [True], "any_pt": [False],
+    }, index=pd.Index([300], name="H_ID"))
+    target = pd.Series({
+        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
+        "car_class": "2plus", "any_license": True, "any_pt": False,
+    })
+    mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
+    assert mid is None and level is None
