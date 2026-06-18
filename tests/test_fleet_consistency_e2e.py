@@ -75,7 +75,12 @@ def v2_output_with_hsn(sampler):
     df_cars = _make_cars()
     spec, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
-    out = hsn_tsn.attach_hsn_tsn(spec, data_path=DATA_PATH, random_seed=42)
+    try:
+        out = hsn_tsn.attach_hsn_tsn(spec, data_path=DATA_PATH, random_seed=42)
+    except FileNotFoundError:
+        pytest.skip(
+            "HSN/TSN lookup is local-only (run scripts/scrape_hsn_tsn.py); skipped when absent"
+        )
     return out
 
 
