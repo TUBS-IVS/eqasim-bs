@@ -30,6 +30,11 @@ DEFAULT_VEHICLE_SPEC = [
     ("brand", "categorical"), ("powertrain", "categorical"),
     ("euro_norm", "categorical"), ("fuel", "categorical"),
     ("power_kw", "numeric"), ("displacement_ccm", "numeric"),
+    # Task 8 (Feature P): per-vehicle match provenance columns.
+    # Absent columns are silently skipped (INFO log) for runs without these cols.
+    ("hsn_tsn_match_tier", "categorical"),
+    ("brand_source", "categorical"),
+    ("powertrain_feasibility", "categorical"),
 ]
 GPKG_NAME = "population_explorer.gpkg"
 

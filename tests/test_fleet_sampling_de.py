@@ -272,3 +272,205 @@ def test_gemeinde_tilt_raises_local_bev_share():
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())
     assert bev_tilt > bev_base, (bev_base, bev_tilt, top["ratio"])
+
+
+# --------------------------------------------------------------------------- #
+# Task 5 — sonstige redistribution (consistency_v2).
+# --------------------------------------------------------------------------- #
+@pytest.fixture(scope="module")
+def sampled_v2(sampler):
+    """sample_fleet with consistency_v2=True (default)."""
+    df_cars = _make_cars()
+    df_spec, df_types = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
+    return df_spec, df_types
+
+
+@pytest.fixture(scope="module")
+def sampled_v2_off(sampler):
+    """sample_fleet with consistency_v2=False (legacy path)."""
+    df_cars = _make_cars()
+    df_spec, df_types = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=False)
+    return df_spec, df_types
+
+
+def test_no_sonstige_segment_in_output(sampled_v2):
+    """After redistribution, no vehicle carries segment=='sonstige'."""
+    df_spec, _ = sampled_v2
+    assert (df_spec["segment"] == "sonstige").sum() == 0
+    assert (df_spec["brand"].astype(str).str.strip() == "").mean() < 0.001
+
+
+def test_sonstige_off_keeps_old_behaviour(sampled_v2_off):
+    """With consistency_v2=False, sonstige can appear (legacy path unchanged)."""
+    df_spec, _ = sampled_v2_off
+    # sonstige is ~2.3% of fleet; with n=4000*num_kreise it must appear at least
+    # once (statistical near-certainty).
+    assert (df_spec["segment"] == "sonstige").sum() > 0
+
+
+# --------------------------------------------------------------------------- #
+# Task 7 — per-Kreis BEV/PHEV recalibration on the feasible support (Bug 2).
+# --------------------------------------------------------------------------- #
+def test_every_electric_car_is_electric_capable(sampled, sampler):
+    """Feasibility preserved post-recalibration: every BEV/PHEV the v2 chain
+    emits must be assigned to an electric-CAPABLE model (its HSN/TSN feasible set
+    includes that powertrain). The Task 7 rake only RE-WEIGHTS feasible electric
+    mass, so it can never create a petrol-only BEV.
+    """
+    from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
+
+    ff = sampler.feasible_fuels
+    if ff is None:
+        pytest.skip("HSN/TSN lookup absent; feasibility mask disabled.")
+    df_spec, _ = sampled
+    electric = df_spec[df_spec["powertrain"].isin(["bev", "phev"])]
+    violations = 0
+    checked = 0
+    for _, car in electric.iterrows():
+        brand = str(car["brand"])
+        model = str(car["model"])
+        if not brand or not model:
+            continue
+        feasible = ff.model_feasible_powertrains(
+            brand, model_family(canonical_brand(brand) or "", model))
+        if feasible is None:
+            # Unknown model -> unmasked pmf was kept; no feasibility claim.
+            continue
+        checked += 1
+        if car["powertrain"] not in feasible:
+            violations += 1
+    assert checked > 0, "no model-constrained electric cars to verify"
+    assert violations == 0, f"{violations}/{checked} electric cars not capable"
+
+
+def test_euro_age_consistent_after_recalibration(sampled):
+    """Internal consistency preserved post-recalibration: euro/age are re-derived
+    from the FINAL (raked) powertrain, so every combustion car still satisfies the
+    age<->euro rule and no BEV carries a combustion Euro concept.
+    """
+    df_spec, _ = sampled
+    combustion = df_spec[df_spec["powertrain"].isin(["petrol", "diesel", "gas"])]
+    for _, car in combustion.iterrows():
+        assert fs._age_consistent_with_euro(
+            car["age_band"], car["euro_class"], car["powertrain"]), car.to_dict()
+    bev = df_spec[df_spec["powertrain"] == "bev"]
+    assert (bev["hbefa_emission"] == "PC BEV").all()
+
+
+def test_recalibration_deterministic_given_seed():
+    """Same seed -> identical raked output (the Task 7 rake uses no fresh rng)."""
+    df_cars = _make_cars(n_per_kreis=400)
+    a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    pd.testing.assert_frame_equal(a, b)
+
+
+# --------------------------------------------------------------------------- #
+# Task 8 — provenance columns (Feature P).
+# --------------------------------------------------------------------------- #
+def test_provenance_columns_present(sampled):
+    """brand_source and powertrain_feasibility must be present on df_spec (v2).
+
+    brand_source ∈ {"kba_model", "sonstige_redistributed"};
+    powertrain_feasibility ∈ {"model_constrained", "segment_fallback"}.
+    (The fixture ``sampled`` uses consistency_v2=True, the default.)
+    """
+    df_spec, _ = sampled
+    for col, domain in [
+        ("brand_source", {"kba_model", "sonstige_redistributed"}),
+        ("powertrain_feasibility", {"model_constrained", "segment_fallback"}),
+    ]:
+        assert col in df_spec.columns, f"column '{col}' missing from df_spec"
+        assert set(df_spec[col].unique()) <= domain, (
+            f"column '{col}' has unexpected values: "
+            f"{set(df_spec[col].unique()) - domain}"
+        )
+
+
+def test_provenance_columns_absent_on_off_path(sampled_v2_off):
+    """consistency_v2=False (OFF path) must NOT add the provenance columns so
+    the existing output columns stay byte-identical."""
+    df_spec, _ = sampled_v2_off
+    assert "brand_source" not in df_spec.columns
+    assert "powertrain_feasibility" not in df_spec.columns
+
+
+# --------------------------------------------------------------------------- #
+# Task 8 review fix — household.py keep_tier gate
+# --------------------------------------------------------------------------- #
+def _make_minimal_df_spec(with_provenance: bool) -> pd.DataFrame:
+    """Synthetic df_spec frame with the columns attach_hsn_tsn requires.
+
+    ``with_provenance=True`` adds ``brand_source`` + ``powertrain_feasibility``
+    to simulate the consistency_v2 ON path; without them we simulate the OFF
+    path (consistency_v2=False).  The ``segment`` column is omitted so the
+    segment tier is skipped (unit test environment, no data_path).
+    """
+    from braunschweig.data.kba import hsn_tsn as hst
+
+    # Build a tiny 4-row HSN/TSN lookup in-memory (no data_path required).
+    lookup_df = pd.DataFrame([
+        {"brand": "VW", "hsn": "0603", "tsn": "ABC",
+         "model": "VW Golf", "power_ps": 115, "power_kw": 85,
+         "displacement_ccm": 1968, "fuel": "Diesel"},
+        {"brand": "BMW", "hsn": "0005", "tsn": "XYZ",
+         "model": "BMW 3er", "power_ps": 184, "power_kw": 135,
+         "displacement_ccm": 1998, "fuel": "Benzin"},
+    ])
+    lookup = hst.HsnTsnLookup.from_frame(lookup_df)
+
+    df = pd.DataFrame([
+        {"brand": "VW", "model": "VW Golf", "powertrain": "diesel",
+         "household_id": 1, "owner_id": 101, "vehicle_id": "101:car:0",
+         "mode": "car", "economic_status": "medium",
+         "kreis_ags5": "03101", "gemeinde": "BRAUNSCHWEIG", "raumtyp": 71},
+        {"brand": "BMW", "model": "BMW 3er", "powertrain": "petrol",
+         "household_id": 2, "owner_id": 201, "vehicle_id": "201:car:0",
+         "mode": "car", "economic_status": "high",
+         "kreis_ags5": "03101", "gemeinde": "BRAUNSCHWEIG", "raumtyp": 71},
+    ])
+    if with_provenance:
+        df["brand_source"] = "kba_model"
+        df["powertrain_feasibility"] = "model_constrained"
+
+    # Run attach_hsn_tsn using the in-memory lookup (no data_path).
+    keep_tier = "brand_source" in df.columns   # the gate under test
+    df = hst.attach_hsn_tsn(df, lookup=lookup, keep_tier=keep_tier)
+    return df
+
+
+def test_household_off_path_no_hsn_tsn_match_tier():
+    """OFF path (no brand_source on df_spec): keep_tier=False -> no tier column.
+
+    Verifies the gate ``keep_tier = "brand_source" in df_spec.columns`` in
+    household.execute() so df_vehicles stays byte-identical for existing columns
+    when consistency_v2=False.
+    """
+    df = _make_minimal_df_spec(with_provenance=False)
+    assert "hsn_tsn_match_tier" not in df.columns, (
+        "OFF path must NOT have hsn_tsn_match_tier; found columns: "
+        + str(list(df.columns))
+    )
+    # Engine attribute columns must still be present (the attach ran).
+    for col in ("engine_power_kw", "engine_power_ps", "displacement_ccm",
+                "fuel_detail", "hsn", "tsn"):
+        assert col in df.columns, f"expected engine column '{col}' missing"
+
+
+def test_household_v2_path_all_three_provenance_columns():
+    """v2 path (brand_source present): keep_tier=True -> all three provenance
+    columns survive to df_vehicles.
+
+    Verifies the three columns travel together: brand_source,
+    powertrain_feasibility, and hsn_tsn_match_tier.
+    """
+    df = _make_minimal_df_spec(with_provenance=True)
+    for col in ("brand_source", "powertrain_feasibility", "hsn_tsn_match_tier"):
+        assert col in df.columns, (
+            f"v2 path must have '{col}'; found columns: {list(df.columns)}"
+        )
+    # Verify tier values are non-empty strings.
+    assert df["hsn_tsn_match_tier"].notna().all()
+    assert (df["hsn_tsn_match_tier"].str.len() > 0).all()

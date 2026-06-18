@@ -39,13 +39,23 @@ import time
 import urllib.request
 from pathlib import Path
 
-# The manufacturer list from the hsn-tsn.de landing page (as provided).
+# The manufacturer list. The first 36 are linked from the hsn-tsn.de landing
+# page; the remaining brands are NOT linked there but their pages exist directly
+# (probed HTTP 200), so they are fetched by slug too. Brands probed as 404 on the
+# site (DS, Bentley, Aston Martin, MG, Ferrari, McLaren, Rolls-Royce, GWM) are
+# intentionally absent -- the scraper logs a warning and skips a missing page.
 BRANDS = [
+    # --- linked on the landing page ---
     "Alfa Romeo", "Audi", "BMW", "Chrysler", "Citroen", "Dacia", "Daewoo",
     "Daihatsu", "Fiat", "Ford", "Honda", "Hyundai", "Isuzu", "Jaguar", "Kia",
     "Lada", "Lancia", "Mazda", "Mercedes-Benz", "Mitsubishi", "Nissan", "Opel",
     "Peugeot", "Porsche", "Renault", "Rover", "Saab", "Seat", "Skoda", "Smart",
     "Subaru", "Suzuki", "Talbot", "Toyota", "Volvo", "VW",
+    # --- unlinked but present (fetched by direct slug) ---
+    "Tesla", "Mini", "Jeep", "Lamborghini", "Land Rover", "Chevrolet", "Lexus",
+    "Maserati", "Ssangyong", "Polestar", "BYD", "Lynk-Co", "Infiniti", "Lotus",
+    "Dodge", "Iveco", "MAN", "Austin", "Cadillac", "Hummer", "Cupra", "Abarth",
+    "Alpine", "Genesis", "Nio", "Ineos",
 ]
 
 BASE_URL = "http://www.hsn-tsn.de/{slug}.html"

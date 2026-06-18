@@ -292,6 +292,11 @@ def configure(context):
     # fleet_model_brands (the matcher keys on brand/model); with brands off the
     # attach is skipped.
     context.config("fleet_hsn_tsn_attributes", True)
+    # Task 9: end-to-end consistency_v2 flag. When True (default) the v2 path in
+    # sample_fleet is active (sonstige redistribution + model-feasible powertrain
+    # mask + per-Kreis electric rake). When False the legacy path is used, which
+    # is byte-identical to the pre-plan output for every existing column.
+    context.config("fleet_consistency_v2", True)
     context.config("fleet_electric_calibration", "kreis_mix_gemeinde_bev_tilt")
     # Optional override for the KBA derived-CSV directory. Default None -> the
     # readers (braunschweig.data.kba.fleet_tables) resolve the tables under
@@ -313,6 +318,7 @@ def execute(context):
     fleet_model_enabled = bool(context.config("fleet_model_enabled"))
     model_brands = bool(context.config("fleet_model_brands"))
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
+    consistency_v2 = bool(context.config("fleet_consistency_v2"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -347,7 +353,7 @@ def execute(context):
     # Attach the full KBA/HBEFA spec to every household car (F4 chain).
     df_spec, df_vehicle_types = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
-        model_brands=model_brands)
+        model_brands=model_brands, consistency_v2=consistency_v2)
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the
@@ -361,8 +367,17 @@ def execute(context):
                 "fleet_model_brands=False -> brand/model are empty, skipping the "
                 "HSN/TSN attach (no engine attributes written).")
         else:
+            # Couple keep_tier to whether the consistency-v2 provenance ran.
+            # sample_fleet adds ``brand_source`` ONLY in the v2 path, so
+            # ``brand_source in df_spec.columns`` is True iff consistency_v2 was
+            # active.  The three provenance columns (brand_source,
+            # powertrain_feasibility, hsn_tsn_match_tier) must travel together:
+            # present on v2, absent on the OFF path so df_vehicles stays
+            # byte-identical for existing columns when consistency_v2=False.
+            keep_tier = "brand_source" in df_spec.columns
             df_spec = hsn_tsn.attach_hsn_tsn(
-                df_spec, data_path=fleet_data_path, keep_tier=False)
+                df_spec, data_path=fleet_data_path,
+                random_seed=random_seed, keep_tier=keep_tier)
 
     # The current vehicles writer consumes critair/technology/age/euro per
     # vehicle (synthesis.vehicles.vehicles + matsim.scenario.vehicles). The
