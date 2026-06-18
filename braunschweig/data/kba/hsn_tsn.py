@@ -26,13 +26,13 @@ the simulation.
 
 Brand canonicalisation
 ----------------------
-The HSN/TSN file uses 36 display brand names ("Alfa Romeo", "Mercedes-Benz",
+The HSN/TSN file uses 62 display brand names ("Alfa Romeo", "Mercedes-Benz",
 "VW", ...). The fleet ``brand`` column is the first whitespace token of the KBA
 Modellreihe string (so "VOLKSWAGEN"/"VW" -> ``VW``, "MERCEDES" -> the family
 "Mercedes-Benz", "ALFA" -> "Alfa Romeo"). :data:`FLEET_BRAND_TO_HSN_TSN` maps the
 fleet brand tokens onto the HSN/TSN display brands. Fleet marques absent from the
-HSN/TSN file (e.g. BYD, TESLA, MINI, JEEP) map to ``None`` and fall back to the
-brand-level / global median; the unmapped brands encountered are logged.
+HSN/TSN file (e.g. ASTON, BENTLEY, DS, FERRARI) map to ``None`` and fall back to
+the brand-level / global median; the unmapped brands encountered are logged.
 
 Model-family normalisation
 --------------------------
@@ -87,38 +87,60 @@ REQUIRED_COLUMNS = (
 )
 
 #: Fleet brand token (first token of the KBA Modellreihe, upper-case) -> the
-#: HSN/TSN display brand name. Built by inspecting BOTH label sets: the 36
+#: HSN/TSN display brand name. Built by inspecting BOTH label sets: the 62
 #: HSN/TSN display brands and the 62 fleet brand tokens. Fleet marques with no
 #: HSN/TSN counterpart are intentionally absent (they resolve to ``None`` ->
 #: brand/global fallback, logged). Two-word display brands ("Alfa Romeo",
-#: "Mercedes-Benz") are reached from the single fleet token ("ALFA",
-#: "MERCEDES").
+#: "Mercedes-Benz", "Land Rover") are reached from the single fleet token
+#: ("ALFA", "MERCEDES", "LAND").
 FLEET_BRAND_TO_HSN_TSN: dict[str, str] = {
+    "ABARTH": "Abarth",
     "ALFA": "Alfa Romeo",
+    "ALPINE": "Alpine",
     "AUDI": "Audi",
-    "AUSTIN": "Rover",          # Austin is part of the Rover/BMC lineage in KBA.
+    "AUSTIN": "Austin",         # "Austin" now present in 62-brand lookup; was "Rover".
     "BMW": "BMW",
-    "CHEVROLET": "Daewoo",      # Chevrolet Europe == rebadged Daewoo in KBA HSN/TSN.
+    "BYD": "BYD",
+    "CADILLAC": "Cadillac",
+    "CHEVROLET": "Daewoo",      # Fleet Chevrolet (Matiz/Spark/Aveo/Kalos/Cruze) == rebadged Daewoo in KBA.
     "CHRYSLER": "Chrysler",
     "CITROEN": "Citroen",
+    "CUPRA": "Cupra",
     "DACIA": "Dacia",
     "DAEWOO": "Daewoo",
     "DAIHATSU": "Daihatsu",
+    "DODGE": "Dodge",
     "FIAT": "Fiat",
     "FORD": "Ford",
+    "GENESIS": "Genesis",
     "HONDA": "Honda",
+    "HUMMER": "Hummer",
     "HYUNDAI": "Hyundai",
+    "INEOS": "Ineos",
+    "INFINITI": "Infiniti",
     "ISUZU": "Isuzu",
+    "IVECO": "Iveco",
     "JAGUAR": "Jaguar",
+    "JEEP": "Jeep",
     "KIA": "Kia",
     "LADA": "Lada",
+    "LAMBORGHINI": "Lamborghini",
     "LANCIA": "Lancia",
+    "LAND": "Land Rover",
+    "LEXUS": "Lexus",
+    "LOTUS": "Lotus",
+    "LYNK": "Lynk-Co",
+    "MAN": "MAN",
+    "MASERATI": "Maserati",
     "MAZDA": "Mazda",
     "MERCEDES": "Mercedes-Benz",
+    "MINI": "Mini",
     "MITSUBISHI": "Mitsubishi",
+    "NIO": "Nio",
     "NISSAN": "Nissan",
     "OPEL": "Opel",
     "PEUGEOT": "Peugeot",
+    "POLESTAR": "Polestar",
     "PORSCHE": "Porsche",
     "RENAULT": "Renault",
     "ROVER": "Rover",
@@ -126,9 +148,11 @@ FLEET_BRAND_TO_HSN_TSN: dict[str, str] = {
     "SEAT": "Seat",
     "SKODA": "Skoda",
     "SMART": "Smart",
+    "SSANGYONG": "Ssangyong",
     "SUBARU": "Subaru",
     "SUZUKI": "Suzuki",
     "TALBOT": "Talbot",
+    "TESLA": "Tesla",
     "TOYOTA": "Toyota",
     "VOLKSWAGEN": "VW",
     "VOLVO": "Volvo",

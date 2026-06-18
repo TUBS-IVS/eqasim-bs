@@ -268,7 +268,9 @@ def test_unmatched_brand_engines_not_all_identical(lookup):
 def test_segment_fuel_fallback_prefers_same_segment(lookup):
     # An unmapped exotic in 'gelaendewagen' petrol should draw an SUV-sized
     # engine pool, i.e. median kW above the global petrol median.
-    df_glob = pd.DataFrame({"brand": ["LAMBORGHINI"], "model": ["LAMBORGHINI URUS"],
+    # Since LAMBORGHINI is now mapped to the lookup (brand tier), we use FERRARI
+    # which has no HSN/TSN counterpart and must fall through to the segment tier.
+    df_glob = pd.DataFrame({"brand": ["FERRARI"], "model": ["FERRARI 296"],
                             "powertrain": ["petrol"], "segment": ["gelaendewagen"]})
     out = hsn_tsn.attach_hsn_tsn(df_glob, lookup=lookup, random_seed=3)
     assert out["hsn_tsn_match_tier"].iloc[0] == "segment"
@@ -279,15 +281,66 @@ def test_segment_fuel_fallback_prefers_same_segment(lookup):
 # Task 4: brand coverage lift + model_family normalisation improvements
 # --------------------------------------------------------------------------- #
 def test_extended_brand_map_covers_top_unmapped():
-    """All brief example tokens (TESLA, CUPRA, MINI, JEEP, LAND) were verified
-    against the 36-brand HSN/TSN lookup and have NO counterpart there.
-    They must stay unmapped (canonical_brand returns None) — falling to the
-    global/segment fallback is the CORRECT behaviour for these marques.
-    CUPRA is not even a fleet brand token (no KBA Modellreihe starts with it).
+    """Fleet tokens without any HSN/TSN counterpart (exotic/niche/non-automotive)
+    must stay unmapped so they fall to the global/segment fallback.
+
+    ASTON (Martin), BENTLEY, FERRARI, GWM, MG, MORGAN, DS, and the catch-all
+    SONSTIGE have no matching brand in the 62-brand HSN/TSN lookup.
     """
-    for token in ["TESLA", "CUPRA", "MINI", "JEEP", "LAND"]:
+    for token in ["ASTON", "BENTLEY", "FERRARI", "GWM", "MG", "MORGAN", "DS", "SONSTIGE"]:
         assert hsn_tsn.canonical_brand(token) is None, (
             f"{token} should stay unmapped (no HSN/TSN counterpart)"
+        )
+
+
+def test_new_brands_canonicalise():
+    """26 newly-scraped brands now present in the 62-brand HSN/TSN lookup CSV
+    must be reachable via canonical_brand.  Each assertion verifies both the
+    fleet-token -> display-brand mapping AND that the display brand actually
+    exists in the lookup CSV (so a typo here would be caught by the data test).
+    """
+    # Load the lookup brand set for the in-lookup assertion.
+    import pandas as pd
+    lookup_csv = DATA / "braunschweig" / "kba" / "hsn_tsn_lookup.csv"
+    lookup_brands = set(pd.read_csv(lookup_csv)["brand"].unique())
+
+    expected = {
+        "TESLA": "Tesla",
+        "MINI": "Mini",
+        "JEEP": "Jeep",
+        "LAMBORGHINI": "Lamborghini",
+        "LAND": "Land Rover",
+        "LEXUS": "Lexus",
+        "MASERATI": "Maserati",
+        "SSANGYONG": "Ssangyong",
+        "POLESTAR": "Polestar",
+        "BYD": "BYD",
+        "LYNK": "Lynk-Co",
+        "INFINITI": "Infiniti",
+        "LOTUS": "Lotus",
+        "DODGE": "Dodge",
+        "IVECO": "Iveco",
+        "MAN": "MAN",
+        "CADILLAC": "Cadillac",
+        "HUMMER": "Hummer",
+        "CUPRA": "Cupra",
+        "ABARTH": "Abarth",
+        "ALPINE": "Alpine",
+        "GENESIS": "Genesis",
+        "NIO": "Nio",
+        "INEOS": "Ineos",
+        # AUSTIN remapped: was "Rover", now "Austin" (direct entry in 62-brand lookup).
+        "AUSTIN": "Austin",
+    }
+
+    for token, display in sorted(expected.items()):
+        result = hsn_tsn.canonical_brand(token)
+        assert result == display, (
+            f"canonical_brand({token!r}) == {result!r}, expected {display!r}"
+        )
+        assert display in lookup_brands, (
+            f"Display brand {display!r} (for token {token!r}) not found in "
+            f"hsn_tsn_lookup.csv — typo or CSV not updated?"
         )
 
 
