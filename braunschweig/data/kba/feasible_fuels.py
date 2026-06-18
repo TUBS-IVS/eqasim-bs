@@ -100,9 +100,16 @@ class FeasibleFuels:
     ``None`` when the model is unknown (no HSN/TSN rows for that brand+family).
     """
 
-    def __init__(self, family_powertrains: dict[tuple[str, str], frozenset[str]]):
+    def __init__(
+        self,
+        family_powertrains: dict[tuple[str, str], frozenset[str]],
+        brand_powertrains: dict[str, frozenset[str]],
+    ):
         #: (canonical_brand, family) -> frozenset of feasible powertrain labels.
         self._family_powertrains = family_powertrains
+        #: canonical_brand -> frozenset of ALL feasible powertrains for that brand
+        #: (union across every HSN/TSN family row for that brand).
+        self._brand_powertrains = brand_powertrains
 
     # -- construction --------------------------------------------------------
     @classmethod
@@ -133,6 +140,7 @@ class FeasibleFuels:
             )
 
         family_powertrains: dict[tuple[str, str], set[str]] = {}
+        brand_powertrains: dict[str, set[str]] = {}
         unmapped_fuels: set[str] = set()
         for brand, model, fuel in zip(df["brand"], df["model"], df["fuel"]):
             brand_s = str(brand)
@@ -144,6 +152,7 @@ class FeasibleFuels:
                 unmapped_fuels.add(str(fuel))
                 continue
             family_powertrains.setdefault((brand_s, family), set()).add(powertrain)
+            brand_powertrains.setdefault(brand_s, set()).add(powertrain)
 
         if unmapped_fuels:
             logger.warning(
@@ -155,12 +164,14 @@ class FeasibleFuels:
                 len(unmapped_fuels), ", ".join(sorted(unmapped_fuels)),
             )
 
-        frozen = {k: frozenset(v) for k, v in family_powertrains.items()}
+        frozen_family = {k: frozenset(v) for k, v in family_powertrains.items()}
+        frozen_brand = {b: frozenset(v) for b, v in brand_powertrains.items()}
         logger.info(
             "[feasible_fuels] built feasibility for %d (brand, family) keys "
-            "from HSN/TSN lookup.", len(frozen),
+            "and %d brand-level keys from HSN/TSN lookup.",
+            len(frozen_family), len(frozen_brand),
         )
-        return cls(frozen)
+        return cls(frozen_family, frozen_brand)
 
     # -- query ---------------------------------------------------------------
     def model_feasible_powertrains(
@@ -176,14 +187,35 @@ class FeasibleFuels:
         :func:`braunschweig.data.kba.hsn_tsn.model_family`).
 
         Returns the SET of canonical powertrains that ``(brand, family)`` can
-        carry per the HSN/TSN lookup, or ``None`` when the brand has no HSN/TSN
-        counterpart or the family has no rows for that brand (unknown -> caller
-        keeps the unmasked pmf).
+        carry per the HSN/TSN lookup, or ``None`` when the brand is truly
+        unknown (no HSN/TSN rows at all; caller keeps the unmasked pmf).
+
+        Resolution order
+        ----------------
+        1. ``(canonical_brand, family)`` hit  — tightest, family-specific set.
+        2. ``canonical_brand`` hit  — union across ALL families of that brand.
+           Constrains single-fuel exotics (Lamborghini -> {petrol}, Tesla ->
+           {bev}) and is harmlessly permissive for multi-fuel brands (VW ->
+           {petrol, diesel, bev, ...}).
+        3. ``None`` — brand not in HSN/TSN at all; caller keeps unmasked pmf.
         """
         cb = canonical_brand(brand)
         if cb is None or not family:
             return None
+
+        # Tier 1 — (brand, family) exact hit
         feasible = self._family_powertrains.get((cb, str(family)))
-        if feasible is None:
-            return None
-        return set(feasible)
+        if feasible is not None:
+            return set(feasible)
+
+        # Tier 2 — brand-level fallback (new)
+        brand_feasible = self._brand_powertrains.get(cb)
+        if brand_feasible is not None:
+            logger.debug(
+                "[feasible_fuels] brand-level fallback for (%s, %s) -> %s",
+                cb, family, brand_feasible,
+            )
+            return set(brand_feasible)
+
+        # Tier 3 — truly unknown brand
+        return None
