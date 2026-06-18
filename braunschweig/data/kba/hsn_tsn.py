@@ -102,7 +102,7 @@ FLEET_BRAND_TO_HSN_TSN: dict[str, str] = {
     "BMW": "BMW",
     "BYD": "BYD",
     "CADILLAC": "Cadillac",
-    "CHEVROLET": "Daewoo",      # Fleet Chevrolet (Matiz/Spark/Aveo/Kalos/Cruze) == rebadged Daewoo in KBA.
+    "CHEVROLET": "Chevrolet",   # Fleet Chevrolet (Spark, Matiz, Aveo, Captiva, Cruze, Orlando, Corvette, Trax, Kalos, Camaro, Nubira, Lacetti, Epica, Rezzo) in KBA lookup.
     "CHRYSLER": "Chrysler",
     "CITROEN": "Citroen",
     "CUPRA": "Cupra",

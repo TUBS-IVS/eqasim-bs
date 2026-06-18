@@ -331,6 +331,8 @@ def test_new_brands_canonicalise():
         "INEOS": "Ineos",
         # AUSTIN remapped: was "Rover", now "Austin" (direct entry in 62-brand lookup).
         "AUSTIN": "Austin",
+        # CHEVROLET: all KBA Chevrolet models (Spark, Matiz, Aveo, Captiva, Cruze, Orlando, Corvette, Trax, Kalos, Camaro, Nubira, Lacetti, Epica, Rezzo) in lookup.
+        "CHEVROLET": "Chevrolet",
     }
 
     for token, display in sorted(expected.items()):
