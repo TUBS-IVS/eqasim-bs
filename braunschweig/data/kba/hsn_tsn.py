@@ -69,6 +69,11 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+# Relative path of the KBA segment-model CSV inside the synpp ``data_path``.
+KBA_SEGMENT_MODEL_RELATIVE_PATH = os.path.join(
+    "braunschweig", "kba", "derived", "kba_segment_model.csv"
+)
+
 logger = logging.getLogger(__name__)
 
 #: Relative path of the HSN/TSN lookup CSV inside the synpp ``data_path``.
@@ -333,6 +338,8 @@ class HsnTsnLookup:
         (the EXACT tier, when the powertrain fuel group is known and present);
       * ``brand_model_records``      -- (brand, family) -> record (MODEL tier);
       * ``brand_records``            -- brand -> median record (BRAND tier);
+      * ``segment_fuel_pools``       -- (segment, fuel group) -> pool (SEGMENT tier,
+        Task 3: between brand and global; requires segment kwarg to lookup/attach);
       * ``global_record``            -- global median over all variants.
     """
 
@@ -350,13 +357,23 @@ class HsnTsnLookup:
     global_fuel_pools: dict[str, VariantPool] = field(default_factory=dict)
     brand_pools: dict[str, VariantPool] = field(default_factory=dict)
     global_pool: Optional[VariantPool] = field(default=None)
+    # Task 3: segment-conditioned engine pool, keyed by (segment, fuel_group).
+    # Populated when from_data_path is called (kba_segment_model.csv available).
+    # Empty dict when only from_frame is used (e.g. in unit tests without data_path).
+    segment_fuel_pools: dict[tuple[str, str], VariantPool] = field(default_factory=dict)
     # Diagnostic counters (no-silent-fallback rule).
     _tier_counts: Counter = field(default_factory=Counter)
     _unmapped_brands: Counter = field(default_factory=Counter)
 
     @classmethod
     def from_data_path(cls, data_path: str) -> "HsnTsnLookup":
-        """Build the lookup from ``<data_path>/braunschweig/kba/hsn_tsn_lookup.csv``."""
+        """Build the lookup from ``<data_path>/braunschweig/kba/hsn_tsn_lookup.csv``.
+
+        Also loads ``kba_segment_model.csv`` (when present) to build
+        segment-conditioned engine pools (Task 3: segment tier between brand
+        and global). The segment tagging is opportunistic; a missing
+        kba_segment_model.csv only suppresses the segment tier.
+        """
         path = os.path.join(data_path, HSN_TSN_RELATIVE_PATH)
         if not os.path.exists(path):
             raise FileNotFoundError(
@@ -370,11 +387,59 @@ class HsnTsnLookup:
                 f"{path}: missing columns {sorted(missing)} (have "
                 f"{sorted(df.columns)}) -- schema drift; re-run scrape_hsn_tsn.py."
             )
-        return cls.from_frame(df)
+
+        # Task 3: build (canonical_brand, family) -> segment map from
+        # kba_segment_model.csv so we can tag every HSN/TSN variant row with a
+        # KBA segment and build segment-conditioned variant pools.
+        family_to_segment: dict[tuple[str, str], str] = {}
+        seg_model_path = os.path.join(data_path, KBA_SEGMENT_MODEL_RELATIVE_PATH)
+        if os.path.exists(seg_model_path):
+            try:
+                df_seg = pd.read_csv(seg_model_path, comment="#")
+                for _, row in df_seg.iterrows():
+                    seg_model_str = str(row["model"])
+                    segment = str(row["segment"])
+                    brand_token = seg_model_str.split(" ", 1)[0].upper()
+                    cb = canonical_brand(brand_token)
+                    if cb is None:
+                        continue
+                    fam = model_family(cb, seg_model_str)
+                    if fam:
+                        family_to_segment[(cb, fam)] = segment
+                logger.debug(
+                    "[hsn_tsn] built family->segment map: %d entries from %s",
+                    len(family_to_segment), seg_model_path,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[hsn_tsn] could not load kba_segment_model.csv for segment "
+                    "tagging (segment tier will be skipped): %s", exc,
+                )
+        else:
+            logger.debug(
+                "[hsn_tsn] kba_segment_model.csv not found at %s; "
+                "segment tier disabled.", seg_model_path,
+            )
+
+        return cls.from_frame(df, family_to_segment=family_to_segment)
 
     @classmethod
-    def from_frame(cls, df: pd.DataFrame) -> "HsnTsnLookup":
-        """Build the lookup from an in-memory HSN/TSN frame (used by tests)."""
+    def from_frame(
+        cls,
+        df: pd.DataFrame,
+        family_to_segment: Optional[dict[tuple[str, str], str]] = None,
+    ) -> "HsnTsnLookup":
+        """Build the lookup from an in-memory HSN/TSN frame (used by tests).
+
+        Parameters
+        ----------
+        df : HSN/TSN variant frame (columns: brand, hsn, tsn, model, power_ps,
+            power_kw, displacement_ccm, fuel).
+        family_to_segment : optional ``(canonical_brand, family) -> segment`` map
+            built from ``kba_segment_model.csv`` in :meth:`from_data_path`. When
+            ``None`` (tests / callers without data_path) the segment tier is
+            silently disabled (``segment_fuel_pools`` stays empty).
+        """
         df = df.copy()
         df["hsn"] = df["hsn"].astype(str)
         df["tsn"] = df["tsn"].astype(str)
@@ -416,6 +481,31 @@ class HsnTsnLookup:
         global_pool = VariantPool.from_group(
             df, str(df["fuel"].mode().iloc[0]) if len(df) else "")
 
+        # Task 3: build segment-conditioned variant pools when the
+        # family_to_segment map was provided (from_data_path path).
+        # Tag each HSN/TSN row with its KBA segment via the (brand, family) key.
+        segment_fuel_pools: dict[tuple[str, str], VariantPool] = {}
+        if family_to_segment:
+            df["_segment"] = [
+                family_to_segment.get((str(b), str(f)), "")
+                for b, f in zip(df["brand"], df["_family"])
+            ]
+            tagged = df[df["_segment"] != ""]
+            n_tagged = len(tagged)
+            n_pools = 0
+            for (segment, fuel), seg_fuel_group in tagged.groupby(["_segment", "fuel"]):
+                if len(seg_fuel_group) == 0:
+                    continue
+                segment_fuel_pools[(str(segment), str(fuel))] = VariantPool.from_group(
+                    seg_fuel_group, str(fuel)
+                )
+                n_pools += 1
+            logger.debug(
+                "[hsn_tsn] segment pools: %d HSN/TSN rows tagged, %d "
+                "(segment, fuel) pools built",
+                n_tagged, n_pools,
+            )
+
         return cls(
             brand_model_fuel_records=brand_model_fuel,
             brand_model_records=brand_model,
@@ -427,24 +517,41 @@ class HsnTsnLookup:
             global_fuel_pools=global_fuel_pools,
             brand_pools=brand_pools,
             global_pool=global_pool,
+            segment_fuel_pools=segment_fuel_pools,
         )
 
     def lookup(self, fleet_brand: str, family: str,
-               powertrain: Optional[str] = None) -> tuple[EngineRecord, str]:
-        """Resolve (fleet brand, model family, powertrain) -> (record, tier).
+               powertrain: Optional[str] = None,
+               segment: Optional[str] = None) -> tuple[EngineRecord, str]:
+        """Resolve (fleet brand, model family, powertrain[, segment]) -> (record, tier).
 
         Tier order: exact (brand+family+fuel group) -> model (brand+family) ->
-        brand (brand median) -> global (global median). The fuel group is the
-        dominant HSN/TSN fuel string for the powertrain; an exact-tier hit
-        additionally requires that fuel group to be present for the model family,
-        else the match drops to the model tier (so a model with no electric
-        variant in the HSN/TSN file still gets its combustion median).
+        brand (brand median) -> segment (segment+fuel pool, Task 3) ->
+        global (global median). The fuel group is the dominant HSN/TSN fuel
+        string for the powertrain; an exact-tier hit additionally requires that
+        fuel group to be present for the model family, else the match drops to
+        the model tier (so a model with no electric variant in the HSN/TSN file
+        still gets its combustion median).
+
+        The ``segment`` parameter enables the SEGMENT tier (between brand and
+        global): when given and ``segment_fuel_pools`` contains an entry for
+        ``(segment, fuel_group)``, that pool is used. Pass ``None`` (default)
+        to skip the segment tier entirely (OFF-safe for callers without segment
+        data and for from_frame-built lookups without segment pools).
         """
         brand = canonical_brand(fleet_brand)
         fuel_group = powertrain_to_fuel_group(powertrain)
         if brand is None:
             if fleet_brand:
                 self._unmapped_brands[str(fleet_brand)] += 1
+            # No brand match: try segment tier first, then global.
+            if segment is not None and fuel_group is not None and self.segment_fuel_pools:
+                pool = self.segment_fuel_pools.get((str(segment), fuel_group))
+                if pool is not None:
+                    self._tier_counts["segment"] += 1
+                    # Return global_record as a placeholder; attach_hsn_tsn
+                    # detects tier=="segment" and draws from the pool directly.
+                    return self.global_record, "segment"
             self._tier_counts["global"] += 1
             if fuel_group is not None:
                 rec = self.global_fuel_records.get(fuel_group)
@@ -473,6 +580,17 @@ class HsnTsnLookup:
         if rec is not None:
             self._tier_counts["brand"] += 1
             return rec, "brand"
+
+        # SEGMENT tier (Task 3): between brand and global.
+        # Only active when the caller passes a segment AND segment_fuel_pools
+        # are populated (i.e. from_data_path with kba_segment_model.csv).
+        if segment is not None and fuel_group is not None and self.segment_fuel_pools:
+            pool = self.segment_fuel_pools.get((str(segment), fuel_group))
+            if pool is not None:
+                self._tier_counts["segment"] += 1
+                # Return global_record as a placeholder; attach_hsn_tsn detects
+                # tier=="segment" and draws from the pool directly.
+                return self.global_record, "segment"
 
         # GLOBAL tier, fuel-conditioned first.
         if fuel_group is not None:
@@ -512,6 +630,22 @@ class HsnTsnLookup:
                 return pool
         return self.global_pool
 
+    def get_segment_pool(self, segment: str,
+                         powertrain: Optional[str] = None) -> Optional[VariantPool]:
+        """Return the segment-conditioned variant pool for a segment/fuel combo.
+
+        Used by :func:`attach_hsn_tsn` when tier is ``"segment"`` so that
+        each vehicle draws a varied engine from the matching segment+fuel pool.
+        Returns ``None`` when the segment tier is not populated or the
+        (segment, fuel_group) pair is absent.
+        """
+        if not self.segment_fuel_pools:
+            return None
+        fuel_group = powertrain_to_fuel_group(powertrain)
+        if fuel_group is None:
+            return None
+        return self.segment_fuel_pools.get((str(segment), fuel_group))
+
     def log_tier_rates(self) -> None:
         """Log the per-tier match rates (no-silent-fallback rule).
 
@@ -547,7 +681,7 @@ class HsnTsnLookup:
             )
 
 
-_POOLED_TIERS = frozenset({"brand", "global"})
+_POOLED_TIERS = frozenset({"brand", "global", "segment"})
 
 
 def attach_hsn_tsn(df_vehicles: pd.DataFrame,
@@ -602,6 +736,13 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
             raise ValueError("attach_hsn_tsn: provide either data_path or lookup")
         lookup = HsnTsnLookup.from_data_path(data_path)
 
+    # Task 3: read the "segment" column when present; None otherwise so the
+    # segment tier is skipped (OFF-safe for callers without segment data).
+    has_segment = "segment" in df_vehicles.columns
+    segment_values: list[Optional[str]] = (
+        df_vehicles["segment"].tolist() if has_segment else [None] * len(df_vehicles)
+    )
+
     rng = np.random.default_rng(random_seed)
 
     n = len(df_vehicles)
@@ -614,17 +755,21 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     tier = [""] * n
 
     # Cache is ONLY for exact/model tiers (deterministic medians). Pooled tiers
-    # (brand/global) are drawn per-vehicle from the variant pool and must NOT be
-    # cached (each draw must use the rng so different vehicles get different
+    # (brand/global/segment) are drawn per-vehicle from the variant pool and must
+    # NOT be cached (each draw must use the rng so different vehicles get different
     # engines).
-    cache: dict[tuple[str, str, str], tuple[EngineRecord, str]] = {}
+    cache: dict[tuple[str, str, str, str], tuple[EngineRecord, str]] = {}
     records = df_vehicles[["brand", "model", "powertrain"]].to_dict(orient="records")
     for i, row in enumerate(records):
         brand = row["brand"]
         model = row["model"]
         powertrain = row["powertrain"]
+        seg = segment_values[i]
+        seg_str = str(seg) if seg is not None and not (
+            isinstance(seg, float) and np.isnan(seg)) else None
         family = model_family(canonical_brand(brand) or "", model)
-        key = (str(brand), str(family), str(powertrain))
+        # Include segment in cache key so different segments don't share a cache entry.
+        key = (str(brand), str(family), str(powertrain), str(seg_str))
 
         cached = cache.get(key)
         if cached is not None:
@@ -635,11 +780,15 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
                 cached = None
 
         if cached is None:
-            rec_raw, vehicle_tier = lookup.lookup(brand, family, powertrain)
+            rec_raw, vehicle_tier = lookup.lookup(brand, family, powertrain,
+                                                  segment=seg_str)
             if vehicle_tier in _POOLED_TIERS:
                 # Pool draw: per-vehicle random engine from the matched variant
                 # distribution. Never cached so every vehicle gets an independent draw.
-                pool = lookup.get_pool(brand, powertrain)
+                if vehicle_tier == "segment" and seg_str is not None:
+                    pool = lookup.get_segment_pool(seg_str, powertrain)
+                else:
+                    pool = lookup.get_pool(brand, powertrain)
                 if pool is not None and len(pool.power_kw) > 0:
                     rec = _draw_record(pool, rng)
                 else:
@@ -692,15 +841,17 @@ def _log_tier_rates_from_column(tier: list[str], unmapped: Counter) -> None:
     exact = counts.get("exact", 0)
     model = counts.get("model", 0)
     brand = counts.get("brand", 0)
+    segment = counts.get("segment", 0)
     glob = counts.get("global", 0)
     exact_model_rate = (exact + model) / total
     emit = logger.warning if exact_model_rate < 0.5 else logger.info
     emit(
         "[hsn_tsn] match tier rates over %d vehicles: exact %d (%.1f%%), "
-        "model %d (%.1f%%), brand %d (%.1f%%), global %d (%.1f%%); "
-        "exact+model %.1f%%",
+        "model %d (%.1f%%), brand %d (%.1f%%), segment %d (%.1f%%), "
+        "global %d (%.1f%%); exact+model %.1f%%",
         total, exact, 100.0 * exact / total, model, 100.0 * model / total,
-        brand, 100.0 * brand / total, glob, 100.0 * glob / total,
+        brand, 100.0 * brand / total, segment, 100.0 * segment / total,
+        glob, 100.0 * glob / total,
         100.0 * exact_model_rate,
     )
     if unmapped:

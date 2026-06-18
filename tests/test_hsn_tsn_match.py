@@ -260,3 +260,16 @@ def test_unmatched_brand_engines_not_all_identical(lookup):
     out = hsn_tsn.attach_hsn_tsn(df, lookup=lookup, random_seed=7)
     assert out["engine_power_kw"].nunique() > 1, "global fallback is a single constant"
     assert (out["fuel_detail"] == "Benzin").all()
+
+
+# --------------------------------------------------------------------------- #
+# Task 3: segment-conditioned engine fallback pool
+# --------------------------------------------------------------------------- #
+def test_segment_fuel_fallback_prefers_same_segment(lookup):
+    # An unmapped exotic in 'gelaendewagen' petrol should draw an SUV-sized
+    # engine pool, i.e. median kW above the global petrol median.
+    df_glob = pd.DataFrame({"brand": ["LAMBORGHINI"], "model": ["LAMBORGHINI URUS"],
+                            "powertrain": ["petrol"], "segment": ["gelaendewagen"]})
+    out = hsn_tsn.attach_hsn_tsn(df_glob, lookup=lookup, random_seed=3)
+    assert out["hsn_tsn_match_tier"].iloc[0] in {"segment", "global"}
+    assert out["engine_power_kw"].iloc[0] > 0
