@@ -273,3 +273,51 @@ def test_segment_fuel_fallback_prefers_same_segment(lookup):
     out = hsn_tsn.attach_hsn_tsn(df_glob, lookup=lookup, random_seed=3)
     assert out["hsn_tsn_match_tier"].iloc[0] == "segment"
     assert out["engine_power_kw"].iloc[0] > 0
+
+
+# --------------------------------------------------------------------------- #
+# Task 4: brand coverage lift + model_family normalisation improvements
+# --------------------------------------------------------------------------- #
+def test_extended_brand_map_covers_top_unmapped():
+    """All brief example tokens (TESLA, CUPRA, MINI, JEEP, LAND) were verified
+    against the 36-brand HSN/TSN lookup and have NO counterpart there.
+    They must stay unmapped (canonical_brand returns None) — falling to the
+    global/segment fallback is the CORRECT behaviour for these marques.
+    CUPRA is not even a fleet brand token (no KBA Modellreihe starts with it).
+    """
+    for token in ["TESLA", "CUPRA", "MINI", "JEEP", "LAND"]:
+        assert hsn_tsn.canonical_brand(token) is None, (
+            f"{token} should stay unmapped (no HSN/TSN counterpart)"
+        )
+
+
+def test_model_family_strips_trailing_comma():
+    """Comma-separated KBA model strings (e.g. 'MERCEDES GLK, GLC') produce
+    a trailing-comma first token ('glk,'); the comma must be stripped so the
+    family matches the lookup key ('glk').
+    """
+    # Fleet side: comma-separated multi-model entries
+    assert hsn_tsn.model_family("Mercedes-Benz", "MERCEDES GLK, GLC") == "glk"
+    # ML-KLASSE -> the -klasse suffix is stripped further to "ml" (matches lookup "ml")
+    assert hsn_tsn.model_family("Mercedes-Benz", "MERCEDES ML-KLASSE, GLE") == "ml"
+    assert hsn_tsn.model_family("Mitsubishi", "MITSUBISHI MIRAGE, SPACE STAR") == "mirage"
+    assert hsn_tsn.model_family("Ford", "FORD TRANSIT, TOURNEO") == "transit"
+
+
+def test_model_family_strips_exclamation_suffix():
+    """HSN/TSN lookup stores VW 'Up!' with an exclamation mark; the KBA fleet
+    model is 'VW UP' (no '!'). The normaliser must strip trailing '!' so both
+    sides agree on the family 'up'.
+    """
+    # Lookup side: 'VW Up! 1.0' -> family should be 'up' (not 'up!')
+    assert hsn_tsn.model_family("VW", "VW Up! 1.0") == "up"
+    # Fleet side: already 'up' (no change needed)
+    assert hsn_tsn.model_family("VW", "VW UP") == "up"
+
+
+def test_vw_up_resolves_to_model_tier(lookup):
+    """After the '!' normalisation fix, VW UP must resolve at model tier
+    (not fall to brand tier as before).
+    """
+    rec, tier = lookup.lookup("VW", "up", "petrol")
+    assert tier in {"exact", "model"}, f"VW UP fell to {tier} tier (expected model/exact)"

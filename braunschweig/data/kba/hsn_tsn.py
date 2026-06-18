@@ -223,13 +223,30 @@ def _strip_generation_suffix(token: str) -> str:
         single-letter class), via an explicit ``-klasse`` strip;
       * Opel/VW generation suffixes ``"corsa-d"`` / ``"astra-k"`` /
         ``"ascona-c"`` (HSN/TSN) -> ``"corsa"`` / ``"astra"`` / ``"ascona"``, so
-        they match the suffix-less KBA family ``"corsa"`` / ``"astra"``.
+        they match the suffix-less KBA family ``"corsa"`` / ``"astra"``;
+      * Trailing comma from KBA comma-separated multi-model strings
+        (``"glk,"`` -> ``"glk"``, ``"mirage,"`` -> ``"mirage"``): the KBA
+        Modellreihe sometimes lists two successor models as ``"MERCEDES GLK,
+        GLC"``; the first token carries a trailing comma that must be stripped
+        so it matches the single-model lookup key ``"glk"``;
+      * Trailing exclamation mark from HSN/TSN brand quirks (``"up!"`` ->
+        ``"up"``): VW's city car is stored as ``"VW Up! 1.0"`` in the HSN/TSN
+        file but the KBA Modellreihe uses ``"VW UP"`` (no ``!``); stripping the
+        ``!`` makes both sides agree on ``"up"``.
 
     The generation strip fires ONLY when the suffix is a short trailing
     ``-<1-2 chars>`` AND the stem before it is at least three characters, so
     genuine hyphenated names with a short STEM are preserved (``"c-max"``,
     ``"b-max"``, ``"gt-r"``, ``"e-tron"`` keep their hyphen).
     """
+    if not token:
+        return ""
+    # Strip trailing comma (comma-separated multi-model KBA strings).
+    if token.endswith(","):
+        token = token[:-1]
+    # Strip trailing exclamation mark (e.g. HSN/TSN "up!" -> "up").
+    if token.endswith("!"):
+        token = token[:-1]
     if not token:
         return ""
     if token.endswith("-klasse"):
