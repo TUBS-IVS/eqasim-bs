@@ -269,6 +269,44 @@ class EngineRecord:
         }
 
 
+@dataclass(frozen=True)
+class VariantPool:
+    """A pool of HSN/TSN variant rows for a fallback tier (brand or global).
+
+    Holds parallel numpy arrays for a uniform-random draw; the fuel_detail is
+    the authoritative HSN/TSN fuel-group string for this pool (already
+    fuel-conditioned by how the pool is constructed). The arrays may contain
+    many rows; drawing a random index each time ensures unmatched cars are NOT
+    all assigned one identical engine fingerprint.
+    """
+
+    power_kw: np.ndarray
+    power_ps: np.ndarray
+    displacement: np.ndarray
+    fuel_detail: str       # authoritative fuel string for this pool (already fuel-filtered)
+    hsn: np.ndarray
+    tsn: np.ndarray
+
+    @classmethod
+    def from_group(cls, group: pd.DataFrame, fuel_detail: str) -> "VariantPool":
+        """Build a pool from a subset of the HSN/TSN frame."""
+        return cls(
+            power_kw=group["power_kw"].to_numpy(dtype=float),
+            power_ps=group["power_ps"].to_numpy(dtype=float),
+            displacement=group["displacement_ccm"].to_numpy(dtype=float),
+            fuel_detail=fuel_detail,
+            hsn=group["hsn"].to_numpy(dtype=str),
+            tsn=group["tsn"].to_numpy(dtype=str),
+        )
+
+
+def _draw_record(pool: VariantPool, rng: np.random.Generator) -> EngineRecord:
+    """Draw one variant uniformly from a pool (deterministic via rng)."""
+    i = int(rng.integers(len(pool.power_kw)))
+    return EngineRecord(pool.power_kw[i], pool.power_ps[i], pool.displacement[i],
+                        pool.fuel_detail, pool.hsn[i], pool.tsn[i])
+
+
 def _aggregate(group: pd.DataFrame) -> EngineRecord:
     """Collapse the HSN/TSN rows of one match key to a representative record.
 
@@ -304,6 +342,14 @@ class HsnTsnLookup:
     global_record: EngineRecord
     brand_fuel_records: dict[tuple[str, str], EngineRecord] = field(default_factory=dict)
     global_fuel_records: dict[str, EngineRecord] = field(default_factory=dict)
+    # Variant pools for the pooled fallback tiers (brand/global) — used by
+    # attach_hsn_tsn to draw a per-vehicle engine rather than returning one
+    # identical median for every unmatched car (Bug 1 fix). Keyed by
+    # (brand, fuel_group) and fuel_group respectively (mirroring the median dicts).
+    brand_fuel_pools: dict[tuple[str, str], VariantPool] = field(default_factory=dict)
+    global_fuel_pools: dict[str, VariantPool] = field(default_factory=dict)
+    brand_pools: dict[str, VariantPool] = field(default_factory=dict)
+    global_pool: Optional[VariantPool] = field(default=None)
     # Diagnostic counters (no-silent-fallback rule).
     _tier_counts: Counter = field(default_factory=Counter)
     _unmapped_brands: Counter = field(default_factory=Counter)
@@ -353,13 +399,22 @@ class HsnTsnLookup:
         global_record = _aggregate(df)
 
         brand_fuel: dict[tuple[str, str], EngineRecord] = {}
+        brand_fuel_pools: dict[tuple[str, str], VariantPool] = {}
+        brand_pools: dict[str, VariantPool] = {}
         for brand, brand_group in df.groupby("brand"):
+            brand_pools[str(brand)] = VariantPool.from_group(
+                brand_group, str(brand_group["fuel"].mode().iloc[0]) if len(brand_group) else "")
             for fuel, fuel_group in brand_group.groupby("fuel"):
                 brand_fuel[(str(brand), str(fuel))] = _aggregate(fuel_group)
-        global_fuel: dict[str, EngineRecord] = {
-            str(fuel): _aggregate(fuel_group)
-            for fuel, fuel_group in df.groupby("fuel")
-        }
+                brand_fuel_pools[(str(brand), str(fuel))] = VariantPool.from_group(
+                    fuel_group, str(fuel))
+        global_fuel: dict[str, EngineRecord] = {}
+        global_fuel_pools: dict[str, VariantPool] = {}
+        for fuel, fuel_group in df.groupby("fuel"):
+            global_fuel[str(fuel)] = _aggregate(fuel_group)
+            global_fuel_pools[str(fuel)] = VariantPool.from_group(fuel_group, str(fuel))
+        global_pool = VariantPool.from_group(
+            df, str(df["fuel"].mode().iloc[0]) if len(df) else "")
 
         return cls(
             brand_model_fuel_records=brand_model_fuel,
@@ -368,6 +423,10 @@ class HsnTsnLookup:
             global_record=global_record,
             brand_fuel_records=brand_fuel,
             global_fuel_records=global_fuel,
+            brand_fuel_pools=brand_fuel_pools,
+            global_fuel_pools=global_fuel_pools,
+            brand_pools=brand_pools,
+            global_pool=global_pool,
         )
 
     def lookup(self, fleet_brand: str, family: str,
@@ -424,6 +483,35 @@ class HsnTsnLookup:
         self._tier_counts["global"] += 1
         return self.global_record, "global"
 
+    def get_pool(self, fleet_brand: str,
+                 powertrain: Optional[str] = None) -> Optional[VariantPool]:
+        """Return the best-matching variant pool for a brand/global fallback.
+
+        Used by :func:`attach_hsn_tsn` for the pooled tiers (brand/global) so
+        that the drawn engine varies per vehicle rather than being a single
+        constant median. Returns ``None`` when the pool dicts are empty (e.g.
+        a lookup built before Task 2; callers fall back to the median record).
+        """
+        brand = canonical_brand(fleet_brand)
+        fuel_group = powertrain_to_fuel_group(powertrain)
+        if brand is not None and fuel_group is not None:
+            pool = self.brand_fuel_pools.get((brand, fuel_group))
+            if pool is not None:
+                return pool
+            pool = self.brand_pools.get(brand)
+            if pool is not None:
+                return pool
+        elif brand is not None:
+            pool = self.brand_pools.get(brand)
+            if pool is not None:
+                return pool
+        # Global fallback.
+        if fuel_group is not None:
+            pool = self.global_fuel_pools.get(fuel_group)
+            if pool is not None:
+                return pool
+        return self.global_pool
+
     def log_tier_rates(self) -> None:
         """Log the per-tier match rates (no-silent-fallback rule).
 
@@ -459,9 +547,13 @@ class HsnTsnLookup:
             )
 
 
+_POOLED_TIERS = frozenset({"brand", "global"})
+
+
 def attach_hsn_tsn(df_vehicles: pd.DataFrame,
                    data_path: Optional[str] = None,
                    lookup: Optional[HsnTsnLookup] = None,
+                   random_seed: int = 0,
                    keep_tier: bool = True) -> pd.DataFrame:
     """Attach the five HSN/TSN engine columns to every fleet vehicle.
 
@@ -470,6 +562,18 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     median. The added columns are ``engine_power_kw``, ``engine_power_ps``,
     ``displacement_ccm``, ``fuel_detail``, ``hsn``, ``tsn``. Match-tier rates are
     logged (no-silent-fallback rule).
+
+    ``fuel_detail`` is always derived from the vehicle's own ``powertrain`` via
+    :data:`POWERTRAIN_TO_FUEL_GROUP`; it is never copied verbatim from the lookup
+    record (which may reflect a different fuel for the same model family). This
+    ensures a diesel car never carries "Benzin" in ``fuel_detail``.
+
+    For the pooled fallback tiers (``brand`` and ``global``) the engine numbers
+    (power_kw/ps, displacement, hsn/tsn) are drawn uniformly at random from the
+    matched variant pool so that unmatched cars do NOT all share one identical
+    engine fingerprint. The draw is deterministic given ``random_seed``. The
+    exact/model tiers are deterministic medians and are cached per distinct
+    vehicle spec for performance.
 
     Parameters
     ----------
@@ -480,7 +584,9 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
         ``None``.
     lookup : an optional pre-built :class:`HsnTsnLookup` (avoids re-reading the
         CSV when attaching to several frames).
-    keep_tier : when ``True`` (default) the diagnostic ``_hsn_tsn_match_tier``
+    random_seed : integer seed for the numpy RNG used to draw from variant pools
+        for the pooled fallback tiers. Default 0 (fully deterministic).
+    keep_tier : when ``True`` (default) the diagnostic ``hsn_tsn_match_tier``
         column is kept on the returned frame (handy for analysis / tests); set
         ``False`` to drop it.
     """
@@ -496,6 +602,8 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
             raise ValueError("attach_hsn_tsn: provide either data_path or lookup")
         lookup = HsnTsnLookup.from_data_path(data_path)
 
+    rng = np.random.default_rng(random_seed)
+
     n = len(df_vehicles)
     power_kw = [0.0] * n
     power_ps = [0.0] * n
@@ -505,9 +613,10 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     tsn = [""] * n
     tier = [""] * n
 
-    # Cache per distinct (brand, model, powertrain) triple so the lookup runs
-    # once per distinct vehicle spec rather than once per vehicle (the fleet has
-    # millions of rows but only thousands of distinct specs).
+    # Cache is ONLY for exact/model tiers (deterministic medians). Pooled tiers
+    # (brand/global) are drawn per-vehicle from the variant pool and must NOT be
+    # cached (each draw must use the rng so different vehicles get different
+    # engines).
     cache: dict[tuple[str, str, str], tuple[EngineRecord, str]] = {}
     records = df_vehicles[["brand", "model", "powertrain"]].to_dict(orient="records")
     for i, row in enumerate(records):
@@ -516,19 +625,40 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
         powertrain = row["powertrain"]
         family = model_family(canonical_brand(brand) or "", model)
         key = (str(brand), str(family), str(powertrain))
+
         cached = cache.get(key)
+        if cached is not None:
+            rec, vehicle_tier = cached
+            # Pooled tiers are never cached — they must always draw per-vehicle.
+            # If somehow a pooled tier ends up cached (shouldn't happen), draw anyway.
+            if vehicle_tier in _POOLED_TIERS:
+                cached = None
+
         if cached is None:
-            # The spec cache means lookup() (and its internal tier counter) runs
-            # once per distinct spec, not per vehicle; the authoritative
-            # per-vehicle tier rates are computed from the attached tier column
-            # below, so the cache cannot under-count the logged rates.
-            cached = lookup.lookup(brand, family, powertrain)
-            cache[key] = cached
-        rec, vehicle_tier = cached
+            rec_raw, vehicle_tier = lookup.lookup(brand, family, powertrain)
+            if vehicle_tier in _POOLED_TIERS:
+                # Pool draw: per-vehicle random engine from the matched variant
+                # distribution. Never cached so every vehicle gets an independent draw.
+                pool = lookup.get_pool(brand, powertrain)
+                if pool is not None and len(pool.power_kw) > 0:
+                    rec = _draw_record(pool, rng)
+                else:
+                    rec = rec_raw
+                # Do NOT add to cache — the next vehicle at this spec must draw again.
+            else:
+                # exact/model tiers are deterministic medians; cache them.
+                rec = rec_raw
+                cache[key] = (rec, vehicle_tier)
+        else:
+            rec, vehicle_tier = cached
+
         power_kw[i] = rec.power_kw
         power_ps[i] = rec.power_ps
         displacement[i] = rec.displacement_ccm
-        fuel_detail[i] = rec.fuel_detail
+        # fuel_detail is ALWAYS derived from the vehicle's own powertrain (Bug 1
+        # fix: a diesel car must never carry "Benzin" from a petrol-dominant median).
+        fuel_detail[i] = (POWERTRAIN_TO_FUEL_GROUP.get(str(powertrain).lower())
+                          or rec.fuel_detail)
         hsn[i] = rec.hsn
         tsn[i] = rec.tsn
         tier[i] = vehicle_tier
@@ -540,7 +670,7 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     out["fuel_detail"] = fuel_detail
     out["hsn"] = hsn
     out["tsn"] = tsn
-    out["_hsn_tsn_match_tier"] = tier
+    out["hsn_tsn_match_tier"] = tier
 
     # Log the per-vehicle tier rates from the attached column (authoritative;
     # independent of the lookup's own internal counter, which the spec-cache
@@ -548,7 +678,7 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     _log_tier_rates_from_column(tier, lookup._unmapped_brands)
 
     if not keep_tier:
-        out = out.drop(columns="_hsn_tsn_match_tier")
+        out = out.drop(columns="hsn_tsn_match_tier")
     return out
 
 

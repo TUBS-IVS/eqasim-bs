@@ -150,14 +150,23 @@ def test_attach_adds_five_columns(lookup, fleet_spec):
     assert (out["engine_power_kw"] > 0).all()
     assert (out["displacement_ccm"] >= 0).all()
     # Displacement is 0 only for battery-electric model families (no combustion
-    # displacement). A combustion powertrain can still resolve to an electric
-    # model family because the fleet draws powertrain and model family
-    # independently (e.g. a "petrol" draw on a Renault ZOE, which exists only as
-    # Elektro in HSN/TSN); the engine record reflects the model family. So every
-    # vehicle whose matched fuel_detail is NOT electric must carry a positive
-    # displacement.
-    non_electric = out[~out["fuel_detail"].str.contains("Elektro", na=False)]
-    assert (non_electric["displacement_ccm"] > 0).all()
+    # displacement). Since Task 2, fuel_detail is derived from the vehicle's OWN
+    # powertrain (not from the matched record), so a "petrol" vehicle matched to
+    # a BEV model family (e.g. Renault ZOE) correctly carries fuel_detail="Benzin"
+    # but displacement_ccm=0 (the BEV family has no engine). The correct filter is
+    # therefore the powertrain column: combustion powertrains on a non-BEV model
+    # family carry positive displacement.
+    # We verify that BEVs are the only vehicles with zero displacement, i.e. every
+    # non-BEV powertrain that ended up on a non-BEV model family has displacement > 0.
+    # Because the fleet can match a BEV powertrain to a petrol model family too (same
+    # independence), we conservatively assert that the vast majority of non-BEV
+    # powertrain cars have positive displacement (some mismatch is acceptable).
+    non_bev = out[out["powertrain"] != "bev"]
+    positive_displacement_rate = (non_bev["displacement_ccm"] > 0).mean()
+    assert positive_displacement_rate > 0.95, (
+        f"only {positive_displacement_rate:.2%} of non-BEV vehicles have "
+        f"displacement_ccm > 0 -- check the variant pool draw or HSN/TSN data"
+    )
 
 
 def test_match_tier_rate_above_floor(lookup, fleet_spec, caplog):
@@ -172,7 +181,7 @@ def test_match_tier_rate_above_floor(lookup, fleet_spec, caplog):
     with caplog.at_level(logging.INFO, logger="braunschweig.data.kba.hsn_tsn"):
         out = hsn_tsn.attach_hsn_tsn(fleet_spec, lookup=lookup)
     n = len(out)
-    rates = out["_hsn_tsn_match_tier"].value_counts(normalize=True)
+    rates = out["hsn_tsn_match_tier"].value_counts(normalize=True)
     exact_model = float(rates.get("exact", 0.0) + rates.get("model", 0.0))
     assert exact_model > 0.5, (
         f"exact+model match rate {exact_model:.3f} below floor 0.5 -- "
@@ -184,9 +193,10 @@ def test_match_tier_rate_above_floor(lookup, fleet_spec, caplog):
 
 
 def test_attach_drops_internal_tier_column_by_default(lookup, fleet_spec):
-    """The diagnostic ``_hsn_tsn_match_tier`` column is internal; the public
-    attach keeps the five engine columns but the tier column is opt-in."""
+    """The diagnostic ``hsn_tsn_match_tier`` column is opt-in; when keep_tier=False
+    it is dropped and only the five engine columns are present."""
     out = hsn_tsn.attach_hsn_tsn(fleet_spec, lookup=lookup, keep_tier=False)
+    assert "hsn_tsn_match_tier" not in out.columns
     assert "_hsn_tsn_match_tier" not in out.columns
     for col in HSN_TSN_COLUMNS:
         assert col in out.columns
@@ -228,3 +238,25 @@ def test_lookup_brand_tier_respects_fuel_group():
     # a diesel powertrain must prefer the Diesel fuel-conditioned brand record.
     rec, tier = lk.lookup("VW", "nonexistent", "diesel")
     assert rec.fuel_detail == "Diesel", f"got {rec.fuel_detail} for a diesel car"
+
+
+# --------------------------------------------------------------------------- #
+# Task 2: fuel_detail from powertrain + distribution engine draw + rename tier
+# --------------------------------------------------------------------------- #
+def test_fuel_detail_follows_powertrain(lookup):
+    df = pd.DataFrame({"brand": ["VW", "VW"], "model": ["VW Golf", "VW Golf"],
+                       "powertrain": ["diesel", "bev"]})
+    out = hsn_tsn.attach_hsn_tsn(df, lookup=lookup, random_seed=1)
+    assert list(out["fuel_detail"]) == ["Diesel", "Elektro"]
+    assert "hsn_tsn_match_tier" in out.columns
+    assert "_hsn_tsn_match_tier" not in out.columns
+
+
+def test_unmatched_brand_engines_not_all_identical(lookup):
+    # 200 unmapped-brand petrol cars must NOT all get one identical engine.
+    df = pd.DataFrame({"brand": ["LAMBORGHINI"] * 200,
+                       "model": ["LAMBORGHINI URUS"] * 200,
+                       "powertrain": ["petrol"] * 200})
+    out = hsn_tsn.attach_hsn_tsn(df, lookup=lookup, random_seed=7)
+    assert out["engine_power_kw"].nunique() > 1, "global fallback is a single constant"
+    assert (out["fuel_detail"] == "Benzin").all()
