@@ -369,26 +369,29 @@ def test_render_catalog_csv_full_reduced_catalog_42_rows() -> None:
 from braunschweig.popsim import control_spec as cs
 
 
-def test_employment_grid_controls_are_six_age_sex():
+_EG_GROUPS = ("16_29", "30_39", "40_49", "50_59", "60plus")
+
+
+def test_employment_grid_controls_are_ten_age_sex():
     cn = {c.name: c for c in cs.employment_grid_controls()}
-    assert set(cn) == {f"EMPLOYED_{s}_{g}_agg" for s in "MF" for g in ("young", "prime", "old")}
-    e = cn["EMPLOYED_M_young_agg"].seed_expressions["mid"].replace(" ", "")
+    assert set(cn) == {f"EMPLOYED_{s}_{g}_agg" for s in "MF" for g in _EG_GROUPS}
+    e = cn["EMPLOYED_M_16_29_agg"].seed_expressions["mid"].replace(" ", "")
     assert "P_TAET.isin([1,2,3,4,6,8])" in e and "HP_SEX==1" in e
     assert "HP_ALTER>15" in e and "HP_ALTER<30" in e   # 16..29
-    assert cn["EMPLOYED_F_old_agg"].seed_expressions["entd"] is None
+    assert cn["EMPLOYED_F_60plus_agg"].seed_expressions["entd"] is None
 
 
 def test_full_catalog_appends_employment_grid_only_when_requested():
     base = cs.full_catalog()
     names_off = {c.name for c in base}
-    assert "EMPLOYED_M_young_agg" not in names_off
+    assert "EMPLOYED_M_16_29_agg" not in names_off
     on = cs.full_catalog(include_employment_grid=True)
     names_on = {c.name for c in on}
-    assert {f"EMPLOYED_{s}_{g}_agg" for s in "MF" for g in ("young", "prime", "old")} <= names_on
-    assert len(on) == len(base) + 6
+    assert {f"EMPLOYED_{s}_{g}_agg" for s in "MF" for g in _EG_GROUPS} <= names_on
+    assert len(on) == len(base) + 10
 
 
-def test_build_controls_df_employment_grid_flag_adds_six_controls():
+def test_build_controls_df_employment_grid_flag_adds_ten_controls():
     # stage.py imports cleanly under the test .venv (no yaml dependency), so the
     # build_controls_df flag is exercised directly here.
     from braunschweig.popsim.stage import build_controls_df
@@ -397,13 +400,13 @@ def test_build_controls_df_employment_grid_flag_adds_six_controls():
         controls_source="catalog", tiers=("tier0",), employment_grid=False
     )
     fields_off = set(off["control_field"])
-    assert "EMPLOYED_M_young_agg_ZENSUS100m" not in fields_off
-    assert "EMPLOYED_F_old_agg_ZENSUS100m" not in fields_off
+    assert "EMPLOYED_M_16_29_agg_ZENSUS100m" not in fields_off
+    assert "EMPLOYED_F_60plus_agg_ZENSUS100m" not in fields_off
 
     on = build_controls_df(
         controls_source="catalog", tiers=("tier0",), employment_grid=True
     )
     fields_on = set(on["control_field"])
     for s in "MF":
-        for g in ("young", "prime", "old"):
+        for g in _EG_GROUPS:
             assert f"EMPLOYED_{s}_{g}_agg_ZENSUS100m" in fields_on

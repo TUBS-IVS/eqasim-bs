@@ -144,6 +144,7 @@ def test_employed_by_age_group():
     persons = pd.DataFrame({"RegionalSchlussel_ARS": ["03102000000"]*4,
                             "HP_ALTER": [20, 25, 40, 70], "P_TAET": [1, 8, 1, 1]})
     r = vc.employed_by_age_group(persons)
-    assert round(r[("03102","young")], 3) == 1.0     # ages 20,25 both employed (1,8)
-    assert round(r[("03102","prime")], 3) == 1.0     # age 40 employed
-    assert round(r[("03102","old")], 3) == 1.0       # age 70 employed
+    # 5-group reality: 16_29 (ages 20,25), 40_49 (age 40), 60plus (age 70)
+    assert round(r[("03102","16_29")], 3) == 1.0     # ages 20,25 both employed (1,8)
+    assert round(r[("03102","40_49")], 3) == 1.0     # age 40 employed
+    assert round(r[("03102","60plus")], 3) == 1.0    # age 70 employed

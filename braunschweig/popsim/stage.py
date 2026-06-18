@@ -96,8 +96,8 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 # (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
 # "tier3" is among control_tiers (catalog source); ignored otherwise.
 KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
-# Employment grid control (Task 5): when "on", activates the six age-group x sex-resolved
-# 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg). The targets are
+# Employment grid control (Task 5): when "on", activates the ten age-group x sex-resolved
+# 100m employment controls (EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg). The targets are
 # computed per cell from the Zensus 2000S-2001 employment-by-age SHAPE rescaled per
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
@@ -498,7 +498,7 @@ def execute(context) -> pd.DataFrame:
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
-    # Employment grid control (Task 5): the six EMPLOYED_{M,F}_{young,prime,old}_agg
+    # Employment grid control (Task 5): the ten EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg
     # targets are COMPUTED per cell (not stored in the parquet), so strip them from the
     # parquet load set and add the single-year {M,F}_AGE_<year> input columns (the age
     # SHAPE denominator, y>=16) that ARE present in the parquet. When OFF, load_cols is
@@ -512,8 +512,10 @@ def execute(context) -> pd.DataFrame:
         load_cols = _eg.select_load_columns(
             load_cols, _eg_available,
             computed_cols={
-                "EMPLOYED_M_young_agg", "EMPLOYED_M_prime_agg", "EMPLOYED_M_old_agg",
-                "EMPLOYED_F_young_agg", "EMPLOYED_F_prime_agg", "EMPLOYED_F_old_agg",
+                "EMPLOYED_M_16_29_agg", "EMPLOYED_M_30_39_agg", "EMPLOYED_M_40_49_agg",
+                "EMPLOYED_M_50_59_agg", "EMPLOYED_M_60plus_agg",
+                "EMPLOYED_F_16_29_agg", "EMPLOYED_F_30_39_agg", "EMPLOYED_F_40_49_agg",
+                "EMPLOYED_F_50_59_agg", "EMPLOYED_F_60plus_agg",
             },
         )
 
@@ -530,8 +532,8 @@ def execute(context) -> pd.DataFrame:
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
 
-    # Employment grid control (Task 5): inject the six per-cell
-    # EMPLOYED_{M,F}_{young,prime,old}_agg target columns. The age SHAPE comes from the
+    # Employment grid control (Task 5): inject the ten per-cell
+    # EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from the
     # committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
     # load_age_shares; exact for the kreisfreie Staedte, national fallback for the
     # Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
@@ -594,9 +596,9 @@ def execute(context) -> pd.DataFrame:
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
         )
         logger.info(
-            "[popsim.stage] employment grid control ON: injected 6 "
-            "EMPLOYED_{M,F}_{young,prime,old}_agg per-cell targets (census levels from "
-            "%s, age shape from %s, %d Kreise).",
+            "[popsim.stage] employment grid control ON: injected 10 "
+            "EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg per-cell targets "
+            "(census levels from %s, age shape from %s, %d Kreise).",
             _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
         )
 

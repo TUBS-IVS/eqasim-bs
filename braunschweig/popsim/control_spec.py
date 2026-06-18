@@ -778,17 +778,20 @@ def tier3_controls() -> List[CatalogControl]:
 
 
 def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
-    """Six 100m age-group×sex employment controls (3 groups × 2 sexes). MiD-only.
+    """Ten 100m age-group×sex employment controls (5 groups × 2 sexes). MiD-only.
 
-    Age groups: young (16-29), prime (30-59), old (60+).
+    Age groups: 16_29 (16-29), 30_39 (30-39), 40_49 (40-49), 50_59 (50-59), 60plus (60+).
     census_source is the per-cell target column injected by employment_grid into the
-    cells frame (EMPLOYED_{M,F}_{young,prime,old}_agg). ENTD cannot express P_TAET -> None.
+    cells frame (EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg).
+    ENTD cannot express P_TAET -> None.
     Employed definition: P_TAET ∈ {1,2,3,4,6,8} (MiD erwerb; incl. Azubi, excl. Elternzeit/FSJ).
     """
     groups = {
-        "young": "(persons.HP_ALTER>15)&(persons.HP_ALTER<30)",
-        "prime": "(persons.HP_ALTER>29)&(persons.HP_ALTER<60)",
-        "old":   "(persons.HP_ALTER>59)",
+        "16_29": "(persons.HP_ALTER>15)&(persons.HP_ALTER<30)",
+        "30_39": "(persons.HP_ALTER>29)&(persons.HP_ALTER<40)",
+        "40_49": "(persons.HP_ALTER>39)&(persons.HP_ALTER<50)",
+        "50_59": "(persons.HP_ALTER>49)&(persons.HP_ALTER<60)",
+        "60plus": "(persons.HP_ALTER>59)",
     }
     out: List[CatalogControl] = []
     for prefix, sex in (("M", 1), ("F", 2)):

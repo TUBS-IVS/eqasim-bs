@@ -1,6 +1,7 @@
 """Build a per-cell, age×sex-resolved employment target for a 100m PopulationSim control.
 
-SHAPE  = Zensus 2000S-2001 Erwerbstätige by age-group×Kreis (young 16-29 / prime 30-59 / old 60+),
+SHAPE  = Zensus 2000S-2001 Erwerbstätige by age-group×Kreis
+         (5 groups: 16_29 / 30_39 / 40_49 / 50_59 / 60plus),
          loaded via braunschweig.popsim.zensus_employment_age.
 LEVEL  = cleancensus Erwerbstaetige Kreis×sex totals (kreis_erwerbsstatus parquet).
 DENOM  = the prepared cells' single-year {M,F}_AGE_<year> columns, summed to Kreis×group.
@@ -10,7 +11,7 @@ household weights are set) instead of only at KREIS, and respects each cell's ag
 composition. It rescales per Kreis×sex×group to census_level × age_share, so the
 Zensus 2001 source is used only for the age SHAPE; the absolute LEVEL is census.
 
-Produces 6 control columns: EMPLOYED_{M,F}_{young,prime,old}_agg.
+Produces 10 control columns: EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg.
 """
 from __future__ import annotations
 
@@ -100,7 +101,7 @@ def per_cell_employment_targets(
     min_age: int = 16,
     single_year_max: int = 100,
 ) -> pd.DataFrame:
-    """Per-cell EMPLOYED_{M,F}_{young,prime,old}_agg, rescaled per Kreis×sex×group.
+    """Per-cell EMPLOYED_{M,F}_{16_29,...,60plus}_agg, rescaled per Kreis×sex×group.
 
     For each Kreis k, sex s, group g:
         sum_cells(EMPLOYED_{s}_{g}_agg) == census_Erwerbstätige[k,s] × age_share[k,g]
@@ -157,10 +158,10 @@ def add_employment_grid_columns(
     min_age: int = 16,
     single_year_max: int = 100,
 ) -> pd.DataFrame:
-    """Return a copy of ``cells`` with the 6 employment-grid columns added.
+    """Return a copy of ``cells`` with the 10 employment-grid columns added.
 
     Thin wrapper over :func:`per_cell_employment_targets` for the stage wiring: it
-    computes the six per-cell employment targets (Zensus 2001 age-shape rescaled per
+    computes the ten per-cell employment targets (Zensus 2001 age-shape rescaled per
     Kreis×sex×group to the census Erwerbstaetige level) and attaches them via merge
     on ZENSUS100m.
 
@@ -182,7 +183,7 @@ def add_employment_grid_columns(
     Returns
     -------
     pandas.DataFrame
-        Copy of ``cells`` with 6 columns EMPLOYED_{M,F}_{young,prime,old}_agg added.
+        Copy of ``cells`` with 10 columns EMPLOYED_{M,F}_{16_29,...,60plus}_agg added.
     """
     t = per_cell_employment_targets(
         cells, census_levels, age_shares_by_kreis,
