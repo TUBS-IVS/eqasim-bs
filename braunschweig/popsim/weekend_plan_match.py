@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.sampling import weighted_choice
+
 logger = logging.getLogger(__name__)
 
 PT_SUBSCRIPTION_CODES = frozenset({3, 4, 5, 6})  # see attributes.map_has_pt_subscription
@@ -43,6 +45,7 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     feats.index.name = "H_ID"
     feats["any_license"] = has_lic.reindex(feats.index).fillna(False).to_numpy()
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
+    feats["H_GEW"] = households.set_index("H_ID")["H_GEW"].reindex(feats.index).to_numpy()
     return feats
 
 
@@ -67,10 +70,11 @@ def match_household(target_id, target_feats, weekday_feats, *, rng):
         if len(narrowed) > 0:
             ids = sorted(narrowed.index.tolist())
             level = len(SOFT_KEYS_BY_PRIORITY) - len(active)
-            return ids[int(rng.randint(len(ids)))], level
+            return weighted_choice(ids, narrowed.loc[ids, "H_GEW"].to_numpy(), rng=rng), level
         if not active:
-            ids = sorted(pool.index.tolist())  # size-only fallback
-            return ids[int(rng.randint(len(ids)))], len(SOFT_KEYS_BY_PRIORITY)
+            ids = sorted(pool.index.tolist())  # size + RegioStaR only
+            return (weighted_choice(ids, pool.loc[ids, "H_GEW"].to_numpy(), rng=rng),
+                    len(SOFT_KEYS_BY_PRIORITY))
         active.pop()  # drop the lowest-priority remaining soft key
 
 
