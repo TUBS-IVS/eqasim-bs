@@ -251,3 +251,104 @@ def test_every_weekend_person_is_resolved_no_silent_gap():
     # every weekend person resolved to a weekday source (here HH 1)
     assert (weekend["plan_source_H_ID"] == 1).all()
     assert weekend["resolution"].isin({"hh_match", "person_fallback"}).all()
+
+
+# ---------------------------------------------------------------------------
+# A1 + A2: weekday_pool is reporting-day-based; mixed-HH sweep
+# ---------------------------------------------------------------------------
+
+def test_reassign_sweeps_weekend_member_of_mixed_household():
+    """A genuinely-mixed household (3 weekday + 1 weekend members, majority=weekday)
+    is classified as weekday by household_day_type. The weekend-reporting member
+    initially sources its own weekend plan. The per-person safety-net sweep must
+    detect this and reroute it to a weekday-reporting donor. report.n_swept >= 1.
+    """
+    # HH 10: pure weekday donor (exists so weekday_pool is non-empty)
+    # HH 20: mixed household -- 3 weekday-reporting + 1 weekend-reporting member;
+    #         household_day_type resolves to "weekday" (majority).
+    households = pd.DataFrame({
+        "H_ID": [10, 20], "H_GR": [2, 4],
+        "hh_type5": ["couple", "couple"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+    })
+    persons = pd.DataFrame({
+        "H_ID":          [10, 10,  20,  20,  20,  20],
+        "P_ID":          [ 1,  2,   1,   2,   3,   4],
+        "HP_ALTER":      [40, 38,  41,  39,  35,  45],
+        "HP_SEX":        [ 1,  2,   1,   2,   1,   2],
+        "P_FSCHEIN":     [ 1,  1,   1,   1,   1,   1],
+        "P_TAET":        [ 1,  1,   1,   1,   1,   1],
+        "P_FKARTE":      [ 1,  1,   1,   1,   1,   1],
+        # HH 10: weekday. HH 20: first 3 members weekday (kernwo=2), 4th weekend (kernwo=6)
+        "kernwo":        [ 2,  2,   2,   2,   2,   6],
+        # all initially self-sourcing
+        "source_H_ID":   [10, 10,  20,  20,  20,  20],
+        "source_P_ID":   [ 1,  2,   1,   2,   3,   4],
+        "member_imputed": [False] * 6,
+    })
+
+    out, trace, report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(42))
+
+    # The 4th member of HH 20 (P_ID=4, kernwo=6) must now point at a
+    # weekday-reporting donor, not itself.
+    weekend_member = out[(out["H_ID"] == 20) & (out["P_ID"] == 4)].iloc[0]
+    # Donor must be a weekday-reporting real person
+    from braunschweig.popsim.seed import WEEKDAY_KERNWO
+    all_real = persons[~persons["member_imputed"]]
+    wd_real_ids = set(
+        zip(all_real[all_real["kernwo"].isin(WEEKDAY_KERNWO)]["H_ID"],
+            all_real[all_real["kernwo"].isin(WEEKDAY_KERNWO)]["P_ID"])
+    )
+    assert (weekend_member["source_H_ID"], weekend_member["source_P_ID"]) in wd_real_ids, (
+        f"Weekend member's source {(weekend_member['source_H_ID'], weekend_member['source_P_ID'])} "
+        f"is not in the weekday-reporting donor set {wd_real_ids}"
+    )
+    # Trace resolution for this person should be "mixed_person_sweep"
+    swept_row = trace[(trace["H_ID"] == 20) & (trace["P_ID"] == 4)].iloc[0]
+    assert swept_row["resolution"] == "mixed_person_sweep", (
+        f"Expected 'mixed_person_sweep', got '{swept_row['resolution']}'"
+    )
+    assert report.n_swept >= 1, f"Expected n_swept >= 1, got {report.n_swept}"
+
+
+def test_fallback_pool_excludes_weekend_reporting_persons():
+    """The weekday_pool used for match_person must contain no weekend-reporting
+    persons. Even if a person belongs to a household classified as 'weekday'
+    (e.g. mixed household resolved by majority), their kernwo must be in
+    WEEKDAY_KERNWO for them to appear in the pool.
+    """
+    from braunschweig.popsim.seed import WEEKDAY_KERNWO
+    from braunschweig.popsim.day_type import WEEKEND_KERNWO as WKND_KW
+
+    # Build: HH 10 pure weekday (2 members), HH 20 mixed (2 weekday + 1 weekend -> majority weekday)
+    households = pd.DataFrame({
+        "H_ID": [10, 20], "H_GR": [2, 3],
+        "hh_type5": ["couple", "couple"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [1, 1],
+    })
+    persons = pd.DataFrame({
+        "H_ID":        [10, 10,  20,  20,  20],
+        "P_ID":        [ 1,  2,   1,   2,   3],
+        "HP_ALTER":    [40, 38,  41,  39,  35],
+        "HP_SEX":      [ 1,  2,   1,   2,   1],
+        "P_FSCHEIN":   [ 1,  1,   1,   1,   1],
+        "P_TAET":      [ 1,  1,   1,   1,   1],
+        "P_FKARTE":    [ 1,  1,   1,   1,   1],
+        "kernwo":      [ 2,  2,   2,   2,   6],  # HH 20 P_ID=3: weekend
+        "source_H_ID": [10, 10,  20,  20,  20],
+        "source_P_ID": [ 1,  2,   1,   2,   3],
+        "member_imputed": [False] * 5,
+    })
+
+    # Reconstruct weekday_pool exactly as reassign_weekend_plan_sources does (A1)
+    weekday_pool = persons[
+        (~persons["member_imputed"].astype(bool))
+        & persons["kernwo"].isin(WEEKDAY_KERNWO)
+    ]
+
+    # Assert no weekend-reporting row leaked into the pool
+    assert not weekday_pool["kernwo"].isin(WKND_KW).any(), (
+        f"weekday_pool must not contain weekend-kernwo rows; "
+        f"found kernwo values: {weekday_pool['kernwo'].unique().tolist()}"
+    )

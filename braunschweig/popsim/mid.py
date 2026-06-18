@@ -535,6 +535,25 @@ def load_mid_attributes(
     return households, persons
 
 
+def drop_invalid_households(households, persons, *, household_id="H_ID"):
+    """Drop the invalid-household sentinel: rows whose household id is 0 or null.
+
+    Real MiD 2023 has an H_ID=0 bucket of 312 unrelated persons with mixed
+    reporting days -- not a real household; it must not be a population donor.
+    Returns ``(households, persons, n_hh_dropped, n_persons_dropped)``.
+    """
+    bad_hh = households[household_id].isna() | (households[household_id] == 0)
+    n_hh = int(bad_hh.sum())
+    keep_p = ~(persons[household_id].isna() | (persons[household_id] == 0))
+    n_p = int((~keep_p).sum())
+    return (
+        households[~bad_hh].copy(),
+        persons[keep_p].copy(),
+        n_hh,
+        n_p,
+    )
+
+
 def load_completed_donor(
     mid_dir: Union[str, Path],
     *,
@@ -577,6 +596,17 @@ def load_completed_donor(
             "numpy.random.RandomState); random processes must use an explicit seed."
         )
     households, persons = load_mid_attributes(mid_dir)
+
+    # Drop H_ID=0 / null sentinel before any downstream logic (donor validity).
+    households, persons, _n_hh_bad, _n_p_bad = drop_invalid_households(
+        households, persons, household_id=MID_SEED_COLUMNS.household_id)
+    if _n_hh_bad or _n_p_bad:
+        logger.warning(
+            "[mid.load_completed_donor] dropped %d invalid-household row(s) "
+            "(H_ID=0 or null) and %d associated person(s) from the donor data; "
+            "these are not real households and must not be population donors.",
+            _n_hh_bad, _n_p_bad,
+        )
 
     # Same tri-state day-filter contract as load_mid_seed: `None` -> standard
     # weekday default; explicit empty iterable -> day filter OFF; else verbatim.

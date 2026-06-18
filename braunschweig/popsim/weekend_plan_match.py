@@ -141,11 +141,14 @@ class WeekendMatchReport:
     n_person_fallback_households: int
     n_persons_remapped: int
     hh_match_level_counts: dict
+    n_swept: int = 0
 
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID"):
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
+    from braunschweig.popsim.day_type import WEEKEND_KERNWO
+    from braunschweig.popsim.seed import WEEKDAY_KERNWO
 
     persons = persons.copy()
     hh_dt = _dt.household_day_type(persons, household_id=household_id)
@@ -163,7 +166,15 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     weekday_ids = hh_dt.index[hh_dt == "weekday"]
     weekend_ids = hh_dt.index[hh_dt == "weekend"]
     weekday_feats = feats.loc[feats.index.isin(weekday_ids)]
-    weekday_persons = persons[persons[household_id].isin(weekday_ids)].copy()
+
+    # A1: Build the person-fallback pool from REAL (non-imputed) weekday-REPORTING
+    # persons, not from all persons belonging to weekday households. This ensures
+    # that weekend-reporting members of genuinely-mixed households (resolved to
+    # "weekday" by majority vote) are never offered as weekday-plan donors.
+    weekday_pool = persons[
+        (~persons["member_imputed"].astype(bool))
+        & persons["kernwo"].isin(WEEKDAY_KERNWO)
+    ]
 
     persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
     # default trace row = own plan (correct for weekday + filler bookkeeping below)
@@ -203,7 +214,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                     continue
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_persons, rng=rng)
+                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -213,13 +224,34 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             for tpos in range(len(target_members)):
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_persons, rng=rng)
+                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
                 match_level[ridx] = plevel
                 n_remapped += 1
             n_person_fallback += 1
+
+    # A2: Safety-net sweep: resolve every person's plan-source to its donor's kernwo;
+    # any person whose source is a weekend-diary donor (e.g. a weekend-reporting member
+    # of a genuinely-mixed household that household_day_type resolved to "weekday" by
+    # majority) gets a weekday plan. Makes the invariant "no person sources a weekend
+    # plan" hold universally, regardless of household-level classification.
+    real_persons = persons[~persons["member_imputed"].astype(bool)]
+    donor_kernwo = real_persons.set_index([household_id, "P_ID"])["kernwo"]
+    src_idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+    src_kernwo = pd.Series(donor_kernwo.reindex(src_idx).to_numpy(), index=persons.index)
+    sweep_mask = src_kernwo.isin(WEEKEND_KERNWO)
+    n_swept = 0
+    for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
+        trow = persons.loc[ridx]
+        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+        persons.loc[ridx, "source_H_ID"] = sh
+        persons.loc[ridx, "source_P_ID"] = sp
+        resolution[ridx] = "mixed_person_sweep"
+        match_level[ridx] = plevel
+        n_remapped += 1
+        n_swept += 1
 
     donor_dt = persons[household_id].map(hh_dt)
     trace = pd.DataFrame({
@@ -237,16 +269,23 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         n_person_fallback_households=n_person_fallback,
         n_persons_remapped=n_remapped,
         hh_match_level_counts=level_counts,
+        n_swept=n_swept,
     )
     logger.info(
         "[weekend_plan_match] %d weekend households: %d HH-matched, %d via "
-        "person-fallback; %d persons remapped. HH match-level counts: %s",
+        "person-fallback; %d persons remapped, %d swept by per-person safety net. "
+        "HH match-level counts: %s",
         report.n_weekend_households, report.n_hh_matched,
         report.n_person_fallback_households, report.n_persons_remapped,
-        report.hh_match_level_counts,
+        report.n_swept, report.hh_match_level_counts,
     )
     if len(weekend_ids) and report.n_hh_matched == 0:
         logger.warning(
             "[weekend_plan_match] no weekend household matched at HH level; all "
             "%d fell back to person-level matching.", len(weekend_ids))
+    if n_swept:
+        logger.warning(
+            "[weekend_plan_match] safety-net sweep caught %d person(s) sourcing "
+            "weekend plans (mixed households resolved to weekday by majority); "
+            "remapped each to a weekday-reporting donor.", n_swept)
     return persons, trace, report

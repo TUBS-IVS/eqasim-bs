@@ -272,3 +272,46 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
     assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1",
             "P_GEW", "kernwo"} <= set(persons.columns)
 
+
+# ---------------------------------------------------------------------------
+# Change B: drop_invalid_households
+# ---------------------------------------------------------------------------
+
+def test_drop_invalid_households_removes_sentinel_and_null():
+    """H_ID=0 and H_ID=null households (and their persons) are removed; valid
+    households are untouched; returned counts are correct."""
+    households = pd.DataFrame({
+        "H_ID": [0, 1, None, 2],         # H_ID=0 + None are sentinels
+        "H_GR": [3, 2, 1, 1],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [0, 0, 0, 1, 1, None, 2],
+        "P_ID": [1, 2, 3, 1, 2, 1, 1],
+    })
+
+    hh_out, p_out, n_hh, n_p = mid.drop_invalid_households(households, persons)
+
+    # Valid households 1 and 2 remain
+    assert set(hh_out["H_ID"].tolist()) == {1, 2}, (
+        f"Expected only H_ID {{1, 2}}, got {set(hh_out['H_ID'].tolist())}"
+    )
+    # Valid persons (H_ID=1 x2, H_ID=2 x1) remain
+    assert set(hh_out["H_ID"].tolist()) == {1, 2}
+    assert len(p_out) == 3
+    assert set(p_out["H_ID"].tolist()) == {1, 2}
+
+    # Counts: 2 bad households (H_ID=0 and None), 4 bad persons (3 from H_ID=0, 1 from None)
+    assert n_hh == 2, f"Expected 2 bad households, got {n_hh}"
+    assert n_p == 4, f"Expected 4 bad persons, got {n_p}"
+
+
+def test_drop_invalid_households_noop_when_all_valid():
+    """When all H_IDs are valid (non-zero, non-null) the frames are returned unchanged."""
+    households = pd.DataFrame({"H_ID": [1, 2, 3], "H_GR": [1, 2, 3]})
+    persons = pd.DataFrame({"H_ID": [1, 2, 3], "P_ID": [1, 1, 1]})
+
+    hh_out, p_out, n_hh, n_p = mid.drop_invalid_households(households, persons)
+
+    assert n_hh == 0 and n_p == 0
+    assert len(hh_out) == 3 and len(p_out) == 3
+
