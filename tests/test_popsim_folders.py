@@ -57,6 +57,39 @@ def test_geo_crosswalk_omits_kreis_when_no_ars():
     assert "KREIS" not in xwalk.columns
 
 
+def test_geo_crosswalk_resolves_parent_kreis_to_dominant():
+    # A 1km parent whose 100m cells straddle two Kreise must collapse to the dominant
+    # Kreis (by population weight) so WELT>STAAT>KREIS>1km>100m nests strictly.
+    df = pd.DataFrame({
+        "GITTER_ID_100m": ["a", "b", "c", "d"],
+        "GITTER_ID_1km":  ["P1", "P1", "P1", "P2"],
+        "ARS":            ["031010000000", "031010000000", "031530000000", "031530000000"],
+        "EW":             [40, 40, 5, 7],   # P1: 03101=80 vs 03153=5 -> dominant 03101
+    })
+    xwalk = folders.build_geo_crosswalk(
+        df, id_col_100m="GITTER_ID_100m", parent_col="GITTER_ID_1km",
+        ars_col="ARS", resolve_parent_kreis=True, kreis_weight_col="EW",
+    )
+    # cell c is reassigned from 03153 to the parent's dominant Kreis 03101
+    assert set(xwalk.loc[xwalk["ZENSUS1km"] == "P1", "KREIS"]) == {"03101"}
+    assert set(xwalk.loc[xwalk["ZENSUS1km"] == "P2", "KREIS"]) == {"03153"}
+    # strict nesting: every 1km parent maps to exactly one Kreis
+    assert (xwalk.groupby("ZENSUS1km")["KREIS"].nunique() == 1).all()
+
+
+def test_geo_crosswalk_raw_kreis_without_resolution():
+    # Default (no resolution): raw per-cell KREIS = ARS[:5]; a 1km parent may straddle.
+    df = pd.DataFrame({
+        "GITTER_ID_100m": ["a", "b"],
+        "GITTER_ID_1km":  ["P1", "P1"],
+        "ARS":            ["031010000000", "031530000000"],
+    })
+    xwalk = folders.build_geo_crosswalk(
+        df, id_col_100m="GITTER_ID_100m", parent_col="GITTER_ID_1km", ars_col="ARS",
+    )
+    assert list(xwalk["KREIS"]) == ["03101", "03153"]
+
+
 def _toy_kreis_xwalk():
     return pd.DataFrame(
         {
@@ -92,6 +125,65 @@ def test_build_kreis_control_totals_raises_on_missing_kreis():
         folders.build_kreis_control_totals(
             kreis_table, _toy_kreis_xwalk(), controls_map={"employed": ("E11",)},
         )
+
+
+def test_build_kreis_control_totals_apportions_by_weight():
+    # Each Kreis's controls are scaled by its apportion weight (the batch's
+    # population share of that Kreis). This is the per-batch target so a Kreis
+    # split across batches no longer over-targets the FULL marginal in every batch.
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153"],
+            "E11": [100.0, 200.0],
+            "S_a": [10.0, 20.0],
+            "S_b": [5.0, 7.0],
+        }
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"employed": ("E11",), "schul_low": ("S_a", "S_b")},
+        apportion_weights={"03101": 0.6, "03153": 0.4},
+    )
+    assert list(totals["KREIS"]) == ["03101", "03153"]
+    # employed: full 100/200 scaled by 0.6/0.4
+    assert list(totals["employed"]) == [60.0, 80.0]
+    # schul_low: (10+5)=15 * 0.6, (20+7)=27 * 0.4
+    assert totals["schul_low"].tolist() == pytest.approx([9.0, 10.8])
+
+
+def test_build_kreis_control_totals_weight_defaults_to_one_for_missing_kreis():
+    # A Kreis absent from apportion_weights keeps its full marginal (weight 1.0).
+    kreis_table = pd.DataFrame(
+        {"ARS_kreis": ["03101", "03153"], "E11": [100.0, 200.0]}
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"employed": ("E11",)},
+        apportion_weights={"03101": 0.25},  # 03153 omitted -> weight 1.0
+    )
+    assert list(totals["employed"]) == [25.0, 200.0]
+
+
+def test_build_kreis_control_totals_none_weights_is_legacy_byte_identical():
+    # apportion_weights=None must reproduce the legacy full-marginal output exactly
+    # (byte-identical) so single-batch / pre-Tier-3 callers are unchanged.
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153", "09999"],
+            "E11": [100.0, 200.0, 9.0],
+            "S_a": [10.0, 20.0, 1.0],
+            "S_b": [5.0, 7.0, 1.0],
+        }
+    )
+    cmap = {"employed": ("E11",), "schul_low": ("S_a", "S_b")}
+    legacy = folders.build_kreis_control_totals(kreis_table, _toy_kreis_xwalk(), controls_map=cmap)
+    explicit_none = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(), controls_map=cmap, apportion_weights=None
+    )
+    pd.testing.assert_frame_equal(legacy, explicit_none)
+    # And it is the full marginal (no scaling).
+    assert list(legacy["employed"]) == [100.0, 200.0]
+    assert list(legacy["schul_low"]) == [15.0, 27.0]
 
 
 def test_geo_crosswalk_maps_each_cell_to_its_parent():
@@ -224,6 +316,32 @@ def test_write_popsim_folder_creates_expected_files(tmp_path):
     # Round-trip a written CSV to confirm content.
     back = pd.read_csv(base / "data/geo_cross_walk.csv", dtype=str)
     assert list(back.columns) == ["ZENSUS100m", "ZENSUS1km", "STAAT", "WELT"]
+
+
+def test_write_popsim_folder_writes_kreis_only_when_present(tmp_path):
+    # KREIS is written iff present in control_totals: tier0-2 (no KREIS) stays
+    # byte-identical (no extra file); tier3 adds control_totals_KREIS.csv.
+    xwalk = folders.build_geo_crosswalk(_toy_100m())
+    totals = folders.build_control_totals(
+        _toy_targets(), xwalk, target_cols=["total_population"]
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"HP_ID": [1], "P_ID": [1], "STAAT": [1]})
+
+    folders.write_popsim_folder(
+        tmp_path / "no_kreis", geo_crosswalk=xwalk, control_totals=totals,
+        controls_csv=pd.DataFrame(), seed_households=seed_hh, seed_persons=seed_p,
+    )
+    assert not (tmp_path / "no_kreis" / "data" / "control_totals_KREIS.csv").exists()
+
+    totals_k = dict(totals)
+    totals_k["KREIS"] = pd.DataFrame({"KREIS": ["03101"], "employed": [123]})
+    written = folders.write_popsim_folder(
+        tmp_path / "with_kreis", geo_crosswalk=xwalk, control_totals=totals_k,
+        controls_csv=pd.DataFrame(), seed_households=seed_hh, seed_persons=seed_p,
+    )
+    assert (tmp_path / "with_kreis" / "data" / "control_totals_KREIS.csv").is_file()
+    assert "control_totals_KREIS.csv" in written
 
 
 def test_write_popsim_folder_requires_all_control_geographies(tmp_path):

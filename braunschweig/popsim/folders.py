@@ -24,12 +24,16 @@ Replaces the in-notebook folder generation of popsimprep's Step 2/3.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Mapping, Sequence, Union
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import cells, controls
+
+logger = logging.getLogger(__name__)
 
 # Geography level names, top (coarsest) to bottom (finest). Matches the
 # PopulationSim settings.yaml geographies for this workflow.
@@ -42,12 +46,47 @@ GEO_100M = "ZENSUS100m"
 CONTROL_GEOGRAPHIES: Sequence[str] = (GEO_100M, GEO_1KM, GEO_STAAT, GEO_WELT)
 
 
+def _resolve_parent_kreis(
+    xwalk: pd.DataFrame, weights: np.ndarray
+) -> pd.DataFrame:
+    """Collapse each 1 km parent's ``KREIS`` to its single dominant Kreis.
+
+    A 1 km grid cell may straddle a Kreis border (its 100 m children carry
+    different ARS). PopulationSim's geography hierarchy requires strict nesting
+    (each 1 km maps to exactly one parent Kreis), so each parent is assigned the
+    Kreis with the largest summed ``weights`` across its cells; ties break on the
+    higher Kreis id (deterministic). Reassigned (boundary) cells are logged.
+    """
+    work = xwalk[[GEO_1KM, GEO_KREIS]].copy()
+    work["_w"] = weights
+    by_pair = work.groupby([GEO_1KM, GEO_KREIS], sort=False)["_w"].sum().reset_index()
+    dominant = (
+        by_pair.sort_values(["_w", GEO_KREIS])
+        .groupby(GEO_1KM, sort=False)
+        .tail(1)
+        .set_index(GEO_1KM)[GEO_KREIS]
+    )
+    new_kreis = xwalk[GEO_1KM].map(dominant).to_numpy()
+    n_reassigned = int((new_kreis != xwalk[GEO_KREIS].to_numpy()).sum())
+    if n_reassigned:
+        logger.info(
+            "[popsim.folders] geo_crosswalk: resolved %d/%d 100m cells to their 1km "
+            "parent's dominant Kreis (border cells straddling Kreis boundaries).",
+            n_reassigned, len(xwalk),
+        )
+    out = xwalk.copy()
+    out[GEO_KREIS] = new_kreis
+    return out
+
+
 def build_geo_crosswalk(
     df_100m: pd.DataFrame,
     *,
     id_col_100m: str = "GITTER_ID_100m",
     parent_col: str = "GITTER_ID_1km",
     ars_col: str | None = None,
+    resolve_parent_kreis: bool = False,
+    kreis_weight_col: str | None = None,
 ) -> pd.DataFrame:
     """Build the PopulationSim geo crosswalk for the given 100 m cells.
 
@@ -92,10 +131,20 @@ def build_geo_crosswalk(
             GEO_WELT: 1,
         }
     )
-    # Optional KREIS level for Tier-3 controls: each 100 m cell maps unambiguously
-    # to its Kreis = the first 5 digits of the cell's ARS.
+    # Optional KREIS level for Tier-3 controls: each 100 m cell maps to its Kreis =
+    # the first 5 digits of the cell's ARS. With ``resolve_parent_kreis`` the raw
+    # per-cell Kreis is then collapsed to one dominant Kreis per 1 km parent so the
+    # WELT > STAAT > KREIS > ZENSUS1km > ZENSUS100m hierarchy nests strictly.
     if ars_col is not None and ars_col in df_100m.columns:
         xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+        if resolve_parent_kreis:
+            if kreis_weight_col is not None and kreis_weight_col in df_100m.columns:
+                weights = pd.to_numeric(
+                    df_100m[kreis_weight_col], errors="coerce"
+                ).fillna(0.0).to_numpy()
+            else:
+                weights = np.ones(len(df_100m))
+            xwalk = _resolve_parent_kreis(xwalk, weights)
     return xwalk
 
 
@@ -171,6 +220,7 @@ def build_kreis_control_totals(
     *,
     controls_map: Mapping[str, Sequence[str]],
     ars_col: str = "ARS_kreis",
+    apportion_weights: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
     """Build the KREIS control-totals table from an imported per-Kreis census table.
 
@@ -182,6 +232,19 @@ def build_kreis_control_totals(
     control target to the row-sum of its census-source columns (a coarse class = the
     sum of its category columns). Suppressed (NaN) components are treated as 0 by the
     row-sum.
+
+    Per-batch apportionment
+    -----------------------
+    RegioStaR stratification can split ONE Kreis across MULTIPLE batches (a batch is a
+    cell-disjoint sub-region). Each such batch must target only ITS share of the Kreis
+    marginal, not the full Kreis marginal -- otherwise every batch holding a fraction
+    of the Kreis targets the whole count, and (summed over batches) PopulationSim is
+    constrained to N times the true marginal, saturating the control. ``apportion_weights``
+    is ``{kreis: share}`` (the batch's population fraction of that Kreis); each control's
+    per-Kreis value is multiplied by that share. A Kreis absent from the map (or a
+    ``None`` map) keeps weight ``1.0`` = the full marginal. When the map gives every
+    batch its population share of the Kreis, the per-Kreis targets sum (across batches)
+    to exactly the full marginal.
 
     Parameters
     ----------
@@ -195,6 +258,11 @@ def build_kreis_control_totals(
         ``{control_name: census_source_cols}`` (e.g. the catalog's tier3 entries).
     ars_col:
         The Kreis-key column in ``kreis_table`` (default ``"ARS_kreis"``).
+    apportion_weights:
+        Optional ``{kreis: float share}`` to scale each Kreis's controls (the batch's
+        population share of the Kreis). ``None`` (default) -> full marginal, legacy
+        behaviour byte-identical (so single-batch / pre-Tier-3 callers are unchanged).
+        A Kreis missing from the map defaults to ``1.0`` (full marginal).
 
     Returns
     -------
@@ -224,7 +292,13 @@ def build_kreis_control_totals(
 
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
-        out[name] = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        if apportion_weights is not None:
+            weights = np.array(
+                [float(apportion_weights.get(k, 1.0)) for k in kreise], dtype=float
+            )
+            values = values * weights
+        out[name] = values
     return pd.DataFrame(out)
 
 
@@ -250,7 +324,9 @@ def write_popsim_folder(
     folder:
         Target run-folder path (created, with parents).
     control_totals:
-        Must contain all four geographies (see :data:`CONTROL_GEOGRAPHIES`).
+        Must contain all four required geographies (see :data:`CONTROL_GEOGRAPHIES`).
+        May additionally contain the optional Tier-3 ``KREIS`` table, which is then
+        written as ``control_totals_KREIS.csv`` (absent for tier0-2, byte-identical).
 
     Raises
     ------
@@ -281,6 +357,10 @@ def write_popsim_folder(
     _csv(geo_crosswalk, data_dir / "geo_cross_walk.csv")
     for geography in CONTROL_GEOGRAPHIES:
         _csv(control_totals[geography], data_dir / f"control_totals_{geography}.csv")
+    # Optional Tier-3 KREIS geography: written only when present so tier0-2 runs
+    # (no KREIS in control_totals) stay byte-identical to the pre-Tier-3 baseline.
+    if GEO_KREIS in control_totals:
+        _csv(control_totals[GEO_KREIS], data_dir / f"control_totals_{GEO_KREIS}.csv")
     _csv(seed_households, data_dir / "seed_households.csv")
     _csv(seed_persons, data_dir / "seed_persons.csv")
     _csv(controls_csv, configs_dir / "controls.csv")

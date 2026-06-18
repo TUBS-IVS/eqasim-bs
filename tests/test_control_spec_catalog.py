@@ -112,8 +112,9 @@ def test_tier1_household_type_is_mid_only() -> None:
     catalog = cs.full_catalog(include_tiers=("tier0", "tier1"))
     mid = {c.name for c in cs.controls_for_seed(catalog, "mid")}
     entd = {c.name for c in cs.controls_for_seed(catalog, "entd")}
+    # LOSSLESS reduction: "einpersonen" is dropped (exact residual of the partition;
+    # single-person count stays pinned by the household-size control H_GR == 1).
     bases = [
-        "EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter",
         "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter",
         "Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter",
         "Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter",
@@ -122,6 +123,9 @@ def test_tier1_household_type_is_mid_only() -> None:
     for b in bases:
         assert b in mid          # MiD can express household type
         assert b not in entd     # ENTD drops it (composition differs)
+    # The dropped einpersonen control must not appear for either seed.
+    assert "EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter" not in mid
+    assert "EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter" not in entd
 
 
 # ---------------------------------------------------------------------------

@@ -348,20 +348,41 @@ def _backbone_age_expression(band_label: str, lower: int | None, upper: int | No
 
 
 def tier0_backbone_catalog() -> List[CatalogControl]:
-    """Build the Tier-0 backbone catalog: hh/pop totals + 9 age bands x 2 sexes + M/F totals.
+    """Build the Tier-0 backbone catalog (LOSSLESS-reduced): 20 controls.
 
-    The backbone catalog spans two geographies (ZENSUS100m and ZENSUS1km) and
-    produces 22 controls per geography = 44 total. All controls have both ``mid``
-    and ``entd`` seed expressions (the MiD and ENTD built tables share the same
-    column names HP_ALTER / HP_SEX / H_GEW / P_GEW).
+    This is the over-controlling fix: redundant/derivable marginals are dropped so
+    PopulationSim is constrained only by an independent, non-redundant set, without
+    losing any information (every dropped target is an exact sum of kept ones).
 
-    Control-field naming follows the production baseline exactly:
+    Reduced structure (21 controls):
+
+    - ``ZENSUS100m`` (19): ``HH_TOTAL`` + the 18 age x sex bands.
+      * ``POP_TOTAL`` is DROPPED at 100m -- it is the exact sum of the 18 age x sex
+        bands, so it is fully derivable (lossless) and adds no independent constraint.
+      * ``M_TOTAL`` / ``F_TOTAL`` are DROPPED at 100m -- each is the exact sum of that
+        sex's 9 age bands, again fully derivable (lossless).
+    - ``ZENSUS1km`` (1): ``HH_TOTAL`` only.
+      * The 18 age bands + ``M_TOTAL`` / ``F_TOTAL`` + ``POP_TOTAL`` are ALL DROPPED at
+        1km: the 100m age bands aggregate exactly to their 1km parent under nested
+        sub_balancing, so every 1km person duplicate is redundant (lossless).
+      * ``HH_TOTAL`` is KEPT at BOTH geographies: it is the required household
+        expansion / integerizer anchor (also the settings ``total_hh_control``) and
+        must not be dropped or renamed. It is the SINGLE 1km control -- a 1km-only
+        person control (POP) is avoided (build_control_totals emits one shared 100m
+        source set -> a 1km-only source column would be missing -> PopulationSim
+        KeyError); persons are enforced via the 100m age x sex bands + aggregation.
+
+    Net: 100m = {HH_TOTAL, 18 bands} = 19 ; 1km = {HH_TOTAL} = 1 ; total 20.
+
+    All controls have both ``mid`` and ``entd`` seed expressions (the MiD and ENTD
+    built tables share the column names HP_ALTER / HP_SEX / H_GEW / P_GEW).
+
+    Control-field naming follows the production baseline exactly (byte-identical for
+    every kept control):
     - Household total base: ``Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj``
     - Population total base: ``POP_TOTAL_100m_adj``
     - Male age bands: ``M_AGE_{band_label}_agg``
     - Female age bands: ``F_AGE_{band_label}_agg``
-    - Male total: ``M_TOTAL``
-    - Female total: ``F_TOTAL``
 
     The base name is the same for both geographies; the geography suffix is appended
     by :func:`render_catalog_csv`.
@@ -369,7 +390,7 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
     Returns
     -------
     list[CatalogControl]
-        44 backbone controls (22 per geography).
+        20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km).
     """
     HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
@@ -379,58 +400,52 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
 
     catalog: List[CatalogControl] = []
 
-    for geography in (GEO_100M, GEO_1KM):
-        # Household total.
-        catalog.append(
-            CatalogControl(
-                name=HH_TOTAL_BASE,
-                geography=geography,
-                seed_table=SEED_TABLE_HOUSEHOLDS,
-                importance=1000,
-                census_source=(HH_TOTAL_BASE,),
-                seed_expressions={"mid": HH_TOTAL_EXPR, "entd": HH_TOTAL_EXPR},
-            )
+    # --- ZENSUS100m: HH_TOTAL + 18 age x sex bands (POP_TOTAL / M_TOTAL / F_TOTAL
+    #     dropped here as exact sums of kept controls -> lossless). ---
+    catalog.append(
+        CatalogControl(
+            name=HH_TOTAL_BASE,
+            geography=GEO_100M,
+            seed_table=SEED_TABLE_HOUSEHOLDS,
+            importance=1000,
+            census_source=(HH_TOTAL_BASE,),
+            seed_expressions={"mid": HH_TOTAL_EXPR, "entd": HH_TOTAL_EXPR},
         )
-        # Population total.
-        catalog.append(
-            CatalogControl(
-                name=POP_TOTAL_BASE,
-                geography=geography,
-                seed_table=SEED_TABLE_PERSONS,
-                importance=1000,
-                census_source=(POP_TOTAL_BASE,),
-                seed_expressions={"mid": POP_TOTAL_EXPR, "entd": POP_TOTAL_EXPR},
-            )
-        )
-        # 9 male age bands then 9 female age bands.
-        for sex_prefix, sex_value in (("M", 1), ("F", 2)):
-            for band_label, lower, upper in AGE_BANDS:
-                name = f"{sex_prefix}_AGE_{band_label}_agg"
-                expr = _backbone_age_expression(band_label, lower, upper, sex_value)
-                catalog.append(
-                    CatalogControl(
-                        name=name,
-                        geography=geography,
-                        seed_table=SEED_TABLE_PERSONS,
-                        importance=1000,
-                        census_source=(name,),
-                        seed_expressions={"mid": expr, "entd": expr},
-                    )
-                )
-        # Male and female totals.
-        for sex_prefix, sex_value in (("M", 1), ("F", 2)):
-            name = f"{sex_prefix}_TOTAL"
-            expr = f"(persons.HP_SEX=={sex_value})"
+    )
+    # 9 male age bands then 9 female age bands.
+    for sex_prefix, sex_value in (("M", 1), ("F", 2)):
+        for band_label, lower, upper in AGE_BANDS:
+            name = f"{sex_prefix}_AGE_{band_label}_agg"
+            expr = _backbone_age_expression(band_label, lower, upper, sex_value)
             catalog.append(
                 CatalogControl(
                     name=name,
-                    geography=geography,
+                    geography=GEO_100M,
                     seed_table=SEED_TABLE_PERSONS,
                     importance=1000,
                     census_source=(name,),
                     seed_expressions={"mid": expr, "entd": expr},
                 )
             )
+
+    # --- ZENSUS1km: HH_TOTAL ONLY (the household expansion / integerizer anchor).
+    #     POP_TOTAL + the 18 age bands + M/F totals are ALL dropped at 1km: they are
+    #     exact 100m->1km aggregates under nested sub_balancing (lossless). A 1km-ONLY
+    #     person control (POP) is intentionally avoided: build_control_totals emits one
+    #     shared 100m source-column set for both grid geographies, so a 1km-only source
+    #     column is NOT written -> PopulationSim setup raises KeyError. HH_TOTAL is the
+    #     single 1km control; persons are enforced via the 100m age x sex bands + the
+    #     exact 100m->1km aggregation. ---
+    catalog.append(
+        CatalogControl(
+            name=HH_TOTAL_BASE,
+            geography=GEO_1KM,
+            seed_table=SEED_TABLE_HOUSEHOLDS,
+            importance=1000,
+            census_source=(HH_TOTAL_BASE,),
+            seed_expressions={"mid": HH_TOTAL_EXPR, "entd": HH_TOTAL_EXPR},
+        )
+    )
 
     return catalog
 
@@ -498,8 +513,11 @@ _TIER1_HH_SIZE_ENTRIES: Sequence[tuple] = (
 #   single_parent                                     -> alleinerziehend
 #   three_plus_adults                                 -> mehrpers_ohne_kernfamilie
 #   not_classifiable                                  -> None (seed column is NaN/dropped)
+# LOSSLESS reduction: the "einpersonen" entry is intentionally OMITTED. The
+# single-person household count stays pinned by the Tier-1 household-size control
+# H_GR == 1 (einpersonen ~= household_size == 1), so einpersonen becomes the exact
+# residual of the household-type partition and adds no independent constraint.
 _TIER1_HH_TYPE_ENTRIES: Sequence[tuple] = (
-    ("EinpersHH_SingleHH_Typ_priv_HH_Familie_100m_Gitter",    "einpersonen"),
     ("Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter",         "paar_ohne_kind"),
     ("Paare_mitKind_Typ_priv_HH_Familie_100m_Gitter",          "paar_mit_kind"),
     ("Alleinerziehende_Typ_priv_HH_Familie_100m_Gitter",       "alleinerziehend"),
@@ -508,28 +526,34 @@ _TIER1_HH_TYPE_ENTRIES: Sequence[tuple] = (
 
 
 def tier1_controls() -> List[CatalogControl]:
-    """Build the Tier-1 catalog: household-size + household-type controls.
+    """Build the Tier-1 catalog (LOSSLESS-reduced): household-size + household-type.
 
-    Household-size: 6 categories × 2 geographies = 12 controls (MiD + ENTD).
-    Household-type: 5 Zensus Familie classes × 2 geographies = 10 controls (MiD-only).
+    Reduced to ZENSUS100m only (the 1km duplicates aggregate exactly from the 100m
+    controls under nested sub_balancing, so they add no independent constraint):
+
+    Household-size: 6 categories x 1 geography (100m) = 6 controls (MiD + ENTD).
+    Household-type: 4 Zensus Familie classes x 1 geography (100m) = 4 controls
+    (MiD-only). The "einpersonen" class is dropped (see ``_TIER1_HH_TYPE_ENTRIES``):
+    it is the exact residual of the type partition and the single-person count is
+    already pinned by the household-size control ``H_GR == 1``.
 
     The household-size controls use the ``H_GR`` column on the seed households table
     (present in both the MiD and ENTD seeds after the Tier-7 implementation adds it).
 
     The household-type controls use the ``hh_type5`` column on the MiD seed households
-    table, carrying one of five collapsed labels derived from
+    table, carrying one of the collapsed labels derived from
     ``braunschweig.data.mid.status_by_hhtype.map_households_to_hhtype``. ENTD is
     ``None`` (inexpressible) and is dropped by :func:`controls_for_seed` with a WARNING.
 
     Returns
     -------
     list[CatalogControl]
-        22 Tier-1 controls (12 household-size + 10 household-type).
+        10 Tier-1 controls (6 household-size + 4 household-type), all at ZENSUS100m.
     """
     catalog: List[CatalogControl] = []
 
-    # --- Household-size (Task 7) ---
-    for geography in (GEO_100M, GEO_1KM):
+    # --- Household-size (Task 7) -- 100m only ---
+    for geography in (GEO_100M,):
         for census_base, h_gr_value, op in _TIER1_HH_SIZE_ENTRIES:
             expr = f"(households.H_GR {op} {h_gr_value})"
             catalog.append(
@@ -543,8 +567,8 @@ def tier1_controls() -> List[CatalogControl]:
                 )
             )
 
-    # --- Household-type / Lebensform Familie 5-class (Task 8) ---
-    for geography in (GEO_100M, GEO_1KM):
+    # --- Household-type / Lebensform Familie (Task 8) -- 100m only, no einpersonen ---
+    for geography in (GEO_100M,):
         for census_base, hh_type5_class in _TIER1_HH_TYPE_ENTRIES:
             mid_expr = f"(households.hh_type5 == '{hh_type5_class}')"
             catalog.append(
@@ -620,9 +644,12 @@ _TIER2_BUILDING_TYPE_ENTRIES: Sequence[tuple] = (
 
 
 def tier2_controls() -> List[CatalogControl]:
-    """Build the Tier-2 catalog: tenure (owner/renter) + building_type (3-class) controls.
+    """Build the Tier-2 catalog (LOSSLESS-reduced): tenure + building_type controls.
 
-    Tenure: 2 categories (owner, renter) × 2 geographies = 4 controls.
+    Reduced to ZENSUS100m only (the 1km duplicates aggregate exactly from the 100m
+    controls under nested sub_balancing, so they add no independent constraint):
+
+    Tenure: 2 categories (owner, renter) x 1 geography (100m) = 2 controls.
     MiD-only: ENTD does not carry a reliable tenure flag (``entd=None``); the
     control is dropped for ENTD by :func:`controls_for_seed` with a WARNING.
 
@@ -638,7 +665,7 @@ def tier2_controls() -> List[CatalogControl]:
     - H_MIETE in {3, 9, 309}     -> excluded (neither owner nor renter)
 
     Building type: 3 classes (Ein-/Zweifamilienhaus, Mehrfamilienhaus, Sonstiges) ×
-    2 geographies = 6 controls.  MiD-only (ENTD has no building-type flag).
+    1 geography (100m) = 3 controls.  MiD-only (ENTD has no building-type flag).
 
     The building_type controls use MULTI-COLUMN census_source: the derived marginal
     column (e.g. ``building_type_ein_zweifamilienhaus``) is the row-sum of multiple
@@ -655,12 +682,12 @@ def tier2_controls() -> List[CatalogControl]:
     Returns
     -------
     list[CatalogControl]
-        10 Tier-2 controls: 4 tenure + 6 building_type (both × 2 geographies).
+        5 Tier-2 controls: 2 tenure + 3 building_type (all at ZENSUS100m).
     """
     catalog: List[CatalogControl] = []
 
-    # --- Tenure (existing) ---
-    for geography in (GEO_100M, GEO_1KM):
+    # --- Tenure (existing) -- 100m only ---
+    for geography in (GEO_100M,):
         for census_base, mid_expr in _TIER2_TENURE_ENTRIES:
             catalog.append(
                 CatalogControl(
@@ -673,8 +700,8 @@ def tier2_controls() -> List[CatalogControl]:
                 )
             )
 
-    # --- Building type (new, multi-column census_source) ---
-    for geography in (GEO_100M, GEO_1KM):
+    # --- Building type (multi-column census_source) -- 100m only ---
+    for geography in (GEO_100M,):
         for derived_name, source_cols, mid_expr in _TIER2_BUILDING_TYPE_ENTRIES:
             catalog.append(
                 CatalogControl(
@@ -697,27 +724,34 @@ def tier2_controls() -> List[CatalogControl]:
 # seed persons -- exactly like tier2's raw households.H_MIETE / haustyp. The seed-build
 # (mid.load_mid_seed / project_completed_seed) retains these raw cols via
 # select_seed_columns(extra_person_cols=...), so no seed-side derivation/imputation is
-# needed. The code groupings MIRROR the PROVISIONAL crosswalk in attributes.py
-# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2) and the census_source class sums; confirm
-# all three together vs the MiD Codeplan B1 (plan Task 2.0). employed uses P_TAET 1..7
-# (Erwerbstätige; 7=freiwilliger Wehrdienst is the open Task 2.3 call -- drop to 1..6 to
-# exclude it). The derived schulabschluss/beruflabschluss attributes are output-only
-# (assembly, for validation), not used by the control mechanism.
+# needed. The code groupings + census_source class sums are confirmed vs the MiD 2023
+# Codeplan B1 (sheet Personen) and mirror the maps in attributes.py
+# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET 1..6 (Erwerbs-
+# tätige) -- 7 (freiwilliger Wehrdienst / Bundesfreiwilligendienst / FSJ/FÖJ) is
+# EXCLUDED: it is not an ILO-Erwerbstätigkeit (Taschengeld, no wage), so it must not
+# count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
+# 3->mid / 4->high; census low = __21+__22 only (POS ≈0 in West-German BS). __3 (ohne
+# allgemeinbildenden Abschluss) is intentionally DROPPED from low so both sides measure
+# the same completed-qualification universe -- MiD bildung1 cannot cleanly isolate
+# "ohne" (code 1 mixes it with all <15 kids + current pupils). beruflabschluss: bildung2
+# 1->vocational / {2,3}->tertiary (both carry a Hochschulabschluss) / 5->none; code 4
+# (anderer) has no Zensus pendant and is not counted. The derived schulabschluss/
+# beruflabschluss attributes are output-only (assembly, validation), not used here.
 _TIER3_ENTRIES: Sequence[tuple] = (
     # (name, census_source cols, mid expression over the RAW seed-persons cols)
-    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6, 7]))"),
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))"),
     ("schulabschluss_low",
-     ("SCHULABS_STP__21", "SCHULABS_STP__22", "SCHULABS_STP__3"),
-     "(persons.bildung1.isin([1, 2, 5]))"),
+     ("SCHULABS_STP__21", "SCHULABS_STP__22"),
+     "(persons.bildung1 == 2)"),
     ("schulabschluss_mid", ("SCHULABS_STP__23",), "(persons.bildung1 == 3)"),
     ("schulabschluss_high", ("SCHULABS_STP__24",), "(persons.bildung1 == 4)"),
     ("beruflabschluss_none", ("BERUFABS_AUSF_STP__2",), "(persons.bildung2 == 5)"),
     ("beruflabschluss_vocational",
      ("BERUFABS_AUSF_STP__11", "BERUFABS_AUSF_STP__12", "BERUFABS_AUSF_STP__13"),
-     "(persons.bildung2.isin([1, 2]))"),
+     "(persons.bildung2 == 1)"),
     ("beruflabschluss_tertiary",
      ("BERUFABS_AUSF_STP__14", "BERUFABS_AUSF_STP__15", "BERUFABS_AUSF_STP__16", "BERUFABS_AUSF_STP__17"),
-     "(persons.bildung2.isin([3, 4]))"),
+     "(persons.bildung2.isin([2, 3]))"),
 )
 
 
@@ -749,12 +783,13 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
     Parameters
     ----------
     include_tiers:
-        Tiers to include. ``"tier0"`` is always included when present (backbone
-        Zensus controls). ``"tier1"`` adds the 22 household-size + household-type
-        controls. ``"tier2"`` adds the 4 tenure (owner/renter) controls.
-        ``"tier3"`` adds the 7 employment/education controls at KREIS geography
-        (MiD-only; ENTD drops all via controls_for_seed).
-        Default ``("tier0",)`` reproduces the pre-Tier-7 baseline exactly.
+        Tiers to include (LOSSLESS-reduced catalog). ``"tier0"`` is always included
+        when present: 21 backbone Zensus controls (100m HH_TOTAL + 18 age x sex bands;
+        1km HH_TOTAL + POP_TOTAL). ``"tier1"`` adds the 10 household-size (6) +
+        household-type (4) controls at 100m. ``"tier2"`` adds the 5 tenure (2) +
+        building_type (3) controls at 100m. ``"tier3"`` adds the 7 employment/education
+        controls at KREIS geography (MiD-only; ENTD drops all via controls_for_seed).
+        Full ``("tier0","tier1","tier2","tier3")`` = 21 + 10 + 5 + 7 = 43.
 
     Returns
     -------

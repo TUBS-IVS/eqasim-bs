@@ -76,7 +76,9 @@ KEY_BATCH_TIMEOUT = "braunschweig.population.popsim.batch_timeout_s"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
-# Phase 4B: RegioStaR donor stratification flag (default OFF = byte-identical).
+# RegioStaR donor stratification (Phase 4B). Default ON (project rule: new features
+# default on); set False for the byte-identical pre-4B path (full seed per batch,
+# still supported + unit-tested).
 KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
@@ -91,6 +93,16 @@ KEY_CONTROLS_SOURCE = "braunschweig.population.popsim.controls_source"
 # Control tiers: comma-separated tier names included when controls_source="catalog".
 # Default "tier0" = byte-identical to the pre-Task-7 baseline.
 KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
+# Tier-3 KREIS controls: directory holding the imported cleancensus kreis_* tables
+# (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
+# "tier3" is among control_tiers (catalog source); ignored otherwise.
+KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
+# Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
+# seed. "default" -> (1,2,3) Mo-Fr (legacy: weekend / kernwo=4 households dropped).
+# "off"/"all" -> keep ALL reporting days (no day filter). The reporting day is a
+# trip-modelling concern, irrelevant to the population's employment/education/HH
+# composition; "off" enlarges the donor pool (reduces IPU weight concentration).
+KEY_SEED_DAY_FILTER = "braunschweig.population.popsim.seed_day_filter"
 # Spatial income tilt (Nettokaltmiete GAMMA layer): default ON per project rule.
 # When ON, applies a within-Kreis income redistribution scaled by the per-cell
 # net cold rent index (renters) or Eigentümerquote index (owners), preserving the
@@ -161,6 +173,32 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
 
+def _kreis_controls_map(controls):
+    """Map each KREIS control to its census_source columns, keyed by the column name
+    the control_totals_KREIS.csv must carry.
+
+    The key is the control_field ``f"{name}_{geography}"`` (e.g. ``employed_KREIS``) --
+    the SAME name render_catalog_csv writes into controls.csv, and what PopulationSim
+    looks up in the control-totals table. The grid path achieves this via the geography
+    column suffix (build_control_totals); the KREIS path must mirror it here, else
+    PopulationSim errors ``<field> not in index``.
+    """
+    return {f"{c.name}_{c.geography}": tuple(c.census_source) for c in controls}
+
+
+def _grid_geography_controls(controls, cs):
+    """Keep only controls sourced from the GRID parquet (ZENSUS100m / ZENSUS1km).
+
+    The grid column load + aggregation read columns from the prepared 100m parquet.
+    KREIS-geography Tier-3 controls (employment/education) carry census_source columns
+    that live in the imported kreis table, NOT the grid -- including them here would
+    request Kreis-census columns from the grid (spurious WARNINGs + bogus all-zero
+    columns). Their KREIS totals are built separately via folders.build_kreis_control_totals.
+    """
+    grid_geos = (cs.GEO_100M, cs.GEO_1KM)
+    return [c for c in controls if c.geography in grid_geos]
+
+
 def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
     """Return the multi-column aggregation map for the active controls.
 
@@ -180,7 +218,7 @@ def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mi
         return {}
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.build_aggregation_map(active)
 
 
@@ -198,7 +236,7 @@ def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid",
         return None
     from braunschweig.popsim import control_spec as cs
     catalog = cs.full_catalog(include_tiers=tiers)
-    active = cs.controls_for_seed(catalog, seed)
+    active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.source_columns_union(active)
 
 
@@ -231,15 +269,19 @@ def configure(context):
     # Seeded attribute imputation in build_persons; declaring the key also makes
     # synpp invalidate the stage cache when the pipeline random_seed changes.
     context.config("random_seed")
-    # Phase 4B: RegioStaR donor stratification.  Default False = byte-identical to
-    # pre-4B: each batch receives the full seed, no stratum filtering.
-    context.config(KEY_STRATIFY, False)
+    # RegioStaR donor stratification (Phase 4B): default ON (project rule: features
+    # default on). Set False for the byte-identical pre-4B path (full seed per batch).
+    context.config(KEY_STRATIFY, True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
     # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
     context.config(KEY_CONTROL_TIERS, "tier0")
+    # Tier-3 KREIS controls directory. Default "" = not configured (no Tier-3).
+    context.config(KEY_KREIS_CONTROLS, "")
+    # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
+    context.config(KEY_SEED_DAY_FILTER, "default")
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
     # When OFF, the income frame is unchanged (byte-identical); no cells parquet
     # re-read occurs.
@@ -394,6 +436,10 @@ def execute(context) -> pd.DataFrame:
     # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
     control_tiers_str = context.config(KEY_CONTROL_TIERS)
     control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
+    # Seed reporting-day filter: "off"/"all" -> keep all kernwo (no day filter, ()),
+    # else None -> the loader's default (1,2,3) Mo-Fr.
+    _day_filter_cfg = str(context.config(KEY_SEED_DAY_FILTER)).strip().lower()
+    seed_day_filter = () if _day_filter_cfg in ("off", "all", "none", "") else None
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     controls_df = build_controls_df(
         controls_source=controls_source,
@@ -402,6 +448,29 @@ def execute(context) -> pd.DataFrame:
         tiers=control_tiers,
     )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
+
+    # Tier-3 KREIS controls (employment / education): when active, load the imported
+    # per-Kreis census table and derive the {control_name: census_source} map from the
+    # catalog's KREIS-geography controls expressible by the active seed. Passed to
+    # run_popsim_mid, which builds control_totals_KREIS.csv per batch. When tier3 is
+    # absent both stay None -> the tier0-2 folder is byte-identical.
+    kreis_table = None
+    kreis_controls_map = None
+    if "tier3" in control_tiers and controls_source == "catalog":
+        from braunschweig.popsim import control_spec as _cs
+        tier3 = [c for c in _cs.tier3_controls() if c.expression_for(source_name) is not None]
+        kreis_controls_map = _kreis_controls_map(tier3)
+        kreis_dir = context.config(KEY_KREIS_CONTROLS)
+        if not kreis_dir:
+            raise ValueError(
+                "control_tiers includes 'tier3' but "
+                f"{KEY_KREIS_CONTROLS} is not set; cannot source the KREIS controls."
+            )
+        kreis_table = mid.load_kreis_control_table(kreis_dir)
+        logger.info(
+            "[popsim.stage] Tier-3 KREIS controls active: %d controls, kreis table %d rows from %s",
+            len(kreis_controls_map), len(kreis_table), kreis_dir,
+        )
 
     # For catalog-based controls with multi-column census sources (e.g. building_type),
     # load the raw source columns from the parquet (union of all census_source tuples)
@@ -455,7 +524,12 @@ def execute(context) -> pd.DataFrame:
         # frames. RNG offset +74513 keeps the mirror-draw stream disjoint from
         # the +74511 attribute-imputation stream below.
         weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
-        day_filter = seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else None
+        # Weekend-plan match needs weekend reporters in the donor, so it forces ALL
+        # kernwo days (overriding seed_day_filter). When OFF we defer to main's
+        # configurable seed_day_filter (default None -> loader default (1,2,3) Mo-Fr).
+        day_filter = (
+            seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
+        )
         completion_rng = np.random.RandomState(random_seed + 74513)
         (
             completed_donor_households, completed_donor_persons,
@@ -491,7 +565,7 @@ def execute(context) -> pd.DataFrame:
         # mid_dir. This path is byte-identical to all prior versions.
         seed_columns = source.seed_columns()
         seed_households, seed_persons, report = mid.load_mid_seed(
-            mid_dir, columns=seed_columns
+            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 
@@ -515,6 +589,8 @@ def execute(context) -> pd.DataFrame:
         num_workers=num_workers,
         source=source,
         stratify_regiostar=stratify_regiostar,
+        kreis_table=kreis_table,
+        kreis_controls_map=kreis_controls_map,
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
