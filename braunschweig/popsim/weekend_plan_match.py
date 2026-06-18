@@ -64,3 +64,32 @@ def match_household(target_id, target_feats, weekday_feats, *, rng):
             ids = sorted(pool.index.tolist())  # size-only fallback
             return ids[int(rng.randint(len(ids)))], len(SOFT_KEYS_BY_PRIORITY)
         active.pop()  # drop the lowest-priority remaining soft key
+
+
+AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
+
+
+def _age_band(ages: pd.Series) -> np.ndarray:
+    return pd.cut(ages, bins=list(AGE_BAND_EDGES), labels=False).to_numpy()
+
+
+def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
+    """Greedily pair each target member to a distinct donor member by
+    (coarse age band, sex), falling back to age band only, then any free donor.
+    """
+    d_band = _age_band(donor_members["HP_ALTER"])
+    d_sex = donor_members["HP_SEX"].to_numpy()
+    used = np.zeros(len(donor_members), dtype=bool)
+    t_band = _age_band(target_members["HP_ALTER"])
+    t_sex = target_members["HP_SEX"].to_numpy()
+    pairs = []
+    for tpos in range(len(target_members)):
+        exact = np.flatnonzero(~used & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
+        band_only = np.flatnonzero(~used & (d_band == t_band[tpos]))
+        any_free = np.flatnonzero(~used)
+        for cand in (exact, band_only, any_free):
+            if len(cand) > 0:
+                pairs.append((tpos, int(cand[0])))
+                used[cand[0]] = True
+                break
+    return pairs

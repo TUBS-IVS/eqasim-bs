@@ -76,3 +76,11 @@ def test_match_household_returns_none_when_no_equal_size():
     })
     mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
     assert mid is None and level is None
+
+
+def test_align_members_pairs_by_age_band_then_sex():
+    target = pd.DataFrame({"HP_ALTER": [40, 8], "HP_SEX": [1, 2]}).reset_index(drop=True)
+    donor = pd.DataFrame({"HP_ALTER": [10, 42], "HP_SEX": [2, 1]}).reset_index(drop=True)
+    pairs = wpm.align_members(target, donor)
+    # adult target (pos 0) -> adult donor (pos 1); child target (pos 1) -> child donor (pos 0)
+    assert sorted(pairs) == [(0, 1), (1, 0)]
