@@ -133,16 +133,17 @@ def match_person(target_row, weekday_persons, *, rng):
         pool = weekday_persons[mask]
         if len(pool) > 0:
             level = len(PERSON_KEYS_BY_PRIORITY) - len(active)
-            chosen = pool.sort_values(["H_ID", "P_ID"]).iloc[int(rng.randint(len(pool)))]
-            return chosen["H_ID"], chosen["P_ID"], level
+            h, p = weighted_choice(list(zip(pool["H_ID"], pool["P_ID"])),
+                                   pool["P_GEW"].to_numpy(), rng=rng)
+            return h, p, level
         if not active:
-            chosen = weekday_persons.sort_values(["H_ID", "P_ID"]).iloc[
-                int(rng.randint(len(weekday_persons)))]
+            h, p = weighted_choice(list(zip(weekday_persons["H_ID"], weekday_persons["P_ID"])),
+                                   weekday_persons["P_GEW"].to_numpy(), rng=rng)
             logger.debug(
                 "[weekend_plan_match] match_person hit the whole-pool size-only "
                 "fallback (all person keys dropped); drew weekday (%s, %s).",
-                chosen["H_ID"], chosen["P_ID"])
-            return chosen["H_ID"], chosen["P_ID"], len(PERSON_KEYS_BY_PRIORITY)
+                h, p)
+            return h, p, len(PERSON_KEYS_BY_PRIORITY)
         active.pop()
 
 

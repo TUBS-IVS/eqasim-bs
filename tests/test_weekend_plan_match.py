@@ -111,6 +111,7 @@ def test_match_person_exact_then_relaxes():
         "H_ID": [50, 51], "P_ID": [1, 1],
         "HP_ALTER": [40, 9], "HP_SEX": [1, 2],
         "P_FSCHEIN": [1, 2], "P_TAET": [1, 11], "P_FKARTE": [1, 1],
+        "P_GEW": [1.0, 1.0],
     })
     target = pd.Series({
         "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
@@ -138,6 +139,7 @@ def test_reassign_hh_match_remaps_weekend_household():
         "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -164,6 +166,7 @@ def test_reassign_person_fallback_when_no_equal_size_weekday_hh():
         "kernwo": [2, 6, 6],            # weekday single HH 1; weekend couple HH 2 (size 2)
         "source_H_ID": [1, 2, 2], "source_P_ID": [1, 1, 2],
         "member_imputed": [False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -189,6 +192,7 @@ def test_reassign_is_deterministic_given_rng():
         "kernwo": [2, 2, 2, 2, 6, 6],   # HH3 weekend
         "source_H_ID": [1, 1, 2, 2, 3, 3], "source_P_ID": [1, 2, 1, 2, 1, 2],
         "member_imputed": [False] * 6,
+        "P_GEW": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     })
     a, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
     b, _, _ = wpm.reassign_weekend_plan_sources(households.copy(), persons.copy(), rng=np.random.RandomState(7))
@@ -211,6 +215,7 @@ def test_reassign_derives_hh_type5_when_absent():
         "kernwo": [2, 2, 6, 6],          # HH 1 weekday, HH 2 weekend
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     assert "hh_type5" not in households.columns
     out, trace, report = wpm.reassign_weekend_plan_sources(
@@ -245,6 +250,7 @@ def test_reassign_no_silent_gap_when_donor_undersized():
         "kernwo": [2, 2, 6, 6],
         "source_H_ID": [1, 2, 3, 3], "source_P_ID": [1, 1, 1, 2],
         "member_imputed": [False, False, False, False],
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, report = wpm.reassign_weekend_plan_sources(
         households, persons, rng=np.random.RandomState(0))
@@ -271,6 +277,7 @@ def test_every_weekend_person_is_resolved_no_silent_gap():
         "kernwo": [2, 2, 6, 6],
         "source_H_ID": [1, 1, 2, 2], "source_P_ID": [1, 2, 1, 2],
         "member_imputed": [False] * 4,
+        "P_GEW": [1.0, 1.0, 1.0, 1.0],
     })
     out, trace, _ = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0))
     weekend = trace[trace["donor_day_type"] == "weekend"]
@@ -312,6 +319,7 @@ def test_reassign_sweeps_weekend_member_of_mixed_household():
         "source_H_ID":   [10, 10,  20,  20,  20,  20],
         "source_P_ID":   [ 1,  2,   1,   2,   3,   4],
         "member_imputed": [False] * 6,
+        "P_GEW":         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     })
 
     out, trace, report = wpm.reassign_weekend_plan_sources(
@@ -372,6 +380,23 @@ def test_match_household_draws_proportional_to_h_gew():
         mid, _ = wpm.match_household(7, target, weekday, rng=rng)
         counts[mid] += 1
     assert counts[200] > counts[100] * 3  # heavy HH dominates
+
+
+def test_match_person_draws_proportional_to_p_gew():
+    # two persons share the (highest-priority) keys; person (50,1) has 9x the weight
+    weekday = pd.DataFrame({
+        "H_ID": [50, 60], "P_ID": [1, 1],
+        "HP_ALTER": [40, 40], "HP_SEX": [1, 1],
+        "P_FSCHEIN": [1, 1], "P_TAET": [1, 1], "P_FKARTE": [1, 1],
+        "P_GEW": [9.0, 1.0],
+    })
+    target = pd.Series({"HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1})
+    rng = np.random.RandomState(0)
+    counts = {50: 0, 60: 0}
+    for _ in range(2000):
+        h, _p, _l = wpm.match_person(target, weekday, rng=rng)
+        counts[h] += 1
+    assert counts[50] > counts[60] * 3  # heavy person dominates
 
 
 def test_fallback_pool_excludes_weekend_reporting_persons():
