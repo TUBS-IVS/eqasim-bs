@@ -271,5 +271,5 @@ def test_segment_fuel_fallback_prefers_same_segment(lookup):
     df_glob = pd.DataFrame({"brand": ["LAMBORGHINI"], "model": ["LAMBORGHINI URUS"],
                             "powertrain": ["petrol"], "segment": ["gelaendewagen"]})
     out = hsn_tsn.attach_hsn_tsn(df_glob, lookup=lookup, random_seed=3)
-    assert out["hsn_tsn_match_tier"].iloc[0] in {"segment", "global"}
+    assert out["hsn_tsn_match_tier"].iloc[0] == "segment"
     assert out["engine_power_kw"].iloc[0] > 0
