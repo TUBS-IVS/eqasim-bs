@@ -64,10 +64,55 @@ def test_unknown_brand_returns_none(ff):
     assert ff.model_feasible_powertrains("FABRIKAMARKE", "phantasiemodell") is None
 
 
-def test_known_brand_unknown_family_returns_none(ff):
-    # A known canonical brand but a family that has no HSN/TSN rows -> None
-    # (unknown family; caller keeps the unmasked segment pmf).
-    assert ff.model_feasible_powertrains("VW", "zzznichtexistent") is None
+def test_known_brand_unknown_family_returns_brand_fallback(ff):
+    # A known canonical brand but a family that has no HSN/TSN rows -> brand-level
+    # fallback (not None). VW has petrol AND diesel in its HSN/TSN rows, so the
+    # returned set must include both (no false constraint).
+    result = ff.model_feasible_powertrains("VW", "zzznichtexistent")
+    assert result is not None, "known brand with unknown family should return brand-level fallback"
+    assert "petrol" in result
+    assert "diesel" in result
+
+
+# --------------------------------------------------------------------------- #
+# Brand-level fallback: new tests
+# --------------------------------------------------------------------------- #
+def test_brand_level_constrains_single_fuel_brand_lamborghini(ff):
+    """Lamborghini family 'urus' is absent from Lambo HSN/TSN rows (only Gallardo etc.).
+    The brand-level fallback should return petrol-only for the brand -> excludes diesel."""
+    result = ff.model_feasible_powertrains("LAMBORGHINI", "urus")
+    assert result is not None, (
+        "LAMBORGHINI brand is in HSN/TSN lookup; brand-level fallback must fire, not None"
+    )
+    assert "diesel" not in result, f"LAMBORGHINI/urus must exclude diesel, got {result}"
+    assert "petrol" in result, f"LAMBORGHINI/urus must include petrol, got {result}"
+
+
+def test_brand_level_constrains_single_fuel_brand_tesla(ff):
+    """Tesla family miss (e.g. 'roadster2' not in lookup) -> brand-level fallback.
+    Tesla is BEV-only in HSN/TSN -> must exclude petrol and diesel."""
+    # Pick a family name that is almost certainly absent from the Tesla lookup rows
+    result = ff.model_feasible_powertrains("TESLA", "roadster2")
+    assert result is not None, (
+        "TESLA brand is in HSN/TSN; brand-level fallback must fire, not None"
+    )
+    assert "petrol" not in result, f"Tesla brand fallback must exclude petrol, got {result}"
+    assert "diesel" not in result, f"Tesla brand fallback must exclude diesel, got {result}"
+    assert "bev" in result, f"Tesla brand fallback must include bev, got {result}"
+
+
+def test_brand_level_permissive_for_multifuel(ff):
+    """VW with unknown family -> brand-level fallback includes petrol AND diesel."""
+    result = ff.model_feasible_powertrains("VW", "zzznichtexistent")
+    assert result is not None
+    assert "petrol" in result
+    assert "diesel" in result
+
+
+def test_unknown_brand_still_none(ff):
+    """A brand genuinely absent from the 62-brand HSN/TSN lookup returns None.
+    Ferrari/MG are not in the scraped set (Lamborghini IS, so we can't use it)."""
+    assert ff.model_feasible_powertrains("FERRARI", "roma") is None
 
 
 # --------------------------------------------------------------------------- #
