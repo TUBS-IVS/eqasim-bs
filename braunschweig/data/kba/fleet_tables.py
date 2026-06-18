@@ -286,6 +286,28 @@ def load_mid_segment_by_status_bundesland(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_mid_age_by_segment_status(data_path: str) -> pd.DataFrame:
+    """MiD 2023 vehicle-age band x segment x economic status.
+
+    ``share`` is P(age_band | segment, status); within each (segment, status)
+    cell the shares sum to 1.0.  ``base_weighted`` is the weighted vehicle base
+    of the (segment, status) cell used to produce the age distribution.
+
+    Produced by ``scripts/build_mid_age_by_segment_status.py`` from the raw
+    MiD 2023 Autos micro-data (``MiD2023_Autos.csv``).
+    """
+    filename = "mid2023_age_by_segment_status.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df, ["segment", "status", "age_band", "share", "base_weighted"],
+        filename,
+    )
+    _require_labels(df["segment"], SEGMENT_LABELS, "segment", filename)
+    _require_labels(df["status"], STATUS_LABELS, "status", filename)
+    _require_labels(df["age_band"], AGE_BAND_LABELS, "age_band", filename)
+    return df
+
+
 def load_mid_segment_by_status_raumtyp(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by RegioStaR-7 Raumtyp (column-%).
 
