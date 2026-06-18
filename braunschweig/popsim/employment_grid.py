@@ -20,29 +20,6 @@ from braunschweig.popsim.zensus_employment_age import AGE_GROUPS
 
 MIN_EMPLOYMENT_AGE = 16
 
-# (age_class, lo_inclusive, hi_exclusive_or_None) -- GENESIS 13111 bands, floored at 16.
-# Kept for backward compatibility with band_for_age (used by some callers).
-GENESIS_EMPLOYMENT_BANDS: tuple[tuple[int, int, int | None], ...] = (
-    (0, 16, 20),
-    (20, 20, 25),
-    (25, 25, 30),
-    (30, 30, 50),
-    (50, 50, 60),
-    (60, 60, 65),
-    (65, 65, None),
-)
-
-
-def band_for_age(age: int) -> int | None:
-    """Return the GENESIS age_class for a single year, or None if not employable."""
-    if age < MIN_EMPLOYMENT_AGE:
-        return None
-    for age_class, lo, hi in GENESIS_EMPLOYMENT_BANDS:
-        if age >= lo and (hi is None or age < hi):
-            return age_class
-    return None
-
-
 _SEX = (("M", "ERWERBSTAT_KURZ_STP__11_M"), ("F", "ERWERBSTAT_KURZ_STP__11_W"))
 
 

@@ -3,19 +3,9 @@ import pandas as pd
 from braunschweig.popsim import employment_grid as eg
 
 
-def test_band_for_age_maps_genesis_bands_and_floors_at_16():
-    assert eg.band_for_age(15) is None       # below minimum employment age
-    assert eg.band_for_age(16) == 0          # u20 band
-    assert eg.band_for_age(19) == 0
-    assert eg.band_for_age(20) == 20
-    assert eg.band_for_age(29) == 25
-    assert eg.band_for_age(30) == 30
-    assert eg.band_for_age(49) == 30
-    assert eg.band_for_age(64) == 60
-    assert eg.band_for_age(65) == 65
-    assert eg.band_for_age(99) == 65
-
-
+# NOTE: test_band_for_age_maps_genesis_bands_and_floors_at_16 was removed because
+# GENESIS_EMPLOYMENT_BANDS and band_for_age were deleted (GENESIS approach replaced by
+# Zensus age-shares).
 # NOTE: test_employable_population_by_kreis_sums_single_years_into_bands,
 # test_employment_rates_divide_svb_by_population, test_employment_rates_zero_population_is_zero_rate,
 # test_per_cell_targets_apply_shape_and_rescale_to_census_level,
@@ -123,3 +113,44 @@ def test_add_employment_grid_columns_attaches_6_targets_to_cells_copy():
     assert list(out["OTHER"]) == [7, 8]
     # Input cells frame is not mutated (copy semantics).
     assert "EMPLOYED_M_prime_agg" not in cells.columns
+
+
+def test_per_cell_targets_per_kreis_no_bleed():
+    """Kreis 03102 and 03103 each produce their own correct totals with no cross-bleed."""
+    # Two Kreise, two cells each.  All prime-age males for simplicity.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2", "c3", "c4"],
+        "KREIS":      ["03102", "03102", "03103", "03103"],
+        "M_AGE_40":   [100,      300,     200,      400],
+        "M_AGE_50":   [0,        0,       0,        0],
+        "F_AGE_40":   [0,        0,       0,        0],
+    })
+    census_levels = pd.DataFrame({
+        "ARS_kreis":                   ["03102", "03103"],
+        "ERWERBSTAT_KURZ_STP__11_M":   [140.0,   360.0],
+        "ERWERBSTAT_KURZ_STP__11_W":   [0.0,     0.0],
+    })
+    # Both Kreise: all employed are prime-age (shares sum to 1 each, different distributions).
+    age_shares_by_kreis = {
+        "03102": {"young": 0.0, "prime": 1.0, "old": 0.0},
+        "03103": {"young": 0.0, "prime": 1.0, "old": 0.0},
+    }
+    out = eg.per_cell_employment_targets(cells, census_levels, age_shares_by_kreis)
+    out = out.set_index("ZENSUS100m")
+
+    # Kreis 03102: level_M=140, prime_share=1.0 → total prime_M = 140
+    #   cells c1:c2 pop ratio 100:300 → c1=35, c2=105
+    total_03102 = out.loc[["c1", "c2"], "EMPLOYED_M_prime_agg"].sum()
+    assert round(total_03102, 6) == 140.0, f"03102 total={total_03102}"
+    assert round(out.loc["c1", "EMPLOYED_M_prime_agg"], 6) == 35.0
+    assert round(out.loc["c2", "EMPLOYED_M_prime_agg"], 6) == 105.0
+
+    # Kreis 03103: level_M=360, prime_share=1.0 → total prime_M = 360
+    #   cells c3:c4 pop ratio 200:400 → c3=120, c4=240
+    total_03103 = out.loc[["c3", "c4"], "EMPLOYED_M_prime_agg"].sum()
+    assert round(total_03103, 6) == 360.0, f"03103 total={total_03103}"
+    assert round(out.loc["c3", "EMPLOYED_M_prime_agg"], 6) == 120.0
+    assert round(out.loc["c4", "EMPLOYED_M_prime_agg"], 6) == 240.0
+
+    # The two totals must differ — confirming they are not cross-contaminated.
+    assert total_03102 != total_03103
