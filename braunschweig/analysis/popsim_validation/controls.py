@@ -52,6 +52,7 @@ from braunschweig.analysis.population_validation.controls import (
     categorical_person_control,
     _geo_col,
 )
+from braunschweig.popsim.zensus_employment_age import AGE_GROUPS as _AGE_GROUPS3
 
 if TYPE_CHECKING:
     from braunschweig.analysis.population_validation.population_source import PopulationFrames
@@ -71,10 +72,10 @@ _ARS_COLUMN_CLEAN = "RegionalSchlussel_ARS"
 # Kreis controls dir (GENESIS per-Kreis marginals) relative to the data root.
 _KREIS_CONTROLS_SUBPATH = "braunschweig/popsim/kreis_controls"
 
-# Employment seed predicate: P_TAET in {1..6} (matches control_spec's "employed"
-# expression). NOT attributes.EMPLOYED_TAET, which also includes 7 (Wehr-/
-# Bundesfreiwilligendienst/FSJ) -- 7 is excluded from the ILO-employed control.
-_EMPLOYED_PTAET = frozenset({1, 2, 3, 4, 5, 6})
+# Employment seed predicate: MiD official `erwerb` definition (P_TAET in {1,2,3,4,6,8}).
+# Includes Auszubildende (8); excludes 5 (Elternzeit) and 7 (FSJ/Wehrdienst).
+# Consistent with attributes.EMPLOYED_TAET and the Tier-3 control expressions.
+_EMPLOYED_PTAET = frozenset({1, 2, 3, 4, 6, 8})
 
 # Census-source column groups in the merged kreis control table (raw GENESIS
 # columns). Mirror control_spec._TIER3_ENTRIES + the ERWERBSTAT universe (children
@@ -528,8 +529,9 @@ def _persons_ars5(frames: "PopulationFrames", value_col: str) -> pd.DataFrame:
 
 
 def _realized_employed(frames: "PopulationFrames", geo: pd.DataFrame) -> pd.DataFrame:
-    """Realized employment (Tier-3): per Kreis, persons with P_TAET in {1..6} are
-    'employed', all others 'not_employed' (over the whole synthetic population)."""
+    """Realized employment (Tier-3): per Kreis, persons with P_TAET in {1,2,3,4,6,8}
+    (= the ``_EMPLOYED_PTAET`` constant; MiD ``erwerb`` definition) are 'employed',
+    all others 'not_employed' (over the whole synthetic population)."""
     persons = frames.persons
     if "P_TAET" not in persons.columns or "RegionalSchlussel_ARS" not in persons.columns:
         LOGGER.warning("P_TAET/RegionalSchlussel_ARS absent; employed control skipped.")
@@ -569,6 +571,34 @@ def _realized_beruflabschluss(frames: "PopulationFrames", geo: pd.DataFrame) -> 
     p = p.dropna(subset=["category"])
     out = p.groupby(["ars5", "category"]).size().rename("synthetic_count").reset_index()
     return out.rename(columns={"ars5": "geo_id"})
+
+
+def employed_25_64_rate(persons):
+    """Employment rate within the 25-64 age band, per Kreis (ARS[:5])."""
+    band = persons[(persons["HP_ALTER"] >= 25) & (persons["HP_ALTER"] <= 64)].copy()
+    band["KREIS"] = band["RegionalSchlussel_ARS"].astype(str).str[:5]
+    band["is_emp"] = band["P_TAET"].isin(_EMPLOYED_PTAET)
+    grp = band.groupby("KREIS")["is_emp"]
+    return (grp.sum() / grp.count()).to_dict()
+
+
+def employed_by_age_group(persons):
+    """Employment rate per Kreis × age group (young 16-29 / prime 30-59 / old 60+).
+
+    Uses the module-level ``_EMPLOYED_PTAET`` (MiD erwerb definition: P_TAET in
+    {1,2,3,4,6,8}).  Returns a dict keyed by ``(kreis5, group_name)`` where
+    kreis5 is the 5-digit ARS prefix (``RegionalSchlussel_ARS[:5]``).
+    """
+    df = persons.copy()
+    df["K"] = df["RegionalSchlussel_ARS"].astype(str).str[:5]
+    df["is_emp"] = df["P_TAET"].isin(_EMPLOYED_PTAET)
+    out = {}
+    for g, lo, hi in _AGE_GROUPS3:
+        sub = df[(df["HP_ALTER"] >= lo) & (df["HP_ALTER"] <= hi)]
+        grp = sub.groupby("K")["is_emp"]
+        for k, rate in (grp.sum() / grp.count()).items():
+            out[(k, g)] = rate
+    return out
 
 
 # ---------------------------------------------------------------------------

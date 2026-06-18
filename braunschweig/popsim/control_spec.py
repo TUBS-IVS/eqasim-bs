@@ -726,10 +726,10 @@ def tier2_controls() -> List[CatalogControl]:
 # select_seed_columns(extra_person_cols=...), so no seed-side derivation/imputation is
 # needed. The code groupings + census_source class sums are confirmed vs the MiD 2023
 # Codeplan B1 (sheet Personen) and mirror the maps in attributes.py
-# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET 1..6 (Erwerbs-
-# tätige) -- 7 (freiwilliger Wehrdienst / Bundesfreiwilligendienst / FSJ/FÖJ) is
-# EXCLUDED: it is not an ILO-Erwerbstätigkeit (Taschengeld, no wage), so it must not
-# count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
+# (SCHULABS_BY_BILDUNG1 / BERUFABS_BY_BILDUNG2). employed uses P_TAET ∈ {1,2,3,4,6,8}
+# = MiD `erwerb` definition (incl. 8 Auszubildende; excl. 5 Elternzeit and 7 FSJ/
+# freiwilliger Dienst): 7 is not an ILO-Erwerbstätigkeit (Taschengeld, no wage) so it
+# must not count toward census __11 (ILO Erwerbstätige). schulabschluss: bildung1 2->low /
 # 3->mid / 4->high; census low = __21+__22 only (POS ≈0 in West-German BS). __3 (ohne
 # allgemeinbildenden Abschluss) is intentionally DROPPED from low so both sides measure
 # the same completed-qualification universe -- MiD bildung1 cannot cleanly isolate
@@ -739,7 +739,7 @@ def tier2_controls() -> List[CatalogControl]:
 # beruflabschluss attributes are output-only (assembly, validation), not used here.
 _TIER3_ENTRIES: Sequence[tuple] = (
     # (name, census_source cols, mid expression over the RAW seed-persons cols)
-    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 5, 6]))"),
+    ("employed", ("ERWERBSTAT_KURZ_STP__11",), "(persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))"),
     ("schulabschluss_low",
      ("SCHULABS_STP__21", "SCHULABS_STP__22"),
      "(persons.bildung1 == 2)"),
@@ -777,7 +777,41 @@ def tier3_controls() -> List[CatalogControl]:
     return catalog
 
 
-def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogControl]:
+def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
+    """Ten 100m age-group×sex employment controls (5 groups × 2 sexes). MiD-only.
+
+    Age groups: 16_29 (16-29), 30_39 (30-39), 40_49 (40-49), 50_59 (50-59), 60plus (60+).
+    census_source is the per-cell target column injected by employment_grid into the
+    cells frame (EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg).
+    ENTD cannot express P_TAET -> None.
+    Employed definition: P_TAET ∈ {1,2,3,4,6,8} (MiD erwerb; incl. Azubi, excl. Elternzeit/FSJ).
+    """
+    groups = {
+        "16_29": "(persons.HP_ALTER>15)&(persons.HP_ALTER<30)",
+        "30_39": "(persons.HP_ALTER>29)&(persons.HP_ALTER<40)",
+        "40_49": "(persons.HP_ALTER>39)&(persons.HP_ALTER<50)",
+        "50_59": "(persons.HP_ALTER>49)&(persons.HP_ALTER<60)",
+        "60plus": "(persons.HP_ALTER>59)",
+    }
+    out: List[CatalogControl] = []
+    for prefix, sex in (("M", 1), ("F", 2)):
+        for g, ageclause in groups.items():
+            name = f"EMPLOYED_{prefix}_{g}_agg"
+            expr = f"(persons.P_TAET.isin([1, 2, 3, 4, 6, 8]))&(persons.HP_SEX=={sex})&{ageclause}"
+            out.append(
+                CatalogControl(
+                    name=name,
+                    geography=GEO_100M,
+                    seed_table=SEED_TABLE_PERSONS,
+                    importance=importance,
+                    census_source=(name,),
+                    seed_expressions={"mid": expr, "entd": None},
+                )
+            )
+    return out
+
+
+def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -805,6 +839,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",)) -> List[CatalogContr
         catalog.extend(tier2_controls())
     if "tier3" in include_tiers:
         catalog.extend(tier3_controls())
+    if include_employment_grid:
+        catalog.extend(employment_grid_controls())
     return catalog
 
 

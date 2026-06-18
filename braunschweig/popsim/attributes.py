@@ -33,21 +33,24 @@ from braunschweig.popsim import missing
 #  95 Nicht zuzuordnen (unclassifiable)   -- NOT in map -> fallback
 SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 
-# MiD P_TAET (Taetigkeit der Person): codes 1..7 are forms of employment, 8..17 are
-# not employed. Source: MiD 2023 Codeplan B1 (Personen sheet, variable P_TAET):
+# MiD P_TAET (Taetigkeit der Person): MiD official `erwerb` definition (Erwerbstätigkeit
+# ja/nein per MiD methodology). Source: MiD 2023 Codeplan B1 (Personen sheet, P_TAET):
 #   1  Angestellte/r, Arbeiter/in (auch Zeit-/Berufssoldat/in)       -> employed
 #   2  Beamtin/Beamter                                               -> employed
 #   3  Selbststaendige/r, Freiberufler/in                            -> employed
 #   4  geringfuegig erwerbstaetig (auch 520-Euro-Job)                -> employed
-#   5  erwerbstaetig, aber momentan in Elternzeit/Pflegezeit/etc.    -> employed
+#   5  erwerbstaetig, aber momentan in Elternzeit/Pflegezeit/etc.    -> NOT employed (Elternzeit)
 #   6  unbezahlt mithelfende/r Familienangehoerige/r im Betrieb      -> employed
-#   7  freiwilliger Wehrdienst / Bundesfreiwilligendienst (FSJ/FOEJ) -> employed
-#   8  in Ausbildung            9  Schueler/in        10 Student/in   -> not employed
+#   7  freiwilliger Wehrdienst / Bundesfreiwilligendienst (FSJ/FOEJ) -> NOT employed (FSJ)
+#   8  in Ausbildung (Auszubildende/r)                               -> employed (Azubi)
+#   9  Schueler/in        10 Student/in                              -> not employed
 #  11  Rentner/in/Pensionaer/in 12 arbeitslos         13 Hausfrau/-mann
 #  14  dauerhaft erwerbsunfaehig 15 Kind (zu Hause)    16 Kind (Kindergarten/Tagesbetreuung)
 #  17  sonstiges (other/miscellaneous activity)                      -> not employed
 #  99  keine Angabe (item non-response)                              -> imputed
-EMPLOYED_TAET = frozenset({1, 2, 3, 4, 5, 6, 7})
+# MiD official `erwerb` = Erwerbstätigkeit ja/nein (inkl. Auszubildende). P_TAET 1,2,3,4,6,8.
+# (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
+EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
@@ -132,12 +135,14 @@ def map_employed(
 ) -> pd.DataFrame:
     """Add a boolean ``employed`` from MiD ``P_TAET`` via the uniform missing policy.
 
-    MiD codebook mapping: codes 1..7 (Angestellte/Arbeiter, Beamte, Selbststaendige,
-    geringfuegig, Elternzeit, mithelfende Angehoerige, freiwilliger Wehr-/Bundes-
-    freiwilligendienst) -> True; 8..17 (Ausbildung, Schueler, Student, Rentner,
-    arbeitslos, Hausfrau/-mann, erwerbsunfaehig, Kind, sonstiges) -> False. The full
-    substantive code range 1..17 is enumerated (the real MiD Personen table carries
-    P_TAET=17 "sonstiges" for ~4,043 persons; MiD 2023 Codeplan B1, Personen, P_TAET).
+    MiD `erwerb` definition (Erwerbstätigkeit ja/nein): codes {1, 2, 3, 4, 6, 8}
+    (Angestellte/Arbeiter, Beamte, Selbststaendige, geringfuegig, mithelfende
+    Angehoerige, Auszubildende) -> True. Codes 5 (Elternzeit) and 7 (FSJ/Wehrdienst)
+    are NOT erwerbstätig per the MiD ``erwerb`` variable and map to False. Codes
+    9..17 (Schueler, Student, Rentner, arbeitslos, Hausfrau/-mann, erwerbsunfaehig,
+    Kind, sonstiges) -> False. The full substantive code range 1..17 is enumerated
+    (the real MiD Personen table carries P_TAET=17 "sonstiges" for ~4,043 persons;
+    MiD 2023 Codeplan B1, Personen, P_TAET).
     No structural design-missing codes apply (employment is asked of all respondents
     above interviewing age). 99 (keine Angabe, item non-response) -> imputed from the
     valid pool within the same age group (alter_gr1) when present, else global pool;
