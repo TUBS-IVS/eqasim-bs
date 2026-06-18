@@ -60,6 +60,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.sampling import weighted_choice
+
 logger = logging.getLogger(__name__)
 
 # Relaxation hierarchy AFTER the hard equal-size (H_GR) condition: each key
@@ -116,7 +118,8 @@ def _select_mirror(
         if len(narrowed) > 0:
             pool = narrowed
     ids = sorted(pool[household_id].tolist())
-    return ids[int(rng.randint(len(ids)))]
+    weights = pool.set_index(household_id)["H_GEW"].reindex(ids).to_numpy()
+    return weighted_choice(ids, weights, rng=rng)
 
 
 def _match_present_members(

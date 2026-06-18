@@ -23,9 +23,13 @@ from braunschweig.popsim import member_completion
 # ---------------------------------------------------------------------------
 
 def _make_households(*args):
-    """Build a households frame from tuples of (H_ID, H_GR)."""
+    """Build a households frame from tuples of (H_ID, H_GR).
+
+    All households are given H_GEW=1.0 so _select_mirror's weighted draw
+    behaves identically to the old uniform draw (equal weights -> uniform).
+    """
     return pd.DataFrame(
-        [{"H_ID": h, "H_GR": gr} for h, gr in args]
+        [{"H_ID": h, "H_GR": gr, "H_GEW": 1.0} for h, gr in args]
     )
 
 
@@ -211,3 +215,20 @@ def test_complete_members_no_same_day_mirror_stays_unfilled():
     assert a_persons["member_imputed"].sum() == 0
     assert report.n_households_filled == 0
     assert report.n_persons_added == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 6: _select_mirror draws proportional to H_GEW
+# ---------------------------------------------------------------------------
+
+def test_select_mirror_draws_proportional_to_h_gew():
+    incomplete_row = pd.Series({"H_ID": 1, "H_GR": 2, "hhgr_gr": 2, "oek_status": 3, "RegioStaR7": 71})
+    candidates = pd.DataFrame({
+        "H_ID": [10, 20], "H_GR": [2, 2], "hhgr_gr": [2, 2],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_GEW": [1.0, 9.0],
+    })
+    rng = np.random.RandomState(0)
+    counts = {10: 0, 20: 0}
+    for _ in range(2000):
+        counts[member_completion._select_mirror(incomplete_row, candidates, household_id="H_ID", rng=rng)] += 1
+    assert counts[20] > counts[10] * 3  # heavy mirror dominates

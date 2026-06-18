@@ -8,7 +8,7 @@ from braunschweig.popsim import member_completion, mid
 def _fixture():
     households = pd.DataFrame({
         "H_ID": ["A", "B"], "H_GR": [4, 4], "hhgr_gr": [4, 4],
-        "oek_status": [3, 3], "RegioStaR7": [73, 73],
+        "oek_status": [3, 3], "RegioStaR7": [73, 73], "H_GEW": [1.0, 1.0],
     })
     persons = pd.DataFrame({
         "H_ID":     ["A", "A", "B", "B", "B", "B"],
