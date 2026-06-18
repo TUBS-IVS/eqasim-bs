@@ -34,13 +34,17 @@ def test_age_table_schema_and_gradient():
     assert (abs(totals - 1.0) < 1e-6).all(), \
         f"share does not sum to 1.0 per (segment,status): {totals[abs(totals - 1.0) >= 1e-6]}"
 
-    # --- monotone gradient: P(<5yr) rises with status (pool over segments, base-weighted) ---
+    # --- monotone gradient: P(<5yr) rises strictly across all 5 statuses ---
     piv = (
         df[df["age_band"] == "under_5"]
         .groupby("status")
         .apply(lambda g: (g["share"] * g["base_weighted"]).sum() / g["base_weighted"].sum())
     )
-    assert piv["very_low"] < piv["very_high"], (
-        f"P(under_5 | very_low)={piv['very_low']:.4f} should be < "
-        f"P(under_5 | very_high)={piv['very_high']:.4f}"
-    )
+    ordered = ["very_low", "low", "medium", "high", "very_high"]
+    vals = [piv[s] for s in ordered]
+    for i in range(len(vals) - 1):
+        assert vals[i] < vals[i + 1], (
+            f"P(under_5) not strictly monotone: "
+            f"{ordered[i]}={vals[i]:.4f} >= {ordered[i+1]}={vals[i+1]:.4f} "
+            f"(full chain: {dict(zip(ordered, [f'{v:.4f}' for v in vals]))})"
+        )

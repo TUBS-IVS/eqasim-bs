@@ -138,7 +138,7 @@ SURVEY_YEAR = 2023
 # A_BAUJ range to keep: vehicles built before 1980 require a "40_plus" band
 # not in the KBA scheme; vehicles with A_BAUJ == 9999 (unknown) are dropped.
 _BAUJ_MIN = 1980
-_BAUJ_MAX = SURVEY_YEAR  # age >= 0; built no later than survey year
+_BAUJ_MAX = SURVEY_YEAR  # 2024 excluded: no 2024-built vehicles exist in the 2023 survey
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +225,48 @@ def build(mid_path: Path) -> pd.DataFrame:
 
     tidy = (
         merged[["segment", "status", "age_band", "share", "base_weighted"]]
+        .sort_values(["segment", "status", "age_band"])
+        .reset_index(drop=True)
+    )
+
+    # --- ensure rectangular: every present (segment,status) has all 7 age bands ---
+    present_pairs = tidy[["segment", "status"]].drop_duplicates()
+    age_band_cat = pd.CategoricalIndex(AGE_BAND_LABELS)
+    full_index = pd.MultiIndex.from_frame(
+        present_pairs.assign(_dummy=1)
+        .merge(
+            pd.DataFrame({"age_band": AGE_BAND_LABELS, "_dummy": 1}),
+            on="_dummy",
+        )
+        .drop(columns="_dummy")[["segment", "status", "age_band"]]
+    )
+    tidy = tidy.set_index(["segment", "status", "age_band"])
+    missing_cells = full_index.difference(tidy.index)
+    if len(missing_cells) > 0:
+        # Build base_weighted for each (segment,status) to carry into filled rows
+        base_map = tidy["base_weighted"].groupby(level=["segment", "status"]).first()
+        fill_rows = []
+        filled_pairs: set[tuple] = set()
+        for seg, sta, band in missing_cells:
+            fill_rows.append({
+                "segment": seg,
+                "status": sta,
+                "age_band": band,
+                "share": 0.0,
+                "base_weighted": float(base_map.get((seg, sta), 0.0)),
+            })
+            filled_pairs.add((seg, sta))
+        filled_df = pd.DataFrame(fill_rows).set_index(["segment", "status", "age_band"])
+        tidy = pd.concat([tidy, filled_df])
+        logger.warning(
+            "[build_mid_age_by_segment_status] filled %d zero-weight (segment,status,age_band) "
+            "cells across %d (segment,status) pairs: %s",
+            len(missing_cells),
+            len(filled_pairs),
+            sorted(filled_pairs),
+        )
+    tidy = (
+        tidy.reset_index()
         .sort_values(["segment", "status", "age_band"])
         .reset_index(drop=True)
     )
