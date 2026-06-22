@@ -52,9 +52,7 @@ from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
-from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
-from braunschweig.popsim import weekend_plan_match
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 logger = logging.getLogger(__name__)

@@ -629,6 +629,21 @@ cross-machine reuse. `cache_share_enabled: false` makes the launcher a pure no-o
 `tests/test_cache_share.py`, `tests/test_cache_share_cli.py`,
 `tests/test_run_synpp_prime.py`.
 
+**Shareable-stage set + fixed work_dir (Tier A / B).** The two all-features server
+configs share, beyond the freight chain, the 32 empirically verified
+sampling- AND path-independent stages (identical synpp hash at 1% and 25%) plus
+`braunschweig.popsim.stage` and `braunschweig.popsim.completed_donor`. Sharing
+`popsim.stage` requires a SINGLE fixed `braunschweig.population.popsim.work_dir`
+(`eqasim-data/popsim_work_allfeat`) across all run configs so its hash is identical;
+the stale-batch guard (`purge_stale_batches_on_config_change`) keeps a shared
+work_dir safe on a config change. The MiD donor build (member completion +
+weekend-plan match) is the `braunschweig.popsim.completed_donor` stage: it depends
+only on the MiD data, the random seed, the seed day-filter, and the weekend-plan
+flag -- NOT on controls / sampling / work_dir -- so it is computed once and reused
+across ALL runs (including control-tier changes). Export a completed run's stages to
+the store with `python scripts/cache_share.py export ...`; future runs prime them.
+Design: `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`.
+
 ## Run analysis (post-simulation)
 
 The validation notebook `braunschweig/analysis/validation_mid2023.ipynb`
