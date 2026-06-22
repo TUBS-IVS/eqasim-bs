@@ -38,8 +38,25 @@ config:
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
-  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
+  # Full LOSSLESS-reduced catalog = tier0+tier1+tier2+tier3 = 21+10+5+7 = 43 controls
+  # (duplicates already removed in the catalog; see control_spec.full_catalog). tier3
+  # adds the 7 Kreis-level employment/education controls.
+  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
   braunschweig.population.popsim.stratify_regiostar: true
+
+  # --- Shared persistent stage-cache (prime-on-launch) ---------------------
+  # Reuse expensive sampling-independent stage caches from a shared, synced store so
+  # they are not recomputed every run (primarily the ~3 h freight extraction). The
+  # launcher (scripts/run_synpp.py) primes the working_directory from the store before
+  # synpp runs; synpp validates each artifact's hash, so a mismatch is a safe recompute
+  # (never corruption). Force a recompute by listing the module in cache_share_recompute
+  # ("*" = all). See docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md.
+  cache_share_enabled: true
+  cache_share_store: eqasim-data/cache_shared
+  cache_share_stages:
+    - braunschweig.data.freight.german_wide
+    - braunschweig.freight.extraction
+  cache_share_recompute: []
 
   java_memory: 100G
 

@@ -598,6 +598,37 @@ Tests: `tests/test_download_german_wide_freight.py`,
 `tests/test_freight_trips.py`, `tests/test_freight_injection_wiring.py`,
 `tests/test_freight_filter.py`.
 
+## Shared persistent stage-cache (`cache_share`, prime-on-launch)
+
+Expensive **sampling-rate-independent** synpp stages (above all
+`braunschweig.freight.extraction` -- the ~3 h published Java routing, run once per
+trip category) are recomputed on every fresh run because synpp caches per
+`working_directory`. `braunschweig.cache_share` + the `scripts/run_synpp.py`
+launcher reuse them across runs/machines by **priming**: synpp stores each stage as
+`<module>__<hash>.p` (+ `<module>__<hash>.cache/`) and re-validates `<hash>` on load,
+so we never recompute synpp's hash -- we copy the artifacts and let synpp decide.
+
+- `scripts/cache_share.py export --working-directory <wd> --store <store> --modules m1,m2`
+  copies a stage's cache artifacts into a shared store.
+- `scripts/cache_share.py prime  --working-directory <wd> --store <store> --modules m1,m2 [--recompute m1]`
+  copies the store's entries for the requested modules into a target working_directory.
+- `run_synpp.py` calls `prime_from_config` BEFORE synpp runs, driven by config keys:
+  `cache_share_enabled` (default **true**), `cache_share_store`
+  (default `eqasim-data/cache_shared`), `cache_share_stages` (default = the freight
+  chain), `cache_share_recompute` (default `[]`; `["*"]` = recompute all).
+
+A primed entry whose hash does NOT match the target config is **ignored by synpp and
+recomputed** -- never a corruption, only a forgone speedup (logged as a miss; no
+silent fallback). The store is gitignored and travels via the existing
+`scripts/sync_data_to_server.ps1`. **Exclusion:** stages whose hash depends on
+machine-variable config (e.g. an auto worker count `num_workers: 0` ->
+`cpu_count - 2`) will not hit across machines -- pin a fixed integer there if you need
+cross-machine reuse. `cache_share_enabled: false` makes the launcher a pure no-op
+(byte-identical to plain `python -m synpp`). Design:
+`docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md`. Tests:
+`tests/test_cache_share.py`, `tests/test_cache_share_cli.py`,
+`tests/test_run_synpp_prime.py`.
+
 ## Run analysis (post-simulation)
 
 The validation notebook `braunschweig/analysis/validation_mid2023.ipynb`
