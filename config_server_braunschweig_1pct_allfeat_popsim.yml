@@ -43,6 +43,11 @@ config:
   # adds the 7 Kreis-level employment/education controls.
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
   braunschweig.population.popsim.stratify_regiostar: true
+  # Per-cell employment grid (the newly-built feature: EMPLOYED_{M,F} x 5 age bands,
+  # Zensus shares at GENESIS aggregate level -- NOT raked to P9, so no overfitting).
+  # Complements the tier3 Kreis-level `employed` control hierarchically (same
+  # employed=erwerb / P_TAET definition); both ON by design.
+  braunschweig.population.popsim.employment_grid: "on"   # quoted: YAML 1.1 parses bare on->bool True; stage checks ==\"on\"
 
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so
