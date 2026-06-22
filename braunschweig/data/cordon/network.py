@@ -9,11 +9,72 @@ See ``docs/superpowers/plans/2026-06-05-cordon-einpendler-injection.md`` (Task 1
 from __future__ import annotations
 
 import gzip
+import json
+import logging
 import os
 import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 from shapely.geometry import LineString
+
+logger = logging.getLogger(__name__)
+
+# Provenance signature recording the source buffer the cordon OSM ring was clipped
+# with, written next to the ring pbf in the osm/cordon dir (see clip_osm_to_cordon_ring).
+CLIP_SIGNATURE_FILE = ".clip_signature"
+
+
+def write_clip_signature(out_dir, source_buffer_m, germany_pbf) -> str:
+    """Record the params the cordon OSM ring was clipped with, in ``out_dir``.
+
+    Lets a later run detect a STALE osm/cordon clip (clipped with a different
+    ``cordon_network_source_buffer_m`` than the run is configured for) via
+    :func:`verify_clip_signature`. Written by scripts/clip_osm_to_cordon_ring.py.
+    """
+    os.makedirs(str(out_dir), exist_ok=True)
+    path = os.path.join(str(out_dir), CLIP_SIGNATURE_FILE)
+    payload = {
+        "source_buffer_m": float(source_buffer_m),
+        "germany_pbf": os.path.basename(str(germany_pbf)),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, sort_keys=True)
+    return path
+
+
+def verify_clip_signature(osm_cordon_dir, configured_buffer_m, *, tolerance_m: float = 1.0) -> None:
+    """Fail loud if the osm/cordon ring was clipped with a different source buffer.
+
+    If a ``.clip_signature`` exists and its ``source_buffer_m`` differs from
+    ``configured_buffer_m`` (beyond ``tolerance_m``), raise RuntimeError naming the
+    regenerate command -- the pre-clipped network would otherwise be a silently stale
+    road extent. If NO signature exists (a clip made before this guard), log a WARNING
+    and return (cannot verify; backward-compatible -- never breaks an existing clip).
+    """
+    path = os.path.join(str(osm_cordon_dir), CLIP_SIGNATURE_FILE)
+    if not os.path.isfile(path):
+        logger.warning(
+            "[cordon] cannot verify the osm/cordon ring buffer: no %s in %s -- "
+            "regenerate via scripts/clip_osm_to_cordon_ring.py to enable the freshness "
+            "check (proceeding; the pre-clip is ASSUMED to match the configured buffer).",
+            CLIP_SIGNATURE_FILE, osm_cordon_dir)
+        return
+    with open(path, encoding="utf-8") as f:
+        sig = json.load(f)
+    clipped = float(sig.get("source_buffer_m", -1.0))
+    configured = float(configured_buffer_m)
+    if abs(clipped - configured) > tolerance_m:
+        raise RuntimeError(
+            "cordon osm ring is STALE: the ring was clipped with source_buffer_m=%.0f m, "
+            "but the run is configured for cordon_network_source_buffer_m=%.0f m. The "
+            "pre-clipped road network does not match the configured cordon extent. "
+            "Re-run:\n  python scripts/clip_osm_to_cordon_ring.py --source-buffer-m %.0f "
+            "--germany-pbf <germany.osm.pbf> --out %s/germany-latest.zgb_ring.osm.pbf\n"
+            "(or set cordon_network_source_buffer_m back to %.0f)." % (
+                clipped, configured, configured, str(osm_cordon_dir), clipped))
+    logger.info(
+        "[cordon] osm/cordon ring buffer verified: clipped %.0f m == configured %.0f m.",
+        clipped, configured)
 
 # Inner path of the layers inside the VG250-EW GeoPackage zip.
 VG250_INNER_GPKG = ("vg250-ew_12-31.utm32s.gpkg.ebenen/"

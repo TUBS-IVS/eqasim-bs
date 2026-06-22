@@ -997,6 +997,12 @@ def configure(context):
     # Default True: the feature is active by default.  Set to False to reproduce the
     # legacy lossy PT->car reassignment (byte-identical for same rng seed).
     context.config("cordon_incommuter_mode_balance", True)
+    # Declared unconditionally (independent of real_origin) so execute() can verify the
+    # pre-clipped osm/cordon ring was built with the configured source buffer
+    # (verify_clip_signature) -- a stale clip would silently change the road extent.
+    context.config("cordon_network_source_buffer_m", 45000.0)
+    context.config("osm_path", "osm")
+    context.config("data_path")
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
@@ -1022,6 +1028,16 @@ def execute(context):
     crs = "EPSG:25832"
     if not context.config("cordon_enabled"):
         return _empty_frames(crs)
+
+    # Guard: the pre-clipped osm/cordon ring must have been built with the configured
+    # cordon_network_source_buffer_m, else data.osm.cleaned silently uses a stale road
+    # extent. Warns if the ring predates the clip-signature guard; raises on a mismatch.
+    import os as _os
+    from braunschweig.data.cordon.network import verify_clip_signature
+    verify_clip_signature(
+        _os.path.join(context.config("data_path"), context.config("osm_path")),
+        float(context.config("cordon_network_source_buffer_m")),
+    )
 
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
 

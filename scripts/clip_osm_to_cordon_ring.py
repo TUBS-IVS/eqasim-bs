@@ -37,6 +37,7 @@ import geopandas as gpd
 
 from braunschweig.data.cordon.network import (
     read_external_gemeinden,
+    write_clip_signature,
     ZGB_KREIS_PREFIXES,
 )
 from braunschweig.data.spatial.cordon import build_cordon_polygon
@@ -201,6 +202,12 @@ def clip_germany_pbf(
 
     out_size_mb = _file_size_mb(out_pbf)
     _log(f"Output: {out_pbf} ({out_size_mb:.1f} MiB) in {elapsed:.1f}s")
+
+    # Record the source buffer this ring was clipped with, next to the pbf, so a later
+    # pipeline run can fail loud if its configured cordon_network_source_buffer_m differs
+    # (verify_clip_signature). Prevents a silently stale road extent on a buffer change.
+    sig_path = write_clip_signature(Path(out_pbf).parent, source_buffer_m, germany_pbf)
+    _log(f"Clip signature: {sig_path} (source_buffer_m={source_buffer_m:.0f})")
     _log("Done.")
 
 
