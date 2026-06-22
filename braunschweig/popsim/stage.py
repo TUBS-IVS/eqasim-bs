@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -425,6 +426,50 @@ def join_cell_attributes(
     return combined
 
 
+# Filename of the per-work_dir config signature used to detect a config change and
+# purge stale batch folders (see purge_stale_batches_on_config_change).
+WORK_DIR_SIGNATURE_FILE = ".popsim_config_signature"
+
+
+def purge_stale_batches_on_config_change(work_dir, signature: str) -> int:
+    """Remove stale ``batch_*`` folders when the popsim config/control set changed.
+
+    The PopulationSim ``work_dir`` persists across runs (it lives OUTSIDE synpp's
+    stage cache), and the batch runner SKIPS any batch whose completion marker
+    (``output/final_expanded_household_ids.csv``) already exists. If the config changed
+    since the run that produced those outputs (e.g. tier3 / employment_grid controls
+    were added, changing the per-batch inputs), skipping them would merge an
+    old-config population for those cells -- a silent correctness bug.
+
+    Guard: a signature file in ``work_dir`` records the config that produced the
+    current batches. On a MISMATCH (or first run with pre-existing folders) every
+    ``batch_*`` folder is removed so all batches re-run with the current config. On a
+    MATCH (same config -- e.g. a resumed interrupted run) the folders are kept, so the
+    skip-completed-batches resume optimisation still works. Returns the number of
+    batch folders purged.
+    """
+    work_dir = Path(work_dir)
+    sig_path = work_dir / WORK_DIR_SIGNATURE_FILE
+    previous = sig_path.read_text(encoding="utf-8").strip() if sig_path.is_file() else None
+    if previous == signature:
+        return 0
+    purged = 0
+    for batch_folder in sorted(work_dir.glob("batch_*")):
+        if batch_folder.is_dir():
+            shutil.rmtree(batch_folder)
+            purged += 1
+    work_dir.mkdir(parents=True, exist_ok=True)
+    sig_path.write_text(signature, encoding="utf-8")
+    if purged:
+        logger.warning(
+            "[popsim.stage] popsim config changed since the last run in this work_dir "
+            "(or signature was absent) -> purged %d stale batch folder(s) so every batch "
+            "re-runs with the CURRENT config (prevents stale-batch skips).", purged)
+    else:
+        logger.info("[popsim.stage] wrote work_dir config signature (no stale batches).")
+    return purged
+
+
 def execute(context) -> pd.DataFrame:
     """Run popsim_mid and return the merged expanded-household table."""
     cells_path = context.config(KEY_CELLS)
@@ -710,6 +755,25 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
+    # Purge stale batch folders if the popsim config/control set changed since the last
+    # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
+    # a config change would otherwise leave old completion markers that the batch runner
+    # skips -> stale-config population for those cells). Signature = everything that
+    # determines a batch's inputs (the full control set, the PopulationSim settings, the
+    # batching/stratification, the donor source, the KREIS controls, the seed-day filter).
+    import hashlib as _hashlib
+    import json as _json
+    _config_signature = _hashlib.sha256(_json.dumps({
+        "controls": controls_df.to_csv(index=False),
+        "settings": Path(settings_path).read_text(encoding="utf-8"),
+        "max_cells": max_cells,
+        "stratify_regiostar": stratify_regiostar,
+        "source": source_name,
+        "employment_grid": employment_grid_on,
+        "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
+        "seed_day_filter": str(seed_day_filter),
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    purge_stale_batches_on_config_change(work_dir, _config_signature)
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
