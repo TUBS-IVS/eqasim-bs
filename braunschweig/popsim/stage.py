@@ -437,8 +437,24 @@ def execute(context) -> pd.DataFrame:
     # synpp's ExecuteContext.config() takes only the key; the defaults are
     # registered in configure() (3000 / 3 / "mid" / False) and resolved here.
     max_cells = int(context.config(KEY_MAX_CELLS))
-    num_workers = int(context.config(KEY_WORKERS))
+    # Worker count honours the auto sentinel (0/null/"auto" -> cores - reserve), so
+    # the batch runner scales with the box it lands on. An explicit positive integer
+    # is used verbatim (pin it when byte-reproducibility across machines matters).
+    from braunschweig.parallelism import resolve_workers
+    _requested_workers = context.config(KEY_WORKERS)
+    num_workers = resolve_workers(_requested_workers)
+    logger.info(
+        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, cpu_count=%s)",
+        num_workers, _requested_workers, os.cpu_count(),
+    )
     work_dir = context.config(KEY_WORK_DIR)
+    # Create the PopulationSim working directory up front so the stage can write
+    # its intermediate artefacts (weekend_plan_match trace, pseudonym map, per-batch
+    # PopulationSim folders) into it. On a FRESH cache this directory does not exist
+    # yet; the first writer below (the weekend_plan_match trace) would otherwise fail
+    # with "Cannot save file into a non-existent directory". Creating it here keeps
+    # the stage self-contained (CLAUDE.md: create output directories explicitly).
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE)
     stratify_regiostar = bool(context.config(KEY_STRATIFY))
@@ -710,6 +726,32 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
+
+    # Surface the PopulationSim integerizer feasibility (no-silent-fallback): some
+    # zones return INFEASIBLE and fall back to smart-rounded weights inside
+    # PopulationSim. That is otherwise buried in the per-batch logs; aggregate and
+    # log it here (WARNING above INTEGERIZER_INFEASIBLE_WARN_RATE). A high rate is a
+    # quality signal (control set over-constrained for small cells -- common at low
+    # sampling rates), not a hard failure: a smart-rounded population is still produced.
+    feas = mid.summarize_integerizer_feasibility(work_dir)
+    context.set_info("popsim_integerizer_infeasible_rate", feas["infeasible_rate"])
+    context.set_info("popsim_integerizer_n_infeasible", feas["n_infeasible"])
+    _feas_log = (
+        logger.warning
+        if feas["infeasible_rate"] > mid.INTEGERIZER_INFEASIBLE_WARN_RATE
+        else logger.info
+    )
+    _feas_log(
+        "[popsim.stage] PopulationSim integerizer: %d/%d zones OPTIMAL (%.1f%%), "
+        "%d INFEASIBLE -> smart-rounded (%.1f%%), %d simul-retry-failed, across %d "
+        "batch log(s). A high INFEASIBLE rate means the control set is "
+        "over-constrained for small cells (expected to shrink at higher sampling "
+        "rates where cells hold more households).",
+        feas["n_optimal"], feas["n_total"],
+        100.0 * (1.0 - feas["infeasible_rate"]),
+        feas["n_infeasible"], 100.0 * feas["infeasible_rate"],
+        feas["n_simul_retry_failed"], feas["n_logs"],
+    )
 
     # Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
     # from the cells frame back onto the merged PopulationSim output: the ARS

@@ -119,6 +119,65 @@ def building_cell_id(north_m: float, east_m: float) -> str:
     return f"CRS3035RES100mN{north_corner}E{east_corner}"
 
 
+# Maximum search radius (in 100 m cells) for the neighbour-cell home fallback: when
+# a household's own Zensus cell has no building, look for the spatially nearest real
+# building in concentric rings of neighbouring cells up to this radius before
+# resorting to a random point inside the own (building-less) cell. Ring 1 = the 8
+# directly adjacent cells (the common "centroid fell just over the boundary" case);
+# 3 rings reach ~300-420 m, still firmly local. Keep small so the household stays
+# in its Zensus neighbourhood.
+NEIGHBOUR_MAX_RING = 3
+
+
+def _nearest_neighbour_building(cell_id, fps_by_cell_df, geom_by_bid, buildings_crs,
+                                max_ring=NEIGHBOUR_MAX_RING):
+    """Nearest real building to ``cell_id`` searched in expanding neighbour rings.
+
+    For a household whose own 100 m Zensus cell contains no building, this finds the
+    spatially nearest eligible building in the surrounding cells (ring 1 = the 8
+    adjacent cells, then ring 2, ...), so the household is snapped to a genuine
+    nearby dwelling instead of a coordinate in a building-less cell. This is most
+    relevant for the dominant empty-cell cause: a boundary building whose centroid
+    fell just into the neighbouring cell.
+
+    Deterministic (NO RNG): candidates are ranked by Euclidean distance (in the
+    buildings' metric CRS) with ties broken by ``building_id``, so the result is
+    fully reproducible.
+
+    Returns
+    -------
+    tuple[object, object]
+        ``(building_id, point_in_buildings_crs)`` of the nearest neighbour building,
+        or ``(None, None)`` if no building exists within ``max_ring`` rings.
+    """
+    _, n_sw, e_sw = _parse_inspire_id(cell_id)
+    centre_3035 = Point(float(e_sw) + CELL_SIZE_M / 2.0, float(n_sw) + CELL_SIZE_M / 2.0)
+    centre = gpd.GeoSeries([centre_3035], crs=ZENSUS_CRS).to_crs(buildings_crs).iloc[0]
+    for ring in range(1, max_ring + 1):
+        candidates = []  # (distance_m, building_id, point)
+        for d_north in range(-ring, ring + 1):
+            for d_east in range(-ring, ring + 1):
+                # Only the shell at exactly this ring (inner rings already searched).
+                if max(abs(d_north), abs(d_east)) != ring:
+                    continue
+                neighbour_id = building_cell_id(
+                    north_m=n_sw + d_north * CELL_SIZE_M,
+                    east_m=e_sw + d_east * CELL_SIZE_M,
+                )
+                neighbour_fps = fps_by_cell_df.get(neighbour_id)
+                if neighbour_fps is None or len(neighbour_fps) == 0:
+                    continue
+                for bid in neighbour_fps["building_id"].to_numpy():
+                    pt = geom_by_bid.get(bid)
+                    if pt is not None:
+                        candidates.append((centre.distance(pt), bid, pt))
+        if candidates:
+            candidates.sort(key=lambda t: (t[0], str(t[1])))
+            _, bid, pt = candidates[0]
+            return bid, pt
+    return None, None
+
+
 @dataclass(frozen=True)
 class HomeCellReport:
     """Outcome of the cell-accurate home placement.
@@ -350,8 +409,14 @@ class TypedHomeReport:
         household's preferred type (``btype``); the primary objective of the
         lexicographic matcher.
     n_zero_building_cells:
-        Households whose 100 m cell had no building footprint at all; placed at a
-        random point inside the cell (never relocated to another cell/commune).
+        Households whose own 100 m cell had no building footprint at all. They are
+        placed at the nearest neighbour-cell building when one exists within
+        NEIGHBOUR_MAX_RING (``n_neighbour_cell_placed``), otherwise at a random
+        point inside their own cell (never relocated to another commune).
+    n_neighbour_cell_placed:
+        Of ``n_zero_building_cells``, how many households were snapped to the
+        spatially nearest building in a NEIGHBOURING cell (ring search) instead of
+        a random in-cell point. Logged so the neighbour-fallback rate is visible.
     n_overcapacity:
         Households the matcher had to over-occupy an existing building for (more
         households than typed dwelling slots in the cell).
@@ -361,6 +426,7 @@ class TypedHomeReport:
     in_cell_rate: float
     type_match_rate: float
     n_zero_building_cells: int
+    n_neighbour_cell_placed: int
     n_overcapacity: int
 
 
@@ -565,15 +631,35 @@ def assign_homes_typed(
     hh = households.copy()
     hh["btype"] = hh["building_type_3class"].map(_BTYPE_MAP).fillna("efh_zfh")
     rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
-    n_match = n_zero = n_over = n_in_cell = 0
+    n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
+            # The household's own 100 m cell has no building. Prefer the spatially
+            # nearest real building in a NEIGHBOURING cell (ring search, ENH) -- this
+            # captures the dominant empty-cell cause (a boundary building whose
+            # centroid fell just into the next cell) and keeps the household in its
+            # Zensus neighbourhood. Only if no building exists within NEIGHBOUR_MAX_RING
+            # do we keep the random in-cell point (own cell still authoritative).
+            #
+            # We ALWAYS draw the in-cell random point so the seeded RNG stream stays
+            # aligned with the prior behaviour for every NON-empty cell (their output
+            # is byte-identical); the drawn point is simply overridden when a
+            # neighbour building is found.
+            nb_bid, nb_pt = _nearest_neighbour_building(
+                str(cell_id), fps_by_cell_df, geom_by_bid, buildings.crs,
+            )
             for r in grp.itertuples(index=False):
                 rec_id.append(getattr(r, household_id_col))
                 rec_comm.append(getattr(r, commune_col))
-                rec_bid.append(pd.NA)
-                rec_geom.append(hm.random_point_in_cell(str(cell_id), rng))
+                in_cell_point = hm.random_point_in_cell(str(cell_id), rng)
+                if nb_bid is not None:
+                    rec_bid.append(nb_bid)
+                    rec_geom.append(nb_pt)
+                    n_neighbour += 1
+                else:
+                    rec_bid.append(pd.NA)
+                    rec_geom.append(in_cell_point)
             n_zero += len(grp)
             continue
         n_in_cell += len(grp)
@@ -609,13 +695,15 @@ def assign_homes_typed(
         in_cell_rate=(n_in_cell / n if n else 0.0),
         type_match_rate=(n_match / n if n else 0.0),
         n_zero_building_cells=n_zero,
+        n_neighbour_cell_placed=n_neighbour,
         n_overcapacity=n_over,
     )
     log = logger.warning if (n_zero or n_over) else logger.info
     log(
-        "[home_typed] %d HH: in-cell %.1f%%, type-match %.1f%%, %d zero-building, "
+        "[home_typed] %d HH: in-cell %.1f%%, type-match %.1f%%, %d zero-building "
+        "(%d snapped to nearest neighbour-cell building, %d random in-cell point), "
         "%d over-capacity", n, report.in_cell_rate * 100, report.type_match_rate * 100,
-        n_zero, n_over,
+        n_zero, n_neighbour, n_zero - n_neighbour, n_over,
     )
     result = gpd.GeoDataFrame(
         {"household_id": rec_id, "commune_id": rec_comm,

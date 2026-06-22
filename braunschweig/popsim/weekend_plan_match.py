@@ -49,19 +49,33 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     return feats
 
 
-def match_household(target_id, target_feats, weekday_feats, *, rng):
+def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_key=None):
     """Find a weekday household of EQUAL size AND EQUAL RegioStaR (the hard keys),
     matching as many soft keys as possible (drop the lowest-priority soft key
     first). Returns ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no
     weekday household shares the target's size and RegioStaR (caller then uses the
     person-level fallback). The match never crosses spatial type.
+
+    ``weekday_by_key`` is an optional precomputed ``{(size, regiostar7): subframe}``
+    lookup (``weekday_feats`` grouped on the two hard keys). When given, the pool is
+    fetched in O(1) instead of re-scanning the full ``weekday_feats`` on every call
+    (the dominant cost over tens of thousands of weekend households). The grouped
+    subframe preserves ``weekday_feats``'s row order and ``weighted_choice`` draws
+    over ``sorted(ids)``, so the result is BYTE-IDENTICAL to the boolean-mask path.
     """
-    pool = weekday_feats[
-        (weekday_feats["size"] == target_feats["size"])
-        & (weekday_feats["regiostar7"] == target_feats["regiostar7"])
-    ]
-    if len(pool) == 0:
-        return None, None
+    if weekday_by_key is not None:
+        pool = weekday_by_key.get(
+            (target_feats["size"], target_feats["regiostar7"])
+        )
+        if pool is None or len(pool) == 0:
+            return None, None
+    else:
+        pool = weekday_feats[
+            (weekday_feats["size"] == target_feats["size"])
+            & (weekday_feats["regiostar7"] == target_feats["regiostar7"])
+        ]
+        if len(pool) == 0:
+            return None, None
     active = list(SOFT_KEYS_BY_PRIORITY)
     while True:
         narrowed = pool
@@ -202,10 +216,27 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_remapped = 0
     level_counts: dict = {}
 
-    for hid in sorted(weekend_ids):
+    # Pre-group the weekday pool on the two HARD match keys (size, regiostar7) ONCE,
+    # so match_household does an O(1) lookup per weekend household instead of
+    # re-scanning weekday_feats each time (was O(n_weekend x n_weekday), the
+    # dominant cost of this stage). Byte-identical: see match_household docstring.
+    weekday_by_key = {
+        key: g for key, g in weekday_feats.groupby(["size", "regiostar7"], sort=False)
+    }
+
+    weekend_ids_sorted = sorted(weekend_ids)
+    n_weekend_total = len(weekend_ids_sorted)
+    progress_step = max(1, n_weekend_total // 10)  # ~10 plain-text heartbeats
+
+    for loop_index, hid in enumerate(weekend_ids_sorted):
+        if loop_index % progress_step == 0 and loop_index > 0:
+            logger.info(
+                "[weekend_plan_match] progress %d/%d weekend households (%.0f%%)",
+                loop_index, n_weekend_total, 100.0 * loop_index / n_weekend_total,
+            )
         target_members = persons_by_hh[hid].reset_index()  # keeps original index in 'index'
         matched_id, level = match_household(
-            hid, feats.loc[hid], weekday_feats, rng=rng)
+            hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key)
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
             paired = align_members(target_members, donor_members)

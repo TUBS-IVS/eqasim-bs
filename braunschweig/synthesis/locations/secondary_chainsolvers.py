@@ -1134,7 +1134,14 @@ def execute(context):
 
     parallel_enabled = bool(context.config("braunschweig.chainsolvers.parallel"))
     configured_procs = context.config("braunschweig.chainsolvers.processes")
-    n_workers = int(configured_procs) if configured_procs else int(context.config("processes"))
+    # chainsolvers.processes (when set) overrides the synpp `processes` count; either
+    # honours the auto sentinel (0/null/"auto" -> cores - reserve) so the chain solver
+    # scales with the box. A key left unset (None) defers to `processes`. An explicit
+    # positive integer is used verbatim (resolve_workers is the identity there), so
+    # existing configs stay byte-identical.
+    from braunschweig.parallelism import resolve_workers
+    _requested_procs = configured_procs if configured_procs is not None else context.config("processes")
+    n_workers = resolve_workers(_requested_procs)
     n_workers = max(1, min(n_workers, n_total)) if n_total else 1
     run_parallel = parallel_enabled and n_workers > 1 and n_total > 0
 
