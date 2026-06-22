@@ -38,10 +38,14 @@ config:
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
-  # Full LOSSLESS-reduced catalog = tier0+tier1+tier2+tier3 = 21+10+5+7 = 43 controls
-  # (duplicates already removed in the catalog; see control_spec.full_catalog). tier3
-  # adds the 7 Kreis-level employment/education controls.
-  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
+  # LOSSLESS-reduced catalog tier0+tier1+tier2 (35 controls). tier3 (7 Kreis-level
+  # employment/education controls) is DEFERRED: it requires the kreis_controls data
+  # dir (braunschweig.population.popsim.kreis_controls_dir) + a settings_tier3.yaml,
+  # neither of which is generated yet (no producer script; the gate_tier3 run was
+  # never executed). Re-add ",tier3" + kreis_controls_dir once that data exists.
+  # The per-cell employment control below (employment_grid) is the active, validated
+  # employment feature.
+  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
   braunschweig.population.popsim.stratify_regiostar: true
   # Per-cell employment grid (the newly-built feature: EMPLOYED_{M,F} x 5 age bands,
   # Zensus shares at GENESIS aggregate level -- NOT raked to P9, so no overfitting).
