@@ -498,11 +498,13 @@ def execute(context) -> pd.DataFrame:
     )
     work_dir = context.config(KEY_WORK_DIR)
     # Create the PopulationSim working directory up front so the stage can write
-    # its intermediate artefacts (weekend_plan_match trace, pseudonym map, per-batch
-    # PopulationSim folders) into it. On a FRESH cache this directory does not exist
-    # yet; the first writer below (the weekend_plan_match trace) would otherwise fail
-    # with "Cannot save file into a non-existent directory". Creating it here keeps
-    # the stage self-contained (CLAUDE.md: create output directories explicitly).
+    # its intermediate artefacts (pseudonym map, per-batch PopulationSim folders)
+    # into it. On a FRESH cache this directory does not exist yet; the first writer
+    # below (the pseudonym map / per-batch folders) would otherwise fail with
+    # "Cannot save file into a non-existent directory". (The weekend_plan_match trace
+    # is now written into the completed_donor stage's own cache dir, not here.)
+    # Creating it here keeps the stage self-contained (CLAUDE.md: create output
+    # directories explicitly).
     Path(work_dir).mkdir(parents=True, exist_ok=True)
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE)
