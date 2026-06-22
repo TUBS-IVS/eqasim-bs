@@ -38,23 +38,19 @@ config:
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
-  # LOSSLESS-reduced catalog tier0+tier1+tier2 (35 controls). tier3 (7 Kreis-level
-  # employment/education controls) is DEFERRED: it requires the kreis_controls data
-  # dir (braunschweig.population.popsim.kreis_controls_dir) + a settings_tier3.yaml,
-  # neither of which is generated yet (no producer script; the gate_tier3 run was
-  # never executed). Re-add ",tier3" + kreis_controls_dir once that data exists.
-  # The per-cell employment control below (employment_grid) is the active, validated
-  # employment feature.
-  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
+  # Full LOSSLESS-reduced catalog tier0+tier1+tier2+tier3 (incl. the 7 Kreis-level
+  # employment/education controls). tier3 needs the KREIS geography -> settings_tier3.yaml
+  # (a superset of the normal settings: WELT/STAAT/KREIS/ZENSUS1km/ZENSUS100m) and the
+  # imported cleancensus kreis_controls data (kreis_controls_dir below).
+  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
   braunschweig.population.popsim.stratify_regiostar: true
-  # employment_grid + tier3 are DEFERRED: both require the cleancensus
-  # kreis_erwerbsstatus.parquet (+ schulabschluss/berufl_abschluss for tier3) imported
-  # into braunschweig.population.popsim.kreis_controls_dir, which is not generated yet
-  # (the parquets come from an external cleancensus tool and were never imported here).
-  # Enabling either fails fast (ValueError: kreis_controls_dir not set). Re-enable once
-  # the cleancensus Kreis controls are imported. The synthesis still controls employment
-  # via tier0-2 + the donor; this only omits the finer Kreis/cell employment targets.
-  # braunschweig.population.popsim.employment_grid: "on"
+  # Per-cell employment grid (EMPLOYED_{M,F} x 5 age bands; Zensus age shapes rescaled
+  # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
+  # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
+  braunschweig.population.popsim.employment_grid: "on"
+  # Imported cleancensus Kreis control tables (kreis_erwerbsstatus / schulabschluss /
+  # berufl_abschluss.parquet) -- required by BOTH employment_grid and tier3.
+  braunschweig.population.popsim.kreis_controls_dir: eqasim-data/data/braunschweig/popsim/kreis_controls
 
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so
@@ -93,7 +89,9 @@ config:
   braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw
   # popsimprep + uv live OUTSIDE the repo on the server (absolute Linux paths).
   braunschweig.population.popsim.controls_path: /home/felix/popsimprep/popsim/configs/_prep3_controls.csv
-  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings.yaml
+  # settings_tier3.yaml adds the KREIS geography (superset of settings.yaml), required
+  # for the tier3 Kreis controls; it also serves tier0-2 unchanged.
+  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3.yaml
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
   braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
