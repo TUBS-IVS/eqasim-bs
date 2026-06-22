@@ -103,6 +103,9 @@ config:
     # shared work_dir below so its hash is identical).
     - braunschweig.popsim.stage
     - braunschweig.popsim.distance_distributions
+    # Tier B2: the completed-donor build (member completion + weekend match) depends
+    # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
+    - braunschweig.popsim.completed_donor
   cache_share_recompute: []
 
   java_memory: 100G

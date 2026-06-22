@@ -59,6 +59,8 @@ EXPECTED_SHAREABLE_STAGES = {
     # Tier B1:
     "braunschweig.popsim.stage",
     "braunschweig.popsim.distance_distributions",
+    # Tier B2:
+    "braunschweig.popsim.completed_donor",
 }
 
 

@@ -136,3 +136,22 @@ def test_completed_donor_stage_execute_returns_frames_and_writes_trace(tmp_path)
     # Build reports surfaced as run info.
     assert "member_completion_filled" in ctx.info
     assert "seed_completeness_rate" in ctx.info
+
+
+import inspect
+
+from braunschweig.popsim import stage as popsim_stage
+
+
+def test_popsim_stage_consumes_completed_donor_stage():
+    src = inspect.getsource(popsim_stage.execute)
+    # The inline member-completion build is gone (delegated to the stage)...
+    assert "mid.load_completed_donor(" not in src
+    assert "reassign_weekend_plan_sources(" not in src
+    # ...and the stage is consumed instead.
+    assert 'context.stage("completed_donor")' in src
+
+
+def test_popsim_stage_configure_registers_completed_donor_for_mid():
+    src = inspect.getsource(popsim_stage.configure)
+    assert "completed_donor" in src

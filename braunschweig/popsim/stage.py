@@ -338,6 +338,12 @@ def configure(context):
         context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
 
     source_name = context.config(KEY_SOURCE, "mid")
+    # Member completion (D3) runs for the MiD source only. When active, the donor
+    # build (member completion + weekend-plan match) is delegated to the cached
+    # braunschweig.popsim.completed_donor stage so it runs ONCE across all runs
+    # (it depends only on mid/seed/day_filter/weekend, not controls/sampling/work_dir).
+    if source_name == "mid" and bool(context.config(KEY_COMPLETE_MEMBERS, True)):
+        context.stage("braunschweig.popsim.completed_donor", alias="completed_donor")
     if source_name == "entd":
         # popsim_open: the ENTD donor for the PopulationSim SEED + attribute/trip
         # mapping must carry the FULL household composition (multi-person households).
@@ -694,42 +700,24 @@ def execute(context) -> pd.DataFrame:
             hts_hh_seed, hts_persons_seed
         )
     elif complete_members:
-        # popsim_mid with member completion (D3, default ON): ONE completion pass
-        # on the attribute-bearing donor tables (day-filtered like the legacy
-        # seed), then the PopulationSim seed is projected out of the completed
-        # frames. RNG offset +74513 keeps the mirror-draw stream disjoint from
-        # the +74511 attribute-imputation stream below.
-        weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
-        # Weekend-plan match needs weekend reporters in the donor, so it forces ALL
-        # kernwo days (overriding seed_day_filter). When OFF we defer to main's
-        # configurable seed_day_filter (default None -> loader default (1,2,3) Mo-Fr).
-        day_filter = (
-            seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
-        )
-        completion_rng = np.random.RandomState(random_seed + 74513)
-        (
-            completed_donor_households, completed_donor_persons,
-            report, completion_report,
-        ) = mid.load_completed_donor(
-            mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
-        )
-        if weekend_plan_match_on:
-            # completion_rng is DELIBERATELY shared with member-completion above:
-            # the two draws form one entangled seeded stream -- do NOT reseed it.
-            completed_donor_persons, _weekend_trace, _weekend_report = (
-                weekend_plan_match.reassign_weekend_plan_sources(
-                    completed_donor_households, completed_donor_persons,
-                    rng=completion_rng,
-                )
-            )
-            _weekend_trace.to_parquet(Path(work_dir) / "weekend_plan_match_trace.parquet")
-            logger.info("[popsim.stage] weekend_plan_match: %s", _weekend_report)
+        # popsim_mid with member completion (D3, default ON): the donor build
+        # (member completion + weekend-plan match) is produced by the cached
+        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
+        # The same completed frames feed BOTH the PopulationSim seed (projected
+        # here) AND the expansion donor tables below.
+        donor = context.stage("completed_donor")
+        completed_donor_households = donor.households
+        completed_donor_persons = donor.persons
+        report = donor.completeness_report
+        completion_report = donor.completion_report
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
         # load_mid_seed does, so the seed carries it for the household_type control.
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
         )
+        # Surface the build reports on THIS run too (so they are present even when
+        # the completed_donor stage was served from cache and its execute did not run).
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled
         )
