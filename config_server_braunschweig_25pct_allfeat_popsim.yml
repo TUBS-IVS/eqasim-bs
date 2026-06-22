@@ -62,8 +62,47 @@ config:
   cache_share_enabled: true
   cache_share_store: eqasim-data/cache_shared
   cache_share_stages:
+    # Freight chain (input validation + the ~3 h Java routing).
     - braunschweig.data.freight.german_wide
     - braunschweig.freight.extraction
+    - braunschweig.freight.trips
+    # Tier A: 32 verified sampling- AND path-independent stages (identical hash at
+    # 1% and 25%). Shared from the store instead of recomputed every run.
+    - braunschweig.data.buildings
+    - braunschweig.data.census.employees
+    - braunschweig.data.census.employment
+    - braunschweig.data.cordon_network
+    - braunschweig.data.cordon_pt_gates
+    - braunschweig.data.locations
+    - braunschweig.data.mid.zones
+    - braunschweig.data.schools.kita_facilities
+    - braunschweig.data.schools.university_facilities
+    - braunschweig.locations.secondary
+    - braunschweig.locations.work
+    - braunschweig.synthesis.cordon_gates
+    - data.gtfs.cleaned
+    - data.hts.entd.cleaned
+    - data.hts.entd.filtered
+    - data.hts.entd.reweighted
+    - data.hts.selected
+    - data.osm.cleaned
+    - data.spatial.departments
+    - data.spatial.municipalities
+    - eqasim_common.data.osm.chunked
+    - eqasim_common.data.osm.locations
+    - eqasim_common.data.spatial.iris
+    - eqasim_common.gravity.distance_matrix
+    - eqasim_common.locations.education
+    - eqasim_common.spatial.codes
+    - eqasim_common.spatial.entd_codes
+    - matsim.scenario.supply.gtfs
+    - matsim.scenario.supply.osm
+    - matsim.scenario.supply.processed
+    # Tier B1: popsim.stage is sampling-independent; sharing it reuses the donor
+    # build + the 33 per-1km PopulationSim batches across runs (requires the fixed
+    # shared work_dir below so its hash is identical).
+    - braunschweig.popsim.stage
+    - braunschweig.popsim.distance_distributions
   cache_share_recompute: []
 
   java_memory: 100G
@@ -95,7 +134,11 @@ config:
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
   braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
-  braunschweig.population.popsim.work_dir: eqasim-data/cache_bs_25pct_allfeat_popsim/popsim_work
+  # Tier B1: a SINGLE fixed work_dir shared across all run configs (NOT the per-cache
+  # scratch path), so popsim.stage's hash is identical across sampling rates and
+  # cache_share can share the donor build + the per-1km batches. The stale-batch guard
+  # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
   braunschweig.population.popsim.max_cells: 1500
   # Auto-scale to the 64-core box (0 -> cpu_count - 2 ~ 62 parallel batches).
   braunschweig.population.popsim.num_workers: 0
