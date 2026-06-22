@@ -91,3 +91,48 @@ def test_build_completed_donor_is_deterministic(tmp_path):
     )
     pd.testing.assert_frame_equal(a.persons, b.persons)
     pd.testing.assert_frame_equal(a.households, b.households)
+
+
+class _FakeContext:
+    """Minimal synpp ExecuteContext stand-in for the completed_donor stage.
+
+    Records config() lookups against a dict, exposes a cache path, and captures
+    set_info() calls. Mirrors the surface the stage uses.
+    """
+    def __init__(self, config, cache_path):
+        self._config = config
+        self._cache_path = str(cache_path)
+        self.info = {}
+
+    def config(self, key, default=None):
+        return self._config.get(key, default)
+
+    def path(self):
+        return self._cache_path
+
+    def set_info(self, key, value):
+        self.info[key] = value
+
+
+def test_completed_donor_stage_execute_returns_frames_and_writes_trace(tmp_path):
+    (tmp_path / "mid").mkdir()
+    _write_mid_attribute_fixture(tmp_path / "mid")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    ctx = _FakeContext(
+        {
+            "braunschweig.population.popsim.mid_raw_path": str(tmp_path / "mid"),
+            "random_seed": 1234,
+            "braunschweig.population.popsim.seed_day_filter": "default",
+            "braunschweig.population.popsim.weekend_plan_match": True,
+        },
+        cache,
+    )
+    result = cd.execute(ctx)
+    assert len(result.households) > 0
+    assert len(result.persons) > 0
+    # Weekend trace persisted into the stage cache dir.
+    assert (cache / cd.WEEKEND_TRACE_FILE).is_file()
+    # Build reports surfaced as run info.
+    assert "member_completion_filled" in ctx.info
+    assert "seed_completeness_rate" in ctx.info

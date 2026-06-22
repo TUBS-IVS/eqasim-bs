@@ -118,3 +118,54 @@ def build_completed_donor(
         completion_report=completion_report,
         weekend_report=weekend_report,
     )
+
+
+def configure(context):
+    """Declare the completed-donor config dependencies.
+
+    This stage depends ONLY on the MiD donor data, the random seed, the seed
+    day-filter, and the weekend-plan-match flag -- NOT on controls, sampling, or
+    work_dir. That narrow dependency set is what makes it shareable across ALL runs
+    (incl. control-tier changes) via the cache_share store.
+    """
+    from braunschweig.popsim.stage import (
+        KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+    )
+    context.config(KEY_MID)
+    context.config("random_seed")
+    context.config(KEY_SEED_DAY_FILTER, "default")
+    context.config(KEY_WEEKEND_PLAN_MATCH, True)
+
+
+def execute(context) -> CompletedDonor:
+    """Run the MiD completed-donor build and persist the weekend trace.
+
+    Returns a :class:`CompletedDonor`; ``popsim.stage`` consumes it via
+    ``context.stage("completed_donor")`` and reuses the frames for BOTH the
+    PopulationSim seed and the expansion donor tables.
+    """
+    from braunschweig.popsim.stage import (
+        KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+    )
+    mid_dir = context.config(KEY_MID)
+    random_seed = int(context.config("random_seed"))
+    # Same tri-state day-filter parsing as stage.execute: "off"/"all"/"none"/"" ->
+    # no day filter (()), else None -> the loader's weekday default (1,2,3).
+    _day_filter_cfg = str(context.config(KEY_SEED_DAY_FILTER)).strip().lower()
+    seed_day_filter = () if _day_filter_cfg in ("off", "all", "none", "") else None
+    weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
+
+    result = build_completed_donor(
+        mid_dir,
+        random_seed=random_seed,
+        seed_day_filter=seed_day_filter,
+        weekend_plan_match_on=weekend_plan_match_on,
+        trace_path=Path(context.path()) / WEEKEND_TRACE_FILE if weekend_plan_match_on else None,
+    )
+
+    # Surface the build reports as run info (also set on the consumer in popsim.stage
+    # so they are present on a cache hit, where this execute does not run).
+    context.set_info("member_completion_filled", result.completion_report.n_households_filled)
+    context.set_info("member_completion_persons_added", result.completion_report.n_persons_added)
+    context.set_info("seed_completeness_rate", result.completeness_report.completeness_rate)
+    return result
