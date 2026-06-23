@@ -112,9 +112,31 @@ def test_realised_counts_household_control_groups_by_cell():
         syn_hh, donor_hh, donor_p, [_make_household_control()])
     assert n_resolved == 1
     assert n_skipped == 0
-    by = {r.zensus100m: r.realised for r in result[result.control == "has_car"].itertuples()}
+    by = {r.zensus100m: r.realised for r in result[result.control == "has_car_ZENSUS100m"].itertuples()}
     assert by["cellA"] == 1   # only H_ID 11 (2 cars >= 1)
     assert by["cellB"] == 1   # H_ID 12 (1 car >= 1)
+
+
+def test_realised_control_key_matches_target_convention(tmp_path):
+    """REGRESSION (root cause of the -100%-everywhere bug): realised_counts must key
+    each control the SAME way _load_targets does -- the geography-suffixed control field
+    ``{name}_{geography}`` that control_totals_ZENSUS100m.csv carries. Otherwise the
+    target<-realised merge in cell_error_table never matches and realised is filled 0."""
+    syn_hh = pd.DataFrame({
+        "household_id": [1, 2], "ZENSUS100m": ["cellA", "cellB"], "H_ID": [10, 12],
+    })
+    donor_hh = pd.DataFrame({"H_ID": [10, 12], "H_ANZAUTO": [2, 1]})
+    donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
+    realised, _, _ = ce.realised_counts(syn_hh, donor_hh, donor_p, [_make_household_control()])
+    # Target exactly as produced from a real control_totals_ZENSUS100m.csv (suffixed column).
+    ct = tmp_path / "control_totals_ZENSUS100m.csv"
+    ct.write_text("ZENSUS100m,has_car_ZENSUS100m\ncellA,1\ncellB,1\n", encoding="utf-8")
+    target = ce._load_targets(ct)
+    common = set(realised["control"]) & set(target["control"])
+    assert common, (
+        "realised control keys %s do not align with target keys %s"
+        % (sorted(set(realised["control"])), sorted(set(target["control"])))
+    )
 
 
 def test_realised_counts_person_control_joins_one_to_many():
@@ -133,7 +155,7 @@ def test_realised_counts_person_control_joins_one_to_many():
         syn_hh, donor_hh, donor_p, [_make_person_control()])
     assert n_resolved == 1
     assert n_skipped == 0
-    by = {r.zensus100m: r.realised for r in result[result.control == "adult_30plus"].itertuples()}
+    by = {r.zensus100m: r.realised for r in result[result.control == "adult_30plus_ZENSUS100m"].itertuples()}
     assert by["cellA"] == 1   # HP_ALTER 35 >= 30; 25 < 30
     assert by["cellB"] == 1   # HP_ALTER 40 >= 30
 
@@ -156,7 +178,7 @@ def test_realised_counts_household_donor_dedup_guards_against_fanout():
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
     result, n_resolved, n_skipped = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_household_control()])
-    by = {r.zensus100m: r.realised for r in result[result.control == "has_car"].itertuples()}
+    by = {r.zensus100m: r.realised for r in result[result.control == "has_car_ZENSUS100m"].itertuples()}
     # cellA: only H_ID 11 qualifies (2 cars); duplicate must not inflate to 2
     assert by["cellA"] == 1, f"expected 1 but got {by.get('cellA')} -- duplicate H_ID fan-out not guarded"
     assert by["cellB"] == 1  # H_ID 12 (1 car) -- unaffected

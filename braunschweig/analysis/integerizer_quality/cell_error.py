@@ -94,9 +94,15 @@ def realised_counts(
             )
             continue
         n_resolved += 1
+        # Key the realised count by the geography-suffixed control field
+        # (``{name}_{geography}``) -- this is the SAME identifier the control_totals
+        # target files carry (e.g. ``has_car_ZENSUS100m``). Keying by the bare
+        # ``control.name`` made the target<-realised merge in cell_error_table never
+        # match, so realised was filled 0 everywhere (fabricated -100% fit).
+        control_field = f"{control.name}_{control.geography}"
         counts = frame.loc[mask].groupby(_CELL).size()
         for cell, n in counts.items():
-            rows.append({"zensus100m": cell, "control": control.name, "realised": int(n)})
+            rows.append({"zensus100m": cell, "control": control_field, "realised": int(n)})
 
     return pd.DataFrame(rows, columns=["zensus100m", "control", "realised"]), n_resolved, n_skipped
 
@@ -169,5 +175,32 @@ def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_g
             "Check the control_spec expression format / donor attribute columns."
         )
 
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(
+    long = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(
         columns=["zensus100m", "control", "realised", "target", "abs_error", "batch"])
+
+    # Defense-in-depth: the realised counts must actually ALIGN to the targets after
+    # the per-batch target<-realised merge. If realised is 0 on (almost) every cell
+    # that has a positive target, the realised and target control keys are not matching
+    # (e.g. a {name}_{geography} suffix mismatch) -- which silently fabricates a -100%
+    # fit. Fail loud. (A control genuinely absent from a cell legitimately contributes
+    # 0, so some zeros are expected; ~0% realised>0 across the whole frame is the signal
+    # that the keys did not join -- the exact bug class that slipped past the
+    # expression-resolved guard, since NaN-attribute comparisons evaluate to False.)
+    if len(long):
+        pos_target = long["target"] > 0
+        n_pos = int(pos_target.sum())
+        n_realised_pos = int((long.loc[pos_target, "realised"] > 0).sum())
+        share = (n_realised_pos / n_pos) if n_pos else 0.0
+        logger.info(
+            "[integerizer_quality] realised>0 on %d/%d positive-target cells (%.1f%%)",
+            n_realised_pos, n_pos, 100.0 * share,
+        )
+        if n_pos and share < 0.01:
+            raise RuntimeError(
+                "integerizer_quality: realised is ~0 on essentially all positive-target "
+                "cells (%.2f%%) -- the realised and target control keys are not aligning "
+                "(check the {name}_{geography} control field). Refusing to emit a "
+                "fabricated ~100%% error." % (100.0 * share)
+            )
+
+    return long
