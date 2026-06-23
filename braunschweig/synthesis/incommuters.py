@@ -1007,7 +1007,13 @@ def configure(context):
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.locations.work")
-    context.stage("braunschweig.synthesis.population.enriched")  # RAW, for n_residents
+    # Aliased name (config maps it to the popsim enriched_adapter or the IPF
+    # braunschweig.synthesis.population.enriched). Depending on the hard-coded IPF
+    # module bypassed the alias and dragged the eqasim HTS-matching subtree
+    # (synthesis.population.matched) into popsim runs. Only the max resident
+    # person_id / household_id are read (id collision avoidance), which both variants
+    # provide, so the population-agnostic aliased dependency is correct.
+    context.stage("synthesis.population.enriched")  # RAW, for n_residents
     context.stage("braunschweig.data.inkar.household_income")  # origin-Kreis income level
     context.stage("data.hts.selected", alias="hts")
     if context.config("cordon_incommuter_real_origin"):
@@ -1042,7 +1048,7 @@ def execute(context):
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
 
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
-    residents = context.stage("braunschweig.synthesis.population.enriched")
+    residents = context.stage("synthesis.population.enriched")
     _hts_households, hts_persons, hts_trips = context.stage("hts")
     rng = np.random.default_rng(int(context.config("random_seed")) + 100000)
 
