@@ -1,8 +1,14 @@
-## FULL-PIPELINE 1% ALL-FEATURES popsim_mid smoke -- SERVER (Linux) variant.
-## End-to-end wiring proof of the COMBINED branch (integration/all-features):
-## popsim_mid (MiD donor, weight-sampled) + new fleet module + cross-cordon
-## einpendler + long-haul freight + education gravity + income tilt/Kreis control,
-## with 10 MATSim iterations. Server is FULLY loaded (64 cores / 128 GB):
+## FULL-PIPELINE 25% ALL-FEATURES popsim_mid run -- SERVER (Linux) variant.
+## End-to-end wiring proof of the COMBINED branch (integration/all-features) at
+## sampling_rate 0.25: popsim_mid (MiD donor, weight-sampled) + new fleet module +
+## cross-cordon einpendler + long-haul freight + education gravity + income
+## tilt/Kreis control. This is the FIRST 25% run: 10 MATSim iterations only, to verify
+## the full pipeline runs end-to-end (matsim_last_iteration: 9). It is ALSO the cache
+## SEEDING run -- on success it auto-exports the sampling-independent shareable stages
+## (freight extraction, popsim.stage, completed_donor, ...) into cache_share_store, so
+## the later 100% / 200-iteration production run primes them and skips the heavy work.
+## For the production run, bump matsim_last_iteration back to 199 (write_plans 50).
+## Server is FULLY loaded (64 cores / 128 GB):
 ##   - synpp processes 32, popsim num_workers 0 (auto -> cpu_count-2 ~ 62),
 ##     chainsolvers.processes 0 (auto), MATSim threads 56/16, java_memory 100G.
 ##
@@ -107,6 +113,11 @@ config:
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
   cache_share_recompute: []
+  # Auto-export the shareable stages into the store after a SUCCESSFUL run, so this
+  # seeding run populates the store for the 100% / production run (default true;
+  # set false to prime-without-export on a throwaway config). Never overwrites an
+  # existing store entry (skip_existing); a different hash is stored alongside.
+  cache_share_export: true
 
   java_memory: 100G
 
@@ -115,9 +126,11 @@ config:
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- MATSim runtime (64-core box) ---
-  matsim_last_iteration: 199
+  # FIRST 25% run: 10 iterations (0..9) only, to verify the full pipeline runs
+  # end-to-end. Bump to 199 (and write_plans 50) for the 200-iteration production run.
+  matsim_last_iteration: 9
   matsim_write_events_interval: 0
-  matsim_write_plans_interval: 50
+  matsim_write_plans_interval: 5
   matsim_threads: 56
   matsim_qsim_threads: 16
 
