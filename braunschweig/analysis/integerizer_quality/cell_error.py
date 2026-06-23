@@ -114,19 +114,29 @@ def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_g
     """Long [zensus100m, control, realised, target, abs_error, batch, KREIS] over all batches."""
     from braunschweig.popsim import control_spec, mid as midmod, seed as seedmod
 
+    from tqdm import tqdm
+
     work_dir = Path(work_dir)
     controls = control_spec.full_catalog(include_tiers=tuple(tiers),
                                          include_employment_grid=employment_grid)
     controls = [c for c in controls if getattr(c, "geography", None) == _CELL]
+    logger.info("[integerizer_quality] %d ZENSUS100m controls; loading completed donor "
+                "(member completion + weekend match) -- this is the slow phase...",
+                len(controls))
     rng = np.random.RandomState(random_seed + 74513)
     day_filter = seedmod.ALL_REPORTING_KERNWO if weekend else None
     donor_hh, donor_p, _creport, _mreport = midmod.load_completed_donor(
         mid_dir, completion_rng=rng, day_filter_values=day_filter)
+    logger.info("[integerizer_quality] donor loaded: %d households, %d persons; "
+                "evaluating controls per batch...", len(donor_hh), len(donor_p))
 
     parts = []
     total_resolved = 0
     total_skipped = 0
-    for batch_dir in sorted(work_dir.glob("batch_*")):
+    batch_dirs = sorted(work_dir.glob("batch_*"))
+    # Progress bar over the per-batch realised-vs-target evaluation so the run's
+    # duration is visible (the donor load above emits its own progress heartbeats).
+    for batch_dir in tqdm(batch_dirs, desc="[integerizer_quality] batches", unit="batch"):
         out = batch_dir / "output"
         targets_path = batch_dir / "data" / "control_totals_ZENSUS100m.csv"
         syn_hh_path = out / "synthetic_households.csv"
