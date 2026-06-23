@@ -738,7 +738,9 @@ def execute(context):
             "IPF/open workflows."
         )
 
-    mode = context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
+    # The default is registered in configure() (synpp's ExecuteContext.config() does
+    # NOT accept a default argument -- only the PrepareContext does), so read by key only.
+    mode = context.config(KEY_HOME_MATCHING)
     if mode == "legacy":
         households = (
             df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
