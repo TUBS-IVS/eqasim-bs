@@ -53,33 +53,89 @@ def test_classify_zones_marks_infeasible_as_smart_rounded(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Task 3: cell_error
+# Task 3: cell_error  — uses REAL CatalogControl objects (not a fake _Ctrl class)
 # ---------------------------------------------------------------------------
 import pandas as pd
+import pytest
 from braunschweig.analysis.integerizer_quality import cell_error as ce
+from braunschweig.popsim import control_spec
 
 
-class _Ctrl:
-    name = "has_car"
-    geography = "ZENSUS100m"
-    family = "household"
-    def expression_for(self, seed):
-        return "H_ANZAUTO >= 1"
+# ---- HOUSEHOLD control with a real table-prefixed expression ----
+
+def _make_household_control():
+    """Real CatalogControl with the table-prefixed expression format used in production."""
+    return control_spec.CatalogControl(
+        name="has_car",
+        geography="ZENSUS100m",
+        seed_table=control_spec.SEED_TABLE_HOUSEHOLDS,
+        importance=1,
+        census_source=("x",),
+        seed_expressions={"mid": "(households.H_ANZAUTO >= 1)"},
+    )
+
+
+def _make_person_control():
+    """Real CatalogControl with a person-table-prefixed expression."""
+    return control_spec.CatalogControl(
+        name="adult_30plus",
+        geography="ZENSUS100m",
+        seed_table=control_spec.SEED_TABLE_PERSONS,
+        importance=1,
+        census_source=("y",),
+        seed_expressions={"mid": "(persons.HP_ALTER >= 30)"},
+    )
+
+
+def _make_no_expr_control():
+    """Real CatalogControl whose mid expression is None -> should increment n_skipped."""
+    return control_spec.CatalogControl(
+        name="no_mid",
+        geography="ZENSUS100m",
+        seed_table=control_spec.SEED_TABLE_HOUSEHOLDS,
+        importance=1,
+        census_source=("z",),
+        seed_expressions={"mid": None},
+    )
 
 
 def test_realised_counts_household_control_groups_by_cell():
+    """Real CatalogControl with prefixed expression must evaluate correctly per cell."""
     syn_hh = pd.DataFrame({
         "household_id": [1, 2, 3],
         "ZENSUS100m": ["cellA", "cellA", "cellB"],
         "H_ID": [10, 11, 12],
     })
-    syn_p = pd.DataFrame({"ZENSUS100m": [], "household_id": []})
     donor_hh = pd.DataFrame({"H_ID": [10, 11, 12], "H_ANZAUTO": [0, 2, 1]})
-    donor_p = pd.DataFrame({"H_ID": [], "P_TAET": []})
-    out = ce.realised_counts(syn_hh, syn_p, donor_hh, donor_p, [_Ctrl()])
-    by = {(r.zensus100m): r.realised for r in out[out.control == "has_car"].itertuples()}
-    assert by["cellA"] == 1  # only H_ID 11 (2 cars)
-    assert by["cellB"] == 1  # H_ID 12 (1 car)
+    donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
+    result, n_resolved, n_skipped = ce.realised_counts(
+        syn_hh, donor_hh, donor_p, [_make_household_control()])
+    assert n_resolved == 1
+    assert n_skipped == 0
+    by = {r.zensus100m: r.realised for r in result[result.control == "has_car"].itertuples()}
+    assert by["cellA"] == 1   # only H_ID 11 (2 cars >= 1)
+    assert by["cellB"] == 1   # H_ID 12 (1 car >= 1)
+
+
+def test_realised_counts_person_control_joins_one_to_many():
+    """Person control must join donor_persons one-to-many via H_ID and count per cell."""
+    syn_hh = pd.DataFrame({
+        "ZENSUS100m": ["cellA", "cellB"],
+        "H_ID": [10, 11],
+    })
+    # H_ID 10 has 2 persons; H_ID 11 has 1 person
+    donor_p = pd.DataFrame({
+        "H_ID":     [10, 10, 11],
+        "HP_ALTER": [35, 25, 40],
+    })
+    donor_hh = pd.DataFrame({"H_ID": [10, 11]})
+    result, n_resolved, n_skipped = ce.realised_counts(
+        syn_hh, donor_hh, donor_p, [_make_person_control()])
+    assert n_resolved == 1
+    assert n_skipped == 0
+    by = {r.zensus100m: r.realised for r in result[result.control == "adult_30plus"].itertuples()}
+    assert by["cellA"] == 1   # HP_ALTER 35 >= 30; 25 < 30
+    assert by["cellB"] == 1   # HP_ALTER 40 >= 30
 
 
 def test_realised_counts_household_donor_dedup_guards_against_fanout():
@@ -95,15 +151,26 @@ def test_realised_counts_household_donor_dedup_guards_against_fanout():
         "ZENSUS100m": ["cellA", "cellA", "cellB"],
         "H_ID": [10, 11, 12],
     })
-    syn_p = pd.DataFrame({"ZENSUS100m": [], "household_id": []})
     # H_ID 11 is duplicated with identical H_ANZAUTO — simulates a fan-out source
     donor_hh = pd.DataFrame({"H_ID": [10, 11, 11, 12], "H_ANZAUTO": [0, 2, 2, 1]})
-    donor_p = pd.DataFrame({"H_ID": [], "P_TAET": []})
-    out = ce.realised_counts(syn_hh, syn_p, donor_hh, donor_p, [_Ctrl()])
-    by = {r.zensus100m: r.realised for r in out[out.control == "has_car"].itertuples()}
+    donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
+    result, n_resolved, n_skipped = ce.realised_counts(
+        syn_hh, donor_hh, donor_p, [_make_household_control()])
+    by = {r.zensus100m: r.realised for r in result[result.control == "has_car"].itertuples()}
     # cellA: only H_ID 11 qualifies (2 cars); duplicate must not inflate to 2
-    assert by["cellA"] == 1, f"expected 1 but got {by.get('cellA')} — duplicate H_ID fan-out not guarded"
-    assert by["cellB"] == 1  # H_ID 12 (1 car) — unaffected
+    assert by["cellA"] == 1, f"expected 1 but got {by.get('cellA')} -- duplicate H_ID fan-out not guarded"
+    assert by["cellB"] == 1  # H_ID 12 (1 car) -- unaffected
+
+
+def test_realised_counts_none_expr_increments_skipped():
+    """A control whose expression_for('mid') is None must increment n_skipped, not n_resolved."""
+    syn_hh = pd.DataFrame({"ZENSUS100m": ["cellA"], "H_ID": [10]})
+    donor_hh = pd.DataFrame({"H_ID": [10], "H_ANZAUTO": [1]})
+    donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
+    _, n_resolved, n_skipped = ce.realised_counts(
+        syn_hh, donor_hh, donor_p, [_make_no_expr_control()])
+    assert n_resolved == 0
+    assert n_skipped == 1
 
 
 # ---------------------------------------------------------------------------
@@ -120,15 +187,23 @@ def test_build_outputs_splits_error_by_status():
         "target":   [10, 0, 10, 0],
         "abs_error": [0, 0, 2, 0],
         "batch": ["batch_000"] * 4,
+        "KREIS": ["03101", "03101", "03158", "03158"],
     })
     zones = pd.DataFrame({
         "zensus100m": ["A", "B"], "status": ["optimal", "smart_rounded"],
         "converged_false": [False, False], "batch": ["batch_000", "batch_000"],
     })
-    out = build = rep.build_outputs(error_long, zones)
+    out = rep.build_outputs(error_long, zones)
     ebc = out["error_by_control"].set_index(["control", "status"])
     assert ebc.loc[("c1", "optimal"), "mean_abs_error"] == 0.0
     assert ebc.loc[("c1", "smart_rounded"), "mean_abs_error"] == 1.0  # (2+0)/2
     cs = out["cell_summary"].set_index("zensus100m")
     assert cs.loc["B", "total_abs_error"] == 2
     assert bool(cs.loc["B", "is_smart_rounded"]) is True
+    # error_by_kreis must be a real per-Kreis aggregation (not the batch table)
+    ekk = out["error_by_kreis"]
+    assert "kreis" in ekk.columns or ekk.index.name == "kreis" or "KREIS" in str(ekk.columns)
+    # Both Kreise must appear
+    kreis_values = set(ekk["kreis"]) if "kreis" in ekk.columns else set(ekk.index)
+    assert "03101" in kreis_values
+    assert "03158" in kreis_values
