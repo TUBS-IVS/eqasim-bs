@@ -247,6 +247,51 @@ def test_car_agents_board_at_road_gate():
         "car validation entry_y must match the road gate y"
 
 
+def test_every_incommuter_owns_a_car_passenger_vehicle():
+    """Regression: every in-commuter -- car AND pt -- must own a car_passenger vehicle.
+
+    car_passenger is a network-routed mode (eqasim core NETWORK_MODES =
+    [car, car_passenger, truck]) the in-loop discrete mode choice can assign to ANY
+    agent regardless of car ownership. If an in-commuter lacks the vehicle, MATSim aborts
+    routing in replanning with "Could not retrieve vehicle id ... for mode car_passenger"
+    (observed on the 25% all-features popsim run, iteration 1). Residents get it via
+    synthesis.vehicles.passengers.default; in-commuters must get it too. A 50/50 car/pt
+    reference is used so the assertion also covers pt agents, which own no car vehicle.
+    """
+    gates, assignment, flows, zgb_work, hp, ht = _minimal_inputs()
+    pt_stops = _pt_entry_stops_new_schema()
+    rng = np.random.default_rng(7)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.5, "pt": 0.5}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops)
+
+    persons = set(frames["persons"]["person_id"])
+    vehicles = frames["vehicles"]
+    assert len(persons) > 0, "fixture should produce at least one in-commuter"
+
+    passenger_owners = set(vehicles.loc[vehicles["mode"] == "car_passenger", "owner_id"])
+    missing = persons - passenger_owners
+    assert not missing, (
+        "every in-commuter must own a car_passenger vehicle; missing for: %s" % sorted(missing))
+
+    # The car_passenger vehicle ids follow the "<person_id>:car_passenger" convention and
+    # reference the default_car_passenger type (consistent with the resident passengers stage).
+    cp = vehicles[vehicles["mode"] == "car_passenger"]
+    assert (cp["vehicle_id"] == cp["owner_id"].astype(str) + ":car_passenger").all()
+    assert (cp["type_id"] == "default_car_passenger").all()
+
+    # Regression: car-mode agents still own their "car" vehicle (the fix only adds, never
+    # removes). pt agents legitimately own no car vehicle -- only car_passenger.
+    car_trip_persons = set(frames["trips"].loc[frames["trips"]["mode"] == "car", "person_id"])
+    car_owners = set(vehicles.loc[vehicles["mode"] == "car", "owner_id"])
+    assert car_trip_persons <= car_owners, \
+        "car-mode in-commuters must still own a car vehicle"
+
+
 def test_pt_fallback_to_car_when_no_station_in_source_kreis():
     """FALLBACK: a PT agent whose source Kreis has NO eligible rail station is reassigned to car.
 

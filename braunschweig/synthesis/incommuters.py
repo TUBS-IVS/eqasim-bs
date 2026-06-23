@@ -604,6 +604,18 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                                               "hbefa_cat", "hbefa_tech", "hbefa_size",
                                               "hbefa_emission"])
         vehicles = _build_legacy_vehicles(person_ids, modes)
+    # Every in-commuter -- like every resident (synthesis.vehicles.passengers.default) --
+    # must own a car_passenger vehicle. car_passenger is a network-routed mode (eqasim
+    # core NETWORK_MODES = [car, car_passenger, truck]) that the in-loop discrete mode
+    # choice can assign to ANY agent regardless of car ownership; without the vehicle the
+    # MATSim router aborts with "Could not retrieve vehicle id ... for mode car_passenger".
+    # The car builders above emit only "car" (and only for car-mode agents), so the
+    # car_passenger vehicle is added here for every in-commuter. The default_car_passenger
+    # vehicle TYPE is already in the scenario type table (added by the resident passengers
+    # stage and de-duplicated in braunschweig.matsim.scenario.vehicles), so only the
+    # per-agent vehicles are emitted.
+    vehicles = pd.concat([vehicles, _build_incommuter_passenger_vehicles(person_ids)],
+                         ignore_index=True)
     # Per-agent validation record (one row per in-commuter): source Kreis, direction,
     # final mode (post PT->car reassignment), and the ACTUAL boarding point.
     #
@@ -932,6 +944,34 @@ def _build_legacy_vehicles(person_ids, modes):
         "mode": "car",
         "vehicle_id": [f"{pid}:car" for pid in owners],
         "type_id": "default_car",
+        "critair": "Crit'air 1",
+        "technology": "Gazole",
+        "age": 0,
+        "euro": 6,
+    })
+
+
+def _build_incommuter_passenger_vehicles(person_ids):
+    """One ``car_passenger`` vehicle per in-commuter, mirroring
+    ``synthesis.vehicles.passengers.default`` for residents.
+
+    ``car_passenger`` is a network-routed mode (eqasim core
+    ``NETWORK_MODES = [car, car_passenger, truck]``) that the in-loop discrete mode
+    choice can assign to ANY agent regardless of car ownership. Without a
+    ``car_passenger`` vehicle the MATSim router aborts with
+    "Could not retrieve vehicle id from person ... for mode: car_passenger". The car
+    builders emit only ``car`` (and only for car-mode agents), so every in-commuter is
+    given a ``car_passenger`` vehicle here. The writer columns mirror
+    :func:`_build_legacy_vehicles` / ``synthesis.vehicles.passengers.default`` exactly;
+    the ``default_car_passenger`` type is contributed once by the resident passengers
+    stage and de-duplicated downstream, so it is not re-emitted here.
+    """
+    person_ids = np.asarray(person_ids)
+    return pd.DataFrame({
+        "owner_id": person_ids,
+        "mode": "car_passenger",
+        "vehicle_id": [f"{pid}:car_passenger" for pid in person_ids],
+        "type_id": "default_car_passenger",
         "critair": "Crit'air 1",
         "technology": "Gazole",
         "age": 0,
