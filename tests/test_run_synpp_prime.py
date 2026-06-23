@@ -56,3 +56,70 @@ def test_prime_from_config_absent_store_is_safe(tmp_path):
     rep = mod.prime_from_config(str(cfg))
     assert rep["primed"] == []
     assert "braunschweig.freight.extraction" in rep["missing_in_store"]
+
+
+# --- automatic post-run export (export_to_store_from_config) -----------------
+
+def test_export_from_config_disabled_is_noop(tmp_path):
+    mod = _load()
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(textwrap.dedent("""
+        working_directory: {wd}/wd
+        config:
+          cache_share_enabled: false
+    """).format(wd=tmp_path).strip(), encoding="utf-8")
+    assert mod.export_to_store_from_config(str(cfg)) is None
+
+
+def test_export_from_config_export_flag_false_is_noop(tmp_path):
+    mod = _load()
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(textwrap.dedent("""
+        working_directory: {wd}/wd
+        config:
+          cache_share_enabled: true
+          cache_share_export: false
+    """).format(wd=tmp_path).strip(), encoding="utf-8")
+    assert mod.export_to_store_from_config(str(cfg)) is None
+
+
+def test_export_from_config_exports_requested_stage(tmp_path):
+    mod = _load()
+    wd = tmp_path / "wd"
+    os.makedirs(wd)
+    with open(wd / "braunschweig.freight.extraction__h9.p", "wb") as f:
+        f.write(b"x")
+    store = tmp_path / "store"
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(textwrap.dedent("""
+        working_directory: {wd}
+        config:
+          cache_share_store: {store}
+          cache_share_stages: [braunschweig.freight.extraction]
+    """).format(wd=wd, store=store).strip(), encoding="utf-8")
+    rep = mod.export_to_store_from_config(str(cfg))
+    assert "braunschweig.freight.extraction__h9" in rep["exported"]
+    assert (store / "braunschweig.freight.extraction__h9.p").exists()
+
+
+def test_export_from_config_does_not_overwrite_existing_store_entry(tmp_path):
+    mod = _load()
+    wd = tmp_path / "wd"
+    os.makedirs(wd)
+    with open(wd / "braunschweig.freight.extraction__h9.p", "wb") as f:
+        f.write(b"NEW")
+    store = tmp_path / "store"
+    os.makedirs(store)
+    with open(store / "braunschweig.freight.extraction__h9.p", "wb") as f:
+        f.write(b"ORIGINAL")
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(textwrap.dedent("""
+        working_directory: {wd}
+        config:
+          cache_share_store: {store}
+          cache_share_stages: [braunschweig.freight.extraction]
+    """).format(wd=wd, store=store).strip(), encoding="utf-8")
+    rep = mod.export_to_store_from_config(str(cfg))
+    # auto-export uses skip_existing=True -> the store entry is NOT clobbered.
+    assert (store / "braunschweig.freight.extraction__h9.p").read_bytes() == b"ORIGINAL"
+    assert "braunschweig.freight.extraction__h9" in rep["skipped_present"]

@@ -68,28 +68,44 @@ def _copy_entry(src_dir: str, dst_dir: str, entry: str) -> None:
         shutil.copytree(cache_src, cache_dst)
 
 
-def export(working_directory: str, modules: list, store: str) -> dict:
+def export(working_directory: str, modules: list, store: str, skip_existing: bool = False) -> dict:
     """Copy each module's synpp cache entries from ``working_directory`` into ``store``.
 
-    Returns ``{"exported": [<entry>...], "skipped": [<module>...]}`` where ``skipped``
-    lists modules that had no cache entry in ``working_directory`` (logged, never
-    silently ignored).
+    ``skip_existing`` controls the overwrite policy when an entry with the SAME
+    ``<module>__<hash>`` already exists in ``store``:
+
+    - ``False`` (default, CLI behaviour): the store entry is re-copied (overwritten
+      with byte-identical content, since the hash is the content identity).
+    - ``True`` (used by the automatic post-run export): the existing store entry is
+      left untouched and reported in ``skipped_present`` -- so the store is never
+      clobbered. A genuinely different config/content has a different ``<hash>`` and
+      therefore a different filename, so it is stored ALONGSIDE the old entry; it is
+      never the same name, so nothing is overwritten in either mode.
+
+    Returns ``{"exported": [...], "skipped": [<module>...], "skipped_present": [...]}``
+    where ``skipped`` lists modules that had no cache entry in ``working_directory`` and
+    ``skipped_present`` lists entries left in place because they were already in the
+    store (only populated when ``skip_existing`` is True). Both are logged, never
+    silently ignored.
     """
-    exported, skipped = [], []
+    exported, skipped, skipped_present = [], [], []
     for module in modules:
         entries = find_stage_entries(working_directory, module)
         if not entries:
             skipped.append(module)
             continue
         for entry in entries:
+            if skip_existing and os.path.exists(os.path.join(store, entry + _RESULT_SUFFIX)):
+                skipped_present.append(entry)
+                continue
             _copy_entry(working_directory, store, entry)
             exported.append(entry)
     logger.info(
         "[cache_share] export: %d entr(ies) for %d module(s) -> %s; "
-        "skipped (no cache present) %d %s",
-        len(exported), len(modules), store, len(skipped), skipped or "",
+        "already-in-store %d; skipped (no cache present) %d %s",
+        len(exported), len(modules), store, len(skipped_present), len(skipped), skipped or "",
     )
-    return {"exported": exported, "skipped": skipped}
+    return {"exported": exported, "skipped": skipped, "skipped_present": skipped_present}
 
 
 def prime(working_directory: str, modules: list, store: str, recompute: list) -> dict:

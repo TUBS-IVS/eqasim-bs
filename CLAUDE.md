@@ -616,6 +616,14 @@ so we never recompute synpp's hash -- we copy the artifacts and let synpp decide
   `cache_share_enabled` (default **true**), `cache_share_store`
   (default `eqasim-data/cache_shared`), `cache_share_stages` (default = the freight
   chain), `cache_share_recompute` (default `[]`; `["*"]` = recompute all).
+- `run_synpp.py` calls `export_to_store_from_config` AFTER a **successful** run (a
+  failed run raises first, so it never seeds the store), copying `cache_share_stages`
+  from the working_directory into the store. Gated by `cache_share_enabled` AND
+  `cache_share_export` (default **true**; set false to prime-without-export on a
+  throwaway config). The auto-export uses `cache_share.export(..., skip_existing=True)`
+  so an entry already in the store is **never overwritten**; a different config/content
+  has a different `<hash>` and is stored alongside. The CLI `export` keeps its
+  overwrite default (`skip_existing=False`).
 
 A primed entry whose hash does NOT match the target config is **ignored by synpp and
 recomputed** -- never a corruption, only a forgone speedup (logged as a miss; no

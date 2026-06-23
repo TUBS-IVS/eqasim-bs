@@ -69,6 +69,46 @@ def prime_from_config(config_path):
     return cache_share.prime(working_directory, stages, store, recompute)
 
 
+def export_to_store_from_config(config_path):
+    """Export the run's shareable stage caches into the shared store AFTER the run.
+
+    Symmetric to :func:`prime_from_config`. Reads the same ``cache_share_*`` keys and
+    copies the configured ``cache_share_stages`` from the working_directory into the
+    store, so a completed run seeds the store for the next one. Gated by BOTH
+    ``cache_share_enabled`` (master switch) and ``cache_share_export`` (default True):
+    either being false makes this a logged no-op, so a throwaway config can prime from
+    the store without writing its own stages back into it.
+
+    Uses ``skip_existing=True`` so an entry already in the store is never overwritten;
+    a different config/content has a different hash and is stored alongside. Returns the
+    export report, or ``None`` when disabled. Called only after a successful run (a
+    failed/partial run raises before reaching this, so it never seeds the store).
+    """
+    log = logging.getLogger("braunschweig")
+    with open(config_path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
+    cfg = doc.get("config", {}) or {}
+    if not cfg.get("cache_share_enabled", True):
+        log.info("[cache_share] auto-export disabled (cache_share_enabled false).")
+        return None
+    if not cfg.get("cache_share_export", True):
+        log.info("[cache_share] auto-export disabled (cache_share_export false).")
+        return None
+    working_directory = doc.get("working_directory")
+    store = cfg.get("cache_share_store", "eqasim-data/cache_shared")
+    stages = cfg.get("cache_share_stages", DEFAULT_CACHE_SHARE_STAGES)
+    if not working_directory:
+        log.info("[cache_share] auto-export: no working_directory -> nothing to export.")
+        return None
+    os.makedirs(store, exist_ok=True)
+    report = cache_share.export(working_directory, stages, store, skip_existing=True)
+    log.info(
+        "[cache_share] auto-export: exported %d, already-in-store %d, not-in-cache %s",
+        len(report["exported"]), len(report["skipped_present"]), report["skipped"] or "[]",
+    )
+    return report
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
@@ -80,6 +120,10 @@ def main(argv=None) -> int:
     logging.getLogger("braunschweig").info("Run log: %s", log_path)
     prime_from_config(argv[0])
     synpp.run_from_yaml(argv[0])
+    # Export the shareable stage caches into the shared store ONLY after a successful
+    # run (run_from_yaml raises on failure, so a failed/partial run never seeds the
+    # store). Gated by cache_share_enabled + cache_share_export inside the helper.
+    export_to_store_from_config(argv[0])
     return 0
 
 

@@ -60,6 +60,51 @@ def test_export_skips_module_without_cache_entry(tmp_path):
     assert rep["skipped"] == ["absent.module"]
 
 
+def test_export_skip_existing_does_not_overwrite_same_hash(tmp_path):
+    # skip_existing=True: an entry already in the store (same <module>__<hash>) is
+    # left untouched, never re-copied -> the auto-export never clobbers the store.
+    wd = tmp_path / "wd"
+    store = tmp_path / "store"
+    _make_entry(str(wd), "braunschweig.freight.extraction__abc123")
+    os.makedirs(store)
+    with open(store / "braunschweig.freight.extraction__abc123.p", "wb") as f:
+        f.write(b"ORIGINAL")
+    rep = cache_share.export(
+        str(wd), ["braunschweig.freight.extraction"], str(store), skip_existing=True,
+    )
+    assert (store / "braunschweig.freight.extraction__abc123.p").read_bytes() == b"ORIGINAL"
+    assert "braunschweig.freight.extraction__abc123" in rep["skipped_present"]
+    assert "braunschweig.freight.extraction__abc123" not in rep["exported"]
+
+
+def test_export_skip_existing_adds_new_hash_alongside(tmp_path):
+    # A different config/content has a different hash -> different filename -> the new
+    # entry is stored ALONGSIDE the old one (nothing overwritten).
+    wd = tmp_path / "wd"
+    store = tmp_path / "store"
+    _make_entry(str(store), "braunschweig.freight.extraction__OLDHASH", with_cache=False)
+    _make_entry(str(wd), "braunschweig.freight.extraction__NEWHASH")
+    rep = cache_share.export(
+        str(wd), ["braunschweig.freight.extraction"], str(store), skip_existing=True,
+    )
+    assert (store / "braunschweig.freight.extraction__OLDHASH.p").exists()
+    assert (store / "braunschweig.freight.extraction__NEWHASH.p").exists()
+    assert "braunschweig.freight.extraction__NEWHASH" in rep["exported"]
+
+
+def test_export_default_overwrites_existing(tmp_path):
+    # Default skip_existing=False keeps the current (overwrite) CLI behaviour.
+    wd = tmp_path / "wd"
+    store = tmp_path / "store"
+    _make_entry(str(wd), "m__h1", with_cache=False)
+    os.makedirs(store)
+    with open(store / "m__h1.p", "wb") as f:
+        f.write(b"OLD")
+    rep = cache_share.export(str(wd), ["m"], str(store))
+    assert (store / "m__h1.p").read_bytes() == b"x"  # overwritten
+    assert "m__h1" in rep["exported"]
+
+
 def test_prime_skips_recompute_and_star(tmp_path):
     store = tmp_path / "store"
     target = tmp_path / "target"
