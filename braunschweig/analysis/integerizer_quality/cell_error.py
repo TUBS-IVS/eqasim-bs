@@ -29,6 +29,21 @@ def realised_counts(synthetic_households, synthetic_persons, donor_households,
     """Long [zensus100m, control, realised] for ZENSUS100m-geography controls."""
     rows = []
     hh = synthetic_households[[_CELL, "H_ID"]].copy()
+
+    # Guard: deduplicate the household donor on H_ID before any merge.  The
+    # household donor is expected to have exactly one row per H_ID.  If duplicates
+    # are present they would fan out the left-merge and silently inflate realised
+    # counts — a no-silent-fallback violation.  Deduplicate here once (not inside
+    # the loop) and log a warning so the issue is always observable.
+    donor_hh_unique = donor_households.drop_duplicates("H_ID")
+    n_dropped = len(donor_households) - len(donor_hh_unique)
+    if n_dropped > 0:
+        logger.warning(
+            "realised_counts: dropped %d duplicate H_ID rows from donor_households "
+            "(unique H_IDs: %d, total rows before dedup: %d); fan-out prevented",
+            n_dropped, len(donor_hh_unique), len(donor_households),
+        )
+
     for control in controls:
         if getattr(control, "geography", None) != _CELL:
             continue
@@ -39,7 +54,7 @@ def realised_counts(synthetic_households, synthetic_persons, donor_households,
         if _is_person_family(control):
             joined = hh.merge(donor_persons, on="H_ID", how="left")
         else:
-            joined = hh.merge(donor_households, on="H_ID", how="left")
+            joined = hh.merge(donor_hh_unique, on="H_ID", how="left")
         try:
             mask = joined.eval(expr)
         except Exception as error:  # surface, never silently skip

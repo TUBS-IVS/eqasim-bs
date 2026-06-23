@@ -80,3 +80,27 @@ def test_realised_counts_household_control_groups_by_cell():
     by = {(r.zensus100m): r.realised for r in out[out.control == "has_car"].itertuples()}
     assert by["cellA"] == 1  # only H_ID 11 (2 cars)
     assert by["cellB"] == 1  # H_ID 12 (1 car)
+
+
+def test_realised_counts_household_donor_dedup_guards_against_fanout():
+    """Duplicate H_ID rows in donor_households must NOT fan out the realised count.
+
+    H_ID 11 appears twice in donor_households (simulating a data defect). Without
+    the dedup guard the left-merge doubles the row and the realised count for cellA
+    would be 2 instead of 1. The guard must emit a warning and use the unique set,
+    keeping the count correct.
+    """
+    syn_hh = pd.DataFrame({
+        "household_id": [1, 2, 3],
+        "ZENSUS100m": ["cellA", "cellA", "cellB"],
+        "H_ID": [10, 11, 12],
+    })
+    syn_p = pd.DataFrame({"ZENSUS100m": [], "household_id": []})
+    # H_ID 11 is duplicated with identical H_ANZAUTO — simulates a fan-out source
+    donor_hh = pd.DataFrame({"H_ID": [10, 11, 11, 12], "H_ANZAUTO": [0, 2, 2, 1]})
+    donor_p = pd.DataFrame({"H_ID": [], "P_TAET": []})
+    out = ce.realised_counts(syn_hh, syn_p, donor_hh, donor_p, [_Ctrl()])
+    by = {r.zensus100m: r.realised for r in out[out.control == "has_car"].itertuples()}
+    # cellA: only H_ID 11 qualifies (2 cars); duplicate must not inflate to 2
+    assert by["cellA"] == 1, f"expected 1 but got {by.get('cellA')} — duplicate H_ID fan-out not guarded"
+    assert by["cellB"] == 1  # H_ID 12 (1 car) — unaffected
