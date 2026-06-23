@@ -156,8 +156,16 @@ config:
   # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
   braunschweig.population.popsim.max_cells: 1500
-  # Auto-scale to the 64-core box (0 -> cpu_count - 2 ~ 62 parallel batches).
-  braunschweig.population.popsim.num_workers: 0
+  # Parallel PopulationSim batches. NOT auto/0 (=62): the binding resource here is RAM
+  # (128 GB), not cores. The big urban batches build multi-GB weight tables (e.g. the
+  # densest Braunschweig batch: 17.4M weight rows / 1.3 GB just for the checkpoint, plus
+  # integerizer + expand working set). Running ~33 of them at once exhausted the 128 GB
+  # and the OOM killer silently killed the ~9 largest batches (no output, population gap).
+  # 8 concurrent caps peak memory with ample headroom while still using the box well
+  # (each batch is internally multi-threaded). A fixed integer (not the 0 sentinel) also
+  # stabilises the popsim.stage hash for cross-run cache reuse. Raise only if `free -g`
+  # shows large headroom during the batch phase.
+  braunschweig.population.popsim.num_workers: 8
   braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- Gravity calibration ---
