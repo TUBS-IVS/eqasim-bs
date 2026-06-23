@@ -104,3 +104,31 @@ def test_realised_counts_household_donor_dedup_guards_against_fanout():
     # cellA: only H_ID 11 qualifies (2 cars); duplicate must not inflate to 2
     assert by["cellA"] == 1, f"expected 1 but got {by.get('cellA')} — duplicate H_ID fan-out not guarded"
     assert by["cellB"] == 1  # H_ID 12 (1 car) — unaffected
+
+
+# ---------------------------------------------------------------------------
+# Task 4: report
+# ---------------------------------------------------------------------------
+from braunschweig.analysis.integerizer_quality import report as rep
+
+
+def test_build_outputs_splits_error_by_status():
+    error_long = pd.DataFrame({
+        "zensus100m": ["A", "A", "B", "B"],
+        "control": ["c1", "c1", "c1", "c1"],
+        "realised": [10, 0, 8, 0],
+        "target":   [10, 0, 10, 0],
+        "abs_error": [0, 0, 2, 0],
+        "batch": ["batch_000"] * 4,
+    })
+    zones = pd.DataFrame({
+        "zensus100m": ["A", "B"], "status": ["optimal", "smart_rounded"],
+        "converged_false": [False, False], "batch": ["batch_000", "batch_000"],
+    })
+    out = build = rep.build_outputs(error_long, zones)
+    ebc = out["error_by_control"].set_index(["control", "status"])
+    assert ebc.loc[("c1", "optimal"), "mean_abs_error"] == 0.0
+    assert ebc.loc[("c1", "smart_rounded"), "mean_abs_error"] == 1.0  # (2+0)/2
+    cs = out["cell_summary"].set_index("zensus100m")
+    assert cs.loc["B", "total_abs_error"] == 2
+    assert bool(cs.loc["B", "is_smart_rounded"]) is True
