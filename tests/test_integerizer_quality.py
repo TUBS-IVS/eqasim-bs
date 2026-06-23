@@ -50,3 +50,33 @@ def test_classify_zones_marks_infeasible_as_smart_rounded(tmp_path):
     assert by_id["CRS3035RES100mN1E1"] == "optimal"
     assert by_id["CRS3035RES100mN2E2"] == "smart_rounded"
     assert df["batch"].unique().tolist() == ["batch_000"]
+
+
+# ---------------------------------------------------------------------------
+# Task 3: cell_error
+# ---------------------------------------------------------------------------
+import pandas as pd
+from braunschweig.analysis.integerizer_quality import cell_error as ce
+
+
+class _Ctrl:
+    name = "has_car"
+    geography = "ZENSUS100m"
+    family = "household"
+    def expression_for(self, seed):
+        return "H_ANZAUTO >= 1"
+
+
+def test_realised_counts_household_control_groups_by_cell():
+    syn_hh = pd.DataFrame({
+        "household_id": [1, 2, 3],
+        "ZENSUS100m": ["cellA", "cellA", "cellB"],
+        "H_ID": [10, 11, 12],
+    })
+    syn_p = pd.DataFrame({"ZENSUS100m": [], "household_id": []})
+    donor_hh = pd.DataFrame({"H_ID": [10, 11, 12], "H_ANZAUTO": [0, 2, 1]})
+    donor_p = pd.DataFrame({"H_ID": [], "P_TAET": []})
+    out = ce.realised_counts(syn_hh, syn_p, donor_hh, donor_p, [_Ctrl()])
+    by = {(r.zensus100m): r.realised for r in out[out.control == "has_car"].itertuples()}
+    assert by["cellA"] == 1  # only H_ID 11 (2 cars)
+    assert by["cellB"] == 1  # H_ID 12 (1 car)
