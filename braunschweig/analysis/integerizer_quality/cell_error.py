@@ -133,8 +133,19 @@ def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_g
     day_filter = seedmod.ALL_REPORTING_KERNWO if weekend else None
     donor_hh, donor_p, _creport, _mreport = midmod.load_completed_donor(
         mid_dir, completion_rng=rng, day_filter_values=day_filter)
+    # Attach the derived hh_type5 (Zensus Familientyp) onto the donor households so the
+    # household-type controls (Typ_priv_HH_Familie, whose mid expression is
+    # ``households.hh_type5 == '<class>'``) are MEASURABLE. load_completed_donor does not
+    # carry hh_type5 -- it is derived in project_completed_seed -- so we reuse the SAME
+    # helper here (no reimplementation), keeping the realised count consistent with the
+    # seed convention. Without it those expressions raise (missing column) -> skipped ->
+    # fabricated -100% fit.
+    hh_type5 = seedmod.derive_hh_type5(donor_p, household_id_col="H_ID", age_col="HP_ALTER")
+    donor_hh = donor_hh.copy()
+    donor_hh["hh_type5"] = donor_hh["H_ID"].map(hh_type5)
     logger.info("[integerizer_quality] donor loaded: %d households, %d persons; "
-                "evaluating controls per batch...", len(donor_hh), len(donor_p))
+                "hh_type5 attached (%d classified); evaluating controls per batch...",
+                len(donor_hh), len(donor_p), int(donor_hh["hh_type5"].notna().sum()))
 
     parts = []
     total_resolved = 0

@@ -139,6 +139,33 @@ def test_realised_control_key_matches_target_convention(tmp_path):
     )
 
 
+def test_realised_counts_hh_type_control_uses_hh_type5_column():
+    """HH-type (Typ_priv_HH_Familie) controls evaluate against the derived
+    ``households.hh_type5`` column. cell_error_table attaches hh_type5 to the donor
+    (via seed.derive_hh_type5); given that column, realised_counts must count these
+    controls -- previously they were skipped (column absent) -> fabricated -100%."""
+    syn_hh = pd.DataFrame({
+        "household_id": [1, 2, 3], "ZENSUS100m": ["cellA", "cellA", "cellB"],
+        "H_ID": [10, 11, 12],
+    })
+    donor_hh = pd.DataFrame({
+        "H_ID": [10, 11, 12],
+        "hh_type5": ["paar_ohne_kind", "alleinerziehend", "paar_ohne_kind"],
+    })
+    donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
+    ctrl = control_spec.CatalogControl(
+        name="Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter", geography="ZENSUS100m",
+        seed_table=control_spec.SEED_TABLE_HOUSEHOLDS, importance=1, census_source=("x",),
+        seed_expressions={"mid": "(households.hh_type5 == 'paar_ohne_kind')"},
+    )
+    result, n_resolved, n_skipped = ce.realised_counts(syn_hh, donor_hh, donor_p, [ctrl])
+    assert n_resolved == 1 and n_skipped == 0
+    key = "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m"
+    by = {r.zensus100m: r.realised for r in result[result.control == key].itertuples()}
+    assert by["cellA"] == 1   # H_ID 10 paar_ohne_kind (11 is alleinerziehend, excluded)
+    assert by["cellB"] == 1   # H_ID 12 paar_ohne_kind
+
+
 def test_realised_counts_person_control_joins_one_to_many():
     """Person control must join donor_persons one-to-many via H_ID and count per cell."""
     syn_hh = pd.DataFrame({
