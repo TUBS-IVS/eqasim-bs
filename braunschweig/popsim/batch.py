@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -308,6 +309,20 @@ def run_batches(
 DEFAULT_POPSIM_COMMAND = ("uv", "run", "populationsim")
 DEFAULT_POPSIM_TIMEOUT_S = 3600
 
+# Thread caps applied to every PopulationSim subprocess. numpy/OpenBLAS (and OpenMP /
+# MKL / numexpr) otherwise spawn one thread per CPU core PER PROCESS, so running many
+# batches in parallel oversubscribes the machine by orders of magnitude (e.g. 16
+# batches x 64 OpenBLAS threads = 1024 threads on 64 cores). On the run server that
+# oversubscription crashed numpy with segfaults in libc (12 batches lost in one 25%
+# run). Pinning each subprocess to a single BLAS/OpenMP thread removes the
+# oversubscription; batch-level parallelism is then governed solely by num_workers.
+_SINGLE_THREAD_BLAS_ENV = {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+}
+
 
 def make_populationsim_run_one(
     *,
@@ -350,10 +365,14 @@ def make_populationsim_run_one(
 
         command = [*command_prefix, "-w", str(folder)]
         run_cwd = str(cwd) if cwd is not None else str(folder_path.parent)
+        # Pin BLAS/OpenMP to a single thread per subprocess (see _SINGLE_THREAD_BLAS_ENV)
+        # on top of the inherited environment, so parallel batches do not oversubscribe
+        # the CPU and crash numpy.
+        run_env = {**os.environ, **_SINGLE_THREAD_BLAS_ENV}
         try:
             result = subprocess_run(
                 command, cwd=run_cwd, capture_output=True, text=True,
-                timeout=effective_timeout,
+                timeout=effective_timeout, env=run_env,
             )
         except subprocess.TimeoutExpired:
             return BatchResult(str(folder), "failed", f"timeout after {timeout_s}s",

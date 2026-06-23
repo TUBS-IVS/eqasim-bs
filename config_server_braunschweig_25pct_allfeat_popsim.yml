@@ -156,16 +156,17 @@ config:
   # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
   braunschweig.population.popsim.max_cells: 1500
-  # Parallel PopulationSim batches. NOT auto/0 (=62): the binding resource here is RAM
-  # (128 GB), not cores. The big urban batches build multi-GB weight tables (e.g. the
-  # densest Braunschweig batch: 17.4M weight rows / 1.3 GB just for the checkpoint, plus
-  # integerizer + expand working set). Running ~33 of them at once exhausted the 128 GB
-  # and the OOM killer silently killed the ~9 largest batches (no output, population gap).
-  # 8 concurrent caps peak memory with ample headroom while still using the box well
-  # (each batch is internally multi-threaded). A fixed integer (not the 0 sentinel) also
-  # stabilises the popsim.stage hash for cross-run cache reuse. Raise only if `free -g`
-  # shows large headroom during the batch phase.
-  braunschweig.population.popsim.num_workers: 8
+  # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is now pinned to a
+  # single BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch),
+  # which fixed the real failure -- at 62-way parallelism each batch's OpenBLAS spawned
+  # 64 threads, oversubscribing the box (~4000 threads / 64 cores) and crashing numpy
+  # with segfaults in libc (12 batches lost in one run). With 1 thread per batch the
+  # batch-level parallelism is governed purely by this number; 16 single-threaded
+  # batches use the cores well and keep peak RAM (~5 GB/batch) safe on 128 GB. A fixed
+  # integer (not the 0 sentinel) also stabilises the popsim.stage hash for cache reuse.
+  braunschweig.population.popsim.num_workers: 16
+  # No per-batch timeout: heavy control sets converge slowly; batches must run to
+  # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- Gravity calibration ---

@@ -143,12 +143,14 @@ config:
   # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
   braunschweig.population.popsim.max_cells: 1500
-  # Parallel PopulationSim batches. NOT auto/0 (=62): the binding resource is RAM, not
-  # cores. The big urban batches build multi-GB weight tables; running ~33 at once
-  # exhausted the 128 GB box and the OOM killer killed the largest batches (silent
-  # population gap). 8 concurrent caps peak memory with headroom. Keep 1% and 25% equal
-  # so the sampling-independent popsim.stage hash matches and the cache is shared.
-  braunschweig.population.popsim.num_workers: 8
+  # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is pinned to 1
+  # BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch) -- at
+  # 62-way parallelism each batch's OpenBLAS spawned 64 threads, oversubscribing the box
+  # and crashing numpy with segfaults in libc. With 1 thread/batch, num_workers alone
+  # governs parallelism; 16 uses the cores well at safe RAM. Keep 1% and 25% equal so the
+  # sampling-independent popsim.stage hash matches and the cache is shared.
+  braunschweig.population.popsim.num_workers: 16
+  # No per-batch timeout (0 = disabled): batches run to completion no matter how long.
   braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- Gravity calibration ---
