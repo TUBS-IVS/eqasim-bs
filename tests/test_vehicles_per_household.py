@@ -367,3 +367,57 @@ def test_sample_fleet_receives_age_income_coupling_kwarg(monkeypatch):
         assert captured[0]["age_income_coupling"] == flag, (
             f"expected age_income_coupling={flag}, got {captured[0]['age_income_coupling']}"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Per-person car-vehicle coverage (non-owners get a routing default_car).
+# --------------------------------------------------------------------------- #
+def test_non_owners_get_a_routing_default_car():
+    """Every person without a real fleet car gets a default_car so car-driver legs route.
+
+    Regression for the iteration-1 crash on the 25% all-features popsim run: non-owner
+    members of car-owning households (car_availability some/all) owned no car vehicle, so
+    MATSim aborted routing with "Could not retrieve vehicle id from person ... for mode:
+    car" when the in-loop discrete mode choice assigned them car-driver. eqasim core gives
+    every person a car vehicle; this restores that coverage for the household fleet.
+    """
+    # Real fleet: only person 101 owns a household (HBEFA-typed) car.
+    df_vehicles = pd.DataFrame({
+        "owner_id": [101], "mode": ["car"], "vehicle_id": ["101:car:0"],
+        "type_id": ["petrol_medium"], "critair": [""], "technology": ["petrol"],
+        "age": [3], "euro": [6],
+    })
+    df_types = pd.DataFrame([{
+        "type_id": "petrol_medium", "length": 5.0, "width": 1.0, "mode": "car",
+        "hbefa_cat": "PASSENGER_CAR", "hbefa_tech": "average", "hbefa_size": "average",
+        "hbefa_emission": "average",
+    }])
+    df_persons = pd.DataFrame({"person_id": [101, 102, 103]})
+
+    out_types, out_veh = hh._add_default_cars_for_non_owners(df_types, df_vehicles, df_persons)
+
+    # Every person now owns a car vehicle (no person can be assigned car-driver without one).
+    car_owners = set(out_veh.loc[out_veh["mode"] == "car", "owner_id"])
+    assert {101, 102, 103} <= car_owners
+
+    # The owner keeps the real fleet car; non-owners get a default_car "<person_id>:car".
+    assert (out_veh.loc[out_veh["owner_id"] == 101, "type_id"] == "petrol_medium").all()
+    default_rows = out_veh[out_veh["type_id"] == "default_car"]
+    assert set(default_rows["owner_id"]) == {102, 103}
+    assert set(default_rows["vehicle_id"]) == {"102:car", "103:car"}
+
+    # The default_car type is registered (de-duplicated) alongside the HBEFA type.
+    assert {"petrol_medium", "default_car"} <= set(out_types["type_id"])
+
+
+def test_all_owners_no_default_cars_added():
+    """When every person already owns a fleet car, no default_car is added (pure no-op)."""
+    df_vehicles = pd.DataFrame({
+        "owner_id": [1, 2], "mode": ["car", "car"],
+        "vehicle_id": ["1:car:0", "2:car:0"], "type_id": ["t", "t"],
+    })
+    df_types = pd.DataFrame([{"type_id": "t", "mode": "car"}])
+    df_persons = pd.DataFrame({"person_id": [1, 2]})
+    out_types, out_veh = hh._add_default_cars_for_non_owners(df_types, df_vehicles, df_persons)
+    assert "default_car" not in set(out_veh["type_id"])
+    assert len(out_veh) == 2
