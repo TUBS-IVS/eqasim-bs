@@ -19,5 +19,8 @@ def test_descent_records_history():
     out = coordinate_descent(
         obj, init={"pot_weight": 3.0, "dist_dev_weight": 3.0},
         grid={"pot_weight": [0.0, 1.0, 3.0], "dist_dev_weight": [0.0, 1.0, 3.0]})
-    assert len(out["history"]) >= 1
-    assert out["loss"] <= obj({"pot_weight": 3.0, "dist_dev_weight": 3.0})
+    assert out["weights"]["pot_weight"] == 0.0
+    assert out["weights"]["dist_dev_weight"] == 0.0
+    assert out["loss"] < 1e-9
+    assert len(out["history"]) >= 2                       # init + >=1 improvement
+    assert out["history"][-1]["loss"] == out["loss"]      # history tail consistent with return
