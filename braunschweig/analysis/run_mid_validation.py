@@ -469,13 +469,10 @@ def _mode_share_table(
 # Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
 # ---------------------------------------------------------------------------
 
-# Legacy constant detour factor (1.3). Retained as an optional override; the
-# default for education target conversion is now None (distance-dependent
-# circuity curve via circuity.routed_to_euclidean, Tier 3C), matching the new
-# default of braunschweig.calibration._legacy_education_slopes. Pass this
-# constant explicitly to _education_distance_table to reproduce the pre-Tier-3C
-# validation targets.
-from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR  # noqa: F401
+# Tier 3C: education targets use the distance-dependent circuity curve by default.
+# To restore the pre-Tier-3C constant inversion, pass
+# detour_factor=ROUTED_DETOUR_FACTOR (from braunschweig.constants, value 1.3)
+# to _education_distance_table / build_target_table.
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
@@ -540,8 +537,8 @@ def _education_distance_table(
 
     ``detour_factor=None`` (default, Tier 3C): targets use the
     distance-dependent circuity curve (circuity.routed_to_euclidean).
-    Pass a float (e.g. _EDU_DETOUR_FACTOR = 1.3) to force the legacy
-    constant detour-factor inversion.
+    Pass a float (e.g. ROUTED_DETOUR_FACTOR = 1.3 from braunschweig.constants)
+    to force the legacy constant detour-factor inversion.
     """
     targets = build_target_table(t43_raw, detour_factor)
     valid = education.dropna(subset=["level", "regiostar7"])
@@ -821,7 +818,8 @@ def run(args: _Args) -> dict[str, Any]:
         education = _education_distances(activities, homes_kreis, persons_kreis)
         # detour_factor=None => Tier 3C distance-dependent circuity curve
         # (matches the new default in _legacy_education_slopes). Pass
-        # _EDU_DETOUR_FACTOR here to restore the pre-Tier-3C constant inversion.
+        # ROUTED_DETOUR_FACTOR (braunschweig.constants) to restore the pre-Tier-3C
+        # constant inversion.
         education_table = _education_distance_table(
             education, t43_raw, detour_factor=None
         )
