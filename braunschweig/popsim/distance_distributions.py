@@ -321,11 +321,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
 
 def configure(context):
-    """Declare stage dependencies: MiD Wege path + random_seed from config."""
+    """Declare stage dependencies: MiD Wege path + random_seed + purpose/shop flags."""
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
     # but we declare it for consistent config validation across popsim stages.
     context.config("random_seed")
+    context.config("secondary_distance_by_purpose", False)
+    context.config("secondary_shop_daily_split", False)
 
 
 def execute(context):
@@ -339,6 +341,9 @@ def execute(context):
     from braunschweig.popsim import mid as mid_module
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
+    by_purpose = context.config("secondary_distance_by_purpose")
+    shop_daily_split = context.config("secondary_shop_daily_split")
+
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
     )
@@ -346,4 +351,4 @@ def execute(context):
     logger.info(
         "[popsim.distance_distributions] loaded %d MiD trips", len(mid_wege)
     )
-    return run(mid_wege)
+    return run(mid_wege, by_purpose=by_purpose, shop_daily_split=shop_daily_split)
