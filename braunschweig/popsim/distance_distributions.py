@@ -161,7 +161,6 @@ def _build_mode_distributions(df: pd.DataFrame) -> dict:
         CustomDistanceSampler.
     """
     distributions = {}
-    n_modes_built = 0
 
     for mode in df["mode"].unique():
         mode_df = df[df["mode"] == mode]
@@ -183,20 +182,17 @@ def _build_mode_distributions(df: pd.DataFrame) -> dict:
             weights = weights[sorter]
 
             cdf = np.cumsum(weights)
-            # Guard against empty bins (non-empty bins: cdf[-1] > 0 always holds
-            # because W_GEW > 0, so this is equivalent to the original `cdf /= cdf[-1]`
-            # for non-empty bins and avoids a ZeroDivisionError for empty ones).
+            # Guard against empty bins: empty bins raise IndexError on cdf[-1],
+            # zero-weight bins raise ZeroDivisionError. This guard handles both.
             cdf = cdf / cdf[-1] if len(cdf) and cdf[-1] > 0 else cdf
 
             distributions[mode]["distributions"].append(
                 dict(cdf=cdf, values=values, weights=weights)
             )
 
-        n_modes_built += 1
-
     logger.info(
         "[popsim.distance_distributions] built distributions for %d modes: %s",
-        n_modes_built,
+        len(distributions),
         sorted(distributions.keys()),
     )
 

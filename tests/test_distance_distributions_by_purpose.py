@@ -54,7 +54,7 @@ def test_by_purpose_adds_a_purpose_layer():
     bp = run(w, by_purpose=True)
 
     # Top-level keys are PURPOSES; each maps to a mode-keyed dict like the legacy one
-    assert "shop" in bp and "leisure" in bp
+    assert "shop" in bp and "leisure" in bp and "other" in bp
     mode_dict = bp["shop"]
     any_mode = next(iter(mode_dict))
     assert set(mode_dict[any_mode]) == {"bounds", "distributions"}
@@ -115,6 +115,12 @@ def test_off_is_byte_identical_to_pre_refactor():
         f"Mode key mismatch: actual={set(actual)}, expected={set(expected)}"
     )
 
+    # Mode dict structure keys must be identical
+    for mode in actual:
+        assert set(actual[mode]) == {"bounds", "distributions"}, (
+            f"Actual mode {mode} dict has wrong keys: {set(actual[mode])}"
+        )
+
     for mode in expected:
         # Same bounds array
         np.testing.assert_array_equal(
@@ -125,19 +131,15 @@ def test_off_is_byte_identical_to_pre_refactor():
         assert len(actual[mode]["distributions"]) == len(expected[mode]["distributions"]), (
             f"Number of bins mismatch for mode={mode}"
         )
-        # Spot-check first non-empty bin: values and cdf must be identical
+        # True byte-identical check: iterate ALL bins, check both values and cdf exactly
         for i, (a_bin, e_bin) in enumerate(
             zip(actual[mode]["distributions"], expected[mode]["distributions"])
         ):
-            if len(e_bin["values"]) == 0:
-                continue  # skip empty bins (both should be empty anyway)
             np.testing.assert_array_equal(
                 a_bin["values"], e_bin["values"],
                 err_msg=f"values mismatch for mode={mode}, bin={i}"
             )
-            np.testing.assert_array_almost_equal(
+            np.testing.assert_array_equal(
                 a_bin["cdf"], e_bin["cdf"],
-                decimal=12,
                 err_msg=f"cdf mismatch for mode={mode}, bin={i}"
             )
-            break  # first non-empty bin is sufficient for the spot-check
