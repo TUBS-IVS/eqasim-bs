@@ -177,6 +177,10 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
 
     km_by_kreis: dict[str, list] = {}
     jobs_by_gemeinde: dict[str, float] = {}
+    # F2: use a local variable instead of a function attribute.
+    # F6: called "skipped" because no alternative assignment is made (it is a drop,
+    #     not a fallback to a different method).
+    n_skipped = 0
 
     for _, row in df_homes.iterrows():
         origin_commune = str(row["commune_id"])
@@ -203,10 +207,9 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
 
         # Sample a work location in the destination commune.
         if dest_commune not in work_xy or len(work_xy[dest_commune]) == 0:
-            # No work locations in destination; fall back to a random municipality
-            # that does have locations. This is logged at the end of the loop.
-            n_fallback_work = getattr(assign_and_measure, "_n_fallback_work", 0) + 1
-            assign_and_measure._n_fallback_work = n_fallback_work
+            # No work locations in the drawn destination commune -- worker is dropped
+            # (no alternative assignment is attempted). Counted as skipped below.
+            n_skipped += 1
             continue
         xy = work_xy[dest_commune]
         w = work_weights[dest_commune]
@@ -221,25 +224,25 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
         km_by_kreis.setdefault(origin_ars5, []).append(d_km)
         jobs_by_gemeinde[dest_commune] = jobs_by_gemeinde.get(dest_commune, 0.0) + 1.0
 
-    # Report work-location fallback rate (CLAUDE.md no-silent-fallback).
+    # Report skip rate (CLAUDE.md no-silent-fallback).
+    # Workers are skipped (dropped, not reassigned) when the drawn destination
+    # Gemeinde has no work locations in the cached work_locations stage.
     n_workers = len(df_homes)
-    n_fallback = getattr(assign_and_measure, "_n_fallback_work", 0)
-    assign_and_measure._n_fallback_work = 0  # reset for subsequent calls
-    n_primary = n_workers - n_fallback
-    primary_pct = 100.0 * n_primary / n_workers if n_workers else 0.0
-    fallback_pct = 100.0 * n_fallback / n_workers if n_workers else 0.0
-    if n_fallback > 0.05 * n_workers:
+    n_assigned = n_workers - n_skipped
+    assigned_pct = 100.0 * n_assigned / n_workers if n_workers else 0.0
+    skipped_pct = 100.0 * n_skipped / n_workers if n_workers else 0.0
+    if n_skipped > 0.05 * n_workers:
         logger.warning(
-            "[commute-calib] work-location assignment: primary %d/%d (%.1f%%), "
-            "fallback (no work locations in drawn destination) %d/%d (%.1f%%) -- "
-            "high fallback rate may indicate a commune mismatch; check work_locations stage.",
-            n_primary, n_workers, primary_pct, n_fallback, n_workers, fallback_pct,
+            "[commute-calib] work-location assignment: assigned %d/%d (%.1f%%), "
+            "skipped (no work locations in drawn destination) %d/%d (%.1f%%) -- "
+            "high skip rate may indicate a commune mismatch; check work_locations stage.",
+            n_assigned, n_workers, assigned_pct, n_skipped, n_workers, skipped_pct,
         )
     else:
         logger.info(
-            "[commute-calib] work-location assignment: primary %d/%d (%.1f%%), "
-            "fallback %d/%d (%.1f%%)",
-            n_primary, n_workers, primary_pct, n_fallback, n_workers, fallback_pct,
+            "[commute-calib] work-location assignment: assigned %d/%d (%.1f%%), "
+            "skipped %d/%d (%.1f%%)",
+            n_assigned, n_workers, assigned_pct, n_skipped, n_workers, skipped_pct,
         )
 
     return (
@@ -254,6 +257,8 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
 
 def _yaml_factors_block(factors, label="global"):
     """Format a factors dict (band -> float) or (rs7 -> {band -> float}) as YAML."""
+    if not factors:
+        return "gravity_friction_factors: {}"
     lines = ["gravity_friction_factors:"]
     if isinstance(list(factors.values())[0], dict):
         # Per-RS7 factors
@@ -266,6 +271,29 @@ def _yaml_factors_block(factors, label="global"):
         pairs = ", ".join(f"{b}: {factors[b]:.6f}" for b in sorted(factors.keys()))
         lines.append(f"  {{{pairs}}}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# OD row-normalisation helper (used in two places inside the Furness loop)
+# ---------------------------------------------------------------------------
+
+def _row_normalise_od(df_od: "pd.DataFrame") -> "pd.DataFrame":
+    """Row-normalise an OD DataFrame with columns origin_id, destination_id, weight.
+
+    Rows whose origin total is zero get weight=1 on the self-loop and total=1
+    (the self-loop sentinel used throughout the Furness loop).
+    Returns df with columns [origin_id, destination_id, weight].
+    """
+    df_total = (
+        df_od[["origin_id", "weight"]].groupby("origin_id").sum()
+        .reset_index().rename(columns={"weight": "total"})
+    )
+    df_od = df_od.merge(df_total, on="origin_id")
+    f_missing = df_od["total"] == 0.0
+    df_od.loc[f_missing & (df_od["origin_id"] == df_od["destination_id"]), "weight"] = 1.0
+    df_od.loc[f_missing, "total"] = 1.0
+    df_od["weight"] = df_od["weight"] / df_od["total"]
+    return df_od[["origin_id", "destination_id", "weight"]]
 
 
 # ---------------------------------------------------------------------------
@@ -311,15 +339,21 @@ def main():
     )
     parser.add_argument(
         "--per-rs7", action="store_true",
-        help="Calibrate per-RS7 factors rather than a single global factor set.",
+        help=(
+            "EXPERIMENTAL / LIMITED: calibrate per-RS7 factors rather than a single global "
+            "factor set. Limitation: no per-RS7 P13 distance-distribution target exists in "
+            "the committed MiD data (P13 is per-Kreis only); all RS7 codes chase the SAME "
+            "ZGB aggregate P13 target. The global (default) path is the primary, fully-supported "
+            "mode. Use --per-rs7 only for exploratory analysis, not for committed calibration."
+        ),
     )
     parser.add_argument(
         "--min-count", type=int, default=50,
         help="Minimum worker count per (RS7, band) cell for shrinkage (default: 50).",
     )
     parser.add_argument(
-        "--seed", type=int, default=0,
-        help="Random seed for work-location sampling (default: 0).",
+        "--seed", type=int, default=None,
+        help="Random seed for work-location sampling (default: random_seed from config, or 0).",
     )
     parser.add_argument(
         "--output-dir", default=None,
@@ -336,6 +370,7 @@ def main():
     constant = -2.4
     diagonal = 1.0
     slope_overrides = None
+    cfg = {}
 
     if args.config:
         cfg = _load_config(args.config)
@@ -354,6 +389,10 @@ def main():
             "No --config supplied; using project defaults: "
             "slope=%.4f, constant=%.4f, diagonal=%.4f", slope, constant, diagonal
         )
+
+    # F9: resolve random seed: explicit --seed > config random_seed > 0.
+    seed = args.seed if args.seed is not None else int(cfg.get("random_seed", 0))
+    logger.info("[commute-calib] random seed: %d", seed)
 
     # ------------------------------------------------------------------
     # 2. Load required stage pickles
@@ -482,12 +521,9 @@ def main():
     # CACHE KEY NOTE: the scope (braunschweig.political_prefix) is a config value.
     # We derive it from the Pendler data (origins that appear in df_pendler) as a
     # robust fallback when the config is not parsed fully.
-    if args.config:
-        cfg_all = _load_config(args.config)
-        scope = [str(p) for p in cfg_all.get("braunschweig.political_prefix",
-                                              cfg_all.get("political_prefix", []))]
-    else:
-        scope = []
+    # Reuse the already-loaded `cfg` dict (F8: no second _load_config call).
+    scope = [str(p) for p in cfg.get("braunschweig.political_prefix",
+                                     cfg.get("political_prefix", []))]
     if not scope:
         logger.warning(
             "[commute-calib] 'braunschweig.political_prefix' not found in config; "
@@ -528,29 +564,20 @@ def main():
 
     # Merge home location geometry (from household locations via household_id).
     # The home locations stage is a GeoDataFrame keyed by household; join via household_id.
-    if "household_id" in df_workers.columns:
-        worker_hh = df_workers[["person_id", "household_id"]].copy()
-        df_home_geom = df_home_locations[["household_id", "geometry"]].copy()
-        df_home_geom = df_home_geom.drop_duplicates("household_id")
-        worker_homes_gdf = worker_communes.merge(
-            worker_hh, on="person_id", how="left"
-        ).merge(df_home_geom, on="household_id", how="left")
-    else:
-        # Fallback: home_locations may be keyed by person_id directly.
-        logger.warning(
-            "[commute-calib] 'household_id' not in enriched persons; "
-            "merging home geometry by person_id directly."
+    # The all-features enriched stage always carries household_id; if absent, fail early.
+    if "household_id" not in df_workers.columns:
+        raise RuntimeError(
+            "[commute-calib] Column 'household_id' not found in enriched persons stage. "
+            "The all-features enriched stage is expected to carry household_id for every "
+            "worker. Check that the correct enriched stage was loaded and the cache is "
+            "from an all-features run."
         )
-        if "person_id" in df_home_locations.columns:
-            df_home_geom = df_home_locations[["person_id", "geometry"]].drop_duplicates("person_id")
-            worker_homes_gdf = worker_communes.merge(
-                df_home_geom, on="person_id", how="left"
-            )
-        else:
-            raise RuntimeError(
-                "[commute-calib] Cannot resolve home geometry for workers: "
-                "neither 'household_id' nor 'person_id' found in home_locations stage."
-            )
+    worker_hh = df_workers[["person_id", "household_id"]].copy()
+    df_home_geom = df_home_locations[["household_id", "geometry"]].copy()
+    df_home_geom = df_home_geom.drop_duplicates("household_id")
+    worker_homes_gdf = worker_communes.merge(
+        worker_hh, on="person_id", how="left"
+    ).merge(df_home_geom, on="household_id", how="left")
 
     # Extract metric x/y coordinates (stage is in EPSG:25832).
     worker_homes_gdf = worker_homes_gdf.dropna(subset=["geometry"])
@@ -615,6 +642,10 @@ def main():
     else:
         factors_by_rs7 = None
 
+    # F4: precompute rs7_vec once (municipalities are constant across iterations).
+    # _worker_rs7 already calls ars_to_ags8 internally; no double application here.
+    rs7_vec_global = np.array([_worker_rs7(c) for c in municipalities])
+
     # ------------------------------------------------------------------
     # 7. Furness iteration loop
     # ------------------------------------------------------------------
@@ -624,10 +655,8 @@ def main():
     for it in range(args.max_iterations):
         # Build friction matrix for this iteration.
         if args.per_rs7 and factors_by_rs7 is not None:
-            # Per-RS7 friction: build rs7_vec from origin municipalities.
-            rs7_vec = np.array([
-                _worker_rs7(ars_to_ags8(c)) for c in municipalities
-            ])
+            # Per-RS7 friction: use the precomputed rs7_vec (F4).
+            rs7_vec = rs7_vec_global
             friction_factors_arg = {
                 rs7: {b: float(factors_by_rs7[rs7][b]) for b in range(N_BANDS)}
                 for rs7 in factors_by_rs7
@@ -654,16 +683,7 @@ def main():
         ).reset_index()
 
         # Normalise to row-sum weights for _calibrate.
-        df_total = (
-            df_od[["origin_id", "weight"]].groupby("origin_id").sum()
-            .reset_index().rename(columns={"weight": "total"})
-        )
-        df_od = df_od.merge(df_total, on="origin_id")
-        f_missing = df_od["total"] == 0.0
-        df_od.loc[f_missing & (df_od["origin_id"] == df_od["destination_id"]), "weight"] = 1.0
-        df_od.loc[f_missing, "total"] = 1.0
-        df_od["weight"] = df_od["weight"] / df_od["total"]
-        df_od = df_od[["origin_id", "destination_id", "weight"]]
+        df_od = _row_normalise_od(df_od)
 
         # BA Pendleratlas calibration (authoritative inter-Kreis constraint).
         df_od_calibrated = _calibrate(df_od, df_population_full, df_pendler_scope)
@@ -671,17 +691,7 @@ def main():
         if "flow" in df_od_calibrated.columns and "weight" not in df_od_calibrated.columns:
             df_od_calibrated = df_od_calibrated.rename(columns={"flow": "weight"})
         if "weight" in df_od_calibrated.columns:
-            df_total2 = (
-                df_od_calibrated[["origin_id", "weight"]].groupby("origin_id").sum()
-                .reset_index().rename(columns={"weight": "total"})
-            )
-            df_od_calibrated = df_od_calibrated.merge(df_total2, on="origin_id")
-            f_m2 = df_od_calibrated["total"] == 0.0
-            df_od_calibrated.loc[
-                f_m2 & (df_od_calibrated["origin_id"] == df_od_calibrated["destination_id"]),
-                "weight"] = 1.0
-            df_od_calibrated.loc[f_m2, "total"] = 1.0
-            df_od_calibrated["weight"] = df_od_calibrated["weight"] / df_od_calibrated["total"]
+            df_od_calibrated = _row_normalise_od(df_od_calibrated)
 
         # Rebuild od_matrix numpy array from the calibrated OD.
         od_pivot = df_od_calibrated.pivot(
@@ -690,9 +700,12 @@ def main():
         od_matrix = od_pivot.values
 
         # Assign work locations and measure realised distances.
+        # C1: pass seed + it so each iteration draws an independent-but-reproducible
+        # sample; passing the same seed every iteration would freeze the stochastic
+        # draw and could falsely trigger early convergence.
         km_by_kreis, jobs_by_gemeinde = assign_and_measure(
             od_matrix, municipalities, worker_homes_gdf,
-            df_work_locations, df_population_full, args.seed,
+            df_work_locations, df_population_full, seed + it,
         )
 
         # ZGB aggregate band shares (all workers pooled).
@@ -790,11 +803,39 @@ def main():
     # 8. Per-RS7 shrinkage (if --per-rs7)
     # ------------------------------------------------------------------
     if args.per_rs7 and factors_by_rs7 is not None:
-        # Count workers per RS7 for shrinkage.
+        # EXPERIMENTAL / LIMITED: per-RS7 factors all chase the SAME ZGB P13 aggregate
+        # target (no per-RS7 P13 distribution is available in the committed MiD data).
+        # Per CLAUDE.md (no invented references), per-RS7 targets are NOT fabricated here.
+        # Use the global (default) path for committed calibration results.
+        logger.warning(
+            "[commute-calib] --per-rs7 is EXPERIMENTAL: no per-RS7 P13 target exists "
+            "in the committed MiD data. All RS7 codes chase the same ZGB aggregate target. "
+            "Do not treat per-RS7 factors as validated calibration results."
+        )
+
+        # Count workers per (RS7, band) for shrinkage.
+        # Build the per-band histogram from the realised km_by_kreis so that cells
+        # with very few observed trips in a given band are correctly identified as sparse
+        # (instead of passing the total RS7 worker count for every band, which overstates
+        # the per-band sample size).
         counts_by_rs7 = {}
         for rs7 in rs7_codes:
             rs7_mask = worker_homes_gdf["rs7"] == rs7
-            counts_by_rs7[rs7] = np.full(N_BANDS, int(rs7_mask.sum()))
+            rs7_workers_sub = worker_homes_gdf[rs7_mask]
+            rs7_kreis_set = set(rs7_workers_sub["commune_id"].str[:5].unique())
+            rs7_km_parts = [km_by_kreis[k] for k in km_by_kreis if k in rs7_kreis_set]
+            if rs7_km_parts:
+                km_all_rs7 = np.concatenate(rs7_km_parts)
+                km_detoured = apply_detour(km_all_rs7, factor=args.detour_factor)
+                # Per-band count = number of workers whose detoured commute fell in each band.
+                band_hist = np.zeros(N_BANDS, dtype=int)
+                for b in range(N_BANDS):
+                    lo = BAND_EDGES_KM[b]
+                    hi = BAND_EDGES_KM[b + 1]
+                    band_hist[b] = int(np.sum((km_detoured >= lo) & (km_detoured < hi)))
+                counts_by_rs7[rs7] = band_hist
+            else:
+                counts_by_rs7[rs7] = np.zeros(N_BANDS, dtype=int)
 
         factors_by_rs7, shrinkage_rate = shrink_sparse_factors(
             factors_by_rs7, counts_by_rs7, factors_b, args.min_count
