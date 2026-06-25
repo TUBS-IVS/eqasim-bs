@@ -2,6 +2,30 @@ import numpy as np
 from braunschweig.calibration import detour_fit as df
 
 
+def test_route_on_unit_grid_recovers_manhattan():
+    # 3x3 metre grid; nodes at (i*1000, j*1000); edges along grid lines (length 1000 m).
+    node_xy, ids, edges = [], [], []
+    idx = {}
+    for i in range(3):
+        for j in range(3):
+            idx[(i, j)] = len(node_xy)
+            node_xy.append((i * 1000.0, j * 1000.0))
+            ids.append(f"{i}_{j}")
+    node_xy = np.array(node_xy)
+    for i in range(3):
+        for j in range(3):
+            if i + 1 < 3:
+                edges.append((idx[(i, j)], idx[(i + 1, j)], 1000.0))
+            if j + 1 < 3:
+                edges.append((idx[(i, j)], idx[(i, j + 1)], 1000.0))
+    csr, xy = df.build_graph_from_edges(node_xy, edges)
+    # origin (0,0) -> dest (2,2): grid distance 4000 m, euclidean 2828 m
+    routed, fail = df.route_lengths_km(
+        csr, xy, np.array([[0.0, 0.0]]), np.array([[2000.0, 2000.0]]))
+    assert not fail[0]
+    np.testing.assert_allclose(routed[0], 4.0, rtol=1e-6)  # km
+
+
 def test_fit_recovers_known_params():
     rng = np.random.RandomState(0)
     d = rng.uniform(0.2, 60.0, size=5000)
