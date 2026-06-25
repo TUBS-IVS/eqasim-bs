@@ -37,17 +37,38 @@ def load_potentials(path: str) -> gpd.GeoDataFrame:
             "building_activity_potentials parquet missing columns %s; "
             "re-run scripts/import_building_activity_potentials.py" % missing
         )
+    # Fail loudly on malformed values, mirroring the import-script validate()
+    # (CLAUDE.md: this stage is the authoritative loader and must fail fast on
+    # malformed input, not silently propagate negative potentials or empty
+    # geometry into the downstream location-choice weighting).
+    for col in POTENTIAL_COLUMNS:
+        negative_count = int((gdf[col] < 0).sum())
+        if negative_count:
+            raise ValueError(
+                "%d negative values in %s; re-run "
+                "scripts/import_building_activity_potentials.py" % (negative_count, col)
+            )
+    if gdf.geometry.is_empty.any() or gdf.geometry.isna().any():
+        raise ValueError(
+            "empty/missing geometry in building_activity_potentials parquet; "
+            "re-run scripts/import_building_activity_potentials.py"
+        )
     return gdf
 
 
 def assign_commune(gdf: gpd.GeoDataFrame, zones: gpd.GeoDataFrame):
-    """Attach ``commune_id`` by centroid-in-polygon (primary) with nearest-zone
+    """Attach ``commune_id`` by point-in-polygon (primary) with nearest-zone
     fallback. Returns ``(gdf, primary_count, fallback_count)`` (CLAUDE.md
-    fallback transparency)."""
+    fallback transparency).
+
+    The join point is ``representative_point()`` rather than the centroid: for
+    concave or multi-part footprints the centroid can fall outside the polygon,
+    which would force an unnecessary nearest-zone fallback. ``representative_point``
+    is guaranteed to lie inside the geometry."""
     if zones.crs != gdf.crs:
         zones = zones.to_crs(gdf.crs)
     pts = gdf.copy()
-    pts["geometry"] = gdf.geometry.centroid
+    pts["geometry"] = gdf.geometry.representative_point()
     joined = gpd.sjoin(
         pts[["building_id", "geometry"]],
         zones[["commune_id", "geometry"]],
