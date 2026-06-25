@@ -461,8 +461,8 @@ delegates to this module.
 the legacy `* 1.3` exactly for reproducibility / regression.
 
 **Single source of truth for params:**
-`eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv` (local-only,
-not committed). Car and walk rows carry `c_inf`, `a`, `tau_km`; the pt row carries
+`eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv` (committed,
+regenerated in-place by the fit script). Car and walk rows carry `c_inf`, `a`, `tau_km`; the pt row carries
 `uplift` and `base` (pt = car * uplift, see below). `load_circuity_params` validates
 all fields on load (c_inf >= 1, a >= 0, tau > 0, uplift >= 1) and raises on a
 missing or malformed file — fail-fast, no silent fallback.
@@ -475,6 +475,13 @@ missing or malformed file — fail-fast, no silent fallback.
 | Secondary validation (`scripts/validate_secondary_distances.py`) | per-leg: `car` / `pt` / `walk` from `mode_to_network` | purpose x mode layer |
 | Education: kindergarten / grundschule / sekundar_1 | `walk` | MiD T43 on-foot targets |
 | Education: oberstufe / bbs / hochschule | `car` | Destatis MZ 2024, motorised trips |
+
+Note: the fit script (`scripts/calibrate_detour_circuity.py`) **excludes kindergarten
+(age 0-5) from the OD sample** used to fit the walk curve. Kindergarten trips are
+already represented by short-distance walk secondary legs, and their MiD T43 mean
+(~1.5-2.3 km) is below the minimum-samples floor for a reliable per-level fit.
+The `walk` curve is applied to kindergarten in production via the same dispatch row
+above; no dedicated kindergarten OD pairs are sampled during fitting.
 
 **PT uplift.** `c_pt(d) = c_car(d) * uplift`, where `uplift` is cited from
 Huang & Levinson (2015). The value in the params CSV is currently an **UNVERIFIED
