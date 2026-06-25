@@ -89,3 +89,56 @@ def test_convergence_loop_stops_after_floor_on_stable_stream():
         converged = tracker.update(n, fit)
     assert converged
     assert n >= 4000
+
+
+def test_accumulate_accepted_indices_alignment():
+    """Prove that cum_pool_indices returned by accumulate_accepted_indices correctly
+    maps back to the original pool arrays.
+
+    Given a pool of OD pairs with known euclidean distances, two batch draws are
+    simulated.  The accepted-index accumulator is called after each batch.  At the
+    end, ``pool_euclidean_km[cum_pool_indices]`` must equal ``cum_euclidean_km``
+    element-wise (the alignment invariant).
+    """
+    rng = np.random.RandomState(7)
+    # Pool: 20 OD pairs with known euclidean distances (metres)
+    n_pool = 20
+    origins = np.zeros((n_pool, 2))
+    # Give each pair a distinct euclidean distance so we can verify alignment.
+    dests = np.zeros((n_pool, 2))
+    dests[:, 0] = np.arange(n_pool, dtype=float) * 100.0 + 50.0  # 50m, 150m, 250m, ...
+    pool_eucl_km = np.linalg.norm(dests - origins, axis=1) / 1000.0
+
+    cum_pool_indices: list = []
+    cum_euclidean: list = []
+
+    # Simulate two batches, each drawing 8 indices; reject the first two in each batch.
+    for batch_start in (0, 8):
+        batch_idx = np.arange(batch_start, batch_start + 8, dtype=int) % n_pool
+        eucl_batch = pool_eucl_km[batch_idx]
+        # Reject first two pairs (keep = False for idx 0,1 in batch)
+        keep = np.ones(len(batch_idx), dtype=bool)
+        keep[:2] = False
+
+        # Accumulate via helper
+        df.accumulate_accepted_indices(cum_pool_indices, batch_idx, keep)
+        cum_euclidean.extend(eucl_batch[keep].tolist())
+
+    cum_idx = np.array(cum_pool_indices, dtype=int)
+
+    # Core invariant: pool distances indexed by cum_pool_indices == cum_euclidean
+    np.testing.assert_array_equal(
+        pool_eucl_km[cum_idx],
+        np.array(cum_euclidean),
+        err_msg=(
+            "pool_eucl_km[cum_pool_indices] must equal cum_euclidean element-wise; "
+            "alignment broken."
+        ),
+    )
+    # Lengths must match
+    assert len(cum_idx) == len(cum_euclidean), (
+        f"cum_pool_indices length ({len(cum_idx)}) != cum_euclidean length "
+        f"({len(cum_euclidean)})"
+    )
+    # Each batch had 8 pairs, first 2 rejected -> 6 accepted per batch, 12 total
+    assert len(cum_idx) == 12

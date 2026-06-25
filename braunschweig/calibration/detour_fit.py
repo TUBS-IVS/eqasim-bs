@@ -164,6 +164,28 @@ def route_lengths_km(csr, node_xy, origins_xy, dests_xy):
 
 
 # ---------------------------------------------------------------------------
+# Accepted-index accumulator helper
+# ---------------------------------------------------------------------------
+
+def accumulate_accepted_indices(cum_pool_indices: list, batch_idx: np.ndarray,
+                                keep_mask: np.ndarray) -> None:
+    """Append the pool indices of accepted pairs to the running accumulator list.
+
+    Given `batch_idx` (indices into the full OD pool for a routing batch) and
+    `keep_mask` (boolean mask of length len(batch_idx); True = accepted pair),
+    appends `batch_idx[keep_mask]` to `cum_pool_indices` in place.
+
+    Maintains the invariant:
+      pool_euclidean_km[cum_pool_indices] == cum_euclidean_km  (element-wise)
+
+    so the accepted sample can always be traced back to its origin commune_id
+    (and hence its origin RS7 class) via ``commune_ids[cum_pool_indices]``.
+    """
+    accepted = batch_idx[keep_mask]
+    cum_pool_indices.extend(accepted.tolist())
+
+
+# ---------------------------------------------------------------------------
 # Distance-stratified OD sampling
 # ---------------------------------------------------------------------------
 

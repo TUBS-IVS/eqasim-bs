@@ -43,6 +43,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from braunschweig.calibration.detour_fit import (  # noqa: E402
+    accumulate_accepted_indices,
     ConvergenceTracker,
     build_graph_from_edges,
     fit_circuity_curve,
@@ -450,7 +451,7 @@ def _run_convergence_loop(
     convergence_step: int,
     convergence_tol: float,
     convergence_patience: int,
-) -> tuple[dict, list[dict], np.ndarray, np.ndarray]:
+) -> tuple[dict, list[dict], np.ndarray, np.ndarray, np.ndarray]:
     """Run the convergence-driven stratified-sampling loop for one network.
 
     Each round draws `convergence_step` more OD pairs via `stratified_sample`,
@@ -461,13 +462,17 @@ def _run_convergence_loop(
     Returns:
       fit_params: final fitted param dict
       history: list of per-round tracker history dicts
-      cum_euclidean_km: cumulative accepted euclidean distances (km)
-      cum_routed_km: cumulative accepted routed distances (km)
+      cum_euclidean_km: cumulative accepted euclidean distances (km), length M
+      cum_routed_km: cumulative accepted routed distances (km), length M
+      cum_pool_indices: pool indices of each accepted pair (length M); satisfies
+        origins_xy[cum_pool_indices[i]] == origin of accepted pair i, so the caller
+        can recover commune_ids[cum_pool_indices] for RS7 tagging.
     """
     tracker = ConvergenceTracker(min_samples=min_samples, tol=convergence_tol,
                                  patience=convergence_patience)
     cum_euclidean: list[float] = []
     cum_routed: list[float] = []
+    cum_pool_idx: list[int] = []
     n_routed_total = 0
     n_fail_total = 0
     converged = False
@@ -526,6 +531,8 @@ def _run_convergence_loop(
 
         cum_euclidean.extend(eucl_km[keep].tolist())
         cum_routed.extend(routed_km[keep].tolist())
+        # Track accepted pool indices so _rs7_diagnostic can recover origin commune_id.
+        accumulate_accepted_indices(cum_pool_idx, batch_idx, keep)
 
         n_cum = len(cum_euclidean)
         try:
@@ -585,6 +592,7 @@ def _run_convergence_loop(
         tracker.history,
         np.array(cum_euclidean),
         np.array(cum_routed),
+        np.array(cum_pool_idx, dtype=int),
     )
 
 
@@ -620,24 +628,24 @@ def _rs7_diagnostic(
         logger.warning("[circuity][%s] no data for per-RS7 diagnostic.", network_label)
         return pd.DataFrame()
 
-    # Tag each cumulative sample pair by origin RS7
-    # sample_indices_used: indices into the OD pool (origins_xy/dests_xy/commune_ids)
-    # for the accepted pairs -- may not be tracked if pools exceed sample. Fallback:
-    # use commune_ids array aligned to cum_euclidean via a re-sample tag.
-    # ASSUMPTION: sample_indices_used is passed as the index array into commune_ids
-    # for the accepted sample. If the index is unavailable, all pairs get commune ''
-    # and the RS7 tag will be absent for all -> all flagged 'under_sampled'.
-    if sample_indices_used is not None and len(sample_indices_used) == len(cum_euclidean):
-        raw_communes = commune_ids[sample_indices_used]
-    elif len(commune_ids) == len(cum_euclidean):
-        raw_communes = commune_ids
-    else:
-        logger.warning(
-            "[circuity][%s] per-RS7: commune_ids length (%d) != sample length (%d); "
-            "per-RS7 diagnostic will have no RS7 tags.",
-            network_label, len(commune_ids), len(cum_euclidean),
+    # Tag each cumulative sample pair by origin RS7.
+    # sample_indices_used: 1-D int array of pool indices for the accepted pairs,
+    # returned by _run_convergence_loop. Must satisfy:
+    #   len(sample_indices_used) == len(cum_euclidean)
+    # so commune_ids[sample_indices_used] gives each accepted pair's origin commune.
+    if sample_indices_used is None:
+        raise ValueError(
+            f"[circuity][{network_label}] _rs7_diagnostic called with "
+            "sample_indices_used=None; pass the cum_pool_idx from _run_convergence_loop "
+            "so each accepted pair is correctly mapped to its origin commune_id."
         )
-        raw_communes = np.array([""] * len(cum_euclidean))
+    if len(sample_indices_used) != len(cum_euclidean):
+        raise ValueError(
+            f"[circuity][{network_label}] _rs7_diagnostic: sample_indices_used length "
+            f"({len(sample_indices_used)}) != cum_euclidean length ({len(cum_euclidean)}). "
+            "The index array and the cumulative distance arrays must be in 1-to-1 correspondence."
+        )
+    raw_communes = commune_ids[sample_indices_used]
 
     rs7_tags = np.array([
         rs7_by_ags8.get(ars_to_ags8(c), -1) if c else -1
@@ -799,6 +807,12 @@ def _band_shift_impact(
         logger.warning("[circuity] band-shift commute: P13 ZGB target or car pool absent; skipped.")
 
     # Secondary (walk, W12) -- one row per purpose
+    if walk_fit.get("n", 0) == 0:
+        logger.warning(
+            "[circuity] band-shift walk impact: walk_fit n=0 (placeholder, no real walk fit). "
+            "Walk EMD deltas below are NOT from a real fit and must not be used for "
+            "calibration decisions. Re-run with --osm-pbf to obtain a real walk curve."
+        )
     if w12_targets and len(walk_euclidean) > 0:
         for purpose in ("shop", "leisure", "other"):
             w12_shares = w12_targets.get(purpose, None)
@@ -982,6 +996,12 @@ def _write_summary(
         "- walk graph: OSM PBF via pyrosm, EPSG:25832",
         "- OD pool: home->work (employed persons) + secondary (car/walk) + education legs",
         "- pt row: NOT fitted here; carried over from existing seed file (UNVERIFIED placeholder)",
+        (
+            "- walk fit: PLACEHOLDER (n=0, no real walk curve fitted; re-run with --osm-pbf). "
+            "Walk impact figures above are NOT scientifically valid."
+            if walk_fit.get("n", 0) == 0 else
+            "- walk fit: real curve fitted from OSM walk network."
+        ),
         "- REGENERATE: re-run scripts/calibrate_detour_circuity.py on the server after each synthesis update",
     ]
 
@@ -1116,7 +1136,13 @@ def main():
     rs7_by_ags8: dict = {}
     try:
         df_regiostar = _load_stage(wd, "braunschweig.data.bbsr.regiostar")
-        rs7_by_ags8 = df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
+        # Drop rows with missing regiostar7 before building the dict so values are
+        # plain Python ints (no pd.NA). The -1 sentinel is the only missing-marker
+        # downstream (via .get(ags8, -1)).
+        rs7_series = df_regiostar.dropna(subset=["regiostar7"]).set_index(
+            "commune_id"
+        )["regiostar7"]
+        rs7_by_ags8 = {k: int(v) for k, v in rs7_series.items()}
         logger.info("[circuity] RS7 lookup loaded: %d Gemeinden", len(rs7_by_ags8))
     except Exception as exc:
         logger.warning("[circuity] RS7 lookup not available: %s; per-RS7 diagnostic skipped.", exc)
@@ -1196,7 +1222,7 @@ def main():
     # --- Convergence loop: car ---
     rng_car = np.random.RandomState(seed)
     logger.info("[circuity] --- CAR convergence loop ---")
-    car_fit, car_history, car_eucl, car_rout = _run_convergence_loop(
+    car_fit, car_history, car_eucl, car_rout, car_pool_idx = _run_convergence_loop(
         "car", car_csr, car_node_xy,
         car_origins, car_dests,
         rng=rng_car,
@@ -1216,11 +1242,12 @@ def main():
     walk_history: list[dict] = []
     walk_eucl: np.ndarray = np.zeros(0)
     walk_rout: np.ndarray = np.zeros(0)
+    walk_pool_idx: np.ndarray = np.zeros(0, dtype=int)
 
     if walk_csr is not None and len(walk_origins) > 0:
         rng_walk = np.random.RandomState(seed + 1)
         logger.info("[circuity] --- WALK convergence loop ---")
-        walk_fit, walk_history, walk_eucl, walk_rout = _run_convergence_loop(
+        walk_fit, walk_history, walk_eucl, walk_rout, walk_pool_idx = _run_convergence_loop(
             "walk", walk_csr, walk_node_xy,
             walk_origins, walk_dests,
             rng=rng_walk,
@@ -1246,14 +1273,11 @@ def main():
 
     if rs7_by_ags8 and len(car_eucl) > 0:
         logger.info("[circuity] --- per-RS7 diagnostic: car ---")
-        # commune_ids for the accepted car sample:
-        # We pass car_commune_ids (full pool) and None for sample_indices (fallback path).
-        # The diagnostic will align if commune_ids length matches the sample.
         df_rs7_car = _rs7_diagnostic(
             car_origins, car_dests,
             car_commune_ids,
             car_eucl, car_rout,
-            sample_indices_used=None,
+            sample_indices_used=car_pool_idx,
             rs7_by_ags8=rs7_by_ags8,
             global_fit=car_fit,
             p13_targets=p13_targets,
@@ -1268,7 +1292,7 @@ def main():
             walk_origins, walk_dests,
             walk_commune_ids,
             walk_eucl, walk_rout,
-            sample_indices_used=None,
+            sample_indices_used=walk_pool_idx,
             rs7_by_ags8=rs7_by_ags8,
             global_fit=walk_fit,
             p13_targets=p13_targets,
