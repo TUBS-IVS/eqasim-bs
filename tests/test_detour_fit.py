@@ -2,15 +2,14 @@ import numpy as np
 from braunschweig.calibration import detour_fit as df
 
 
-def test_route_on_unit_grid_recovers_manhattan():
-    # 3x3 metre grid; nodes at (i*1000, j*1000); edges along grid lines (length 1000 m).
-    node_xy, ids, edges = [], [], []
+def _build_unit_grid():
+    """3x3 grid with 1000 m edge spacing.  Returns (csr, node_xy, idx_map)."""
+    node_xy, edges = [], []
     idx = {}
     for i in range(3):
         for j in range(3):
             idx[(i, j)] = len(node_xy)
             node_xy.append((i * 1000.0, j * 1000.0))
-            ids.append(f"{i}_{j}")
     node_xy = np.array(node_xy)
     for i in range(3):
         for j in range(3):
@@ -19,11 +18,40 @@ def test_route_on_unit_grid_recovers_manhattan():
             if j + 1 < 3:
                 edges.append((idx[(i, j)], idx[(i, j + 1)], 1000.0))
     csr, xy = df.build_graph_from_edges(node_xy, edges)
+    return csr, xy, idx
+
+
+def test_route_on_unit_grid_recovers_manhattan():
+    # 3x3 metre grid; nodes at (i*1000, j*1000); edges along grid lines (length 1000 m).
+    csr, xy, _ = _build_unit_grid()
     # origin (0,0) -> dest (2,2): grid distance 4000 m, euclidean 2828 m
     routed, fail = df.route_lengths_km(
         csr, xy, np.array([[0.0, 0.0]]), np.array([[2000.0, 2000.0]]))
     assert not fail[0]
     np.testing.assert_allclose(routed[0], 4.0, rtol=1e-6)  # km
+
+
+def test_route_limit_m_prunes_distant_pairs():
+    """route_lengths_km with a limit_m smaller than the true path returns fail=True
+    for the out-of-range pair and the correct length when the limit is generous.
+
+    Grid: 3x3 nodes at 1000 m spacing.  (0,0)->(2,2) has shortest path 4000 m.
+    A limit of 3500 m (< 4000 m) must make the pair fail; 4500 m (> 4000 m) must
+    return the correct 4.0 km.
+    """
+    csr, xy, _ = _build_unit_grid()
+    o = np.array([[0.0, 0.0]])
+    d = np.array([[2000.0, 2000.0]])
+
+    # Tight limit: path 4000 m exceeds limit 3500 m -> fail
+    routed_tight, fail_tight = df.route_lengths_km(csr, xy, o, d, limit_m=3500.0)
+    assert fail_tight[0], "pair beyond limit_m must be flagged as fail"
+    assert np.isnan(routed_tight[0]), "routed distance must be NaN for a failed pair"
+
+    # Generous limit: path 4000 m within limit 4500 m -> correct length
+    routed_gen, fail_gen = df.route_lengths_km(csr, xy, o, d, limit_m=4500.0)
+    assert not fail_gen[0], "pair within limit_m must not be flagged as fail"
+    np.testing.assert_allclose(routed_gen[0], 4.0, rtol=1e-6)  # km
 
 
 def test_fit_recovers_known_params():

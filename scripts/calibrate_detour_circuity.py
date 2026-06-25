@@ -459,13 +459,24 @@ def _run_convergence_loop(
     convergence_step: int,
     convergence_tol: float,
     convergence_patience: int,
+    route_limit_m: float = np.inf,
 ) -> tuple[dict, list[dict], np.ndarray, np.ndarray, np.ndarray]:
     """Run the convergence-driven stratified-sampling loop for one network.
 
     Each round draws `convergence_step` more OD pairs via `stratified_sample`,
-    routes them on the graph, drops snap/route failures (with explicit failure-rate
-    logging), fits `fit_circuity_curve` on the cumulative routed sample, and checks
-    convergence via ConvergenceTracker.
+    routes them on the graph (bounded by ``route_limit_m``), drops snap/route
+    failures (with explicit failure-rate logging), fits `fit_circuity_curve` on
+    the cumulative routed sample, and checks convergence via ConvergenceTracker.
+    Pairs beyond ``route_limit_m`` become route failures and are counted in the
+    existing failure-rate logging (observable, not silent).
+
+    Parameters
+    ----------
+    route_limit_m : float
+        Maximum Dijkstra search radius in metres, passed to ``route_lengths_km``.
+        Default ``np.inf`` is unbounded (the original behaviour).  Set to a finite
+        value to prune the graph search and avoid hours-long walks on large OSM
+        graphs with millions of nodes.
 
     Returns:
       fit_params: final fitted param dict
@@ -507,7 +518,8 @@ def _run_convergence_loop(
         d_batch = dests_xy[batch_idx]
         eucl_km = np.linalg.norm(d_batch - o_batch, axis=1) / 1000.0
 
-        routed_km, fail = route_lengths_km(csr, node_xy, o_batch, d_batch)
+        routed_km, fail = route_lengths_km(csr, node_xy, o_batch, d_batch,
+                                           limit_m=route_limit_m)
 
         n_fail = int(fail.sum())
         n_routed = len(fail)
@@ -1102,6 +1114,28 @@ def main():
         help="Consecutive stable rounds required to declare convergence (default: 2).",
     )
     parser.add_argument(
+        "--walk-route-limit-km", type=float, default=20.0,
+        help=(
+            "Maximum Dijkstra search radius (km) for the walk network. "
+            "Prunes the graph search so the walk Dijkstra does not expand to all 6M+ "
+            "OSM walk nodes per source.  Pairs beyond the limit become route failures "
+            "and are counted in the existing failure-rate log.  "
+            "Default 20 km (> longest in-ZGB walk trip, safe headroom; walk pool max ~10 km). "
+            "Set to 0 to disable (unbounded, original behaviour)."
+        ),
+    )
+    parser.add_argument(
+        "--car-route-limit-km", type=float, default=250.0,
+        help=(
+            "Maximum Dijkstra search radius (km) for the car/driving network. "
+            "Prunes the graph search to the ZGB diameter plus safe headroom.  "
+            "Pairs beyond the limit become route failures and are counted in the "
+            "existing failure-rate log.  "
+            "Default 250 km (> ZGB diameter ~130 km euclidean, safe headroom). "
+            "Set to 0 to disable (unbounded, original behaviour)."
+        ),
+    )
+    parser.add_argument(
         "--seed", type=int, default=None,
         help="Random seed (default: random_seed from config, or 0).",
     )
@@ -1127,10 +1161,18 @@ def main():
         cfg = _load_config(args.config)
         logger.info("[circuity] config loaded from '%s'", args.config)
     seed = args.seed if args.seed is not None else int(cfg.get("random_seed", 0))
+    # Convert km limits to metres; 0 -> unbounded (np.inf).
+    walk_route_limit_m = args.walk_route_limit_km * 1000.0 if args.walk_route_limit_km > 0 else np.inf
+    car_route_limit_m = args.car_route_limit_km * 1000.0 if args.car_route_limit_km > 0 else np.inf
     logger.info("[circuity] random seed: %d", seed)
     logger.info("[circuity] working directory: %s", wd)
     logger.info("[circuity] output dir: %s", args.output_dir)
     logger.info("[circuity] params output: %s", args.params_output)
+    logger.info(
+        "[circuity] Dijkstra route limits: walk=%.0f m (%.1f km), car=%.0f m (%.1f km)",
+        walk_route_limit_m, walk_route_limit_m / 1000.0,
+        car_route_limit_m, car_route_limit_m / 1000.0,
+    )
 
     # --- Output directory ---
     if args.output_dir:
@@ -1312,7 +1354,8 @@ def main():
 
     # --- Convergence loop: car ---
     rng_car = np.random.RandomState(seed)
-    logger.info("[circuity] --- CAR convergence loop ---")
+    logger.info("[circuity] --- CAR convergence loop (route limit %.0f m) ---",
+                car_route_limit_m)
     car_fit, car_history, car_eucl, car_rout, car_pool_idx = _run_convergence_loop(
         "car", car_csr, car_node_xy,
         car_origins, car_dests,
@@ -1322,6 +1365,7 @@ def main():
         convergence_step=args.convergence_step,
         convergence_tol=args.convergence_tol,
         convergence_patience=args.convergence_patience,
+        route_limit_m=car_route_limit_m,
     )
     logger.info(
         "[circuity] CAR fit: c_inf=%.4f a=%.4f tau=%.4f R2=%.4f n=%d",
@@ -1337,7 +1381,8 @@ def main():
 
     if walk_csr is not None and len(walk_origins) > 0:
         rng_walk = np.random.RandomState(seed + 1)
-        logger.info("[circuity] --- WALK convergence loop ---")
+        logger.info("[circuity] --- WALK convergence loop (route limit %.0f m) ---",
+                    walk_route_limit_m)
         walk_fit, walk_history, walk_eucl, walk_rout, walk_pool_idx = _run_convergence_loop(
             "walk", walk_csr, walk_node_xy,
             walk_origins, walk_dests,
@@ -1347,6 +1392,7 @@ def main():
             convergence_step=args.convergence_step,
             convergence_tol=args.convergence_tol,
             convergence_patience=args.convergence_patience,
+            route_limit_m=walk_route_limit_m,
         )
         logger.info(
             "[circuity] WALK fit: c_inf=%.4f a=%.4f tau=%.4f R2=%.4f n=%d",

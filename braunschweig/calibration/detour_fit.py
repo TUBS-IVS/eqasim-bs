@@ -271,11 +271,37 @@ def clip_od_to_bbox(
     )
 
 
-def route_lengths_km(csr, node_xy, origins_xy, dests_xy):
+def route_lengths_km(csr, node_xy, origins_xy, dests_xy, limit_m=np.inf):
     """Network shortest-path length (km) for paired origin/dest coords.
 
     Snaps each endpoint to the nearest graph node (cKDTree). Pairs with no path
-    (disconnected) are flagged in the returned boolean mask and carry NaN.
+    (disconnected or beyond ``limit_m``) are flagged in the returned boolean mask
+    and carry NaN.
+
+    Parameters
+    ----------
+    csr : scipy.sparse.csr_matrix
+        Symmetric CSR adjacency matrix with edge weights in **metres**.
+    node_xy : np.ndarray, shape (N, 2)
+        Node coordinates in the metric CRS (EPSG:25832).
+    origins_xy : np.ndarray, shape (M, 2)
+        Origin coordinates.
+    dests_xy : np.ndarray, shape (M, 2)
+        Destination coordinates (paired with origins).
+    limit_m : float, optional
+        Maximum search radius in **metres** passed to ``scipy.sparse.csgraph.dijkstra``
+        as the ``limit`` argument.  Nodes beyond this distance from the source are
+        returned as inf by scipy and treated as route failures here.  Use this to
+        bound the Dijkstra search and avoid scanning the entire graph for large
+        networks (e.g. walk 6M nodes, car 3M nodes) when the OD pairs are short.
+        Default is ``np.inf`` (unbounded, equivalent to the original behaviour).
+
+    Returns
+    -------
+    routed_km : np.ndarray, shape (M,)
+        Shortest-path length in km; NaN for failed/out-of-range pairs.
+    fail : np.ndarray of bool, shape (M,)
+        True for pairs with no path or path distance > limit_m.
     """
     tree = cKDTree(node_xy)
     _, o_idx = tree.query(np.asarray(origins_xy, dtype=float))
@@ -284,7 +310,7 @@ def route_lengths_km(csr, node_xy, origins_xy, dests_xy):
     fail = np.zeros(len(o_idx), dtype=bool)
     for src in np.unique(o_idx):
         members = np.where(o_idx == src)[0]
-        dist = dijkstra(csr, directed=False, indices=int(src))
+        dist = dijkstra(csr, directed=False, indices=int(src), limit=limit_m)
         for m in members:
             dm = dist[d_idx[m]]
             if np.isinf(dm):
