@@ -4,7 +4,7 @@ from shapely.geometry import Point, Polygon
 from braunschweig.synthesis.locations.secondary_chainsolvers import (
     _build_locations_df,
     build_scorer,
-    attach_secondary_potentials,
+    build_secondary_candidates,
 )
 
 
@@ -58,24 +58,27 @@ def test_build_scorer_combined_when_enabled():
     assert list(out) == [19.5, -0.5]   # 2*pot - 0.5*ddev
 
 
-def test_attach_secondary_potentials_maps_activities():
-    cand = gpd.GeoDataFrame(
-        {"location_id": ["sec_0", "sec_1"]},
-        geometry=[Point(5, 5), Point(500, 500)], crs="EPSG:25832",
+def test_build_secondary_candidates_replace_shop_leisure_from_gpkg():
+    legacy = gpd.GeoDataFrame(
+        {"location_id": ["sec_0"], "commune_id": ["03101000"], "iris_id": ["03101000"],
+         "offers_shop": [True], "offers_leisure": [True], "offers_other": [True]},
+        geometry=[Point(500, 500)], crs="EPSG:25832",   # far from the gpkg building
     )
-    b = Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])
+    b = Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])    # centroid (5,5)
     buildings = gpd.GeoDataFrame(
-        {"building_id": [0],
+        {"building_id": [7],
          "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
-         "potential_leisure": [9.0], "potential_generic": [100.0]},
+         "potential_leisure": [9.0], "potential_generic": [100.0],
+         "commune_id": ["03101000"]},
         geometry=[b], crs="EPSG:25832",
     )
-    out = attach_secondary_potentials(cand, buildings)
-    # sec_0 is inside the building
-    assert out.loc[0, "pot_shop"] == 7.0      # retail_daily + retail_non_daily
-    assert out.loc[0, "pot_leisure"] == 9.0
-    assert out.loc[0, "pot_other"] == 100.0
-    # sec_1 outside -> fallback 0.0
-    assert out.loc[1, "pot_shop"] == 0.0
-    assert out.loc[1, "pot_leisure"] == 0.0
-    assert out.loc[1, "pot_other"] == 0.0
+    out = build_secondary_candidates(legacy, buildings)
+    # one gpkg row (shop+leisure) + one legacy 'other' row
+    gpkg = out[out["location_id"] == "sec_b_7"].iloc[0]
+    assert gpkg["offers_shop"] and gpkg["offers_leisure"] and not gpkg["offers_other"]
+    assert gpkg["pot_shop"] == 7.0 and gpkg["pot_leisure"] == 9.0
+    assert gpkg.geometry.geom_type == "Point"
+    other = out[out["location_id"] == "sec_0"].iloc[0]
+    assert other["offers_other"] and not other["offers_shop"] and not other["offers_leisure"]
+    assert other["pot_other"] == 0.0     # legacy point far from the gpkg building -> generic fallback 0.0
+    assert len(out) == 2

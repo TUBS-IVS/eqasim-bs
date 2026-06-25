@@ -210,25 +210,89 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
         )
 
 
-def attach_secondary_potentials(df_secondary: gpd.GeoDataFrame,
-                                df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Add pot_shop / pot_leisure / pot_other columns to the secondary candidates
-    by footprint join (shop = retail_daily + retail_non_daily; leisure = leisure;
-    other = generic). Missing -> 0.0 (rate logged by attach_potential)."""
+def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
+                               df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """REPLACE secondary candidates when building potentials are ON.
+
+    shop/leisure candidates = gpkg activity buildings (native potentials, no
+    fallback — the candidate set IS the buildings that carry a non-zero
+    retail or leisure potential); 'other' candidates = the legacy broad catalog
+    with the generic potential attached by footprint join (fallback 0.0, logged
+    by attach_potential so the rate stays observable).
+
+    Parameters
+    ----------
+    df_secondary_legacy:
+        The legacy secondary candidate GeoDataFrame from
+        ``synthesis.locations.secondary`` (columns: location_id, commune_id,
+        iris_id, geometry(Point), offers_shop, offers_leisure, offers_other).
+    df_buildings:
+        Building-footprint GeoDataFrame from
+        ``braunschweig.data.building_potentials`` (columns: building_id,
+        potential_retail_daily, potential_retail_non_daily, potential_leisure,
+        potential_generic, commune_id, geometry(POLYGON), EPSG:25832).
+
+    Returns
+    -------
+    GeoDataFrame with columns:
+        location_id, commune_id, iris_id, geometry(Point),
+        offers_shop, offers_leisure, offers_other,
+        pot_shop, pot_leisure, pot_other
+    concat of gpkg shop/leisure rows and legacy other rows, reset index.
+    """
     from braunschweig.data.building_potential_attach import attach_potential
-    zero = np.zeros(len(df_secondary), dtype=float)
-    shop_daily, _, _ = attach_potential(
-        df_secondary, df_buildings, "potential_retail_daily", zero, "sec_shop_daily")
-    shop_nd, _, _ = attach_potential(
-        df_secondary, df_buildings, "potential_retail_non_daily", zero, "sec_shop_nd")
-    leisure, _, _ = attach_potential(
-        df_secondary, df_buildings, "potential_leisure", zero, "sec_leisure")
-    other, _, _ = attach_potential(
-        df_secondary, df_buildings, "potential_generic", zero, "sec_other")
-    out = df_secondary.copy()
-    out["pot_shop"] = shop_daily + shop_nd
-    out["pot_leisure"] = leisure
-    out["pot_other"] = other
+
+    # --- gpkg shop/leisure candidates ---
+    # One row per building that carries a non-zero retail or leisure potential.
+    # Potentials are native (read directly from the building table); no spatial
+    # join needed, so there is no fallback path for this half of the candidates.
+    b = df_buildings.copy()
+    retail = (b["potential_retail_daily"].astype(float)
+              + b["potential_retail_non_daily"].astype(float))
+    leisure = b["potential_leisure"].astype(float)
+    keep = (retail > 0) | (leisure > 0)
+    b = b[keep]
+    retail = retail[keep]
+    leisure = leisure[keep]
+    gpkg = gpd.GeoDataFrame({
+        "location_id": ("sec_b_" + b["building_id"].astype(str)).values,
+        "commune_id": b["commune_id"].astype(str).values,
+        "iris_id": b["commune_id"].astype(str).values,
+        "offers_shop": (retail > 0).values,
+        "offers_leisure": (leisure > 0).values,
+        "offers_other": False,
+        "pot_shop": retail.values,
+        "pot_leisure": leisure.values,
+        "pot_other": 0.0,
+        "geometry": b.geometry.centroid.values,
+    }, crs=df_buildings.crs)
+
+    # --- legacy 'other' candidates (broad catalog) ---
+    # All legacy candidates become 'other'-only rows so the broad OSM/ALKIS/
+    # landuse catalog is preserved for the 'other' purpose.  The generic
+    # potential is attached by footprint join (fallback 0.0, rate logged).
+    legacy = df_secondary_legacy.copy()
+    pot_other, _p, _f = attach_potential(
+        legacy, df_buildings, "potential_generic",
+        fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
+    legacy_other = gpd.GeoDataFrame({
+        "location_id": legacy["location_id"].astype(str).values,
+        "commune_id": legacy["commune_id"].astype(str).values,
+        "iris_id": legacy["iris_id"].astype(str).values,
+        "offers_shop": False,
+        "offers_leisure": False,
+        "offers_other": True,
+        "pot_shop": 0.0,
+        "pot_leisure": 0.0,
+        "pot_other": pot_other,
+        "geometry": legacy.geometry.values,
+    }, crs=legacy.crs)
+
+    out = gpd.GeoDataFrame(
+        pd.concat([gpkg, legacy_other], ignore_index=True), crs=df_buildings.crs)
+    print("[braunschweig.secondary_chainsolvers] REPLACE candidates: "
+          "%d gpkg shop/leisure buildings + %d legacy 'other' candidates"
+          % (len(gpkg), len(legacy_other)))
     return out
 
 
@@ -1206,7 +1270,7 @@ def execute(context):
         "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
     } if sec_enabled else None)
     if sec_enabled:
-        df_secondary = attach_secondary_potentials(
+        df_secondary = build_secondary_candidates(
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
         )
