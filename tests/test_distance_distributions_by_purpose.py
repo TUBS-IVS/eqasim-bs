@@ -143,3 +143,10 @@ def test_off_is_byte_identical_to_pre_refactor():
                 a_bin["cdf"], e_bin["cdf"],
                 err_msg=f"cdf mismatch for mode={mode}, bin={i}"
             )
+
+
+def test_shop_daily_split_adds_subtype_keys():
+    from braunschweig.popsim.distance_distributions import run
+    w = _synthetic_wege()
+    bp = run(w, by_purpose=True, shop_daily_split=True)
+    assert "shop_daily" in bp and "shop_non_daily" in bp and "shop" in bp

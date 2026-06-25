@@ -220,8 +220,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         eqasim secondary purpose (``shop``/``leisure``/``other``/``work``/
         ``education``) from ``map_purpose``.
     shop_daily_split:
-        Reserved for Task 5 (shop temporal disaggregation). Accepted here but
-        not yet used; pass False (default) to preserve current behaviour.
+        When True (and ``by_purpose=True`` and ``W_ZWD`` is present in the
+        input frame), adds ``shop_daily`` and ``shop_non_daily`` keys to the
+        purpose layer built from the MiD W_ZWD detail codes (501 = daily;
+        502/503/504/505 = non-daily). The aggregate ``shop`` key is kept as a
+        fallback. If ``W_ZWD`` is absent, a warning is logged and the split is
+        skipped silently (no KeyError). Pass False (default) to preserve the
+        current behaviour.
 
     Returns
     -------
@@ -317,6 +322,38 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         "[popsim.distance_distributions] purpose-layer built for purposes: %s",
         sorted(out.keys()),
     )
+
+    # --- Step 7: shop daily / non-daily sub-distributions (Task 5). ----------
+    # When both flags are set and W_ZWD survived the column selection, build
+    # separate distributions for daily (501) and non-daily (502-505) shop legs.
+    # The aggregate "shop" key is KEPT so downstream callers without the split
+    # can still use it as a fallback.
+    if shop_daily_split:
+        if "W_ZWD" not in df.columns:
+            logger.warning(
+                "[popsim.distance_distributions] shop_daily_split=True but "
+                "W_ZWD column is absent from the Wege frame; skipping the "
+                "daily/non-daily split."
+            )
+        else:
+            from braunschweig.popsim.shop_subtype import (
+                SHOP_DAILY_W_ZWD,
+                SHOP_NONDAILY_W_ZWD,
+            )
+            shop_df = df[df["following_purpose"] == "shop"]
+            daily_df = shop_df[shop_df["W_ZWD"].isin(SHOP_DAILY_W_ZWD)]
+            nondaily_df = shop_df[shop_df["W_ZWD"].isin(SHOP_NONDAILY_W_ZWD)]
+            if len(daily_df):
+                out["shop_daily"] = _build_mode_distributions(daily_df)
+            if len(nondaily_df):
+                out["shop_non_daily"] = _build_mode_distributions(nondaily_df)
+            logger.info(
+                "[popsim.distance_distributions] shop split: "
+                "daily=%d legs, non_daily=%d legs",
+                len(daily_df),
+                len(nondaily_df),
+            )
+
     return out
 
 
