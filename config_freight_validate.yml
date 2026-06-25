@@ -42,6 +42,19 @@ config:
   freight_truck_pce: 3.5
   freight_truck_max_velocity_kmh: 80.0
 
+  # Building-level activity potentials (OSM/ALKIS redistribution, TUBS-IVS
+  # Activities-and-Potentials-Calculation-Pipeline). Aggregate references
+  # (Census SvB, NDS) stay authoritative; the gpkg supplies the within-zone
+  # building weight. Requires the local-only parquet (see
+  # scripts/import_building_activity_potentials.py).
+  building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
+  work_building_potentials: true
+  secondary_building_potentials: true
+  secondary_scorer_mode: combined
+  secondary_scorer_pot_weight: 1.0
+  secondary_scorer_dist_dev_weight: 1.0
+  education_building_distribution: true
+
   data_path: eqasim-data/data
   maven_binary: C:/Users/bienzeisler/tools/apache-maven-3.9.9/bin/mvn.cmd
   output_path: eqasim-data/output_bs

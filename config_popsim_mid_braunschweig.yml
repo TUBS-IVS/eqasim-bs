@@ -28,6 +28,12 @@ config:
 
   freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
 
+  # Building-level activity potentials OFF (no local-only parquet required);
+  # see the real-data run configs for the ON path.
+  work_building_potentials: false
+  secondary_building_potentials: false
+  education_building_distribution: false
+
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_popsim_mid
   output_prefix: braunschweig_popsim_mid_1pct_
