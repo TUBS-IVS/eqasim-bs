@@ -49,8 +49,29 @@ def load_circuity_params(path: str = DEFAULT_PARAMS_PATH) -> dict:
                 f"detour_circuity_params.csv missing required network '{required}' "
                 f"(path={path})."
             )
-    if params["car"]["c_inf"] < 1.0:
-        raise ValueError("car c_inf must be >= 1.0 (circuity cannot shorten a trip).")
+    for net in ("car", "walk"):
+        p = params[net]
+        if p["c_inf"] < 1.0:
+            raise ValueError(
+                f"{net} c_inf={p['c_inf']!r} must be >= 1.0 "
+                f"(circuity cannot shorten a trip; path={path})."
+            )
+        if p["a"] < 0.0:
+            raise ValueError(
+                f"{net} a={p['a']!r} must be >= 0.0 "
+                f"(negative short-distance uplift is non-physical; path={path})."
+            )
+        if p["tau"] <= 0.0:
+            raise ValueError(
+                f"{net} tau_km={p['tau']!r} must be > 0.0 "
+                f"(non-positive scale length makes the curve undefined; path={path})."
+            )
+    if params["pt"]["uplift"] < 1.0:
+        raise ValueError(
+            f"pt uplift={params['pt']['uplift']!r} must be >= 1.0 "
+            f"(PT cannot be faster than the base network on the same euclidean distance; "
+            f"path={path})."
+        )
     _CACHE[path] = params
     return params
 
