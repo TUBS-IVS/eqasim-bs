@@ -404,10 +404,29 @@ python scripts/calibrate_gravity_distribution.py `
     --output-dir eqasim-data/data/braunschweig/calibration/commute
 ```
 
-Paste the printed `gravity_friction_factors` YAML block into the all-features
-run configs. Do not hand-edit the factors — re-run the script and paste its
-output. The factors are pinned into the all-features configs after this server
-run is completed (not yet pinned).
+If a calibration is warranted, paste the printed `gravity_friction_factors`
+YAML block into the all-features run configs (do not hand-edit the factors —
+re-run the script and paste its output).
+
+**Finding (2026-06-25 run on `cache_bs_25pct_allfeat`): no commute friction
+calibration is currently warranted.** Measured against MiD P13 (ZGB aggregate),
+all inputs and the realised output already match: the per-person MiD work-leg
+targets (the donor `commute_distance`) give EMD 0.0037, the gravity OD-flow
+gives EMD 0.037, and the realised synthesis home->work straight-line
+distribution gives EMD ~0.065 (below the 0.08 threshold). The historical
+"EMD 0.47 FAIL" was a **stale** figure measured on MATSim-*routed* distances
+from a run **before** the building-activity-potentials feature (which sources
+work candidates from the gpkg buildings and reshaped the within-zone
+placement). Because the distribution already matches, **no `gravity_friction_factors`
+are pinned** — the per-band friction stays at its `None` default (byte-identical
+to the legacy `exp(slope*d)` friction), and this module is provided as
+calibration *infrastructure* (used if a future sampling rate, config, or the
+education levels reveal a real distribution gap). A note on the discretization:
+`synthesis.population.spatial.primary.locations.define_distance_ordering` is a
+per-origin bijection between candidates and persons, so the greedy
+target-matching is **aggregate-distribution-preserving** — the realised
+trip-length histogram is governed by the OD-derived candidate pool (the
+friction), not by the matching step.
 
 Tests: `tests/test_gravity_friction.py`, `tests/test_calibration_metrics.py`,
 `tests/test_calibration_targets.py`, `tests/test_calibration_commute.py`,
