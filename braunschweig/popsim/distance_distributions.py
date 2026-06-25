@@ -100,6 +100,9 @@ BIN_SIZE = 200
 REQUIRED_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "hvm_imp",
                     "wegkm_imp", "W_SZS", "W_SZM", "W_AZS", "W_AZM", "W_GEW")
 
+# Optional column kept when present (needed by Task 5 for shop daily split).
+_OPTIONAL_COLUMNS = ("W_ZWD",)
+
 
 def _build_preceding_purpose(wege: pd.DataFrame) -> pd.Series:
     """Derive preceding_purpose from following_purpose per (H_ID, P_ID) chain.
@@ -136,7 +139,72 @@ def _build_preceding_purpose(wege: pd.DataFrame) -> pd.Series:
     return preceding.reindex(wege.index)
 
 
-def run(mid_wege: pd.DataFrame) -> dict:
+def _build_mode_distributions(df: pd.DataFrame) -> dict:
+    """Per-mode quantile travel-time bins + W_GEW-weighted euclidean-distance CDFs.
+
+    This is the exact legacy Step-6 logic, factored out so it can be applied to
+    the whole frame (by_purpose=False) or to a per-purpose sub-frame
+    (by_purpose=True).
+
+    Parameters
+    ----------
+    df:
+        Already-prepared DataFrame with columns: ``mode``, ``travel_time``,
+        ``distance``, ``weight`` (= W_GEW), ``preceding_purpose``,
+        ``following_purpose``. Primary-only trips must already be filtered out.
+
+    Returns
+    -------
+    dict
+        ``{mode: {"bounds": np.ndarray, "distributions": [{"cdf", "values",
+        "weights"}, ...]}}`` — the exact structure consumed by
+        CustomDistanceSampler.
+    """
+    distributions = {}
+    n_modes_built = 0
+
+    for mode in df["mode"].unique():
+        mode_df = df[df["mode"] == mode]
+
+        bounds = calculate_bounds(mode_df["travel_time"].values, BIN_SIZE)
+        distributions[mode] = dict(bounds=np.array(bounds), distributions=[])
+
+        for lower_bound, upper_bound in zip([-np.inf] + bounds[:-1], bounds):
+            bin_df = mode_df[
+                (mode_df["travel_time"] > lower_bound) &
+                (mode_df["travel_time"] <= upper_bound)
+            ]
+
+            values = bin_df["distance"].values
+            weights = bin_df["weight"].values
+
+            sorter = np.argsort(values)
+            values = values[sorter]
+            weights = weights[sorter]
+
+            cdf = np.cumsum(weights)
+            # Guard against empty bins (non-empty bins: cdf[-1] > 0 always holds
+            # because W_GEW > 0, so this is equivalent to the original `cdf /= cdf[-1]`
+            # for non-empty bins and avoids a ZeroDivisionError for empty ones).
+            cdf = cdf / cdf[-1] if len(cdf) and cdf[-1] > 0 else cdf
+
+            distributions[mode]["distributions"].append(
+                dict(cdf=cdf, values=values, weights=weights)
+            )
+
+        n_modes_built += 1
+
+    logger.info(
+        "[popsim.distance_distributions] built distributions for %d modes: %s",
+        n_modes_built,
+        sorted(distributions.keys()),
+    )
+
+    return distributions
+
+
+def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
+        shop_daily_split: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -149,12 +217,25 @@ def run(mid_wege: pd.DataFrame) -> dict:
         All rows are used; caller is responsible for any pre-filtering (e.g.
         restricting to a specific Bundesland). The weight column W_GEW is the
         MiD Wege-Gewicht (Fallzahl-normalised expansion weight).
+    by_purpose:
+        When False (default), returns the legacy ``{mode: ...}`` structure —
+        byte-identical to the pre-refactor output.
+        When True, returns ``{purpose: {mode: ...}}`` where purpose is the
+        eqasim secondary purpose (``shop``/``leisure``/``other``/``work``/
+        ``education``) from ``map_purpose``.
+    shop_daily_split:
+        Reserved for Task 5 (shop temporal disaggregation). Accepted here but
+        not yet used; pass False (default) to preserve current behaviour.
 
     Returns
     -------
     dict
-        Per-mode distance distributions in the EXACT structure consumed by
-        CustomDistanceSampler (see module docstring).
+        When ``by_purpose=False``: ``{mode: {"bounds", "distributions"}}`` —
+        the EXACT structure consumed by CustomDistanceSampler (see module
+        docstring).
+        When ``by_purpose=True``: ``{purpose: {mode: {"bounds",
+        "distributions"}}}`` — one inner dict per purpose present in the
+        filtered frame.
     """
     missing = [c for c in REQUIRED_COLUMNS if c not in mid_wege.columns]
     if missing:
@@ -193,10 +274,14 @@ def run(mid_wege: pd.DataFrame) -> dict:
     df["distance"] = df["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
 
     # --- Step 5: select columns needed and filter primary-only trips. ------
-    df = df[["mode", "travel_time", "distance", "W_GEW",
-             "preceding_purpose", "following_purpose"]].rename(
-        columns={"W_GEW": "weight"}
-    )
+    # Keep W_ZWD when present: needed by Task 5 (shop daily split) and
+    # by the byte-identical test which replicates this selection exactly.
+    keep_cols = ["mode", "travel_time", "distance", "W_GEW",
+                 "preceding_purpose", "following_purpose"]
+    for opt_col in _OPTIONAL_COLUMNS:
+        if opt_col in df.columns:
+            keep_cols.append(opt_col)
+    df = df[keep_cols].rename(columns={"W_GEW": "weight"})
 
     # Replicate the default stage filter exactly (lines 43-47):
     # exclude trips where BOTH ends are primary activities.
@@ -217,52 +302,26 @@ def run(mid_wege: pd.DataFrame) -> dict:
         n_after,
     )
 
-    # --- Step 6: build per-mode quantile travel_time bins + CDFs. ----------
-    # Mirrors the default stage execute() logic exactly (lines 54-78).
-    modes = df["mode"].unique()
-    distributions = {}
+    # --- Step 6: build per-mode (or per-purpose × mode) distributions. ------
+    if not by_purpose:
+        # Legacy path: build over the whole filtered frame.
+        # _build_mode_distributions replicates the exact Step-6 logic that was
+        # inlined here before the refactor; by_purpose=False is byte-identical.
+        return _build_mode_distributions(df)
 
-    n_modes_built = 0
-    for mode in modes:
-        f_mode = df["mode"] == mode
-        mode_df = df[f_mode]
-
-        # Quantile bin bounds from travel_time values (same as default).
-        bounds = calculate_bounds(mode_df["travel_time"].values, BIN_SIZE)
-        distributions[mode] = dict(bounds=np.array(bounds), distributions=[])
-
-        # Per-bin weighted CDF of euclidean_distance (same logic as default,
-        # but using W_GEW weights instead of person_weight).
-        for lower_bound, upper_bound in zip([-np.inf] + bounds[:-1], bounds):
-            f_bound = (
-                (mode_df["travel_time"] > lower_bound) &
-                (mode_df["travel_time"] <= upper_bound)
-            )
-            bin_df = mode_df[f_bound]
-
-            values = bin_df["distance"].values
-            weights = bin_df["weight"].values
-
-            sorter = np.argsort(values)
-            values = values[sorter]
-            weights = weights[sorter]
-
-            cdf = np.cumsum(weights)
-            cdf /= cdf[-1]
-
-            distributions[mode]["distributions"].append(
-                dict(cdf=cdf, values=values, weights=weights)
-            )
-
-        n_modes_built += 1
+    # Purpose layer: split by following_purpose, then build per-mode within each.
+    out = {}
+    for purpose in df["following_purpose"].unique():
+        pdf = df[df["following_purpose"] == purpose]
+        if len(pdf) == 0:
+            continue
+        out[purpose] = _build_mode_distributions(pdf)
 
     logger.info(
-        "[popsim.distance_distributions] built distributions for %d modes: %s",
-        n_modes_built,
-        sorted(distributions.keys()),
+        "[popsim.distance_distributions] purpose-layer built for purposes: %s",
+        sorted(out.keys()),
     )
-
-    return distributions
+    return out
 
 
 def configure(context):
