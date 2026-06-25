@@ -47,7 +47,7 @@ from braunschweig.gravity.model import (  # noqa: E402
     _synthesise_intra_kreis,
 )
 from braunschweig.calibration.metrics import apply_detour, band_shares, emd_on_bands  # noqa: E402
-from braunschweig.calibration.targets import load_p13_band_shares  # noqa: E402
+from braunschweig.calibration.targets import load_p13_band_shares, load_p13_band_shares_by_rs7  # noqa: E402
 from braunschweig.calibration.commute import (  # noqa: E402
     build_validation_report,
     furness_update,
@@ -142,6 +142,11 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
         Realised straight-line commute distances (km) per home-Kreis (5-digit ars5).
     jobs_by_gemeinde : dict[str, float]
         Realised assigned-job counts per destination Gemeinde.
+    km_by_rs7 : dict[int, np.ndarray]
+        Realised straight-line commute distances (km) per home-RS7 code. Only
+        populated when ``df_homes`` contains an ``rs7`` column; otherwise an
+        empty dict. The per-RS7 measurement is exact (per-worker, not a Kreis
+        proxy) and is used by the per-RS7 Furness update path.
 
     Notes
     -----
@@ -176,7 +181,9 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
             work_weights[commune_id] = np.ones(len(grp)) / len(grp)
 
     km_by_kreis: dict[str, list] = {}
+    km_by_rs7: dict[int, list] = {}
     jobs_by_gemeinde: dict[str, float] = {}
+    has_rs7_col = "rs7" in df_homes.columns
     # F2: use a local variable instead of a function attribute.
     # F6: called "skipped" because no alternative assignment is made (it is a drop,
     #     not a fallback to a different method).
@@ -189,6 +196,8 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
 
         # Identify home Kreis (first 5 characters of the 8-digit AGS commune_id).
         origin_ars5 = origin_commune[:5]
+        # Home RS7 code (present when the caller tagged worker_homes_gdf["rs7"]).
+        home_rs7 = int(row["rs7"]) if has_rs7_col else -1
 
         if origin_commune not in muni_index:
             # Origin not in the gravity matrix; skip (very rare edge case).
@@ -222,6 +231,8 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
         d_km = np.sqrt(dx * dx + dy * dy) / 1000.0
 
         km_by_kreis.setdefault(origin_ars5, []).append(d_km)
+        if home_rs7 > 0:
+            km_by_rs7.setdefault(home_rs7, []).append(d_km)
         jobs_by_gemeinde[dest_commune] = jobs_by_gemeinde.get(dest_commune, 0.0) + 1.0
 
     # Report skip rate (CLAUDE.md no-silent-fallback).
@@ -248,6 +259,7 @@ def assign_and_measure(od_matrix, municipalities, df_homes, df_work_locations,
     return (
         {k: np.array(v) for k, v in km_by_kreis.items()},
         jobs_by_gemeinde,
+        {k: np.array(v) for k, v in km_by_rs7.items()},
     )
 
 
@@ -335,16 +347,21 @@ def main():
     )
     parser.add_argument(
         "--emd-threshold", type=float, default=0.08,
-        help="Stop when ZGB-aggregate EMD falls at or below this value (default: 0.08).",
+        help=(
+            "Stop when EMD falls at or below this value (default: 0.08). "
+            "Global mode: ZGB-aggregate EMD. "
+            "Per-RS7 mode: max EMD across all RS7 codes."
+        ),
     )
     parser.add_argument(
         "--per-rs7", action="store_true",
         help=(
-            "EXPERIMENTAL / LIMITED: calibrate per-RS7 factors rather than a single global "
-            "factor set. Limitation: no per-RS7 P13 distance-distribution target exists in "
-            "the committed MiD data (P13 is per-Kreis only); all RS7 codes chase the SAME "
-            "ZGB aggregate P13 target. The global (default) path is the primary, fully-supported "
-            "mode. Use --per-rs7 only for exploratory analysis, not for committed calibration."
+            "Calibrate per-RS7 friction factors rather than a single global factor set. "
+            "Each RS7 code (72-77) is calibrated to its own commute-distance distribution "
+            "from MiD 2023 Tabelle P13 Raumtyp block "
+            "(mid2023_P13_commute_distance_by_rs7.csv). RS7 71 (Metropole) is absent "
+            "from the ZGB sample. An RS7 present among origins but absent from the P13 "
+            "Raumtyp table falls back to the ZGB aggregate target (logged explicitly)."
         ),
     )
     parser.add_argument(
@@ -605,6 +622,22 @@ def main():
         )
     logger.info("[commute-calib] loaded P13 targets for %d keys", len(targets))
 
+    # Load per-RS7 P13 targets when running in per-RS7 mode.
+    rs7_targets: dict = {}
+    if args.per_rs7:
+        rs7_p13_path = os.path.join(args.mid_dir, "mid2023_P13_commute_distance_by_rs7.csv")
+        if not os.path.isfile(rs7_p13_path):
+            raise RuntimeError(
+                f"Per-RS7 P13 CSV not found at '{rs7_p13_path}'. "
+                "Ensure --mid-dir points to the correct directory and "
+                "mid2023_P13_commute_distance_by_rs7.csv is committed."
+            )
+        rs7_targets = load_p13_band_shares_by_rs7(args.mid_dir)
+        logger.info(
+            "[commute-calib] loaded per-RS7 P13 targets for RS7 codes: %s",
+            sorted(rs7_targets.keys()),
+        )
+
     # Per-RS7 worker counts for the shrinkage step.
     rs7_lookup = (
         df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
@@ -703,7 +736,7 @@ def main():
         # C1: pass seed + it so each iteration draws an independent-but-reproducible
         # sample; passing the same seed every iteration would freeze the stochastic
         # draw and could falsely trigger early convergence.
-        km_by_kreis, jobs_by_gemeinde = assign_and_measure(
+        km_by_kreis, jobs_by_gemeinde, km_by_rs7_realised = assign_and_measure(
             od_matrix, municipalities, worker_homes_gdf,
             df_work_locations, df_population_full, seed + it,
         )
@@ -737,51 +770,115 @@ def main():
         worst_kreis_emd = max(per_kreis_emd.values()) if per_kreis_emd else float("nan")
         worst_kreis = max(per_kreis_emd, key=per_kreis_emd.get) if per_kreis_emd else "n/a"
 
-        logger.info(
-            "[commute-calib] iter %02d: ZGB aggregate EMD=%.4f, "
-            "worst Kreis EMD=%.4f (%s)",
-            it, emd_zgb, worst_kreis_emd, worst_kreis,
-        )
+        # Per-RS7 EMD diagnostics (only in per-RS7 mode).
+        per_rs7_emd: dict[int, float] = {}
+        if args.per_rs7 and rs7_targets:
+            for rs7_code, km_arr_rs7 in km_by_rs7_realised.items():
+                if rs7_code in rs7_targets:
+                    shares_rs7_diag = band_shares(apply_detour(km_arr_rs7, factor=args.detour_factor))
+                    per_rs7_emd[rs7_code] = emd_on_bands(shares_rs7_diag, rs7_targets[rs7_code])
+            if per_rs7_emd:
+                max_rs7_emd = max(per_rs7_emd.values())
+                worst_rs7 = max(per_rs7_emd, key=per_rs7_emd.get)
+                logger.info(
+                    "[commute-calib] iter %02d: ZGB aggregate EMD=%.4f, "
+                    "max RS7 EMD=%.4f (RS7=%d), per-RS7 EMDs: %s",
+                    it, emd_zgb, max_rs7_emd, worst_rs7,
+                    {r: round(v, 4) for r, v in sorted(per_rs7_emd.items())},
+                )
+            else:
+                max_rs7_emd = float("nan")
+                logger.info(
+                    "[commute-calib] iter %02d: ZGB aggregate EMD=%.4f, "
+                    "worst Kreis EMD=%.4f (%s); no per-RS7 EMD available",
+                    it, emd_zgb, worst_kreis_emd, worst_kreis,
+                )
+        else:
+            max_rs7_emd = float("nan")
+            logger.info(
+                "[commute-calib] iter %02d: ZGB aggregate EMD=%.4f, "
+                "worst Kreis EMD=%.4f (%s)",
+                it, emd_zgb, worst_kreis_emd, worst_kreis,
+            )
+
         iter_log.append({
             "iteration": it,
             "emd_zgb": emd_zgb,
             "worst_kreis_emd": worst_kreis_emd,
             "worst_kreis": worst_kreis,
+            "max_rs7_emd": max_rs7_emd,
+            "per_rs7_emd": {str(r): v for r, v in per_rs7_emd.items()},
         })
 
-        if emd_zgb <= args.emd_threshold:
+        # Convergence criterion:
+        #   - per-RS7 mode: stop when the max per-RS7 EMD <= threshold
+        #   - global mode: stop when the ZGB aggregate EMD <= threshold
+        if args.per_rs7:
+            convergence_emd = max_rs7_emd if not np.isnan(max_rs7_emd) else emd_zgb
+        else:
+            convergence_emd = emd_zgb
+
+        if convergence_emd <= args.emd_threshold:
             logger.info(
-                "[commute-calib] converged at iter %d (EMD=%.4f <= threshold=%.4f)",
-                it, emd_zgb, args.emd_threshold,
+                "[commute-calib] converged at iter %d "
+                "(%s EMD=%.4f <= threshold=%.4f)",
+                it,
+                "max RS7" if args.per_rs7 else "ZGB aggregate",
+                convergence_emd, args.emd_threshold,
             )
             converged = True
             break
 
         # Furness update.
         if args.per_rs7 and factors_by_rs7 is not None:
+            # For each RS7 present in the origin set, update toward the real per-RS7
+            # P13 Raumtyp target. An RS7 absent from rs7_targets falls back to the ZGB
+            # aggregate -- this is logged explicitly (CLAUDE.md no-silent-fallback).
+            n_rs7_primary = 0
+            n_rs7_fallback = 0
             for rs7 in rs7_codes:
-                # Per-RS7 target: use the pooled ZGB target for all RS7 to avoid fabricating
-                # per-RS7 P13 targets that are not committed in the repository.
-                # ASSUMPTION: per-RS7 calibration uses the ZGB P13 aggregate as the target;
-                # no separate per-RS7 P13 distribution is available in the committed MiD CSVs.
-                target_for_rs7 = targets.get("03ZGB", None)
+                if rs7 in rs7_targets:
+                    target_for_rs7 = rs7_targets[rs7]
+                    n_rs7_primary += 1
+                else:
+                    # No committed per-RS7 P13 target for this code; fall back to ZGB
+                    # aggregate. This should not occur for the ZGB RS7 codes 72-77 --
+                    # log it prominently so it is never silent.
+                    target_for_rs7 = targets.get("03ZGB", None)
+                    n_rs7_fallback += 1
+                    logger.warning(
+                        "[commute-calib] iter %02d RS7=%d: no per-RS7 P13 target found "
+                        "in mid2023_P13_commute_distance_by_rs7.csv; falling back to ZGB "
+                        "aggregate target (CLAUDE.md no-silent-fallback). "
+                        "Expected for RS7 codes 72-77; unexpected otherwise.",
+                        it, rs7,
+                    )
                 if target_for_rs7 is None:
                     continue
-                rs7_mask = worker_homes_gdf["rs7"] == rs7
-                rs7_workers = worker_homes_gdf[rs7_mask]
-                rs7_kreis_set = set(rs7_workers["commune_id"].str[:5].unique())
-                rs7_km_parts = [km_by_kreis[k] for k in km_by_kreis if k in rs7_kreis_set]
-                km_rs7 = np.concatenate(rs7_km_parts) if rs7_km_parts else np.array([])
+
+                # Use directly measured per-RS7 km (exact, not Kreis-proxy).
+                km_rs7 = km_by_rs7_realised.get(rs7, np.array([]))
 
                 if len(km_rs7) < args.min_count:
                     logger.debug(
-                        "[commute-calib] RS7=%d: only %d workers; skipping factor update",
-                        rs7, len(km_rs7),
+                        "[commute-calib] iter %02d RS7=%d: only %d workers; "
+                        "skipping factor update (below min_count=%d)",
+                        it, rs7, len(km_rs7), args.min_count,
                     )
                     continue
                 shares_rs7 = band_shares(apply_detour(km_rs7, factor=args.detour_factor))
                 factors_by_rs7[rs7] = furness_update(
                     factors_by_rs7[rs7], target_for_rs7, shares_rs7
+                )
+
+            if n_rs7_fallback > 0:
+                total_rs7 = n_rs7_primary + n_rs7_fallback
+                logger.warning(
+                    "[commute-calib] iter %02d: per-RS7 target coverage: "
+                    "primary (real P13 Raumtyp) %d/%d RS7 codes, "
+                    "fallback (ZGB aggregate) %d/%d RS7 codes (%.1f%%).",
+                    it, n_rs7_primary, total_rs7, n_rs7_fallback, total_rs7,
+                    100.0 * n_rs7_fallback / total_rs7,
                 )
         else:
             factors_b = furness_update(factors_b, targets.get("03ZGB", model_shares_zgb),
@@ -789,13 +886,20 @@ def main():
             factors_dict = {b: float(factors_b[b]) for b in range(N_BANDS)}
 
     if not converged:
+        final_emd = float("nan")
+        if iter_log:
+            if args.per_rs7 and not np.isnan(iter_log[-1]["max_rs7_emd"]):
+                final_emd = iter_log[-1]["max_rs7_emd"]
+            else:
+                final_emd = iter_log[-1]["emd_zgb"]
         logger.warning(
             "[commute-calib] did not converge within %d iterations; "
-            "final ZGB EMD=%.4f (threshold=%.4f). "
+            "final %s EMD=%.4f (threshold=%.4f). "
             "The Furness loop is limited by the achievable within-pair portion; "
             "residual EMD reflects the BA inter-Kreis constraint.",
             args.max_iterations,
-            iter_log[-1]["emd_zgb"] if iter_log else float("nan"),
+            "max RS7" if args.per_rs7 else "ZGB aggregate",
+            final_emd,
             args.emd_threshold,
         )
 
@@ -803,29 +907,18 @@ def main():
     # 8. Per-RS7 shrinkage (if --per-rs7)
     # ------------------------------------------------------------------
     if args.per_rs7 and factors_by_rs7 is not None:
-        # EXPERIMENTAL / LIMITED: per-RS7 factors all chase the SAME ZGB P13 aggregate
-        # target (no per-RS7 P13 distribution is available in the committed MiD data).
-        # Per CLAUDE.md (no invented references), per-RS7 targets are NOT fabricated here.
-        # Use the global (default) path for committed calibration results.
-        logger.warning(
-            "[commute-calib] --per-rs7 is EXPERIMENTAL: no per-RS7 P13 target exists "
-            "in the committed MiD data. All RS7 codes chase the same ZGB aggregate target. "
-            "Do not treat per-RS7 factors as validated calibration results."
-        )
+        # Per-RS7 friction factors are calibrated to the real MiD 2023 P13 Raumtyp
+        # per-RS7 commute-distance distribution (mid2023_P13_commute_distance_by_rs7.csv,
+        # RS7 codes 72-77). Shrinkage blends low-count cells toward the pooled factor
+        # to reduce noise in sparse rural RS7 codes.
 
-        # Count workers per (RS7, band) for shrinkage.
-        # Build the per-band histogram from the realised km_by_kreis so that cells
-        # with very few observed trips in a given band are correctly identified as sparse
-        # (instead of passing the total RS7 worker count for every band, which overstates
-        # the per-band sample size).
+        # Count workers per (RS7, band) for shrinkage using directly measured per-RS7 km
+        # (exact, not the Kreis-proxy previously used). This correctly identifies sparse
+        # per-band cells rather than overestimating density by using the total RS7 count.
         counts_by_rs7 = {}
         for rs7 in rs7_codes:
-            rs7_mask = worker_homes_gdf["rs7"] == rs7
-            rs7_workers_sub = worker_homes_gdf[rs7_mask]
-            rs7_kreis_set = set(rs7_workers_sub["commune_id"].str[:5].unique())
-            rs7_km_parts = [km_by_kreis[k] for k in km_by_kreis if k in rs7_kreis_set]
-            if rs7_km_parts:
-                km_all_rs7 = np.concatenate(rs7_km_parts)
+            km_all_rs7 = km_by_rs7_realised.get(rs7, np.array([]))
+            if len(km_all_rs7) > 0:
                 km_detoured = apply_detour(km_all_rs7, factor=args.detour_factor)
                 # Per-band count = number of workers whose detoured commute fell in each band.
                 band_hist = np.zeros(N_BANDS, dtype=int)
