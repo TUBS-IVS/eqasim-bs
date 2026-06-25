@@ -520,9 +520,34 @@ def _execute_gravity_base(context):
         municipalities, slope, slope_overrides, df_regiostar,
     )
 
-    friction = (
-        np.exp(slope_vec[:, None] * distances + constant)
-        + np.eye(len(municipalities)) * diagonal
+    from braunschweig.gravity.friction import build_friction_matrix
+
+    friction_factors = context.config("gravity_friction_factors")
+    rs7_vec = None
+    if isinstance(friction_factors, dict) and friction_factors and all(
+        isinstance(v, dict) for v in friction_factors.values()
+    ):
+        rs7_lookup = (
+            df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
+        )
+
+        def _ags8(cid):
+            s = str(cid)
+            return s[0:5] + s[9:12] if len(s) == 12 else s
+
+        rs7_vec = np.array([
+            int(rs7_lookup.get(_ags8(c)) or -1) for c in municipalities
+        ])
+        friction_factors = {int(k): {int(b): float(f) for b, f in v.items()}
+                            for k, v in friction_factors.items()}
+    elif isinstance(friction_factors, dict) and friction_factors:
+        friction_factors = {int(b): float(f) for b, f in friction_factors.items()}
+    else:
+        friction_factors = None
+
+    friction = build_friction_matrix(
+        distances, slope_vec, constant, diagonal,
+        factors=friction_factors, rs7_vec=rs7_vec,
     )
     # ExecuteContext.config() takes the key alone (the default is declared in
     # configure()); passing a default here would raise.
@@ -588,6 +613,12 @@ def configure(context):
     # "Config option ... is not requested" at execute time. ``None`` survives
     # flattening and is treated as "no overrides" by ``_build_origin_slope_vector``.
     context.config("gravity_slope_by_regiostar7", None)
+    # Optional per-distance-band friction factors. None/absent = legacy
+    # exp(slope*d) friction (byte-identical OFF path). {band: f} = global per-band;
+    # {rs7: {band: f}} = per-origin-RS7 per-band. Written by
+    # scripts/calibrate_gravity_distribution.py; do not hand-edit. Must default to
+    # None (not {}) so synpp flatten() does not drop it (see gravity_slope_by_regiostar7).
+    context.config("gravity_friction_factors", None)
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")

@@ -50,3 +50,16 @@ def test_per_rs7_band_factors_apply_per_origin_row():
     assert got[0, 1] == 0.5         # origin row 0 -> rs7 71, band 1
     assert got[1, 0] == 0.1         # origin row 1 -> rs7 77, band 1
     assert got[1, 1] == 3.0 + 1.0   # origin row 1 -> rs7 77, band 0, + diagonal
+
+
+def test_model_friction_assembly_off_equivalent():
+    """The builder with factors=None equals the legacy formula the model uses."""
+    import numpy as np
+    from braunschweig.gravity.friction import build_friction_matrix
+    n = 6
+    rng = np.random.default_rng(3)
+    distances = rng.uniform(0, 90, size=(n, n))
+    slope_vec = np.full(n, -0.065)
+    legacy = (np.exp(slope_vec[:, None] * distances + (-2.4)) + np.eye(n) * 1.0)
+    got = build_friction_matrix(distances, slope_vec, -2.4, 1.0, factors=None)
+    np.testing.assert_array_equal(got, legacy)
