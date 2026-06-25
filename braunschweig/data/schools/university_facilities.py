@@ -1,8 +1,10 @@
 """Build university destination points for the education gravity model.
 
 Inside the ZGB region the per-commune enrollment (LSN) is distributed across the
-commune's OSM university buildings by area (detailed intra-city spread). Each
-surrounding institution becomes a single curated campus point. Output:
+commune's OSM university buildings by the chosen weight column (default: footprint
+area; with education_building_distribution=True: building potential from the
+building-potentials stage). Each surrounding institution becomes a single curated
+campus point (that branch is not affected by the weight_column parameter). Output:
 GeoDataFrame[location_id, capacity, geometry] in EPSG:25832.
 """
 from __future__ import annotations
@@ -21,10 +23,25 @@ CRS_METRIC = "EPSG:25832"
 OSTFALIA_COMMUNES = ["03158", "03102", "03103"]
 
 
-def build_university_facilities(df_hochschulen, df_osm_uni):
+def build_university_facilities(df_hochschulen, df_osm_uni, weight_column="weight"):
+    """Distribute local enrollment across OSM university buildings; add surrounding points.
+
+    Parameters
+    ----------
+    df_hochschulen:
+        Institution table with columns institution, scope, ars5, enrollment, lon, lat.
+    df_osm_uni:
+        OSM university buildings GeoDataFrame; must contain commune_id, geometry,
+        and the column named by weight_column (for local-scope institutions only).
+    weight_column:
+        Column in df_osm_uni to use as the distribution weight for LOCAL institutions.
+        Default "weight" (footprint area) reproduces the legacy behaviour
+        byte-identically. Pass "potential" to distribute by building potential.
+        The surrounding-institution branch (curated single points) is not affected.
+    """
     rows_id, rows_cap, rows_geom = [], [], []
 
-    # --- surrounding: one point per institution -------------------------------
+    # --- surrounding: one point per institution (UNCHANGED) -------------------
     sur = df_hochschulen[df_hochschulen["scope"] == "surrounding"]
     if len(sur):
         pts = gpd.GeoSeries(
@@ -35,19 +52,19 @@ def build_university_facilities(df_hochschulen, df_osm_uni):
             rows_cap.append(float(cap))
             rows_geom.append(geom)
 
-    # --- local: pool enrollment per commune, split across OSM buildings by area
+    # --- local: pool enrollment per commune, split across OSM buildings -------
     local = df_hochschulen[df_hochschulen["scope"] == "local"].copy()
     osm = df_osm_uni.to_crs(CRS_METRIC).copy()
     osm["ars5"] = osm["commune_id"].astype(str).str[:5]
 
     def _distribute(enrollment, communes):
         sub = osm[osm["ars5"].isin(communes)]
-        total_area = sub["weight"].sum()
+        total_area = sub[weight_column].sum()
         if total_area <= 0 or sub.empty:
             return
         for _, b in sub.iterrows():
             rows_id.append("uni_loc_%d" % len(rows_id))
-            rows_cap.append(float(enrollment) * float(b["weight"]) / total_area)
+            rows_cap.append(float(enrollment) * float(b[weight_column]) / total_area)
             rows_geom.append(b["geometry"])
 
     pooled = {}
@@ -72,6 +89,9 @@ def configure(context):
     context.config("data_path")
     context.config("nds_hochschulen_path", "braunschweig/schools/nds_hochschulen.csv")
     context.stage("eqasim_common.locations.education")
+    enabled = context.config("education_building_distribution", True)
+    if enabled:
+        context.stage("braunschweig.data.building_potentials")
 
 
 def execute(context):
@@ -80,7 +100,20 @@ def execute(context):
     df_h = pd.read_csv(path, dtype={"ars5": str})
     df_osm = context.stage("eqasim_common.locations.education")
     df_osm = df_osm[df_osm["education_type"] == "university"].copy()
-    gdf = build_university_facilities(df_h, df_osm)
+
+    enabled = context.config("education_building_distribution")
+    weight_column = "weight"
+    if enabled:
+        from braunschweig.data.building_potential_attach import attach_potential
+        df_b = context.stage("braunschweig.data.building_potentials")
+        vals, _p, _f = attach_potential(
+            df_osm, df_b, "potential_university",
+            fallback=df_osm["weight"].to_numpy(float), label="university")
+        df_osm = df_osm.copy()
+        df_osm["potential"] = vals
+        weight_column = "potential"
+
+    gdf = build_university_facilities(df_h, df_osm, weight_column=weight_column)
     # Guard against silent enrollment loss: a local institution whose commune has
     # no OSM university building is dropped by the area-distribution (its students
     # would be redistributed to the nearest surviving campus). Name any such
