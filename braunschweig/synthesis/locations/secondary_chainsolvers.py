@@ -1269,6 +1269,8 @@ def execute(context):
         "pot_weight": context.config("secondary_scorer_pot_weight"),
         "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
     } if sec_enabled else None)
+    # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
+    # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
     if sec_enabled:
         df_secondary = build_secondary_candidates(
             df_secondary,

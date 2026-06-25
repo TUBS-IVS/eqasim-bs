@@ -40,7 +40,7 @@ def test_without_potentials_is_legacy_schema():
 
 
 # ---------------------------------------------------------------------------
-# C3: build_scorer and attach_secondary_potentials
+# C3r: build_scorer and build_secondary_candidates
 # ---------------------------------------------------------------------------
 
 def test_build_scorer_none_when_disabled():

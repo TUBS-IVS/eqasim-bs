@@ -3,6 +3,7 @@
 Covers the pure ``rename_columns`` transformation and its idempotency on values.
 The CLI / file-IO path is exercised by the manual Step 5 real-data run.
 """
+import pytest
 import geopandas as gpd
 from shapely.geometry import Polygon
 from scripts.import_building_activity_potentials import (
@@ -48,3 +49,19 @@ def test_rename_is_idempotent_on_values():
     out1 = rename_columns(g)
     out2 = rename_columns(g)
     assert out1["potential_generic"].equals(out2["potential_generic"])
+
+
+def test_rename_raises_on_missing_column():
+    from scripts.import_building_activity_potentials import rename_columns
+    g = _source_gdf().drop(columns=["assigned_Workers"])
+    with pytest.raises(ValueError, match="missing expected columns"):
+        rename_columns(g)
+
+
+def test_validate_raises_on_negative_potential():
+    from scripts.import_building_activity_potentials import rename_columns, validate
+    g = _source_gdf()
+    out = rename_columns(g)
+    out.loc[0, "potential_work"] = -1.0
+    with pytest.raises(ValueError):
+        validate(out)

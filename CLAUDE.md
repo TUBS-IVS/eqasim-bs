@@ -524,15 +524,15 @@ feature stages that redistribute locations.
 | `secondary_scorer_dist_dev_weight` | Weight on the distance-deviation term in the combined scorer (default `1.0`) |
 | `education_building_distribution` | `braunschweig.synthesis.locations.education_gravity` — weighted building draw within the assigned school/facility |
 
-**Run config split.** The six real-data run configs
-(`config_local_braunschweig.yml`, `config_freight_validate.yml`,
-`config_server_braunschweig_100pct.yml`,
+**Run config split.** The five committed real-data run configs
+(`config_local_braunschweig.yml`, `config_server_braunschweig_100pct.yml`,
 `config_server_braunschweig_1pct_allfeat_popsim.yml`,
 `config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`config_local_braunschweig_1pct_allfeat_full.yml`) set all four flags to `true`
-and include `building_potentials_path`. All other configs set the three boolean
-flags to `false` and omit the path, so the feature is off and no local-only
-parquet is required.
+`config_freight_validate.yml`) set all four flags to `true` and include
+`building_potentials_path`. The local-only (gitignored)
+`config_local_braunschweig_1pct_allfeat_full.yml` also enables the feature
+but is not committed. All other configs set the three boolean flags to `false`
+and omit the path, so the feature is off and no local-only parquet is required.
 
 **Aggregate controls are unaffected.** Work-zone totals (GENESIS SvB), OD
 gravity flows, and NDS school enrollment totals remain the authoritative
@@ -545,7 +545,12 @@ pre-feature pipeline: activity locations are placed by the existing zone-level
 or uniform-random-building logic, no building parquet is loaded, and the
 `braunschweig.data.building_potentials` stage is never requested.
 
-Tests: `tests/test_building_potentials.py`.
+Tests: `tests/test_building_activity_potentials_import.py`,
+`tests/test_building_activity_potentials_stage.py`,
+`tests/test_building_potential_attach.py`,
+`tests/test_work_building_potentials.py`,
+`tests/test_secondary_building_potentials.py`,
+`tests/test_education_building_distribution.py`.
 
 ## Long-haul freight injection (german-wide-freight v3)
 
