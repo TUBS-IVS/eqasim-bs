@@ -14,6 +14,11 @@ BS pipeline no longer delegates through ``bavaria.locations.work``.
 Schema is preserved (employees, fake, commune_id, iris_id, geometry,
 location_id) so downstream stages (commute-distance matching, primary
 locations) work unchanged.
+
+When ``work_building_potentials`` is True (default), the ON path REPLACES the
+ALKIS/OSM candidate set entirely with gpkg activity buildings that carry
+``potential_work > 0``.  The ALKIS area*floors path is used only when the flag
+is False, and is byte-identical to the pre-feature pipeline.
 """
 
 from __future__ import annotations
@@ -22,86 +27,94 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from braunschweig.data.building_potential_attach import attach_potential
+
+# --- Building-potential REPLACE builder ------------------------------------
+
+def build_work_candidates_from_potentials(df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """REPLACE work candidates with gpkg activity buildings carrying potential_work > 0.
+
+    Each row in the returned GeoDataFrame corresponds to one gpkg building whose
+    ``potential_work`` is strictly positive.  The legacy ALKIS area*floors weights
+    are NOT used at all on this path.
+
+    Parameters
+    ----------
+    df_buildings:
+        GeoDataFrame from ``braunschweig.data.building_potentials`` with columns
+        ``potential_work``, ``commune_id``, and polygon geometry (EPSG:25832).
+
+    Returns
+    -------
+    GeoDataFrame
+        Columns: employees (float), fake (bool), commune_id (str), iris_id (str),
+        geometry (Point, centroid of the input footprint polygon).  CRS matches
+        the input.
+    """
+    df = df_buildings[df_buildings["potential_work"] > 0].copy()
+    out = gpd.GeoDataFrame({
+        "employees": df["potential_work"].astype(float).values,
+        "fake": False,
+        "commune_id": df["commune_id"].astype(str).values,
+        "iris_id": df["commune_id"].astype(str).values,
+        "geometry": df.geometry.centroid.values,
+    }, crs=df.crs)
+    return out
 
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
 
-def compute_employees_weight(df_work, df_buildings, enabled: bool):
-    """Per-building work weight.
-
-    OFF (``enabled=False`` or no buildings supplied): returns exactly
-    ``area * floors`` as a float ndarray, byte-identical to the legacy path.
-    ON: ``potential_work`` is attached by footprint containment (spatial join),
-    falling back to ``area * floors`` for candidates with no matching building.
-
-    Parameters
-    ----------
-    df_work:
-        GeoDataFrame of workplace candidate points with columns ``area`` and
-        ``floors`` (EPSG:25832).
-    df_buildings:
-        Building-footprint GeoDataFrame with column ``potential_work``
-        (EPSG:25832), or ``None`` / empty when unavailable.
-    enabled:
-        If False, always return the legacy ``area * floors`` weight.
-
-    Returns
-    -------
-    np.ndarray
-        Float array aligned to ``df_work`` row order.
-    """
-    area_floors = (df_work["area"] * df_work["floors"]).to_numpy(dtype=float)
-    if not enabled or df_buildings is None or len(df_buildings) == 0:
-        return area_floors
-    values, _primary, _fallback = attach_potential(
-        df_work, df_buildings, "potential_work",
-        fallback=area_floors, label="work",
-    )
-    return values
-
-
 def _execute_base(context):
-    """OSM/ALKIS workplace points + synthetic centroids for missing Gemeinden."""
-    df = context.stage("braunschweig.data.locations")
-    df = df[df["location_type"] == "work"].copy()
-
+    """OSM/ALKIS workplace points OR gpkg-building REPLACE + synthetic centroids."""
     enabled = context.config("work_building_potentials")
-    df_buildings = (context.stage("braunschweig.data.building_potentials")
-                    if enabled else None)
-    df["employees"] = compute_employees_weight(df, df_buildings, enabled)
-    df["fake"] = False
 
-    # Fill missing municipalities with a synthetic centroid workplace.
+    if enabled:
+        # ON path: entire candidate set comes from gpkg activity buildings.
+        df = build_work_candidates_from_potentials(
+            context.stage("braunschweig.data.building_potentials"))
+        n_gpkg = len(df)
+    else:
+        # OFF path: legacy ALKIS area*floors, byte-identical to the pre-feature pipeline.
+        df = context.stage("braunschweig.data.locations")
+        df = df[df["location_type"] == "work"].copy()
+        df["employees"] = (df["area"] * df["floors"]).astype(float)
+        df["fake"] = False
+        df = df[["employees", "fake", "commune_id", "iris_id", "geometry"]]
+        n_gpkg = 0
+
+    # Synthetic centroid for any Gemeinde missing from the candidate set (UNCHANGED logic).
     df_fake = context.stage("data.spatial.municipalities")
     df_fake = df_fake[~df_fake["commune_id"].isin(df["commune_id"])].copy()
-
     df_fake["geometry"] = df_fake["geometry"].centroid
     df_fake["iris_id"] = df_fake["commune_id"].astype(str) + "0000"
     df_fake["iris_id"] = df_fake["iris_id"].astype("category")
     df_fake["employees"] = 1
     df_fake["fake"] = True
 
+    n_fake = len(df_fake)
     df = pd.concat([
         df[["employees", "fake", "commune_id", "iris_id", "geometry"]],
         df_fake[["employees", "fake", "commune_id", "iris_id", "geometry"]],
     ])
-
     df["location_id"] = np.arange(len(df))
     df["location_id"] = "work_" + df["location_id"].astype(str)
 
+    if enabled:
+        print("[braunschweig.locations.work] REPLACE candidates from building "
+              "potentials: %d gpkg work buildings + %d synthetic-centroid Gemeinden"
+              % (n_gpkg, n_fake))
     return df
 
 
 # --- Braunschweig-specific -------------------------------------------------
 
 def configure(context):
-    context.stage("braunschweig.data.locations")
     context.stage("data.spatial.municipalities")
     context.stage("braunschweig.data.external_workplaces")
     enabled = context.config("work_building_potentials", True)
     if enabled:
         context.stage("braunschweig.data.building_potentials")
+    else:
+        context.stage("braunschweig.data.locations")
 
 
 def execute(context) -> gpd.GeoDataFrame:

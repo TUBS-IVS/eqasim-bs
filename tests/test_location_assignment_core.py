@@ -333,7 +333,8 @@ def test_secondary_empty_candidate_pool():
 # configure() : declares exactly the stage dependencies it consumes.
 # ---------------------------------------------------------------------------
 
-def test_work_configure_declares_expected_stages():
+def test_work_configure_declares_expected_stages_on():
+    """ON path (default): declares building_potentials, not braunschweig.data.locations."""
     requested: list[str] = []
 
     class _Recorder:
@@ -341,14 +342,38 @@ def test_work_configure_declares_expected_stages():
             requested.append(name)
 
         def config(self, option, default=None):
+            return default  # work_building_potentials default=True -> ON path
+
+    work_stage.configure(_Recorder())
+    assert set(requested) == {
+        "data.spatial.municipalities",
+        "braunschweig.data.external_workplaces",
+        "braunschweig.data.building_potentials",
+    }
+    assert "braunschweig.data.locations" not in requested
+
+
+def test_work_configure_declares_expected_stages_off():
+    """OFF path: declares braunschweig.data.locations, not building_potentials."""
+    requested: list[str] = []
+
+    class _Recorder:
+        def stage(self, name, config=None):
+            requested.append(name)
+
+        def config(self, option, default=None):
+            # Return False when asked for work_building_potentials -> OFF path
+            if option == "work_building_potentials":
+                return False
             return default
 
     work_stage.configure(_Recorder())
-    assert requested == [
-        "braunschweig.data.locations",
+    assert set(requested) == {
         "data.spatial.municipalities",
         "braunschweig.data.external_workplaces",
-    ]
+        "braunschweig.data.locations",
+    }
+    assert "braunschweig.data.building_potentials" not in requested
 
 
 def test_secondary_configure_declares_locations_stage():
