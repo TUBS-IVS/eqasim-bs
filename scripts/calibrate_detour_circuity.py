@@ -246,178 +246,183 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
         logger.warning("[circuity] no commute OD pairs available (no workers or no work locations).")
 
     # --- SECONDARY legs (car + walk) ---
-    # ASSUMPTION: stage name 'braunschweig.synthesis.locations.secondary' produces a
-    # GeoDataFrame with columns [person_id, mode, geometry] CRS=EPSG:25832.
-    # If the mode column is absent, all secondary legs are added to the car pool
-    # (logged explicitly so the fallback is visible).
+    # Build secondary legs via the same pattern as validate_secondary_distances.py:
+    # load synthesis.population.spatial.locations (geometry per activity),
+    # synthesis.population.activities (purpose per activity),
+    # synthesis.population.trips (mode per leg).
+    # Each leg is defined as (previous_activity_location -> secondary_activity_location).
+    # Mode is joined from the trips stage via activity_index == trip_index.
+    # Car/car_passenger -> car pool; walk/bike -> walk pool; pt excluded.
     try:
-        df_secondary = _load_stage(wd, "braunschweig.synthesis.locations.secondary")
-        has_mode_col = "mode" in df_secondary.columns
+        df_all_locs = _load_stage(wd, "synthesis.population.spatial.locations")
+        df_acts = _load_stage(wd, "synthesis.population.activities")
+        df_trips = _load_stage(wd, "synthesis.population.trips")
+        logger.info(
+            "[circuity] secondary: loaded locations (%d), activities (%d), trips (%d)",
+            len(df_all_locs), len(df_acts), len(df_trips),
+        )
 
-        if not has_mode_col:
-            logger.warning(
-                "[circuity] secondary locations stage has no 'mode' column; "
-                "adding all %d secondary OD pairs to the car pool "
-                "(CLAUDE.md no-silent-fallback: verify secondary stage schema).",
-                len(df_secondary),
+        # Extract x/y from activity geometry (EPSG:25832).
+        df_all_locs = df_all_locs.reset_index(drop=True)
+        df_acts = df_acts.reset_index(drop=True)
+        df_xy = df_all_locs[["person_id", "activity_index"]].copy()
+        df_xy["x_m"] = df_all_locs["geometry"].x
+        df_xy["y_m"] = df_all_locs["geometry"].y
+
+        # Attach commune_id for RS7 tagging (from spatial.locations if available,
+        # else fall back to person -> household -> home commune).
+        if "commune_id" in df_all_locs.columns:
+            df_xy["commune_id"] = df_all_locs["commune_id"].values
+        else:
+            # Fallback: join via household; commune_id will be home commune.
+            p_to_hh = df_enriched[["person_id", "household_id"]].drop_duplicates("person_id")
+            df_xy = df_xy.merge(p_to_hh, on="person_id", how="left")
+            df_xy = df_xy.merge(
+                hh_xy.reset_index()[["household_id", "commune_id"]],
+                on="household_id", how="left",
             )
 
-        # Secondary stage carries DESTINATION geometry; we need the home geometry too.
-        # Join person -> household_id from enriched, then household -> home coords.
-        person_to_hh = df_enriched[["person_id", "household_id"]].drop_duplicates("person_id")
-        sec_w_hh = df_secondary.merge(person_to_hh, on="person_id", how="left")
-        sec_w_home = sec_w_hh.merge(
-            hh_xy.reset_index()[["household_id", "hx", "hy", "commune_id"]],
-            on="household_id", how="left",
+        # Merge purpose onto coordinates.
+        df_merged = df_xy.merge(
+            df_acts[["person_id", "activity_index", "purpose"]],
+            on=["person_id", "activity_index"],
+            how="inner",
         )
-        sec_w_home = sec_w_home.dropna(subset=["hx", "hy"])
-        logger.info("[circuity] secondary legs with home geometry: %d", len(sec_w_home))
+        df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
 
-        # Extract secondary destination xy
-        sec_w_home = sec_w_home.dropna(subset=["geometry"])
-        sec_dx_arr = sec_w_home.geometry.x.values
-        sec_dy_arr = sec_w_home.geometry.y.values
-        sec_hx = sec_w_home["hx"].values
-        sec_hy = sec_w_home["hy"].values
-        sec_commune = sec_w_home["commune_id"].fillna("").values
+        # Build legs: shift by one to obtain the previous activity's coordinates.
+        df_prev = df_merged[["person_id", "x_m", "y_m"]].shift(1).rename(
+            columns={"person_id": "prev_person_id", "x_m": "prev_x", "y_m": "prev_y"}
+        )
+        df_legs_all = pd.concat([df_merged, df_prev], axis=1)
+        same_person_mask = df_legs_all["person_id"] == df_legs_all["prev_person_id"]
+        df_legs_all = df_legs_all[same_person_mask].copy()
 
-        if has_mode_col:
-            sec_mode = sec_w_home["mode"].fillna("").values
-            car_mask = np.isin(sec_mode, ["car", "car_passenger"])
-            walk_mask = np.isin(sec_mode, ["walk", "bike"])
-            other_mask = ~(car_mask | walk_mask)
-            n_other = int(other_mask.sum())
-            if n_other > 0:
-                logger.info(
-                    "[circuity] secondary legs: %d car, %d walk/bike, %d other modes "
-                    "(other excluded from circuity pools)",
-                    int(car_mask.sum()), int(walk_mask.sum()), n_other,
-                )
-            else:
-                logger.info(
-                    "[circuity] secondary legs: %d car, %d walk/bike",
-                    int(car_mask.sum()), int(walk_mask.sum()),
-                )
-            if car_mask.any():
-                car_ox.extend(sec_hx[car_mask].tolist())
-                car_oy.extend(sec_hy[car_mask].tolist())
-                car_dx.extend(sec_dx_arr[car_mask].tolist())
-                car_dy.extend(sec_dy_arr[car_mask].tolist())
-                car_commune_ids.extend(sec_commune[car_mask].tolist())
-            if walk_mask.any():
-                walk_ox.extend(sec_hx[walk_mask].tolist())
-                walk_oy.extend(sec_hy[walk_mask].tolist())
-                walk_dx.extend(sec_dx_arr[walk_mask].tolist())
-                walk_dy.extend(sec_dy_arr[walk_mask].tolist())
-                walk_commune_ids.extend(sec_commune[walk_mask].tolist())
-        else:
-            # No mode column: all go to car pool
-            car_ox.extend(sec_hx.tolist())
-            car_oy.extend(sec_hy.tolist())
-            car_dx.extend(sec_dx_arr.tolist())
-            car_dy.extend(sec_dy_arr.tolist())
-            car_commune_ids.extend(sec_commune.tolist())
+        # Keep only secondary purposes.
+        _SEC_PURPOSES = ("shop", "leisure", "other")
+        sec_mask = df_legs_all["purpose"].isin(_SEC_PURPOSES)
+        df_sec_legs = df_legs_all[sec_mask].copy()
+        logger.info("[circuity] secondary legs before mode join: %d", len(df_sec_legs))
+
+        # Join mode via trip_index == activity_index.
+        df_mode = df_trips[["person_id", "trip_index", "mode"]].rename(
+            columns={"trip_index": "activity_index"}
+        )
+        n_before_mode = len(df_sec_legs)
+        df_sec_legs = df_sec_legs.merge(
+            df_mode, on=["person_id", "activity_index"], how="left"
+        )
+        if len(df_sec_legs) != n_before_mode:
+            logger.warning(
+                "[circuity] secondary mode-join changed row count %d -> %d; "
+                "possible non-unique (person_id, activity_index) key in trips stage.",
+                n_before_mode, len(df_sec_legs),
+            )
+        n_mode_missing = df_sec_legs["mode"].isna().sum()
+        if n_mode_missing > 0:
+            logger.warning(
+                "[circuity] secondary mode join: %d/%d legs missing mode (no fallback; "
+                "these legs are excluded from both pools).",
+                n_mode_missing, n_before_mode,
+            )
+        df_sec_legs = df_sec_legs.dropna(subset=["mode", "prev_x", "prev_y"])
+
+        sec_mode_arr = df_sec_legs["mode"].values
+        car_sec_mask = np.isin(sec_mode_arr, ["car", "car_passenger"])
+        walk_sec_mask = np.isin(sec_mode_arr, ["walk", "bike"])
+        other_sec_mask = ~(car_sec_mask | walk_sec_mask)
+        n_car_sec = int(car_sec_mask.sum())
+        n_walk_sec = int(walk_sec_mask.sum())
+        n_other_sec = int(other_sec_mask.sum())
+        logger.info(
+            "[circuity] secondary legs: %d car, %d walk/bike, %d other modes (pt excluded)",
+            n_car_sec, n_walk_sec, n_other_sec,
+        )
+
+        sec_ox = df_sec_legs["prev_x"].values
+        sec_oy = df_sec_legs["prev_y"].values
+        sec_dx_arr = df_sec_legs["x_m"].values
+        sec_dy_arr = df_sec_legs["y_m"].values
+        sec_commune_vals = df_sec_legs["commune_id"].fillna("").values if "commune_id" in df_sec_legs.columns else np.full(len(df_sec_legs), "", dtype=object)
+
+        if car_sec_mask.any():
+            car_ox.extend(sec_ox[car_sec_mask].tolist())
+            car_oy.extend(sec_oy[car_sec_mask].tolist())
+            car_dx.extend(sec_dx_arr[car_sec_mask].tolist())
+            car_dy.extend(sec_dy_arr[car_sec_mask].tolist())
+            car_commune_ids.extend(sec_commune_vals[car_sec_mask].tolist())
+        if walk_sec_mask.any():
+            walk_ox.extend(sec_ox[walk_sec_mask].tolist())
+            walk_oy.extend(sec_oy[walk_sec_mask].tolist())
+            walk_dx.extend(sec_dx_arr[walk_sec_mask].tolist())
+            walk_dy.extend(sec_dy_arr[walk_sec_mask].tolist())
+            walk_commune_ids.extend(sec_commune_vals[walk_sec_mask].tolist())
 
     except RuntimeError as exc:
         logger.warning(
-            "[circuity] secondary locations stage not found: %s; "
+            "[circuity] secondary locations stages not found (tried "
+            "synthesis.population.spatial.locations / synthesis.population.activities / "
+            "synthesis.population.trips): %s; "
             "secondary OD pairs will be absent from the pool.", exc
         )
 
     # --- EDUCATION legs (long = car pool, short = walk pool) ---
-    # ASSUMPTION: education stage name 'braunschweig.synthesis.locations.education'
-    # (or 'synthesis.population.spatial.primary.candidates' persons frame with age).
-    # Long education (oberstufe/bbs/hochschule, age >= 16): car pool.
-    # Short education (grundschule/sekundar_1, age 6-15): walk pool.
-    # Kindergarten (age 0-5) is excluded (very short trips, dominated by walk pool
-    # already covered by secondary legs).
+    # Real stage: braunschweig.synthesis.locations.education_gravity
+    # GeoDataFrame columns: [person_id, commune_id, location_id, geometry]
+    # Origin = student's home location from synthesis.population.spatial.home.locations.
+    # Age split (from enriched): age 6-15 -> walk pool (grundschule/sekundar_1);
+    #                            age >= 16 -> car pool (oberstufe/bbs/hochschule);
+    #                            age 0-5 excluded (kindergarten, trip dominated by
+    #                            walk secondary legs).
     try:
-        candidates = _load_stage(wd, "synthesis.population.spatial.primary.candidates")
-        persons_raw = candidates.get("persons", candidates) if isinstance(candidates, dict) else candidates
-        has_edu = persons_raw.get("has_education_trip", None) if hasattr(persons_raw, "get") else None
-        if has_edu is None and "has_education_trip" in persons_raw.columns:
-            has_edu = persons_raw["has_education_trip"]
-        if has_edu is None:
-            logger.warning(
-                "[circuity] 'has_education_trip' not found in primary.candidates persons; "
-                "education OD pairs will be absent from the pool."
-            )
-        else:
-            persons_edu = persons_raw[has_edu].copy()
-            # Join age from enriched
-            age_cols = df_enriched[["person_id", "age"]].drop_duplicates("person_id")
-            persons_edu = persons_edu.merge(age_cols, on="person_id", how="left")
-            # Join household_id if not present
-            if "household_id" not in persons_edu.columns:
-                persons_edu = persons_edu.merge(
-                    df_enriched[["person_id", "household_id"]].drop_duplicates("person_id"),
-                    on="person_id", how="left",
-                )
-            # Join home geometry
-            persons_edu = persons_edu.merge(
-                hh_xy.reset_index()[["household_id", "hx", "hy", "commune_id"]],
-                on="household_id", how="left",
-            )
-            persons_edu = persons_edu.dropna(subset=["hx", "hy", "age"])
+        edu_locs = _load_stage(wd, "braunschweig.synthesis.locations.education_gravity")
+        logger.info(
+            "[circuity] education locations loaded from "
+            "'braunschweig.synthesis.locations.education_gravity': %d rows",
+            len(edu_locs),
+        )
 
-            # Education destinations
-            # ASSUMPTION: education location stage name is
-            # 'braunschweig.locations.replacement_education_gravity' or
-            # 'synthesis.population.spatial.primary.locations'. We try the BS
-            # replacement stage first (flag-gated, typical in all-features cache).
-            edu_stage_name = None
-            edu_locs = None
-            for candidate_stage in (
-                "braunschweig.locations.replacement_education_gravity",
-                "synthesis.population.spatial.primary.locations",
-            ):
-                try:
-                    edu_locs = _load_stage(wd, candidate_stage)
-                    edu_stage_name = candidate_stage
-                    break
-                except RuntimeError:
-                    continue
+        # Education destination coordinates.
+        edu_locs_df = edu_locs[["person_id", "geometry"]].copy()
+        edu_locs_df = edu_locs_df.dropna(subset=["geometry"])
+        edu_locs_df["ex"] = edu_locs_df["geometry"].x
+        edu_locs_df["ey"] = edu_locs_df["geometry"].y
 
-            if edu_locs is None:
-                logger.warning(
-                    "[circuity] education location stage not found in cache; "
-                    "education OD pairs will be absent."
-                )
-            else:
-                logger.info(
-                    "[circuity] education locations loaded from '%s': %d rows",
-                    edu_stage_name, len(edu_locs),
-                )
-                # Join education destinations to persons by person_id
-                edu_locs_xy = edu_locs[["person_id", "geometry"]].copy()
-                edu_locs_xy = edu_locs_xy.dropna(subset=["geometry"])
-                edu_locs_xy["ex"] = edu_locs_xy["geometry"].apply(lambda g: g.x)
-                edu_locs_xy["ey"] = edu_locs_xy["geometry"].apply(lambda g: g.y)
-                persons_edu = persons_edu.merge(
-                    edu_locs_xy[["person_id", "ex", "ey"]], on="person_id", how="left"
-                )
-                persons_edu = persons_edu.dropna(subset=["ex", "ey"])
+        # Join age from enriched.
+        age_cols = df_enriched[["person_id", "age"]].drop_duplicates("person_id")
+        edu_locs_df = edu_locs_df.merge(age_cols, on="person_id", how="left")
 
-                long_mask = persons_edu["age"] >= 16   # oberstufe / bbs / hochschule
-                short_mask = (persons_edu["age"] >= 6) & (persons_edu["age"] <= 15)  # grundschule / sekundar_1
+        # Join household_id from enriched, then home coords from hh_xy.
+        hh_id_col = df_enriched[["person_id", "household_id"]].drop_duplicates("person_id")
+        edu_locs_df = edu_locs_df.merge(hh_id_col, on="person_id", how="left")
+        edu_locs_df = edu_locs_df.merge(
+            hh_xy.reset_index()[["household_id", "hx", "hy", "commune_id"]],
+            on="household_id", how="left",
+        )
+        edu_locs_df = edu_locs_df.dropna(subset=["ex", "ey", "hx", "hy", "age"])
 
-                def _add_edu(mask, pool_ox, pool_oy, pool_dx, pool_dy, pool_commune, label):
-                    sel = persons_edu[mask]
-                    if len(sel) == 0:
-                        return
-                    pool_ox.extend(sel["hx"].tolist())
-                    pool_oy.extend(sel["hy"].tolist())
-                    pool_dx.extend(sel["ex"].tolist())
-                    pool_dy.extend(sel["ey"].tolist())
-                    pool_commune.extend(sel["commune_id"].fillna("").tolist())
-                    logger.info("[circuity] education OD pairs added to %s pool: %d", label, len(sel))
+        long_mask = edu_locs_df["age"] >= 16        # oberstufe / bbs / hochschule
+        short_mask = (edu_locs_df["age"] >= 6) & (edu_locs_df["age"] <= 15)  # grundschule / sekundar_1
+        # age 0-5 (kindergarten) excluded intentionally
 
-                _add_edu(long_mask, car_ox, car_oy, car_dx, car_dy, car_commune_ids, "car")
-                _add_edu(short_mask, walk_ox, walk_oy, walk_dx, walk_dy, walk_commune_ids, "walk")
+        def _add_edu(mask, pool_ox, pool_oy, pool_dx, pool_dy, pool_commune, label):
+            sel = edu_locs_df[mask]
+            if len(sel) == 0:
+                return
+            pool_ox.extend(sel["hx"].tolist())
+            pool_oy.extend(sel["hy"].tolist())
+            pool_dx.extend(sel["ex"].tolist())
+            pool_dy.extend(sel["ey"].tolist())
+            pool_commune.extend(sel["commune_id"].fillna("").tolist())
+            logger.info("[circuity] education OD pairs added to %s pool: %d", label, len(sel))
+
+        _add_edu(long_mask, car_ox, car_oy, car_dx, car_dy, car_commune_ids, "car")
+        _add_edu(short_mask, walk_ox, walk_oy, walk_dx, walk_dy, walk_commune_ids, "walk")
 
     except RuntimeError as exc:
         logger.warning(
-            "[circuity] primary.candidates stage not found: %s; "
+            "[circuity] education gravity stage not found "
+            "(tried 'braunschweig.synthesis.locations.education_gravity'): %s; "
             "education OD pairs will be absent from the pool.", exc
         )
 
@@ -1161,37 +1166,47 @@ def main():
         logger.warning("[circuity] RS7 lookup not available: %s; per-RS7 diagnostic skipped.", exc)
 
     # --- Build car graph ---
-    logger.info("[circuity] building car graph from MATSim network...")
-    # ASSUMPTION: the processed network lives at <wd>/supply.processed__<hash>.p or
-    # is a GeoDataFrame/dict. We load the 'supply.processed' stage and extract the
-    # network.xml.gz path from it, OR fall back to reading network.xml.gz from the
-    # standard synpp output path.
-    # ALTERNATIVE: the supply stage may return a dict with key 'network_file' or
-    # may be a filepath string. We implement a safe loader that handles both.
-    # If the stage pickle is not available, we try to find network.xml.gz directly.
+    # The real artifact is a .cache DIRECTORY named
+    # matsim.scenario.supply.processed__<hash>.cache/ containing road_network.xml.gz
+    # (the car-only network without PT links).  The parallel .p pickle returns a dict
+    # with keys 'network_path' and 'schedule_path' holding bare filenames relative to
+    # that .cache directory -- NOT absolute paths.  We glob for the .cache directory
+    # and look for road_network.xml.gz inside it; fall back to network.xml.gz only
+    # when road_network.xml.gz is absent.
+    logger.info("[circuity] building car graph from MATSim processed network...")
     car_csr = None
     car_node_xy = None
     try:
-        supply = _load_stage(wd, "supply.processed")
-        # The supply.processed stage output schema is uncertain; typical eqasim outputs
-        # include a 'network_file' key or the file is written to the output path.
-        # ASSUMPTION: supply.processed returns a dict; 'network_file' key holds the path.
-        # If it returns a filepath string, use it directly.
-        if isinstance(supply, dict) and "network_file" in supply:
-            net_path = supply["network_file"]
-        elif isinstance(supply, str) and supply.endswith(".xml.gz"):
-            net_path = supply
+        cache_dirs = glob.glob(
+            os.path.join(wd, "matsim.scenario.supply.processed__*.cache")
+        )
+        if not cache_dirs:
+            raise RuntimeError(
+                "No matsim.scenario.supply.processed__*.cache directory found in "
+                f"'{wd}'. Ensure the full synthesis pipeline including the MATSim "
+                "supply stage has been run and cached."
+            )
+        # Use the most-recently-modified cache directory.
+        supply_cache_dir = max(cache_dirs, key=os.path.getmtime)
+        logger.info("[circuity] supply.processed cache dir: %s", supply_cache_dir)
+
+        road_net = os.path.join(supply_cache_dir, "road_network.xml.gz")
+        full_net = os.path.join(supply_cache_dir, "network.xml.gz")
+        if os.path.isfile(road_net):
+            net_path = road_net
+            logger.info("[circuity] using road_network.xml.gz (car-only, no PT links)")
+        elif os.path.isfile(full_net):
+            net_path = full_net
+            logger.warning(
+                "[circuity] road_network.xml.gz not found; falling back to "
+                "network.xml.gz (includes PT links — car routing may be less clean)."
+            )
         else:
-            # Try to find network.xml.gz in the working directory
-            net_candidates = glob.glob(os.path.join(wd, "*.xml.gz"))
-            if net_candidates:
-                net_path = max(net_candidates, key=os.path.getmtime)
-                logger.warning(
-                    "[circuity] supply.processed stage returned unexpected type; "
-                    "using most-recently-modified .xml.gz: %s", net_path,
-                )
-            else:
-                raise RuntimeError("No .xml.gz found in working directory.")
+            raise RuntimeError(
+                f"Neither road_network.xml.gz nor network.xml.gz found inside "
+                f"'{supply_cache_dir}'."
+            )
+
         logger.info("[circuity] reading MATSim network from '%s'", net_path)
         node_xy_arr, edges, _ = read_matsim_network(net_path)
         car_csr, car_node_xy = build_graph_from_edges(node_xy_arr, edges)
@@ -1199,8 +1214,8 @@ def main():
     except Exception as exc:
         raise RuntimeError(
             f"[circuity] failed to build car graph: {exc}. "
-            "Check that the 'supply.processed' stage pickle is present in the cache "
-            "and that network.xml.gz is accessible."
+            "Check that matsim.scenario.supply.processed__*.cache exists in the cache "
+            "directory and contains road_network.xml.gz."
         ) from exc
 
     # --- Build walk graph ---
