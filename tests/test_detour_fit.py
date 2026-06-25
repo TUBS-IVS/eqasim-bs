@@ -72,3 +72,20 @@ def test_stratified_sample_balances_short_and_long():
     dists = np.linalg.norm(d[idx] - o[idx], axis=1) / 1000.0
     assert (dists > 20).sum() >= 50   # long stratum represented, not swamped
     assert (dists < 1).sum() >= 50
+
+
+def test_convergence_loop_stops_after_floor_on_stable_stream():
+    """End-to-end fit loop: fit on a synthetic stream, check convergence fires after
+    min_samples floor and stops before max_samples when the stream is stable."""
+    rng = np.random.RandomState(1)
+    tracker = df.ConvergenceTracker(min_samples=4000, tol=0.02, patience=2)
+    n = 0
+    converged = False
+    while n < 20000 and not converged:
+        n += 2000
+        d = rng.uniform(0.2, 60.0, size=n)
+        routed = d * (1.15 + 0.6 * np.exp(-d / 2.0))
+        fit = df.fit_circuity_curve(d, routed)
+        converged = tracker.update(n, fit)
+    assert converged
+    assert n >= 4000
