@@ -22,15 +22,54 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
+from braunschweig.data.building_potential_attach import attach_potential
+
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
+
+def compute_employees_weight(df_work, df_buildings, enabled: bool):
+    """Per-building work weight.
+
+    OFF (``enabled=False`` or no buildings supplied): returns exactly
+    ``area * floors`` as a float ndarray, byte-identical to the legacy path.
+    ON: ``potential_work`` is attached by footprint containment (spatial join),
+    falling back to ``area * floors`` for candidates with no matching building.
+
+    Parameters
+    ----------
+    df_work:
+        GeoDataFrame of workplace candidate points with columns ``area`` and
+        ``floors`` (EPSG:25832).
+    df_buildings:
+        Building-footprint GeoDataFrame with column ``potential_work``
+        (EPSG:25832), or ``None`` / empty when unavailable.
+    enabled:
+        If False, always return the legacy ``area * floors`` weight.
+
+    Returns
+    -------
+    np.ndarray
+        Float array aligned to ``df_work`` row order.
+    """
+    area_floors = (df_work["area"] * df_work["floors"]).to_numpy(dtype=float)
+    if not enabled or df_buildings is None or len(df_buildings) == 0:
+        return area_floors
+    values, _primary, _fallback = attach_potential(
+        df_work, df_buildings, "potential_work",
+        fallback=area_floors, label="work",
+    )
+    return values
+
 
 def _execute_base(context):
     """OSM/ALKIS workplace points + synthetic centroids for missing Gemeinden."""
     df = context.stage("braunschweig.data.locations")
     df = df[df["location_type"] == "work"].copy()
 
-    df["employees"] = df["area"] * df["floors"]
+    enabled = context.config("work_building_potentials")
+    df_buildings = (context.stage("braunschweig.data.building_potentials")
+                    if enabled else None)
+    df["employees"] = compute_employees_weight(df, df_buildings, enabled)
     df["fake"] = False
 
     # Fill missing municipalities with a synthetic centroid workplace.
@@ -60,10 +99,20 @@ def configure(context):
     context.stage("braunschweig.data.locations")
     context.stage("data.spatial.municipalities")
     context.stage("braunschweig.data.external_workplaces")
+    context.config("work_building_potentials", True)
+    if context.config("work_building_potentials"):
+        context.stage("braunschweig.data.building_potentials")
 
 
 def execute(context) -> gpd.GeoDataFrame:
     df_zgb = _execute_base(context)
+
+    if context.config("work_building_potentials"):
+        by_commune = df_zgb[~df_zgb["fake"]].groupby("commune_id")["employees"].sum()
+        print("[braunschweig.locations.work] potential_work per-commune sum "
+              "(cross-check vs Census SvB): %d communes, total %.0f"
+              % (len(by_commune), float(by_commune.sum())))
+
     df_ext = context.stage("braunschweig.data.external_workplaces")
 
     if df_ext.crs != df_zgb.crs:
