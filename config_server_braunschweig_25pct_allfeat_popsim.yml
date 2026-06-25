@@ -48,6 +48,13 @@ config:
   secondary_scorer_mode: combined
   secondary_scorer_pot_weight: 1.0
   secondary_scorer_dist_dev_weight: 1.0
+  # Purpose-resolved secondary distances (MiD, popsim_mid). Tier 1: distance
+  # distributions per (purpose x mode); Tier 2: shop daily/non-daily split
+  # (distance + retail_daily/non_daily placement). Defaults False elsewhere ->
+  # byte-identical. See docs/superpowers/specs/2026-06-25-purpose-resolved-secondary-distances-design.md
+  secondary_distance_by_purpose: true
+  secondary_shop_daily_split: true
+  secondary_distance_min_obs: 30
   education_building_distribution: true
 
   data_path: eqasim-data/data
