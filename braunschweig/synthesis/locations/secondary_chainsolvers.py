@@ -171,8 +171,26 @@ def _resample_distributions(distributions, factors):
 
 def _sample_leg_distance(distributions, mode, travel_time, purpose,
                          leisure_correction_factor, random):
-    """Replicates ``CustomDistanceSampler.sample_distances`` for one leg."""
-    mode_distribution = distributions[mode]
+    """Replicates ``CustomDistanceSampler.sample_distances`` for one leg.
+
+    Auto-detects whether ``distributions`` is the legacy per-mode structure
+    ``{mode: ...}`` or a purpose-layered one ``{purpose: {mode: ...}}``.
+    Purposes (shop/leisure/other/work/education) and modes (car/walk/pt/
+    bicycle/car_passenger) are disjoint vocabularies, so a top-level key equal
+    to ``mode`` means the legacy per-mode structure; otherwise a purpose layer
+    is expected and ``distributions[purpose]`` is selected. If ``purpose`` is
+    absent from the purpose-layered dict the resulting KeyError surfaces
+    immediately (no silent fallback -- a wiring bug should not be hidden).
+    """
+    # Auto-detect structure by checking whether the mode key is present at the
+    # top level. Since purposes and modes are disjoint vocabularies, this is
+    # unambiguous: a top-level "car"/"walk"/... key means legacy; a top-level
+    # "shop"/"leisure"/... key means purpose-layered.
+    if mode in distributions:
+        mode_distributions = distributions
+    else:
+        mode_distributions = distributions[purpose]
+    mode_distribution = mode_distributions[mode]
     bound_index = int(np.count_nonzero(travel_time > mode_distribution["bounds"]))
     mode_distribution = mode_distribution["distributions"][bound_index]
     distance = mode_distribution["values"][
