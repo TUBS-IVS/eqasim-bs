@@ -171,18 +171,38 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     return float(distance)
 
 
-def _build_locations_df(df_secondary: pd.DataFrame) -> pd.DataFrame:
-    """Convert eqasim secondary candidates → chainsolvers ``locations_df``."""
+# Maps each secondary activity to its attached candidate-potential column.
+_ACTIVITY_POTENTIAL_COLUMN = {
+    "shop": "pot_shop",
+    "leisure": "pot_leisure",
+    "other": "pot_other",
+}
+
+
+def _build_locations_df(df_secondary, with_potentials: bool = False):
+    """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
+
+    When ``with_potentials`` is True a ``potentials`` column is added: a
+    semicolon-joined string aligned 1:1 with ``activities`` (the chainsolvers df
+    parser reads per-activity potentials parallel to the activities list).
+    """
     activities = []
-    for _, row in df_secondary[["offers_shop", "offers_leisure", "offers_other"]].iterrows():
-        acts = []
-        if bool(row["offers_shop"]):
-            acts.append("shop")
-        if bool(row["offers_leisure"]):
-            acts.append("leisure")
-        if bool(row["offers_other"]):
-            acts.append("other")
+    potentials = []
+    cols = ["offers_shop", "offers_leisure", "offers_other"]
+    if with_potentials:
+        cols = cols + list(_ACTIVITY_POTENTIAL_COLUMN.values())
+    for _, row in df_secondary[cols].iterrows():
+        acts, pots = [], []
+        for act, offer in (("shop", "offers_shop"),
+                           ("leisure", "offers_leisure"),
+                           ("other", "offers_other")):
+            if bool(row[offer]):
+                acts.append(act)
+                if with_potentials:
+                    pots.append(float(row[_ACTIVITY_POTENTIAL_COLUMN[act]]))
         activities.append("; ".join(acts))
+        if with_potentials:
+            potentials.append("; ".join(str(p) for p in pots))
 
     # Vectorised coordinate access (GeoSeries.x/.y) instead of a per-geometry
     # Python lambda; produces the identical (n, 2) ordering as the candidate
@@ -191,13 +211,15 @@ def _build_locations_df(df_secondary: pd.DataFrame) -> pd.DataFrame:
         df_secondary.geometry.x.values,
         df_secondary.geometry.y.values,
     ))
-    out = pd.DataFrame({
+    data = {
         "id": df_secondary["location_id"].astype(str).values,
         "x": coords[:, 0],
         "y": coords[:, 1],
         "activities": activities,
-    })
-    return out
+    }
+    if with_potentials:
+        data["potentials"] = potentials
+    return pd.DataFrame(data)
 
 
 # ---------------------------------------------------------------------------
