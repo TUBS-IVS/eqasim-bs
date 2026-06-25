@@ -423,21 +423,11 @@ def main():
     # cached as 'gravity.distance_matrix' (without the eqasim_common prefix).
     df_distances = _load_stage(wd, "eqasim_common.gravity.distance_matrix")
 
-    # Filtered population (commune_id, weight) -- one row per synthetic person.
-    # CACHE KEY NOTE: resolves to 'braunschweig.ipf.attributed' (legacy) or
-    # 'braunschweig.popsim.stage' (popsim configs). The stage 'data.census.filtered'
-    # is a redirect alias; the actual pickle may be stored under the resolved name.
-    # Try 'data.census.filtered' first; if absent, use the enriched population.
-    try:
-        df_population_full = _load_stage(wd, "data.census.filtered")
-    except RuntimeError:
-        logger.warning(
-            "Stage 'data.census.filtered' not cached; falling back to "
-            "'braunschweig.popsim.stage'. This is NOT a silent fallback: "
-            "the upstream resolver directs data.census.filtered to one of "
-            "these two stages; the fallback is a deliberate secondary lookup."
-        )
-        df_population_full = _load_stage(wd, "braunschweig.popsim.stage")
+    # Census population per Gemeinde (commune_id, sex, age_class, weight).
+    # Schema confirmed on the 25pct cache: type=DataFrame, cols=[commune_id, sex, age_class, weight].
+    # Used to build the population margin vector for the gravity model and for
+    # the BA Pendleratlas calibration (_calibrate expects commune_id + weight).
+    df_population_full = _load_stage(wd, "braunschweig.data.census.population")
 
     # Employees-at-workplace per Gemeinde (commune_id, weight -> employees).
     df_employees_raw = _load_stage(wd, "braunschweig.data.census.employees")
@@ -459,39 +449,24 @@ def main():
     if "household_id" not in df_home_locations.columns:
         df_home_locations = df_home_locations.reset_index()
 
-    # Home zones (person_id -> commune_id for working persons).
-    # CACHE KEY NOTE: 'synthesis.population.spatial.home.zones' maps person_id
-    # to the home Gemeinde commune_id. Verify column names on the server.
-    df_home_zones = _load_stage(wd, "synthesis.population.spatial.home.zones")
+    # Home zones (household_id -> commune_id).
+    # Schema confirmed on the 25pct cache: type=DataFrame,
+    # cols=[household_id, departement_id, commune_id, iris_id].
+    # Workers are joined to their home commune via household_id (not person_id).
+    df_home_zones = _load_stage(wd, "braunschweig.synthesis.spatial.home_zones")
 
     # Enriched persons (to identify workers and get person->household mapping).
-    # CACHE KEY NOTE: 'braunschweig.synthesis.population.enriched' is the BS-specific
-    # enrichment stage (or 'synthesis.population.enriched' in the base eqasim).
-    # Try the BS-specific name first, then the base name as a secondary lookup.
-    try:
-        df_enriched = _load_stage(wd, "braunschweig.synthesis.population.enriched")
-    except RuntimeError:
-        logger.warning(
-            "Stage 'braunschweig.synthesis.population.enriched' not cached; "
-            "falling back to 'synthesis.population.enriched' (secondary lookup, "
-            "non-silent: the enrichment stage may be stored under the base name)."
-        )
-        df_enriched = _load_stage(wd, "synthesis.population.enriched")
+    # Schema confirmed on the 25pct cache: type=GeoDataFrame,
+    # cols include person_id, household_id, employed (bool), age, sex, ...
+    # Workers are identified by employed==True.
+    df_enriched = _load_stage(wd, "braunschweig.synthesis.population.enriched")
 
-    # Work candidate locations (commune_id, geometry, optional employees weight).
-    # CACHE KEY NOTE: in BS the work stage may be 'braunschweig.synthesis.locations.work'
-    # (building-potential replacement) or the base 'synthesis.locations.work'.
-    # Try the BS override first; fall back to base (non-silent).
-    try:
-        df_work_locations = _load_stage(wd, "braunschweig.synthesis.locations.work")
-        logger.info("[commute-calib] work locations: loaded from BS override stage")
-    except RuntimeError:
-        logger.warning(
-            "[commute-calib] work locations: BS override stage not cached; "
-            "falling back to base 'synthesis.locations.work' (non-silent fallback: "
-            "check that work_building_potentials flag matches the cached run)."
-        )
-        df_work_locations = _load_stage(wd, "synthesis.locations.work")
+    # Work candidate locations (commune_id, geometry, employees weight).
+    # Schema confirmed on the 25pct cache: type=GeoDataFrame,
+    # cols=[employees, fake, commune_id, iris_id, geometry, location_id], CRS=EPSG:25832.
+    # This is the BS replacement stage (building-potential work locations).
+    df_work_locations = _load_stage(wd, "braunschweig.locations.work")
+    logger.info("[commute-calib] work locations: loaded %d candidates", len(df_work_locations))
 
     # ------------------------------------------------------------------
     # 3. Build OD matrix inputs (mirrors _execute_gravity_base in gravity/model.py)
@@ -558,30 +533,28 @@ def main():
     # ------------------------------------------------------------------
     # 4. Build the working-persons home DataFrame
     # ------------------------------------------------------------------
-    # Identify workers: persons who have a work trip.
-    if "has_work_trip" in df_enriched.columns:
+    # Identify workers: persons with employed==True.
+    # Schema confirmed: enriched stage has 'employed' (bool), 'person_id', 'household_id'.
+    if "employed" in df_enriched.columns:
+        df_workers = df_enriched[df_enriched["employed"]].copy()
+    elif "has_work_trip" in df_enriched.columns:
+        logger.warning(
+            "[commute-calib] 'employed' not in enriched stage; using 'has_work_trip' "
+            "(non-silent fallback: verify enriched stage schema)."
+        )
         df_workers = df_enriched[df_enriched["has_work_trip"]].copy()
     else:
         logger.warning(
-            "[commute-calib] column 'has_work_trip' not in enriched persons; "
-            "using all persons as workers. Verify the enriched stage schema on the server."
+            "[commute-calib] neither 'employed' nor 'has_work_trip' in enriched stage; "
+            "using all persons as workers (non-silent: verify enriched stage schema)."
         )
         df_workers = df_enriched.copy()
+    logger.info("[commute-calib] workers identified: %d (employed==True)", len(df_workers))
 
-    # Merge worker person -> home commune_id.
-    # home_zones has columns: person_id, commune_id (or similar).
-    # CACHE KEY NOTE: column name may be 'commune_id' or 'origin_id'; rename if needed.
-    if "commune_id" not in df_home_zones.columns and "origin_id" in df_home_zones.columns:
-        df_home_zones = df_home_zones.rename(columns={"origin_id": "commune_id"})
-
-    worker_communes = df_workers[["person_id"]].merge(
-        df_home_zones[["person_id", "commune_id"]], on="person_id", how="inner"
-    )
-    logger.info("[commute-calib] workers with home commune: %d", len(worker_communes))
-
-    # Merge home location geometry (from household locations via household_id).
-    # The home locations stage is a GeoDataFrame keyed by household; join via household_id.
-    # The all-features enriched stage always carries household_id; if absent, fail early.
+    # Merge worker person -> home commune_id via household_id.
+    # home_zones schema: [household_id, departement_id, commune_id, iris_id].
+    # Workers carry household_id; join household_id -> commune_id, then bring in
+    # home geometry from home_locations (also keyed by household_id).
     if "household_id" not in df_workers.columns:
         raise RuntimeError(
             "[commute-calib] Column 'household_id' not found in enriched persons stage. "
@@ -589,12 +562,19 @@ def main():
             "worker. Check that the correct enriched stage was loaded and the cache is "
             "from an all-features run."
         )
-    worker_hh = df_workers[["person_id", "household_id"]].copy()
+
+    # Deduplicate home_zones to one row per household (it is already one row per household,
+    # but guard defensively). Then join: worker -> household -> commune_id.
+    df_home_zones_dedup = df_home_zones[["household_id", "commune_id"]].drop_duplicates("household_id")
+    worker_communes = df_workers[["person_id", "household_id"]].merge(
+        df_home_zones_dedup, on="household_id", how="inner"
+    )
+    logger.info("[commute-calib] workers with home commune: %d", len(worker_communes))
+
+    # Merge home location geometry via household_id.
     df_home_geom = df_home_locations[["household_id", "geometry"]].copy()
     df_home_geom = df_home_geom.drop_duplicates("household_id")
-    worker_homes_gdf = worker_communes.merge(
-        worker_hh, on="person_id", how="left"
-    ).merge(df_home_geom, on="household_id", how="left")
+    worker_homes_gdf = worker_communes.merge(df_home_geom, on="household_id", how="left")
 
     # Extract metric x/y coordinates (stage is in EPSG:25832).
     worker_homes_gdf = worker_homes_gdf.dropna(subset=["geometry"])
