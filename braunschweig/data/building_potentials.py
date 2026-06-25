@@ -5,6 +5,8 @@ Loads the renamed parquet produced by
 by a centroid spatial join to the VG250 Gemeinde polygons (mirroring
 ``braunschweig.data.buildings``). The footprint polygon is kept as the active
 geometry so downstream consumers can point-in-polygon join candidates onto it.
+
+Stage name: ``braunschweig.data.building_potentials``.
 """
 from __future__ import annotations
 
@@ -88,7 +90,7 @@ def execute(context) -> gpd.GeoDataFrame:
     total = primary + fallback
     share = (fallback / total) if total else 0.0
     print(
-        "[braunschweig.data.buildings.activity_potentials] %d buildings; "
+        "[braunschweig.data.building_potentials] %d buildings; "
         "commune join primary %d (%.1f%%), fallback nearest %d (%.1f%%)"
         % (len(gdf), primary, 100.0 * primary / total if total else 0.0,
            fallback, 100.0 * share)

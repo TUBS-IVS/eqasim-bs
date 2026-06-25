@@ -1,6 +1,6 @@
 import geopandas as gpd
 from shapely.geometry import Polygon
-from braunschweig.data.buildings.activity_potentials import (
+from braunschweig.data.building_potentials import (
     assign_commune, REQUIRED_COLUMNS,
 )
 
