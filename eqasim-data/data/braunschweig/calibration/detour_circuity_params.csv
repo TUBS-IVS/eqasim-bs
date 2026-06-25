@@ -1,7 +1,14 @@
 # Distance-dependent detour/circuity parameters c(d)=c_inf+a*exp(-d/tau).
-# car, walk: fitted by scripts/calibrate_detour_circuity.py on the ZGB networks (REGENERATE; values below are seed placeholders).
-# pt: NOT fitted -> c_pt(d)=c_car(d)*uplift. uplift provenance MUST be verified against Huang & Levinson (2015) before pinning (currently UNVERIFIED placeholder).
+# STATUS (2026-06-25): the f(d) curve was fitted on the 25% ZGB synthesis and MEASURED to be
+# NOT materially better than the constant detour factor 1.3 (band-shift EMD delta ~0.003;
+# see calibration/detour/summary.md + band_shift_impact.csv). The pipeline DEFAULT is therefore
+# the constant 1.3 (mode="constant", byte-identical to pre-Tier-3). These fitted rows are retained
+# as OPT-IN infrastructure (mode="curve") and for traceability -- NOT pinned as the default.
+# Caveats: smoke fit n~2200, not formally converged; walk had ~31% route failures (OSM pedestrian
+# graph disconnected components); per-RS7 under-sampled except RS7-72. Re-run the fit script for a
+# converged result if the curve is ever to be activated.
+# pt: c_pt(d)=c_car(d)*uplift; uplift is an UNVERIFIED placeholder -- verify vs Huang & Levinson (2015).
 network,c_inf,a,tau_km,uplift,base,n_samples,fit_r2,rs7,provenance
-car,1.15,0.60,2.0,,,0,0.0,,SEED_PLACEHOLDER_rerun_calibrate_detour_circuity
-walk,1.20,0.40,1.0,,,0,0.0,,SEED_PLACEHOLDER_rerun_calibrate_detour_circuity
-pt,,,,1.30,car,0,0.0,,UNVERIFIED_Huang_Levinson_2015_circuity_in_urban_transit_networks
+car,1.187861,0.501792,4.954663,,,2345,0.233625,,fit_25pct_smoke_seed1234_IMMATERIAL_vs_const_1.3
+walk,1.198766,0.469954,1.224886,,,2202,0.195102,,fit_25pct_smoke_seed1234_walk31pct_routefail_IMMATERIAL
+pt,,,,1.3,car,0,0.0,,UNVERIFIED_Huang_Levinson_2015
