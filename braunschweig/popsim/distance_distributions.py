@@ -238,6 +238,15 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         "distributions"}}}`` — one inner dict per purpose present in the
         filtered frame.
     """
+    # Guard against invalid flag combination: shop_daily_split only takes
+    # effect inside the by_purpose branch, so using it without by_purpose
+    # silently loses the shop distance split.
+    if shop_daily_split and not by_purpose:
+        raise ValueError(
+            "secondary_shop_daily_split=True requires secondary_distance_by_purpose=True "
+            "(the shop daily/non-daily distance layers live inside the per-purpose layer)."
+        )
+
     missing = [c for c in REQUIRED_COLUMNS if c not in mid_wege.columns]
     if missing:
         raise ValueError(

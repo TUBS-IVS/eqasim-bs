@@ -150,3 +150,11 @@ def test_shop_daily_split_adds_subtype_keys():
     w = _synthetic_wege()
     bp = run(w, by_purpose=True, shop_daily_split=True)
     assert "shop_daily" in bp and "shop_non_daily" in bp and "shop" in bp
+
+
+def test_shop_split_without_by_purpose_raises():
+    import pytest
+    from braunschweig.popsim.distance_distributions import run
+    w = _synthetic_wege()
+    with pytest.raises(ValueError, match="requires secondary_distance_by_purpose"):
+        run(w, by_purpose=False, shop_daily_split=True)

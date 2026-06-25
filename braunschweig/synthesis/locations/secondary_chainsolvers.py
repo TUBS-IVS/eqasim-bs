@@ -198,6 +198,9 @@ def _resample_distributions(distributions, factors):
     at the top level).
     """
     distributions = copy.deepcopy(distributions)
+    # Guard against empty dict: next(iter(...)) raises StopIteration on empty.
+    if not distributions:
+        return distributions
     # Detect whether the top level is a purpose layer or a mode layer. A mode-level
     # dict always carries a "distributions" key; a purpose-level dict does not
     # (its values are mode dicts, each of which carries "distributions" one level
