@@ -54,7 +54,7 @@ from braunschweig.calibration._legacy_gravity_decay import (
     load_pendler,
 )
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[2]
 OUTPUT_PATH = REPO / "eqasim-data" / "cache_bs" / "calibration" / "gravity_beta_per_rs7.json"
 REGIOSTAR_XLSX = DATA_DIR / "regiostar" / "regiostar_referenzdatei.xlsx"
 REGIOSTAR_SHEET = "ReferenzGebietsstand2020"

@@ -51,7 +51,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO / "eqasim-data" / "data"
 OUTPUT_PATH = REPO / "eqasim-data" / "cache_bs" / "calibration" / "gravity_beta.json"
 
