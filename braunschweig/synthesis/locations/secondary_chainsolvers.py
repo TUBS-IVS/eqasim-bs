@@ -202,12 +202,12 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
         Scorer = getattr(cs, "Scorer", None)
         if Scorer is None:
             from chainsolvers.scoring_selection import Scorer
+        return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight)
     except Exception as exc:
         raise RuntimeError(
             "secondary_building_potentials is ON but the chainsolvers combined "
             "Scorer is unavailable (%s); pin the git commit in environment.yml" % exc
         )
-    return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight)
 
 
 def attach_secondary_potentials(df_secondary: gpd.GeoDataFrame,

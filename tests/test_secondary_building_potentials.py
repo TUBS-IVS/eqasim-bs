@@ -77,4 +77,5 @@ def test_attach_secondary_potentials_maps_activities():
     assert out.loc[0, "pot_other"] == 100.0
     # sec_1 outside -> fallback 0.0
     assert out.loc[1, "pot_shop"] == 0.0
+    assert out.loc[1, "pot_leisure"] == 0.0
     assert out.loc[1, "pot_other"] == 0.0
