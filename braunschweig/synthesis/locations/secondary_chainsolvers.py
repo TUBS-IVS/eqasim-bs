@@ -89,6 +89,18 @@ def configure(context):
     # mobsim without changing the MATSim thread count.
     context.config("braunschweig.chainsolvers.processes", None)
 
+    # Building-potential scorer (flag-gated; default ON). When enabled, each
+    # candidate's per-activity potential (retail / leisure / generic) is attached
+    # from the building footprints and forwarded to the chainsolvers combined
+    # Scorer. When disabled the stage is byte-identical to the pre-C3 behaviour
+    # (distance-only scoring, no potentials column in locations_df).
+    sec_enabled = context.config("secondary_building_potentials", True)
+    context.config("secondary_scorer_mode", "combined")
+    context.config("secondary_scorer_pot_weight", 1.0)
+    context.config("secondary_scorer_dist_dev_weight", 1.0)
+    if sec_enabled:
+        context.stage("braunschweig.data.building_potentials")
+
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors of the legacy stage)
@@ -177,6 +189,47 @@ _ACTIVITY_POTENTIAL_COLUMN = {
     "leisure": "pot_leisure",
     "other": "pot_other",
 }
+
+
+def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float):
+    """Construct the chainsolvers combined Scorer, or None when disabled (the
+    legacy distance-only path). Import-lazy so the module loads without the dep.
+    Raises if enabled but the Scorer is unavailable (no silent fallback)."""
+    if not enabled:
+        return None
+    try:
+        import chainsolvers as cs
+        Scorer = getattr(cs, "Scorer", None)
+        if Scorer is None:
+            from chainsolvers.scoring_selection import Scorer
+    except Exception as exc:
+        raise RuntimeError(
+            "secondary_building_potentials is ON but the chainsolvers combined "
+            "Scorer is unavailable (%s); pin the git commit in environment.yml" % exc
+        )
+    return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight)
+
+
+def attach_secondary_potentials(df_secondary: gpd.GeoDataFrame,
+                                df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Add pot_shop / pot_leisure / pot_other columns to the secondary candidates
+    by footprint join (shop = retail_daily + retail_non_daily; leisure = leisure;
+    other = generic). Missing -> 0.0 (rate logged by attach_potential)."""
+    from braunschweig.data.building_potential_attach import attach_potential
+    zero = np.zeros(len(df_secondary), dtype=float)
+    shop_daily, _, _ = attach_potential(
+        df_secondary, df_buildings, "potential_retail_daily", zero, "sec_shop_daily")
+    shop_nd, _, _ = attach_potential(
+        df_secondary, df_buildings, "potential_retail_non_daily", zero, "sec_shop_nd")
+    leisure, _, _ = attach_potential(
+        df_secondary, df_buildings, "potential_leisure", zero, "sec_leisure")
+    other, _, _ = attach_potential(
+        df_secondary, df_buildings, "potential_generic", zero, "sec_other")
+    out = df_secondary.copy()
+    out["pot_shop"] = shop_daily + shop_nd
+    out["pot_leisure"] = leisure
+    out["pot_other"] = other
+    return out
 
 
 def _build_locations_df(df_secondary, with_potentials: bool = False):
@@ -748,11 +801,12 @@ _CHAIN_RESULT_COLUMNS = [
 # drop the rest.
 _CHAIN_CHUNK_SIZE = 500
 
-# Worker-process globals: the (read-only) locations table and solver name are
-# sent once per worker via the Pool initializer instead of being pickled with
-# every task.
+# Worker-process globals: the (read-only) locations table, solver name, and
+# scorer spec are sent once per worker via the Pool initializer instead of being
+# pickled with every task.
 _WORKER_LOCATIONS_DF = None
 _WORKER_SOLVER = None
+_WORKER_SCORER_SPEC = None
 
 
 def _empty_chain_result_df() -> pd.DataFrame:
@@ -810,10 +864,11 @@ def _derive_shard_seed(base_seed: int, shard_index: int) -> int:
     return int(np.random.SeedSequence([int(base_seed), int(shard_index)]).generate_state(1)[0])
 
 
-def _init_chain_worker(locations_df, solver) -> None:
-    global _WORKER_LOCATIONS_DF, _WORKER_SOLVER
+def _init_chain_worker(locations_df, solver, scorer_spec=None) -> None:
+    global _WORKER_LOCATIONS_DF, _WORKER_SOLVER, _WORKER_SCORER_SPEC
     _WORKER_LOCATIONS_DF = locations_df
     _WORKER_SOLVER = solver
+    _WORKER_SCORER_SPEC = scorer_spec
 
 
 def _solve_person_shard(task):
@@ -831,10 +886,12 @@ def _solve_person_shard(task):
         _logging.getLogger(_name).setLevel(_logging.WARNING)
 
     shard_index, shard_uids, shard_df, shard_seed = task
+    scorer = build_scorer(**_WORKER_SCORER_SPEC) if _WORKER_SCORER_SPEC else None
     ctx = cs.setup(
         locations_df=_WORKER_LOCATIONS_DF,
         solver=_WORKER_SOLVER or "carla",
         rng_seed=int(shard_seed),
+        scorer=scorer,
     )
 
     # Person sub-frames are contiguous iloc slices of shard_df (rows are built
@@ -888,7 +945,7 @@ def _solve_person_shard(task):
 
 
 def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
-                           base_seed, n_workers, t0):
+                           base_seed, n_workers, t0, scorer_spec=None):
     """Solve all person chains across ``n_workers`` processes and recombine
     deterministically (results concatenated in shard-index order)."""
     shards = _make_person_shards(unique_persons, n_workers)
@@ -931,7 +988,7 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
     with pool_context.Pool(
         processes=len(tasks),
         initializer=_init_chain_worker,
-        initargs=(locations_df, solver),
+        initargs=(locations_df, solver, scorer_spec),
     ) as pool:
         for shard_index, res_df, shard_failed in pool.imap_unordered(_solve_person_shard, tasks):
             results_by_index[shard_index] = res_df
@@ -1141,7 +1198,19 @@ def execute(context):
         f"[braunschweig.secondary_chainsolvers] {len(plans_df):,} plan rows; "
         f"building chainsolvers context..."
     )
-    locations_df = _build_locations_df(df_secondary)
+    sec_enabled = context.config("secondary_building_potentials")
+    scorer_spec = ({
+        "enabled": True,
+        "mode": context.config("secondary_scorer_mode"),
+        "pot_weight": context.config("secondary_scorer_pot_weight"),
+        "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
+    } if sec_enabled else None)
+    if sec_enabled:
+        df_secondary = attach_secondary_potentials(
+            df_secondary,
+            context.stage("braunschweig.data.building_potentials"),
+        )
+    locations_df = _build_locations_df(df_secondary, with_potentials=sec_enabled)
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
     # One base seed drawn from the deterministic RandomState. Drawing exactly
@@ -1178,12 +1247,12 @@ def execute(context):
     if run_parallel:
         result_df, failed_problem_idx = _solve_chains_parallel(
             plans_for_cs, unique_persons, locations_df, solver_name,
-            base_seed, n_workers, t0,
+            base_seed, n_workers, t0, scorer_spec,
         )
     else:
         # Serial path: a single shard over all persons seeded with base_seed, so
         # the chunked solve loop is byte-identical to the pre-parallel behaviour.
-        _init_chain_worker(locations_df, solver_name)
+        _init_chain_worker(locations_df, solver_name, scorer_spec)
         _shard_idx, result_df, failed_problem_idx = _solve_person_shard(
             (0, unique_persons, plans_for_cs, base_seed)
         )
