@@ -46,6 +46,12 @@ def attach_potential(candidates: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame,
     label:
         Short identifier used in the log message (e.g. "work", "education").
 
+    Notes
+    -----
+    Multi-footprint behaviour: when a candidate's representative point falls
+    inside more than one building footprint (e.g. touching ALKIS boundaries),
+    the first match in ``buildings`` row order is used (via ``drop_duplicates``).
+
     Returns
     -------
     values : np.ndarray
@@ -68,7 +74,7 @@ def attach_potential(candidates: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame,
     pts["_row"] = np.arange(len(candidates))
     # representative_point() lies inside the geometry for both points and polygons
     pts["geometry"] = candidates.geometry.representative_point()
-    pts = pts.set_geometry("geometry")
+    pts = pts.set_geometry("geometry", crs=candidates.crs)
 
     joined = gpd.sjoin(
         pts[["_row", "geometry"]],
