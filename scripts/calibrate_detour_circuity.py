@@ -44,10 +44,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from braunschweig.calibration.detour_fit import (  # noqa: E402
     accumulate_accepted_indices,
+    bbox_from_home_locations,
+    clip_od_to_bbox,
     ConvergenceTracker,
     build_graph_from_edges,
     fit_circuity_curve,
     read_matsim_network,
+    read_osm_network_pyrosm,
     read_walk_network_pyrosm,
     route_lengths_km,
     stratified_sample,
@@ -1010,8 +1013,8 @@ def _write_summary(
         "",
         "## Notes",
         "",
-        "- car graph: MATSim processed network (cache supply.processed network.xml.gz)",
-        "- walk graph: OSM PBF via pyrosm, EPSG:25832",
+        "- car graph: OSM PBF driving network via pyrosm (bbox-clipped to ZGB homes + margin), EPSG:25832",
+        "- walk graph: OSM PBF walking network via pyrosm (bbox-clipped to ZGB homes + margin), EPSG:25832",
         "- OD pool: home->work (employed persons) + secondary (car/walk) + education legs",
         "- pt row: NOT fitted here; carried over from existing seed file (UNVERIFIED placeholder)",
         (
@@ -1052,7 +1055,22 @@ def main():
     )
     parser.add_argument(
         "--osm-pbf", default=None,
-        help="Path to the OSM PBF file for the walk network (required for walk graph).",
+        help="Path to the OSM PBF file for both the car (driving) and walk networks (required).",
+    )
+    parser.add_argument(
+        "--bbox-margin-km", type=float, default=5.0,
+        help=(
+            "Margin in km to add around the ZGB home-location extent when deriving the "
+            "bounding box for pyrosm graph extraction and OD clipping (default: 5.0)."
+        ),
+    )
+    parser.add_argument(
+        "--max-snap-m", type=float, default=500.0,
+        help=(
+            "Maximum allowed snap distance in metres from an OD endpoint to the nearest "
+            "graph node.  OD pairs exceeding this threshold for either endpoint are dropped "
+            "from the pool (default: 500)."
+        ),
     )
     parser.add_argument(
         "--config", default=None,
@@ -1165,77 +1183,107 @@ def main():
     except Exception as exc:
         logger.warning("[circuity] RS7 lookup not available: %s; per-RS7 diagnostic skipped.", exc)
 
-    # --- Build car graph ---
-    # The real artifact is a .cache DIRECTORY named
-    # matsim.scenario.supply.processed__<hash>.cache/ containing road_network.xml.gz
-    # (the car-only network without PT links).  The parallel .p pickle returns a dict
-    # with keys 'network_path' and 'schedule_path' holding bare filenames relative to
-    # that .cache directory -- NOT absolute paths.  We glob for the .cache directory
-    # and look for road_network.xml.gz inside it; fall back to network.xml.gz only
-    # when road_network.xml.gz is absent.
-    logger.info("[circuity] building car graph from MATSim processed network...")
+    # --- Guard: --osm-pbf is required for both car and walk graphs ---
+    if not args.osm_pbf:
+        raise SystemExit(
+            "[circuity] --osm-pbf is required (used for both car/driving and walk networks). "
+            "Provide the path to the ZGB OSM PBF file."
+        )
+    if not os.path.isfile(args.osm_pbf):
+        raise FileNotFoundError(
+            f"[circuity] OSM PBF not found: '{args.osm_pbf}'. "
+            "Provide the correct path via --osm-pbf."
+        )
+
+    # --- Derive bounding box from HOME locations (ZGB residential extent + margin) ---
+    # Load the home.locations stage directly so the bbox is derived from actual home
+    # coordinates only (all ZGB residents), not from OD origins which include
+    # secondary activity locations that could lie far from home.
+    logger.info("[circuity] loading home locations for bbox derivation...")
+    try:
+        df_homes_bbox = _load_stage(wd, "synthesis.population.spatial.home.locations")
+        if "household_id" not in df_homes_bbox.columns:
+            df_homes_bbox = df_homes_bbox.reset_index()
+        home_xy_for_bbox = np.column_stack([
+            df_homes_bbox["geometry"].x.values,
+            df_homes_bbox["geometry"].y.values,
+        ])
+        logger.info("[circuity] home locations for bbox: %d points", len(home_xy_for_bbox))
+    except Exception as exc:
+        logger.warning(
+            "[circuity] could not load home.locations for bbox derivation: %s; "
+            "falling back to car+walk OD origins.", exc,
+        )
+        home_xy_for_bbox = np.vstack([
+            car_origins,
+            walk_origins,
+        ]) if (len(car_origins) > 0 or len(walk_origins) > 0) else np.zeros((0, 2))
+
+    if len(home_xy_for_bbox) == 0:
+        raise RuntimeError(
+            "[circuity] no home locations available to derive the bounding box."
+        )
+    margin_m = args.bbox_margin_km * 1000.0
+    bbox_dict = bbox_from_home_locations(home_xy_for_bbox, margin_m=margin_m)
+    bbox_m = bbox_dict["metric"]
+    bbox_wgs84 = bbox_dict["wgs84"]
+    logger.info(
+        "[circuity] bbox from home locations (EPSG:25832, +%.0fm margin): "
+        "minx=%.0f miny=%.0f maxx=%.0f maxy=%.0f",
+        margin_m, *bbox_m,
+    )
+    logger.info(
+        "[circuity] bbox WGS84 (for pyrosm): lon_min=%.4f lat_min=%.4f "
+        "lon_max=%.4f lat_max=%.4f",
+        *bbox_wgs84,
+    )
+
+    # --- Build car graph from OSM driving network ---
+    logger.info("[circuity] building car graph from OSM driving network: %s", args.osm_pbf)
     car_csr = None
     car_node_xy = None
     try:
-        cache_dirs = glob.glob(
-            os.path.join(wd, "matsim.scenario.supply.processed__*.cache")
+        car_node_xy_arr, car_edges_list, _ = read_osm_network_pyrosm(
+            args.osm_pbf, network_type="driving", bbox=bbox_wgs84,
         )
-        if not cache_dirs:
-            raise RuntimeError(
-                "No matsim.scenario.supply.processed__*.cache directory found in "
-                f"'{wd}'. Ensure the full synthesis pipeline including the MATSim "
-                "supply stage has been run and cached."
-            )
-        # Use the most-recently-modified cache directory.
-        supply_cache_dir = max(cache_dirs, key=os.path.getmtime)
-        logger.info("[circuity] supply.processed cache dir: %s", supply_cache_dir)
-
-        road_net = os.path.join(supply_cache_dir, "road_network.xml.gz")
-        full_net = os.path.join(supply_cache_dir, "network.xml.gz")
-        if os.path.isfile(road_net):
-            net_path = road_net
-            logger.info("[circuity] using road_network.xml.gz (car-only, no PT links)")
-        elif os.path.isfile(full_net):
-            net_path = full_net
-            logger.warning(
-                "[circuity] road_network.xml.gz not found; falling back to "
-                "network.xml.gz (includes PT links — car routing may be less clean)."
-            )
-        else:
-            raise RuntimeError(
-                f"Neither road_network.xml.gz nor network.xml.gz found inside "
-                f"'{supply_cache_dir}'."
-            )
-
-        logger.info("[circuity] reading MATSim network from '%s'", net_path)
-        node_xy_arr, edges, _ = read_matsim_network(net_path)
-        car_csr, car_node_xy = build_graph_from_edges(node_xy_arr, edges)
-        logger.info("[circuity] car graph: %d nodes, %d edges", car_node_xy.shape[0], len(edges))
+        car_csr, car_node_xy = build_graph_from_edges(car_node_xy_arr, car_edges_list)
+        logger.info(
+            "[circuity] car graph (OSM driving): %d nodes, %d edges",
+            car_node_xy.shape[0], len(car_edges_list),
+        )
     except Exception as exc:
         raise RuntimeError(
-            f"[circuity] failed to build car graph: {exc}. "
-            "Check that matsim.scenario.supply.processed__*.cache exists in the cache "
-            "directory and contains road_network.xml.gz."
+            f"[circuity] failed to build car graph from OSM driving network: {exc}. "
+            "Check that --osm-pbf points to a valid OSM PBF file covering the ZGB area."
         ) from exc
 
-    # --- Build walk graph ---
+    # --- Clip car OD pool to bbox + snap threshold ---
+    car_origins, car_dests, car_commune_ids = clip_od_to_bbox(
+        car_origins, car_dests, car_commune_ids,
+        bbox_m=bbox_m,
+        node_xy=car_node_xy,
+        max_snap_m=args.max_snap_m,
+        label="car",
+    )
+    if len(car_origins) == 0:
+        raise RuntimeError(
+            "[circuity] car OD pool is empty after bbox+snap clipping. "
+            "Check that --osm-pbf covers the ZGB area and that --max-snap-m is sufficient."
+        )
+
+    # --- Build walk graph from OSM walking network ---
     walk_csr = None
     walk_node_xy = None
-    if args.osm_pbf:
-        if not os.path.isfile(args.osm_pbf):
-            raise FileNotFoundError(
-                f"[circuity] OSM PBF not found: '{args.osm_pbf}'. "
-                "Provide the correct path via --osm-pbf."
-            )
-        logger.info("[circuity] building walk graph from OSM PBF: %s", args.osm_pbf)
+    if len(walk_origins) > 0:
+        logger.info("[circuity] building walk graph from OSM walking network: %s", args.osm_pbf)
         try:
-            walk_node_xy_arr, walk_edges, _ = read_walk_network_pyrosm(
-                args.osm_pbf, bbox=None
+            walk_node_xy_arr, walk_edges_list, _ = read_osm_network_pyrosm(
+                args.osm_pbf, network_type="walking", bbox=bbox_wgs84,
             )
-            walk_csr, walk_node_xy = build_graph_from_edges(walk_node_xy_arr, walk_edges)
+            walk_csr, walk_node_xy = build_graph_from_edges(walk_node_xy_arr, walk_edges_list)
             logger.info(
-                "[circuity] walk graph: %d nodes, %d edges",
-                walk_node_xy.shape[0], len(walk_edges),
+                "[circuity] walk graph (OSM walking): %d nodes, %d edges",
+                walk_node_xy.shape[0], len(walk_edges_list),
             )
         except Exception as exc:
             logger.warning(
@@ -1243,9 +1291,24 @@ def main():
             )
     else:
         logger.warning(
-            "[circuity] --osm-pbf not provided; walk graph will not be built. "
+            "[circuity] walk OD pool is empty; walk graph will not be built. "
             "Walk circuity curve will carry the seed placeholder."
         )
+
+    # --- Clip walk OD pool to bbox + snap threshold ---
+    if walk_csr is not None and len(walk_origins) > 0:
+        walk_origins, walk_dests, walk_commune_ids = clip_od_to_bbox(
+            walk_origins, walk_dests, walk_commune_ids,
+            bbox_m=bbox_m,
+            node_xy=walk_node_xy,
+            max_snap_m=args.max_snap_m,
+            label="walk",
+        )
+        if len(walk_origins) == 0:
+            logger.warning(
+                "[circuity] walk OD pool empty after bbox+snap clip; walk fit skipped."
+            )
+            walk_csr = None
 
     # --- Convergence loop: car ---
     rng_car = np.random.RandomState(seed)

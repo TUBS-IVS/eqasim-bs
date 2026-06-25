@@ -119,15 +119,33 @@ def read_matsim_network(path_xml_gz):
     return np.array(node_xy, dtype=float), edges, node_ids
 
 
-def read_walk_network_pyrosm(pbf_path, bbox=None):
-    """Walking network from an OSM PBF via pyrosm -> (node_xy, edges, node_ids).
+def read_osm_network_pyrosm(pbf_path, network_type="walking", bbox=None):
+    """OSM road/walk network from a PBF via pyrosm -> (node_xy, edges, node_ids).
+
+    Parameters
+    ----------
+    pbf_path : str or Path
+        Path to the OSM PBF file.
+    network_type : str
+        pyrosm network type: ``"walking"`` or ``"driving"``.  Passed directly to
+        ``OSM.get_network(network_type=...)``.
+    bbox : list or None
+        Optional bounding box [minx, miny, maxx, maxy] in WGS84 (EPSG:4326)
+        passed to pyrosm ``OSM(bounding_box=bbox)``.  When None the whole PBF is
+        read (slow for large files).
+
+    Returns
+    -------
+    node_xy : np.ndarray, shape (N, 2), EPSG:25832 metres
+    edges : list of (u_idx, v_idx, length_m)
+    node_ids : list of OSM node ids (in the same order as node_xy rows)
 
     Edge length is the geometry length in the project metric CRS (EPSG:25832).
     Import of pyrosm is deferred to keep module-level import light.
     """
     from pyrosm import OSM
     osm = OSM(pbf_path, bounding_box=bbox)
-    nodes, edges_gdf = osm.get_network(network_type="walking", nodes=True)
+    nodes, edges_gdf = osm.get_network(network_type=network_type, nodes=True)
     nodes = nodes.to_crs(25832)
     edges_gdf = edges_gdf.to_crs(25832)
     id_to_index = {nid: i for i, nid in enumerate(nodes["id"].tolist())}
@@ -138,6 +156,119 @@ def read_walk_network_pyrosm(pbf_path, bbox=None):
         if u is not None and v is not None and geom is not None:
             edges.append((u, v, float(geom.length)))
     return node_xy, edges, list(id_to_index.keys())
+
+
+def read_walk_network_pyrosm(pbf_path, bbox=None):
+    """Walking network from an OSM PBF via pyrosm -> (node_xy, edges, node_ids).
+
+    Thin wrapper around :func:`read_osm_network_pyrosm` with ``network_type="walking"``.
+    Kept for backwards compatibility.
+    """
+    return read_osm_network_pyrosm(pbf_path, network_type="walking", bbox=bbox)
+
+
+def bbox_from_home_locations(home_xy_m: np.ndarray, margin_m: float = 5000.0) -> dict:
+    """Derive an axis-aligned bounding box from home coordinates in EPSG:25832.
+
+    Parameters
+    ----------
+    home_xy_m : np.ndarray, shape (N, 2)
+        Home point coordinates in EPSG:25832 metres.
+    margin_m : float
+        Extra margin to add on each side (default 5000 m = 5 km).
+
+    Returns
+    -------
+    dict with keys:
+      ``metric``  – (minx, miny, maxx, maxy) in EPSG:25832
+      ``wgs84``   – [minx, miny, maxx, maxy] in EPSG:4326 (for pyrosm bounding_box)
+    """
+    import pyproj
+    xs = home_xy_m[:, 0]
+    ys = home_xy_m[:, 1]
+    minx = float(xs.min()) - margin_m
+    miny = float(ys.min()) - margin_m
+    maxx = float(xs.max()) + margin_m
+    maxy = float(ys.max()) + margin_m
+    # Convert corners to WGS84 for pyrosm bounding_box.
+    transformer = pyproj.Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=True)
+    lon_min, lat_min = transformer.transform(minx, miny)
+    lon_max, lat_max = transformer.transform(maxx, maxy)
+    return {
+        "metric": (minx, miny, maxx, maxy),
+        "wgs84": [lon_min, lat_min, lon_max, lat_max],
+    }
+
+
+def clip_od_to_bbox(
+    origins_xy: np.ndarray,
+    dests_xy: np.ndarray,
+    commune_ids: np.ndarray,
+    bbox_m: tuple,
+    node_xy: np.ndarray,
+    max_snap_m: float = 500.0,
+    label: str = "",
+) -> tuple:
+    """Drop OD pairs whose endpoints lie outside the metric bbox or snap too far.
+
+    Parameters
+    ----------
+    origins_xy : np.ndarray, shape (N, 2)
+    dests_xy   : np.ndarray, shape (N, 2)
+    commune_ids: np.ndarray, shape (N,), dtype object
+    bbox_m     : (minx, miny, maxx, maxy) in EPSG:25832
+    node_xy    : np.ndarray, shape (M, 2)  — graph node coordinates (EPSG:25832)
+    max_snap_m : float  — maximum allowed snap distance in metres (default 500)
+    label      : str    — network label used in log messages
+
+    Returns
+    -------
+    origins_xy_clipped, dests_xy_clipped, commune_ids_clipped  (same dtype)
+    """
+    from scipy.spatial import cKDTree
+    minx, miny, maxx, maxy = bbox_m
+    n_total = len(origins_xy)
+
+    # --- Spatial bbox filter ---
+    ox, oy = origins_xy[:, 0], origins_xy[:, 1]
+    dx, dy = dests_xy[:, 0], dests_xy[:, 1]
+    in_bbox = (
+        (ox >= minx) & (ox <= maxx) & (oy >= miny) & (oy <= maxy) &
+        (dx >= minx) & (dx <= maxx) & (dy >= miny) & (dy <= maxy)
+    )
+    n_outside = int((~in_bbox).sum())
+
+    # --- Snap-distance filter (against the graph nodes) ---
+    tree = cKDTree(node_xy)
+    snap_o, _ = tree.query(origins_xy[in_bbox])
+    snap_d, _ = tree.query(dests_xy[in_bbox])
+    snap_ok = (snap_o <= max_snap_m) & (snap_d <= max_snap_m)
+    n_snap_fail = int((~snap_ok).sum())
+
+    keep = np.where(in_bbox)[0][snap_ok]
+    n_kept = len(keep)
+    n_dropped = n_total - n_kept
+
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info(
+        "[circuity][%s] OD clip: kept %d/%d (%.1f%%), "
+        "dropped %d outside bbox, %d snap>%.0fm",
+        label, n_kept, n_total, 100.0 * n_kept / max(n_total, 1),
+        n_outside, n_snap_fail, max_snap_m,
+    )
+    if n_kept == 0:
+        _log.warning(
+            "[circuity][%s] ALL OD pairs dropped after bbox+snap clip (n_total=%d). "
+            "Check that bbox_m covers the study area and that --max-snap-m is large enough.",
+            label, n_total,
+        )
+
+    return (
+        origins_xy[keep],
+        dests_xy[keep],
+        commune_ids[keep],
+    )
 
 
 def route_lengths_km(csr, node_xy, origins_xy, dests_xy):
