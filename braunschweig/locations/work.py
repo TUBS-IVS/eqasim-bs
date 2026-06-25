@@ -99,8 +99,8 @@ def configure(context):
     context.stage("braunschweig.data.locations")
     context.stage("data.spatial.municipalities")
     context.stage("braunschweig.data.external_workplaces")
-    context.config("work_building_potentials", True)
-    if context.config("work_building_potentials"):
+    enabled = context.config("work_building_potentials", True)
+    if enabled:
         context.stage("braunschweig.data.building_potentials")
 
 

@@ -27,6 +27,7 @@ def _buildings():
 def test_off_is_area_times_floors():
     w = compute_employees_weight(_work_points(), _buildings(), enabled=False)
     assert list(w) == [200.0, 400.0]   # area*floors, byte-identical to legacy
+    assert w.dtype == float
 
 
 def test_on_uses_potential_with_area_fallback():
