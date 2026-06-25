@@ -1,7 +1,9 @@
 import pandas as pd
+import braunschweig.data.mid.school_distance as sd
 from braunschweig.data.mid.school_distance import (
     AGEGROUP_TO_LEVEL, build_target_table, routed_to_straight_line,
 )
+from braunschweig.calibration import circuity
 
 
 def _raw():
@@ -39,3 +41,22 @@ def test_detour_factor_shortens_target():
 
 def test_routed_to_straight_line():
     assert abs(routed_to_straight_line(6.5, 1.3) - 5.0) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Tier 3C: network-aware inversion tests
+# ---------------------------------------------------------------------------
+
+def test_routed_to_straight_line_legacy_factor_preserved():
+    assert sd.routed_to_straight_line(13.0, detour_factor=1.3) == 10.0
+
+
+def test_build_target_table_uses_network_per_level():
+    raw = pd.DataFrame([{"regiostar7": 77, "km_0_6": 2.0, "km_7_10": 3.0,
+                         "km_11_13": 5.0, "km_14_17": 12.0}])
+    tbl = sd.build_target_table(raw)  # curve mode, per-level network
+    gs = tbl[tbl["level"] == "grundschule"].iloc[0]
+    ob = tbl[tbl["level"] == "oberstufe"].iloc[0]
+    # grundschule -> walk inversion; oberstufe -> car inversion
+    assert gs["target_km"] == circuity.routed_to_euclidean(3.0, "walk")
+    assert ob["target_km"] == circuity.routed_to_euclidean(12.0, "car")

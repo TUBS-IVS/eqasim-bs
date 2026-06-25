@@ -231,8 +231,10 @@ def main():
     )
     parser.add_argument("--working-directory", required=True,
                         help="Directory containing synpp stage pickles (e.g. eqasim-data/cache_bs_25pct).")
-    parser.add_argument("--detour-factor", type=float, default=1.3,
-                        help="Routed/straight-line detour factor applied to MiD target distances (default 1.3).")
+    parser.add_argument("--detour-factor", type=float, default=None,
+                        help="Routed/straight-line detour factor applied to MiD target distances. "
+                             "None (default) => distance-dependent circuity curve; "
+                             "set a float (e.g. 1.3) to force the legacy constant detour factor.")
     parser.add_argument("--seed", type=int, default=0,
                         help="Random seed for stochastic assignment (default 0).")
     parser.add_argument("--output-dir", default=None,
@@ -359,7 +361,7 @@ def main():
     raw_mz = pd.read_csv(mz_path)
     bbs_t = bbs_target_km(raw_mz, args.detour_factor)
     logger.info("BBS national straight-line target: %.3f km "
-                "(detour factor %.2f)", bbs_t, args.detour_factor)
+                "(detour_factor=%s)", bbs_t, args.detour_factor)
 
     # ------------------------------------------------------------------
     # 5. Calibrate per level on the FULL pupil set (coupled per-RS7 secant)
@@ -699,7 +701,7 @@ def main():
         uni_weight = uni["capacity"].values.astype(float)
 
         hochschule_t = hochschule_target_km(raw_mz, args.detour_factor)
-        logger.info("Hochschule straight-line target: %.3f km (detour factor %.2f)",
+        logger.info("Hochschule straight-line target: %.3f km (detour_factor=%s)",
                     hochschule_t, args.detour_factor)
 
         # Bisection: mean distance decreases monotonically as slope becomes more

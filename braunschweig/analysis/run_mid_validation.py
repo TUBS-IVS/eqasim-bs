@@ -469,12 +469,13 @@ def _mode_share_table(
 # Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
 # ---------------------------------------------------------------------------
 
-# Routed/straight-line detour factor used to convert the MiD Tabelle 43 routed
-# targets to a straight-line equivalent. Kept equal to the calibration default
-# in scripts/calibrate_education_slopes.py so the post-sim validation compares
-# against the same target the slopes were fitted to. Canonical project-wide
-# constant (braunschweig.constants); alias kept.
-from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR
+# Legacy constant detour factor (1.3). Retained as an optional override; the
+# default for education target conversion is now None (distance-dependent
+# circuity curve via circuity.routed_to_euclidean, Tier 3C), matching the new
+# default of braunschweig.calibration._legacy_education_slopes. Pass this
+# constant explicitly to _education_distance_table to reproduce the pre-Tier-3C
+# validation targets.
+from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR  # noqa: F401
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
@@ -532,10 +533,16 @@ def _education_distances(
 
 
 def _education_distance_table(
-    education: pd.DataFrame, t43_raw: pd.DataFrame, detour_factor: float
+    education: pd.DataFrame, t43_raw: pd.DataFrame, detour_factor: float | None = None
 ) -> pd.DataFrame:
     """Per (RegioStaR-7, level): pupil count, mean synthetic straight-line km,
-    the MiD Tabelle 43 straight-line target, and the signed deviation."""
+    the MiD Tabelle 43 straight-line target, and the signed deviation.
+
+    ``detour_factor=None`` (default, Tier 3C): targets use the
+    distance-dependent circuity curve (circuity.routed_to_euclidean).
+    Pass a float (e.g. _EDU_DETOUR_FACTOR = 1.3) to force the legacy
+    constant detour-factor inversion.
+    """
     targets = build_target_table(t43_raw, detour_factor)
     valid = education.dropna(subset=["level", "regiostar7"])
     rows: list[dict[str, Any]] = []
@@ -812,8 +819,11 @@ def run(args: _Args) -> dict[str, Any]:
     t43_raw = _load_t43()
     if t43_raw is not None:
         education = _education_distances(activities, homes_kreis, persons_kreis)
+        # detour_factor=None => Tier 3C distance-dependent circuity curve
+        # (matches the new default in _legacy_education_slopes). Pass
+        # _EDU_DETOUR_FACTOR here to restore the pre-Tier-3C constant inversion.
         education_table = _education_distance_table(
-            education, t43_raw, _EDU_DETOUR_FACTOR
+            education, t43_raw, detour_factor=None
         )
         education_table.to_csv(out / "education_distance_vs_t43.csv", index=False)
     else:
@@ -1046,8 +1056,8 @@ def run(args: _Args) -> dict[str, Any]:
             "",
             "_Realised home->education distances of school-age pupils (ages "
             "0-17, the T43 scope) compared to the per-(RS7, level) targets the "
-            "education gravity slopes were calibrated to (routed / detour "
-            f"{_EDU_DETOUR_FACTOR}). BBS / university pupils are out of T43 "
+            "education gravity slopes were calibrated to (distance-dependent "
+            "circuity inversion, Tier 3C). BBS / university pupils are out of T43 "
             "scope and not shown._",
             "",
             _df_to_markdown(education_table),
