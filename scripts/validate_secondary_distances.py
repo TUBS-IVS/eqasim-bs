@@ -247,7 +247,7 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
             continue
 
         mean_euc = float(np.mean(km_arr))
-        # Apply detour factor (1.3) to put euclidean on the MiD routed axis.
+        # Apply distance-dependent circuity to put euclidean on the MiD routed axis.
         mean_routed = float(np.mean(apply_detour(km_arr)))
 
         # Band shares on the W12 9-band grid (after detour correction).

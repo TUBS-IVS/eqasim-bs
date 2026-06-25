@@ -46,7 +46,7 @@ from braunschweig.gravity.model import (  # noqa: E402
     evaluate_gravity,
     _synthesise_intra_kreis,
 )
-from braunschweig.calibration.metrics import apply_detour, band_shares, emd_on_bands  # noqa: E402
+from braunschweig.calibration.metrics import band_shares, emd_on_bands  # noqa: E402
 from braunschweig.calibration.targets import load_p13_band_shares, load_p13_band_shares_by_rs7  # noqa: E402
 from braunschweig.calibration.commute import (  # noqa: E402
     build_validation_report,
@@ -725,7 +725,7 @@ def main():
         if len(all_km) == 0:
             logger.error("[commute-calib] iter %d: no realised distances; aborting", it)
             break
-        model_shares_zgb = band_shares(apply_detour(all_km, factor=args.detour_factor))
+        model_shares_zgb = band_shares(np.asarray(all_km, dtype=float) * args.detour_factor)
 
         # ZGB aggregate EMD.
         if "03ZGB" in targets:
@@ -735,7 +735,7 @@ def main():
             emd_zgb_vals = []
             for kreis, km_arr in km_by_kreis.items():
                 if kreis in targets:
-                    shares_k = band_shares(apply_detour(km_arr, factor=args.detour_factor))
+                    shares_k = band_shares(np.asarray(km_arr, dtype=float) * args.detour_factor)
                     emd_zgb_vals.append(emd_on_bands(shares_k, targets[kreis]))
             emd_zgb = float(np.mean(emd_zgb_vals)) if emd_zgb_vals else float("nan")
 
@@ -743,7 +743,7 @@ def main():
         per_kreis_emd = {}
         for kreis, km_arr in km_by_kreis.items():
             if kreis in targets:
-                shares_k = band_shares(apply_detour(km_arr, factor=args.detour_factor))
+                shares_k = band_shares(np.asarray(km_arr, dtype=float) * args.detour_factor)
                 per_kreis_emd[kreis] = emd_on_bands(shares_k, targets[kreis])
 
         worst_kreis_emd = max(per_kreis_emd.values()) if per_kreis_emd else float("nan")
@@ -754,7 +754,7 @@ def main():
         if args.per_rs7 and rs7_targets:
             for rs7_code, km_arr_rs7 in km_by_rs7_realised.items():
                 if rs7_code in rs7_targets:
-                    shares_rs7_diag = band_shares(apply_detour(km_arr_rs7, factor=args.detour_factor))
+                    shares_rs7_diag = band_shares(np.asarray(km_arr_rs7, dtype=float) * args.detour_factor)
                     per_rs7_emd[rs7_code] = emd_on_bands(shares_rs7_diag, rs7_targets[rs7_code])
             if per_rs7_emd:
                 max_rs7_emd = max(per_rs7_emd.values())
@@ -860,7 +860,7 @@ def main():
                         it, rs7, len(km_rs7), args.min_count,
                     )
                     continue
-                shares_rs7 = band_shares(apply_detour(km_rs7, factor=args.detour_factor))
+                shares_rs7 = band_shares(np.asarray(km_rs7, dtype=float) * args.detour_factor)
                 factors_by_rs7[rs7] = furness_update(
                     factors_by_rs7[rs7], target_for_rs7, shares_rs7
                 )
@@ -917,7 +917,7 @@ def main():
         for rs7 in rs7_codes:
             km_all_rs7 = km_by_rs7_realised.get(rs7, np.array([]))
             if len(km_all_rs7) > 0:
-                km_detoured = apply_detour(km_all_rs7, factor=args.detour_factor)
+                km_detoured = np.asarray(km_all_rs7, dtype=float) * args.detour_factor
                 # Per-band count = number of workers whose detoured commute fell in each band.
                 band_hist = np.zeros(N_BANDS, dtype=int)
                 for b in range(N_BANDS):
@@ -1054,7 +1054,7 @@ def _write_outputs(final_factors, km_by_kreis, jobs_by_gemeinde, targets,
     # Per-Kreis band shares + EMD.
     rows = []
     for kreis, km_arr in km_by_kreis.items():
-        shares = band_shares(apply_detour(km_arr, factor=args.detour_factor))
+        shares = band_shares(np.asarray(km_arr, dtype=float) * args.detour_factor)
         target = targets.get(kreis, targets.get("03ZGB", np.full(N_BANDS, 1.0 / N_BANDS)))
         emd = emd_on_bands(shares, target)
         n_workers = len(km_arr)
@@ -1079,7 +1079,7 @@ def _write_outputs(final_factors, km_by_kreis, jobs_by_gemeinde, targets,
 
     # Per-RS7 results CSV (only in per-RS7 mode).
     # One row per (rs7, band): realised detoured share, MiD P13 Raumtyp reference share,
-    # difference, and per-RS7 EMD.  Uses band_shares/apply_detour/emd_on_bands directly
+    # difference, and per-RS7 EMD.  Uses band_shares/emd_on_bands directly
     # (DRY — same helpers as the Furness loop) so the numbers are fully traceable.
     if args.per_rs7 and km_by_rs7_realised is not None and rs7_targets is not None:
         rs7_rows = []
@@ -1087,7 +1087,7 @@ def _write_outputs(final_factors, km_by_kreis, jobs_by_gemeinde, targets,
             km_arr_rs7 = km_by_rs7_realised[rs7_code]
             if len(km_arr_rs7) == 0:
                 continue
-            shares_rs7 = band_shares(apply_detour(km_arr_rs7, factor=args.detour_factor))
+            shares_rs7 = band_shares(np.asarray(km_arr_rs7, dtype=float) * args.detour_factor)
             target_rs7 = rs7_targets.get(rs7_code)
             emd_rs7 = emd_on_bands(shares_rs7, target_rs7) if target_rs7 is not None else float("nan")
             n_workers_rs7 = len(km_arr_rs7)

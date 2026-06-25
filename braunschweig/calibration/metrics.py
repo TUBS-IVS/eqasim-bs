@@ -10,17 +10,22 @@ from __future__ import annotations
 
 import numpy as np
 
+from braunschweig.calibration import circuity
 from braunschweig.gravity.friction import BAND_EDGES_KM, band_index
 
-# ASSUMPTION: euclidean->routed detour factor. Same value and rationale as
-# braunschweig.data.mid.school_distance (T43). Single source of truth.
-DETOUR_FACTOR = 1.3
+# Legacy constant detour factor, retained for mode="constant" (reproducibility /
+# regression). The default path is now the distance-dependent circuity curve.
+DETOUR_FACTOR = circuity.LEGACY_DETOUR_FACTOR
 
 
-def apply_detour(euclidean_km, factor=DETOUR_FACTOR):
-    """Scale euclidean (straight-line) distances to routed-equivalent km, so the
-    model output lies on the same axis as the MiD routed band edges."""
-    return np.asarray(euclidean_km, dtype=float) * factor
+def apply_detour(euclidean_km, network="car", mode="curve"):
+    """Scale euclidean (straight-line) km to routed-equivalent km so the model
+    output lies on the same axis as the MiD routed band edges.
+
+    mode="curve" (default) uses the fitted distance-dependent circuity curve for
+    ``network``; mode="constant" reproduces the legacy ``* DETOUR_FACTOR`` exactly.
+    """
+    return circuity.euclidean_to_routed(euclidean_km, network=network, mode=mode)
 
 
 def band_shares(distances_km, edges=BAND_EDGES_KM, weights=None):

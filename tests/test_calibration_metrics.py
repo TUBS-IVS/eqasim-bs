@@ -5,8 +5,9 @@ from braunschweig.calibration.metrics import (
 
 
 def test_apply_detour_scales_euclidean_to_routed():
+    # mode="constant" exercises the legacy 1.3 path (now opt-in).
     d = np.array([0.0, 10.0])
-    np.testing.assert_allclose(apply_detour(d), d * DETOUR_FACTOR)
+    np.testing.assert_allclose(apply_detour(d, mode="constant"), d * DETOUR_FACTOR)
 
 
 def test_band_shares_normalised():
