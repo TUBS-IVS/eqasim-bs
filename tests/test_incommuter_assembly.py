@@ -125,8 +125,17 @@ def test_pt_agents_board_at_pt_entry_stop():
     val = frames["validation"]
     assert (val["entry_kind"] == "rail_station").all(), \
         "PT agents must have entry_kind=='rail_station'"
-    # car-only commuters own no vehicle here
-    assert len(frames["vehicles"]) == 0
+    # Every in-commuter -- including these pt-only agents -- now owns a car_passenger
+    # vehicle: car_passenger is a network-routed mode the in-loop discrete mode choice can
+    # assign to any agent, so it must be routable (previously pt agents owned no vehicle,
+    # which crashed MATSim routing once mode choice picked car_passenger). pt agents own
+    # ONLY car_passenger (no car).
+    veh = frames["vehicles"]
+    n_agents = frames["persons"]["person_id"].nunique()
+    assert len(veh) == n_agents, "one car_passenger vehicle per pt in-commuter"
+    assert (veh["mode"] == "car_passenger").all(), \
+        "pt-only in-commuters own only car_passenger vehicles"
+    assert set(veh["owner_id"]) == set(frames["persons"]["person_id"])
 
 
 def _agent_times_reference(donors, hts_trips, person_col, dist_km, speed_kmh, detour_factor):

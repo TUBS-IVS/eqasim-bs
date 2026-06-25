@@ -27,8 +27,10 @@ def configure(context):
     context.stage("eqasim_common.data.population.raw")
 
 def execute(context):
-    # Load codes
-    df_codes = context.stage("eqasim_common.data.population.raw")[["municipality_code"]]
+    # Load codes. .copy() makes df_codes an independent DataFrame (not a slice/view of
+    # the cached raw population frame), so the subsequent column assignments below are
+    # unambiguous and do not raise pandas' SettingWithCopyWarning.
+    df_codes = context.stage("eqasim_common.data.population.raw")[["municipality_code"]].copy()
 
     # Clean up identifiers
     df_codes["region_id"] = df_codes["municipality_code"].str[:2].astype("category")

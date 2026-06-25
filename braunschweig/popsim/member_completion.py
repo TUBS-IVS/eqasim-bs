@@ -228,15 +228,35 @@ def complete_members(
 
     persons_by_household = dict(tuple(persons.groupby(household_id, sort=False)))
 
+    # Pre-group the complete-household candidate pool ONCE, instead of scanning the
+    # full `complete` frame on every incomplete host (which was O(n_incomplete x
+    # n_complete) -- the dominant cost of this stage). The grouped subframes
+    # preserve `complete`'s row order, so the candidate set handed to
+    # _select_mirror is identical to the per-iteration boolean-mask version and the
+    # seeded weighted draw is BYTE-IDENTICAL. Two lookup tables:
+    #   complete_by_size            -> legacy/no-day-type path (size only)
+    #   complete_by_size_daytype    -> kernwo-aware path (size AND host day type)
+    complete_by_size = {s: g for s, g in complete.groupby(size_col, sort=False)}
+    complete_by_size_daytype: dict = {}
+    if hh_dt is not None:
+        complete_daytype = complete[household_id].map(hh_dt)
+        complete_by_size_daytype = {
+            key: g
+            for key, g in complete.groupby([complete[size_col], complete_daytype], sort=False)
+        }
+
     filler_frames: list = []
     n_filled = 0
     n_added = 0
     n_unfillable = 0
 
+    incomplete_sorted = incomplete.sort_values(household_id)
+    n_incomplete_total = len(incomplete_sorted)
+    progress_step = max(1, n_incomplete_total // 10)  # ~10 heartbeats over the loop
+
     # Deterministic iteration order: sorted by household id.
-    for _, row in incomplete.sort_values(household_id).iterrows():
+    for loop_index, (_, row) in enumerate(incomplete_sorted.iterrows()):
         host_id = row[household_id]
-        candidates = complete[complete[size_col] == row[size_col]]
         # Day-type filter: when active, restrict mirrors to the same day type
         # as the host household (hard filter, same priority as equal size).
         # Guard: only apply when BOTH hh_dt is available AND the host has a
@@ -245,13 +265,21 @@ def complete_members(
         # the candidate set and silently make the household unfillable -- a
         # regression vs. the pre-Option-B behaviour.  When host_dt is None we
         # fall back to the un-day-constrained candidate set (legacy path).
-        if hh_dt is not None:
-            host_dt = hh_dt.get(host_id)
-            if host_dt is not None:
-                candidates = candidates[candidates[household_id].map(hh_dt) == host_dt]
-        if len(candidates) == 0:
+        host_dt = hh_dt.get(host_id) if hh_dt is not None else None
+        if host_dt is not None:
+            candidates = complete_by_size_daytype.get((row[size_col], host_dt))
+        else:
+            candidates = complete_by_size.get(row[size_col])
+        if candidates is None or len(candidates) == 0:
             n_unfillable += 1
             continue
+        # Plain-text progress heartbeat (the live progress bar only renders on a
+        # TTY; this keeps a non-TTY file log from looking frozen during the loop).
+        if loop_index % progress_step == 0 and loop_index > 0:
+            logger.info(
+                "[popsim.member_completion] progress %d/%d incomplete households (%.0f%%)",
+                loop_index, n_incomplete_total, 100.0 * loop_index / n_incomplete_total,
+            )
 
         mirror_id = _select_mirror(
             row, candidates, household_id=household_id, rng=rng

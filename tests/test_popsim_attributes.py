@@ -15,10 +15,11 @@ from braunschweig.popsim import attributes as attr
 def test_map_employed_from_p_taet():
     persons = pd.DataFrame({"P_TAET": [1, 2, 3, 7, 8, 11, 12, 99]})
     out = attr.map_employed(persons)
-    # 1..7 erwerbstaetig -> True; 8 (Ausbildung), 11 (Rentner), 12 (arbeitslos) -> False.
+    # New definition (MiD erwerb): {1,2,3,4,6,8} employed.
+    # 7 (FSJ/Wehrdienst) -> NOT employed; 8 (Azubi) -> employed.
     # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently False); with the
-    # valid pool {T,T,T,T,F,F,F} and default rng(0), the imputed result is a bool, not NaN.
-    assert list(out["employed"][:7]) == [True, True, True, True, False, False, False]
+    # valid pool and default rng(0), the imputed result is a bool, not NaN.
+    assert list(out["employed"][:7]) == [True, True, True, False, True, False, False]
     assert out["employed"].iloc[7] in (True, False)
     assert out["employed"].isna().sum() == 0
 
@@ -113,3 +114,10 @@ def test_derive_bicycle_availability():
     assert attr.derive_bicycle_availability(3, 3) == "all"
     assert attr.derive_bicycle_availability(4, 3) == "all"
     assert attr.derive_bicycle_availability(1, 3) == "some"
+
+
+def test_employed_includes_azubi_excludes_elternzeit_and_fsj():
+    import numpy as np
+    persons = pd.DataFrame({"P_TAET": [1, 5, 7, 8, 10], "alter_gr1": [3, 3, 2, 2, 2]})
+    out = attr.map_employed(persons, rng=np.random.RandomState(0))
+    assert list(out["employed"]) == [True, False, False, True, False]

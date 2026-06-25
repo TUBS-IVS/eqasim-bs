@@ -356,9 +356,9 @@ def test_stage_flag_off_uses_legacy_path():
     # The flag exists with default True (project rule: features default ON).
     assert '"braunschweig.population.popsim.complete_members"' in src
     assert "context.config(KEY_COMPLETE_MEMBERS, True)" in src
-    # The ON branch runs ONE completion pass and derives the seed from it.
-    assert "load_completed_donor" in src
-    assert "74513" in src  # disjoint RNG stream for the mirror draw
+    # The ON branch delegates to the cached completed_donor stage (Task 4 refactor).
+    assert 'context.stage("completed_donor")' in src
+    assert "load_completed_donor" not in src  # inline build replaced by stage consumption
     # The OFF branch still calls the legacy seed loader + donor loader.
     assert "mid.load_mid_seed(" in src
     assert "source.load_donor(mid_dir)" in src

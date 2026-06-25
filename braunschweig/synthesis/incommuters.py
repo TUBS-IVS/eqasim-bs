@@ -604,6 +604,18 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                                               "hbefa_cat", "hbefa_tech", "hbefa_size",
                                               "hbefa_emission"])
         vehicles = _build_legacy_vehicles(person_ids, modes)
+    # Every in-commuter -- like every resident (synthesis.vehicles.passengers.default) --
+    # must own a car_passenger vehicle. car_passenger is a network-routed mode (eqasim
+    # core NETWORK_MODES = [car, car_passenger, truck]) that the in-loop discrete mode
+    # choice can assign to ANY agent regardless of car ownership; without the vehicle the
+    # MATSim router aborts with "Could not retrieve vehicle id ... for mode car_passenger".
+    # The car builders above emit only "car" (and only for car-mode agents), so the
+    # car_passenger vehicle is added here for every in-commuter. The default_car_passenger
+    # vehicle TYPE is already in the scenario type table (added by the resident passengers
+    # stage and de-duplicated in braunschweig.matsim.scenario.vehicles), so only the
+    # per-agent vehicles are emitted.
+    vehicles = pd.concat([vehicles, _build_incommuter_passenger_vehicles(person_ids)],
+                         ignore_index=True)
     # Per-agent validation record (one row per in-commuter): source Kreis, direction,
     # final mode (post PT->car reassignment), and the ACTUAL boarding point.
     #
@@ -939,6 +951,34 @@ def _build_legacy_vehicles(person_ids, modes):
     })
 
 
+def _build_incommuter_passenger_vehicles(person_ids):
+    """One ``car_passenger`` vehicle per in-commuter, mirroring
+    ``synthesis.vehicles.passengers.default`` for residents.
+
+    ``car_passenger`` is a network-routed mode (eqasim core
+    ``NETWORK_MODES = [car, car_passenger, truck]``) that the in-loop discrete mode
+    choice can assign to ANY agent regardless of car ownership. Without a
+    ``car_passenger`` vehicle the MATSim router aborts with
+    "Could not retrieve vehicle id from person ... for mode: car_passenger". The car
+    builders emit only ``car`` (and only for car-mode agents), so every in-commuter is
+    given a ``car_passenger`` vehicle here. The writer columns mirror
+    :func:`_build_legacy_vehicles` / ``synthesis.vehicles.passengers.default`` exactly;
+    the ``default_car_passenger`` type is contributed once by the resident passengers
+    stage and de-duplicated downstream, so it is not re-emitted here.
+    """
+    person_ids = np.asarray(person_ids)
+    return pd.DataFrame({
+        "owner_id": person_ids,
+        "mode": "car_passenger",
+        "vehicle_id": [f"{pid}:car_passenger" for pid in person_ids],
+        "type_id": "default_car_passenger",
+        "critair": "Crit'air 1",
+        "technology": "Gazole",
+        "age": 0,
+        "euro": 6,
+    })
+
+
 def _empty_frames(crs):
     """Zero-row frames (the flag-OFF / no-agent path) so the merge is a perfect no-op."""
     return dict(
@@ -997,11 +1037,23 @@ def configure(context):
     # Default True: the feature is active by default.  Set to False to reproduce the
     # legacy lossy PT->car reassignment (byte-identical for same rng seed).
     context.config("cordon_incommuter_mode_balance", True)
+    # Declared unconditionally (independent of real_origin) so execute() can verify the
+    # pre-clipped osm/cordon ring was built with the configured source buffer
+    # (verify_clip_signature) -- a stale clip would silently change the road extent.
+    context.config("cordon_network_source_buffer_m", 45000.0)
+    context.config("osm_path", "osm")
+    context.config("data_path")
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("braunschweig.data.cordon_pt_gates")
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.locations.work")
-    context.stage("braunschweig.synthesis.population.enriched")  # RAW, for n_residents
+    # Aliased name (config maps it to the popsim enriched_adapter or the IPF
+    # braunschweig.synthesis.population.enriched). Depending on the hard-coded IPF
+    # module bypassed the alias and dragged the eqasim HTS-matching subtree
+    # (synthesis.population.matched) into popsim runs. Only the max resident
+    # person_id / household_id are read (id collision avoidance), which both variants
+    # provide, so the population-agnostic aliased dependency is correct.
+    context.stage("synthesis.population.enriched")  # RAW, for n_residents
     context.stage("braunschweig.data.inkar.household_income")  # origin-Kreis income level
     context.stage("data.hts.selected", alias="hts")
     if context.config("cordon_incommuter_real_origin"):
@@ -1023,10 +1075,20 @@ def execute(context):
     if not context.config("cordon_enabled"):
         return _empty_frames(crs)
 
+    # Guard: the pre-clipped osm/cordon ring must have been built with the configured
+    # cordon_network_source_buffer_m, else data.osm.cleaned silently uses a stale road
+    # extent. Warns if the ring predates the clip-signature guard; raises on a mismatch.
+    import os as _os
+    from braunschweig.data.cordon.network import verify_clip_signature
+    verify_clip_signature(
+        _os.path.join(context.config("data_path"), context.config("osm_path")),
+        float(context.config("cordon_network_source_buffer_m")),
+    )
+
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
 
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
-    residents = context.stage("braunschweig.synthesis.population.enriched")
+    residents = context.stage("synthesis.population.enriched")
     _hts_households, hts_persons, hts_trips = context.stage("hts")
     rng = np.random.default_rng(int(context.config("random_seed")) + 100000)
 

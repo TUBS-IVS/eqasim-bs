@@ -210,3 +210,214 @@ def test_default_method_is_legacy_byte_identical():
         ["owner_id", "mode", "vehicle_id", "type_id"]]
     pd.testing.assert_frame_equal(
         produced.reset_index(drop=True), legacy.reset_index(drop=True))
+
+
+# --------------------------------------------------------------------------- #
+# Task 4 — fleet_age_income_coupling config wiring.
+# --------------------------------------------------------------------------- #
+class _StubContext:
+    """Minimal synpp configure-phase context stub.
+
+    Records ``context.config(key, default)`` calls so tests can assert that
+    ``fleet_age_income_coupling`` is registered with the correct default without
+    actually importing synpp or running a pipeline.
+    """
+
+    def __init__(self):
+        self._registered: dict[str, object] = {}
+
+    def stage(self, *_args, **_kwargs):
+        pass
+
+    def config(self, key: str, default=None):
+        self._registered[key] = default
+
+    def registered(self) -> dict:
+        return dict(self._registered)
+
+
+def test_fleet_age_income_coupling_registered_with_default_true():
+    """configure() must register fleet_age_income_coupling with default True.
+
+    Mirrors how fleet_consistency_v2 is wired at the same site in configure().
+    """
+    ctx = _StubContext()
+    hh.configure(ctx)
+    registered = ctx.registered()
+    assert "fleet_age_income_coupling" in registered, (
+        "fleet_age_income_coupling must be declared in configure()"
+    )
+    assert registered["fleet_age_income_coupling"] is True, (
+        "fleet_age_income_coupling default must be True (coupling-ON by default)"
+    )
+
+
+def test_fleet_age_income_coupling_off_produces_flat_age():
+    """With age_income_coupling=False, car age must NOT be status-stratified.
+
+    When the flag is False the tilt block is skipped; the age distribution
+    is flat across economic_status groups (no gradient). This is the small
+    faithful reproduction: it calls sample_fleet directly with the flag off
+    and asserts that the age column shows no systematic difference between
+    the lowest and highest status groups.
+    """
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+
+    rng = np.random.default_rng(7)
+    n = 800
+    statuses = ["very_low"] * n + ["very_high"] * n
+    rng.shuffle(statuses)
+    rows = []
+    for i, status in enumerate(statuses):
+        rows.append({
+            "household_id": i,
+            "owner_id": i,
+            "economic_status": status,
+            "kreis_ags5": "03101",
+            "gemeinde": "BRAUNSCHWEIG, STADT",
+            "raumtyp": 72,
+        })
+    df_cars = pd.DataFrame(rows)
+
+    df_spec, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=False)
+
+    mean_age = df_spec.groupby("economic_status")["age"].mean()
+    age_very_low = mean_age["very_low"]
+    age_very_high = mean_age["very_high"]
+    # With coupling=False the gradient must be negligible (< 1 year gap).
+    gap = abs(age_very_low - age_very_high)
+    assert gap < 1.0, (
+        f"coupling=False should produce a flat age distribution across status "
+        f"groups, but very_low mean={age_very_low:.2f} vs "
+        f"very_high mean={age_very_high:.2f} (gap={gap:.2f} >= 1.0)"
+    )
+
+
+def test_sample_fleet_receives_age_income_coupling_kwarg(monkeypatch):
+    """execute() must thread age_income_coupling into sample_fleet.
+
+    Patches fleet.sample_fleet to capture keyword arguments, then verifies
+    that when fleet_age_income_coupling=False in the config the call site
+    passes age_income_coupling=False (and when True -> True).
+    Mirrors the consistency_v2 threading pattern.
+    """
+    from braunschweig.synthesis.vehicles.cars import household as hh_mod
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+
+    captured: list[dict] = []
+
+    def _fake_sample_fleet(df_cars, data_path, **kwargs):
+        captured.append(dict(kwargs))
+        # Return a minimal valid tuple so execute() can continue past sample_fleet.
+        df_spec = df_cars.copy()
+        for col in ("segment", "powertrain", "euro_class", "type_id",
+                    "hbefa_cat", "hbefa_tech", "hbefa_size", "hbefa_emission",
+                    "age", "age_band", "brand", "model"):
+            if col not in df_spec.columns:
+                df_spec[col] = "x" if df_spec.empty else (
+                    0 if col in ("euro_class", "age") else "x")
+        df_types = pd.DataFrame([{
+            "type_id": "x", "nb_seats": 4, "length": 5.0, "width": 1.0,
+            "pce": 1.0, "mode": "car", "hbefa_cat": "PASSENGER_CAR",
+            "hbefa_tech": "average", "hbefa_size": "average",
+            "hbefa_emission": "average",
+        }])
+        return df_spec, df_types
+
+    monkeypatch.setattr(hh_mod.fleet, "sample_fleet", _fake_sample_fleet)
+
+    class _Ctx:
+        """Minimal execute-phase context that serves a canned config and real stages."""
+        def __init__(self, age_income_coupling: bool):
+            self._coupling = age_income_coupling
+
+        def config(self, key: str):
+            defaults = {
+                "data_path": DATA_PATH,
+                "random_seed": 42,
+                "hbefa_segment_size_map": None,
+                "fleet_model_enabled": True,
+                "fleet_model_brands": False,
+                "fleet_hsn_tsn_attributes": False,
+                "fleet_consistency_v2": True,
+                "fleet_age_income_coupling": self._coupling,
+                "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
+                "kba_fleet_paths": None,
+            }
+            return defaults[key]
+
+        def stage(self, name: str):
+            if name == "synthesis.population.enriched":
+                return _make_persons()
+            if name == "synthesis.population.spatial.home.zones":
+                return _make_homes()
+            if name == "braunschweig.data.bbsr.regiostar":
+                return _make_regiostar()
+            raise KeyError(name)
+
+    for flag in (False, True):
+        captured.clear()
+        hh_mod.execute(_Ctx(age_income_coupling=flag))
+        assert captured, "sample_fleet was not called"
+        assert "age_income_coupling" in captured[0], (
+            "execute() must pass age_income_coupling= to sample_fleet"
+        )
+        assert captured[0]["age_income_coupling"] == flag, (
+            f"expected age_income_coupling={flag}, got {captured[0]['age_income_coupling']}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Per-person car-vehicle coverage (non-owners get a routing default_car).
+# --------------------------------------------------------------------------- #
+def test_non_owners_get_a_routing_default_car():
+    """Every person without a real fleet car gets a default_car so car-driver legs route.
+
+    Regression for the iteration-1 crash on the 25% all-features popsim run: non-owner
+    members of car-owning households (car_availability some/all) owned no car vehicle, so
+    MATSim aborted routing with "Could not retrieve vehicle id from person ... for mode:
+    car" when the in-loop discrete mode choice assigned them car-driver. eqasim core gives
+    every person a car vehicle; this restores that coverage for the household fleet.
+    """
+    # Real fleet: only person 101 owns a household (HBEFA-typed) car.
+    df_vehicles = pd.DataFrame({
+        "owner_id": [101], "mode": ["car"], "vehicle_id": ["101:car:0"],
+        "type_id": ["petrol_medium"], "critair": [""], "technology": ["petrol"],
+        "age": [3], "euro": [6],
+    })
+    df_types = pd.DataFrame([{
+        "type_id": "petrol_medium", "length": 5.0, "width": 1.0, "mode": "car",
+        "hbefa_cat": "PASSENGER_CAR", "hbefa_tech": "average", "hbefa_size": "average",
+        "hbefa_emission": "average",
+    }])
+    df_persons = pd.DataFrame({"person_id": [101, 102, 103]})
+
+    out_types, out_veh = hh._add_default_cars_for_non_owners(df_types, df_vehicles, df_persons)
+
+    # Every person now owns a car vehicle (no person can be assigned car-driver without one).
+    car_owners = set(out_veh.loc[out_veh["mode"] == "car", "owner_id"])
+    assert {101, 102, 103} <= car_owners
+
+    # The owner keeps the real fleet car; non-owners get a default_car "<person_id>:car".
+    assert (out_veh.loc[out_veh["owner_id"] == 101, "type_id"] == "petrol_medium").all()
+    default_rows = out_veh[out_veh["type_id"] == "default_car"]
+    assert set(default_rows["owner_id"]) == {102, 103}
+    assert set(default_rows["vehicle_id"]) == {"102:car", "103:car"}
+
+    # The default_car type is registered (de-duplicated) alongside the HBEFA type.
+    assert {"petrol_medium", "default_car"} <= set(out_types["type_id"])
+
+
+def test_all_owners_no_default_cars_added():
+    """When every person already owns a fleet car, no default_car is added (pure no-op)."""
+    df_vehicles = pd.DataFrame({
+        "owner_id": [1, 2], "mode": ["car", "car"],
+        "vehicle_id": ["1:car:0", "2:car:0"], "type_id": ["t", "t"],
+    })
+    df_types = pd.DataFrame([{"type_id": "t", "mode": "car"}])
+    df_persons = pd.DataFrame({"person_id": [1, 2]})
+    out_types, out_veh = hh._add_default_cars_for_non_owners(df_types, df_vehicles, df_persons)
+    assert "default_car" not in set(out_veh["type_id"])
+    assert len(out_veh) == 2

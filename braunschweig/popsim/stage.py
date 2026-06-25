@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -51,9 +52,7 @@ from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
-from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import sources
-from braunschweig.popsim import weekend_plan_match
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 logger = logging.getLogger(__name__)
@@ -97,6 +96,12 @@ KEY_CONTROL_TIERS = "braunschweig.population.popsim.control_tiers"
 # (kreis_erwerbsstatus/schulabschluss/berufl_abschluss.parquet). Loaded only when
 # "tier3" is among control_tiers (catalog source); ignored otherwise.
 KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
+# Employment grid control (Task 5): when "on", activates the ten age-group x sex-resolved
+# 100m employment controls (EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg). The targets are
+# computed per cell from the Zensus 2000S-2001 employment-by-age SHAPE rescaled per
+# Kreis x sex x group to the census Erwerbstaetige Kreis level
+# (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
+KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
 # Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
 # seed. "default" -> (1,2,3) Mo-Fr (legacy: weekend / kernwo=4 households dropped).
 # "off"/"all" -> keep ALL reporting days (no day filter). The reporting day is a
@@ -154,7 +159,7 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
     return sources.get_source(source_name)
 
 
-def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",), employment_grid=False):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -163,12 +168,16 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
 
     tiers: tuple of tier names to include when controls_source="catalog". Default
     ("tier0",) reproduces the pre-Task-7 baseline byte-identically.
+
+    employment_grid: when True (catalog source only), append the six age-group x
+    sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
+    catalog. Default False = byte-identical to the pre-employment-grid catalog.
     """
     if controls_source == "csv":
         return pd.read_csv(controls_path, sep=";")
     if controls_source == "catalog":
         from braunschweig.popsim import control_spec as cs
-        catalog = cs.full_catalog(include_tiers=tiers)
+        catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid)
         return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     raise ValueError(f"unknown controls_source {controls_source!r}")
 
@@ -280,6 +289,17 @@ def configure(context):
     context.config(KEY_CONTROL_TIERS, "tier0")
     # Tier-3 KREIS controls directory. Default "" = not configured (no Tier-3).
     context.config(KEY_KREIS_CONTROLS, "")
+    # Employment grid control (Task 5). Default "off" = byte-identical to today.
+    context.config(KEY_EMPLOYMENT_GRID, "off")
+    # When the employment grid control is ON, the per-cell employment targets are
+    # built from the Zensus 2000S-2001 employment-by-age SHAPE (a committed reference
+    # CSV under data_path; see braunschweig.popsim.zensus_employment_age) rescaled per
+    # Kreis×sex×group to the census Erwerbstaetige Kreis level. No synpp stage
+    # dependency is needed (the former GENESIS SvB stage dependency is gone). We only
+    # ensure data_path is declared so the reference CSV can be located; this is a
+    # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
+    if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
+        context.config("data_path")
     # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
     context.config(KEY_SEED_DAY_FILTER, "default")
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
@@ -316,6 +336,12 @@ def configure(context):
         context.stage("braunschweig.data.bbsr.regiostar", alias="regiostar_tenure")
 
     source_name = context.config(KEY_SOURCE, "mid")
+    # Member completion (D3) runs for the MiD source only. When active, the donor
+    # build (member completion + weekend-plan match) is delegated to the cached
+    # braunschweig.popsim.completed_donor stage so it runs ONCE across all runs
+    # (it depends only on mid/seed/day_filter/weekend, not controls/sampling/work_dir).
+    if source_name == "mid" and bool(context.config(KEY_COMPLETE_MEMBERS, True)):
+        context.stage("braunschweig.popsim.completed_donor", alias="completed_donor")
     if source_name == "entd":
         # popsim_open: the ENTD donor for the PopulationSim SEED + attribute/trip
         # mapping must carry the FULL household composition (multi-person households).
@@ -404,6 +430,50 @@ def join_cell_attributes(
     return combined
 
 
+# Filename of the per-work_dir config signature used to detect a config change and
+# purge stale batch folders (see purge_stale_batches_on_config_change).
+WORK_DIR_SIGNATURE_FILE = ".popsim_config_signature"
+
+
+def purge_stale_batches_on_config_change(work_dir, signature: str) -> int:
+    """Remove stale ``batch_*`` folders when the popsim config/control set changed.
+
+    The PopulationSim ``work_dir`` persists across runs (it lives OUTSIDE synpp's
+    stage cache), and the batch runner SKIPS any batch whose completion marker
+    (``output/final_expanded_household_ids.csv``) already exists. If the config changed
+    since the run that produced those outputs (e.g. tier3 / employment_grid controls
+    were added, changing the per-batch inputs), skipping them would merge an
+    old-config population for those cells -- a silent correctness bug.
+
+    Guard: a signature file in ``work_dir`` records the config that produced the
+    current batches. On a MISMATCH (or first run with pre-existing folders) every
+    ``batch_*`` folder is removed so all batches re-run with the current config. On a
+    MATCH (same config -- e.g. a resumed interrupted run) the folders are kept, so the
+    skip-completed-batches resume optimisation still works. Returns the number of
+    batch folders purged.
+    """
+    work_dir = Path(work_dir)
+    sig_path = work_dir / WORK_DIR_SIGNATURE_FILE
+    previous = sig_path.read_text(encoding="utf-8").strip() if sig_path.is_file() else None
+    if previous == signature:
+        return 0
+    purged = 0
+    for batch_folder in sorted(work_dir.glob("batch_*")):
+        if batch_folder.is_dir():
+            shutil.rmtree(batch_folder)
+            purged += 1
+    work_dir.mkdir(parents=True, exist_ok=True)
+    sig_path.write_text(signature, encoding="utf-8")
+    if purged:
+        logger.warning(
+            "[popsim.stage] popsim config changed since the last run in this work_dir "
+            "(or signature was absent) -> purged %d stale batch folder(s) so every batch "
+            "re-runs with the CURRENT config (prevents stale-batch skips).", purged)
+    else:
+        logger.info("[popsim.stage] wrote work_dir config signature (no stale batches).")
+    return purged
+
+
 def execute(context) -> pd.DataFrame:
     """Run popsim_mid and return the merged expanded-household table."""
     cells_path = context.config(KEY_CELLS)
@@ -416,8 +486,26 @@ def execute(context) -> pd.DataFrame:
     # synpp's ExecuteContext.config() takes only the key; the defaults are
     # registered in configure() (3000 / 3 / "mid" / False) and resolved here.
     max_cells = int(context.config(KEY_MAX_CELLS))
-    num_workers = int(context.config(KEY_WORKERS))
+    # Worker count honours the auto sentinel (0/null/"auto" -> cores - reserve), so
+    # the batch runner scales with the box it lands on. An explicit positive integer
+    # is used verbatim (pin it when byte-reproducibility across machines matters).
+    from braunschweig.parallelism import resolve_workers
+    _requested_workers = context.config(KEY_WORKERS)
+    num_workers = resolve_workers(_requested_workers)
+    logger.info(
+        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, cpu_count=%s)",
+        num_workers, _requested_workers, os.cpu_count(),
+    )
     work_dir = context.config(KEY_WORK_DIR)
+    # Create the PopulationSim working directory up front so the stage can write
+    # its intermediate artefacts (pseudonym map, per-batch PopulationSim folders)
+    # into it. On a FRESH cache this directory does not exist yet; the first writer
+    # below (the pseudonym map / per-batch folders) would otherwise fail with
+    # "Cannot save file into a non-existent directory". (The weekend_plan_match trace
+    # is now written into the completed_donor stage's own cache dir, not here.)
+    # Creating it here keeps the stage self-contained (CLAUDE.md: create output
+    # directories explicitly).
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
     kreise = list(context.config(KEY_KREISE))
     source_name = context.config(KEY_SOURCE)
     stratify_regiostar = bool(context.config(KEY_STRATIFY))
@@ -441,11 +529,14 @@ def execute(context) -> pd.DataFrame:
     _day_filter_cfg = str(context.config(KEY_SEED_DAY_FILTER)).strip().lower()
     seed_day_filter = () if _day_filter_cfg in ("off", "all", "none", "") else None
     controls_source = context.config(KEY_CONTROLS_SOURCE)
+    # Employment grid control (Task 5): default "off" -> byte-identical path.
+    employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
     controls_df = build_controls_df(
         controls_source=controls_source,
         controls_path=controls_path,
         seed=source_name,
         tiers=control_tiers,
+        employment_grid=employment_grid_on,
     )
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
@@ -483,6 +574,27 @@ def execute(context) -> pd.DataFrame:
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
+    # Employment grid control (Task 5): the ten EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg
+    # targets are COMPUTED per cell (not stored in the parquet), so strip them from the
+    # parquet load set and add the single-year {M,F}_AGE_<year> input columns (the age
+    # SHAPE denominator, y>=16) that ARE present in the parquet. When OFF, load_cols is
+    # untouched (byte-identical).
+    if employment_grid_on:
+        from braunschweig.popsim import employment_grid as _eg
+        import pyarrow.parquet as _pq_eg
+
+        _eg_raw_names = _pq_eg.ParquetFile(cells_path).schema.names
+        _eg_available = [prepared_cells.clean_col_name(_n) for _n in _eg_raw_names]
+        load_cols = _eg.select_load_columns(
+            load_cols, _eg_available,
+            computed_cols={
+                "EMPLOYED_M_16_29_agg", "EMPLOYED_M_30_39_agg", "EMPLOYED_M_40_49_agg",
+                "EMPLOYED_M_50_59_agg", "EMPLOYED_M_60plus_agg",
+                "EMPLOYED_F_16_29_agg", "EMPLOYED_F_30_39_agg", "EMPLOYED_F_40_49_agg",
+                "EMPLOYED_F_50_59_agg", "EMPLOYED_F_60plus_agg",
+            },
+        )
+
     cells = mid.load_control_cells(cells_path, load_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
 
@@ -495,6 +607,76 @@ def execute(context) -> pd.DataFrame:
         tiers=control_tiers,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+
+    # Employment grid control (Task 5): inject the ten per-cell
+    # EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from the
+    # committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
+    # load_age_shares; exact for the kreisfreie Staedte, national fallback for the
+    # Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
+    # Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
+    # dependency is no longer used. When OFF, none of this runs -> byte-identical.
+    if employment_grid_on:
+        from braunschweig.popsim import employment_grid as _eg
+        from braunschweig.popsim import zensus_employment_age as _za
+        from braunschweig.popsim import folders as _folders
+
+        # Census LEVEL: the sex-split Erwerbstaetige Kreis totals. Sourced from the
+        # imported cleancensus kreis_erwerbsstatus table (same dir as the Tier-3
+        # KREIS controls). Fail fast (Tier-3 style) if the dir is not configured.
+        _eg_kreis_dir = context.config(KEY_KREIS_CONTROLS)
+        if not _eg_kreis_dir:
+            raise ValueError(
+                f"{KEY_EMPLOYMENT_GRID} is 'on' but {KEY_KREIS_CONTROLS} is not set; "
+                "cannot source the census Erwerbstaetige Kreis levels "
+                "(kreis_erwerbsstatus.parquet)."
+            )
+        _eg_levels_path = os.path.join(_eg_kreis_dir, "kreis_erwerbsstatus.parquet")
+        if not os.path.exists(_eg_levels_path):
+            raise FileNotFoundError(
+                f"employment grid control requires {_eg_levels_path}; import the "
+                "cleancensus kreis_erwerbsstatus parquet into the kreis_controls dir."
+            )
+        _eg_levels = pd.read_parquet(_eg_levels_path)
+        _eg_levels["ARS_kreis"] = _eg_levels["ARS_kreis"].astype(str).str.zfill(5)
+        _eg_census_levels = _eg_levels[
+            ["ARS_kreis", "ERWERBSTAT_KURZ_STP__11_M", "ERWERBSTAT_KURZ_STP__11_W"]
+        ].copy()
+
+        # Derive the 5-digit Kreis on the cells frame from the 12-digit ARS column,
+        # matching folders.GEO_KREIS = ARS[:5].
+        if mid._ARS_COLUMN not in cells.columns:
+            raise ValueError(
+                f"{KEY_EMPLOYMENT_GRID} is 'on' but the cells frame carries no "
+                f"{mid._ARS_COLUMN!r} column; cannot derive the Kreis code."
+            )
+        cells = cells.copy()
+        cells[_folders.GEO_KREIS] = cells[mid._ARS_COLUMN].astype(str).str[:5]
+
+        # SHAPE: Zensus 2000S-2001 employment-by-age-group shares per Kreis, loaded from
+        # the committed reference CSV under data_path. Built once per distinct Kreis on
+        # the cells frame (exact for 03101/02/03, national fallback for the Landkreise).
+        _eg_data_path = context.config("data_path")
+        _eg_ref = os.path.join(
+            _eg_data_path, "braunschweig/popsim/zensus2022_employment_by_age_ref.csv"
+        )
+        if not os.path.exists(_eg_ref):
+            raise FileNotFoundError(
+                f"employment grid control requires the Zensus age-share reference "
+                f"{_eg_ref}; import zensus2022_employment_by_age_ref.csv into "
+                "data/braunschweig/popsim/."
+            )
+        _eg_kreise = sorted(cells[_folders.GEO_KREIS].astype(str).unique())
+        _eg_age_shares = {k: _za.load_age_shares(_eg_ref, k) for k in _eg_kreise}
+
+        cells = _eg.add_employment_grid_columns(
+            cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
+        )
+        logger.info(
+            "[popsim.stage] employment grid control ON: injected 10 "
+            "EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg per-cell targets "
+            "(census levels from %s, age shape from %s, %d Kreise).",
+            _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
+        )
 
     # Build the PopulationSim seed.
     # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -518,42 +700,24 @@ def execute(context) -> pd.DataFrame:
             hts_hh_seed, hts_persons_seed
         )
     elif complete_members:
-        # popsim_mid with member completion (D3, default ON): ONE completion pass
-        # on the attribute-bearing donor tables (day-filtered like the legacy
-        # seed), then the PopulationSim seed is projected out of the completed
-        # frames. RNG offset +74513 keeps the mirror-draw stream disjoint from
-        # the +74511 attribute-imputation stream below.
-        weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
-        # Weekend-plan match needs weekend reporters in the donor, so it forces ALL
-        # kernwo days (overriding seed_day_filter). When OFF we defer to main's
-        # configurable seed_day_filter (default None -> loader default (1,2,3) Mo-Fr).
-        day_filter = (
-            seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
-        )
-        completion_rng = np.random.RandomState(random_seed + 74513)
-        (
-            completed_donor_households, completed_donor_persons,
-            report, completion_report,
-        ) = mid.load_completed_donor(
-            mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
-        )
-        if weekend_plan_match_on:
-            # completion_rng is DELIBERATELY shared with member-completion above:
-            # the two draws form one entangled seeded stream -- do NOT reseed it.
-            completed_donor_persons, _weekend_trace, _weekend_report = (
-                weekend_plan_match.reassign_weekend_plan_sources(
-                    completed_donor_households, completed_donor_persons,
-                    rng=completion_rng,
-                )
-            )
-            _weekend_trace.to_parquet(Path(work_dir) / "weekend_plan_match_trace.parquet")
-            logger.info("[popsim.stage] weekend_plan_match: %s", _weekend_report)
+        # popsim_mid with member completion (D3, default ON): the donor build
+        # (member completion + weekend-plan match) is produced by the cached
+        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
+        # The same completed frames feed BOTH the PopulationSim seed (projected
+        # here) AND the expansion donor tables below.
+        donor = context.stage("completed_donor")
+        completed_donor_households = donor.households
+        completed_donor_persons = donor.persons
+        report = donor.completeness_report
+        completion_report = donor.completion_report
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
         # load_mid_seed does, so the seed carries it for the household_type control.
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
         )
+        # Surface the build reports on THIS run too (so they are present even when
+        # the completed_donor stage was served from cache and its execute did not run).
         context.set_info(
             "member_completion_filled", completion_report.n_households_filled
         )
@@ -579,6 +743,25 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
+    # Purge stale batch folders if the popsim config/control set changed since the last
+    # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
+    # a config change would otherwise leave old completion markers that the batch runner
+    # skips -> stale-config population for those cells). Signature = everything that
+    # determines a batch's inputs (the full control set, the PopulationSim settings, the
+    # batching/stratification, the donor source, the KREIS controls, the seed-day filter).
+    import hashlib as _hashlib
+    import json as _json
+    _config_signature = _hashlib.sha256(_json.dumps({
+        "controls": controls_df.to_csv(index=False),
+        "settings": Path(settings_path).read_text(encoding="utf-8"),
+        "max_cells": max_cells,
+        "stratify_regiostar": stratify_regiostar,
+        "source": source_name,
+        "employment_grid": employment_grid_on,
+        "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
+        "seed_day_filter": str(seed_day_filter),
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    purge_stale_batches_on_config_change(work_dir, _config_signature)
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
@@ -595,6 +778,32 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
+
+    # Surface the PopulationSim integerizer feasibility (no-silent-fallback): some
+    # zones return INFEASIBLE and fall back to smart-rounded weights inside
+    # PopulationSim. That is otherwise buried in the per-batch logs; aggregate and
+    # log it here (WARNING above INTEGERIZER_INFEASIBLE_WARN_RATE). A high rate is a
+    # quality signal (control set over-constrained for small cells -- common at low
+    # sampling rates), not a hard failure: a smart-rounded population is still produced.
+    feas = mid.summarize_integerizer_feasibility(work_dir)
+    context.set_info("popsim_integerizer_infeasible_rate", feas["infeasible_rate"])
+    context.set_info("popsim_integerizer_n_infeasible", feas["n_infeasible"])
+    _feas_log = (
+        logger.warning
+        if feas["infeasible_rate"] > mid.INTEGERIZER_INFEASIBLE_WARN_RATE
+        else logger.info
+    )
+    _feas_log(
+        "[popsim.stage] PopulationSim integerizer: %d/%d zones OPTIMAL (%.1f%%), "
+        "%d INFEASIBLE -> smart-rounded (%.1f%%), %d simul-retry-failed, across %d "
+        "batch log(s). A high INFEASIBLE rate means the control set is "
+        "over-constrained for small cells (expected to shrink at higher sampling "
+        "rates where cells hold more households).",
+        feas["n_optimal"], feas["n_total"],
+        100.0 * (1.0 - feas["infeasible_rate"]),
+        feas["n_infeasible"], 100.0 * feas["infeasible_rate"],
+        feas["n_simul_retry_failed"], feas["n_logs"],
+    )
 
     # Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
     # from the cells frame back onto the merged PopulationSim output: the ARS

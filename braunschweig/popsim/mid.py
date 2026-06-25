@@ -58,6 +58,60 @@ _ARS_COLUMN = "RegionalSchlussel_ARS"
 # (no-silent-fallback policy).
 MAX_MISSING_BATCH_RATE = 0.10
 
+# Above this share of zone-integerizations falling back to smart-rounding
+# (PopulationSim returning INFEASIBLE), the popsim stage logs a WARNING instead of
+# INFO. This is a quality signal, not a hard failure: PopulationSim still produces a
+# (smart-rounded) population. A high rate usually means the control set is
+# over-constrained for small cells -- common at low sampling rates where a 100 m
+# cell holds very few households (no-silent-fallback policy: surface the rate).
+INTEGERIZER_INFEASIBLE_WARN_RATE = 0.05
+
+
+def summarize_integerizer_feasibility(work_dir: Union[str, Path]) -> dict:
+    """Aggregate the PopulationSim LP-integerizer feasibility across batch logs.
+
+    PopulationSim integerizes each control zone with an LP; when the control set
+    cannot be satisfied integer-simultaneously (typically tiny cells at a low
+    sampling rate) it returns INFEASIBLE and falls back INTERNALLY to "smart-rounded
+    original weights". That fallback is otherwise invisible to this pipeline -- it
+    lives only in the per-batch ``populationsim.log`` -- so this parser surfaces it
+    (CLAUDE.md: no silent fallbacks; treat a high rate as a quality signal).
+
+    Parameters
+    ----------
+    work_dir:
+        The popsim working directory containing the ``batch_*/output/populationsim.log``
+        files.
+
+    Returns
+    -------
+    dict
+        ``n_logs`` (batch logs scanned), ``n_optimal`` (zones integerized optimally),
+        ``n_infeasible`` (zones that fell back to smart-rounding),
+        ``n_simul_retry_failed`` (zone-group simultaneous-integerize retries that
+        failed), ``n_total`` (optimal + infeasible) and ``infeasible_rate``.
+    """
+    work_dir = Path(work_dir)
+    n_logs = n_optimal = n_infeasible = n_simul_retry_failed = 0
+    for log_path in sorted(work_dir.glob("*/output/populationsim.log")):
+        n_logs += 1
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        # ": OPTIMAL" terminates each "Integerizer status for ...: OPTIMAL" line;
+        # "Integerizer failed for ... status INFEASIBLE" is one smart-round fallback.
+        n_optimal += text.count(": OPTIMAL")
+        n_infeasible += text.count("Integerizer failed for")
+        n_simul_retry_failed += text.count("do_simul_integerizing retry failed")
+    n_total = n_optimal + n_infeasible
+    infeasible_rate = (n_infeasible / n_total) if n_total else 0.0
+    return {
+        "n_logs": n_logs,
+        "n_optimal": n_optimal,
+        "n_infeasible": n_infeasible,
+        "n_simul_retry_failed": n_simul_retry_failed,
+        "n_total": n_total,
+        "infeasible_rate": infeasible_rate,
+    }
+
 
 def _run_batches_and_merge(
     batch_folders: Sequence[str], run_one, *, num_workers: int
