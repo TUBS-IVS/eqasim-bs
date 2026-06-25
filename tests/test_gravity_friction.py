@@ -52,6 +52,23 @@ def test_per_rs7_band_factors_apply_per_origin_row():
     assert got[1, 1] == 3.0 + 1.0   # origin row 1 -> rs7 77, band 0, + diagonal
 
 
+def test_per_rs7_unmatched_rs7_falls_back_to_exp_row():
+    """Unmatched RS7 origins fall back to legacy exp(slope*d+constant) per row."""
+    distances = np.array([[0.0, 7.0], [7.0, 0.0]])
+    slope_vec = np.array([-0.2, -0.3])
+    factors = {72: {b: 1.0 for b in range(7)}}   # only RS7 72 calibrated
+    rs7_vec = np.array([72, -1])                  # row 1 unmatched -> exp fallback
+    got = build_friction_matrix(distances, slope_vec, constant=-2.4,
+                                diagonal=1.0, factors=factors, rs7_vec=rs7_vec)
+    # row 0 (rs7 72): band factor 1.0 off-diagonal, +diagonal on [0,0]
+    assert got[0, 1] == 1.0
+    assert got[0, 0] == 1.0 + 1.0
+    # row 1 (unmatched): legacy exp(slope*d + c), +diagonal on [1,1]
+    exp_row = np.exp(slope_vec[1] * distances[1, :] + (-2.4))
+    np.testing.assert_allclose(got[1, 1], exp_row[1] + 1.0)
+    np.testing.assert_allclose(got[1, 0], exp_row[0])
+
+
 def test_model_friction_assembly_off_equivalent():
     """The builder with factors=None equals the legacy formula the model uses."""
     import numpy as np

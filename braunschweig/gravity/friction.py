@@ -8,7 +8,11 @@ friction byte-identically (OFF path).
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # Distance-band edges in km (single source of truth; aligned to MiD P13 bands,
 # with the exactly-0 "same place" P13 column folded into the first band -- the
@@ -48,12 +52,39 @@ def build_friction_matrix(distances_km, slope_vec, constant, diagonal,
         lut = np.array([float(factors[b]) for b in range(len(edges) - 1)])
         base = lut[bands]
     else:
-        # Per-RS7 per-band: vectorise the inner loop (origin rows stay separate)
+        # Per-RS7 per-band: vectorise the inner loop (origin rows stay separate).
+        # Origins whose RS7 code is not in ``factors`` (e.g. external communes coded
+        # -1, or RS7 71 absent from the calibrated set) fall back to the legacy
+        # exponential for that row so a KeyError never crashes a real run.
         rs7_vec = np.asarray(rs7_vec)
+        slope_vec_arr = np.asarray(slope_vec)
         base = np.empty_like(distances_km)
+        n_matched = 0
+        n_fallback = 0
         for i in range(n):
-            row_factors = factors[int(rs7_vec[i])]
-            lut = np.array([float(row_factors[b]) for b in range(len(edges) - 1)])
-            base[i, :] = lut[bands[i, :]]
+            rs7_code = int(rs7_vec[i])
+            if rs7_code in factors:
+                row_factors = factors[rs7_code]
+                lut = np.array([float(row_factors[b]) for b in range(len(edges) - 1)])
+                base[i, :] = lut[bands[i, :]]
+                n_matched += 1
+            else:
+                # Unmatched RS7: fall back to legacy exp(slope * d + constant) for this row.
+                base[i, :] = np.exp(slope_vec_arr[i] * distances_km[i, :] + constant)
+                n_fallback += 1
+
+        # Log match/fallback rate (CLAUDE.md no-silent-fallback).
+        logger.info(
+            "[friction] per-RS7: matched %d/%d origins (%.1f%%), fallback to exp %d/%d (%.1f%%)",
+            n_matched, n, 100.0 * n_matched / n if n else 0.0,
+            n_fallback, n, 100.0 * n_fallback / n if n else 0.0,
+        )
+        if n_fallback > 0:
+            logger.warning(
+                "[friction] %d origin row(s) had unmatched RS7 codes and fell back to the "
+                "legacy exponential. Check that all origin communes have a calibrated RS7 "
+                "friction factor (or are intentional external/EXT communes).",
+                n_fallback,
+            )
 
     return base + np.eye(n) * diagonal

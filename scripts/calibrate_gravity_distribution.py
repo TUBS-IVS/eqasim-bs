@@ -660,7 +660,6 @@ def main():
     ], dtype=float)
     initial_factors = initial_factors / initial_factors.mean()  # normalise mean to 1
     factors_b = initial_factors.copy()
-    factors_dict = {b: float(factors_b[b]) for b in range(N_BANDS)}
 
     # Per-RS7 factors: start from the same global initial factors for every RS7.
     rs7_codes = sorted(
@@ -903,7 +902,6 @@ def main():
         else:
             factors_b = furness_update(factors_b, targets.get("03ZGB", model_shares_zgb),
                                        model_shares_zgb)
-            factors_dict = {b: float(factors_b[b]) for b in range(N_BANDS)}
 
     if not converged:
         final_emd = float("nan")
@@ -950,8 +948,34 @@ def main():
             else:
                 counts_by_rs7[rs7] = np.zeros(N_BANDS, dtype=int)
 
+        # Compute a genuine pooled-calibrated factor: the worker-count-weighted mean
+        # of the converged per-RS7 factors.  This is the correct blend target for
+        # shrinkage: sparse rural RS7 cells (RS7 75/76/77) will be pulled toward the
+        # realised ZGB-wide calibrated distribution, NOT toward the uncalibrated seed
+        # (which is what passing ``factors_b`` would do in per-RS7 mode, since
+        # ``factors_b`` is only updated in the global ``else`` branch and stays at the
+        # initial exp(slope * mid_b) seed when --per-rs7 is active).
+        rs7_worker_counts = {
+            rs7: int(np.sum(counts_by_rs7.get(rs7, np.zeros(N_BANDS))))
+            for rs7 in factors_by_rs7
+        }
+        total_workers_for_pool = sum(rs7_worker_counts.values())
+        if total_workers_for_pool > 0:
+            pooled_calibrated = np.zeros(N_BANDS, dtype=float)
+            for rs7, f_arr in factors_by_rs7.items():
+                w = rs7_worker_counts[rs7] / total_workers_for_pool
+                pooled_calibrated += w * np.asarray(f_arr, dtype=float)
+        else:
+            # No workers at all — fall back to the global initial seed (safe no-op).
+            pooled_calibrated = factors_b.copy()
+            logger.warning(
+                "[commute-calib] shrinkage: no RS7 workers found for pooled-calibrated "
+                "derivation; using initial seed as pooled target (should not occur on a "
+                "real synthesis)."
+            )
+
         factors_by_rs7, shrinkage_rate = shrink_sparse_factors(
-            factors_by_rs7, counts_by_rs7, factors_b, args.min_count
+            factors_by_rs7, counts_by_rs7, pooled_calibrated, args.min_count
         )
 
         # MANDATORY: log shrinkage rate explicitly (CLAUDE.md no-silent-fallback).
