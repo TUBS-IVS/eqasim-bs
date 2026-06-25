@@ -244,6 +244,12 @@ config:
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
+  # Building-level activity potentials OFF (no local-only parquet required);
+  # see the real-data run configs for the ON path.
+  work_building_potentials: false
+  secondary_building_potentials: false
+  education_building_distribution: false
+
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_bavaria.yml but with three census loaders and the
 # buildings loader redirected to the forked Braunschweig implementations.

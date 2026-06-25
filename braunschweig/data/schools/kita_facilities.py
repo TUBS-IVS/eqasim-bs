@@ -1,8 +1,10 @@
 """Build Kita (kindergarten) destination points for the education gravity model.
 
 Each LSN Einheits-/Samtgemeinde's Plaetze (LSN K2300112) are distributed across the
-unit's OSM kindergarten POIs by area. A POI's LSN unit is derived from its 12-digit
-ARS commune_id; the kreisfreie Staedte fall back to the 3-digit Kreis code. Output:
+unit's OSM kindergarten POIs by the chosen weight column (default: footprint area;
+with education_building_distribution=True: building potential from the building-
+potentials stage). A POI's LSN unit is derived from its 12-digit ARS commune_id;
+the kreisfreie Staedte fall back to the 3-digit Kreis code. Output:
 GeoDataFrame[location_id, capacity, geometry] in EPSG:25832.
 """
 from __future__ import annotations
@@ -21,7 +23,21 @@ def lsn_unit(commune_id):
     return s[2:5] + s[6:9]
 
 
-def build_kita_facilities(df_kitas, df_osm_kg):
+def build_kita_facilities(df_kitas, df_osm_kg, weight_column="weight"):
+    """Distribute each LSN unit's Plaetze across its OSM kindergarten POIs.
+
+    Parameters
+    ----------
+    df_kitas:
+        LSN Kita table with columns lsn_code (str) and plaetze (float).
+    df_osm_kg:
+        OSM kindergarten POIs GeoDataFrame; must contain commune_id, geometry,
+        and the column named by weight_column.
+    weight_column:
+        Column in df_osm_kg to use as the distribution weight. Default "weight"
+        (footprint area) reproduces the legacy behaviour byte-identically.
+        Pass "potential" to distribute by building potential instead.
+    """
     osm = df_osm_kg.to_crs(CRS_METRIC).copy()
     osm["lsn6"] = osm["commune_id"].map(lsn_unit)
     osm["kreis3"] = osm["commune_id"].astype(str).str[2:5]
@@ -36,12 +52,12 @@ def build_kita_facilities(df_kitas, df_osm_kg):
     for unit, sub in osm.groupby("unit"):
         if unit not in plaetze:
             continue
-        total_area = sub["weight"].sum()
-        if total_area <= 0:
+        total = sub[weight_column].sum()
+        if total <= 0:
             continue
         for _, b in sub.iterrows():
             rows_id.append("kita_%d" % len(rows_id))
-            rows_cap.append(float(plaetze[unit]) * float(b["weight"]) / total_area)
+            rows_cap.append(float(plaetze[unit]) * float(b[weight_column]) / total)
             rows_geom.append(b["geometry"])
 
     gdf = gpd.GeoDataFrame({"location_id": rows_id, "capacity": rows_cap},
@@ -53,6 +69,9 @@ def configure(context):
     context.config("data_path")
     context.config("nds_kitas_path", "braunschweig/schools/nds_kitas_zgb.csv")
     context.stage("eqasim_common.locations.education")
+    enabled = context.config("education_building_distribution", True)
+    if enabled:
+        context.stage("braunschweig.data.building_potentials")
 
 
 def execute(context):
@@ -60,7 +79,20 @@ def execute(context):
     df_k = pd.read_csv(path, dtype={"lsn_code": str})
     df_osm = context.stage("eqasim_common.locations.education")
     df_osm = df_osm[df_osm["education_type"] == "kindergarten"].copy()
-    gdf = build_kita_facilities(df_k, df_osm)
+
+    enabled = context.config("education_building_distribution")
+    weight_column = "weight"
+    if enabled:
+        from braunschweig.data.building_potential_attach import attach_potential
+        df_b = context.stage("braunschweig.data.building_potentials")
+        vals, _p, _f = attach_potential(
+            df_osm, df_b, "potential_kindergarten",
+            fallback=df_osm["weight"].to_numpy(float), label="kita")
+        df_osm = df_osm.copy()
+        df_osm["potential"] = vals
+        weight_column = "potential"
+
+    gdf = build_kita_facilities(df_k, df_osm, weight_column=weight_column)
     placed = float(gdf["capacity"].sum())
     expected = float(df_k["plaetze"].sum())
 

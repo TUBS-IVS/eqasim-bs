@@ -89,6 +89,18 @@ def configure(context):
     # mobsim without changing the MATSim thread count.
     context.config("braunschweig.chainsolvers.processes", None)
 
+    # Building-potential scorer (flag-gated; default ON). When enabled, each
+    # candidate's per-activity potential (retail / leisure / generic) is attached
+    # from the building footprints and forwarded to the chainsolvers combined
+    # Scorer. When disabled the stage is byte-identical to the pre-C3 behaviour
+    # (distance-only scoring, no potentials column in locations_df).
+    sec_enabled = context.config("secondary_building_potentials", True)
+    context.config("secondary_scorer_mode", "combined")
+    context.config("secondary_scorer_pot_weight", 1.0)
+    context.config("secondary_scorer_dist_dev_weight", 1.0)
+    if sec_enabled:
+        context.stage("braunschweig.data.building_potentials")
+
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors of the legacy stage)
@@ -171,18 +183,143 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     return float(distance)
 
 
-def _build_locations_df(df_secondary: pd.DataFrame) -> pd.DataFrame:
-    """Convert eqasim secondary candidates → chainsolvers ``locations_df``."""
+# Maps each secondary activity to its attached candidate-potential column.
+_ACTIVITY_POTENTIAL_COLUMN = {
+    "shop": "pot_shop",
+    "leisure": "pot_leisure",
+    "other": "pot_other",
+}
+
+
+def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float):
+    """Construct the chainsolvers combined Scorer, or None when disabled (the
+    legacy distance-only path). Import-lazy so the module loads without the dep.
+    Raises if enabled but the Scorer is unavailable (no silent fallback)."""
+    if not enabled:
+        return None
+    try:
+        import chainsolvers as cs
+        Scorer = getattr(cs, "Scorer", None)
+        if Scorer is None:
+            from chainsolvers.scoring_selection import Scorer
+        return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight)
+    except Exception as exc:
+        raise RuntimeError(
+            "secondary_building_potentials is ON but the chainsolvers combined "
+            "Scorer is unavailable (%s); pin the git commit in environment.yml" % exc
+        )
+
+
+def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
+                               df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """REPLACE secondary candidates when building potentials are ON.
+
+    shop/leisure candidates = gpkg activity buildings (native potentials, no
+    fallback — the candidate set IS the buildings that carry a non-zero
+    retail or leisure potential); 'other' candidates = the legacy broad catalog
+    with the generic potential attached by footprint join (fallback 0.0, logged
+    by attach_potential so the rate stays observable).
+
+    Parameters
+    ----------
+    df_secondary_legacy:
+        The legacy secondary candidate GeoDataFrame from
+        ``synthesis.locations.secondary`` (columns: location_id, commune_id,
+        iris_id, geometry(Point), offers_shop, offers_leisure, offers_other).
+    df_buildings:
+        Building-footprint GeoDataFrame from
+        ``braunschweig.data.building_potentials`` (columns: building_id,
+        potential_retail_daily, potential_retail_non_daily, potential_leisure,
+        potential_generic, commune_id, geometry(POLYGON), EPSG:25832).
+
+    Returns
+    -------
+    GeoDataFrame with columns:
+        location_id, commune_id, iris_id, geometry(Point),
+        offers_shop, offers_leisure, offers_other,
+        pot_shop, pot_leisure, pot_other
+    concat of gpkg shop/leisure rows and legacy other rows, reset index.
+    """
+    from braunschweig.data.building_potential_attach import attach_potential
+
+    # --- gpkg shop/leisure candidates ---
+    # One row per building that carries a non-zero retail or leisure potential.
+    # Potentials are native (read directly from the building table); no spatial
+    # join needed, so there is no fallback path for this half of the candidates.
+    b = df_buildings.copy()
+    retail = (b["potential_retail_daily"].astype(float)
+              + b["potential_retail_non_daily"].astype(float))
+    leisure = b["potential_leisure"].astype(float)
+    keep = (retail > 0) | (leisure > 0)
+    b = b[keep]
+    retail = retail[keep]
+    leisure = leisure[keep]
+    gpkg = gpd.GeoDataFrame({
+        "location_id": ("sec_b_" + b["building_id"].astype(str)).values,
+        "commune_id": b["commune_id"].astype(str).values,
+        "iris_id": b["commune_id"].astype(str).values,
+        "offers_shop": (retail > 0).values,
+        "offers_leisure": (leisure > 0).values,
+        "offers_other": False,
+        "pot_shop": retail.values,
+        "pot_leisure": leisure.values,
+        "pot_other": 0.0,
+        "geometry": b.geometry.centroid.values,
+    }, crs=df_buildings.crs)
+
+    # --- legacy 'other' candidates (broad catalog) ---
+    # All legacy candidates become 'other'-only rows so the broad OSM/ALKIS/
+    # landuse catalog is preserved for the 'other' purpose.  The generic
+    # potential is attached by footprint join (fallback 0.0, rate logged).
+    legacy = df_secondary_legacy.copy()
+    pot_other, _p, _f = attach_potential(
+        legacy, df_buildings, "potential_generic",
+        fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
+    legacy_other = gpd.GeoDataFrame({
+        "location_id": legacy["location_id"].astype(str).values,
+        "commune_id": legacy["commune_id"].astype(str).values,
+        "iris_id": legacy["iris_id"].astype(str).values,
+        "offers_shop": False,
+        "offers_leisure": False,
+        "offers_other": True,
+        "pot_shop": 0.0,
+        "pot_leisure": 0.0,
+        "pot_other": pot_other,
+        "geometry": legacy.geometry.values,
+    }, crs=legacy.crs)
+
+    out = gpd.GeoDataFrame(
+        pd.concat([gpkg, legacy_other], ignore_index=True), crs=df_buildings.crs)
+    print("[braunschweig.secondary_chainsolvers] REPLACE candidates: "
+          "%d gpkg shop/leisure buildings + %d legacy 'other' candidates"
+          % (len(gpkg), len(legacy_other)))
+    return out
+
+
+def _build_locations_df(df_secondary, with_potentials: bool = False):
+    """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
+
+    When ``with_potentials`` is True a ``potentials`` column is added: a
+    semicolon-joined string aligned 1:1 with ``activities`` (the chainsolvers df
+    parser reads per-activity potentials parallel to the activities list).
+    """
     activities = []
-    for _, row in df_secondary[["offers_shop", "offers_leisure", "offers_other"]].iterrows():
-        acts = []
-        if bool(row["offers_shop"]):
-            acts.append("shop")
-        if bool(row["offers_leisure"]):
-            acts.append("leisure")
-        if bool(row["offers_other"]):
-            acts.append("other")
+    potentials = []
+    cols = ["offers_shop", "offers_leisure", "offers_other"]
+    if with_potentials:
+        cols = cols + list(_ACTIVITY_POTENTIAL_COLUMN.values())
+    for _, row in df_secondary[cols].iterrows():
+        acts, pots = [], []
+        for act, offer in (("shop", "offers_shop"),
+                           ("leisure", "offers_leisure"),
+                           ("other", "offers_other")):
+            if bool(row[offer]):
+                acts.append(act)
+                if with_potentials:
+                    pots.append(float(row[_ACTIVITY_POTENTIAL_COLUMN[act]]))
         activities.append("; ".join(acts))
+        if with_potentials:
+            potentials.append("; ".join(str(p) for p in pots))
 
     # Vectorised coordinate access (GeoSeries.x/.y) instead of a per-geometry
     # Python lambda; produces the identical (n, 2) ordering as the candidate
@@ -191,13 +328,15 @@ def _build_locations_df(df_secondary: pd.DataFrame) -> pd.DataFrame:
         df_secondary.geometry.x.values,
         df_secondary.geometry.y.values,
     ))
-    out = pd.DataFrame({
+    data = {
         "id": df_secondary["location_id"].astype(str).values,
         "x": coords[:, 0],
         "y": coords[:, 1],
         "activities": activities,
-    })
-    return out
+    }
+    if with_potentials:
+        data["potentials"] = potentials
+    return pd.DataFrame(data)
 
 
 # ---------------------------------------------------------------------------
@@ -726,11 +865,12 @@ _CHAIN_RESULT_COLUMNS = [
 # drop the rest.
 _CHAIN_CHUNK_SIZE = 500
 
-# Worker-process globals: the (read-only) locations table and solver name are
-# sent once per worker via the Pool initializer instead of being pickled with
-# every task.
+# Worker-process globals: the (read-only) locations table, solver name, and
+# scorer spec are sent once per worker via the Pool initializer instead of being
+# pickled with every task.
 _WORKER_LOCATIONS_DF = None
 _WORKER_SOLVER = None
+_WORKER_SCORER_SPEC = None
 
 
 def _empty_chain_result_df() -> pd.DataFrame:
@@ -788,10 +928,11 @@ def _derive_shard_seed(base_seed: int, shard_index: int) -> int:
     return int(np.random.SeedSequence([int(base_seed), int(shard_index)]).generate_state(1)[0])
 
 
-def _init_chain_worker(locations_df, solver) -> None:
-    global _WORKER_LOCATIONS_DF, _WORKER_SOLVER
+def _init_chain_worker(locations_df, solver, scorer_spec=None) -> None:
+    global _WORKER_LOCATIONS_DF, _WORKER_SOLVER, _WORKER_SCORER_SPEC
     _WORKER_LOCATIONS_DF = locations_df
     _WORKER_SOLVER = solver
+    _WORKER_SCORER_SPEC = scorer_spec
 
 
 def _solve_person_shard(task):
@@ -809,10 +950,12 @@ def _solve_person_shard(task):
         _logging.getLogger(_name).setLevel(_logging.WARNING)
 
     shard_index, shard_uids, shard_df, shard_seed = task
+    scorer = build_scorer(**_WORKER_SCORER_SPEC) if _WORKER_SCORER_SPEC else None
     ctx = cs.setup(
         locations_df=_WORKER_LOCATIONS_DF,
         solver=_WORKER_SOLVER or "carla",
         rng_seed=int(shard_seed),
+        scorer=scorer,
     )
 
     # Person sub-frames are contiguous iloc slices of shard_df (rows are built
@@ -866,7 +1009,7 @@ def _solve_person_shard(task):
 
 
 def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
-                           base_seed, n_workers, t0):
+                           base_seed, n_workers, t0, scorer_spec=None):
     """Solve all person chains across ``n_workers`` processes and recombine
     deterministically (results concatenated in shard-index order)."""
     shards = _make_person_shards(unique_persons, n_workers)
@@ -909,7 +1052,7 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
     with pool_context.Pool(
         processes=len(tasks),
         initializer=_init_chain_worker,
-        initargs=(locations_df, solver),
+        initargs=(locations_df, solver, scorer_spec),
     ) as pool:
         for shard_index, res_df, shard_failed in pool.imap_unordered(_solve_person_shard, tasks):
             results_by_index[shard_index] = res_df
@@ -1119,7 +1262,21 @@ def execute(context):
         f"[braunschweig.secondary_chainsolvers] {len(plans_df):,} plan rows; "
         f"building chainsolvers context..."
     )
-    locations_df = _build_locations_df(df_secondary)
+    sec_enabled = context.config("secondary_building_potentials")
+    scorer_spec = ({
+        "enabled": True,
+        "mode": context.config("secondary_scorer_mode"),
+        "pot_weight": context.config("secondary_scorer_pot_weight"),
+        "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
+    } if sec_enabled else None)
+    # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
+    # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
+    if sec_enabled:
+        df_secondary = build_secondary_candidates(
+            df_secondary,
+            context.stage("braunschweig.data.building_potentials"),
+        )
+    locations_df = _build_locations_df(df_secondary, with_potentials=sec_enabled)
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
     # One base seed drawn from the deterministic RandomState. Drawing exactly
@@ -1156,12 +1313,12 @@ def execute(context):
     if run_parallel:
         result_df, failed_problem_idx = _solve_chains_parallel(
             plans_for_cs, unique_persons, locations_df, solver_name,
-            base_seed, n_workers, t0,
+            base_seed, n_workers, t0, scorer_spec,
         )
     else:
         # Serial path: a single shard over all persons seeded with base_seed, so
         # the chunked solve loop is byte-identical to the pre-parallel behaviour.
-        _init_chain_worker(locations_df, solver_name)
+        _init_chain_worker(locations_df, solver_name, scorer_spec)
         _shard_idx, result_df, failed_problem_idx = _solve_person_shard(
             (0, unique_persons, plans_for_cs, base_seed)
         )

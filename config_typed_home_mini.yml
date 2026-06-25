@@ -85,6 +85,12 @@ config:
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
+  # Building-level activity potentials OFF (no local-only parquet required);
+  # see the real-data run configs for the ON path.
+  work_building_potentials: false
+  secondary_building_potentials: false
+  education_building_distribution: false
+
   education_gravity_enabled: false
   education_gravity_slope_by_level_rs7:
     kindergarten: {72: -3.0000, 73: -2.0251, 74: -3.0000, 75: -3.0000, 76: -0.5167, 77: -2.8138}
