@@ -1,0 +1,7 @@
+# Distance-dependent detour/circuity parameters c(d)=c_inf+a*exp(-d/tau).
+# car, walk: fitted by scripts/calibrate_detour_circuity.py on the ZGB networks (REGENERATE; values below are seed placeholders).
+# pt: NOT fitted -> c_pt(d)=c_car(d)*uplift. uplift provenance MUST be verified against Huang & Levinson (2015) before pinning (currently UNVERIFIED placeholder).
+network,c_inf,a,tau_km,uplift,base,n_samples,fit_r2,rs7,provenance
+car,1.15,0.60,2.0,,,0,0.0,,SEED_PLACEHOLDER_rerun_calibrate_detour_circuity
+walk,1.20,0.40,1.0,,,0,0.0,,SEED_PLACEHOLDER_rerun_calibrate_detour_circuity
+pt,,,,1.30,car,0,0.0,,UNVERIFIED_Huang_Levinson_2015_circuity_in_urban_transit_networks
