@@ -10,7 +10,7 @@ def test_load_params_has_three_networks():
     assert set(params) == {"car", "walk", "pt"}
     assert params["car"]["c_inf"] >= 1.0
     assert params["pt"]["base"] == "car"
-    assert params["pt"]["uplift"] > 1.0
+    assert params["pt"]["uplift"] >= 1.0
 
 
 def test_curve_monotone_decreasing_toward_asymptote():

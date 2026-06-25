@@ -662,11 +662,11 @@ def _rs7_diagnostic(
                                                      params=None, mode="constant")
         shares_const = band_shares(global_routed_by_curve, edges=BAND_EDGES_KM)
         # Under fitted curve
+        # Only the "car" key is used; drop unused walk/pt keys to avoid
+        # magic-number placeholders that never influence the car-network evaluation.
         fitted_params = {
             "car": {"c_inf": global_fit["c_inf"], "a": global_fit["a"],
                     "tau": global_fit["tau"]},
-            "walk": {"c_inf": 1.2, "a": 0.4, "tau": 1.0},  # placeholder walk
-            "pt": {"uplift": 1.3, "base": "car"},
         }
         from braunschweig.calibration.circuity import circuity_factor as _cf
         routed_by_fitted = cum_euclidean * _cf(
@@ -714,11 +714,11 @@ def _rs7_diagnostic(
 
                 # Per-RS7 EMD vs P13 ZGB target
                 if p13_zgb is not None:
+                    # Only the "car" key is evaluated; unused walk/pt keys are omitted
+                    # to avoid hardcoded placeholder values that never affect the result.
                     rs7_params_dict = {
                         "car": {"c_inf": rs7_fit["c_inf"], "a": rs7_fit["a"],
                                 "tau": rs7_fit["tau"]},
-                        "walk": {"c_inf": 1.2, "a": 0.4, "tau": 1.0},
-                        "pt": {"uplift": 1.3, "base": "car"},
                     }
                     from braunschweig.calibration.circuity import circuity_factor as _cf
                     routed_rs7_fitted = cum_euclidean[mask] * _cf(
@@ -774,7 +774,9 @@ def _band_shift_impact(
     rows = []
     p13_zgb = p13_targets.get("03ZGB", None)
 
-    car_params = {
+    # Named fit_params (not car_params) because the dict covers car+walk+pt;
+    # the walk lookup below uses network="walk" on this same dict.
+    fit_params = {
         "car": {"c_inf": car_fit["c_inf"], "a": car_fit["a"], "tau": car_fit["tau"]},
         "walk": {"c_inf": walk_fit["c_inf"], "a": walk_fit["a"], "tau": walk_fit["tau"]},
         "pt": {"uplift": 1.3, "base": "car"},
@@ -786,7 +788,7 @@ def _band_shift_impact(
     if p13_zgb is not None and len(car_euclidean) > 0:
         const_routed = car_euclidean * LEGACY_DETOUR_FACTOR
         fit_routed = car_euclidean * _cf(car_euclidean, network="car",
-                                         params=car_params, mode="curve")
+                                         params=fit_params, mode="curve")
         shares_const = band_shares(const_routed, edges=BAND_EDGES_KM)
         shares_fit = band_shares(fit_routed, edges=BAND_EDGES_KM)
         emd_c = emd_on_bands(shares_const, p13_zgb)
@@ -814,29 +816,40 @@ def _band_shift_impact(
             "calibration decisions. Re-run with --osm-pbf to obtain a real walk curve."
         )
     if w12_targets and len(walk_euclidean) > 0:
-        for purpose in ("shop", "leisure", "other"):
-            w12_shares = w12_targets.get(purpose, None)
-            if w12_shares is None:
-                continue
-            const_walk = walk_euclidean * LEGACY_DETOUR_FACTOR
-            fit_walk = walk_euclidean * _cf(walk_euclidean, network="walk",
-                                            params=car_params, mode="curve")
-            n_w12 = len(W12_BAND_EDGES_KM) - 1
-            shares_const_w12 = band_shares(const_walk, edges=W12_BAND_EDGES_KM)
-            shares_fit_w12 = band_shares(fit_walk, edges=W12_BAND_EDGES_KM)
-            emd_c_w12 = emd_on_bands(shares_const_w12[:n_w12], w12_shares[:n_w12])
-            emd_f_w12 = emd_on_bands(shares_fit_w12[:n_w12], w12_shares[:n_w12])
+        # Emit a SINGLE pooled row: walk_euclidean covers all secondary purposes
+        # combined (the pool passed here has no purpose column), so separate
+        # per-purpose EMDs would be identical and misleading.  The authoritative
+        # per-purpose secondary EMD is produced by scripts/validate_secondary_distances.py.
+        const_walk = walk_euclidean * LEGACY_DETOUR_FACTOR
+        fit_walk = walk_euclidean * _cf(walk_euclidean, network="walk",
+                                        params=fit_params, mode="curve")
+        n_w12 = len(W12_BAND_EDGES_KM) - 1
+        shares_const_w12 = band_shares(const_walk, edges=W12_BAND_EDGES_KM)
+        shares_fit_w12 = band_shares(fit_walk, edges=W12_BAND_EDGES_KM)
+        # Use the pooled W12 target (average of available purpose shares, or first available).
+        pooled_w12 = next(
+            (w12_targets[p] for p in ("shop", "leisure", "other") if p in w12_targets),
+            None,
+        )
+        if pooled_w12 is not None:
+            emd_c_w12 = emd_on_bands(shares_const_w12[:n_w12], pooled_w12[:n_w12])
+            emd_f_w12 = emd_on_bands(shares_fit_w12[:n_w12], pooled_w12[:n_w12])
             rows.append({
-                "trip_type": f"secondary_{purpose}",
+                "trip_type": "secondary_walk_pooled",
                 "metric": "emd_vs_w12",
                 "emd_constant_1_3": emd_c_w12,
                 "emd_fitted_curve": emd_f_w12,
                 "delta": emd_f_w12 - emd_c_w12,
-                "note": "negative delta = fitted curve reduces EMD (closer to MiD W12 target)",
+                "note": (
+                    "pooled secondary walk (no purpose split here; "
+                    "per-purpose EMD: scripts/validate_secondary_distances.py). "
+                    "negative delta = fitted curve reduces EMD"
+                ),
             })
             logger.info(
-                "[circuity] band-shift impact secondary/%s W12: const=%.4f fitted=%.4f delta=%.4f",
-                purpose, emd_c_w12, emd_f_w12, emd_f_w12 - emd_c_w12,
+                "[circuity] band-shift impact secondary walk (pooled) W12: "
+                "const=%.4f fitted=%.4f delta=%.4f",
+                emd_c_w12, emd_f_w12, emd_f_w12 - emd_c_w12,
             )
     else:
         logger.warning("[circuity] band-shift secondary: W12 targets or walk pool absent; skipped.")

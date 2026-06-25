@@ -216,6 +216,12 @@ def measure_secondary_distances(working_directory: str):
     df_secondary = df_secondary.merge(
         df_mode, on=["person_id", "activity_index"], how="left"
     )
+    if len(df_secondary) != n_before_mode_join:
+        raise AssertionError(
+            f"[secondary-validate] secondary mode-join changed row count "
+            f"{n_before_mode_join} -> {len(df_secondary)}: "
+            "non-unique (person_id, activity_index) key in trips stage?"
+        )
     n_mode_missing = df_secondary["mode"].isna().sum()
     if n_mode_missing > 0:
         logger.warning(
