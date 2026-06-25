@@ -187,11 +187,33 @@ def _resample_distributions(distributions, factors):
     mutate only the copy; the returned object carries the resampled CDFs while
     the original cached object stays untouched. The deep copy is cheap (a
     handful of small distribution dicts per mode).
+
+    Handles BOTH the legacy per-mode structure ``{mode: {bounds, distributions}}``
+    and the purpose-layered structure ``{purpose: {mode: {bounds, distributions}}}``
+    (Tier 1, built when ``secondary_shop_daily_split`` adds ``shop_daily`` /
+    ``shop_non_daily`` distribution layers). The per-mode resample ``factors`` are
+    applied within each mode regardless of the layer structure. Detection mirrors
+    ``_sample_leg_distance``: a mode-level dict carries a ``"distributions"`` key;
+    a purpose-level dict maps purpose -> mode-dict (no ``"distributions"`` key
+    at the top level).
     """
     distributions = copy.deepcopy(distributions)
-    for mode, mode_distributions in distributions.items():
-        for distribution in mode_distributions["distributions"]:
-            distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
+    # Detect whether the top level is a purpose layer or a mode layer. A mode-level
+    # dict always carries a "distributions" key; a purpose-level dict does not
+    # (its values are mode dicts, each of which carries "distributions" one level
+    # deeper). Modes and purposes are disjoint vocabularies, so an ambiguous top-
+    # level key cannot occur.
+    sample_value = next(iter(distributions.values()))
+    is_purpose_layered = "distributions" not in sample_value
+    if is_purpose_layered:
+        for purpose, mode_dict in distributions.items():
+            for mode, mode_distributions in mode_dict.items():
+                for distribution in mode_distributions["distributions"]:
+                    distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
+    else:
+        for mode, mode_distributions in distributions.items():
+            for distribution in mode_distributions["distributions"]:
+                distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
     return distributions
 
 
@@ -570,12 +592,14 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
 
-    # Tier-2 subtype accounting (fallback transparency). Counts shop legs by
-    # imputed subtype and how many drew distances from the aggregate "shop"
-    # layer because their subtype layer was missing from the distributions.
-    subtype_stats: Dict[str, int] = {
-        "shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0,
-    }
+    # Tier-2 subtype accounting (fallback transparency). Allocated only when the
+    # subtype decider is active (ON path); on the OFF path an empty dict is
+    # returned so the caller's logging gate (shop_subtype_decider is not None)
+    # stays consistent with the allocation gate here.
+    subtype_stats: Dict[str, int] = (
+        {"shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0}
+        if shop_subtype_decider is not None else {}
+    )
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -1374,7 +1398,8 @@ def _build_shop_subtype_decider(context, random_seed: int):
         print(
             "[braunschweig.secondary_chainsolvers] shop daily subtype: using "
             f"pinned flat daily share {marginal:.3f} "
-            "(secondary_shop_daily_share set)."
+            "(secondary_shop_daily_share set; MiD estimation skipped, "
+            "labelled-fraction diagnostic N/A)."
         )
     else:
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
@@ -1522,7 +1547,8 @@ def execute(context):
         realised_daily = (n_daily / n_shop_legs) if n_shop_legs else 0.0
         n_dist_fb = subtype_stats["distance_layer_fallback"]
         print(
-            "[braunschweig.secondary_chainsolvers] shop subtype labelling: "
+            "[braunschweig.secondary_chainsolvers] shop subtype labelling "
+            "(bounded shop legs only; unbounded go to fallback untagged): "
             f"{n_shop_legs:,} bounded shop legs -> daily {n_daily:,} "
             f"({100.0 * realised_daily:.1f}%), non_daily {n_nondaily:,} "
             f"({100.0 * (1.0 - realised_daily):.1f}%); "

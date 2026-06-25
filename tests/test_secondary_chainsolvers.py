@@ -632,6 +632,103 @@ def test_resample_distributions_is_not_compounded_via_cached_object():
             )
 
 
+def _purpose_layered_distribution():
+    """Purpose-layered distribution structure (Tier 1): ``{purpose: {mode: ...}}``.
+
+    Mirrors the structure produced by ``braunschweig.popsim.distance_distributions``
+    when ``secondary_shop_daily_split`` adds ``shop_daily`` / ``shop_non_daily``
+    layers.  Each purpose maps to the same per-mode dict structure as the legacy
+    ``_flat_distribution``, so the CDF arrays are the same shape -- the only
+    difference is the extra nesting level.
+    """
+    return {
+        "shop_daily": _flat_distribution(),
+        "shop_non_daily": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+
+
+def test_resample_distributions_handles_purpose_layered_structure():
+    """``_resample_distributions`` must handle the purpose-layered structure
+    ``{purpose: {mode: {bounds, distributions}}}`` (Tier 1 ON) without crashing
+    and must apply the per-mode CDF resample factors within each purpose layer.
+
+    Regression guard for C-1: before the fix, ``mode_distributions["distributions"]``
+    raised ``KeyError`` on a purpose-level dict whose top-level key does not have a
+    ``"distributions"`` sub-key, so Tier1+Tier2 BOTH ON hard-crashed in execute().
+    """
+    layered = _purpose_layered_distribution()
+    # Snapshot every CDF so we can verify the resample was actually applied.
+    original_cdfs = {
+        purpose: {
+            mode: [d["cdf"].copy() for d in layered[purpose][mode]["distributions"]]
+            for mode in layered[purpose]
+        }
+        for purpose in layered
+    }
+
+    resampled = sc._resample_distributions(layered, _RESAMPLE_FACTORS)
+
+    # Input must be untouched (deep-copy contract).
+    for purpose in layered:
+        for mode in layered[purpose]:
+            for d, snapshot in zip(layered[purpose][mode]["distributions"],
+                                   original_cdfs[purpose][mode]):
+                assert np.array_equal(d["cdf"], snapshot), (
+                    f"input CDF mutated: purpose={purpose}, mode={mode}"
+                )
+
+    # The returned copy must be a distinct object.
+    assert resampled is not layered
+
+    # For modes with a non-zero factor, the resampled CDF must differ from the
+    # original in every purpose layer (proving the resample was actually applied).
+    for purpose in resampled:
+        for mode in ("pt", "walk"):  # non-zero factors: pt=0.5, walk=-0.5
+            for d_in, d_out in zip(layered[purpose][mode]["distributions"],
+                                   resampled[purpose][mode]["distributions"]):
+                assert d_out["cdf"] is not d_in["cdf"]
+                assert not np.array_equal(d_out["cdf"], d_in["cdf"]), (
+                    f"CDF unchanged after resample: purpose={purpose}, mode={mode}"
+                )
+
+    # Zero-factor modes (car, bicycle) resample to normalised-same values on a copy.
+    for purpose in resampled:
+        for mode in ("car", "bicycle"):
+            for d_in, d_out in zip(layered[purpose][mode]["distributions"],
+                                   resampled[purpose][mode]["distributions"]):
+                assert d_out["cdf"] is not d_in["cdf"]
+                assert np.allclose(d_out["cdf"], d_in["cdf"])
+
+
+def test_resample_distributions_legacy_structure_unchanged():
+    """The legacy per-mode structure (no purpose layer) still works correctly
+    after the C-1 fix (regression guard for the existing path)."""
+    original = _flat_distribution()
+    original_cdfs = {
+        mode: [d["cdf"].copy() for d in original[mode]["distributions"]]
+        for mode in original
+    }
+    resampled = sc._resample_distributions(original, _RESAMPLE_FACTORS)
+
+    # Input untouched.
+    for mode in original:
+        for d, snapshot in zip(original[mode]["distributions"], original_cdfs[mode]):
+            assert np.array_equal(d["cdf"], snapshot)
+
+    # Non-zero-factor modes changed; zero-factor modes produce a normalised copy.
+    for mode in ("pt", "walk"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert not np.array_equal(d_out["cdf"], d_in["cdf"])
+    for mode in ("car", "bicycle"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert np.allclose(d_out["cdf"], d_in["cdf"])
+
+
 # ---------------------------------------------------------------------------
 # Fallback transparency: PRIMARY (carla) vs FALLBACK accounting.
 #
@@ -822,9 +919,9 @@ def test_build_plans_df_columnar_matches_reference():
     assert ref_meta == new_meta
     assert ref_unbounded == new_unbounded
     pd.testing.assert_frame_equal(new_df, ref_df)  # values, dtypes, order
-    assert subtype_stats == {
-        "shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0,
-    }
+    # OFF path (shop_subtype_decider=None): subtype_stats is {} (empty dict,
+    # not allocated on the OFF path so the gate stays consistent with M-1).
+    assert subtype_stats == {}
 
 
 def test_build_plans_df_empty_keeps_legacy_shape():
