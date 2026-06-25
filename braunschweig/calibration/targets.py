@@ -25,6 +25,22 @@ _P13_BAND_COLUMNS = [
 ]
 
 
+def _p13_row_to_band_shares(row):
+    """Convert one P13 CSV row to a length-7 band-share array summing to 1.
+
+    Sums the distance columns according to _P13_BAND_COLUMNS and renormalises.
+    Non-distance columns (keine_feste_arbeit, keine_angabe) are excluded before
+    normalisation so the shares reflect the distance-class distribution only.
+    Returns None when the distance total is zero (row cannot be used as a target).
+    """
+    bands = np.array(
+        [float(sum(row[c] for c in cols)) for cols in _P13_BAND_COLUMNS],
+        dtype=float,
+    )
+    total = bands.sum()
+    return (bands / total) if total > 0 else None
+
+
 def load_p13_band_shares(mid_dir):
     """Commute-distance band shares per residence Kreis ars5 (+ '03ZGB')."""
     path = os.path.join(mid_dir, "mid2023_P13.csv")
@@ -32,11 +48,24 @@ def load_p13_band_shares(mid_dir):
     out = {}
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])
-        bands = np.array([
-            float(sum(row[c] for c in cols)) for cols in _P13_BAND_COLUMNS
-        ], dtype=float)
-        total = bands.sum()
-        if total <= 0:
-            continue
-        out[ars5] = bands / total
+        shares = _p13_row_to_band_shares(row)
+        if shares is not None:
+            out[ars5] = shares
+    return out
+
+
+def load_p13_band_shares_by_rs7(mid_dir):
+    """Per-RS7 commute-distance band shares from the P13 Raumtyp block.
+
+    Returns {regiostar7_int: length-7 ndarray summing to 1}. This is a REAL
+    per-RS7 target from MiD 2023 Tabelle A P13 (page 77, Raumtyp block) -- not a
+    ZGB aggregate proxy.  RS7 code 71 (Metropole) is absent from the ZGB sample.
+    """
+    path = os.path.join(mid_dir, "mid2023_P13_commute_distance_by_rs7.csv")
+    df = pd.read_csv(path, comment="#")
+    out = {}
+    for _, row in df.iterrows():
+        shares = _p13_row_to_band_shares(row)
+        if shares is not None:
+            out[int(row["regiostar7"])] = shares
     return out
