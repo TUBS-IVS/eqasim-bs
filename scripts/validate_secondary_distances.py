@@ -7,9 +7,9 @@ to the committed W12 band-share targets via EMD.
 A secondary trip is any leg whose destination activity has purpose
 shop / leisure / other. The distance is computed as the straight-line
 (euclidean) distance from the PREVIOUS activity location to the secondary
-activity location (EPSG:25832 metres -> km). The euclidean distances are
-scaled by the documented detour factor (1.3) to put them on the same
-routed axis as the MiD W12 reported trip lengths.
+activity location (EPSG:25832 metres -> km). Each leg's euclidean distance
+is scaled to the routed axis using the fitted circuity curve for its mode
+network (car/pt/walk), matching the MiD W12 reported trip lengths.
 
 Usage::
 
@@ -38,11 +38,33 @@ import pandas as pd
 # is run directly (not as a module) without a prior `pip install -e .`.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from braunschweig.calibration.metrics import apply_detour, emd_on_bands  # noqa: E402
+from braunschweig.calibration import circuity  # noqa: E402
+from braunschweig.calibration.metrics import emd_on_bands  # noqa: E402
 from braunschweig.calibration.targets import (  # noqa: E402
     W12_BAND_EDGES_KM,
     load_w12_band_shares,
 )
+
+# ---------------------------------------------------------------------------
+# Per-leg mode -> circuity network dispatch
+# ---------------------------------------------------------------------------
+
+# Map a leg mode to the circuity network used for its euclidean->routed scaling.
+_MODE_TO_NETWORK = {
+    "car": "car",
+    "car_passenger": "car",
+    "pt": "pt",
+    "walk": "walk",
+    "bike": "walk",
+}
+
+
+def mode_to_network(mode: str) -> str:
+    """Return the circuity network ('car'|'pt'|'walk') for a leg mode.
+
+    Unknown modes default to 'car' (the most common motorised network).
+    """
+    return _MODE_TO_NETWORK.get(str(mode), "car")
 
 logger = logging.getLogger(__name__)
 
@@ -109,18 +131,19 @@ def measure_secondary_distances(working_directory: str):
 
     Returns
     -------
-    dict[str, np.ndarray]
-        Per purpose (shop / leisure / other): 1-D array of euclidean distances
-        in km (EPSG:25832 straight-line). Empty array when no trips of that
-        purpose are present.
+    dict[str, pd.DataFrame]
+        Per purpose (shop / leisure / other): DataFrame with columns
+        ``euclidean_km`` (float) and ``mode`` (str). Empty DataFrame when no
+        trips of that purpose are present.
     """
-    # Load the two required stages.
+    # Load the three required stages.
     df_locs = _load_stage(working_directory, "synthesis.population.spatial.locations")
     df_acts = _load_stage(working_directory, "synthesis.population.activities")
+    df_trips = _load_stage(working_directory, "synthesis.population.trips")
 
     logger.info(
-        "Loaded locations (%d rows) and activities (%d rows).",
-        len(df_locs), len(df_acts),
+        "Loaded locations (%d rows), activities (%d rows) and trips (%d rows).",
+        len(df_locs), len(df_acts), len(df_trips),
     )
 
     # Merge geometry onto activities using (person_id, activity_index) as the
@@ -183,15 +206,40 @@ def measure_secondary_distances(working_directory: str):
     df_secondary = df_secondary.copy()
     df_secondary["euclidean_km"] = np.sqrt(dx * dx + dy * dy) / 1000.0
 
-    # Split by purpose.
-    result: dict[str, np.ndarray] = {}
+    # Join mode from the trips stage.  In the synthesis pipeline the leg that
+    # brings a person TO activity_index=k corresponds to trip_index=k in
+    # synthesis.population.trips (activities.py sets activity_index = trip_index).
+    df_mode = df_trips[["person_id", "trip_index", "mode"]].rename(
+        columns={"trip_index": "activity_index"}
+    )
+    n_before_mode_join = len(df_secondary)
+    df_secondary = df_secondary.merge(
+        df_mode, on=["person_id", "activity_index"], how="left"
+    )
+    n_mode_missing = df_secondary["mode"].isna().sum()
+    if n_mode_missing > 0:
+        logger.warning(
+            "[secondary-validate] mode join: %d/%d legs missing mode; defaulting to 'car'.",
+            n_mode_missing, n_before_mode_join,
+        )
+        df_secondary["mode"] = df_secondary["mode"].fillna("car")
+    else:
+        logger.info(
+            "[secondary-validate] mode join: primary %d/%d (100%%, no fallback).",
+            n_before_mode_join, n_before_mode_join,
+        )
+
+    # Split by purpose and return per-leg DataFrames with euclidean_km + mode.
+    result: dict[str, pd.DataFrame] = {}
     for purpose in _SECONDARY_PURPOSES:
         mask = df_secondary["purpose"] == purpose
-        km_arr = df_secondary.loc[mask, "euclidean_km"].values
-        result[purpose] = km_arr
+        df_purpose = df_secondary.loc[mask, ["euclidean_km", "mode"]].copy()
+        result[purpose] = df_purpose
+        n_legs = len(df_purpose)
+        mean_euc = float(df_purpose["euclidean_km"].mean()) if n_legs > 0 else float("nan")
         logger.info(
             "[secondary-validate] purpose=%s: %d legs, mean euclidean=%.2f km.",
-            purpose, len(km_arr), float(np.mean(km_arr)) if len(km_arr) > 0 else float("nan"),
+            purpose, n_legs, mean_euc,
         )
 
     # Log primary-path rate (CLAUDE.md no-silent-fallback): all legs derived
@@ -215,8 +263,8 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
 
     Parameters
     ----------
-    distances_by_purpose : dict[str, np.ndarray]
-        Per purpose: euclidean distances in km.
+    distances_by_purpose : dict[str, pd.DataFrame]
+        Per purpose: DataFrame with columns ``euclidean_km`` and ``mode``.
     w12_targets : dict
         Output of load_w12_band_shares: includes purpose band shares + mean_km.
 
@@ -229,8 +277,8 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
     """
     rows = []
     for purpose in _SECONDARY_PURPOSES:
-        km_arr = distances_by_purpose.get(purpose, np.array([]))
-        n = len(km_arr)
+        df_purpose = distances_by_purpose.get(purpose, pd.DataFrame(columns=["euclidean_km", "mode"]))
+        n = len(df_purpose)
         if n == 0:
             rows.append({
                 "purpose": purpose,
@@ -246,12 +294,23 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
             )
             continue
 
-        mean_euc = float(np.mean(km_arr))
-        # Apply distance-dependent circuity to put euclidean on the MiD routed axis.
-        mean_routed = float(np.mean(apply_detour(km_arr)))
+        mean_euc = float(df_purpose["euclidean_km"].mean())
 
-        # Band shares on the W12 9-band grid (after detour correction).
-        routed_km = apply_detour(km_arr)
+        # Per-leg routed-equivalent: scale each leg by its mode's circuity network.
+        # routed is computed ONCE and reused for both the mean and the band shares
+        # (no double computation).
+        routed_km = np.empty(n, dtype=float)
+        for network, grp_idx in df_purpose.groupby(
+            df_purpose["mode"].map(mode_to_network)
+        ).groups.items():
+            sl = df_purpose.index.get_indexer(list(grp_idx))
+            routed_km[sl] = circuity.euclidean_to_routed(
+                df_purpose.loc[grp_idx, "euclidean_km"].to_numpy(), network
+            )
+
+        mean_routed = float(np.mean(routed_km))
+
+        # Band shares on the W12 9-band grid (after per-leg circuity scaling).
         model_shares = _w12_band_shares(routed_km)
         target_shares = w12_targets[purpose]
         emd = emd_on_bands(model_shares, target_shares)
@@ -278,8 +337,8 @@ def print_table(rows: list[dict]) -> None:
     sep = "-" * len(header)
     print("\n" + sep)
     print("Secondary trip distances: model vs MiD 2023 W12")
-    print("  Routed-equiv = euclidean x 1.3 (documented detour factor)")
-    print("  EMD computed on the 9 W12 distance bands after detour correction")
+    print("  Routed-equiv = per-leg circuity scaling by mode network (car/pt/walk)")
+    print("  EMD computed on the 9 W12 distance bands after per-leg circuity scaling")
     print(sep)
     print(header)
     print(sep)
