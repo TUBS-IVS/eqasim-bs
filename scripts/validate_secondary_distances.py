@@ -302,16 +302,19 @@ def build_report(distances_by_purpose: dict, w12_targets: dict) -> list[dict]:
 
         mean_euc = float(df_purpose["euclidean_km"].mean())
 
-        # Per-leg routed-equivalent: scale each leg by its mode's circuity network.
-        # routed is computed ONCE and reused for both the mean and the band shares
-        # (no double computation).
+        # Per-leg routed-equivalent: scale each leg by its mode's circuity network
+        # using the constant detour factor (mode="constant", the default). The
+        # distance-dependent curve is opt-in only (mode="curve") and was measured
+        # immaterial for ZGB secondary trips (EMD delta ~0.003).
+        # routed is computed ONCE and reused for both the mean and the band shares.
         routed_km = np.empty(n, dtype=float)
         for network, grp_idx in df_purpose.groupby(
             df_purpose["mode"].map(mode_to_network)
         ).groups.items():
             sl = df_purpose.index.get_indexer(list(grp_idx))
             routed_km[sl] = circuity.euclidean_to_routed(
-                df_purpose.loc[grp_idx, "euclidean_km"].to_numpy(), network
+                df_purpose.loc[grp_idx, "euclidean_km"].to_numpy(), network,
+                mode="constant",
             )
 
         mean_routed = float(np.mean(routed_km))

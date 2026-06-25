@@ -43,6 +43,7 @@ import pandas as pd
 
 from braunschweig.analysis import spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
+from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
 LOGGER = logging.getLogger("braunschweig.analysis.mid_validation")
@@ -469,10 +470,10 @@ def _mode_share_table(
 # Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
 # ---------------------------------------------------------------------------
 
-# Tier 3C: education targets use the distance-dependent circuity curve by default.
-# To restore the pre-Tier-3C constant inversion, pass
-# detour_factor=ROUTED_DETOUR_FACTOR (from braunschweig.constants, value 1.3)
-# to _education_distance_table / build_target_table.
+# Education targets use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3),
+# byte-identical to the pre-Tier-3 legacy. The distance-dependent circuity curve
+# was measured immaterial for ZGB (EMD delta ~0.003) and is opt-in only:
+# pass mode="curve" to build_target_table / _education_distance_table explicitly.
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
@@ -530,15 +531,17 @@ def _education_distances(
 
 
 def _education_distance_table(
-    education: pd.DataFrame, t43_raw: pd.DataFrame, detour_factor: float | None = None
+    education: pd.DataFrame,
+    t43_raw: pd.DataFrame,
+    detour_factor: float | None = LEGACY_DETOUR_FACTOR,
 ) -> pd.DataFrame:
     """Per (RegioStaR-7, level): pupil count, mean synthetic straight-line km,
     the MiD Tabelle 43 straight-line target, and the signed deviation.
 
-    ``detour_factor=None`` (default, Tier 3C): targets use the
-    distance-dependent circuity curve (circuity.routed_to_euclidean).
-    Pass a float (e.g. ROUTED_DETOUR_FACTOR = 1.3 from braunschweig.constants)
-    to force the legacy constant detour-factor inversion.
+    ``detour_factor=LEGACY_DETOUR_FACTOR`` (default, 1.3): targets use the proven
+    constant detour factor — byte-identical to the pre-Tier-3 legacy.
+    Pass ``detour_factor=None`` and ``mode="curve"`` to build_target_table directly
+    to opt into the distance-dependent circuity curve (found immaterial for ZGB).
     """
     targets = build_target_table(t43_raw, detour_factor)
     valid = education.dropna(subset=["level", "regiostar7"])
@@ -816,12 +819,11 @@ def run(args: _Args) -> dict[str, Any]:
     t43_raw = _load_t43()
     if t43_raw is not None:
         education = _education_distances(activities, homes_kreis, persons_kreis)
-        # detour_factor=None => Tier 3C distance-dependent circuity curve
-        # (matches the new default in _legacy_education_slopes). Pass
-        # ROUTED_DETOUR_FACTOR (braunschweig.constants) to restore the pre-Tier-3C
-        # constant inversion.
+        # Use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3) so the
+        # validation report is byte-identical to the pre-Tier-3 legacy.
+        # The distance-dependent circuity curve is opt-in only (mode="curve").
         education_table = _education_distance_table(
-            education, t43_raw, detour_factor=None
+            education, t43_raw, detour_factor=LEGACY_DETOUR_FACTOR
         )
         education_table.to_csv(out / "education_distance_vs_t43.csv", index=False)
     else:
@@ -1054,9 +1056,8 @@ def run(args: _Args) -> dict[str, Any]:
             "",
             "_Realised home->education distances of school-age pupils (ages "
             "0-17, the T43 scope) compared to the per-(RS7, level) targets the "
-            "education gravity slopes were calibrated to (distance-dependent "
-            "circuity inversion, Tier 3C). BBS / university pupils are out of T43 "
-            "scope and not shown._",
+            "education gravity slopes were calibrated to (constant detour factor "
+            "1.3). BBS / university pupils are out of T43 scope and not shown._",
             "",
             _df_to_markdown(education_table),
             "",

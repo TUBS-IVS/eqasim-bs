@@ -45,8 +45,20 @@ def test_hochschule_target_applies_detour():
 # Tier 3C: network-aware inversion tests
 # ---------------------------------------------------------------------------
 
-def test_bbs_target_curve_uses_car_inversion():
+def test_bbs_target_default_is_constant():
+    """Default (no mode) must use constant detour 1.3 — byte-identical to pre-Tier-3."""
     raw = pd.DataFrame([{"school_type": "berufsbildend",
                          "lt5": 10, "b5_10": 20, "b10_25": 30, "b25_50": 30, "ge50": 10}])
     routed = ms.banded_mean_km([10, 20, 30, 30, 10])
-    assert ms.bbs_target_km(raw) == circuity.routed_to_euclidean(routed, "car")
+    expected = routed / circuity.LEGACY_DETOUR_FACTOR
+    assert abs(ms.bbs_target_km(raw) - expected) < 1e-9
+
+
+def test_bbs_target_curve_mode_uses_car_inversion():
+    """Explicit mode='curve' inverts the fitted circuity curve (opt-in)."""
+    raw = pd.DataFrame([{"school_type": "berufsbildend",
+                         "lt5": 10, "b5_10": 20, "b10_25": 30, "b25_50": 30, "ge50": 10}])
+    routed = ms.banded_mean_km([10, 20, 30, 30, 10])
+    assert ms.bbs_target_km(raw, mode="curve") == circuity.routed_to_euclidean(
+        routed, "car", mode="curve"
+    )

@@ -231,10 +231,13 @@ def main():
     )
     parser.add_argument("--working-directory", required=True,
                         help="Directory containing synpp stage pickles (e.g. eqasim-data/cache_bs_25pct).")
-    parser.add_argument("--detour-factor", type=float, default=None,
+    parser.add_argument("--detour-factor", type=float, default=1.3,
                         help="Routed/straight-line detour factor applied to MiD target distances. "
-                             "None (default) => distance-dependent circuity curve; "
-                             "set a float (e.g. 1.3) to force the legacy constant detour factor.")
+                             "Default 1.3 (the proven constant detour factor, pre-Tier-3 legacy). "
+                             "The distance-dependent circuity curve was measured immaterial for ZGB "
+                             "and is not the default; to opt into it, pass a value of None is not "
+                             "supported from the CLI -- run build_target_table(raw, mode='curve') "
+                             "directly from Python.")
     parser.add_argument("--seed", type=int, default=0,
                         help="Random seed for stochastic assignment (default 0).")
     parser.add_argument("--output-dir", default=None,

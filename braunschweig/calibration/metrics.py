@@ -13,17 +13,20 @@ import numpy as np
 from braunschweig.calibration import circuity
 from braunschweig.gravity.friction import BAND_EDGES_KM, band_index
 
-# Legacy constant detour factor, retained for mode="constant" (reproducibility /
-# regression). The default path is now the distance-dependent circuity curve.
+# Legacy constant detour factor; equals LEGACY_DETOUR_FACTOR (1.3) and is the
+# proven, default detour factor for ZGB. The distance-dependent circuity curve
+# was measured immaterial (EMD delta ~0.003) and is now opt-in via mode="curve".
 DETOUR_FACTOR = circuity.LEGACY_DETOUR_FACTOR
 
 
-def apply_detour(euclidean_km, network="car", mode="curve"):
+def apply_detour(euclidean_km, network="car", mode="constant"):
     """Scale euclidean (straight-line) km to routed-equivalent km so the model
     output lies on the same axis as the MiD routed band edges.
 
-    mode="curve" (default) uses the fitted distance-dependent circuity curve for
-    ``network``; mode="constant" reproduces the legacy ``* DETOUR_FACTOR`` exactly.
+    mode="constant" (default) reproduces the legacy ``euclidean * DETOUR_FACTOR`` (1.3)
+    exactly — byte-identical to the pre-Tier-3 pipeline. mode="curve" (opt-in) uses
+    the fitted distance-dependent circuity curve for ``network``; found immaterial
+    for ZGB and therefore not the default.
     """
     return circuity.euclidean_to_routed(euclidean_km, network=network, mode=mode)
 

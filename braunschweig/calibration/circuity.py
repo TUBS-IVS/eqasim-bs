@@ -7,8 +7,11 @@ Both directions are exposed:
   euclidean_to_routed(d) = d * c(d)                 (model euclidean -> MiD routed axis)
   routed_to_euclidean(r) = brentq root of d*c(d)=r  (MiD routed target -> straight-line)
 
-mode="constant" reproduces the legacy single detour factor (1.3) exactly, for
-reproducibility / regression. mode="curve" (default) uses the fitted curve.
+mode="constant" (default) reproduces the proven constant detour factor (1.3) exactly,
+byte-identical to the pre-Tier-3 legacy. mode="curve" (opt-in) uses the fitted
+distance-dependent circuity curve; it was measured on the 25 % ZGB run and found
+immaterial (band-shift EMD delta ~0.003) relative to the constant, so the constant
+remains the default and the curve is an opt-in research feature.
 """
 from __future__ import annotations
 
@@ -84,8 +87,14 @@ def _resolve(params, mode):
     return params
 
 
-def circuity_factor(euclidean_km, network="car", params=None, mode="curve"):
-    """Return c(d) per element of euclidean_km for the given network."""
+def circuity_factor(euclidean_km, network="car", params=None, mode="constant"):
+    """Return c(d) per element of euclidean_km for the given network.
+
+    mode="constant" (default): returns the proven LEGACY_DETOUR_FACTOR (1.3)
+    uniformly — byte-identical to the pre-Tier-3 pipeline.
+    mode="curve" (opt-in): uses the fitted distance-dependent circuity curve;
+    found immaterial for ZGB (EMD delta ~0.003).
+    """
     d = np.asarray(euclidean_km, dtype=float)
     if mode == "constant":
         return np.full_like(d, LEGACY_DETOUR_FACTOR)
@@ -97,14 +106,22 @@ def circuity_factor(euclidean_km, network="car", params=None, mode="curve"):
     return p["c_inf"] + p["a"] * np.exp(-d / p["tau"])
 
 
-def euclidean_to_routed(euclidean_km, network="car", params=None, mode="curve"):
-    """Map straight-line km to routed-equivalent km: routed = d * c(d)."""
+def euclidean_to_routed(euclidean_km, network="car", params=None, mode="constant"):
+    """Map straight-line km to routed-equivalent km: routed = d * c(d).
+
+    mode="constant" (default): d * LEGACY_DETOUR_FACTOR (1.3), byte-identical to
+    the pre-Tier-3 legacy. mode="curve" (opt-in): the fitted circuity curve.
+    """
     d = np.asarray(euclidean_km, dtype=float)
     return d * circuity_factor(d, network, params=params, mode=mode)
 
 
-def routed_to_euclidean(routed_km, network="car", params=None, mode="curve"):
-    """Inverse map routed km -> straight-line km (unique root of d*c(d)=routed)."""
+def routed_to_euclidean(routed_km, network="car", params=None, mode="constant"):
+    """Inverse map routed km -> straight-line km (unique root of d*c(d)=routed).
+
+    mode="constant" (default): r / LEGACY_DETOUR_FACTOR (1.3), byte-identical to
+    the pre-Tier-3 legacy. mode="curve" (opt-in): Brentq inversion of the fitted curve.
+    """
     r = np.asarray(routed_km, dtype=float)
     if mode == "constant":
         return r / LEGACY_DETOUR_FACTOR

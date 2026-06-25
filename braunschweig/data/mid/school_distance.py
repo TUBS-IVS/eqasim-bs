@@ -46,26 +46,29 @@ LEVEL_TO_NETWORK = {
 }
 
 
-def routed_to_straight_line(routed_km, detour_factor=None, network="car", mode="curve"):
+def routed_to_straight_line(routed_km, detour_factor=None, network="car", mode="constant"):
     """Convert a routed length to its straight-line equivalent.
 
     Legacy path: pass ``detour_factor`` -> ``routed/detour_factor`` (back-compat).
-    Tier 3C path (default): invert the distance-dependent circuity curve for
-    ``network`` (mode="constant" reproduces the 1.3 constant exactly).
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR
+    (1.3) via circuity.routed_to_euclidean — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
     """
     if detour_factor is not None:
         return float(routed_km) / float(detour_factor)
     return float(circuity.routed_to_euclidean(float(routed_km), network, mode=mode))
 
 
-def build_target_table(raw, detour_factor=None, mode="curve"):
+def build_target_table(raw, detour_factor=None, mode="constant"):
     """Long table [regiostar7, level, routed_km, target_km] from the wide
     RS7 x age-group frame.
 
     Legacy path: pass ``detour_factor`` -> ``target_km = routed_km / detour_factor``.
-    Tier 3C path (default): per-level network circuity inversion via
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    uniformly via circuity.routed_to_euclidean — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): per-level network circuity inversion via
     ``circuity.routed_to_euclidean`` (kindergarten/grundschule/sekundar_1 -> walk,
-    oberstufe -> car).
+    oberstufe -> car); found immaterial for ZGB and therefore not the default.
     """
     rows = []
     for _, r in raw.iterrows():

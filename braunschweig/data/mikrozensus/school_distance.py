@@ -26,12 +26,13 @@ def banded_mean_km(shares_percent):
     return sum(s * m for s, m in zip(shares_percent, BAND_MIDPOINTS_KM)) / total
 
 
-def bbs_target_km(raw, detour_factor=None, network="car", mode="curve"):
+def bbs_target_km(raw, detour_factor=None, network="car", mode="constant"):
     """Straight-line BBS target from the routed banded mean (car network).
 
     Legacy path: pass ``detour_factor`` -> ``routed / detour_factor`` (back-compat).
-    Tier 3C path (default): invert the distance-dependent circuity curve for
-    ``network`` via ``circuity.routed_to_euclidean``.
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    via ``circuity.routed_to_euclidean`` — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
     """
     row = raw[raw["school_type"] == "berufsbildend"].iloc[0]
     routed = banded_mean_km([float(row[c]) for c in _BAND_COLS])
@@ -40,12 +41,13 @@ def bbs_target_km(raw, detour_factor=None, network="car", mode="curve"):
     return float(circuity.routed_to_euclidean(routed, network, mode=mode))
 
 
-def hochschule_target_km(raw, detour_factor=None, network="car", mode="curve"):
+def hochschule_target_km(raw, detour_factor=None, network="car", mode="constant"):
     """Straight-line Hochschule target from the routed banded mean (car network).
 
     Legacy path: pass ``detour_factor`` -> ``routed / detour_factor`` (back-compat).
-    Tier 3C path (default): invert the distance-dependent circuity curve for
-    ``network`` via ``circuity.routed_to_euclidean``.
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    via ``circuity.routed_to_euclidean`` — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
     """
     row = raw[raw["school_type"] == "hochschule"].iloc[0]
     routed = banded_mean_km([float(row[c]) for c in _BAND_COLS])
