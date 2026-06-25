@@ -25,10 +25,28 @@ def test_off_path_is_byte_identical_to_exp_friction():
 def test_global_band_factors_replace_exp_and_keep_diagonal():
     distances = np.array([[0.0, 7.0], [60.0, 3.0]])
     slope_vec = np.array([-0.2, -0.2])
-    factors = {0: 2.0, 1: 0.5, 5: 0.1}
+    # All 7 bands (0-6) must be present in factors (calibration always produces all)
+    factors = {0: 2.0, 1: 0.5, 2: 0.3, 3: 0.2, 4: 0.15, 5: 0.1, 6: 0.05}
     got = build_friction_matrix(distances, slope_vec, constant=-2.4,
                                 diagonal=1.0, factors=factors)
     assert got[0, 0] == 2.0 + 1.0   # d=0 -> band 0 + diagonal
     assert got[0, 1] == 0.5         # d=7 -> band 1
     assert got[1, 0] == 0.1         # d=60 -> band 5
     assert got[1, 1] == 2.0 + 1.0   # d=3 -> band 0 + diagonal
+
+
+def test_per_rs7_band_factors_apply_per_origin_row():
+    distances = np.array([[0.0, 7.0], [7.0, 0.0]])
+    slope_vec = np.array([-0.2, -0.2])
+    # All 7 bands (0-6) must be present in each RS7's factor dict
+    factors = {
+        71: {0: 2.0, 1: 0.5, 2: 0.3, 3: 0.2, 4: 0.15, 5: 0.1, 6: 0.05},
+        77: {0: 3.0, 1: 0.1, 2: 0.08, 3: 0.06, 4: 0.05, 5: 0.04, 6: 0.03},
+    }
+    rs7_vec = np.array([71, 77])
+    got = build_friction_matrix(distances, slope_vec, constant=-2.4,
+                                diagonal=1.0, factors=factors, rs7_vec=rs7_vec)
+    assert got[0, 0] == 2.0 + 1.0   # origin row 0 -> rs7 71, band 0, + diagonal
+    assert got[0, 1] == 0.5         # origin row 0 -> rs7 71, band 1
+    assert got[1, 0] == 0.1         # origin row 1 -> rs7 77, band 1
+    assert got[1, 1] == 3.0 + 1.0   # origin row 1 -> rs7 77, band 0, + diagonal

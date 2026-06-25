@@ -13,7 +13,7 @@ import numpy as np
 # Distance-band edges in km (single source of truth; aligned to MiD P13 bands,
 # with the exactly-0 "same place" P13 column folded into the first band -- the
 # intra-Gemeinde diagonal term carries the ~0 mass).
-BAND_EDGES_KM = [0.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0, float("inf")]
+BAND_EDGES_KM = (0.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0, float("inf"))
 
 
 def band_index(distances_km, edges=BAND_EDGES_KM):
@@ -25,6 +25,8 @@ def band_index(distances_km, edges=BAND_EDGES_KM):
 def build_friction_matrix(distances_km, slope_vec, constant, diagonal,
                           factors=None, edges=BAND_EDGES_KM, rs7_vec=None):
     """Assemble the gravity friction matrix.
+
+    ``distances_km`` must be a 2-D matrix of shape ``(n_origins, n_destinations)``.
 
     ``factors=None`` -> legacy ``exp(slope_vec[:, None] * d + constant)``.
     ``factors={band: f}`` -> global per-band friction.
@@ -41,17 +43,17 @@ def build_friction_matrix(distances_km, slope_vec, constant, diagonal,
 
     bands = band_index(distances_km, edges)
     if rs7_vec is None:
-        # Use only the factors provided, indexing by band
-        base = np.empty_like(distances_km)
-        for i in range(bands.shape[0]):
-            for j in range(bands.shape[1]):
-                base[i, j] = float(factors[bands[i, j]])
+        # Global per-band: use vectorised look-up table
+        # Build LUT for all possible bands (0..len(edges)-2), expecting all to be in factors
+        lut = np.array([float(factors[b]) for b in range(len(edges) - 1)])
+        base = lut[bands]
     else:
+        # Per-RS7 per-band: vectorise the inner loop (origin rows stay separate)
         rs7_vec = np.asarray(rs7_vec)
         base = np.empty_like(distances_km)
         for i in range(n):
             row_factors = factors[int(rs7_vec[i])]
-            for j in range(bands.shape[1]):
-                base[i, j] = float(row_factors[bands[i, j]])
+            lut = np.array([float(row_factors[b]) for b in range(len(edges) - 1)])
+            base[i, :] = lut[bands[i, :]]
 
     return base + np.eye(n) * diagonal
