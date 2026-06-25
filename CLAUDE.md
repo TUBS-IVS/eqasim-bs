@@ -432,6 +432,118 @@ Tests: `tests/test_gravity_friction.py`, `tests/test_calibration_metrics.py`,
 `tests/test_calibration_targets.py`, `tests/test_calibration_commute.py`,
 `tests/test_calibration_migration_shims.py`.
 
+## Distance-dependent detour/circuity factor (Tier 3)
+
+**Premise.** Every calibrator in the corner converts model output (straight-line
+euclidean km) to the routed axis of MiD band edges by multiplying by a detour
+factor. The legacy constant `1.3` is a broad average; empirical network studies
+show circuity decays with distance (Ballou et al. 2002; Giacomin & Levinson 2015,
+*Road network circuity in metropolitan areas*) — short trips are more tortuous than
+long ones. Replacing `1.3` with an empirically fitted curve improves the axis
+alignment of **every** distribution comparison and is therefore a methodological
+correctness measure, not a fix for a failing KPI (shop EMD 0.053, commute EMD ~0.065
+— both already pass the 0.08 threshold). The fit script's `band_shift_impact.csv`
+quantifies the materiality of the curve vs the constant before any slopes are
+re-pinned (measure-first gate).
+
+**Curve form.** `c(d_km) = c_inf + a * exp(-d_km / tau)` (per network). Both
+directions are exposed:
+- `euclidean_to_routed(d)` = `d * c(d)` — converts model output to the routed axis.
+- `routed_to_euclidean(r)` — unique inverse via `scipy.optimize.brentq`
+  (converts MiD routed targets to straight-line for slope calibration).
+
+**Module.** `braunschweig/calibration/circuity.py` — contains
+`circuity_factor`, `euclidean_to_routed`, `routed_to_euclidean`, and
+`load_circuity_params`. `braunschweig/calibration/metrics.py` (`apply_detour`)
+delegates to this module.
+
+`mode="curve"` (NEW DEFAULT) uses the fitted curve; `mode="constant"` reproduces
+the legacy `* 1.3` exactly for reproducibility / regression.
+
+**Single source of truth for params:**
+`eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv` (local-only,
+not committed). Car and walk rows carry `c_inf`, `a`, `tau_km`; the pt row carries
+`uplift` and `base` (pt = car * uplift, see below). `load_circuity_params` validates
+all fields on load (c_inf >= 1, a >= 0, tau > 0, uplift >= 1) and raises on a
+missing or malformed file — fail-fast, no silent fallback.
+
+**Networks and dispatch.**
+
+| Context | Network | Source |
+|---|---|---|
+| Commute calibration | `car` | upstream of mode choice |
+| Secondary validation (`scripts/validate_secondary_distances.py`) | per-leg: `car` / `pt` / `walk` from `mode_to_network` | purpose x mode layer |
+| Education: kindergarten / grundschule / sekundar_1 | `walk` | MiD T43 on-foot targets |
+| Education: oberstufe / bbs / hochschule | `car` | Destatis MZ 2024, motorised trips |
+
+**PT uplift.** `c_pt(d) = c_car(d) * uplift`, where `uplift` is cited from
+Huang & Levinson (2015). The value in the params CSV is currently an **UNVERIFIED
+PLACEHOLDER** — it MUST be verified against the paper before the curve is used on
+the pt axis in production. Do not treat the placeholder as a validated reference.
+
+**Fit script and regenerate command.** `scripts/calibrate_detour_circuity.py`
+reads the cached synpp working directory, extracts OD pairs (home→work, car/walk
+secondary legs, education trips), builds routing graphs — car from the MATSim
+`supply.processed` network (`read_matsim_network` in `detour_fit.py`, xml.etree
+iterparse + `scipy.sparse.csgraph.dijkstra`; the repo-local `matsim` package is
+deliberately NOT imported), walk from the OSM PBF via pyrosm — and runs a
+**convergence-driven stratified-sampling loop** (minimum-samples floor 8000; stops
+when `c_inf`, `a`, `tau` are all stable within tolerance for `patience` rounds).
+Zero new dependencies beyond what scipy already provides.
+
+```powershell
+python scripts/calibrate_detour_circuity.py `
+    --working-directory eqasim-data/cache_bs_25pct_allfeat `
+    --osm-pbf eqasim-data/osm/niedersachsen.osm.pbf `
+    --config config_server_braunschweig_25pct_allfeat_popsim.yml `
+    --output-dir eqasim-data/data/braunschweig/calibration/detour_circuity
+```
+
+Outputs: `detour_circuity_params.csv` (committed path updated in-place),
+`circuity_convergence_<net>.csv/.png`, `circuity_by_rs7.csv`,
+`band_shift_impact.csv` (commute EMD vs P13 and secondary EMD vs W12 under
+constant 1.3 vs fitted curve), `circuity_fit_<net>.png`, `summary.md`.
+
+**Per-RS7 diagnostic rule.** The script also reports a per-RS7 fitted curve
+(`circuity_by_rs7.csv`). A per-RS7 curve is promoted only if the band-shift impact
+diverges materially from the global curve (analogous to the education-style
+shrinkage: sparse cells are shrinkage-regularised to the pooled curve of converged
+cells; cells at the steep bound are kept as structural floors). Start with the
+global curve; do not promote per-RS7 without evidence from `band_shift_impact.csv`.
+
+**Behaviour change.** Two existing tools switch from the constant to the curve by
+default:
+- `braunschweig/calibration/_legacy_education_slopes.py` (`--detour-factor`,
+  default now `None` = curve; pass `--detour-factor 1.3` to reproduce the old fit).
+- `braunschweig/analysis/run_mid_validation.py` (`detour_factor=None` => curve for
+  education T43 targets, labelled "Tier 3C" in the source).
+- The constant remains reachable via `mode="constant"` in `circuity_factor` /
+  `apply_detour`, or via `braunschweig.constants.ROUTED_DETOUR_FACTOR` (value 1.3).
+
+**Tier 3A — secondary scorer-weight calibration (built, NOT activated).**
+`braunschweig/calibration/secondary.py` implements a pure coordinate-descent
+optimiser (`coordinate_descent`) for per-purpose chainsolvers scorer weights
+(`secondary_dist_dev_weight` / `secondary_scorer_pot_weight`). Infrastructure
+only — pinning/activating the weights is gated on the deferred 25% ON validation
+run actually showing a shop residual vs MiD W12. Until then the weights stay at
+their current config values.
+
+**SERVER-DEFERRED steps (require the 25% allfeat cache and OSM PBF).**
+1. Run `calibrate_detour_circuity.py` and commit the updated params CSV.
+2. Check `band_shift_impact.csv` — if the shift is material, re-run
+   `calibrate_education_slopes.py` (without `--detour-factor 1.3`) and re-pin
+   the `education_gravity_slope_by_level_rs7` YAML in the run configs.
+3. Verify the pt uplift value against Huang & Levinson (2015) and update the pt
+   row in the params CSV.
+4. Re-run `validate_secondary_distances.py` under the curve default and assess
+   whether Tier 3A activation is warranted.
+
+Tests: `tests/test_circuity.py`, `tests/test_detour_fit.py`,
+`tests/test_metrics_circuity.py`, additions to
+`tests/test_mid_school_distance.py` / `tests/test_mikrozensus_school_distance.py`,
+`tests/test_secondary_distance_dispatch.py`,
+`tests/test_calibration_secondary_scorer.py`.
+
 ## Education gravity model (NDS school data)
 
 All education levels are assigned by real-data distance-decay gravity models,
