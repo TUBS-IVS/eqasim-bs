@@ -23,10 +23,16 @@ uncalibrated gravity result (no equivalent observed data).
 
 from __future__ import annotations
 
+import logging
 import os
 
 import numpy as np
 import pandas as pd
+
+from braunschweig.data.bbsr.regiostar import ars_to_ags8
+from braunschweig.gravity.friction import build_friction_matrix
+
+logger = logging.getLogger(__name__)
 
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
@@ -520,8 +526,6 @@ def _execute_gravity_base(context):
         municipalities, slope, slope_overrides, df_regiostar,
     )
 
-    from braunschweig.gravity.friction import build_friction_matrix
-
     friction_factors = context.config("gravity_friction_factors")
     rs7_vec = None
     if isinstance(friction_factors, dict) and friction_factors and all(
@@ -531,18 +535,29 @@ def _execute_gravity_base(context):
             df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
         )
 
-        def _ags8(cid):
-            s = str(cid)
-            return s[0:5] + s[9:12] if len(s) == 12 else s
-
         rs7_vec = np.array([
-            int(rs7_lookup.get(_ags8(c)) or -1) for c in municipalities
+            int(rs7_lookup.get(ars_to_ags8(c)) or -1) for c in municipalities
         ])
+        n_missing_rs7 = int(np.sum(rs7_vec == -1))
+        n_total_origins = len(municipalities)
+        logger.info(
+            "[gravity friction] per-RS7 factors: %d/%d origins matched an RS7 code (%.1f%%), %d unmatched",
+            n_total_origins - n_missing_rs7, n_total_origins,
+            100.0 * (n_total_origins - n_missing_rs7) / max(n_total_origins, 1),
+            n_missing_rs7,
+        )
+        if n_missing_rs7:
+            logger.warning(
+                "[gravity friction] %d/%d origins have no RS7 code; their per-band "
+                "factors would be missing -- check the regiostar coverage",
+                n_missing_rs7, n_total_origins,
+            )
         friction_factors = {int(k): {int(b): float(f) for b, f in v.items()}
                             for k, v in friction_factors.items()}
     elif isinstance(friction_factors, dict) and friction_factors:
         friction_factors = {int(b): float(f) for b, f in friction_factors.items()}
     else:
+        # Also catches {}: a missing or empty mapping is the OFF path (byte-identical).
         friction_factors = None
 
     friction = build_friction_matrix(
