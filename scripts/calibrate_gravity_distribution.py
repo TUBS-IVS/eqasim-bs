@@ -818,6 +818,21 @@ def main():
         else:
             convergence_emd = emd_zgb
 
+        # Fix 3: fail fast when both convergence metrics are NaN — means no RS7 target
+        # matched any realised home-RS7 AND no ZGB/Kreis target is present.  Running to
+        # max_iterations would produce a meaningless calibration (CLAUDE.md fail-early).
+        if np.isnan(convergence_emd):
+            msg = (
+                f"[commute-calib] iter {it:02d}: convergence_emd is NaN — "
+                "no per-RS7 P13 target matched any realised home-RS7 home commune "
+                "and no ZGB/Kreis aggregate target available. "
+                "Check that mid2023_P13_commute_distance_by_rs7.csv is present in "
+                "--mid-dir and that the home-RS7 join in assign_and_measure produced "
+                "non-empty per-RS7 km arrays."
+            )
+            logger.error(msg)
+            raise RuntimeError(msg)
+
         if convergence_emd <= args.emd_threshold:
             logger.info(
                 "[commute-calib] converged at iter %d "
@@ -871,13 +886,18 @@ def main():
                     factors_by_rs7[rs7], target_for_rs7, shares_rs7
                 )
 
-            if n_rs7_fallback > 0:
+            # Aggregate fallback-rate log: emit once (first iteration only) so it
+            # is never silent (CLAUDE.md no-silent-fallback) but does not repeat
+            # up to max_iterations times.  RS7 target coverage is static — the set
+            # of RS7 codes in rs7_targets does not change between iterations.
+            if n_rs7_fallback > 0 and it == 0:
                 total_rs7 = n_rs7_primary + n_rs7_fallback
                 logger.warning(
-                    "[commute-calib] iter %02d: per-RS7 target coverage: "
+                    "[commute-calib] per-RS7 target coverage: "
                     "primary (real P13 Raumtyp) %d/%d RS7 codes, "
-                    "fallback (ZGB aggregate) %d/%d RS7 codes (%.1f%%).",
-                    it, n_rs7_primary, total_rs7, n_rs7_fallback, total_rs7,
+                    "fallback (ZGB aggregate) %d/%d RS7 codes (%.1f%%). "
+                    "(Logged once; coverage is static across iterations.)",
+                    n_rs7_primary, total_rs7, n_rs7_fallback, total_rs7,
                     100.0 * n_rs7_fallback / total_rs7,
                 )
         else:
@@ -968,10 +988,24 @@ def main():
 
     print("\n# Per-iteration convergence log:")
     for entry in iter_log:
-        print(
-            f"  iter {entry['iteration']:02d}: ZGB EMD={entry['emd_zgb']:.4f}, "
-            f"worst Kreis EMD={entry['worst_kreis_emd']:.4f} ({entry['worst_kreis']})"
-        )
+        if args.per_rs7:
+            # In per-RS7 mode the convergence criterion is max_rs7_emd; show it
+            # prominently along with a compact per-RS7 breakdown.
+            rs7_breakdown = " ".join(
+                f"{r}:{v:.4f}"
+                for r, v in sorted(
+                    (int(k), v) for k, v in entry.get("per_rs7_emd", {}).items()
+                )
+            )
+            print(
+                f"  iter {entry['iteration']:02d}: max RS7 EMD={entry['max_rs7_emd']:.4f}, "
+                f"ZGB EMD={entry['emd_zgb']:.4f} | per-RS7: {rs7_breakdown}"
+            )
+        else:
+            print(
+                f"  iter {entry['iteration']:02d}: ZGB EMD={entry['emd_zgb']:.4f}, "
+                f"worst Kreis EMD={entry['worst_kreis_emd']:.4f} ({entry['worst_kreis']})"
+            )
 
     # ------------------------------------------------------------------
     # 10. Write outputs (if --output-dir)
@@ -981,6 +1015,8 @@ def main():
         _write_outputs(
             final_factors, km_by_kreis, jobs_by_gemeinde, targets,
             df_employees_raw, iter_log, args, converged,
+            km_by_rs7_realised=km_by_rs7_realised,
+            rs7_targets=rs7_targets,
         )
         logger.info("[commute-calib] wrote outputs to %s", args.output_dir)
 
@@ -990,8 +1026,27 @@ def main():
 # ---------------------------------------------------------------------------
 
 def _write_outputs(final_factors, km_by_kreis, jobs_by_gemeinde, targets,
-                   df_employees, iter_log, args, converged):
-    """Write gravity_calibration_results.csv and gravity_calibration_report.json."""
+                   df_employees, iter_log, args, converged,
+                   km_by_rs7_realised=None, rs7_targets=None):
+    """Write gravity_calibration_results.csv and gravity_calibration_report.json.
+
+    In per-RS7 mode (args.per_rs7 is True), ``final_factors`` is a nested dict
+    ``{rs7: {band: float}}`` instead of ``{band: float}``.  In that mode an
+    additional file ``gravity_calibration_results_per_rs7.csv`` is written with
+    one row per (rs7, band) showing the realised detoured band share, the MiD P13
+    Raumtyp reference share, their difference, and the per-RS7 EMD.  The existing
+    per-Kreis results CSV is always written in both modes (it remains useful context
+    for diagnosing inter-Kreis variation).
+
+    Parameters
+    ----------
+    km_by_rs7_realised : dict[int, np.ndarray] | None
+        Per-RS7 realised straight-line commute distances from the last Furness
+        iteration.  Required when args.per_rs7 is True.
+    rs7_targets : dict[int, np.ndarray] | None
+        Per-RS7 MiD P13 Raumtyp band-share targets (RS7 codes 72-77).
+        Required when args.per_rs7 is True.
+    """
     # Per-Kreis band shares + EMD.
     rows = []
     for kreis, km_arr in km_by_kreis.items():
@@ -1017,6 +1072,40 @@ def _write_outputs(final_factors, km_by_kreis, jobs_by_gemeinde, targets,
     csv_path = os.path.join(args.output_dir, "gravity_calibration_results.csv")
     df_results.to_csv(csv_path, index=False)
     logger.info("[commute-calib] wrote %s", csv_path)
+
+    # Per-RS7 results CSV (only in per-RS7 mode).
+    # One row per (rs7, band): realised detoured share, MiD P13 Raumtyp reference share,
+    # difference, and per-RS7 EMD.  Uses band_shares/apply_detour/emd_on_bands directly
+    # (DRY — same helpers as the Furness loop) so the numbers are fully traceable.
+    if args.per_rs7 and km_by_rs7_realised is not None and rs7_targets is not None:
+        rs7_rows = []
+        for rs7_code in sorted(km_by_rs7_realised.keys()):
+            km_arr_rs7 = km_by_rs7_realised[rs7_code]
+            if len(km_arr_rs7) == 0:
+                continue
+            shares_rs7 = band_shares(apply_detour(km_arr_rs7, factor=args.detour_factor))
+            target_rs7 = rs7_targets.get(rs7_code)
+            emd_rs7 = emd_on_bands(shares_rs7, target_rs7) if target_rs7 is not None else float("nan")
+            n_workers_rs7 = len(km_arr_rs7)
+            for b in range(N_BANDS):
+                lo = BAND_EDGES_KM[b]
+                hi = BAND_EDGES_KM[b + 1]
+                rs7_rows.append({
+                    "rs7": rs7_code,
+                    "band": b,
+                    "band_lo_km": lo,
+                    "band_hi_km": hi if np.isfinite(hi) else 999.0,
+                    "model_share": float(shares_rs7[b]),
+                    "target_share": float(target_rs7[b]) if target_rs7 is not None else float("nan"),
+                    "diff": float(shares_rs7[b] - target_rs7[b]) if target_rs7 is not None else float("nan"),
+                    "emd_rs7": emd_rs7,
+                    "n_workers": n_workers_rs7,
+                })
+        if rs7_rows:
+            df_rs7 = pd.DataFrame(rs7_rows)
+            csv_rs7_path = os.path.join(args.output_dir, "gravity_calibration_results_per_rs7.csv")
+            df_rs7.to_csv(csv_rs7_path, index=False)
+            logger.info("[commute-calib] wrote %s", csv_rs7_path)
 
     # SvB target per Gemeinde for attraction fill.
     svb_target = (
