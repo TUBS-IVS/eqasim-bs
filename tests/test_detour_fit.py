@@ -59,3 +59,16 @@ def test_tracker_resets_patience_on_move():
     t.update(4000, {"c_inf": 1.15, "a": 0.6, "tau": 2.0})       # 1st stable
     t.update(6000, {"c_inf": 1.30, "a": 0.6, "tau": 2.0})       # moved -> reset
     assert t.update(8000, {"c_inf": 1.30, "a": 0.6, "tau": 2.0}) is False  # only 1st stable again
+
+
+def test_stratified_sample_balances_short_and_long():
+    rng = np.random.RandomState(0)
+    # 9000 short trips (~0.5 km) and 100 long (~30 km); naive sampling buries long.
+    o = np.zeros((9100, 2))
+    d = np.zeros((9100, 2))
+    d[:9000, 0] = 500.0
+    d[9000:, 0] = 30000.0
+    idx = df.stratified_sample(o, d, n_target=2000, rng=rng)
+    dists = np.linalg.norm(d[idx] - o[idx], axis=1) / 1000.0
+    assert (dists > 20).sum() >= 50   # long stratum represented, not swamped
+    assert (dists < 1).sum() >= 50

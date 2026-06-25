@@ -161,3 +161,31 @@ def route_lengths_km(csr, node_xy, origins_xy, dests_xy):
             else:
                 routed_km[m] = dm / 1000.0
     return routed_km, fail
+
+
+# ---------------------------------------------------------------------------
+# Distance-stratified OD sampling
+# ---------------------------------------------------------------------------
+
+STRATA_EDGES_KM = (0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, float("inf"))
+
+
+def stratified_sample(origins_xy, dests_xy, n_target, rng, edges_km=STRATA_EDGES_KM):
+    """Draw ~n_target row indices spread evenly across euclidean-distance strata.
+
+    Each non-empty stratum gets an equal target share; strata with fewer members
+    than their share contribute all of theirs (no oversampling beyond available).
+    """
+    o = np.asarray(origins_xy, dtype=float)
+    d = np.asarray(dests_xy, dtype=float)
+    dist_km = np.linalg.norm(d - o, axis=1) / 1000.0
+    inner = np.asarray(edges_km[1:-1], dtype=float)
+    strata = np.digitize(dist_km, inner)
+    present = [s for s in np.unique(strata)]
+    per = max(1, n_target // max(len(present), 1))
+    picks = []
+    for s in present:
+        members = np.where(strata == s)[0]
+        take = min(per, members.size)
+        picks.append(rng.choice(members, size=take, replace=False))
+    return np.concatenate(picks) if picks else np.array([], dtype=int)
