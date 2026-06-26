@@ -40,6 +40,12 @@ def build_external_secondary_points(gemeinden, zgb_prefixes):
     zgb = set(str(p) for p in zgb_prefixes)
     out = gemeinden[~gemeinden["ars5"].astype(str).isin(zgb)].copy()
     out["commune_id"] = "EXT" + out["gem_ags"].astype(str)
+    # _load_gemeinden returns Gemeinde POLYGONS; the secondary candidate set (and
+    # carla's discretization, which reads geometry.x/.y) requires POINT geometries.
+    # Collapse each polygon to its representative point (guaranteed inside the
+    # polygon, unlike a centroid for concave shapes) -- same convention as
+    # external_workplaces / gemeinde_external_points.
+    out["geometry"] = out.geometry.representative_point()
     return gpd.GeoDataFrame(
         out[["commune_id", "ars5", "gem_ags", "ewz", "geometry"]],
         geometry="geometry", crs=gemeinden.crs,
