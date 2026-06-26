@@ -11,6 +11,8 @@ import os
 
 import pandas as pd
 
+from braunschweig.calibration import circuity
+
 # distance-band midpoints (km); the open 50+ band is assumed at 65 km
 # (midpoint of the [50, 80) interval, consistent with Destatis rounding the
 # distribution to integer percent; see test_banded_mean_km_matches_hand_calc).
@@ -24,18 +26,34 @@ def banded_mean_km(shares_percent):
     return sum(s * m for s, m in zip(shares_percent, BAND_MIDPOINTS_KM)) / total
 
 
-def bbs_target_km(raw, detour_factor):
-    """Straight-line BBS target = routed banded mean / detour_factor."""
+def bbs_target_km(raw, detour_factor=None, network="car", mode="constant"):
+    """Straight-line BBS target from the routed banded mean (car network).
+
+    Legacy path: pass ``detour_factor`` -> ``routed / detour_factor`` (back-compat).
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    via ``circuity.routed_to_euclidean`` — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
+    """
     row = raw[raw["school_type"] == "berufsbildend"].iloc[0]
     routed = banded_mean_km([float(row[c]) for c in _BAND_COLS])
-    return routed / float(detour_factor)
+    if detour_factor is not None:
+        return routed / float(detour_factor)
+    return float(circuity.routed_to_euclidean(routed, network, mode=mode))
 
 
-def hochschule_target_km(raw, detour_factor):
-    """Straight-line Hochschule target = routed banded mean / detour_factor."""
+def hochschule_target_km(raw, detour_factor=None, network="car", mode="constant"):
+    """Straight-line Hochschule target from the routed banded mean (car network).
+
+    Legacy path: pass ``detour_factor`` -> ``routed / detour_factor`` (back-compat).
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    via ``circuity.routed_to_euclidean`` — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
+    """
     row = raw[raw["school_type"] == "hochschule"].iloc[0]
     routed = banded_mean_km([float(row[c]) for c in _BAND_COLS])
-    return routed / float(detour_factor)
+    if detour_factor is not None:
+        return routed / float(detour_factor)
+    return float(circuity.routed_to_euclidean(routed, network, mode=mode))
 
 
 def configure(context):

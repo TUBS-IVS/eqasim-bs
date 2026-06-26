@@ -23,10 +23,16 @@ uncalibrated gravity result (no equivalent observed data).
 
 from __future__ import annotations
 
+import logging
 import os
 
 import numpy as np
 import pandas as pd
+
+from braunschweig.data.bbsr.regiostar import ars_to_ags8
+from braunschweig.gravity.friction import build_friction_matrix
+
+logger = logging.getLogger(__name__)
 
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
@@ -520,9 +526,43 @@ def _execute_gravity_base(context):
         municipalities, slope, slope_overrides, df_regiostar,
     )
 
-    friction = (
-        np.exp(slope_vec[:, None] * distances + constant)
-        + np.eye(len(municipalities)) * diagonal
+    friction_factors = context.config("gravity_friction_factors")
+    rs7_vec = None
+    if isinstance(friction_factors, dict) and friction_factors and all(
+        isinstance(v, dict) for v in friction_factors.values()
+    ):
+        rs7_lookup = (
+            df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
+        )
+
+        rs7_vec = np.array([
+            int(rs7_lookup.get(ars_to_ags8(c)) or -1) for c in municipalities
+        ])
+        n_missing_rs7 = int(np.sum(rs7_vec == -1))
+        n_total_origins = len(municipalities)
+        logger.info(
+            "[gravity friction] per-RS7 factors: %d/%d origins matched an RS7 code (%.1f%%), %d unmatched",
+            n_total_origins - n_missing_rs7, n_total_origins,
+            100.0 * (n_total_origins - n_missing_rs7) / max(n_total_origins, 1),
+            n_missing_rs7,
+        )
+        if n_missing_rs7:
+            logger.warning(
+                "[gravity friction] %d/%d origins have no RS7 code; their per-band "
+                "factors would be missing -- check the regiostar coverage",
+                n_missing_rs7, n_total_origins,
+            )
+        friction_factors = {int(k): {int(b): float(f) for b, f in v.items()}
+                            for k, v in friction_factors.items()}
+    elif isinstance(friction_factors, dict) and friction_factors:
+        friction_factors = {int(b): float(f) for b, f in friction_factors.items()}
+    else:
+        # Also catches {}: a missing or empty mapping is the OFF path (byte-identical).
+        friction_factors = None
+
+    friction = build_friction_matrix(
+        distances, slope_vec, constant, diagonal,
+        factors=friction_factors, rs7_vec=rs7_vec,
     )
     # ExecuteContext.config() takes the key alone (the default is declared in
     # configure()); passing a default here would raise.
@@ -588,6 +628,12 @@ def configure(context):
     # "Config option ... is not requested" at execute time. ``None`` survives
     # flattening and is treated as "no overrides" by ``_build_origin_slope_vector``.
     context.config("gravity_slope_by_regiostar7", None)
+    # Optional per-distance-band friction factors. None/absent = legacy
+    # exp(slope*d) friction (byte-identical OFF path). {band: f} = global per-band;
+    # {rs7: {band: f}} = per-origin-RS7 per-band. Written by
+    # scripts/calibrate_gravity_distribution.py; do not hand-edit. Must default to
+    # None (not {}) so synpp flatten() does not drop it (see gravity_slope_by_regiostar7).
+    context.config("gravity_friction_factors", None)
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")

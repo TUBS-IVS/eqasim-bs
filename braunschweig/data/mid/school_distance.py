@@ -23,6 +23,8 @@ import os
 
 import pandas as pd
 
+from braunschweig.calibration import circuity
+
 # MiD age-group columns -> our school levels. km_0_6 maps to kindergarten,
 # which is now routed through the capacity-constrained gravity model on real
 # Kita facilities (braunschweig.data.schools.kita_facilities).
@@ -33,27 +35,54 @@ AGEGROUP_TO_LEVEL = {
     "km_14_17": "oberstufe",
 }
 
+# Per-level routing network for the routed->straight-line inversion (Tier 3C).
+# kindergarten / grundschule / sekundar_1 trips are predominantly walking
+# distance; oberstufe trips span wider areas and use car-network circuity.
+LEVEL_TO_NETWORK = {
+    "kindergarten": "walk",
+    "grundschule": "walk",
+    "sekundar_1": "walk",
+    "oberstufe": "car",
+}
 
-def routed_to_straight_line(routed_km, detour_factor):
-    """Convert a routed length to its straight-line equivalent."""
-    return float(routed_km) / float(detour_factor)
+
+def routed_to_straight_line(routed_km, detour_factor=None, network="car", mode="constant"):
+    """Convert a routed length to its straight-line equivalent.
+
+    Legacy path: pass ``detour_factor`` -> ``routed/detour_factor`` (back-compat).
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR
+    (1.3) via circuity.routed_to_euclidean — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): inverts the fitted distance-dependent circuity curve.
+    """
+    if detour_factor is not None:
+        return float(routed_km) / float(detour_factor)
+    return float(circuity.routed_to_euclidean(float(routed_km), network, mode=mode))
 
 
-def build_target_table(raw, detour_factor):
+def build_target_table(raw, detour_factor=None, mode="constant"):
     """Long table [regiostar7, level, routed_km, target_km] from the wide
-    RS7 x age-group frame. target_km = routed_km / detour_factor."""
+    RS7 x age-group frame.
+
+    Legacy path: pass ``detour_factor`` -> ``target_km = routed_km / detour_factor``.
+    Default path (mode="constant"): divides by the constant LEGACY_DETOUR_FACTOR (1.3)
+    uniformly via circuity.routed_to_euclidean — byte-identical to the pre-Tier-3 legacy.
+    Opt-in path (mode="curve"): per-level network circuity inversion via
+    ``circuity.routed_to_euclidean`` (kindergarten/grundschule/sekundar_1 -> walk,
+    oberstufe -> car); found immaterial for ZGB and therefore not the default.
+    """
     rows = []
     for _, r in raw.iterrows():
         for col, level in AGEGROUP_TO_LEVEL.items():
             routed = float(r[col])
+            network = LEVEL_TO_NETWORK[level]
             rows.append({
                 "regiostar7": int(r["regiostar7"]),
                 "level": level,
                 "routed_km": routed,
-                "target_km": routed_to_straight_line(routed, detour_factor),
+                "target_km": routed_to_straight_line(
+                    routed, detour_factor=detour_factor, network=network, mode=mode),
             })
-    return pd.DataFrame(rows, columns=["regiostar7", "level",
-                                       "routed_km", "target_km"])
+    return pd.DataFrame(rows, columns=["regiostar7", "level", "routed_km", "target_km"])
 
 
 def configure(context):

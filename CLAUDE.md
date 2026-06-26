@@ -311,6 +311,268 @@ Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 `tests/test_gravity_slope_config.py` (the `None` default / flatten contract).
 
+## Calibration corner + commute distance-distribution calibration
+
+`braunschweig/calibration/` is the single home for the project's offline
+calibration tooling. Runtime model components stay with the model (the
+per-band friction builder lives in `braunschweig/gravity/friction.py`, the
+secondary chainsolvers scorer in its own stage); the corner holds only the
+shared metrics, MiD distribution targets, the per-model calibration loops,
+their CLIs, and the reports. It consumes the runtime components and emits
+pinned YAML; it is **never imported by the runtime pipeline**. The three
+legacy calibrators were migrated in as `braunschweig/calibration/_legacy_*`
+(gravity per-RS7 slope, gravity decay, education slopes) with thin
+`scripts/calibrate_*.py` shims that preserve existing behaviour.
+
+**Modules.**
+
+- `metrics.py` — shared helpers: `band_shares`, `emd_on_bands`,
+  `apply_detour` (`DETOUR_FACTOR = 1.3`, same ASSUMPTION and convention as
+  T43; the model output is euclidean, the MiD target is routed, so model
+  distances are scaled before comparison — the committed reference shares are
+  never transformed).
+- `targets.py` — MiD distribution-target loaders: `load_p13_band_shares`
+  (per-Kreis commute bands from `mid2023_P13.csv`) and
+  `load_p13_band_shares_by_rs7` (per-RS7 commute bands from
+  `mid2023_P13_commute_distance_by_rs7.csv`).
+- `commute.py` — Furness/Hyman multiplicative factor update (`furness_update`),
+  sparse-cell shrinkage toward the pooled per-band factor
+  (`shrink_sparse_factors`, rate logged — no silent fallback), and the
+  end-of-calibration validation report (`build_validation_report`: per-Kreis
+  distance EMD vs P13 target + per-Gemeinde attraction fill vs GENESIS SvB).
+
+**The objective.** The gravity friction is calibrated so the realised
+home -> work **straight-line distance distribution** matches MiD 2023 Tabelle
+A P13 (EMD-minimised), not just the mean. There is no mode choice at this
+stage (synthesis-realised, upstream of MATSim). The BA Pendleratlas Kreis-pair
+calibration (`_calibrate` in `braunschweig.gravity.model`) is **unchanged and
+always applied inside the loop** — it remains the authoritative inter-Kreis
+control; the per-band friction factors only reshape the within-Kreis-pair
+(including intra-Kreis) allocation.
+
+**Per-band friction.** `braunschweig/gravity/friction.py` generalises the
+scalar `exp(slope * d)` to per-band factors `f_b`, one per distance band,
+wired into `braunschweig.gravity.model` behind config key
+`gravity_friction_factors` (default `None` -> legacy exponential, OFF path
+byte-identical). Global mode: `{band: f}`. Per-RS7 mode:
+`{rs7: {band: f}}`, using the per-origin RS7 vector. Band edges (single
+source of truth, aligned to MiD P13):
+`BAND_EDGES_KM = (0, 5, 10, 20, 30, 50, 100, inf)` (7 bands).
+
+**Reference data.** Two committed MiD CSVs under
+`eqasim-data/data/braunschweig/mid/`:
+
+| File | Source | Used by |
+|---|---|---|
+| `mid2023_P13.csv` | Tabelle A P13 per-Kreis + '03ZGB' aggregate | global calibration target |
+| `mid2023_P13_commute_distance_by_rs7.csv` | Tabelle A P13 page 77, Raumtyp block, RS7 72–77 | `--per-rs7` calibration target |
+
+The Raumtyp CSV is extracted by `scripts/extract_mid_p13_rs7.py` from the
+local-only MiD PDF (page 77) via a PDF parser with an oracle assertion on all
+6 rows (fail-fast on any PDF-extraction mismatch). RS7 code 71 (Metropole) is
+absent from the ZGB sample.
+
+**CLI — `scripts/calibrate_gravity_distribution.py`.** An in-process
+Furness/Hyman loop on a cached working directory (no synpp re-run, no MATSim).
+Per iteration: build friction matrix from current factors ->
+`evaluate_gravity` -> `_calibrate` (BA pinned) -> row-normalise OD ->
+sample work locations + measure realised straight-line distances ->
+`band_shares(apply_detour(...))` -> EMD vs P13 -> `furness_update`. In
+`--per-rs7` mode each RS7 (72–77) is updated independently toward its real
+P13 Raumtyp target; an RS7 absent from the Raumtyp CSV falls back to the ZGB
+aggregate with an explicit warning (CLAUDE.md no-silent-fallback). Sparse
+`(RS7, band)` cells (count < `--min-count`, default 50) are shrinkage-blended
+toward the pooled per-band factor; the shrinkage rate is always logged.
+Acceptance criterion: commute EMD vs P13 <= `--emd-threshold` (default 0.08);
+residual EMD from the BA inter-Kreis constraint is reported honestly. Outputs
+under `--output-dir` (default
+`eqasim-data/data/braunschweig/calibration/commute/`):
+`gravity_calibration_results.csv` (per-Kreis band shares + EMD),
+`gravity_calibration_results_per_rs7.csv` (per-RS7 mode only), and
+`gravity_calibration_report.json`; the pinned YAML is printed to stdout.
+
+**Workflow.** Develop and explore on `cache_bs_1pct_allfeat_full`; pin the
+final `gravity_friction_factors` from `cache_bs_25pct_allfeat` (the 1 % cache
+is too small for reliable per-Kreis x band cells). Run on the server where the
+caches live:
+
+```powershell
+python scripts/calibrate_gravity_distribution.py `
+    --working-directory eqasim-data/cache_bs_25pct_allfeat `
+    --config config_server_braunschweig_25pct_allfeat_popsim.yml `
+    --per-rs7 `
+    --output-dir eqasim-data/data/braunschweig/calibration/commute
+```
+
+If a calibration is warranted, paste the printed `gravity_friction_factors`
+YAML block into the all-features run configs (do not hand-edit the factors —
+re-run the script and paste its output).
+
+**Finding (2026-06-25 run on `cache_bs_25pct_allfeat`): no commute friction
+calibration is currently warranted.** Measured against MiD P13 (ZGB aggregate),
+all inputs and the realised output already match: the per-person MiD work-leg
+targets (the donor `commute_distance`) give EMD 0.0037, the gravity OD-flow
+gives EMD 0.037, and the realised synthesis home->work straight-line
+distribution gives EMD ~0.065 (below the 0.08 threshold). The historical
+"EMD 0.47 FAIL" was a **stale** figure measured on MATSim-*routed* distances
+from a run **before** the building-activity-potentials feature (which sources
+work candidates from the gpkg buildings and reshaped the within-zone
+placement). Because the distribution already matches, **no `gravity_friction_factors`
+are pinned** — the per-band friction stays at its `None` default (byte-identical
+to the legacy `exp(slope*d)` friction), and this module is provided as
+calibration *infrastructure* (used if a future sampling rate, config, or the
+education levels reveal a real distribution gap). A note on the discretization:
+`synthesis.population.spatial.primary.locations.define_distance_ordering` is a
+per-origin bijection between candidates and persons, so the greedy
+target-matching is **aggregate-distribution-preserving** — the realised
+trip-length histogram is governed by the OD-derived candidate pool (the
+friction), not by the matching step.
+
+Tests: `tests/test_gravity_friction.py`, `tests/test_calibration_metrics.py`,
+`tests/test_calibration_targets.py`, `tests/test_calibration_commute.py`,
+`tests/test_calibration_migration_shims.py`.
+
+## Distance-dependent detour/circuity factor (Tier 3)
+
+**VERDICT (2026-06-25, measure-first): the constant detour factor `1.3` remains the
+DEFAULT.** The distance-dependent curve was built, fitted on the 25% ZGB synthesis,
+and MEASURED to be **not materially better** than the constant `1.3`
+(`band_shift_impact.csv`: commute EMD vs P13 0.0878 -> 0.0849, delta ~0.003; pooled
+secondary walk vs W12 0.0712 -> 0.0729, slightly worse — both far below the 0.01
+materiality threshold). So the curve is **not pinned**; the `f(d)` machinery + the
+committed 25% measurement (`calibration/detour/`) are retained as **opt-in
+infrastructure** (`mode="curve"`) and for traceability. This mirrors the
+commute-friction outcome: machinery built, measured, found not warranted — no
+overfitting. The fitted curves themselves are plausible (car c_inf=1.19, c(0.5km)=1.64;
+walk c_inf=1.20, c(0.5km)=1.51); they simply do not move the ZGB distributions.
+
+**Premise.** Every calibrator in the corner converts model output (straight-line
+euclidean km) to the routed axis of MiD band edges by multiplying by a detour
+factor. The legacy constant `1.3` is a broad average; empirical network studies
+show circuity decays with distance (Ballou et al. 2002; Giacomin & Levinson 2015,
+*Road network circuity in metropolitan areas*) — short trips are more tortuous than
+long ones. A fitted curve would improve the axis alignment in principle, so the
+machinery was built and gated behind a **measure-first** check
+(`band_shift_impact.csv`) before changing any default — which is exactly what showed
+the curve to be immaterial for ZGB (see VERDICT).
+
+**Curve form.** `c(d_km) = c_inf + a * exp(-d_km / tau)` (per network). Both
+directions are exposed:
+- `euclidean_to_routed(d)` = `d * c(d)` — converts model output to the routed axis.
+- `routed_to_euclidean(r)` — unique inverse via `scipy.optimize.brentq`
+  (converts MiD routed targets to straight-line for slope calibration).
+
+**Module.** `braunschweig/calibration/circuity.py` — contains
+`circuity_factor`, `euclidean_to_routed`, `routed_to_euclidean`, and
+`load_circuity_params`. `braunschweig/calibration/metrics.py` (`apply_detour`)
+delegates to this module.
+
+`mode="constant"` (DEFAULT) reproduces the legacy `* 1.3` exactly — byte-identical
+to the pre-Tier-3 pipeline. `mode="curve"` (opt-in) uses the fitted curve; it is
+available infrastructure but, per the VERDICT above, not the default.
+
+**Single source of truth for params:**
+`eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv` (committed,
+regenerated in-place by the fit script). Car and walk rows carry `c_inf`, `a`, `tau_km`; the pt row carries
+`uplift` and `base` (pt = car * uplift, see below). `load_circuity_params` validates
+all fields on load (c_inf >= 1, a >= 0, tau > 0, uplift >= 1) and raises on a
+missing or malformed file — fail-fast, no silent fallback.
+
+**Networks and dispatch.**
+
+| Context | Network | Source |
+|---|---|---|
+| Commute calibration | `car` | upstream of mode choice |
+| Secondary validation (`scripts/validate_secondary_distances.py`) | per-leg: `car` / `pt` / `walk` from `mode_to_network` | purpose x mode layer |
+| Education: kindergarten / grundschule / sekundar_1 | `walk` | MiD T43 on-foot targets |
+| Education: oberstufe / bbs / hochschule | `car` | Destatis MZ 2024, motorised trips |
+
+Note: the fit script (`scripts/calibrate_detour_circuity.py`) **excludes kindergarten
+(age 0-5) from the OD sample** used to fit the walk curve. Kindergarten trips are
+already represented by short-distance walk secondary legs, and their MiD T43 mean
+(~1.5-2.3 km) is below the minimum-samples floor for a reliable per-level fit.
+The `walk` curve is applied to kindergarten in production via the same dispatch row
+above; no dedicated kindergarten OD pairs are sampled during fitting.
+
+**PT uplift.** `c_pt(d) = c_car(d) * uplift`, where `uplift` is cited from
+Huang & Levinson (2015). The value in the params CSV is currently an **UNVERIFIED
+PLACEHOLDER** — it MUST be verified against the paper before the curve is used on
+the pt axis in production. Do not treat the placeholder as a validated reference.
+
+**Fit script and regenerate command.** `scripts/calibrate_detour_circuity.py`
+reads the cached synpp working directory, extracts OD pairs (home→work via the
+`synthesis.population.spatial.locations`/`activities`/`trips` join, car/walk
+secondary legs by leg mode, education trips via `education_gravity`), builds
+routing graphs from the **OSM PBF via pyrosm** — `car` = OSM driving network,
+`walk` = OSM walking network, both **bbox-clipped to the ZGB home extent + margin**
+(`scipy.sparse.csgraph.dijkstra` with a per-network distance `limit`; the MATSim
+sim network is NOT used — it is too coarse and gave implausible circuity ~2.6x for
+short trips). OD pairs are **clipped to the network coverage** (endpoints inside
+the bbox, snap < 500 m); the cross-Germany commute/education tail is dropped and
+logged. A **convergence-driven stratified-sampling loop** (minimum-samples floor
+8000; stops when `c_inf`, `a`, `tau` are stable within tolerance for `patience`
+rounds) fits each network. Zero new dependencies (scipy + pyrosm already present;
+no networkx). NOTE: the OSM walk graph for ZGB is large (~1.9M nodes) and had
+~31% route failures from disconnected pedestrian components in the 25% smoke — a
+production activation of the curve should first restrict each graph to its largest
+connected component.
+
+```powershell
+python scripts/calibrate_detour_circuity.py `
+    --working-directory eqasim-data/cache_bs_25pct_allfeat `
+    --osm-pbf eqasim-data/data/osm/cordon/germany-latest.zgb_ring.osm.pbf `
+    --config config_server_braunschweig_25pct_allfeat_popsim.yml `
+    --walk-route-limit-km 20 --car-route-limit-km 250 `
+    --output-dir eqasim-data/data/braunschweig/calibration/detour
+```
+
+Outputs (the committed 25% measurement lives in `calibration/detour/`):
+`detour_circuity_params.csv`, `circuity_convergence_<net>.csv/.png`,
+`circuity_by_rs7.csv`, `band_shift_impact.csv` (commute EMD vs P13 and secondary
+EMD vs W12 under constant 1.3 vs fitted curve — the materiality gate),
+`circuity_fit_<net>.png`, `summary.md`, `PROVENANCE.md`.
+
+**Per-RS7 diagnostic rule.** The script also reports a per-RS7 fitted curve
+(`circuity_by_rs7.csv`). A per-RS7 curve is promoted only if the band-shift impact
+diverges materially from the global curve (analogous to the education-style
+shrinkage: sparse cells are shrinkage-regularised to the pooled curve of converged
+cells; cells at the steep bound are kept as structural floors). Start with the
+global curve; do not promote per-RS7 without evidence from `band_shift_impact.csv`.
+
+**No behaviour change (default).** Because the curve is not pinned, the default
+pipeline is byte-identical to the pre-Tier-3 constant `1.3`:
+- `braunschweig/calibration/_legacy_education_slopes.py` (`--detour-factor` default
+  `1.3`) — education slopes are calibrated on the constant; no re-pin was needed.
+- `braunschweig/analysis/run_mid_validation.py` — education T43 targets use the
+  constant `1.3` (`braunschweig.constants.ROUTED_DETOUR_FACTOR`).
+- The fitted curve is reachable only via explicit `mode="curve"` (in
+  `circuity_factor` / `apply_detour` / the education loaders) for future
+  experimentation.
+
+**Tier 3A — secondary scorer-weight calibration (built, NOT activated).**
+`braunschweig/calibration/secondary.py` implements a pure coordinate-descent
+optimiser (`coordinate_descent`) for per-purpose chainsolvers scorer weights
+(`secondary_dist_dev_weight` / `secondary_scorer_pot_weight`). Infrastructure
+only — pinning/activating the weights is gated on the deferred 25% ON validation
+run actually showing a shop residual vs MiD W12. Until then the weights stay at
+their current config values.
+
+**Status of the once-deferred steps.**
+1. DONE — `calibrate_detour_circuity.py` was run on the 25% cache; the measurement
+   is committed under `calibration/detour/`.
+2. DONE — `band_shift_impact.csv` shows the curve is NOT material -> education
+   slopes were NOT re-pinned (they stay on the constant 1.3, unchanged).
+3. OPEN (only if the curve is ever activated) — verify the pt uplift value against
+   Huang & Levinson (2015) before using `mode="curve"` on the pt axis.
+4. OPEN — Tier 3A (`secondary.py` scorer-weight descent) stays built-but-inactive;
+   activation is still gated on a 25% ON validation run showing a shop residual.
+
+Tests: `tests/test_circuity.py`, `tests/test_detour_fit.py`,
+`tests/test_metrics_circuity.py`, additions to
+`tests/test_mid_school_distance.py` / `tests/test_mikrozensus_school_distance.py`,
+`tests/test_secondary_distance_dispatch.py`,
+`tests/test_calibration_secondary_scorer.py`.
+
 ## Education gravity model (NDS school data)
 
 All education levels are assigned by real-data distance-decay gravity models,
@@ -551,6 +813,123 @@ Tests: `tests/test_building_activity_potentials_import.py`,
 `tests/test_work_building_potentials.py`,
 `tests/test_secondary_building_potentials.py`,
 `tests/test_education_building_distribution.py`.
+
+## Purpose-resolved secondary activity distances (Tier 1 + Tier 2)
+
+Secondary activity trip-distance distributions are refined by sourcing the
+desired leg distance per **eqasim secondary purpose** (shop / leisure / other)
+instead of per mode only, and — for shopping — by distinguishing **daily-needs
+vs non-daily** trips both in distance sampling and in which building type they
+are placed at. The eqasim activity taxonomy is **unchanged**: the pipeline output
+purpose stays `shop` / `leisure` / `other`; the resolution is internal to the
+distance sampler and the location placement.
+
+**Root cause.** `_sample_leg_distance` in
+`braunschweig/synthesis/locations/secondary_chainsolvers.py` previously drew the
+desired distance from `distance_distributions[mode][travel_time_band]` — purpose
+was ignored (except a leisure scaling factor). So a shop-by-car and a
+leisure-by-car leg drew the **same** distribution, diluting shop distances by the
+longer leisure tail. MiD 2023 W_GEW-weighted mean distances by coarse purpose
+confirm a ~3× shop subtype range (daily 3.9 km vs non-daily 8.6 km) and a ~5×
+leisure subtype range (dog-walk 3.9 km vs visit-friends 21.3 km). The OFF
+baseline measures shop EMD 0.053, leisure EMD 0.064, other EMD 0.018 against MiD
+W12 — all below the 0.08 quality threshold, so this is a **realism refinement**,
+not a broken model.
+
+**Tier 1 — per-(purpose x mode) distributions (`secondary_distance_by_purpose`).** 
+`braunschweig/popsim/distance_distributions.py` (`run`) builds CDFs grouped by
+(secondary purpose x mode x travel-time band) instead of (mode x band),
+W_GEW-weighted, using `wegkm_imp / DETOUR_FACTOR` (1.3 — documented ASSUMPTION;
+see below) for the euclidean conversion. The output structure gains a purpose
+layer: `distributions[purpose][mode]{bounds, distributions:[{values,cdf}]}`.
+`_sample_leg_distance` indexes `[purpose][mode][band]` when the purpose layer is
+present; absent it falls back to the legacy `[mode][band]` path (OFF
+byte-identical). Sparse-cell fallback: if a (purpose, mode) cell has fewer than
+`secondary_distance_min_obs` legs, the pooled (any-purpose, mode) distribution is
+used and the rate is **logged** — never silent. This is a popsim_mid-only
+enhancement; the default ENTD stage is untouched.
+
+**Tier 2 — daily / non-daily shopping split (`secondary_shop_daily_split`).** 
+Tier 1 already incorporates the shop aggregate distribution (~80% daily mix).
+Tier 2 additionally makes the **joint (distance, building type)** realistic.
+
+- **Subtype imputation.** Each synthetic shop leg is imputed a subtype (`daily` /
+  `non_daily`) by a seeded draw from `P(daily | mode, travel-time band)` learned
+  from the labelled CATI/CAWI MiD legs (MiD W_ZWD 501 = daily; 502/503/504/505 =
+  non-daily; PAPI/children sentinels 2202/4402/... excluded from estimation). The
+  conditional model is *estimated* on the 60% of shop legs that carry W_ZWD, then
+  *imputed onto 100%* of synthetic shop legs from their observed covariates — so a
+  PAPI-donor leg still receives a subtype draw, nothing is dropped. The labelled
+  fraction, per-cell counts, and any covariate cell that fell back to the marginal
+  share are **logged** (no silent fallback). Implemented in
+  `braunschweig/popsim/shop_subtype.py`. The seeded RNG uses `random_seed` plus
+  an offset.
+- **Distance.** Tier 1's shop distribution is further split into `shop_daily` /
+  `shop_non_daily` (W_ZWD 501 vs 502-505), and `_sample_leg_distance` uses the
+  subtype key.
+- **Building placement.** The chainsolver's `_build_locations_df` maps internal
+  activity `shop_daily` to the `potential_retail_daily` column and `shop_non_daily`
+  to `potential_retail_non_daily`, splitting the `pot_shop` sum that was previously
+  undifferentiated. After solving, both internal names map back to eqasim purpose
+  `shop` — the location output schema (`[person_id, commune_id, location_id,
+  geometry]`) is unchanged. The carla solver accepts the internal activity names
+  directly (verified by a smoke test in `tests/test_secondary_chainsolvers.py`).
+
+**Config keys (all default false / null so OFF = byte-identical to pre-feature).**
+
+| Key | Default | Effect |
+|---|---|---|
+| `secondary_distance_by_purpose` | `false` | Tier 1 purpose x mode distributions (popsim_mid) |
+| `secondary_shop_daily_split` | `false` | Tier 2 daily/non-daily split + placement |
+| `secondary_shop_daily_share` | `null` | Pin the daily share; `null` = derive from MiD W_GEW |
+| `secondary_distance_min_obs` | `30` | Sparse-cell fallback threshold (legs per cell) |
+
+Both flags are set to `true` in the two server all-features popsim_mid run configs
+(`config_server_braunschweig_1pct_allfeat_popsim.yml` and
+`config_server_braunschweig_25pct_allfeat_popsim.yml`). All other configs leave
+them `false`.
+
+**Validation.** `scripts/validate_secondary_distances.py` compares realised
+secondary trip band shares (detour-adjusted via `metrics.apply_detour`) to MiD W12
+(Einkauf / Freizeit / Erledigung) using `braunschweig.calibration.targets.load_w12_band_shares`.
+Outputs land under `eqasim-data/data/braunschweig/calibration/secondary/`. The
+W12 EMD before Tier 1 (OFF baseline: shop 0.053, leisure 0.064, other 0.018) is
+the honest before-state; the after-state requires a full 25% ON synpp run (the
+`cache_bs_25pct_allfeat` re-run is the next step and has not been completed at the
+time of this commit). The Tier 2 placement check (daily trips at
+`retail_daily` buildings vs non-daily at `retail_non_daily`, plus mean distances)
+is a **structural realism** check only: MiD W12 is a distance distribution, not a
+placement target, so Tier 2 has **no committed W12 target** — do not interpret a
+convergence of placement ratios as a validated fit (see CLAUDE.md
+"convergence != validation").
+
+**Assumptions and limits.**
+
+- `DETOUR_FACTOR = 1.3` (constant, **ASSUMPTION**): the model output is euclidean
+  distance, the MiD W12 reference is routed. Short trips empirically have higher
+  circuity; a distance-dependent `f(d)` is Tier 3-C backlog (see below).
+- The CATI/CAWI-only detail (60% coverage) is sufficient for estimation; the
+  unlabelled 40% are imputed from the conditional model on observed covariates —
+  this is statistical imputation, not an invented per-leg label.
+- popsim_mid only; the default ENTD distance stage is untouched.
+
+**Tier 3 — backlog (not built; separate specs if warranted).**
+
+- *(A) Residual scorer tuning.* Tier 1+2 fix the desired distance; the combined
+  scorer's `pot_weight` pull toward large buildings may add a residual. Tune
+  `secondary_dist_dev_weight` / `secondary_scorer_pot_weight` only after the 25%
+  ON run confirms a residual attributable to the scorer.
+- *(C) Distance-dependent detour `f(d)`.* Circuity decays with distance (Ballou
+  et al.; Giacomin & Levinson 2015, *Road network circuity in metropolitan areas*).
+  Derive `f(d)` empirically from the ZGB MATSim network; this is cross-cutting
+  (commute, education, secondary all use `DETOUR_FACTOR`) and belongs in its own
+  spec with re-validation of all three.
+
+Tests: `tests/test_distance_distributions_by_purpose.py`,
+`tests/test_sample_leg_distance_purpose.py`,
+`tests/test_shop_subtype.py`,
+`tests/test_calibration_targets.py` (W12 additions),
+`tests/test_secondary_chainsolvers.py` (Tier 2 + carla smoke).
 
 ## Long-haul freight injection (german-wide-freight v3)
 

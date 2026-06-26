@@ -1,0 +1,3 @@
+trip_type,metric,emd_constant_1_3,emd_fitted_curve,delta,note
+commute,emd_vs_p13_zgb,0.08777311598688585,0.08485911456542174,-0.002914001421464113,negative delta = fitted curve reduces EMD (closer to MiD P13 target)
+secondary_walk_pooled,emd_vs_w12,0.07118755676657584,0.07294732061762038,0.001759763851044538,pooled secondary walk (no purpose split here; per-purpose EMD: scripts/validate_secondary_distances.py). negative delta = fitted curve reduces EMD

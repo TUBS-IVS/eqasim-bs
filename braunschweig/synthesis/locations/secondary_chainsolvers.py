@@ -101,6 +101,32 @@ def configure(context):
     if sec_enabled:
         context.stage("braunschweig.data.building_potentials")
 
+    # Daily / non-daily shopping subtype (Tier 2). When ON, each shop leg is
+    # tagged with a daily/non-daily subtype that drives BOTH its desired
+    # distance (the shop_daily / shop_non_daily distribution layer built by
+    # braunschweig.popsim.distance_distributions when secondary_shop_daily_split
+    # is set there) AND the building it is placed at (potential_retail_daily vs
+    # potential_retail_non_daily instead of the summed pot_shop). The eqasim
+    # output activity purpose stays "shop"; the subtype is internal to the
+    # chainsolver. OFF (default false / flag absent) is byte-identical to the
+    # pre-feature behaviour (single "shop" activity, summed pot_shop).
+    context.config("secondary_shop_daily_split", False)
+    # Optional pinned daily share (None -> derive the conditional
+    # P(daily | mode, travel-time band) from the MiD Wege survey). A float in
+    # [0, 1] forces a flat marginal daily probability instead of the
+    # MiD-estimated conditional table (used only if one wants to pin the share).
+    context.config("secondary_shop_daily_share", None)
+    # Minimum observation count for a (mode, travel-time band) cell to receive
+    # its own MiD-estimated daily probability; thinner cells fall back to the
+    # MiD marginal share (logged, no silent fallback).
+    context.config("secondary_distance_min_obs", 30)
+    # MiD Wege directory: only consumed (and only declared) when the daily
+    # split is ON, so non-real configs that leave the flag off never require
+    # the local-only MiD delivery.
+    shop_daily_split = context.config("secondary_shop_daily_split")
+    if shop_daily_split:
+        context.config("braunschweig.population.popsim.mid_dir")
+
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors of the legacy stage)
@@ -161,18 +187,61 @@ def _resample_distributions(distributions, factors):
     mutate only the copy; the returned object carries the resampled CDFs while
     the original cached object stays untouched. The deep copy is cheap (a
     handful of small distribution dicts per mode).
+
+    Handles BOTH the legacy per-mode structure ``{mode: {bounds, distributions}}``
+    and the purpose-layered structure ``{purpose: {mode: {bounds, distributions}}}``
+    (Tier 1, built when ``secondary_shop_daily_split`` adds ``shop_daily`` /
+    ``shop_non_daily`` distribution layers). The per-mode resample ``factors`` are
+    applied within each mode regardless of the layer structure. Detection mirrors
+    ``_sample_leg_distance``: a mode-level dict carries a ``"distributions"`` key;
+    a purpose-level dict maps purpose -> mode-dict (no ``"distributions"`` key
+    at the top level).
     """
     distributions = copy.deepcopy(distributions)
-    for mode, mode_distributions in distributions.items():
-        for distribution in mode_distributions["distributions"]:
-            distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
+    # Guard against empty dict: next(iter(...)) raises StopIteration on empty.
+    if not distributions:
+        return distributions
+    # Detect whether the top level is a purpose layer or a mode layer. A mode-level
+    # dict always carries a "distributions" key; a purpose-level dict does not
+    # (its values are mode dicts, each of which carries "distributions" one level
+    # deeper). Modes and purposes are disjoint vocabularies, so an ambiguous top-
+    # level key cannot occur.
+    sample_value = next(iter(distributions.values()))
+    is_purpose_layered = "distributions" not in sample_value
+    if is_purpose_layered:
+        for purpose, mode_dict in distributions.items():
+            for mode, mode_distributions in mode_dict.items():
+                for distribution in mode_distributions["distributions"]:
+                    distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
+    else:
+        for mode, mode_distributions in distributions.items():
+            for distribution in mode_distributions["distributions"]:
+                distribution["cdf"] = _resample_cdf(distribution["cdf"], factors[mode])
     return distributions
 
 
 def _sample_leg_distance(distributions, mode, travel_time, purpose,
                          leisure_correction_factor, random):
-    """Replicates ``CustomDistanceSampler.sample_distances`` for one leg."""
-    mode_distribution = distributions[mode]
+    """Replicates ``CustomDistanceSampler.sample_distances`` for one leg.
+
+    Auto-detects whether ``distributions`` is the legacy per-mode structure
+    ``{mode: ...}`` or a purpose-layered one ``{purpose: {mode: ...}}``.
+    Purposes (shop/leisure/other/work/education) and modes (car/walk/pt/
+    bicycle/car_passenger) are disjoint vocabularies, so a top-level key equal
+    to ``mode`` means the legacy per-mode structure; otherwise a purpose layer
+    is expected and ``distributions[purpose]`` is selected. If ``purpose`` is
+    absent from the purpose-layered dict the resulting KeyError surfaces
+    immediately (no silent fallback -- a wiring bug should not be hidden).
+    """
+    # Auto-detect structure by checking whether the mode key is present at the
+    # top level. Since purposes and modes are disjoint vocabularies, this is
+    # unambiguous: a top-level "car"/"walk"/... key means legacy; a top-level
+    # "shop"/"leisure"/... key means purpose-layered.
+    if mode in distributions:
+        mode_distributions = distributions
+    else:
+        mode_distributions = distributions[purpose]
+    mode_distribution = mode_distributions[mode]
     bound_index = int(np.count_nonzero(travel_time > mode_distribution["bounds"]))
     mode_distribution = mode_distribution["distributions"][bound_index]
     distance = mode_distribution["values"][
@@ -183,12 +252,41 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     return float(distance)
 
 
-# Maps each secondary activity to its attached candidate-potential column.
+def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bool:
+    """True iff ``distributions`` is purpose-layered AND carries ``purpose``.
+
+    A purpose-layered structure is ``{purpose: {mode: ...}}``; the legacy
+    per-mode structure is ``{mode: ...}``. Modes and purposes are disjoint
+    vocabularies, so a top-level key equal to a known mode (e.g. ``"car"``)
+    means the legacy structure, in which no purpose sub-keying exists (returns
+    False). Used by the Tier-2 shop subtype routing to decide whether a
+    ``shop_daily`` / ``shop_non_daily`` distance layer exists or the aggregate
+    ``"shop"`` layer must be used as a logged fallback.
+    """
+    _MODE_KEYS = {"car", "car_passenger", "pt", "bicycle", "walk"}
+    if not distributions:
+        return False
+    # Legacy per-mode structure: a top-level mode key is present.
+    if any(k in distributions for k in _MODE_KEYS):
+        return False
+    return purpose in distributions
+
+
+# Maps each secondary chainsolver activity to its attached candidate-potential
+# column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to the
+# split retail potentials; the aggregate "shop" maps to the summed pot_shop and
+# is the only shop key on the OFF path.
 _ACTIVITY_POTENTIAL_COLUMN = {
     "shop": "pot_shop",
+    "shop_daily": "pot_shop_daily",
+    "shop_non_daily": "pot_shop_non_daily",
     "leisure": "pot_leisure",
     "other": "pot_other",
 }
+
+# Internal shop subtype activities (chainsolver-only). They never leak into the
+# eqasim output: _extract_locations maps them back to the "shop" purpose.
+SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
 
 
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float):
@@ -237,8 +335,15 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     GeoDataFrame with columns:
         location_id, commune_id, iris_id, geometry(Point),
         offers_shop, offers_leisure, offers_other,
-        pot_shop, pot_leisure, pot_other
+        pot_shop, pot_shop_daily, pot_shop_non_daily, pot_leisure, pot_other
     concat of gpkg shop/leisure rows and legacy other rows, reset index.
+
+    ``pot_shop`` stays the SUM of the daily + non-daily retail potential (used
+    on the OFF / non-split path, byte-identical to before); ``pot_shop_daily``
+    and ``pot_shop_non_daily`` carry the two gpkg components separately so the
+    Tier-2 daily/non-daily split (secondary_shop_daily_split) can route a leg's
+    placement to the matching retail subtype. The legacy 'other' rows carry 0.0
+    for all three shop potentials.
     """
     from braunschweig.data.building_potential_attach import attach_potential
 
@@ -247,12 +352,15 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     # Potentials are native (read directly from the building table); no spatial
     # join needed, so there is no fallback path for this half of the candidates.
     b = df_buildings.copy()
-    retail = (b["potential_retail_daily"].astype(float)
-              + b["potential_retail_non_daily"].astype(float))
+    retail_daily = b["potential_retail_daily"].astype(float)
+    retail_non_daily = b["potential_retail_non_daily"].astype(float)
+    retail = retail_daily + retail_non_daily
     leisure = b["potential_leisure"].astype(float)
     keep = (retail > 0) | (leisure > 0)
     b = b[keep]
     retail = retail[keep]
+    retail_daily = retail_daily[keep]
+    retail_non_daily = retail_non_daily[keep]
     leisure = leisure[keep]
     gpkg = gpd.GeoDataFrame({
         "location_id": ("sec_b_" + b["building_id"].astype(str)).values,
@@ -262,6 +370,8 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_leisure": (leisure > 0).values,
         "offers_other": False,
         "pot_shop": retail.values,
+        "pot_shop_daily": retail_daily.values,
+        "pot_shop_non_daily": retail_non_daily.values,
         "pot_leisure": leisure.values,
         "pot_other": 0.0,
         "geometry": b.geometry.centroid.values,
@@ -283,6 +393,8 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_leisure": False,
         "offers_other": True,
         "pot_shop": 0.0,
+        "pot_shop_daily": 0.0,
+        "pot_shop_non_daily": 0.0,
         "pot_leisure": 0.0,
         "pot_other": pot_other,
         "geometry": legacy.geometry.values,
@@ -296,27 +408,70 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     return out
 
 
-def _build_locations_df(df_secondary, with_potentials: bool = False):
+def _build_locations_df(df_secondary, with_potentials: bool = False,
+                        shop_daily_split: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
     semicolon-joined string aligned 1:1 with ``activities`` (the chainsolvers df
     parser reads per-activity potentials parallel to the activities list).
+
+    When ``shop_daily_split`` is True (Tier 2: secondary_shop_daily_split) a
+    building that offers shopping is emitted under the two internal subtype
+    activities ``shop_daily`` / ``shop_non_daily`` (each carrying its own retail
+    potential, ``pot_shop_daily`` / ``pot_shop_non_daily``) instead of a single
+    ``shop`` activity, so the carla solver can place a daily shop leg at a
+    daily-retail building and a non-daily leg at a non-daily-retail building. A
+    subtype is only offered when its potential column is strictly positive, so a
+    daily-only building is not a candidate for a non-daily leg and vice versa.
+    ``shop_daily_split`` requires ``with_potentials`` (the split is meaningless
+    without the per-subtype potentials). OFF (default) is byte-identical to the
+    pre-feature behaviour (a single ``shop`` activity at ``pot_shop``).
     """
+    if shop_daily_split and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] shop_daily_split requires "
+            "with_potentials (the daily/non-daily split needs the per-subtype "
+            "retail potential columns)."
+        )
     activities = []
     potentials = []
+    # Activity emission order. With the split ON the single "shop" offer is
+    # replaced by the two subtype activities (shop_daily/shop_non_daily); the
+    # leisure/other activities are unchanged.
+    if shop_daily_split:
+        offer_specs = (("shop_daily", "offers_shop"),
+                       ("shop_non_daily", "offers_shop"),
+                       ("leisure", "offers_leisure"),
+                       ("other", "offers_other"))
+    else:
+        offer_specs = (("shop", "offers_shop"),
+                       ("leisure", "offers_leisure"),
+                       ("other", "offers_other"))
     cols = ["offers_shop", "offers_leisure", "offers_other"]
     if with_potentials:
-        cols = cols + list(_ACTIVITY_POTENTIAL_COLUMN.values())
+        # Only require the potential columns actually consumed by the active
+        # offer_specs, so the non-split path does not demand the subtype
+        # potential columns (byte-identical + no spurious KeyError on candidate
+        # frames that carry only the summed pot_shop).
+        cols = cols + [_ACTIVITY_POTENTIAL_COLUMN[act] for act, _ in offer_specs]
     for _, row in df_secondary[cols].iterrows():
         acts, pots = [], []
-        for act, offer in (("shop", "offers_shop"),
-                           ("leisure", "offers_leisure"),
-                           ("other", "offers_other")):
-            if bool(row[offer]):
+        for act, offer in offer_specs:
+            if not bool(row[offer]):
+                continue
+            if with_potentials:
+                pot = float(row[_ACTIVITY_POTENTIAL_COLUMN[act]])
+                # A shop subtype with a zero potential is not a candidate for
+                # that subtype (the building has no daily / no non-daily retail
+                # floor area). Without the split the aggregate shop offer is
+                # kept regardless so the OFF path is byte-identical.
+                if shop_daily_split and act in SHOP_SUBTYPE_ACTIVITIES and pot <= 0.0:
+                    continue
                 acts.append(act)
-                if with_potentials:
-                    pots.append(float(row[_ACTIVITY_POTENTIAL_COLUMN[act]]))
+                pots.append(pot)
+            else:
+                acts.append(act)
         activities.append("; ".join(acts))
         if with_potentials:
             potentials.append("; ".join(str(p) for p in pots))
@@ -398,12 +553,27 @@ def _problem_legs(problem) -> List[Dict[str, Any]]:
 def _build_plans_df(problems: List[Dict[str, Any]],
                     distributions: Dict[str, Any],
                     leisure_correction_factor: float,
-                    random: np.random.RandomState) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int]]:
+                    random: np.random.RandomState,
+                    shop_subtype_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
-    Returns ``(plans_df, problem_meta, unbounded_indices)``. Unbounded
-    problems (tail / head / floating chains) are excluded — carla needs
-    both endpoints anchored. They are placed by ``_fallback_place``.
+    Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
+    Unbounded problems (tail / head / floating chains) are excluded — carla
+    needs both endpoints anchored. They are placed by ``_fallback_place``.
+
+    ``shop_subtype_decider`` (Tier 2: secondary_shop_daily_split). When None
+    (default / OFF) the leg loop is byte-identical to the pre-feature path: a
+    shop leg's activity and distance purpose are both ``"shop"``. When provided
+    it is a callable ``(mode: str, travel_time_s: float) -> "shop_daily" |
+    "shop_non_daily"`` that tags each shop leg's internal subtype, which becomes
+    BOTH the chainsolver activity (so the leg is placed at a retail_daily /
+    retail_non_daily building) AND the distance-distribution purpose (so it
+    draws the shop_daily / shop_non_daily distance layer). It draws from its own
+    seeded RNG (NOT ``random``), so the distance-sampling RNG stream — and hence
+    the OFF path — stays byte-identical. ``subtype_stats`` reports how many shop
+    legs were labelled daily / non_daily and how many fell back from a missing
+    subtype distance layer to the aggregate ``"shop"`` layer (no silent
+    fallback).
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -424,6 +594,15 @@ def _build_plans_df(problems: List[Dict[str, Any]],
 
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
+
+    # Tier-2 subtype accounting (fallback transparency). Allocated only when the
+    # subtype decider is active (ON path); on the OFF path an empty dict is
+    # returned so the caller's logging gate (shop_subtype_decider is not None)
+    # stays consistent with the allocation gate here.
+    subtype_stats: Dict[str, int] = (
+        {"shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0}
+        if shop_subtype_decider is not None else {}
+    )
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -460,9 +639,36 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         for leg in legs:
             li = leg["leg_index"]
             to_act_type = leg["to_act_type"]
+
+            # The eqasim purpose used for placement (the chainsolver activity)
+            # and for the distance-distribution lookup. Default: the secondary
+            # purpose itself ("shop"/"leisure"/"other"); non-secondary (fixed
+            # anchor) legs use "other" for distance only.
+            placement_act = to_act_type
+            distance_purpose = (
+                to_act_type if to_act_type in SECONDARY_PURPOSES else "other"
+            )
+
+            # Tier 2: resolve a shop leg to its daily / non-daily subtype. The
+            # subtype is the chainsolver activity (-> retail_daily / non_daily
+            # placement) AND the distance purpose (-> shop_daily / non_daily
+            # distance layer). If the subtype layer is absent from the
+            # distributions (sparse), fall back to the aggregate "shop" layer
+            # for the DISTANCE only and count it; the placement activity still
+            # carries the subtype so the building routing is unaffected.
+            if shop_subtype_decider is not None and to_act_type == "shop":
+                subtype = shop_subtype_decider(leg["mode"], leg["travel_time"])
+                placement_act = subtype
+                subtype_stats[subtype] += 1
+                if _purpose_in_distributions(distributions, subtype):
+                    distance_purpose = subtype
+                else:
+                    distance_purpose = "shop"
+                    subtype_stats["distance_layer_fallback"] += 1
+
             distance_m = _sample_leg_distance(
                 distributions, leg["mode"], leg["travel_time"],
-                to_act_type if to_act_type in SECONDARY_PURPOSES else "other",
+                distance_purpose,
                 leisure_correction_factor, random,
             )
 
@@ -480,7 +686,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
 
             col_uid.append(f"{person_id}#{prob_idx}")
             col_leg_id.append(f"{person_id}#{prob_idx}#{li}")
-            col_act.append(to_act_type if to_act_type != "__fixed__" else "home")
+            col_act.append(placement_act if placement_act != "__fixed__" else "home")
             col_dist.append(distance_m)
             col_from_x.append(from_x)
             col_from_y.append(from_y)
@@ -492,7 +698,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     if not col_uid:
         # Preserve the legacy empty-frame shape (from_records([]) has NO
         # columns) so the no-bounded-legs early return behaves identically.
-        return pd.DataFrame.from_records([]), problem_meta, unbounded_idx
+        return pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats
 
     plans_df = pd.DataFrame({
         "unique_person_id": col_uid,
@@ -506,7 +712,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         "_leg_index": col_leg_index,
         "_problem_idx": col_prob_idx,
     })
-    return plans_df, problem_meta, unbounded_idx
+    return plans_df, problem_meta, unbounded_idx, subtype_stats
 
 
 def _build_rda_candidate_index(df_secondary: pd.DataFrame):
@@ -763,7 +969,14 @@ def _extract_locations(result_df: pd.DataFrame,
     known_prob = np.array(
         [valid_split[i] and (prob_idx_int[i] in meta_by_idx) for i in range(n_rows)]
     )
-    is_secondary = pd.Series(to_act, dtype=object).isin(SECONDARY_PURPOSES).to_numpy()
+    # Tier 2: the internal shop subtype activities (shop_daily / shop_non_daily)
+    # are secondary too -- they map back to the eqasim "shop" purpose. Include
+    # them here so a subtype-tagged leg is not silently dropped at extraction.
+    # The subtype label never reaches the output schema (which carries no
+    # purpose: [person_id, activity_index, location_id, geometry]); this is the
+    # implicit map-back to "shop".
+    secondary_acts = set(SECONDARY_PURPOSES) | set(SHOP_SUBTYPE_ACTIVITIES)
+    is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
 
     keep = known_prob & is_secondary & coords_present
@@ -1139,6 +1352,104 @@ def _fallback_accounting_summary(n_total_problems: int,
 
 
 # ---------------------------------------------------------------------------
+# Tier 2: daily / non-daily shop subtype decider
+# ---------------------------------------------------------------------------
+
+# Deterministic offset added to random_seed for the subtype-imputation RNG, so
+# the subtype draws use a SEPARATE stream from the distance-sampling RNG
+# (``random``) and therefore never perturb the distance draws -> the OFF path
+# stays byte-identical.
+SHOP_SUBTYPE_SEED_OFFSET = 90211
+
+
+def _build_shop_subtype_decider(context, random_seed: int):
+    """Build the per-leg shop daily/non-daily decider, or return None when OFF.
+
+    Returns a callable ``(mode: str, travel_time_s: float) -> "shop_daily" |
+    "shop_non_daily"`` (Tier 2) when ``secondary_shop_daily_split`` is ON, else
+    ``None`` (the byte-identical OFF path). The conditional daily probability
+    ``P(daily | mode, travel-time band)`` is estimated from the MiD 2023 Wege
+    survey (labelled CATI/CAWI shop legs only) via
+    ``braunschweig.popsim.shop_subtype.estimate_daily_probability``; per leg the
+    subtype is drawn ``~ Bernoulli(P(daily | covariates))`` with a dedicated
+    seeded RNG. ``secondary_shop_daily_share`` (a float in [0, 1]) overrides the
+    MiD-estimated table with a flat marginal share (used to pin the share); when
+    None the MiD conditional table is used. The labelled fraction is logged (no
+    silent fallback).
+    """
+    if not context.config("secondary_shop_daily_split"):
+        return None
+
+    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.shop_subtype import (
+        SHOP_DAILY_W_ZWD,
+        SHOP_NONDAILY_W_ZWD,
+        estimate_daily_probability,
+        impute_subtype,
+        tt_band,
+    )
+    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+
+    pinned_share = context.config("secondary_shop_daily_share")
+    min_obs = int(context.config("secondary_distance_min_obs"))
+
+    if pinned_share is not None:
+        # Flat marginal share: no covariate conditioning. ASSUMPTION-free in the
+        # sense that the caller explicitly pinned it via config.
+        marginal = float(pinned_share)
+        prob: Dict[Any, float] = {("__marginal__", -1): marginal}
+        print(
+            "[braunschweig.secondary_chainsolvers] shop daily subtype: using "
+            f"pinned flat daily share {marginal:.3f} "
+            "(secondary_shop_daily_share set; MiD estimation skipped, "
+            "labelled-fraction diagnostic N/A)."
+        )
+    else:
+        # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
+        mid_dir = context.config("braunschweig.population.popsim.mid_dir")
+        mid_wege = mid_module.load_mid_wege(mid_dir)
+        # estimate_daily_probability needs columns: W_ZWECK, mode, travel_time,
+        # W_ZWD, W_GEW. map_mode derives "mode" from hvm_imp; travel_time is
+        # arrival - departure in seconds (the same derivation the distance
+        # distributions stage uses).
+        mid_wege = map_mode(mid_wege)
+        dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
+        arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
+        tt = arr - dep
+        tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
+        mid_wege = mid_wege.assign(travel_time=tt)
+
+        n_shop = int((mid_wege["W_ZWECK"] == 4).sum())
+        labelled_mask = (
+            (mid_wege["W_ZWECK"] == 4)
+            & mid_wege["W_ZWD"].isin(SHOP_DAILY_W_ZWD | SHOP_NONDAILY_W_ZWD)
+        )
+        n_labelled = int(labelled_mask.sum())
+        prob = estimate_daily_probability(mid_wege, min_obs=min_obs)
+        marginal = float(prob[("__marginal__", -1)])
+        n_cells = sum(1 for k in prob if k != ("__marginal__", -1))
+        print(
+            "[braunschweig.secondary_chainsolvers] shop daily subtype: MiD "
+            f"labelled shop legs {n_labelled:,}/{n_shop:,} "
+            f"({100.0 * n_labelled / n_shop if n_shop else 0.0:.1f}%); "
+            f"marginal daily share {marginal:.3f}; "
+            f"{n_cells} (mode, tt_band) cells >= min_obs={min_obs} "
+            "(thinner cells use the marginal)."
+        )
+
+    rng = np.random.RandomState(int(random_seed) + SHOP_SUBTYPE_SEED_OFFSET)
+
+    def decide(mode: str, travel_time_s: float) -> str:
+        # impute_subtype is vectorised; call it on a 1-element batch so the
+        # estimation/imputation logic is shared (no duplicated probability
+        # lookup). The dedicated rng keeps this independent of the distance RNG.
+        is_daily = impute_subtype([mode], [travel_time_s], prob, marginal, rng)[0]
+        return "shop_daily" if is_daily else "shop_non_daily"
+
+    return decide
+
+
+# ---------------------------------------------------------------------------
 # synpp execute
 # ---------------------------------------------------------------------------
 
@@ -1171,8 +1482,16 @@ def execute(context):
         car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5,
     ))
 
-    random = np.random.RandomState(context.config("random_seed"))
+    random_seed = context.config("random_seed")
+    random = np.random.RandomState(random_seed)
     leisure_corr = float(context.config("leisure_correction_factor"))
+
+    # Tier 2: daily / non-daily shop subtype decider (None when the flag is OFF,
+    # so the leg loop and the candidate build stay byte-identical). Built before
+    # solving so its MiD load / probability-estimation logging happens once.
+    shop_daily_split = bool(context.config("secondary_shop_daily_split"))
+    shop_subtype_decider = _build_shop_subtype_decider(context, random_seed)
+
     fallback_strategy = (
         context.config("braunschweig.chainsolvers.fallback") or "rda"
     )
@@ -1216,13 +1535,30 @@ def execute(context):
         f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
     )
 
-    plans_df, problem_meta, unbounded_idx = _build_plans_df(
+    plans_df, problem_meta, unbounded_idx, subtype_stats = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
+        shop_subtype_decider=shop_subtype_decider,
     )
     print(
         f"[braunschweig.secondary_chainsolvers] bounded problems: "
         f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
     )
+    if shop_subtype_decider is not None:
+        n_daily = subtype_stats["shop_daily"]
+        n_nondaily = subtype_stats["shop_non_daily"]
+        n_shop_legs = n_daily + n_nondaily
+        realised_daily = (n_daily / n_shop_legs) if n_shop_legs else 0.0
+        n_dist_fb = subtype_stats["distance_layer_fallback"]
+        print(
+            "[braunschweig.secondary_chainsolvers] shop subtype labelling "
+            "(bounded shop legs only; unbounded go to fallback untagged): "
+            f"{n_shop_legs:,} bounded shop legs -> daily {n_daily:,} "
+            f"({100.0 * realised_daily:.1f}%), non_daily {n_nondaily:,} "
+            f"({100.0 * (1.0 - realised_daily):.1f}%); "
+            f"distance-layer fallback to aggregate 'shop' "
+            f"{n_dist_fb:,}/{n_shop_legs:,} "
+            f"({100.0 * n_dist_fb / n_shop_legs if n_shop_legs else 0.0:.1f}%)"
+        )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
@@ -1276,7 +1612,23 @@ def execute(context):
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
         )
-    locations_df = _build_locations_df(df_secondary, with_potentials=sec_enabled)
+    # Tier 2 requires the building-potential candidate set: the subtype legs
+    # (shop_daily / shop_non_daily) can only be placed at buildings tagged with
+    # those subtype activities, which exist only on the with_potentials path. A
+    # subtype split without building potentials would leave carla with no
+    # candidates for the subtype activities -> fail fast (no silent fallback).
+    if shop_daily_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_shop_daily_split "
+            "requires secondary_building_potentials to be ON (the daily / "
+            "non-daily shop placement needs the retail_daily / retail_non_daily "
+            "building candidates). Enable secondary_building_potentials or "
+            "disable secondary_shop_daily_split."
+        )
+    locations_df = _build_locations_df(
+        df_secondary, with_potentials=sec_enabled,
+        shop_daily_split=shop_daily_split,
+    )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
     # One base seed drawn from the deterministic RandomState. Drawing exactly

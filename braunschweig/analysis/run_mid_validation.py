@@ -43,6 +43,7 @@ import pandas as pd
 
 from braunschweig.analysis import spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
+from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
 
 LOGGER = logging.getLogger("braunschweig.analysis.mid_validation")
@@ -469,12 +470,10 @@ def _mode_share_table(
 # Education-trip distance vs MiD Tabelle 43 (per RegioStaR-7, per level)
 # ---------------------------------------------------------------------------
 
-# Routed/straight-line detour factor used to convert the MiD Tabelle 43 routed
-# targets to a straight-line equivalent. Kept equal to the calibration default
-# in scripts/calibrate_education_slopes.py so the post-sim validation compares
-# against the same target the slopes were fitted to. Canonical project-wide
-# constant (braunschweig.constants); alias kept.
-from braunschweig.constants import ROUTED_DETOUR_FACTOR as _EDU_DETOUR_FACTOR
+# Education targets use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3),
+# byte-identical to the pre-Tier-3 legacy. The distance-dependent circuity curve
+# was measured immaterial for ZGB (EMD delta ~0.003) and is opt-in only:
+# pass mode="curve" to build_target_table / _education_distance_table explicitly.
 
 # Pupil-age -> school level, matching braunschweig.data.mid.school_distance
 # AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
@@ -532,10 +531,18 @@ def _education_distances(
 
 
 def _education_distance_table(
-    education: pd.DataFrame, t43_raw: pd.DataFrame, detour_factor: float
+    education: pd.DataFrame,
+    t43_raw: pd.DataFrame,
+    detour_factor: float | None = LEGACY_DETOUR_FACTOR,
 ) -> pd.DataFrame:
     """Per (RegioStaR-7, level): pupil count, mean synthetic straight-line km,
-    the MiD Tabelle 43 straight-line target, and the signed deviation."""
+    the MiD Tabelle 43 straight-line target, and the signed deviation.
+
+    ``detour_factor=LEGACY_DETOUR_FACTOR`` (default, 1.3): targets use the proven
+    constant detour factor — byte-identical to the pre-Tier-3 legacy.
+    Pass ``detour_factor=None`` and ``mode="curve"`` to build_target_table directly
+    to opt into the distance-dependent circuity curve (found immaterial for ZGB).
+    """
     targets = build_target_table(t43_raw, detour_factor)
     valid = education.dropna(subset=["level", "regiostar7"])
     rows: list[dict[str, Any]] = []
@@ -812,8 +819,11 @@ def run(args: _Args) -> dict[str, Any]:
     t43_raw = _load_t43()
     if t43_raw is not None:
         education = _education_distances(activities, homes_kreis, persons_kreis)
+        # Use the constant detour factor (LEGACY_DETOUR_FACTOR = 1.3) so the
+        # validation report is byte-identical to the pre-Tier-3 legacy.
+        # The distance-dependent circuity curve is opt-in only (mode="curve").
         education_table = _education_distance_table(
-            education, t43_raw, _EDU_DETOUR_FACTOR
+            education, t43_raw, detour_factor=LEGACY_DETOUR_FACTOR
         )
         education_table.to_csv(out / "education_distance_vs_t43.csv", index=False)
     else:
@@ -1046,9 +1056,8 @@ def run(args: _Args) -> dict[str, Any]:
             "",
             "_Realised home->education distances of school-age pupils (ages "
             "0-17, the T43 scope) compared to the per-(RS7, level) targets the "
-            "education gravity slopes were calibrated to (routed / detour "
-            f"{_EDU_DETOUR_FACTOR}). BBS / university pupils are out of T43 "
-            "scope and not shown._",
+            "education gravity slopes were calibrated to (constant detour factor "
+            "1.3). BBS / university pupils are out of T43 scope and not shown._",
             "",
             _df_to_markdown(education_table),
             "",

@@ -632,6 +632,103 @@ def test_resample_distributions_is_not_compounded_via_cached_object():
             )
 
 
+def _purpose_layered_distribution():
+    """Purpose-layered distribution structure (Tier 1): ``{purpose: {mode: ...}}``.
+
+    Mirrors the structure produced by ``braunschweig.popsim.distance_distributions``
+    when ``secondary_shop_daily_split`` adds ``shop_daily`` / ``shop_non_daily``
+    layers.  Each purpose maps to the same per-mode dict structure as the legacy
+    ``_flat_distribution``, so the CDF arrays are the same shape -- the only
+    difference is the extra nesting level.
+    """
+    return {
+        "shop_daily": _flat_distribution(),
+        "shop_non_daily": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+
+
+def test_resample_distributions_handles_purpose_layered_structure():
+    """``_resample_distributions`` must handle the purpose-layered structure
+    ``{purpose: {mode: {bounds, distributions}}}`` (Tier 1 ON) without crashing
+    and must apply the per-mode CDF resample factors within each purpose layer.
+
+    Regression guard for C-1: before the fix, ``mode_distributions["distributions"]``
+    raised ``KeyError`` on a purpose-level dict whose top-level key does not have a
+    ``"distributions"`` sub-key, so Tier1+Tier2 BOTH ON hard-crashed in execute().
+    """
+    layered = _purpose_layered_distribution()
+    # Snapshot every CDF so we can verify the resample was actually applied.
+    original_cdfs = {
+        purpose: {
+            mode: [d["cdf"].copy() for d in layered[purpose][mode]["distributions"]]
+            for mode in layered[purpose]
+        }
+        for purpose in layered
+    }
+
+    resampled = sc._resample_distributions(layered, _RESAMPLE_FACTORS)
+
+    # Input must be untouched (deep-copy contract).
+    for purpose in layered:
+        for mode in layered[purpose]:
+            for d, snapshot in zip(layered[purpose][mode]["distributions"],
+                                   original_cdfs[purpose][mode]):
+                assert np.array_equal(d["cdf"], snapshot), (
+                    f"input CDF mutated: purpose={purpose}, mode={mode}"
+                )
+
+    # The returned copy must be a distinct object.
+    assert resampled is not layered
+
+    # For modes with a non-zero factor, the resampled CDF must differ from the
+    # original in every purpose layer (proving the resample was actually applied).
+    for purpose in resampled:
+        for mode in ("pt", "walk"):  # non-zero factors: pt=0.5, walk=-0.5
+            for d_in, d_out in zip(layered[purpose][mode]["distributions"],
+                                   resampled[purpose][mode]["distributions"]):
+                assert d_out["cdf"] is not d_in["cdf"]
+                assert not np.array_equal(d_out["cdf"], d_in["cdf"]), (
+                    f"CDF unchanged after resample: purpose={purpose}, mode={mode}"
+                )
+
+    # Zero-factor modes (car, bicycle) resample to normalised-same values on a copy.
+    for purpose in resampled:
+        for mode in ("car", "bicycle"):
+            for d_in, d_out in zip(layered[purpose][mode]["distributions"],
+                                   resampled[purpose][mode]["distributions"]):
+                assert d_out["cdf"] is not d_in["cdf"]
+                assert np.allclose(d_out["cdf"], d_in["cdf"])
+
+
+def test_resample_distributions_legacy_structure_unchanged():
+    """The legacy per-mode structure (no purpose layer) still works correctly
+    after the C-1 fix (regression guard for the existing path)."""
+    original = _flat_distribution()
+    original_cdfs = {
+        mode: [d["cdf"].copy() for d in original[mode]["distributions"]]
+        for mode in original
+    }
+    resampled = sc._resample_distributions(original, _RESAMPLE_FACTORS)
+
+    # Input untouched.
+    for mode in original:
+        for d, snapshot in zip(original[mode]["distributions"], original_cdfs[mode]):
+            assert np.array_equal(d["cdf"], snapshot)
+
+    # Non-zero-factor modes changed; zero-factor modes produce a normalised copy.
+    for mode in ("pt", "walk"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert not np.array_equal(d_out["cdf"], d_in["cdf"])
+    for mode in ("car", "bicycle"):
+        for d_in, d_out in zip(original[mode]["distributions"],
+                               resampled[mode]["distributions"]):
+            assert np.allclose(d_out["cdf"], d_in["cdf"])
+
+
 # ---------------------------------------------------------------------------
 # Fallback transparency: PRIMARY (carla) vs FALLBACK accounting.
 #
@@ -814,18 +911,23 @@ def test_build_plans_df_columnar_matches_reference():
 
     ref_df, ref_meta, ref_unbounded = _build_plans_df_reference(
         problems, distributions, 2.0, np.random.RandomState(5))
-    new_df, new_meta, new_unbounded = sc._build_plans_df(
+    # OFF path (shop_subtype_decider=None): the 4th return is the subtype stats
+    # (all zero) and the frame must stay value-identical to the legacy build.
+    new_df, new_meta, new_unbounded, subtype_stats = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5))
 
     assert ref_meta == new_meta
     assert ref_unbounded == new_unbounded
     pd.testing.assert_frame_equal(new_df, ref_df)  # values, dtypes, order
+    # OFF path (shop_subtype_decider=None): subtype_stats is {} (empty dict,
+    # not allocated on the OFF path so the gate stays consistent with M-1).
+    assert subtype_stats == {}
 
 
 def test_build_plans_df_empty_keeps_legacy_shape():
     # All problems unbounded -> legacy from_records([]) frame (no columns).
     problems = [p for p in _bounded_problems() if p["origin"] is None]
-    new_df, meta, unbounded = sc._build_plans_df(
+    new_df, meta, unbounded, _subtype_stats = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(0))
     assert len(new_df) == 0 and len(new_df.columns) == 0
     assert meta == [] and unbounded == list(range(len(problems)))
@@ -837,7 +939,7 @@ def test_build_plans_df_empty_keeps_legacy_shape():
 
 def test_person_row_ranges_match_groupby_subframes():
     problems = _bounded_problems()
-    plans_df, _, _ = sc._build_plans_df(
+    plans_df, _, _, _ = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(5))
     plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
@@ -862,3 +964,196 @@ def test_person_row_ranges_match_groupby_subframes():
 def test_person_row_ranges_rejects_non_contiguous_rows():
     df = pd.DataFrame({"unique_person_id": ["a", "a", "b", "a"], "x": [1, 2, 3, 4]})
     assert sc._person_row_ranges(df) is None
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: daily / non-daily shop subtype (distance + retail_daily/non_daily
+# placement). The OFF path is byte-identical; the ON path tags shop legs with
+# an internal subtype that drives BOTH the distance layer and the building
+# placement, while the eqasim output purpose stays "shop".
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+def _split_candidates():
+    """Candidate frame carrying the split retail potentials (Tier 2)."""
+    return gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_0", "sec_1", "sec_2"],
+            "offers_shop": [True, True, False],
+            "offers_leisure": [False, True, False],
+            "offers_other": [False, False, True],
+            "pot_shop": [10.0, 5.0, 0.0],
+            "pot_shop_daily": [10.0, 0.0, 0.0],      # sec_0 daily-only
+            "pot_shop_non_daily": [0.0, 5.0, 0.0],   # sec_1 non-daily-only
+            "pot_leisure": [0.0, 3.0, 0.0],
+            "pot_other": [0.0, 0.0, 7.0],
+        },
+        geometry=[geo.Point(0, 0), geo.Point(100, 100), geo.Point(200, 200)],
+        crs="EPSG:25832",
+    )
+
+
+def test_build_locations_df_shop_subtype_split_emits_subtype_activities():
+    out = sc._build_locations_df(
+        _split_candidates(), with_potentials=True, shop_daily_split=True)
+    # sec_0 offers shop with daily potential only -> shop_daily (non_daily
+    # dropped because its potential is 0).
+    assert out.loc[0, "activities"] == "shop_daily"
+    assert out.loc[0, "potentials"] == "10.0"
+    # sec_1 offers shop with non-daily potential only -> shop_non_daily, plus
+    # leisure.
+    assert out.loc[1, "activities"] == "shop_non_daily; leisure"
+    assert out.loc[1, "potentials"] == "5.0; 3.0"
+    # sec_2 offers only other.
+    assert out.loc[2, "activities"] == "other"
+    assert out.loc[2, "potentials"] == "7.0"
+    # The aggregate shop activity never appears on the split path.
+    assert not any(a.startswith("shop;") or a == "shop" for a in out["activities"])
+
+
+def test_build_locations_df_off_path_byte_identical_with_split_columns():
+    # A candidate frame that ALSO carries the split columns must, on the
+    # non-split path, still produce the legacy shop activity at pot_shop.
+    out = sc._build_locations_df(
+        _split_candidates(), with_potentials=True, shop_daily_split=False)
+    assert out.loc[0, "activities"] == "shop"
+    assert out.loc[0, "potentials"] == "10.0"
+    assert out.loc[1, "activities"] == "shop; leisure"
+    assert out.loc[1, "potentials"] == "5.0; 3.0"
+
+
+def test_build_locations_df_split_requires_potentials():
+    with pytest.raises(ValueError, match="requires with_potentials"):
+        sc._build_locations_df(
+            _split_candidates(), with_potentials=False, shop_daily_split=True)
+
+
+def test_build_secondary_candidates_carries_split_retail_columns():
+    legacy = gpd.GeoDataFrame(
+        {"location_id": ["sec_0"], "commune_id": ["03101000"],
+         "iris_id": ["03101000"], "offers_shop": [True],
+         "offers_leisure": [True], "offers_other": [True]},
+        geometry=[geo.Point(500, 500)], crs="EPSG:25832",
+    )
+    from shapely.geometry import Polygon
+    b = Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])
+    buildings = gpd.GeoDataFrame(
+        {"building_id": [7],
+         "potential_retail_daily": [4.0], "potential_retail_non_daily": [3.0],
+         "potential_leisure": [9.0], "potential_generic": [100.0],
+         "commune_id": ["03101000"]},
+        geometry=[b], crs="EPSG:25832",
+    )
+    out = sc.build_secondary_candidates(legacy, buildings)
+    gpkg = out[out["location_id"] == "sec_b_7"].iloc[0]
+    # Summed pot_shop preserved (OFF path), components carried separately.
+    assert gpkg["pot_shop"] == 7.0
+    assert gpkg["pot_shop_daily"] == 4.0
+    assert gpkg["pot_shop_non_daily"] == 3.0
+    # Legacy other row carries 0.0 for all three shop potentials.
+    other = out[out["location_id"] == "sec_0"].iloc[0]
+    assert other["pot_shop_daily"] == 0.0 and other["pot_shop_non_daily"] == 0.0
+
+
+def test_purpose_in_distributions_detects_layer_and_legacy():
+    # Legacy per-mode structure -> no purpose sub-keying.
+    assert not sc._purpose_in_distributions(_flat_distribution(), "shop_daily")
+    # Purpose-layered structure with the subtype present.
+    layered = {"shop_daily": _flat_distribution(), "shop": _flat_distribution()}
+    assert sc._purpose_in_distributions(layered, "shop_daily")
+    # Purpose-layered structure missing the subtype.
+    assert not sc._purpose_in_distributions(layered, "shop_non_daily")
+    assert not sc._purpose_in_distributions({}, "shop_daily")
+
+
+def _shop_problem():
+    """One bounded problem, single shop leg between two fixed anchors."""
+    return [{
+        "person_id": 100, "activity_index": 2, "size": 1,
+        "purposes": ["shop"], "modes": ["car", "car"],
+        "travel_times": np.array([600.0, 600.0]),
+        "origin": np.array([[0.0, 0.0]]),
+        "destination": np.array([[1000.0, 1000.0]]),
+    }]
+
+
+def test_build_plans_df_subtype_decider_tags_shop_legs_and_uses_subtype_distance():
+    # A decider that always returns shop_daily; distributions carry a shop_daily
+    # layer, so the distance purpose is shop_daily (no fallback) and the plan's
+    # to_act_type becomes shop_daily.
+    layered = {"shop_daily": _flat_distribution(),
+               "shop": _flat_distribution(),
+               "leisure": _flat_distribution(),
+               "other": _flat_distribution()}
+    df, meta, unbounded, stats = sc._build_plans_df(
+        _shop_problem(), layered, 2.0, np.random.RandomState(1),
+        shop_subtype_decider=lambda mode, tt: "shop_daily",
+    )
+    shop_rows = df[df["to_act_type"] == "shop_daily"]
+    assert len(shop_rows) == 1                      # the shop leg is tagged
+    assert stats["shop_daily"] == 1 and stats["shop_non_daily"] == 0
+    assert stats["distance_layer_fallback"] == 0    # shop_daily layer present
+
+
+def test_build_plans_df_subtype_distance_layer_fallback_counted():
+    # The subtype layer is ABSENT -> the distance falls back to the aggregate
+    # shop layer and the fallback is counted; the placement activity still
+    # carries the subtype.
+    layered = {"shop": _flat_distribution(),
+               "leisure": _flat_distribution(),
+               "other": _flat_distribution()}
+    df, meta, unbounded, stats = sc._build_plans_df(
+        _shop_problem(), layered, 2.0, np.random.RandomState(1),
+        shop_subtype_decider=lambda mode, tt: "shop_non_daily",
+    )
+    assert (df["to_act_type"] == "shop_non_daily").sum() == 1
+    assert stats["shop_non_daily"] == 1
+    assert stats["distance_layer_fallback"] == 1
+
+
+def test_extract_locations_maps_shop_subtypes_back_to_shop():
+    # A solver result carrying the internal subtype activities must NOT be
+    # dropped at extraction (they are secondary, mapped implicitly to shop).
+    rdf = pd.DataFrame({
+        "unique_person_id": ["7#0", "7#0"],
+        "unique_leg_id": ["7#0#0", "7#0#1"],
+        "to_act_type": ["shop_daily", "shop_non_daily"],
+        "to_x": [0.0, 10.0],
+        "to_y": [0.0, 10.0],
+        "to_act_identifier": ["L1", "L2"],
+    })
+    meta = [{"problem_idx": 0, "person_id": 7, "activity_index": 3,
+             "n_secondary": 2}]
+    df_loc, df_conv = sc._extract_locations(
+        rdf, meta, _df_secondary(), crs="EPSG:25832")
+    # Both subtype legs survive -> placed; the output schema carries no purpose.
+    assert list(df_loc["person_id"]) == [7, 7]
+    assert "to_act_type" not in df_loc.columns
+    assert list(df_conv["valid"]) == [True]
+
+
+def test_carla_accepts_shop_subtype_activities_smoke():
+    # End-to-end smoke: carla must accept the internal shop_daily / shop_non_daily
+    # activities + their potential columns and place a subtype-tagged leg at the
+    # matching subtype building (no KeyError on the unknown activity name).
+    cs = pytest.importorskip("chainsolvers")
+    locations_df = sc._build_locations_df(
+        _split_candidates(), with_potentials=True, shop_daily_split=True)
+    # plans: one daily shop leg between two anchors.
+    layered = {"shop_daily": _flat_distribution(),
+               "shop": _flat_distribution(),
+               "leisure": _flat_distribution(),
+               "other": _flat_distribution()}
+    plans_df, meta, unbounded, stats = sc._build_plans_df(
+        _shop_problem(), layered, 2.0, np.random.RandomState(3),
+        shop_subtype_decider=lambda mode, tt: "shop_daily",
+    )
+    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    ctx = cs.setup(locations_df=locations_df, solver="carla", rng_seed=7)
+    res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=plans_for_cs)
+    # The shop_daily leg was placed at the daily-only building sec_0.
+    placed = res_df[res_df["to_act_type"] == "shop_daily"]
+    assert len(placed) == 1
+    assert placed.iloc[0]["to_act_identifier"] == "sec_0"

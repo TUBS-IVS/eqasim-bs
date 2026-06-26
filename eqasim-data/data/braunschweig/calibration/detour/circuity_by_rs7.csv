@@ -1,0 +1,13 @@
+rs7,n_samples,under_sampled,c_inf,a,tau_km,r2,emd_vs_p13_constant,emd_vs_p13_fitted,rs7_delta_emd,verdict,network
+72,873,False,1.1888490354221948,0.6804951113021667,3.330220452989744,0.28158301470836467,0.11545899074997841,0.118895416866817,0.003436426116838587,promote,car
+73,383,True,,,,,,,,under_sampled,car
+74,795,True,,,,,,,,under_sampled,car
+75,93,True,,,,,,,,under_sampled,car
+76,85,True,,,,,,,,under_sampled,car
+77,116,True,,,,,,,,under_sampled,car
+72,860,False,1.2030647929819256,0.3567956391448534,1.699833094739406,0.1746615688045694,0.27722138868050344,0.283229140618488,0.006007751937984529,keep_global,walk
+73,412,True,,,,,,,,under_sampled,walk
+74,741,True,,,,,,,,under_sampled,walk
+75,60,True,,,,,,,,under_sampled,walk
+76,63,True,,,,,,,,under_sampled,walk
+77,66,True,,,,,,,,under_sampled,walk
