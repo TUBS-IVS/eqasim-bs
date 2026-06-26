@@ -50,7 +50,10 @@ LOGGER = logging.getLogger("run_building_fit_secondary")
 
 STAGE_REALISED_SECONDARY = "braunschweig.synthesis.locations.secondary_chainsolvers"
 STAGE_ACTIVITIES = "synthesis.population.activities"
-STAGE_LEGACY_CANDIDATES = "synthesis.locations.secondary"
+# The legacy secondary candidate stage is aliased to braunschweig.locations.secondary
+# in the run configs, so synpp caches it under that name (not the alias target
+# "synthesis.locations.secondary"). Load the real cached name.
+STAGE_LEGACY_CANDIDATES = "braunschweig.locations.secondary"
 STAGE_BUILDING_POTENTIALS = "braunschweig.data.building_potentials"
 
 # eqasim secondary purpose -> the reconstructed-candidate potential column.
