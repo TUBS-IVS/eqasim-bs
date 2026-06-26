@@ -42,6 +42,7 @@ config:
   building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
   work_building_potentials: true
   secondary_building_potentials: true
+  secondary_external_candidates: false  # external secondary candidates need cordon_enabled (off here)
   secondary_scorer_mode: combined
   secondary_scorer_pot_weight: 1.0
   secondary_scorer_dist_dev_weight: 1.0

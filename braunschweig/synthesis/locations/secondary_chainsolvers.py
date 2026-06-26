@@ -47,6 +47,23 @@ from synthesis.population.spatial.secondary.problems import (
 
 
 # ---------------------------------------------------------------------------
+# Pure helpers (unit-testable without a synpp context)
+# ---------------------------------------------------------------------------
+
+def external_candidates_cordon_warning(external_on, cordon_on):
+    """Return a warning string when external secondary candidates are enabled but
+    the cordon cutter is off (the resulting boundary-crossing trips would not be
+    converted into 'outside' activities and would be unroutable in MATSim), else None."""
+    if external_on and not cordon_on:
+        return ("[braunschweig.secondary_chainsolvers] WARNING: "
+                "secondary_external_candidates is ON but cordon_enabled is OFF -- "
+                "long-distance secondary activities at external Gemeinde centroids "
+                "will not be converted to 'outside' activities and may be unroutable "
+                "in MATSim. Enable cordon_enabled or disable secondary_external_candidates.")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # synpp configure
 # ---------------------------------------------------------------------------
 
@@ -100,6 +117,13 @@ def configure(context):
     context.config("secondary_scorer_dist_dev_weight", 1.0)
     if sec_enabled:
         context.stage("braunschweig.data.building_potentials")
+
+    # External Gemeinde centroids for long-distance secondary trips (flag-gated,
+    # default ON). Only consumed when the building-potential candidate set is built.
+    external_on = context.config("secondary_external_candidates", True)
+    if sec_enabled and external_on:
+        context.stage("braunschweig.data.external_secondary_points")
+    context.config("cordon_enabled", False)
 
     # Daily / non-daily shopping subtype (Tier 2). When ON, each shop leg is
     # tagged with a daily/non-daily subtype that drives BOTH its desired
@@ -252,6 +276,37 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     return float(distance)
 
 
+def _rda_sample_distances(distributions, problem, leisure_correction_factor, random):
+    """Per-leg desired distances for the rda fallback's distance sampler.
+
+    The rda fallback (``_rda_fallback_place``) receives the same distribution
+    object as the carla path. With the Tier-1 purpose-resolved feature ON that
+    object is ``{purpose: {mode: ...}}``, but eqasim's stock
+    ``CustomDistanceSampler.sample_distances`` indexes it by ``mode`` and raises
+    ``KeyError: '<mode>'`` -- which is why the fallback placed nothing for the
+    long-distance / unbounded chains it is meant to catch. Reuse the
+    purpose-aware ``_sample_leg_distance`` (which auto-detects the layout) so the
+    fallback samples distances exactly like the carla path. The legacy
+    ``{mode: ...}`` layout stays byte-identical (auto-detected).
+
+    Mirrors ``CustomDistanceSampler.sample_distances`` EXACTLY: a
+    length-``len(modes)`` array is zero-initialised and filled by ``zip`` over
+    (modes, travel_times, purposes). When the chain has more legs than secondary
+    purposes (the trailing leg returns to a primary anchor), ``zip`` truncates to
+    the purposes length and those trailing legs keep distance 0 -- the relaxation
+    solver requires one distance per leg, so the returned length MUST equal
+    ``len(modes)``.
+    """
+    distances = np.zeros((len(problem["modes"]),))
+    for index, (mode, travel_time, purpose) in enumerate(zip(
+            problem["modes"], problem["travel_times"], problem["purposes"])):
+        distances[index] = _sample_leg_distance(
+            distributions, mode, travel_time, purpose,
+            leisure_correction_factor, random,
+        )
+    return distances
+
+
 def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bool:
     """True iff ``distributions`` is purpose-layered AND carries ``purpose``.
 
@@ -309,7 +364,8 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
 
 
 def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
-                               df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+                               df_buildings: gpd.GeoDataFrame,
+                               df_external: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
     """REPLACE secondary candidates when building potentials are ON.
 
     shop/leisure candidates = gpkg activity buildings (native potentials, no
@@ -400,8 +456,39 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "geometry": legacy.geometry.values,
     }, crs=legacy.crs)
 
+    # External Gemeinde centroids (outside ZGB): long-distance secondary candidates
+    # so carla can match desired distances beyond the study area instead of
+    # truncating to the area edge. offers all three purposes; potential =
+    # population (ewz) -- a population proxy; external selection is distance-driven
+    # (carla snaps the relaxed point to the nearest external centroid), so the exact
+    # potential only ranks among near-equal-distance centroids.
+    frames = [gpkg, legacy_other]
+    if df_external is not None and len(df_external) > 0:
+        ext = (df_external.to_crs(df_buildings.crs)
+               if df_external.crs != df_buildings.crs else df_external)
+        ewz = ext["ewz"].astype(float).values
+        cid = ext["commune_id"].astype(str).values
+        ext_rows = gpd.GeoDataFrame({
+            "location_id": cid,
+            "commune_id": cid,
+            "iris_id": cid,
+            "offers_shop": True,
+            "offers_leisure": True,
+            "offers_other": True,
+            "pot_shop": ewz,
+            "pot_shop_daily": ewz,
+            "pot_shop_non_daily": ewz,
+            "pot_leisure": ewz,
+            "pot_other": ewz,
+            "geometry": ext.geometry.values,
+        }, crs=df_buildings.crs)
+        frames.append(ext_rows)
+        print("[braunschweig.secondary_chainsolvers] external candidates: "
+              "%d Gemeinde centroids appended for long-distance secondary trips"
+              % len(ext_rows))
+
     out = gpd.GeoDataFrame(
-        pd.concat([gpkg, legacy_other], ignore_index=True), crs=df_buildings.crs)
+        pd.concat(frames, ignore_index=True), crs=df_buildings.crs)
     print("[braunschweig.secondary_chainsolvers] REPLACE candidates: "
           "%d gpkg shop/leisure buildings + %d legacy 'other' candidates"
           % (len(gpkg), len(legacy_other)))
@@ -785,7 +872,22 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     )
 
     discretization_solver = CustomDiscretizationSolver(candidate_index)
-    distance_sampler = CustomDistanceSampler(
+
+    class _PurposeAwareDistanceSampler(CustomDistanceSampler):
+        """``CustomDistanceSampler`` that understands the Tier-1 purpose-resolved
+        distribution layout ``{purpose: {mode: ...}}``. The stock sampler indexes
+        by mode and raises ``KeyError`` on that layout; this reuses the
+        purpose-aware ``_sample_leg_distance`` (legacy ``{mode: ...}`` still works,
+        auto-detected) so the fallback can actually place long-distance / unbounded
+        chains instead of raising and dropping them (which crashed downstream)."""
+
+        def sample_distances(self, problem):
+            return _rda_sample_distances(
+                self.distributions, problem,
+                self.leisure_correction_factor, self.random,
+            )
+
+    distance_sampler = _PurposeAwareDistanceSampler(
         maximum_iterations=1000, random=random,
         distributions=distributions,
         leisure_correction_factor=leisure_correction_factor,
@@ -1608,9 +1710,17 @@ def execute(context):
     # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
     # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
     if sec_enabled:
+        external_on = context.config("secondary_external_candidates")
+        df_external = (context.stage("braunschweig.data.external_secondary_points")
+                       if external_on else None)
+        warning = external_candidates_cordon_warning(
+            external_on, context.config("cordon_enabled"))
+        if warning:
+            print(warning, flush=True)
         df_secondary = build_secondary_candidates(
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
+            df_external=df_external,
         )
     # Tier 2 requires the building-potential candidate set: the subtype legs
     # (shop_daily / shop_non_daily) can only be placed at buildings tagged with
