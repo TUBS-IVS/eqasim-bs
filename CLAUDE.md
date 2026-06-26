@@ -931,6 +931,25 @@ Tests: `tests/test_distance_distributions_by_purpose.py`,
 `tests/test_calibration_targets.py` (W12 additions),
 `tests/test_secondary_chainsolvers.py` (Tier 2 + carla smoke).
 
+### External secondary candidates (long-distance trips)
+
+`secondary_external_candidates` (default true; on only where `cordon_enabled` is true)
+appends German Gemeinde centroids OUTSIDE ZGB (vg250, population-weighted,
+`braunschweig.data.external_secondary_points`, `commune_id = "EXT<gem_ags8>"`) to
+the secondary candidate set, so carla matches MiD long desired distances (~6% of
+leisure / ~3% of other exceed the ~50 km area, measured on the 1% all-features
+cache) to a far external centroid instead of truncating to the area edge. MATSim
+routability is handled by eqasim's `RunScenarioCutter` (cordon_enabled), which
+converts the boundary-crossing secondary trip into a fixed "outside" activity —
+the same mechanism used for work out-commuters (`braunschweig.data.external_workplaces`).
+A warning is logged if the flag is on without cordon. Direction is a distance-only
+proxy (no secondary OD data; ASSUMPTION, as in external_workplaces); the realised
+MATSim network distance ends at the cordon while the synthesis distance is the full
+value. OFF path byte-identical.
+
+Tests: `tests/test_external_secondary_points.py`, `tests/test_secondary_chainsolvers.py`,
+`tests/test_secondary_external_wiring.py`.
+
 ## Long-haul freight injection (german-wide-freight v3)
 
 Long-haul road freight (heavy goods vehicles) is injected into the MATSim
