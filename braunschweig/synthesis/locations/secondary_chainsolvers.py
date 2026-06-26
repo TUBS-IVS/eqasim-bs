@@ -252,6 +252,37 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     return float(distance)
 
 
+def _rda_sample_distances(distributions, problem, leisure_correction_factor, random):
+    """Per-leg desired distances for the rda fallback's distance sampler.
+
+    The rda fallback (``_rda_fallback_place``) receives the same distribution
+    object as the carla path. With the Tier-1 purpose-resolved feature ON that
+    object is ``{purpose: {mode: ...}}``, but eqasim's stock
+    ``CustomDistanceSampler.sample_distances`` indexes it by ``mode`` and raises
+    ``KeyError: '<mode>'`` -- which is why the fallback placed nothing for the
+    long-distance / unbounded chains it is meant to catch. Reuse the
+    purpose-aware ``_sample_leg_distance`` (which auto-detects the layout) so the
+    fallback samples distances exactly like the carla path. The legacy
+    ``{mode: ...}`` layout stays byte-identical (auto-detected).
+
+    Mirrors ``CustomDistanceSampler.sample_distances`` EXACTLY: a
+    length-``len(modes)`` array is zero-initialised and filled by ``zip`` over
+    (modes, travel_times, purposes). When the chain has more legs than secondary
+    purposes (the trailing leg returns to a primary anchor), ``zip`` truncates to
+    the purposes length and those trailing legs keep distance 0 -- the relaxation
+    solver requires one distance per leg, so the returned length MUST equal
+    ``len(modes)``.
+    """
+    distances = np.zeros((len(problem["modes"]),))
+    for index, (mode, travel_time, purpose) in enumerate(zip(
+            problem["modes"], problem["travel_times"], problem["purposes"])):
+        distances[index] = _sample_leg_distance(
+            distributions, mode, travel_time, purpose,
+            leisure_correction_factor, random,
+        )
+    return distances
+
+
 def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bool:
     """True iff ``distributions`` is purpose-layered AND carries ``purpose``.
 
@@ -785,7 +816,22 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     )
 
     discretization_solver = CustomDiscretizationSolver(candidate_index)
-    distance_sampler = CustomDistanceSampler(
+
+    class _PurposeAwareDistanceSampler(CustomDistanceSampler):
+        """``CustomDistanceSampler`` that understands the Tier-1 purpose-resolved
+        distribution layout ``{purpose: {mode: ...}}``. The stock sampler indexes
+        by mode and raises ``KeyError`` on that layout; this reuses the
+        purpose-aware ``_sample_leg_distance`` (legacy ``{mode: ...}`` still works,
+        auto-detected) so the fallback can actually place long-distance / unbounded
+        chains instead of raising and dropping them (which crashed downstream)."""
+
+        def sample_distances(self, problem):
+            return _rda_sample_distances(
+                self.distributions, problem,
+                self.leisure_correction_factor, self.random,
+            )
+
+    distance_sampler = _PurposeAwareDistanceSampler(
         maximum_iterations=1000, random=random,
         distributions=distributions,
         leisure_correction_factor=leisure_correction_factor,

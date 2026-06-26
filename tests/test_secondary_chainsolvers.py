@@ -1157,3 +1157,34 @@ def test_carla_accepts_shop_subtype_activities_smoke():
     placed = res_df[res_df["to_act_type"] == "shop_daily"]
     assert len(placed) == 1
     assert placed.iloc[0]["to_act_identifier"] == "sec_0"
+
+
+def test_rda_sample_distances_purpose_resolved_layout_no_keyerror():
+    """The rda fallback's distance sampler must handle the Tier-1 purpose-resolved
+    layout {purpose: {mode: ...}} -- indexing it by mode (the stock sampler) raised
+    KeyError and dropped the long-distance / unbounded chains, crashing downstream."""
+    import numpy as np
+    from braunschweig.synthesis.locations.secondary_chainsolvers import _rda_sample_distances
+
+    def cell(value):
+        return {"bounds": np.array([np.inf]),
+                "distributions": [{"values": np.array([value]), "cdf": np.array([1.0])}]}
+
+    # Purpose-resolved: leisure/car -> 5000, other/car -> 9000.
+    distributions = {"leisure": {"car": cell(5000.0)}, "other": {"car": cell(9000.0)}}
+    rng = np.random.RandomState(0)
+
+    d = _rda_sample_distances(
+        distributions,
+        {"modes": ["car"], "travel_times": [600.0], "purposes": ["leisure"]},
+        1.0, rng)
+    assert d.shape == (1,)
+    assert d[0] == 5000.0  # indexed [leisure][car] -- no KeyError on the mode
+
+    # Legacy {mode: ...} layout stays byte-identical (auto-detected).
+    legacy = {"car": cell(7000.0)}
+    d2 = _rda_sample_distances(
+        legacy,
+        {"modes": ["car"], "travel_times": [600.0], "purposes": ["other"]},
+        1.0, rng)
+    assert d2[0] == 7000.0
