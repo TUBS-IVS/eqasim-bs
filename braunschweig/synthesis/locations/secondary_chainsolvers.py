@@ -47,6 +47,23 @@ from synthesis.population.spatial.secondary.problems import (
 
 
 # ---------------------------------------------------------------------------
+# Pure helpers (unit-testable without a synpp context)
+# ---------------------------------------------------------------------------
+
+def external_candidates_cordon_warning(external_on, cordon_on):
+    """Return a warning string when external secondary candidates are enabled but
+    the cordon cutter is off (the resulting boundary-crossing trips would not be
+    converted into 'outside' activities and would be unroutable in MATSim), else None."""
+    if external_on and not cordon_on:
+        return ("[braunschweig.secondary_chainsolvers] WARNING: "
+                "secondary_external_candidates is ON but cordon_enabled is OFF -- "
+                "long-distance secondary activities at external Gemeinde centroids "
+                "will not be converted to 'outside' activities and may be unroutable "
+                "in MATSim. Enable cordon_enabled or disable secondary_external_candidates.")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # synpp configure
 # ---------------------------------------------------------------------------
 
@@ -100,6 +117,13 @@ def configure(context):
     context.config("secondary_scorer_dist_dev_weight", 1.0)
     if sec_enabled:
         context.stage("braunschweig.data.building_potentials")
+
+    # External Gemeinde centroids for long-distance secondary trips (flag-gated,
+    # default ON). Only consumed when the building-potential candidate set is built.
+    external_on = context.config("secondary_external_candidates", True)
+    if sec_enabled and external_on:
+        context.stage("braunschweig.data.external_secondary_points")
+    context.config("cordon_enabled", False)
 
     # Daily / non-daily shopping subtype (Tier 2). When ON, each shop leg is
     # tagged with a daily/non-daily subtype that drives BOTH its desired
@@ -1686,9 +1710,17 @@ def execute(context):
     # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
     # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
     if sec_enabled:
+        external_on = context.config("secondary_external_candidates")
+        df_external = (context.stage("braunschweig.data.external_secondary_points")
+                       if external_on else None)
+        warning = external_candidates_cordon_warning(
+            external_on, context.config("cordon_enabled"))
+        if warning:
+            print(warning, flush=True)
         df_secondary = build_secondary_candidates(
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
+            df_external=df_external,
         )
     # Tier 2 requires the building-potential candidate set: the subtype legs
     # (shop_daily / shop_non_daily) can only be placed at buildings tagged with
