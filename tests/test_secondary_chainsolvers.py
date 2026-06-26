@@ -1188,3 +1188,45 @@ def test_rda_sample_distances_purpose_resolved_layout_no_keyerror():
         {"modes": ["car"], "travel_times": [600.0], "purposes": ["other"]},
         1.0, rng)
     assert d2[0] == 7000.0
+
+
+def test_build_secondary_candidates_appends_external_centroids():
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point, Polygon
+    import braunschweig.synthesis.locations.secondary_chainsolvers as sc
+
+    # Minimal legacy candidate (one 'other' catalog point) ...
+    legacy = gpd.GeoDataFrame({
+        "location_id": ["sec_0"], "commune_id": ["03101000"],
+        "iris_id": ["0310100000000000"],
+        "offers_leisure": [False], "offers_shop": [False], "offers_other": [True],
+        "geometry": [Point(600000, 5790000)],
+    }, crs="EPSG:25832")
+    # ... and one gpkg building with retail potential.
+    buildings = gpd.GeoDataFrame({
+        "building_id": [1], "commune_id": ["03101000"],
+        "potential_retail_daily": [2.0], "potential_retail_non_daily": [1.0],
+        "potential_leisure": [0.0], "potential_generic": [0.0],
+        "geometry": [Polygon([(600000, 5790000), (600010, 5790000),
+                              (600010, 5790010), (600000, 5790010)])],
+    }, crs="EPSG:25832")
+    external = gpd.GeoDataFrame({
+        "commune_id": ["EXT05111000"], "ars5": ["05111"], "gem_ags": ["05111000"],
+        "ewz": [600000.0], "geometry": [Point(550000, 5800000)],
+    }, crs="EPSG:25832")
+
+    out = sc.build_secondary_candidates(legacy, buildings, df_external=external)
+
+    ext_rows = out[out["location_id"] == "EXT05111000"]
+    assert len(ext_rows) == 1
+    r = ext_rows.iloc[0]
+    assert bool(r["offers_shop"]) and bool(r["offers_leisure"]) and bool(r["offers_other"])
+    assert r["pot_leisure"] == 600000.0 and r["pot_other"] == 600000.0
+    assert r["pot_shop"] == 600000.0
+
+    # df_external=None -> byte-identical to the no-external result.
+    out_none = sc.build_secondary_candidates(legacy, buildings, df_external=None)
+    out_default = sc.build_secondary_candidates(legacy, buildings)
+    assert list(out_none["location_id"]) == list(out_default["location_id"])
+    assert "EXT05111000" not in set(out_none["location_id"])

@@ -340,7 +340,8 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
 
 
 def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
-                               df_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+                               df_buildings: gpd.GeoDataFrame,
+                               df_external: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
     """REPLACE secondary candidates when building potentials are ON.
 
     shop/leisure candidates = gpkg activity buildings (native potentials, no
@@ -431,8 +432,39 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "geometry": legacy.geometry.values,
     }, crs=legacy.crs)
 
+    # External Gemeinde centroids (outside ZGB): long-distance secondary candidates
+    # so carla can match desired distances beyond the study area instead of
+    # truncating to the area edge. offers all three purposes; potential =
+    # population (ewz) -- a population proxy; external selection is distance-driven
+    # (carla snaps the relaxed point to the nearest external centroid), so the exact
+    # potential only ranks among near-equal-distance centroids.
+    frames = [gpkg, legacy_other]
+    if df_external is not None and len(df_external) > 0:
+        ext = (df_external.to_crs(df_buildings.crs)
+               if df_external.crs != df_buildings.crs else df_external)
+        ewz = ext["ewz"].astype(float).values
+        cid = ext["commune_id"].astype(str).values
+        ext_rows = gpd.GeoDataFrame({
+            "location_id": cid,
+            "commune_id": cid,
+            "iris_id": cid,
+            "offers_shop": True,
+            "offers_leisure": True,
+            "offers_other": True,
+            "pot_shop": ewz,
+            "pot_shop_daily": ewz,
+            "pot_shop_non_daily": ewz,
+            "pot_leisure": ewz,
+            "pot_other": ewz,
+            "geometry": ext.geometry.values,
+        }, crs=df_buildings.crs)
+        frames.append(ext_rows)
+        print("[braunschweig.secondary_chainsolvers] external candidates: "
+              "%d Gemeinde centroids appended for long-distance secondary trips"
+              % len(ext_rows))
+
     out = gpd.GeoDataFrame(
-        pd.concat([gpkg, legacy_other], ignore_index=True), crs=df_buildings.crs)
+        pd.concat(frames, ignore_index=True), crs=df_buildings.crs)
     print("[braunschweig.secondary_chainsolvers] REPLACE candidates: "
           "%d gpkg shop/leisure buildings + %d legacy 'other' candidates"
           % (len(gpkg), len(legacy_other)))
