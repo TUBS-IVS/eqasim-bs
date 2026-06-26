@@ -179,25 +179,24 @@ def test_excess_tv_is_near_zero_when_realised_is_a_clean_sample_of_potential():
     assert abs(z["excess_tv"]) < 0.05   # ... so the excess (real misfit) is ~0.
 
 
-def test_secondary_potential_support_maps_purpose_to_columns():
+def test_secondary_potential_support_selects_per_purpose_potential_column():
     from braunschweig.calibration.run_building_fit_secondary import secondary_potential_support
 
-    parquet = pd.DataFrame({
-        "building_id": [1, 2, 3],
-        "target_taz": ["T1", "T1", "T2"],
-        "potential_retail_daily": [2.0, 0.0, 1.0],
-        "potential_retail_non_daily": [1.0, 0.0, 0.0],
-        "potential_leisure": [0.0, 5.0, 0.0],
-        "potential_generic": [1.0, 1.0, 1.0],
+    # The reconstructed chainsolver candidate table (build_secondary_candidates):
+    # shop/leisure rows are gpkg buildings (sec_b_*), other rows are legacy catalog.
+    candidates = pd.DataFrame({
+        "location_id": ["sec_b_1", "sec_b_2", "sec_7"],
+        "commune_id": ["A", "A", "B"],
+        "pot_shop": [3.0, 0.0, 0.0],
+        "pot_leisure": [0.0, 5.0, 0.0],
+        "pot_other": [0.0, 0.0, 2.0],
     })
-    # shop = retail_daily + retail_non_daily; only buildings with potential>0 are support.
-    shop = secondary_potential_support(parquet, "shop").set_index("building_id")
-    assert set(shop.index) == {1, 3}            # building 2 has 0 retail -> excluded
-    assert shop.loc[1, "potential"] == pytest.approx(3.0)
-    assert shop.loc[1, "zone"] == "T1"
-    # leisure = potential_leisure
-    leisure = secondary_potential_support(parquet, "leisure")
-    assert set(leisure["building_id"]) == {2}
-    # other = potential_generic
-    other = secondary_potential_support(parquet, "other")
-    assert set(other["building_id"]) == {1, 2, 3}
+    # shop -> pot_shop; only candidates with potential>0 form the support.
+    shop = secondary_potential_support(candidates, "shop").set_index("building_id")
+    assert set(shop.index) == {"sec_b_1"}
+    assert shop.loc["sec_b_1", "potential"] == pytest.approx(3.0)
+    assert shop.loc["sec_b_1", "zone"] == "A"
+    # leisure -> pot_leisure
+    assert set(secondary_potential_support(candidates, "leisure")["building_id"]) == {"sec_b_2"}
+    # other -> pot_other
+    assert set(secondary_potential_support(candidates, "other")["building_id"]) == {"sec_7"}
