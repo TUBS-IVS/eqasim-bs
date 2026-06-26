@@ -177,3 +177,27 @@ def test_excess_tv_is_near_zero_when_realised_is_a_clean_sample_of_potential():
     assert z["tv_distance"] > 0.0       # raw TV is inflated by discreteness ...
     assert z["tv_floor"] > 0.0          # ... and so is the floor ...
     assert abs(z["excess_tv"]) < 0.05   # ... so the excess (real misfit) is ~0.
+
+
+def test_secondary_potential_support_maps_purpose_to_columns():
+    from braunschweig.calibration.run_building_fit_secondary import secondary_potential_support
+
+    parquet = pd.DataFrame({
+        "building_id": [1, 2, 3],
+        "target_taz": ["T1", "T1", "T2"],
+        "potential_retail_daily": [2.0, 0.0, 1.0],
+        "potential_retail_non_daily": [1.0, 0.0, 0.0],
+        "potential_leisure": [0.0, 5.0, 0.0],
+        "potential_generic": [1.0, 1.0, 1.0],
+    })
+    # shop = retail_daily + retail_non_daily; only buildings with potential>0 are support.
+    shop = secondary_potential_support(parquet, "shop").set_index("building_id")
+    assert set(shop.index) == {1, 3}            # building 2 has 0 retail -> excluded
+    assert shop.loc[1, "potential"] == pytest.approx(3.0)
+    assert shop.loc[1, "zone"] == "T1"
+    # leisure = potential_leisure
+    leisure = secondary_potential_support(parquet, "leisure")
+    assert set(leisure["building_id"]) == {2}
+    # other = potential_generic
+    other = secondary_potential_support(parquet, "other")
+    assert set(other["building_id"]) == {1, 2, 3}
