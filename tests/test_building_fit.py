@@ -138,3 +138,42 @@ def test_prepare_frames_excludes_fake_candidates_so_they_count_as_fallback():
     rep = build_fit_report(realised, potential, sampling_rate=1.0)
     assert rep["coverage"]["off_potential_building"] == 1
     assert rep["coverage"]["primary_rate"] == pytest.approx(0.75)
+
+
+def test_multinomial_tv_floor_is_zero_for_large_sample_and_high_for_n1():
+    from braunschweig.calibration.building_fit import multinomial_tv_floor
+
+    potential_share = np.array([0.25, 0.25, 0.25, 0.25])
+    # N=1: a single activity lands on one building -> realised share [1,0,0,0],
+    # TV vs uniform = 0.5*(0.75 + 3*0.25) = 0.75 for every possible draw.
+    floor_n1 = multinomial_tv_floor(potential_share, 1, n_draws=50, seed=0)
+    assert floor_n1 == pytest.approx(0.75, abs=1e-9)
+
+    # Large N: a perfect multinomial sample tracks the shares -> floor -> ~0.
+    floor_big = multinomial_tv_floor(potential_share, 5000, n_draws=50, seed=0)
+    assert floor_big < 0.05
+
+
+def test_excess_tv_is_near_zero_when_realised_is_a_clean_sample_of_potential():
+    # When the realised counts ARE a multinomial sample of the potential, the
+    # observed TV sits at the noise floor, so excess_tv ~ 0 (the discreteness
+    # 0-effect is netted out -- the "smart" sampling-rate-fair signal).
+    from braunschweig.calibration.building_fit import build_fit_report
+
+    n_buildings, n_activities = 40, 120  # sub-1 density, like the real 25% run
+    potential = pd.DataFrame({
+        "building_id": list(range(n_buildings)),
+        "zone": ["Z"] * n_buildings,
+        "potential": [1.0] * n_buildings,
+    })
+    rng = np.random.RandomState(0)
+    counts = rng.multinomial(n_activities, [1.0 / n_buildings] * n_buildings)
+    rows = sum(([b] * int(c) for b, c in enumerate(counts)), [])
+    realised = pd.DataFrame({"building_id": rows})
+
+    rep = build_fit_report(realised, potential, sampling_rate=0.25)
+    z = rep["per_zone"].set_index("zone").loc["Z"]
+    assert "tv_floor" in rep["per_zone"].columns and "excess_tv" in rep["per_zone"].columns
+    assert z["tv_distance"] > 0.0       # raw TV is inflated by discreteness ...
+    assert z["tv_floor"] > 0.0          # ... and so is the floor ...
+    assert abs(z["excess_tv"]) < 0.05   # ... so the excess (real misfit) is ~0.

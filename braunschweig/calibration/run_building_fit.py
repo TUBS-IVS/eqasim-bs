@@ -193,6 +193,8 @@ def _write_summary(output_dir, per_zone, coverage, sampling_rate):
     pe = valid["pearson"].to_numpy(dtype=float)
     weighted_tv = float(np.average(tv, weights=w)) if w.sum() > 0 else float("nan")
     weighted_pearson = float(np.average(pe, weights=w)) if w.sum() > 0 else float("nan")
+    ex = valid["excess_tv"].to_numpy(dtype=float)
+    weighted_excess = float(np.average(ex, weights=w)) if w.sum() > 0 else float("nan")
     median_pearson = float(valid["pearson"].median())
     # Activity density: how many sampled workers per candidate building. When this
     # is < 1, more buildings exist than sampled workers, so many potential
@@ -228,6 +230,9 @@ def _write_summary(output_dir, per_zone, coverage, sampling_rate):
         f"- median per-commune Pearson r: {median_pearson:.3f}",
         f"- activity-weighted mean total-variation distance: {weighted_tv:.4f} "
         "(0 = exact; high values here are dominated by the sub-1 activity density)",
+        f"- activity-weighted mean EXCESS TV (observed - multinomial noise floor): "
+        f"{weighted_excess:.4f}  [sampling-rate-fair misfit; ~0 = as good as the "
+        "sample size allows, the 0-effects netted out]",
         "",
         "Largest communes by work volume (the most reliable cells):",
         "",

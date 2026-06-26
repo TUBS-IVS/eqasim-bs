@@ -78,6 +78,31 @@ def within_zone_fit(realised_count, potential_weight):
     }
 
 
+def multinomial_tv_floor(potential_share, n_activities, *, n_draws=200, seed=0):
+    """Expected total-variation distance of a PERFECT multinomial sample.
+
+    The sampling-noise floor: if the ``n_activities`` realised activities were a
+    perfect multinomial draw from the within-zone ``potential_share`` vector, this
+    is the TV distance one would still observe purely from discreteness (a building
+    with expected count < 1 is often realised as 0). Subtracting this floor from the
+    observed TV isolates genuine placement misfit from the sub-1-density artefact.
+
+    Computed by seeded Monte-Carlo (deterministic for a given ``seed``); ``n_draws``
+    samples are averaged. Returns 0.0 when there are no activities.
+    """
+    shares = np.asarray(potential_share, dtype=float)
+    total = shares.sum()
+    if total <= 0 or n_activities <= 0:
+        return 0.0
+    shares = shares / total
+    rng = np.random.RandomState(seed)
+    tvs = np.empty(n_draws)
+    for i in range(n_draws):
+        counts = rng.multinomial(n_activities, shares)
+        tvs[i] = 0.5 * np.abs(counts / n_activities - shares).sum()
+    return float(tvs.mean())
+
+
 def build_fit_report(realised, potential, *, sampling_rate,
                      id_col="building_id", zone_col="zone", value_col="potential"):
     """Per-zone building-potential fit report.
@@ -136,13 +161,19 @@ def build_fit_report(realised, potential, *, sampling_rate,
     rows = []
     for zone, grp in support.groupby(zone_col):
         m = within_zone_fit(grp["realised_count"].values, grp[value_col].values)
+        n_act = int(grp["realised_count"].sum())
+        # Noise floor: expected TV of a perfect multinomial sample of this size.
+        # excess_tv is the misfit beyond what sampling discreteness alone produces.
+        tv_floor = multinomial_tv_floor(grp[value_col].values, n_act)
         rows.append({
             "zone": zone,
             "n_buildings": m["n_buildings"],
-            "realised_activities": int(grp["realised_count"].sum()),
+            "realised_activities": n_act,
             "pearson": m["pearson"],
             "spearman": m["spearman"],
             "tv_distance": m["tv_distance"],
+            "tv_floor": tv_floor,
+            "excess_tv": m["tv_distance"] - tv_floor,
         })
 
     per_zone = pd.DataFrame(rows).sort_values("zone").reset_index(drop=True)
