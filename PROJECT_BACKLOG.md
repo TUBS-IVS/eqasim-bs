@@ -105,9 +105,27 @@ lowest geography (mandatory); full standard `models` list incl. `meta_control_fa
    → `meta_control_factoring` is effectively a no-op. Not wrong; confirm it is intentional
    (reserved for a future national meta control) vs. removable.
 
-→ **Next (step 1b kickoff): MEASURE before tuning** — realised expansion-factor distribution
-+ household-total exactness on a cached run — then decide whether importance/expansion tuning
-is warranted (measure-before-calibrating).
+### popsim measurement — step 1b results & verdict (2026-06-27)
+
+Measured on the completed 100% server run (`popsim_work_allfeat`, 33 batches; expansion from
+`pipeline.h5` `/STAAT_weights/final_seed_balancing` `balanced_weight / sample_weight`,
+n=152,277; HH-total from `synthetic_households` vs `control_totals_ZENSUS100m`):
+
+- **HH-total hit EXACTLY** — 43,598 cells, 11 off (0.03 %), total +0.022 %. → `importance=1000`
+  on `total_hh_control` is fine; the anchor enforces the count. **Importance tuning would not
+  help — the controls are already hit.**
+- **`max_expansion_factor=30` binds only ~0.30 %** of seed households (≥25: 0.46 %; 80 % are
+  *down*-weighted < 1). A cheap, low-risk raise to ~50–100 would relax those rare-type cases;
+  not a major lever.
+- **Anomaly:** realised max expansion factor **67 > the 30 cap** → the cap is not hard-enforced
+  at 30 (likely integerization / `sample_weight` base). Verify in `popsimprep`.
+
+**VERDICT (measure-before-calibrating): the PopulationSim config is correct and sound.** The
+expensive importance/expansion calibration (plan step 1b) is **NOT warranted** — same pattern
+as gravity/secondary (measured → already good → do not over-calibrate). Only actionable tweak:
+raise `max_expansion_factor` in the `popsimprep` settings; optionally investigate the unused
+`WELT` meta level and the >30 anomaly. With popsim confirmed sound, the sequence can move to
+**step 2 (gravity calibration)** on a population we now trust.
 
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
