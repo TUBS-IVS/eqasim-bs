@@ -7,9 +7,11 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from scripts.calibrate_gravity_per_rs7 import kreis_distance_to_zgb  # noqa: E402
-from scripts.calibrate_gravity_per_rs7 import select_ring_anchors  # noqa: E402
-from scripts.calibrate_gravity_per_rs7 import fit_panel_rs7_slopes  # noqa: E402
+# The per-RS7 calibrator was migrated into the calibration corner (PR #18); the
+# scripts/ shim now only re-exports `main`, so import the helpers from their new home.
+from braunschweig.calibration._legacy_gravity_per_rs7 import kreis_distance_to_zgb  # noqa: E402
+from braunschweig.calibration._legacy_gravity_per_rs7 import select_ring_anchors  # noqa: E402
+from braunschweig.calibration._legacy_gravity_per_rs7 import fit_panel_rs7_slopes  # noqa: E402
 
 
 class _Pt:
