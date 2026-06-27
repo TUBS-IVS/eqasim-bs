@@ -850,12 +850,18 @@ def execute(context) -> pd.DataFrame:
     # pseudonymise=False (ENTD): source_* are set directly to the open ENTD ids
     # by EntdSource.map_person_attributes; no surrogate mapping is needed.
     pseudonymise = (source_name == "mid")
+    # When income_kreis_control is ON it OVERWRITES household_income_eur with a fresh
+    # per-Kreis continuous draw further below, so the INKAR midpoint scaling inside
+    # build_persons would be redundant -- tell build_persons to skip it (no-op on the
+    # final output; see assembly.build_persons skip_inkar_income_scale).
+    income_kreis_control_on = bool(context.config(KEY_INCOME_KC))
     persons, pseudonym_map = assembly.build_persons(
         combined, donor_households, donor_persons,
         rng=rng,
         attribute_mapper=source.map_person_attributes,
         pseudonymise=pseudonymise,
         inkar_scale=inkar_income,
+        skip_inkar_income_scale=income_kreis_control_on,
     )
     context.set_info("popsim_n_persons", len(persons))
 
@@ -894,7 +900,7 @@ def execute(context) -> pd.DataFrame:
     # Replaces the build_persons midpoint x INKAR_scale income with a real continuous
     # draw reshaped per Kreis to the construct-corrected INKAR target. Runs BEFORE the
     # within-Kreis spatial tilt (which is Kreis-mean-preserving and layers on top).
-    if bool(context.config(KEY_INCOME_KC)):
+    if income_kreis_control_on:
         _kc_data_path = context.config("data_path")
         _kc_scope = [str(p) for p in context.config(KEY_KREISE)]
         _income_tables = {
