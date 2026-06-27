@@ -180,8 +180,13 @@ to sweep importance 1000/5000/10000 on the representative `batch_000` (1,475 cel
 - even `NO_INTEGERIZATION_EVER` (skip the integerizer) still spends **>20 min in
   `sub_balancing` over 1,475 cells** per run, and the float weights live in a locked
   `pipeline.h5` until the process exits.
-A clean 3-level sweep is **~1 h+ of compute** and only resolvable as an **unattended background
-job**, not interactively. **Engineering judgment:** the importance ceiling is also
+- the **official doc recommendation** (set `total_hh_control` to very high importance, 1e9)
+  was also tested (SIMUL): it **did not complete** in ~30 min and the integerizer hit
+  **`status INFEASIBLE`** on a cell (hard HH-count + the other controls cannot be satisfied
+  with integer seed households → smart-round fallback). So even the doc's literal importance
+  recommendation over-constrains this dataset's integerization.
+A clean multi-level sweep is **~1 h+ of compute** and only resolvable as an **unattended
+background job** with the sequential integerizer (in progress), not interactively. **Engineering judgment:** the importance ceiling is also
 *donor-limited* (importance can only redistribute existing seed households, not create the
 rare/large types the MiD seed lacks), so the expected payoff is small. **Recommended lever:
 the German MiD donor (richer seed)** rather than importance tuning. The exact sweep number
