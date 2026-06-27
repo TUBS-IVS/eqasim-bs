@@ -172,6 +172,21 @@ types the seed barely contains. **Implications:**
    not yet obtained — the simul runs did not finish. (Test batch left at `~/popsim_proof` on
    the server for a follow-up seq-integerizer A/B.)
 
+**Importance sweep — attempted, computationally infeasible interactively (2026-06-27).** Tried
+to sweep importance 1000/5000/10000 on the representative `batch_000` (1,475 cells):
+- simul integerizer **thrashes** when importance is raised (no completion);
+- sequential integerizer is **>77 min per run** (orchestrator hit a 50 min timeout, orphaned
+  the worker);
+- even `NO_INTEGERIZATION_EVER` (skip the integerizer) still spends **>20 min in
+  `sub_balancing` over 1,475 cells** per run, and the float weights live in a locked
+  `pipeline.h5` until the process exits.
+A clean 3-level sweep is **~1 h+ of compute** and only resolvable as an **unattended background
+job**, not interactively. **Engineering judgment:** the importance ceiling is also
+*donor-limited* (importance can only redistribute existing seed households, not create the
+rare/large types the MiD seed lacks), so the expected payoff is small. **Recommended lever:
+the German MiD donor (richer seed)** rather than importance tuning. The exact sweep number
+remains available via an unattended run if required.
+
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
 | # | Item | Why now | Effort |
