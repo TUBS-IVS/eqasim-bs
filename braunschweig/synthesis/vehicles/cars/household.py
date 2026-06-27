@@ -459,6 +459,30 @@ def _add_default_cars_for_non_owners(df_vehicle_types, df_vehicles, df_persons):
     if n_default == 0:
         return df_vehicle_types, df_vehicles
     default_types, default_vehicles = _legacy_default_fleet(non_owners)
+    # The routing default_cars carry only the legacy writer columns; the German-fleet
+    # / engine columns (brand, model, powertrain, engine_power_kw, ...) would otherwise
+    # be NaN after the concat. Fill every such column with an explicit, data-backed value
+    # so the vehicles frame has NO NaN gaps (CLAUDE.md no-silent-fallback): numeric engine
+    # attributes use the typed-fleet MEDIAN (data-derived, not an invented constant);
+    # categorical fleet columns are left EMPTY ("") -- the same "no fleet identity"
+    # convention used when fleet_model_brands is off -- rather than a fabricated brand, so
+    # these placeholder rows stay distinguishable (their ``type_id`` is ``default_car``)
+    # without polluting the brand mix. On the legacy path (fleet_model_enabled=False) the
+    # two frames already share columns, so ``extra_cols`` is empty and the concat stays
+    # byte-identical.
+    extra_cols = [c for c in df_vehicles.columns if c not in default_vehicles.columns]
+    for col in extra_cols:
+        series = df_vehicles[col]
+        if pd.api.types.is_numeric_dtype(series):
+            default_vehicles[col] = float(series.median()) if series.notna().any() else 0.0
+        else:
+            default_vehicles[col] = ""
+    if extra_cols:
+        logger.info(
+            "[vehicles.household] filled %d placeholder column(s) on %d routing "
+            "default_car(s) (numeric=typed-fleet median, categorical=empty): %s",
+            len(extra_cols), n_default, ", ".join(sorted(extra_cols)),
+        )
     df_vehicles = pd.concat([df_vehicles, default_vehicles], ignore_index=True)
     df_vehicle_types = pd.concat([df_vehicle_types, default_types], ignore_index=True)
     df_vehicle_types = df_vehicle_types.drop_duplicates(subset="type_id").reset_index(drop=True)
