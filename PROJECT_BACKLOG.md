@@ -120,12 +120,31 @@ n=152,277; HH-total from `synthetic_households` vs `control_totals_ZENSUS100m`):
 - **Anomaly:** realised max expansion factor **67 > the 30 cap** → the cap is not hard-enforced
   at 30 (likely integerization / `sample_weight` base). Verify in `popsimprep`.
 
-**VERDICT (measure-before-calibrating): the PopulationSim config is correct and sound.** The
-expensive importance/expansion calibration (plan step 1b) is **NOT warranted** — same pattern
-as gravity/secondary (measured → already good → do not over-calibrate). Only actionable tweak:
-raise `max_expansion_factor` in the `popsimprep` settings; optionally investigate the unused
-`WELT` meta level and the >30 anomaly. With popsim confirmed sound, the sequence can move to
-**step 2 (gravity calibration)** on a population we now trust.
+**Full per-control / per-level fit (measured directly: each control's `expression` from the
+batch `controls.csv` evaluated on the seed-attribute-joined synthetic population vs the
+`control_totals_<geo>` target, all 33 batches):**
+
+| level | controls | mean \|%dev\| | max \|%dev\| |
+|---|---|---|---|
+| ZENSUS1km | 1 | 0.02 % | 0.02 % |
+| KREIS | 7 | 2.40 % | 3.71 % |
+| **ZENSUS100m** | 44 | **6.04 %** | **27.87 %** |
+
+At ZENSUS100m the household *count* is exact but the *composition* is systematically
+**under**-achieved (all worst controls negative): HH 6+ persons −27.9 %, multi-person-no-core-
+family −21.8 %, building_type sonstiges −18.0 %, HH 5 persons −13.5 %, MFH −8.8 %, F_AGE_0_9
+−8.7 %, single-parents −8.6 %. The integerizer hits the HH total but squeezes out large/rare
+household types — the very households at the `max_expansion_factor` cap.
+
+**CORRECTED VERDICT.** The config is *structurally* correct, but the 100 m composition is
+under-fit by ~6 % (rare types up to 28 %), so **targeted nachsteuern IS warranted** (this
+supersedes the earlier "not warranted", which looked only at the HH total):
+1. **Raise `importance` selectively** on the under-achieved controls (HH size 5/6+, multi-
+   person / single-parent HH types, building types) — not a uniform bump. Data-justified.
+2. **Raise `max_expansion_factor`** (~50–100) to release the rare large households at the cap.
+3. Residual bias points to **seed donor diversity** (too few large/rare HH in the MiD seed) →
+   the German MiD donor lever long-term.
+Then proceed to **step 2 (gravity)** on the improved population.
 
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
