@@ -8,6 +8,37 @@ The codebase must be treated as research software. Correctness, reproducibility,
 
 The project should follow the style and structure of MATSim and eqasim as closely as possible. The implementation should be professional, modular, documented, and suitable for scientific use.
 
+## Project navigation & status (read this first)
+
+The living project-management layer. Consult these for orientation and **keep them current**
+(end every work session with `/close`, which updates them):
+
+- **`PROJECT_STATUS.md`** (committed) — at-a-glance feature matrix: what is built, its status,
+  where it lives, what it is validated against, plus the current branch/PR map. **First stop**
+  for "what exists / where / how far along".
+- **`PROJECT_BACKLOG.md`** (committed) — the single ranked backlog of open / partial /
+  deliberately-dropped work. The canonical open-work source (do not start a competing list).
+- **`SESSION_LOG.md`** (gitignored, local-only) — chronological work log; append one entry per
+  session (newest on top).
+- **`docs/codebase/`** (gitignored, local-only) — architecture/onboarding: `STACK`, `STRUCTURE`,
+  `ARCHITECTURE`, `CONVENTIONS`, `INTEGRATIONS`, `TESTING`, `CONCERNS`.
+- **`docs/superpowers/{specs,plans}/`** (gitignored) — per-feature design specs + execution plans.
+- **Claude memory** (`~/.claude/.../memory/`) — curated long-term facts; travels with `~/.claude`,
+  not the repo.
+
+**Working discipline (one task, fully closed before the next):**
+brainstorm intent → write a plan → isolate in a branch/worktree off `main` → TDD → verify with
+real evidence (run the suite on the server when matsim-shadowing breaks local imports) → review →
+land via `git pr` → delete the branch → update `PROJECT_STATUS.md` / `PROJECT_BACKLOG.md` /
+`SESSION_LOG.md`. A branch is either merged-and-deleted or explicitly parked in the backlog with a
+status — never just left lying around.
+
+**PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never
+the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the
+alias on a new machine:
+`git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
+Never push without explicit per-push confirmation (see the git policy below).
+
 ## Reference data: MiD 2023 constraint tables (read this!)
 
 Numerical reference values from the MiD 2023 regional sample
