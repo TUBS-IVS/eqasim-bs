@@ -42,6 +42,73 @@
 
 Ranked by **(value × readiness) ÷ cost**, with loss-risk items pulled to the top.
 
+### ⭐ Agreed next sequence (user-directed, 2026-06-27)
+
+Do these in order. **popsim comes first because it is the foundation of the whole model** —
+the synthetic population is upstream of gravity, location choice and mode choice, so if popsim
+changes, the gravity calibration (which runs on the popsim output) must be redone. Calibrate
+the base first, then everything downstream.
+
+1. **popsim — verify configuration, then test the weights.** *(FIRST — foundation.)*
+   - **Step 1a: config audit.** Verify our PopulationSim setup (settings.yaml template,
+     `controls.csv`, the seed/control geographies) against the official reference
+     <https://activitysim.github.io/populationsim/application_configuration.html> — confirm
+     we set importance, control geographies, expansion/integerizer and the meta/seed/sub
+     hierarchy correctly. (User: "we discussed all that"; expected to be implementation-heavy.)
+   - **Step 1b: weights calibration.** Then execute the **PopulationSim importance/expansion
+     calibration** (design + 63 KB plan at
+     `docs/superpowers/{specs,plans}/2026-06-24-popsim-importance-calibration*.md`): tune
+     per-family importance weights + expansion factors vs the Zensus controls (coordinate
+     descent, donor KPIs held out, baseline-vs-tuned verdict). *(Previously flagged as
+     overfitting-risk — the user wants it tested; report honestly whether tuning beats the
+     baseline, never pin a worse result.)*
+2. **Calibrate the gravity model.** *(AFTER popsim, on the corrected population.)* First make
+   `scripts/calibrate_gravity_distribution.py` **popsim_mid-compatible** (it currently expects
+   the IPF-path stage `braunschweig.data.census.population`; the real all-features caches are
+   popsim_mid and expose `synthesis.population.sampled` / `braunschweig.popsim.stage` instead).
+   Then run it on `cache_bs_100pct_allfeat_synth` to verify / pin the per-band friction weights
+   of the detailed gravity model (per-RS7 slope + per-band friction → MiD P13; see §2.4).
+3. **Real monetary costs at the end (PT / ÖPNV).** *(LAST.)* Build a real cost model feeding
+   the mode-choice utility: **VRB public-transport tariff** (fare zones) + car monetary costs,
+   replacing the placeholder costs. It is a mode-choice/behaviour lever, so it lands after the
+   gravity + popsim calibration and alongside the mode-choice ASC work (Tier 1.2). Needs a
+   committed VRB tariff reference (no invented fares).
+
+### popsim config audit — step 1a findings (2026-06-27)
+
+Audited the applied `settings.yaml` + `controls.csv` (from a cached `popsim_work` batch)
+against the official reference
+<https://activitysim.github.io/populationsim/application_configuration.html>. The settings
+live in the **separate `popsimprep` repo** (`popsim/configs/settings.yaml` /
+`settings_tier3.yaml`), wired into eqasim-bs via `braunschweig.population.popsim.settings_path`.
+
+**Correct per the reference (✅):** hierarchy `geographies: [WELT, STAAT, ZENSUS1km, ZENSUS100m]`
+in strict nesting order; `seed_geography: STAAT` (national MiD seed); `household_weight_col:
+H_GEW`, `household_id_col: H_ID`; `total_hh_control` set to the 100m household-total at the
+lowest geography (mandatory); full standard `models` list incl. `meta_control_factoring`,
+`sub_balancing` per sub-geography, `integerize_final_seed_weights`; `USE_SIMUL_INTEGERIZER`,
+`INTEGERIZE_WITH_BACKSTOPPED_CONTROLS`, `GROUP_BY_INCIDENCE_SIGNATURE` all on.
+
+**To verify / act on (⚠️ — these drive step 1b):**
+1. **All 35 controls at `importance: 1000`, including `total_hh_control`.** The reference
+   recommends a *very high* importance on the household-total to lock the count. Likely
+   mitigated by PopulationSim enforcing the `total_hh_control` setting via the integerizer
+   anchor — but **measure** whether the per-cell household total is hit exactly (use the
+   integerizer-quality report) before trusting it. This uniform-1000 baseline is exactly what
+   the importance calibration (step 1b) tunes.
+2. **`max_expansion_factor: 30` (the default) with a NATIONAL seed expanded to 100 m cells.**
+   The reference says raise it if rare household types can't be sampled. National-MiD → 100 m
+   is a high-expansion regime; 30 may bind. **Measure the realised expansion-factor
+   distribution** (how many seed households hit the cap) — if it binds, rare household types
+   are under-sampled (a silent quality loss).
+3. **The `WELT` meta level carries no control** (controls.csv has only ZENSUS100m/1km targets)
+   → `meta_control_factoring` is effectively a no-op. Not wrong; confirm it is intentional
+   (reserved for a future national meta control) vs. removable.
+
+→ **Next (step 1b kickoff): MEASURE before tuning** — realised expansion-factor distribution
++ household-total exactness on a cached run — then decide whether importance/expansion tuning
+is warranted (measure-before-calibrating).
+
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
 | # | Item | Why now | Effort |
