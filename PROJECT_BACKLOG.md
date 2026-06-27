@@ -146,6 +146,32 @@ supersedes the earlier "not warranted", which looked only at the HH total):
    the German MiD donor lever long-term.
 Then proceed to **step 2 (gravity)** on the improved population.
 
+### popsim nachsteuern — proof iteration (2026-06-27)
+
+Tested the levers on a copy of `batch_000` (A/B vs the cached baseline): raised
+`max_expansion_factor` 30→75 and bumped `importance` on the 7 worst-fitting controls
+(HH 5/6+, multi-person/single-parent HH types, building types).
+
+- **`importance=10000`** → the **simultaneous integerizer thrashed** (>2900 CBC iterations on a
+  single sub-zone, growing primal-infeasibility, no completion in ~10 min). Over-constrained.
+- **`importance=3000`** (gentler) → **still thrashed** (>4000 iterations, ~18 min, no
+  completion), while the baseline (`importance=1000`) integerizes fine.
+
+**Finding:** the importance lever is **bottlenecked by integerizer tractability** with
+`USE_SIMUL_INTEGERIZER: true` — even a 3× bump makes the simultaneous integerizer struggle to
+converge. Combined with *where* the under-fit sits (rare/large HH types that are thin in the
+MiD seed), this points to the 100 m composition under-fit being largely **donor-bound**:
+forcing the marginals via importance breaks the integerizer rather than synthesising household
+types the seed barely contains. **Implications:**
+1. Naive importance/expansion tuning is **not a clean win** — it needs the **sequential
+   integerizer** (`USE_SIMUL_INTEGERIZER: false`) for tractable trials, and even then is
+   likely donor-limited for the rare types.
+2. The real lever for the 100 m composition is **donor diversity** — the **German MiD donor**
+   (richer seed of large/rare households). This is the recurring top realism lever (Tier 2.1).
+3. A definitive A/B fit number still needs a *completing* tuned run (sequential integerizer);
+   not yet obtained — the simul runs did not finish. (Test batch left at `~/popsim_proof` on
+   the server for a follow-up seq-integerizer A/B.)
+
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
 | # | Item | Why now | Effort |
