@@ -124,6 +124,11 @@ def _stub(config_overrides=None, path=None):
         "fleet_model_enabled": True,
         "fleet_model_brands": True,
         "fleet_hsn_tsn_attributes": True,
+        # fleet_consistency_v2 (PR #12) and fleet_age_income_coupling (PR #13) are read
+        # without a default in execute() (configure() registers their defaults); the stub
+        # context does not carry configure-time defaults, so the test must provide them.
+        "fleet_consistency_v2": True,
+        "fleet_age_income_coupling": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }
