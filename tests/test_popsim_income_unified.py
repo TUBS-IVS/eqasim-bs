@@ -406,6 +406,85 @@ def test_build_persons_mid_high_income_uses_numeric_rule():
     )
 
 
+def test_build_persons_skip_inkar_income_scale_keeps_raw_midpoint():
+    """skip_inkar_income_scale=True skips the (redundant) INKAR per-Kreis scaling.
+
+    When income_kreis_control is on it draws a fresh per-Kreis continuous income and
+    OVERWRITES household_income_eur downstream, so the INKAR scaling in build_persons
+    is wasted. With skip_inkar_income_scale=True and INKAR scale 1.5 for Kreis 03101,
+    the raw midpoint (1750.0 for hheink_gr1=4) is left UNSCALED -- it is exactly the
+    value the control step replaces. economic_status (the income-control input) and
+    the categorical household_income label must remain so the control step still has
+    its inputs.
+    """
+    from braunschweig.popsim import assembly
+
+    inkar = _inkar_scale({"03101": 1.5})
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["A"], "ZENSUS1km": ["KA"], "H_ID": [1],
+        "RegionalSchlussel_ARS": ["031010000000"],
+    })
+    mid_hh = pd.DataFrame({
+        "H_ID": [1], "oek_status": [3], "hheink_gr1": [4],
+        "H_ANZAUTO": [1], "H_ANZRAD": [1],
+    })
+    mid_p = pd.DataFrame({
+        "H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1],
+        "P_TAET": [1], "P_FSCHEIN": [1], "P_FKARTE": [3], "P_BKAT": [1],
+    })
+
+    persons, _ = assembly.build_persons(
+        merged, mid_hh, mid_p,
+        rng=np.random.RandomState(0),
+        inkar_scale=inkar,
+        skip_inkar_income_scale=True,
+    )
+
+    # INKAR scaling skipped -> raw midpoint 1750.0 (NOT 1750*1.5 = 2625).
+    got = float(persons["household_income_eur"].iloc[0])
+    assert abs(got - 1750.0) < 1.0, (
+        f"skip_inkar_income_scale=True must leave the raw midpoint 1750.0 "
+        f"(INKAR not applied, value is overwritten by income_kreis_control); got {got}"
+    )
+    # The income-control inputs/labels must survive the skip.
+    assert "economic_status" in persons.columns, "economic_status must remain (control input)"
+    assert "household_income" in persons.columns, "categorical household_income label must remain"
+
+
+def test_build_persons_skip_inkar_default_false_still_scales():
+    """The default skip_inkar_income_scale=False preserves the legacy INKAR scaling.
+
+    Byte-identical OFF path: with the default (no skip) and INKAR scale 1.5,
+    household_income_eur = 1750.0 * 1.5 = 2625.0 (same as before this feature).
+    """
+    from braunschweig.popsim import assembly
+
+    inkar = _inkar_scale({"03101": 1.5})
+    merged = pd.DataFrame({
+        "ZENSUS100m": ["A"], "ZENSUS1km": ["KA"], "H_ID": [1],
+        "RegionalSchlussel_ARS": ["031010000000"],
+    })
+    mid_hh = pd.DataFrame({
+        "H_ID": [1], "oek_status": [3], "hheink_gr1": [4],
+        "H_ANZAUTO": [1], "H_ANZRAD": [1],
+    })
+    mid_p = pd.DataFrame({
+        "H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1],
+        "P_TAET": [1], "P_FSCHEIN": [1], "P_FKARTE": [3], "P_BKAT": [1],
+    })
+
+    persons, _ = assembly.build_persons(
+        merged, mid_hh, mid_p,
+        rng=np.random.RandomState(0),
+        inkar_scale=inkar,
+    )
+
+    got = float(persons["household_income_eur"].iloc[0])
+    assert abs(got - round(1750.0 * 1.5, 0)) < 1.0, (
+        f"default (no skip) must apply INKAR scaling 1.5 -> 2625.0; got {got}"
+    )
+
+
 def test_build_persons_no_inkar_uses_scale_one():
     """build_persons with no inkar_scale (None) uses scale=1.0 (pure midpoint).
 

@@ -261,7 +261,8 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     # top level. Since purposes and modes are disjoint vocabularies, this is
     # unambiguous: a top-level "car"/"walk"/... key means legacy; a top-level
     # "shop"/"leisure"/... key means purpose-layered.
-    if mode in distributions:
+    legacy_mode_keyed = mode in distributions
+    if legacy_mode_keyed:
         mode_distributions = distributions
     else:
         mode_distributions = distributions[purpose]
@@ -271,7 +272,15 @@ def _sample_leg_distance(distributions, mode, travel_time, purpose,
     distance = mode_distribution["values"][
         int(np.count_nonzero(random.random_sample() > mode_distribution["cdf"]))
     ]
-    if purpose == "leisure":
+    # The leisure-correction factor is a LEGACY mode-only heuristic: on the
+    # per-mode distribution leisure trips are diluted by the shorter shop/other
+    # legs sharing the same mode, so leisure distances were scaled up to
+    # compensate. With the Tier-1 purpose-resolved distributions
+    # (secondary_distance_by_purpose: true) the leisure distance is sourced
+    # DIRECTLY from the per-purpose MiD CDF, so applying the factor on top
+    # double-counts and inflates the leisure far-tail (~2x). Apply it ONLY on the
+    # legacy per-mode structure; on the purpose-layered structure it is a no-op.
+    if purpose == "leisure" and legacy_mode_keyed:
         distance *= leisure_correction_factor
     return float(distance)
 
