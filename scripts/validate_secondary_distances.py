@@ -86,23 +86,29 @@ _SECONDARY_PURPOSES = ("shop", "leisure", "other")
 # Stage-cache loading
 # ---------------------------------------------------------------------------
 
-def _load_stage(working_directory: str, stage: str):
-    """Load the most-recently-modified pickle for a synpp stage name.
+def _load_stage(working_directory: str, stage: str, aliases=()):
+    """Load the most-recently-modified pickle for a synpp stage (or any alias).
 
-    Raises RuntimeError when no matching file is found (fail-fast, no silent
-    fallback).
+    synpp caches a stage under its RESOLVED alias-target name, so the same logical
+    stage has different pickle names per workflow. The trips stage, for example, is
+    cached as ``synthesis.population.trips`` in the ENTD/IPF workflows but as
+    ``braunschweig.popsim.trips_stage`` in the popsim_mid workflow. ``aliases`` is
+    tried in order after ``stage``; the first name with a matching pickle wins.
+
+    Raises RuntimeError when no name matches (fail-fast, no silent fallback).
     """
-    pattern = os.path.join(working_directory, stage + "__*.p")
-    matches = glob.glob(pattern)
-    if not matches:
-        raise RuntimeError(
-            f"No cached pickle found for stage '{stage}' in '{working_directory}'. "
-            f"Expected pattern: {pattern}"
-        )
-    latest = max(matches, key=os.path.getmtime)
-    logger.info("Loading stage '%s' from '%s'", stage, latest)
-    with open(latest, "rb") as fh:
-        return pickle.load(fh)
+    for name in (stage, *aliases):
+        matches = glob.glob(os.path.join(working_directory, name + "__*.p"))
+        if matches:
+            latest = max(matches, key=os.path.getmtime)
+            logger.info("Loading stage '%s' from '%s'", name, latest)
+            with open(latest, "rb") as fh:
+                return pickle.load(fh)
+    tried = ", ".join((stage, *aliases))
+    raise RuntimeError(
+        f"No cached pickle found for stage '{stage}' (names tried: {tried}) "
+        f"in '{working_directory}'."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +145,8 @@ def measure_secondary_distances(working_directory: str):
     # Load the three required stages.
     df_locs = _load_stage(working_directory, "synthesis.population.spatial.locations")
     df_acts = _load_stage(working_directory, "synthesis.population.activities")
-    df_trips = _load_stage(working_directory, "synthesis.population.trips")
+    df_trips = _load_stage(working_directory, "synthesis.population.trips",
+                           aliases=("braunschweig.popsim.trips_stage",))
 
     logger.info(
         "Loaded locations (%d rows), activities (%d rows) and trips (%d rows).",

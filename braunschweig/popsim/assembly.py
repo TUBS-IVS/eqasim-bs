@@ -421,6 +421,7 @@ def build_persons(
     attribute_mapper=None,
     pseudonymise: bool = True,
     inkar_scale=None,
+    skip_inkar_income_scale: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -554,7 +555,16 @@ def build_persons(
     # (MiD: INCOME_GROUP_MIDPOINT_EUR; ENTD: ENTD_INCOME_CLASS_MIDPOINT_EUR via entd.py).
     # build_persons overwrites it with the INKAR-scaled value.
     # With inkar_scale=None (unit tests or stage not wired): scale=1.0 for all, logged.
-    if "household_income_eur" in persons.columns:
+    #
+    # ``skip_inkar_income_scale`` is set by the stage when income_kreis_control is ON:
+    # that step draws a fresh per-Kreis continuous income and OVERWRITES
+    # household_income_eur / household_income / high_income downstream
+    # (income_kreis_control.apply_kreis_income_control), so the INKAR midpoint scaling
+    # here would be redundant. We then leave the raw income-class midpoint in place
+    # (it is never read before the control step replaces it), making this a no-op on
+    # the final output while avoiding the wasted per-Kreis scaling join. The default
+    # (False) preserves the legacy INKAR-scaled path byte-identically.
+    if not skip_inkar_income_scale and "household_income_eur" in persons.columns:
         midpoint_series = persons["household_income_eur"].copy()
         persons = _income_module.apply_inkar_income_eur(
             persons, inkar_scale, midpoint_series=midpoint_series,
