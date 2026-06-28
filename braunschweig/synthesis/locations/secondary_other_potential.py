@@ -4,7 +4,16 @@
 is ~46% errand (service buildings) + ~54% broad (escort + catch-all). The raw
 `potential_generic = volume_m3 x class_weight` is function-blind and dominated by
 industrial-volume giants (VW-Werk 26.7M). This derives a capped, whitelist-boosted
-`potential_other` per building. See
+`potential_other` per building using a single uniform formula:
+
+    pot = min(potential_generic, cap) * (broad_share + errand_share * 1(whitelist))
+    pot = 0  where volume_m3 < min_volume_m3
+    cap  = nanquantile(potential_generic over whitelist buildings, cap_percentile)
+
+Every building — whitelist or not — uses its own `min(generic, cap)` as the base.
+Whitelist buildings receive the full `broad_share + errand_share` multiplier; all
+others receive only `broad_share`. Unknown-class buildings behave identically to
+non-whitelist known buildings (is_white=False). See
 docs/superpowers/specs/2026-06-28-smart-other-potential-design.md.
 """
 from __future__ import annotations
@@ -39,24 +48,18 @@ def derive_other_potential(df_buildings, mapping, *, broad_share, errand_share,
         print("WARNING: [secondary_other_potential] no whitelist buildings; "
               "cap derived from all-building generic quantile")
 
-    # Compute potential per building:
-    # - whitelist buildings: min(generic, cap) * 1.0
-    #   They participate proportionally up to the cap (prevents giant whitelist buildings
-    #   from dominating).
-    # - non-whitelist known buildings: cap * broad_share
-    #   They always participate at cap level downweighted by broad_share; their raw generic
-    #   is irrelevant because their primary function is not errand-oriented.
-    # - unknown class buildings: min(generic, cap) * broad_share
-    #   Treated conservatively like broad (no errand boost), but capped.
+    # Uniform formula for ALL buildings:
+    #   pot = min(generic, cap) * (broad_share + errand_share * is_white)
+    # Whitelist buildings get the full multiplier (broad + errand boost).
+    # All other buildings (non-whitelist known or unknown class) get only broad_share.
+    # Unknown-class buildings are not in the whitelist (is_white=False) so they
+    # automatically receive the broad multiplier — no separate branch needed.
     is_nonwhitelist_known = (~is_white) & is_known
     is_unknown = ~is_known
 
-    capped_generic = np.minimum(generic, cap)
-    pot = np.where(is_white,
-                   capped_generic * 1.0,
-                   np.where(is_nonwhitelist_known,
-                            cap * broad_share,
-                            capped_generic * broad_share))
+    capped = np.minimum(generic, cap)
+    multiplier = broad_share + errand_share * is_white.astype(float)
+    pot = capped * multiplier
 
     tiny = volume < float(min_volume_m3)
     pot[tiny] = 0.0

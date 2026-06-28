@@ -24,8 +24,8 @@ def test_derive_caps_whitelist_giant_and_downweights_nonwhitelist():
     cap = stats["cap_value"]
     # whitelist giant -> capped * 1.0 (NOT 26.7M)
     assert pot.iloc[0] == cap and pot.iloc[0] < 26_659_425.0
-    # non-whitelist giant -> capped * broad_share (0.54), still a candidate, not 0
-    assert np.isclose(pot.iloc[1], cap * 0.54)
+    # non-whitelist giant -> min(generic, cap) * broad_share; generic 3_099_341 < cap (~26.1M)
+    assert np.isclose(pot.iloc[1], 3_099_341.0 * 0.54)
     # normal whitelist below cap -> generic * 1.0 unchanged
     assert np.isclose(pot.iloc[2], 11_550.0)
     # tiny whitelist (volume < 50) -> 0
