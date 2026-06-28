@@ -42,6 +42,14 @@ config:
   building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
   work_building_potentials: true
   secondary_building_potentials: true
+  secondary_other_smart_potential: true
+  secondary_other_broad_share: 0.54
+  secondary_other_errand_share: 0.46
+  secondary_other_min_volume_m3: 50.0
+  secondary_other_cap_percentile: 0.99
+  # Part B scorer scale-alignment -- byte-identical defaults until calibrated:
+  secondary_scorer_attr_transform: linear
+  secondary_scorer_selection: top_n
   secondary_external_candidates: false  # external secondary candidates need cordon_enabled (off here)
   secondary_scorer_mode: combined
   secondary_scorer_pot_weight: 1.0
