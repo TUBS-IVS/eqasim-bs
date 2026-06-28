@@ -108,12 +108,6 @@ eqasim-data/*
 !eqasim-data/.gitkeep
 !eqasim-data/DOWNLOAD_CHECKLIST.md
 !eqasim-data/DOWNLOAD_CHECKLIST_BS.md
-# Un-ignore the buildings/ directory and the Bosserhof reference CSV within it,
-# so this small derived mapping is committed alongside the MiD reference tables.
-!eqasim-data/data/
-!eqasim-data/data/braunschweig/
-!eqasim-data/data/braunschweig/buildings/
-!eqasim-data/data/braunschweig/buildings/bosserhof_class_to_purpose.csv
 
 # --- Internal working artefacts (kept out of the public research repository) ---
 # Public-interface markdown is tracked normally -- README.md, CLAUDE.md,
