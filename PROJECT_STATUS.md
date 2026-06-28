@@ -5,7 +5,8 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-06-27 · `origin/main` = `031aefc` (PR #19) · open PR **#20** (calibration remainder).
+> **Last updated:** 2026-06-28 · `origin/main` = `381b6a4` (PR #20 merged) · open PR **#21** (PM-layer professionalization).
+> Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
 > Keep this current with `/close` at the end of each work session.
 
 ---

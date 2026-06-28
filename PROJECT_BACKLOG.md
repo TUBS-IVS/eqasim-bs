@@ -36,6 +36,19 @@
    trip donor** (replacing the French ENTD-2008 donor) — but it is blocked on MiD microdata
    and is a large effort.
 
+### New (2026-06-28)
+
+- **Re-sync `eqasim-data/data/` from the run server** (issue: data-loss recovery). A recursive
+  force-delete of a leftover worktree followed an `eqasim-data` junction and wiped the local
+  `data/` subtree. Git-tracked files were restored; the **gitignored local-only data**
+  (buildings parquet, `nds_*.csv`, osm/gtfs/vg250/germany/...) must be re-synced from
+  `felix@...:/home/felix/eqasim-bs/eqasim-data/data/` (authoritative copy intact). Caches survived.
+- **Secondary `other` over-concentration** (issue #27): combined scorer raw-sums volume-driven
+  `generic` potential (VW-Werk = 26.7M) vs. metre-scale distance; `other` placement concentrates
+  on industrial mega-structures. Measure-first: build the `excess_tv` concentration check on
+  `cache_bs_25pct_allfeat` before any weight/transform change. Levers: log1p-scale generic /
+  class-filter industrial / winsorize — NOT raising `pot_weight`.
+
 ---
 
 ## 1. Priority ranking (what to do, in order)
