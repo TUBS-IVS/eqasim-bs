@@ -7,6 +7,40 @@ the (server) caller as ``objective``; this module is the pure optimiser.
 """
 from __future__ import annotations
 
+from braunschweig.calibration.metrics import emd_on_bands
+
+
+def build_secondary_loss(per_purpose_realised_fn, w12_targets, *,
+                         concentration_fn=None, conc_weight=0.0):
+    """Return loss(weights) = sum_purpose EMD(realised_p, target_p) [+ conc_weight*concentration].
+
+    per_purpose_realised_fn(weights) -> {purpose: realised_band_shares}; w12_targets
+    is {purpose: target_band_shares}. Pure; deterministic given the realised fn.
+
+    Parameters
+    ----------
+    per_purpose_realised_fn : callable
+        weights -> {purpose: array-like band shares}. Called on each loss evaluation.
+    w12_targets : dict
+        {purpose: array-like band shares}. Must include the same purposes
+        (shop, leisure, other) as used by the calibrator.
+    concentration_fn : callable, optional
+        weights -> float concentration penalty (e.g. mean excess_tv / top-1 share).
+        Only applied when conc_weight > 0.
+    conc_weight : float
+        Weight on the concentration penalty term. Default 0.0 (no penalty).
+    """
+    def loss(weights):
+        realised = per_purpose_realised_fn(weights)
+        total = 0.0
+        for purpose, target in w12_targets.items():
+            if purpose in realised:
+                total += emd_on_bands(realised[purpose], target)
+        if concentration_fn is not None and conc_weight:
+            total += conc_weight * float(concentration_fn(weights))
+        return total
+    return loss
+
 
 def coordinate_descent(objective, init, grid, max_rounds=10):
     """Minimise ``objective(weights)`` by axis-wise grid coordinate descent.
