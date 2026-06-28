@@ -1916,6 +1916,14 @@ first: ask before pushing and wait for an explicit "yes" / "push it" / equivalen
 each time (a prior confirmation does not authorise later pushes). This applies to
 all branches and remotes, including `origin/main`.
 
+**Issue-first for newly discovered work.** When a new feature, gap, or idea surfaces
+mid-session, PROPOSE it to the user; only after explicit confirmation, open a GitHub
+issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the `eqasim-org/eqasim-bavaria`
+upstream). This guarantees incidental findings are tracked, not forgotten. All issues,
+PRs, and the Project board live on the fork only. The canonical feature workflow that
+ties this together (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr`
+-> record) is documented in `CONTRIBUTING.md`.
+
 Keep commits focused.
 
 Commit messages must be in English.
