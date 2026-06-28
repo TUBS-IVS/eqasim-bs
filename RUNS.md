@@ -15,6 +15,33 @@
 | 1pct-allfeat-full-2026-06-22 | 2026-06-22 | `config_local_braunschweig_1pct_allfeat_full.yml` | 1% | local | popsim_mid + fleet v2 + income-age + employment grid + cordon + ALKIS homes + freight | 10 | wiring/convergence smoke only (mode choice OFF — NOT behavioural validation) | `cache_bs_1pct_allfeat_full` | completed (smoke) | `docs/runs/2026-06-22_1pct_allfeat_full_smoke_findings.md` |
 | 25pct-parking | unknown | `config_local_braunschweig_25pct_parking.yml` | 25% | unknown | urban parking (BS inner ring) | unknown | MiD validation report (parking vs no-parking comparison) | `output_bs_25pct_parking` | referenced in `run-analysis` docs; date unknown | feature docs |
 
+## Runs on the run server (discovered 2026-06-28 via SSH; read-only)
+
+Authoritative run artifacts live on the Linux run server under
+`/home/felix/eqasim-bs/eqasim-data/`. The following exist there (date = directory mtime,
+size = `du -sh`). Server git HEAD at discovery: `e1164cc` (2026-06-23) — **behind**
+`origin/main` (`381b6a4`). Several fields are not safely recoverable: the per-run
+`*_meta.json` is inconsistent (reads `sampling_rate 1.0` / `hts entd` even in a `25pct`
+popsim directory — looks like a default template, not the real run state), so sampling/hts
+below are taken from the **directory name** and flagged where the meta disagrees.
+
+| artifact | date | size | what it is (from dir name) | notes |
+|---|---|---|---|---|
+| `cache_bs_100pct_allfeat_synth` | 2026-06-27 | 11G | **100% all-features synthesis** cache (newest) | synthesis-only cache; no MATSim `output_*` dir found alongside |
+| `cache_bs_25pct_allfeat_popsim` | 2026-06-24 | 13G | 25% all-features popsim cache | meta.json says 1.0/entd — inconsistent, verify |
+| `output_bs_25pct_allfeat_popsim` | 2026-06-27 | 2.3G | 25% all-features popsim output | has `analysis/cordon`; no `mid_validation` report present |
+| `cache_bs_1pct_allfeat_fit` | 2026-06-26 | 2.3G | 1% all-features fit cache | calibration-fit working dir |
+| `cache_bs_1pct_allfeat_popsim` | 2026-06-22 | 3.3G | 1% all-features popsim cache | — |
+| `output_bs_1pct_allfeat_popsim` | 2026-06-26 | 19M | 1% all-features popsim output | — |
+| `output_bs_100pct_popsim_t3` | 2026-06-17 | 810M | 100% popsim tier-3 output | older code |
+| `output_full_allfeatures` | 2026-06-17 | 828M | full all-features output | older code |
+
+> **Note for the backlog:** a **100% all-features *synthesis*** (`cache_bs_100pct_allfeat_synth`,
+> 2026-06-27) already exists on newer code — but it is a synthesis cache, not a confirmed full
+> MATSim production run. The "100% production run on newest code" item should be re-scoped to
+> "run/confirm MATSim on top of this synthesis", not "synthesise from scratch". Verify against the
+> server before launching a fresh full run.
+
 ## Open / planned runs (see PROJECT_BACKLOG.md)
 
 - **100% production run on newest code** (all current features; Tier-A/B caching makes it
