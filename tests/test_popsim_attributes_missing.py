@@ -85,10 +85,17 @@ def test_number_of_cars_no_rng_backward_compatible():
 # ---------------------------------------------------------------------------
 
 def test_employed_valid_codes_map_to_existing_semantics():
-    """Codes 1..7 map to True, 8..16 to False; no NaN in output."""
-    persons = pd.DataFrame({"P_TAET": [1, 7, 8, 16]})
+    """MiD `erwerb`: P_TAET in {1,2,3,4,6,8} -> True; 5 (Elternzeit), 7 (FSJ/Wehrdienst)
+    and 9..17 -> False; no NaN.
+
+    Pinned to the official MiD ``erwerb`` definition (``EMPLOYED_TAET`` / ``map_employed``,
+    commit d6556b6 "unify employed = MiD erwerb"). Note 8 (Auszubildende) -> True and
+    7 (FSJ/Wehrdienst) -> False, which the earlier naive "1..7 True / 8..16 False"
+    placeholder got backwards.
+    """
+    persons = pd.DataFrame({"P_TAET": [1, 8, 5, 7, 16]})
     out = a.map_employed(persons, rng=np.random.RandomState(0))
-    assert out["employed"].tolist() == [True, True, False, False]
+    assert out["employed"].tolist() == [True, True, False, False, False]
     assert out["employed"].isna().sum() == 0
 
 

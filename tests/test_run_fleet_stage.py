@@ -124,6 +124,11 @@ def _stub(config_overrides=None, path=None):
         "fleet_model_enabled": True,
         "fleet_model_brands": True,
         "fleet_hsn_tsn_attributes": True,
+        # fleet_consistency_v2 (PR #12) and fleet_age_income_coupling (PR #13) are read
+        # without a default in execute() (configure() registers their defaults); the stub
+        # context does not carry configure-time defaults, so the test must provide them.
+        "fleet_consistency_v2": True,
+        "fleet_age_income_coupling": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }
@@ -153,8 +158,9 @@ def test_stage_execute_produces_valid_fleet():
     ctx = _stub()
     df_vehicle_types, df_vehicles = hh.execute(ctx)
 
-    # Vehicle count per household == number_of_cars (2 + 0 + 1 + 1 = 4).
-    assert len(df_vehicles) == 4
+    # 4 typed household cars (2 + 0 + 1 + 1) PLUS 1 routing default_car for the carless
+    # non-owner member (hh2 person 201) added by _add_default_cars_for_non_owners = 5.
+    assert len(df_vehicles) == 5
     # Distinct HBEFA types, every vehicle references a real one.
     assert df_vehicle_types["type_id"].is_unique
     assert set(df_vehicles["type_id"]).issubset(set(df_vehicle_types["type_id"]))
@@ -194,7 +200,9 @@ def test_stage_output_writes_valid_matsim_vehicles(tmp_path):
                  for a in engine.find(f"{MATSIM_NS}attributes").findall(f"{MATSIM_NS}attribute")}
         assert attrs["HbefaVehicleCategory"] == "PASSENGER_CAR"
         assert attrs["HbefaTechnology"]
-        assert attrs["HbefaSizeClass"] in ("small", "medium", "large")
+        # "average" is the eqasim-base default_car type (routing placeholder for carless
+        # non-owners); the typed German fleet uses small/medium/large.
+        assert attrs["HbefaSizeClass"] in ("small", "medium", "large", "average")
         assert attrs["HbefaEmissionsConcept"]
     # Every written vehicle references a defined type.
     vehicles = root.findall(f"{MATSIM_NS}vehicle")
