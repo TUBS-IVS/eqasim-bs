@@ -118,7 +118,7 @@ eqasim-data/*
 # that does not belong in a citable scientific repository.
 plan/
 docs/superpowers/
-docs/codebase/
+docs/codebase/.codebase-scan.txt
 quality/
 .github/skills/
 /memories/
