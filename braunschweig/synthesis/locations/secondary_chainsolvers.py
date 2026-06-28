@@ -115,6 +115,20 @@ def configure(context):
     context.config("secondary_scorer_mode", "combined")
     context.config("secondary_scorer_pot_weight", 1.0)
     context.config("secondary_scorer_dist_dev_weight", 1.0)
+    # Attractiveness transform applied to building potentials before scoring:
+    # "linear" (default, byte-identical to before), "log1p" (log(1+P),
+    # the calibrated-MNL form), or "log". Forwarded to chainsolvers Scorer.
+    context.config("secondary_scorer_attr_transform", "linear")
+    # Carla candidate-selection strategy: "top_n" (default, byte-identical),
+    # "top_n_spatial_downsample" (carla's complex-case native default — pass
+    # None/omit to leave carla at its built-in defaults), or "mnl" (MNL
+    # sampling, see Task 8 eval). When "mnl", BOTH strategies are set to "mnl"
+    # in cs.setup(parameters=...). For any other value no parameters are passed
+    # so carla uses its native defaults (byte-identical for the default "top_n").
+    context.config("secondary_scorer_selection", "top_n")
+    # MNL temperature: reserved for Task 8 evaluation; CarlaConfig has no
+    # temperature field, so this key is registered but NOT wired into cs.setup.
+    context.config("secondary_scorer_mnl_temperature", 1.0)
     if sec_enabled:
         context.stage("braunschweig.data.building_potentials")
 
@@ -370,10 +384,17 @@ _ACTIVITY_POTENTIAL_COLUMN = {
 SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
 
 
-def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float):
+def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
+                 attr_transform: str = "linear"):
     """Construct the chainsolvers combined Scorer, or None when disabled (the
     legacy distance-only path). Import-lazy so the module loads without the dep.
-    Raises if enabled but the Scorer is unavailable (no silent fallback)."""
+    Raises if enabled but the Scorer is unavailable (no silent fallback).
+
+    ``attr_transform`` controls how building potentials are scaled before scoring:
+    ``"linear"`` (default, byte-identical to before), ``"log1p"`` (log(1+P),
+    the calibrated-MNL form), or ``"log"``. Forwarded directly to
+    ``chainsolvers.Scorer(attr_transform=...)``.
+    """
     if not enabled:
         return None
     try:
@@ -381,7 +402,8 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
         Scorer = getattr(cs, "Scorer", None)
         if Scorer is None:
             from chainsolvers.scoring_selection import Scorer
-        return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight)
+        return Scorer(mode=mode, pot_weight=pot_weight, dist_dev_weight=dist_dev_weight,
+                      attr_transform=attr_transform)
     except Exception as exc:
         raise RuntimeError(
             "secondary_building_potentials is ON but the chainsolvers combined "
@@ -1336,12 +1358,21 @@ def _solve_person_shard(task):
         _logging.getLogger(_name).setLevel(_logging.WARNING)
 
     shard_index, shard_uids, shard_df, shard_seed = task
-    scorer = build_scorer(**_WORKER_SCORER_SPEC) if _WORKER_SCORER_SPEC else None
+    if _WORKER_SCORER_SPEC:
+        # "_cs_parameters" is a non-Scorer key carrying the optional carla
+        # selection parameters dict; pop it before forwarding to build_scorer.
+        scorer_spec_copy = dict(_WORKER_SCORER_SPEC)
+        cs_parameters = scorer_spec_copy.pop("_cs_parameters", None)
+        scorer = build_scorer(**scorer_spec_copy)
+    else:
+        scorer = None
+        cs_parameters = None
     ctx = cs.setup(
         locations_df=_WORKER_LOCATIONS_DF,
         solver=_WORKER_SOLVER or "carla",
         rng_seed=int(shard_seed),
         scorer=scorer,
+        **({"parameters": cs_parameters} if cs_parameters is not None else {}),
     )
 
     # Person sub-frames are contiguous iloc slices of shard_df (rows are built
@@ -1772,12 +1803,33 @@ def execute(context):
         f"building chainsolvers context..."
     )
     sec_enabled = context.config("secondary_building_potentials")
-    scorer_spec = ({
-        "enabled": True,
-        "mode": context.config("secondary_scorer_mode"),
-        "pot_weight": context.config("secondary_scorer_pot_weight"),
-        "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
-    } if sec_enabled else None)
+    if sec_enabled:
+        # Build the scorer spec. "_cs_parameters" carries the optional carla
+        # selection parameters dict and is popped in _solve_person_shard before
+        # forwarding the remaining keys to build_scorer(**...).
+        selection = str(context.config("secondary_scorer_selection") or "top_n")
+        # Pass parameters= to cs.setup ONLY for "mnl"; for all other values
+        # (including the default "top_n") pass nothing so carla uses its native
+        # defaults -- the only way to stay byte-identical. CarlaConfig has no
+        # temperature field; secondary_scorer_mnl_temperature is reserved for
+        # Task 8 eval and is NOT wired into cs.setup here.
+        cs_parameters = (
+            {
+                "selection_strategy_complex_case": "mnl",
+                "selection_strategy_two_leg_case": "mnl",
+            }
+            if selection == "mnl" else None
+        )
+        scorer_spec = {
+            "enabled": True,
+            "mode": context.config("secondary_scorer_mode"),
+            "pot_weight": context.config("secondary_scorer_pot_weight"),
+            "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
+            "attr_transform": str(context.config("secondary_scorer_attr_transform") or "linear"),
+            "_cs_parameters": cs_parameters,
+        }
+    else:
+        scorer_spec = None
     # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
     # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
     if sec_enabled:
