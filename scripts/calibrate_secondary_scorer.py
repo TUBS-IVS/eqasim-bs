@@ -45,6 +45,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from braunschweig.calibration import circuity  # noqa: E402
 from braunschweig.calibration.secondary import build_secondary_loss, coordinate_descent  # noqa: E402
+from braunschweig.calibration.secondary_measurement import (  # noqa: E402
+    mode_to_network,
+    w12_band_shares as _w12_band_shares,
+)
 from braunschweig.calibration.targets import W12_BAND_EDGES_KM, load_w12_band_shares  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -99,38 +103,6 @@ def _load_stage(working_directory: str, stage: str, aliases=()):
         f"No cached pickle found for stage '{stage}' (names tried: {tried}) "
         f"in '{working_directory}'."
     )
-
-
-# ---------------------------------------------------------------------------
-# Per-leg mode -> circuity network dispatch (mirrors validate_secondary_distances)
-# ---------------------------------------------------------------------------
-
-_MODE_TO_NETWORK = {
-    "car":           "car",
-    "car_passenger": "car",
-    "pt":            "pt",
-    "walk":          "walk",
-    "bike":          "walk",
-}
-
-
-def mode_to_network(mode: str) -> str:
-    """Return the circuity network for a leg mode; unknown modes default to 'car'."""
-    return _MODE_TO_NETWORK.get(str(mode), "car")
-
-
-# ---------------------------------------------------------------------------
-# Band-share helper (W12 9-band grid; mirrors validate_secondary_distances)
-# ---------------------------------------------------------------------------
-
-def _w12_band_shares(distances_km):
-    """Normalised share per W12 9-band grid for an array of distances in km."""
-    edges = np.asarray(W12_BAND_EDGES_KM[1:-1], dtype=float)  # inner edges only
-    bands = np.digitize(np.asarray(distances_km, dtype=float), edges)
-    n_bands = len(W12_BAND_EDGES_KM) - 1  # 9
-    counts = np.bincount(bands, minlength=n_bands).astype(float)
-    total = counts.sum()
-    return counts / total if total > 0 else counts
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +368,7 @@ def calibrate(
     conc_weight: float,
     output_dir: str,
     random_seed: int = 0,
+    leisure_corr: float = 2.0,
 ):
     """Run coordinate-descent calibration of the secondary scorer.
 
@@ -459,7 +432,7 @@ def calibrate(
         car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5,
     ))
 
-    leisure_corr = 2.0  # default from configure()
+    # leisure_corr passed in from main() (config key leisure_correction_factor, default 2.0).
 
     logger.info("[calibrate-scorer] enumerating assignment problems...")
     t0 = time.time()
@@ -675,6 +648,19 @@ def main():
             random_seed = int(rs)
     logger.info("[calibrate-scorer] random_seed=%d.", random_seed)
 
+    # Derive leisure_correction_factor from config (mirrors configure() default 2.0).
+    leisure_corr = 2.0
+    if isinstance(cfg, dict):
+        lc = cfg.get("leisure_correction_factor")
+        if lc is None:
+            for section in cfg.values():
+                if isinstance(section, dict) and "leisure_correction_factor" in section:
+                    lc = section["leisure_correction_factor"]
+                    break
+        if lc is not None:
+            leisure_corr = float(lc)
+    logger.info("[calibrate-scorer] leisure_correction_factor=%.2f.", leisure_corr)
+
     # Validate paths.
     if not os.path.isdir(args.working_directory):
         raise RuntimeError(
@@ -695,6 +681,7 @@ def main():
         conc_weight=args.conc_weight,
         output_dir=args.output_dir,
         random_seed=random_seed,
+        leisure_corr=leisure_corr,
     )
 
     # Write report JSON.
