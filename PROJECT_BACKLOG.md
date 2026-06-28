@@ -4,8 +4,8 @@
 > implemented, deliberately parked, or designed-and-forgot — cross-checked against what the
 > code already does (so superseded ideas are marked dead, not re-attempted).
 >
-> Created: 2026-06-27. Companion to `PROJECT_HANDOVER.md` (2026-06-22, narrative) and
-> `CLAUDE.md` (binding instructions + feature detail). Where they disagree, `CLAUDE.md` and
+> Created: 2026-06-27. Companion to `docs/ONBOARDING.md` (narrative), `docs/DECISIONS.md`
+> (the *why*), and `CLAUDE.md` (binding instructions). Where they disagree, `CLAUDE.md` and
 > git win — this is a point-in-time snapshot.
 >
 > Sources: 50 Claude memory files, 14 design specs in `docs/superpowers/specs/`, git

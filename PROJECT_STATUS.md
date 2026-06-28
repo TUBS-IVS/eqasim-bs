@@ -152,10 +152,15 @@ Full ranked detail in [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md). Headlines:
 
 | Doc | Purpose |
 |---|---|
-| `CLAUDE.md` | Binding rules + deep feature detail (authoritative) |
-| **`PROJECT_STATUS.md`** (this) | At-a-glance feature/branch dashboard |
+| `CLAUDE.md` | Binding rules + working discipline (authoritative); deep feature detail linked from here |
+| `docs/features/*` | Deep per-feature detail (split out of CLAUDE.md) |
+| **`PROJECT_STATUS.md`** (this) | At-a-glance feature/branch dashboard (single status source) |
 | `PROJECT_BACKLOG.md` | Ranked open/partial/dropped work |
-| `PROJECT_HANDOVER.md` | Narrative onboarding/handover |
+| `docs/DECISIONS.md` | ADR log — the *why*, commit/PR-linked, back to the bavaria baseline |
+| `RUNS.md` | Simulation run ledger |
+| `docs/UPSTREAM_DELTA.md` | What eqasim-bs adds vs. eqasim-bavaria (pinned merge-base) |
+| `docs/ONBOARDING.md` | Durable narrative entry point (replaces PROJECT_HANDOVER.md) |
+| `CONTRIBUTING.md` | Canonical feature workflow + human contract |
 | `docs/codebase/` | Architecture, structure, stack, conventions, integrations, testing, concerns |
 | `SESSION_LOG.md` | Chronological work log (update via `/close`) |
 | `docs/superpowers/{specs,plans}/` | Per-feature design specs + execution plans |
