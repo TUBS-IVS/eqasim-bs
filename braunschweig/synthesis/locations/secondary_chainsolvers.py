@@ -125,6 +125,23 @@ def configure(context):
         context.stage("braunschweig.data.external_secondary_points")
     context.config("cordon_enabled", False)
 
+    # Smart `other` potential (flag-gated; default OFF). When ON (and when
+    # secondary_building_potentials is also ON), the `other` candidate
+    # potential is derived via the Bosserhof function-class mapping
+    # (derive_other_potential): a capped, whitelist-boosted potential that
+    # prevents industrial-volume giants (e.g. VW factory) from dominating
+    # the generic potential. The footprint-join fallback is the median of the
+    # positive other-potential values (logged; no silent fallback). When OFF
+    # (default) the raw potential_generic is used — byte-identical to the
+    # pre-feature behaviour.
+    context.config("secondary_other_smart_potential", False)
+    context.config("secondary_other_broad_share", 0.54)
+    context.config("secondary_other_errand_share", 0.46)
+    context.config("secondary_other_min_volume_m3", 50.0)
+    context.config("secondary_other_cap_percentile", 0.99)
+    if sec_enabled and context.config("secondary_other_smart_potential"):
+        context.stage("braunschweig.data.bosserhof_purpose")
+
     # Daily / non-daily shopping subtype (Tier 2). When ON, each shop leg is
     # tagged with a daily/non-daily subtype that drives BOTH its desired
     # distance (the shop_daily / shop_non_daily distribution layer built by
@@ -374,7 +391,9 @@ def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: f
 
 def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
                                df_buildings: gpd.GeoDataFrame,
-                               df_external: gpd.GeoDataFrame = None) -> gpd.GeoDataFrame:
+                               df_external: gpd.GeoDataFrame = None,
+                               *, mapping=None,
+                               other_potential_params=None) -> gpd.GeoDataFrame:
     """REPLACE secondary candidates when building potentials are ON.
 
     shop/leisure candidates = gpkg activity buildings (native potentials, no
@@ -394,6 +413,24 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         ``braunschweig.data.building_potentials`` (columns: building_id,
         potential_retail_daily, potential_retail_non_daily, potential_leisure,
         potential_generic, commune_id, geometry(POLYGON), EPSG:25832).
+        When ``mapping`` is provided, the buildings frame must additionally
+        carry ``volume_m3`` and the Bosserhof class column (default
+        ``bosserhof_class_clean``).
+    df_external:
+        Optional GeoDataFrame of external Gemeinde centroids (long-distance
+        secondary candidates).
+    mapping:
+        Optional DataFrame ``[bosserhof_class, eqasim_purpose, other_destination]``
+        from ``braunschweig.data.bosserhof_purpose``.  When provided (ON path)
+        the ``other`` potential is derived via
+        ``derive_other_potential`` (capped, whitelist-boosted) and the median of
+        the positive values is used as the spatial-join fallback (logged).
+        When ``None`` (default / OFF path) the raw ``potential_generic`` is used
+        with a zero fallback — byte-identical to the pre-feature behaviour.
+    other_potential_params:
+        Optional dict with keyword arguments forwarded to
+        ``derive_other_potential`` (``broad_share``, ``errand_share``,
+        ``min_volume_m3``, ``cap_percentile``). Ignored when ``mapping`` is None.
 
     Returns
     -------
@@ -444,12 +481,37 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
 
     # --- legacy 'other' candidates (broad catalog) ---
     # All legacy candidates become 'other'-only rows so the broad OSM/ALKIS/
-    # landuse catalog is preserved for the 'other' purpose.  The generic
-    # potential is attached by footprint join (fallback 0.0, rate logged).
+    # landuse catalog is preserved for the 'other' purpose.
     legacy = df_secondary_legacy.copy()
-    pot_other, _p, _f = attach_potential(
-        legacy, df_buildings, "potential_generic",
-        fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
+    if mapping is not None:
+        # ON path: derive a capped, whitelist-boosted potential_other via the
+        # Bosserhof function-class mapping. The footprint-join fallback is the
+        # median of the positive potential_other values (so candidates without a
+        # containing building still receive a reasonable non-zero potential rather
+        # than the 0.0 that the generic fallback would give). The rate is logged
+        # by attach_potential (no silent fallback).
+        from braunschweig.synthesis.locations.secondary_other_potential import (
+            derive_other_potential,
+        )
+        params = other_potential_params or {}
+        bld = df_buildings.copy()
+        pot_series, st = derive_other_potential(bld, mapping, **params)
+        bld["potential_other"] = pot_series.values
+        positive = pot_series[pot_series > 0.0]
+        median_prior = float(positive.median()) if len(positive) else 0.0
+        print("[braunschweig.secondary_chainsolvers] smart other potential: "
+              "cap=%.0f whitelist=%d non-whitelist=%d unknown_class=%d tiny=%d "
+              "median_prior=%.1f" % (st["cap_value"], st["n_whitelist"],
+              st["n_nonwhitelist"], st["n_unknown_class"], st["n_tiny"], median_prior))
+        pot_other, _p, _f = attach_potential(
+            legacy, bld, "potential_other",
+            fallback=np.full(len(legacy), median_prior, dtype=float), label="sec_other")
+    else:
+        # OFF path: byte-identical to the pre-feature behaviour (raw
+        # potential_generic, zero fallback). No new imports, no new logic.
+        pot_other, _p, _f = attach_potential(
+            legacy, df_buildings, "potential_generic",
+            fallback=np.zeros(len(legacy), dtype=float), label="sec_other")
     legacy_other = gpd.GeoDataFrame({
         "location_id": legacy["location_id"].astype(str).values,
         "commune_id": legacy["commune_id"].astype(str).values,
@@ -1726,11 +1788,33 @@ def execute(context):
             external_on, context.config("cordon_enabled"))
         if warning:
             print(warning, flush=True)
-        df_secondary = build_secondary_candidates(
-            df_secondary,
-            context.stage("braunschweig.data.building_potentials"),
-            df_external=df_external,
-        )
+        # Smart other potential (flag-gated). When ON, pass the Bosserhof
+        # mapping and the derived-potential parameters so build_secondary_candidates
+        # computes the capped, whitelist-boosted potential_other instead of the
+        # raw potential_generic. When OFF (default), pass neither kwarg so the
+        # call is byte-identical to the pre-feature behaviour.
+        smart_other = bool(context.config("secondary_other_smart_potential"))
+        if smart_other:
+            _mapping = context.stage("braunschweig.data.bosserhof_purpose")
+            _other_params = dict(
+                broad_share=float(context.config("secondary_other_broad_share")),
+                errand_share=float(context.config("secondary_other_errand_share")),
+                min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
+                cap_percentile=float(context.config("secondary_other_cap_percentile")),
+            )
+            df_secondary = build_secondary_candidates(
+                df_secondary,
+                context.stage("braunschweig.data.building_potentials"),
+                df_external=df_external,
+                mapping=_mapping,
+                other_potential_params=_other_params,
+            )
+        else:
+            df_secondary = build_secondary_candidates(
+                df_secondary,
+                context.stage("braunschweig.data.building_potentials"),
+                df_external=df_external,
+            )
     # Tier 2 requires the building-potential candidate set: the subtype legs
     # (shop_daily / shop_non_daily) can only be placed at buildings tagged with
     # those subtype activities, which exist only on the with_potentials path. A
