@@ -26,12 +26,15 @@ The living project-management layer. Consult these for orientation and **keep th
 - **Claude memory** (`~/.claude/.../memory/`) — curated long-term facts; travels with `~/.claude`,
   not the repo.
 
-**Working discipline (one task, fully closed before the next):**
-brainstorm intent → write a plan → isolate in a branch/worktree off `main` → TDD → verify with
-real evidence (run the suite on the server when matsim-shadowing breaks local imports) → review →
-land via `git pr` → delete the branch → update `PROJECT_STATUS.md` / `PROJECT_BACKLOG.md` /
-`SESSION_LOG.md`. A branch is either merged-and-deleted or explicitly parked in the backlog with a
-status — never just left lying around.
+**Working discipline (one task, fully closed before the next):** the single canonical
+feature workflow is documented in `CONTRIBUTING.md` (brainstorm → plan → worktree → TDD →
+verify → review → `git pr` → record). A branch is either merged-and-deleted or explicitly
+parked in the backlog with a status — never just left lying around.
+
+**Mandatory at `/close` (end of every session):** update `PROJECT_STATUS.md`,
+`PROJECT_BACKLOG.md`, `SESSION_LOG.md`; add a `RUNS.md` row if a run happened; add/update an
+ADR in `docs/DECISIONS.md` if a decision was made; sync the GitHub Project board; and apply
+the issue-first rule for any newly discovered work. These keep the PM layer from drifting.
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never
 the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the
