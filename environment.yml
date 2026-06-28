@@ -40,10 +40,12 @@ dependencies:
     # locations stage aborts with "ModuleNotFoundError: No module named
     # 'chainsolvers'".
     #
-    # Pinned to the TUBS-IVS commit that implements the combined Scorer
-    # (mode="geometric"/"potential"/"combined", pot_weight/dist_dev_weight),
-    # consumed by braunschweig.data.building_potentials via the secondary
-    # combined scorer. The PyPI 0.1.0 release has a stubbed scorer that ignores
-    # potentials; no newer PyPI release exists yet. Swap to chainsolvers==0.2.0
-    # once that release is published.
-    - git+https://github.com/TUBS-IVS/chainsolvers.git@cb50c41ed5b28d899bfe5e6e7545486cbb69e1a5
+    # Pinned to the TUBS-IVS commit that adds native attr_transform to Scorer
+    # (attr_transform="linear"/"log1p"/"log"), the mnl selection strategy, and
+    # the carla_sample / dp_sample solvers -- required by the smart-other-potential
+    # feature (Task 2+). The combined Scorer (mode="geometric"/"potential"/"combined",
+    # pot_weight/dist_dev_weight) is still present and the default attr_transform
+    # "linear" is byte-identical to the previous pin, so existing runs are unaffected.
+    # The PyPI 0.1.0 release has a stubbed scorer; no newer PyPI release exists yet.
+    # Swap to chainsolvers==0.2.0 once that release is published.
+    - git+https://github.com/TUBS-IVS/chainsolvers.git@d8d8ae7de5bf2504d44b8422abcfe827ed7d054b
