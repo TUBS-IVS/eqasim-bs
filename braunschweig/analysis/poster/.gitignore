@@ -1,0 +1,4 @@
+# Generated figures (decorative outputs) — keep scripts, not renders.
+poster_maps/
+*_preview.png
+__pycache__/
