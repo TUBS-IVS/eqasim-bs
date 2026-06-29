@@ -40,31 +40,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from braunschweig.calibration import circuity  # noqa: E402
 from braunschweig.calibration.metrics import emd_on_bands  # noqa: E402
+from braunschweig.calibration.secondary_measurement import (  # noqa: E402
+    mode_to_network,
+    w12_band_shares as _w12_band_shares,
+)
 from braunschweig.calibration.targets import (  # noqa: E402
     W12_BAND_EDGES_KM,
     load_w12_band_shares,
 )
-
-# ---------------------------------------------------------------------------
-# Per-leg mode -> circuity network dispatch
-# ---------------------------------------------------------------------------
-
-# Map a leg mode to the circuity network used for its euclidean->routed scaling.
-_MODE_TO_NETWORK = {
-    "car": "car",
-    "car_passenger": "car",
-    "pt": "pt",
-    "walk": "walk",
-    "bike": "walk",
-}
-
-
-def mode_to_network(mode: str) -> str:
-    """Return the circuity network ('car'|'pt'|'walk') for a leg mode.
-
-    Unknown modes default to 'car' (the most common motorised network).
-    """
-    return _MODE_TO_NETWORK.get(str(mode), "car")
 
 logger = logging.getLogger(__name__)
 
@@ -109,23 +92,6 @@ def _load_stage(working_directory: str, stage: str, aliases=()):
         f"No cached pickle found for stage '{stage}' (names tried: {tried}) "
         f"in '{working_directory}'."
     )
-
-
-# ---------------------------------------------------------------------------
-# Distance-band helpers (W12-specific)
-# ---------------------------------------------------------------------------
-
-def _w12_band_shares(distances_km):
-    """Normalised share per W12 band for an array of distances in km.
-
-    W12_BAND_EDGES_KM = (0, 0.5, 1, 2, 5, 10, 20, 50, 100, inf) -> 9 bands.
-    """
-    edges = np.asarray(W12_BAND_EDGES_KM[1:-1], dtype=float)  # inner edges only
-    bands = np.digitize(np.asarray(distances_km, dtype=float), edges)
-    n_bands = len(W12_BAND_EDGES_KM) - 1  # 9
-    counts = np.bincount(bands, minlength=n_bands).astype(float)
-    total = counts.sum()
-    return counts / total if total > 0 else counts
 
 
 # ---------------------------------------------------------------------------

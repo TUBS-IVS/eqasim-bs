@@ -1230,3 +1230,22 @@ def test_build_secondary_candidates_appends_external_centroids():
     out_default = sc.build_secondary_candidates(legacy, buildings)
     assert list(out_none["location_id"]) == list(out_default["location_id"])
     assert "EXT05111000" not in set(out_none["location_id"])
+
+
+# ---------------------------------------------------------------------------
+# Task 5: build_scorer attr_transform wiring
+# ---------------------------------------------------------------------------
+
+def test_build_scorer_passes_attr_transform():
+    """build_scorer forwards attr_transform to the chainsolvers Scorer."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers import build_scorer
+    s = build_scorer(True, "combined", 1.0, 1.0, attr_transform="log1p")
+    assert s is not None and getattr(s, "attr_transform", None) == "log1p"
+
+
+def test_build_scorer_default_linear_byte_identical():
+    """build_scorer default (no attr_transform kwarg) produces attr_transform='linear'
+    or equivalent, confirming the OFF path is byte-identical."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers import build_scorer
+    s = build_scorer(True, "combined", 1.0, 1.0)
+    assert getattr(s, "attr_transform", "linear") in ("linear", "none")

@@ -1,0 +1,45 @@
+bosserhof_class,eqasim_purpose,other_destination
+arenas large events,leisure,False
+business oriented services,other,True
+car dealerships,work,False
+craft businesses,other,True
+craft courtyards,other,True
+customer oriented services,other,True
+customer service,other,True
+department stores,shop,False
+discount stores,shop,False
+diy stores,shop,False
+entertainment culture,leisure,False
+facilities for culture leisure and sports,leisure,False
+factory outlet centers,shop,False
+fitness wellness,leisure,False
+furniture stores,shop,False
+highly productive industries machine material or space intensive,work,False
+hospitals,other,True
+hotels,leisure,False
+hotels with conference areas,leisure,False
+hypermarkets superstores,shop,False
+industrial operations production,work,False
+kindergartens,education,False
+large cinemas,leisure,False
+large discos fun leisure pools,leisure,False
+normal office,work,False
+nursing homes,other,True
+open plan office,work,False
+others industrial,work,False
+public facilities,other,True
+research institutes,work,False
+restaurants gastronomy,leisure,False
+retail,shop,False
+retail small scale,shop,False
+schools,education,False
+self service department stores,shop,False
+services,other,True
+shopping centers,shop,False
+suppliers for car dealerships,work,False
+theme parks,leisure,False
+transport,other,True
+universities,education,False
+vehicle electrical repair,other,True
+wholesale,work,False
+yards depots storage areas construction yards,work,False
