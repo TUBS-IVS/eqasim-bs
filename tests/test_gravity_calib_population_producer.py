@@ -48,16 +48,45 @@ def test_falls_back_to_legacy_producer_when_no_alias():
     assert calib.resolve_population_producer(None) == calib.DEFAULT_POPULATION_PRODUCER
 
 
-def test_script_does_not_hardcode_census_population_load():
-    # Regression guard: the population producer must be resolved via the alias,
-    # never hard-coded to the IPF census stage (which popsim_mid caches lack).
+def test_resolve_stage_returns_configured_producer():
+    aliases = {"synthesis.population.enriched": "braunschweig.popsim.enriched_adapter"}
+    assert (
+        calib.resolve_stage(aliases, "synthesis.population.enriched", "fallback")
+        == "braunschweig.popsim.enriched_adapter"
+    )
+
+
+def test_resolve_stage_falls_back_when_key_absent():
+    assert calib.resolve_stage({}, "synthesis.population.enriched", "fallback") == "fallback"
+    assert calib.resolve_stage(None, "x", "fallback") == "fallback"
+
+
+def test_script_does_not_hardcode_popsim_incompatible_stage_loads():
+    # Regression guard: the three workflow-dependent stages must be resolved via
+    # aliases (variable args), never hard-coded to the IPF/eqasim stage names that
+    # popsim_mid caches do not contain.
     src = _SCRIPT_PATH.read_text(encoding="utf-8")
     assert '_load_stage(wd, "braunschweig.data.census.population")' not in src
+    assert '_load_stage(wd, "braunschweig.synthesis.population.enriched")' not in src
+    assert '_load_stage(wd, "synthesis.population.spatial.home.locations")' not in src
+    # The resolved-producer variables must be the load arguments instead.
+    assert "_load_stage(wd, population_producer)" in src
+    assert "_load_stage(wd, enriched_producer)" in src
+    assert "_load_stage(wd, home_locations_producer)" in src
 
 
-def test_load_aliases_resolves_popsim_mid_config_to_popsim_stage():
-    # End-to-end: the committed popsim_mid config must resolve to popsim.stage.
+def test_popsim_mid_config_resolves_all_three_producers():
+    # End-to-end: the committed popsim_mid config must resolve every
+    # workflow-dependent stage to its popsim producer.
     pytest.importorskip("yaml")
     cfg_path = _REPO_ROOT / "config_popsim_mid_braunschweig.yml"
     aliases = calib._load_aliases(str(cfg_path))
     assert calib.resolve_population_producer(aliases) == "braunschweig.popsim.stage"
+    assert (
+        calib.resolve_stage(aliases, calib.ENRICHED_ALIAS_KEY, "x")
+        == "braunschweig.popsim.enriched_adapter"
+    )
+    assert (
+        calib.resolve_stage(aliases, calib.HOME_LOCATIONS_ALIAS_KEY, "x")
+        == "braunschweig.synthesis.locations.home_cell"
+    )

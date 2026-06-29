@@ -131,45 +131,60 @@ def _load_aliases(config_path: str) -> dict:
     return {}
 
 
-# synpp alias the gravity model loads as its population margin (see
-# braunschweig/gravity/model.py: configure()/execute() both use
-# context.stage("data.census.filtered")). The calibration must read the SAME
-# population, so it resolves this alias from the run config's ``aliases`` block.
+# synpp logical stage names the gravity calibration consumes. Each is loaded by
+# the actual eqasim demand pipeline under these names, and each run config
+# redirects them via its ``aliases`` block to the active producer:
+#
+#   logical name                                 IPF default                       popsim_mid/open
+#   data.census.filtered                         braunschweig.ipf.attributed       braunschweig.popsim.stage
+#   synthesis.population.enriched                braunschweig.synthesis.population.enriched   braunschweig.popsim.enriched_adapter
+#   synthesis.population.spatial.home.locations  (itself)                          braunschweig.synthesis.locations.home_cell
+#
+# The calibration must measure the SAME population/persons/home points the model
+# + demand are built from, so it resolves these names from the config's aliases
+# (the popsim_mid caches do not contain the IPF stage names at all). All three
+# resolved popsim producers are schema-compatible: popsim.stage has
+# commune_id+weight; enriched_adapter has employed+person_id+household_id;
+# home_cell is a GeoDataFrame with household_id+geometry (EPSG:25832).
 POPULATION_ALIAS_KEY = "data.census.filtered"
+ENRICHED_ALIAS_KEY = "synthesis.population.enriched"
+HOME_LOCATIONS_ALIAS_KEY = "synthesis.population.spatial.home.locations"
 
-# Legacy fallback producer when a config carries no ``aliases`` block. This is
-# the IPF-path census population (commune_id, sex, age_class, weight) that the
-# script originally hard-coded. It is only reached for alias-less configs; a
-# warning is emitted so the choice is never silent (CLAUDE.md no-silent-fallback).
+# Legacy fallbacks when a config carries no ``aliases`` entry for a key (IPF /
+# alias-less configs). Only reached when the alias is absent; a warning is then
+# emitted so the choice is never silent (CLAUDE.md no-silent-fallback).
 DEFAULT_POPULATION_PRODUCER = "braunschweig.data.census.population"
+DEFAULT_ENRICHED_PRODUCER = "braunschweig.synthesis.population.enriched"
+DEFAULT_HOME_LOCATIONS_PRODUCER = "synthesis.population.spatial.home.locations"
+
+
+def resolve_stage(aliases, alias_key: str, default: str) -> str:
+    """Resolve a logical synpp stage name to its concrete producer via aliases.
+
+    ``aliases`` is the run config's top-level ``aliases`` block (see
+    :func:`_load_aliases`). Returns the configured producer for ``alias_key``,
+    or ``default`` (with a warning) when the key is absent -- so an alias-less
+    config still resolves to a stage, and a missing alias is never silent.
+    """
+    producer = (aliases or {}).get(alias_key)
+    if not producer:
+        logger.warning(
+            "[commute-calib] config has no '%s' alias; falling back to '%s'. "
+            "For popsim_mid/open caches this may be wrong -- ensure the run "
+            "config carries an 'aliases' block (CLAUDE.md no-silent-fallback).",
+            alias_key, default,
+        )
+        return default
+    return str(producer)
 
 
 def resolve_population_producer(aliases) -> str:
-    """Resolve the synpp stage that produces the population the gravity model uses.
+    """Resolve the population stage the gravity model reads (``data.census.filtered``).
 
-    The gravity model reads the alias ``data.census.filtered``, which each run
-    config redirects to the active population producer:
-    ``braunschweig.ipf.attributed`` for the IPF workflow, or
-    ``braunschweig.popsim.stage`` for the popsim_mid / popsim_open workflows.
-    Because the calibration must measure the SAME population the model + demand
-    are built from, it resolves the producer from the config's ``aliases`` block
-    instead of hard-coding a single stage (the popsim_mid caches do not contain
-    the IPF ``braunschweig.data.census.population`` stage at all).
-
-    Falls back to :data:`DEFAULT_POPULATION_PRODUCER` (with a warning) when no
-    alias is configured.
+    Thin wrapper over :func:`resolve_stage` for the population margin; see the
+    module-level alias-key table for the IPF vs popsim_mid mapping.
     """
-    producer = (aliases or {}).get(POPULATION_ALIAS_KEY)
-    if not producer:
-        logger.warning(
-            "[commute-calib] config has no '%s' alias; falling back to the legacy "
-            "IPF census producer '%s'. For popsim_mid/open caches this is wrong -- "
-            "ensure the run config carries an 'aliases' block "
-            "(CLAUDE.md no-silent-fallback).",
-            POPULATION_ALIAS_KEY, DEFAULT_POPULATION_PRODUCER,
-        )
-        return DEFAULT_POPULATION_PRODUCER
-    return str(producer)
+    return resolve_stage(aliases, POPULATION_ALIAS_KEY, DEFAULT_POPULATION_PRODUCER)
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +465,13 @@ def main():
     diagonal = 1.0
     slope_overrides = None
     cfg = {}
-    # The population producer the gravity model reads via the
-    # ``data.census.filtered`` alias. Resolved from the config's ``aliases``
-    # block so the calibration measures the SAME population the model uses
-    # (popsim_mid -> braunschweig.popsim.stage; IPF -> braunschweig.ipf.attributed).
+    # Stage producers the gravity model + demand pipeline read via synpp aliases.
+    # Resolved from the config's ``aliases`` block so the calibration measures the
+    # SAME population / persons / home points the model uses (popsim_mid -> popsim
+    # producers; IPF -> ipf/synthesis producers). See the alias-key table above.
     population_producer = DEFAULT_POPULATION_PRODUCER
+    enriched_producer = DEFAULT_ENRICHED_PRODUCER
+    home_locations_producer = DEFAULT_HOME_LOCATIONS_PRODUCER
 
     if args.config:
         cfg = _load_config(args.config)
@@ -462,13 +479,19 @@ def main():
         constant = float(cfg.get("gravity_constant", constant))
         diagonal = float(cfg.get("gravity_diagonal", diagonal))
         slope_overrides = cfg.get("gravity_slope_by_regiostar7", None) or None
-        population_producer = resolve_population_producer(_load_aliases(args.config))
+        aliases = _load_aliases(args.config)
+        population_producer = resolve_population_producer(aliases)
+        enriched_producer = resolve_stage(aliases, ENRICHED_ALIAS_KEY, DEFAULT_ENRICHED_PRODUCER)
+        home_locations_producer = resolve_stage(
+            aliases, HOME_LOCATIONS_ALIAS_KEY, DEFAULT_HOME_LOCATIONS_PRODUCER
+        )
         logger.info(
             "Config loaded: slope=%.4f, constant=%.4f, diagonal=%.4f, "
-            "slope_by_rs7=%s, population_producer=%s",
+            "slope_by_rs7=%s, population_producer=%s, enriched_producer=%s, "
+            "home_locations_producer=%s",
             slope, constant, diagonal,
             "set" if slope_overrides else "none",
-            population_producer,
+            population_producer, enriched_producer, home_locations_producer,
         )
     else:
         logger.info(
@@ -515,11 +538,14 @@ def main():
     # Census employment (departement_id, weight) -- needed by _synthesise_intra_kreis.
     df_employment = _load_stage(wd, "braunschweig.data.census.employment")
 
-    # Home locations of working persons (person_id, commune_id, geometry).
-    # CACHE KEY NOTE: 'synthesis.population.spatial.home.locations' is the
-    # standard eqasim stage that stores a GeoDataFrame keyed by household_id.
-    # Verify the schema on the server; it must carry commune_id + geometry.
-    df_home_locations = _load_stage(wd, "synthesis.population.spatial.home.locations")
+    # Home-point locations, from the producer the demand pipeline reads via the
+    # ``synthesis.population.spatial.home.locations`` alias (resolved above):
+    #   popsim_mid/open -> braunschweig.synthesis.locations.home_cell
+    #                      (GeoDataFrame: household_id, commune_id, home_location_id,
+    #                       geometry POINT in EPSG:25832 -- one home per household)
+    #   IPF             -> the standard eqasim home.locations GeoDataFrame
+    # Only household_id + geometry are used here.
+    df_home_locations = _load_stage(wd, home_locations_producer)
     if "household_id" not in df_home_locations.columns:
         df_home_locations = df_home_locations.reset_index()
 
@@ -529,11 +555,14 @@ def main():
     # Workers are joined to their home commune via household_id (not person_id).
     df_home_zones = _load_stage(wd, "braunschweig.synthesis.spatial.home_zones")
 
-    # Enriched persons (to identify workers and get person->household mapping).
-    # Schema confirmed on the 25pct cache: type=GeoDataFrame,
-    # cols include person_id, household_id, employed (bool), age, sex, ...
-    # Workers are identified by employed==True.
-    df_enriched = _load_stage(wd, "braunschweig.synthesis.population.enriched")
+    # Enriched persons (to identify workers and get person->household mapping),
+    # from the producer the demand pipeline reads via the
+    # ``synthesis.population.enriched`` alias (resolved above):
+    #   popsim_mid/open -> braunschweig.popsim.enriched_adapter
+    #   IPF             -> braunschweig.synthesis.population.enriched
+    # Both carry person_id, household_id and employed (bool); workers are
+    # identified by employed==True.
+    df_enriched = _load_stage(wd, enriched_producer)
 
     # Work candidate locations (commune_id, geometry, employees weight).
     # Schema confirmed on the 25pct cache: type=GeoDataFrame,
