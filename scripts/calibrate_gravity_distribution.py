@@ -110,6 +110,68 @@ def _load_config(config_path: str) -> dict:
     return raw or {}
 
 
+def _load_aliases(config_path: str) -> dict:
+    """Load the top-level synpp ``aliases`` block from a YAML run config.
+
+    Returns an empty dict when the config has no ``aliases`` block. The block
+    maps a logical stage name (e.g. ``data.census.filtered``) to the concrete
+    producing stage for the active workflow (see :func:`resolve_population_producer`).
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "PyYAML is required to load the run config. "
+            "Install with: conda install pyyaml"
+        ) from exc
+    with open(config_path, "r", encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh)
+    if isinstance(raw, dict) and isinstance(raw.get("aliases"), dict):
+        return raw["aliases"]
+    return {}
+
+
+# synpp alias the gravity model loads as its population margin (see
+# braunschweig/gravity/model.py: configure()/execute() both use
+# context.stage("data.census.filtered")). The calibration must read the SAME
+# population, so it resolves this alias from the run config's ``aliases`` block.
+POPULATION_ALIAS_KEY = "data.census.filtered"
+
+# Legacy fallback producer when a config carries no ``aliases`` block. This is
+# the IPF-path census population (commune_id, sex, age_class, weight) that the
+# script originally hard-coded. It is only reached for alias-less configs; a
+# warning is emitted so the choice is never silent (CLAUDE.md no-silent-fallback).
+DEFAULT_POPULATION_PRODUCER = "braunschweig.data.census.population"
+
+
+def resolve_population_producer(aliases) -> str:
+    """Resolve the synpp stage that produces the population the gravity model uses.
+
+    The gravity model reads the alias ``data.census.filtered``, which each run
+    config redirects to the active population producer:
+    ``braunschweig.ipf.attributed`` for the IPF workflow, or
+    ``braunschweig.popsim.stage`` for the popsim_mid / popsim_open workflows.
+    Because the calibration must measure the SAME population the model + demand
+    are built from, it resolves the producer from the config's ``aliases`` block
+    instead of hard-coding a single stage (the popsim_mid caches do not contain
+    the IPF ``braunschweig.data.census.population`` stage at all).
+
+    Falls back to :data:`DEFAULT_POPULATION_PRODUCER` (with a warning) when no
+    alias is configured.
+    """
+    producer = (aliases or {}).get(POPULATION_ALIAS_KEY)
+    if not producer:
+        logger.warning(
+            "[commute-calib] config has no '%s' alias; falling back to the legacy "
+            "IPF census producer '%s'. For popsim_mid/open caches this is wrong -- "
+            "ensure the run config carries an 'aliases' block "
+            "(CLAUDE.md no-silent-fallback).",
+            POPULATION_ALIAS_KEY, DEFAULT_POPULATION_PRODUCER,
+        )
+        return DEFAULT_POPULATION_PRODUCER
+    return str(producer)
+
+
 # ---------------------------------------------------------------------------
 # assign_and_measure: simulate the work-location assignment for one OD matrix
 # ---------------------------------------------------------------------------
@@ -388,6 +450,11 @@ def main():
     diagonal = 1.0
     slope_overrides = None
     cfg = {}
+    # The population producer the gravity model reads via the
+    # ``data.census.filtered`` alias. Resolved from the config's ``aliases``
+    # block so the calibration measures the SAME population the model uses
+    # (popsim_mid -> braunschweig.popsim.stage; IPF -> braunschweig.ipf.attributed).
+    population_producer = DEFAULT_POPULATION_PRODUCER
 
     if args.config:
         cfg = _load_config(args.config)
@@ -395,16 +462,19 @@ def main():
         constant = float(cfg.get("gravity_constant", constant))
         diagonal = float(cfg.get("gravity_diagonal", diagonal))
         slope_overrides = cfg.get("gravity_slope_by_regiostar7", None) or None
+        population_producer = resolve_population_producer(_load_aliases(args.config))
         logger.info(
             "Config loaded: slope=%.4f, constant=%.4f, diagonal=%.4f, "
-            "slope_by_rs7=%s",
+            "slope_by_rs7=%s, population_producer=%s",
             slope, constant, diagonal,
             "set" if slope_overrides else "none",
+            population_producer,
         )
     else:
         logger.info(
             "No --config supplied; using project defaults: "
-            "slope=%.4f, constant=%.4f, diagonal=%.4f", slope, constant, diagonal
+            "slope=%.4f, constant=%.4f, diagonal=%.4f, population_producer=%s",
+            slope, constant, diagonal, population_producer,
         )
 
     # F9: resolve random seed: explicit --seed > config random_seed > 0.
@@ -423,11 +493,15 @@ def main():
     # cached as 'gravity.distance_matrix' (without the eqasim_common prefix).
     df_distances = _load_stage(wd, "eqasim_common.gravity.distance_matrix")
 
-    # Census population per Gemeinde (commune_id, sex, age_class, weight).
-    # Schema confirmed on the 25pct cache: type=DataFrame, cols=[commune_id, sex, age_class, weight].
-    # Used to build the population margin vector for the gravity model and for
-    # the BA Pendleratlas calibration (_calibrate expects commune_id + weight).
-    df_population_full = _load_stage(wd, "braunschweig.data.census.population")
+    # Population per Gemeinde, from the SAME producer the gravity model reads via
+    # the ``data.census.filtered`` alias (resolved above from the config):
+    #   popsim_mid/open -> braunschweig.popsim.stage
+    #   IPF             -> braunschweig.ipf.attributed
+    # Both expose commune_id + weight (the gravity model renames weight->population),
+    # so this frame feeds both the population margin vector and the BA Pendleratlas
+    # calibration (_calibrate expects commune_id + weight). The previous hard-coded
+    # IPF stage braunschweig.data.census.population is absent from popsim_mid caches.
+    df_population_full = _load_stage(wd, population_producer)
 
     # Employees-at-workplace per Gemeinde (commune_id, weight -> employees).
     df_employees_raw = _load_stage(wd, "braunschweig.data.census.employees")
