@@ -20,6 +20,29 @@ def _frames():
     return act, loc
 
 
+def _frames_multi_secondary():
+    """Fixture with leisure and other secondary purposes for a single person."""
+    act = pd.DataFrame({
+        "person_id": [2, 2, 2, 2, 2],
+        "activity_index": [0, 1, 2, 3, 4],
+        "purpose": ["home", "leisure", "other", "shop", "home"],
+        "is_first": [True, False, False, False, False],
+    })
+    loc = gpd.GeoDataFrame({
+        "person_id": [2, 2, 2, 2, 2],
+        "activity_index": [0, 1, 2, 3, 4],
+        "commune_id": ["03101000"] * 5,
+        "geometry": [
+            Point(0, 0),
+            Point(1000, 0),    # leisure: 1000 m from home
+            Point(1000, 500),  # other:   500 m from leisure
+            Point(2000, 500),  # shop:   1000 m from other
+            Point(0, 0),
+        ],
+    }, geometry="geometry", crs="EPSG:25832")
+    return act, loc
+
+
 def test_work_distance_is_home_to_work_with_detour():
     act, loc = _frames()
     out = D.realised_distances(act, loc, activity="work", detour_factor=1.3)
@@ -39,3 +62,22 @@ def test_rs7_lookup_fills_home_rs7():
     act, loc = _frames()
     out = D.realised_distances(act, loc, activity="work", rs7_lookup={"03101000": 72})
     assert int(out.iloc[0]["home_rs7"]) == 72
+
+
+def test_secondary_leisure_and_other_both_measured():
+    """Both 'leisure' and 'other' purposes must appear in the secondary output."""
+    act, loc = _frames_multi_secondary()
+    out = D.realised_distances(act, loc, activity="secondary", detour_factor=1.0)
+    purposes_found = set(out["purpose"].unique())
+    assert "leisure" in purposes_found, f"leisure missing from secondary output: {purposes_found}"
+    assert "other" in purposes_found, f"other missing from secondary output: {purposes_found}"
+    assert "shop" in purposes_found, f"shop missing from secondary output: {purposes_found}"
+    # Verify distances are measured from the preceding activity (leg semantics).
+    leisure_row = out[out.purpose == "leisure"].iloc[0]
+    assert abs(leisure_row["distance_km"] - 1.0) < 1e-9, (
+        f"leisure distance should be 1.0 km (leg from home), got {leisure_row['distance_km']}"
+    )
+    other_row = out[out.purpose == "other"].iloc[0]
+    assert abs(other_row["distance_km"] - 0.5) < 1e-9, (
+        f"other distance should be 0.5 km (leg from leisure), got {other_row['distance_km']}"
+    )
