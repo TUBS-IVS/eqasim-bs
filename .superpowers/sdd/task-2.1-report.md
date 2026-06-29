@@ -92,4 +92,4 @@ Test assertions remain fully satisfied: `len(targets) >= 1` holds (8 Kreis rows 
 after dropping "Gesamt"), and `any_key` resolves to a real Kreis name.
 
 ### Commit hash (review fixes)
-TBD — see commit below.
+`261172b`
