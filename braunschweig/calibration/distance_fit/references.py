@@ -77,7 +77,13 @@ def work_p38_2(mid_dir):
         d_50_100km, d_100_200km, d_200_300km, d_300km_plus, d_unplausibel_keine_angabe,
         mittel_km.
     Values are row-percentages; d_unplausibel_keine_angabe and mittel_km are excluded
-    before normalisation so shares reflect the 9 distance bands only.
+    before normalisation so shares reflect the 9 distance bands only. The
+    d_unplausibel_keine_angabe column is excluded and each Kreis row is renormalised
+    to sum to 1 over the 9 valid distance bands, i.e. implausible/missing distances
+    are redistributed proportionally across the valid bands (the same convention as the
+    P13 reference).
+    Aggregate rows (region lowercased in {"gesamt", "total", "insgesamt"}) are skipped;
+    the returned dict contains only actual Kreis/Stadt rows.
     Band edges: [0, 5, 10, 20, 30, 50, 100, 200, 300, inf) km.
     Returns (targets, _P38_2_BAND_EDGES_KM, 'out_of_sample').
     """
@@ -86,8 +92,12 @@ def work_p38_2(mid_dir):
     targets = {}
     n_primary = 0
     n_skip = 0
+    _AGGREGATE_LABELS = {"gesamt", "total", "insgesamt"}
     for _, row in df.iterrows():
         region = str(row["region"]).strip()
+        if region.lower() in _AGGREGATE_LABELS:
+            logger.debug("[distance-fit] P38.2: skipping aggregate row '%s'.", region)
+            continue
         band_values = np.array([float(row[c]) for c in _P38_2_BAND_COLS], dtype=float)
         total = band_values.sum()
         if total <= 0:
@@ -119,6 +129,7 @@ def education_t43(mid_dir):
         rs7 = int(row["regiostar7"])
         for col in _T43_AGE_COLS:
             targets[f"{rs7}|{col}"] = float(row[col])
+    logger.info("[distance-fit] T43: loaded %d (rs7 x age-band) mean-distance targets.", len(targets))
     return targets, None, "in_sample"
 
 
