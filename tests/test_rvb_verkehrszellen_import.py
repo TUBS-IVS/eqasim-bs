@@ -31,8 +31,8 @@ def _source_gdf():
 
 def test_rename_maps_and_derives_columns():
     out = rename_columns(_source_gdf())
-    assert set(["taz_id", "taz_name", "commune_id", "kreis", "regiostar7",
-                "geometry"]).issubset(out.columns)
+    assert {"taz_id", "taz_name", "commune_id", "kreis", "regiostar7",
+             "geometry"}.issubset(out.columns)
     assert "Verkehrszelle_Nummer" not in out.columns
     assert out["taz_id"].tolist() == ["310101901", "310101902"]
     # commune_id = "0" + 7-digit AGS; kreis = commune_id[:5]
@@ -102,3 +102,27 @@ def test_validate_raises_on_bad_ags():
 def test_validate_accepts_clean_input():
     out = rename_columns(_source_gdf())
     validate(out)  # must not raise
+
+
+def test_main_returns_2_when_source_missing(tmp_path):
+    from scripts.import_rvb_verkehrszellen import main
+    rc = main(["--source", str(tmp_path / "nope.gpkg"),
+               "--out-dir", str(tmp_path / "out")])
+    assert rc == 2
+
+
+def test_main_writes_parquet_and_readme(tmp_path):
+    import geopandas as gpd
+    from scripts.import_rvb_verkehrszellen import main
+    src = tmp_path / "src.gpkg"
+    _source_gdf().to_file(src, layer="Verkehrszellen", driver="GPKG")
+    out_dir = tmp_path / "out"
+    rc = main(["--source", str(src), "--out-dir", str(out_dir)])
+    assert rc == 0
+    parquet = out_dir / "rvb_verkehrszellen_epsg25832.parquet"
+    assert parquet.exists()
+    assert (out_dir / "README.md").exists()
+    loaded = gpd.read_parquet(parquet)
+    assert loaded["taz_id"].tolist() == ["310101901", "310101902"]
+    assert loaded["commune_id"].tolist() == ["03101000", "03101000"]
+    assert loaded.crs.to_epsg() == 25832

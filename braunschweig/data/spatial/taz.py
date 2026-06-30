@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 
 import geopandas as gpd
+import pandas as pd
 
 CRS_METRIC = "EPSG:25832"
 
@@ -41,13 +42,20 @@ def load_taz_zones(path: str) -> gpd.GeoDataFrame:
             "rvb_verkehrszellen parquet missing columns %s; re-run "
             "scripts/import_rvb_verkehrszellen.py" % missing
         )
+    bad_ags = gdf[gdf["commune_id"].astype(str).str.len() != 8]
+    if len(bad_ags):
+        raise ValueError(
+            "%d rows with a commune_id that is not 8 digits; re-run "
+            "scripts/import_rvb_verkehrszellen.py" % len(bad_ags)
+        )
     n_dup = int(gdf["taz_id"].duplicated().sum())
     if n_dup:
         raise ValueError(
             "%d duplicate taz_id values; re-run "
             "scripts/import_rvb_verkehrszellen.py" % n_dup
         )
-    bad_rs7 = gdf[~gdf["regiostar7"].astype(int).isin(VALID_RS7)]
+    rs7_numeric = pd.to_numeric(gdf["regiostar7"], errors="coerce")
+    bad_rs7 = gdf[rs7_numeric.isna() | ~rs7_numeric.isin(VALID_RS7)]
     if len(bad_rs7):
         raise ValueError(
             "%d rows with regiostar7 outside 71..77: %s; re-run "

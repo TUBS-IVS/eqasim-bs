@@ -27,6 +27,7 @@ def test_load_accepts_valid_input(tmp_path):
     assert len(loaded) == 2
     assert loaded.crs.to_epsg() == 25832
     assert set(REQUIRED_COLUMNS).issubset(loaded.columns)
+    assert "geometry" in loaded.columns
 
 
 def test_load_rejects_missing_column(tmp_path):
@@ -61,4 +62,22 @@ def test_load_rejects_empty_geometry(tmp_path):
     path = tmp_path / "empty.parquet"
     gdf.to_parquet(path)
     with pytest.raises(ValueError, match="empty/missing geometry"):
+        load_taz_zones(str(path))
+
+
+def test_load_rejects_non_numeric_rs7(tmp_path):
+    gdf = _valid_taz_gdf()
+    gdf["regiostar7"] = ["x", "74"]  # object column with a non-numeric value
+    path = tmp_path / "nonnum_rs7.parquet"
+    gdf.to_parquet(path)
+    with pytest.raises(ValueError, match="outside 71..77"):
+        load_taz_zones(str(path))
+
+
+def test_load_rejects_bad_commune_id(tmp_path):
+    gdf = _valid_taz_gdf()
+    gdf.loc[0, "commune_id"] = "0310100"  # 7 chars, not 8
+    path = tmp_path / "bad_ags.parquet"
+    gdf.to_parquet(path)
+    with pytest.raises(ValueError, match="not 8 digits"):
         load_taz_zones(str(path))
