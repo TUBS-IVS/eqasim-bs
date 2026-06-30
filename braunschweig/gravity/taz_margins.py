@@ -141,6 +141,15 @@ def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, ags_to_ars
         primary, fallback
 
 
+def taz_to_kreis_lookup(df_taz):
+    """Return a dict mapping taz_id (str) -> 5-digit Kreis ARS (str).
+
+    Used by ``_zone_to_kreis`` when the gravity model operates on TAZ-keyed
+    origin/destination identifiers instead of the legacy commune_id AGS-8.
+    """
+    return dict(zip(df_taz["taz_id"].astype(str), df_taz["kreis"].astype(str)))
+
+
 def build_origin_population_per_taz(df_homes, df_population, df_taz):
     """Re-bin the PER-PERSON census population (weight per person, keyed
     household_id) onto TAZ via the per-household home POINT (one-to-many on

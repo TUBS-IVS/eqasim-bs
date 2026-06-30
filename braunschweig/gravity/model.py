@@ -655,9 +655,17 @@ def configure(context):
         context.stage("eqasim_common.spatial.codes")
 
 
+def _zone_to_kreis(series: pd.Series, lookup: dict | None = None) -> pd.Series:
+    """Map a zone id to its 5-digit Kreis ARS. lookup is None -> legacy commune_id
+    str[:5] (byte-identical). lookup given -> map each taz_id, raise on unmapped."""
+    if lookup is None:
+        return series.astype(str).str[:5]
+    return series.astype(str).map(lambda z: lookup[z])
+
+
 def _gemeinde_to_kreis(series: pd.Series) -> pd.Series:
-    """Strip a commune_id (8-digit AGS) down to a 5-digit Kreis ARS."""
-    return series.astype(str).str[:5]
+    """Backwards-compatible shim (tests/braunschweig/test_stages.py imports this)."""
+    return _zone_to_kreis(series)
 
 
 def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
