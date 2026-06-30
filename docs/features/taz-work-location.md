@@ -51,12 +51,18 @@ This parquet is gitignored and must never be committed. The stage
 (`braunschweig.data.spatial.taz`) fails fast with a clear error if the file is
 absent.
 
-## commune_id normalisation (ARS-12)
+## commune_id format (8-digit AGS) and ARS-12 normalisation
 
-The VISUM shapefile carries commune identifiers (AGS) in varying digit lengths.
-`import_rvb_verkehrszellen.py` normalises all commune IDs to the 8-digit ARS
-format used throughout the pipeline (zero-padded on the left). This is verified
-in the validation step of `load_taz_zones`.
+The TAZ stage's `commune_id` is the **8-digit AGS** (Amtlicher Gemeindeschluessel,
+zero-padded); `import_rvb_verkehrszellen.py` / `load_taz_zones` validate this
+8-digit form. The pipeline's population (`braunschweig.popsim.stage`) and employees
+(`braunschweig.data.census.employees`) frames, however, key on the **12-digit ARS**
+(Amtlicher Regionalschluessel). The WORK destination margin therefore normalises the
+TAZ 8-digit AGS to the 12-digit ARS (via the `eqasim_common.spatial.codes` crosswalk,
+the same map `employees.py` uses) before joining the authoritative employee totals,
+and raises on any unmapped AGS so a 100% join miss can never silently zero the
+attraction. The 5-digit Kreis prefix is identical in AGS and ARS, so the TAZ->Kreis
+lookup is format-robust.
 
 ## Stage contract
 
