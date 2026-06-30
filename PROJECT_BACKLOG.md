@@ -32,9 +32,34 @@
    calibration (zero code) and one half of the gravity distance-distribution calibration.
 4. **The "produce results" front is the real bottleneck**, not features: no 100% production
    run exists on the newest code, and mode choice is still OFF (no calibrated modal split).
-5. The highest-*value* remaining model lever everyone keeps naming is the **German MiD Wege
-   trip donor** (replacing the French ENTD-2008 donor) — but it is blocked on MiD microdata
-   and is a large effort.
+5. **The German MiD Wege trip donor is DONE** (not blocked, as previously framed): the
+   `popsim_mid` workflow already uses the MiD Wege as the activity-chain donor — merged to
+   `main` via `feature/population-method-workflows` (merge `cd9d217`); see issue #24 (closed
+   2026-06-29). ENTD-2008 survives only as the `popsim_open` donor + the 1.3 detour constant.
+   The *narrower* lever that genuinely remains is **seed-donor diversity** (the ZENSUS100m
+   household composition is donor-bound — rare/large household types are thin in the MiD seed;
+   see §2.1 + the popsim nachsteuern findings).
+
+### New (2026-06-30) — TAZ sub-zonal work location choice + commute-fit diagnostics
+
+- **TAZ sub-zonal work location choice (eqasim IRIS-analog)** — issue **#79**, spec
+  `docs/superpowers/specs/2026-06-30-taz-subzonal-work-location-choice-design.md`.
+  Root cause established this session (systematic-debugging): the Gemeinde-resolution
+  gravity has no intra-city structure for the kreisfreie Staedte (BS/SZ/WOB = 1 Gemeinde);
+  the within-Gemeinde candidate pool (co-located homes+jobs) governs the realised distance
+  histogram -> intra-city commutes too short (per-Kreis EMD ~0.12 residual vs robust RS7/ZGB;
+  the WOB per-Kreis MiD P13 target is **n=39**, unreliable). Fix = fill eqasim's sub-commune
+  zone slot with RVB VISUM Verkehrszellen (TAZ), reuse the zone-agnostic eqasim functions,
+  BA stays Kreis-anchor. **Flag-gated default OFF; TAZ data local-only (proprietary VISUM,
+  not publishable).** Open-data pseudo-zone alternative = issue **#80** (TODO, deferred).
+- **Distance-fit diagnostics module** (this session, NOT yet landed): `braunschweig/calibration/distance_fit/`
+  (Phases 0-5.1 built + 26 local tests green + real-data-validated on the 25% cache via slim
+  parquet) on worktree branch `worktree-fix+gravity-calib-popsim-mid`, plus the
+  `calibrate_gravity_distribution.py` popsim_mid fix. Needs: server test run, the n-awareness
+  hardening (min-n flag + Kreis-type split, surfaced by the WOB n=39 finding), then `git pr`.
+  Spec `docs/superpowers/specs/2026-06-29-distance-fit-diagnostics-design.md`, plan
+  `docs/superpowers/plans/2026-06-29-distance-fit-diagnostics.md`. Issue #24 (MiD Wege donor)
+  closed this session (DONE via popsim_mid).
 
 ### New (2026-06-28)
 
@@ -43,11 +68,19 @@
   `data/` subtree. Git-tracked files were restored; the **gitignored local-only data**
   (buildings parquet, `nds_*.csv`, osm/gtfs/vg250/germany/...) must be re-synced from
   `felix@...:/home/felix/eqasim-bs/eqasim-data/data/` (authoritative copy intact). Caches survived.
-- **Secondary `other` over-concentration** (issue #27): combined scorer raw-sums volume-driven
-  `generic` potential (VW-Werk = 26.7M) vs. metre-scale distance; `other` placement concentrates
-  on industrial mega-structures. Measure-first: build the `excess_tv` concentration check on
-  `cache_bs_25pct_allfeat` before any weight/transform change. Levers: log1p-scale generic /
-  class-filter industrial / winsorize — NOT raising `pot_weight`.
+- **Secondary `other` over-concentration** (issue #27 — **PR #77 OPEN**, 2026-06-28): combined
+  scorer raw-sums volume-driven `generic` potential (VW-Werk = 26.7M) vs. metre-scale distance;
+  `other` placement concentrated on industrial mega-structures.
+  - **DONE in PR #77 (Part A, active, OFF byte-identical):** function-aware `potential_other` via a
+    committed Bosserhof class→purpose mapping CSV — `min(generic,cap)×(0.54+0.46·whitelist)`, zeroed
+    below `min_volume_m3`; broad/errand shares from MiD W_ZWECK (5/6/10). Enabled in the 5 real configs.
+  - **DONE in PR #77 (Part B, infra only):** chainsolvers bumped to `d8d8ae7d` (native
+    `attr_transform=log1p` + `mnl` + circle-intersection fix); `build_scorer` passes attr_transform;
+    `scripts/calibrate_secondary_scorer.py` + `build_secondary_loss` (per-purpose W12 + concentration).
+  - **OPEN (server, measure-first):** run `calibrate_secondary_scorer.py` on `cache_bs_25pct_allfeat`;
+    pin `attr_transform`/weights ONLY on a measured win vs the OFF baseline (shop 0.053/leisure
+    0.064/other 0.018) without regressing any purpose. Then the `excess_tv` concentration check +
+    gated `dp_sample`/`carla_sample`/`mnl` A/B. Do NOT raise `pot_weight`.
 
 ---
 
@@ -226,7 +259,7 @@ remains available via an unattended run if required.
 
 | # | Item | Status | Assessment | Effort |
 |---|------|--------|-----------|--------|
-| 2.1 | **German MiD Wege trip donor** (replace French ENTD-2008 trip donor + re-estimate mode choice). | DEFERRED; named repeatedly as *the* biggest realism lever. Aggregate trip-purpose fit is **donor-pool-bound** — step-1 matching can't fix it, only a German donor can. | **Highest value, highest cost.** Blocked on MiD microdata (SUF), not just margins. Worth scoping the data-access path now even if build is later. | L |
+| 2.1 | **Seed-donor diversity** (richer MiD seed for the ZENSUS100m household composition). *Was: "German MiD Wege trip donor" — that part is **DONE**, see below.* | The MiD Wege **trip donor** is implemented: `popsim_mid` uses MiD Wege as the activity-chain donor (merged `cd9d217`; issue #24 closed 2026-06-29). The **remaining** gap is seed *composition*: the popsim audit (2026-06-27) found the 100m household composition under-fit by ~6 % (rare/large types up to 28 %), and importance tuning thrashes the integerizer rather than synthesising types the MiD seed barely contains → **donor-bound**. | **Narrower than "replace ENTD".** A richer / larger MiD seed (more large/rare households) is the real lever; blocked on a bigger MiD microdata sample (SUF). Worth scoping the data-access path. Tracked as a new issue. | L |
 | ~~2.2~~ | ~~LoD2 height → volume-weighted dwelling capacity & typing~~ | ✅ **DONE (verified 2026-06-27).** `data/lod2_heights.py` (OI→height), non-destructive `join_lod2_heights` by `OI` in `data/buildings.py` with coverage logging, and `building_typing.py` uses `building_volume(area, height)` end-to-end (volume-rank MFH typing, `MFH_MIN_FLOORS=4` tuned on a Salzgitter real-pop sweep, volume-weighted `build_slots`). ALKIS `OI` passthrough tested (`test_preprocess_alkis_oi.py`). | The earlier "PARTIAL" verdict was from a stale tree. | — |
 | ~~2.3~~ | ~~Real building worker dataset vs area*floors proxy~~ | ✅ **DONE (verified 2026-06-27).** `locations/work.py` with `work_building_potentials=True` (default) **REPLACES** the candidate set with the real computed `potential_work` from the building-activity-potentials parquet — `area*floors` is only the OFF/legacy path. Per-commune `potential_work` sum is printed as a Census-SvB cross-check. The "area*floors proxy pending" memory note is obsolete. | — | — |
 | 2.4 | **Education distance-distribution calibration (×3 levels)** — the second half of the gravity distance-distribution plan (Phase 2, reuses the Tier-3 shared layer). | PLANNED-ONLY. The *commute* half was built (per-band friction on the worktree branch) and then **found unnecessary** (commute already matches MiD P13). | Reuse the now-built machinery. Only do it if education trip-length validation actually shows a gap — **measure first** (see Lessons). | M |

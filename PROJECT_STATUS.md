@@ -5,7 +5,8 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-06-28 · `origin/main` = `381b6a4` (PR #20 merged) · open PR **#21** (PM-layer professionalization).
+> **Last updated:** 2026-06-30 · `origin/main` = `381b6a4` (PR #20 merged) · open PRs **#21** (PM-layer professionalization), **#77** (smart `other` potential + chainsolvers scorer scale-alignment, Closes #27 — Part A active, scorer calibration server-deferred).
+> Open issues: **#79** (TAZ sub-zonal work location choice — designed, NOT built, starts fresh next session), **#80** (open-data pseudo-zone alternative, TODO). Issue **#24** (MiD Wege donor) closed 2026-06-30 (DONE via popsim_mid). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on worktree branch `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed; see backlog). See ADR-0049.
 > Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
 > Keep this current with `/close` at the end of each work session.
 
