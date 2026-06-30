@@ -39,7 +39,8 @@ def test_dest_margin_splits_and_preserves_commune_total():
 
 
 def test_dest_margin_zero_potential_splits_uniformly():
-    b = gpd.GeoDataFrame({"building_id": [0, 1], "potential_work": [0.0, 0.0]},
+    b = gpd.GeoDataFrame({"building_id": [0, 1], "potential_work": [0.0, 0.0],
+                          "commune_id": ["03101000", "03101000"]},
                          geometry=[Point(5, 5), Point(15, 5)], crs="EPSG:25832")
     emp = pd.DataFrame({"commune_id": ["031010000000"], "weight": [100.0]})
     df, _, _ = build_dest_attraction_per_taz(b, emp, _taz(), _AGS_TO_ARS)

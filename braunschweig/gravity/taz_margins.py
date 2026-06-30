@@ -91,7 +91,7 @@ def normalize_commune_to_ars(commune_id_series, ags_to_ars):
     if out.isna().any():
         missing = sorted(commune_id_series[out.isna()].astype(str).unique())[:5]
         raise ValueError("%d commune_id (AGS) have no ARS mapping, e.g. %s"
-                         % (int(out.isna().sum()), missing))
+                         % (int(out.isna().sum()), ", ".join(missing)))
     return out
 
 
@@ -102,21 +102,20 @@ def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, ags_to_ars
     employees but no TAZ raise (M4). Returns (DataFrame[taz_id, commune_id(ARS),
     attraction], primary, fallback)."""
     bld = df_buildings[["building_id", "potential_work"]].copy()
-    # When buildings carry commune_id, derive kreis to constrain the nearest-TAZ fallback
-    # to the point's own Kreis so no employment mass crosses a Kreis boundary (DECISION 2).
-    has_commune = "commune_id" in df_buildings.columns
-    if has_commune:
-        bld["kreis"] = df_buildings["commune_id"].astype(str).str[:5]
+    # Derive kreis from commune_id (AGS-8, first 5 digits) to constrain the nearest-TAZ
+    # fallback to the point's own Kreis so no employment mass crosses a Kreis boundary
+    # (DECISION 2). commune_id is mandatory in df_buildings (building_potentials contract).
+    bld["kreis"] = df_buildings["commune_id"].astype(str).str[:5]
     bld_geom = df_buildings.geometry
     assigned, primary, fallback = assign_taz(
         gpd.GeoDataFrame(bld, geometry=bld_geom.values, crs=df_buildings.crs),
-        df_taz, id_column="building_id",
-        kreis_column="kreis" if has_commune else None,
+        df_taz, id_column="building_id", kreis_column="kreis",
         # Pass a GeoSeries (not GeometryArray) so assign_taz can call .values on it.
         point_geometry=bld_geom.representative_point(),
     )
     # M3: merge potential_work back by building_id, never positional .values.
     pot = assigned.merge(bld[["building_id", "potential_work"]], on="building_id", how="left")
+    # commune_id here is still AGS-8 (from df_taz via assign_taz); ARS-12 mapping happens below.
     pot_by_taz = (pot.groupby(["taz_id", "commune_id"])["potential_work"].sum()
                      .rename("pot").reset_index())
 
