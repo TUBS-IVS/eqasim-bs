@@ -30,7 +30,11 @@ SOURCE_LAYER = "Verkehrszellen"
 
 # The official municipality key column in the source (7-digit AGS, e.g.
 # ``3101000``). commune_id = "0" + this value (8-digit, e.g. ``03101000``).
-AGS_COLUMN = "Amtlicher_Gemeindeschluessel"
+# The real RVB gpkg spells this WITH a u-umlaut. The literal below therefore
+# contains a non-ASCII u-umlaut to match the exact UTF-8 column name pyogrio
+# returns (a rare, justified exception to the ASCII-source preference; the .py
+# is UTF-8). Confirmed against the real gpkg by the Task-5 import run.
+AGS_COLUMN = "Amtlicher_Gemeindeschlüssel"
 
 # Source column -> standardised snake_case column.
 COLUMN_RENAME = {

@@ -22,7 +22,7 @@ def _source_gdf():
         {
             "Verkehrszelle_Nummer": ["310101901", "310101902"],
             "Verkehrszelle_Name": ["BS Stadtkern 6", "BS Stadtkern 7"],
-            "Amtlicher_Gemeindeschluessel": ["3101000", "3101000"],
+            "Amtlicher_Gemeindeschlüssel": ["3101000", "3101000"],
             "RegioStaR7_Regionstyp": [72, 74],
         },
         geometry=[poly_a, poly_b], crs="EPSG:32632",
@@ -61,7 +61,7 @@ def test_rename_raises_on_missing_crs():
         {
             "Verkehrszelle_Nummer": ["310101901"],
             "Verkehrszelle_Name": ["BS Stadtkern 6"],
-            "Amtlicher_Gemeindeschluessel": ["3101000"],
+            "Amtlicher_Gemeindeschlüssel": ["3101000"],
             "RegioStaR7_Regionstyp": [72],
         },
         geometry=[poly],
