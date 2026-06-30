@@ -705,7 +705,8 @@ def _execute_gravity_base(context):
 
     if not taz_on:
         # OFF path: byte-identical to the pre-extraction behaviour.
-        return education_od, education_od
+        # Third element is None so execute() can unpack uniformly.
+        return education_od, education_od, None
 
     # TAZ pass for work-location gravity (ON path).
     # NOTE: household_id presence on data.census.filtered is a server-e2e
@@ -757,7 +758,9 @@ def _execute_gravity_base(context):
         max_iterations=max_iterations,
     )
 
-    return work_od, education_od
+    # Return pop_taz as the third element so execute() can reuse it without
+    # calling build_origin_population_per_taz a second time (sjoin is expensive).
+    return work_od, education_od, pop_taz
 
 
 # --- Braunschweig-specific -------------------------------------------------
@@ -1125,7 +1128,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 
 def execute(context):
-    df_work_od, df_education_od = _execute_gravity_base(context)
+    # _execute_gravity_base returns a 3-tuple: (work_od, education_od, pop_taz).
+    # pop_taz is the TAZ origin-margin DataFrame (non-None only on the ON path);
+    # it is threaded out here so execute() does not call build_origin_population_per_taz
+    # a second time (the sjoin is expensive).
+    df_work_od, df_education_od, pop_taz_from_base = _execute_gravity_base(context)
     # data.census.filtered resolves to the configured population producer
     # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
     # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
@@ -1141,29 +1148,22 @@ def execute(context):
 
     df_pendler = _synthesise_intra_kreis(df_pendler, df_employment, scope)
 
-    taz_on = context.config("taz_work_location_choice", False)
+    # ExecuteContext.config() takes the key alone; the default is declared in configure().
+    # Passing a default here raises "config() takes 2 positional arguments but 3 were given".
+    taz_on = context.config("taz_work_location_choice")
 
     if taz_on:
-        # ON path: resolve the TAZ population margin and taz->kreis lookup so
-        # _calibrate and _append_outbound_flows aggregate correctly.
-        # The TAZ margin was already built inside _execute_gravity_base (pop_taz);
-        # re-read the same stages here to avoid passing it through the base function's
-        # return tuple (which would change the execute() output schema).
-        from braunschweig.gravity.taz_margins import (  # noqa: PLC0415
-            build_origin_population_per_taz,
-            taz_to_kreis_lookup,
-        )
+        # ON path: reuse the TAZ population margin already computed by
+        # _execute_gravity_base (pop_taz_from_base) -- no second sjoin needed.
+        from braunschweig.gravity.taz_margins import taz_to_kreis_lookup  # noqa: PLC0415
         df_taz = context.stage("braunschweig.data.spatial.taz")
-        df_homes = context.stage("synthesis.population.spatial.home.locations")
-        df_population_raw = context.stage("data.census.filtered")
-        pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
         zone_to_kreis = taz_to_kreis_lookup(df_taz)
         population_key = "taz_id"
         population_value = "population"
         # pop_taz schema: taz_id, commune_id, population -- the _calibrate and
         # _append_outbound_flows functions group by population_key so they receive
         # the correct per-TAZ margin.
-        df_population_for_od = pop_taz
+        df_population_for_od = pop_taz_from_base
     else:
         # OFF path: defaults -> byte-identical behaviour.
         zone_to_kreis = None
