@@ -60,3 +60,35 @@ def load_taz_zones(path: str) -> gpd.GeoDataFrame:
             "scripts/import_rvb_verkehrszellen.py"
         )
     return gdf
+
+
+def configure(context):
+    context.config("data_path")
+    context.config(
+        "taz_zones_path",
+        "braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet",
+    )
+
+
+def execute(context) -> gpd.GeoDataFrame:
+    path = os.path.join(context.config("data_path"),
+                        context.config("taz_zones_path"))
+    gdf = load_taz_zones(path)
+    per_kreis = gdf["kreis"].value_counts().sort_index()
+    print(
+        "[braunschweig.data.spatial.taz] %d TAZ across %d Kreise (%s)"
+        % (len(gdf), len(per_kreis),
+           ", ".join("%s=%d" % (k, int(c)) for k, c in per_kreis.items()))
+    )
+    return gdf[["taz_id", "commune_id", "kreis", "regiostar7", "geometry"]]
+
+
+def validate(context):
+    path = os.path.join(context.config("data_path"),
+                        context.config("taz_zones_path"))
+    if not os.path.exists(path):
+        raise RuntimeError(
+            "rvb_verkehrszellen_epsg25832.parquet missing: run "
+            "scripts/import_rvb_verkehrszellen.py (local-only proprietary data)"
+        )
+    return os.path.getsize(path)
