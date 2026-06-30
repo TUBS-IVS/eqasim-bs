@@ -164,6 +164,8 @@ def _attach_taz_id(df_combined: gpd.GeoDataFrame, df_taz: gpd.GeoDataFrame) -> g
     joined = gpd.sjoin(pts, taz_geom, how="left", predicate="within").drop(
         columns=["index_right"], errors="ignore"
     )
+    # TAZ polygons are assumed non-overlapping, so each point falls within at most
+    # one polygon; drop_duplicates(keep="first") is therefore deterministic.
     joined = joined.drop_duplicates("location_id", keep="first")
 
     n_primary = int(joined["taz_id"].notna().sum())

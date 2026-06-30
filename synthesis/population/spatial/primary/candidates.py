@@ -228,6 +228,19 @@ def execute(context):
             on="household_id", how="left",
         )
 
+        # Guard: a household_id absent from home_taz_result (home-point coverage
+        # gap) would leave home_taz_id NaN, causing that person to silently drop
+        # from the WORK demand groupby.  Raise early with a clear count so the
+        # gap is never invisible (CLAUDE.md: no silent fallbacks).
+        n_nan_taz = int(df_persons["home_taz_id"].isna().sum())
+        if n_nan_taz > 0:
+            raise ValueError(
+                "%d persons have no home_taz_id after the household home-point -> TAZ merge "
+                "(home-point coverage gap: %d households not present in home_taz_result). "
+                "Check that synthesis.population.spatial.home.locations covers all households."
+                % (n_nan_taz, int(df_persons.loc[df_persons["home_taz_id"].isna(), "household_id"].nunique()))
+            )
+
     # Prepare spatial data
     df_work_od, df_education_od = context.stage("data.od.weighted")
 
