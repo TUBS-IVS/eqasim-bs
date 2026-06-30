@@ -24,11 +24,12 @@
 working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
 
 run:
-  # SYNTHESIS-ONLY at 100%: popsim.stage is sampling-independent (always the full
-  # ~1.1M population), so this validates the optimized importance weights region-wide.
-  # MATSim (matsim.output) is intentionally omitted -- a 100% 200-iteration MATSim run
-  # is a separate, days-long step; the importance weights only affect synthesis.
-  - synthesis.output
+  # EVERYTHING UP TO (not including) the MATSim simulation at 100%. matsim.simulation.prepare
+  # builds the complete scenario -- full ~1.1M population (optimized importance weights),
+  # the household FLEET / vehicles (fleet model: brands, HSN/TSN, BEV), network, facilities,
+  # cordon cut and freight injection -- but stops before the qsim iterations (the days-long
+  # 200-iteration run is a separate step). This gives the fleet model + a ready-to-run scenario.
+  - matsim.simulation.prepare
   - braunschweig.analysis.simwrapper_export
 
 config:
