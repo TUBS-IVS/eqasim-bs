@@ -101,3 +101,66 @@ def validate(gdf: gpd.GeoDataFrame) -> None:
         )
     if gdf.geometry.is_empty.any() or gdf.geometry.isna().any():
         raise ValueError("empty/missing geometry in source")
+
+
+def write_readme(path: str, source: str, n_rows: int) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(
+            "# RVB VISUM traffic-analysis zones (Verkehrszellen / TAZ)\n\n"
+            "One row per traffic-analysis zone of the RVB (Regionalverband "
+            "Grossraum Braunschweig) VISUM transport model.\n\n"
+            "## Provenance\n\n"
+            "- Producer: RVB VISUM transport model (proprietary).\n"
+            "- LOCAL-ONLY -- must NOT be published or committed.\n"
+            "- Source file (local-only): `%s`, layer `%s`.\n"
+            "- Rows: %d. Source CRS: EPSG:32632 -> reprojected to EPSG:25832.\n\n"
+            "## Regenerate\n\n"
+            "```powershell\n"
+            "python scripts/import_rvb_verkehrszellen.py --source <gpkg>\n"
+            "```\n\n"
+            "## Columns\n\n"
+            "`taz_id` (str key, Verkehrszelle_Nummer); `taz_name` (human label); "
+            "`commune_id` (8-digit AGS = \"0\" + Amtlicher_Gemeindeschluessel); "
+            "`kreis` (commune_id[:5]); `regiostar7` (int 71..77); `geometry` "
+            "(MultiPolygon, EPSG:25832).\n"
+            % (source, SOURCE_LAYER, n_rows)
+        )
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", default=DEFAULT_SOURCE)
+    parser.add_argument(
+        "--out-dir",
+        default=os.path.join("eqasim-data", "data", "braunschweig", "taz"),
+    )
+    args = parser.parse_args(argv)
+
+    if not os.path.exists(args.source):
+        print("ERROR: source gpkg not found: %s" % args.source, file=sys.stderr)
+        return 2
+
+    gdf = gpd.read_file(args.source, layer=SOURCE_LAYER)
+    out = rename_columns(gdf)
+    validate(out)
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    parquet_path = os.path.join(args.out_dir, "rvb_verkehrszellen_epsg25832.parquet")
+    out.to_parquet(parquet_path)
+    write_readme(os.path.join(args.out_dir, "README.md"), args.source, len(out))
+    print(
+        "[import_rvb_verkehrszellen] wrote %d Verkehrszellen -> %s"
+        % (len(out), parquet_path)
+    )
+    print(
+        "  kreise: %s"
+        % ", ".join(
+            "%s=%d" % (k, int(c))
+            for k, c in out["kreis"].value_counts().sort_index().items()
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
