@@ -4,9 +4,10 @@ Loads the parquet produced by ``scripts/import_rvb_verkehrszellen.py`` and
 returns one row per TAZ shaped like the IRIS zone stage
 (``eqasim_common.data.spatial.iris``): ``[taz_id, commune_id, kreis,
 regiostar7, geometry]`` in EPSG:25832. This is the eqasim IRIS-analog sub-commune
-zone source; when the work-location TAZ feature is ON, the gravity distance
-matrix + OD are built from these zones instead of the Gemeinde-resolution IRIS
-placeholder (later phase).
+zone source; when the ``taz_work_location_choice`` flag is ON, the gravity
+distance matrix + OD are built from these zones instead of the
+Gemeinde-resolution IRIS placeholder (implemented behind the flag in
+``braunschweig.locations.work`` and ``braunschweig.gravity.model``).
 
 The underlying VISUM data is LOCAL-ONLY / proprietary: the parquet lives in the
 gitignored ``eqasim-data`` tree and is never committed. This stage fails fast if
@@ -82,6 +83,11 @@ def execute(context) -> gpd.GeoDataFrame:
     path = os.path.join(context.config("data_path"),
                         context.config("taz_zones_path"))
     gdf = load_taz_zones(path)
+    # Cast to str so downstream consumers always see a consistent str dtype
+    # regardless of how the parquet was written (integer taz_id is common when
+    # the zone IDs happen to be numeric).
+    gdf["taz_id"] = gdf["taz_id"].astype(str)
+    gdf["kreis"] = gdf["kreis"].astype(str)
     per_kreis = gdf["kreis"].value_counts().sort_index()
     print(
         "[braunschweig.data.spatial.taz] %d TAZ across %d Kreise (%s)"

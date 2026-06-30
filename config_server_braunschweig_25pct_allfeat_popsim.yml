@@ -244,6 +244,12 @@ config:
   braunschweig.home_density_weighting: true
   braunschweig.buildings_path: braunschweig/buildings
 
+  # WORK gravity at TAZ (sub-commune) resolution: fixes intra-city commute
+  # distances in kreisfreie Staedte (e.g. Braunschweig). Requires local-only
+  # RVB VISUM Verkehrszellen data (gitignored). Default OFF; set to true only
+  # in configs where that proprietary parquet is present.
+  taz_work_location_choice: false
+
   # --- Education gravity (real NDS schools / Kita / Hochschule) ---
   education_gravity_enabled: true
   education_gravity_slope_by_level_rs7:

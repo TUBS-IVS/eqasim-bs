@@ -151,6 +151,12 @@ config:
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
   # --- Feature flags --------------------------------------------------------
+  # WORK gravity at TAZ (sub-commune) resolution: fixes intra-city commute
+  # distances in kreisfreie Staedte (e.g. Braunschweig). Requires local-only
+  # RVB VISUM Verkehrszellen data (gitignored). Default OFF; set to true only
+  # in configs where that proprietary parquet is present.
+  taz_work_location_choice: false
+
   # Education gravity over the real NDS school/Kita/Hochschule registers
   # (ON per the default-ON rule; calibrated slopes below are copied from
   # config_local_braunschweig_25pct_allfeat.yml).
