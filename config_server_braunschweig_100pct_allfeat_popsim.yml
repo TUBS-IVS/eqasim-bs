@@ -29,6 +29,10 @@ run:
   # the household FLEET / vehicles (fleet model: brands, HSN/TSN, BEV), network, facilities,
   # cordon cut and freight injection -- but stops before the qsim iterations (the days-long
   # 200-iteration run is a separate step). This gives the fleet model + a ready-to-run scenario.
+  # synthesis.output listed FIRST so synpp resolves data.hts.entd.cleaned before
+  # synthesis.population.matched (which references it at import) -- mirrors the working
+  # 25% run order; targeting the matsim stage alone first triggers an import-order error.
+  - synthesis.output
   - matsim.simulation.prepare
   - braunschweig.analysis.simwrapper_export
 
