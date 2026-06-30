@@ -92,6 +92,13 @@ def test_validate_raises_on_empty_geometry():
         validate(out)
 
 
+def test_validate_raises_on_bad_ags():
+    out = rename_columns(_source_gdf())
+    out.loc[0, "commune_id"] = "0310100"  # 7 chars instead of 8
+    with pytest.raises(ValueError, match="commune_id that is not 8 digits"):
+        validate(out)
+
+
 def test_validate_accepts_clean_input():
     out = rename_columns(_source_gdf())
     validate(out)  # must not raise
