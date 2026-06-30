@@ -83,6 +83,65 @@ def assign_taz(points_gdf, df_taz, id_column, kreis_column=None, point_geometry=
     return joined[[id_column, "taz_id", "commune_id"]], primary, fallback
 
 
+def normalize_commune_to_ars(commune_id_series, ags_to_ars):
+    """Map an 8-digit AGS commune_id to the 12-digit ARS used by the population /
+    employees frames (the same crosswalk braunschweig.data.census.employees uses).
+    Raise on any unmapped AGS (no silent miss -> no all-zero attraction, B2)."""
+    out = commune_id_series.astype(str).map(ags_to_ars)
+    if out.isna().any():
+        missing = sorted(commune_id_series[out.isna()].astype(str).unique())[:5]
+        raise ValueError("%d commune_id (AGS) have no ARS mapping, e.g. %s"
+                         % (int(out.isna().sum()), missing))
+    return out
+
+
+def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, ags_to_ars):
+    """Split each commune's authoritative employee total across its TAZ by building
+    potential_work share (DECISION 1, commune-total-preserving). commune_id is
+    normalised AGS-8 -> ARS-12 before the employees join (B2). Communes with
+    employees but no TAZ raise (M4). Returns (DataFrame[taz_id, commune_id(ARS),
+    attraction], primary, fallback)."""
+    bld = df_buildings[["building_id", "potential_work"]].copy()
+    # When buildings carry commune_id, derive kreis to constrain the nearest-TAZ fallback
+    # to the point's own Kreis so no employment mass crosses a Kreis boundary (DECISION 2).
+    has_commune = "commune_id" in df_buildings.columns
+    if has_commune:
+        bld["kreis"] = df_buildings["commune_id"].astype(str).str[:5]
+    bld_geom = df_buildings.geometry
+    assigned, primary, fallback = assign_taz(
+        gpd.GeoDataFrame(bld, geometry=bld_geom.values, crs=df_buildings.crs),
+        df_taz, id_column="building_id",
+        kreis_column="kreis" if has_commune else None,
+        # Pass a GeoSeries (not GeometryArray) so assign_taz can call .values on it.
+        point_geometry=bld_geom.representative_point(),
+    )
+    # M3: merge potential_work back by building_id, never positional .values.
+    pot = assigned.merge(bld[["building_id", "potential_work"]], on="building_id", how="left")
+    pot_by_taz = (pot.groupby(["taz_id", "commune_id"])["potential_work"].sum()
+                     .rename("pot").reset_index())
+
+    # All TAZ of every commune (so a commune with no buildings still gets rows).
+    taz_index = df_taz[["taz_id", "commune_id"]].drop_duplicates()
+    grid = taz_index.merge(pot_by_taz, on=["taz_id", "commune_id"], how="left").fillna({"pot": 0.0})
+    grid["commune_ars"] = normalize_commune_to_ars(grid["commune_id"], ags_to_ars)   # B2
+
+    emp = df_employees.groupby("commune_id")["weight"].sum().rename("emp")            # ARS-12 keyed
+    # M4: every employer commune must have TAZ rows, else its mass is silently lost.
+    missing = set(emp.index.astype(str)) - set(grid["commune_ars"].astype(str))
+    if missing:
+        raise ValueError("%d communes have employees but no TAZ: %s"
+                         % (len(missing), sorted(missing)[:5]))
+    grid = grid.merge(emp, left_on="commune_ars", right_index=True, how="left").fillna({"emp": 0.0})
+
+    grid["pot_sum"] = grid.groupby("commune_ars")["pot"].transform("sum")
+    grid["n_taz"] = grid.groupby("commune_ars")["taz_id"].transform("count")
+    share = (grid["pot"] / grid["pot_sum"].where(grid["pot_sum"] > 0)).fillna(1.0 / grid["n_taz"])
+    grid["attraction"] = share * grid["emp"]
+    grid["taz_id"] = grid["taz_id"].astype(str)
+    return grid[["taz_id", "commune_ars", "attraction"]].rename(columns={"commune_ars": "commune_id"}), \
+        primary, fallback
+
+
 def build_origin_population_per_taz(df_homes, df_population, df_taz):
     """Re-bin the PER-PERSON census population (weight per person, keyed
     household_id) onto TAZ via the per-household home POINT (one-to-many on
