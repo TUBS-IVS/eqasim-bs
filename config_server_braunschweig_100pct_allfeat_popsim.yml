@@ -3,7 +3,7 @@
 ## sampling_rate 0.25: popsim_mid (MiD donor, weight-sampled) + new fleet module +
 ## cross-cordon einpendler + long-haul freight + education gravity + income
 ## tilt/Kreis control. This is the FIRST 25% run: 10 MATSim iterations only, to verify
-## the full pipeline runs end-to-end (matsim_last_iteration: 9). It is ALSO the cache
+## the full pipeline runs end-to-end (matsim_last_iteration: 0). It is ALSO the cache
 ## SEEDING run -- on success it auto-exports the sampling-independent shareable stages
 ## (freight extraction, popsim.stage, completed_donor, ...) into cache_share_store, so
 ## the later 100% / 200-iteration production run primes them and skips the heavy work.
@@ -29,11 +29,14 @@ run:
   # the household FLEET / vehicles (fleet model: brands, HSN/TSN, BEV), network, facilities,
   # cordon cut and freight injection -- but stops before the qsim iterations (the days-long
   # 200-iteration run is a separate step). This gives the fleet model + a ready-to-run scenario.
-  # synthesis.output listed FIRST so synpp resolves data.hts.entd.cleaned before
-  # synthesis.population.matched (which references it at import) -- mirrors the working
-  # 25% run order; targeting the matsim stage alone first triggers an import-order error.
+  # matsim.output is the PROVEN-working target (the 25% run used it) -- its stage-import
+  # order avoids an eqasim circular-import landmine that the prepare-only target trips.
+  # With matsim_last_iteration: 0 it builds the COMPLETE scenario incl. the household
+  # FLEET / vehicles (brands, HSN/TSN, BEV), network, facilities, cordon cut and freight
+  # injection, then runs only iteration 0 (one mobsim) -- NOT the days-long 200-iteration
+  # run. This gives the fleet model + a baseline scenario without the full simulation.
   - synthesis.output
-  - matsim.simulation.prepare
+  - matsim.output
   - braunschweig.analysis.simwrapper_export
 
 config:
@@ -68,7 +71,7 @@ config:
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_100pct_allfeat_popsim
   output_prefix: braunschweig_100pct_allfeat_popsim_
-  simwrapper_include_matsim: false
+  simwrapper_include_matsim: true
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
@@ -161,7 +164,7 @@ config:
   # --- MATSim runtime (64-core box) ---
   # FIRST 25% run: 10 iterations (0..9) only, to verify the full pipeline runs
   # end-to-end. Bump to 199 (and write_plans 50) for the 200-iteration production run.
-  matsim_last_iteration: 9
+  matsim_last_iteration: 0
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5
   matsim_threads: 56
