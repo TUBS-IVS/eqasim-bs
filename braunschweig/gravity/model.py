@@ -888,17 +888,40 @@ def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
 
 def _calibrate(df_od: pd.DataFrame,
                df_population: pd.DataFrame,
-               df_pendler: pd.DataFrame) -> pd.DataFrame:
-    """IPF-scale Gemeinde-level OD so Kreis aggregates match BA Pendler."""
+               df_pendler: pd.DataFrame,
+               zone_to_kreis: dict | None = None,
+               population_key: str = "commune_id",
+               population_value: str = "weight") -> pd.DataFrame:
+    """IPF-scale zone-level OD so Kreis aggregates match BA Pendler.
+
+    OFF path (zone_to_kreis=None): uses legacy commune_id[:5] -> byte-identical.
+    ON path (zone_to_kreis=dict): maps each taz_id via the lookup, raises if no
+    in-scope flows are found after mapping (silent BA-skip guard).
+
+    Parameters
+    ----------
+    df_od:
+        Origin-destination frame with columns ``origin_id``, ``destination_id``, ``weight``.
+    df_population:
+        Population frame; grouped by ``population_key``, summed on ``population_value``.
+    df_pendler:
+        BA Pendleratlas Kreis-pair flows (columns ``orig_ars``, ``dest_ars``, ``flow``).
+    zone_to_kreis:
+        None -> legacy str[:5] mapping (OFF path). dict -> explicit taz_id->Kreis map (ON path).
+    population_key:
+        Column to group ``df_population`` by. OFF: ``"commune_id"``; ON: ``"taz_id"``.
+    population_value:
+        Column to sum from ``df_population``. OFF: ``"weight"``; ON: ``"population"``.
+    """
     df = df_od.copy()
-    df["orig_kreis"] = _gemeinde_to_kreis(df["origin_id"])
-    df["dest_kreis"] = _gemeinde_to_kreis(df["destination_id"])
+    df["orig_kreis"] = _zone_to_kreis(df["origin_id"], zone_to_kreis)
+    df["dest_kreis"] = _zone_to_kreis(df["destination_id"], zone_to_kreis)
 
     pop = (
-        df_population.groupby("commune_id")["weight"].sum()
+        df_population.groupby(population_key)[population_value].sum()
                      .rename("pop")
                      .reset_index()
-                     .rename(columns={"commune_id": "origin_id"})
+                     .rename(columns={population_key: "origin_id"})
     )
     df = pd.merge(df, pop, on="origin_id", how="left")
     df["pop"] = df["pop"].fillna(0.0)
@@ -928,6 +951,11 @@ def _calibrate(df_od: pd.DataFrame,
     df_rest = df_rest[df_rest["_merge"] == "left_only"].drop(columns=["_merge"])
 
     if len(df_scope) == 0:
+        if zone_to_kreis is not None:
+            raise RuntimeError(
+                "[gravity TAZ] no in-scope flow after taz->kreis mapping; "
+                "BA calibration would be silently skipped"
+            )
         print("[braunschweig.gravity.model] no scope overlap; returning raw gravity")
         return df_od
 
@@ -962,8 +990,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
                            df_population: pd.DataFrame,
                            df_pendler: pd.DataFrame,
                            df_external: pd.DataFrame,
-                           scope: list[str]) -> pd.DataFrame:
-    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``.
+                           scope: list[str],
+                           zone_to_kreis: dict | None = None,
+                           population_key: str = "commune_id",
+                           population_value: str = "weight") -> pd.DataFrame:
+    """Add rows ``(origin_zone, synthetic_external_commune, weight)``.
 
     Each outbound BA Kreis flow is split across the per-Gemeinde EXT points
     in ``df_external`` proportional to their ``employees`` share, so the
@@ -972,8 +1003,14 @@ def _append_outbound_flows(df_od: pd.DataFrame,
     against the work-pool ``commune_id`` in the downstream candidate sampler
     (``synthesis/population/spatial/primary/candidates.py``).
 
-    Mass is conserved: for every (origin, Kreis) pair the sum of per-Gemeinde
+    Mass is conserved: for every (origin, Kreis) pair the sum of per-zone
     flows equals the original Kreis-level outbound flow.
+
+    OFF path (zone_to_kreis=None): groups ``df_population`` by ``commune_id``,
+    derives Kreis via ``str[:5]`` -- byte-identical to the prior behaviour.
+    ON path (zone_to_kreis=dict): groups by ``taz_id`` (population_key), maps
+    each taz_id to its Kreis via the lookup; origin_id in injected rows is the
+    taz_id so the key space is consistent with the calibrated work OD.
     """
     ext_ars = set(df_external["ars5"].astype(str))
     df_out_pendler = df_pendler[
@@ -981,15 +1018,38 @@ def _append_outbound_flows(df_od: pd.DataFrame,
         & df_pendler["dest_ars"].isin(ext_ars)
     ].copy()
 
-    pop = (
-        df_population.groupby("commune_id")["weight"].sum()
-                     .rename("pop").reset_index()
-    )
-    pop["orig_ars"] = pop["commune_id"].astype(str).str[:5]
-    pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
-    pop["share"] = np.where(pop["kreis_total"] > 0,
-                            pop["pop"] / pop["kreis_total"], 0.0)
-    pop = pop[pop["orig_ars"].isin(scope)]
+    if zone_to_kreis is None:
+        # OFF path: classic commune_id[:5] grouping and origin key.
+        pop = (
+            df_population.groupby("commune_id")["weight"].sum()
+                         .rename("pop").reset_index()
+        )
+        pop["orig_ars"] = pop["commune_id"].astype(str).str[:5]
+        pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
+        pop["share"] = np.where(pop["kreis_total"] > 0,
+                                pop["pop"] / pop["kreis_total"], 0.0)
+        pop = pop[pop["orig_ars"].isin(scope)]
+        # origin_id for injected rows is the Gemeinde commune_id (OFF behaviour).
+        pop_origin_col = "commune_id"
+    else:
+        # ON path: group by taz_id, map to Kreis via lookup; origin_id = taz_id.
+        pop = (
+            df_population.groupby(population_key)[population_value].sum()
+                         .rename("pop").reset_index()
+                         .rename(columns={population_key: "taz_id"})
+        )
+        pop["orig_ars"] = pop["taz_id"].astype(str).map(zone_to_kreis)
+        if pop["orig_ars"].isna().any():
+            missing_n = int(pop["orig_ars"].isna().sum())
+            raise RuntimeError(
+                "[gravity TAZ _append_outbound_flows] %d taz_id values have no "
+                "Kreis mapping in zone_to_kreis; cannot build outbound shares" % missing_n
+            )
+        pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
+        pop["share"] = np.where(pop["kreis_total"] > 0,
+                                pop["pop"] / pop["kreis_total"], 0.0)
+        pop = pop[pop["orig_ars"].isin(scope)]
+        pop_origin_col = "taz_id"
 
     # Build per-Gemeinde employee shares keyed by Kreis ars5, carrying commune_id.
     # gem_share = employees / Sigma_{Gemeinde in Kreis} employees.
@@ -1009,11 +1069,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
         print("[braunschweig.gravity.model] no outbound flows to inject")
         df_all = df_od.copy()
     else:
-        # origin_gemeinde x dest_kreis rows, with each origin's flow share.
+        # origin_zone x dest_kreis rows, with each origin's flow share.
         df_inj = pop.merge(df_out_pendler, on="orig_ars", how="inner")
         df_inj["flow"] = df_inj["share"] * df_inj["flow"].astype(float)
         df_inj = df_inj[df_inj["flow"] > 0]
-        # df_inj now has columns: commune_id, orig_ars, dest_ars, flow (Kreis-level split).
+        # df_inj now has columns: <pop_origin_col>, orig_ars, dest_ars, flow (Kreis-level split).
 
         # Expand each Kreis-level flow to per-Gemeinde rows via the employee share.
         # Join on ars5 == dest_ars (many-to-many: one origin->Kreis row becomes N rows).
@@ -1040,7 +1100,7 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
         df_inj["flow"] = df_inj["flow"] * df_inj["gem_share"]
         df_inj = df_inj[df_inj["flow"] > 0]
-        df_inj = df_inj.rename(columns={"commune_id": "origin_id"})
+        df_inj = df_inj.rename(columns={pop_origin_col: "origin_id"})
         df_inj = df_inj[["origin_id", "destination_id", "flow"]]
 
         n_ext_rows = len(df_inj)
@@ -1081,14 +1141,52 @@ def execute(context):
 
     df_pendler = _synthesise_intra_kreis(df_pendler, df_employment, scope)
 
+    taz_on = context.config("taz_work_location_choice", False)
+
+    if taz_on:
+        # ON path: resolve the TAZ population margin and taz->kreis lookup so
+        # _calibrate and _append_outbound_flows aggregate correctly.
+        # The TAZ margin was already built inside _execute_gravity_base (pop_taz);
+        # re-read the same stages here to avoid passing it through the base function's
+        # return tuple (which would change the execute() output schema).
+        from braunschweig.gravity.taz_margins import (  # noqa: PLC0415
+            build_origin_population_per_taz,
+            taz_to_kreis_lookup,
+        )
+        df_taz = context.stage("braunschweig.data.spatial.taz")
+        df_homes = context.stage("synthesis.population.spatial.home.locations")
+        df_population_raw = context.stage("data.census.filtered")
+        pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
+        zone_to_kreis = taz_to_kreis_lookup(df_taz)
+        population_key = "taz_id"
+        population_value = "population"
+        # pop_taz schema: taz_id, commune_id, population -- the _calibrate and
+        # _append_outbound_flows functions group by population_key so they receive
+        # the correct per-TAZ margin.
+        df_population_for_od = pop_taz
+    else:
+        # OFF path: defaults -> byte-identical behaviour.
+        zone_to_kreis = None
+        population_key = "commune_id"
+        population_value = "weight"
+        df_population_for_od = df_population
+
     print(
-        "[braunschweig.gravity.model] calibrating {:,} Gemeinde-pairs "
+        "[braunschweig.gravity.model] calibrating {:,} zone-pairs "
         "against {:,} BA Kreis-pair flows".format(len(df_work_od), len(df_pendler))
     )
 
-    df_work_calibrated = _calibrate(df_work_od, df_population, df_pendler)
+    df_work_calibrated = _calibrate(
+        df_work_od, df_population_for_od, df_pendler,
+        zone_to_kreis=zone_to_kreis,
+        population_key=population_key,
+        population_value=population_value,
+    )
     df_work_extended = _append_outbound_flows(
-        df_work_calibrated, df_population, df_pendler, df_external, scope,
+        df_work_calibrated, df_population_for_od, df_pendler, df_external, scope,
+        zone_to_kreis=zone_to_kreis,
+        population_key=population_key,
+        population_value=population_value,
     )
 
     return df_work_extended, df_education_od
