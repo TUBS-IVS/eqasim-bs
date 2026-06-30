@@ -19,6 +19,13 @@ When ``work_building_potentials`` is True (default), the ON path REPLACES the
 ALKIS/OSM candidate set entirely with gpkg activity buildings that carry
 ``potential_work > 0``.  The ALKIS area*floors path is used only when the flag
 is False, and is byte-identical to the pre-feature pipeline.
+
+When ``taz_work_location_choice`` is True, each work candidate is additionally
+assigned a ``taz_id`` column via point-in-polygon against the TAZ polygons.
+External/synthetic-centroid candidates that lie outside any TAZ polygon fall
+back to the commune-as-TAZ assignment (commune_id used as taz_id), and this
+fallback rate is logged so it is observable.  The OFF path does not touch
+``taz_id`` and is byte-identical to the pre-feature pipeline.
 """
 
 from __future__ import annotations
@@ -115,9 +122,78 @@ def configure(context):
         context.stage("braunschweig.data.building_potentials")
     else:
         context.stage("braunschweig.data.locations")
+    # TAZ dep: only declare when the flag is ON so the OFF path is unaffected.
+    if context.config("taz_work_location_choice", False):
+        context.stage("braunschweig.data.spatial.taz")
+
+
+def _attach_taz_id(df_combined: gpd.GeoDataFrame, df_taz: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Attach ``taz_id`` to every work candidate by point-in-polygon.
+
+    Candidates that fall outside any TAZ polygon (external synthetic centroids,
+    candidates in Kreise not covered by the ZGB TAZ dataset) fall back to
+    using their ``commune_id`` as the ``taz_id``.  This degenerate fallback
+    keeps the schema consistent: every candidate has a ``taz_id``, but external
+    rows are effectively treated as one-TAZ-per-commune.  The primary and
+    fallback counts are logged so the rate is observable (CLAUDE.md: no silent
+    fallbacks).
+
+    Parameters
+    ----------
+    df_combined:
+        Combined work candidate GeoDataFrame (geometry = centroid point).
+    df_taz:
+        TAZ polygons from ``braunschweig.data.spatial.taz``.
+
+    Returns
+    -------
+    GeoDataFrame
+        Input frame with an additional ``taz_id`` column (str).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if df_taz.crs != df_combined.crs:
+        df_taz = df_taz.to_crs(df_combined.crs)
+
+    taz_geom = df_taz[["taz_id", "geometry"]]
+
+    # PIP join: location_id is the unique key.
+    pts = df_combined[["location_id", "geometry"]].copy()
+    pts = gpd.GeoDataFrame(pts, geometry="geometry", crs=df_combined.crs)
+    joined = gpd.sjoin(pts, taz_geom, how="left", predicate="within").drop(
+        columns=["index_right"], errors="ignore"
+    )
+    joined = joined.drop_duplicates("location_id", keep="first")
+
+    n_primary = int(joined["taz_id"].notna().sum())
+    n_fallback = int(joined["taz_id"].isna().sum())
+    total = n_primary + n_fallback
+
+    logger.info(
+        "[braunschweig.locations.work] TAZ assignment: %d/%d candidates primary "
+        "(%.1f%%), %d fallback commune-as-TAZ (%.1f%%)",
+        n_primary, total, 100.0 * n_primary / total if total else 0.0,
+        n_fallback, 100.0 * n_fallback / total if total else 0.0,
+    )
+
+    # Apply: primary from PIP, fallback from commune_id.
+    taz_map = joined.set_index("location_id")["taz_id"]
+    df_combined = df_combined.copy()
+    df_combined["taz_id"] = df_combined["location_id"].map(taz_map)
+    # Fallback: commune_id used as taz_id for candidates outside any TAZ polygon.
+    f_missing = df_combined["taz_id"].isna()
+    if f_missing.any():
+        df_combined.loc[f_missing, "taz_id"] = df_combined.loc[f_missing, "commune_id"].astype(str)
+
+    df_combined["taz_id"] = df_combined["taz_id"].astype(str)
+    return df_combined
 
 
 def execute(context) -> gpd.GeoDataFrame:
+    # Read the TAZ flag (no default here; the default is declared in configure()).
+    taz_on = context.config("taz_work_location_choice")
+
     df_zgb = _execute_base(context)
 
     if context.config("work_building_potentials"):
@@ -162,5 +238,13 @@ def execute(context) -> gpd.GeoDataFrame:
         f"ZGB workplaces: {len(df_zgb):,} (sum employees = {zgb_emp_total:,}) + "
         f"external synthetic workplaces: {n_ext} (sum SvB = {ext_svb:,})"
     )
+
+    # When the TAZ flag is ON, attach taz_id to every candidate so the
+    # downstream pool filter (candidates.py _filter_pool_by_zone) can select by
+    # taz_id.  The OFF path does not add taz_id; the column is absent and the
+    # commune_id filter path is byte-identical.
+    if taz_on:
+        df_taz = context.stage("braunschweig.data.spatial.taz")
+        df_combined = _attach_taz_id(df_combined, df_taz)
 
     return df_combined
