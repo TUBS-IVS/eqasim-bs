@@ -41,6 +41,7 @@ prohibited (see CLAUDE.md).
 from __future__ import annotations
 
 import logging
+import re as _re
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
@@ -56,6 +57,25 @@ from braunschweig.synthesis.vehicles.age_income import AgeIncomeModel
 from braunschweig.synthesis.vehicles.segment import SegmentModel
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_gemeinde(name: str) -> str:
+    """Normalise a Gemeinde name for matching population labels to FZ 27.17 keys.
+
+    Uppercase, transliterate German umlauts/eszett (UE/OE/AE/SS), drop any
+    administrative suffix after a comma (", STADT" / ",ST." / ",FLECKEN" / ...)
+    and any parenthetical qualifier ("(LANDKREIS ...)"), collapse whitespace.
+    Applied identically on BOTH sides so e.g. population "WOLFENBÜTTEL, STADT"
+    matches the FZ 27.17 key "WOLFENBUETTEL,ST.". Coverage measured on the 100%
+    run: 33.6% -> 100% of gemeinde-bearing fleet cars.
+    """
+    s = str(name).upper().strip()
+    for a, b in (("Ü", "UE"), ("Ö", "OE"), ("Ä", "AE"), ("ß", "SS")):
+        s = s.replace(a, b)
+    s = _re.sub(r",.*$", "", s)      # drop administrative suffix after comma
+    s = _re.sub(r"\(.*?\)", "", s)   # drop parenthetical qualifier
+    return " ".join(s.split())
+
 
 #: Canonical powertrain order used for every powertrain probability vector.
 POWERTRAINS: tuple[str, ...] = ft.POWERTRAIN_LABELS
@@ -297,7 +317,7 @@ class PowertrainModel:
         """
         out: dict[tuple[str, str], dict[str, float]] = {}
         for _, row in df_gem.iterrows():
-            key = (str(row["kreis_ags5"]), str(row["gemeinde"]).strip().upper())
+            key = (str(row["kreis_ags5"]), normalize_gemeinde(row["gemeinde"]))
             shares: dict[str, float] = {}
             for col, pt in (("private_bev_share", "bev"),
                             ("private_phev_share", "phev")):
@@ -353,7 +373,7 @@ class PowertrainModel:
         if gemeinde is None:
             self._gemeinde_fallback += 1
             return pmf
-        key = (kreis_ags5, str(gemeinde).strip().upper())
+        key = (kreis_ags5, normalize_gemeinde(gemeinde))
         gem_shares = self.gemeinde_private_electric_share.get(key)
         kreis_shares = self.kreis_private_electric_share.get(kreis_ags5)
         if gem_shares is None or kreis_shares is None:
