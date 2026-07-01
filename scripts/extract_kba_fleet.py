@@ -65,6 +65,7 @@ MID_RAUMTYP_PATH = KBA_DIR / "output_mit_2023_raumtyp_fahrzeuge.xlsx"
 
 FUEL_46251_PATH = RAW_DIR / "regionalstatistik_46251_02_fuel_kreis_20250101.csv"
 EURO_46251_PATH = RAW_DIR / "regionalstatistik_46251_03_euro_kreis_20250101.csv"
+AGE_NATIONAL_PATH = RAW_DIR / "statista_kba_3438_pkw_age_national_2026.xlsx"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -170,6 +171,18 @@ ZGB_KREISE = {
     "03154": "Helmstedt",
     "03157": "Peine",
     "03158": "Wolfenbuettel",
+}
+
+# German Statista age-band labels -> canonical snake_case band labels (ID 3438).
+# These 6 bands cover the full Pkw fleet; they are a VALIDATION control, never
+# an IPF dimension.
+_AGE_NATIONAL_BANDS = {
+    "unter 2 jahre": "under_2",
+    "2 bis 4 jahre": "2_to_4",
+    "5 bis 9 jahre": "5_to_9",
+    "10 bis 14 jahre": "10_to_14",
+    "15 bis 29 jahre": "15_to_29",
+    "30 und mehr jahre": "30_plus",
 }
 
 # KBA placeholder symbols that map to a numeric 0 (count below 0.5 / none).
@@ -825,6 +838,57 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Statista KBA ID 3438 -> kba_age_national.csv (VALIDATION control)
+# --------------------------------------------------------------------------- #
+def extract_age_national(path: Path = AGE_NATIONAL_PATH, year: int = 2026) -> pd.DataFrame:
+    """KBA/Statista ID 3438: national Pkw age distribution (VALIDATION control).
+
+    Sheet ``Daten``: the band-label row precedes the per-year rows (col1 is
+    blank/misc, col2 = year value, cols 3.. = band percentages in the order
+    listed in ``_AGE_NATIONAL_BANDS``).  Returns the requested year's 6 bands
+    as a tidy DataFrame with columns ``year, stichtag, band, share_pct``.
+
+    This is a national validation anchor (mean_age_years = 10.9 as stated in the
+    Statista source); it is never used as an IPF dimension.
+
+    Args:
+        path: Path to the Statista xlsx (``Daten`` sheet).
+        year: Reference year to extract (default 2026).
+
+    Returns:
+        DataFrame with 6 rows and columns ``year, stichtag, band, share_pct``.
+
+    Raises:
+        RuntimeError: If ``year`` is not found in the sheet.
+    """
+    rows = _read_sheet(path, "Daten")
+    header: dict[int, str] | None = None
+    for row in rows:
+        labels = [(_normalise_label(c).lower() if c else "") for c in row]
+        if "unter 2 jahre" in labels:
+            header = {
+                i: _AGE_NATIONAL_BANDS[labels[i]]
+                for i in range(len(labels))
+                if labels[i] in _AGE_NATIONAL_BANDS
+            }
+            continue
+        if header is not None and row[1] is not None and str(row[1]).strip().isdigit() \
+                and int(row[1]) == year:
+            recs = [
+                {"year": year, "stichtag": f"{year}-01-01",
+                 "band": band, "share_pct": float(row[i])}
+                for i, band in header.items()
+            ]
+            df = pd.DataFrame(recs)
+            logger.info(
+                "[age_national] year=%d, bands=%d, sum_share_pct=%.2f",
+                year, len(df), df["share_pct"].sum(),
+            )
+            return df
+    raise RuntimeError(f"age control: year {year} not found in {path}")
+
+
+# --------------------------------------------------------------------------- #
 # Driver
 # --------------------------------------------------------------------------- #
 def _write(frame: pd.DataFrame, name: str) -> None:
@@ -834,9 +898,30 @@ def _write(frame: pd.DataFrame, name: str) -> None:
     logger.info("[write] %s (%d rows, %d cols)", path, len(frame), frame.shape[1])
 
 
+def _write_with_header(frame: pd.DataFrame, name: str, header_line: str) -> None:
+    """Write ``frame`` as CSV with a ``# ...`` comment line prepended.
+
+    Mirrors ``_write`` but prefixes the file with ``header_line`` (which must
+    start with ``#``) so provenance metadata (e.g. mean_age_years, source ID,
+    stichtag) travels with the CSV.  The loaders already tolerate ``# ...``
+    comment lines via ``pd.read_csv(..., comment="#")``.
+
+    Args:
+        frame: DataFrame to write.
+        name: Output filename under ``DERIVED_DIR``.
+        header_line: The comment line to prepend (e.g. ``"# key=val key2=val2"``).
+    """
+    DERIVED_DIR.mkdir(parents=True, exist_ok=True)
+    path = DERIVED_DIR / name
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(header_line + "\n")
+        fh.write(frame.to_csv(index=False))
+    logger.info("[write] %s (%d rows, %d cols, with header)", path, len(frame), frame.shape[1])
+
+
 def main() -> None:
     for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
-                     FUEL_46251_PATH, EURO_46251_PATH):
+                     FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -864,6 +949,11 @@ def main() -> None:
     )
     _write(extract_kreis_fuel_46251(), "kba_kreis_fuel.csv")
     _write(extract_kreis_euro_46251(), "kba_kreis_euro.csv")
+    _write_with_header(
+        extract_age_national(),
+        "kba_age_national.csv",
+        "# mean_age_years=10.9 source=KBA/Statista ID3438 stichtag=2026-01-01",
+    )
     logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
 
 

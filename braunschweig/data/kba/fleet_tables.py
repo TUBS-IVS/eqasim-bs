@@ -70,6 +70,13 @@ AGE_BAND_LABELS: tuple[str, ...] = (
     "30_plus",
 )
 
+#: National Pkw age band labels (Statista KBA ID 3438, 6-band scheme).
+#: These are DIFFERENT from the FZ 27.7 age bands: they use a coarser grouping
+#: intended for validation of the realised fleet age distribution, not for IPF.
+AGE_NATIONAL_BAND_LABELS: tuple[str, ...] = (
+    "under_2", "2_to_4", "5_to_9", "10_to_14", "15_to_29", "30_plus",
+)
+
 #: The 8 ZGB Kreise as AGS-5 ("03" + Kreis3 == KBA Kennziffer).
 ZGB_KREISE_AGS5: tuple[str, ...] = (
     "03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158",
@@ -341,6 +348,36 @@ def load_kreis_euro(data_path: str) -> pd.DataFrame:
     unexpected = set(df["teil"]) - {"all", "diesel"}
     if unexpected:
         raise RuntimeError(f"{filename}: unexpected teil values {sorted(unexpected)}.")
+    return df
+
+
+def load_age_national(data_path: str) -> pd.DataFrame:
+    """KBA/Statista ID 3438: national Pkw age distribution (VALIDATION control).
+
+    Reads ``kba_age_national.csv`` (produced by ``scripts/extract_kba_fleet.py``)
+    which carries a ``# mean_age_years=...`` comment header line.  The CSV
+    columns are ``year, stichtag, band, share_pct`` for the 6 national age bands.
+
+    This is a committed validation anchor -- never used as an IPF dimension.
+    The file comment records ``mean_age_years=10.9`` as stated by the source.
+
+    Args:
+        data_path: Root data path (the ``derived/`` subdirectory is resolved
+            automatically by ``_read``).
+
+    Returns:
+        DataFrame with 6 rows and columns ``year, stichtag, band, share_pct``.
+
+    Raises:
+        FileNotFoundError: If the CSV is absent (run
+            ``scripts/extract_kba_fleet.py`` on the server to generate it).
+        RuntimeError: If required columns are missing or band labels are
+            outside the expected set (schema drift).
+    """
+    filename = "kba_age_national.csv"
+    df = _read(data_path, filename)
+    _require_columns(df, ["year", "stichtag", "band", "share_pct"], filename)
+    _require_labels(df["band"], AGE_NATIONAL_BAND_LABELS, "band", filename)
     return df
 
 
