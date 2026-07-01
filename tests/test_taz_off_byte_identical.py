@@ -73,7 +73,7 @@ TAZ_ONLY_STAGES = {
     "braunschweig.gravity.distance_matrix_taz",
     "synthesis.population.spatial.home.locations",
     "braunschweig.data.building_potentials",
-    "eqasim_common.spatial.codes",          # also sector-aware dep; OFF for both here
+    "data.spatial.municipalities",          # geometric commune source for the TAZ dest margin
 }
 
 
@@ -164,7 +164,7 @@ def test_on_path_requests_taz_stages():
         "braunschweig.gravity.distance_matrix_taz",
         "synthesis.population.spatial.home.locations",
         "braunschweig.data.building_potentials",
-        "eqasim_common.spatial.codes",
+        "data.spatial.municipalities",
     }:
         assert taz_stage in staged, (
             "configure() with taz_work_location_choice=True did not stage %r" % taz_stage
