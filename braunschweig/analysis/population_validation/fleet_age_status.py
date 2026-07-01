@@ -154,8 +154,12 @@ def build_panel(vehicles: pd.DataFrame | None, data_path: str) -> pd.DataFrame:
         )
         return empty
 
-    # Synthetic summary.
-    df = vehicles[["economic_status", "age"]].copy()
+    # Synthetic summary. Restrict to the household FLEET subset first: vehicles.csv
+    # also carries eqasim routing vehicles (mode=='car', economic_status=nan) that
+    # would otherwise be silently dropped by the per-status groupby -- filter them
+    # out explicitly via the shared fleet filter so the counts are unambiguous.
+    from braunschweig.analysis import fleet_filter as _ff
+    df = _ff.fleet_vehicles(vehicles, context="fleet_age_status")[["economic_status", "age"]].copy()
     df["age"] = pd.to_numeric(df["age"], errors="coerce")
     df["under_5"] = df["age"] < 5
 
