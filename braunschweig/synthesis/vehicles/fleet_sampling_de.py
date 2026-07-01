@@ -977,11 +977,14 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
 
             # 3. euro_class <- P(euro | powertrain).
-            # NOTE: the A4-revised pure-electric euro="electric" override is applied
-            # ONLY on the consistency_v2 path below. The legacy (consistency_v2=False)
-            # path is a frozen verbatim copy of the original loop and MUST stay byte-identical
-            # to the pre-feature output (enforced by test_off_path_byte_identical);
-            # it therefore keeps the drawn combustion euro even for electric rows.
+            # NOTE: the pure-electric euro="electric" override (A4) is applied ONLY on
+            # the consistency_v2 path below. This legacy (consistency_v2=False) loop is
+            # kept a VERBATIM copy of the original draw logic -- no per-loop overrides are
+            # added here -- so electric rows keep their drawn combustion euro. Its OUTPUT
+            # may still differ from the committed golden because SHARED model components
+            # improved (the segment-status seed A3, the age/euro joint #93); the golden
+            # (test_off_path_byte_identical) is regenerated after the branch stabilises,
+            # guarded by the invariant that this loop's CODE stays diff-free vs the base.
             euro_pmf = sampler.euro_given_powertrain[powertrain]
             euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
 
