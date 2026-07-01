@@ -71,12 +71,39 @@ def load_taz_zones(path: str) -> gpd.GeoDataFrame:
     return gdf
 
 
+def filter_to_scope(gdf: gpd.GeoDataFrame, kreise) -> gpd.GeoDataFrame:
+    """Keep only zones whose 5-digit ``kreis`` is in ``kreise`` (the ZGB political
+    scope, ``braunschweig.political_prefix``).
+
+    The imported gpkg spans the wider RVB VISUM Einflussraum (~2118 zones across
+    several Bundeslaender); the WORK location choice only needs the ZGB zones
+    (~880 across the 8 member Kreise). ``kreise`` None/empty -> no filter (the
+    whole imported set is returned, e.g. when the stage is resolved standalone).
+    Raises if the filter would keep zero zones (a wrong scope, no silent empty).
+    """
+    if not kreise:
+        return gdf
+    scope = {str(k) for k in kreise}
+    kept = gdf[gdf["kreis"].astype(str).isin(scope)].copy()
+    if len(kept) == 0:
+        raise ValueError(
+            "TAZ scope filter kept 0 of %d zones for political_prefix %s; "
+            "check the Kreis codes" % (len(gdf), sorted(scope))
+        )
+    return kept
+
+
 def configure(context):
     context.config("data_path")
     context.config(
         "taz_zones_path",
         "braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet",
     )
+    # ZGB scope filter (see filter_to_scope): the imported gpkg spans the wider
+    # VISUM Einflussraum; keep only the ZGB Kreise from the political scope.
+    # Default None -> no filter (stage resolvable standalone / in Phase-1 tests);
+    # the popsim configs set braunschweig.political_prefix to the 8 ZGB Kreise.
+    context.config("braunschweig.political_prefix", None)
 
 
 def execute(context) -> gpd.GeoDataFrame:
@@ -88,10 +115,12 @@ def execute(context) -> gpd.GeoDataFrame:
     # the zone IDs happen to be numeric).
     gdf["taz_id"] = gdf["taz_id"].astype(str)
     gdf["kreis"] = gdf["kreis"].astype(str)
+    n_total = len(gdf)
+    gdf = filter_to_scope(gdf, context.config("braunschweig.political_prefix"))
     per_kreis = gdf["kreis"].value_counts().sort_index()
     print(
-        "[braunschweig.data.spatial.taz] %d TAZ across %d Kreise (%s)"
-        % (len(gdf), len(per_kreis),
+        "[braunschweig.data.spatial.taz] %d/%d TAZ in ZGB scope across %d Kreise (%s)"
+        % (len(gdf), n_total, len(per_kreis),
            ", ".join("%s=%d" % (k, int(c)) for k, c in per_kreis.items()))
     )
     return gdf[["taz_id", "commune_id", "kreis", "regiostar7", "geometry"]]

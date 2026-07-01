@@ -46,6 +46,26 @@ def test_rename_reprojects_to_25832():
     assert out.crs.to_epsg() == 25832
 
 
+def test_rename_handles_8digit_ags_two_digit_bundesland():
+    # The real gpkg spans the wider VISUM Einflussraum: zones in a two-digit
+    # Bundesland (>=10) carry an already-8-digit AGS (e.g. Sachsen-Anhalt
+    # 15081026). zfill(8) must leave these UNCHANGED (not prefix a "0"), and
+    # kreis = commune_id[:5]. This is the real-data case Task 5 surfaced.
+    poly = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+    g = gpd.GeoDataFrame(
+        {
+            "Verkehrszelle_Nummer": ["150810261"],
+            "Verkehrszelle_Name": ["SA zone"],
+            "Amtlicher_Gemeindeschlüssel": ["15081026"],   # already 8-digit
+            "RegioStaR7_Regionstyp": [77],
+        },
+        geometry=[poly], crs="EPSG:32632",
+    )
+    out = rename_columns(g)
+    assert out["commune_id"].tolist() == ["15081026"]   # unchanged, NOT "015081026"
+    assert out["kreis"].tolist() == ["15081"]
+
+
 def test_rename_raises_on_missing_column():
     g = _source_gdf().drop(columns=["RegioStaR7_Regionstyp"])
     with pytest.raises(ValueError, match="missing expected columns"):

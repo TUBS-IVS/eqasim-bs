@@ -2,7 +2,9 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon
 
-from braunschweig.data.spatial.taz import load_taz_zones, REQUIRED_COLUMNS
+from braunschweig.data.spatial.taz import (
+    load_taz_zones, filter_to_scope, REQUIRED_COLUMNS,
+)
 
 
 def _valid_taz_gdf():
@@ -18,6 +20,32 @@ def _valid_taz_gdf():
         },
         geometry=[poly_a, poly_b], crs="EPSG:25832",
     )
+
+
+def _scope_gdf():
+    # two zones in ZGB kreis 03101, one in non-ZGB kreis 15081 (Sachsen-Anhalt).
+    p = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+    return gpd.GeoDataFrame(
+        {"taz_id": ["a", "b", "c"], "commune_id": ["03101000", "03101000", "15081026"],
+         "kreis": ["03101", "03101", "15081"], "regiostar7": [72, 74, 77]},
+        geometry=[p, p, p], crs="EPSG:25832",
+    )
+
+
+def test_filter_to_scope_keeps_only_political_prefix():
+    kept = filter_to_scope(_scope_gdf(), ["03101", "03102"])
+    assert set(kept["taz_id"]) == {"a", "b"}          # 15081 (non-ZGB) dropped
+    assert set(kept["kreis"]) == {"03101"}
+
+
+def test_filter_to_scope_none_keeps_all():
+    assert len(filter_to_scope(_scope_gdf(), None)) == 3     # no filter
+    assert len(filter_to_scope(_scope_gdf(), [])) == 3
+
+
+def test_filter_to_scope_raises_on_empty_result():
+    with pytest.raises(ValueError, match="kept 0 of"):
+        filter_to_scope(_scope_gdf(), ["09999"])            # no zone in that Kreis
 
 
 def test_load_accepts_valid_input(tmp_path):

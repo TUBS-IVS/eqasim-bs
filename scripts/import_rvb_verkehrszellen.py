@@ -74,8 +74,13 @@ def rename_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # taz_id and the official key are categorical/string identifiers.
     out["taz_id"] = out["taz_id"].astype(str)
     out["regiostar7"] = out["regiostar7"].astype(int)
-    # commune_id = "0" + 7-digit AGS -> 8-digit; kreis = commune_id[:5].
-    out["commune_id"] = "0" + gdf[AGS_COLUMN].astype(str).str.strip()
+    # commune_id = the German AGS zero-padded to 8 digits; kreis = commune_id[:5].
+    # zfill(8) handles BOTH single-digit-Bundesland AGS (7-digit in the source,
+    # e.g. NI 3101000 -> 03101000) AND two-digit-Bundesland AGS (already 8-digit,
+    # e.g. Sachsen-Anhalt 15081026): the real gpkg spans the wider VISUM
+    # Einflussraum, not only the 8 ZGB Kreise. (The ZGB scope filter lives in the
+    # taz zone stage, keyed on braunschweig.political_prefix -- see taz.py.)
+    out["commune_id"] = gdf[AGS_COLUMN].astype(str).str.strip().str.zfill(8)
     out["kreis"] = out["commune_id"].str[:5]
 
     if out.crs.to_epsg() != 25832:
