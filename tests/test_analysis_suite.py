@@ -64,3 +64,47 @@ def test_malformed_output_raises(tmp_path):
     ctx = FakeContext(_base_config(tmp_path))
     with pytest.raises(FileNotFoundError):
         AS.execute(ctx)
+
+
+def _install_pop_spy(monkeypatch, calls, raise_exc=None):
+    import braunschweig.analysis.population_validation.run_population_validation as R
+    monkeypatch.setattr(R, "_parse_args", lambda argv: {"argv": argv})
+    def fake_run(ns):
+        calls.append(ns)
+        if raise_exc:
+            raise raise_exc
+    monkeypatch.setattr(R, "run", fake_run)
+
+
+def test_population_validation_runs_by_default(tmp_path, monkeypatch):
+    _write_min_output(tmp_path)
+    calls = []
+    _install_pop_spy(monkeypatch, calls)
+    ctx = FakeContext(_base_config(tmp_path))
+    AS.execute(ctx)
+    assert len(calls) == 1
+    assert "--run-output-dir" in calls[0]["argv"]
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert "population_validation" in summary["ran"]
+
+
+def test_population_validation_flag_off(tmp_path, monkeypatch):
+    _write_min_output(tmp_path)
+    calls = []
+    _install_pop_spy(monkeypatch, calls)
+    ctx = FakeContext(_base_config(tmp_path, analysis_population_validation=False))
+    AS.execute(ctx)
+    assert calls == []
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert any(s["analysis"] == "population_validation" for s in summary["skipped"])
+
+
+def test_sub_analysis_failure_is_caught(tmp_path, monkeypatch):
+    _write_min_output(tmp_path)
+    calls = []
+    _install_pop_spy(monkeypatch, calls, raise_exc=RuntimeError("boom"))
+    ctx = FakeContext(_base_config(tmp_path))
+    result = AS.execute(ctx)  # must NOT raise
+    assert result is not None
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert any(f["analysis"] == "population_validation" for f in summary["failed"])

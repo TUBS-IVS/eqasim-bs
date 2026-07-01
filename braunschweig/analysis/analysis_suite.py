@@ -100,7 +100,13 @@ def execute(context):
         "ran": [], "skipped": [], "failed": [],
     }
 
-    # Sub-analyses are wired in Tasks 2-5 (each appends _run(...) calls here).
+    def _pop():
+        from braunschweig.analysis.population_validation import run_population_validation as R
+        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
+    _run(summary, "population_validation",
+         context.config(KEY_POPULATION_VALIDATION, True), True, "", _pop)
+
+    # (further sub-analyses appended in Tasks 3-5)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)
