@@ -72,7 +72,7 @@ def sampler():
 @pytest.fixture(scope="module")
 def sampled(sampler):
     df_cars = _make_cars()
-    df_spec, df_types = fs.sample_fleet(
+    df_spec, df_types, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42, sampler=sampler)
     return df_spec, df_types
 
@@ -235,7 +235,7 @@ def test_unknown_kreis_falls_back_and_logs(caplog):
         "gemeinde": np.nan, "raumtyp": 73,
     }] * 50)
     with caplog.at_level(logging.WARNING):
-        df_spec, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
+        df_spec, _, _summary = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
     assert len(df_spec) == 50  # never drops a car
     text = " ".join(r.message for r in caplog.records).lower()
     assert "fallback" in text
@@ -243,15 +243,15 @@ def test_unknown_kreis_falls_back_and_logs(caplog):
 
 def test_deterministic_given_seed():
     df_cars = _make_cars(n_per_kreis=300)
-    a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
-    b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
+    a, _, _s1 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
+    b, _, _s2 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
     pd.testing.assert_frame_equal(a, b)
 
 
 def test_different_seed_changes_draw():
     df_cars = _make_cars(n_per_kreis=300)
-    a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
-    b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=2)
+    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
+    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=2)
     assert not a["powertrain"].equals(b["powertrain"])
 
 
@@ -275,8 +275,8 @@ def test_gemeinde_tilt_raises_local_bev_share():
     tilted = base.copy()
     tilted["gemeinde"] = gemeinde
 
-    spec_base, _ = fs.sample_fleet(base, DATA_PATH, random_seed=5)
-    spec_tilt, _ = fs.sample_fleet(tilted, DATA_PATH, random_seed=5)
+    spec_base, _, _ = fs.sample_fleet(base, DATA_PATH, random_seed=5)
+    spec_tilt, _, _ = fs.sample_fleet(tilted, DATA_PATH, random_seed=5)
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())
     assert bev_tilt > bev_base, (bev_base, bev_tilt, top["ratio"])
@@ -289,7 +289,7 @@ def test_gemeinde_tilt_raises_local_bev_share():
 def sampled_v2(sampler):
     """sample_fleet with consistency_v2=True (default)."""
     df_cars = _make_cars()
-    df_spec, df_types = fs.sample_fleet(
+    df_spec, df_types, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
     return df_spec, df_types
 
@@ -370,8 +370,8 @@ def test_euro_age_consistent_after_recalibration(sampled):
 def test_recalibration_deterministic_given_seed():
     """Same seed -> identical raked output (the Task 7 rake uses no fresh rng)."""
     df_cars = _make_cars(n_per_kreis=400)
-    a, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
-    b, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
     pd.testing.assert_frame_equal(a, b)
 
 
@@ -517,7 +517,7 @@ def test_income_age_gradient_in_output():
     After applying the MiD tilt, very_low households drive older cars.
     """
     df_cars = _make_cars_multi_status(n_per_status=3000)
-    df_spec, _ = fs.sample_fleet(
+    df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True,
         age_income_coupling=True,
@@ -588,7 +588,7 @@ def test_age_income_off_unchanged():
             })
     df_cars = pd.DataFrame(rows)
 
-    df_spec, _ = fs.sample_fleet(
+    df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True, age_income_coupling=False)
 
@@ -601,7 +601,7 @@ def test_age_income_off_unchanged():
     )
 
     # Also verify the coupling=True run produces DIFFERENT ages (tilt is active).
-    df_spec_on, _ = fs.sample_fleet(
+    df_spec_on, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True, age_income_coupling=True)
     # With n=2500 cars the age distribution must differ somewhere.
@@ -642,7 +642,7 @@ def test_synthetic_age_status_matches_mid():
 
     # Build a representative fleet with balanced statuses.
     df_cars = _make_cars_multi_status(n_per_status=3000)
-    df_spec, _ = fs.sample_fleet(
+    df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True, age_income_coupling=True,
     )
@@ -717,3 +717,137 @@ def test_fleet_age_panel_data_absent_safe():
     })
     panel3 = FAS.build_panel(df_no_status, DATA_PATH)
     assert panel3.empty
+
+
+# --------------------------------------------------------------------------- #
+# Task 3 — validate_realised_margins wired into sample_fleet (consistency_v2). #
+# --------------------------------------------------------------------------- #
+
+def test_effective_expected_probs_sum_to_one():
+    """_effective_expected returns PMF dicts that each sum to ~1.0.
+
+    Uses a 3-car synthetic input (no data loading) to verify the pure helper
+    produces normalised probability dicts for all dimensions.
+    """
+    n_pt = len(fs.POWERTRAINS)
+    n_age = len(ft.AGE_BAND_LABELS)
+    n_euro = len(ft.EURO_CLASS_LABELS)
+
+    # Synthetic per-car inputs (3 cars).
+    n = 3
+    # Equal powertrain probability vectors (will be normalised).
+    car_pmfs = [np.ones(n_pt) / n_pt] * n
+    # Per-car effective factor: identity (uniform, no rake bias).
+    kreis_factors = [np.ones(n_pt)] * n
+    # Synthetic age_euro_joint: uniform over all cells (rows=age, cols=euro).
+    uniform_joint = np.ones((n_age, n_euro), dtype=float) / (n_age * n_euro)
+    age_euro_joints = [uniform_joint] * n
+    # No income tilt (None).
+    tilts = [None] * n
+
+    expected = fs._effective_expected(
+        car_pmfs=car_pmfs,
+        kreis_factors=kreis_factors,
+        age_euro_joints=age_euro_joints,
+        tilts=tilts,
+        powertrains=list(fs.POWERTRAINS),
+        age_labels=list(ft.AGE_BAND_LABELS),
+        euro_labels=list(ft.EURO_CLASS_LABELS),
+    )
+
+    for dim in ("powertrain", "age_band", "euro_class"):
+        total = sum(expected[dim].values())
+        assert abs(total - 1.0) < 1e-9, (
+            f"_effective_expected '{dim}' PMF sums to {total} (expected 1.0)"
+        )
+
+
+def test_effective_expected_with_tilt_sums_to_one():
+    """_effective_expected with a non-trivial tilt still sums to 1.0."""
+    n_age = len(ft.AGE_BAND_LABELS)
+    n_euro = len(ft.EURO_CLASS_LABELS)
+    n_pt = len(fs.POWERTRAINS)
+
+    n = 2
+    car_pmfs = [np.ones(n_pt) / n_pt] * n
+    kreis_factors = [np.ones(n_pt)] * n
+    # Non-uniform joint: more mass on first age band.
+    joint = np.ones((n_age, n_euro), dtype=float)
+    joint[0, :] *= 3.0
+    joint = joint / joint.sum()
+    age_euro_joints = [joint] * n
+    # Non-trivial tilt: down-weight older bands.
+    tilt = np.linspace(2.0, 0.5, n_age)
+    tilts = [tilt] * n
+
+    expected = fs._effective_expected(
+        car_pmfs=car_pmfs,
+        kreis_factors=kreis_factors,
+        age_euro_joints=age_euro_joints,
+        tilts=tilts,
+        powertrains=list(fs.POWERTRAINS),
+        age_labels=list(ft.AGE_BAND_LABELS),
+        euro_labels=list(ft.EURO_CLASS_LABELS),
+    )
+
+    for dim in ("powertrain", "age_band", "euro_class"):
+        total = sum(expected[dim].values())
+        assert abs(total - 1.0) < 1e-9, (
+            f"_effective_expected '{dim}' PMF sums to {total} after tilt "
+            f"(expected 1.0)"
+        )
+
+
+def test_sample_fleet_validation_not_flagged(caplog):
+    """sample_fleet (consistency_v2=True) emits a validation summary with
+    any_flagged=False on a correctly implemented model (healthy fleet).
+
+    Uses a moderately-sized seeded fleet (2 Kreise, 1000 cars per Kreis) so
+    Monte-Carlo noise is small enough for the 4-sigma band not to fire.
+    """
+    rng_input = np.random.default_rng(77)
+    statuses = list(ft.STATUS_LABELS)
+    rows = []
+    for kreis in ft.ZGB_KREISE_AGS5[:2]:
+        for _ in range(1000):
+            rows.append({
+                "economic_status": str(rng_input.choice(statuses)),
+                "kreis_ags5": kreis,
+                "gemeinde": np.nan,
+                "raumtyp": int(rng_input.choice([71, 72, 73, 74, 75, 76, 77])),
+            })
+    df_cars = pd.DataFrame(rows)
+
+    with caplog.at_level(logging.INFO):
+        result = fs.sample_fleet(
+            df_cars, DATA_PATH, random_seed=7,
+            consistency_v2=True, age_income_coupling=True,
+        )
+
+    # Task 3 returns a 3-tuple (df_spec, df_types, validation_summary).
+    assert len(result) == 3, (
+        f"sample_fleet (consistency_v2=True) should return 3-tuple; "
+        f"got {len(result)}-tuple"
+    )
+    df_spec, df_types, summary = result
+
+    assert isinstance(summary, dict), "validation summary must be a dict"
+    assert "any_flagged" in summary, "summary must contain 'any_flagged'"
+    assert summary["any_flagged"] is False, (
+        f"Validation flagged drift on a healthy fleet: "
+        f"{summary.get('dimensions', {})}"
+    )
+
+    # Verify the validator fired: all four key dimensions must appear.
+    dims = set(summary.get("dimensions", {}).keys())
+    for expected_dim in ("powertrain", "age_band", "euro_class", "segment"):
+        assert expected_dim in dims, (
+            f"Expected dimension '{expected_dim}' missing from summary; "
+            f"found: {dims}"
+        )
+
+    # Verify a log message was emitted for the validation.
+    text = " ".join(r.message for r in caplog.records).lower()
+    assert "fleet_validation" in text or "fleet_de" in text, (
+        "Expected validation log message not found in captured log"
+    )

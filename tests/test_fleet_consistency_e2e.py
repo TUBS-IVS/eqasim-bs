@@ -73,7 +73,7 @@ def sampler():
 def v2_output_with_hsn(sampler):
     """Full v2 pipeline: sample_fleet (v2) + attach_hsn_tsn on real data."""
     df_cars = _make_cars()
-    spec, _ = fs.sample_fleet(
+    spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
     try:
         out = hsn_tsn.attach_hsn_tsn(spec, data_path=DATA_PATH, random_seed=42)

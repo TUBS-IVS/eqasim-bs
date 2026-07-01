@@ -790,7 +790,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  model_brands: bool = True,
                  consistency_v2: bool = True,
                  age_income_coupling: bool = True,
-                 age_euro_joint: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 age_euro_joint: bool = True
+                 ) -> "tuple[pd.DataFrame, pd.DataFrame] | tuple[pd.DataFrame, pd.DataFrame, dict]":
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -828,12 +829,18 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
 
     Returns
     -------
-    (df_spec, df_vehicle_types) :
-        ``df_spec`` is ``df_cars`` with the added spec columns
-        ``segment, powertrain, euro_class, age_band, age, brand, model,
-        type_id, hbefa_cat, hbefa_tech, hbefa_size, hbefa_emission``;
-        ``df_vehicle_types`` holds the distinct HBEFA :class:`VehicleType`
-        records to register (one per ``type_id``).
+    When ``consistency_v2=True`` (default):
+        ``(df_spec, df_vehicle_types, validation_summary)`` — a 3-tuple;
+        ``validation_summary`` is the dict returned by
+        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_realised_margins`.
+    When ``consistency_v2=False`` (legacy path):
+        ``(df_spec, df_vehicle_types)`` — 2-tuple, byte-identical to the
+        pre-Task-3 legacy behaviour.
+    ``df_spec`` is ``df_cars`` with the added spec columns
+    ``segment, powertrain, euro_class, age_band, age, brand, model,
+    type_id, hbefa_cat, hbefa_tech, hbefa_size, hbefa_emission``;
+    ``df_vehicle_types`` holds the distinct HBEFA :class:`VehicleType`
+    records to register (one per ``type_id``).
     """
     required = {"economic_status", "kreis_ags5", "gemeinde", "raumtyp"}
     missing = required - set(df_cars.columns)
@@ -1110,6 +1117,14 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # PASS 2: apply the per-Kreis rake factor, draw the powertrain, then
         # re-derive euro/age from the FINAL powertrain (internal consistency) and
         # map to HBEFA.
+        # Task 3: collect per-car effective inputs for the realised-margin
+        # validator (_effective_expected).  We need the joint BEFORE the draw
+        # (i.e. for the DRAWN powertrain) to compute the expected age/euro
+        # marginals that correspond to the actual draws.
+        _v3_joints: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        _v3_tilts: list[Optional[np.ndarray]] = [None] * n
+        _v3_pmfs: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        _v3_kreis_factors: list[np.ndarray] = [None] * n  # type: ignore[list-item]
         for i in range(n):
             pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pmf)
@@ -1132,11 +1147,20 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 if age_model is not None:
                     tilt = age_model.age_tilt(car_segment[i], car_status[i])
                     age_pmf = age_pmf * tilt   # multiplicative; _draw_age renormalises
+                else:
+                    tilt = None
                 age_band = _draw_age_consistent_with_euro(
                     rng, age_pmf, euro_class, powertrain)
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
                 car_brand[i], car_model[i])
+            # Task 3: record the effective inputs used for this car so that the
+            # validator can compare the aggregate expected marginals to the
+            # realised marginals.
+            _v3_pmfs[i] = car_pmf[i]
+            _v3_kreis_factors[i] = kreis_factors[car_kreis[i]]
+            _v3_joints[i] = sampler.age_euro_joint[powertrain]
+            _v3_tilts[i] = tilt
 
     df_spec = df_cars.copy()
     df_spec["segment"] = out_segment
@@ -1190,6 +1214,35 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             100.0 * (_feasibility_fallback / n if n else 0.0),
         )
 
+    # Task 3: validate realised fleet marginals vs effective target PMFs
+    # (consistency_v2 path only; legacy path stays byte-identical).
+    if consistency_v2:
+        from braunschweig.synthesis.vehicles import fleet_validation as _fv
+
+        _expected = _effective_expected(
+            car_pmfs=_v3_pmfs,
+            kreis_factors=_v3_kreis_factors,
+            age_euro_joints=_v3_joints,
+            tilts=_v3_tilts,
+            powertrains=list(POWERTRAINS),
+            age_labels=list(ft.AGE_BAND_LABELS),
+            euro_labels=list(ft.EURO_CLASS_LABELS),
+        )
+        # Segment: the KBA FZ 27.10 marginal is the segment draw target;
+        # compare realised segment shares to sampler.segment_model.kba_marginal.
+        _expected["segment"] = {
+            s: float(v)
+            for s, v in zip(sampler.segment_model.segments,
+                            sampler.segment_model.kba_marginal)
+        }
+        _validation_summary = _fv.validate_realised_margins(
+            df_spec, _expected, sample_rate=1.0)
+        logger.info(
+            "[fleet_de] realised-margin validation (consistency_v2): "
+            "any_flagged=%s", _validation_summary["any_flagged"],
+        )
+        return df_spec, df_vehicle_types, _validation_summary
+
     return df_spec, df_vehicle_types
 
 
@@ -1226,3 +1279,83 @@ def _log_simple_fallback(label: str, fallback: int, total: int) -> None:
         100.0 * (total - fallback) / total if total else 0.0,
         fallback, 100.0 * rate,
     )
+
+
+def _effective_expected(
+    car_pmfs: Sequence[np.ndarray],
+    kreis_factors: Sequence[np.ndarray],
+    age_euro_joints: Sequence[np.ndarray],
+    tilts: Sequence[Optional[np.ndarray]],
+    powertrains: Sequence[str],
+    age_labels: Sequence[str],
+    euro_labels: Sequence[str],
+) -> dict[str, dict[str, float]]:
+    """Accumulate the effective per-car target PMFs for the three dimensions.
+
+    For each car, the EFFECTIVE powertrain pmf is ``car_pmf * kreis_factor``
+    (renormalised).  The age/euro marginals are derived from the tilted
+    ``age_euro_joint`` matrix (rows=age bands, cols=Euro classes): the age
+    marginal is the row sum and the euro marginal is the column sum of the
+    tilt-applied, renormalised joint.  Accumulating these over all ``n`` cars
+    and dividing by ``n`` yields the expected marginal PMFs (mean effective
+    target) for the validator.
+
+    This is a pure helper (no RNG, no data loading) so it is unit-testable
+    without running the full sampler.
+
+    Parameters
+    ----------
+    car_pmfs : per-car powertrain pmf (pre-rake; shape ``n_powertrain``).
+    kreis_factors : per-car per-Kreis rake factor array (shape ``n_powertrain``).
+    age_euro_joints : per-car ``age x euro`` joint matrix (shape
+        ``n_age x n_euro``), from ``sampler.age_euro_joint[powertrain]``.
+    tilts : per-car income-age tilt (shape ``n_age``) or ``None`` (no tilt).
+    powertrains : powertrain label sequence (ordered like pmf vectors).
+    age_labels : age-band label sequence (ordered like matrix rows).
+    euro_labels : Euro-class label sequence (ordered like matrix columns).
+
+    Returns
+    -------
+    dict with keys ``"powertrain"``, ``"age_band"``, ``"euro_class"``;
+    each value is a ``label -> probability`` dict summing to 1.0.
+    """
+    n = len(car_pmfs)
+    if n == 0:
+        return {
+            "powertrain": {p: 1.0 / len(powertrains) for p in powertrains},
+            "age_band": {a: 1.0 / len(age_labels) for a in age_labels},
+            "euro_class": {e: 1.0 / len(euro_labels) for e in euro_labels},
+        }
+
+    acc_pt = np.zeros(len(powertrains), dtype=float)
+    acc_age = np.zeros(len(age_labels), dtype=float)
+    acc_euro = np.zeros(len(euro_labels), dtype=float)
+
+    for pmf, factors, joint, tilt in zip(car_pmfs, kreis_factors,
+                                          age_euro_joints, tilts):
+        # Effective powertrain pmf after the per-Kreis rake.
+        eff_pt = np.asarray(pmf, dtype=float) * np.asarray(factors, dtype=float)
+        s = eff_pt.sum()
+        if s > 0:
+            eff_pt = eff_pt / s
+        acc_pt += eff_pt
+
+        # Effective age/euro joint after the income-age tilt (if present).
+        M = np.asarray(joint, dtype=float).copy()
+        if tilt is not None:
+            M = M * np.asarray(tilt, dtype=float)[:, None]
+        m = M.sum()
+        if m > 0:
+            M = M / m
+        acc_age += M.sum(axis=1)   # age marginal
+        acc_euro += M.sum(axis=0)  # euro marginal
+
+    # Normalise by n to get mean expected marginals (which sum to 1.0).
+    return {
+        "powertrain": {p: float(acc_pt[j] / n)
+                       for j, p in enumerate(powertrains)},
+        "age_band": {a: float(acc_age[j] / n)
+                     for j, a in enumerate(age_labels)},
+        "euro_class": {e: float(acc_euro[j] / n)
+                       for j, e in enumerate(euro_labels)},
+    }

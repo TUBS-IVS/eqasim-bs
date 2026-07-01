@@ -357,10 +357,16 @@ def execute(context):
     )
 
     # Attach the full KBA/HBEFA spec to every household car (F4 chain).
-    df_spec, df_vehicle_types = fleet.sample_fleet(
+    # Task 3: consistency_v2=True returns a 3-tuple (df_spec, df_types, summary);
+    # the legacy path (consistency_v2=False) returns the original 2-tuple.
+    _fleet_result = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands, consistency_v2=consistency_v2,
         age_income_coupling=age_income_coupling)
+    if len(_fleet_result) == 3:
+        df_spec, df_vehicle_types, _ = _fleet_result
+    else:
+        df_spec, df_vehicle_types = _fleet_result
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the

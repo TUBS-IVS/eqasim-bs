@@ -169,7 +169,7 @@ def test_sample_fleet_runs_on_built_frame():
 
     df_cars = hh.build_household_car_frame(
         _make_persons(), _make_homes(), _make_regiostar())
-    df_spec, df_types = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
+    df_spec, df_types, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
     assert len(df_spec) == len(df_cars)
     for col in ("segment", "powertrain", "euro_class", "type_id",
                 "hbefa_cat", "hbefa_tech", "hbefa_size", "hbefa_emission"):
@@ -279,7 +279,7 @@ def test_fleet_age_income_coupling_off_produces_flat_age():
         })
     df_cars = pd.DataFrame(rows)
 
-    df_spec, _ = fs.sample_fleet(
+    df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True, age_income_coupling=False)
 

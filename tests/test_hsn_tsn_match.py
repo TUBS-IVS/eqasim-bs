@@ -135,7 +135,7 @@ def _make_cars(n_per_kreis: int = 2000, seed: int = 0) -> pd.DataFrame:
 @pytest.fixture(scope="module")
 def fleet_spec():
     df_cars = _make_cars()
-    df_spec, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=42)
+    df_spec, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=42)
     return df_spec
 
 
