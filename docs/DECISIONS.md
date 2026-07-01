@@ -841,8 +841,8 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   `c8655b1..3c2ebb5` — a `--taz` mode in `scripts/calibrate_gravity_distribution.py` re-fitting friction
   on the TAZ work-OD via `compute_work_od` + TAZ-aware `_calibrate`, work-pass-scoped so it cannot leak
   into the education Gemeinde pass), but the pre-calibration measurement showed friction is **not
-  needed**. The branch is **PARKED (not pushed, not merged)** as gated-off infra, reusable only if a
-  future measurement shows a real gap. The remaining Phase-3 work is to **validate the flag-ON TAZ
+  needed**. The branch is **PARKED (pushed to the fork as backup, not merged)** as gated-off infra,
+  reusable only if a future measurement shows a real gap. The remaining Phase-3 work is to **validate the flag-ON TAZ
   feature at scale** (run the 100% population with `taz_work_location_choice: true`,
   `matsim_last_iteration: 0`), not to calibrate.
 - **Why (measured, traceable references only):** (1) **Mechanism** — eqasim's two-stage location

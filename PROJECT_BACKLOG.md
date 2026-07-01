@@ -59,7 +59,7 @@
     on the TAZ work-OD). But the aggregate commute distribution **already fits MiD P13** (measured EMD
     ~0.054 on the current 100% `popsim_mid` pop, flag-OFF, ZGB-resident; WOB per-Kreis ~0.21 = n=39
     noise, ADR-0049); a 1% flag-ON A/B even IMPROVES the aggregate (0.057->0.033). So the branch is
-    **PARKED (not pushed/merged), gated-off infra** — reuse only if a future measurement shows a real
+    **PARKED (pushed to the fork as backup, not merged), gated-off infra** — reuse only if a future measurement shows a real
     gap (ADR-0050). **Remaining Phase-3 = validate the flag-ON TAZ at 100%** (`taz_work_location_choice:
     true`, `matsim_last_iteration: 0`; multi-hour — origin/main's popsim/secondary sources differ from
     the commit that built the 24G flag-OFF cache, so it rebuilds) + a **spatial validation map** (OSM
