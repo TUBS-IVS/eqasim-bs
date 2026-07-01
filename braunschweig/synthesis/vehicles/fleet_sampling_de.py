@@ -477,6 +477,90 @@ def _age_band_max_years(age_band: str) -> int:
     return mapping[age_band]
 
 
+def _ipf_joint(allowed: np.ndarray, row_target: np.ndarray, col_target: np.ndarray,
+               iterations: int = 1000, tol: float = 1e-10) -> np.ndarray:
+    """Iterative proportional fit of a joint on ``allowed`` cells to two marginals.
+
+    ``allowed`` is a 0/1 support matrix (rows x cols). Returns a matrix whose row
+    sums match ``row_target`` and column sums match ``col_target`` as closely as
+    the support allows. When the two marginals are marginally infeasible on the
+    support, IPF returns the maximum-entropy compromise (a small residual on the
+    over-constrained marginal). Falls back to the independent outer product when
+    no cell is allowed (degenerate data).
+    """
+    M = allowed.astype(float).copy()
+    if M.sum() <= 0:
+        return np.outer(row_target, col_target)
+    for _ in range(iterations):
+        rs = M.sum(axis=1)
+        rs[rs == 0] = 1.0
+        M = M * (row_target / rs)[:, None]
+        cs = M.sum(axis=0)
+        cs[cs == 0] = 1.0
+        M = M * (col_target / cs)[None, :]
+        if (np.abs(M.sum(axis=1) - row_target).max() < tol
+                and np.abs(M.sum(axis=0) - col_target).max() < tol):
+            break
+    return M
+
+
+def _age_euro_joint_matrices(
+    age_given_powertrain: Mapping[str, np.ndarray],
+    euro_given_powertrain: Mapping[str, np.ndarray],
+) -> dict[str, np.ndarray]:
+    """Per-fuel joint ``P(age_band, euro_class | fuel)`` (rows=age, cols=euro).
+
+    Drawing euro and age from independent KBA marginals and then masking age to
+    the drawn Euro class destroys the KBA ``age|fuel`` marginal: Euro-6 (intro
+    2015) forces cars <= 9 yr, so a Euro-6-heavy ``euro|fuel`` drags the fleet
+    ~4-5 yr too young (measured: petrol 12.05 -> 7.33 yr). Instead fit a joint
+    that honours BOTH committed KBA marginals (``age|fuel`` as row targets,
+    ``euro|fuel`` as column targets) on the Euro-age consistency support (see
+    :func:`_age_consistent_with_euro`) via :func:`_ipf_joint`, then draw
+    ``(age, euro)`` jointly (:func:`_draw_age_euro_joint`). This preserves the
+    KBA age marginal (fleet mean ~10.6 yr) AND the euro marginal (emissions).
+    """
+    ages = list(ft.AGE_BAND_LABELS)
+    euros = list(ft.EURO_CLASS_LABELS)
+    out: dict[str, np.ndarray] = {}
+    for fuel, age_pmf in age_given_powertrain.items():
+        r = np.asarray(age_pmf, dtype=float)
+        r = r / r.sum() if r.sum() > 0 else np.ones(len(ages)) / len(ages)
+        c = np.asarray(euro_given_powertrain.get(fuel, np.ones(len(euros))), dtype=float)
+        c = c / c.sum() if c.sum() > 0 else np.ones(len(euros)) / len(euros)
+        allowed = np.array(
+            [[1.0 if _age_consistent_with_euro(a, e, fuel) else 0.0 for e in euros]
+             for a in ages],
+            dtype=float,
+        )
+        out[fuel] = _ipf_joint(allowed, r, c)
+    return out
+
+
+def _draw_age_euro_joint(rng: np.random.Generator, joint_matrix: np.ndarray,
+                         tilt: Optional[np.ndarray] = None) -> tuple[str, str]:
+    """Draw ``(age_band, euro_class)`` jointly from a per-fuel joint matrix.
+
+    ``joint_matrix`` has rows=age bands, cols=Euro classes (see
+    :func:`_age_euro_joint_matrices`). An optional ``tilt`` (length = #age bands)
+    multiplicatively reweights the age rows before the joint draw and is
+    renormalised, so the income->age signal shifts the age mix within the
+    population without overriding the marginal (mean-preserving in expectation).
+    """
+    ages = list(ft.AGE_BAND_LABELS)
+    euros = list(ft.EURO_CLASS_LABELS)
+    M = np.asarray(joint_matrix, dtype=float).copy()
+    if tilt is not None:
+        M = M * np.asarray(tilt, dtype=float)[:, None]
+    total = M.sum()
+    if total <= 0:
+        return ages[0], euros[0]
+    flat = (M / total).ravel()
+    k = int(rng.choice(len(flat), p=flat))
+    ai, ei = divmod(k, len(euros))
+    return ages[ai], euros[ei]
+
+
 # --------------------------------------------------------------------------- #
 # Brand / model conditional distributions (additive, isolated)
 # --------------------------------------------------------------------------- #
@@ -512,6 +596,11 @@ class FleetSampler:
     powertrain_model: PowertrainModel
     euro_given_powertrain: dict[str, np.ndarray]
     age_given_powertrain: dict[str, np.ndarray]
+    #: Per-fuel joint P(age_band, euro_class | fuel), fit by IPF to both KBA
+    #: marginals on the Euro-age consistency support (see
+    #: :func:`_age_euro_joint_matrices`). Consumed by the consistency_v2 joint
+    #: age/euro draw so the fleet age marginal matches KBA (~10.6 yr).
+    age_euro_joint: dict[str, np.ndarray]
     model_given_segment: dict[str, pd.DataFrame]
     size_map: dict[str, str]
     # Task 6: model-feasible powertrain sets (Bug 2). Built from the HSN/TSN
@@ -535,11 +624,14 @@ class FleetSampler:
                 "[fleet_de] HSN/TSN lookup absent; model-feasible powertrain "
                 "mask (Bug 2) disabled (consistency_v2 keeps the unmasked pmf)."
             )
+        euro_given = _euro_given_powertrain(data_path)
+        age_given = _age_given_powertrain(data_path)
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
-            euro_given_powertrain=_euro_given_powertrain(data_path),
-            age_given_powertrain=_age_given_powertrain(data_path),
+            euro_given_powertrain=euro_given,
+            age_given_powertrain=age_given,
+            age_euro_joint=_age_euro_joint_matrices(age_given, euro_given),
             model_given_segment=_model_given_segment(data_path),
             size_map=dict(size_map) if size_map is not None else {},
             feasible_fuels=feasible_fuels,
@@ -677,7 +769,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  sampler: Optional[FleetSampler] = None,
                  model_brands: bool = True,
                  consistency_v2: bool = True,
-                 age_income_coupling: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 age_income_coupling: bool = True,
+                 age_euro_joint: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -1000,17 +1093,27 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         for i in range(n):
             pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pmf)
-            # Feature B (Task 3): income-age tilt. Applied ONLY in the v2 path
-            # when age_income_coupling=True; the euro draw is unaffected.
-            euro_pmf = sampler.euro_given_powertrain[powertrain]
-            euro_class = _draw_categorical(
-                rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
-            age_pmf = sampler.age_given_powertrain[powertrain]
-            if age_model is not None:
-                tilt = age_model.age_tilt(car_segment[i], car_status[i])
-                age_pmf = age_pmf * tilt   # multiplicative; _draw_age renormalises
-            age_band = _draw_age_consistent_with_euro(
-                rng, age_pmf, euro_class, powertrain)
+            # Draw (age, euro) JOINTLY from the per-fuel IPF joint so BOTH KBA
+            # marginals (age|fuel, euro|fuel) are honoured on the Euro-age
+            # consistency support -- this fixes the euro-first age collapse that
+            # made the fleet ~4 yr too young (petrol 12.05 -> 7.33). The income
+            # tilt (Feature B) reweights the age rows (mean-preserving). Setting
+            # age_euro_joint=False restores the legacy euro-first draw + age mask.
+            if age_euro_joint:
+                tilt = (age_model.age_tilt(car_segment[i], car_status[i])
+                        if age_model is not None else None)
+                age_band, euro_class = _draw_age_euro_joint(
+                    rng, sampler.age_euro_joint[powertrain], tilt)
+            else:
+                euro_pmf = sampler.euro_given_powertrain[powertrain]
+                euro_class = _draw_categorical(
+                    rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+                age_pmf = sampler.age_given_powertrain[powertrain]
+                if age_model is not None:
+                    tilt = age_model.age_tilt(car_segment[i], car_status[i])
+                    age_pmf = age_pmf * tilt   # multiplicative; _draw_age renormalises
+                age_band = _draw_age_consistent_with_euro(
+                    rng, age_pmf, euro_class, powertrain)
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
                 car_brand[i], car_model[i])
