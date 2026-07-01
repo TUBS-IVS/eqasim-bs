@@ -509,6 +509,150 @@ def _euro_all_other(euros: Sequence[str]) -> np.ndarray:
     return vec
 
 
+def _euro_given_kreis_powertrain(
+    data_path: str,
+) -> "Optional[dict[tuple[str, str], np.ndarray]]":
+    """``P(euro | kreis, powertrain)`` from Regionalstatistik 46251-03.
+
+    Returns a dict keyed by ``(kreis_ags5, powertrain)`` -> normalised euro pmf,
+    or ``None`` if ``kba_kreis_euro.csv`` is absent (caller falls back to the
+    national FZ 27.4 pmf).
+
+    **Assumptions (46251-03 coverage):**
+
+    * *diesel*: uses the Kreis ``teil=="diesel"`` euro counts directly.
+    * *petrol*, *gas*, *other*: uses ``max(all_count - diesel_count, 0)`` per euro
+      class as a non-diesel combustion proxy. 46251-03 does not break down euro by
+      individual fuel type, so petrol / gas / other all share this non-diesel shape.
+      This is an intentional modelling assumption; document it explicitly.
+    * *bev*, *phev*, *hybrid*, *hydrogen*: 46251-03 covers only combustion; fall
+      back to the national pmf from :func:`_euro_given_powertrain` for every Kreis.
+
+    If a (kreis, powertrain) marginal is all-zero after clipping (degenerate data),
+    the national pmf is substituted and a warning is logged.
+    """
+    euros = list(ft.EURO_CLASS_LABELS)
+    try:
+        df = ft.load_kreis_euro(data_path)
+    except FileNotFoundError:
+        return None
+
+    national = _euro_given_powertrain(data_path)
+    # Powertrains that are NOT covered by 46251-03 (no combustion euro split);
+    # for these every Kreis reuses the national pmf.
+    _NON_COMBUSTION = frozenset({"bev", "phev", "hybrid", "hydrogen"})
+    # Combustion powertrains in 46251-03; we derive per-Kreis for these.
+    _DIESEL_PT = "diesel"
+    _NON_DIESEL_COMBUSTIONs = {"petrol", "gas", "other"}
+
+    out: dict[tuple[str, str], np.ndarray] = {}
+
+    for kreis_ags5, grp in df.groupby("kreis_ags5"):
+        kreis = str(kreis_ags5)
+        row_all = grp[grp["teil"] == "all"]
+        row_dsl = grp[grp["teil"] == "diesel"]
+        if row_all.empty:
+            logger.warning(
+                "[fleet_de] T6b: Kreis %s has no 'all' row in kba_kreis_euro; "
+                "using national pmf for all powertrains.",
+                kreis,
+            )
+            for pt in POWERTRAINS:
+                out[(kreis, pt)] = national[pt]
+            continue
+
+        all_counts = np.array(
+            [row_all.iloc[0][e] for e in euros], dtype=float)
+
+        # Diesel pmf: from the 'diesel' teil row.
+        if not row_dsl.empty:
+            dsl_counts = np.array(
+                [row_dsl.iloc[0][e] for e in euros], dtype=float)
+        else:
+            # No diesel row -> treat as all-zero diesel (all_counts stay as is).
+            dsl_counts = np.zeros(len(euros), dtype=float)
+
+        s_dsl = dsl_counts.sum()
+        if s_dsl > 0:
+            pmf_diesel: np.ndarray = dsl_counts / s_dsl
+        else:
+            logger.warning(
+                "[fleet_de] T6b: Kreis %s diesel euro marginal is all-zero; "
+                "substituting national diesel pmf.",
+                kreis,
+            )
+            pmf_diesel = national[_DIESEL_PT]
+        out[(kreis, _DIESEL_PT)] = pmf_diesel
+
+        # Non-diesel combustion pmf: max(all - diesel, 0) per euro class.
+        non_dsl_counts = np.maximum(all_counts - dsl_counts, 0.0)
+        s_non_dsl = non_dsl_counts.sum()
+        if s_non_dsl > 0:
+            pmf_non_dsl: np.ndarray = non_dsl_counts / s_non_dsl
+        else:
+            logger.warning(
+                "[fleet_de] T6b: Kreis %s non-diesel combustion euro marginal "
+                "is all-zero (all_counts=diesel_counts); substituting national "
+                "petrol pmf.",
+                kreis,
+            )
+            pmf_non_dsl = national.get("petrol", national.get("other", _euro_all_other(euros)))
+        # petrol / gas / other all share this non-diesel combustion shape
+        # (documented assumption: 46251-03 has no per-fuel-type euro split).
+        for pt in _NON_DIESEL_COMBUSTIONs:
+            out[(kreis, pt)] = pmf_non_dsl
+
+        # Non-combustion powertrains: always use the national pmf.
+        for pt in _NON_COMBUSTION:
+            out[(kreis, pt)] = national[pt]
+
+    return out
+
+
+def _age_euro_joint_kreis(
+    age_given_powertrain: Mapping[str, np.ndarray],
+    euro_given_national: Mapping[str, np.ndarray],
+    euro_given_kreis: "dict[tuple[str, str], np.ndarray]",
+) -> "dict[tuple[str, str], np.ndarray]":
+    """Per-(Kreis, powertrain) joint ``P(age_band, euro_class | kreis, powertrain)``.
+
+    Uses the same :func:`_age_euro_joint_matrices` IPF machinery as the national
+    joint, but substitutes the per-Kreis euro column target where available.
+
+    Parameters
+    ----------
+    age_given_powertrain:
+        National ``P(age_band | powertrain)`` (rows = age bands).
+    euro_given_national:
+        National ``P(euro_class | powertrain)`` fallback.
+    euro_given_kreis:
+        Per-(kreis, powertrain) euro pmf from :func:`_euro_given_kreis_powertrain`.
+
+    Returns
+    -------
+    dict[(kreis_ags5, powertrain) -> IPF joint matrix (n_age x n_euro)]
+    """
+    kreise = {k for k, _pt in euro_given_kreis.keys()}
+    ages = list(ft.AGE_BAND_LABELS)
+    euros = list(ft.EURO_CLASS_LABELS)
+    out: dict[tuple[str, str], np.ndarray] = {}
+    for kreis in kreise:
+        for fuel, age_pmf in age_given_powertrain.items():
+            euro_pmf = euro_given_kreis.get(
+                (kreis, fuel), euro_given_national.get(fuel, np.ones(len(euros)) / len(euros)))
+            r = np.asarray(age_pmf, dtype=float)
+            r = r / r.sum() if r.sum() > 0 else np.ones(len(ages)) / len(ages)
+            c = np.asarray(euro_pmf, dtype=float)
+            c = c / c.sum() if c.sum() > 0 else np.ones(len(euros)) / len(euros)
+            allowed = np.array(
+                [[1.0 if _age_consistent_with_euro(a, e, fuel) else 0.0 for e in euros]
+                 for a in ages],
+                dtype=float,
+            )
+            out[(kreis, fuel)] = _ipf_joint(allowed, r, c)
+    return out
+
+
 def _age_given_powertrain(data_path: str) -> dict[str, np.ndarray]:
     """``P(age_band | powertrain)`` (FZ 27.7) as powertrain -> pmf over age band.
 
@@ -691,6 +835,11 @@ class FleetSampler:
     # lookup, which is local-only / gitignored; ``None`` when the CSV is absent
     # (then the feasibility mask is simply not applied — OFF-safe).
     feasible_fuels: Optional[FeasibleFuels] = None
+    #: Task 6b: per-(Kreis, powertrain) joint P(age_band, euro_class | kreis,
+    #: powertrain) built from Regionalstatistik 46251-03 per-Kreis Euro counts.
+    #: ``None`` when kba_kreis_euro.csv is absent (then the national
+    #: ``age_euro_joint`` is used unchanged -- byte-identical fallback).
+    age_euro_joint_kreis: Optional[dict[tuple, np.ndarray]] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -710,6 +859,22 @@ class FleetSampler:
             )
         euro_given = _euro_given_powertrain(data_path)
         age_given = _age_given_powertrain(data_path)
+        # Task 6b: try to build the per-Kreis euro joint from 46251-03.
+        # Returns None when kba_kreis_euro.csv is absent -- fallback to national.
+        euro_given_kreis = _euro_given_kreis_powertrain(data_path)
+        if euro_given_kreis is not None:
+            logger.info(
+                "[fleet_de] per-Kreis euro joint (46251-03): building per-"
+                "(Kreis, powertrain) age-euro IPF joints."
+            )
+            age_euro_joint_kreis: Optional[dict[tuple, np.ndarray]] = _age_euro_joint_kreis(
+                age_given, euro_given, euro_given_kreis)
+        else:
+            logger.info(
+                "[fleet_de] national euro joint (FZ27.4 fallback): "
+                "kba_kreis_euro.csv absent; per-Kreis euro marginal disabled."
+            )
+            age_euro_joint_kreis = None
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -719,6 +884,7 @@ class FleetSampler:
             model_given_segment=_model_given_segment(data_path),
             size_map=dict(size_map) if size_map is not None else {},
             feasible_fuels=feasible_fuels,
+            age_euro_joint_kreis=age_euro_joint_kreis,
         )
 
 
@@ -1213,8 +1379,20 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             if age_euro_joint:
                 tilt = (age_model.age_tilt(car_segment[i], car_status[i])
                         if age_model is not None else None)
+                # Task 6b: select the per-Kreis joint when available; fall back
+                # to the national per-powertrain joint otherwise. Use the SAME
+                # selected joint for both the draw and the _v3_joints recording
+                # (internal consistency).
+                _selected_joint: np.ndarray
+                if sampler.age_euro_joint_kreis is not None:
+                    _selected_joint = sampler.age_euro_joint_kreis.get(
+                        (car_kreis[i], powertrain),
+                        sampler.age_euro_joint[powertrain],
+                    )
+                else:
+                    _selected_joint = sampler.age_euro_joint[powertrain]
                 age_band, euro_class = _draw_age_euro_joint(
-                    rng, sampler.age_euro_joint[powertrain], tilt)
+                    rng, _selected_joint, tilt)
                 # Pure-electric drivetrains (BEV / hydrogen) carry no combustion
                 # Euro stage; override to the real "electric" category.  PHEV
                 # and hybrid DO have a combustion engine, so they keep their
@@ -1238,6 +1416,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                     tilt = None
                 age_band = _draw_age_consistent_with_euro(
                     rng, age_pmf, euro_class, powertrain)
+                _selected_joint = sampler.age_euro_joint[powertrain]
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
                 car_brand[i], car_model[i])
@@ -1246,7 +1425,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             # realised marginals.
             _v3_pmfs[i] = car_pmf[i]
             _v3_kreis_factors[i] = kreis_factors[car_kreis[i]]
-            _v3_joints[i] = sampler.age_euro_joint[powertrain]
+            _v3_joints[i] = _selected_joint  # Task 6b: per-Kreis when available
             _v3_tilts[i] = tilt
             _v3_powertrains[i] = powertrain  # A4-revised: used to mirror the "electric" override
 
