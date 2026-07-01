@@ -53,6 +53,17 @@ def test_build_taz_calibration_inputs_shapes_and_keys():
     assert len(out["home_taz"]) == 3
 
 
+def test_build_work_by_taz_groups_and_normalises():
+    from braunschweig.calibration.commute_taz import build_work_by_taz
+    work = gpd.GeoDataFrame(
+        {"taz_id": ["t2", "t2"], "employees": [1.0, 3.0]},
+        geometry=[Point(1000, 0), Point(2000, 0)], crs="EPSG:25832")
+    wbt = build_work_by_taz(work)
+    xy, w = wbt["t2"]
+    assert xy.shape == (2, 2)
+    assert abs(w.sum() - 1.0) < 1e-9 and abs(w[1] - 0.75) < 1e-9
+
+
 def test_assign_and_measure_taz_distances_and_rs7():
     from braunschweig.calibration.commute_taz import assign_and_measure_taz
     zones = ["t1", "t2", "t3", "t4"]

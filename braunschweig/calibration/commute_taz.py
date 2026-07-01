@@ -190,3 +190,37 @@ def assign_and_measure_taz(od_matrix, zones, home_taz, work_by_taz, rs7_by_zone,
         {k: np.array(v) for k, v in km_by_rs7.items()},
         skip_rate,
     )
+
+
+def build_work_by_taz(df_work_taz):
+    """Build a per-TAZ work-location lookup from a work-locations GeoDataFrame tagged with taz_id.
+
+    For each TAZ, collects the (x, y) coordinates of all work locations and their
+    weights. The 'employees' column is used as weight when present and positive;
+    otherwise uniform weights are used. The weight vector sums to 1.0 so
+    assign_and_measure_taz's internal ``w / w.sum()`` normalisation never hits 0/0.
+
+    Parameters
+    ----------
+    df_work_taz : GeoDataFrame
+        Work-location candidates already tagged with 'taz_id' (string). Must carry
+        a metric geometry column (EPSG:25832). Optionally carries an 'employees'
+        column used as sampling weight.
+
+    Returns
+    -------
+    dict[str, tuple(np.ndarray, np.ndarray)]
+        Keys are taz_id strings. Each value is ``(xy, w)`` where ``xy`` has shape
+        ``(K, 2)`` with columns (x_m, y_m) in metres and ``w`` is a length-K
+        probability vector summing to 1.0.
+    """
+    out = {}
+    for taz_id, grp in df_work_taz.groupby("taz_id"):
+        xy = np.column_stack([grp.geometry.x.values, grp.geometry.y.values])
+        if "employees" in grp.columns and float(grp["employees"].sum()) > 0:
+            w = grp["employees"].to_numpy(dtype=float)
+            w = w / w.sum()
+        else:
+            w = np.ones(len(grp)) / len(grp)
+        out[str(taz_id)] = (xy, w)
+    return out

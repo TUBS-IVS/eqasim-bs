@@ -309,6 +309,257 @@ def _row_normalise_od(df_od: "pd.DataFrame") -> "pd.DataFrame":
 
 
 # ---------------------------------------------------------------------------
+# TAZ calibration branch (_run_taz_calibration)
+# ---------------------------------------------------------------------------
+
+def _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, seed):
+    """TAZ variant of the calibration: re-fit per-RS7 friction on the TAZ work OD.
+
+    Loads population-level stages from the cache (no popsim rebuild), builds the TAZ
+    layer via build_taz_calibration_inputs, then runs the Furness loop through
+    compute_work_od. Emits work_gravity_friction_factors (work-pass scoped; Task 4
+    wires model.py to read this key).
+
+    The BA Pendleratlas Kreis anchor is preserved: _calibrate is called after each
+    compute_work_od invocation, mirroring execute()'s TAZ ON path. compute_work_od
+    returns an UNcalibrated row-normalised OD (it does not call _calibrate internally);
+    without this explicit call the inter-Kreis flows would be shaped only by the
+    gravity friction and not anchored to observed BA Pendleratlas Kreis-pair flows.
+    """
+    import geopandas as gpd
+
+    from braunschweig.data.building_potentials import assign_commune, load_potentials
+    from braunschweig.data.spatial.taz import filter_to_scope, load_taz_zones
+    from braunschweig.gravity.model import (
+        _calibrate,
+        _synthesise_intra_kreis,
+        compute_work_od,
+    )
+    from braunschweig.calibration.commute_taz import (
+        assign_and_measure_taz,
+        build_taz_calibration_inputs,
+        build_work_by_taz,
+    )
+    from braunschweig.gravity.taz_margins import assign_taz
+    from braunschweig.calibration.metrics import band_shares, emd_on_bands
+    from braunschweig.calibration.targets import (
+        load_p13_band_shares,
+        load_p13_band_shares_by_rs7,
+    )
+    from braunschweig.calibration.commute import furness_update, shrink_sparse_factors
+
+    wd = args.working_directory
+
+    # -----------------------------------------------------------------------
+    # 1. Load cached inputs (direct pickle, no synpp rebuild)
+    # Resolved cache stage names (verified against cache_bs_100pct_allfeat_popsim):
+    # config aliases resolve to concrete cached stages; _load_stage globs the
+    # concrete name (NOT the alias).
+    # -----------------------------------------------------------------------
+    df_homes = _load_stage(wd, "braunschweig.synthesis.locations.home_cell")
+    df_population = _load_stage(wd, "braunschweig.popsim.stage")
+    df_employees = _load_stage(wd, "braunschweig.data.census.employees")
+    df_municipalities = _load_stage(wd, "data.spatial.municipalities")
+    df_regiostar = _load_stage(wd, "braunschweig.data.bbsr.regiostar")
+    df_work = _load_stage(wd, "braunschweig.locations.work")
+    df_pendler = _load_stage(wd, "braunschweig.data.census.pendler")
+    df_employment = _load_stage(wd, "braunschweig.data.census.employment")
+
+    # Building potentials: the building_potentials STAGE is not cached (only
+    # braunschweig.data.buildings, which lacks potential_work), so read the
+    # committed parquet directly and replicate the stage execute() prep:
+    # load_potentials() validates + ensures EPSG:25832; assign_commune() attaches
+    # commune_id via representative_point sjoin (primary) + nearest-zone fallback.
+    # This matches exactly what build_dest_attraction_per_taz consumes in model.py.
+    _bp_path = os.path.join(
+        cfg.get("data_path", "eqasim-data/data"),
+        cfg.get("building_potentials_path",
+                "braunschweig/buildings/building_activity_potentials.parquet"),
+    )
+    df_buildings_raw = load_potentials(_bp_path)
+    df_buildings, bp_primary, bp_fallback = assign_commune(df_buildings_raw, df_municipalities)
+    bp_total = bp_primary + bp_fallback
+    logger.info(
+        "[commute-taz] building_potentials: %d buildings loaded; commune join primary %d (%.1f%%), "
+        "fallback %d (%.1f%%)",
+        len(df_buildings), bp_primary, 100.0 * bp_primary / bp_total if bp_total else 0.0,
+        bp_fallback, 100.0 * bp_fallback / bp_total if bp_total else 0.0,
+    )
+
+    # -----------------------------------------------------------------------
+    # 2. Build TAZ layer
+    # -----------------------------------------------------------------------
+    prefixes = [p.strip() for p in args.political_prefix.split(",") if p.strip()]
+    df_taz = filter_to_scope(load_taz_zones(args.taz_parquet), prefixes)
+    inp = build_taz_calibration_inputs(
+        df_taz, df_homes, df_population, df_employees, df_buildings, df_municipalities)
+    zones = inp["zones"]
+
+    # Tag work locations with TAZ; pre-build the per-TAZ work-location sampler.
+    # assign_taz returns (gdf[id_column, taz_id, commune_id], primary, fallback).
+    work = df_work.copy().reset_index(drop=True)
+    work["work_row_id"] = work.index.astype(str)
+    work["_kreis"] = work["commune_id"].astype(str).str[:5]
+    work_map, work_primary, work_fallback = assign_taz(
+        work, df_taz, id_column="work_row_id", kreis_column="_kreis")
+    logger.info(
+        "[commute-taz] work-location->TAZ primary %d / fallback %d",
+        work_primary, work_fallback,
+    )
+    work = work.merge(work_map[["work_row_id", "taz_id"]], on="work_row_id", how="left")
+    work_by_taz = build_work_by_taz(work.dropna(subset=["taz_id"]))
+
+    # -----------------------------------------------------------------------
+    # 3. MiD P13 targets (committed references only)
+    # -----------------------------------------------------------------------
+    targets = load_p13_band_shares(args.mid_dir)
+    rs7_targets = load_p13_band_shares_by_rs7(args.mid_dir)
+    logger.info(
+        "[commute-taz] loaded P13 targets: ZGB=%s, per-RS7 codes=%s",
+        "03ZGB" in targets, sorted(rs7_targets.keys()),
+    )
+
+    # -----------------------------------------------------------------------
+    # 4. BA Pendleratlas Kreis anchor (same construction as the Gemeinde path)
+    # -----------------------------------------------------------------------
+    scope = prefixes
+    mask = df_pendler["orig_ars"].isin(scope) | df_pendler["dest_ars"].isin(scope)
+    df_pendler_scope = df_pendler[mask].copy()
+    df_pendler_scope = _synthesise_intra_kreis(df_pendler_scope, df_employment, scope)
+
+    # Population frame for _calibrate (TAZ ON path): population_key="taz_id",
+    # population_value="population". inp["df_pop_taz"] has column "origin_id"
+    # (renamed from "taz_id" by build_taz_calibration_inputs); we rename it back
+    # so _calibrate's groupby(population_key) works correctly.
+    df_pop_for_calibrate = inp["df_pop_taz"].rename(
+        columns={"origin_id": "taz_id"})[["taz_id", "population"]].copy()
+
+    # -----------------------------------------------------------------------
+    # 5. Furness loop (per-RS7) via compute_work_od
+    # -----------------------------------------------------------------------
+    factors_by_rs7 = {rs7: np.ones(N_BANDS) for rs7 in sorted(rs7_targets)}
+    iter_log, converged = [], False
+    km_by_rs7 = {}
+    for it in range(args.max_iterations):
+        friction_factors = {int(rs7): {int(b): float(factors_by_rs7[rs7][b])
+                                       for b in range(N_BANDS)}
+                            for rs7 in factors_by_rs7}
+        work_od = compute_work_od(
+            df_population=inp["df_pop_taz"],
+            df_employees=inp["df_emp_taz"],
+            df_distances=inp["df_dist_taz"],
+            df_regiostar=df_regiostar,
+            rs7_by_zone=inp["rs7_by_zone"],
+            slope=slope,
+            constant=constant,
+            diagonal=diagonal,
+            slope_overrides=slope_overrides,
+            friction_factors=friction_factors,
+            max_iterations=int(cfg.get("gravity_max_iterations", 50)),
+        )
+        # BA Pendleratlas Kreis anchor.
+        # VERIFIED: compute_work_od returns an UNcalibrated row-normalised OD (it
+        # calls build_friction_matrix + evaluate_gravity + row-normalise only;
+        # _calibrate is applied separately by execute()). So we must call _calibrate
+        # here, mirroring execute()'s TAZ ON path, else the inter-Kreis BA control
+        # is lost. population_key="taz_id"/population_value="population" matches
+        # the ON path in execute() (lines 1187-1192 in model.py).
+        work_od = _calibrate(
+            work_od, df_pop_for_calibrate, df_pendler_scope,
+            zone_to_kreis=inp["zone_to_kreis"],
+            population_key="taz_id",
+            population_value="population",
+        )
+        # _calibrate returns a 'flow' column (not 'weight'); re-normalise to weights.
+        if "flow" in work_od.columns and "weight" not in work_od.columns:
+            work_od = work_od.rename(columns={"flow": "weight"})
+        work_od = _row_normalise_od(work_od)
+
+        od_pivot = (work_od.pivot(index="origin_id", columns="destination_id", values="weight")
+                    .reindex(index=zones, columns=zones).fillna(0.0))
+        od_matrix = od_pivot.values
+
+        _, km_by_rs7, skip_rate = assign_and_measure_taz(
+            od_matrix, zones, inp["home_taz"], work_by_taz,
+            inp["rs7_by_zone"], random_seed=seed + it,
+        )
+
+        emds = {}
+        for rs7 in list(factors_by_rs7):
+            km = km_by_rs7.get(rs7, np.array([]))
+            if len(km) < args.min_count:
+                continue
+            shares = band_shares(np.asarray(km, float) * args.detour_factor)
+            tgt = (rs7_targets.get(rs7)
+                   if rs7_targets.get(rs7) is not None
+                   else targets.get("03ZGB"))
+            if tgt is None:
+                continue
+            emds[rs7] = emd_on_bands(shares, tgt)
+            factors_by_rs7[rs7] = furness_update(factors_by_rs7[rs7], tgt, shares)
+
+        max_emd = max(emds.values()) if emds else float("nan")
+        iter_log.append({"iter": it, "max_emd": max_emd, "emds": emds,
+                          "skip_rate": skip_rate})
+        logger.info(
+            "[commute-taz] iter %d max_emd=%.4f skip_rate=%.3f (per-RS7 %s)",
+            it, max_emd, skip_rate,
+            {k: round(v, 3) for k, v in emds.items()},
+        )
+        if np.isnan(max_emd):
+            raise RuntimeError(
+                "[commute-taz] EMD is NaN -- no RS7 cell had >= min_count workers "
+                "(%d). Check that home_taz rs7_by_zone covers the TAZ zones and "
+                "that min_count (%d) is not too high for the sample size."
+                % (args.min_count, args.min_count)
+            )
+        if max_emd <= args.emd_threshold:
+            converged = True
+            break
+
+    if not converged:
+        logger.warning(
+            "[commute-taz] did not converge within %d iterations; "
+            "final max_emd=%.4f (threshold=%.4f). "
+            "The Furness loop is limited by the achievable within-pair portion.",
+            args.max_iterations, max_emd, args.emd_threshold,
+        )
+
+    # -----------------------------------------------------------------------
+    # 6. Shrink sparse RS7 cells + emit
+    # -----------------------------------------------------------------------
+    counts_by_rs7 = {rs7: len(km_by_rs7.get(rs7, [])) for rs7 in factors_by_rs7}
+    pooled = np.mean([factors_by_rs7[r] for r in factors_by_rs7], axis=0)
+    factors_by_rs7, shrink_rate = shrink_sparse_factors(
+        factors_by_rs7, counts_by_rs7, pooled, args.min_count)
+    logger.info("[commute-taz] shrinkage rate %.3f; converged=%s", shrink_rate, converged)
+
+    final = {
+        int(rs7): {int(b): float(factors_by_rs7[rs7][b]) for b in range(N_BANDS)}
+        for rs7 in factors_by_rs7
+    }
+    # Output under work_gravity_friction_factors (work-pass scoped, not education).
+    yaml_block = _yaml_factors_block(final).replace(
+        "gravity_friction_factors:", "work_gravity_friction_factors:")
+    print("\n# Paste under 'work_gravity_friction_factors' in config_*braunschweig*.yml")
+    print(yaml_block)
+
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+        report_path = os.path.join(args.output_dir, "taz_friction_report.json")
+        with open(report_path, "w", encoding="utf-8") as fh:
+            json.dump({
+                "converged": converged,
+                "iter_log": iter_log,
+                "work_gravity_friction_factors": final,
+                "shrinkage_rate": shrink_rate,
+            }, fh, indent=2)
+        logger.info("[commute-taz] wrote report to %s", report_path)
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
 
@@ -376,6 +627,22 @@ def main():
         "--output-dir", default=None,
         help="Write gravity_calibration_results.csv and gravity_calibration_report.json here.",
     )
+    parser.add_argument(
+        "--taz", action="store_true",
+        help="Calibrate on the TAZ work-gravity path (sub-Gemeinde zones). Builds the "
+             "TAZ layer in-script from the RVB parquet + cached population stages; writes "
+             "work_gravity_friction_factors (scoped to the work pass, not education).",
+    )
+    parser.add_argument(
+        "--taz-parquet",
+        default="eqasim-data/data/braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet",
+        help="RVB Verkehrszellen parquet (used only with --taz).",
+    )
+    parser.add_argument(
+        "--political-prefix",
+        default="03101,03102,03103,03151,03153,03154,03157,03158",
+        help="Comma-separated 5-digit Kreis ARS to scope the TAZ zones to (used with --taz).",
+    )
     args = parser.parse_args()
 
     wd = args.working_directory
@@ -410,6 +677,10 @@ def main():
     # F9: resolve random seed: explicit --seed > config random_seed > 0.
     seed = args.seed if args.seed is not None else int(cfg.get("random_seed", 0))
     logger.info("[commute-calib] random seed: %d", seed)
+
+    # Dispatch to TAZ calibration branch when --taz is given; returns here.
+    if args.taz:
+        return _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, seed)
 
     # ------------------------------------------------------------------
     # 2. Load required stage pickles
