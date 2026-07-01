@@ -381,6 +381,54 @@ def load_age_national(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_gemeinde_ev(data_path: str) -> pd.DataFrame:
+    """KBA per-Gemeinde EV shares (Stichtag 2026-04-01), ZGB Gemeinden only.
+
+    Loads ``kba_gemeinde_ev.csv`` produced by
+    ``scripts/extract_kba_fleet.py::extract_gemeinde_ev``.  Validates that all
+    required columns are present and that every ``kreis_ags5`` belongs to the 8
+    ZGB Kreise (no non-ZGB rows, no extra Kreis codes that are not ZGB).
+
+    Columns: ``kreis_ags5, ags8, gemeinde, gemeinde_norm, stichtag,
+    ev_share, bev_share, phev_share, fuelcell_share``.
+
+    Note: the loader does **not** require all 8 ZGB Kreise to be present
+    (some Kreise may have only one Gemeinde = the Kreisstadt which is already the
+    Kreis itself; the per-Gemeinde CSV only covers Gemeinden with sufficient counts).
+    It does reject any Kreis code that is **not** one of the 8 ZGB codes.
+
+    Args:
+        data_path: Root data path; ``braunschweig/kba/derived/`` is appended
+            automatically.
+
+    Returns:
+        DataFrame with the nine columns listed above.  ``kreis_ags5`` and ``ags8``
+        are string columns (leading zero preserved).
+
+    Raises:
+        FileNotFoundError: If ``kba_gemeinde_ev.csv`` is absent.
+        RuntimeError: If required columns are missing or any ``kreis_ags5`` is not
+            one of the 8 ZGB Kreise.
+    """
+    filename = "kba_gemeinde_ev.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df,
+        [
+            "kreis_ags5", "ags8", "gemeinde", "gemeinde_norm", "stichtag",
+            "ev_share", "bev_share", "phev_share", "fuelcell_share",
+        ],
+        filename,
+    )
+    unexpected = set(df["kreis_ags5"]) - set(ZGB_KREISE_AGS5)
+    if unexpected:
+        raise RuntimeError(
+            f"{filename}: unexpected non-ZGB kreis_ags5 codes {sorted(unexpected)} "
+            f"(allowed {sorted(ZGB_KREISE_AGS5)})."
+        )
+    return df
+
+
 def load_mid_segment_by_status_raumtyp(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by RegioStaR-7 Raumtyp (column-%).
 

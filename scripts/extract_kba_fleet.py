@@ -66,6 +66,7 @@ MID_RAUMTYP_PATH = KBA_DIR / "output_mit_2023_raumtyp_fahrzeuge.xlsx"
 FUEL_46251_PATH = RAW_DIR / "regionalstatistik_46251_02_fuel_kreis_20250101.csv"
 EURO_46251_PATH = RAW_DIR / "regionalstatistik_46251_03_euro_kreis_20250101.csv"
 AGE_NATIONAL_PATH = RAW_DIR / "statista_kba_3438_pkw_age_national_2026.xlsx"
+GEMEINDE_EV_PATH = RAW_DIR / "kba_ev_gemeinde_timeseries_2023_2026.csv"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -835,6 +836,105 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
     for c in euro_cols:
         frame[f"{c}_share"] = frame[c] / frame["total"]
     return frame
+
+
+# --------------------------------------------------------------------------- #
+# KBA per-Gemeinde EV shares (2026.04) -> kba_gemeinde_ev.csv (ZGB only)
+# --------------------------------------------------------------------------- #
+def extract_gemeinde_ev(path: Path = GEMEINDE_EV_PATH) -> pd.DataFrame:
+    """KBA per-Gemeinde EV shares (Stichtag 2026-04-01), BEV/PHEV/fuel-cell split.
+
+    The KBA per-Gemeinde timeseries CSV (``kba_ev_gemeinde_timeseries_2023_2026.csv``)
+    carries one row per Gemeinde per quarterly reporting period.  For ZGB Gemeinden
+    the absolute Pkw counts are suppressed by KBA data-protection rules; only the
+    ``*_Anteil`` (share) columns carry data -- the downstream tilt consumes shares,
+    so this is loss-free for our use.
+
+    This function:
+    - Keeps only the latest reporting period (``Berichtszeitpunkt``, e.g. "2026.04").
+    - Filters to Gemeinden whose AGS-8 prefix (first 5 digits) is one of the 8 ZGB
+      Kreise (``ZGB_KREISE``).
+    - Converts German decimal commas to dots and divides share columns by 100
+      (percent -> fraction).
+    - Logs the count of rows with any missing share values (no-silent-fallback rule);
+      NaN shares are kept in the output so the consuming tilt can fall back to the
+      Kreis-level value.
+    - Applies ``normalize_gemeinde`` from
+      ``braunschweig.synthesis.vehicles.fleet_sampling_de`` to produce the
+      ``gemeinde_norm`` matching key.
+
+    Args:
+        path: Path to the raw KBA Gemeinde EV CSV (utf-8-sig, ``Berichtszeitpunkt``
+              column carries the period string like ``"2026.04"``).
+
+    Returns:
+        DataFrame with columns: ``kreis_ags5, ags8, gemeinde, gemeinde_norm,
+        stichtag, ev_share, bev_share, phev_share, fuelcell_share``.
+        Sorted by (``kreis_ags5``, ``gemeinde``); index reset.
+    """
+    # Local import: the synthesis package is not guaranteed to be on sys.path
+    # at script import time (only needed here, not by the other extractor functions).
+    from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde
+
+    df = pd.read_csv(path, encoding="utf-8-sig", dtype=str)
+
+    # Derive the 5-digit Kreis prefix from the 8-digit Gemeinde AGS.
+    df["ags5"] = df["AGS"].str.strip().str[:5]
+
+    # Keep only the latest reporting period.
+    latest = sorted(df["Berichtszeitpunkt"].dropna().unique())[-1]  # e.g. "2026.04"
+    stichtag = f"{latest[:4]}-{latest[5:7]}-01"
+
+    sub = df[
+        (df["Berichtszeitpunkt"] == latest) & (df["ags5"].isin(ZGB_KREISE))
+    ].copy()
+
+    def _frac(col: str) -> pd.Series:
+        """Parse a percent share column (German comma) and divide by 100."""
+        return (
+            pd.to_numeric(
+                sub[col].str.replace(",", ".", regex=False),
+                errors="coerce",
+            )
+            / 100.0
+        )
+
+    out = pd.DataFrame(
+        {
+            "kreis_ags5": sub["ags5"].values,
+            "ags8": sub["AGS"].str.strip().values,
+            "gemeinde": sub["Gemeinde"].str.strip().values,
+            "stichtag": stichtag,
+            "ev_share": _frac("Pkw Elektro Anteil").values,
+            "bev_share": _frac("Pkw_BEV_Anteil").values,
+            "phev_share": _frac("Pkw Plug In Hybrid Anteil").values,
+            "fuelcell_share": _frac("Pkw Brennstoffzelle Anteil").values,
+        }
+    )
+
+    out["gemeinde_norm"] = out["gemeinde"].map(normalize_gemeinde)
+
+    # Log missing-share rows (no-silent-fallback rule): if any share is NaN for a
+    # ZGB row that is genuinely unexpected (not a KBA suppression), it is a signal
+    # that the column mapping needs attention.  The consumer (EV tilt) will fall
+    # back to the Kreis value for such rows.
+    share_cols = ["ev_share", "bev_share", "phev_share", "fuelcell_share"]
+    n_missing = int(out[share_cols].isna().any(axis=1).sum())
+    n_total = len(out)
+    if n_missing > 0:
+        logger.warning(
+            "[extract_gemeinde_ev] %d/%d ZGB Gemeinde rows have at least one missing "
+            "share value (NaN kept; consuming tilt falls back to Kreis level).",
+            n_missing, n_total,
+        )
+    else:
+        logger.info(
+            "[extract_gemeinde_ev] %d ZGB Gemeinde rows, all share columns populated "
+            "(stichtag=%s).",
+            n_total, stichtag,
+        )
+
+    return out.sort_values(["kreis_ags5", "gemeinde"]).reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
