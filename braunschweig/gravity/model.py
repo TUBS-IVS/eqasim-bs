@@ -228,6 +228,14 @@ def evaluate_gravity(
     is removed. The returned matrix and the number of iterations performed are
     therefore identical to before.
     """
+    # The production/attraction targets may arrive as pandas Series (compute_work_od
+    # passes df columns). Their integer __getitem__ (``population[k]`` / ``employees[k]``
+    # below) positionally indexes a string-indexed Series, which pandas deprecates with
+    # a FutureWarning. Coerce to plain arrays once so positional access is explicit; the
+    # values -- and hence the balancing result -- are unchanged.
+    population = np.asarray(population)
+    employees = np.asarray(employees)
+
     production = np.ones((len(population),))
     attraction = np.ones((len(population),))
     flow = np.ones((len(population), len(population)))
