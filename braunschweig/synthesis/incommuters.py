@@ -908,8 +908,15 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
     # Derive a deterministic integer seed from the in-commuter rng so the fleet
     # draw is reproducible and decoupled from the rng's mutable internal state.
     fleet_seed = int(rng.integers(0, 2**31 - 1))
-    df_spec, df_vehicle_types = fleet.sample_fleet(
+    # sample_fleet returns a 3-tuple (df_spec, df_types, validation_summary) under
+    # consistency_v2 (default True) and the legacy 2-tuple otherwise; handle both
+    # robustly (mirrors braunschweig.synthesis.vehicles.cars.household).
+    _fleet_result = fleet.sample_fleet(
         df_cars, data_path, random_seed=fleet_seed)
+    if len(_fleet_result) == 3:
+        df_spec, df_vehicle_types, _ = _fleet_result
+    else:
+        df_spec, df_vehicle_types = _fleet_result
 
     df_vehicles = pd.DataFrame({
         "owner_id": car_person_ids,
