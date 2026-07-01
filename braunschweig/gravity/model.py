@@ -695,6 +695,23 @@ def _execute_gravity_base(context):
     # ExecuteContext.config() takes the key alone (the default is declared in
     # configure()); passing a default here would raise.
     max_iterations = context.config("gravity_max_iterations")
+    # work_gravity_friction_factors scopes friction to the TAZ work pass only.
+    # Falls back to gravity_friction_factors when absent/None so the OFF path
+    # (all existing configs) is byte-identical (the fallback is logged explicitly
+    # to satisfy the no-silent-fallback contract).
+    work_friction_factors = context.config("work_gravity_friction_factors")
+    if work_friction_factors is None:
+        work_friction_factors = friction_factors
+        logger.info(
+            "[gravity] work_gravity_friction_factors unset; work pass uses "
+            "gravity_friction_factors (%s).",
+            "set" if friction_factors else "none",
+        )
+    else:
+        logger.info(
+            "[gravity] work pass uses work_gravity_friction_factors (scoped); "
+            "education pass uses gravity_friction_factors.",
+        )
 
     # Gemeinde pass (used for education, and also for work when TAZ is OFF).
     education_od = compute_work_od(
@@ -765,7 +782,7 @@ def _execute_gravity_base(context):
         constant=constant,
         diagonal=diagonal,
         slope_overrides=slope_overrides,
-        friction_factors=friction_factors,
+        friction_factors=work_friction_factors,
         max_iterations=max_iterations,
     )
 
@@ -821,6 +838,13 @@ def configure(context):
     # scripts/calibrate_gravity_distribution.py; do not hand-edit. Must default to
     # None (not {}) so synpp flatten() does not drop it (see gravity_slope_by_regiostar7).
     context.config("gravity_friction_factors", None)
+    # Optional per-distance-band friction factors scoped to the WORK (TAZ) pass only.
+    # When set, the work pass uses these factors and the education Gemeinde pass
+    # continues to use gravity_friction_factors (unmodified). When absent/None the
+    # work pass falls back to gravity_friction_factors (byte-identical behaviour).
+    # Written by scripts/calibrate_gravity_distribution.py after a work-TAZ-specific
+    # calibration run. Must default to None (not {}) for the same synpp flatten() reason.
+    context.config("work_gravity_friction_factors", None)
     context.stage("braunschweig.data.census.pendler")
     context.stage("braunschweig.data.census.employment")
     context.stage("braunschweig.data.external_workplaces")
