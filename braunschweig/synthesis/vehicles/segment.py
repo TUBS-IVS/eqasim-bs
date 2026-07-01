@@ -96,14 +96,26 @@ SEGMENT_RANK_ORDER: tuple[str, ...] = (
 
 
 def _status_given_segment(df: pd.DataFrame, region: str,
-                          segments: Sequence[str]) -> np.ndarray:
+                          segments: Sequence[str],
+                          *,
+                          status_marginal: np.ndarray | None = None) -> np.ndarray:
     """Return ``P(status | segment, region)`` as a ``(n_segment, n_status)`` matrix.
 
     ``share_pct`` is the MiD column percentage (per (segment, region) it sums to
     ~100 over status). We renormalise each segment row to a proper pmf over
-    status. Segments absent from the MiD table (e.g. ``wohnmobile``) or with an
-    all-zero row get a uniform status distribution so the seed stays positive and
-    the rake can place the KBA marginal there.
+    status.
+
+    Segments absent from the MiD table (e.g. ``wohnmobile``, ~2% of the KBA
+    fleet) or with an all-zero row get seeded with ``status_marginal`` when
+    supplied, otherwise with a uniform distribution.
+
+    ASSUMPTION: a data-absent segment (no MiD rows for this region/segment
+    combination) is seeded with the population status prior -- the base-weighted
+    NDS status marginal computed from all segments that DO have MiD data.  This
+    is more informative than a uniform 1/n seed and keeps the KBA rake feasible
+    while reflecting the actual economic-status composition of the population.
+    The segment marginal is still fixed exactly by the KBA rake; only the within-
+    segment status shape of the data-absent segment changes.
     """
     statuses = list(ft.STATUS_LABELS)
     sub = df[df["region"] == region]
@@ -120,7 +132,10 @@ def _status_given_segment(df: pd.DataFrame, region: str,
         if total > 0:
             out[i] = row / total
         else:
-            out[i] = np.ones(len(statuses)) / len(statuses)
+            # Use the population status prior when available so the zero-row
+            # segment is not seeded with a flat uniform distribution.
+            out[i] = (status_marginal.copy() if status_marginal is not None
+                      else np.ones(len(statuses)) / len(statuses))
     return out
 
 
@@ -197,10 +212,14 @@ class SegmentModel:
         kba_marginal = kba_marginal / kba_marginal.sum()
 
         # MiD NDS evidence.
-        p_status_given_segment = _status_given_segment(
-            df_bl, ft.BUNDESLAND_NIEDERSACHSEN, segments)
+        # Compute the NDS status marginal first so it can be passed to
+        # _status_given_segment as the seed for data-absent segments (e.g.
+        # 'wohnmobile'), replacing the less-informative uniform 1/n fallback.
         nds_status = _status_distribution(
             df_bl, ft.BUNDESLAND_NIEDERSACHSEN, segments)
+        p_status_given_segment = _status_given_segment(
+            df_bl, ft.BUNDESLAND_NIEDERSACHSEN, segments,
+            status_marginal=nds_status)
 
         # Seed = Bayes joint P(status | segment) * P(segment): carries both the
         # MiD association and (as its segment marginal) the KBA marginal.
