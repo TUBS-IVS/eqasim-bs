@@ -167,3 +167,35 @@ def test_popsim_and_integerizer_run_when_ready(tmp_path, monkeypatch):
     AS.execute(ctx)
     assert len(pv_calls) == 1
     assert len(iq_calls) == 1 and "--work-dir" in iq_calls[0] and "--mid-dir" in iq_calls[0]
+
+
+def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
+    DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
+    EDU = pytest.importorskip("braunschweig.analysis.run_education_validation")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    dash_calls, edu_calls = [], []
+    monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
+    monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
+    ctx = FakeContext(_base_config(tmp_path))  # no matsim, no working dir
+    AS.execute(ctx)
+    assert dash_calls == [] and edu_calls == []
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
+    assert reasons["dashboard"] == "no MATSim sim cache"
+    assert "working_directory" in reasons["education_validation"]
+
+
+def test_dashboard_runs_with_sim_cache(tmp_path, monkeypatch):
+    DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    dash_calls = []
+    monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
+    run_cache = tmp_path / "matsim.simulation.run__abc.cache"; run_cache.mkdir()
+    ctx = FakeContext(
+        _base_config(tmp_path, simwrapper_include_matsim=True),
+        paths={"matsim.simulation.run": str(run_cache)})
+    AS.execute(ctx)
+    assert len(dash_calls) == 1
+    assert "--sim-cache" in dash_calls[0]

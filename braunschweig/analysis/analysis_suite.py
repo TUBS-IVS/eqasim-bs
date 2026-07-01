@@ -138,7 +138,29 @@ def execute(context):
          context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
          "popsim work_dir / mid_dir not resolvable", _iq)
 
-    # (further sub-analyses appended in Task 5)
+    edu_ready = bool(working_directory) and Path(str(working_directory)).is_dir()
+    def _edu():
+        from braunschweig.analysis import run_education_validation as R
+        R.main(["--working-directory", str(working_directory),
+                "--sampling-rate", str(sampling_rate),
+                "--output-dir", str(output_path / "analysis" / "education_validation")])
+    _run(summary, "education_validation",
+         context.config(KEY_EDUCATION_VALIDATION, True), edu_ready,
+         "working_directory not set (analysis_working_directory)", _edu)
+
+    def _dash():
+        import sys as _sys
+        from braunschweig.analysis.dashboard import build_dashboard as R
+        argv = ["build_dashboard", "--output-dir", str(output_path),
+                "--sim-cache", sim_cache, "--sample-rate", str(sampling_rate)]
+        old = _sys.argv[:]
+        _sys.argv = argv
+        try:
+            R.main()
+        finally:
+            _sys.argv = old
+    _run(summary, "dashboard",
+         context.config(KEY_DASHBOARD, True), bool(sim_cache), "no MATSim sim cache", _dash)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)
