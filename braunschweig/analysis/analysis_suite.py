@@ -121,7 +121,24 @@ def execute(context):
     _run(summary, "household_composition",
          context.config(KEY_HOUSEHOLD_COMPOSITION, True), True, "", _hh)
 
-    # (further sub-analyses appended in Tasks 4-5)
+    def _popsim():
+        from braunschweig.analysis.popsim_validation import run_popsim_control_validation as R
+        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
+    _run(summary, "popsim_validation",
+         context.config(KEY_POPSIM_VALIDATION, True), is_popsim, "not a popsim run", _popsim)
+
+    mid_dir = (str(Path(data_path) / "braunschweig" / "popsim" / "mid2023_raw")
+               if data_path else None)
+    iq_ready = (is_popsim and bool(work_dir) and Path(work_dir).is_dir()
+                and mid_dir is not None and Path(mid_dir).is_dir())
+    def _iq():
+        from braunschweig.analysis import run_integerizer_quality as R
+        R.main(["--work-dir", work_dir, "--mid-dir", mid_dir, "--output-dir", str(output_path)])
+    _run(summary, "integerizer_quality",
+         context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
+         "popsim work_dir / mid_dir not resolvable", _iq)
+
+    # (further sub-analyses appended in Task 5)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)

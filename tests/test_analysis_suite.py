@@ -129,3 +129,41 @@ def test_mid_and_household_run_by_default(tmp_path, monkeypatch):
     assert len(hh_calls) == 1
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert {"mid_validation", "household_composition"} <= set(summary["ran"])
+
+
+def test_popsim_skipped_when_not_popsim(tmp_path, monkeypatch):
+    PV = pytest.importorskip("braunschweig.analysis.popsim_validation.run_popsim_control_validation")
+    IQ = pytest.importorskip("braunschweig.analysis.run_integerizer_quality")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    pv_calls, iq_calls = [], []
+    monkeypatch.setattr(PV, "_parse_args", lambda argv: {"argv": argv})
+    monkeypatch.setattr(PV, "run", lambda ns: pv_calls.append(ns))
+    monkeypatch.setattr(IQ, "main", lambda argv: iq_calls.append(argv))
+    ctx = FakeContext(_base_config(tmp_path))  # method=None -> not popsim
+    AS.execute(ctx)
+    assert pv_calls == [] and iq_calls == []
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
+    assert reasons["popsim_validation"] == "not a popsim run"
+
+
+def test_popsim_and_integerizer_run_when_ready(tmp_path, monkeypatch):
+    PV = pytest.importorskip("braunschweig.analysis.popsim_validation.run_popsim_control_validation")
+    IQ = pytest.importorskip("braunschweig.analysis.run_integerizer_quality")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    work = tmp_path / "work"; work.mkdir()
+    mid = tmp_path / "braunschweig" / "popsim" / "mid2023_raw"; mid.mkdir(parents=True)
+    pv_calls, iq_calls = [], []
+    monkeypatch.setattr(PV, "_parse_args", lambda argv: {"argv": argv})
+    monkeypatch.setattr(PV, "run", lambda ns: pv_calls.append(ns))
+    monkeypatch.setattr(IQ, "main", lambda argv: iq_calls.append(argv))
+    ctx = FakeContext(_base_config(
+        tmp_path,
+        **{"braunschweig.population.method": "popsim_mid",
+           "braunschweig.population.popsim.work_dir": str(work),
+           "data_path": str(tmp_path)}))
+    AS.execute(ctx)
+    assert len(pv_calls) == 1
+    assert len(iq_calls) == 1 and "--work-dir" in iq_calls[0] and "--mid-dir" in iq_calls[0]
