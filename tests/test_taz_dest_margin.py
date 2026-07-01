@@ -8,7 +8,15 @@ import geopandas as gpd
 import pandas as pd
 import pytest
 from shapely.geometry import Point, Polygon
-from braunschweig.gravity.taz_margins import build_dest_attraction_per_taz
+from braunschweig.gravity.taz_margins import build_dest_attraction_per_taz, build_ags_to_ars
+
+
+def test_build_ags_to_ars_covers_kreisfrei_and_landkreis():
+    # AGS-8 = ARS[:5] + ARS[9:12]. Built from the population's ARS-12 commune ids so
+    # it is COMPLETE for the scope (the codes crosswalk missed 49 ZGB communes, e2e).
+    m = build_ags_to_ars(["031010000000", "031530016006"])
+    assert m["03101000"] == "031010000000"   # BS kreisfrei (VB=0000)
+    assert m["03153006"] == "031530016006"   # Goslar Landkreis (real VB dropped) -- the e2e case
 
 
 def _taz():  # TAZ stage commune_id is 8-digit AGS (Phase-1 contract)

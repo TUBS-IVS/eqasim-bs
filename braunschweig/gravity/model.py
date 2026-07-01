@@ -709,10 +709,12 @@ def _execute_gravity_base(context):
         return education_od, education_od, None
 
     # TAZ pass for work-location gravity (ON path).
-    # NOTE: household_id presence on data.census.filtered is a server-e2e
-    # verification item -- this column is required by build_origin_population_per_taz
-    # but is not verified locally (real stages + LAPACK + matsim unavailable).
+    # The origin margin splits each commune's census weight across its TAZ by the
+    # home-point distribution, keyed on the 12-digit ARS commune_id that BOTH
+    # data.census.filtered and home.locations carry (their household_id spaces are
+    # disjoint -- FULL vs SAMPLED population -- so a household_id join cannot work).
     from braunschweig.gravity.taz_margins import (  # noqa: PLC0415
+        build_ags_to_ars,
         build_dest_attraction_per_taz,
         build_origin_population_per_taz,
     )
@@ -722,10 +724,11 @@ def _execute_gravity_base(context):
     df_homes = context.stage("synthesis.population.spatial.home.locations")
     df_buildings = context.stage("braunschweig.data.building_potentials")
 
-    # Build the AGS-8 -> ARS-12 crosswalk exactly as
-    # braunschweig/data/census/employees.py does it.
-    df_codes = context.stage("eqasim_common.spatial.codes")
-    ags_to_ars = dict(zip(df_codes["ags"].astype(str), df_codes["commune_id"].astype(str)))
+    # AGS-8 -> ARS-12 crosswalk for the dest margin (building commune AGS-8 -> the
+    # ARS-12 keyed employees). Built from the population's own ARS-12 commune ids
+    # (AGS-8 = ARS[:5] + ARS[9:12]) so it is COMPLETE for the scope -- the
+    # eqasim_common.spatial.codes crosswalk was missing 49 ZGB communes (e2e).
+    ags_to_ars = build_ags_to_ars(df_population_raw["commune_id"].astype(str).unique())
 
     pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
     att_taz, _, _ = build_dest_attraction_per_taz(df_buildings, df_employees_raw, df_taz, ags_to_ars)

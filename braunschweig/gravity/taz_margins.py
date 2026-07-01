@@ -150,6 +150,23 @@ def taz_to_kreis_lookup(df_taz):
     return dict(zip(df_taz["taz_id"].astype(str), df_taz["kreis"].astype(str)))
 
 
+def build_ags_to_ars(commune_ars):
+    """Build an AGS-8 -> ARS-12 commune crosswalk from 12-digit ARS commune ids.
+
+    AGS-8 = ARS[:5] + ARS[9:12] (Land+RB+Kreis + Gemeinde, dropping the 4-digit
+    Gemeindeverband that ARS-12 carries but AGS-8 does not). Built from the
+    population's own commune ids (data.census.filtered, ARS-12) so it is COMPLETE
+    for the modelled scope -- the eqasim_common.spatial.codes crosswalk was missing
+    49 ZGB communes (surfaced by the flag-ON e2e). Non-12-digit ids are skipped.
+    """
+    out = {}
+    for a in commune_ars:
+        a = str(a)
+        if len(a) == 12:
+            out[a[:5] + a[9:12]] = a
+    return out
+
+
 def build_origin_population_per_taz(df_homes, df_population, df_taz):
     """Distribute each commune's census population across its TAZ by the home-point
     DISTRIBUTION, keyed on commune_id (12-digit ARS).
