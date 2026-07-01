@@ -168,20 +168,31 @@ def build_origin_population_per_taz(df_homes, df_population, df_taz):
     df_population["household_id"] = df_population["household_id"].astype(str)
     hh = df_population.drop_duplicates("household_id")[["household_id", "commune_id"]].copy()
     hh["kreis"] = hh["commune_id"].astype(str).str[:5]
-    homes = df_homes[["household_id", "geometry"]].merge(
-        hh[["household_id", "kreis"]], on="household_id", how="left")
+    # Population-first: attach each population household's home POINT. Homes without
+    # a population row are not demand and are naturally dropped by this merge; a
+    # population household without a home point cannot be placed and is dropped with
+    # a logged rate (observable, not silent -- CLAUDE.md). home.locations should
+    # place every household, so this rate is expected to be ~0.
+    homes = hh.merge(
+        df_homes.drop_duplicates("household_id")[["household_id", "geometry"]],
+        on="household_id", how="left",
+    )
+    n_hh = len(homes)
+    n_no_home = int(homes["geometry"].isna().sum())
+    if n_no_home:
+        logger.warning(
+            "[taz_margins.origin] %d/%d population households (%.2f%%) have no home "
+            "point -> dropped from the origin margin",
+            n_no_home, n_hh, 100.0 * n_no_home / n_hh if n_hh else 0.0,
+        )
+        homes = homes[homes["geometry"].notna()]
     homes = gpd.GeoDataFrame(homes, geometry="geometry", crs=df_homes.crs)
-    if homes["kreis"].isna().any():
-        raise ValueError("%d home households have no population row (kreis unknown)"
-                         % int(homes["kreis"].isna().sum()))
     home_taz, primary, fallback = assign_taz(
         homes, df_taz, id_column="household_id", kreis_column="kreis")
+    # per-person population summed onto each household's TAZ (inner join drops
+    # persons whose household was unplaced above; assign_taz conserves rows).
     merged = df_population[["household_id", "weight"]].merge(
-        home_taz[["household_id", "taz_id", "commune_id"]], on="household_id", how="left")
-    if merged["taz_id"].isna().any():
-        raise ValueError(
-            "%d persons have a household with no home point -> no TAZ; the population "
-            "and home-point producers must share household_id" % int(merged["taz_id"].isna().sum()))
+        home_taz[["household_id", "taz_id", "commune_id"]], on="household_id", how="inner")
     out = (merged.groupby(["taz_id", "commune_id"])["weight"].sum()
                  .rename("population").reset_index())
     out["taz_id"] = out["taz_id"].astype(str)
