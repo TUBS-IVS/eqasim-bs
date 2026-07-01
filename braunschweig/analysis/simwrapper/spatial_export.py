@@ -115,24 +115,15 @@ def load_fleet(run_output_dir: str) -> "gpd.GeoDataFrame | None":
 
     vehicles = vehicles.copy()
 
-    # The vehicles CSV contains one row per (household, mode) assignment.
-    # Rows where mode == "car_passenger" are ride-sharing passengers -- they
-    # do not own a distinct vehicle asset and their powertrain is NaN.
-    # The fleet map must show OWNED vehicles only (mode == "car").
-    n_raw = len(vehicles)
-    if "mode" in vehicles.columns:
-        vehicles = vehicles[vehicles["mode"] == "car"].copy()
-        n_owned = len(vehicles)
-        LOGGER.info(
-            "[fleet] filtered to mode=='car': %d owned vehicles / %d total rows "
-            "(dropped %d car_passenger rows with no powertrain)",
-            n_owned, n_raw, n_raw - n_owned,
-        )
-    else:
-        LOGGER.warning(
-            "[fleet] 'mode' column absent -- using all %d rows (may include "
-            "car_passenger rows without powertrain/geometry)", n_raw,
-        )
+    # vehicles.csv holds TWO car-mode sets: the household FLEET vehicles
+    # (household_id-keyed, with brand/powertrain/engine_power) and eqasim
+    # per-person ROUTING vehicles (owner_id-keyed, no fleet attributes = NaN).
+    # Both are mode=='car', so a mode-only filter would mix the routing vehicles
+    # in (NaN powertrain/power). The fleet map must show fleet vehicles only --
+    # the shared fleet filter keeps mode=='car' AND non-null household_id and logs
+    # the fleet-vs-routing split.
+    from braunschweig.analysis import fleet_filter as _ff
+    vehicles = _ff.fleet_vehicles(vehicles, context="simwrapper.fleet").copy()
 
     # Cast engine_power_kw to float so describe() and mean() work correctly.
 

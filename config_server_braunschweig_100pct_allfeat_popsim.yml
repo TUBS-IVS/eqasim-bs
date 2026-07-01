@@ -38,6 +38,7 @@ run:
   - synthesis.output
   - matsim.output
   - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
 
 config:
   processes: 32
@@ -70,6 +71,8 @@ config:
 
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_100pct_allfeat_popsim
+  # Feeds education_validation in the analysis_suite stage (synpp cache dir).
+  analysis_working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
   output_prefix: braunschweig_100pct_allfeat_popsim_
   simwrapper_include_matsim: true
 
