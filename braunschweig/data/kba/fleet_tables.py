@@ -466,6 +466,41 @@ def load_gemeinde_ev(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_ev_grid(data_path: str) -> pd.DataFrame:
+    """KBA 5 km EV-share grid (2026), clipped to the ZGB bounding box.
+
+    Loads ``kba_ev_grid.csv`` produced by
+    ``scripts/extract_kba_fleet.py::extract_ev_grid``.
+
+    Columns: ``cell_id, stichtag, ev_share, minx, miny, maxx, maxy, suppressed``.
+
+    ``ev_share`` is in fractions (0-1).  ``suppressed`` marks cells that KBA
+    flagged as low-count (``"-"`` in the source gpkg ``ZS_Anteil_`` column);
+    such cells may carry NaN ``ev_share``.  ``minx, miny, maxx, maxy`` are the
+    cell geometry bounds in EPSG:3857.
+
+    Args:
+        data_path: Root data path; ``braunschweig/kba/derived/`` is appended
+            automatically.
+
+    Returns:
+        DataFrame with the eight columns listed above.
+
+    Raises:
+        FileNotFoundError: If ``kba_ev_grid.csv`` is absent (run
+            ``scripts/extract_kba_fleet.py`` on the server to generate it).
+        RuntimeError: If any required column is missing (schema drift).
+    """
+    filename = "kba_ev_grid.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df,
+        ["cell_id", "stichtag", "ev_share", "minx", "miny", "maxx", "maxy", "suppressed"],
+        filename,
+    )
+    return df
+
+
 def load_mid_segment_by_status_raumtyp(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by RegioStaR-7 Raumtyp (column-%).
 

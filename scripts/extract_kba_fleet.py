@@ -68,6 +68,7 @@ EURO_46251_PATH = RAW_DIR / "regionalstatistik_46251_03_euro_kreis_20250101.csv"
 AGE_NATIONAL_PATH = RAW_DIR / "statista_kba_3438_pkw_age_national_2026.xlsx"
 GEMEINDE_EV_PATH = RAW_DIR / "kba_ev_gemeinde_timeseries_2023_2026.csv"
 MODELLREIHEN_PATH = RAW_DIR / "kba_modellreihen_bestand_2020_2026.csv"
+GRID_EV_PATH = RAW_DIR / "kba_ev_grid_5km_2026.gpkg"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -1109,6 +1110,83 @@ def extract_gemeinde_ev(path: Path = GEMEINDE_EV_PATH) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# KBA 5 km EV-share grid (2026) -> kba_ev_grid.csv (ZGB bbox clip)
+# --------------------------------------------------------------------------- #
+def extract_ev_grid(path: Path = GRID_EV_PATH) -> pd.DataFrame:
+    """KBA 5 km EV-share grid (2026), clipped to the ZGB bounding box.
+
+    Reads the raw gpkg layer (EPSG:3857), clips cells to a generous ZGB
+    bounding box (lon 10.0-11.7, lat 51.5-52.9, centroids reprojected to
+    EPSG:4326), and returns one row per kept cell with:
+
+    - ``cell_id``: raw ``id_5km`` string (e.g. "5kmN2695E4340").
+    - ``stichtag``: "2026-04-01" (KBA reporting date).
+    - ``ev_share``: ``elektro_an`` converted from percent to fraction; NaN where
+      the value is missing or the cell is KBA-suppressed.
+    - ``minx, miny, maxx, maxy``: cell geometry bounds in EPSG:3857.
+    - ``suppressed``: True where ``ZS_Anteil_`` carries "-" (KBA low-count flag).
+
+    geopandas is imported locally to avoid adding it to the module-level
+    import path for callers that do not need gpkg support.
+
+    Logs suppressed-cell and NaN-ev-share counts (no-silent-fallback rule).
+    The consuming grid-tilt stage (a later task) falls back to the Gemeinde-level
+    EV share for suppressed/NaN cells; this extractor never invents values.
+
+    Args:
+        path: Path to the raw KBA 5 km EV-share gpkg.  Defaults to
+            ``GRID_EV_PATH``.
+
+    Returns:
+        DataFrame with columns
+        ``cell_id, stichtag, ev_share, minx, miny, maxx, maxy, suppressed``.
+        Sorted by ``cell_id``; index reset.
+    """
+    import geopandas as gpd
+
+    gdf = gpd.read_file(str(path))  # geometry in EPSG:3857
+
+    # Clip to a generous ZGB bounding box using WGS-84 centroids.
+    cent = gdf.geometry.to_crs(4326).centroid
+    keep = (cent.x >= 10.0) & (cent.x <= 11.7) & (cent.y >= 51.5) & (cent.y <= 52.9)
+    g = gdf[keep].copy()
+
+    bounds = g.geometry.bounds  # minx, miny, maxx, maxy in EPSG:3857
+
+    suppressed_mask = g["ZS_Anteil_"].astype(str).str.strip() == "-"
+    ev_share = pd.to_numeric(g["elektro_an"], errors="coerce") / 100.0
+
+    out = pd.DataFrame({
+        "cell_id": g["id_5km"].astype(str).values,
+        "stichtag": "2026-04-01",
+        "ev_share": ev_share.values,
+        "minx": bounds["minx"].values,
+        "miny": bounds["miny"].values,
+        "maxx": bounds["maxx"].values,
+        "maxy": bounds["maxy"].values,
+        "suppressed": suppressed_mask.values,
+    })
+
+    n_total = len(out)
+    n_suppressed = int(out["suppressed"].sum())
+    n_nan = int(out["ev_share"].isna().sum())
+    logger.info(
+        "[extract_ev_grid] cells kept (ZGB clip): %d; suppressed (KBA '-'): %d; "
+        "ev_share NaN: %d",
+        n_total, n_suppressed, n_nan,
+    )
+    if n_nan > n_suppressed:
+        # NaN cells beyond the suppressed set indicate a data-column issue.
+        logger.warning(
+            "[extract_ev_grid] %d NaN ev_share cells exceed suppressed count (%d); "
+            "check that the 'elektro_an' column is populated in the source gpkg.",
+            n_nan, n_suppressed,
+        )
+
+    return out.sort_values("cell_id").reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
 # Statista KBA ID 3438 -> kba_age_national.csv (VALIDATION control)
 # --------------------------------------------------------------------------- #
 def extract_age_national(path: Path = AGE_NATIONAL_PATH, year: int = 2026) -> pd.DataFrame:
@@ -1193,7 +1271,7 @@ def _write_with_header(frame: pd.DataFrame, name: str, header_line: str) -> None
 def main() -> None:
     for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
                      FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH,
-                     GEMEINDE_EV_PATH, MODELLREIHEN_PATH):
+                     GEMEINDE_EV_PATH, MODELLREIHEN_PATH, GRID_EV_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -1230,6 +1308,7 @@ def main() -> None:
         "# mean_age_years=10.9 source=KBA/Statista ID3438 stichtag=2026-01-01",
     )
     _write(extract_gemeinde_ev(), "kba_gemeinde_ev.csv")
+    _write(extract_ev_grid(), "kba_ev_grid.csv")
     logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
 
 
