@@ -27,7 +27,9 @@ def test_with_lookup_maps_taz():
 
 
 def test_raises_on_unmapped():
-    with pytest.raises(KeyError):
+    # A taz_id absent from the lookup is a TAZ coverage gap -> a descriptive
+    # RuntimeError (not a bare KeyError) naming the offending id.
+    with pytest.raises(RuntimeError, match="no Kreis in the taz->kreis lookup"):
         _zone_to_kreis(pd.Series(["999999"]), {"310101901": "03101"})
 
 

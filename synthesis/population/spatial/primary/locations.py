@@ -61,6 +61,7 @@ def process_municipality(context, origin_id):
     df_candidates = context.data("df_candidates")
     df_persons = context.data("df_persons")
     origin_zone_col = context.data("origin_zone_col")
+    dest_zone_col = context.data("dest_zone_col")
 
     # Find relevant records
     # Filter persons by the origin zone column (commune_id or home_taz_id).
@@ -76,14 +77,15 @@ def process_municipality(context, origin_id):
     df_candidates = df_candidates.iloc[indices]
 
     df_candidates["person_id"] = df_persons["person_id"].values
-    # Rename destination_id to the same column name used for the origin zone so
-    # the returned frame is consistently named (commune_id for education/OFF,
-    # taz_id for WORK ON).
-    df_candidates = df_candidates.rename(columns={"destination_id": origin_zone_col})
+    # Rename destination_id to the DESTINATION zone name so the returned frame is
+    # clearly named: "commune_id" for education/OFF (byte-identical), and
+    # "work_taz_id" for WORK ON -- the column holds the assigned WORK destination
+    # TAZ, so it must NOT reuse the home/origin name "home_taz_id".
+    df_candidates = df_candidates.rename(columns={"destination_id": dest_zone_col})
 
-    return df_candidates[["person_id", origin_zone_col, "location_id", "geometry"]]
+    return df_candidates[["person_id", dest_zone_col, "location_id", "geometry"]]
 
-def process(context, purpose, df_persons, df_candidates, origin_zone_col="commune_id"):
+def process(context, purpose, df_persons, df_candidates, origin_zone_col="commune_id", dest_zone_col=None):
     """Assign candidate locations to persons by minimising commute-distance deviation.
 
     Parameters
@@ -91,15 +93,24 @@ def process(context, purpose, df_persons, df_candidates, origin_zone_col="commun
     origin_zone_col:
         Column in *df_persons* holding the origin zone key used to group
         persons (``"commune_id"`` for education / OFF; ``"home_taz_id"`` for
-        WORK ON path).  The same column name is used on the returned frame.
+        WORK ON path).
+    dest_zone_col:
+        Name given to the assigned DESTINATION zone column on the returned frame
+        (the renamed ``destination_id``). ``None`` -> reuse ``origin_zone_col``,
+        which reproduces the legacy naming for the education/OFF path
+        (byte-identical). The WORK ON path passes ``"work_taz_id"`` so the
+        destination column is not mislabelled as the home/origin TAZ.
     """
+    if dest_zone_col is None:
+        dest_zone_col = origin_zone_col
     unique_ids = df_candidates["origin_id"].unique()
 
     df_result = []
 
     with context.progress(label="Distributing %s destinations" % purpose, total=len(df_persons)) as progress:
         with context.parallel(dict(df_persons=df_persons, df_candidates=df_candidates,
-                                   origin_zone_col=origin_zone_col)) as parallel:
+                                   origin_zone_col=origin_zone_col,
+                                   dest_zone_col=dest_zone_col)) as parallel:
             for df_partial in parallel.imap_unordered(process_municipality, unique_ids):
                 df_result.append(df_partial)
 
@@ -148,10 +159,13 @@ def execute(context):
     # Assign destinations.
     # WORK: when TAZ is ON, group persons by home_taz_id so the equal-count
     # assertion in process_municipality holds on the taz_id key (both persons and
-    # candidates are keyed the same way).  Education is always commune_id.
+    # candidates are keyed the same way).  Education is always commune_id.  The
+    # returned DESTINATION column is named work_taz_id on the ON path so it is not
+    # mislabelled as the home/origin TAZ; OFF keeps the legacy commune_id name.
     work_origin_col = "home_taz_id" if taz_on else "commune_id"
+    work_dest_col = "work_taz_id" if taz_on else "commune_id"
     df_work = process(context, "work", df_work, df_work_candidates,
-                      origin_zone_col=work_origin_col)
+                      origin_zone_col=work_origin_col, dest_zone_col=work_dest_col)
 
     if context.config("education_location_source") == 'bpe':
         df_education = process(context, "education", df_education, df_education_candidates,

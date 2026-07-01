@@ -23,8 +23,14 @@ the contract *statically*: no ``context.config(...)`` call with two or more
 arguments may live outside a function named ``configure``.
 
 The check parses the source with :mod:`ast` (no imports of the stage modules, so
-it is immune to the environment's broken LAPACK) and scans the whole
-``braunschweig`` package.
+it is immune to the environment's broken LAPACK) and scans the ``braunschweig``
+package plus the top-level ``synthesis`` package. The latter carries the
+eqasim-vendored primary/secondary location stages that the TAZ work-location
+feature modifies (``synthesis.population.spatial.primary.locations`` /
+``.candidates`` read ``taz_work_location_choice`` in their execute paths), so the
+same execute-time ``config()`` contract must hold there. The two braunschweig
+alias wrappers (``braunschweig.locations.synthesis.replacement_*``) already live
+under ``braunschweig`` and are covered by that scan.
 """
 from __future__ import annotations
 
@@ -32,7 +38,10 @@ import ast
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-PACKAGE = REPO / "braunschweig"
+# Stage packages whose execute() paths must obey the single-argument config()
+# contract. ``braunschweig`` is our own code; ``synthesis`` is the vendored
+# eqasim location/population tree that the TAZ feature edits.
+PACKAGES = (REPO / "braunschweig", REPO / "synthesis")
 
 # The synpp stage convention always names the context parameter ``context``;
 # restricting the check to ``context.config(...)`` avoids false positives from
@@ -106,13 +115,15 @@ def _scan(path: Path) -> list[tuple[str, int, str]]:
 
 
 def test_no_two_argument_context_config_outside_configure():
-    """Across the whole braunschweig package, ``context.config(key, default)``
-    must appear only inside ``configure()``; anywhere else it crashes at execute.
+    """Across the braunschweig and synthesis packages, ``context.config(key,
+    default)`` must appear only inside ``configure()``; anywhere else it crashes
+    at execute.
     """
     violations: list[str] = []
-    for module_path in sorted(PACKAGE.rglob("*.py")):
-        for location, _line, detail in _scan(module_path):
-            violations.append(f"{location}  ->  {detail}")
+    for package in PACKAGES:
+        for module_path in sorted(package.rglob("*.py")):
+            for location, _line, detail in _scan(module_path):
+                violations.append(f"{location}  ->  {detail}")
 
     assert not violations, (
         "context.config(key, default) is only valid in configure(); the execute "

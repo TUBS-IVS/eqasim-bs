@@ -847,10 +847,24 @@ def configure(context):
 
 def _zone_to_kreis(series: pd.Series, lookup: dict | None = None) -> pd.Series:
     """Map a zone id to its 5-digit Kreis ARS. lookup is None -> legacy commune_id
-    str[:5] (byte-identical). lookup given -> map each taz_id, raise on unmapped."""
+    str[:5] (byte-identical). lookup given -> map each taz_id, raise on unmapped.
+
+    On the ON path an unmapped taz_id is a TAZ coverage gap (the lookup must map
+    every zone). Raise a descriptive ``RuntimeError`` naming the offending ids
+    instead of letting a bare ``KeyError`` from the dict lookup bubble up, so the
+    failure is actionable (consistent with the other explicit guards here and the
+    no-silent-fallback contract)."""
     if lookup is None:
         return series.astype(str).str[:5]
-    return series.astype(str).map(lambda z: lookup[z])
+    zones = series.astype(str)
+    unmapped = sorted(set(zones) - set(lookup))
+    if unmapped:
+        raise RuntimeError(
+            "%d zone id(s) have no Kreis in the taz->kreis lookup, e.g. %s "
+            "(TAZ coverage gap; the lookup must map every taz_id)"
+            % (len(unmapped), ", ".join(unmapped[:5]))
+        )
+    return zones.map(lookup)
 
 
 def _gemeinde_to_kreis(series: pd.Series) -> pd.Series:
