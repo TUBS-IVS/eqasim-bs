@@ -52,6 +52,21 @@ def test_origin_margin_conserves_total():
     assert df["population"].sum() == 6.0
 
 
+def test_origin_margin_handles_mixed_household_id_dtype():
+    # Regression for the flag-ON server e2e: the real population producer
+    # (data.census.filtered) and the home-point producer (home_cell) can carry
+    # household_id in DIFFERENT dtypes (int64 vs object). A pandas merge on mixed
+    # dtypes raises "trying to merge on int64 and object columns"; the helper must
+    # normalise both to str first.
+    homes = _homes()
+    homes["household_id"] = homes["household_id"].astype(str)   # object
+    pop = _pop_per_person()                                     # int64
+    df, primary, fallback = build_origin_population_per_taz(homes, pop, _taz())
+    out = df.set_index("taz_id")["population"]
+    assert out["T1"] == 2.0 and out["T2"] == 1.0 and out["T3"] == 3.0
+    assert df["population"].sum() == 6.0
+
+
 def test_origin_margin_fallback_stays_in_kreis():
     # hh4 at (95,5): nearest polygon is T3 (kreis 03154), but hh4's commune is kreis 03101
     # -> the constrained fallback MUST pick a 03101 TAZ (T1/T2), never T3.

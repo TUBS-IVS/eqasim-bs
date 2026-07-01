@@ -157,6 +157,15 @@ def build_origin_population_per_taz(df_homes, df_population, df_taz):
     constrains any nearest-TAZ fallback to the same Kreis. Returns
     (DataFrame[taz_id, commune_id, population], primary, fallback); the summed
     population equals the input total."""
+    # Normalise household_id to str on BOTH frames before any merge: the real
+    # population producer (data.census.filtered / popsim.stage) and the home-point
+    # producer (home_cell) can carry household_id in different dtypes (int64 vs
+    # object), which makes a pandas merge raise "trying to merge on int64 and
+    # object columns". A str key is dtype-safe (matches how taz_id is handled).
+    df_homes = df_homes.copy()
+    df_population = df_population.copy()
+    df_homes["household_id"] = df_homes["household_id"].astype(str)
+    df_population["household_id"] = df_population["household_id"].astype(str)
     hh = df_population.drop_duplicates("household_id")[["household_id", "commune_id"]].copy()
     hh["kreis"] = hh["commune_id"].astype(str).str[:5]
     homes = df_homes[["household_id", "geometry"]].merge(
