@@ -11,6 +11,9 @@ def configure(context):
     context.stage("synthesis.locations.education")
 
     context.config("education_location_source", "bpe")
+    # Declare the flag so execute() can read it without a default (synpp raises
+    # if execute reads a config key that was never declared in configure).
+    context.config("taz_work_location_choice", False)
 
 
 def define_distance_ordering(df_persons, df_candidates, progress):
@@ -47,11 +50,22 @@ def define_random_ordering(df_persons, df_candidates, progress):
 define_ordering = define_distance_ordering
 
 def process_municipality(context, origin_id):
+    """Assign candidate work/education locations to persons in one origin zone.
+
+    The origin zone is identified by *origin_id*, which may be a commune_id
+    (education path, OFF path) or a taz_id (WORK path when TAZ flag is ON).
+    ``origin_zone_col`` and ``zone_key`` are read from the parallel data bag so
+    the function remains a single-argument parallel worker.
+    """
     # Load data
-    df_candidates, df_persons = context.data("df_candidates"), context.data("df_persons")
+    df_candidates = context.data("df_candidates")
+    df_persons = context.data("df_persons")
+    origin_zone_col = context.data("origin_zone_col")
+    dest_zone_col = context.data("dest_zone_col")
 
     # Find relevant records
-    df_persons = df_persons[df_persons["commune_id"] == origin_id][[
+    # Filter persons by the origin zone column (commune_id or home_taz_id).
+    df_persons = df_persons[df_persons[origin_zone_col] == origin_id][[
         "person_id", "home_location", "commute_distance"
     ]].copy()
     df_candidates = df_candidates[df_candidates["origin_id"] == origin_id]
@@ -63,23 +77,49 @@ def process_municipality(context, origin_id):
     df_candidates = df_candidates.iloc[indices]
 
     df_candidates["person_id"] = df_persons["person_id"].values
-    df_candidates = df_candidates.rename(columns = dict(destination_id = "commune_id"))
+    # Rename destination_id to the DESTINATION zone name so the returned frame is
+    # clearly named: "commune_id" for education/OFF (byte-identical), and
+    # "work_taz_id" for WORK ON -- the column holds the assigned WORK destination
+    # TAZ, so it must NOT reuse the home/origin name "home_taz_id".
+    df_candidates = df_candidates.rename(columns={"destination_id": dest_zone_col})
 
-    return df_candidates[["person_id", "commune_id", "location_id", "geometry"]]
+    return df_candidates[["person_id", dest_zone_col, "location_id", "geometry"]]
 
-def process(context, purpose, df_persons, df_candidates):
+def process(context, purpose, df_persons, df_candidates, origin_zone_col="commune_id", dest_zone_col=None):
+    """Assign candidate locations to persons by minimising commute-distance deviation.
+
+    Parameters
+    ----------
+    origin_zone_col:
+        Column in *df_persons* holding the origin zone key used to group
+        persons (``"commune_id"`` for education / OFF; ``"home_taz_id"`` for
+        WORK ON path).
+    dest_zone_col:
+        Name given to the assigned DESTINATION zone column on the returned frame
+        (the renamed ``destination_id``). ``None`` -> reuse ``origin_zone_col``,
+        which reproduces the legacy naming for the education/OFF path
+        (byte-identical). The WORK ON path passes ``"work_taz_id"`` so the
+        destination column is not mislabelled as the home/origin TAZ.
+    """
+    if dest_zone_col is None:
+        dest_zone_col = origin_zone_col
     unique_ids = df_candidates["origin_id"].unique()
 
     df_result = []
 
-    with context.progress(label = "Distributing %s destinations" % purpose, total = len(df_persons)) as progress:
-        with context.parallel(dict(df_persons = df_persons, df_candidates = df_candidates)) as parallel:
+    with context.progress(label="Distributing %s destinations" % purpose, total=len(df_persons)) as progress:
+        with context.parallel(dict(df_persons=df_persons, df_candidates=df_candidates,
+                                   origin_zone_col=origin_zone_col,
+                                   dest_zone_col=dest_zone_col)) as parallel:
             for df_partial in parallel.imap_unordered(process_municipality, unique_ids):
                 df_result.append(df_partial)
 
     return pd.concat(df_result).sort_index()
 
 def execute(context):
+    # Read the flag (no default here; the default is declared in configure()).
+    taz_on = context.config("taz_work_location_choice")
+
     data = context.stage("synthesis.population.spatial.primary.candidates")
     df_persons = data["persons"]
 
@@ -87,41 +127,57 @@ def execute(context):
     df_work = df_persons[df_persons["has_work_trip"]]
     df_education = df_persons[df_persons["has_education_trip"]]
 
-    # Attach home locations
+    # Attach home locations (already staged unconditionally in configure()).
     df_home = context.stage("synthesis.population.spatial.home.locations")
 
-    df_work = pd.merge(df_work, df_home[["household_id", "geometry"]].rename(columns = {
+    df_work = pd.merge(df_work, df_home[["household_id", "geometry"]].rename(columns={
         "geometry": "home_location"
-    }), how = "left", on = "household_id")
+    }), how="left", on="household_id")
 
-    df_education = pd.merge(df_education, df_home[["household_id", "geometry"]].rename(columns = {
+    df_education = pd.merge(df_education, df_home[["household_id", "geometry"]].rename(columns={
         "geometry": "home_location"
-    }), how = "left", on = "household_id")
+    }), how="left", on="household_id")
 
     # Attach commute distances
     df_commute_distance = context.stage("synthesis.population.spatial.commute_distance")
 
-    df_work = pd.merge(df_work, df_commute_distance["work"], how = "left", on = "person_id")
-    df_education = pd.merge(df_education, df_commute_distance["education"], how = "left", on = "person_id")
+    df_work = pd.merge(df_work, df_commute_distance["work"], how="left", on="person_id")
+    df_education = pd.merge(df_education, df_commute_distance["education"], how="left", on="person_id")
 
-    # Attach geometry
+    # Attach geometry to work candidates
     df_locations = context.stage("synthesis.locations.work")[["location_id", "geometry"]]
     df_work_candidates = data["work_candidates"]
-    df_work_candidates = pd.merge(df_work_candidates, df_locations, how = "left", on = "location_id")
+    df_work_candidates = pd.merge(df_work_candidates, df_locations, how="left", on="location_id")
     df_work_candidates = gpd.GeoDataFrame(df_work_candidates)
 
+    # Attach geometry to education candidates
     df_locations = context.stage("synthesis.locations.education")[["education_type", "location_id", "geometry"]]
     df_education_candidates = data["education_candidates"]
-    df_education_candidates = pd.merge(df_education_candidates, df_locations, how = "left", on = "location_id")
+    df_education_candidates = pd.merge(df_education_candidates, df_locations, how="left", on="location_id")
     df_education_candidates = gpd.GeoDataFrame(df_education_candidates)
 
-    # Assign destinations
-    df_work = process(context, "work", df_work, df_work_candidates)
+    # Assign destinations.
+    # WORK: when TAZ is ON, group persons by home_taz_id so the equal-count
+    # assertion in process_municipality holds on the taz_id key (both persons and
+    # candidates are keyed the same way).  Education is always commune_id.  The
+    # returned DESTINATION column is named work_taz_id on the ON path so it is not
+    # mislabelled as the home/origin TAZ; OFF keeps the legacy commune_id name.
+    work_origin_col = "home_taz_id" if taz_on else "commune_id"
+    work_dest_col = "work_taz_id" if taz_on else "commune_id"
+    df_work = process(context, "work", df_work, df_work_candidates,
+                      origin_zone_col=work_origin_col, dest_zone_col=work_dest_col)
+
     if context.config("education_location_source") == 'bpe':
-        df_education = process(context, "education", df_education, df_education_candidates)
-    else :
+        df_education = process(context, "education", df_education, df_education_candidates,
+                               origin_zone_col="commune_id")
+    else:
         education = []
         for prefix, education_type in EDUCATION_MAPPING.items():
-            education.append(process(context, prefix,df_education[df_education["age_range"]==prefix],df_education_candidates[df_education_candidates["education_type"].isin(education_type)]))
+            education.append(
+                process(context, prefix,
+                        df_education[df_education["age_range"] == prefix],
+                        df_education_candidates[df_education_candidates["education_type"].isin(education_type)],
+                        origin_zone_col="commune_id"))
         df_education = pd.concat(education).sort_index()
+
     return df_work, df_education

@@ -452,43 +452,63 @@ def _read_betriebe_per_commune(context) -> pd.DataFrame:
     return df[["commune_id", "n_betriebe"]]
 
 
-def _execute_gravity_base(context):
-    """Run the bavaria-style Gemeinde x Gemeinde gravity model.
+def compute_work_od(
+    df_population,
+    df_employees,
+    df_distances,
+    df_regiostar,
+    rs7_by_zone,
+    slope,
+    constant,
+    diagonal,
+    slope_overrides,
+    friction_factors,
+    max_iterations,
+):
+    """Pure gravity computation returning one row-normalised OD frame.
 
-    Returns ``(df_work_od, df_education_od)`` of row-normalised
-    conditional probabilities.
+    Extracts the inner body of the legacy ``_execute_gravity_base`` so it can
+    be called twice (once for Gemeinde education, once for TAZ work) when the
+    TAZ branch is active.  When called from the OFF path the single result is
+    returned twice by the caller (byte-identical to the pre-extraction behaviour).
+
+    Parameters
+    ----------
+    df_population
+        Frame with columns ``origin_id`` and ``population`` (already aggregated
+        per zone; no further groupby is applied here on the first group --
+        the groupby on ``origin_id`` IS applied inside this function to handle
+        per-person input frames where multiple rows share an origin).
+    df_employees
+        Frame with columns ``destination_id`` and ``employees``.
+    df_distances
+        Frame with columns ``origin_id``, ``destination_id``, ``distance_km``.
+    df_regiostar
+        RegioStaR reference frame (``commune_id``, ``regiostar7``).  Used only
+        when ``rs7_by_zone`` is ``None`` (the Gemeinde pass).
+    rs7_by_zone
+        When ``None`` the legacy ``df_regiostar``/``_normalize``/``ars_to_ags8``
+        RS7 resolution is used (Gemeinde pass, byte-identical).  When a dict
+        ``{zone_id: rs7_int}`` is given the per-origin RS7 is resolved directly
+        from it -- this only affects results when ``slope_overrides`` or
+        ``friction_factors`` are non-None (both default ``None`` in popsim, so
+        the lookup is inert by default).
+    slope, constant, diagonal
+        Gravity friction parameters.
+    slope_overrides
+        Optional ``{rs7: slope}`` dict; ``None`` = scalar slope everywhere.
+    friction_factors
+        Optional friction-band factor dict; ``None`` = legacy ``exp`` friction.
+    max_iterations
+        Convergence cap for the Furness balancing loop.
+
+    Returns
+    -------
+    pd.DataFrame
+        Row-normalised OD with columns ``origin_id``, ``destination_id``,
+        ``weight``.  Each origin's weights sum to 1.0 (origins with no outbound
+        flow receive weight=1.0 on the self-loop).
     """
-    df_distances = context.stage("eqasim_common.gravity.distance_matrix")
-    # data.census.filtered resolves to the configured population producer
-    # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
-    # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
-    # always come from the SAME population as the demand.
-    df_population = context.stage("data.census.filtered")
-    df_employees = context.stage("braunschweig.data.census.employees")
-    df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
-
-    # Sector-aware destination attraction (flag-gated; OFF -> byte-identical).
-    # Tilts the per-Gemeinde ``employees`` attraction by establishment density
-    # while preserving Kreis totals (see ``apply_sector_aware_attraction``).
-    # synpp's ExecuteContext.config() takes only the key (no default argument);
-    # the default False is declared in configure(). Passing a default here raises
-    # "config() takes 2 positional arguments but 3 were given" and aborts the run.
-    if context.config("braunschweig.gravity.sector_aware_enabled"):
-        df_betriebe = _read_betriebe_per_commune(context)
-        df_employees = apply_sector_aware_attraction(
-            df_employees, df_betriebe, enabled=True,
-        )
-
-    df_population = df_population.rename(columns={
-        "commune_id": "origin_id",
-        "weight": "population",
-    })[["origin_id", "population"]]
-
-    df_employees = df_employees.rename(columns={
-        "commune_id": "destination_id",
-        "weight": "employees",
-    })[["destination_id", "employees"]]
-
     df_population = df_population.groupby("origin_id")["population"].sum().reset_index()
 
     municipalities = set(df_population["origin_id"])
@@ -512,32 +532,45 @@ def _execute_gravity_base(context):
     population *= observations / np.sum(population)
     employees *= observations / np.sum(employees)
 
-    slope = context.config("gravity_slope")
-    constant = context.config("gravity_constant")
-    diagonal = context.config("gravity_diagonal")
-    slope_overrides = context.config("gravity_slope_by_regiostar7")
+    # Per-origin slope: build the RS7 lookup depending on the zone universe.
+    # When rs7_by_zone is given, resolve from the TAZ->RS7 dict directly;
+    # when None, use the legacy df_regiostar/_normalize/ars_to_ags8 path.
+    if rs7_by_zone is not None:
+        # TAZ pass: resolve per-origin RS7 from the explicit zone->rs7 dict.
+        # _build_origin_slope_vector accepts a df_regiostar frame whose index is
+        # commune_id->regiostar7; we build a synthetic one from rs7_by_zone so
+        # the function's internal logic is reused without modification.
+        df_regiostar_for_slope = pd.DataFrame({
+            "commune_id": list(rs7_by_zone.keys()),
+            "regiostar7": list(rs7_by_zone.values()),
+        })
+    else:
+        df_regiostar_for_slope = df_regiostar
 
-    # Per-origin slope: defaults to scalar ``slope`` for every Gemeinde.
-    # When ``gravity_slope_by_regiostar7`` is non-empty, origins whose
-    # RegioStaR-7 code matches an override key receive that slope; the
-    # friction matrix becomes ``exp(slope_vec[:, None] * distances + c)``
-    # so each row (origin Gemeinde) decays at its own urban/rural rate.
     slope_vec = _build_origin_slope_vector(
-        municipalities, slope, slope_overrides, df_regiostar,
+        municipalities, slope, slope_overrides, df_regiostar_for_slope,
     )
 
-    friction_factors = context.config("gravity_friction_factors")
     rs7_vec = None
+    friction_factors_resolved = friction_factors
     if isinstance(friction_factors, dict) and friction_factors and all(
         isinstance(v, dict) for v in friction_factors.values()
     ):
-        rs7_lookup = (
-            df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
-        )
+        # Per-RS7 per-band factors: resolve the rs7_vec for each municipality.
+        if rs7_by_zone is not None:
+            # TAZ pass: resolve from the explicit zone->rs7 dict.
+            rs7_vec = np.array([
+                int(rs7_by_zone.get(str(c), -1)) for c in municipalities
+            ])
+        else:
+            # Gemeinde pass: resolve via df_regiostar + ars_to_ags8 (legacy path).
+            rs7_lookup = (
+                df_regiostar.set_index("commune_id")["regiostar7"].astype("Int64").to_dict()
+            )
+            rs7_vec = np.array([
+                int(rs7_lookup.get(ars_to_ags8(c)) or -1) for c in municipalities
+            ])
 
-        rs7_vec = np.array([
-            int(rs7_lookup.get(ars_to_ags8(c)) or -1) for c in municipalities
-        ])
         n_missing_rs7 = int(np.sum(rs7_vec == -1))
         n_total_origins = len(municipalities)
         logger.info(
@@ -552,21 +585,18 @@ def _execute_gravity_base(context):
                 "factors would be missing -- check the regiostar coverage",
                 n_missing_rs7, n_total_origins,
             )
-        friction_factors = {int(k): {int(b): float(f) for b, f in v.items()}
-                            for k, v in friction_factors.items()}
+        friction_factors_resolved = {int(k): {int(b): float(f) for b, f in v.items()}
+                                     for k, v in friction_factors.items()}
     elif isinstance(friction_factors, dict) and friction_factors:
-        friction_factors = {int(b): float(f) for b, f in friction_factors.items()}
+        friction_factors_resolved = {int(b): float(f) for b, f in friction_factors.items()}
     else:
         # Also catches {}: a missing or empty mapping is the OFF path (byte-identical).
-        friction_factors = None
+        friction_factors_resolved = None
 
     friction = build_friction_matrix(
         distances, slope_vec, constant, diagonal,
-        factors=friction_factors, rs7_vec=rs7_vec,
+        factors=friction_factors_resolved, rs7_vec=rs7_vec,
     )
-    # ExecuteContext.config() takes the key alone (the default is declared in
-    # configure()); passing a default here would raise.
-    max_iterations = context.config("gravity_max_iterations")
     flow = evaluate_gravity(population, employees, friction, max_iterations)
 
     df_matrix = pd.DataFrame({
@@ -592,7 +622,148 @@ def _execute_gravity_base(context):
     df_matrix["weight"] = df_matrix["weight"] / df_matrix["total"]
     df_matrix = df_matrix[["origin_id", "destination_id", "weight"]]
 
-    return df_matrix, df_matrix
+    return df_matrix
+
+
+def _execute_gravity_base(context):
+    """Run the bavaria-style Gemeinde x Gemeinde gravity model.
+
+    Returns ``(df_work_od, df_education_od)`` of row-normalised conditional
+    probabilities.
+
+    When ``taz_work_location_choice`` is OFF (default) the function runs the
+    gravity once on the Gemeinde universe and returns the same frame for both
+    work and education -- byte-identical to the pre-TAZ behaviour.
+
+    When ON the gravity is run TWICE:
+    - Gemeinde pass (``education_od``): standard Gemeinde x Gemeinde gravity.
+    - TAZ pass (``work_od``): TAZ x TAZ gravity using TAZ-aggregated population
+      and building-potential-weighted employee attraction.
+    """
+    # B1: read the flag with the key alone at execute time.  synpp's
+    # ExecuteContext.config() takes only the key; passing a default here raises
+    # "config() takes 2 positional arguments but 3 were given".  The default
+    # False is declared in configure().
+    taz_on = context.config("taz_work_location_choice")
+
+    df_distances = context.stage("eqasim_common.gravity.distance_matrix")
+    # data.census.filtered resolves to the configured population producer
+    # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
+    # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
+    # always come from the SAME population as the demand.
+    df_population_raw = context.stage("data.census.filtered")
+    df_employees_raw = context.stage("braunschweig.data.census.employees")
+    df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
+
+    # Sector-aware destination attraction (flag-gated; OFF -> byte-identical).
+    # Tilts the per-Gemeinde ``employees`` attraction by establishment density
+    # while preserving Kreis totals (see ``apply_sector_aware_attraction``).
+    # synpp's ExecuteContext.config() takes only the key (no default argument);
+    # the default False is declared in configure(). Passing a default here raises
+    # "config() takes 2 positional arguments but 3 were given" and aborts the run.
+    df_employees_gemeinde = df_employees_raw
+    if context.config("braunschweig.gravity.sector_aware_enabled"):
+        df_betriebe = _read_betriebe_per_commune(context)
+        df_employees_gemeinde = apply_sector_aware_attraction(
+            df_employees_gemeinde, df_betriebe, enabled=True,
+        )
+
+    # Rename to the schema expected by compute_work_od.
+    df_pop_gemeinde = df_population_raw.rename(columns={
+        "commune_id": "origin_id",
+        "weight": "population",
+    })[["origin_id", "population"]]
+
+    df_emp_gemeinde = df_employees_gemeinde.rename(columns={
+        "commune_id": "destination_id",
+        "weight": "employees",
+    })[["destination_id", "employees"]]
+
+    slope = context.config("gravity_slope")
+    constant = context.config("gravity_constant")
+    diagonal = context.config("gravity_diagonal")
+    slope_overrides = context.config("gravity_slope_by_regiostar7")
+    friction_factors = context.config("gravity_friction_factors")
+    # ExecuteContext.config() takes the key alone (the default is declared in
+    # configure()); passing a default here would raise.
+    max_iterations = context.config("gravity_max_iterations")
+
+    # Gemeinde pass (used for education, and also for work when TAZ is OFF).
+    education_od = compute_work_od(
+        df_population=df_pop_gemeinde,
+        df_employees=df_emp_gemeinde,
+        df_distances=df_distances,
+        df_regiostar=df_regiostar,
+        rs7_by_zone=None,
+        slope=slope,
+        constant=constant,
+        diagonal=diagonal,
+        slope_overrides=slope_overrides,
+        friction_factors=friction_factors,
+        max_iterations=max_iterations,
+    )
+
+    if not taz_on:
+        # OFF path: byte-identical to the pre-extraction behaviour.
+        # Third element is None so execute() can unpack uniformly.
+        return education_od, education_od, None
+
+    # TAZ pass for work-location gravity (ON path).
+    # The origin margin splits each commune's census weight across its TAZ by the
+    # home-point distribution, keyed on the 12-digit ARS commune_id that BOTH
+    # data.census.filtered and home.locations carry (their household_id spaces are
+    # disjoint -- FULL vs SAMPLED population -- so a household_id join cannot work).
+    from braunschweig.gravity.taz_margins import (  # noqa: PLC0415
+        build_dest_attraction_per_taz,
+        build_origin_population_per_taz,
+    )
+
+    df_taz = context.stage("braunschweig.data.spatial.taz")
+    df_dist_taz = context.stage("braunschweig.gravity.distance_matrix_taz")
+    df_homes = context.stage("synthesis.population.spatial.home.locations")
+    df_buildings = context.stage("braunschweig.data.building_potentials")
+    # Census Gemeinde polygons (commune_id = 12-digit ARS, the key both
+    # data.census.filtered and the employees frame use). The dest margin assigns
+    # each TAZ to its census commune by LOCATION against these polygons, which
+    # reconciles the RVB gpkg AGS-8 codes with the census communes geometrically
+    # (the ~10 Gemeinde-code mismatches vanish; no AGS->ARS crosswalk needed).
+    df_municipalities = context.stage("data.spatial.municipalities")
+
+    pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
+    att_taz, _, _ = build_dest_attraction_per_taz(
+        df_buildings, df_employees_raw, df_taz, df_municipalities)
+
+    # TAZ origin population frame (schema: origin_id, population).
+    df_pop_taz = pop_taz.rename(columns={"taz_id": "origin_id"})[["origin_id", "population"]]
+
+    # TAZ destination attraction frame (schema: destination_id, employees).
+    # att_taz carries commune_id (ARS-12) -- rename to destination_id and use
+    # the ``attraction`` column as the employees analogue.
+    df_emp_taz = att_taz.rename(columns={
+        "taz_id": "destination_id",
+        "attraction": "employees",
+    })[["destination_id", "employees"]]
+
+    # Per-origin RS7: resolved directly from the TAZ frame's regiostar7 column.
+    rs7_by_zone = dict(zip(df_taz["taz_id"].astype(str), df_taz["regiostar7"].astype(int)))
+
+    work_od = compute_work_od(
+        df_population=df_pop_taz,
+        df_employees=df_emp_taz,
+        df_distances=df_dist_taz,
+        df_regiostar=df_regiostar,
+        rs7_by_zone=rs7_by_zone,
+        slope=slope,
+        constant=constant,
+        diagonal=diagonal,
+        slope_overrides=slope_overrides,
+        friction_factors=friction_factors,
+        max_iterations=max_iterations,
+    )
+
+    # Return pop_taz as the third element so execute() can reuse it without
+    # calling build_origin_population_per_taz a second time (sjoin is expensive).
+    return work_od, education_od, pop_taz
 
 
 # --- Braunschweig-specific -------------------------------------------------
@@ -605,6 +776,14 @@ IPF_TOLERANCE = 1e-3
 
 
 def configure(context):
+    # TAZ work-location gravity branch.  Default False -> the OFF path is
+    # byte-identical to the pre-TAZ behaviour (single Gemeinde pass returned
+    # for both work and education).  When True a second TAZ-keyed gravity pass
+    # is computed for work location choice.
+    context.config("taz_work_location_choice", False)
+
+    # Base stages and configs are declared unconditionally so the OFF path
+    # needs no new keys (and all existing pipeline configs remain valid).
     context.stage("eqasim_common.gravity.distance_matrix")
     # data.census.filtered resolves to the configured population producer
     # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
@@ -654,10 +833,43 @@ def configure(context):
         )
         context.stage("eqasim_common.spatial.codes")
 
+    # TAZ-specific stages: only declared when the flag is ON so the OFF path
+    # (all existing configs) needs no new keys or stages.
+    if context.config("taz_work_location_choice", False):
+        context.stage("braunschweig.data.spatial.taz")
+        context.stage("braunschweig.gravity.distance_matrix_taz")
+        context.stage("synthesis.population.spatial.home.locations")
+        context.stage("braunschweig.data.building_potentials")
+        # Census Gemeinde polygons (ARS-12) for the geometric TAZ -> census
+        # commune assignment in the dest margin (build_dest_attraction_per_taz).
+        context.stage("data.spatial.municipalities")
+
+
+def _zone_to_kreis(series: pd.Series, lookup: dict | None = None) -> pd.Series:
+    """Map a zone id to its 5-digit Kreis ARS. lookup is None -> legacy commune_id
+    str[:5] (byte-identical). lookup given -> map each taz_id, raise on unmapped.
+
+    On the ON path an unmapped taz_id is a TAZ coverage gap (the lookup must map
+    every zone). Raise a descriptive ``RuntimeError`` naming the offending ids
+    instead of letting a bare ``KeyError`` from the dict lookup bubble up, so the
+    failure is actionable (consistent with the other explicit guards here and the
+    no-silent-fallback contract)."""
+    if lookup is None:
+        return series.astype(str).str[:5]
+    zones = series.astype(str)
+    unmapped = sorted(set(zones) - set(lookup))
+    if unmapped:
+        raise RuntimeError(
+            "%d zone id(s) have no Kreis in the taz->kreis lookup, e.g. %s "
+            "(TAZ coverage gap; the lookup must map every taz_id)"
+            % (len(unmapped), ", ".join(unmapped[:5]))
+        )
+    return zones.map(lookup)
+
 
 def _gemeinde_to_kreis(series: pd.Series) -> pd.Series:
-    """Strip a commune_id (8-digit AGS) down to a 5-digit Kreis ARS."""
-    return series.astype(str).str[:5]
+    """Backwards-compatible shim (tests/braunschweig/test_stages.py imports this)."""
+    return _zone_to_kreis(series)
 
 
 def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
@@ -697,17 +909,40 @@ def _synthesise_intra_kreis(df_pendler: pd.DataFrame,
 
 def _calibrate(df_od: pd.DataFrame,
                df_population: pd.DataFrame,
-               df_pendler: pd.DataFrame) -> pd.DataFrame:
-    """IPF-scale Gemeinde-level OD so Kreis aggregates match BA Pendler."""
+               df_pendler: pd.DataFrame,
+               zone_to_kreis: dict | None = None,
+               population_key: str = "commune_id",
+               population_value: str = "weight") -> pd.DataFrame:
+    """IPF-scale zone-level OD so Kreis aggregates match BA Pendler.
+
+    OFF path (zone_to_kreis=None): uses legacy commune_id[:5] -> byte-identical.
+    ON path (zone_to_kreis=dict): maps each taz_id via the lookup, raises if no
+    in-scope flows are found after mapping (silent BA-skip guard).
+
+    Parameters
+    ----------
+    df_od:
+        Origin-destination frame with columns ``origin_id``, ``destination_id``, ``weight``.
+    df_population:
+        Population frame; grouped by ``population_key``, summed on ``population_value``.
+    df_pendler:
+        BA Pendleratlas Kreis-pair flows (columns ``orig_ars``, ``dest_ars``, ``flow``).
+    zone_to_kreis:
+        None -> legacy str[:5] mapping (OFF path). dict -> explicit taz_id->Kreis map (ON path).
+    population_key:
+        Column to group ``df_population`` by. OFF: ``"commune_id"``; ON: ``"taz_id"``.
+    population_value:
+        Column to sum from ``df_population``. OFF: ``"weight"``; ON: ``"population"``.
+    """
     df = df_od.copy()
-    df["orig_kreis"] = _gemeinde_to_kreis(df["origin_id"])
-    df["dest_kreis"] = _gemeinde_to_kreis(df["destination_id"])
+    df["orig_kreis"] = _zone_to_kreis(df["origin_id"], zone_to_kreis)
+    df["dest_kreis"] = _zone_to_kreis(df["destination_id"], zone_to_kreis)
 
     pop = (
-        df_population.groupby("commune_id")["weight"].sum()
+        df_population.groupby(population_key)[population_value].sum()
                      .rename("pop")
                      .reset_index()
-                     .rename(columns={"commune_id": "origin_id"})
+                     .rename(columns={population_key: "origin_id"})
     )
     df = pd.merge(df, pop, on="origin_id", how="left")
     df["pop"] = df["pop"].fillna(0.0)
@@ -737,6 +972,11 @@ def _calibrate(df_od: pd.DataFrame,
     df_rest = df_rest[df_rest["_merge"] == "left_only"].drop(columns=["_merge"])
 
     if len(df_scope) == 0:
+        if zone_to_kreis is not None:
+            raise RuntimeError(
+                "[gravity TAZ] no in-scope flow after taz->kreis mapping; "
+                "BA calibration would be silently skipped"
+            )
         print("[braunschweig.gravity.model] no scope overlap; returning raw gravity")
         return df_od
 
@@ -771,8 +1011,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
                            df_population: pd.DataFrame,
                            df_pendler: pd.DataFrame,
                            df_external: pd.DataFrame,
-                           scope: list[str]) -> pd.DataFrame:
-    """Add rows ``(origin_gemeinde, synthetic_external_commune, weight)``.
+                           scope: list[str],
+                           zone_to_kreis: dict | None = None,
+                           population_key: str = "commune_id",
+                           population_value: str = "weight") -> pd.DataFrame:
+    """Add rows ``(origin_zone, synthetic_external_commune, weight)``.
 
     Each outbound BA Kreis flow is split across the per-Gemeinde EXT points
     in ``df_external`` proportional to their ``employees`` share, so the
@@ -781,8 +1024,14 @@ def _append_outbound_flows(df_od: pd.DataFrame,
     against the work-pool ``commune_id`` in the downstream candidate sampler
     (``synthesis/population/spatial/primary/candidates.py``).
 
-    Mass is conserved: for every (origin, Kreis) pair the sum of per-Gemeinde
+    Mass is conserved: for every (origin, Kreis) pair the sum of per-zone
     flows equals the original Kreis-level outbound flow.
+
+    OFF path (zone_to_kreis=None): groups ``df_population`` by ``commune_id``,
+    derives Kreis via ``str[:5]`` -- byte-identical to the prior behaviour.
+    ON path (zone_to_kreis=dict): groups by ``taz_id`` (population_key), maps
+    each taz_id to its Kreis via the lookup; origin_id in injected rows is the
+    taz_id so the key space is consistent with the calibrated work OD.
     """
     ext_ars = set(df_external["ars5"].astype(str))
     df_out_pendler = df_pendler[
@@ -790,15 +1039,38 @@ def _append_outbound_flows(df_od: pd.DataFrame,
         & df_pendler["dest_ars"].isin(ext_ars)
     ].copy()
 
-    pop = (
-        df_population.groupby("commune_id")["weight"].sum()
-                     .rename("pop").reset_index()
-    )
-    pop["orig_ars"] = pop["commune_id"].astype(str).str[:5]
-    pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
-    pop["share"] = np.where(pop["kreis_total"] > 0,
-                            pop["pop"] / pop["kreis_total"], 0.0)
-    pop = pop[pop["orig_ars"].isin(scope)]
+    if zone_to_kreis is None:
+        # OFF path: classic commune_id[:5] grouping and origin key.
+        pop = (
+            df_population.groupby("commune_id")["weight"].sum()
+                         .rename("pop").reset_index()
+        )
+        pop["orig_ars"] = pop["commune_id"].astype(str).str[:5]
+        pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
+        pop["share"] = np.where(pop["kreis_total"] > 0,
+                                pop["pop"] / pop["kreis_total"], 0.0)
+        pop = pop[pop["orig_ars"].isin(scope)]
+        # origin_id for injected rows is the Gemeinde commune_id (OFF behaviour).
+        pop_origin_col = "commune_id"
+    else:
+        # ON path: group by taz_id, map to Kreis via lookup; origin_id = taz_id.
+        pop = (
+            df_population.groupby(population_key)[population_value].sum()
+                         .rename("pop").reset_index()
+                         .rename(columns={population_key: "taz_id"})
+        )
+        pop["orig_ars"] = pop["taz_id"].astype(str).map(zone_to_kreis)
+        if pop["orig_ars"].isna().any():
+            missing_n = int(pop["orig_ars"].isna().sum())
+            raise RuntimeError(
+                "[gravity TAZ _append_outbound_flows] %d taz_id values have no "
+                "Kreis mapping in zone_to_kreis; cannot build outbound shares" % missing_n
+            )
+        pop["kreis_total"] = pop.groupby("orig_ars")["pop"].transform("sum")
+        pop["share"] = np.where(pop["kreis_total"] > 0,
+                                pop["pop"] / pop["kreis_total"], 0.0)
+        pop = pop[pop["orig_ars"].isin(scope)]
+        pop_origin_col = "taz_id"
 
     # Build per-Gemeinde employee shares keyed by Kreis ars5, carrying commune_id.
     # gem_share = employees / Sigma_{Gemeinde in Kreis} employees.
@@ -818,11 +1090,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
         print("[braunschweig.gravity.model] no outbound flows to inject")
         df_all = df_od.copy()
     else:
-        # origin_gemeinde x dest_kreis rows, with each origin's flow share.
+        # origin_zone x dest_kreis rows, with each origin's flow share.
         df_inj = pop.merge(df_out_pendler, on="orig_ars", how="inner")
         df_inj["flow"] = df_inj["share"] * df_inj["flow"].astype(float)
         df_inj = df_inj[df_inj["flow"] > 0]
-        # df_inj now has columns: commune_id, orig_ars, dest_ars, flow (Kreis-level split).
+        # df_inj now has columns: <pop_origin_col>, orig_ars, dest_ars, flow (Kreis-level split).
 
         # Expand each Kreis-level flow to per-Gemeinde rows via the employee share.
         # Join on ars5 == dest_ars (many-to-many: one origin->Kreis row becomes N rows).
@@ -849,7 +1121,7 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
         df_inj["flow"] = df_inj["flow"] * df_inj["gem_share"]
         df_inj = df_inj[df_inj["flow"] > 0]
-        df_inj = df_inj.rename(columns={"commune_id": "origin_id"})
+        df_inj = df_inj.rename(columns={pop_origin_col: "origin_id"})
         df_inj = df_inj[["origin_id", "destination_id", "flow"]]
 
         n_ext_rows = len(df_inj)
@@ -874,7 +1146,11 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 
 def execute(context):
-    df_work_od, df_education_od = _execute_gravity_base(context)
+    # _execute_gravity_base returns a 3-tuple: (work_od, education_od, pop_taz).
+    # pop_taz is the TAZ origin-margin DataFrame (non-None only on the ON path);
+    # it is threaded out here so execute() does not call build_origin_population_per_taz
+    # a second time (the sjoin is expensive).
+    df_work_od, df_education_od, pop_taz_from_base = _execute_gravity_base(context)
     # data.census.filtered resolves to the configured population producer
     # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
     # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
@@ -890,14 +1166,45 @@ def execute(context):
 
     df_pendler = _synthesise_intra_kreis(df_pendler, df_employment, scope)
 
+    # ExecuteContext.config() takes the key alone; the default is declared in configure().
+    # Passing a default here raises "config() takes 2 positional arguments but 3 were given".
+    taz_on = context.config("taz_work_location_choice")
+
+    if taz_on:
+        # ON path: reuse the TAZ population margin already computed by
+        # _execute_gravity_base (pop_taz_from_base) -- no second sjoin needed.
+        from braunschweig.gravity.taz_margins import taz_to_kreis_lookup  # noqa: PLC0415
+        df_taz = context.stage("braunschweig.data.spatial.taz")
+        zone_to_kreis = taz_to_kreis_lookup(df_taz)
+        population_key = "taz_id"
+        population_value = "population"
+        # pop_taz schema: taz_id, commune_id, population -- the _calibrate and
+        # _append_outbound_flows functions group by population_key so they receive
+        # the correct per-TAZ margin.
+        df_population_for_od = pop_taz_from_base
+    else:
+        # OFF path: defaults -> byte-identical behaviour.
+        zone_to_kreis = None
+        population_key = "commune_id"
+        population_value = "weight"
+        df_population_for_od = df_population
+
     print(
-        "[braunschweig.gravity.model] calibrating {:,} Gemeinde-pairs "
+        "[braunschweig.gravity.model] calibrating {:,} zone-pairs "
         "against {:,} BA Kreis-pair flows".format(len(df_work_od), len(df_pendler))
     )
 
-    df_work_calibrated = _calibrate(df_work_od, df_population, df_pendler)
+    df_work_calibrated = _calibrate(
+        df_work_od, df_population_for_od, df_pendler,
+        zone_to_kreis=zone_to_kreis,
+        population_key=population_key,
+        population_value=population_value,
+    )
     df_work_extended = _append_outbound_flows(
-        df_work_calibrated, df_population, df_pendler, df_external, scope,
+        df_work_calibrated, df_population_for_od, df_pendler, df_external, scope,
+        zone_to_kreis=zone_to_kreis,
+        population_key=population_key,
+        population_value=population_value,
     )
 
     return df_work_extended, df_education_od

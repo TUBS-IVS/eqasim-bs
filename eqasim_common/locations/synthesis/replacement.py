@@ -20,6 +20,12 @@ def configure(context):
     context.stage("synthesis.locations.work")
     context.stage("synthesis.locations.education")
 
+    # Declare the TAZ flag so that when this stage is used as an alias for
+    # synthesis.population.spatial.primary.locations, base.execute() can read
+    # it without raising PipelineError ("config option not requested").
+    # The default is False (OFF), preserving byte-identical OFF behaviour.
+    context.config("taz_work_location_choice", False)
+
     # Custom data
     context.stage("eqasim_common.locations.synthesis.education")
 
