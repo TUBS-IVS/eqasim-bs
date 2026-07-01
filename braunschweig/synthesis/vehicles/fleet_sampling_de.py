@@ -979,6 +979,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             # 3. euro_class <- P(euro | powertrain).
             euro_pmf = sampler.euro_given_powertrain[powertrain]
             euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+            # Non-combustion drivetrains carry no combustion Euro stage;
+            # override the drawn euro to the explicit "na" sentinel so the
+            # stored euro_class reflects provenance correctly (HBEFA's
+            # emission_concept_for already ignores euro for these powertrains).
+            if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
+                euro_class = hbefa.NON_COMBUSTION_EURO
 
             # 4. age band <- P(age | powertrain), consistent with the Euro class.
             age_pmf = sampler.age_given_powertrain[powertrain]
@@ -1125,6 +1131,10 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         _v3_tilts: list[Optional[np.ndarray]] = [None] * n
         _v3_pmfs: list[np.ndarray] = [None] * n  # type: ignore[list-item]
         _v3_kreis_factors: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        # A4 (Task 6): also record the drawn powertrain so _effective_expected
+        # can mirror the NON_COMBUSTION_EURO override when computing the expected
+        # euro marginal (non-combustion rows contribute only to the "na" bucket).
+        _v3_powertrains: list[str] = [""] * n
         for i in range(n):
             pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pmf)
@@ -1139,10 +1149,20 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                         if age_model is not None else None)
                 age_band, euro_class = _draw_age_euro_joint(
                     rng, sampler.age_euro_joint[powertrain], tilt)
+                # Non-combustion drivetrains carry no combustion Euro stage;
+                # override the drawn euro to the explicit "na" sentinel so the
+                # stored euro_class reflects provenance correctly (HBEFA's
+                # emission_concept_for already ignores euro for these powertrains).
+                if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
+                    euro_class = hbefa.NON_COMBUSTION_EURO
             else:
                 euro_pmf = sampler.euro_given_powertrain[powertrain]
                 euro_class = _draw_categorical(
                     rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
+                # Non-combustion drivetrains carry no combustion Euro stage;
+                # override the drawn euro to the explicit "na" sentinel.
+                if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
+                    euro_class = hbefa.NON_COMBUSTION_EURO
                 age_pmf = sampler.age_given_powertrain[powertrain]
                 if age_model is not None:
                     tilt = age_model.age_tilt(car_segment[i], car_status[i])
@@ -1161,6 +1181,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             _v3_kreis_factors[i] = kreis_factors[car_kreis[i]]
             _v3_joints[i] = sampler.age_euro_joint[powertrain]
             _v3_tilts[i] = tilt
+            _v3_powertrains[i] = powertrain  # A4: used to mirror the "na" override
 
     df_spec = df_cars.copy()
     df_spec["segment"] = out_segment
@@ -1227,6 +1248,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             powertrains=list(POWERTRAINS),
             age_labels=list(ft.AGE_BAND_LABELS),
             euro_labels=list(ft.EURO_CLASS_LABELS),
+            drawn_powertrains=_v3_powertrains,
         )
         # Segment: the KBA FZ 27.10 marginal is the segment draw target;
         # compare realised segment shares to sampler.segment_model.kba_marginal.
@@ -1289,6 +1311,7 @@ def _effective_expected(
     powertrains: Sequence[str],
     age_labels: Sequence[str],
     euro_labels: Sequence[str],
+    drawn_powertrains: Optional[Sequence[str]] = None,
 ) -> dict[str, dict[str, float]]:
     """Accumulate the effective per-car target PMFs for the three dimensions.
 
@@ -1299,6 +1322,13 @@ def _effective_expected(
     tilt-applied, renormalised joint.  Accumulating these over all ``n`` cars
     and dividing by ``n`` yields the expected marginal PMFs (mean effective
     target) for the validator.
+
+    For non-combustion powertrains (A4), the euro is always overridden to
+    ``hbefa.NON_COMBUSTION_EURO`` ("na") at draw time.  When ``drawn_powertrains``
+    is supplied, this function mirrors that override: a non-combustion car
+    contributes all its euro mass to the ``"na"`` bucket instead of the joint's
+    real euro distribution, so the expected and realised euro marginals stay
+    consistent.
 
     This is a pure helper (no RNG, no data loading) so it is unit-testable
     without running the full sampler.
@@ -1313,6 +1343,10 @@ def _effective_expected(
     powertrains : powertrain label sequence (ordered like pmf vectors).
     age_labels : age-band label sequence (ordered like matrix rows).
     euro_labels : Euro-class label sequence (ordered like matrix columns).
+    drawn_powertrains : optional per-car drawn powertrain label (same length as
+        ``car_pmfs``).  When supplied, non-combustion rows contribute their euro
+        mass to ``hbefa.NON_COMBUSTION_EURO`` rather than the joint columns
+        (mirrors the A4 euro override in the draw).
 
     Returns
     -------
@@ -1320,19 +1354,30 @@ def _effective_expected(
     each value is a ``label -> probability`` dict summing to 1.0.
     """
     n = len(car_pmfs)
+    # "na" label is not in euro_labels; track it separately and merge at the end.
+    non_comb_euro = hbefa.NON_COMBUSTION_EURO
+    euro_labels_list = list(euro_labels)
+    # Extended euro dimension: real labels + "na" sentinel.
+    euro_labels_ext = euro_labels_list + [non_comb_euro]
     if n == 0:
         return {
             "powertrain": {p: 1.0 / len(powertrains) for p in powertrains},
             "age_band": {a: 1.0 / len(age_labels) for a in age_labels},
-            "euro_class": {e: 1.0 / len(euro_labels) for e in euro_labels},
+            "euro_class": {e: 1.0 / len(euro_labels_list) for e in euro_labels_list},
         }
 
     acc_pt = np.zeros(len(powertrains), dtype=float)
     acc_age = np.zeros(len(age_labels), dtype=float)
-    acc_euro = np.zeros(len(euro_labels), dtype=float)
+    acc_euro = np.zeros(len(euro_labels_ext), dtype=float)
+    na_idx = len(euro_labels_list)  # index of the "na" sentinel in acc_euro
 
-    for pmf, factors, joint, tilt in zip(car_pmfs, kreis_factors,
-                                          age_euro_joints, tilts):
+    it = zip(car_pmfs, kreis_factors, age_euro_joints, tilts)
+    if drawn_powertrains is not None:
+        it_pt: Sequence = drawn_powertrains
+    else:
+        it_pt = [""] * n  # type: ignore[assignment]
+
+    for (pmf, factors, joint, tilt), pt in zip(it, it_pt):
         # Effective powertrain pmf after the per-Kreis rake.
         eff_pt = np.asarray(pmf, dtype=float) * np.asarray(factors, dtype=float)
         s = eff_pt.sum()
@@ -1347,15 +1392,27 @@ def _effective_expected(
         m = M.sum()
         if m > 0:
             M = M / m
-        acc_age += M.sum(axis=1)   # age marginal
-        acc_euro += M.sum(axis=0)  # euro marginal
+        acc_age += M.sum(axis=1)   # age marginal (unaffected by the euro override)
+
+        # Euro marginal: mirror the A4 NON_COMBUSTION_EURO override.
+        if drawn_powertrains is not None and pt not in hbefa.COMBUSTION_POWERTRAINS:
+            # All euro mass collapses to the "na" sentinel.
+            acc_euro[na_idx] += 1.0
+        else:
+            acc_euro[:len(euro_labels_list)] += M.sum(axis=0)  # real euro marginal
 
     # Normalise by n to get mean expected marginals (which sum to 1.0).
+    # Include "na" in the euro dict only when it has mass (i.e. drawn_powertrains
+    # was supplied and there are non-combustion draws).
+    euro_dict: dict[str, float] = {}
+    for j, e in enumerate(euro_labels_ext):
+        v = float(acc_euro[j] / n)
+        if v > 0.0 or e != non_comb_euro:
+            euro_dict[e] = v
     return {
         "powertrain": {p: float(acc_pt[j] / n)
                        for j, p in enumerate(powertrains)},
         "age_band": {a: float(acc_age[j] / n)
                      for j, a in enumerate(age_labels)},
-        "euro_class": {e: float(acc_euro[j] / n)
-                       for j, e in enumerate(euro_labels)},
+        "euro_class": euro_dict,
     }

@@ -75,6 +75,13 @@ POWERTRAIN_TO_TECHNOLOGY: dict[str, str] = {
 #: stage for them), so their euro_class is collapsed to a fixed concept below.
 COMBUSTION_POWERTRAINS: frozenset[str] = frozenset({"petrol", "diesel", "gas", "other"})
 
+#: Sentinel euro_class value stored on non-combustion (electric / hydrogen)
+#: vehicles to make it explicit that no combustion Euro stage applies.  HBEFA's
+#: ``emission_concept_for`` already ignores euro for non-combustion powertrains,
+#: so the stored ``type_id`` / emission concept is unaffected -- this is
+#: provenance / semantic clarity only.
+NON_COMBUSTION_EURO: str = "na"
+
 #: Fixed (Euro-independent) emission concepts for the electrified / fuel-cell
 #: powertrains. These are the canonical VSP HBEFA passenger-car concepts.
 NON_COMBUSTION_EMISSION_CONCEPT: dict[str, str] = {
