@@ -714,7 +714,6 @@ def _execute_gravity_base(context):
     # data.census.filtered and home.locations carry (their household_id spaces are
     # disjoint -- FULL vs SAMPLED population -- so a household_id join cannot work).
     from braunschweig.gravity.taz_margins import (  # noqa: PLC0415
-        build_ags_to_ars,
         build_dest_attraction_per_taz,
         build_origin_population_per_taz,
     )
@@ -723,15 +722,16 @@ def _execute_gravity_base(context):
     df_dist_taz = context.stage("braunschweig.gravity.distance_matrix_taz")
     df_homes = context.stage("synthesis.population.spatial.home.locations")
     df_buildings = context.stage("braunschweig.data.building_potentials")
-
-    # AGS-8 -> ARS-12 crosswalk for the dest margin (building commune AGS-8 -> the
-    # ARS-12 keyed employees). Built from the population's own ARS-12 commune ids
-    # (AGS-8 = ARS[:5] + ARS[9:12]) so it is COMPLETE for the scope -- the
-    # eqasim_common.spatial.codes crosswalk was missing 49 ZGB communes (e2e).
-    ags_to_ars = build_ags_to_ars(df_population_raw["commune_id"].astype(str).unique())
+    # Census Gemeinde polygons (commune_id = 12-digit ARS, the key both
+    # data.census.filtered and the employees frame use). The dest margin assigns
+    # each TAZ to its census commune by LOCATION against these polygons, which
+    # reconciles the RVB gpkg AGS-8 codes with the census communes geometrically
+    # (the ~10 Gemeinde-code mismatches vanish; no AGS->ARS crosswalk needed).
+    df_municipalities = context.stage("data.spatial.municipalities")
 
     pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
-    att_taz, _, _ = build_dest_attraction_per_taz(df_buildings, df_employees_raw, df_taz, ags_to_ars)
+    att_taz, _, _ = build_dest_attraction_per_taz(
+        df_buildings, df_employees_raw, df_taz, df_municipalities)
 
     # TAZ origin population frame (schema: origin_id, population).
     df_pop_taz = pop_taz.rename(columns={"taz_id": "origin_id"})[["origin_id", "population"]]
@@ -840,8 +840,9 @@ def configure(context):
         context.stage("braunschweig.gravity.distance_matrix_taz")
         context.stage("synthesis.population.spatial.home.locations")
         context.stage("braunschweig.data.building_potentials")
-        context.config("data_path")
-        context.stage("eqasim_common.spatial.codes")
+        # Census Gemeinde polygons (ARS-12) for the geometric TAZ -> census
+        # commune assignment in the dest margin (build_dest_attraction_per_taz).
+        context.stage("data.spatial.municipalities")
 
 
 def _zone_to_kreis(series: pd.Series, lookup: dict | None = None) -> pd.Series:

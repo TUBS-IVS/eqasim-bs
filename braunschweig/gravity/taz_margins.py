@@ -83,49 +83,109 @@ def assign_taz(points_gdf, df_taz, id_column, kreis_column=None, point_geometry=
     return joined[[id_column, "taz_id", "commune_id"]], primary, fallback
 
 
-def normalize_commune_to_ars(commune_id_series, ags_to_ars):
-    """Map an 8-digit AGS commune_id to the 12-digit ARS used by the population /
-    employees frames (the same crosswalk braunschweig.data.census.employees uses).
-    Raise on any unmapped AGS (no silent miss -> no all-zero attraction, B2)."""
-    out = commune_id_series.astype(str).map(ags_to_ars)
-    if out.isna().any():
-        missing = sorted(commune_id_series[out.isna()].astype(str).unique())[:5]
-        raise ValueError("%d commune_id (AGS) have no ARS mapping, e.g. %s"
-                         % (int(out.isna().sum()), ", ".join(missing)))
-    return out
+def assign_census_commune(points_gdf, df_municipalities, id_column, point_geometry=None):
+    """Attach the CENSUS commune_id (12-digit ARS) to each point by point-in-polygon
+    against the census municipality polygons (data.spatial.municipalities).
+
+    This reconciles the RVB TAZ gpkg's AGS-8 Gemeinde codes with the census
+    communes by LOCATION: the two sources use different Gemeinde partitions /
+    reform vintages, so a handful of AGS codes have no direct census counterpart.
+    A geometric join sidesteps the code mismatch entirely -- a point is placed in
+    whichever census Gemeinde actually contains it. Points outside every polygon
+    use a nearest-commune fallback (counted and logged, never silent). Dedups on
+    ``id_column`` (never the index) and asserts no row is lost. ``point_geometry``
+    overrides the join point (e.g. representative_point for polygons/footprints).
+    Returns (DataFrame[id_column, commune_ars], primary, fallback).
+    """
+    if id_column not in points_gdf.columns:
+        raise ValueError("assign_census_commune requires an explicit id column %r" % id_column)
+    muni = df_municipalities[["commune_id", "geometry"]].copy()
+    muni["commune_id"] = muni["commune_id"].astype(str)
+    if muni.crs != points_gdf.crs:
+        muni = muni.to_crs(points_gdf.crs)
+    muni = muni.rename(columns={"commune_id": "commune_ars"})
+
+    pts = points_gdf[[id_column]].copy()
+    pts["geometry"] = (point_geometry if point_geometry is not None else points_gdf.geometry).values
+    pts = gpd.GeoDataFrame(pts, geometry="geometry", crs=points_gdf.crs)
+
+    joined = gpd.sjoin(pts, muni, how="left", predicate="within").drop(columns=["index_right"])
+    joined = joined.drop_duplicates(id_column, keep="first")
+    primary = int(joined["commune_ars"].notna().sum())
+
+    missing_ids = joined.loc[joined["commune_ars"].isna(), id_column]
+    fallback = int(len(missing_ids))
+    if fallback:
+        miss = pts[pts[id_column].isin(missing_ids)]
+        near = gpd.sjoin_nearest(miss, muni, how="left").drop_duplicates(id_column, keep="first")
+        fill = near.set_index(id_column)["commune_ars"]
+        sel = joined[id_column].isin(missing_ids)
+        joined.loc[sel, "commune_ars"] = joined.loc[sel, id_column].map(fill)
+
+    if len(joined) != len(points_gdf):
+        raise ValueError(
+            "assign_census_commune row count changed (%d in, %d out); duplicate %r"
+            % (len(points_gdf), len(joined), id_column))
+    total = primary + fallback
+    logger.info(
+        "[taz_margins.commune] %d points; within %d (%.1f%%), nearest fallback %d (%.1f%%)",
+        total, primary, 100.0 * primary / total if total else 0.0,
+        fallback, 100.0 * fallback / total if total else 0.0)
+    return joined[[id_column, "commune_ars"]], primary, fallback
 
 
-def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, ags_to_ars):
-    """Split each commune's authoritative employee total across its TAZ by building
-    potential_work share (DECISION 1, commune-total-preserving). commune_id is
-    normalised AGS-8 -> ARS-12 before the employees join (B2). Communes with
-    employees but no TAZ raise (M4). Returns (DataFrame[taz_id, commune_id(ARS),
-    attraction], primary, fallback)."""
-    bld = df_buildings[["building_id", "potential_work"]].copy()
-    # Derive kreis from commune_id (AGS-8, first 5 digits) to constrain the nearest-TAZ
-    # fallback to the point's own Kreis so no employment mass crosses a Kreis boundary
-    # (DECISION 2). commune_id is mandatory in df_buildings (building_potentials contract).
+def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, df_municipalities):
+    """Split each census commune's authoritative employee total across its TAZ by
+    building potential_work share (DECISION 1, commune-total-preserving: the BA
+    Kreis-level control is untouched).
+
+    Each TAZ is assigned to its census commune (12-digit ARS) SPATIALLY, by
+    point-in-polygon against data.spatial.municipalities (B2). This replaces the
+    former AGS-8 -> ARS-12 code crosswalk, which could not cover the ~10 Gemeinde
+    codes where the RVB gpkg and the census disagree; the geometric join places
+    every TAZ in whichever census Gemeinde contains it, so the mismatch vanishes.
+
+    Buildings are then assigned to TAZ (nearest-TAZ fallback CONSTRAINED to the
+    building's Kreis, DECISION 2). The Kreis is the first 5 digits of the
+    building's AGS-8 commune_id, which is IDENTICAL in AGS-8 and ARS-12 (only the
+    Gemeinde suffix differs), so it is a reliable constraint despite the full-code
+    mismatch. Communes with employees but no TAZ raise (M4). Returns
+    (DataFrame[taz_id, commune_id(ARS), attraction], primary, fallback), one row
+    per taz_id.
+    """
+    # 1) Each TAZ -> its census commune (ARS-12) by geometry (representative_point
+    #    is guaranteed inside the polygon). All TAZ are placed, so a commune with
+    #    no buildings still gets rows (uniform fallback below).
+    taz_geom = df_taz.geometry
+    taz_commune, _, _ = assign_census_commune(
+        gpd.GeoDataFrame(df_taz[["taz_id"]].copy(), geometry=taz_geom.values, crs=df_taz.crs),
+        df_municipalities, id_column="taz_id",
+        point_geometry=taz_geom.representative_point())
+    taz_commune["taz_id"] = taz_commune["taz_id"].astype(str)
+
+    # 2) Each building -> a TAZ (nearest fallback constrained to the building's
+    #    Kreis; the Kreis prefix is reliable even though the full AGS code mismatches).
+    bld = df_buildings[["potential_work"]].copy()
+    bld["_bid"] = range(len(bld))
     bld["kreis"] = df_buildings["commune_id"].astype(str).str[:5]
     bld_geom = df_buildings.geometry
     assigned, primary, fallback = assign_taz(
         gpd.GeoDataFrame(bld, geometry=bld_geom.values, crs=df_buildings.crs),
-        df_taz, id_column="building_id", kreis_column="kreis",
+        df_taz, id_column="_bid", kreis_column="kreis",
         # Pass a GeoSeries (not GeometryArray) so assign_taz can call .values on it.
-        point_geometry=bld_geom.representative_point(),
-    )
-    # M3: merge potential_work back by building_id, never positional .values.
-    pot = assigned.merge(bld[["building_id", "potential_work"]], on="building_id", how="left")
-    # commune_id here is still AGS-8 (from df_taz via assign_taz); ARS-12 mapping happens below.
-    pot_by_taz = (pot.groupby(["taz_id", "commune_id"])["potential_work"].sum()
-                     .rename("pot").reset_index())
+        point_geometry=bld_geom.representative_point())
+    # M3: merge potential_work back by _bid, never positional .values.
+    pot = assigned.merge(bld[["_bid", "potential_work"]], on="_bid", how="left")
+    pot_by_taz = pot.groupby("taz_id")["potential_work"].sum().rename("pot").reset_index()
+    pot_by_taz["taz_id"] = pot_by_taz["taz_id"].astype(str)
 
-    # All TAZ of every commune (so a commune with no buildings still gets rows).
-    taz_index = df_taz[["taz_id", "commune_id"]].drop_duplicates()
-    grid = taz_index.merge(pot_by_taz, on=["taz_id", "commune_id"], how="left").fillna({"pot": 0.0})
-    grid["commune_ars"] = normalize_commune_to_ars(grid["commune_id"], ags_to_ars)   # B2
+    # 3) Every TAZ (from the geometric taz->commune map) gets a row; TAZ without
+    #    buildings -> pot 0. Grouping is by the TAZ's census commune (ARS-12).
+    grid = taz_commune.merge(pot_by_taz, on="taz_id", how="left").fillna({"pot": 0.0})
 
-    emp = df_employees.groupby("commune_id")["weight"].sum().rename("emp")            # ARS-12 keyed
-    # M4: every employer commune must have TAZ rows, else its mass is silently lost.
+    emp = (df_employees.assign(commune_id=df_employees["commune_id"].astype(str))
+                       .groupby("commune_id")["weight"].sum().rename("emp"))     # ARS-12 keyed
+    # M4: every employer commune must be reachable by some TAZ, else its mass is silently lost.
     missing = set(emp.index.astype(str)) - set(grid["commune_ars"].astype(str))
     if missing:
         raise ValueError("%d communes have employees but no TAZ: %s"
@@ -148,23 +208,6 @@ def taz_to_kreis_lookup(df_taz):
     origin/destination identifiers instead of the legacy commune_id AGS-8.
     """
     return dict(zip(df_taz["taz_id"].astype(str), df_taz["kreis"].astype(str)))
-
-
-def build_ags_to_ars(commune_ars):
-    """Build an AGS-8 -> ARS-12 commune crosswalk from 12-digit ARS commune ids.
-
-    AGS-8 = ARS[:5] + ARS[9:12] (Land+RB+Kreis + Gemeinde, dropping the 4-digit
-    Gemeindeverband that ARS-12 carries but AGS-8 does not). Built from the
-    population's own commune ids (data.census.filtered, ARS-12) so it is COMPLETE
-    for the modelled scope -- the eqasim_common.spatial.codes crosswalk was missing
-    49 ZGB communes (surfaced by the flag-ON e2e). Non-12-digit ids are skipped.
-    """
-    out = {}
-    for a in commune_ars:
-        a = str(a)
-        if len(a) == 12:
-            out[a[:5] + a[9:12]] = a
-    return out
 
 
 def build_origin_population_per_taz(df_homes, df_population, df_taz):
