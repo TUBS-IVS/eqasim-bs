@@ -168,7 +168,6 @@ class PowertrainModel:
         df_seg = ft.load_segment_powertrain(data_path)
         df_kreis = ft.load_kreis_powertrain(data_path)
         df_fuel_nds = ft.load_fuel_euro_nds(data_path)
-        df_gem = ft.load_gemeinde_private_bev(data_path)
 
         segments = list(segments)
         powertrains = list(POWERTRAINS)
@@ -234,9 +233,25 @@ class PowertrainModel:
             )
             kreis_psp[kreis] = cls._row_normalise(joint)
 
-        # Per-Kreis and per-Gemeinde private electric shares (FZ 27.17 / 27.15).
+        # Per-Kreis private electric shares (FZ 27.15), used as tilt denominator.
         kreis_priv = cls._kreis_private_electric_share(df_kreis)
-        gem_priv = cls._gemeinde_private_electric_share(df_gem)
+
+        # Per-Gemeinde electric shares: prefer the 2026 kba_gemeinde_ev.csv source;
+        # fall back to the FZ 27.17 kba_gemeinde_private_bev.csv when absent.
+        try:
+            df_gem_ev = ft.load_gemeinde_ev(data_path)
+            gem_priv = _gemeinde_electric_share_2026(df_gem_ev)
+            logger.info(
+                "[fleet_de] gemeinde EV tilt: 2026 source (kba_gemeinde_ev); "
+                "%d Gemeinden loaded.", len(gem_priv)
+            )
+        except FileNotFoundError:
+            df_gem_fz27 = ft.load_gemeinde_private_bev(data_path)
+            gem_priv = cls._gemeinde_private_electric_share(df_gem_fz27)
+            logger.info(
+                "[fleet_de] gemeinde EV tilt: FZ27.17 fallback "
+                "(kba_gemeinde_ev.csv absent); %d Gemeinden loaded.", len(gem_priv)
+            )
 
         return cls(
             segments=segments,
@@ -475,6 +490,54 @@ class PowertrainModel:
             100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
             self._gemeinde_fallback, 100.0 * grate,
         )
+
+
+# --------------------------------------------------------------------------- #
+# Gemeinde EV tilt builder (2026 source)
+# --------------------------------------------------------------------------- #
+def _gemeinde_electric_share_2026(
+    df: pd.DataFrame,
+) -> dict[tuple[str, str], dict[str, float]]:
+    """(kreis_ags5, gemeinde_norm) -> electric shares from the 2026 kba_gemeinde_ev.
+
+    Builds the Gemeinde tilt map from the 2026 per-Gemeinde EV CSV
+    (``kba_gemeinde_ev.csv``, Stichtag 2026-04-01). The CSV already carries a
+    ``gemeinde_norm`` column that was normalised during extraction, so no
+    additional name normalisation is applied here (the key is used as-is,
+    matching the population's ``normalize_gemeinde``-normalised Gemeinde label).
+
+    The returned dict entries carry:
+
+    * ``bev``      -- ``bev_share`` (fraction of all private Pkw)
+    * ``phev``     -- ``phev_share`` (fraction of all private Pkw)
+    * ``hydrogen`` -- ``fuelcell_share`` (stored for completeness / future use)
+
+    Hydrogen tilt is intentionally NOT applied by
+    :meth:`PowertrainModel._apply_gemeinde_tilt` because there is no defensible
+    per-Kreis hydrogen denominator: FZ 27.15 has no per-Kreis fuel-cell count,
+    and at ~0.01 % of the fleet any invented denominator would fabricate a
+    scientifically indefensible signal. The ``hydrogen`` key is retained in the
+    dict so a future task can add it when a suitable denominator becomes available.
+
+    NaN-share rows are dropped per powertrain, consistent with the FZ 27.17
+    builder (:meth:`PowertrainModel._gemeinde_private_electric_share`): a
+    Gemeinde whose share is suppressed / missing for a given powertrain falls
+    back to the Kreis share for that powertrain only. A row where ALL shares are
+    NaN is dropped entirely (no entry in the output map).
+    """
+    out: dict[tuple[str, str], dict[str, float]] = {}
+    for _, row in df.iterrows():
+        key = (str(row["kreis_ags5"]), str(row["gemeinde_norm"]))
+        shares: dict[str, float] = {}
+        for col, pt in (("bev_share", "bev"),
+                        ("phev_share", "phev"),
+                        ("fuelcell_share", "hydrogen")):
+            val = row[col]
+            if pd.notna(val):
+                shares[pt] = float(val)
+        if shares:
+            out[key] = shares
+    return out
 
 
 # --------------------------------------------------------------------------- #
