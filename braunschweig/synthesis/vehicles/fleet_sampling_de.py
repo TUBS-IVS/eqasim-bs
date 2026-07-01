@@ -152,17 +152,31 @@ class PowertrainModel:
     def from_data_path(cls, data_path: str, segments: Sequence[str],
                        max_iterations: int = 200,
                        tolerance: float = 1e-9) -> "PowertrainModel":
-        """Build the per-Kreis powertrain model from the committed KBA CSVs."""
+        """Build the per-Kreis powertrain model from the committed KBA CSVs.
+
+        Per-Kreis powertrain marginal source selection (no-silent-fallback rule):
+
+        * **Primary** — if ``kba_kreis_fuel.csv`` (Regionalstatistik 46251-02) is
+          present, the real per-Kreis petrol/diesel/gas/bev/phev/hybrid/other
+          counts are used directly via
+          :meth:`_kreis_powertrain_marginal_from_fuel`. This gives the exact
+          per-Kreis petrol:diesel ratio without the NDS approximation.
+        * **Fallback** — if the file is absent (``FileNotFoundError``), the
+          existing FZ 27.15 + NDS petrol:diesel split path is used unchanged.
+          A log message records which source was actually used.
+        """
         df_seg = ft.load_segment_powertrain(data_path)
         df_kreis = ft.load_kreis_powertrain(data_path)
-        df_fuel = ft.load_fuel_euro_nds(data_path)
+        df_fuel_nds = ft.load_fuel_euro_nds(data_path)
         df_gem = ft.load_gemeinde_private_bev(data_path)
 
         segments = list(segments)
         powertrains = list(POWERTRAINS)
 
         # NDS petrol:diesel split of the combustion residual (FZ 27.4 totals).
-        fuel_totals = df_fuel.groupby("fuel")["count"].sum()
+        # Needed for the national segment x powertrain seed matrix regardless of
+        # which source is used for the per-Kreis marginal.
+        fuel_totals = df_fuel_nds.groupby("fuel")["count"].sum()
         petrol_total = float(fuel_totals.get("petrol", 0.0))
         diesel_total = float(fuel_totals.get("diesel", 0.0))
         combustion_total = petrol_total + diesel_total
@@ -179,9 +193,24 @@ class PowertrainModel:
         # the national fallback.
         national_psg = cls._row_normalise(national_counts)
 
-        # Per-Kreis powertrain marginal target (FZ 27.15), in the 8-label order.
-        kreis_marginal = cls._kreis_powertrain_marginal(
-            df_kreis, powertrains, petrol_fraction)
+        # Per-Kreis powertrain marginal target: prefer real 46251-02 fuel counts;
+        # fall back to FZ 27.15 + NDS split when the file is absent.
+        try:
+            df_kreis_fuel = ft.load_kreis_fuel(data_path)
+            kreis_marginal = cls._kreis_powertrain_marginal_from_fuel(
+                df_kreis_fuel, powertrains)
+            logger.info(
+                "[fleet_de] per-Kreis powertrain marginal: primary source = "
+                "Regionalstatistik 46251-02 fuel counts (kba_kreis_fuel.csv); "
+                "real petrol:diesel ratio used per Kreis."
+            )
+        except FileNotFoundError:
+            kreis_marginal = cls._kreis_powertrain_marginal(
+                df_kreis, powertrains, petrol_fraction)
+            logger.info(
+                "[fleet_de] per-Kreis powertrain marginal: fallback to "
+                "FZ 27.15 + NDS petrol:diesel split (kba_kreis_fuel.csv absent)."
+            )
 
         # National segment marginal (FZ 27.10 segment_share) -- the rake row
         # target, preserving the income->segment->powertrain association.
@@ -283,6 +312,41 @@ class PowertrainModel:
             vec[idx["gas"]] = gas
             vec[idx["petrol"]] = combustion * petrol_fraction
             vec[idx["diesel"]] = combustion * (1.0 - petrol_fraction)
+            out[str(row["kreis_ags5"])] = vec
+        return out
+
+    @staticmethod
+    def _kreis_powertrain_marginal_from_fuel(
+        df_kreis_fuel: pd.DataFrame, powertrains: Sequence[str],
+    ) -> dict[str, np.ndarray]:
+        """Per-Kreis powertrain marginal from Regionalstatistik 46251-02 fuel counts.
+
+        Uses the REAL per-Kreis petrol/diesel/gas/bev/phev/hybrid/other counts from
+        ``kba_kreis_fuel.csv`` directly, so no NDS petrol:diesel approximation is
+        needed. The ``hydrogen`` powertrain has no per-Kreis column in 46251-02 and
+        is set to zero, matching the existing FZ 27.15 behaviour.
+
+        Columns consumed from ``df_kreis_fuel``:
+          ``kreis_ags5``, ``petrol``, ``diesel``, ``gas``,
+          ``bev``, ``phev``, ``hybrid``, ``other``.
+
+        Returns:
+            dict mapping each ``kreis_ags5`` string to a count-like
+            ``np.ndarray`` over ``powertrains`` (same shape contract as
+            :meth:`_kreis_powertrain_marginal`).
+        """
+        idx = {p: i for i, p in enumerate(powertrains)}
+        out: dict[str, np.ndarray] = {}
+        for _, row in df_kreis_fuel.iterrows():
+            vec = np.zeros(len(powertrains), dtype=float)
+            vec[idx["petrol"]] = float(row["petrol"])
+            vec[idx["diesel"]] = float(row["diesel"])
+            vec[idx["gas"]] = float(row["gas"])
+            vec[idx["bev"]] = float(row["bev"])
+            vec[idx["phev"]] = float(row["phev"])
+            vec[idx["hybrid"]] = float(row["hybrid"])
+            vec[idx["other"]] = float(row["other"])
+            # hydrogen: no per-Kreis column in 46251-02; left at zero.
             out[str(row["kreis_ags5"])] = vec
         return out
 
