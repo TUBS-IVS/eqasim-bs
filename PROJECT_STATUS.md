@@ -5,8 +5,9 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-06-30 · `origin/main` = `381b6a4` (PR #20 merged) · open PRs **#21** (PM-layer professionalization), **#77** (smart `other` potential + chainsolvers scorer scale-alignment, Closes #27 — Part A active, scorer calibration server-deferred).
-> Open issues: **#79** (TAZ sub-zonal work location choice — designed, NOT built, starts fresh next session), **#80** (open-data pseudo-zone alternative, TODO). Issue **#24** (MiD Wege donor) closed 2026-06-30 (DONE via popsim_mid). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on worktree branch `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed; see backlog). See ADR-0049.
+> **Last updated:** 2026-07-01 · `origin/main` = `c8655b1` (PR #89 merged) · no open PRs.
+> **TAZ sub-zonal work location choice** (eqasim IRIS-analog): **Phase 1+2 MERGED to main** (PR #85 merge `f5f52d1` + PR #89 FutureWarning fix), flag `taz_work_location_choice` default OFF byte-identical, flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT but measured unnecessary** — branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, NOT pushed, PARKED as gated-off infra); the aggregate commute distribution already fits MiD P13 (measured EMD ~0.054 on the 100% `popsim_mid` pop; see ADR-0050). Remaining Phase-3 = **validate flag-ON TAZ at 100%** (full synthesis + scenario, 0 MATSim iterations) + a spatial validation map.
+> Open issues: **#79** (TAZ feature, Phase 1+2 merged), **#80** (open-data pseudo-zone alt), **#83** (Phase-3 validation, re-scoped), **#81** (config cleanup), **#78** (secondary scorer calib), **#76** (data re-sync), **#86/#91** (analysis-suite), **#22/#23/#26/#25** (production run / mode-choice / 25% gate / test). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed). See ADR-0049, ADR-0050.
 > Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
 > Keep this current with `/close` at the end of each work session.
 

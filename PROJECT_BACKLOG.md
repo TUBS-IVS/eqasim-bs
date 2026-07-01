@@ -52,6 +52,18 @@
   zone slot with RVB VISUM Verkehrszellen (TAZ), reuse the zone-agnostic eqasim functions,
   BA stays Kreis-anchor. **Flag-gated default OFF; TAZ data local-only (proprietary VISUM,
   not publishable).** Open-data pseudo-zone alternative = issue **#80** (TODO, deferred).
+  - **STATUS 2026-07-01: Phase 1+2 MERGED to `main`** (PR #85 merge `f5f52d1` + PR #89 FutureWarning
+    fix); flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT then measured unnecessary.**
+    Branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, all SDD tasks + final opus review
+    clean) adds a `--taz` mode to `calibrate_gravity_distribution.py` (work-pass-scoped per-RS7 friction
+    on the TAZ work-OD). But the aggregate commute distribution **already fits MiD P13** (measured EMD
+    ~0.054 on the current 100% `popsim_mid` pop, flag-OFF, ZGB-resident; WOB per-Kreis ~0.21 = n=39
+    noise, ADR-0049); a 1% flag-ON A/B even IMPROVES the aggregate (0.057->0.033). So the branch is
+    **PARKED (not pushed/merged), gated-off infra** — reuse only if a future measurement shows a real
+    gap (ADR-0050). **Remaining Phase-3 = validate the flag-ON TAZ at 100%** (`taz_work_location_choice:
+    true`, `matsim_last_iteration: 0`; multi-hour — origin/main's popsim/secondary sources differ from
+    the commit that built the 24G flag-OFF cache, so it rebuilds) + a **spatial validation map** (OSM
+    basemap) of the TAZ commute / work-location distribution.
 - **Distance-fit diagnostics module** (this session, NOT yet landed): `braunschweig/calibration/distance_fit/`
   (Phases 0-5.1 built + 26 local tests green + real-data-validated on the 25% cache via slim
   parquet) on worktree branch `worktree-fix+gravity-calib-popsim-mid`, plus the
@@ -280,6 +292,7 @@ remains available via an unattended run if required.
 |---|------|------|
 | 4.1 | **SimWrapper polish**: verify choropleth colours render by value, anglicise residual German labels, wire into 25/100% configs, one full 1% run with MATSim+fleet to validate all 13 tabs. | Merged & working; cosmetic + config gaps only. |
 | 4.2 | **PopulationSim `num_workers` tuning** on the 64-core server; education sparse `cdist`. | Perf only; no OOM risk at 100%, deferred. |
+| 4.3 | **Config cleanup** ([#81](https://github.com/TUBS-IVS/eqasim-bs/issues/81)): prune the ~28 root `config_*.yml` (24 tracked + 4 local) to the canonical set actually used at the end (target ~8), document each kept config's purpose. | Repo hygiene / reproducibility; keep-list driven by `RUNS.md`, no behaviour change. Tracking only (user: "damit ich dran denke"). |
 
 ### TIER 5 — Drop / do NOT re-attempt (recorded so we don't loop back)
 
