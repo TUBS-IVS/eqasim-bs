@@ -498,6 +498,13 @@ def load_ev_grid(data_path: str) -> pd.DataFrame:
         ["cell_id", "stichtag", "ev_share", "minx", "miny", "maxx", "maxy", "suppressed"],
         filename,
     )
+    # ``suppressed`` round-trips through CSV as the strings "True"/"False"; coerce
+    # back to a real bool so a downstream ``if suppressed`` check is correct (a
+    # bare non-empty string like "False" is truthy and would otherwise silently
+    # mark every cell suppressed, disabling the grid EV tilt).
+    df["suppressed"] = df["suppressed"].map(
+        {"True": True, "False": False, True: True, False: False}
+    )
     return df
 
 
