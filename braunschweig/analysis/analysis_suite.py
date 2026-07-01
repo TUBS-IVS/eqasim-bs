@@ -79,7 +79,7 @@ def execute(context):
     from braunschweig.analysis.population_validation import population_source as PS
 
     output_path = Path(context.config("output_path"))
-    if not sorted(output_path.glob("*_persons.csv")):
+    if not list(output_path.glob("*_persons.csv")):
         raise FileNotFoundError(
             f"[analysis_suite] no *_persons.csv in {output_path}; run output malformed")
     prefix = PS._detect_prefix(output_path)
@@ -138,7 +138,7 @@ def execute(context):
          context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
          "popsim work_dir / mid_dir not resolvable", _iq)
 
-    edu_ready = bool(working_directory) and Path(str(working_directory)).is_dir()
+    edu_ready = bool(working_directory) and Path(working_directory).is_dir()
     def _edu():
         from braunschweig.analysis import run_education_validation as R
         R.main(["--working-directory", str(working_directory),

@@ -52,6 +52,8 @@ config:
 
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_1pct_allfeat_popsim
+  # Feeds education_validation in the analysis_suite stage (synpp cache dir).
+  analysis_working_directory: eqasim-data/cache_bs_1pct_allfeat_popsim
   output_prefix: braunschweig_1pct_allfeat_popsim_
   simwrapper_include_matsim: true
 

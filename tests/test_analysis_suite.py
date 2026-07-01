@@ -199,3 +199,18 @@ def test_dashboard_runs_with_sim_cache(tmp_path, monkeypatch):
     AS.execute(ctx)
     assert len(dash_calls) == 1
     assert "--sim-cache" in dash_calls[0]
+
+
+def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):
+    EDU = pytest.importorskip("braunschweig.analysis.run_education_validation")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    wd = tmp_path / "cache"; wd.mkdir()
+    edu_calls = []
+    monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
+    ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
+    AS.execute(ctx)
+    assert len(edu_calls) == 1
+    assert "--working-directory" in edu_calls[0]
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert "education_validation" in summary["ran"]
