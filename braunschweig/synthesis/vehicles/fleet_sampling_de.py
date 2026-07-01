@@ -977,14 +977,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
 
             # 3. euro_class <- P(euro | powertrain).
+            # NOTE: the A4-revised pure-electric euro="electric" override is applied
+            # ONLY on the consistency_v2 path below. The legacy (consistency_v2=False)
+            # path is a frozen verbatim copy of the original loop and MUST stay byte-identical
+            # to the pre-feature output (enforced by test_off_path_byte_identical);
+            # it therefore keeps the drawn combustion euro even for electric rows.
             euro_pmf = sampler.euro_given_powertrain[powertrain]
             euro_class = _draw_categorical(rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
-            # Non-combustion drivetrains carry no combustion Euro stage;
-            # override the drawn euro to the explicit "na" sentinel so the
-            # stored euro_class reflects provenance correctly (HBEFA's
-            # emission_concept_for already ignores euro for these powertrains).
-            if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
-                euro_class = hbefa.NON_COMBUSTION_EURO
 
             # 4. age band <- P(age | powertrain), consistent with the Euro class.
             age_pmf = sampler.age_given_powertrain[powertrain]
@@ -1131,9 +1130,9 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         _v3_tilts: list[Optional[np.ndarray]] = [None] * n
         _v3_pmfs: list[np.ndarray] = [None] * n  # type: ignore[list-item]
         _v3_kreis_factors: list[np.ndarray] = [None] * n  # type: ignore[list-item]
-        # A4 (Task 6): also record the drawn powertrain so _effective_expected
-        # can mirror the NON_COMBUSTION_EURO override when computing the expected
-        # euro marginal (non-combustion rows contribute only to the "na" bucket).
+        # A4-revised (Task 6): also record the drawn powertrain so _effective_expected
+        # can mirror the ELECTRIC_EURO override when computing the expected euro
+        # marginal (pure-electric rows contribute only to the "electric" bucket).
         _v3_powertrains: list[str] = [""] * n
         for i in range(n):
             pmf = car_pmf[i] * kreis_factors[car_kreis[i]]
@@ -1149,20 +1148,21 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                         if age_model is not None else None)
                 age_band, euro_class = _draw_age_euro_joint(
                     rng, sampler.age_euro_joint[powertrain], tilt)
-                # Non-combustion drivetrains carry no combustion Euro stage;
-                # override the drawn euro to the explicit "na" sentinel so the
-                # stored euro_class reflects provenance correctly (HBEFA's
-                # emission_concept_for already ignores euro for these powertrains).
-                if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
-                    euro_class = hbefa.NON_COMBUSTION_EURO
+                # Pure-electric drivetrains (BEV / hydrogen) carry no combustion
+                # Euro stage; override to the real "electric" category.  PHEV
+                # and hybrid DO have a combustion engine, so they keep their
+                # drawn euro (HBEFA emission_concept_for ignores euro for
+                # non-combustion technologies regardless).
+                if powertrain in hbefa.ELECTRIC_EURO_POWERTRAINS:
+                    euro_class = hbefa.ELECTRIC_EURO
             else:
                 euro_pmf = sampler.euro_given_powertrain[powertrain]
                 euro_class = _draw_categorical(
                     rng, list(ft.EURO_CLASS_LABELS), euro_pmf)
-                # Non-combustion drivetrains carry no combustion Euro stage;
-                # override the drawn euro to the explicit "na" sentinel.
-                if powertrain not in hbefa.COMBUSTION_POWERTRAINS:
-                    euro_class = hbefa.NON_COMBUSTION_EURO
+                # Pure-electric drivetrains (BEV / hydrogen) have no combustion
+                # Euro stage; override to the real "electric" category.
+                if powertrain in hbefa.ELECTRIC_EURO_POWERTRAINS:
+                    euro_class = hbefa.ELECTRIC_EURO
                 age_pmf = sampler.age_given_powertrain[powertrain]
                 if age_model is not None:
                     tilt = age_model.age_tilt(car_segment[i], car_status[i])
@@ -1181,7 +1181,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             _v3_kreis_factors[i] = kreis_factors[car_kreis[i]]
             _v3_joints[i] = sampler.age_euro_joint[powertrain]
             _v3_tilts[i] = tilt
-            _v3_powertrains[i] = powertrain  # A4: used to mirror the "na" override
+            _v3_powertrains[i] = powertrain  # A4-revised: used to mirror the "electric" override
 
     df_spec = df_cars.copy()
     df_spec["segment"] = out_segment
@@ -1323,12 +1323,14 @@ def _effective_expected(
     and dividing by ``n`` yields the expected marginal PMFs (mean effective
     target) for the validator.
 
-    For non-combustion powertrains (A4), the euro is always overridden to
-    ``hbefa.NON_COMBUSTION_EURO`` ("na") at draw time.  When ``drawn_powertrains``
-    is supplied, this function mirrors that override: a non-combustion car
-    contributes all its euro mass to the ``"na"`` bucket instead of the joint's
-    real euro distribution, so the expected and realised euro marginals stay
-    consistent.
+    For pure-electric powertrains (BEV / hydrogen, A4-revised), the euro is
+    always overridden to ``hbefa.ELECTRIC_EURO`` ("electric") at draw time.
+    When ``drawn_powertrains`` is supplied, this function mirrors that override:
+    a pure-electric car contributes all its euro mass to the ``"electric"``
+    bucket instead of the joint's real euro distribution, so the expected and
+    realised euro marginals stay consistent.  PHEV and hybrid are NOT in
+    ``ELECTRIC_EURO_POWERTRAINS`` and therefore contribute their full joint euro
+    marginal as usual.
 
     This is a pure helper (no RNG, no data loading) so it is unit-testable
     without running the full sampler.
@@ -1344,9 +1346,9 @@ def _effective_expected(
     age_labels : age-band label sequence (ordered like matrix rows).
     euro_labels : Euro-class label sequence (ordered like matrix columns).
     drawn_powertrains : optional per-car drawn powertrain label (same length as
-        ``car_pmfs``).  When supplied, non-combustion rows contribute their euro
-        mass to ``hbefa.NON_COMBUSTION_EURO`` rather than the joint columns
-        (mirrors the A4 euro override in the draw).
+        ``car_pmfs``).  When supplied, pure-electric rows (BEV / hydrogen)
+        contribute their euro mass to ``hbefa.ELECTRIC_EURO`` rather than the
+        joint columns (mirrors the A4-revised euro override in the draw).
 
     Returns
     -------
@@ -1354,11 +1356,12 @@ def _effective_expected(
     each value is a ``label -> probability`` dict summing to 1.0.
     """
     n = len(car_pmfs)
-    # "na" label is not in euro_labels; track it separately and merge at the end.
-    non_comb_euro = hbefa.NON_COMBUSTION_EURO
+    # "electric" label is not in euro_labels (those are the KBA combustion
+    # labels); track it separately and merge at the end.
+    electric_euro = hbefa.ELECTRIC_EURO
     euro_labels_list = list(euro_labels)
-    # Extended euro dimension: real labels + "na" sentinel.
-    euro_labels_ext = euro_labels_list + [non_comb_euro]
+    # Extended euro dimension: real combustion labels + "electric" category.
+    euro_labels_ext = euro_labels_list + [electric_euro]
     if n == 0:
         return {
             "powertrain": {p: 1.0 / len(powertrains) for p in powertrains},
@@ -1369,7 +1372,7 @@ def _effective_expected(
     acc_pt = np.zeros(len(powertrains), dtype=float)
     acc_age = np.zeros(len(age_labels), dtype=float)
     acc_euro = np.zeros(len(euro_labels_ext), dtype=float)
-    na_idx = len(euro_labels_list)  # index of the "na" sentinel in acc_euro
+    electric_idx = len(euro_labels_list)  # index of the "electric" category in acc_euro
 
     it = zip(car_pmfs, kreis_factors, age_euro_joints, tilts)
     if drawn_powertrains is not None:
@@ -1394,20 +1397,23 @@ def _effective_expected(
             M = M / m
         acc_age += M.sum(axis=1)   # age marginal (unaffected by the euro override)
 
-        # Euro marginal: mirror the A4 NON_COMBUSTION_EURO override.
-        if drawn_powertrains is not None and pt not in hbefa.COMBUSTION_POWERTRAINS:
-            # All euro mass collapses to the "na" sentinel.
-            acc_euro[na_idx] += 1.0
+        # Euro marginal: mirror the A4-revised ELECTRIC_EURO override.
+        # Only pure-electric drivetrains (BEV / hydrogen) have all their euro
+        # mass collapsed to the "electric" category; PHEV and hybrid keep their
+        # drawn joint euro marginal (they have a real combustion Euro stage).
+        if drawn_powertrains is not None and pt in hbefa.ELECTRIC_EURO_POWERTRAINS:
+            # All euro mass collapses to the "electric" category.
+            acc_euro[electric_idx] += 1.0
         else:
             acc_euro[:len(euro_labels_list)] += M.sum(axis=0)  # real euro marginal
 
     # Normalise by n to get mean expected marginals (which sum to 1.0).
-    # Include "na" in the euro dict only when it has mass (i.e. drawn_powertrains
-    # was supplied and there are non-combustion draws).
+    # Include "electric" in the euro dict only when it has mass (i.e.
+    # drawn_powertrains was supplied and there are pure-electric draws).
     euro_dict: dict[str, float] = {}
     for j, e in enumerate(euro_labels_ext):
         v = float(acc_euro[j] / n)
-        if v > 0.0 or e != non_comb_euro:
+        if v > 0.0 or e != electric_euro:
             euro_dict[e] = v
     return {
         "powertrain": {p: float(acc_pt[j] / n)
