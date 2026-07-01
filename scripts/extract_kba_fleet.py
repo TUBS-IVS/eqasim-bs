@@ -56,11 +56,15 @@ logger = logging.getLogger("extract_kba_fleet")
 # --------------------------------------------------------------------------- #
 KBA_DIR = Path("eqasim-data/data/braunschweig/kba")
 DERIVED_DIR = KBA_DIR / "derived"
+RAW_DIR = KBA_DIR / "raw"
 
 FZ27_PATH = KBA_DIR / "fz27_202501.xlsx"
 FZ12_PATH = KBA_DIR / "fz12_2025.xlsx"
 MID_BUNDESLAND_PATH = KBA_DIR / "output_mit_2023_bundesland_fahrzeuge.xlsx"
 MID_RAUMTYP_PATH = KBA_DIR / "output_mit_2023_raumtyp_fahrzeuge.xlsx"
+
+FUEL_46251_PATH = RAW_DIR / "regionalstatistik_46251_02_fuel_kreis_20250101.csv"
+EURO_46251_PATH = RAW_DIR / "regionalstatistik_46251_03_euro_kreis_20250101.csv"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -727,6 +731,100 @@ def extract_mid_segment_by_status(path: Path, segment_map: dict, region_name_map
 
 
 # --------------------------------------------------------------------------- #
+# Regionalstatistik 46251-02 -> kba_kreis_fuel.csv
+# --------------------------------------------------------------------------- #
+def extract_kreis_fuel_46251(path: Path = FUEL_46251_PATH) -> pd.DataFrame:
+    """Regionalstatistik 46251-02: per-Kreis Pkw by fuel (Stichtag 01.01.2025).
+
+    Column order after the 3 id columns (stichtag, ags5, name): Insgesamt,
+    Benzin, Diesel, Gas, Hybrid, darunter Plug-In-Hybrid, Elektro, sonstige.
+    ``Hybrid`` INCLUDES the ``darunter PHEV`` subset, so non-plugin hybrid is
+    ``Hybrid - PHEV``. ``Elektro`` == BEV. Dissolved Kreise carry ``-`` -> dropped.
+    Only the 8 ZGB Kreise are kept.
+    """
+    counter = CoercionCounter("46251-02 kreis_fuel")
+    raw = pd.read_csv(path, sep=";", skiprows=8, header=None, encoding="latin-1", dtype=str)
+    cols = ["stichtag", "ags5", "name", "insg", "benzin", "diesel", "gas",
+            "hybrid", "phev", "elektro", "sonstige"]
+    raw = raw.iloc[:, :len(cols)]
+    raw.columns = cols
+    records = []
+    for _, r in raw.iterrows():
+        code = str(r["ags5"]).strip()
+        if code not in ZGB_KREISE:
+            continue
+        insg = _coerce_count(r["insg"], counter)
+        if pd.isna(insg) or insg <= 0:
+            continue  # dissolved / suppressed Kreis
+        petrol = _coerce_count(r["benzin"], counter)
+        diesel = _coerce_count(r["diesel"], counter)
+        gas = _coerce_count(r["gas"], counter)
+        hybrid_all = _coerce_count(r["hybrid"], counter)
+        phev = _coerce_count(r["phev"], counter)
+        bev = _coerce_count(r["elektro"], counter)
+        other = _coerce_count(r["sonstige"], counter)
+        hybrid = max(np.nan_to_num(hybrid_all) - np.nan_to_num(phev), 0.0)
+        records.append({
+            "kreis_ags5": code, "kreis_name": ZGB_KREISE[code],
+            "stichtag": "2025-01-01",
+            "petrol": petrol, "diesel": diesel, "gas": gas, "bev": bev,
+            "phev": phev, "hybrid": hybrid, "other": other,
+        })
+    counter.log()
+    frame = pd.DataFrame(records).sort_values("kreis_ags5").reset_index(drop=True)
+    pts = ["petrol", "diesel", "gas", "bev", "phev", "hybrid", "other"]
+    frame["total"] = frame[pts].sum(axis=1)
+    for p in pts:
+        frame[f"{p}_share"] = frame[p] / frame["total"]
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# Regionalstatistik 46251-03 -> kba_kreis_euro.csv
+# --------------------------------------------------------------------------- #
+def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
+    """Regionalstatistik 46251-03: per-Kreis Pkw by Euro group (01.01.2025).
+
+    Two rows per Kreis: ``insgesamt`` (all fuels) and ``Dieselangetriebener Pkw``.
+    Columns after the 4 id cols (stichtag, ags5, name, teil): Insgesamt, Euro 1..5,
+    Euro 6, darunter Euro-6d, darunter Euro-6d-temp, Sonstige. The two ``darunter``
+    columns are SUBSETS of Euro 6 and are skipped (no double count).
+    """
+    counter = CoercionCounter("46251-03 kreis_euro")
+    raw = pd.read_csv(path, sep=";", skiprows=8, header=None, encoding="latin-1", dtype=str)
+    cols = ["stichtag", "ags5", "name", "teil", "insg",
+            "e1", "e2", "e3", "e4", "e5", "e6", "e6d", "e6dtemp", "sonstige"]
+    raw = raw.iloc[:, :len(cols)]
+    raw.columns = cols
+    records = []
+    for _, r in raw.iterrows():
+        code = str(r["ags5"]).strip()
+        if code not in ZGB_KREISE:
+            continue
+        teil_raw = _normalise_label(r["teil"]).lower()
+        if teil_raw.startswith("insgesamt"):
+            teil = "all"
+        elif teil_raw.startswith("dieselangetriebener"):
+            teil = "diesel"
+        else:
+            continue
+        euros = {k: _coerce_count(r[v], counter) for k, v in
+                 (("euro1", "e1"), ("euro2", "e2"), ("euro3", "e3"),
+                  ("euro4", "e4"), ("euro5", "e5"), ("euro6", "e6"),
+                  ("other", "sonstige"))}
+        rec = {"kreis_ags5": code, "kreis_name": ZGB_KREISE[code],
+               "stichtag": "2025-01-01", "teil": teil, **euros}
+        records.append(rec)
+    counter.log()
+    frame = pd.DataFrame(records).sort_values(["kreis_ags5", "teil"]).reset_index(drop=True)
+    euro_cols = ["euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other"]
+    frame["total"] = frame[euro_cols].sum(axis=1)
+    for c in euro_cols:
+        frame[f"{c}_share"] = frame[c] / frame["total"]
+    return frame
+
+
+# --------------------------------------------------------------------------- #
 # Driver
 # --------------------------------------------------------------------------- #
 def _write(frame: pd.DataFrame, name: str) -> None:
@@ -737,7 +835,8 @@ def _write(frame: pd.DataFrame, name: str) -> None:
 
 
 def main() -> None:
-    for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH):
+    for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
+                     FUEL_46251_PATH, EURO_46251_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -763,6 +862,8 @@ def main() -> None:
                                       "MiD raumtyp segment_by_status"),
         "mid2023_segment_by_status_raumtyp.csv",
     )
+    _write(extract_kreis_fuel_46251(), "kba_kreis_fuel.csv")
+    _write(extract_kreis_euro_46251(), "kba_kreis_euro.csv")
     logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
 
 

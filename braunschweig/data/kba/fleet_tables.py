@@ -308,6 +308,42 @@ def load_mid_age_by_segment_status(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_kreis_fuel(data_path: str) -> pd.DataFrame:
+    """Regionalstatistik 46251-02: per-Kreis fuel counts + within-Kreis shares.
+
+    Real per-Kreis powertrain marginal (petrol/diesel/gas/bev/phev/hybrid/other),
+    Stichtag 01.01.2025. Supersedes the FZ 27.15 NDS petrol:diesel split for the
+    per-Kreis powertrain rake. Validated to carry all 8 ZGB Kreise.
+    """
+    filename = "kba_kreis_fuel.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df, ["kreis_ags5", "kreis_name", "stichtag", "petrol", "diesel", "gas",
+             "bev", "phev", "hybrid", "other", "total"], filename)
+    _require_zgb_kreise(df["kreis_ags5"], filename)
+    return df
+
+
+def load_kreis_euro(data_path: str) -> pd.DataFrame:
+    """Regionalstatistik 46251-03: per-Kreis Euro-group counts + shares.
+
+    ``teil`` is ``all`` (all fuels) or ``diesel``; euro columns are euro1..euro6 +
+    other. Provides the per-Kreis Euro marginal, Stichtag 01.01.2025. Validated to
+    carry all 8 ZGB Kreise and the canonical Euro labels.
+    """
+    filename = "kba_kreis_euro.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df, ["kreis_ags5", "kreis_name", "stichtag", "teil",
+             "euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other",
+             "total"], filename)
+    _require_zgb_kreise(df.loc[df["teil"] == "all", "kreis_ags5"], filename)
+    unexpected = set(df["teil"]) - {"all", "diesel"}
+    if unexpected:
+        raise RuntimeError(f"{filename}: unexpected teil values {sorted(unexpected)}.")
+    return df
+
+
 def load_mid_segment_by_status_raumtyp(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by RegioStaR-7 Raumtyp (column-%).
 
