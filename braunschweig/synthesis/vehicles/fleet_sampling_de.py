@@ -872,6 +872,42 @@ def _model_given_segment(data_path: str) -> dict[str, pd.DataFrame]:
     return out
 
 
+def _build_model_fuel_weights(mf_df: "pd.DataFrame") -> "dict[str, np.ndarray]":
+    """Build the per-model fuel-type weight vector dict from kba_model_fuel.csv.
+
+    The weight vector is aligned with ``POWERTRAINS`` and has length 8:
+      [petrol_share, diesel_share, 1.0(gas), bev_share, phev_share,
+       hybrid_share, 1.0(hydrogen), 1.0(other)]
+
+    Gas, hydrogen, and other are not tracked per model in the KBA source, so
+    they receive the default weight of 1.0 -- a feasible-but-untracked powertrain
+    retains its full Kreis pmf value unchanged.
+
+    Args:
+        mf_df: DataFrame from :func:`braunschweig.data.kba.fleet_tables.load_model_fuel`.
+
+    Returns:
+        Dict mapping model string (``"MARKE MODELLREIHE"`` convention) to a
+        length-8 float array of weights over ``POWERTRAINS``.
+    """
+    out: dict[str, np.ndarray] = {}
+    for _, row in mf_df.iterrows():
+        model = str(row["model"])
+        # POWERTRAINS = ("petrol","diesel","gas","bev","phev","hybrid","hydrogen","other")
+        vec = np.array([
+            float(row["petrol_share"]),   # petrol
+            float(row["diesel_share"]),   # diesel
+            1.0,                           # gas (not tracked per model -> default)
+            float(row["bev_share"]),      # bev
+            float(row["phev_share"]),     # phev
+            float(row["hybrid_share"]),   # hybrid
+            1.0,                           # hydrogen (not tracked per model -> default)
+            1.0,                           # other (not tracked per model -> default)
+        ], dtype=float)
+        out[model] = vec
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -903,6 +939,12 @@ class FleetSampler:
     #: ``None`` when kba_kreis_euro.csv is absent (then the national
     #: ``age_euro_joint`` is used unchanged -- byte-identical fallback).
     age_euro_joint_kreis: Optional[dict[tuple, np.ndarray]] = None
+    #: Task 10: per-model fuel-type weight vector over POWERTRAINS.
+    #: Maps model string (same "MARKE MODELLREIHE" convention as kba_segment_model)
+    #: to a length-8 numpy array aligned with POWERTRAINS.  Built from
+    #: ``kba_model_fuel.csv``; ``None`` when the file is absent, which restores the
+    #: binary (0/1) feasibility mask -- byte-identical fallback.
+    model_fuel: Optional[dict[str, np.ndarray]] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -938,6 +980,20 @@ class FleetSampler:
                 "kba_kreis_euro.csv absent; per-Kreis euro marginal disabled."
             )
             age_euro_joint_kreis = None
+        # Task 10: per-model fuel-type weight vectors.  Build from kba_model_fuel.csv
+        # when present; fall back to None (binary feasibility mask) when absent.
+        model_fuel: Optional[dict[str, np.ndarray]] = None
+        try:
+            mf_df = ft.load_model_fuel(data_path)
+            model_fuel = _build_model_fuel_weights(mf_df)
+            logger.info(
+                "[fleet_de] model-fuel weight: active (%d models).",
+                len(model_fuel),
+            )
+        except FileNotFoundError:
+            logger.info(
+                "[fleet_de] model-fuel weight: absent -> binary feasibility mask."
+            )
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -948,6 +1004,7 @@ class FleetSampler:
             size_map=dict(size_map) if size_map is not None else {},
             feasible_fuels=feasible_fuels,
             age_euro_joint_kreis=age_euro_joint_kreis,
+            model_fuel=model_fuel,
         )
 
 
@@ -1352,16 +1409,41 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 feasible = _feasible_fuels.model_feasible_powertrains(
                     brand, model_family(canonical_brand(brand) or "", model))
             if feasible is not None:
+                # Task 10: use per-model fuel-type weights inside the feasible set
+                # so the powertrain draw is biased toward the powertrains that model
+                # is actually registered with (e.g. Golf -> petrol/diesel; Model Y ->
+                # BEV).  model_fuel absent OR model not in dict -> wv = all-ones ->
+                # EXACTLY the prior binary (0/1) mask (byte-identical fallback).
+                w = (sampler.model_fuel.get(model)
+                     if (sampler.model_fuel is not None and model) else None)
+                wv = w if w is not None else np.ones(len(POWERTRAINS))
                 mask = np.array(
-                    [1.0 if p in feasible else 0.0 for p in POWERTRAINS],
+                    [wv[i] if p in feasible else 0.0 for i, p in enumerate(POWERTRAINS)],
                     dtype=float,
                 )
                 pt_pmf_masked = pt_pmf * mask
                 if pt_pmf_masked.sum() > 0:
                     pt_pmf = pt_pmf_masked
                     powertrain_feasibility_list[i] = "model_constrained"
+                elif w is not None and (
+                    np.array([1.0 if p in feasible else 0.0
+                              for p in POWERTRAINS]) * pt_pmf
+                ).sum() > 0:
+                    # All-zero weighted mask but the binary mask would not be zero:
+                    # the model's tracked shares are all 0 on the feasible powertrains
+                    # (e.g. a model recorded as gas-only but feasible set is petrol/diesel).
+                    # Fall back to the binary mask and count it so the fallback rate is
+                    # observable.
+                    binary_mask = np.array(
+                        [1.0 if p in feasible else 0.0 for p in POWERTRAINS],
+                        dtype=float,
+                    )
+                    pt_pmf_masked = pt_pmf * binary_mask
+                    pt_pmf = pt_pmf_masked
+                    powertrain_feasibility_list[i] = "model_constrained"
+                    _feasibility_fallback += 1  # count soft-weight zero-sum as fallback
                 else:
-                    # No overlap: keep the UNMASKED pmf and count the fallback.
+                    # No overlap (even with binary mask): keep the UNMASKED pmf.
                     _feasibility_fallback += 1
                     powertrain_feasibility_list[i] = "segment_fallback"
             # Normalise so the stored pmf is a proper distribution for the rake.
