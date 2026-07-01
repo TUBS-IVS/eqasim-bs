@@ -1,8 +1,14 @@
-## FULL-PIPELINE 1% ALL-FEATURES popsim_mid smoke -- SERVER (Linux) variant.
-## End-to-end wiring proof of the COMBINED branch (integration/all-features):
-## popsim_mid (MiD donor, weight-sampled) + new fleet module + cross-cordon
-## einpendler + long-haul freight + education gravity + income tilt/Kreis control,
-## with 10 MATSim iterations. Server is FULLY loaded (64 cores / 128 GB):
+## FULL-PIPELINE 25% ALL-FEATURES popsim_mid run -- SERVER (Linux) variant.
+## End-to-end wiring proof of the COMBINED branch (integration/all-features) at
+## sampling_rate 0.25: popsim_mid (MiD donor, weight-sampled) + new fleet module +
+## cross-cordon einpendler + long-haul freight + education gravity + income
+## tilt/Kreis control. This is the FIRST 25% run: 10 MATSim iterations only, to verify
+## the full pipeline runs end-to-end (matsim_last_iteration: 0). It is ALSO the cache
+## SEEDING run -- on success it auto-exports the sampling-independent shareable stages
+## (freight extraction, popsim.stage, completed_donor, ...) into cache_share_store, so
+## the later 100% / 200-iteration production run primes them and skips the heavy work.
+## For the production run, bump matsim_last_iteration back to 199 (write_plans 50).
+## Server is FULLY loaded (64 cores / 128 GB):
 ##   - synpp processes 32, popsim num_workers 0 (auto -> cpu_count-2 ~ 62),
 ##     chainsolvers.processes 0 (auto), MATSim threads 56/16, java_memory 100G.
 ##
@@ -15,19 +21,29 @@
 ##   4. uv installed at /home/felix/.local/bin/uv
 ##   5. sibling Java project at ~/eqasim-java-bs (eqasim_source_path)
 
-working_directory: eqasim-data/cache_bs_1pct_allfeat_popsim
+working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
 
 run:
+  # EVERYTHING UP TO (not including) the MATSim simulation at 100%. matsim.simulation.prepare
+  # builds the complete scenario -- full ~1.1M population (optimized importance weights),
+  # the household FLEET / vehicles (fleet model: brands, HSN/TSN, BEV), network, facilities,
+  # cordon cut and freight injection -- but stops before the qsim iterations (the days-long
+  # 200-iteration run is a separate step). This gives the fleet model + a ready-to-run scenario.
+  # matsim.output is the PROVEN-working target (the 25% run used it) -- its stage-import
+  # order avoids an eqasim circular-import landmine that the prepare-only target trips.
+  # With matsim_last_iteration: 0 it builds the COMPLETE scenario incl. the household
+  # FLEET / vehicles (brands, HSN/TSN, BEV), network, facilities, cordon cut and freight
+  # injection, then runs only iteration 0 (one mobsim) -- NOT the days-long 200-iteration
+  # run. This gives the fleet model + a baseline scenario without the full simulation.
   - synthesis.output
   - matsim.output
-  - braunschweig.analysis.cordon_validation
   - braunschweig.analysis.simwrapper_export
   - braunschweig.analysis.analysis_suite
 
 config:
   processes: 32
   hts: entd
-  sampling_rate: 0.01
+  sampling_rate: 1.0
   random_seed: 1234
 
   freight_enabled: true
@@ -40,35 +56,34 @@ config:
   building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
   work_building_potentials: true
   secondary_building_potentials: true
-  secondary_other_smart_potential: true
-  secondary_other_broad_share: 0.54
-  secondary_other_errand_share: 0.46
-  secondary_other_min_volume_m3: 50.0
-  secondary_other_cap_percentile: 0.99
-  # Part B scorer scale-alignment -- byte-identical defaults until calibrated:
-  secondary_scorer_attr_transform: linear
-  secondary_scorer_selection: top_n
   secondary_external_candidates: true
   secondary_scorer_mode: combined
   secondary_scorer_pot_weight: 1.0
   secondary_scorer_dist_dev_weight: 1.0
-  # Purpose-resolved secondary distances (MiD, popsim_mid) -- see the 25pct config.
+  # Purpose-resolved secondary distances (MiD, popsim_mid). Tier 1: distance
+  # distributions per (purpose x mode); Tier 2: shop daily/non-daily split
+  # (distance + retail_daily/non_daily placement). Defaults False elsewhere ->
+  # byte-identical. See docs/superpowers/specs/2026-06-25-purpose-resolved-secondary-distances-design.md
   secondary_distance_by_purpose: true
   secondary_shop_daily_split: true
   secondary_distance_min_obs: 30
   education_building_distribution: true
 
   data_path: eqasim-data/data
-  output_path: eqasim-data/output_bs_1pct_allfeat_popsim
+  output_path: eqasim-data/output_bs_100pct_allfeat_popsim
   # Feeds education_validation in the analysis_suite stage (synpp cache dir).
-  analysis_working_directory: eqasim-data/cache_bs_1pct_allfeat_popsim
-  output_prefix: braunschweig_1pct_allfeat_popsim_
+  analysis_working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
+  output_prefix: braunschweig_100pct_allfeat_popsim_
   simwrapper_include_matsim: true
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
+  # OPTIMIZED per-control importance weights (see control_spec.IMPORTANCE_PROFILES):
+  # systematic per-group search lowered the count-weighted Gesamtabweichung 3.365% ->
+  # 2.868% (-15%) on batch_020. Default elsewhere is "uniform" (byte-identical).
+  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
   # Full LOSSLESS-reduced catalog tier0+tier1+tier2+tier3 (incl. the 7 Kreis-level
-  # employment/education controls). tier3 needs the KREIS geography -> settings_tier3.yaml
+  # employment/education controls). tier3 needs the KREIS geography -> settings_tier3_mef100.yaml
   # (a superset of the normal settings: WELT/STAAT/KREIS/ZENSUS1km/ZENSUS100m) and the
   # imported cleancensus kreis_controls data (kreis_controls_dir below).
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
@@ -135,7 +150,13 @@ config:
     # Tier B2: the completed-donor build (member completion + weekend match) depends
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
-  cache_share_recompute: []
+  cache_share_recompute:
+    - braunschweig.popsim.stage
+  # Auto-export the shareable stages into the store after a SUCCESSFUL run, so this
+  # seeding run populates the store for the 100% / production run (default true;
+  # set false to prime-without-export on a throwaway config). Never overwrites an
+  # existing store entry (skip_existing); a different hash is stored alongside.
+  cache_share_export: true
 
   java_memory: 100G
 
@@ -144,7 +165,9 @@ config:
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- MATSim runtime (64-core box) ---
-  matsim_last_iteration: 9
+  # FIRST 25% run: 10 iterations (0..9) only, to verify the full pipeline runs
+  # end-to-end. Bump to 199 (and write_plans 50) for the 200-iteration production run.
+  matsim_last_iteration: 0
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5
   matsim_threads: 56
@@ -160,9 +183,9 @@ config:
   braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw
   # popsimprep + uv live OUTSIDE the repo on the server (absolute Linux paths).
   braunschweig.population.popsim.controls_path: /home/felix/popsimprep/popsim/configs/_prep3_controls.csv
-  # settings_tier3.yaml adds the KREIS geography (superset of settings.yaml), required
+  # settings_tier3_mef100.yaml adds the KREIS geography (superset of settings.yaml), required
   # for the tier3 Kreis controls; it also serves tier0-2 unchanged.
-  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3.yaml
+  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3_mef100.yaml
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
   braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
@@ -170,16 +193,19 @@ config:
   # scratch path), so popsim.stage's hash is identical across sampling rates and
   # cache_share can share the donor build + the per-1km batches. The stale-batch guard
   # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
-  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
   braunschweig.population.popsim.max_cells: 1500
-  # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is pinned to 1
-  # BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch) -- at
-  # 62-way parallelism each batch's OpenBLAS spawned 64 threads, oversubscribing the box
-  # and crashing numpy with segfaults in libc. With 1 thread/batch, num_workers alone
-  # governs parallelism; 16 uses the cores well at safe RAM. Keep 1% and 25% equal so the
-  # sampling-independent popsim.stage hash matches and the cache is shared.
+  # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is now pinned to a
+  # single BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch),
+  # which fixed the real failure -- at 62-way parallelism each batch's OpenBLAS spawned
+  # 64 threads, oversubscribing the box (~4000 threads / 64 cores) and crashing numpy
+  # with segfaults in libc (12 batches lost in one run). With 1 thread per batch the
+  # batch-level parallelism is governed purely by this number; 16 single-threaded
+  # batches use the cores well and keep peak RAM (~5 GB/batch) safe on 128 GB. A fixed
+  # integer (not the 0 sentinel) also stabilises the popsim.stage hash for cache reuse.
   braunschweig.population.popsim.num_workers: 16
-  # No per-batch timeout (0 = disabled): batches run to completion no matter how long.
+  # No per-batch timeout: heavy control sets converge slowly; batches must run to
+  # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0
 
   # --- Gravity calibration ---
@@ -227,12 +253,6 @@ config:
   braunschweig.inkar_year: latest
   braunschweig.home_density_weighting: true
   braunschweig.buildings_path: braunschweig/buildings
-
-  # WORK gravity at TAZ (sub-commune) resolution: fixes intra-city commute
-  # distances in kreisfreie Staedte (e.g. Braunschweig). Requires local-only
-  # RVB VISUM Verkehrszellen data (gitignored). Default OFF; set to true only
-  # in configs where that proprietary parquet is present.
-  taz_work_location_choice: false
 
   # --- Education gravity (real NDS schools / Kita / Hochschule) ---
   education_gravity_enabled: true

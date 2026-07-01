@@ -487,6 +487,92 @@ def render_catalog_csv(controls: Iterable[CatalogControl], seed: str) -> pd.Data
     return pd.DataFrame(rows, columns=list(CONTROLS_CSV_COLUMNS))
 
 
+# ---------------------------------------------------------------------------
+# Importance profiles (PopulationSim per-control importance weights)
+# ---------------------------------------------------------------------------
+# By default every control carries a uniform importance (1000). An importance
+# PROFILE overrides that per control GROUP, where a group is matched from the
+# rendered ``control_field`` name (the same prefixes the offline optimizer used).
+#
+# "optimized_2026_06_30": result of the systematic per-group importance search
+# (coordinate descent, 3-replicate averaged to beat the integerizer's run-to-run
+# noise, count-weighted deviation over all 50 controls, batch_020). It lowered the
+# mengengewichtete Gesamtabweichung from 3.365 % (uniform) to 2.868 % (-15 %,
+# rep-std 0). The pattern: down-weight the already well-fit controls (age x sex,
+# HH-size, HH-type), raise max_expansion_factor (set in settings.yaml, not here),
+# and mildly raise the donor-sparse / employment controls. NOTE: tuned on a single
+# ZGB tile (batch_020, ~2 % of households); the large-HH (6+) and person totals
+# remain donor-bound and are not fully weight-fixable. Provenance: scripts/opt_loop2
+# run, opt2_best.json.
+IMPORTANCE_PROFILES: dict[str, dict[str, int]] = {
+    "uniform": {},
+    "optimized_2026_06_30": {
+        "anchor": 1_000_000_000,  # household total: hard anchor (forces the count)
+        "son": 20_000,            # building_type_sonstiges (donor over-represented)
+        "six": 2_000,             # 6+-person households
+        "employed": 2_000,        # employment controls
+        "age": 200,               # age x sex (well-fit -> down-weighted)
+        "size15": 500,            # HH size 1-5
+        "hhtype": 200,            # HH type
+    },
+}
+
+
+def importance_group_for_field(control_field: str) -> str:
+    """Classify a rendered ``control_field`` into an importance GROUP.
+
+    Matching is by name prefix and mirrors the offline optimizer exactly, so a
+    profile applied here reproduces the searched configuration. Returns ``"other"``
+    for controls not covered by any profile group (they keep the uniform weight).
+    """
+    s = str(control_field)
+    if s.startswith("Insgesamt_Haushalte"):
+        return "anchor"
+    if s.startswith("6_Personen_und_mehr"):
+        return "six"
+    if s.startswith("building_type_sonstiges"):
+        return "son"
+    if "_AGE_" in s:
+        return "age"
+    if s.startswith(("Paare_ohneKind", "Paare_mitKind", "Alleinerziehende", "MehrpersHHohneKernfam")):
+        return "hhtype"
+    if s.startswith(("EigentuemerHH", "MieterHH")):
+        return "tenure"
+    if s.startswith(("1_Person", "2_Personen", "3_Personen", "4_Personen", "5_Personen")):
+        return "size15"
+    if s.startswith(("building_type_ein_zweifamilienhaus", "building_type_mehrfamilienhaus")):
+        return "bld"
+    if s.startswith("EMPLOYED_") or s.startswith("employed"):
+        return "employed"
+    if s.startswith(("schulabschluss", "beruflabschluss")):
+        return "edu"
+    return "other"
+
+
+def apply_importance_profile(controls_csv: pd.DataFrame, profile: str) -> pd.DataFrame:
+    """Return a copy of a rendered ``controls.csv`` frame with profiled importance.
+
+    ``profile`` selects an entry of :data:`IMPORTANCE_PROFILES`. ``"uniform"`` (or an
+    empty profile) is a no-op (byte-identical to the input). For any other profile,
+    each control's ``importance`` is set from its group's profile value; groups absent
+    from the profile keep their existing (uniform) importance. Raises ``KeyError`` on
+    an unknown profile name (fail-fast, no silent fallback).
+    """
+    if profile not in IMPORTANCE_PROFILES:
+        raise KeyError(
+            f"unknown importance profile {profile!r}; known: {sorted(IMPORTANCE_PROFILES)}"
+        )
+    weights = IMPORTANCE_PROFILES[profile]
+    if not weights:
+        return controls_csv
+    out = controls_csv.copy()
+    groups = out["control_field"].map(importance_group_for_field)
+    out["importance"] = [
+        weights.get(g, imp) for g, imp in zip(groups, out["importance"])
+    ]
+    return out
+
+
 # Tier-1 household-size bases (census column name bases) and their H_GR values.
 # Each entry is (census_base, h_gr_value, expression_op) where expression_op
 # is either "==" or ">=" for the seed expression.

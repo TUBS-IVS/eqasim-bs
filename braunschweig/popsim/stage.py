@@ -102,6 +102,8 @@ KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
+# PopulationSim per-control importance profile name (see control_spec.IMPORTANCE_PROFILES).
+KEY_IMPORTANCE_PROFILE = "braunschweig.population.popsim.importance_profile"
 # Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
 # seed. "default" -> (1,2,3) Mo-Fr (legacy: weekend / kernwo=4 households dropped).
 # "off"/"all" -> keep ALL reporting days (no day filter). The reporting day is a
@@ -159,7 +161,8 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
     return sources.get_source(source_name)
 
 
-def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",), employment_grid=False):
+def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
+                      employment_grid=False, importance_profile="uniform"):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -172,14 +175,20 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     employment_grid: when True (catalog source only), append the six age-group x
     sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
     catalog. Default False = byte-identical to the pre-employment-grid catalog.
+
+    importance_profile: a key of control_spec.IMPORTANCE_PROFILES selecting per-group
+    PopulationSim importance weights. Default "uniform" leaves every control's importance
+    untouched (byte-identical). Applied to BOTH sources after the frame is built.
     """
+    from braunschweig.popsim import control_spec as cs
     if controls_source == "csv":
-        return pd.read_csv(controls_path, sep=";")
-    if controls_source == "catalog":
-        from braunschweig.popsim import control_spec as cs
+        df = pd.read_csv(controls_path, sep=";")
+    elif controls_source == "catalog":
         catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid)
-        return cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
-    raise ValueError(f"unknown controls_source {controls_source!r}")
+        df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
+    else:
+        raise ValueError(f"unknown controls_source {controls_source!r}")
+    return cs.apply_importance_profile(df, importance_profile)
 
 
 def _kreis_controls_map(controls):
@@ -291,6 +300,10 @@ def configure(context):
     context.config(KEY_KREIS_CONTROLS, "")
     # Employment grid control (Task 5). Default "off" = byte-identical to today.
     context.config(KEY_EMPLOYMENT_GRID, "off")
+    # PopulationSim per-control importance profile (control_spec.IMPORTANCE_PROFILES).
+    # Default "uniform" = every control importance untouched (byte-identical). Set to
+    # "optimized_2026_06_30" to apply the searched per-group weights (see control_spec).
+    context.config(KEY_IMPORTANCE_PROFILE, "uniform")
     # When the employment grid control is ON, the per-cell employment targets are
     # built from the Zensus 2000S-2001 employment-by-age SHAPE (a committed reference
     # CSV under data_path; see braunschweig.popsim.zensus_employment_age) rescaled per
@@ -531,13 +544,18 @@ def execute(context) -> pd.DataFrame:
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     # Employment grid control (Task 5): default "off" -> byte-identical path.
     employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
+    # Importance profile: default "uniform" -> importance untouched (byte-identical).
+    importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
     controls_df = build_controls_df(
         controls_source=controls_source,
         controls_path=controls_path,
         seed=source_name,
         tiers=control_tiers,
         employment_grid=employment_grid_on,
+        importance_profile=importance_profile,
     )
+    if importance_profile and importance_profile != "uniform":
+        logger.info("[popsim.stage] importance profile applied: %s", importance_profile)
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
 
     # Tier-3 KREIS controls (employment / education): when active, load the imported
