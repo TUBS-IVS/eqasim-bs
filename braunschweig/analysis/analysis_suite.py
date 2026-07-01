@@ -106,7 +106,22 @@ def execute(context):
     _run(summary, "population_validation",
          context.config(KEY_POPULATION_VALIDATION, True), True, "", _pop)
 
-    # (further sub-analyses appended in Tasks 3-5)
+    def _mid():
+        from braunschweig.analysis import run_mid_validation as R
+        argv = ["--output-dir", str(output_path), "--prefix", prefix]
+        if sim_cache:
+            argv += ["--sim-cache", sim_cache]
+        R.main(argv)
+    _run(summary, "mid_validation",
+         context.config(KEY_MID_VALIDATION, True), True, "", _mid)
+
+    def _hh():
+        from braunschweig.analysis import run_household_composition as R
+        R.main(["--output-dir", str(output_path), "--prefix", prefix])
+    _run(summary, "household_composition",
+         context.config(KEY_HOUSEHOLD_COMPOSITION, True), True, "", _hh)
+
+    # (further sub-analyses appended in Tasks 4-5)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)

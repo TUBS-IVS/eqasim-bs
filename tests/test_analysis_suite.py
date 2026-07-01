@@ -108,3 +108,24 @@ def test_sub_analysis_failure_is_caught(tmp_path, monkeypatch):
     assert result is not None
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert any(f["analysis"] == "population_validation" for f in summary["failed"])
+
+
+def test_mid_and_household_run_by_default(tmp_path, monkeypatch):
+    _write_min_output(tmp_path)
+    pop_calls = []
+    _install_pop_spy(monkeypatch, pop_calls)
+    mid_calls, hh_calls = [], []
+    try:
+        import braunschweig.analysis.run_mid_validation as MID
+        import braunschweig.analysis.run_household_composition as HH
+    except Exception as exc:
+        pytest.skip(f"optional dep missing for mid/hh imports: {exc}")
+    monkeypatch.setattr(MID, "main", lambda argv: mid_calls.append(argv))
+    monkeypatch.setattr(HH, "main", lambda argv: hh_calls.append(argv))
+    ctx = FakeContext(_base_config(tmp_path))
+    AS.execute(ctx)
+    assert len(mid_calls) == 1 and "--output-dir" in mid_calls[0]
+    assert "--sim-cache" not in mid_calls[0]        # no MATSim -> no sim cache passed
+    assert len(hh_calls) == 1
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert {"mid_validation", "household_composition"} <= set(summary["ran"])
