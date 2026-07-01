@@ -48,9 +48,13 @@ def test_build_taz_calibration_inputs_shapes_and_keys():
     assert abs(out["df_pop_taz"]["population"].sum() - 150.0) < 1e-6
     # employees conserved
     assert abs(out["df_emp_taz"]["employees"].sum() - 120.0) < 1e-6
-    # home_taz assigns each home to a TAZ with coordinates
-    assert set(out["home_taz"].columns) >= {"household_id", "taz_id", "x_m", "y_m"}
+    # home_taz assigns each home to a TAZ with coordinates and kreis
+    assert set(out["home_taz"].columns) >= {"household_id", "taz_id", "x_m", "y_m", "kreis"}
     assert len(out["home_taz"]) == 3
+    # household 1 is in t1 (Braunschweig Kreis 03101)
+    home1 = out["home_taz"].set_index("household_id").loc[1]
+    assert home1["taz_id"] == "t1"
+    assert home1["kreis"] == "03101"
 
 
 def test_build_work_by_taz_groups_and_normalises():

@@ -7,7 +7,7 @@ Verifies that:
        gravity_friction_factors (fallback, logged; byte-identical behaviour).
      - when work_gravity_friction_factors is set, the single Gemeinde call still
        receives gravity_friction_factors (the TAZ pass is not run).
-  3. On the ON path (taz_work_location_choice=True):
+  3. On the ON path (taz_work_location_choice=True):  # deferred to server (Task 5) -- ON path needs geopandas/sjoin stages
      - the education Gemeinde compute_work_od call receives gravity_friction_factors,
      - the work TAZ compute_work_od call receives work_gravity_friction_factors
        (when set, not the fallback).

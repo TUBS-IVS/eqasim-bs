@@ -397,7 +397,7 @@ def _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, 
 
     # Tag work locations with TAZ; pre-build the per-TAZ work-location sampler.
     # assign_taz returns (gdf[id_column, taz_id, commune_id], primary, fallback).
-    work = df_work.copy().reset_index(drop=True)
+    work = df_work.drop(columns=["taz_id"], errors="ignore").copy().reset_index(drop=True)
     work["work_row_id"] = work.index.astype(str)
     work["_kreis"] = work["commune_id"].astype(str).str[:5]
     work_map, work_primary, work_fallback = assign_taz(
@@ -439,6 +439,8 @@ def _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, 
     # so _calibrate's groupby(population_key) works correctly.
     df_pop_for_calibrate = inp["df_pop_taz"].rename(
         columns={"origin_id": "taz_id"})[["taz_id", "population"]].copy()
+    assert abs(df_pop_for_calibrate["population"].sum() - inp["df_pop_taz"]["population"].sum()) < 1e-6, \
+        "TAZ population not conserved into _calibrate (BA anchor)"
 
     # -----------------------------------------------------------------------
     # 5. Furness loop (per-RS7) via compute_work_od

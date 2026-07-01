@@ -98,6 +98,7 @@ def build_taz_calibration_inputs(df_taz, df_homes, df_population, df_employees,
         "y_m": df_homes.geometry.y.values,
     })
     home_taz = assigned.merge(coords, on="household_id", how="left")
+    home_taz["kreis"] = home_taz["taz_id"].astype(str).map(zone_to_kreis)
 
     return {
         "zones": zones,
