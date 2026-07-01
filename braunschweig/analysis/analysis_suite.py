@@ -138,15 +138,31 @@ def execute(context):
          context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
          "popsim work_dir / mid_dir not resolvable", _iq)
 
-    edu_ready = bool(working_directory) and Path(working_directory).is_dir()
+    # education_validation uniquely reads synpp CACHE stage pickles (named
+    # "<stage>__<hash>.p"), not the output dir. Gate on the cache dir existing AND
+    # carrying the stages education loads, so an unset/stale/incomplete cache SKIPS
+    # cleanly (loud, with the missing stage named) instead of failing red.
+    edu_required_stages = (
+        "braunschweig.synthesis.locations.education_gravity",
+        "braunschweig.data.schools.facilities",
+        "synthesis.population.spatial.home.locations",
+    )
+    if not (bool(working_directory) and Path(working_directory).is_dir()):
+        edu_ready = False
+        edu_reason = "working_directory not set (analysis_working_directory)"
+    else:
+        edu_missing = [s for s in edu_required_stages
+                       if not list(Path(working_directory).glob(f"{s}__*.p"))]
+        edu_ready = not edu_missing
+        edu_reason = ("" if edu_ready
+                      else f"education cache incomplete (missing {edu_missing[0]} pickle)")
     def _edu():
         from braunschweig.analysis import run_education_validation as R
         R.main(["--working-directory", str(working_directory),
                 "--sampling-rate", str(sampling_rate),
                 "--output-dir", str(output_path / "analysis" / "education_validation")])
     _run(summary, "education_validation",
-         context.config(KEY_EDUCATION_VALIDATION, True), edu_ready,
-         "working_directory not set (analysis_working_directory)", _edu)
+         context.config(KEY_EDUCATION_VALIDATION, True), edu_ready, edu_reason, _edu)
 
     def _dash():
         import sys as _sys
