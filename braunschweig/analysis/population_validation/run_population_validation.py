@@ -277,7 +277,12 @@ def run(ns) -> dict:
         households_gdf = gpd.GeoDataFrame(households_geo, geometry="geometry", crs=frames.homes.crs)
         vehicles_gdf = None
         if frames.vehicles is not None:
-            veh = _attach_home_geometry_to_vehicles(frames.vehicles, frames.persons, home_geom)
+            # Export only the household FLEET vehicles to the explorer GPKG: the
+            # eqasim per-person ROUTING vehicles (mode=='car', no fleet attributes)
+            # would otherwise appear as ~49% nan rows in the vehicles layer.
+            from braunschweig.analysis import fleet_filter as _ff
+            fleet_veh = _ff.fleet_vehicles(frames.vehicles, context="geo_export")
+            veh = _attach_home_geometry_to_vehicles(fleet_veh, frames.persons, home_geom)
             if veh is not None:
                 vehicles_gdf = gpd.GeoDataFrame(veh, geometry="geometry", crs=frames.homes.crs)
         kreis_poly = kreise[["ars5", "geometry"]]

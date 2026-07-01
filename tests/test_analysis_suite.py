@@ -206,6 +206,11 @@ def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):
     _write_min_output(tmp_path)
     _install_pop_spy(monkeypatch, [])
     wd = tmp_path / "cache"; wd.mkdir()
+    # education loads these cached synpp stage pickles; stage them so it is "ready".
+    for _s in ("braunschweig.synthesis.locations.education_gravity",
+               "braunschweig.data.schools.facilities",
+               "synthesis.population.spatial.home.locations"):
+        (wd / f"{_s}__deadbeef.p").write_bytes(b"")
     edu_calls = []
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
@@ -214,3 +219,20 @@ def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):
     assert "--working-directory" in edu_calls[0]
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert "education_validation" in summary["ran"]
+
+
+def test_education_skips_when_cache_incomplete(tmp_path, monkeypatch):
+    pytest.importorskip("braunschweig.analysis.run_education_validation")
+    import braunschweig.analysis.run_education_validation as EDU
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    wd = tmp_path / "cache"; wd.mkdir()  # exists but carries no stage pickles
+    edu_calls = []
+    monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
+    ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
+    AS.execute(ctx)
+    assert edu_calls == []  # skipped, not run (and not a red failure)
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert not any(f["analysis"] == "education_validation" for f in summary["failed"])
+    reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
+    assert "cache incomplete" in reasons["education_validation"]
