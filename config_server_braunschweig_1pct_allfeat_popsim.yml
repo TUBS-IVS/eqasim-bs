@@ -22,6 +22,7 @@ run:
   - matsim.output
   - braunschweig.analysis.cordon_validation
   - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
 
 config:
   processes: 32

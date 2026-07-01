@@ -38,6 +38,7 @@ run:
   - synthesis.output
   - matsim.output
   - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
 
 config:
   processes: 32
