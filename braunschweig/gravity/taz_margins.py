@@ -151,49 +151,59 @@ def taz_to_kreis_lookup(df_taz):
 
 
 def build_origin_population_per_taz(df_homes, df_population, df_taz):
-    """Re-bin the PER-PERSON census population (weight per person, keyed
-    household_id) onto TAZ via the per-household home POINT (one-to-many on
-    household_id). The home's Kreis (commune_id[:5] from the per-person frame)
-    constrains any nearest-TAZ fallback to the same Kreis. Returns
-    (DataFrame[taz_id, commune_id, population], primary, fallback); the summed
-    population equals the input total."""
-    # Normalise household_id to str on BOTH frames before any merge: the real
-    # population producer (data.census.filtered / popsim.stage) and the home-point
-    # producer (home_cell) can carry household_id in different dtypes (int64 vs
-    # object), which makes a pandas merge raise "trying to merge on int64 and
-    # object columns". A str key is dtype-safe (matches how taz_id is handled).
-    df_homes = df_homes.copy()
-    df_population = df_population.copy()
-    df_homes["household_id"] = df_homes["household_id"].astype(str)
-    df_population["household_id"] = df_population["household_id"].astype(str)
-    hh = df_population.drop_duplicates("household_id")[["household_id", "commune_id"]].copy()
-    hh["kreis"] = hh["commune_id"].astype(str).str[:5]
-    # Population-first: attach each population household's home POINT. Homes without
-    # a population row are not demand and are naturally dropped by this merge; a
-    # population household without a home point cannot be placed and is dropped with
-    # a logged rate (observable, not silent -- CLAUDE.md). home.locations should
-    # place every household, so this rate is expected to be ~0.
-    homes = hh.merge(
-        df_homes.drop_duplicates("household_id")[["household_id", "geometry"]],
-        on="household_id", how="left",
-    )
-    n_hh = len(homes)
-    n_no_home = int(homes["geometry"].isna().sum())
-    if n_no_home:
-        logger.warning(
-            "[taz_margins.origin] %d/%d population households (%.2f%%) have no home "
-            "point -> dropped from the origin margin",
-            n_no_home, n_hh, 100.0 * n_no_home / n_hh if n_hh else 0.0,
-        )
-        homes = homes[homes["geometry"].notna()]
+    """Distribute each commune's census population across its TAZ by the home-point
+    DISTRIBUTION, keyed on commune_id (12-digit ARS).
+
+    The population producer (data.census.filtered / popsim.stage -- the FULL
+    population) and the home-point producer (home_cell -- the SAMPLED population)
+    use DIFFERENT household_id spaces (a composite census string vs a reindexed
+    integer) and cannot be joined on household_id. But BOTH carry the same 12-digit
+    ARS ``commune_id``, so the origin margin is a WITHIN-COMMUNE split (directly
+    analogous to the destination potential_work split): within each commune, the
+    share of home points in each TAZ weights that commune's authoritative census
+    population. The home's Kreis (commune_id[:5]) constrains any nearest-TAZ
+    fallback to the same Kreis.
+
+    df_homes: home_cell [commune_id (ARS-12), geometry] (per household).
+    df_population: data.census.filtered [commune_id (ARS-12), weight] (per person).
+    Returns (DataFrame[taz_id, commune_id, population], primary, fallback); each
+    commune's population is fully distributed across its TAZ (per-commune conserved).
+    """
+    # 1) authoritative per-commune population weight (the FULL population).
+    pop_by_commune = (df_population.assign(commune_id=df_population["commune_id"].astype(str))
+                      .groupby("commune_id")["weight"].sum().rename("commune_pop").reset_index())
+
+    # 2) assign each home POINT to a TAZ; the kreis-constrained fallback uses the
+    #    home's OWN ARS-12 commune_id[:5] (a synthetic per-row id keeps assign_taz's
+    #    dedup safe and independent of the incompatible household_id).
+    homes = df_homes[["commune_id", "geometry"]].reset_index(drop=True).copy()
+    homes["commune_id"] = homes["commune_id"].astype(str)
+    homes["kreis"] = homes["commune_id"].str[:5]
+    homes["_home_id"] = range(len(homes))
     homes = gpd.GeoDataFrame(homes, geometry="geometry", crs=df_homes.crs)
     home_taz, primary, fallback = assign_taz(
-        homes, df_taz, id_column="household_id", kreis_column="kreis")
-    # per-person population summed onto each household's TAZ (inner join drops
-    # persons whose household was unplaced above; assign_taz conserves rows).
-    merged = df_population[["household_id", "weight"]].merge(
-        home_taz[["household_id", "taz_id", "commune_id"]], on="household_id", how="inner")
-    out = (merged.groupby(["taz_id", "commune_id"])["weight"].sum()
-                 .rename("population").reset_index())
+        homes, df_taz, id_column="_home_id", kreis_column="kreis")
+    # attach the home's OWN commune (ARS-12); assign_taz returns the TAZ's commune
+    # (AGS-8), which we do NOT use for the split (we split by the population commune).
+    home_taz = home_taz.merge(
+        homes[["_home_id", "commune_id"]].rename(columns={"commune_id": "home_commune"}),
+        on="_home_id", how="left")
+
+    # 3) within-commune TAZ home-share: fraction of a commune's homes in each TAZ.
+    counts = (home_taz.groupby(["home_commune", "taz_id"]).size()
+              .rename("n_homes").reset_index())
+    counts["commune_total"] = counts.groupby("home_commune")["n_homes"].transform("sum")
+    counts["share"] = counts["n_homes"] / counts["commune_total"]
+
+    # 4) origin population per TAZ = commune weight x within-commune home-share.
+    m = counts.merge(pop_by_commune, left_on="home_commune", right_on="commune_id", how="left")
+    n_no_pop = int(m["commune_pop"].isna().sum())
+    if n_no_pop:
+        logger.warning(
+            "[taz_margins.origin] %d TAZ-commune rows: commune has homes but no census "
+            "population -> 0 weight (check commune_id alignment)", n_no_pop)
+    m["population"] = m["share"] * m["commune_pop"].fillna(0.0)
+    out = (m[["taz_id", "home_commune", "population"]]
+           .rename(columns={"home_commune": "commune_id"}))
     out["taz_id"] = out["taz_id"].astype(str)
-    return out, primary, fallback
+    return out[["taz_id", "commune_id", "population"]], primary, fallback
