@@ -1021,7 +1021,8 @@ def _write_with_header(frame: pd.DataFrame, name: str, header_line: str) -> None
 
 def main() -> None:
     for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
-                     FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH):
+                     FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH,
+                     GEMEINDE_EV_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -1054,6 +1055,7 @@ def main() -> None:
         "kba_age_national.csv",
         "# mean_age_years=10.9 source=KBA/Statista ID3438 stichtag=2026-01-01",
     )
+    _write(extract_gemeinde_ev(), "kba_gemeinde_ev.csv")
     logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
 
 
