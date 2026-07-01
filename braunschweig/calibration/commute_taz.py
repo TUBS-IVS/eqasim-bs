@@ -108,3 +108,85 @@ def build_taz_calibration_inputs(df_taz, df_homes, df_population, df_employees,
         "zone_to_kreis": zone_to_kreis,
         "home_taz": home_taz,
     }
+
+
+def assign_and_measure_taz(od_matrix, zones, home_taz, work_by_taz, rs7_by_zone,
+                           random_seed):
+    """Assign work TAZ from the OD matrix and measure realised straight-line km.
+
+    Mirrors assign_and_measure (Gemeinde) but keyed on taz_id. Workers whose drawn
+    destination TAZ has no work locations are skipped (dropped, counted, not
+    reassigned) -- reported as a rate by the caller (CLAUDE.md no-silent-fallback).
+    km_by_kreis keys are the home Kreis (first 5 chars of the home TAZ's Kreis via
+    rs7 is not enough -> use the taz_id's Kreis); km_by_rs7 keys are int RS7.
+
+    Parameters
+    ----------
+    od_matrix : np.ndarray
+        NxN row-normalised OD probability matrix. Rows correspond to origin zones,
+        columns to destination zones, in the same order as `zones`.
+    zones : list[str]
+        Ordered list of taz_id values matching the OD matrix axes.
+    home_taz : DataFrame
+        Output of build_taz_calibration_inputs['home_taz']: columns
+        [household_id, taz_id, x_m, y_m] (optionally also 'kreis').
+    work_by_taz : dict[str, tuple(np.ndarray Nx2, np.ndarray N)]
+        Pre-built work-location lookup. Keys are taz_id strings. Each value is a
+        tuple (xy, weights) where xy has shape (K, 2) with (x_m, y_m) columns and
+        weights is a length-K probability vector (need not sum to 1 -- normalised
+        internally).
+    rs7_by_zone : dict[str, int]
+        taz_id -> RegioStar-7 class. Used to group distances by RS7 type.
+    random_seed : int
+        Seed for the NumPy RandomState so the assignment is reproducible.
+
+    Returns
+    -------
+    km_by_kreis : dict[str, np.ndarray]
+        Home-Kreis -> array of straight-line distances in km. Only populated when
+        home_taz contains a 'kreis' column; otherwise an empty dict.
+    km_by_rs7 : dict[int, np.ndarray]
+        RS7 class -> array of straight-line distances in km.
+    skip_rate : float
+        Fraction of workers dropped because their drawn destination TAZ had no work
+        locations or was not present in the zone index. Logged at INFO level.
+    """
+    rng = np.random.RandomState(random_seed)
+    zone_index = {z: i for i, z in enumerate(zones)}
+    km_by_kreis: dict[str, list] = {}
+    km_by_rs7: dict[int, list] = {}
+    n_skipped = 0
+    n_total = len(home_taz)
+    for _, row in home_taz.iterrows():
+        origin_taz = str(row["taz_id"])
+        if origin_taz not in zone_index:
+            n_skipped += 1
+            continue
+        od_row = od_matrix[zone_index[origin_taz], :]
+        s = od_row.sum()
+        if s <= 0:
+            n_skipped += 1
+            continue
+        dest_taz = zones[int(rng.choice(len(zones), p=od_row / s))]
+        if dest_taz not in work_by_taz or len(work_by_taz[dest_taz][0]) == 0:
+            n_skipped += 1
+            continue
+        xy, w = work_by_taz[dest_taz]
+        wx, wy = xy[int(rng.choice(len(xy), p=w / w.sum()))]
+        d_km = float(np.hypot(wx - float(row["x_m"]), wy - float(row["y_m"])) / 1000.0)
+        home_rs7 = int(rs7_by_zone.get(origin_taz, -1))
+        if home_rs7 > 0:
+            km_by_rs7.setdefault(home_rs7, []).append(d_km)
+        # Kreis key: only populated when the caller provides a 'kreis' column in home_taz.
+        if "kreis" in home_taz.columns:
+            km_by_kreis.setdefault(str(row["kreis"]), []).append(d_km)
+    skip_rate = (n_skipped / n_total) if n_total else 0.0
+    logger.info(
+        "[assign-taz] n_total=%d skip=%d (%.1f%%) rs7_groups=%s",
+        n_total, n_skipped, skip_rate * 100.0, sorted(km_by_rs7.keys()),
+    )
+    return (
+        {k: np.array(v) for k, v in km_by_kreis.items()},
+        {k: np.array(v) for k, v in km_by_rs7.items()},
+        skip_rate,
+    )
