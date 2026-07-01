@@ -67,6 +67,7 @@ FUEL_46251_PATH = RAW_DIR / "regionalstatistik_46251_02_fuel_kreis_20250101.csv"
 EURO_46251_PATH = RAW_DIR / "regionalstatistik_46251_03_euro_kreis_20250101.csv"
 AGE_NATIONAL_PATH = RAW_DIR / "statista_kba_3438_pkw_age_national_2026.xlsx"
 GEMEINDE_EV_PATH = RAW_DIR / "kba_ev_gemeinde_timeseries_2023_2026.csv"
+MODELLREIHEN_PATH = RAW_DIR / "kba_modellreihen_bestand_2020_2026.csv"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -613,6 +614,10 @@ def extract_brand_powertrain() -> pd.DataFrame:
 def extract_segment_model() -> pd.DataFrame:
     """FZ 12.1: per-segment model (Modellreihe) counts and within-segment share.
 
+    .. deprecated::
+        Superseded by :func:`extract_segment_model_2026` which reads the newer
+        Modellreihen bestand CSV (01.01.2026); kept for reference/reversibility.
+
     Column indices (0-based, README): col1=Segment (filled once per block,
     uppercase), col2=Modellreihe, col3=Anzahl (count).  Segment subtotal rows
     ("... ZUSAMMEN") and the trailing ``BESTAND INSGESAMT`` / footnotes are
@@ -655,6 +660,172 @@ def extract_segment_model() -> pd.DataFrame:
     segment_totals = frame.groupby("segment")["count"].transform("sum")
     frame["share"] = frame["count"] / segment_totals
     return frame
+
+
+# --------------------------------------------------------------------------- #
+# kba_modellreihen_bestand_2020_2026.csv helpers
+# --------------------------------------------------------------------------- #
+def _read_modellreihen(path) -> pd.DataFrame:
+    """Read the KBA Modellreihen CSV (utf-8-sig), filter to 01.01.2026.
+
+    Returns the raw filtered DataFrame.  The CSV must carry columns:
+    ``Berichtszeitpunkt, Segment, Marke, Modellreihe, Anzahl, Diesel,
+    Hybrid, Hybrid_Plugin, BEV, gewerblich``.
+
+    Args:
+        path: Path-like or str pointing at the raw CSV.
+
+    Returns:
+        DataFrame with only the 01.01.2026 rows.
+    """
+    raw = pd.read_csv(path, sep=";", encoding="utf-8-sig", dtype=str)
+    # Normalise column names (strip leading/trailing whitespace).
+    raw.columns = [c.strip() for c in raw.columns]
+    filtered = raw[raw["Berichtszeitpunkt"].str.strip() == "01.01.2026"].copy()
+    return filtered
+
+
+# --------------------------------------------------------------------------- #
+# Modellreihen -> kba_segment_model.csv (2026 refresh)
+# --------------------------------------------------------------------------- #
+def extract_segment_model_2026(path=None) -> pd.DataFrame:
+    """Modellreihen (2026): per-segment model counts + within-segment share.
+
+    Reads the KBA Modellreihen bestand CSV filtered to Berichtszeitpunkt
+    ``01.01.2026`` and produces the same schema as the legacy
+    ``extract_segment_model`` (``segment, model, count, share``) plus a
+    ``stichtag`` column.
+
+    The join key convention matches ``kba_segment_model.csv`` from FZ 12.1:
+    ``model = f"{Marke} {Modellreihe}"`` (uppercase as delivered by KBA).
+
+    Rows whose ``Segment`` does not map via ``KBA_SEGMENT_MAP`` are skipped;
+    the skip count is logged (no-silent-fallback rule).
+
+    Args:
+        path: Path to the raw Modellreihen CSV.  Defaults to
+            ``MODELLREIHEN_PATH`` when ``None``.
+
+    Returns:
+        DataFrame with columns ``segment, model, count, share, stichtag``.
+    """
+    if path is None:
+        path = MODELLREIHEN_PATH
+    counter = CoercionCounter("Modellreihen 2026 segment_model")
+    df = _read_modellreihen(path)
+    records = []
+    n_unmapped = 0
+    for _, row in df.iterrows():
+        seg_key = str(row["Segment"]).strip().lower()
+        canonical = KBA_SEGMENT_MAP.get(seg_key)
+        if canonical is None:
+            n_unmapped += 1
+            continue
+        model = f"{str(row['Marke']).strip()} {str(row['Modellreihe']).strip()}"
+        count = _coerce_count(row["Anzahl"], counter)
+        records.append({
+            "segment": canonical,
+            "model": model,
+            "count": count,
+            "stichtag": "2026-01-01",
+        })
+    counter.log()
+    if n_unmapped > 0:
+        logger.warning(
+            "[extract_segment_model_2026] %d row(s) with unmapped segment skipped "
+            "(no KBA_SEGMENT_MAP entry); valid rows: %d",
+            n_unmapped, len(records),
+        )
+    frame = pd.DataFrame(records)
+    segment_totals = frame.groupby("segment")["count"].transform("sum")
+    frame["share"] = frame["count"] / segment_totals
+    return frame
+
+
+# --------------------------------------------------------------------------- #
+# Modellreihen -> kba_model_fuel.csv (per-model fuel weight)
+# --------------------------------------------------------------------------- #
+def extract_model_fuel(path=None) -> pd.DataFrame:
+    """Modellreihen (2026): per-model fuel-type shares.
+
+    Reads the KBA Modellreihen bestand CSV filtered to Berichtszeitpunkt
+    ``01.01.2026`` and computes per-model powertrain shares:
+
+    - ``petrol_share``: residual after all electrified/diesel counts,
+      ``max(Anzahl - Diesel - Hybrid - BEV, 0) / Anzahl``.
+      Note: the raw ``Hybrid`` column already **includes** ``Hybrid_Plugin``,
+      so the full ``Hybrid`` is subtracted here (not the split non-plugin value).
+    - ``diesel_share``: ``Diesel / Anzahl``.
+    - ``hybrid_share``: ``max(Hybrid - Hybrid_Plugin, 0) / Anzahl``
+      (non-plugin hybrid only).
+    - ``phev_share``: ``Hybrid_Plugin / Anzahl``.
+    - ``bev_share``: ``BEV / Anzahl``.
+
+    Rows with ``Anzahl <= 0`` after coercion are skipped (logged).
+    Rows whose ``Segment`` does not map via ``KBA_SEGMENT_MAP`` are skipped
+    (logged); the skip count is included in the log message (no-silent-fallback).
+
+    The join key convention matches ``kba_segment_model.csv``:
+    ``model = f"{Marke} {Modellreihe}"`` (uppercase as delivered by KBA).
+
+    Args:
+        path: Path to the raw Modellreihen CSV.  Defaults to
+            ``MODELLREIHEN_PATH`` when ``None``.
+
+    Returns:
+        DataFrame with columns ``segment, model, stichtag, petrol_share,
+        diesel_share, hybrid_share, phev_share, bev_share``.
+    """
+    if path is None:
+        path = MODELLREIHEN_PATH
+    counter = CoercionCounter("Modellreihen 2026 model_fuel")
+    df = _read_modellreihen(path)
+    records = []
+    n_unmapped = 0
+    n_zero_anzahl = 0
+    for _, row in df.iterrows():
+        seg_key = str(row["Segment"]).strip().lower()
+        canonical = KBA_SEGMENT_MAP.get(seg_key)
+        if canonical is None:
+            n_unmapped += 1
+            continue
+        model = f"{str(row['Marke']).strip()} {str(row['Modellreihe']).strip()}"
+        anzahl = _coerce_count(row["Anzahl"], counter)
+        if pd.isna(anzahl) or anzahl <= 0:
+            n_zero_anzahl += 1
+            continue
+        diesel = np.nan_to_num(_coerce_count(row["Diesel"], counter))
+        hybrid_all = np.nan_to_num(_coerce_count(row["Hybrid"], counter))
+        hybrid_plugin = np.nan_to_num(_coerce_count(row["Hybrid_Plugin"], counter))
+        bev = np.nan_to_num(_coerce_count(row["BEV"], counter))
+        # Non-plugin hybrid = total hybrid minus plugin hybrid.
+        hybrid_nonplugin = max(hybrid_all - hybrid_plugin, 0.0)
+        # Petrol residual: subtract full Hybrid (which already includes plugin).
+        petrol = max(anzahl - diesel - hybrid_all - bev, 0.0)
+        records.append({
+            "segment": canonical,
+            "model": model,
+            "stichtag": "2026-01-01",
+            "petrol_share": petrol / anzahl,
+            "diesel_share": diesel / anzahl,
+            "hybrid_share": hybrid_nonplugin / anzahl,
+            "phev_share": hybrid_plugin / anzahl,
+            "bev_share": bev / anzahl,
+        })
+    counter.log()
+    total_skipped = n_unmapped + n_zero_anzahl
+    logger.info(
+        "[extract_model_fuel] models written=%d, skipped: unmapped segment=%d, "
+        "zero/invalid Anzahl=%d (total skipped=%d)",
+        len(records), n_unmapped, n_zero_anzahl, total_skipped,
+    )
+    return pd.DataFrame(records)
+
+
+# --------------------------------------------------------------------------- #
+# FZ 12.1 -> kba_segment_model.csv (DEPRECATED — superseded by 2026 Modellreihen)
+# --------------------------------------------------------------------------- #
+# Superseded by extract_segment_model_2026(); kept for reference/reversibility.
 
 
 # --------------------------------------------------------------------------- #
@@ -1022,7 +1193,7 @@ def _write_with_header(frame: pd.DataFrame, name: str, header_line: str) -> None
 def main() -> None:
     for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
                      FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH,
-                     GEMEINDE_EV_PATH):
+                     GEMEINDE_EV_PATH, MODELLREIHEN_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -1035,7 +1206,10 @@ def main() -> None:
     _write(extract_fuel_euro_nds(), "kba_fuel_euro_nds.csv")
     _write(extract_age_fuel(), "kba_age_fuel.csv")
     _write(extract_brand_powertrain(), "kba_brand_powertrain.csv")
-    _write(extract_segment_model(), "kba_segment_model.csv")
+    # kba_segment_model.csv is now produced from the 2026 Modellreihen source
+    # (extract_segment_model_2026) instead of the legacy FZ 12.1 xlsx.
+    _write(extract_segment_model_2026(), "kba_segment_model.csv")
+    _write(extract_model_fuel(), "kba_model_fuel.csv")
     _write(
         extract_mid_segment_by_status(MID_BUNDESLAND_PATH, MID_SEGMENT_MAP,
                                       MID_BUNDESLAND_NAME_MAP,

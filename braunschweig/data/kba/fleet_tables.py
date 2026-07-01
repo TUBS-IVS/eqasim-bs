@@ -270,6 +270,43 @@ def load_segment_model(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_model_fuel(data_path: str) -> pd.DataFrame:
+    """Modellreihen (2026): per-model fuel-type shares.
+
+    Loads ``kba_model_fuel.csv`` produced by
+    ``scripts/extract_kba_fleet.py::extract_model_fuel``.
+
+    Validates that all required columns are present and that every ``segment``
+    value is a member of ``SEGMENT_LABELS`` (schema drift is surfaced loudly).
+
+    Columns: ``segment, model, stichtag, petrol_share, diesel_share,
+    hybrid_share, phev_share, bev_share``.
+
+    Args:
+        data_path: Root data path; ``braunschweig/kba/derived/`` is appended
+            automatically.
+
+    Returns:
+        DataFrame with the eight columns listed above.
+
+    Raises:
+        FileNotFoundError: If ``kba_model_fuel.csv`` is absent (run
+            ``scripts/extract_kba_fleet.py`` on the server to generate it).
+        RuntimeError: If required columns are missing or any ``segment`` label
+            is outside ``SEGMENT_LABELS``.
+    """
+    filename = "kba_model_fuel.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df,
+        ["segment", "model", "stichtag", "petrol_share", "diesel_share",
+         "hybrid_share", "phev_share", "bev_share"],
+        filename,
+    )
+    _require_labels(df["segment"], SEGMENT_LABELS, "segment", filename)
+    return df
+
+
 def load_mid_segment_by_status_bundesland(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by Bundesland (column-%).
 
