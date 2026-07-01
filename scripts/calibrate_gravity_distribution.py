@@ -407,6 +407,12 @@ def _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, 
         work_primary, work_fallback,
     )
     work = work.merge(work_map[["work_row_id", "taz_id"]], on="work_row_id", how="left")
+    n_drop = int(work["taz_id"].isna().sum())
+    if n_drop:
+        logger.warning(
+            "[commute-taz] %d work locations had no taz_id after assign_taz -- dropped",
+            n_drop,
+        )
     work_by_taz = build_work_by_taz(work.dropna(subset=["taz_id"]))
 
     # -----------------------------------------------------------------------
@@ -528,7 +534,22 @@ def _run_taz_calibration(args, cfg, slope, constant, diagonal, slope_overrides, 
     # -----------------------------------------------------------------------
     # 6. Shrink sparse RS7 cells + emit
     # -----------------------------------------------------------------------
-    counts_by_rs7 = {rs7: len(km_by_rs7.get(rs7, [])) for rs7 in factors_by_rs7}
+    # Build per-(RS7, band) histograms for shrinkage. A scalar total-per-RS7 would
+    # make sparse-band detection all-or-nothing; the band histogram lets shrinkage
+    # act independently on each distance band (matching the Gemeinde path, ~L1187).
+    counts_by_rs7 = {}
+    for rs7 in factors_by_rs7:
+        km_rs7 = km_by_rs7.get(rs7, [])
+        if len(km_rs7) > 0:
+            km_detoured = np.asarray(km_rs7, dtype=float) * args.detour_factor
+            band_hist = np.zeros(N_BANDS, dtype=int)
+            for b in range(N_BANDS):
+                lo = BAND_EDGES_KM[b]
+                hi = BAND_EDGES_KM[b + 1]
+                band_hist[b] = int(np.sum((km_detoured >= lo) & (km_detoured < hi)))
+            counts_by_rs7[rs7] = band_hist
+        else:
+            counts_by_rs7[rs7] = np.zeros(N_BANDS, dtype=int)
     pooled = np.mean([factors_by_rs7[r] for r in factors_by_rs7], axis=0)
     factors_by_rs7, shrink_rate = shrink_sparse_factors(
         factors_by_rs7, counts_by_rs7, pooled, args.min_count)
