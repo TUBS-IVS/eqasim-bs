@@ -223,3 +223,33 @@ def test_kreis_euro_non_zgb_substage_counts(tmp_path):
     assert non_zgb_diesel["euro6d"] == 90000
     assert non_zgb_diesel["euro6dtemp"] == 6000
     assert non_zgb_diesel["euro6ab"] == 120000 - 90000 - 6000
+
+
+# --------------------------------------------------------------------------- #
+# B4 follow-up: extract_fuel_euro6_substage_nds zero-euro6-fuel NaN guard
+# --------------------------------------------------------------------------- #
+def _fz274_substage_rows():
+    """Mock FZ 27.4 rows: col1=Land, col2=fuel, col8=euro6_total, col9=6d-temp,
+    col10=6d, col11=6e. One normal fuel (petrol) + one zero-euro6 fuel (gas)."""
+    def r(land, fuel, total, dtemp, d, e):
+        return (None, land, fuel, None, None, None, None, None, total, dtemp, d, e)
+    return [
+        r("Niedersachsen", "Benzin", 1000, 100, 50, 10),  # petrol: 6d=60, 6ab=840
+        r(None, "Gas insgesamt", 0, 0, 0, 0),             # gas: zero euro6 -> 0/0 guard
+        r("Niedersachsen zusammen", None, None, None, None, None),  # break
+    ]
+
+
+def test_euro6_substage_nds_zero_fuel_no_nan(monkeypatch):
+    monkeypatch.setattr(ex, "_read_sheet", lambda path, sheet: _fz274_substage_rows())
+    df = ex.extract_fuel_euro6_substage_nds()
+    # No NaN anywhere (no-NA rule): the zero-euro6 gas fuel must get share 0.0.
+    assert not df["share"].isna().any()
+    gas = df[df["fuel"] == "gas"]
+    assert len(gas) == 3 and (gas["share"] == 0.0).all()
+    # A normal fuel's substage shares sum to 1 (P(substage|euro6,fuel)).
+    petrol = df[df["fuel"] == "petrol"]
+    assert abs(petrol["share"].sum() - 1.0) < 1e-9
+    # euro6ab = max(euro6 - 6d_incl_6e - 6dtemp, 0) = 1000 - 60 - 100 = 840.
+    ab = float(petrol[petrol["substage"] == "euro6ab"]["count"].iloc[0])
+    assert ab == 840.0

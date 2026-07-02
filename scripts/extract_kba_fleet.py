@@ -602,7 +602,21 @@ def extract_fuel_euro6_substage_nds() -> pd.DataFrame:
     counter.log()
     frame = pd.DataFrame(records)
     fuel_totals = frame.groupby("fuel")["count"].transform("sum")
-    frame["share"] = frame["count"] / fuel_totals
+    # A fuel with ZERO Euro-6 registrations (plausible for a low-volume fuel such
+    # as gas/phev in a Land-level cut) has a zero total; ``count / 0`` would be a
+    # silent NaN. Divide by a floored denominator so those rows get share 0.0
+    # instead of NaN (no-NA / no-silent-fallback rule), and log how many rows are
+    # affected. Their counts are all 0, so 0/1.0 == 0.0 is exact. The B5 substage
+    # draw treats an all-zero fuel substage pmf as a fallback (national euro6ab).
+    safe_totals = fuel_totals.where(fuel_totals > 0, other=1.0)
+    frame["share"] = frame["count"] / safe_totals
+    n_zero_total = int((fuel_totals == 0).sum())
+    if n_zero_total:
+        logger.warning(
+            "[extract_fuel_euro6_substage_nds] %d substage rows have a zero euro6 "
+            "fuel total (fuel with no Euro-6 registrations) -> share set to 0.0.",
+            n_zero_total,
+        )
     frame["stichtag"] = "2025-01-01"
     return frame
 
