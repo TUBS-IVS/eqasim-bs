@@ -352,6 +352,39 @@ def load_mid_age_by_segment_status(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_mid_antrieb_by_status(data_path: str) -> pd.DataFrame:
+    """MiD 2023 vehicle powertrain (A_ANTRIEB) x economic status (oek_status).
+
+    ``share`` is P(powertrain | status); within each status cell the shares
+    sum to 1.0. The ``status == "all"`` row pools every usable row regardless
+    of economic status and carries the overall MiD powertrain mix -- the
+    denominator used by the EV-income tilt (see the corresponding tilt
+    wiring) to compute ``P(powertrain | status) / P(powertrain)``.
+
+    Produced by ``scripts/build_mid_antrieb_by_status.py`` from the raw
+    MiD 2023 Autos micro-data (``MiD2023_Autos.csv``).
+    """
+    filename = "mid2023_antrieb_by_status.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df, ["status", "powertrain", "share", "base_weighted"], filename,
+    )
+    _require_labels(df["powertrain"], POWERTRAIN_LABELS, "powertrain", filename)
+    _require_labels(df["status"], (*STATUS_LABELS, "all"), "status", filename)
+    missing_status = set(STATUS_LABELS) - set(df["status"])
+    if missing_status:
+        raise RuntimeError(
+            f"{filename}: missing economic status group(s) {sorted(missing_status)} "
+            f"(expected all of {sorted(STATUS_LABELS)} plus the pooled 'all' row)."
+        )
+    if "all" not in set(df["status"]):
+        raise RuntimeError(
+            f"{filename}: missing the pooled 'all' row (overall MiD powertrain "
+            f"mix, required as the EV-income tilt denominator)."
+        )
+    return df
+
+
 def load_kreis_fuel(data_path: str) -> pd.DataFrame:
     """Regionalstatistik 46251-02: per-Kreis fuel counts + within-Kreis shares.
 
