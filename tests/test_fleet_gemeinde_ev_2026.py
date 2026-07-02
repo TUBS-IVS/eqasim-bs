@@ -214,19 +214,39 @@ def _make_high_bev_gemeinde_ev_csv(
     gemeinde_norm: str,
     bev_share: float,
     phev_share: float,
+    background_bev_share: float = 0.0,
+    background_phev_share: float = 0.0,
+    n_background_gemeinden: int = 4,
 ) -> None:
-    """Write a synthetic kba_gemeinde_ev.csv with one high-BEV Gemeinde row
-    plus one placeholder row for each of the remaining ZGB Kreise so the
-    loader does not raise on missing Kreise.
+    """Write a synthetic kba_gemeinde_ev.csv with one high-BEV Gemeinde row plus
+    a handful of LOW-share "background" Gemeinden in the SAME Kreis.
+
+    The background rows are required since Task A3
+    (``PowertrainModel._kreis_private_electric_share_2026``): the per-Kreis tilt
+    denominator is now the 2026 weighted MEAN of the Kreis's Gemeinden, not the
+    stale 2025 FZ27.15 Kreis share. With only the single high-BEV row present,
+    the mean of ONE value degenerates to that value itself, making the tilt a
+    no-op by construction -- not a bug, but it stops this fixture from being
+    able to exercise a real within-Kreis tilt. The background rows give the
+    Kreis a genuine (low-share) backdrop so the high-BEV Gemeinde's tilt factor
+    stays clearly above 1. None of the synthetic names match any real FZ 27.17
+    entry, so every row falls back to weight 1 (unweighted mean) -- the FZ27.17
+    weighting itself is covered separately by
+    ``TestKreisPrivateElectricShare2026`` in this file.
 
     kba_gemeinde_ev.csv does NOT require all 8 ZGB Kreise (unlike FZ 27.17 and
     FZ 27.15) -- the loader only rejects EXTRA codes that are not ZGB, not a
-    missing subset. A single high-BEV row is therefore sufficient.
+    missing subset.
     """
     rows = [
         _minimal_ev_row(kreis_ags5, gemeinde_norm,
                         bev_share=bev_share, phev_share=phev_share),
     ]
+    for i in range(n_background_gemeinden):
+        rows.append(_minimal_ev_row(
+            kreis_ags5, f"BACKGROUND_GEMEINDE_{i}",
+            bev_share=background_bev_share, phev_share=background_phev_share,
+        ))
     dest = (
         Path(tmp_data_path) / "braunschweig" / "kba" / "derived"
         / "kba_gemeinde_ev.csv"
@@ -266,12 +286,19 @@ def tmp_data_with_high_bev_gemeinde(tmp_path_factory):
     # unambiguously above it.
     df_kreis = ft.load_kreis_powertrain(DATA_PATH).set_index("kreis_ags5")
     kreis_bev = float(df_kreis.loc[kreis, "bev_share"])
+    kreis_phev = float(df_kreis.loc[kreis, "phev_share"])
     # Set Gemeinde share to max(3x Kreis share, Kreis + 0.10) -- clearly above.
     high_bev = min(max(3.0 * kreis_bev, kreis_bev + 0.10), 0.60)
     high_phev = min(kreis_bev * 1.5, 0.15)
 
+    # Background Gemeinden at the (2025) Kreis level give the 2026 Kreis-mean
+    # denominator (Task A3) a genuine within-Kreis backdrop, so the single
+    # high-BEV Gemeinde's tilt factor stays clearly above 1 rather than
+    # degenerating to a mean-of-one no-op.
     _make_high_bev_gemeinde_ev_csv(tmp_dp, kreis, "TESTGEMEINDE_2026",
-                                   bev_share=high_bev, phev_share=high_phev)
+                                   bev_share=high_bev, phev_share=high_phev,
+                                   background_bev_share=kreis_bev,
+                                   background_phev_share=kreis_phev)
     return tmp_dp, kreis, "TESTGEMEINDE_2026", kreis_bev, high_bev
 
 
@@ -331,6 +358,201 @@ def test_2026_primary_tilt_increases_bev(tmp_data_with_high_bev_gemeinde):
         f"({bev_base:.4f}) for Gemeinde with bev_share={high_bev:.4f} vs "
         f"Kreis bev_share={kreis_bev:.4f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task A3 (review Finding 3): same-vintage (2026/2026) Kreis-mean denominator.
+#
+# Bug: the tilt numerator (`_gemeinde_electric_share_2026`, 2026) was divided
+# by the 2025 FZ27.15 Kreis share, which is systematically stale (EV grew
+# 2025->2026) -- a fleet-wide EV LEVEL shift, not a pure within-Kreis relative
+# tilt. `_kreis_private_electric_share_2026` fixes this by deriving the
+# denominator from the SAME 2026 file, weighted by FZ27.17 `private_total`.
+# ---------------------------------------------------------------------------
+
+def _minimal_fz27_row(kreis_ags5: str, gemeinde: str, private_total: float) -> dict:
+    """A minimal FZ 27.17 (kba_gemeinde_private_bev.csv) row; only
+    ``kreis_ags5``, ``gemeinde`` and ``private_total`` matter for the
+    Kreis-mean weighting under test -- the share columns are unused by
+    ``_kreis_private_electric_share_2026`` (that consumes the 2026 file's
+    shares, not FZ27.17's).
+    """
+    return {
+        "kreis_ags5": kreis_ags5,
+        "kreis_name": "Test-Kreis",
+        "gemeinde": gemeinde,
+        "private_total": private_total,
+        "private_bev": 0.0,
+        "private_phev": 0.0,
+        "private_bev_share": 0.0,
+        "private_phev_share": 0.0,
+    }
+
+
+def _make_minimal_powertrain_model(
+    kreis_priv: dict, gem_priv: dict,
+) -> fs.PowertrainModel:
+    """A PowertrainModel with only the Gemeinde-tilt-relevant fields populated.
+
+    ``segments`` / ``kreis_segment_powertrain`` / ``national_segment_powertrain``
+    are not read by ``_apply_gemeinde_tilt`` and are left as harmless minimal
+    placeholders.
+    """
+    return fs.PowertrainModel(
+        segments=["kompaktklasse"],
+        powertrains=list(fs.POWERTRAINS),
+        kreis_segment_powertrain={},
+        national_segment_powertrain=np.zeros((1, len(fs.POWERTRAINS))),
+        kreis_private_electric_share=kreis_priv,
+        gemeinde_private_electric_share=gem_priv,
+    )
+
+
+class TestKreisPrivateElectricShare2026:
+    """Unit tests for the same-vintage (2026) Kreis-mean tilt denominator."""
+
+    def test_uniform_2x_growth_no_level_shift(self):
+        """All Gemeinden of a Kreis grew by the SAME factor (uniform 2x)
+        relative to the stale 2025 FZ27.15 Kreis share. Because the new
+        denominator is the 2026 weighted MEAN (not the stale 2025 Kreis
+        share), it equals the same uniform 2026 share, so the resulting tilt
+        factor is ~1.0 everywhere -- no fleet-wide EV level shift.
+
+        This is the failing case under the pre-fix code: there, the
+        denominator would be the stale ``fz2715_kreis_bev_share`` and every
+        Gemeinde would get factor ~2.0 (a pure level shift, not a real tilt).
+        """
+        kreis = "03101"
+        fz2715_kreis_bev_share = 0.05  # stale 2025 all-ownership Kreis share
+        uniform_2026_share = 2.0 * fz2715_kreis_bev_share  # uniform 2025->2026 growth
+        rows = [
+            _minimal_ev_row(kreis, "GEM_A", bev_share=uniform_2026_share, phev_share=0.02),
+            _minimal_ev_row(kreis, "GEM_B", bev_share=uniform_2026_share, phev_share=0.02),
+            _minimal_ev_row(kreis, "GEM_C", bev_share=uniform_2026_share, phev_share=0.02),
+        ]
+        df_gem_ev = pd.DataFrame(rows)
+        gem_priv = fs._gemeinde_electric_share_2026(df_gem_ev)
+
+        kreis_priv_2026 = fs.PowertrainModel._kreis_private_electric_share_2026(
+            df_gem_ev, None)
+
+        # The 2026 weighted mean equals the uniform Gemeinde share (no FZ27.17
+        # weights supplied -> unweighted mean of three identical values).
+        assert kreis_priv_2026[kreis]["bev"] == pytest.approx(uniform_2026_share)
+        assert kreis_priv_2026[kreis]["phev"] == pytest.approx(0.02)
+        # Sanity: this must NOT be the stale 2025 Kreis share (that was the bug).
+        assert kreis_priv_2026[kreis]["bev"] != pytest.approx(fz2715_kreis_bev_share)
+
+        model = _make_minimal_powertrain_model(kreis_priv_2026, gem_priv)
+        idx_bev = fs.POWERTRAINS.index("bev")
+        idx_phev = fs.POWERTRAINS.index("phev")
+        for gemeinde in ("GEM_A", "GEM_B", "GEM_C"):
+            tilted = model._apply_gemeinde_tilt(np.ones(len(fs.POWERTRAINS)), kreis, gemeinde)
+            assert tilted[idx_bev] == pytest.approx(1.0, rel=1e-6), (
+                f"{gemeinde}: expected no level shift (factor ~1.0), got "
+                f"{tilted[idx_bev]:.4f}"
+            )
+            assert tilted[idx_phev] == pytest.approx(1.0, rel=1e-6)
+
+    def test_within_kreis_structure_preserved(self):
+        """A Gemeinde at ~2x its 2026-Kreis-weighted mean still receives a ~2x
+        tilt factor: the vintage fix removes the LEVEL bias but must not
+        flatten genuine within-Kreis structure.
+        """
+        kreis = "03151"
+        # Two heavily-weighted "background" Gemeinden at a low, equal share, so
+        # their weighted mean is barely moved by the lightly-weighted high
+        # Gemeinde. The high Gemeinde's share is exactly 2x that background share.
+        background_share = 0.03
+        high_share = 2.0 * background_share
+        background_weight = 990.0
+        high_weight = 10.0
+        rows = [
+            _minimal_ev_row(kreis, "GEM_LOW_A", bev_share=background_share, phev_share=0.01),
+            _minimal_ev_row(kreis, "GEM_LOW_B", bev_share=background_share, phev_share=0.01),
+            _minimal_ev_row(kreis, "GEM_HIGH", bev_share=high_share, phev_share=0.01),
+        ]
+        df_gem_ev = pd.DataFrame(rows)
+        gem_priv = fs._gemeinde_electric_share_2026(df_gem_ev)
+
+        df_fz27 = pd.DataFrame([
+            _minimal_fz27_row(kreis, "GEM_LOW_A", private_total=background_weight),
+            _minimal_fz27_row(kreis, "GEM_LOW_B", private_total=background_weight),
+            _minimal_fz27_row(kreis, "GEM_HIGH", private_total=high_weight),
+        ])
+
+        kreis_priv_2026 = fs.PowertrainModel._kreis_private_electric_share_2026(
+            df_gem_ev, df_fz27)
+
+        expected_mean = (
+            background_weight * background_share
+            + background_weight * background_share
+            + high_weight * high_share
+        ) / (2 * background_weight + high_weight)
+        assert kreis_priv_2026[kreis]["bev"] == pytest.approx(expected_mean)
+
+        model = _make_minimal_powertrain_model(kreis_priv_2026, gem_priv)
+        idx_bev = fs.POWERTRAINS.index("bev")
+        tilted = model._apply_gemeinde_tilt(np.ones(len(fs.POWERTRAINS)), kreis, "GEM_HIGH")
+        expected_factor = min(high_share / expected_mean, 5.0)
+        assert tilted[idx_bev] == pytest.approx(expected_factor, rel=1e-6)
+        # The heavily-weighted background dominates the mean, so the observed
+        # factor stays close to the "2x its Kreis mean" structure by design.
+        assert tilted[idx_bev] == pytest.approx(2.0, rel=0.05)
+
+    def test_missing_weight_falls_back_to_unweighted(self, caplog):
+        """A Gemeinde absent from the FZ27.17 weight table contributes to the
+        Kreis mean with weight 1.0 (unweighted); the fallback is counted and
+        logged (no-silent-fallback rule).
+        """
+        kreis = "03159"
+        rows = [
+            _minimal_ev_row(kreis, "GEM_WEIGHTED_A", bev_share=0.02, phev_share=0.005),
+            _minimal_ev_row(kreis, "GEM_WEIGHTED_B", bev_share=0.04, phev_share=0.005),
+            _minimal_ev_row(kreis, "GEM_NO_WEIGHT", bev_share=0.10, phev_share=0.005),
+        ]
+        df_gem_ev = pd.DataFrame(rows)
+        # FZ27.17 only carries the first two Gemeinden -- GEM_NO_WEIGHT is absent
+        # from the weight table and must fall back to weight 1.0.
+        df_fz27 = pd.DataFrame([
+            _minimal_fz27_row(kreis, "GEM_WEIGHTED_A", private_total=200.0),
+            _minimal_fz27_row(kreis, "GEM_WEIGHTED_B", private_total=300.0),
+        ])
+
+        with caplog.at_level(logging.INFO):
+            kreis_priv_2026 = fs.PowertrainModel._kreis_private_electric_share_2026(
+                df_gem_ev, df_fz27)
+
+        expected_mean = (200.0 * 0.02 + 300.0 * 0.04 + 1.0 * 0.10) / (200.0 + 300.0 + 1.0)
+        assert kreis_priv_2026[kreis]["bev"] == pytest.approx(expected_mean)
+
+        combined = " ".join(r.message for r in caplog.records).lower()
+        assert "fallback" in combined
+        # 1 fallback out of 3 Gemeinden = 33.3%.
+        assert "33.3" in combined
+
+    def test_missing_fz27_frame_all_unweighted(self, caplog):
+        """When ``df_gem_fz27`` is ``None`` (FZ27.17 file absent entirely),
+        every Gemeinde falls back to weight 1.0 and the 100% fallback rate is
+        logged loudly (no-silent-fallback rule), not silently absorbed.
+        """
+        kreis = "03102"
+        rows = [
+            _minimal_ev_row(kreis, "GEM_X", bev_share=0.03, phev_share=0.01),
+            _minimal_ev_row(kreis, "GEM_Y", bev_share=0.05, phev_share=0.01),
+        ]
+        df_gem_ev = pd.DataFrame(rows)
+
+        with caplog.at_level(logging.INFO):
+            kreis_priv_2026 = fs.PowertrainModel._kreis_private_electric_share_2026(
+                df_gem_ev, None)
+
+        # Unweighted mean of the two Gemeinden.
+        assert kreis_priv_2026[kreis]["bev"] == pytest.approx((0.03 + 0.05) / 2.0)
+
+        combined = " ".join(r.message for r in caplog.records).lower()
+        assert "fallback" in combined
+        assert "100.0" in combined
 
 
 # ---------------------------------------------------------------------------

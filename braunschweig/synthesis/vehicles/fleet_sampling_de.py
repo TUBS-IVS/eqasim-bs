@@ -235,24 +235,50 @@ class PowertrainModel:
             )
             kreis_psp[kreis] = cls._row_normalise(joint)
 
-        # Per-Kreis private electric shares (FZ 27.15), used as tilt denominator.
-        kreis_priv = cls._kreis_private_electric_share(df_kreis)
+        # Per-Kreis private electric shares (FZ 27.15, 2025), the tilt denominator
+        # for the FZ27.17-fallback path (both 2025 -- already same-vintage).
+        kreis_priv_fz2715 = cls._kreis_private_electric_share(df_kreis)
 
         # Per-Gemeinde electric shares: prefer the 2026 kba_gemeinde_ev.csv source;
         # fall back to the FZ 27.17 kba_gemeinde_private_bev.csv when absent.
+        #
+        # Review Finding 3: the 2026 Gemeinde numerator must NOT be tilted against
+        # the 2025 FZ27.15 Kreis share -- EV grew 2025->2026, so that ratio is
+        # systematically >1 and produces a fleet-wide EV level shift that the
+        # per-Kreis electric rake then preserves. When the 2026 source is active,
+        # the denominator is instead derived from the SAME 2026 file (see
+        # :meth:`_kreis_private_electric_share_2026`), so numerator and
+        # denominator share both vintage and scope.
         try:
             df_gem_ev = ft.load_gemeinde_ev(data_path)
             gem_priv = _gemeinde_electric_share_2026(df_gem_ev)
+            try:
+                df_gem_fz27_weights = ft.load_gemeinde_private_bev(data_path)
+            except FileNotFoundError:
+                df_gem_fz27_weights = None
+                logger.warning(
+                    "[fleet_de] gemeinde EV tilt: FZ27.17 private_total weights "
+                    "absent (kba_gemeinde_private_bev.csv not found); the 2026 "
+                    "same-vintage Kreis-mean denominator will be UNWEIGHTED "
+                    "(every Gemeinde weight = 1)."
+                )
+            kreis_priv = cls._kreis_private_electric_share_2026(
+                df_gem_ev, df_gem_fz27_weights)
             logger.info(
                 "[fleet_de] gemeinde EV tilt: 2026 source (kba_gemeinde_ev); "
-                "%d Gemeinden loaded.", len(gem_priv)
+                "%d Gemeinden loaded; same-vintage (2026/2026) weighted "
+                "Kreis-mean denominator (pure relative tilt, no EV level shift).",
+                len(gem_priv)
             )
         except FileNotFoundError:
             df_gem_fz27 = ft.load_gemeinde_private_bev(data_path)
             gem_priv = cls._gemeinde_private_electric_share(df_gem_fz27)
+            kreis_priv = kreis_priv_fz2715
             logger.info(
                 "[fleet_de] gemeinde EV tilt: FZ27.17 fallback "
-                "(kba_gemeinde_ev.csv absent); %d Gemeinden loaded.", len(gem_priv)
+                "(kba_gemeinde_ev.csv absent); %d Gemeinden loaded; "
+                "same-vintage (2025/2025) FZ27.15 Kreis denominator.",
+                len(gem_priv)
             )
 
         return cls(
@@ -369,14 +395,20 @@ class PowertrainModel:
 
     @staticmethod
     def _kreis_private_electric_share(df_kreis: pd.DataFrame) -> dict[str, dict[str, float]]:
-        """Per-Kreis electric share used as the Gemeinde-tilt denominator.
+        """Per-Kreis electric share used as the Gemeinde-tilt denominator (2025 path).
 
-        FZ 27.15 ``bev_share`` / ``phev_share`` are the all-ownership shares; the
-        Gemeinde table (FZ 27.17) reports the PRIVATE shares. Using the Kreis
-        all-ownership share as the denominator and the Gemeinde private share as
-        the numerator yields a relative within-Kreis tilt that is robust to the
-        ownership-scope difference (the tilt is a ratio of shares, so a constant
-        private:all offset cancels to first order).
+        FZ 27.15 ``bev_share`` / ``phev_share`` are the 2025 all-ownership shares;
+        the FZ27.17 Gemeinde table (also 2025) reports the PRIVATE shares. Using
+        the Kreis all-ownership share as the denominator and the Gemeinde private
+        share as the numerator yields a relative within-Kreis tilt that is robust
+        to the ownership-scope difference (the tilt is a ratio of shares, so a
+        constant private:all offset cancels to first order).
+
+        This denominator is used ONLY when the FZ27.17 Gemeinde source is the
+        active numerator (``kba_gemeinde_ev.csv`` absent) -- numerator and
+        denominator are then both 2025, i.e. already same-vintage. When the 2026
+        ``kba_gemeinde_ev.csv`` numerator is active, :meth:`_kreis_private_electric_share_2026`
+        is used instead so the denominator shares the numerator's 2026 vintage.
         """
         out: dict[str, dict[str, float]] = {}
         for _, row in df_kreis.iterrows():
@@ -384,6 +416,113 @@ class PowertrainModel:
                 "bev": float(row["bev_share"]),
                 "phev": float(row["phev_share"]),
             }
+        return out
+
+    @staticmethod
+    def _kreis_private_electric_share_2026(
+        df_gem_ev: pd.DataFrame,
+        df_gem_fz27: Optional[pd.DataFrame],
+    ) -> dict[str, dict[str, float]]:
+        """Same-vintage (2026) per-Kreis electric share, the Gemeinde-tilt
+        denominator used ONLY when the 2026 ``kba_gemeinde_ev.csv`` numerator
+        (:func:`_gemeinde_electric_share_2026`) is active (review Finding 3).
+
+        Using the 2025 FZ27.15 Kreis share as the denominator for a 2026
+        Gemeinde-level numerator is a vintage mismatch: EV ownership grew
+        2025->2026, so the ratio is systematically greater than one, and the
+        per-Kreis electric rake then PRESERVES that inflated mean -- a
+        fleet-wide EV level shift disguised as a local tilt. This method fixes
+        that by deriving the denominator from the SAME 2026 file: for each
+        Kreis and each electric powertrain (``bev``, ``phev``), the weighted
+        mean of that Kreis's Gemeinde shares, weighted by each Gemeinde's
+        ``private_total`` from FZ 27.17
+        (:func:`braunschweig.data.kba.fleet_tables.load_gemeinde_private_bev`),
+        joined on ``(kreis_ags5, gemeinde_norm)``. Numerator and denominator then
+        share BOTH vintage (2026) AND scope (private cars), so the
+        private-total-weighted Kreis mean of the ratio is ~= 1: a pure
+        within-Kreis relative tilt, not a level shift.
+
+        A Gemeinde with no matching FZ27.17 ``private_total`` (name not present
+        in the FZ27.17 table, or ``df_gem_fz27`` entirely absent) falls back to
+        weight 1.0 (unweighted contribution to the Kreis mean); this fallback
+        rate is logged (no-silent-fallback rule) so a systematically broken join
+        would be visible as a high fallback rate rather than silently degrading
+        every Kreis mean to an unweighted average.
+
+        NOTE ON EV LEVEL: this method only reshapes the WITHIN-Kreis relative
+        tilt. The per-Kreis EV LEVEL itself stays anchored to the per-Kreis
+        powertrain marginal (Regionalstatistik 46251-02, Stichtag 2025-01-01;
+        see :meth:`_kreis_powertrain_marginal_from_fuel` and its FZ27.15
+        fallback :meth:`_kreis_powertrain_marginal`) -- vintage updates to the
+        EV level happen only via marginal refreshes, not via this Gemeinde tilt
+        (ADR-0050 provenance discipline).
+
+        Args:
+            df_gem_ev: The 2026 ``kba_gemeinde_ev.csv`` frame (the same frame
+                passed to :func:`_gemeinde_electric_share_2026` for the
+                numerator), with columns ``kreis_ags5``, ``gemeinde_norm``,
+                ``bev_share``, ``phev_share``.
+            df_gem_fz27: The FZ 27.17 ``kba_gemeinde_private_bev.csv`` frame,
+                used only for its ``private_total`` weights, joined on
+                ``(kreis_ags5, normalize_gemeinde(gemeinde))``; or ``None`` when
+                that file is absent (every Gemeinde then falls back to weight
+                1.0).
+
+        Returns:
+            dict mapping ``kreis_ags5`` to ``{"bev": weighted_mean, "phev":
+            weighted_mean}``. A powertrain key is omitted for a Kreis where no
+            Gemeinde row has a valid (non-NaN) share for it.
+        """
+        weight_by_key: dict[tuple[str, str], float] = {}
+        if df_gem_fz27 is not None:
+            for _, row in df_gem_fz27.iterrows():
+                key = (str(row["kreis_ags5"]), normalize_gemeinde(row["gemeinde"]))
+                weight_by_key[key] = float(row["private_total"])
+
+        weighted_sums: dict[str, dict[str, float]] = {}
+        weight_sums: dict[str, dict[str, float]] = {}
+        weight_primary = 0
+        weight_fallback = 0
+        for _, row in df_gem_ev.iterrows():
+            kreis_ags5 = str(row["kreis_ags5"])
+            gemeinde_norm = str(row["gemeinde_norm"])
+            weight = weight_by_key.get((kreis_ags5, gemeinde_norm))
+            # ``np.isfinite`` also catches a NaN ``private_total`` (should not
+            # occur for a count column, but a NaN weight must never silently
+            # corrupt the weighted mean -- treat it the same as "no match").
+            if weight is None or not np.isfinite(weight):
+                weight = 1.0
+                weight_fallback += 1
+            else:
+                weight_primary += 1
+            kreis_weighted = weighted_sums.setdefault(kreis_ags5, {})
+            kreis_weight = weight_sums.setdefault(kreis_ags5, {})
+            for col, pt in (("bev_share", "bev"), ("phev_share", "phev")):
+                val = row[col]
+                if pd.notna(val):
+                    kreis_weighted[pt] = kreis_weighted.get(pt, 0.0) + weight * float(val)
+                    kreis_weight[pt] = kreis_weight.get(pt, 0.0) + weight
+
+        weight_total = weight_primary + weight_fallback
+        weight_fallback_rate = (weight_fallback / weight_total) if weight_total else 0.0
+        (logger.warning if weight_fallback_rate > 0.5 else logger.info)(
+            "[fleet_de] gemeinde EV tilt: 2026 Kreis-mean denominator weights: "
+            "primary (FZ27.17 private_total) %d/%d (%.1f%%), fallback "
+            "(no FZ27.17 match, weight=1) %d (%.1f%%).",
+            weight_primary, weight_total,
+            100.0 * weight_primary / weight_total if weight_total else 0.0,
+            weight_fallback, 100.0 * weight_fallback_rate,
+        )
+
+        out: dict[str, dict[str, float]] = {}
+        for kreis_ags5, kreis_weighted in weighted_sums.items():
+            kreis_weight = weight_sums[kreis_ags5]
+            shares: dict[str, float] = {}
+            for pt, weighted_sum in kreis_weighted.items():
+                weight_sum = kreis_weight[pt]
+                if weight_sum > 0:
+                    shares[pt] = weighted_sum / weight_sum
+            out[kreis_ags5] = shares
         return out
 
     @staticmethod
