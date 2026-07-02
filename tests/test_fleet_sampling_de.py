@@ -851,3 +851,125 @@ def test_sample_fleet_validation_not_flagged(caplog):
     assert "fleet_validation" in text or "fleet_de" in text, (
         "Expected validation log message not found in captured log"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Task A2 -- validator "segment" target = EFFECTIVE per-car pmf, not raw KBA.  #
+#                                                                               #
+# expected["segment"] used to be sampler.segment_model.kba_marginal (the raw   #
+# national KBA FZ 27.10 marginal). The realised distribution is instead        #
+# status/raumtyp-conditioned (segment_probabilities) AND has its "sonstige"    #
+# mass redistributed over the modelled segments (Task 5), so the raw-KBA      #
+# target cries wolf at scale. These tests pin the fix: the validator target   #
+# must be the EFFECTIVE per-car segment pmf that PASS 1 actually draws from.  #
+# --------------------------------------------------------------------------- #
+
+def test_expected_segment_is_effective_pmf_not_raw_kba(sampler):
+    """validation_summary['dimensions']['segment']['expected'] must equal the
+    EFFECTIVE per-car segment pmf (status/raumtyp-conditioned segment draw with
+    'sonstige' mass redistributed over the modelled segments), independently
+    recomputed here from the same per-car inputs and the same redistribution
+    rule PASS 1 applies -- NOT the raw national KBA FZ 27.10 marginal.
+
+    This does not depend on RNG draws: segment_probabilities(status, raumtyp)
+    and the sonstige redistribution weights are deterministic given the car's
+    (status, raumtyp), so the "effective" target can be recomputed exactly
+    regardless of sample size or seed.
+    """
+    rng_input = np.random.default_rng(11)
+    statuses = list(ft.STATUS_LABELS)
+    kreis = ft.ZGB_KREISE_AGS5[0]
+    rows = []
+    for _ in range(5000):
+        rows.append({
+            "economic_status": str(rng_input.choice(statuses)),
+            "kreis_ags5": kreis,
+            "gemeinde": np.nan,
+            "raumtyp": int(rng_input.choice([71, 72, 73, 74, 75, 76, 77])),
+        })
+    df_cars = pd.DataFrame(rows)
+
+    _, _, summary = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=13, sampler=sampler, consistency_v2=True)
+
+    # Independently recompute the effective segment pmf: seg_pmf with its
+    # "sonstige" mass redistributed over the modelled segments, exactly as
+    # the PASS-1 sonstige redraw does (Task 5).
+    segments = sampler.segment_model.segments
+    modelled_segments = [
+        s for s in segments
+        if s in sampler.model_given_segment and s != "sonstige"
+    ]
+    df_seg_share = ft.load_segment_powertrain(DATA_PATH)
+    seg_share_map = df_seg_share.set_index("segment")["segment_share"].to_dict()
+    raw = np.array([seg_share_map.get(s, 0.0) for s in modelled_segments], dtype=float)
+    modelled_seg_pmf = raw / raw.sum()
+
+    exp_manual = np.zeros(len(segments))
+    for _, car in df_cars.iterrows():
+        seg_pmf = sampler.segment_model.segment_probabilities(
+            car["economic_status"], int(car["raumtyp"]))
+        eff = np.asarray(seg_pmf, dtype=float).copy()
+        s_idx = segments.index("sonstige")
+        mass = eff[s_idx]
+        eff[s_idx] = 0.0
+        for j, seg_name in enumerate(modelled_segments):
+            eff[segments.index(seg_name)] += mass * float(modelled_seg_pmf[j])
+        exp_manual += eff / eff.sum()
+    exp_manual /= len(df_cars)
+
+    expected_from_summary = summary["dimensions"]["segment"]["expected"]
+    for i, seg in enumerate(segments):
+        assert expected_from_summary[seg] == pytest.approx(exp_manual[i], abs=1e-9), (
+            f"segment '{seg}': validator expected {expected_from_summary[seg]} "
+            f"vs manually recomputed effective pmf {exp_manual[i]}"
+        )
+
+    # The fix must actually change something: the effective target must
+    # differ from the raw KBA marginal (else the bug is still present).
+    raw_kba = dict(zip(sampler.segment_model.segments,
+                        sampler.segment_model.kba_marginal))
+    assert any(
+        abs(expected_from_summary[s] - raw_kba.get(s, 0.0)) > 1e-6
+        for s in segments
+    ), "expected['segment'] must differ from the raw KBA marginal after the fix"
+
+    # "sonstige" mass must be fully redistributed away from the target.
+    assert expected_from_summary.get("sonstige", 0.0) == pytest.approx(0.0, abs=1e-9)
+
+    # The target must remain a proper probability distribution.
+    assert sum(expected_from_summary.values()) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_sample_fleet_segment_not_flagged_at_scale(sampler):
+    """At a car count large enough for the sonstige-redistribution gap
+    (~2-3pp) to exceed the Monte-Carlo band, the validator must NOT flag
+    'segment' DRIFT against the effective target -- and the raw KBA marginal
+    (the pre-fix target) WOULD have flagged, demonstrating this is the fix
+    for the cry-wolf bug (review Finding 2), not a widened tolerance.
+    """
+    df_cars = _make_cars(n_per_kreis=4000)  # 32,000 cars across 8 ZGB Kreise.
+    df_spec, _, summary = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
+
+    seg_summary = summary["dimensions"]["segment"]
+    assert seg_summary["flagged"] is False, (
+        f"segment flagged DRIFT against the effective target at scale: "
+        f"max_dev={seg_summary['max_abs_pp']}pp band={seg_summary['band_pp']}pp"
+    )
+
+    # Demonstrate the bug this fixes: re-validating against the raw KBA
+    # marginal (the OLD, wrong target) flags DRIFT at this n.
+    from braunschweig.synthesis.vehicles import fleet_validation as fv
+    raw_kba_expected = {
+        s: float(v)
+        for s, v in zip(sampler.segment_model.segments,
+                        sampler.segment_model.kba_marginal)
+    }
+    raw_summary = fv.validate_realised_margins(
+        df_spec, {"segment": raw_kba_expected}, sample_rate=1.0)
+    assert raw_summary["dimensions"]["segment"]["flagged"] is True, (
+        "Expected the raw-KBA segment target to flag DRIFT at this n "
+        "(demonstrates the cry-wolf bug); if this no longer flags, the "
+        "fixture's n is too small to exercise the regression."
+    )

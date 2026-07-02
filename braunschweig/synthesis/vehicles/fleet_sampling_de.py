@@ -1482,6 +1482,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # Gemeinde tilt (the tilt is already in this pmf). Its per-Kreis mean
         # electric mass equals the FZ 27.15 share for the no-tilt case.
         car_unmasked_pmf: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        # Task A2: accumulate the EFFECTIVE per-car segment pmf for the
+        # realised-margin validator -- seg_pmf with its "sonstige" mass
+        # redistributed over the modelled segments exactly as the redraw
+        # below, so the validator target reflects the status/raumtyp-
+        # conditioned + sonstige-redistributed distribution PASS 1 actually
+        # draws from, not the raw national KBA FZ 27.10 marginal.
+        _exp_segment = np.zeros(len(segments))
         for i, car in enumerate(records):
             status = car["economic_status"]
             kreis = str(car["kreis_ags5"])
@@ -1494,6 +1501,20 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             # 1. segment <- income-coupled segment IPF.
             seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
             segment = _draw_categorical(rng, segments, seg_pmf)
+
+            # Task A2: effective segment pmf for the validator -- seg_pmf with
+            # its "sonstige" mass redistributed over the modelled segments
+            # exactly as the redraw below (computed from seg_pmf BEFORE the
+            # draw, so it reflects the target distribution, not this car's
+            # realised draw).
+            eff_seg = np.asarray(seg_pmf, dtype=float).copy()
+            if _modelled_seg_pmf is not None:
+                s_idx = segments.index("sonstige")
+                mass = eff_seg[s_idx]
+                eff_seg[s_idx] = 0.0
+                for j, seg_name in enumerate(_modelled_segments):
+                    eff_seg[segments.index(seg_name)] += mass * float(_modelled_seg_pmf[j])
+            _exp_segment += eff_seg / eff_seg.sum()
 
             # Task 5: if sonstige drawn, redraw from modelled segments.
             if segment == "sonstige" and _modelled_seg_pmf is not None:
@@ -1757,12 +1778,14 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             euro_labels=list(ft.EURO_CLASS_LABELS),
             drawn_powertrains=_v3_powertrains,
         )
-        # Segment: the KBA FZ 27.10 marginal is the segment draw target;
-        # compare realised segment shares to sampler.segment_model.kba_marginal.
+        # Task A2 (review Finding 2): the segment draw target is the EFFECTIVE
+        # per-car segment pmf accumulated in PASS 1 (status/raumtyp-
+        # conditioned segment_probabilities, with "sonstige" mass
+        # redistributed over the modelled segments) -- NOT the raw national
+        # KBA FZ 27.10 marginal, which the realised distribution does not
+        # target and which flagged DRIFT on essentially every run at scale.
         _expected["segment"] = {
-            s: float(v)
-            for s, v in zip(sampler.segment_model.segments,
-                            sampler.segment_model.kba_marginal)
+            s: float(v) / n for s, v in zip(segments, _exp_segment)
         }
         _validation_summary = _fv.validate_realised_margins(
             df_spec, _expected, sample_rate=1.0)
