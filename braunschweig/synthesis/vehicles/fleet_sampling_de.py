@@ -1167,6 +1167,162 @@ def _build_model_fuel_weights(mf_df: "pd.DataFrame") -> "dict[str, np.ndarray]":
 
 
 # --------------------------------------------------------------------------- #
+# Task B2: EV-income tilt -- P(bev/phev | economic_status) vs the pooled MiD mix
+# --------------------------------------------------------------------------- #
+#: Minimum MiD base_weighted for a (status, powertrain) cell to be used
+#: directly; below this the cell is treated as too sparse to carry a signal
+#: and the tilt factor falls back to 1.0 (no-op) for that cell -- same
+#: threshold and rationale as :data:`age_income.MIN_CELL_WEIGHT`.
+EV_INCOME_MIN_CELL_WEIGHT: float = 30.0
+
+
+@dataclass
+class EvIncomeTiltModel:
+    """Within-Kreis EV-income tilt: ``f_pt(status) = clip(P(pt|status) / P(pt|all), 0.2, 5.0)``.
+
+    Built from :func:`~braunschweig.data.kba.fleet_tables.load_mid_antrieb_by_status`
+    (MiD 2023 vehicle powertrain x economic status). For each economic status and
+    each electric powertrain (``bev``, ``phev``) the tilt is the ratio of the
+    status-conditional MiD powertrain share to the pooled ("all") MiD share,
+    clipped to ``[0.2, 5.0]`` (the same anti-explosion band used by the Gemeinde
+    and grid electric tilts, see :meth:`PowertrainModel._apply_gemeinde_tilt`).
+    Every other powertrain carries a factor of 1.0 (untouched).
+
+    CRITICAL PLACEMENT (see :func:`sample_fleet`, PASS 1): the tilt must be
+    applied to the car's WORKING powertrain pmf strictly AFTER the
+    ``unmasked_pmf`` snapshot is taken and BEFORE the model-feasibility mask.
+    Because the Task 7 per-Kreis electric rake targets the mean of
+    ``unmasked_pmf`` (which never sees this tilt), the tilt only REDISTRIBUTES
+    electric mass within a Kreis toward higher-status households; it cannot
+    drift the per-Kreis electric AGGREGATE away from the spatial (KBA) target
+    (the same design as the income-age tilt vs the KBA age marginal).
+
+    Thin-cell rule: a (status, powertrain) cell whose ``base_weighted`` is below
+    :data:`EV_INCOME_MIN_CELL_WEIGHT` is treated as too sparse to carry a
+    signal -- the factor is forced to 1.0 and the cell is counted/logged (a
+    thin MiD cell must never inject noise into the fleet).
+    """
+
+    #: status -> length-len(POWERTRAINS) multiplicative factor vector (only the
+    #: bev/phev entries can differ from 1.0).
+    _factors: dict[str, np.ndarray]
+    #: Statuses whose electric cells were ALL either missing or thin -- their
+    #: factor vector is all-ones and a lookup counts as a fallback, not a
+    #: primary hit (there is no real MiD signal behind it).
+    _fallback_statuses: set = field(default_factory=set)
+    # Mutable fallback counters (no-silent-fallback rule).
+    _ev_income_primary: int = field(default=0)
+    _ev_income_fallback: int = field(default=0)
+
+    @classmethod
+    def _from_dataframe(cls, df: pd.DataFrame) -> "EvIncomeTiltModel":
+        """Build from a DataFrame with the ``mid2023_antrieb_by_status.csv`` schema.
+
+        Exposed for unit tests that inject a synthetic table without touching
+        the filesystem.
+        """
+        idx = {p: i for i, p in enumerate(POWERTRAINS)}
+        all_rows = df[df["status"] == "all"].set_index("powertrain")
+        factors: dict[str, np.ndarray] = {}
+        fallback_statuses: set = set()
+        n_thin_cells = 0
+        n_checked_cells = 0
+        for status in ft.STATUS_LABELS:
+            vec = np.ones(len(POWERTRAINS), dtype=float)
+            status_rows = df[df["status"] == status].set_index("powertrain")
+            any_real_signal = False
+            for pt in ELECTRIC_POWERTRAINS:
+                n_checked_cells += 1
+                if pt not in status_rows.index or pt not in all_rows.index:
+                    logger.warning(
+                        "[fleet_de] EV-income tilt: (status=%s, powertrain=%s) "
+                        "missing from mid2023_antrieb_by_status.csv -> factor=1.0",
+                        status, pt,
+                    )
+                    continue
+                base_weighted = float(status_rows.loc[pt, "base_weighted"])
+                if base_weighted < EV_INCOME_MIN_CELL_WEIGHT:
+                    n_thin_cells += 1
+                    logger.warning(
+                        "[fleet_de] EV-income tilt: thin MiD cell (status=%s, "
+                        "powertrain=%s, base_weighted=%.1f < %.0f) -> factor=1.0 "
+                        "(a sparse cell must not inject noise).",
+                        status, pt, base_weighted, EV_INCOME_MIN_CELL_WEIGHT,
+                    )
+                    continue
+                p_all = float(all_rows.loc[pt, "share"])
+                if p_all <= 0.0:
+                    logger.warning(
+                        "[fleet_de] EV-income tilt: pooled 'all' share for "
+                        "powertrain '%s' is zero -> factor=1.0 for status '%s'.",
+                        pt, status,
+                    )
+                    continue
+                p_status = float(status_rows.loc[pt, "share"])
+                factor = float(np.clip(p_status / p_all, 0.2, 5.0))
+                vec[idx[pt]] = factor
+                any_real_signal = True
+            factors[status] = vec
+            if not any_real_signal:
+                fallback_statuses.add(status)
+        if n_thin_cells:
+            logger.warning(
+                "[fleet_de] EV-income tilt: %d/%d (status, electric powertrain) "
+                "cells below the thin-cell threshold (base_weighted < %.0f); "
+                "factor forced to 1.0 for those cells.",
+                n_thin_cells, n_checked_cells, EV_INCOME_MIN_CELL_WEIGHT,
+            )
+        return cls(_factors=factors, _fallback_statuses=fallback_statuses)
+
+    @classmethod
+    def from_data_path(cls, data_path: str) -> "EvIncomeTiltModel":
+        """Construct from the committed ``mid2023_antrieb_by_status.csv``.
+
+        Raises:
+            FileNotFoundError: propagated from the loader when the derived CSV
+                is absent (the caller, :meth:`FleetSampler.from_data_path`,
+                catches this and leaves the tilt inactive).
+        """
+        df = ft.load_mid_antrieb_by_status(data_path)
+        return cls._from_dataframe(df)
+
+    def tilt(self, status: str) -> np.ndarray:
+        """Return the length-len(POWERTRAINS) multiplicative factor vector for *status*.
+
+        An all-ones vector means no income signal is applied (either the
+        status is unknown, or every electric cell for it was missing/thin).
+        Counts a primary hit only when at least one electric powertrain of
+        *status* carries a real (non-thin, present) MiD-derived factor.
+        """
+        vec = self._factors.get(status)
+        if vec is None:
+            self._ev_income_fallback += 1
+            logger.warning(
+                "[fleet_de] EV-income tilt: unknown economic status '%s' -> "
+                "factor=1.0 (no tilt applied).", status,
+            )
+            return np.ones(len(POWERTRAINS), dtype=float)
+        if status in self._fallback_statuses:
+            self._ev_income_fallback += 1
+        else:
+            self._ev_income_primary += 1
+        return vec
+
+    def log_fallback_rate(self) -> tuple[int, int]:
+        """Log the primary-vs-fallback rate (no-silent-fallback rule)."""
+        primary = self._ev_income_primary
+        fallback = self._ev_income_fallback
+        total = primary + fallback
+        rate = (fallback / total) if total else 0.0
+        (logger.warning if rate > 0.5 else logger.info)(
+            "[fleet_de] EV-income tilt: primary %d/%d (%.1f%%), fallback %d (%.1f%%)",
+            primary, total, 100.0 * primary / total if total else 0.0,
+            fallback, 100.0 * rate,
+        )
+        return primary, fallback
+
+
+# --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -1203,6 +1359,12 @@ class FleetSampler:
     #: ``kba_model_fuel.csv``; ``None`` when the file is absent, which restores the
     #: binary (0/1) feasibility mask -- byte-identical fallback.
     model_fuel: Optional[dict[str, np.ndarray]] = None
+    #: Task B2: EV-income tilt (bev/phev vs economic status) built from
+    #: ``mid2023_antrieb_by_status.csv``. ``None`` when the file is absent, which
+    #: disables the tilt entirely (PASS 1 in :func:`sample_fleet` checks
+    #: ``sampler.ev_income_tilt is not None`` before ever calling it) --
+    #: byte-identical fallback.
+    ev_income_tilt: Optional[EvIncomeTiltModel] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -1252,6 +1414,23 @@ class FleetSampler:
             logger.info(
                 "[fleet_de] model-fuel weight: absent -> binary feasibility mask."
             )
+        # Task B2: EV-income tilt. Absent CSV -> tilt inactive, byte-identical
+        # to the pre-Task-B2 behaviour (see EvIncomeTiltModel docstring for the
+        # placement rationale -- the caller in sample_fleet only ever consults
+        # ``sampler.ev_income_tilt`` when it is not None).
+        ev_income_tilt: Optional[EvIncomeTiltModel] = None
+        try:
+            ev_income_tilt = EvIncomeTiltModel.from_data_path(data_path)
+            logger.info(
+                "[fleet_de] EV-income tilt: active "
+                "(mid2023_antrieb_by_status.csv found)."
+            )
+        except FileNotFoundError:
+            logger.info(
+                "[fleet_de] EV-income tilt: mid2023_antrieb_by_status.csv "
+                "absent -> tilt inactive (byte-identical to the no-tilt "
+                "behaviour)."
+            )
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -1263,6 +1442,7 @@ class FleetSampler:
             feasible_fuels=feasible_fuels,
             age_euro_joint_kreis=age_euro_joint_kreis,
             model_fuel=model_fuel,
+            ev_income_tilt=ev_income_tilt,
         )
 
 
@@ -1430,7 +1610,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  model_brands: bool = True,
                  consistency_v2: bool = True,
                  age_income_coupling: bool = True,
-                 age_euro_joint: bool = True
+                 age_euro_joint: bool = True,
+                 ev_income_tilt: bool = True,
                  ) -> "tuple[pd.DataFrame, pd.DataFrame] | tuple[pd.DataFrame, pd.DataFrame, dict]":
     """Draw a full vehicle specification for every household car.
 
@@ -1469,6 +1650,18 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         indexed by ``(segment, economic_status)``. When ``False`` OR when
         ``consistency_v2=False``, the unmodified ``P(age | powertrain)`` is used
         (byte-identical to the pre-Feature-B behaviour).
+    ev_income_tilt : when ``True`` (default) AND ``consistency_v2=True`` AND the
+        sampler carries an active :class:`EvIncomeTiltModel` (built from
+        ``mid2023_antrieb_by_status.csv`` by :meth:`FleetSampler.from_data_path`;
+        ``None`` when that CSV is absent), PASS 1 multiplies the car's working
+        powertrain pmf by ``EvIncomeTiltModel.tilt(economic_status)`` strictly
+        AFTER the Task-7 rake-target (``unmasked_pmf``) snapshot and BEFORE the
+        model-feasibility mask. This redistributes bev/phev mass toward
+        higher-status households WITHIN each Kreis while leaving the Task-7
+        per-Kreis electric AGGREGATE (rake target = mean ``unmasked_pmf``)
+        unchanged. ``False``, ``consistency_v2=False``, or an absent CSV leave
+        the powertrain pmf untouched (byte-identical to the pre-Task-B2
+        behaviour).
 
     Returns
     -------
@@ -1728,6 +1921,16 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 grid_ev_share=_grid_ev,
                 gemeinde_grid_mean=_gem_mean)
             unmasked_pmf = pt_pmf.copy()  # Task 7 rake target (tilt-preserving).
+            # Task B2: EV-income tilt -- applied to the WORKING pt_pmf only, NEVER
+            # to unmasked_pmf captured just above. The Task 7 per-Kreis electric
+            # rake (below) targets the mean of unmasked_pmf (spatial-only), so this
+            # tilt cannot drift the per-Kreis electric AGGREGATE away from the KBA
+            # target; it only redistributes electric mass within the Kreis toward
+            # higher-status households. Must stay strictly BEFORE the feasibility
+            # mask below so it composes with masking exactly like the Gemeinde/grid
+            # tilts (CRITICAL PLACEMENT -- see EvIncomeTiltModel docstring).
+            if ev_income_tilt and sampler.ev_income_tilt is not None:
+                pt_pmf = pt_pmf * sampler.ev_income_tilt.tilt(status)
             feasible = None
             if _feasible_fuels is not None and model:
                 feasible = _feasible_fuels.model_feasible_powertrains(
@@ -1920,6 +2123,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     sampler.powertrain_model.log_fallback_rate()
     if age_model is not None:
         age_model.log_fallback_rate()
+    if consistency_v2 and ev_income_tilt and sampler.ev_income_tilt is not None:
+        sampler.ev_income_tilt.log_fallback_rate()
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
     if model_brands:
         _log_simple_fallback("brand/model draw", brand_model_fallback, n)

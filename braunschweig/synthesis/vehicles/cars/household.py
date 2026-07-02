@@ -448,6 +448,16 @@ def configure(context):
     # byte-identical to pre-Feature-B. Only active when consistency_v2 is also
     # True (the tilt lives inside the v2 block of sample_fleet).
     context.config("fleet_age_income_coupling", True)
+    # Task B2: EV-income tilt flag. When True (default) the v2 path applies
+    # f_pt(status) = clip(P(pt|status)/P(pt|all), 0.2, 5.0), pt in {bev, phev},
+    # from the committed MiD 2023 powertrain-by-economic-status table -- a
+    # within-Kreis redistribution toward higher-status households that leaves
+    # the per-Kreis electric AGGREGATE (Task 7 rake target) unchanged. False,
+    # or an absent mid2023_antrieb_by_status.csv (server-generated, not always
+    # present locally), disables the tilt (byte-identical). Only active when
+    # consistency_v2 is also True (the tilt lives inside the v2 block of
+    # sample_fleet).
+    context.config("fleet_ev_income_tilt", True)
     # T9b: default is the new grid-tilt mode; falls back gracefully to Gemeinde-
     # only when kba_ev_grid.csv is absent.  The legacy Gemeinde-only mode
     # ("kreis_mix_gemeinde_bev_tilt") remains supported for explicit rollback.
@@ -475,6 +485,7 @@ def execute(context):
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
     consistency_v2 = bool(context.config("fleet_consistency_v2"))
     age_income_coupling = bool(context.config("fleet_age_income_coupling"))
+    ev_income_tilt = bool(context.config("fleet_ev_income_tilt"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -584,7 +595,8 @@ def execute(context):
     _fleet_result = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands, consistency_v2=consistency_v2,
-        age_income_coupling=age_income_coupling)
+        age_income_coupling=age_income_coupling,
+        ev_income_tilt=ev_income_tilt)
     if len(_fleet_result) == 3:
         df_spec, df_vehicle_types, _ = _fleet_result
     else:
