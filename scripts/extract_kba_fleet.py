@@ -22,9 +22,10 @@ Legacy xlsx inputs (``kba/`` root, Stichtag 01.01.2025 unless stated):
 Regionalization inputs (``kba/raw/`` subdirectory):
 
 - ``regionalstatistik_46251_02_fuel_kreis_20250101.csv`` (Destatis, Stichtag 01.01.2025)
-    * per-Kreis Pkw by fuel type (ZGB Kreise only)        -> kba_kreis_fuel.csv
+    * per-Kreis Pkw by fuel type (ALL German Kreise)      -> kba_kreis_fuel.csv
 - ``regionalstatistik_46251_03_euro_kreis_20250101.csv`` (Destatis, Stichtag 01.01.2025)
-    * per-Kreis Pkw by Euro emission group (ZGB only)     -> kba_kreis_euro.csv
+    * per-Kreis Pkw by Euro emission group + Euro-6 substage cols (ALL German Kreise)
+                                                          -> kba_kreis_euro.csv
 - ``statista_kba_3438_pkw_age_national_2026.xlsx`` (KBA/Statista ID3438, Stichtag 01.01.2026)
     * national Pkw age-band distribution (VALIDATION anchor, not IPF control)
                                                           -> kba_age_national.csv

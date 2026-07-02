@@ -44,13 +44,15 @@ files to run.  Re-running `scripts/extract_kba_fleet.py` regenerates them identi
 
 | File | Stichtag | Provenance | Content |
 |------|----------|------------|---------|
-| `kba_kreis_fuel.csv` | 2025-01-01 | Destatis Regionalstatistik 46251-02 | Per-Kreis Pkw counts and shares by fuel type (petrol, diesel, gas, bev, phev, hybrid, other); ZGB Kreise only (8 rows) |
-| `kba_kreis_euro.csv` | 2025-01-01 | Destatis Regionalstatistik 46251-03 | Per-Kreis Pkw counts and shares by Euro emission group (euro1–euro6, other); two rows per Kreis (teil=all / teil=diesel); ZGB Kreise only |
+| `kba_kreis_fuel.csv` | 2025-01-01 | Destatis Regionalstatistik 46251-02 | Per-Kreis Pkw counts and shares by fuel type (petrol, diesel, gas, bev, phev, hybrid, other); ALL German Kreise (~400 rows) so cross-cordon in-commuters get their real home-Kreis fuel mix; the 8 ZGB Kreise are a required subset (loader `_require_zgb_subset`) |
+| `kba_kreis_euro.csv` | 2025-01-01 | Destatis Regionalstatistik 46251-03 | Per-Kreis Pkw counts and shares by Euro emission group (euro1–euro6, other); two rows per Kreis (teil=all / teil=diesel); ALL German Kreise (~400 rows), ZGB a required subset. Additive Euro-6 substage count/share columns (`euro6ab`, `euro6dtemp`, `euro6d`) partition the euro6 group for the conditional Euro-6 substage draw (Task B4) |
 | `kba_age_national.csv` | 2026-01-01 | KBA / Statista ID 3438 | National Pkw age-band distribution (6 bands) as share_pct; VALIDATION ANCHOR only — not used as an IPF control; file is prepended with a `# mean_age_years=10.9 source=KBA/Statista ID3438 stichtag=2026-01-01` comment line |
 | `kba_gemeinde_ev.csv` | 2026-04-01 | KBA per-Gemeinde EV timeseries | Per-Gemeinde EV/BEV/PHEV/fuel-cell shares (fractions); latest period only; ZGB Gemeinden only |
 | `kba_model_fuel.csv` | 2026-01-01 | KBA Modellreihen Bestand 01.01.2026 | Per-model-series fuel shares (petrol, diesel, hybrid, phev, bev); used by fleet_sampling_de to regionalise model-specific powertrain mix |
 | `kba_ev_grid.csv` | 2026-04-01 | KBA 5 km EV grid (April 2026) | Per-cell EV share (fraction), cell bounding box in EPSG:3857 (minx/miny/maxx/maxy), suppression flag; ZGB bbox clip applied |
 | `kba_ev_regiostar7.csv` | latest reporting period | KBA per-RegioStaR7 EV timeseries | National EV share (fraction) per RegioStaR-7 code (71–77); LOGGING-ONLY cross-check (Task B6), not an IPF control; consumed by `fleet_validation.crosscheck_ev_by_regiostar7` |
+| `kba_fuel_euro6_substage_nds.csv` | 2025-01-01 | KBA FZ 27.4 (Niedersachsen) | National/NDS fuel × Euro-6 substage (`euro6ab`, `euro6dtemp`, `euro6d`) shares within each fuel's euro6 group; supplies the fuel-conditioned prior for the Euro-6 substage draw where a Kreis lacks its own 46251-03 substage columns (Task B4). Zero-euro6 fuels are guarded to share 0.0 (no NaN) |
+| `mid2023_antrieb_by_status.csv` | (survey — no Stichtag) | MiD 2023 (`MiD2023_Autos`, A_ANTRIEB × oek_status) | A_GEW-weighted `P(powertrain \| economic status)` plus an `all` denominator row; drives the within-Kreis EV-income tilt (BEV/PHEV mass shifted toward higher-income households, per-Kreis electric aggregate preserved). Survey table — carries NO `stichtag` column, like its sibling `mid2023_age_by_segment_status.csv` (Task B1) |
 
 ### Legacy outputs (present before 2026-07-02)
 
@@ -82,11 +84,14 @@ files to run.  Re-running `scripts/extract_kba_fleet.py` regenerates them identi
 
 ## Provenance note
 
-Multiple Stichtag vintages are present by design (see ADR-0050).  The 46251 fuel and euro
-data share Stichtag 2025-01-01 and are combinable.  The EV tilt data (Gemeinde and grid)
-carry Stichtag 2026-04-01 and are used as ratio tilts, not hard counts, so the ~15-month lag
-to the 46251 base is scientifically acceptable.  The Modellreihen and age data carry
-Stichtag 2026-01-01.  No reconciliation of absolute counts across vintages is performed.
+Multiple Stichtag vintages are present by design (see ADR-0050 and ADR-0051).  The 46251 fuel
+and euro data share Stichtag 2025-01-01 and are combinable; the FZ 27.4 Euro-6 substage table
+(`kba_fuel_euro6_substage_nds.csv`) shares this 2025-01-01 vintage.  The EV tilt data (Gemeinde
+and grid) carry Stichtag 2026-04-01 and are used as ratio tilts, not hard counts, so the ~15-month
+lag to the 46251 base is scientifically acceptable.  The Modellreihen and age data carry Stichtag
+2026-01-01.  The MiD-2023 survey table (`mid2023_antrieb_by_status.csv`) carries NO `stichtag`
+column — it is a household-survey distribution used as a within-Kreis ratio tilt, not a register
+count.  No reconciliation of absolute counts across vintages is performed.
 
 KBA register data counts vehicles REGISTERED in a Kreis (including company/leasing cars at
 the business-seat address).  The synthesis produces HOUSEHOLD cars.  Spatial patterns and

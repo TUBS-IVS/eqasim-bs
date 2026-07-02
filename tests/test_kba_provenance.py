@@ -17,6 +17,12 @@ Expected stichtag values by extractor:
 - ``extract_model_fuel``         -> ``"2026-01-01"``  (KBA Modellreihen, Stichtag 01.01.2026)
 - ``extract_gemeinde_ev``        -> ``"2026-04-01"``  (KBA per-Gemeinde EV, April 2026)
 - ``extract_ev_grid``            -> ``"2026-04-01"``  (KBA 5 km EV grid, April 2026)
+- ``extract_ev_regiostar7``      -> latest-period-derived (``"2026-04-01"`` for a "2026.04" fixture)
+
+Note: ``build_mid_antrieb_by_status.py`` (Task B1) deliberately emits NO ``stichtag``
+column -- it is a MiD-2023 household-survey distribution, not a register snapshot,
+mirroring its sibling ``mid2023_age_by_segment_status.csv`` -- so it is out of scope
+for this file's "extractor that emits a stichtag" contract and is not tested here.
 
 Fixture-construction patterns match those in the sibling test files
 ``test_extract_kba_46251.py``, ``test_extract_kba_age_national.py``,
@@ -229,3 +235,36 @@ def test_extract_ev_grid_stichtag(tmp_path):
     assert (df["stichtag"] == "2026-04-01").all(), (
         f"Unexpected stichtag values: {df['stichtag'].unique().tolist()}"
     )
+
+
+def test_extract_ev_regiostar7_stichtag(tmp_path):
+    """extract_ev_regiostar7 (Task B6): stichtag is derived from the LATEST
+    reporting period ('2026.04' -> '2026-04-01'); only the latest period is
+    kept and the residual RegioStaR7 code 99 ('keine Zuordnung') is dropped.
+    """
+    csv_path = tmp_path / "kba_ev_regiostar7_timeseries_2023_2026.csv"
+    # utf-8-sig, comma-separated (matches the raw file + extract_gemeinde_ev
+    # fixture style): field separator is a comma, so the "Pkw Elektro Anteil"
+    # decimal uses a dot -- the extractor's defensive str.replace(",", ".") is a
+    # no-op here. Includes an older period, the latest period, and a code-99 row
+    # ("keine Zuordnung") that the extractor must drop.
+    csv_path.write_text(
+        "Berichtszeitpunkt,Regiostar7 Nummer,Pkw Elektro Anteil\n"
+        "2025.04,71,3.0\n"   # older period -> dropped by latest-period filter
+        "2026.04,71,4.5\n"
+        "2026.04,77,2.1\n"
+        "2026.04,99,9.9\n",  # 'keine Zuordnung' -> dropped
+        encoding="utf-8-sig",
+    )
+    df = ex.extract_ev_regiostar7(csv_path)
+    assert "stichtag" in df.columns, "stichtag column missing from ev_regiostar7 output"
+    assert (df["stichtag"] == "2026-04-01").all(), (
+        f"Unexpected stichtag values: {df['stichtag'].unique().tolist()}"
+    )
+    # Only the latest period is kept and code 99 is dropped -> codes {71, 77}.
+    assert sorted(df["rs7"].tolist()) == [71, 77], (
+        f"Unexpected rs7 codes: {df['rs7'].tolist()}"
+    )
+    # Percent -> fraction: '4.5' -> 0.045.
+    rs71 = df.loc[df["rs7"] == 71, "ev_share"].iloc[0]
+    assert rs71 == pytest.approx(0.045, abs=1e-9), f"rs7=71 ev_share={rs71}"
