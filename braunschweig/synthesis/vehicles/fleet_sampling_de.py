@@ -1409,8 +1409,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             segment = _draw_categorical(rng, segments, seg_pmf)
 
             # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
+            # T9b: pass optional grid columns (None when absent -> no-op).
+            _grid_ev = car.get("grid_ev_share")
+            _gem_mean = car.get("gemeinde_grid_mean")
             pt_pmf = sampler.powertrain_model.powertrain_probabilities(
-                segment, kreis, gemeinde)
+                segment, kreis, gemeinde,
+                grid_ev_share=_grid_ev,
+                gemeinde_grid_mean=_gem_mean)
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
 
             # 3. euro_class <- P(euro | powertrain).
@@ -1488,8 +1493,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
 
             # 3. feasible-fuels mask (Task 6): derive the powertrain set this model
             # can carry. None -> unknown model -> no mask.
+            # T9b: pass optional grid columns (None when absent -> no-op).
+            _grid_ev = car.get("grid_ev_share")
+            _gem_mean = car.get("gemeinde_grid_mean")
             pt_pmf = sampler.powertrain_model.powertrain_probabilities(
-                segment, kreis, gemeinde)
+                segment, kreis, gemeinde,
+                grid_ev_share=_grid_ev,
+                gemeinde_grid_mean=_gem_mean)
             unmasked_pmf = pt_pmf.copy()  # Task 7 rake target (tilt-preserving).
             feasible = None
             if _feasible_fuels is not None and model:
