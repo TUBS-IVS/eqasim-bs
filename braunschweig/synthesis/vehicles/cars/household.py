@@ -458,6 +458,14 @@ def configure(context):
     # consistency_v2 is also True (the tilt lives inside the v2 block of
     # sample_fleet).
     context.config("fleet_ev_income_tilt", True)
+    # Task B5: Euro-6 substage (6ab/6d-temp/6d) conditional draw flag. When
+    # True (default) the v2 path refines a combustion vehicle's headline
+    # "euro6" draw into one of the three real Euro-6 substages via the
+    # per-Kreis / national FZ 27.4 fallback chain (see
+    # fleet_sampling_de.Euro6SubstageModel). False, consistency_v2=False, or
+    # absent substage CSVs (server-generated, not always present locally)
+    # leave the plain "euro6" label (byte-identical).
+    context.config("fleet_euro6_substage", True)
     # T9b: default is the new grid-tilt mode; falls back gracefully to Gemeinde-
     # only when kba_ev_grid.csv is absent.  The legacy Gemeinde-only mode
     # ("kreis_mix_gemeinde_bev_tilt") remains supported for explicit rollback.
@@ -486,6 +494,7 @@ def execute(context):
     consistency_v2 = bool(context.config("fleet_consistency_v2"))
     age_income_coupling = bool(context.config("fleet_age_income_coupling"))
     ev_income_tilt = bool(context.config("fleet_ev_income_tilt"))
+    euro6_substage = bool(context.config("fleet_euro6_substage"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -596,7 +605,8 @@ def execute(context):
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands, consistency_v2=consistency_v2,
         age_income_coupling=age_income_coupling,
-        ev_income_tilt=ev_income_tilt)
+        ev_income_tilt=ev_income_tilt,
+        euro6_substage=euro6_substage)
     if len(_fleet_result) == 3:
         df_spec, df_vehicle_types, _ = _fleet_result
     else:

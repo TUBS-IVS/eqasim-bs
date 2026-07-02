@@ -1198,6 +1198,226 @@ def _draw_age_euro_joint(rng: np.random.Generator, joint_matrix: np.ndarray,
 
 
 # --------------------------------------------------------------------------- #
+# Task B5: Euro-6 substage (6ab / 6d-temp / 6d) conditional draw
+# --------------------------------------------------------------------------- #
+def _euro6_substage_given_kreis(data_path: str) -> "dict[tuple[str, str], np.ndarray]":
+    """``P(substage | euro6, kreis, powertrain)`` from the Euro-6 substage
+    columns on ``kba_kreis_euro.csv`` (Task B4: ``euro6d``, ``euro6dtemp``,
+    ``euro6ab``), composed diesel-vs-non-diesel EXACTLY like the headline euro
+    joint (see :func:`_euro_given_kreis_powertrain`, "T6b"):
+
+    * ``diesel``: the ``teil=="diesel"`` row's substage counts, normalised.
+    * ``petrol``, ``gas``, ``other``: ``max(all - diesel, 0)`` per substage
+      column, normalised. 46251-03 does not break the substage down by
+      individual fuel, so these three non-diesel combustion fuels share the
+      same composed shape (same documented assumption as T6b).
+
+    Returns an EMPTY dict (never ``None``) when ``kba_kreis_euro.csv`` is
+    absent, so the caller (:class:`Euro6SubstageModel`) falls straight through
+    to the national fallback. A (Kreis, diesel/non-diesel) cell whose composed
+    substage counts sum to zero or NaN (pre-Task-B4 zero-filled data -- see
+    :func:`braunschweig.data.kba.fleet_tables.load_kreis_euro` -- or a
+    genuinely Euro-6-substage-free Kreis-fuel) is OMITTED from the returned
+    dict rather than stored as a degenerate 0/0 pmf (no-silent-fallback rule):
+    a missing key is the caller's signal to fall back to the national pmf.
+    """
+    substages = list(ft.EURO6_SUBSTAGE_LABELS)
+    try:
+        df = ft.load_kreis_euro(data_path)
+    except FileNotFoundError:
+        logger.info(
+            "[fleet_de] Euro-6 substage: kba_kreis_euro.csv absent -> "
+            "per-Kreis substage composition disabled (national fallback / "
+            "plain-euro6 fallback only)."
+        )
+        return {}
+
+    _DIESEL_PT = "diesel"
+    _NON_DIESEL_COMBUSTIONs = {"petrol", "gas", "other"}
+    out: dict[tuple[str, str], np.ndarray] = {}
+    n_diesel_ok = 0
+    n_diesel_zero = 0
+    n_nondiesel_ok = 0
+    n_nondiesel_zero = 0
+
+    for kreis_ags5, grp in df.groupby("kreis_ags5"):
+        kreis = str(kreis_ags5)
+        row_all = grp[grp["teil"] == "all"]
+        row_dsl = grp[grp["teil"] == "diesel"]
+        if row_all.empty:
+            continue
+        all_counts = np.nan_to_num(
+            np.array([row_all.iloc[0][s] for s in substages], dtype=float))
+        if not row_dsl.empty:
+            dsl_counts = np.nan_to_num(
+                np.array([row_dsl.iloc[0][s] for s in substages], dtype=float))
+        else:
+            dsl_counts = np.zeros(len(substages), dtype=float)
+
+        s_dsl = dsl_counts.sum()
+        if s_dsl > 0:
+            out[(kreis, _DIESEL_PT)] = dsl_counts / s_dsl
+            n_diesel_ok += 1
+        else:
+            n_diesel_zero += 1
+
+        non_dsl_counts = np.maximum(all_counts - dsl_counts, 0.0)
+        s_non_dsl = non_dsl_counts.sum()
+        if s_non_dsl > 0:
+            pmf_non_dsl = non_dsl_counts / s_non_dsl
+            for pt in _NON_DIESEL_COMBUSTIONs:
+                out[(kreis, pt)] = pmf_non_dsl
+            n_nondiesel_ok += 1
+        else:
+            n_nondiesel_zero += 1
+
+    n_kreis = n_diesel_ok + n_diesel_zero
+    logger.info(
+        "[fleet_de] Euro-6 substage per-Kreis composition (kba_kreis_euro.csv, "
+        "%d Kreise): diesel cells %d/%d usable (%d all-zero/NaN -> national "
+        "fallback); non-diesel-combustion cells %d/%d usable (%d all-zero/NaN "
+        "-> national fallback).",
+        n_kreis, n_diesel_ok, n_kreis, n_diesel_zero,
+        n_nondiesel_ok, n_kreis, n_nondiesel_zero,
+    )
+    return out
+
+
+@dataclass
+class Euro6SubstageModel:
+    """``P(substage | euro6, kreis, powertrain)`` with a national FZ 27.4 fallback.
+
+    Applied strictly AFTER the joint ``(age, euro)`` draw and the pure-electric
+    ``euro_class`` override (see :func:`sample_fleet`), and only when the drawn
+    ``euro_class == "euro6"`` and ``powertrain`` is a genuine combustion
+    powertrain (:data:`hbefa.COMBUSTION_POWERTRAINS`; this excludes ``phev`` /
+    ``hybrid``, which keep their drawn combustion-shaped euro_class untouched,
+    and ``bev`` / ``hydrogen``, whose euro_class is already overridden to
+    ``"electric"`` before this stage runs).
+
+    Both sources degrade gracefully to an empty dict when their CSV is absent
+    (:func:`_euro6_substage_given_kreis` / :meth:`_national_pmf`), so this class
+    is ALWAYS constructed (never ``None``): :meth:`substage_pmf` simply returns
+    ``None`` when neither source has a usable pmf for a given (Kreis,
+    powertrain), and the caller then keeps the plain ``"euro6"`` label without
+    consuming any RNG -- the no-silent-fallback / determinism contract for this
+    feature (see the Task B5 brief).
+    """
+
+    #: Canonical substage label order (also the pmf vector order everywhere).
+    substages: list[str]
+    #: (kreis_ags5, powertrain) -> pmf over ``substages``. Only combustion
+    #: powertrains with a usable (non-all-zero) composed source are present.
+    kreis_pmf: dict[tuple[str, str], np.ndarray]
+    #: powertrain -> national FZ 27.4 (Niedersachsen) pmf over ``substages``.
+    #: Only fuels with a positive Euro-6 substage total are present.
+    national_pmf: dict[str, np.ndarray]
+    # Mutable fallback counters (no-silent-fallback rule).
+    _kreis_primary: int = field(default=0)
+    _national_fallback: int = field(default=0)
+    _absent_fallback: int = field(default=0)
+
+    @classmethod
+    def from_data_path(cls, data_path: str) -> "Euro6SubstageModel":
+        return cls(
+            substages=list(ft.EURO6_SUBSTAGE_LABELS),
+            kreis_pmf=_euro6_substage_given_kreis(data_path),
+            national_pmf=cls._national_pmf(data_path),
+        )
+
+    @staticmethod
+    def _national_pmf(data_path: str) -> dict[str, np.ndarray]:
+        """National FZ 27.4 (Niedersachsen) ``P(substage | euro6, fuel)`` fallback.
+
+        Returns an empty dict (never ``None``) when
+        ``kba_fuel_euro6_substage_nds.csv`` is absent. A fuel whose substage
+        counts are all-zero (no Euro-6 registrations for that fuel -- see
+        ``scripts/extract_kba_fleet.py::extract_fuel_euro6_substage_nds``) is
+        OMITTED rather than stored as a degenerate 0/0 pmf.
+        """
+        substages = list(ft.EURO6_SUBSTAGE_LABELS)
+        try:
+            df = ft.load_fuel_euro6_substage_nds(data_path)
+        except FileNotFoundError:
+            logger.info(
+                "[fleet_de] Euro-6 substage: kba_fuel_euro6_substage_nds.csv "
+                "absent -> national fallback disabled (per-Kreis-only or "
+                "plain-euro6 fallback)."
+            )
+            return {}
+        out: dict[str, np.ndarray] = {}
+        n_zero = 0
+        for fuel, grp in df.groupby("fuel"):
+            vec = (grp.set_index("substage")["count"].reindex(substages)
+                   .fillna(0.0).to_numpy(dtype=float))
+            s = vec.sum()
+            if s > 0:
+                out[fuel] = vec / s
+            else:
+                n_zero += 1
+        if n_zero:
+            logger.warning(
+                "[fleet_de] Euro-6 substage national fallback: %d fuel(s) have "
+                "an all-zero substage total (no Euro-6 registrations for that "
+                "fuel) -> no national pmf for those fuels (falls through to "
+                "plain euro6).",
+                n_zero,
+            )
+        return out
+
+    def pmf_for(self, kreis_ags5: str, powertrain: str) -> Optional[np.ndarray]:
+        """Pure (non-counting) lookup, used by the ``_effective_expected`` mirror.
+
+        Must NOT increment the fallback counters (those are incremented once,
+        by :meth:`substage_pmf`, at actual draw time); this method exists so
+        the validator can recompute the SAME pmf a car's draw used without
+        double-counting the fallback rate.
+        """
+        pmf = self.kreis_pmf.get((kreis_ags5, powertrain))
+        if pmf is not None:
+            return pmf
+        return self.national_pmf.get(powertrain)
+
+    def substage_pmf(self, kreis_ags5: str, powertrain: str) -> Optional[np.ndarray]:
+        """Return the pmf to draw the substage from, counting the fallback level.
+
+        Fallback chain (no-silent-fallback rule): per-(Kreis, powertrain)
+        composed pmf -> national FZ 27.4 pmf -> ``None`` (the caller keeps the
+        plain ``"euro6"`` label without drawing, so NO RNG is consumed on this
+        path -- determinism when substage data is absent).
+        """
+        pmf = self.kreis_pmf.get((kreis_ags5, powertrain))
+        if pmf is not None:
+            self._kreis_primary += 1
+            return pmf
+        pmf = self.national_pmf.get(powertrain)
+        if pmf is not None:
+            self._national_fallback += 1
+            return pmf
+        self._absent_fallback += 1
+        return None
+
+    def log_fallback_rate(self) -> None:
+        """Log the per-Kreis vs national vs plain-euro6 fallback rates."""
+        total = self._kreis_primary + self._national_fallback + self._absent_fallback
+        if total == 0:
+            logger.info(
+                "[fleet_de] Euro-6 substage draw: no combustion Euro-6 vehicle "
+                "drawn this run (0 substage lookups)."
+            )
+            return
+        absent_rate = self._absent_fallback / total
+        (logger.warning if absent_rate > 0.5 else logger.info)(
+            "[fleet_de] Euro-6 substage draw: per-Kreis %d/%d (%.1f%%), "
+            "national fallback %d (%.1f%%), plain-euro6 fallback (no substage "
+            "data) %d (%.1f%%).",
+            self._kreis_primary, total, 100.0 * self._kreis_primary / total,
+            self._national_fallback, 100.0 * self._national_fallback / total,
+            self._absent_fallback, 100.0 * absent_rate,
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Brand / model conditional distributions (additive, isolated)
 # --------------------------------------------------------------------------- #
 def _model_given_segment(data_path: str) -> dict[str, pd.DataFrame]:
@@ -1473,6 +1693,13 @@ class FleetSampler:
     #: ``sampler.ev_income_tilt is not None`` before ever calling it) --
     #: byte-identical fallback.
     ev_income_tilt: Optional[EvIncomeTiltModel] = None
+    #: Task B5: Euro-6 substage (6ab/6d-temp/6d) conditional draw model.
+    #: ALWAYS constructed by :meth:`from_data_path` (never ``None`` in
+    #: production; both its internal sources degrade gracefully to an empty
+    #: dict when their CSV is absent -- see :class:`Euro6SubstageModel`). Kept
+    #: ``Optional`` for defensive checks / direct test construction, mirroring
+    #: the other optional models on this dataclass.
+    euro6_substage: Optional[Euro6SubstageModel] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -1559,6 +1786,17 @@ class FleetSampler:
                 "absent -> tilt inactive (byte-identical to the no-tilt "
                 "behaviour)."
             )
+        # Task B5: Euro-6 substage model. Always constructed (never raises);
+        # both its sources degrade gracefully to an empty dict when their CSV
+        # is absent, so building it here has no effect on RNG/determinism --
+        # only actually DRAWING from it (gated by the ``euro6_substage`` flag
+        # in :func:`sample_fleet`) can.
+        euro6_substage = Euro6SubstageModel.from_data_path(data_path)
+        logger.info(
+            "[fleet_de] Euro-6 substage model built: %d per-Kreis cell(s), "
+            "%d national fuel(s).",
+            len(euro6_substage.kreis_pmf), len(euro6_substage.national_pmf),
+        )
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -1571,6 +1809,7 @@ class FleetSampler:
             age_euro_joint_kreis=age_euro_joint_kreis,
             model_fuel=model_fuel,
             ev_income_tilt=ev_income_tilt,
+            euro6_substage=euro6_substage,
         )
 
 
@@ -1740,6 +1979,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  age_income_coupling: bool = True,
                  age_euro_joint: bool = True,
                  ev_income_tilt: bool = True,
+                 euro6_substage: bool = True,
                  ) -> "tuple[pd.DataFrame, pd.DataFrame] | tuple[pd.DataFrame, pd.DataFrame, dict]":
     """Draw a full vehicle specification for every household car.
 
@@ -1790,6 +2030,22 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         unchanged. ``False``, ``consistency_v2=False``, or an absent CSV leave
         the powertrain pmf untouched (byte-identical to the pre-Task-B2
         behaviour).
+    euro6_substage : when ``True`` (default) AND ``consistency_v2=True``, PASS 2
+        refines a combustion vehicle's drawn ``euro_class`` from the headline
+        ``"euro6"`` into one of the three real Euro-6 substages (``euro6ab``,
+        ``euro6dtemp``, ``euro6d``) STRICTLY AFTER the joint ``(age, euro)``
+        draw and the pure-electric override above, via
+        :meth:`FleetSampler.euro6_substage.substage_pmf` (per-Kreis
+        diesel/non-diesel composition from Regionalstatistik 46251-03, falling
+        back to the national FZ 27.4 substage split). Only fires for
+        ``euro_class == "euro6"`` and ``powertrain in
+        hbefa.COMBUSTION_POWERTRAINS`` (``phev``/``hybrid`` keep their drawn
+        combustion-shaped euro_class untouched; ``bev``/``hydrogen`` already
+        carry ``"electric"`` by this point). ``False``, ``consistency_v2=False``,
+        or substage data absent for a given (Kreis, powertrain) with no
+        national fallback either leave the plain ``"euro6"`` label and consume
+        NO additional RNG (byte-identical / deterministic on the absent-data
+        path).
 
     Returns
     -------
@@ -2212,6 +2468,27 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 age_band = _draw_age_consistent_with_euro(
                     rng, age_pmf, euro_class, powertrain)
                 _selected_joint = sampler.age_euro_joint[powertrain]
+
+            # Task B5: Euro-6 substage (6ab/6d-temp/6d) conditional draw.
+            # Fires STRICTLY AFTER the joint (age, euro) draw and the
+            # pure-electric override above, only for a genuine combustion
+            # Euro-6 vehicle (bev/hydrogen never reach here: their euro_class
+            # was already overridden to "electric"; phev/hybrid are excluded
+            # because they are not in hbefa.COMBUSTION_POWERTRAINS, so they
+            # always keep their drawn combustion-shaped euro_class untouched).
+            if (euro6_substage and sampler.euro6_substage is not None
+                    and euro_class == "euro6"
+                    and powertrain in hbefa.COMBUSTION_POWERTRAINS):
+                _substage_pmf = sampler.euro6_substage.substage_pmf(
+                    car_kreis[i], powertrain)
+                if _substage_pmf is not None:
+                    # A real pmf resolved (per-Kreis or national fallback) ->
+                    # draw. The absent-data path (both fallbacks miss) returns
+                    # None above and consumes NO rng here, keeping the plain
+                    # "euro6" label (determinism / byte-identity requirement).
+                    euro_class = _draw_categorical(
+                        rng, sampler.euro6_substage.substages, _substage_pmf)
+
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
                 car_brand[i], car_model[i])
@@ -2253,6 +2530,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         age_model.log_fallback_rate()
     if consistency_v2 and ev_income_tilt and sampler.ev_income_tilt is not None:
         sampler.ev_income_tilt.log_fallback_rate()
+    if consistency_v2 and euro6_substage and sampler.euro6_substage is not None:
+        sampler.euro6_substage.log_fallback_rate()
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
     if model_brands:
         _log_simple_fallback("brand/model draw", brand_model_fallback, n)
@@ -2292,6 +2571,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             age_labels=list(ft.AGE_BAND_LABELS),
             euro_labels=list(ft.EURO_CLASS_LABELS),
             drawn_powertrains=_v3_powertrains,
+            euro6_substage_model=(
+                sampler.euro6_substage
+                if (euro6_substage and sampler.euro6_substage is not None)
+                else None
+            ),
+            car_kreis=car_kreis,
         )
         # Task A2 (review Finding 2): the segment draw target is the EFFECTIVE
         # per-car segment pmf accumulated in PASS 1 (status/raumtyp-
@@ -2357,6 +2642,8 @@ def _effective_expected(
     age_labels: Sequence[str],
     euro_labels: Sequence[str],
     drawn_powertrains: Optional[Sequence[str]] = None,
+    euro6_substage_model: "Optional[Euro6SubstageModel]" = None,
+    car_kreis: Optional[Sequence[str]] = None,
 ) -> dict[str, dict[str, float]]:
     """Accumulate the effective per-car target PMFs for the three dimensions.
 
@@ -2377,6 +2664,17 @@ def _effective_expected(
     ``ELECTRIC_EURO_POWERTRAINS`` and therefore contribute their full joint euro
     marginal as usual.
 
+    Task B5: when ``euro6_substage_model`` and ``car_kreis`` are both supplied,
+    this function ALSO mirrors the Euro-6 substage draw: for a combustion car
+    (``pt in hbefa.COMBUSTION_POWERTRAINS``), the joint's ``"euro6"`` column
+    mass is further split across the three substage labels using the SAME pmf
+    the actual draw would use (:meth:`Euro6SubstageModel.pmf_for`, a pure
+    lookup that does not touch the fallback counters). A car whose (Kreis,
+    powertrain) has no usable substage pmf (absent-data fallback) keeps its
+    ``"euro6"`` mass unsplit, exactly mirroring the draw's plain-"euro6"
+    fallback. When either argument is ``None`` (flag off / no sampler
+    available), the euro dimension is unchanged from the pre-Task-B5 behaviour.
+
     This is a pure helper (no RNG, no data loading) so it is unit-testable
     without running the full sampler.
 
@@ -2394,6 +2692,11 @@ def _effective_expected(
         ``car_pmfs``).  When supplied, pure-electric rows (BEV / hydrogen)
         contribute their euro mass to ``hbefa.ELECTRIC_EURO`` rather than the
         joint columns (mirrors the A4-revised euro override in the draw).
+    euro6_substage_model : optional active :class:`Euro6SubstageModel` (Task
+        B5); ``None`` disables the substage mirror (pre-Task-B5 behaviour).
+    car_kreis : optional per-car home Kreis AGS-5 (same length as
+        ``car_pmfs``), required together with ``euro6_substage_model`` to look
+        up the per-(Kreis, powertrain) substage pmf.
 
     Returns
     -------
@@ -2405,8 +2708,15 @@ def _effective_expected(
     # labels); track it separately and merge at the end.
     electric_euro = hbefa.ELECTRIC_EURO
     euro_labels_list = list(euro_labels)
-    # Extended euro dimension: real combustion labels + "electric" category.
-    euro_labels_ext = euro_labels_list + [electric_euro]
+    # Task B5: the three Euro-6 substage labels are an additional, conditional
+    # extension of the euro dimension -- present only when a substage model is
+    # actually active (mirrors the draw, which only ever emits them then).
+    substage_labels: list[str] = (
+        list(euro6_substage_model.substages) if euro6_substage_model is not None else []
+    )
+    # Extended euro dimension: real combustion labels + "electric" category +
+    # the (possibly empty) Euro-6 substage labels.
+    euro_labels_ext = euro_labels_list + [electric_euro] + substage_labels
     if n == 0:
         return {
             "powertrain": {p: 1.0 / len(powertrains) for p in powertrains},
@@ -2418,14 +2728,28 @@ def _effective_expected(
     acc_age = np.zeros(len(age_labels), dtype=float)
     acc_euro = np.zeros(len(euro_labels_ext), dtype=float)
     electric_idx = len(euro_labels_list)  # index of the "electric" category in acc_euro
+    # Precomputed indices for the substage split (avoids repeated list.index()
+    # lookups inside the per-car loop).
+    substage_ext_idx = [euro_labels_ext.index(lbl) for lbl in substage_labels]
+    euro6_col = euro_labels_list.index("euro6") if "euro6" in euro_labels_list else None
 
-    it = zip(car_pmfs, kreis_factors, age_euro_joints, tilts)
     if drawn_powertrains is not None:
         it_pt: Sequence = drawn_powertrains
     else:
         it_pt = [""] * n  # type: ignore[assignment]
+    if car_kreis is not None:
+        it_kreis: Sequence = car_kreis
+    else:
+        it_kreis = [None] * n  # type: ignore[assignment]
 
-    for (pmf, factors, joint, tilt), pt in zip(it, it_pt):
+    for idx in range(n):
+        pmf = car_pmfs[idx]
+        factors = kreis_factors[idx]
+        joint = age_euro_joints[idx]
+        tilt = tilts[idx]
+        pt = it_pt[idx]
+        kreis = it_kreis[idx]
+
         # Effective powertrain pmf after the per-Kreis rake.
         eff_pt = np.asarray(pmf, dtype=float) * np.asarray(factors, dtype=float)
         s = eff_pt.sum()
@@ -2449,16 +2773,36 @@ def _effective_expected(
         if drawn_powertrains is not None and pt in hbefa.ELECTRIC_EURO_POWERTRAINS:
             # All euro mass collapses to the "electric" category.
             acc_euro[electric_idx] += 1.0
-        else:
-            acc_euro[:len(euro_labels_list)] += M.sum(axis=0)  # real euro marginal
+            continue
+
+        euro_marginal = M.sum(axis=0).copy()  # real euro marginal
+        # Task B5: mirror the conditional Euro-6 substage draw -- split this
+        # car's "euro6" mass across the substage labels using the SAME pmf the
+        # actual draw would resolve (kreis -> national -> absent). A car whose
+        # (Kreis, powertrain) has no usable pmf keeps its "euro6" mass unsplit,
+        # exactly mirroring the draw's plain-"euro6" fallback (no false alarm).
+        if (euro6_substage_model is not None and euro6_col is not None
+                and drawn_powertrains is not None and kreis is not None
+                and pt in hbefa.COMBUSTION_POWERTRAINS):
+            euro6_mass = float(euro_marginal[euro6_col])
+            if euro6_mass > 0.0:
+                substage_pmf = euro6_substage_model.pmf_for(kreis, pt)
+                if substage_pmf is not None:
+                    euro_marginal[euro6_col] = 0.0
+                    for k, ext_idx in enumerate(substage_ext_idx):
+                        acc_euro[ext_idx] += euro6_mass * float(substage_pmf[k])
+        acc_euro[:len(euro_labels_list)] += euro_marginal
 
     # Normalise by n to get mean expected marginals (which sum to 1.0).
-    # Include "electric" in the euro dict only when it has mass (i.e.
-    # drawn_powertrains was supplied and there are pure-electric draws).
+    # Include the "electric" / Euro-6-substage labels in the euro dict only
+    # when they have mass (i.e. the corresponding feature was actually active
+    # and drew at least once) -- the headline euro_labels_list entries (incl.
+    # plain "euro6") are always included, even at 0.0.
+    conditional_labels = {electric_euro, *substage_labels}
     euro_dict: dict[str, float] = {}
     for j, e in enumerate(euro_labels_ext):
         v = float(acc_euro[j] / n)
-        if v > 0.0 or e != electric_euro:
+        if v > 0.0 or e not in conditional_labels:
             euro_dict[e] = v
     return {
         "powertrain": {p: float(acc_pt[j] / n)
