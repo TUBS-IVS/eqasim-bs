@@ -106,6 +106,51 @@ class TestWeightVectorBuild:
 
 
 # --------------------------------------------------------------------------- #
+# Review Finding 1 fix: untracked powertrains (gas/hydrogen/other) must carry
+# the MEAN of the five tracked shares, not a hardcoded 1.0. A hardcoded 1.0
+# boosts a feasible-but-untracked powertrain by ~1/tracked_share after
+# renormalisation -- scale bug (e.g. gas inflated ~1.7x on a brand-union
+# feasible set). ``_model_fuel_weight_vector`` is the pure per-row helper
+# extracted from ``_build_model_fuel_weights`` to make this scale-neutral
+# behaviour directly testable.
+# --------------------------------------------------------------------------- #
+class TestModelFuelWeightVectorScaleNeutral:
+    """Unit-tests for the scale-neutral untracked-powertrain fix (Finding 1)."""
+
+    def test_untracked_weight_is_scale_neutral_not_one(self):
+        # model registered 60% petrol / 40% diesel; gas untracked.
+        row = {"model": "VW CADDY", "petrol_share": 0.6, "diesel_share": 0.4,
+               "bev_share": 0.0, "phev_share": 0.0, "hybrid_share": 0.0}
+        vec = fs._model_fuel_weight_vector(row)   # helper extracted in Step 3
+        idx = {p: i for i, p in enumerate(fs.POWERTRAINS)}
+        tracked_mean = (0.6 + 0.4 + 0.0 + 0.0 + 0.0) / 5.0
+        assert vec[idx["gas"]] == pytest.approx(tracked_mean)
+        assert vec[idx["hydrogen"]] == pytest.approx(tracked_mean)
+        assert vec[idx["other"]] == pytest.approx(tracked_mean)
+        # ratio gas:petrol under a uniform feasible set must equal tracked_mean/0.6,
+        # NOT 1/0.6 (the old bug).
+        assert vec[idx["gas"]] / vec[idx["petrol"]] == pytest.approx(tracked_mean / 0.6)
+        assert vec[idx["gas"]] / vec[idx["petrol"]] != pytest.approx(1.0 / 0.6)
+        # Tracked entries are unaffected by the fix.
+        assert vec[idx["petrol"]] == pytest.approx(0.6)
+        assert vec[idx["diesel"]] == pytest.approx(0.4)
+        assert vec[idx["bev"]] == pytest.approx(0.0)
+        assert vec[idx["phev"]] == pytest.approx(0.0)
+        assert vec[idx["hybrid"]] == pytest.approx(0.0)
+
+    def test_all_tracked_zero_gives_all_zero_vector(self):
+        """Edge case: all five tracked shares 0 (e.g. a gas-only model KBA does
+        not track per-model) -> neutral = mean([0,0,0,0,0]) = 0 -> the ENTIRE
+        weight vector is zero (untracked entries are no longer hardcoded 1.0).
+        """
+        row = {"model": "SOME GAS MODEL", "petrol_share": 0.0, "diesel_share": 0.0,
+               "bev_share": 0.0, "phev_share": 0.0, "hybrid_share": 0.0}
+        vec = fs._model_fuel_weight_vector(row)
+        assert vec.sum() == pytest.approx(0.0)
+        assert np.all(vec == 0.0)
+
+
+# --------------------------------------------------------------------------- #
 # Unit-test: mask construction with/without model_fuel
 # --------------------------------------------------------------------------- #
 def _build_mask(feasible: set, wv: np.ndarray | None) -> np.ndarray:
@@ -420,4 +465,98 @@ def test_diesel_bias_observable_for_high_diesel_model(sampler_real):
         f"Soft 95%-diesel weight for '{test_model}' did not increase diesel fraction: "
         f"binary={diesel_frac_binary:.3f}, soft={diesel_frac_soft:.3f}. "
         "Task 10 model_fuel weight is not applied correctly."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Review Finding 1 fix, edge case: all five tracked shares are 0 for a model
+# (e.g. a model KBA only records with gas registrations) -> the fixed
+# ``_model_fuel_weight_vector`` returns neutral=0 for gas/hydrogen/other too,
+# so the WHOLE weight vector is zero. Inside the feasible set this makes the
+# weighted mask sum to 0 -- the existing all-zero guard in ``sample_fleet``
+# (see the ``elif w is not None and (...).sum() > 0`` branch) must then fall
+# back to the BINARY feasibility mask and count the fallback, rather than
+# degrading to the fully-unmasked segment/kreis pmf (the "no overlap" branch).
+# --------------------------------------------------------------------------- #
+def test_all_zero_tracked_falls_back_to_binary_mask_via_sample_fleet(sampler_real):
+    """A model with all five tracked shares == 0 must not silently draw outside
+    the feasible powertrain set; the guard must restrict the draw to it.
+
+    Strategy mirrors ``test_diesel_bias_observable_for_high_diesel_model``:
+    find a real model whose feasible set contains both petrol and diesel, then
+    inject a ``model_fuel`` vector for it built by the (fixed) production
+    helper ``fs._model_fuel_weight_vector`` from all-zero tracked shares. That
+    vector is all-zero (precondition asserted below), which is the scenario
+    the old hardcoded-1.0 code could never produce (gas/hydrogen/other would
+    have stayed at 1.0), so this edge case only exists after the Finding-1 fix.
+    """
+    if not DATA.exists():
+        pytest.skip("eqasim-data not available")
+    if sampler_real.feasible_fuels is None:
+        pytest.skip("HSN/TSN lookup absent; feasibility mask disabled -> "
+                    "the all-zero guard has no effect to test.")
+
+    from braunschweig.data.kba import fleet_tables as ft
+    from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
+
+    seg_model_df = ft.load_segment_model(DATA_PATH)
+    ff = sampler_real.feasible_fuels
+
+    test_model = None
+    for _, row in seg_model_df.sort_values("count", ascending=False).iterrows():
+        model_str = str(row["model"])
+        if not model_str:
+            continue
+        brand = model_str.split(" ", 1)[0]
+        mf = model_family(canonical_brand(brand) or "", model_str)
+        feasible = ff.model_feasible_powertrains(brand, mf)
+        if feasible is not None and "petrol" in feasible and "diesel" in feasible:
+            test_model = model_str
+            break
+
+    if test_model is None:
+        pytest.skip("No model with petrol+diesel feasible set found; "
+                    "cannot verify the all-zero guard.")
+
+    # All five tracked shares are 0 for this (synthetic) model row -> the
+    # fixed helper returns an all-zero vector (neutral == 0 too).
+    zero_row = {"model": test_model, "petrol_share": 0.0, "diesel_share": 0.0,
+                "bev_share": 0.0, "phev_share": 0.0, "hybrid_share": 0.0}
+    wv = fs._model_fuel_weight_vector(zero_row)
+    assert wv.sum() == pytest.approx(0.0), (
+        "precondition failed: the injected weight vector must be all-zero "
+        "for this edge case to exercise the all-zero guard."
+    )
+
+    n = 3000
+    kreis = ft.ZGB_KREISE_AGS5[0]
+    rng = np.random.default_rng(23)
+    statuses = list(ft.STATUS_LABELS)
+    df_cars = pd.DataFrame([{
+        "economic_status": rng.choice(statuses),
+        "kreis_ags5": kreis,
+        "gemeinde": np.nan,
+        "raumtyp": 71,
+    } for _ in range(n)])
+
+    patched = _SamplerWithModelFuel(sampler_real, {test_model: wv})
+    df_spec, _, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=23, sampler=patched)
+    sub = df_spec[df_spec["model"] == test_model]
+
+    if len(sub) < 10:
+        pytest.skip(f"Too few '{test_model}' cars drawn ({len(sub)}) to assess "
+                    "the all-zero guard.")
+
+    # The guard must fall back to the binary mask: draws stay restricted to the
+    # feasible set (petrol/diesel), and the row is counted as model_constrained
+    # (not degraded to the unmasked "segment_fallback" pmf, which could draw
+    # any powertrain the Kreis pmf allows).
+    assert set(sub["powertrain"].unique()).issubset({"petrol", "diesel"}), (
+        f"All-zero weighted mask for '{test_model}' did not fall back to the "
+        f"binary feasibility mask: drew {sorted(sub['powertrain'].unique())}."
+    )
+    assert (sub["powertrain_feasibility"] == "model_constrained").all(), (
+        "All-zero weighted mask must be counted as a model_constrained "
+        "fallback, not degrade to segment_fallback."
     )

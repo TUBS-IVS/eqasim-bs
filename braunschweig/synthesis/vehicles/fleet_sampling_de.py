@@ -960,16 +960,45 @@ def _model_given_segment(data_path: str) -> dict[str, pd.DataFrame]:
     return out
 
 
+def _model_fuel_weight_vector(row) -> np.ndarray:
+    """Weight vector over POWERTRAINS for one model (kba_model_fuel row).
+
+    Tracked powertrains carry the model's registered-stock share. The
+    Modellreihen table does NOT track gas/hydrogen/other; weighting them 1.0
+    would boost them by ~1/tracked_share after renormalisation (scale bug), so
+    they carry the MEAN tracked share instead -- scale-neutral: an untracked
+    feasible powertrain keeps its Kreis proportion relative to the model's
+    average tracked propensity.
+
+    Args:
+        row: mapping (DataFrame row or dict) with ``petrol_share``,
+            ``diesel_share``, ``bev_share``, ``phev_share``, ``hybrid_share``.
+
+    Returns:
+        Length-8 float array of weights over ``POWERTRAINS``.
+    """
+    petrol = float(row["petrol_share"]); diesel = float(row["diesel_share"])
+    bev = float(row["bev_share"]); phev = float(row["phev_share"])
+    hybrid = float(row["hybrid_share"])
+    neutral = float(np.mean([petrol, diesel, bev, phev, hybrid]))
+    # Order = POWERTRAINS: petrol, diesel, gas, bev, phev, hybrid, hydrogen, other
+    return np.array([petrol, diesel, neutral, bev, phev, hybrid, neutral, neutral],
+                    dtype=float)
+
+
 def _build_model_fuel_weights(mf_df: "pd.DataFrame") -> "dict[str, np.ndarray]":
     """Build the per-model fuel-type weight vector dict from kba_model_fuel.csv.
 
     The weight vector is aligned with ``POWERTRAINS`` and has length 8:
-      [petrol_share, diesel_share, 1.0(gas), bev_share, phev_share,
-       hybrid_share, 1.0(hydrogen), 1.0(other)]
+      [petrol_share, diesel_share, neutral(gas), bev_share, phev_share,
+       hybrid_share, neutral(hydrogen), neutral(other)]
+    where ``neutral`` is the mean of the five tracked shares (see
+    :func:`_model_fuel_weight_vector`).
 
     Gas, hydrogen, and other are not tracked per model in the KBA source, so
-    they receive the default weight of 1.0 -- a feasible-but-untracked powertrain
-    retains its full Kreis pmf value unchanged.
+    they receive the scale-neutral mean weight rather than a hardcoded 1.0 --
+    a hardcoded 1.0 would boost a feasible-but-untracked powertrain by
+    ~1/tracked_share after renormalisation (review Finding 1).
 
     Args:
         mf_df: DataFrame from :func:`braunschweig.data.kba.fleet_tables.load_model_fuel`.
@@ -981,18 +1010,7 @@ def _build_model_fuel_weights(mf_df: "pd.DataFrame") -> "dict[str, np.ndarray]":
     out: dict[str, np.ndarray] = {}
     for _, row in mf_df.iterrows():
         model = str(row["model"])
-        # POWERTRAINS = ("petrol","diesel","gas","bev","phev","hybrid","hydrogen","other")
-        vec = np.array([
-            float(row["petrol_share"]),   # petrol
-            float(row["diesel_share"]),   # diesel
-            1.0,                           # gas (not tracked per model -> default)
-            float(row["bev_share"]),      # bev
-            float(row["phev_share"]),     # phev
-            float(row["hybrid_share"]),   # hybrid
-            1.0,                           # hydrogen (not tracked per model -> default)
-            1.0,                           # other (not tracked per model -> default)
-        ], dtype=float)
-        out[model] = vec
+        out[model] = _model_fuel_weight_vector(row)
     return out
 
 
