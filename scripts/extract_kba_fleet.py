@@ -1,7 +1,9 @@
 """Extract KBA / MiD fleet reference tables into committed tidy CSVs.
 
-Source xlsx files (raw, local-only under ``eqasim-data/data/braunschweig/kba/``,
+Source files (raw, local-only under ``eqasim-data/data/braunschweig/kba/``,
 documented in that directory's ``README.md``):
+
+Legacy xlsx inputs (``kba/`` root, Stichtag 01.01.2025 unless stated):
 
 - ``fz27_202501.xlsx`` (KBA FZ 27 series, stock date 1 January 2025)
     * FZ 27.10 -> segment x powertrain (national)        -> kba_segment_powertrain.csv
@@ -10,12 +12,29 @@ documented in that directory's ``README.md``):
     * FZ 27.4  -> Niedersachsen fuel x Euro class         -> kba_fuel_euro_nds.csv
     * FZ 27.7  -> vehicle age band x fuel (Pkw column)    -> kba_age_fuel.csv
     * FZ 27.11 -> brand x powertrain (national)           -> kba_brand_powertrain.csv
-- ``fz12_2025.xlsx`` (KBA FZ 12.1)
-    * FZ 12.1  -> segment x model (Modellreihe)           -> kba_segment_model.csv
+- ``fz12_2025.xlsx`` (KBA FZ 12.1; superseded for kba_segment_model.csv)
+    * FZ 12.1  -> segment x model (Modellreihe)           (cross-check only)
 - ``output_mit_2023_bundesland_fahrzeuge.xlsx`` (MiD 2023)
     * segment x economic status, by Bundesland           -> mid2023_segment_by_status_bundesland.csv
 - ``output_mit_2023_raumtyp_fahrzeuge.xlsx`` (MiD 2023)
     * segment x economic status, by RegioStaR Raumtyp     -> mid2023_segment_by_status_raumtyp.csv
+
+Regionalization inputs (``kba/raw/`` subdirectory):
+
+- ``regionalstatistik_46251_02_fuel_kreis_20250101.csv`` (Destatis, Stichtag 01.01.2025)
+    * per-Kreis Pkw by fuel type (ZGB Kreise only)        -> kba_kreis_fuel.csv
+- ``regionalstatistik_46251_03_euro_kreis_20250101.csv`` (Destatis, Stichtag 01.01.2025)
+    * per-Kreis Pkw by Euro emission group (ZGB only)     -> kba_kreis_euro.csv
+- ``statista_kba_3438_pkw_age_national_2026.xlsx`` (KBA/Statista ID3438, Stichtag 01.01.2026)
+    * national Pkw age-band distribution (VALIDATION anchor, not IPF control)
+                                                          -> kba_age_national.csv
+- ``kba_ev_gemeinde_timeseries_2023_2026.csv`` (KBA, latest period 2026.04)
+    * per-Gemeinde EV/BEV/PHEV/fuel-cell share (ZGB only) -> kba_gemeinde_ev.csv
+- ``kba_modellreihen_bestand_2020_2026.csv`` (KBA Modellreihen, Stichtag 01.01.2026)
+    * per-model-series fuel shares                        -> kba_model_fuel.csv
+    * per-segment model share (replacing FZ 12.1)         -> kba_segment_model.csv
+- ``kba_ev_grid_5km_2026.gpkg`` (KBA 5 km grid, April 2026)
+    * sub-communal EV share tilt (EPSG:3857, ZGB bbox)    -> kba_ev_grid.csv
 
 The xlsx headers are multi-line and the data starts around row 12, so every
 sheet is parsed by *explicit column indices* (documented in the README), never
@@ -24,11 +43,16 @@ secret/unknown, ``/`` not reliable, ``()`` uncertain, blank) are coerced to 0
 or NaN *explicitly*, and the coercion count per file is logged (project
 no-silent-fallback rule).
 
+Every derived CSV that carries provenance data includes a ``stichtag`` column
+(ISO date string ``YYYY-MM-DD``) so the reporting date travels with the data.
+Multiple Stichtag vintages are present by design (see ADR-0050); do not
+reconcile absolute counts across vintages.
+
 The derived CSVs are written under
 ``eqasim-data/data/braunschweig/kba/derived/`` and force-committed (the
 ``eqasim-data`` tree is otherwise gitignored), matching the committed-MiD-CSV
 pattern. This script is idempotent: re-running it reproduces the same CSVs from
-the (unchanged) raw xlsx.
+the (unchanged) raw files.
 
 Usage::
 
