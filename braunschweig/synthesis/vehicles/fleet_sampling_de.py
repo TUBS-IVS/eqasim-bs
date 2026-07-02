@@ -41,6 +41,7 @@ prohibited (see CLAUDE.md).
 from __future__ import annotations
 
 import logging
+import math
 import re as _re
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
@@ -147,6 +148,8 @@ class PowertrainModel:
     _kreis_fallback: int = field(default=0)
     _gemeinde_primary: int = field(default=0)
     _gemeinde_fallback: int = field(default=0)
+    _grid_primary: int = field(default=0)
+    _grid_fallback: int = field(default=0)
 
     @classmethod
     def from_data_path(cls, data_path: str, segments: Sequence[str],
@@ -414,12 +417,31 @@ class PowertrainModel:
 
     # -- per-car query -------------------------------------------------------
     def powertrain_probabilities(self, segment: str, kreis_ags5: str,
-                                 gemeinde: Optional[str]) -> np.ndarray:
-        """``P(powertrain | segment, kreis)`` with the Gemeinde electric tilt.
+                                 gemeinde: Optional[str],
+                                 grid_ev_share: Optional[float] = None,
+                                 gemeinde_grid_mean: Optional[float] = None,
+                                 ) -> np.ndarray:
+        """``P(powertrain | segment, kreis)`` with the Gemeinde electric tilt
+        and an optional further within-Gemeinde tilt from a 5 km grid cell.
 
         Falls back to the national ``P(powertrain | segment)`` when the Kreis is
         unknown (counted/logged), and to the Kreis-level electric share when the
         Gemeinde is unknown or has no FZ 27.17 entry.
+
+        The grid tilt is applied AFTER the Gemeinde tilt and BEFORE the final
+        renormalisation.  When ``grid_ev_share`` or ``gemeinde_grid_mean`` is
+        ``None`` the grid tilt is a no-op, so all existing callers (which do not
+        pass these parameters) produce byte-identical results.
+
+        Args:
+            segment: Vehicle segment label (must be in ``self.segments``).
+            kreis_ags5: Home Kreis AGS-5 code.
+            gemeinde: Home Gemeinde name (``None`` -> Kreis-level tilt only).
+            grid_ev_share: EV share of the household's 5 km grid cell
+                (``None`` -> grid tilt disabled).
+            gemeinde_grid_mean: Household-weighted mean EV share across all
+                grid cells within the Gemeinde (``None`` -> grid tilt disabled).
+                Must be > 0 for the tilt to fire.
         """
         if segment not in self.segments:
             raise ValueError(f"unknown segment '{segment}'")
@@ -434,6 +456,7 @@ class PowertrainModel:
             base = kreis_matrix[seg_index].copy()
 
         base = self._apply_gemeinde_tilt(base, kreis_ags5, gemeinde)
+        base = self._apply_grid_tilt(base, grid_ev_share, gemeinde_grid_mean)
         total = base.sum()
         if total <= 0:
             return np.ones(len(self.powertrains)) / len(self.powertrains)
@@ -472,12 +495,67 @@ class PowertrainModel:
             tilted[idx[pt]] *= factor
         return tilted
 
+    def _apply_grid_tilt(self, pmf: np.ndarray,
+                         grid_ev_share: Optional[float],
+                         gemeinde_grid_mean: Optional[float]) -> np.ndarray:
+        """Tilt the bev/phev mass to the household's 5 km grid cell EV share.
+
+        Multiplies the electric powertrain probabilities by
+        ``clip(grid_ev_share / gemeinde_grid_mean, 0.2, 5.0)`` and leaves the
+        non-electric mass untouched; the whole vector is renormalised by the
+        caller.
+
+        The ratio ``grid_ev_share / gemeinde_grid_mean`` re-weights EV mass
+        toward high-EV cells WITHIN the Gemeinde.  Because ``gemeinde_grid_mean``
+        is the household-weighted mean of the Gemeinde's cell shares (wired by
+        T9b), the ratio averages to ~1 within the Gemeinde so the Gemeinde-level
+        EV aggregate is preserved; only intra-Gemeinde variation is added.
+
+        The tilt is a no-op (fallback counted) when:
+          * ``grid_ev_share`` is ``None``,
+          * ``gemeinde_grid_mean`` is ``None``,
+          * ``gemeinde_grid_mean`` <= 0 (avoids division by zero), or
+          * ``grid_ev_share`` is NaN (suppressed / missing cell data).
+
+        Args:
+            pmf: Probability mass vector over powertrains (modified in-place on
+                a copy, then returned; the original is not mutated).
+            grid_ev_share: EV share of the household's grid cell, or ``None``.
+            gemeinde_grid_mean: Household-weighted mean cell EV share for the
+                Gemeinde, or ``None``.
+
+        Returns:
+            Tilted pmf (un-renormalised; the caller normalises).
+        """
+        # When both params are None the caller has not requested a grid tilt at
+        # all (the default case for all existing callers).  Do not count a
+        # fallback so the rate log stays meaningful: a non-zero fallback rate
+        # always means a partially-configured call where the tilt could not fire.
+        if grid_ev_share is None and gemeinde_grid_mean is None:
+            return pmf
+        if (grid_ev_share is None
+                or gemeinde_grid_mean is None
+                or gemeinde_grid_mean <= 0.0
+                or (isinstance(grid_ev_share, float)
+                    and math.isnan(grid_ev_share))):
+            self._grid_fallback += 1
+            return pmf
+        self._grid_primary += 1
+        idx = {p: i for i, p in enumerate(self.powertrains)}
+        tilted = pmf.copy()
+        factor = float(np.clip(grid_ev_share / gemeinde_grid_mean, 0.2, 5.0))
+        for pt in ELECTRIC_POWERTRAINS:
+            tilted[idx[pt]] *= factor
+        return tilted
+
     def log_fallback_rate(self) -> None:
         """Log the primary-vs-fallback rates (no-silent-fallback rule)."""
         ktot = self._kreis_primary + self._kreis_fallback
         gtot = self._gemeinde_primary + self._gemeinde_fallback
+        grtot = self._grid_primary + self._grid_fallback
         krate = (self._kreis_fallback / ktot) if ktot else 0.0
         grate = (self._gemeinde_fallback / gtot) if gtot else 0.0
+        grrate = (self._grid_fallback / grtot) if grtot else 0.0
         (logger.warning if krate > 0.05 else logger.info)(
             "[fleet_de] powertrain Kreis lookup: primary %d/%d (%.1f%%), "
             "fallback %d (%.1f%%)", self._kreis_primary, ktot,
@@ -489,6 +567,12 @@ class PowertrainModel:
             "fallback %d (%.1f%%)", self._gemeinde_primary, gtot,
             100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
             self._gemeinde_fallback, 100.0 * grate,
+        )
+        (logger.warning if grrate > 0.50 else logger.info)(
+            "[fleet_de] powertrain grid tilt: primary %d/%d (%.1f%%), "
+            "fallback %d (%.1f%%)", self._grid_primary, grtot,
+            100.0 * self._grid_primary / grtot if grtot else 0.0,
+            self._grid_fallback, 100.0 * grrate,
         )
 
 
