@@ -198,6 +198,10 @@ class TestFromDataPathWithFuelCSV:
         real_derived = DATA / "braunschweig" / "kba" / "derived"
         # Symlink or copy all existing CSVs so the other loaders work.
         for src in real_derived.glob("*.csv"):
+            # Never symlink the file we overlay below (write-through-symlink would
+            # corrupt the real committed derived CSV).
+            if src.name == "kba_kreis_fuel.csv":
+                continue
             dst = derived / src.name
             try:
                 dst.symlink_to(src)

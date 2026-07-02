@@ -127,6 +127,10 @@ def _make_tmp_data_path_with_euro(tmp_path: Path, df_euro: pd.DataFrame) -> str:
     derived.mkdir(parents=True)
     real_derived = DATA / "braunschweig" / "kba" / "derived"
     for src in real_derived.glob("*.csv"):
+        # Never symlink a file we overlay below (write-through-symlink would
+        # corrupt the real committed derived CSV).
+        if src.name == "kba_kreis_euro.csv":
+            continue
         dst = derived / src.name
         try:
             dst.symlink_to(src)
@@ -201,6 +205,10 @@ def _make_tmp_data_path_with_fuel_and_euro(
     derived.mkdir(parents=True)
     real_derived = DATA / "braunschweig" / "kba" / "derived"
     for src in real_derived.glob("*.csv"):
+        # Never symlink a file we overlay below (write-through-symlink would
+        # corrupt the real committed derived CSV).
+        if src.name in ("kba_kreis_fuel.csv", "kba_kreis_euro.csv"):
+            continue
         dst = derived / src.name
         try:
             dst.symlink_to(src)

@@ -74,6 +74,12 @@ def _mirror_real_data_with_extras(tmp_path: Path, extra_files: "dict[str, pd.Dat
     derived.mkdir(parents=True, exist_ok=True)
     real_derived = DATA / "braunschweig" / "kba" / "derived"
     for src in real_derived.glob("*.csv"):
+        # NEVER symlink a file we are about to overlay: to_csv(derived/name) would
+        # then write THROUGH the symlink into the real committed derived CSV and
+        # corrupt it (the write-through-a-link data-loss class). Overlaid names are
+        # written fresh below instead.
+        if src.name in extra_files:
+            continue
         dst = derived / src.name
         if dst.exists():
             continue
