@@ -536,8 +536,12 @@ class PowertrainModel:
         if (grid_ev_share is None
                 or gemeinde_grid_mean is None
                 or gemeinde_grid_mean <= 0.0
-                or (isinstance(grid_ev_share, float)
-                    and math.isnan(grid_ev_share))):
+                or not np.isfinite(grid_ev_share)):
+            # ``np.isfinite`` catches NaN/inf for BOTH Python float and numpy
+            # scalars (e.g. ``np.float64`` NaN from a pandas spatial join), so a
+            # missing/suppressed cell share can never divide into the pmf and
+            # produce a NaN probability (no-NA guarantee).  grid_ev_share is
+            # guaranteed non-None here (the ``is None`` term short-circuits first).
             self._grid_fallback += 1
             return pmf
         self._grid_primary += 1
