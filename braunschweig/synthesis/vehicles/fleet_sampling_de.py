@@ -534,6 +534,7 @@ class PowertrainModel:
             return pmf
         if (grid_ev_share is None
                 or gemeinde_grid_mean is None
+                or not np.isfinite(gemeinde_grid_mean)
                 or gemeinde_grid_mean <= 0.0
                 or not np.isfinite(grid_ev_share)):
             # ``np.isfinite`` catches NaN/inf for BOTH Python float and numpy
@@ -1409,13 +1410,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             segment = _draw_categorical(rng, segments, seg_pmf)
 
             # 2. powertrain <- P(powertrain | segment) raked per Kreis + Gemeinde tilt.
-            # T9b: pass optional grid columns (None when absent -> no-op).
-            _grid_ev = car.get("grid_ev_share")
-            _gem_mean = car.get("gemeinde_grid_mean")
+            # The sub-communal grid EV tilt (T9b), like the A4 euro override, is a
+            # consistency_v2-only feature: this legacy loop stays a VERBATIM copy of
+            # the original draw and does NOT pass the grid columns, so the
+            # consistency_v2=False path is byte-identical regardless of whether the
+            # run attached grid_ev_share/gemeinde_grid_mean to df_cars.
             pt_pmf = sampler.powertrain_model.powertrain_probabilities(
-                segment, kreis, gemeinde,
-                grid_ev_share=_grid_ev,
-                gemeinde_grid_mean=_gem_mean)
+                segment, kreis, gemeinde)
             powertrain = _draw_categorical(rng, list(POWERTRAINS), pt_pmf)
 
             # 3. euro_class <- P(euro | powertrain).
@@ -1515,7 +1516,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                      if (sampler.model_fuel is not None and model) else None)
                 wv = w if w is not None else np.ones(len(POWERTRAINS))
                 mask = np.array(
-                    [wv[i] if p in feasible else 0.0 for i, p in enumerate(POWERTRAINS)],
+                    [wv[k] if p in feasible else 0.0 for k, p in enumerate(POWERTRAINS)],
                     dtype=float,
                 )
                 pt_pmf_masked = pt_pmf * mask
