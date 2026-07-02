@@ -337,8 +337,11 @@ def grid_ev_share_for_homes(homes_gdf, grid_df: pd.DataFrame) -> pd.Series:
         predicate="within",
     )
 
-    # When a point falls on a cell boundary it may match two cells (sjoin
-    # returns multiple rows).  Keep the first match per household.
+    # Defensive dedup: with predicate="within" a point strictly inside a cell
+    # matches exactly one cell, so a well-formed tiling grid yields no duplicates
+    # (the real edge case is a boundary/exterior point matching NONE, handled by
+    # the left join -> NaN). Keep one row per household as a harmless safeguard
+    # against any degenerate overlapping-cell input.
     joined = joined.drop_duplicates(subset=["household_id"], keep="first")
 
     matched = int(joined["_ev_share_effective"].notna().sum())
@@ -551,12 +554,16 @@ def execute(context):
                 "(no grid columns on df_cars).",
                 electric_calibration,
             )
-        except Exception as exc:  # noqa: BLE001 -- log and degrade gracefully
+        except Exception as exc:  # noqa: BLE001 -- log (with traceback) and degrade gracefully
+            # exc_info=True captures the full traceback so an UNEXPECTED failure
+            # here (e.g. a wrong column name, a geopandas/shapely import error, a
+            # CRS mismatch) is diagnosable from the run log instead of being
+            # silently masked as a graceful fallback (no-silent-fallback rule).
             logger.warning(
                 "[vehicles.household] fleet_electric_calibration=%s: "
                 "grid tilt setup failed (%s) -> falling back to Gemeinde-only "
                 "tilt (no grid columns on df_cars).",
-                electric_calibration, exc,
+                electric_calibration, exc, exc_info=True,
             )
         if not _grid_cols_added:
             logger.info(
@@ -582,6 +589,13 @@ def execute(context):
         df_spec, df_vehicle_types, _ = _fleet_result
     else:
         df_spec, df_vehicle_types = _fleet_result
+    # The grid-tilt inputs (grid_ev_share, gemeinde_grid_mean) were consumed
+    # during the powertrain draw inside sample_fleet; they are NOT vehicle
+    # attributes. Drop them here so they do not leak into df_vehicles /
+    # vehicles.csv (and do not receive meaningless median fills on the routing
+    # default_car rows in _add_default_cars_for_non_owners). ``errors="ignore"``
+    # keeps this a no-op when the grid tilt was inactive (columns absent).
+    df_spec = df_spec.drop(columns=["grid_ev_share", "gemeinde_grid_mean"], errors="ignore")
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the
