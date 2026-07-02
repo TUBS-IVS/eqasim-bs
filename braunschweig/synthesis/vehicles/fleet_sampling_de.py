@@ -40,8 +40,10 @@ prohibited (see CLAUDE.md).
 
 from __future__ import annotations
 
+import collections.abc
 import logging
 import re as _re
+import time
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
@@ -234,6 +236,20 @@ class PowertrainModel:
                 tolerance=tolerance,
             )
             kreis_psp[kreis] = cls._row_normalise(joint)
+
+        # Task B3 traceability: the per-Kreis powertrain marginal now potentially
+        # covers every German Kreis (Regionalstatistik 46251-02 is not ZGB-filtered
+        # any more), which is what lets cross-cordon in-commuters draw their real
+        # home-Kreis fuel mix. Log the realised coverage so a broken join upstream
+        # (e.g. the primary source silently reverting to the 8-Kreis FZ 27.15
+        # fallback) is visible rather than a silent loss of coverage.
+        n_zgb_covered = sum(1 for k in kreis_psp if k in set(ft.ZGB_KREISE_AGS5))
+        n_non_zgb_covered = len(kreis_psp) - n_zgb_covered
+        logger.info(
+            "[fleet_de] per-Kreis powertrain marginal coverage: %d Kreise "
+            "(%d ZGB + %d non-ZGB).",
+            len(kreis_psp), n_zgb_covered, n_non_zgb_covered,
+        )
 
         # Per-Kreis private electric shares (FZ 27.15, 2025), the tilt denominator
         # for the FZ27.17-fallback path (both 2025 -- already same-vintage).
@@ -912,15 +928,53 @@ def _euro_given_kreis_powertrain(
     return out
 
 
+def _single_kreis_powertrain_age_euro_joint(
+    kreis_ags5: str, fuel: str,
+    age_given_powertrain: Mapping[str, np.ndarray],
+    euro_given_national: Mapping[str, np.ndarray],
+    euro_given_kreis: "Mapping[tuple[str, str], np.ndarray]",
+) -> np.ndarray:
+    """Single-cell IPF joint ``P(age_band, euro_class | kreis, powertrain)``.
+
+    Extracted from :func:`_age_euro_joint_kreis` so both the eager dict builder
+    and :class:`LazyKreisEuroJoint` (Task B3: the per-Kreis euro joint now
+    potentially spans every German Kreis, ~400 x 8 powertrains, which is too
+    slow to build eagerly -- see the class docstring) share exactly the same
+    per-cell computation.
+
+    Uses the same :func:`_age_euro_joint_matrices` IPF machinery as the
+    national joint, but substitutes the per-Kreis euro column target where
+    available.
+    """
+    ages = list(ft.AGE_BAND_LABELS)
+    euros = list(ft.EURO_CLASS_LABELS)
+    age_pmf = age_given_powertrain[fuel]
+    euro_pmf = euro_given_kreis.get(
+        (kreis_ags5, fuel), euro_given_national.get(fuel, np.ones(len(euros)) / len(euros)))
+    r = np.asarray(age_pmf, dtype=float)
+    r = r / r.sum() if r.sum() > 0 else np.ones(len(ages)) / len(ages)
+    c = np.asarray(euro_pmf, dtype=float)
+    c = c / c.sum() if c.sum() > 0 else np.ones(len(euros)) / len(euros)
+    allowed = np.array(
+        [[1.0 if _age_consistent_with_euro(a, e, fuel) else 0.0 for e in euros]
+         for a in ages],
+        dtype=float,
+    )
+    return _ipf_joint(allowed, r, c)
+
+
 def _age_euro_joint_kreis(
     age_given_powertrain: Mapping[str, np.ndarray],
     euro_given_national: Mapping[str, np.ndarray],
     euro_given_kreis: "dict[tuple[str, str], np.ndarray]",
 ) -> "dict[tuple[str, str], np.ndarray]":
-    """Per-(Kreis, powertrain) joint ``P(age_band, euro_class | kreis, powertrain)``.
+    """Per-(Kreis, powertrain) joint ``P(age_band, euro_class | kreis, powertrain)``,
+    built EAGERLY for every (kreis, powertrain) pair.
 
-    Uses the same :func:`_age_euro_joint_matrices` IPF machinery as the national
-    joint, but substitutes the per-Kreis euro column target where available.
+    Kept for direct unit testing and as the reference implementation that
+    :class:`LazyKreisEuroJoint` must match exactly; :meth:`FleetSampler.from_data_path`
+    uses the lazy class instead (Task B3: eager build measured ~15 s wall-time
+    at the ~400-Kreis German-wide scale, see the class docstring).
 
     Parameters
     ----------
@@ -936,24 +990,75 @@ def _age_euro_joint_kreis(
     dict[(kreis_ags5, powertrain) -> IPF joint matrix (n_age x n_euro)]
     """
     kreise = {k for k, _pt in euro_given_kreis.keys()}
-    ages = list(ft.AGE_BAND_LABELS)
-    euros = list(ft.EURO_CLASS_LABELS)
     out: dict[tuple[str, str], np.ndarray] = {}
     for kreis in kreise:
-        for fuel, age_pmf in age_given_powertrain.items():
-            euro_pmf = euro_given_kreis.get(
-                (kreis, fuel), euro_given_national.get(fuel, np.ones(len(euros)) / len(euros)))
-            r = np.asarray(age_pmf, dtype=float)
-            r = r / r.sum() if r.sum() > 0 else np.ones(len(ages)) / len(ages)
-            c = np.asarray(euro_pmf, dtype=float)
-            c = c / c.sum() if c.sum() > 0 else np.ones(len(euros)) / len(euros)
-            allowed = np.array(
-                [[1.0 if _age_consistent_with_euro(a, e, fuel) else 0.0 for e in euros]
-                 for a in ages],
-                dtype=float,
-            )
-            out[(kreis, fuel)] = _ipf_joint(allowed, r, c)
+        for fuel in age_given_powertrain:
+            out[(kreis, fuel)] = _single_kreis_powertrain_age_euro_joint(
+                kreis, fuel, age_given_powertrain, euro_given_national, euro_given_kreis)
     return out
+
+
+class LazyKreisEuroJoint(collections.abc.Mapping):
+    """Lazily-computed, cached ``{(kreis_ags5, powertrain): IPF joint}`` mapping.
+
+    Task B3 extended the Regionalstatistik 46251-03 per-Kreis Euro table
+    (``kba_kreis_euro.csv``) to every German Kreis, so the per-(Kreis,
+    powertrain) age-euro joint can now span ~400 Kreise x 8 powertrains
+    (~3200 small 7x7 IPFs). Building all of them EAGERLY at
+    ``FleetSampler.from_data_path`` time was measured at ~15 s wall-time for a
+    synthetic ~400-Kreis fixture -- most of those combinations are never drawn
+    by a given run's actual household population (which typically touches the
+    8 ZGB home Kreise plus whichever in-commuter home Kreise are present).
+
+    This class defers each cell's IPF to first access via ``__getitem__`` (and
+    therefore ``.get()``, since :class:`collections.abc.Mapping` implements
+    ``get`` on top of ``__getitem__``) and caches the result, so the realised
+    compute cost matches the number of DISTINCT ``(kreis, powertrain)`` pairs
+    actually queried during sampling, not the full national universe. The
+    logical key set (and therefore ``len()``, ``in``, ``.keys()``) is still the
+    full cross product of Kreise-with-euro-data x configured powertrains,
+    identical to what the eager :func:`_age_euro_joint_kreis` builder would
+    produce -- :func:`_single_kreis_powertrain_age_euro_joint` is the exact
+    same per-cell computation used by both, so every returned value is
+    numerically identical to the eager result (verified by
+    ``tests/test_fleet_b1_euro_kreis.py::test_age_euro_joint_kreis_is_lazily_computed_and_matches_eager``).
+
+    Determinism is preserved: the IPF computation has no randomness, so lazy +
+    cached is bit-identical to eager, just deferred (and never repeated for the
+    same key thanks to the cache).
+    """
+
+    def __init__(
+        self,
+        age_given_powertrain: Mapping[str, np.ndarray],
+        euro_given_national: Mapping[str, np.ndarray],
+        euro_given_kreis: "Mapping[tuple[str, str], np.ndarray]",
+    ) -> None:
+        self._age_given_powertrain = age_given_powertrain
+        self._euro_given_national = euro_given_national
+        self._euro_given_kreis = euro_given_kreis
+        kreise = {k for k, _pt in euro_given_kreis.keys()}
+        self._keys: frozenset = frozenset(
+            (kreis, fuel) for kreis in kreise for fuel in age_given_powertrain
+        )
+        self._cache: dict[tuple[str, str], np.ndarray] = {}
+
+    def __getitem__(self, key: tuple[str, str]) -> np.ndarray:
+        if key not in self._keys:
+            raise KeyError(key)
+        if key not in self._cache:
+            kreis_ags5, fuel = key
+            self._cache[key] = _single_kreis_powertrain_age_euro_joint(
+                kreis_ags5, fuel, self._age_given_powertrain,
+                self._euro_given_national, self._euro_given_kreis,
+            )
+        return self._cache[key]
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._keys)
 
 
 def _age_given_powertrain(data_path: str) -> dict[str, np.ndarray]:
@@ -1351,8 +1456,11 @@ class FleetSampler:
     #: Task 6b: per-(Kreis, powertrain) joint P(age_band, euro_class | kreis,
     #: powertrain) built from Regionalstatistik 46251-03 per-Kreis Euro counts.
     #: ``None`` when kba_kreis_euro.csv is absent (then the national
-    #: ``age_euro_joint`` is used unchanged -- byte-identical fallback).
-    age_euro_joint_kreis: Optional[dict[tuple, np.ndarray]] = None
+    #: ``age_euro_joint`` is used unchanged -- byte-identical fallback). Task
+    #: B3: a :class:`LazyKreisEuroJoint` (dict-like, computed and cached on
+    #: first access) rather than a plain eager dict -- see that class's
+    #: docstring for the ~400-Kreis performance rationale.
+    age_euro_joint_kreis: Optional[Mapping[tuple, np.ndarray]] = None
     #: Task 10: per-model fuel-type weight vector over POWERTRAINS.
     #: Maps model string (same "MARKE MODELLREIHE" convention as kba_segment_model)
     #: to a length-8 numpy array aligned with POWERTRAINS.  Built from
@@ -1392,8 +1500,28 @@ class FleetSampler:
                 "[fleet_de] per-Kreis euro joint (46251-03): building per-"
                 "(Kreis, powertrain) age-euro IPF joints."
             )
-            age_euro_joint_kreis: Optional[dict[tuple, np.ndarray]] = _age_euro_joint_kreis(
+            # Task B3: the per-Kreis euro joint now potentially covers every
+            # German Kreis (Regionalstatistik 46251-03 is not ZGB-filtered any
+            # more, see load_kreis_euro / _require_zgb_subset). Building all
+            # ~400 Kreise x 8 powertrains eagerly was MEASURED at ~15 s
+            # wall-time for a synthetic ~400-Kreis fixture (exceeds the
+            # brief's ~10 s bound) -- most (kreis, powertrain) pairs are never
+            # drawn by a given run's actual household population. Use the lazy,
+            # cached mapping instead (see LazyKreisEuroJoint docstring); its
+            # values are numerically identical to the eager builder.
+            _build_start = time.perf_counter()
+            age_euro_joint_kreis: Optional[Mapping[tuple, np.ndarray]] = LazyKreisEuroJoint(
                 age_given, euro_given, euro_given_kreis)
+            _build_seconds = time.perf_counter() - _build_start
+            _n_kreise_euro = len({k for k, _pt in age_euro_joint_kreis.keys()})
+            (logger.warning if _build_seconds > 10.0 else logger.info)(
+                "[fleet_de] per-Kreis euro joint (46251-03): lazy index covers "
+                "%d Kreise x %d powertrains (index built in %.3f s). Individual "
+                "(kreis, powertrain) IPF joints are computed and cached on "
+                "first draw, not eagerly (Task B3 performance note: eager "
+                "build measured ~15 s at ~400-Kreis scale).",
+                _n_kreise_euro, len(POWERTRAINS), _build_seconds,
+            )
         else:
             logger.info(
                 "[fleet_de] national euro joint (FZ27.4 fallback): "

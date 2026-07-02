@@ -958,7 +958,15 @@ def extract_kreis_fuel_46251(path: Path = FUEL_46251_PATH) -> pd.DataFrame:
     Benzin, Diesel, Gas, Hybrid, darunter Plug-In-Hybrid, Elektro, sonstige.
     ``Hybrid`` INCLUDES the ``darunter PHEV`` subset, so non-plugin hybrid is
     ``Hybrid - PHEV``. ``Elektro`` == BEV. Dissolved Kreise carry ``-`` -> dropped.
-    Only the 8 ZGB Kreise are kept.
+
+    Task B3: the raw 46251-02 file covers EVERY German Kreis, not only the 8
+    ZGB Kreise -- keeping every Kreis with valid counts lets cross-cordon
+    in-commuters (who carry their real origin ``kreis_ags5``, see
+    ``incommuters._incommuter_kreis_ags5``) draw their true home-Kreis fuel mix
+    instead of falling back to the national one. The 8 ZGB Kreise keep the
+    canonical ``ZGB_KREISE`` label (backward-compatible provenance, matches the
+    other ZGB-only KBA tables); every other Kreis uses the file's own ``name``
+    column, since it has no ``ZGB_KREISE`` entry.
     """
     counter = CoercionCounter("46251-02 kreis_fuel")
     raw = pd.read_csv(path, sep=";", skiprows=8, header=None, encoding="latin-1", dtype=str)
@@ -967,10 +975,10 @@ def extract_kreis_fuel_46251(path: Path = FUEL_46251_PATH) -> pd.DataFrame:
     raw = raw.iloc[:, :len(cols)]
     raw.columns = cols
     records = []
+    n_zgb = 0
+    n_non_zgb = 0
     for _, r in raw.iterrows():
         code = str(r["ags5"]).strip()
-        if code not in ZGB_KREISE:
-            continue
         insg = _coerce_count(r["insg"], counter)
         if pd.isna(insg) or insg <= 0:
             continue  # dissolved / suppressed Kreis
@@ -982,13 +990,25 @@ def extract_kreis_fuel_46251(path: Path = FUEL_46251_PATH) -> pd.DataFrame:
         bev = _coerce_count(r["elektro"], counter)
         other = _coerce_count(r["sonstige"], counter)
         hybrid = max(np.nan_to_num(hybrid_all) - np.nan_to_num(phev), 0.0)
+        if code in ZGB_KREISE:
+            kreis_name = ZGB_KREISE[code]
+            n_zgb += 1
+        else:
+            kreis_name = str(r["name"]).strip()
+            n_non_zgb += 1
         records.append({
-            "kreis_ags5": code, "kreis_name": ZGB_KREISE[code],
+            "kreis_ags5": code, "kreis_name": kreis_name,
             "stichtag": "2025-01-01",
             "petrol": petrol, "diesel": diesel, "gas": gas, "bev": bev,
             "phev": phev, "hybrid": hybrid, "other": other,
         })
     counter.log()
+    logger.info(
+        "[extract_kreis_fuel_46251] %d Kreise kept (%d ZGB, %d non-ZGB); "
+        "in-commuters from any of these Kreise now get their real home-Kreis "
+        "fuel mix instead of the national fallback.",
+        n_zgb + n_non_zgb, n_zgb, n_non_zgb,
+    )
     frame = pd.DataFrame(records).sort_values("kreis_ags5").reset_index(drop=True)
     pts = ["petrol", "diesel", "gas", "bev", "phev", "hybrid", "other"]
     frame["total"] = frame[pts].sum(axis=1)
@@ -1007,6 +1027,12 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
     Columns after the 4 id cols (stichtag, ags5, name, teil): Insgesamt, Euro 1..5,
     Euro 6, darunter Euro-6d, darunter Euro-6d-temp, Sonstige. The two ``darunter``
     columns are SUBSETS of Euro 6 and are skipped (no double count).
+
+    Task B3: like :func:`extract_kreis_fuel_46251`, every Kreis covered by the
+    raw 46251-03 file is kept (not only the 8 ZGB Kreise), so cross-cordon
+    in-commuters get their real home-Kreis Euro-class mix. The 8 ZGB Kreise
+    keep the canonical ``ZGB_KREISE`` label; every other Kreis uses the file's
+    own ``name`` column.
     """
     counter = CoercionCounter("46251-03 kreis_euro")
     raw = pd.read_csv(path, sep=";", skiprows=8, header=None, encoding="latin-1", dtype=str)
@@ -1015,10 +1041,10 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
     raw = raw.iloc[:, :len(cols)]
     raw.columns = cols
     records = []
+    zgb_codes_kept: set = set()
+    non_zgb_codes_kept: set = set()
     for _, r in raw.iterrows():
         code = str(r["ags5"]).strip()
-        if code not in ZGB_KREISE:
-            continue
         teil_raw = _normalise_label(r["teil"]).lower()
         if teil_raw.startswith("insgesamt"):
             teil = "all"
@@ -1026,14 +1052,30 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
             teil = "diesel"
         else:
             continue
+        insg = _coerce_count(r["insg"], counter)
+        if pd.isna(insg) or insg <= 0:
+            continue  # dissolved / suppressed Kreis (only ever occurs for non-ZGB Kreise here)
         euros = {k: _coerce_count(r[v], counter) for k, v in
                  (("euro1", "e1"), ("euro2", "e2"), ("euro3", "e3"),
                   ("euro4", "e4"), ("euro5", "e5"), ("euro6", "e6"),
                   ("other", "sonstige"))}
-        rec = {"kreis_ags5": code, "kreis_name": ZGB_KREISE[code],
+        if code in ZGB_KREISE:
+            kreis_name = ZGB_KREISE[code]
+            zgb_codes_kept.add(code)
+        else:
+            kreis_name = str(r["name"]).strip()
+            non_zgb_codes_kept.add(code)
+        rec = {"kreis_ags5": code, "kreis_name": kreis_name,
                "stichtag": "2025-01-01", "teil": teil, **euros}
         records.append(rec)
     counter.log()
+    logger.info(
+        "[extract_kreis_euro_46251] %d Kreise kept (%d ZGB, %d non-ZGB); "
+        "in-commuters from any of these Kreise now get their real home-Kreis "
+        "Euro-class mix instead of the national fallback.",
+        len(zgb_codes_kept) + len(non_zgb_codes_kept),
+        len(zgb_codes_kept), len(non_zgb_codes_kept),
+    )
     frame = pd.DataFrame(records).sort_values(["kreis_ags5", "teil"]).reset_index(drop=True)
     euro_cols = ["euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other"]
     frame["total"] = frame[euro_cols].sum(axis=1)

@@ -145,6 +145,14 @@ def _require_labels(values: Iterable[str], allowed: Iterable[str],
 
 
 def _require_zgb_kreise(values: Iterable[str], filename: str) -> None:
+    """Strict ZGB-only check: exactly the 8 ZGB Kreise, no more, no fewer.
+
+    Used by loaders whose source table is genuinely ZGB-scoped (FZ 27.15, FZ
+    27.17, the 2026 Gemeinde EV shares): a non-ZGB code there would indicate a
+    join or filter bug in the extractor, not real additional coverage. Do NOT
+    weaken this helper for Task B3 -- use :func:`_require_zgb_subset` instead
+    for tables that now legitimately cover every German Kreis.
+    """
     codes = set(values)
     missing = set(ZGB_KREISE_AGS5) - codes
     if missing:
@@ -156,6 +164,26 @@ def _require_zgb_kreise(values: Iterable[str], filename: str) -> None:
     if extra:
         raise RuntimeError(
             f"{filename}: unexpected non-ZGB Kreis codes {sorted(extra)}."
+        )
+
+
+def _require_zgb_subset(values: Iterable[str], filename: str) -> None:
+    """All-Kreise check: the 8 ZGB Kreise MUST be present; extras are ALLOWED.
+
+    Used by the Regionalstatistik 46251 loaders (:func:`load_kreis_fuel`,
+    :func:`load_kreis_euro`), whose raw source files cover every German Kreis
+    (Task B3): a non-ZGB Kreis code is expected and lets cross-cordon
+    in-commuters (who carry their real origin ``kreis_ags5``, see
+    ``incommuters._incommuter_kreis_ags5``) draw their true home-Kreis mix. A
+    missing ZGB Kreis is still a hard error -- the ZGB region itself must never
+    silently lose coverage.
+    """
+    codes = set(values)
+    missing = set(ZGB_KREISE_AGS5) - codes
+    if missing:
+        raise RuntimeError(
+            f"{filename}: missing ZGB Kreise {sorted(missing)} "
+            f"(expected all of {sorted(ZGB_KREISE_AGS5)})."
         )
 
 
@@ -390,14 +418,17 @@ def load_kreis_fuel(data_path: str) -> pd.DataFrame:
 
     Real per-Kreis powertrain marginal (petrol/diesel/gas/bev/phev/hybrid/other),
     Stichtag 01.01.2025. Supersedes the FZ 27.15 NDS petrol:diesel split for the
-    per-Kreis powertrain rake. Validated to carry all 8 ZGB Kreise.
+    per-Kreis powertrain rake. The raw 46251-02 file covers every German Kreis
+    (Task B3): validated to carry at least all 8 ZGB Kreise; extra (non-ZGB)
+    Kreis rows are allowed and are how cross-cordon in-commuters get their real
+    home-Kreis fuel mix instead of the national fallback.
     """
     filename = "kba_kreis_fuel.csv"
     df = _read(data_path, filename)
     _require_columns(
         df, ["kreis_ags5", "kreis_name", "stichtag", "petrol", "diesel", "gas",
              "bev", "phev", "hybrid", "other", "total"], filename)
-    _require_zgb_kreise(df["kreis_ags5"], filename)
+    _require_zgb_subset(df["kreis_ags5"], filename)
     return df
 
 
@@ -405,8 +436,10 @@ def load_kreis_euro(data_path: str) -> pd.DataFrame:
     """Regionalstatistik 46251-03: per-Kreis Euro-group counts + shares.
 
     ``teil`` is ``all`` (all fuels) or ``diesel``; euro columns are euro1..euro6 +
-    other. Provides the per-Kreis Euro marginal, Stichtag 01.01.2025. Validated to
-    carry all 8 ZGB Kreise and the canonical Euro labels.
+    other. Provides the per-Kreis Euro marginal, Stichtag 01.01.2025. The raw
+    46251-03 file covers every German Kreis (Task B3): validated to carry at
+    least all 8 ZGB Kreise (in the ``all`` rows) and the canonical Euro labels;
+    extra (non-ZGB) Kreis rows are allowed.
     """
     filename = "kba_kreis_euro.csv"
     df = _read(data_path, filename)
@@ -414,7 +447,7 @@ def load_kreis_euro(data_path: str) -> pd.DataFrame:
         df, ["kreis_ags5", "kreis_name", "stichtag", "teil",
              "euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other",
              "total"], filename)
-    _require_zgb_kreise(df.loc[df["teil"] == "all", "kreis_ags5"], filename)
+    _require_zgb_subset(df.loc[df["teil"] == "all", "kreis_ags5"], filename)
     unexpected = set(df["teil"]) - {"all", "diesel"}
     if unexpected:
         raise RuntimeError(f"{filename}: unexpected teil values {sorted(unexpected)}.")
