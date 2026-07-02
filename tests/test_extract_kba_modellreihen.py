@@ -8,6 +8,7 @@ Fixture design:
 - Two models with known count breakdowns, so all share arithmetic can be verified exactly.
 """
 import io
+import logging
 import textwrap
 
 import pandas as pd
@@ -224,3 +225,78 @@ def test_extract_segment_model_2026_stichtag(tmp_path):
     csv_path = _write_modellreihen(tmp_path)
     df = ex.extract_segment_model_2026(csv_path)
     assert (df["stichtag"] == "2026-01-01").all()
+
+
+# ---------------------------------------------------------------------------
+# Task B6: Hybrid_ohne_Plugin consistency assertion
+# ---------------------------------------------------------------------------
+# Two models in the "Minis" segment, both carrying the OPTIONAL direct
+# Hybrid_ohne_Plugin column (absent from MODELLREIHEN_FIXTURE above):
+#   ALPHA MINI:  Hybrid=200, Hybrid_Plugin=80 -> computed non-plugin = 120;
+#                Hybrid_ohne_Plugin=120 -> AGREES.
+#   BETA CITY:   Hybrid=50,  Hybrid_Plugin=20 -> computed non-plugin = 30;
+#                Hybrid_ohne_Plugin=25 -> DISAGREES by 5 vehicles.
+MODELLREIHEN_FIXTURE_WITH_HYBRID_OHNE_PLUGIN = (
+    "﻿"  # utf-8-sig BOM
+    "Berichtszeitpunkt;Segment;Marke;Modellreihe;Anzahl;Diesel;Hybrid;Hybrid_Plugin;"
+    "BEV;gewerblich;Hybrid_ohne_Plugin\n"
+    "01.01.2026;Minis;ALPHA;MINI;1000;100;200;80;50;120;120\n"
+    "01.01.2026;Minis;BETA;CITY;500;0;50;20;100;30;25\n"
+)
+
+
+def _write_modellreihen_with_hybrid_column(tmp_path) -> str:
+    path = tmp_path / "kba_modellreihen_bestand_2020_2026.csv"
+    path.write_text(MODELLREIHEN_FIXTURE_WITH_HYBRID_OHNE_PLUGIN, encoding="utf-8-sig")
+    return str(path)
+
+
+def test_hybrid_ohne_plugin_disagreement_logs_warning_with_row_count(tmp_path, caplog):
+    """A disagreeing Hybrid_ohne_Plugin row must log a WARNING naming the row count."""
+    csv_path = _write_modellreihen_with_hybrid_column(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="extract_kba_fleet"):
+        ex.extract_model_fuel(csv_path)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Hybrid_ohne_Plugin" in msg for msg in warnings), (
+        f"Expected a Hybrid_ohne_Plugin consistency warning, got: {warnings}"
+    )
+    # Exactly one of the two rows disagrees (BETA CITY).
+    assert any("1/2" in msg or "1 " in msg for msg in warnings)
+
+
+def test_hybrid_ohne_plugin_disagreement_keeps_computed_value(tmp_path):
+    """The COMPUTED hybrid_share (Hybrid - Hybrid_Plugin) must be kept even when it
+    disagrees with the source's own Hybrid_ohne_Plugin column."""
+    csv_path = _write_modellreihen_with_hybrid_column(tmp_path)
+    df = ex.extract_model_fuel(csv_path).set_index("model")
+    beta = df.loc["BETA CITY"]
+    # Computed: (50 - 20) / 500 = 0.06, NOT the direct column's 25 / 500 = 0.05.
+    assert pytest.approx(beta["hybrid_share"], abs=1e-9) == 30 / 500
+    assert beta["hybrid_share"] != pytest.approx(25 / 500, abs=1e-9)
+
+
+def test_hybrid_ohne_plugin_agreement_row_not_counted_as_mismatch(tmp_path, caplog):
+    """A single-row fixture where Hybrid_ohne_Plugin agrees must log no warning."""
+    fixture = (
+        "﻿"
+        "Berichtszeitpunkt;Segment;Marke;Modellreihe;Anzahl;Diesel;Hybrid;Hybrid_Plugin;"
+        "BEV;gewerblich;Hybrid_ohne_Plugin\n"
+        "01.01.2026;Minis;ALPHA;MINI;1000;100;200;80;50;120;120\n"
+    )
+    csv_path = tmp_path / "kba_modellreihen_bestand_2020_2026.csv"
+    csv_path.write_text(fixture, encoding="utf-8-sig")
+    with caplog.at_level(logging.WARNING, logger="extract_kba_fleet"):
+        ex.extract_model_fuel(str(csv_path))
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("Hybrid_ohne_Plugin" in msg for msg in warnings)
+
+
+def test_hybrid_ohne_plugin_absent_column_no_warning(tmp_path, caplog):
+    """When the raw CSV has no Hybrid_ohne_Plugin column at all (the case for every
+    raw file seen so far), the consistency check must be silently skipped -- no
+    warning, no crash, byte-identical to the pre-B6 behaviour."""
+    csv_path = _write_modellreihen(tmp_path)  # base fixture, no Hybrid_ohne_Plugin column
+    with caplog.at_level(logging.WARNING, logger="extract_kba_fleet"):
+        ex.extract_model_fuel(csv_path)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("Hybrid_ohne_Plugin" in msg for msg in warnings)

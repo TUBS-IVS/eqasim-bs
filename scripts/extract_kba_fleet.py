@@ -35,6 +35,10 @@ Regionalization inputs (``kba/raw/`` subdirectory):
     * per-segment model share (replacing FZ 12.1)         -> kba_segment_model.csv
 - ``kba_ev_grid_5km_2026.gpkg`` (KBA 5 km grid, April 2026)
     * sub-communal EV share tilt (EPSG:3857, ZGB bbox)    -> kba_ev_grid.csv
+- ``kba_ev_regiostar7_timeseries_2023_2026.csv`` (KBA, latest period)
+    * national EV share by RegioStaR-7 (LOGGING-ONLY cross-check,
+      never an IPF control -- see fleet_validation.crosscheck_ev_by_regiostar7)
+                                                          -> kba_ev_regiostar7.csv
 
 The xlsx headers are multi-line and the data starts around row 12, so every
 sheet is parsed by *explicit column indices* (documented in the README), never
@@ -93,6 +97,7 @@ AGE_NATIONAL_PATH = RAW_DIR / "statista_kba_3438_pkw_age_national_2026.xlsx"
 GEMEINDE_EV_PATH = RAW_DIR / "kba_ev_gemeinde_timeseries_2023_2026.csv"
 MODELLREIHEN_PATH = RAW_DIR / "kba_modellreihen_bestand_2020_2026.csv"
 GRID_EV_PATH = RAW_DIR / "kba_ev_grid_5km_2026.gpkg"
+EV_REGIOSTAR7_PATH = RAW_DIR / "kba_ev_regiostar7_timeseries_2023_2026.csv"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -187,6 +192,9 @@ KBA_FUEL_MAP = {
     "darunter plug-in": "phev",
     "sonstige": "other",
 }
+
+# The 7 RegioStaR-7 codes (BMV/BBSR typology; 99 = "keine Zuordnung" is dropped).
+RS7_CODES = (71, 72, 73, 74, 75, 76, 77)
 
 # ZGB Kreise (KBA Kennziffer == Kreis AGS-5 == "03" + Kreis3).
 ZGB_KREISE = {
@@ -874,6 +882,17 @@ def extract_model_fuel(path=None) -> pd.DataFrame:
     Rows whose ``Segment`` does not map via ``KBA_SEGMENT_MAP`` are skipped
     (logged); the skip count is included in the log message (no-silent-fallback).
 
+    Task B6 consistency assertion: when the raw CSV carries a direct
+    ``Hybrid_ohne_Plugin`` column (a KBA-reported non-plugin-hybrid count,
+    distinct from the ``Hybrid``/``Hybrid_Plugin`` pair used above), this is
+    compared against the COMPUTED ``hybrid_nonplugin = Hybrid - Hybrid_Plugin``
+    for every row. A disagreement is logged as a WARNING with the row count --
+    this validates our arithmetic against the source's own column but does
+    NOT change the emitted value; ``hybrid_share`` always keeps the COMPUTED
+    value (already covered by :mod:`tests.test_extract_kba_modellreihen`). The
+    column is OPTIONAL: its absence (the case for every raw file seen so far)
+    is silent, since it carries no information either way.
+
     The join key convention matches ``kba_segment_model.csv``:
     ``model = f"{Marke} {Modellreihe}"`` (uppercase as delivered by KBA).
 
@@ -889,9 +908,12 @@ def extract_model_fuel(path=None) -> pd.DataFrame:
         path = MODELLREIHEN_PATH
     counter = CoercionCounter("Modellreihen 2026 model_fuel")
     df = _read_modellreihen(path)
+    has_hybrid_ohne_plugin = "Hybrid_ohne_Plugin" in df.columns
     records = []
     n_unmapped = 0
     n_zero_anzahl = 0
+    n_hybrid_checked = 0
+    n_hybrid_mismatch = 0
     for _, row in df.iterrows():
         seg_key = str(row["Segment"]).strip().lower()
         canonical = KBA_SEGMENT_MAP.get(seg_key)
@@ -907,8 +929,16 @@ def extract_model_fuel(path=None) -> pd.DataFrame:
         hybrid_all = np.nan_to_num(_coerce_count(row["Hybrid"], counter))
         hybrid_plugin = np.nan_to_num(_coerce_count(row["Hybrid_Plugin"], counter))
         bev = np.nan_to_num(_coerce_count(row["BEV"], counter))
-        # Non-plugin hybrid = total hybrid minus plugin hybrid.
+        # Non-plugin hybrid = total hybrid minus plugin hybrid. This COMPUTED
+        # value is the one emitted below (hybrid_share); it is already covered
+        # by test_extract_model_fuel_hybrid_split and is never overwritten.
         hybrid_nonplugin = max(hybrid_all - hybrid_plugin, 0.0)
+        if has_hybrid_ohne_plugin:
+            hybrid_direct = _coerce_count(row["Hybrid_ohne_Plugin"], counter)
+            if not pd.isna(hybrid_direct):
+                n_hybrid_checked += 1
+                if abs(hybrid_nonplugin - hybrid_direct) > 1e-6:
+                    n_hybrid_mismatch += 1
         # Petrol residual: subtract full Hybrid (which already includes plugin).
         petrol = max(anzahl - diesel - hybrid_all - bev, 0.0)
         records.append({
@@ -928,6 +958,22 @@ def extract_model_fuel(path=None) -> pd.DataFrame:
         "zero/invalid Anzahl=%d (total skipped=%d)",
         len(records), n_unmapped, n_zero_anzahl, total_skipped,
     )
+    if has_hybrid_ohne_plugin:
+        if n_hybrid_mismatch > 0:
+            logger.warning(
+                "[extract_model_fuel] %d/%d row(s) where the computed non-plugin "
+                "hybrid count (Hybrid - Hybrid_Plugin) disagrees with the source's "
+                "own 'Hybrid_ohne_Plugin' column -- the COMPUTED value is kept "
+                "(already tested); this is a consistency check against the source's "
+                "own arithmetic, not a data correction.",
+                n_hybrid_mismatch, n_hybrid_checked,
+            )
+        else:
+            logger.info(
+                "[extract_model_fuel] Hybrid_ohne_Plugin consistency check: all "
+                "%d row(s) agree with the computed value (Hybrid - Hybrid_Plugin).",
+                n_hybrid_checked,
+            )
     return pd.DataFrame(records)
 
 
@@ -1362,6 +1408,84 @@ def extract_ev_grid(path: Path = GRID_EV_PATH) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# KBA per-RegioStaR7 EV share timeseries -> kba_ev_regiostar7.csv
+# (national LOGGING-ONLY cross-check; Task B6)
+# --------------------------------------------------------------------------- #
+def extract_ev_regiostar7(path: Path = EV_REGIOSTAR7_PATH) -> pd.DataFrame:
+    """KBA per-RegioStaR7 EV share timeseries -> a national validation cross-check.
+
+    Reads the KBA RegioStaR-7 EV timeseries CSV
+    (``kba_ev_regiostar7_timeseries_2023_2026.csv``), one row per RegioStaR-7
+    region per quarterly reporting period (``Berichtszeitpunkt``, e.g.
+    ``"2026.04"``). This is a NATIONAL aggregate, not ZGB-specific, and is used
+    ONLY by :func:`braunschweig.synthesis.vehicles.fleet_validation.crosscheck_ev_by_regiostar7`
+    as a LOGGING-ONLY, order-of-magnitude cross-check -- it is never fed into
+    the synthesis as an IPF control or asserted as a regional target (see the
+    project's no-invented-reference-value rule).
+
+    This function:
+
+    - Keeps only the LATEST reporting period.
+    - Maps ``Regiostar7 Nummer`` to the canonical ``rs7`` int code (71..77);
+      the residual code ``99`` ("keine Zuordnung", unassigned) and any other
+      unparseable code are DROPPED (logged, no-silent-fallback rule).
+    - Converts German decimal commas in ``Pkw Elektro Anteil`` to dots and
+      divides by 100 (percent -> fraction) to produce ``ev_share``.
+
+    Args:
+        path: Path to the raw KBA RegioStaR-7 EV timeseries CSV (utf-8-sig).
+            Defaults to :data:`EV_REGIOSTAR7_PATH`.
+
+    Returns:
+        DataFrame with columns ``rs7, ev_share, stichtag``, one row per
+        RegioStaR-7 code (71..77), sorted by ``rs7``.
+    """
+    df = pd.read_csv(path, encoding="utf-8-sig", dtype=str)
+
+    # Keep only the latest reporting period (mirrors extract_gemeinde_ev).
+    latest = sorted(df["Berichtszeitpunkt"].dropna().unique())[-1]  # e.g. "2026.04"
+    stichtag = f"{latest[:4]}-{latest[5:7]}-01"
+
+    sub = df[df["Berichtszeitpunkt"] == latest].copy()
+
+    rs7_numeric = pd.to_numeric(sub["Regiostar7 Nummer"], errors="coerce")
+    n_before = len(sub)
+    keep = rs7_numeric.isin(RS7_CODES)
+    n_dropped = int((~keep).sum())
+    if n_dropped:
+        logger.info(
+            "[extract_ev_regiostar7] %d/%d row(s) dropped (RegioStaR7 code outside "
+            "71..77, e.g. 99 'keine Zuordnung' or unparseable); %d kept.",
+            n_dropped, n_before, n_before - n_dropped,
+        )
+    sub = sub[keep].copy()
+    sub["rs7"] = rs7_numeric[keep].astype(int)
+
+    ev_share = pd.to_numeric(
+        sub["Pkw Elektro Anteil"].str.replace(",", ".", regex=False), errors="coerce",
+    ) / 100.0
+    n_nan = int(ev_share.isna().sum())
+    if n_nan:
+        logger.warning(
+            "[extract_ev_regiostar7] %d/%d row(s) have an unparseable 'Pkw Elektro "
+            "Anteil' value -> ev_share NaN.", n_nan, len(sub),
+        )
+
+    out = pd.DataFrame({
+        "rs7": sub["rs7"].values,
+        "ev_share": ev_share.values,
+        "stichtag": stichtag,
+    }).sort_values("rs7").reset_index(drop=True)
+
+    logger.info(
+        "[extract_ev_regiostar7] %d RegioStaR7 rows kept (stichtag=%s); national "
+        "cross-check only, never an IPF control.",
+        len(out), stichtag,
+    )
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Statista KBA ID 3438 -> kba_age_national.csv (VALIDATION control)
 # --------------------------------------------------------------------------- #
 def extract_age_national(path: Path = AGE_NATIONAL_PATH, year: int = 2026) -> pd.DataFrame:
@@ -1485,6 +1609,23 @@ def main() -> None:
     )
     _write(extract_gemeinde_ev(), "kba_gemeinde_ev.csv")
     _write(extract_ev_grid(), "kba_ev_grid.csv")
+
+    # Task B6: the RegioStaR7 EV timeseries is a NEW, OPTIONAL raw input (a
+    # national logging-only cross-check, never an IPF control) -- guard it
+    # separately from the hard-required tuple above so main() still runs to
+    # completion (and the other 15 derived CSVs still regenerate) before the
+    # raw file has been supplied.
+    if EV_REGIOSTAR7_PATH.exists():
+        _write(extract_ev_regiostar7(), "kba_ev_regiostar7.csv")
+    else:
+        logger.info(
+            "[main] %s absent -- skipping kba_ev_regiostar7.csv (Task B6 national "
+            "EV cross-check input; optional, not required by any control). Supply "
+            "the raw file and re-run to enable braunschweig.synthesis.vehicles."
+            "fleet_validation.crosscheck_ev_by_regiostar7.",
+            EV_REGIOSTAR7_PATH,
+        )
+
     logger.info("[done] all KBA/MiD fleet reference CSVs written to %s", DERIVED_DIR)
 
 

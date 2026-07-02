@@ -650,6 +650,48 @@ def load_ev_grid(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_ev_regiostar7(data_path: str) -> pd.DataFrame:
+    """KBA per-RegioStaR7 EV share (national), LOGGING-ONLY validation cross-check.
+
+    Loads ``kba_ev_regiostar7.csv`` produced by
+    ``scripts/extract_kba_fleet.py::extract_ev_regiostar7`` (Task B6). This is a
+    NATIONAL aggregate (not ZGB-specific); it feeds ONLY
+    :func:`braunschweig.synthesis.vehicles.fleet_validation.crosscheck_ev_by_regiostar7`,
+    an order-of-magnitude cross-check that NEVER flags the run -- per the
+    no-invented-reference-value rule (CLAUDE.md), a national figure cannot be
+    asserted as a regional (ZGB) target, so it is reported as a CROSS-CHECK only.
+
+    Columns: ``rs7, ev_share, stichtag``.
+
+    Args:
+        data_path: Root data path; ``braunschweig/kba/derived/`` is appended
+            automatically.
+
+    Returns:
+        DataFrame with the three columns listed above, one row per
+        RegioStaR-7 code.
+
+    Raises:
+        FileNotFoundError: If ``kba_ev_regiostar7.csv`` is absent (the raw
+            RegioStaR7 timeseries CSV is a new, optional input -- run
+            ``scripts/extract_kba_fleet.py`` on the server once it has been
+            supplied to generate this file).
+        RuntimeError: If required columns are missing, or any ``rs7`` code is
+            outside the 7 canonical RegioStaR-7 codes (schema drift).
+    """
+    filename = "kba_ev_regiostar7.csv"
+    df = _read(data_path, filename)
+    _require_columns(df, ["rs7", "ev_share", "stichtag"], filename)
+    allowed_rs7 = set(RS7_TO_RAUMTYP_REGION)
+    unexpected = set(df["rs7"]) - allowed_rs7
+    if unexpected:
+        raise RuntimeError(
+            f"{filename}: unexpected RegioStaR7 code(s) {sorted(unexpected)} "
+            f"(allowed {sorted(allowed_rs7)})."
+        )
+    return df
+
+
 def load_mid_segment_by_status_raumtyp(data_path: str) -> pd.DataFrame:
     """MiD 2023 segment x economic status, by RegioStaR-7 Raumtyp (column-%).
 

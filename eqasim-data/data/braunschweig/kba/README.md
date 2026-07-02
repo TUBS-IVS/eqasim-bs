@@ -23,6 +23,7 @@ for large binary files).
 | `kba_modellreihen_bestand_2020_2026.csv` | KBA Fahrzeugzulassungen — Modellreihen Bestand | 01.01.2026 | Per-model-series (Marke + Modellreihe) registered stock with Anzahl, Diesel, Hybrid, Hybrid_Plugin, BEV counts; utf-8-sig encoding, semicolon-separated |
 | `kba_ev_grid_5km_2026.gpkg` | KBA open data portal (5 km grid EV share) | April 2026 | 5 km × 5 km grid cells with per-cell EV share (``elektro_an`` in percent); EPSG:3857; suppressed cells carry ``ZS_Anteil_ == "-"`` |
 | `fz27_202501.xlsx` | KBA FZ 27 (series 2025-01) | 01.01.2025 | Multi-sheet: FZ 27.10 segment × powertrain, FZ 27.15 Kreis × powertrain (ZGB only), FZ 27.17 Gemeinde × private BEV/PHEV (ZGB only), FZ 27.4 Niedersachsen fuel × Euro class, FZ 27.7 age band × fuel, FZ 27.11 brand × powertrain |
+| `kba_ev_regiostar7_timeseries_2023_2026.csv` | KBA open data portal (per-RegioStaR7 EV timeseries) | Latest reporting period | National EV share by RegioStaR-7 code (71–77; code 99 "keine Zuordnung" dropped); utf-8-sig encoding, comma-separated. **OPTIONAL** input (Task B6): used ONLY as a logging-only national cross-check (`fleet_validation.crosscheck_ev_by_regiostar7`), never as an IPF control; `scripts/extract_kba_fleet.py::main()` skips `kba_ev_regiostar7.csv` gracefully (logged) if this file is absent |
 
 Legacy raw files (also local-only, used by earlier extractors):
 
@@ -49,6 +50,7 @@ files to run.  Re-running `scripts/extract_kba_fleet.py` regenerates them identi
 | `kba_gemeinde_ev.csv` | 2026-04-01 | KBA per-Gemeinde EV timeseries | Per-Gemeinde EV/BEV/PHEV/fuel-cell shares (fractions); latest period only; ZGB Gemeinden only |
 | `kba_model_fuel.csv` | 2026-01-01 | KBA Modellreihen Bestand 01.01.2026 | Per-model-series fuel shares (petrol, diesel, hybrid, phev, bev); used by fleet_sampling_de to regionalise model-specific powertrain mix |
 | `kba_ev_grid.csv` | 2026-04-01 | KBA 5 km EV grid (April 2026) | Per-cell EV share (fraction), cell bounding box in EPSG:3857 (minx/miny/maxx/maxy), suppression flag; ZGB bbox clip applied |
+| `kba_ev_regiostar7.csv` | latest reporting period | KBA per-RegioStaR7 EV timeseries | National EV share (fraction) per RegioStaR-7 code (71–77); LOGGING-ONLY cross-check (Task B6), not an IPF control; consumed by `fleet_validation.crosscheck_ev_by_regiostar7` |
 
 ### Legacy outputs (present before 2026-07-02)
 
