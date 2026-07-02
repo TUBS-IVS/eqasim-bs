@@ -628,7 +628,11 @@ class PowertrainModel:
             if gem_share is None or kreis_share <= 0.0:
                 continue
             # Clip the tilt to [0.2, 5] so a tiny denominator cannot explode a
-            # single Gemeinde's electric share.
+            # single Gemeinde's electric share. F8 NOTE: the 0.2 lower floor is
+            # DELIBERATE -- a Gemeinde with a genuine near-zero EV share still keeps
+            # >=20% of the Kreis's relative EV propensity rather than being fully
+            # suppressed. This is an anti-explosion guard; it means "no-EV pockets"
+            # are not represented at the extreme (acceptable trade-off).
             factor = float(np.clip(gem_share / kreis_share, 0.2, 5.0))
             tilted[idx[pt]] *= factor
         return tilted
@@ -686,6 +690,9 @@ class PowertrainModel:
         self._grid_primary += 1
         idx = {p: i for i, p in enumerate(self.powertrains)}
         tilted = pmf.copy()
+        # F8 NOTE: the 0.2 lower floor is DELIBERATE (same as the Gemeinde tilt) --
+        # a true near-zero-EV cell keeps >=20% of the Gemeinde's relative EV
+        # propensity rather than being fully suppressed (anti-explosion guard).
         factor = float(np.clip(grid_ev_share / gemeinde_grid_mean, 0.2, 5.0))
         for pt in ELECTRIC_POWERTRAINS:
             tilted[idx[pt]] *= factor
@@ -815,6 +822,12 @@ def _euro_given_kreis_powertrain(
       class as a non-diesel combustion proxy. 46251-03 does not break down euro by
       individual fuel type, so petrol / gas / other all share this non-diesel shape.
       This is an intentional modelling assumption; document it explicitly.
+      F12 NOTE: 46251-03 ``all`` is ALL Pkw (not combustion-only), so ``all-diesel``
+      still contains the euro grouping of electrified Pkw (bev/phev/hybrid). The
+      petrol/gas/other euro SHAPE is therefore slightly contaminated by electrified
+      vehicles' euro classes. The effect is small (electrified are a minority and
+      their euro is overridden to "electric" for bev/hydrogen at draw time) and
+      acknowledged; a per-fuel-per-Kreis euro table would be needed to remove it.
     * *bev*, *phev*, *hybrid*, *hydrogen*: 46251-03 covers only combustion; fall
       back to the national pmf from :func:`_euro_given_powertrain` for every Kreis.
 
@@ -1444,7 +1457,10 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         ``"sonstige"`` are redistributed: a replacement segment is redrawn from
         the KBA segment marginal restricted to the modelled (model-bearing)
         segments, proportional to ``segment_share``. This ensures no emitted
-        vehicle carries ``sonstige`` / an empty brand. When ``False``, the legacy
+        vehicle carries the ``"sonstige"`` segment (F11: an empty brand is NOT
+        fully ruled out -- a modelled segment that happens to lack Modellreihen
+        rows, e.g. ``wohnmobile``, can still yield an empty brand/model, which
+        then takes the intended unmasked-pmf fallback). When ``False``, the legacy
         behaviour is preserved (``sonstige`` can appear with an empty brand).
     age_income_coupling : when ``True`` (default) AND ``consistency_v2=True``,
         the per-car age PMF is multiplied by the MiD income-age tilt from
@@ -1819,6 +1835,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             # made the fleet ~4 yr too young (petrol 12.05 -> 7.33). The income
             # tilt (Feature B) reweights the age rows (mean-preserving). Setting
             # age_euro_joint=False restores the legacy euro-first draw + age mask.
+            # F6 NOTE: this age_euro_joint=False branch is NOT wired to any config
+            # key (production always uses True); it is reachable only from direct/
+            # test calls. On that branch the validator's expected age/euro (derived
+            # from the joint in _effective_expected) would diverge from the actual
+            # euro-first+mask draw and false-alarm -- acceptable for a test-only path.
             if age_euro_joint:
                 tilt = (age_model.age_tilt(car_segment[i], car_status[i])
                         if age_model is not None else None)

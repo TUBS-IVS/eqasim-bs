@@ -6,6 +6,14 @@ realised marginals to those EFFECTIVE targets (NOT the raw KBA tables) so the
 residual collapses to Monte-Carlo sampling error on a healthy model and still
 catches implementation bugs (e.g. the 4-yr age offset). Logging-only; no
 silent drift. See docs/superpowers/specs/2026-07-01-fleet-model-improvements-design.md.
+
+F4 NOTE (combustion-split traceability): the per-Kreis electric rake re-centres
+only the ELECTRIC (bev/phev) mass to the per-Kreis target. After the per-model
+fuel-weight mask, the per-Kreis petrol:diesel:gas:hybrid split is therefore NOT
+guaranteed to match the 46251-02 / FZ 27.15 combustion marginal, and this
+validator compares against the (already-weighted) EFFECTIVE pmf, so it does not
+police that drift. The realised per-Kreis combustion split should be
+spot-checked against 46251-02 in the per-run validation summary.
 """
 from __future__ import annotations
 import logging
