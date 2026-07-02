@@ -375,6 +375,42 @@ def test_recalibration_deterministic_given_seed():
     pd.testing.assert_frame_equal(a, b)
 
 
+def test_electric_rake_warns_on_overshoot(caplog):
+    """F5: the rake must WARN symmetrically when the mask forces the achieved
+    electric share ABOVE the target and it cannot be scaled back down --
+    mirroring the pre-existing under-shoot WARNING.
+
+    Every car's masked pmf is deterministically bev=1.0 (an electric-only
+    feasible model), so the achieved bev share is pinned at 1.0 regardless of
+    the rake factor. With a target share of 0.5 this is unreachable from
+    above and must log a WARNING carrying a POSITIVE residual.
+    """
+    pmfs = np.array([[1.0, 0.0]] * 20, dtype=float)  # col 0 = bev, col 1 = other
+    electric_idx = {"bev": 0}
+    with caplog.at_level(logging.WARNING):
+        factors, residuals = fs._electric_rake_factors(
+            pmfs, {"bev": 0.5}, electric_idx, kreis="TEST_OVERSHOOT")
+    assert residuals["bev"] > 0.01
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("UNREACHABLE" in r.message for r in warnings), (
+        "expected an UNREACHABLE WARNING for the over-shoot residual")
+    assert any("TEST_OVERSHOOT" in r.message for r in warnings)
+
+
+def test_electric_rake_warns_on_undershoot(caplog):
+    """F5 (regression): the pre-existing under-shoot WARNING still fires when
+    a Kreis has too little feasible electric mass to reach the target."""
+    pmfs = np.array([[0.0, 1.0]] * 20, dtype=float)  # col 0 = bev, col 1 = other
+    electric_idx = {"bev": 0}
+    with caplog.at_level(logging.WARNING):
+        factors, residuals = fs._electric_rake_factors(
+            pmfs, {"bev": 0.5}, electric_idx, kreis="TEST_UNDERSHOOT")
+    assert residuals["bev"] < -0.01
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("UNREACHABLE" in r.message for r in warnings)
+    assert any("TEST_UNDERSHOOT" in r.message for r in warnings)
+
+
 # --------------------------------------------------------------------------- #
 # Task 8 — provenance columns (Feature P).
 # --------------------------------------------------------------------------- #

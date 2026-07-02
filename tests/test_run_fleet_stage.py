@@ -29,6 +29,9 @@ DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
 import matsim.scenario.vehicles as writer  # noqa: E402
+from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
+from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
+from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 from braunschweig.synthesis.vehicles.cars import household as hh  # noqa: E402
 
 DATA_PATH = str(DATA)
@@ -319,3 +322,54 @@ def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path):
     assert "engine_power_kw" in seen
     assert "displacement_ccm" in seen
     assert "hsn" in seen and "tsn" in seen
+
+
+# --------------------------------------------------------------------------- #
+# 6. F10: default_car routing rows carry the LEGACY vocab; typed fleet rows
+# carry only the CANONICAL German-fleet vocab. Never change the default-row
+# values (pre-existing output, accepted quirk -- see the docstring on
+# _legacy_default_fleet / _add_default_cars_for_non_owners and the ADR).
+# --------------------------------------------------------------------------- #
+CANONICAL_TECHNOLOGY_VOCAB = set(fs.POWERTRAINS)
+CANONICAL_EURO_VOCAB = set(ft.EURO_CLASS_LABELS) | {hbefa.ELECTRIC_EURO}
+
+
+def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab():
+    """The typed household fleet and the eqasim-core routing placeholder
+    (``default_car``) coexist in the same ``df_vehicles`` frame with two
+    DIFFERENT vocabularies for technology/euro/euro_class:
+
+      * NON-default rows (the differentiated German fleet) use the canonical
+        vocab: ``technology`` in ``fs.POWERTRAINS`` and ``euro``/``euro_class``
+        in ``ft.EURO_CLASS_LABELS`` plus the ``hbefa.ELECTRIC_EURO`` override.
+      * default rows (``type_id == "default_car"``, the routing placeholder
+        eqasim-core needs for every non-owner) keep the LEGACY vocab
+        (``technology="Gazole"``, ``euro=6`` (int), ``critair="Crit'air 1"``)
+        exactly as emitted by ``synthesis.vehicles.cars.default`` -- this is a
+        pre-existing, byte-comparability-preserving quirk (F10), NOT a bug to
+        silently mix into the German vocab.
+    """
+    ctx = _stub()
+    _, df_vehicles = hh.execute(ctx)
+
+    is_default = df_vehicles["type_id"] == "default_car"
+    assert is_default.any(), "fixture must include at least one routing default_car"
+    assert (~is_default).any(), "fixture must include at least one typed fleet car"
+
+    typed = df_vehicles[~is_default]
+    assert set(typed["technology"].unique()) <= CANONICAL_TECHNOLOGY_VOCAB, (
+        f"non-default technology values outside the canonical vocab: "
+        f"{set(typed['technology'].unique()) - CANONICAL_TECHNOLOGY_VOCAB}")
+    assert set(typed["euro"].unique()) <= CANONICAL_EURO_VOCAB, (
+        f"non-default euro values outside the canonical vocab: "
+        f"{set(typed['euro'].unique()) - CANONICAL_EURO_VOCAB}")
+    assert set(typed["euro_class"].unique()) <= CANONICAL_EURO_VOCAB, (
+        f"non-default euro_class values outside the canonical vocab: "
+        f"{set(typed['euro_class'].unique()) - CANONICAL_EURO_VOCAB}")
+
+    # The default rows are cleanly separable via type_id and keep their
+    # documented legacy values (unchanged by F10 -- doc-only fix).
+    default_rows = df_vehicles[is_default]
+    assert (default_rows["technology"] == "Gazole").all()
+    assert (default_rows["euro"] == 6).all()
+    assert (default_rows["critair"] == "Crit'air 1").all()

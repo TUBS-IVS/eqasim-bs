@@ -1289,7 +1289,7 @@ def _draw_age_consistent_with_euro(rng: np.random.Generator,
 def _electric_rake_factors(
     pmfs: np.ndarray, kreis_target_share: dict[str, float],
     electric_idx: dict[str, int], max_iterations: int = 50,
-    tolerance: float = 1e-9,
+    tolerance: float = 1e-9, kreis: str = "?",
 ) -> tuple[np.ndarray, dict[str, float]]:
     """Per-electric-powertrain multiplicative scale factors for ONE Kreis.
 
@@ -1314,6 +1314,8 @@ def _electric_rake_factors(
     kreis_target_share : {powertrain -> FZ 27.15 share} for this Kreis (the
         electric entries are the rake targets).
     electric_idx : {electric powertrain -> column index in ``pmfs``}.
+    kreis : Kreis code, used only to make the WARNING log messages below
+        traceable; has no effect on the computed factors/residuals.
 
     Returns
     -------
@@ -1321,11 +1323,22 @@ def _electric_rake_factors(
         ``factors`` is a length-``n_powertrains`` vector of multiplicative scale
         factors (1.0 for every non-electric powertrain); ``residuals`` maps each
         electric powertrain to ``achieved_share - target_share`` AFTER raking
-        (≈0 when reachable; the signed unreachable residual otherwise). When an
-        electric target is UNREACHABLE (too little feasible mass: the maximum
-        achievable share — all feasible mass forced onto ``e`` — is below the
-        target) the factor is driven high and the residual is reported negative
-        so the caller can log a no-silent-fallback WARNING.
+        (≈0 when reachable; the signed unreachable residual otherwise).
+
+        Two UNREACHABLE cases are possible and both are logged here as a
+        no-silent-fallback WARNING (F5):
+
+        * Too LITTLE feasible mass (the maximum achievable share -- all
+          feasible mass forced onto ``e`` -- is below the target): the factor
+          is driven high and the residual is reported NEGATIVE
+          (``resid < -0.01``).
+        * Too MUCH forced feasible mass (e.g. every car in the Kreis is
+          assigned to an electric-only model, so ``e`` already saturates the
+          masked pmf at 1.0 for every car): the achieved share cannot be
+          scaled DOWN below what the mask already forces, and the residual is
+          reported POSITIVE (``resid > +0.01``). This over-shoot mirrors the
+          under-shoot case and typically signals a high-EV Kreis where the
+          model-feasibility mask leaves too few non-electric alternatives.
     """
     n_cars, n_pt = pmfs.shape
     factors = np.ones(n_pt, dtype=float)
@@ -1375,7 +1388,26 @@ def _electric_rake_factors(
 
     for j, e in enumerate(electric_idx):
         factors[cols[j]] = alpha[j]
-        residuals[e] = float(achieved[j] - targets[j])
+        resid = float(achieved[j] - targets[j])
+        residuals[e] = resid
+        # No silent fallback (F5): an unreachable target -- from either side --
+        # means the model-feasibility mask leaves too little (or too much)
+        # electric-capable mass to hit the FZ 27.15 share for this Kreis.
+        if resid < -0.01:
+            logger.warning(
+                "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
+                "%s UNREACHABLE (under target) -- target %.4f, max achievable "
+                "%.4f (residual %.4f); too few electric-capable cars.",
+                kreis, e, targets[j], targets[j] + resid, resid,
+            )
+        elif resid > 0.01:
+            logger.warning(
+                "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
+                "%s UNREACHABLE (over target) -- target %.4f, min achievable "
+                "%.4f (residual %.4f); forced electric-only models cannot be "
+                "scaled down further.",
+                kreis, e, targets[j], targets[j] + resid, resid,
+            )
     return factors, residuals
 
 
@@ -1757,21 +1789,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 e: float(unmasked[:, idx].mean())
                 for e, idx in electric_idx.items()
             }
+            # Unreachable-target WARNINGs (both under- and over-shoot, F5) are
+            # logged inside _electric_rake_factors itself, keyed by ``kreis``.
             factors, residuals = _electric_rake_factors(
-                pmfs, target, electric_idx)
+                pmfs, target, electric_idx, kreis=kreis)
             kreis_factors[kreis] = factors
-            for e, resid in residuals.items():
-                # Unreachable: too little feasible electric mass to meet the
-                # target (achieved < target after forcing all feasible mass onto
-                # e). No silent fallback -- log a WARNING with the residual.
-                if resid < -0.01:
-                    logger.warning(
-                        "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
-                        "%s UNREACHABLE -- target %.4f, max achievable %.4f "
-                        "(residual %.4f); too few electric-capable cars.",
-                        kreis, e, target.get(e, 0.0),
-                        target.get(e, 0.0) + resid, resid,
-                    )
 
         # PASS 2: apply the per-Kreis rake factor, draw the powertrain, then
         # re-derive euro/age from the FINAL powertrain (internal consistency) and

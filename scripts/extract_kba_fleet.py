@@ -378,11 +378,16 @@ def extract_segment_powertrain() -> pd.DataFrame:
         if canonical is None:
             continue
         total = _coerce_count(_cell(row, 2), counter)
-        bev = _coerce_count(_cell(row, 7), counter)
+        # F9: a KBA-suppressed alt-drive cell (placeholder "." / "()" / blank)
+        # coerces to NaN; wrap every alt-drive count in np.nan_to_num so a
+        # suppressed cell cannot propagate NaN into alt_total / *_share below
+        # (the hydrogen column is already NaN-safe via np.nansum -- apply the
+        # same guard to bev/phev/hybrid/gas for consistency).
+        bev = np.nan_to_num(_coerce_count(_cell(row, 7), counter))
         fuel_cell = _coerce_count(_cell(row, 8), counter)
-        phev = _coerce_count(_cell(row, 9), counter)
-        hybrid = _coerce_count(_cell(row, 10), counter)
-        gas = _coerce_count(_cell(row, 13), counter)
+        phev = np.nan_to_num(_coerce_count(_cell(row, 9), counter))
+        hybrid = np.nan_to_num(_coerce_count(_cell(row, 10), counter))
+        gas = np.nan_to_num(_coerce_count(_cell(row, 13), counter))
         hydrogen_col = _coerce_count(_cell(row, 14), counter)
         hydrogen = np.nansum([fuel_cell, hydrogen_col])
         records.append({
@@ -429,15 +434,18 @@ def extract_kreis_powertrain() -> pd.DataFrame:
         code = str(kennziffer).strip()
         if code not in ZGB_KREISE:
             continue
+        # F9: guard every alt-drive count against a KBA-suppressed cell
+        # (placeholder -> NaN via _coerce_count) so it cannot propagate NaN
+        # into alt_share/bev_share/phev_share below.
         records.append({
             "kreis_ags5": code,
             "kreis_name": ZGB_KREISE[code],
             "total": _coerce_count(_cell(row, 4), counter),
-            "alt_total": _coerce_count(_cell(row, 5), counter),
-            "bev": _coerce_count(_cell(row, 9), counter),
-            "phev": _coerce_count(_cell(row, 10), counter),
-            "hybrid": _coerce_count(_cell(row, 11), counter),
-            "gas": _coerce_count(_cell(row, 14), counter),
+            "alt_total": np.nan_to_num(_coerce_count(_cell(row, 5), counter)),
+            "bev": np.nan_to_num(_coerce_count(_cell(row, 9), counter)),
+            "phev": np.nan_to_num(_coerce_count(_cell(row, 10), counter)),
+            "hybrid": np.nan_to_num(_coerce_count(_cell(row, 11), counter)),
+            "gas": np.nan_to_num(_coerce_count(_cell(row, 14), counter)),
         })
     counter.log()
     frame = pd.DataFrame(records).sort_values("kreis_ags5").reset_index(drop=True)
