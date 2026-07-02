@@ -12,6 +12,7 @@ Expected stichtag values by extractor:
 
 - ``extract_kreis_fuel_46251``   -> ``"2025-01-01"``  (Destatis 46251-02, Stichtag 01.01.2025)
 - ``extract_kreis_euro_46251``   -> ``"2025-01-01"``  (Destatis 46251-03, Stichtag 01.01.2025)
+- ``extract_fuel_euro6_substage_nds`` -> ``"2025-01-01"``  (FZ 27.4 Euro-6 substage, Stichtag 01.01.2025)
 - ``extract_age_national``       -> ``"2026-01-01"``  (KBA/Statista ID3438, Stichtag 01.01.2026)
 - ``extract_model_fuel``         -> ``"2026-01-01"``  (KBA Modellreihen, Stichtag 01.01.2026)
 - ``extract_gemeinde_ev``        -> ``"2026-04-01"``  (KBA per-Gemeinde EV, April 2026)
@@ -128,6 +129,55 @@ def test_extract_kreis_euro_46251_stichtag(tmp_path):
     assert (df["stichtag"] == "2025-01-01").all(), (
         f"Unexpected stichtag values: {df['stichtag'].unique().tolist()}"
     )
+
+
+def test_extract_fuel_euro6_substage_nds_stichtag_and_shares(tmp_path, monkeypatch):
+    """extract_fuel_euro6_substage_nds (Task B4): stichtag == '2025-01-01' and
+    per-fuel substage shares (P(substage | euro6, fuel)) sum to 1.
+
+    FZ 27.4 sheet layout (see extract_fuel_euro_nds / extract_fuel_euro6_substage_nds
+    docstrings): col1=Land (filled once per block), col2=fuel, col3..7=Euro1..5,
+    col8=Euro6 total, col9=darunter Euro-6d-temp, col10=darunter Euro-6d,
+    col11=darunter Euro-6e (folded into euro6d -- Euro-6e is the newest
+    sub-class and has no separate downstream bucket), col12=Sonstige,
+    col13=row total.
+    """
+    xlsx = tmp_path / "fz27_euro6_substage.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "FZ 27.4"
+    # Benzin (petrol): euro6=1000, 6d-temp=200, 6d=500, 6e=100
+    #   -> euro6d (folded) = 600, euro6ab = max(1000 - 200 - 600, 0) = 200
+    ws.append([None, "Niedersachsen", "Benzin", 10, 20, 30, 40, 50, 1000, 200, 500, 100, 5, 1855])
+    # Diesel: euro6=2000, 6d-temp=300, 6d=700, 6e absent (no separate 6e reported)
+    #   -> euro6d (folded) = 700, euro6ab = max(2000 - 300 - 700, 0) = 1000
+    ws.append([None, None, "Diesel", 15, 25, 35, 45, 55, 2000, 300, 700, None, 8, 2483])
+    ws.append([None, "Niedersachsen zusammen", None])
+    wb.save(xlsx)
+    monkeypatch.setattr(ex, "FZ27_PATH", xlsx)
+
+    df = ex.extract_fuel_euro6_substage_nds()
+
+    assert "stichtag" in df.columns, "stichtag column missing from euro6_substage output"
+    assert (df["stichtag"] == "2025-01-01").all(), (
+        f"Unexpected stichtag values: {df['stichtag'].unique().tolist()}"
+    )
+    assert set(df["substage"]) == {"euro6ab", "euro6dtemp", "euro6d"}
+
+    petrol = df[df["fuel"] == "petrol"].set_index("substage")["count"]
+    assert petrol["euro6dtemp"] == 200
+    assert petrol["euro6d"] == 600  # 500 (6d) + 100 (6e, folded in)
+    assert petrol["euro6ab"] == 200  # 1000 - 200 - 600
+
+    diesel = df[df["fuel"] == "diesel"].set_index("substage")["count"]
+    assert diesel["euro6dtemp"] == 300
+    assert diesel["euro6d"] == 700  # no 6e reported -> unchanged
+    assert diesel["euro6ab"] == 1000  # 2000 - 300 - 700
+
+    # P(substage | euro6, fuel) sums to 1 within each fuel.
+    per_fuel = df.groupby("fuel")["share"].sum()
+    for fuel, total in per_fuel.items():
+        assert total == pytest.approx(1.0, abs=1e-6), f"fuel {fuel} shares sum to {total}"
 
 
 def test_extract_age_national_stichtag(tmp_path):

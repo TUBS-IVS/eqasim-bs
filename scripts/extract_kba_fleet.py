@@ -546,6 +546,68 @@ def extract_fuel_euro_nds() -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# FZ 27.4 -> kba_fuel_euro6_substage_nds.csv (Niedersachsen, Task B4)
+# --------------------------------------------------------------------------- #
+def extract_fuel_euro6_substage_nds() -> pd.DataFrame:
+    """FZ 27.4: Niedersachsen fuel x Euro-6 substage breakdown (long form).
+
+    :func:`extract_fuel_euro_nds` keeps only the headline Euro classes
+    (1..6, other) and skips the Euro-6 sub-breakdown columns. This function
+    extracts that sub-breakdown instead, using the SAME column layout (see
+    that function's docstring): col1=Land (once per block), col2=fuel,
+    col8=Euro6 total, col9=darunter Euro-6d-temp, col10=darunter Euro-6d,
+    col11=darunter Euro-6e.
+
+    Euro-6e is the newest sub-class and has no separate downstream bucket (the
+    HBEFA Euro-6 sub-mapping in Task B5 only distinguishes 6a/b/c, 6d-temp and
+    6d), so it is FOLDED INTO Euro-6d here -- a NaN-safe fold so a KBA-
+    suppressed or absent 6e cell does not turn the residual computation
+    negative. The residual ("Euro-6a/b/c", not reported directly by Destatis)
+    is derived as ``euro6ab = max(euro6_total - euro6dtemp - euro6d, 0)`` per
+    fuel, mirroring the per-Kreis 46251-03 derivation in
+    :func:`extract_kreis_euro_46251`.
+
+    Returns:
+        Long-form DataFrame with columns ``fuel, substage, count, share,
+        stichtag``, where ``substage`` in ``{"euro6ab", "euro6dtemp",
+        "euro6d"}`` and ``share = P(substage | euro6, fuel)`` (the three
+        substage counts sum to the fuel's euro6 total, so shares sum to 1
+        within each fuel that has a positive euro6 total).
+    """
+    rows = _read_sheet(FZ27_PATH, "FZ 27.4")
+    counter = CoercionCounter("FZ 27.4 fuel_euro6_substage_nds")
+    records = []
+    in_block = False
+    for row in rows:
+        land = _normalise_label(row[1]) if row[1] is not None else ""
+        if land.lower().startswith("niedersachsen zusammen"):
+            break
+        if land.lower() == "niedersachsen":
+            in_block = True
+        if not in_block:
+            continue
+        fuel_label = _normalise_label(row[2]).lower() if row[2] is not None else ""
+        powertrain = KBA_FUEL_MAP.get(fuel_label)
+        if powertrain is None:
+            continue
+        euro6_total = _coerce_count(_cell(row, 8), counter)
+        euro6dtemp = np.nan_to_num(_coerce_count(_cell(row, 9), counter))
+        euro6d_raw = np.nan_to_num(_coerce_count(_cell(row, 10), counter))
+        euro6e = np.nan_to_num(_coerce_count(_cell(row, 11), counter))
+        euro6d = euro6d_raw + euro6e  # fold Euro-6e into Euro-6d (documented above)
+        euro6ab = max(np.nan_to_num(euro6_total) - euro6dtemp - euro6d, 0.0)
+        records.append({"fuel": powertrain, "substage": "euro6ab", "count": euro6ab})
+        records.append({"fuel": powertrain, "substage": "euro6dtemp", "count": euro6dtemp})
+        records.append({"fuel": powertrain, "substage": "euro6d", "count": euro6d})
+    counter.log()
+    frame = pd.DataFrame(records)
+    fuel_totals = frame.groupby("fuel")["count"].transform("sum")
+    frame["share"] = frame["count"] / fuel_totals
+    frame["stichtag"] = "2025-01-01"
+    return frame
+
+
+# --------------------------------------------------------------------------- #
 # FZ 27.7 -> kba_age_fuel.csv (Pkw column)
 # --------------------------------------------------------------------------- #
 def extract_age_fuel() -> pd.DataFrame:
@@ -1025,8 +1087,18 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
 
     Two rows per Kreis: ``insgesamt`` (all fuels) and ``Dieselangetriebener Pkw``.
     Columns after the 4 id cols (stichtag, ags5, name, teil): Insgesamt, Euro 1..5,
-    Euro 6, darunter Euro-6d, darunter Euro-6d-temp, Sonstige. The two ``darunter``
-    columns are SUBSETS of Euro 6 and are skipped (no double count).
+    Euro 6, darunter Euro-6d, darunter Euro-6d-temp, Sonstige.
+
+    Task B4: the headline ``euro6`` column (the Destatis Euro-6 total) stays
+    UNCHANGED, so every existing consumer (the per-Kreis Euro rake, ``total``,
+    the ``euro*_share`` columns below) keeps working exactly as before. The two
+    ``darunter`` columns -- previously read into the raw frame but discarded --
+    are now ALSO emitted as additive count columns ``euro6d`` / ``euro6dtemp``
+    (NOT part of ``euro_cols``/``total``, to avoid double counting the Euro-6
+    total), plus the derived residual ``euro6ab = max(euro6 - euro6d -
+    euro6dtemp, 0)`` (the pre-6d-temp Euro 6a/b/c share, not reported directly
+    by Destatis). This mirrors the FZ 27.4 Euro-6 substage breakdown produced
+    by :func:`extract_fuel_euro6_substage_nds`.
 
     Task B3: like :func:`extract_kreis_fuel_46251`, every Kreis covered by the
     raw 46251-03 file is kept (not only the 8 ZGB Kreise), so cross-cordon
@@ -1059,6 +1131,17 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
                  (("euro1", "e1"), ("euro2", "e2"), ("euro3", "e3"),
                   ("euro4", "e4"), ("euro5", "e5"), ("euro6", "e6"),
                   ("other", "sonstige"))}
+        # Task B4: Euro-6 substage counts.  "darunter Euro-6d" / "darunter
+        # Euro-6d-temp" are SUBSETS of euro6 (raw values kept as-is, possibly
+        # NaN for a KBA-suppressed cell, matching the sibling raw columns
+        # above); the residual ("6a/b/c") is derived with a NaN-safe guard so a
+        # suppressed darunter cell cannot turn the clamp negative.
+        euro6d = _coerce_count(r["e6d"], counter)
+        euro6dtemp = _coerce_count(r["e6dtemp"], counter)
+        euro6ab = max(
+            np.nan_to_num(euros["euro6"]) - np.nan_to_num(euro6d) - np.nan_to_num(euro6dtemp),
+            0.0,
+        )
         if code in ZGB_KREISE:
             kreis_name = ZGB_KREISE[code]
             zgb_codes_kept.add(code)
@@ -1066,7 +1149,8 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
             kreis_name = str(r["name"]).strip()
             non_zgb_codes_kept.add(code)
         rec = {"kreis_ags5": code, "kreis_name": kreis_name,
-               "stichtag": "2025-01-01", "teil": teil, **euros}
+               "stichtag": "2025-01-01", "teil": teil, **euros,
+               "euro6d": euro6d, "euro6dtemp": euro6dtemp, "euro6ab": euro6ab}
         records.append(rec)
     counter.log()
     logger.info(
@@ -1077,6 +1161,9 @@ def extract_kreis_euro_46251(path: Path = EURO_46251_PATH) -> pd.DataFrame:
         len(zgb_codes_kept), len(non_zgb_codes_kept),
     )
     frame = pd.DataFrame(records).sort_values(["kreis_ags5", "teil"]).reset_index(drop=True)
+    # NOTE: euro_cols (and hence `total`/`*_share`) intentionally excludes
+    # euro6d/euro6dtemp/euro6ab -- they are subsets/derivations of euro6, not
+    # additional independent classes, so including them would double count.
     euro_cols = ["euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other"]
     frame["total"] = frame[euro_cols].sum(axis=1)
     for c in euro_cols:
@@ -1356,6 +1443,7 @@ def main() -> None:
     _write(extract_kreis_powertrain(), "kba_kreis_powertrain.csv")
     _write(extract_gemeinde_private_bev(), "kba_gemeinde_private_bev.csv")
     _write(extract_fuel_euro_nds(), "kba_fuel_euro_nds.csv")
+    _write(extract_fuel_euro6_substage_nds(), "kba_fuel_euro6_substage_nds.csv")
     _write(extract_age_fuel(), "kba_age_fuel.csv")
     _write(extract_brand_powertrain(), "kba_brand_powertrain.csv")
     # kba_segment_model.csv is now produced from the 2026 Modellreihen source

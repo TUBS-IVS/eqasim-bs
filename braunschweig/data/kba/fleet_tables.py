@@ -64,6 +64,16 @@ EURO_CLASS_LABELS: tuple[str, ...] = (
     "euro1", "euro2", "euro3", "euro4", "euro5", "euro6", "other",
 )
 
+#: Canonical Euro-6 substage labels (Task B4). Euro-6e (the newest sub-class)
+#: is folded into ``euro6d`` at extraction time (see
+#: ``scripts/extract_kba_fleet.py::extract_fuel_euro6_substage_nds``), so this
+#: set has exactly three members.
+EURO6_SUBSTAGE_LABELS: tuple[str, ...] = ("euro6ab", "euro6dtemp", "euro6d")
+
+#: The three additive Euro-6 substage COUNT columns on ``kba_kreis_euro.csv``
+#: (Task B4). OPTIONAL for backward compatibility -- see :func:`load_kreis_euro`.
+EURO6_SUBSTAGE_COLUMNS: tuple[str, ...] = ("euro6d", "euro6dtemp", "euro6ab")
+
 #: Canonical vehicle-age band labels (FZ 27.7).
 AGE_BAND_LABELS: tuple[str, ...] = (
     "under_5", "5_to_9", "10_to_14", "15_to_19", "20_to_24", "25_to_29",
@@ -258,6 +268,39 @@ def load_fuel_euro_nds(data_path: str) -> pd.DataFrame:
     return df
 
 
+def load_fuel_euro6_substage_nds(data_path: str) -> pd.DataFrame:
+    """FZ 27.4 (Niedersachsen): Euro-6 substage counts + within-fuel shares.
+
+    Loads ``kba_fuel_euro6_substage_nds.csv`` produced by
+    ``scripts/extract_kba_fleet.py::extract_fuel_euro6_substage_nds`` (Task B4).
+    Provides ``P(substage | euro6, fuel)`` for the three Euro-6 substages
+    (``euro6ab``, ``euro6dtemp``, ``euro6d``; Euro-6e is folded into
+    ``euro6d`` at extraction time -- see that function's docstring), intended
+    for the HBEFA Euro-6 sub-mapping (Task B5; not wired here).
+
+    Columns: ``fuel, substage, count, share, stichtag``.
+
+    Args:
+        data_path: Root data path; ``braunschweig/kba/derived/`` is appended
+            automatically.
+
+    Returns:
+        DataFrame with the five columns listed above.
+
+    Raises:
+        FileNotFoundError: If ``kba_fuel_euro6_substage_nds.csv`` is absent
+            (run ``scripts/extract_kba_fleet.py`` on the server to generate it).
+        RuntimeError: If required columns are missing, or any ``fuel``/
+            ``substage`` label is outside the canonical sets (schema drift).
+    """
+    filename = "kba_fuel_euro6_substage_nds.csv"
+    df = _read(data_path, filename)
+    _require_columns(df, ["fuel", "substage", "count", "share", "stichtag"], filename)
+    _require_labels(df["fuel"], POWERTRAIN_LABELS, "fuel", filename)
+    _require_labels(df["substage"], EURO6_SUBSTAGE_LABELS, "substage", filename)
+    return df
+
+
 def load_age_fuel(data_path: str) -> pd.DataFrame:
     """FZ 27.7: vehicle-age band x fuel (Pkw column) + within-fuel shares.
 
@@ -440,6 +483,19 @@ def load_kreis_euro(data_path: str) -> pd.DataFrame:
     46251-03 file covers every German Kreis (Task B3): validated to carry at
     least all 8 ZGB Kreise (in the ``all`` rows) and the canonical Euro labels;
     extra (non-ZGB) Kreis rows are allowed.
+
+    Task B4 adds three additive Euro-6 substage COUNT columns that are
+    subsets/derivations of ``euro6`` (NOT part of ``total``, which stays
+    unchanged): ``euro6d``, ``euro6dtemp`` (the two Destatis "darunter" subsets)
+    and the derived residual ``euro6ab = max(euro6 - euro6d - euro6dtemp, 0)``.
+    These columns are OPTIONAL for backward compatibility with
+    ``kba_kreis_euro.csv`` files generated before Task B4 (and with synthetic
+    test fixtures that predate it): when all three are present they are
+    validated (must be non-negative) and returned as-is (PRIMARY path); when
+    any is missing, the loader degrades gracefully by filling all three with
+    0.0 and LOGGING the fallback (no-silent-fallback rule) instead of raising,
+    so the per-Kreis powertrain rake and age-euro joint keep working unchanged
+    on pre-B4 data.
     """
     filename = "kba_kreis_euro.csv"
     df = _read(data_path, filename)
@@ -451,6 +507,26 @@ def load_kreis_euro(data_path: str) -> pd.DataFrame:
     unexpected = set(df["teil"]) - {"all", "diesel"}
     if unexpected:
         raise RuntimeError(f"{filename}: unexpected teil values {sorted(unexpected)}.")
+
+    missing_substage = [c for c in EURO6_SUBSTAGE_COLUMNS if c not in df.columns]
+    if missing_substage:
+        logger.info(
+            "[load_kreis_euro] %s: Euro-6 substage column(s) %s absent (pre-Task-B4 "
+            "schema, fallback path); filling with 0.0 for all %d rows so the "
+            "per-Kreis powertrain/euro logic keeps working unchanged. Re-run "
+            "scripts/extract_kba_fleet.py to populate the real substage counts.",
+            filename, missing_substage, len(df),
+        )
+        for column in EURO6_SUBSTAGE_COLUMNS:
+            if column not in df.columns:
+                df[column] = 0.0
+    else:
+        negative = {c: int((df[c] < 0).sum()) for c in EURO6_SUBSTAGE_COLUMNS if (df[c] < 0).any()}
+        if negative:
+            raise RuntimeError(
+                f"{filename}: negative Euro-6 substage count(s) {negative} -- "
+                f"euro6d/euro6dtemp/euro6ab must be >= 0."
+            )
     return df
 
 

@@ -144,3 +144,109 @@ def test_load_kreis_euro_rejects_unexpected_teil(tmp_path):
     dp = _write_derived(tmp_path, "kba_kreis_euro.csv", pd.DataFrame(rows))
     with pytest.raises(RuntimeError):
         ft.load_kreis_euro(dp)
+
+
+# ---------------------------------------------------------------------------
+# Task B4: euro6d / euro6dtemp / euro6ab are ADDITIVE, OPTIONAL columns on
+# kba_kreis_euro.csv -- present on a freshly-regenerated (post-B4) CSV, but
+# ABSENT on the legacy-schema fixtures used above (and on any pre-B4 committed
+# CSV). load_kreis_euro must degrade gracefully (fill 0.0 + log) rather than
+# raise when they are missing, so every fixture above keeps working unchanged.
+# ---------------------------------------------------------------------------
+def test_load_kreis_euro_backward_compatible_without_substage_columns(tmp_path, caplog):
+    """A legacy-schema kba_kreis_euro.csv (no euro6d/euro6dtemp/euro6ab) must
+    still load: the loader fills the three columns with 0.0 and logs the
+    fallback (no-silent-fallback rule), rather than raising."""
+    import logging
+
+    rows = []
+    for k in ft.ZGB_KREISE_AGS5:
+        for teil in ("all", "diesel"):
+            rows.append(_euro_row(k, k, teil))
+    dp = _write_derived(tmp_path, "kba_kreis_euro.csv", pd.DataFrame(rows))
+    with caplog.at_level(logging.INFO):
+        out = ft.load_kreis_euro(dp)
+    for c in ("euro6d", "euro6dtemp", "euro6ab"):
+        assert c in out.columns
+        assert (out[c] == 0.0).all()
+    msgs = " ".join(r.message for r in caplog.records).lower()
+    assert "euro6d" in msgs or "substage" in msgs, (
+        f"Expected a log message about the missing Euro-6 substage columns; got: {msgs!r}"
+    )
+
+
+def test_load_kreis_euro_keeps_substage_columns_when_present(tmp_path):
+    """When euro6d/euro6dtemp/euro6ab ARE present (post-B4 extractor run),
+    the loader returns them unchanged (PRIMARY path, no fallback fill)."""
+    rows = []
+    for k in ft.ZGB_KREISE_AGS5:
+        for teil in ("all", "diesel"):
+            row = _euro_row(k, k, teil)
+            row["euro6d"] = 3.0
+            row["euro6dtemp"] = 2.0
+            row["euro6ab"] = 5.0
+            rows.append(row)
+    dp = _write_derived(tmp_path, "kba_kreis_euro.csv", pd.DataFrame(rows))
+    out = ft.load_kreis_euro(dp)
+    assert (out["euro6d"] == 3.0).all()
+    assert (out["euro6dtemp"] == 2.0).all()
+    assert (out["euro6ab"] == 5.0).all()
+
+
+def test_load_kreis_euro_rejects_negative_substage_counts(tmp_path):
+    """A negative euro6d/euro6dtemp/euro6ab count is invalid data and must
+    raise rather than load silently."""
+    rows = []
+    for k in ft.ZGB_KREISE_AGS5:
+        for teil in ("all", "diesel"):
+            row = _euro_row(k, k, teil)
+            row["euro6d"] = 3.0
+            row["euro6dtemp"] = 2.0
+            row["euro6ab"] = -1.0  # invalid
+            rows.append(row)
+    dp = _write_derived(tmp_path, "kba_kreis_euro.csv", pd.DataFrame(rows))
+    with pytest.raises(RuntimeError):
+        ft.load_kreis_euro(dp)
+
+
+# ---------------------------------------------------------------------------
+# Task B4: load_fuel_euro6_substage_nds (FZ 27.4 Euro-6 substage table)
+# ---------------------------------------------------------------------------
+def _substage_row(fuel: str, substage: str, count: float, share: float) -> dict:
+    return {
+        "fuel": fuel, "substage": substage, "count": count, "share": share,
+        "stichtag": "2025-01-01",
+    }
+
+
+def test_load_fuel_euro6_substage_nds_schema_and_shares(tmp_path):
+    rows = [
+        _substage_row("petrol", "euro6ab", 200, 0.2),
+        _substage_row("petrol", "euro6dtemp", 200, 0.2),
+        _substage_row("petrol", "euro6d", 600, 0.6),
+        _substage_row("diesel", "euro6ab", 1000, 0.5),
+        _substage_row("diesel", "euro6dtemp", 300, 0.15),
+        _substage_row("diesel", "euro6d", 700, 0.35),
+    ]
+    dp = _write_derived(tmp_path, "kba_fuel_euro6_substage_nds.csv", pd.DataFrame(rows))
+    out = ft.load_fuel_euro6_substage_nds(dp)
+    assert set(out.columns) >= {"fuel", "substage", "count", "share", "stichtag"}
+    assert set(out["substage"]) == {"euro6ab", "euro6dtemp", "euro6d"}
+    per_fuel = out.groupby("fuel")["share"].sum()
+    for fuel, total in per_fuel.items():
+        assert total == pytest.approx(1.0, abs=1e-6)
+
+
+def test_load_fuel_euro6_substage_nds_missing_column_raises(tmp_path):
+    rows = [_substage_row("petrol", "euro6ab", 200, 1.0)]
+    df = pd.DataFrame(rows).drop(columns=["share"])
+    dp = _write_derived(tmp_path, "kba_fuel_euro6_substage_nds.csv", df)
+    with pytest.raises(RuntimeError):
+        ft.load_fuel_euro6_substage_nds(dp)
+
+
+def test_load_fuel_euro6_substage_nds_rejects_unexpected_substage(tmp_path):
+    rows = [_substage_row("petrol", "euro6e", 200, 1.0)]  # 'euro6e' is folded into euro6d, not a valid label
+    dp = _write_derived(tmp_path, "kba_fuel_euro6_substage_nds.csv", pd.DataFrame(rows))
+    with pytest.raises(RuntimeError):
+        ft.load_fuel_euro6_substage_nds(dp)
