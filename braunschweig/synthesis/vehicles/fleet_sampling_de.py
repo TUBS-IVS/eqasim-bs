@@ -41,7 +41,6 @@ prohibited (see CLAUDE.md).
 from __future__ import annotations
 
 import logging
-import math
 import re as _re
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
