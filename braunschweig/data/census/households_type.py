@@ -12,7 +12,12 @@ Output schema::
     hh_size    : str   "1" / "2" / "3" / "4" / "5" / "6+"
     hh_type    : str   "single" / "couple" / "couple_with_children" /
                        "single_parent" / "other_multi"
-    weight     : float households in that cell (Insgesamt rows excluded)
+    weight     : float persons in that cell (Insgesamt rows excluded)
+
+Note: the GENESIS 1000A statistic reports PERSONS living in a household of the
+given (size, type), not household counts (value_variable_code = persons, as in
+the sister table 1000A-3082). The ZGB total therefore matches the ~1.14 M ZGB
+population, not the ~0.56 M household count.
 """
 
 from __future__ import annotations
@@ -124,8 +129,9 @@ def load_household_size_by_commune(data_path: str, scope_prefixes) -> pd.DataFra
     prefix is in ``scope_prefixes``. Used by the validation harness target
     loader; no synpp context required.
 
-    Returns columns ``[commune_id, hh_size, weight]`` (households, suppressed
-    cells = 0).
+    Returns columns ``[commune_id, hh_size, weight]`` where ``weight`` is PERSONS
+    living in a household of that size class (the 1000A statistic reports persons,
+    not household counts), suppressed cells = 0.
     """
     df = _parse_long(_read_csv_from_zip(_path_for_data_path(data_path)))
     df["commune_id"] = df["commune_id"].astype(str)
@@ -135,7 +141,7 @@ def load_household_size_by_commune(data_path: str, scope_prefixes) -> pd.DataFra
              .sum())
     if out.empty or out["weight"].sum() <= 0:
         raise RuntimeError(
-            f"No Zensus 1000A-2081 households for scope {sorted(scope)} "
+            f"No Zensus 1000A-2081 persons for scope {sorted(scope)} "
             f"under {data_path}"
         )
     return out
@@ -146,7 +152,7 @@ def execute(context) -> pd.DataFrame:
     out = _parse_long(_read_csv_from_zip(path))
     print(
         "[braunschweig.data.census.households_type] "
-        f"loaded {len(out):,} cells, total HHs = {out['weight'].sum():,.0f}"
+        f"loaded {len(out):,} cells, total persons = {out['weight'].sum():,.0f}"
     )
     return out
 

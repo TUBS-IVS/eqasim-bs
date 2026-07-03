@@ -91,13 +91,27 @@ def categorical_person_control(name, family, geography, column, categories, targ
     return Control(name, family, geography, tuple(categories), realized, target)
 
 
-def bucket_household_control(name, family, geography, column, top, target, top_label=None):
+def bucket_household_control(name, family, geography, column, top, target, top_label=None,
+                             weight_column=None):
     """Bucket a numeric household column into ``[0, 1, ..., top-1, top_lab]`` categories.
 
     ``top_label`` is the string label for values >= ``top`` (e.g. ``"6+"``).
     When ``None`` (default), the top label is ``str(top)`` — identical to the
     previous behaviour, so existing callers (cars_per_hh, bicycles_per_hh) are
     byte-unchanged.
+
+    ``weight_column`` selects the realized aggregation basis:
+
+    * ``None`` (default): count HOUSEHOLDS per bin (``synthetic_count`` = number of
+      households). Keeps cars_per_hh / bicycles_per_hh byte-identical.
+    * a column name: SUM that (numeric) column per bin instead of counting. Used by
+      the ``household_size`` control with ``weight_column="household_size"`` so the
+      realized distribution is PERSON-weighted (persons living in a household of
+      each size class). Its Zensus 1000A-2081 target reports PERSONS and the IPF
+      balances that same person margin, so the synthetic side must be persons too;
+      a household-count basis would compare household-shares against person-shares
+      (issue #97). Households whose weight is non-numeric/missing are excluded from
+      the distribution (logged), mirroring the bucket-column NA handling.
     """
     geo_col = _geo_col(geography)
     top_lab = top_label if top_label is not None else str(top)
@@ -105,9 +119,14 @@ def bucket_household_control(name, family, geography, column, top, target, top_l
     cats = tuple(str(i) for i in range(top)) + (top_lab,)
 
     def realized(frames, geo) -> pd.DataFrame:
+        empty = pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
         if column not in frames.households.columns:
             LOGGER.warning("control %s: column %r absent in households; skipped", name, column)
-            return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
+            return empty
+        if weight_column is not None and weight_column not in frames.households.columns:
+            LOGGER.warning("control %s: weight column %r absent in households; skipped",
+                           name, weight_column)
+            return empty
         df = frames.households.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         df = df.dropna(subset=[geo_col]).copy()
         vals = pd.to_numeric(df[column], errors="coerce")
@@ -125,8 +144,24 @@ def bucket_household_control(name, family, geography, column, top, target, top_l
         # Values equal to top (after clipping) get the top_lab label (e.g. "6+").
         cat = cat.where(capped < top, top_lab)
         df["category"] = cat.to_numpy()
-        out = (df.groupby([geo_col, "category"]).size()
-                 .rename("synthetic_count").reset_index())
+        if weight_column is None:
+            out = (df.groupby([geo_col, "category"]).size()
+                     .rename("synthetic_count").reset_index())
+        else:
+            # Person-weighted basis: sum the weight column (e.g. household_size ->
+            # persons) per (geo, size bin) instead of counting households.
+            weights = pd.to_numeric(df[weight_column], errors="coerce")
+            n_wna = int(weights.isna().sum())
+            if n_wna:
+                LOGGER.warning(
+                    "control %s: %d household(s) have non-numeric/missing weight %r; "
+                    "excluded from the person-weighted distribution",
+                    name, n_wna, weight_column,
+                )
+            df = df.assign(_weight=weights)
+            df = df[df["_weight"].notna()]
+            out = (df.groupby([geo_col, "category"], as_index=False)["_weight"].sum()
+                     .rename(columns={"_weight": "synthetic_count"}))
         return out.rename(columns={geo_col: "geo_id"})
 
     return Control(name, family, geography, cats, realized, target)
@@ -422,6 +457,11 @@ def household_size_target(data_path: str) -> pd.DataFrame:
     :func:`braunschweig.analysis.spatial.assign_geographies` and used by the
     ``household_size`` bucket control).
 
+    The Zensus 1000A-2081 source reports PERSONS living in a household of each
+    size class (not household counts), so ``target_share`` is a per-commune PERSON
+    share. The realized ``household_size`` control is registered person-weighted
+    (``weight_column="household_size"``) to match this basis (issue #97).
+
     The Zensus 1000A-2081 source carries a 12-digit ARS; this function converts
     it to the 8-digit AGS via ``ARS[:5] + ARS[9:12]`` (the standard rule used
     throughout the project). Shares sum to 1 per (converted) commune."""
@@ -565,9 +605,15 @@ def build_registry(data_path: str) -> list[Control]:
     # household_size uses the bucket builder so values >= 6 are collapsed to the
     # "6+" label matching the Zensus 1000A-2081 target categories. The geography
     # is "gemeinde" (8-digit commune_id) because the Zensus source is per-Gemeinde.
+    # weight_column="household_size" makes the realized side PERSON-weighted
+    # (persons living in a household of each size class): the Zensus 1000A-2081
+    # target reports PERSONS and the IPF balances that same person margin, so the
+    # synthetic side must be persons too. A household-count basis would compare
+    # household-shares against person-shares (issue #97 basis mismatch).
     reg.append(bucket_household_control(
         "household_size", "census", "gemeinde", "household_size",
-        top=6, top_label="6+", target=household_size_target))
+        top=6, top_label="6+", target=household_size_target,
+        weight_column="household_size"))
 
     # --- Employment (REAL target, MiD 2023 P9; age 14+ base, no upper cap) ----
     # The MiD P9 percentages are over the "Personen ab 14 Jahre" basis, so the
