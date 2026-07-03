@@ -354,3 +354,77 @@ def test_pt_control_age_base_excludes_children():
     assert got.get("fahre_nie", 0) == 0, (
         f"Expected fahre_nie=0 (age-8 child excluded from base), got {got}"
     )
+
+
+# --- minor-employment plausibility guard (issue #96) -------------------------
+# The written `employed` flag must be ~0 for minors (age < 15). A non-trivial
+# employed share among under-15s is not scientifically defensible and signals an
+# upstream mapping defect -- the P_TAET=9 'Schueler' nonresponse collision that
+# imputed pupils to employed=True (fixed in #101). These tests pin the guard used
+# by the population-validation stage as a regression watchdog. They call the
+# standalone helper directly (plain DataFrames, no registry/committed CSVs), so
+# they run locally without the census source data.
+
+def test_minor_employment_guard_flags_inflated():
+    """A ``bad`` population (under-15s marked employed) is flagged; raises only
+    when raise_on_exceed is set, otherwise WARNs and returns the flag."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5],
+        "household_id": [10, 10, 20, 20, 30],
+        "age": [10, 12, 14, 40, 41],
+        "employed": [True, True, True, True, False],
+    })
+    # 3 of 3 minors (age<=14) employed -> rate 1.0, far above the default bound.
+    result = C.check_minor_employment(persons, raise_on_exceed=False)
+    assert result is not None
+    assert result["n_minors"] == 3
+    assert result["n_employed"] == 3
+    assert result["rate"] == 1.0
+    assert result["exceeded"] is True
+
+    import pytest
+    with pytest.raises(ValueError, match="minor"):
+        C.check_minor_employment(persons, raise_on_exceed=True)
+
+
+def test_minor_employment_guard_passes_clean():
+    """A ``good`` population (no employed under-15s) passes with rate 0 and never
+    raises, even with raise_on_exceed=True."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "household_id": [10, 10, 20, 20],
+        "age": [8, 12, 14, 40],
+        "employed": [False, False, False, True],
+    })
+    result = C.check_minor_employment(persons, raise_on_exceed=True)
+    assert result is not None
+    assert result["n_minors"] == 3
+    assert result["n_employed"] == 0
+    assert result["rate"] == 0.0
+    assert result["exceeded"] is False
+
+
+def test_minor_employment_guard_boundary_age():
+    """The band is age < 15 (age <= 14): an employed 14-year-old is counted as a
+    minor; an employed 15-year-old is not."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [14, 15],
+        "employed": [True, True],
+    })
+    result = C.check_minor_employment(persons, raise_on_exceed=False)
+    assert result["n_minors"] == 1        # only the age-14 person
+    assert result["n_employed"] == 1
+    assert result["rate"] == 1.0
+
+
+def test_minor_employment_guard_missing_column():
+    """Absent ``employed`` (or ``age``) column -> WARN + skip (returns None), no
+    exception, mirroring the absent-column pattern of the other controls."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [10, 40],
+    })
+    assert C.check_minor_employment(persons, raise_on_exceed=True) is None

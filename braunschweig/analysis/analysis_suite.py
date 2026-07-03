@@ -27,6 +27,11 @@ KEY_HOUSEHOLD_COMPOSITION = "analysis_household_composition"
 KEY_DASHBOARD = "analysis_dashboard"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_METHOD = "braunschweig.population.method"
+# Issue #96 minor-employment plausibility guard (population_validation). The
+# default bound is single-sourced from controls.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE
+# (imported lazily where needed to keep stage import light).
+KEY_MINOR_EMP_MAX_RATE = "analysis_minor_employment_max_rate"  # fraction, under-15 employed share
+KEY_MINOR_EMP_RAISE = "analysis_minor_employment_raise"        # bool: raise vs warn on exceed
 
 
 def configure(context):
@@ -45,6 +50,11 @@ def configure(context):
     context.config(KEY_WORK_DIR, None)
     context.config(KEY_METHOD, None)
     context.config("analysis_working_directory", None)
+    from braunschweig.analysis.population_validation.controls import (
+        DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
+    )
+    context.config(KEY_MINOR_EMP_MAX_RATE, DEFAULT_MINOR_EMPLOYMENT_MAX_RATE)
+    context.config(KEY_MINOR_EMP_RAISE, False)
     if not context.config(KEY_ENABLED):
         return
     context.stage("synthesis.output")
@@ -102,7 +112,15 @@ def execute(context):
 
     def _pop():
         from braunschweig.analysis.population_validation import run_population_validation as R
-        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
+        from braunschweig.analysis.population_validation.controls import (
+            DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
+        )
+        argv = ["--run-output-dir", str(output_path), "--prefix", prefix,
+                "--minor-employment-max-rate",
+                str(context.config(KEY_MINOR_EMP_MAX_RATE, DEFAULT_MINOR_EMPLOYMENT_MAX_RATE))]
+        if context.config(KEY_MINOR_EMP_RAISE, False):
+            argv.append("--minor-employment-raise")
+        R.run(R._parse_args(argv))
     _run(summary, "population_validation",
          context.config(KEY_POPULATION_VALIDATION, True), True, "", _pop)
 

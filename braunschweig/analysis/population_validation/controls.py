@@ -270,6 +270,108 @@ def _employed_label(series: pd.Series) -> np.ndarray:
     return np.where(_is_truthy(series), "employed", "not_employed")
 
 
+# Youngest age at which paid employment is broadly legal in Germany is 15, so the
+# census/MiD employed share for age < 15 is ~0. ``age <= MINOR_MAX_AGE_YEARS`` is
+# the under-15 band (age < 15). A non-trivial employed share there is not
+# scientifically defensible and signals an upstream employed-mapping defect --
+# e.g. the P_TAET=9 'Schueler/in' nonresponse collision that imputed pupils to
+# employed=True (issue #96, fixed in #101).
+MINOR_MAX_AGE_YEARS: int = 14
+
+# ASSUMPTION: 0.5 % is a plausibility GUARD bound on the under-15 employed share
+# (dimensionless fraction of the age<15 subpopulation), NOT a validated reference
+# target. It is chosen to tolerate isolated donor / rounding noise while catching
+# the ~56-96 % inflation observed in issue #96. The underlying "employed share for
+# age<15 is ~0" basis is the German Jugendarbeitsschutzgesetz minimum working age
+# of 15, not a fitted census value. Overridable via the population-validation
+# config key analysis_minor_employment_max_rate.
+DEFAULT_MINOR_EMPLOYMENT_MAX_RATE: float = 0.005
+
+
+def check_minor_employment(
+    persons: pd.DataFrame,
+    *,
+    max_rate: float = DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
+    raise_on_exceed: bool = False,
+    max_age_years: int = MINOR_MAX_AGE_YEARS,
+) -> dict | None:
+    """Region-wide plausibility guard: the employed share among minors must be ~0.
+
+    Computes the employed share among persons with ``age <= max_age_years`` (the
+    under-15 band) on the written ``employed`` flag, using the same ``_is_truthy``
+    convention as the employment control's ``_employed_label`` (so the guard sees
+    exactly the value surface that issue #96 corrupted). The check is region-wide,
+    not per-geo: the defect it guards against is region-wide.
+
+    Reporting follows the CLAUDE.md fallback-transparency rule -- the explicit rate
+    is always logged. When the rate exceeds ``max_rate`` the guard either raises a
+    ``ValueError`` (``raise_on_exceed=True``, for a hard regression gate once the
+    population is known-clean) or logs a WARNING (default, so a run on not-yet-fixed
+    data still completes and records the flag).
+
+    Parameters
+    ----------
+    persons:
+        Person frame carrying ``age`` and boolean-ish ``employed`` columns.
+    max_rate:
+        Upper bound on the employed share among the age<15 subpopulation
+        (dimensionless fraction). Default ``DEFAULT_MINOR_EMPLOYMENT_MAX_RATE``.
+    raise_on_exceed:
+        Raise ``ValueError`` instead of warning when the bound is exceeded.
+    max_age_years:
+        Inclusive upper age of the minor band (default ``MINOR_MAX_AGE_YEARS`` = 14,
+        i.e. age < 15).
+
+    Returns
+    -------
+    dict or None
+        ``{"n_minors", "n_employed", "rate", "max_rate", "exceeded"}`` describing
+        the check, or ``None`` when ``age`` or ``employed`` is absent from the
+        frame (logged as a WARNING, never silently passed).
+    """
+    if "age" not in persons.columns or "employed" not in persons.columns:
+        LOGGER.warning(
+            "check_minor_employment: 'age' and/or 'employed' column absent "
+            "(have %s); minor-employment guard SKIPPED.",
+            sorted(persons.columns),
+        )
+        return None
+
+    ages = pd.to_numeric(persons["age"], errors="coerce")
+    minors = persons[ages <= float(max_age_years)]
+    n_minors = int(len(minors))
+    if n_minors == 0:
+        LOGGER.info(
+            "check_minor_employment: no persons with age <= %d; guard trivially ok.",
+            max_age_years,
+        )
+        return {"n_minors": 0, "n_employed": 0, "rate": 0.0,
+                "max_rate": max_rate, "exceeded": False}
+
+    n_employed = int(_is_truthy(minors["employed"]).sum())
+    rate = n_employed / n_minors
+    exceeded = rate > max_rate
+    base_msg = (
+        "minor employment guard: %d/%d persons age<=%d flagged employed (%.2f%%), "
+        "max_rate=%.2f%%" % (n_employed, n_minors, max_age_years,
+                             100.0 * rate, 100.0 * max_rate)
+    )
+    if exceeded:
+        detail = (
+            base_msg + " -- an implausible employed share among minors signals an "
+            "upstream employed-mapping defect (e.g. the P_TAET=9 'Schueler' "
+            "nonresponse collision, issue #96)."
+        )
+        if raise_on_exceed:
+            raise ValueError("[population_validation] " + detail)
+        LOGGER.warning(detail)
+    else:
+        LOGGER.info(base_msg)
+
+    return {"n_minors": n_minors, "n_employed": n_employed, "rate": rate,
+            "max_rate": max_rate, "exceeded": exceeded}
+
+
 def license_control(name, family, geography, target, age_min=None, age_max=None):
     """Driving-licence control that is robust to the run-output schema.
 
