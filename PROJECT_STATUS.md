@@ -5,7 +5,15 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-01 · `origin/main` = `c8655b1` (PR #89 merged) · no open PRs.
+> **Last updated:** 2026-07-03 · `origin/main` = `141284e` (PRs #101 + #102 merged) · no open PRs.
+> **Issue #96 FIXED** (PR #101, merged): the synthetic `employed` flag was inflated for minors
+> (14-17yo ~96%, region +7-9pp) by a field-width missing-code collision in `missing.resolve`
+> (substantive `P_TAET=9` Schueler treated as generic keine-Angabe and imputed). The popsim Tier-3
+> employment control was already correct (raw `P_TAET.isin`); only the written attribute +
+> population-validation were affected. **#25 closed** (stale erwerb test, fixed independently). A
+> **minor-employment plausibility guard** (PR #102, merged; default WARN) now watches the under-15
+> employed rate. **Next:** 100% re-run with the fix on main, then flip the guard to `raise=True`
+> (measure-before-harden; Phase-0 for #99).
 > **TAZ sub-zonal work location choice** (eqasim IRIS-analog): **Phase 1+2 MERGED to main** (PR #85 merge `f5f52d1` + PR #89 FutureWarning fix), flag `taz_work_location_choice` default OFF byte-identical, flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT but measured unnecessary** — branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, pushed as backup, PARKED as gated-off infra, not merged); the aggregate commute distribution already fits MiD P13 (measured EMD ~0.054 on the 100% `popsim_mid` pop; see ADR-0050). Remaining Phase-3 = **validate flag-ON TAZ at 100%** (full synthesis + scenario, 0 MATSim iterations) + a spatial validation map.
 > Open issues: **#79** (TAZ feature, Phase 1+2 merged), **#80** (open-data pseudo-zone alt), **#83** (Phase-3 validation, re-scoped), **#81** (config cleanup), **#78** (secondary scorer calib), **#76** (data re-sync), **#86/#91** (analysis-suite), **#22/#23/#26/#25** (production run / mode-choice / 25% gate / test). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed). See ADR-0049, ADR-0050.
 > Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
@@ -73,6 +81,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | BEV/electric calibration | `fleet_electric_calibration` | `synthesis/vehicles/fleet_sampling_de.py` | 🟢 | KBA FZ 27.15/27.17 |
 | HSN/TSN engine attrs (kW/ccm/fuel) | `fleet_hsn_tsn_attributes` | `synthesis/vehicles/hbefa.py` | 🟢 | KBA HSN/TSN scraper |
 | Fleet consistency v2 + income-age | (folded into household fleet) | `synthesis/vehicles/` | ✅ (PR #12/#13) | KBA/MiD |
+| Fleet realism upgrade (EV-income tilt, all-Kreise 46251, Euro-6 substage, RS7 cross-check, no-NA) | `fleet_ev_income_tilt` / `fleet_euro6_substage` (default-on) | `synthesis/vehicles/fleet_sampling_de.py`, `data/kba/fleet_tables.py` | 🟡 pushed `feature/fleet-quality-and-data`, final opus review done; **server-verify + merge pending** | KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB |
 | Carless routing re-mode | `remode_carless_car_legs` | `matsim/simulation/prepare.py` | 🟢 | routing consistency |
 
 ### 2.4 Location choice / gravity
@@ -133,6 +142,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 - **Deleted 2026-06-27** (feature-superseded prototypes, verified): `feature/secondary-external-candidates`, `feature/cordon-supply`, `feature/cordon-incommuters` (local + origin).
 - **Retirable after #20 merges:** `feature/calibration-corner` (stale pre-squash), `worktree-calibration-corner`.
 - **Active worktrees** (`.claude/worktrees/`): calibration-corner, cordon-whole-region-gates, employment-age, employment-grid, fleet-consistency, fleet-income-age, popsim-g5, simwrapper, tier3-part2 — most merged; clean these up as part of the loop.
+- **Open branch (unmerged): `feature/fleet-quality-and-data`** (fork, tip `5e0a6e4`, 41 commits stacked on `fix/fleet-age-joint-ipf` PR #92; worktree `eqasim-bs-fleet`). Fleet realism upgrade (Plans 1–3): EV-income tilt, all-Kreise 46251, Euro-6 substage, RS7 logging-only cross-check, degenerate-Kreis NaN guard, no-NA guarantee (euro="electric"). Final opus review done; local suite 290✓ / 2 stale-OFF-golden✗ / 35 skip. **Pending:** server phase (run extractors + full pytest + 1% smoke + **regenerate the 2 OFF goldens**) then `git pr` — **resolve the ADR-0050 number collision** (fleet ceiling vs TAZ friction). Also merge the stacked fleet PRs #90/#93 (close #86/#91/#92). Full state: memory `project-fleet-quality-realism`, ADR-0051.
 - **PR rule:** always `git pr` (alias → base `TUBS-IVS/eqasim-bs`, never the eqasim-org upstream).
 
 ---
