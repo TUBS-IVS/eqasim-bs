@@ -345,3 +345,81 @@ class TestFromDataPathFallback:
                 sampler_b.euro_given_powertrain[pt],
                 err_msg=f"euro_given_powertrain[{pt!r}] differs between two builds",
             )
+
+
+# --------------------------------------------------------------------------- #
+# STEP 4 (final-review guard): a degenerate Kreis (insg>0 but every fuel
+# component zero/suppressed) must not crash from_data_path with a NaN pmf.
+# --------------------------------------------------------------------------- #
+
+class TestFromDataPathDegenerateKreis:
+    """A Kreis whose fuel components are all zero/suppressed falls back to the
+    national P(powertrain|segment) instead of producing a NaN pmf (which would
+    crash rng.choice at draw time). See the final whole-branch review and the
+    pure-function tests in test_fleet_kreis_marginal_guard.py."""
+
+    def _make_tmp_data_path_with_degenerate_kreis(self, tmp_path: Path) -> tuple[str, str]:
+        """Mirror the real derived tree and overlay a fuel CSV where the FIRST
+        ZGB Kreis has every fuel component zero (degenerate). Returns
+        ``(data_path, degenerate_ags5)``."""
+        derived = tmp_path / "braunschweig" / "kba" / "derived"
+        derived.mkdir(parents=True)
+        real_derived = DATA / "braunschweig" / "kba" / "derived"
+        for src in real_derived.glob("*.csv"):
+            # Never symlink the file we overlay below (write-through-symlink would
+            # corrupt the real committed derived CSV).
+            if src.name == "kba_kreis_fuel.csv":
+                continue
+            dst = derived / src.name
+            try:
+                dst.symlink_to(src)
+            except OSError:
+                import shutil
+                shutil.copy2(src, dst)
+
+        degenerate_ags = ft.ZGB_KREISE_AGS5[0]
+        rows = []
+        for i, ags in enumerate(ft.ZGB_KREISE_AGS5):
+            if ags == degenerate_ags:
+                # insg>0 but every fuel component zero: the crash precondition.
+                rows.append({
+                    "kreis_ags5": ags, "kreis_name": f"Kreis_{ags}",
+                    "stichtag": "2025-01-01",
+                    "petrol": 0, "diesel": 0, "gas": 0,
+                    "bev": 0, "phev": 0, "hybrid": 0, "other": 0,
+                    "total": 0,
+                })
+            else:
+                petrol = 60_000 + i * 5_000
+                diesel = 40_000 - i * 2_000
+                rows.append({
+                    "kreis_ags5": ags, "kreis_name": f"Kreis_{ags}",
+                    "stichtag": "2025-01-01",
+                    "petrol": petrol, "diesel": diesel, "gas": 1_000,
+                    "bev": 4_000, "phev": 1_500, "hybrid": 2_000, "other": 300,
+                    "total": petrol + diesel + 1_000 + 4_000 + 1_500 + 2_000 + 300,
+                })
+        pd.DataFrame(rows).to_csv(derived / "kba_kreis_fuel.csv", index=False)
+        return str(tmp_path), degenerate_ags
+
+    def test_degenerate_kreis_does_not_crash_and_logs_fallback(self, tmp_path, caplog):
+        """from_data_path must build (no NaN pmf), keep the degenerate Kreis, and
+        WARN that it used the national fallback (no-silent-fallback rule)."""
+        if not (DATA / "braunschweig" / "kba" / "derived").exists():
+            pytest.skip("real derived data directory absent")
+        tmp_data, degenerate_ags = self._make_tmp_data_path_with_degenerate_kreis(tmp_path)
+        segs = _segments()
+        with caplog.at_level(logging.WARNING):
+            model = fs.PowertrainModel.from_data_path(tmp_data, segs)
+
+        # The degenerate Kreis is still present and its pmf is finite everywhere.
+        mat = model.kreis_segment_powertrain.get(degenerate_ags)
+        assert mat is not None, f"degenerate Kreis {degenerate_ags} dropped from model"
+        assert np.isfinite(mat).all(), "degenerate Kreis produced a non-finite pmf"
+
+        # The no-silent-fallback warning must have fired.
+        messages = " ".join(r.message for r in caplog.records).lower()
+        assert "usable fuel mass" in messages or "degenerate" in messages, (
+            "Expected a WARN about the degenerate Kreis using the national "
+            f"fallback; got: {messages!r}"
+        )

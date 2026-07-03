@@ -223,19 +223,12 @@ class PowertrainModel:
         )
         seg_share = seg_share / seg_share.sum()
 
-        kreis_psp: dict[str, np.ndarray] = {}
-        for kreis, col_target in kreis_marginal.items():
-            # Seed = P(powertrain | segment) * P(segment): carries the
-            # association and has the national segment marginal as its row sums.
-            seed = national_psg * seg_share[:, None]
-            joint = rake_2d(
-                seed,
-                row_targets=seg_share,
-                col_targets=col_target / col_target.sum(),
-                max_iterations=max_iterations,
-                tolerance=tolerance,
+        kreis_psp, n_marginal_primary, n_marginal_degenerate = (
+            cls._rake_per_kreis_powertrain(
+                kreis_marginal, national_psg, seg_share,
+                max_iterations, tolerance,
             )
-            kreis_psp[kreis] = cls._row_normalise(joint)
+        )
 
         # Task B3 traceability: the per-Kreis powertrain marginal now potentially
         # covers every German Kreis (Regionalstatistik 46251-02 is not ZGB-filtered
@@ -250,6 +243,24 @@ class PowertrainModel:
             "(%d ZGB + %d non-ZGB).",
             len(kreis_psp), n_zgb_covered, n_non_zgb_covered,
         )
+        # No-silent-fallback: report how many Kreise used real per-Kreis fuel
+        # mass (primary) vs the national P(powertrain|segment) degenerate
+        # fallback. A non-trivial degenerate count almost always means a broken
+        # 46251-02 join upstream (empty/suppressed rows), not genuinely empty
+        # Kreise, and should be investigated.
+        if n_marginal_degenerate:
+            logger.warning(
+                "[fleet_de] per-Kreis powertrain marginal: %d/%d Kreis(e) had no "
+                "usable fuel mass (all components zero/suppressed/NaN) -> national "
+                "P(powertrain|segment) used for them; %d Kreis(e) used real "
+                "per-Kreis data. A high degenerate count signals a broken join.",
+                n_marginal_degenerate, len(kreis_marginal), n_marginal_primary,
+            )
+        else:
+            logger.info(
+                "[fleet_de] per-Kreis powertrain marginal: all %d Kreis(e) used "
+                "real per-Kreis fuel mass (0 degenerate).", n_marginal_primary,
+            )
 
         # Per-Kreis private electric shares (FZ 27.15, 2025), the tilt denominator
         # for the FZ27.17-fallback path (both 2025 -- already same-vintage).
@@ -307,6 +318,71 @@ class PowertrainModel:
         )
 
     # -- construction helpers ------------------------------------------------
+    @classmethod
+    def _rake_per_kreis_powertrain(
+        cls, kreis_marginal: dict[str, np.ndarray], national_psg: np.ndarray,
+        seg_share: np.ndarray, max_iterations: int, tolerance: float,
+    ) -> tuple[dict[str, np.ndarray], int, int]:
+        """Rake each per-Kreis powertrain marginal onto the national seed.
+
+        For every Kreis, the seed ``P(powertrain | segment) * P(segment)`` (which
+        carries the income->segment->powertrain association and has the national
+        segment marginal as its row sums) is biproportionally raked so its row
+        sums match ``seg_share`` and its column sums match the per-Kreis
+        powertrain marginal.
+
+        Degenerate-Kreis guard (no-silent-fallback rule): a Kreis can in
+        principle carry ``insg>0`` yet have every fuel component suppressed (read
+        as ``NaN`` by :func:`load_kreis_fuel`) or zero. NaN/inf components are
+        treated as 0 (Regionalstatistik 46251-02 only suppresses SMALL counts, so
+        petrol/diesel -- the dominant categories -- are never affected). If no
+        finite positive mass remains, the per-Kreis column target is undefined;
+        that Kreis falls back to the national ``P(powertrain | segment)`` rather
+        than divide by zero and emit a NaN pmf that would crash ``rng.choice`` at
+        draw time. The Task B3 all-Kreise marginal makes this reachable for
+        cross-cordon in-commuters carrying an arbitrary home Kreis, so the
+        degenerate count is returned for logging.
+
+        Args:
+            kreis_marginal: Mapping ``kreis_ags5 -> count-like powertrain vector``
+                (order matches ``national_psg`` columns).
+            national_psg: Row-normalised national ``P(powertrain | segment)``
+                matrix, shape ``(n_segments, n_powertrains)``; also the degenerate
+                fallback per Kreis.
+            seg_share: National segment marginal (sums to 1), shape
+                ``(n_segments,)``.
+            max_iterations: IPF iteration cap passed to :func:`rake_2d`.
+            tolerance: IPF convergence tolerance passed to :func:`rake_2d`.
+
+        Returns:
+            ``(kreis_psp, n_primary, n_degenerate)`` where ``kreis_psp`` maps each
+            Kreis to a row-normalised ``P(powertrain | segment)`` matrix,
+            ``n_primary`` counts Kreise raked from real per-Kreis mass, and
+            ``n_degenerate`` counts Kreise that used the national fallback.
+        """
+        kreis_psp: dict[str, np.ndarray] = {}
+        n_primary = 0
+        n_degenerate = 0
+        for kreis, col_target in kreis_marginal.items():
+            col = np.nan_to_num(np.asarray(col_target, dtype=float),
+                                nan=0.0, posinf=0.0, neginf=0.0)
+            total = col.sum()
+            if not np.isfinite(total) or total <= 0.0:
+                kreis_psp[kreis] = national_psg.copy()
+                n_degenerate += 1
+                continue
+            seed = national_psg * seg_share[:, None]
+            joint = rake_2d(
+                seed,
+                row_targets=seg_share,
+                col_targets=col / total,
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+            )
+            kreis_psp[kreis] = cls._row_normalise(joint)
+            n_primary += 1
+        return kreis_psp, n_primary, n_degenerate
+
     @staticmethod
     def _national_segment_powertrain_counts(
         df_seg: pd.DataFrame, segments: Sequence[str],
