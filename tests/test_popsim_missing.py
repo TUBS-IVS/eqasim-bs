@@ -40,7 +40,9 @@ def _resolve_reference(df, spec, *, rng):
     """
     src = df[spec.source_col]
     structural_codes = set(spec.structural)
-    nonresponse_set = m.NONRESPONSE_CODES | set(spec.impute_codes)
+    # Mirror resolve(): explicit value_map entries win over the generic
+    # NONRESPONSE_CODES; per-spec impute_codes still force imputation.
+    nonresponse_set = (m.NONRESPONSE_CODES - set(spec.value_map)) | set(spec.impute_codes)
     klass = src.map(lambda c: m.classify_code(c, structural_codes, nonresponse_set))
 
     valid_codes = set(spec.value_map)
@@ -104,6 +106,55 @@ def test_resolve_vectorised_identical_without_group_cols():
     expected = _resolve_reference(df, spec, rng=np.random.RandomState(3))
     actual, _report = m.resolve(df, spec, rng=np.random.RandomState(3))
     pd.testing.assert_series_equal(actual, expected)
+
+
+def test_resolve_value_map_code_wins_over_generic_nonresponse():
+    """An explicitly enumerated value_map code must be mapped, never treated as
+    generic item-nonresponse -- even when it collides with a code in the generic
+    NONRESPONSE_CODES set.
+
+    MiD missing codes are FIELD-WIDTH dependent (Handbuch Kap. 5.1: the index
+    digit 9 is prefixed to the field width, so '9' is keine Angabe only for a
+    single-digit field). For a two-digit field like P_TAET (values 1..17), 9 is
+    the substantive category 'Schueler/in' and keine Angabe is 99. The generic
+    NONRESPONSE_CODES = {9, 99, ...} must therefore NOT shadow the explicit
+    value_map entry for 9; only genuinely unmapped codes (99) are imputed.
+
+    Regression for issue #96 (Schueler mis-imputed as employed) at the root:
+    map_employed / map_household_income_eur / map_number_of_cars all enumerate a
+    substantive '9' in their value_map.
+    """
+    # 9 (Schueler) -> value_map False; 8 (Azubi) -> value_map True; 99 -> keine
+    # Angabe -> imputed from the valid pool {9:False, 8:True}. If 9 were wrongly
+    # treated as nonresponse, it would be imputed from {8:True} and become True.
+    df = pd.DataFrame({"P_TAET": [9, 8, 99]})
+    spec = m.AttributeSpec(
+        name="employed",
+        source_col="P_TAET",
+        value_map={c: (c in {1, 2, 3, 4, 6, 8}) for c in range(1, 18)},
+        structural={},
+    )
+    out, report = m.resolve(df, spec, rng=np.random.RandomState(0))
+    assert out.tolist()[:2] == [False, True]        # 9 and 8 are mapped, not imputed
+    assert out.tolist()[2] in (True, False)          # 99 imputed to a valid value
+    assert report.n_valid == 2                       # 9 and 8 count as valid
+    assert report.n_nonresponse == 1                 # only 99 is nonresponse
+
+
+def test_resolve_impute_codes_still_win_over_value_map():
+    """A per-spec impute_codes entry forces imputation even if the same code is
+    also present in value_map (explicit per-attribute override beats the map)."""
+    df = pd.DataFrame({"X": [1, 1, 2, 3]})
+    spec = m.AttributeSpec(
+        name="x",
+        source_col="X",
+        value_map={1: "a", 2: "b", 3: "c"},
+        impute_codes=(3,),   # force 3 to be imputed from {1:a, 2:b}
+    )
+    out, report = m.resolve(df, spec, rng=np.random.RandomState(0))
+    assert out.tolist()[:3] == ["a", "a", "b"]
+    assert out.tolist()[3] in ("a", "b")   # 3 imputed, not mapped to "c"
+    assert report.n_nonresponse == 1
 
 
 def test_resolve_raises_on_unenumerated_code():
