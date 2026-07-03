@@ -958,6 +958,23 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   fleet; the legacy `consistency_v2=False` path stays verbatim; real-data behaviour (per-Kreis euro
   variation, EV-income gradient, in-commuter home-Kreis mix, euro6 substage split) is verified on the
   server smoke before merge.
+- **Final whole-branch review addendum (2026-07-03, opus):** one further robustness fix landed after
+  the review. The Task B3 all-Kreise marginal lets a cross-cordon in-commuter carry any home Kreis; a
+  Kreis with `insg>0` but every fuel component suppressed/zero produced a NaN column target ->
+  NaN P(powertrain|segment) -> `rng.choice(p=nan)` crash at draw time. The per-Kreis rake was
+  extracted into `PowertrainModel._rake_per_kreis_powertrain` (byte-identical for healthy Kreise) with
+  a degenerate-Kreis guard: NaN/inf components -> 0, and if no finite positive mass remains the Kreis
+  falls back to the national `P(powertrain|segment)` with a counted+logged degenerate rate
+  (no-silent-fallback). Findings #3 (empty-`df_cars` ZeroDivisionError, unreachable in production) and
+  #4 (per-draw euro-joint Kreis-miss not per-draw counted; build-time coverage log already covers it)
+  were assessed and deliberately left. Fix commit `99c660d` (9 new tests).
+- **OFF-path baseline sign-off (2026-07-03, user):** the OFF (`consistency_v2=False`) path is NOT
+  byte-identical to the PRE-branch baseline because the shared segment-IPF zero-row seed improvement
+  (seed the NDS status marginal instead of uniform, commit `9eb2050`) legitimately shifts segment
+  draws in BOTH paths. The legacy loop CODE is verbatim and no new flagged feature leaks into it
+  (final-review-confirmed). The user signed off on keeping the improvement active in both paths rather
+  than gating it; the two OFF-path golden fixtures (`test_off_path_byte_identical`,
+  `test_age_income_off_unchanged`) are therefore regenerated from the canonical server run.
 - **Evidence:** branch `feature/fleet-quality-and-data` (Plan 3 commits, SDD ledger
   `.superpowers/sdd/progress.md`); `scripts/build_mid_antrieb_by_status.py`,
   `scripts/extract_kba_fleet.py`; `braunschweig/synthesis/vehicles/{fleet_sampling_de,fleet_validation,hbefa}.py`;
