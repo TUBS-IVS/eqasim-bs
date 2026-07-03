@@ -56,7 +56,9 @@ copy of the run to re-render, then `python figs/<name>.py`.
 
 - **#96** — output `employed` flag not census-compatible for minors (inflates the
   regional employment rate ~7–9 pp; the 20+ base fits the census). Cross-linked to **#25**.
-- **#97** — population-validation `household_size` control mixes a household-based
-  synthetic count with person-based census targets.
+- **#97** *(fixed, PR #103)* — population-validation `household_size` control mixed a
+  household-based synthetic count with person-based census targets; now person-weighted
+  (region 1–4-person classes fit the census to < 1.2 pp, grade "good"). The QA
+  figures/scoreboard here were re-validated on 2026-07-03 with the corrected control.
 
 Built 2026-07-03.

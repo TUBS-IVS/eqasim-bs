@@ -24,7 +24,7 @@
   },
   "captions": {
     "__CAP_B1__": "1,1 Mio. synthetische Personen in 558.000 Haushalten — links die Wohnstandorte (150-m-Raster), rechts die mittlere Haushaltsgröße: klein in den Stadtkernen, größer im Umland. (100-%-Lauf, Juni 2026)",
-    "__CAP_QA1__": "Gegen die amtlichen Kalibrierziele liegt die Abweichung bei 0,1–1,2 pp — auch die Erwerbstätigkeit passt gegen ihren Zensus-Anker. MiD-Kreiswerte dienen nur als Quervergleich und werden nicht benotet.",
+    "__CAP_QA1__": "Gegen die amtlichen Kalibrierziele liegt die Abweichung bei 0,1–1,4 pp — auch Erwerbstätigkeit und Haushaltsgröße passen gegen ihre Zensus-Referenz. MiD-Kreiswerte dienen nur als Quervergleich und werden nicht benotet.",
     "__CAP_QA2__": "Demografie je Kreis: 0,7–1,3 pp Abweichung. Mobilitätsmerkmale streuen stärker — vor allem dort, wo die MiD-Kreiswerte selbst unsicher sind (Einordnung auf den nächsten Folien).",
     "__CAP_QA3__": "Bis 4 Personen trifft die Synthese den Zensus auf ~1 pp; 5- und 6+-Personen-Haushalte sind unterrepräsentiert (6+: 2,8 % statt 4,7 %) — der bekannte Donor-Engpass, Roadmap-Schritt 01.",
     "__CAP_B2__": "Pkw je Haushalt (Ø 1,04) und ÖPNV-Abo-Quote (Ø 23 %) im 1-km-Raster: in den Kernstädten weniger Autos, mehr Abos.",
