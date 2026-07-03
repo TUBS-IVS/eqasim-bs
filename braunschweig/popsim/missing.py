@@ -77,11 +77,23 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
     """
     src = df[spec.source_col]
     structural_codes = set(spec.structural)
-    # Widen the item-nonresponse set with the spec's per-attribute impute_codes so
-    # those codes are imputed from the valid pool (and crucially classified as
-    # nonresponse BEFORE the valid_or_unknown check, so they never trigger the
-    # unenumerated raise). The global NONRESPONSE_CODES constant is left untouched.
-    nonresponse_set = NONRESPONSE_CODES | set(spec.impute_codes)
+    # Effective item-nonresponse set for THIS attribute:
+    #   1. Start from the generic NONRESPONSE_CODES ({9, 99, 999, ...}).
+    #   2. Remove any code that this spec explicitly enumerates in value_map. MiD
+    #      missing codes are FIELD-WIDTH dependent (Handbuch Kap. 5.1: the index
+    #      digit 9 is prefixed to the field width, so bare '9' is keine Angabe only
+    #      for a single-digit field). For a two-digit field an enumerated '9' is a
+    #      substantive category -- e.g. P_TAET=9 'Schueler/in' (keine Angabe = 99)
+    #      or hheink_gr1=9 '4000-4600 EUR'. Without this removal the generic set
+    #      shadows the value_map and every such row is wrongly imputed instead of
+    #      mapped (issue #96: pupils imputed to employed=True). An explicit
+    #      value_map entry always wins over the generic convention.
+    #   3. Re-add the spec's per-attribute impute_codes so a deliberate per-spec
+    #      override still forces imputation (impute_codes wins over value_map),
+    #      and those codes are classified as nonresponse BEFORE the
+    #      valid_or_unknown check so they never trigger the unenumerated raise.
+    # The global NONRESPONSE_CODES constant itself is left untouched.
+    nonresponse_set = (NONRESPONSE_CODES - set(spec.value_map)) | set(spec.impute_codes)
 
     # Vectorised classification, same precedence as classify_code (structural
     # wins over nonresponse). isin matches the `code in set` semantics of

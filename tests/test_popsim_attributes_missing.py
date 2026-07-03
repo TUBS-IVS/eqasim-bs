@@ -99,6 +99,42 @@ def test_employed_valid_codes_map_to_existing_semantics():
     assert out["employed"].isna().sum() == 0
 
 
+def test_employed_pupils_code9_map_to_false_not_imputed():
+    """Schueler (P_TAET=9) must map to employed=False, not be imputed.
+
+    Regression for issue #96: the generic item-nonresponse set contains 9, which
+    for the two-digit P_TAET field is the substantive category 'Schueler/in'
+    (keine Angabe is 99). Before the fix, every pupil was treated as nonresponse
+    and imputed from the non-pupil valid pool of its age band -- in the 14-17
+    band that pool is dominated by Azubis (P_TAET=8 -> True), inflating pupil
+    employment to ~96 %. All pupils must instead be deterministically False.
+    """
+    # A 14-17 age band: 900 Schueler (9) + 100 Azubi (8), one alter_gr1 band.
+    persons = pd.DataFrame({
+        "P_TAET": [9] * 900 + [8] * 100,
+        "alter_gr1": [3] * 1000,
+    })
+    out = a.map_employed(persons, rng=np.random.RandomState(0))
+    pupils = out.iloc[:900]
+    azubis = out.iloc[900:]
+    assert pupils["employed"].sum() == 0          # no pupil is employed
+    assert azubis["employed"].all()               # every Azubi stays employed
+    assert out["employed"].isna().sum() == 0
+
+
+def test_household_income_group9_maps_to_bracket_not_imputed():
+    """hheink_gr1=9 is the substantive income group 4000-4600 EUR (keine Angabe
+    is 99), so it must map to the group-9 midpoint, not be imputed.
+
+    Same field-width collision as issue #96: 9 is in the generic nonresponse set
+    but is a valid enumerated value_map key here.
+    """
+    hh = pd.DataFrame({"hheink_gr1": [9, 9, 9, 9], "hhgr_gr": [2, 2, 2, 2]})
+    out = a.map_household_income_eur(hh, rng=np.random.RandomState(0))
+    assert (out["household_income_eur"] == 4300.0).all()
+    assert out["household_income_eur"].isna().sum() == 0
+
+
 def test_employed_nonresponse_is_imputed():
     """P_TAET=99 (keine Angabe) must be imputed from the valid pool, never NaN."""
     persons = pd.DataFrame({"P_TAET": [1, 2, 8, 99], "alter_gr1": [3, 3, 3, 3]})
