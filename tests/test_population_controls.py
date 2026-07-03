@@ -112,10 +112,10 @@ def test_absent_column_bucket_household_logs_warning_and_returns_empty(caplog):
 # --- issue #97: household_size control must be on a PERSON basis ---------------
 #
 # The census target (Zensus 1000A-2081, loaded by household_size_target) reports
-# PERSONS living in a household of each size class, and the IPF balances that same
-# person margin. The synthetic side must therefore also be person-weighted; the
-# previous household-count basis compared household-shares against person-shares
-# (the #97 basis mismatch: ~24pp spurious 1-person deviation).
+# PERSONS living in a household of each size class, so the synthetic side must be
+# person-weighted too. The previous household-count basis compared household-shares
+# against person-shares (the #97 basis mismatch), which reads as a large spurious
+# 1-person deviation.
 
 
 def test_bucket_household_control_weight_column_person_weights():

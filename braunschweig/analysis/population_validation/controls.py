@@ -107,8 +107,8 @@ def bucket_household_control(name, family, geography, column, top, target, top_l
     * a column name: SUM that (numeric) column per bin instead of counting. Used by
       the ``household_size`` control with ``weight_column="household_size"`` so the
       realized distribution is PERSON-weighted (persons living in a household of
-      each size class). Its Zensus 1000A-2081 target reports PERSONS and the IPF
-      balances that same person margin, so the synthetic side must be persons too;
+      each size class). Its Zensus 1000A-2081 target is a per-commune PERSON share,
+      so the realized side must be persons too for an apples-to-apples comparison;
       a household-count basis would compare household-shares against person-shares
       (issue #97). Households whose weight is non-numeric/missing are excluded from
       the distribution (logged), mirroring the bucket-column NA handling.
@@ -606,9 +606,9 @@ def build_registry(data_path: str) -> list[Control]:
     # "6+" label matching the Zensus 1000A-2081 target categories. The geography
     # is "gemeinde" (8-digit commune_id) because the Zensus source is per-Gemeinde.
     # weight_column="household_size" makes the realized side PERSON-weighted
-    # (persons living in a household of each size class): the Zensus 1000A-2081
-    # target reports PERSONS and the IPF balances that same person margin, so the
-    # synthetic side must be persons too. A household-count basis would compare
+    # (persons living in a household of each size class). The Zensus 1000A-2081
+    # target is a per-commune PERSON share, so the realized side must be persons
+    # too for an apples-to-apples comparison. A household-count basis would compare
     # household-shares against person-shares (issue #97 basis mismatch).
     reg.append(bucket_household_control(
         "household_size", "census", "gemeinde", "household_size",

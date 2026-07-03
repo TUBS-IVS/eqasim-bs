@@ -14,10 +14,11 @@ Output schema::
                        "single_parent" / "other_multi"
     weight     : float persons in that cell (Insgesamt rows excluded)
 
-Note: the GENESIS 1000A statistic reports PERSONS living in a household of the
-given (size, type), not household counts (value_variable_code = persons, as in
-the sister table 1000A-3082). The ZGB total therefore matches the ~1.14 M ZGB
-population, not the ~0.56 M household count.
+Note: the value is PERSONS living in a household of the given (size, type), not
+household counts. This is pinned by the committed regression test
+``tests/test_hh_size_margin.py::TestHouseholdTypeLoader.test_zgb_persons_match_zensus_reference``,
+which asserts the ZGB total lands in the ~1.135 M person range (the Zensus 2022
+ZGB population), well above the ZGB household count.
 """
 
 from __future__ import annotations
