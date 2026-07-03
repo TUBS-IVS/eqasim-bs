@@ -1,0 +1,1892 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>eqasim-bs — Verkehrsmodell Region Braunschweig · Zwischenstand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============ TU-Braunschweig-inspiriertes Design: Weiß · TU-Rot · Grau ============ */
+:root {
+  --font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --bg: #ffffff;
+  --surface: #f6f6f7;
+  --surface2: #eeeef0;
+  --surface-elevated: #ffffff;
+  --border: rgba(20, 20, 30, 0.10);
+  --border-bright: rgba(20, 20, 30, 0.20);
+  --text: #1a1a1e;
+  --text-dim: #5c5c64;
+  --accent: #be1e3c;            /* TU-Rot */
+  --accent-dark: #8f142c;
+  --accent-dim: rgba(190, 30, 60, 0.06);
+  --green: #1e7a46;
+  --green-dim: rgba(30, 122, 70, 0.09);
+  --amber: #a86414;
+  --amber-dim: rgba(168, 100, 20, 0.10);
+  --blue: #2d5f8f;
+  --blue-dim: rgba(45, 95, 143, 0.09);
+  --fig-bg: #0a0e14;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141417;
+    --surface: #1d1d22;
+    --surface2: #26262c;
+    --surface-elevated: #2e2e35;
+    --border: rgba(255, 255, 255, 0.09);
+    --border-bright: rgba(255, 255, 255, 0.18);
+    --text: #f0f0f2;
+    --text-dim: #a3a3ac;
+    --accent: #e34a66;
+    --accent-dark: #be1e3c;
+    --accent-dim: rgba(227, 74, 102, 0.09);
+    --green: #4fae78;
+    --green-dim: rgba(79, 174, 120, 0.12);
+    --amber: #d99a4e;
+    --amber-dim: rgba(217, 154, 78, 0.12);
+    --blue: #6f9fc9;
+    --blue-dim: rgba(111, 159, 201, 0.12);
+  }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+/* ============ Deck-Engine ============ */
+.deck {
+  height: 100dvh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+.slide {
+  height: 100dvh;
+  scroll-snap-align: start;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(40px, 6vh, 76px) clamp(40px, 7.5vw, 110px);
+  isolation: isolate;
+  opacity: 0;
+  transform: translateY(40px) scale(0.985);
+  transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1);
+}
+.slide.visible { opacity: 1; transform: none; }
+.slide .reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1), transform 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.slide.visible .reveal { opacity: 1; transform: none; }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.07s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.14s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.21s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.28s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.35s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.42s; }
+.slide.visible .reveal:nth-child(7) { transition-delay: 0.49s; }
+.slide.visible .reveal:nth-child(8) { transition-delay: 0.56s; }
+
+/* Die rote Kante — CI-Anleihe: schmale rote Linie am oberen Slide-Rand */
+.slide::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: var(--accent);
+  opacity: 0.9;
+  z-index: 5;
+}
+.slide--title::after, .slide--divider::after, .slide--closing::after { height: 8px; }
+
+/* Dezente Flächen-Atmosphäre */
+.slide:nth-child(odd)  { background-image: radial-gradient(ellipse at 12% 92%, var(--accent-dim) 0%, transparent 48%); }
+.slide:nth-child(even) { background-image: radial-gradient(ellipse at 88% 8%,  var(--accent-dim) 0%, transparent 48%); }
+
+/* ============ Typografie ============ */
+.slide__display {
+  font-size: clamp(42px, 7.6vw, 96px);
+  font-weight: 700;
+  letter-spacing: -2px;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.slide__heading {
+  font-size: clamp(27px, 4.1vw, 46px);
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.slide__label {
+  font-family: var(--font-mono);
+  font-size: clamp(10px, 1.1vw, 13px);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: clamp(10px, 1.5vh, 16px);
+}
+.slide__subtitle {
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 1.6vw, 18px);
+  color: var(--text-dim);
+  letter-spacing: 0.3px;
+}
+em.red { font-style: normal; color: var(--accent); }
+
+/* ============ Titel ============ */
+.slide--title { justify-content: center; align-items: flex-start; text-align: left; }
+.tu-logo {
+  display: block;
+  height: clamp(58px, 9vh, 92px);
+  width: auto;
+  margin-bottom: clamp(32px, 6vh, 64px);
+}
+.title-kicker {
+  font-family: var(--font-mono); font-size: clamp(11px, 1.25vw, 14px);
+  letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+  margin-bottom: clamp(14px, 2.4vh, 24px);
+}
+.title-rule {
+  width: 96px; height: 3px; background: var(--accent);
+  margin: clamp(20px, 3.4vh, 34px) 0;
+}
+
+/* ============ Divider ============ */
+.slide--divider { justify-content: center; }
+.slide--divider .slide__number {
+  font-family: var(--font-body);
+  font-size: clamp(130px, 25vw, 320px);
+  font-weight: 700; line-height: 0.85;
+  color: var(--accent); opacity: 0.06;
+  position: absolute; top: 50%; right: clamp(20px, 6vw, 100px);
+  transform: translateY(-52%);
+  pointer-events: none; font-variant-numeric: tabular-nums; z-index: 0;
+}
+.slide--divider .slide__content { position: relative; z-index: 1; max-width: 900px; }
+
+/* ============ Inhalts-Raster ============ */
+.slide__inner {
+  display: grid; grid-template-columns: 3fr 2fr;
+  gap: clamp(24px, 4vw, 60px); align-items: center; width: 100%;
+}
+.slide__inner > * { min-width: 0; }
+.slide__bullets { list-style: none; padding: 0; }
+.slide__bullets li {
+  padding: clamp(6px, 1vh, 10px) 0 clamp(6px, 1vh, 10px) 24px;
+  position: relative;
+  font-size: clamp(15.5px, 1.8vw, 21px);
+  line-height: 1.55; color: var(--text-dim);
+}
+.slide__bullets li::before {
+  content: ''; position: absolute; left: 0; top: calc(clamp(6px,1vh,10px) + 0.6em);
+  width: 11px; height: 2px; background: var(--accent);
+}
+.slide__bullets li strong { color: var(--text); font-weight: 600; }
+
+/* Zahlen-Stapel */
+.stat-stack { display: flex; flex-direction: column; gap: clamp(10px, 1.7vh, 18px); }
+.stat-stack__item {
+  border-left: 3px solid var(--accent);
+  padding: clamp(7px, 1.2vh, 13px) 0 clamp(7px, 1.2vh, 13px) 18px;
+}
+.stat-stack__value {
+  font-size: clamp(26px, 3.3vw, 42px); font-weight: 700; line-height: 1.05;
+  color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+}
+.stat-stack__label {
+  font-family: var(--font-mono); font-size: clamp(10px, 1.05vw, 12px);
+  text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-top: 4px;
+}
+
+/* ============ Feature-Chips ============ */
+.chip-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: clamp(8px, 1.3vh, 13px);
+  margin-top: clamp(12px, 2vh, 22px);
+}
+.chip-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.chip-grid > * { min-width: 0; }
+.chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-bright);
+  border-radius: 6px;
+  padding: clamp(10px, 1.6vh, 16px) clamp(12px, 1.5vw, 20px);
+}
+.chip--hero { border-left-color: var(--accent); background: var(--accent-dim); }
+.chip__title { font-size: clamp(14.5px, 1.55vw, 19px); font-weight: 600; color: var(--text); line-height: 1.25; }
+.chip__desc {
+  font-size: clamp(12px, 1.25vw, 15px); color: var(--text-dim);
+  line-height: 1.45; margin-top: 4px;
+}
+
+/* Delta-Leiste: Änderung ggü. eqasim-bavaria */
+.delta-bar {
+  display: flex; align-items: baseline; gap: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  padding: clamp(9px, 1.5vh, 15px) clamp(14px, 1.8vw, 22px);
+  margin-top: clamp(12px, 2vh, 22px);
+}
+.delta-bar__tag {
+  font-family: var(--font-mono); font-size: clamp(9.5px, 1vw, 11.5px);
+  font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--accent); white-space: nowrap; flex-shrink: 0;
+}
+.delta-bar__text { font-size: clamp(12.5px, 1.35vw, 16px); color: var(--text-dim); line-height: 1.45; }
+.delta-bar__text strong { color: var(--text); font-weight: 600; }
+
+/* Status-Badges */
+.status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: clamp(10px, 1vw, 12px);
+  font-weight: 600; padding: 4px 12px; border-radius: 999px; white-space: nowrap;
+  letter-spacing: 0.4px;
+}
+.status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status--live { background: var(--green-dim); color: var(--green); }
+.status--next { background: var(--amber-dim); color: var(--amber); }
+.status--plan { background: var(--blue-dim);  color: var(--blue); }
+.feature-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+
+/* Delta-Badges (Tabelle) */
+.dtag {
+  font-family: var(--font-mono); font-size: clamp(9.5px, 1vw, 11.5px); font-weight: 600;
+  letter-spacing: 1px; text-transform: uppercase; padding: 3px 10px; border-radius: 4px;
+  white-space: nowrap;
+}
+.dtag--new  { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); }
+.dtag--ext  { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue); }
+.dtag--base { background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border-bright); }
+
+/* ============ Feature-Landkarte ============ */
+.fmap {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: clamp(10px, 1.2vw, 18px);
+  margin-top: clamp(12px, 2vh, 20px);
+  flex: 0 1 auto; min-height: 0;
+}
+.fmap > * { min-width: 0; }
+.fmap__lane {
+  background: var(--surface); border: 1px solid var(--border);
+  border-top: 3px solid var(--accent); border-radius: 8px;
+  padding: clamp(8px, 1.3vh, 13px) clamp(8px, 0.9vw, 13px);
+  display: flex; flex-direction: column; gap: clamp(4px, 0.7vh, 7px);
+  position: relative;
+}
+.fmap__lane:not(:last-child)::after {
+  content: '\2192'; position: absolute; right: calc(-1 * clamp(10px, 1.2vw, 18px) + 2px);
+  top: 14px; color: var(--accent); opacity: 0.55; font-size: 14px; z-index: 2;
+}
+.fmap__title { font-weight: 600; font-size: clamp(11.5px, 1.1vw, 14.5px); line-height: 1.2; color: var(--text); }
+.fmap__mod {
+  font-family: var(--font-mono); font-size: clamp(7.5px, 0.75vw, 9.5px);
+  color: var(--text-dim); margin-bottom: clamp(2px, 0.5vh, 5px); letter-spacing: 0.3px;
+  overflow-wrap: break-word;
+}
+.fchip {
+  font-size: clamp(9.5px, 0.92vw, 12px); line-height: 1.28;
+  padding: clamp(4px, 0.7vh, 6px) 8px; border-radius: 4px;
+  background: var(--surface2); border-left: 3px solid var(--border-bright);
+  color: var(--text);
+}
+.fchip--new { border-left-color: var(--accent); }
+.fchip--ext { border-left-color: var(--blue); }
+.fchip--base { border-left-color: var(--border-bright); color: var(--text-dim); }
+.fmap-legend {
+  display: flex; gap: clamp(12px, 1.6vw, 24px); align-items: center;
+  margin-top: clamp(10px, 1.6vh, 16px);
+  font-family: var(--font-mono); font-size: clamp(9px, 0.95vw, 11.5px);
+  color: var(--text-dim); flex-wrap: wrap;
+}
+.fmap-legend__key { display: inline-flex; align-items: center; gap: 6px; }
+.fmap-legend__swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.fmap-base {
+  display: flex; flex-wrap: wrap; gap: clamp(5px, 0.7vw, 9px); align-items: center;
+  margin-top: clamp(8px, 1.4vh, 14px);
+  padding: clamp(7px, 1.2vh, 12px) clamp(10px, 1.2vw, 16px);
+  background: var(--surface2); border: 1px dashed var(--border-bright); border-radius: 8px;
+}
+.fmap-base__label {
+  font-family: var(--font-mono); font-size: clamp(8.5px, 0.9vw, 11px); font-weight: 600;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin-right: 6px;
+}
+.fmap-base .fchip { background: var(--surface); }
+
+/* ============ Pipeline ============ */
+.pipeline {
+  display: flex; align-items: stretch; gap: 0;
+  min-height: 0; margin-top: clamp(16px, 2.8vh, 30px);
+}
+.pipeline__step {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: clamp(14px, 2.4vh, 28px) clamp(12px, 1.4vw, 22px);
+  display: flex; flex-direction: column;
+  min-width: 0; overflow-wrap: break-word;
+}
+.pipeline__num {
+  font-family: var(--font-mono); font-size: clamp(10px, 1.05vw, 12.5px);
+  font-weight: 600; color: var(--accent); letter-spacing: 1.5px;
+}
+.pipeline__name { font-size: clamp(16px, 1.85vw, 23px); font-weight: 600; margin: clamp(5px, 0.9vh, 9px) 0; line-height: 1.15; }
+.pipeline__desc { font-size: clamp(12px, 1.25vw, 15px); color: var(--text-dim); line-height: 1.5; flex: 1; }
+.pipeline__file {
+  font-family: var(--font-mono); font-size: clamp(9px, 0.95vw, 11px);
+  color: var(--accent); background: var(--accent-dim);
+  padding: 3px 9px; border-radius: 4px; margin-top: clamp(8px, 1.4vh, 14px);
+  align-self: flex-start; letter-spacing: 0.4px;
+}
+.pipeline__arrow {
+  display: flex; align-items: center; padding: 0 clamp(3px, 0.4vw, 7px);
+  color: var(--accent); flex-shrink: 0; opacity: 0.5;
+}
+
+/* ============ Split ============ */
+.slide--split { padding: 0; }
+.slide--split .slide__panels { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+.slide--split .slide__panels > * { min-width: 0; }
+.slide__panel {
+  padding: clamp(36px, 5.6vh, 70px) clamp(30px, 4.2vw, 64px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide__panel--primary   { background: var(--surface); }
+.slide__panel--secondary { background: var(--bg); border-left: 1px solid var(--border); }
+.slide__panel--fig {
+  background: var(--fig-bg);
+  padding: clamp(20px, 3.5vh, 40px) clamp(18px, 2.4vw, 36px);
+  justify-content: center; align-items: center;
+}
+.slide__panel--fig img {
+  max-width: 100%; max-height: 82%;
+  object-fit: contain; border-radius: 8px;
+}
+.slide__panel--fig .fig-caption { margin-top: 14px; }
+.panel-list { list-style: none; padding: 0; margin-top: clamp(12px, 1.8vh, 20px); }
+.panel-list li {
+  padding: clamp(6px, 1vh, 10px) 0 clamp(6px, 1vh, 10px) 22px;
+  position: relative; font-size: clamp(13.5px, 1.5vw, 18px);
+  line-height: 1.5; color: var(--text-dim);
+}
+.panel-list li::before {
+  content: ''; position: absolute; left: 0; top: calc(clamp(6px,1vh,10px) + 0.58em);
+  width: 10px; height: 2px; background: var(--text-dim); opacity: 0.6;
+}
+.panel-list li strong { color: var(--text); font-weight: 600; }
+.panel-list--good li::before { background: var(--green); opacity: 1; }
+.panel-list--open li::before { background: var(--amber); opacity: 1; }
+.panel-list--red  li::before { background: var(--accent); opacity: 1; }
+
+/* ============ Figuren-Folien (dunkel) ============ */
+.slide--figure {
+  background: var(--fig-bg) !important;
+  background-image: none !important;
+  padding: clamp(28px, 4.5vh, 52px) clamp(28px, 4.5vw, 70px);
+  justify-content: flex-start;
+}
+.slide--figure .slide__label { color: #f07a90; margin-bottom: clamp(6px, 1vh, 12px); }
+.slide--figure .fig-heading {
+  font-size: clamp(20px, 2.6vw, 32px); font-weight: 700; letter-spacing: -0.5px;
+  color: #eef3fb; line-height: 1.12; margin-bottom: clamp(8px, 1.4vh, 16px);
+}
+.fig-frame {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.fig-frame img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; border-radius: 10px;
+}
+.fig-caption {
+  font-family: var(--font-mono); font-size: clamp(10px, 1.15vw, 13px);
+  color: #8b95a7; line-height: 1.5; margin-top: clamp(8px, 1.4vh, 14px);
+  letter-spacing: 0.2px;
+}
+
+/* ============ KPI ============ */
+.slide__kpis {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: clamp(12px, 1.8vw, 24px);
+  margin-top: clamp(16px, 2.8vh, 32px);
+}
+.slide__kpis > * { min-width: 0; }
+.slide__kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border-bright);
+  border-radius: 8px;
+  padding: clamp(16px, 2.8vh, 32px) clamp(16px, 2vw, 26px);
+  overflow: hidden;
+}
+.slide__kpi--hero { border-top-color: var(--accent); background: var(--accent-dim); }
+.slide__kpi-val {
+  font-size: clamp(36px, 5.2vw, 62px); font-weight: 700;
+  line-height: 1.05; letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  color: var(--accent);
+}
+.slide__kpi--muted .slide__kpi-val { color: var(--text); }
+.slide__kpi-label {
+  font-family: var(--font-mono); font-size: clamp(9px, 1.05vw, 12px);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--text-dim); margin-top: 9px; line-height: 1.5;
+}
+
+/* ============ Tabelle ============ */
+.slide--table { padding: clamp(24px, 4vh, 44px) clamp(24px, 4.5vw, 70px); }
+.table-wrap {
+  background: var(--surface-elevated); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin-top: clamp(12px, 2.2vh, 24px);
+}
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.data-table { width: 100%; border-collapse: collapse; font-size: clamp(12.5px, 1.4vw, 17px); line-height: 1.4; }
+.data-table th {
+  background: var(--surface2);
+  font-family: var(--font-mono); font-size: clamp(9px, 1.05vw, 11.5px);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--text-dim); text-align: left;
+  padding: clamp(8px, 1.3vh, 13px) clamp(12px, 1.5vw, 18px);
+  border-bottom: 2px solid var(--accent); white-space: nowrap;
+}
+.data-table td {
+  padding: clamp(7px, 1.2vh, 13px) clamp(12px, 1.5vw, 18px);
+  border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text);
+}
+.data-table td.dim { color: var(--text-dim); font-size: 0.86em; }
+.data-table tbody tr:nth-child(even) { background: var(--surface); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+/* ============ Roadmap ============ */
+.roadmap-wrap {
+  background: var(--surface-elevated); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin-top: clamp(12px, 2.2vh, 24px);
+}
+.roadmap { display: flex; flex-direction: column; }
+.roadmap__item {
+  display: grid; grid-template-columns: 70px 1fr auto;
+  gap: clamp(14px, 2vw, 28px); align-items: center;
+  padding: clamp(9px, 1.5vh, 16px) clamp(14px, 1.8vw, 24px);
+  border-bottom: 1px solid var(--border);
+}
+.roadmap__item:last-child { border-bottom: none; }
+.roadmap__item > * { min-width: 0; }
+.roadmap__item--hero {
+  background: var(--accent-dim);
+  border-left: 4px solid var(--accent);
+}
+.roadmap__num {
+  font-family: var(--font-mono); font-size: clamp(18px, 2.4vw, 30px); font-weight: 600;
+  color: var(--accent); font-variant-numeric: tabular-nums;
+}
+.roadmap__title { font-size: clamp(15px, 1.75vw, 22px); font-weight: 600; color: var(--text); line-height: 1.2; }
+.roadmap__desc { font-size: clamp(11.5px, 1.25vw, 15px); color: var(--text-dim); line-height: 1.42; margin-top: 3px; }
+.roadmap__frame { justify-self: end; }
+
+/* ============ Datenquellen-Karten ============ */
+.data-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: clamp(10px, 1.5vw, 18px); margin-top: clamp(14px, 2.5vh, 28px);
+}
+.data-grid > * { min-width: 0; }
+.data-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: clamp(13px, 2vh, 22px) clamp(13px, 1.4vw, 20px);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.data-card__tag {
+  font-family: var(--font-mono); font-size: clamp(8.5px, 0.95vw, 10.5px);
+  font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent);
+}
+.data-card__name { font-size: clamp(15px, 1.7vw, 20px); font-weight: 600; line-height: 1.15; color: var(--text); }
+.data-card__desc { font-size: clamp(11.5px, 1.2vw, 14px); color: var(--text-dim); line-height: 1.45; }
+
+/* ============ Abschluss ============ */
+.slide--closing { justify-content: center; align-items: flex-start; }
+.closing-points {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: clamp(14px, 2.2vw, 30px);
+  margin-top: clamp(22px, 4vh, 46px);
+  width: 100%;
+}
+.closing-points > * { min-width: 0; }
+.closing-point { border-top: 3px solid var(--accent); padding-top: clamp(12px, 1.8vh, 18px); }
+.closing-point__title { font-size: clamp(16px, 1.8vw, 22px); font-weight: 600; color: var(--text); }
+.closing-point__desc { font-size: clamp(12.5px, 1.35vw, 16px); color: var(--text-dim); line-height: 1.5; margin-top: 6px; }
+
+/* ============ Fußzeile (fix) ============ */
+.deck-footer {
+  position: fixed; bottom: clamp(12px, 2vh, 22px); left: clamp(24px, 4vw, 60px);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  z-index: 100; letter-spacing: 0.6px; opacity: 0.75; pointer-events: none;
+}
+
+/* ============ Lightbox (Klick zum Vergroessern) ============ */
+.fig-frame img, .slide__panel--fig img { cursor: zoom-in; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(4, 6, 10, 0.94);
+  display: none; align-items: center; justify-content: center;
+  padding: 1.5vh 1.5vw; cursor: zoom-out;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 97vw; max-height: 97vh; object-fit: contain;
+  border-radius: 6px; box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7);
+}
+.lightbox__hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 11px; color: #8b95a7; pointer-events: none;
+}
+
+/* ============ Navigation ============ */
+.deck-progress {
+  position: fixed; top: 0; left: 0; height: 4px;
+  background: var(--accent-dark); z-index: 100;
+  transition: width 0.3s ease; pointer-events: none;
+}
+.deck-dots {
+  position: fixed; right: clamp(12px, 2vw, 24px); top: 50%;
+  transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 6px; z-index: 100;
+  background: color-mix(in srgb, var(--bg) 70%, transparent 30%);
+  padding: 8px 5px; border-radius: 20px;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.deck-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-dim); opacity: 0.3;
+  border: none; padding: 0; cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.deck-dot:hover { opacity: 0.6; }
+.deck-dot.active { opacity: 1; transform: scale(1.5); background: var(--accent); }
+.deck-counter {
+  position: fixed; bottom: clamp(12px, 2vh, 22px); right: clamp(12px, 2vw, 24px);
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  z-index: 100; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.deck-hints {
+  position: fixed; bottom: clamp(12px, 2vh, 22px); left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  opacity: 0.6; z-index: 100; transition: opacity 0.5s ease; white-space: nowrap;
+}
+.deck-hints.faded { opacity: 0; pointer-events: none; }
+
+/* ============ Responsiv ============ */
+@media (max-height: 700px) {
+  .slide { padding: clamp(24px, 4vh, 40px) clamp(32px, 6vw, 80px); }
+  .slide__display { font-size: clamp(34px, 7vw, 64px); }
+  .slide--divider .slide__number { font-size: clamp(90px, 18vw, 190px); }
+}
+@media (max-height: 560px) {
+  .deck-footer, .tu-logo { display: none; }
+}
+@media (max-height: 500px) {
+  .slide { padding: clamp(16px, 3vh, 24px) clamp(24px, 5vw, 48px); }
+  .deck-dots { display: none; }
+  .slide__display { font-size: clamp(26px, 6.5vw, 44px); }
+}
+@media (max-width: 900px) {
+  .data-grid { grid-template-columns: repeat(2, 1fr); }
+  .slide__kpis { grid-template-columns: repeat(2, 1fr); }
+  .chip-grid--3 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .slide__inner { grid-template-columns: 1fr; }
+  .slide__aside { display: none; }
+  .slide--split .slide__panels { grid-template-columns: 1fr; }
+  .chip-grid, .chip-grid--3 { grid-template-columns: 1fr; }
+  .pipeline { flex-direction: column; }
+  .pipeline__arrow { justify-content: center; padding: 4px 0; transform: rotate(90deg); }
+  .closing-points { grid-template-columns: 1fr; }
+  .roadmap__frame { display: none; }
+  .roadmap__item { grid-template-columns: 46px 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide, .slide .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- ============ 1 · TITEL ============ -->
+  <section class="slide slide--title">
+    <img class="tu-logo reveal" src="__TU_LOGO__" alt="Technische Universit&auml;t Braunschweig">
+    <div class="slide__content">
+      <p class="title-kicker reveal">Zwischenstand &middot; Projektgruppen-Briefing</p>
+      <h1 class="slide__display reveal">Ein agentenbasiertes Verkehrsmodell<br>f&uuml;r die <em class="red">Region Braunschweig</em></h1>
+      <div class="title-rule reveal"></div>
+      <p class="slide__subtitle reveal">Agentenbasierte Verkehrssimulation mit MATSim &amp; eqasim &mdash; jeder Einwohner als synthetischer Agent<br>Was wir aufgebaut haben &middot; was wir gegen&uuml;ber eqasim-bavaria ver&auml;ndert haben &middot; wohin es geht<br>Juli 2026</p>
+    </div>
+  </section>
+
+  <!-- ============ 2 · DIE IDEE ============ -->
+  <section class="slide">
+    <div class="slide__inner">
+      <div class="slide__text">
+        <p class="slide__label reveal">Die Idee</p>
+        <h2 class="slide__heading reveal">Ein synthetischer Einwohner f&uuml;r jeden realen Einwohner</h2>
+        <ul class="slide__bullets">
+          <li class="reveal">Wir erzeugen eine <strong>synthetische Bev&ouml;lkerung</strong> des Gro&szlig;raums Braunschweig &mdash; statistisch nicht von der realen zu unterscheiden, aber vollst&auml;ndig anonym.</li>
+          <li class="reveal">Jede synthetische Person erh&auml;lt einen <strong>realistischen 24-Stunden-Tag</strong>: Wohnen, Arbeit, Schule, Einkauf, Freizeit &mdash; an realen Orten.</li>
+          <li class="reveal">Alle Personen sind gleichzeitig auf dem <strong>realen Stra&szlig;en- und &Ouml;PNV-Netz</strong> unterwegs &mdash; mit Stau, Verkehrsfl&uuml;ssen und Reisezeiten.</li>
+          <li class="reveal">Das Ergebnis ist ein <strong>Was-w&auml;re-wenn-Labor</strong> f&uuml;r Verkehrsplanung und -politik &mdash; in jedem Schritt auf amtliche Daten gest&uuml;tzt.</li>
+        </ul>
+      </div>
+      <div class="slide__aside reveal">
+        <div class="stat-stack">
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">8 Kreise</div>
+            <div class="stat-stack__label">BS &middot; SZ &middot; WOB + 5 Landkreise (ZGB)</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">100 m</div>
+            <div class="stat-stack__label">Zensus-Rasteraufl&ouml;sung der Bev&ouml;lkerung</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">24 h</div>
+            <div class="stat-stack__label">vollst&auml;ndige Tagespl&auml;ne pro Person</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">100 %</div>
+            <div class="stat-stack__label">Vollbev&ouml;lkerung (plus 1 % / 25 % Test-Skalen)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 · PIPELINE ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">So funktioniert es</p>
+    <h2 class="slide__heading reveal">Von amtlicher Statistik zu simuliertem Verkehr &mdash; eine automatisierte Pipeline</h2>
+    <div class="pipeline reveal">
+      <div class="pipeline__step">
+        <div class="pipeline__num">01</div>
+        <div class="pipeline__name">Referenzdaten</div>
+        <div class="pipeline__desc">Zensus, Mobilit&auml;tserhebungen, Fahrzeugregister, Pendlerstatistik, Geb&auml;ude, Netze.</div>
+        <div class="pipeline__file">amtliche Quellen</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">02</div>
+        <div class="pipeline__name">Synthetische Bev&ouml;lkerung</div>
+        <div class="pipeline__desc">Haushalte und Personen, zellgenau passend zum Zensus erzeugt.</div>
+        <div class="pipeline__file">wer wohnt wo</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">03</div>
+        <div class="pipeline__name">Aktivit&auml;ten &amp; Orte</div>
+        <div class="pipeline__desc">Tagespl&auml;ne aus der nationalen Mobilit&auml;tserhebung; Arbeit, Schule und Einkauf realen Geb&auml;uden zugeordnet.</div>
+        <div class="pipeline__file">was Menschen tun</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">04</div>
+        <div class="pipeline__name">Verkehrssimulation</div>
+        <div class="pipeline__desc">MATSim bewegt jeden Agenten durchs Netz, bis sich der Tagesverkehr stabilisiert.</div>
+        <div class="pipeline__file">MATSim (Java)</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">05</div>
+        <div class="pipeline__name">Validierung &amp; Dashboards</div>
+        <div class="pipeline__desc">Automatischer Abgleich mit realen Referenzdaten; interaktive Ergebnis-Dashboards.</div>
+        <div class="pipeline__file">Qualit&auml;tssicherung</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 · DIVIDER 01 ============ -->
+  <section class="slide slide--divider">
+    <span class="slide__number">01</span>
+    <div class="slide__content">
+      <p class="slide__label reveal">Abschnitt eins</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(38px,6.4vw,84px);">Die Ausgangsbasis:<br>eqasim-bavaria</h2>
+      <p class="slide__subtitle reveal" style="margin-top:16px;">Worauf wir aufsetzen &mdash; und was wir methodisch daraus gemacht haben</p>
+    </div>
+  </section>
+
+  <!-- ============ 5 · DER BAUKASTEN ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">Der Baukasten</p>
+    <h2 class="slide__heading reveal">Drei Ebenen: Simulator, Pipeline, Regionalmodell</h2>
+    <div class="chip-grid chip-grid--3" style="margin-top:clamp(18px,3vh,32px);">
+      <div class="chip reveal">
+        <div class="chip__title">MATSim</div>
+        <div class="chip__desc">Das f&uuml;hrende Open-Source-Framework f&uuml;r gro&szlig;skalige agentenbasierte Verkehrssimulation. Bewegt Millionen Agenten durch reale Netze und l&auml;sst den Tagesverkehr iterativ ins Gleichgewicht laufen.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">eqasim</div>
+        <div class="chip__desc">Eine etablierte Forschungs-Pipeline (ETH Z&uuml;rich / IRT SystemX), die aus Rohdaten reproduzierbar komplette MATSim-Szenarien baut: Bev&ouml;lkerungssynthese, Standortwahl, Verkehrsmittelwahl-Modelle.</div>
+      </div>
+      <div class="chip chip--hero reveal">
+        <div class="chip__title">eqasim-bavaria &rarr; eqasim-bs</div>
+        <div class="chip__desc">Die M&uuml;nchen-Anwendung dieser Pipeline war unsere Blaupause. Im Oktober 2025 geforkt &mdash; seitdem systematisch zum eigenst&auml;ndigen Modell f&uuml;r den Gro&szlig;raum Braunschweig ausgebaut.</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">Prinzip</span>
+      <span class="delta-bar__text">Wir haben die <strong>bew&auml;hrte wissenschaftliche Methodik &uuml;bernommen</strong> und sie Schicht f&uuml;r Schicht mit <strong>deutschen Daten und regionalen Modellen</strong> neu unterf&uuml;ttert &mdash; nachvollziehbar dokumentiert in jedem Schritt.</span>
+    </div>
+  </section>
+
+  <!-- ============ 6 · ÜBERNOMMEN VS. NEU ============ -->
+  <section class="slide slide--split">
+    <div class="slide__panels">
+      <div class="slide__panel slide__panel--primary">
+        <p class="slide__label reveal">&Uuml;bernommen</p>
+        <h2 class="slide__heading reveal">Was wir von eqasim-bavaria geerbt haben</h2>
+        <ul class="panel-list">
+          <li class="reveal"><strong>Pipeline-Architektur</strong> &mdash; das Stufenkonzept (synpp): jeder Schritt einzeln nachvollziehbar, wiederholbar, cachebar.</li>
+          <li class="reveal"><strong>MATSim-Simulationskern</strong> &mdash; Netzabbildung, Iterationslogik, Ereignis-Auswertung.</li>
+          <li class="reveal"><strong>eqasim-Methodik</strong> &mdash; Szenario-Export, Verkehrsmittelwahl-Rahmen (Discrete Mode Choice), Grundstruktur der Synthese.</li>
+          <li class="reveal"><strong>Bew&auml;hrte Grundmodelle</strong> &mdash; z.&thinsp;B. Aktivit&auml;tsketten-Zuordnung und Sekund&auml;rziel-Verfahren als Startpunkt.</li>
+        </ul>
+      </div>
+      <div class="slide__panel slide__panel--secondary">
+        <p class="slide__label reveal">Ersetzt &amp; neu gebaut</p>
+        <h2 class="slide__heading reveal">Was wir ver&auml;ndert haben</h2>
+        <ul class="panel-list panel-list--red">
+          <li class="reveal"><strong>Neue Region</strong> &mdash; Zweckverband Gro&szlig;raum Braunschweig statt M&uuml;nchen: eigene Netze, R&auml;ume, Randbedingungen.</li>
+          <li class="reveal"><strong>Neue Datenbasis</strong> &mdash; franz&ouml;sische Verhaltensdaten (ENTD 2008) ersetzt durch die deutsche MiD 2023; Zensus 2022 im 100-m-Raster statt gr&ouml;berer Marginale.</li>
+          <li class="reveal"><strong>Neues Syntheseverfahren</strong> &mdash; PopulationSim-Workflow mit deutschem Befragungs-Donor, zus&auml;tzlich zum klassischen IPF.</li>
+          <li class="reveal"><strong>56 neue bzw. erweiterte Modellbausteine</strong> &mdash; von der Fahrzeugflotte bis zum G&uuml;terverkehr (die n&auml;chsten Abschnitte).</li>
+          <li class="reveal"><strong>~776 Commits</strong> seit dem Fork &mdash; ein neues Regionsmodul mit 300+ Dateien, ~160.000 Zeilen.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6a · FEATURE-LANDKARTE ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">Die Feature-Landkarte</p>
+    <h2 class="slide__heading reveal">Was wir wo angedockt haben &mdash; entlang der Pipeline</h2>
+    <div class="fmap reveal">
+      <div class="fmap__lane">
+        <div class="fmap__title">Datenfundament</div>
+        <div class="fmap__mod">braunschweig/data/</div>
+        <span class="fchip fchip--new">MiD-2023-Referenztabellen</span>
+        <span class="fchip fchip--new">Zensus-2022-100-m-Raster</span>
+        <span class="fchip fchip--new">KBA-Flottentabellen</span>
+        <span class="fchip fchip--new">BA-Pendlermatrix</span>
+        <span class="fchip fchip--new">ALKIS- + LoD2-Geb&auml;ude</span>
+        <span class="fchip fchip--new">RegioStaR-Raumtypen</span>
+      </div>
+      <div class="fmap__lane">
+        <div class="fmap__title">Bev&ouml;lkerungs-Synthese</div>
+        <div class="fmap__mod">ipf/ &middot; popsim/</div>
+        <span class="fchip fchip--new">PopulationSim + MiD-Donor</span>
+        <span class="fchip fchip--new">Alter-&times;-Gr&ouml;&szlig;e-Zielwerte</span>
+        <span class="fchip fchip--new">Altersbewusste Haushaltsbildung</span>
+        <span class="fchip fchip--new">100-m-Wohnstandorte</span>
+        <span class="fchip fchip--new">Geb&auml;ude-Matching (3D)</span>
+        <span class="fchip fchip--new">Einkommens-Raumtilt</span>
+      </div>
+      <div class="fmap__lane">
+        <div class="fmap__title">Attribute &amp; Flotte</div>
+        <div class="fmap__mod">synthesis/population/ &middot; vehicles/</div>
+        <span class="fchip fchip--new">&Ouml;konom. Status (Bayes)</span>
+        <span class="fchip fchip--new">Einkommen in Euro</span>
+        <span class="fchip fchip--ext">F&uuml;hrerschein &amp; &Ouml;PNV-Abo</span>
+        <span class="fchip fchip--new">Konsistente Pkw-Verf&uuml;gbarkeit</span>
+        <span class="fchip fchip--new">KBA-Flotte + E-Kalibrierung</span>
+        <span class="fchip fchip--new">Motordaten (HSN/TSN, HBEFA)</span>
+      </div>
+      <div class="fmap__lane">
+        <div class="fmap__title">Standortwahl</div>
+        <div class="fmap__mod">gravity/ &middot; locations/</div>
+        <span class="fchip fchip--ext">Gravitation je Raumtyp (BA)</span>
+        <span class="fchip fchip--new">Bildungs-Gravitation</span>
+        <span class="fchip fchip--new">Geb&auml;ude-Arbeitsplatzpotenziale</span>
+        <span class="fchip fchip--ext">Zweckspezifische Distanzen</span>
+        <span class="fchip fchip--new">Funktionsbewusste Attraktivit&auml;t</span>
+      </div>
+      <div class="fmap__lane">
+        <div class="fmap__title">Simulation &amp; Grenzen</div>
+        <div class="fmap__mod">matsim/ &middot; cordon/ &middot; freight/</div>
+        <span class="fchip fchip--new">Einpendler-Injektion + Tore</span>
+        <span class="fchip fchip--new">Kordon-Netz (Ring + Schnitt)</span>
+        <span class="fchip fchip--new">G&uuml;terverkehr-Injektion</span>
+        <span class="fchip fchip--new">Innenstadt-Parken</span>
+        <span class="fchip fchip--new">Eigener MATSim-Java-Fork</span>
+        <span class="fchip fchip--base">Mode-Choice-Rahmen</span>
+      </div>
+      <div class="fmap__lane">
+        <div class="fmap__title">Analyse &amp; QS</div>
+        <div class="fmap__mod">analysis/</div>
+        <span class="fchip fchip--new">MiD-Validierungsbericht</span>
+        <span class="fchip fchip--new">Zensus-Kontrollvalidierung</span>
+        <span class="fchip fchip--new">SimWrapper-Dashboards</span>
+        <span class="fchip fchip--new">Bildungs-Abgleich</span>
+        <span class="fchip fchip--new">Zellgenaue Qualit&auml;tskarten</span>
+        <span class="fchip fchip--new">Run-Ledger + 51 ADRs</span>
+      </div>
+    </div>
+    <div class="fmap-base reveal">
+      <span class="fmap-base__label">Fundament &mdash; &uuml;bernommen von eqasim &amp; MATSim:</span>
+      <span class="fchip fchip--base">synpp-Pipeline-Architektur (Stufen &middot; Caching &middot; Reproduzierbarkeit)</span>
+      <span class="fchip fchip--base">MATSim-Simulationskern (Netz &middot; Iterationen &middot; Ereignisse)</span>
+      <span class="fchip fchip--base">Discrete-Mode-Choice-Rahmen</span>
+      <span class="fchip fchip--base">Szenario-Export nach MATSim</span>
+      <span class="fchip fchip--base">IPF-Grundverfahren</span>
+      <span class="fchip fchip--base">Aktivit&auml;tsketten- &amp; Sekund&auml;rziel-Verfahren</span>
+      <span class="fchip fchip--base">Gravitations-Grundger&uuml;st (z.&thinsp;T. &mdash; je Raumtyp neu kalibriert)</span>
+    </div>
+    <div class="fmap-legend reveal">
+      <span class="fmap-legend__key"><span class="fmap-legend__swatch" style="background:var(--accent);"></span>neu in eqasim-bs</span>
+      <span class="fmap-legend__key"><span class="fmap-legend__swatch" style="background:var(--blue);"></span>&uuml;bernommen &amp; erweitert</span>
+      <span class="fmap-legend__key"><span class="fmap-legend__swatch" style="background:var(--border-bright);"></span>&uuml;bernommene Basis</span>
+      <span style="margin-left:auto;">56 Features &middot; 28 gemergte Pull Requests &middot; 67 Issues &middot; 51 dokumentierte Entscheidungen</span>
+    </div>
+  </section>
+
+  <!-- ============ 8 · DIVIDER 02 ============ -->
+  <section class="slide slide--divider">
+    <span class="slide__number">02</span>
+    <div class="slide__content">
+      <p class="slide__label reveal">Abschnitt zwei</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(38px,6.4vw,84px);">Das Datenfundament</h2>
+      <p class="slide__subtitle reveal" style="margin-top:16px;">Der wichtigste Umbau: eine komplett deutsche, regionale Datenbasis</p>
+    </div>
+  </section>
+
+  <!-- ============ 9 · DATENWECHSEL ============ -->
+  <section class="slide slide--split">
+    <div class="slide__panels">
+      <div class="slide__panel slide__panel--primary">
+        <p class="slide__label reveal">Vorher (eqasim-bavaria)</p>
+        <h2 class="slide__heading reveal">Daten aus zweiter Hand</h2>
+        <ul class="panel-list">
+          <li class="reveal"><strong>ENTD 2008</strong> &mdash; eine franz&ouml;sische Haushaltsbefragung als Quelle f&uuml;r Tagesabl&auml;ufe und Wege.</li>
+          <li class="reveal"><strong>Bayerische Zensus-Aufbereitung</strong> &mdash; Bev&ouml;lkerungsstruktur auf das M&uuml;nchner Umland zugeschnitten.</li>
+          <li class="reveal"><strong>Ein Standard-Pkw je Haushalt</strong>, einheitliche Standortwahl-Parameter, kein Verkehr &uuml;ber die Szenariogrenze hinweg abgebildet.</li>
+        </ul>
+      </div>
+      <div class="slide__panel slide__panel--secondary">
+        <p class="slide__label reveal">Jetzt (eqasim-bs)</p>
+        <h2 class="slide__heading reveal">Deutsche Daten, regional aufgel&ouml;st</h2>
+        <ul class="panel-list panel-list--red">
+          <li class="reveal"><strong>MiD 2023</strong> &mdash; die aktuelle deutsche Mobilit&auml;tserhebung liefert Tagespl&auml;ne, Wegedistanzen und Mobilit&auml;tsmerkmale.</li>
+          <li class="reveal"><strong>Zensus 2022 im 100-m-Raster</strong> &mdash; Haushalte, Alter, Geb&auml;udetypen zellgenau.</li>
+          <li class="reveal"><strong>Sieben weitere amtliche Quellfamilien</strong> &mdash; KBA, BA-Pendleratlas, ALKIS/LoD2, OSM/GTFS, Destatis/INKAR, Landesschuldaten (n&auml;chste Folie).</li>
+          <li class="reveal"><strong>Jede abgeleitete Datei ist r&uuml;ckverfolgbar</strong> &mdash; Quelle, Filter, Raumbezug und Erzeugungsschritt sind dokumentiert.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 10 · DATENQUELLEN ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">Datenfundament</p>
+    <h2 class="slide__heading reveal">Acht amtliche Quellfamilien tragen das Modell</h2>
+    <div class="data-grid reveal">
+      <div class="data-card">
+        <div class="data-card__tag">Bev&ouml;lkerung</div>
+        <div class="data-card__name">Zensus 2022</div>
+        <div class="data-card__desc">Deutscher Zensus im 100-m-Raster &mdash; wer wohnt wo, Haushaltsgr&ouml;&szlig;en, Alter, Geb&auml;ude.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Verhalten</div>
+        <div class="data-card__name">MiD 2023</div>
+        <div class="data-card__desc">Nationale Haushaltsbefragung &bdquo;Mobilit&auml;t in Deutschland&ldquo; &mdash; Tagesabl&auml;ufe, Wegedistanzen, Mobilit&auml;tsmerkmale.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Fahrzeuge</div>
+        <div class="data-card__name">KBA-Register</div>
+        <div class="data-card__desc">Fahrzeugzulassungen des Kraftfahrt-Bundesamts &mdash; Pkw-Bestand, Marken, Segmente, E-Anteil.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Pendeln</div>
+        <div class="data-card__name">BA-Pendleratlas</div>
+        <div class="data-card__desc">Pendlermatrix der Bundesagentur f&uuml;r Arbeit &mdash; beobachtete Wohn-Arbeits-Verflechtungen.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Geb&auml;ude</div>
+        <div class="data-card__name">ALKIS + LoD2</div>
+        <div class="data-card__desc">Amtliches Liegenschaftskataster und 3D-Geb&auml;udemodelle &mdash; reale Grundrisse, H&ouml;hen, Volumina.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Netze</div>
+        <div class="data-card__name">OSM + GTFS</div>
+        <div class="data-card__desc">Stra&szlig;ennetz und &Ouml;PNV-Fahrpl&auml;ne f&uuml;r die simulierte Angebotsseite.</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Sozio&ouml;konomie</div>
+        <div class="data-card__name">Destatis &middot; INKAR &middot; BBSR</div>
+        <div class="data-card__desc">Einkommen, Besch&auml;ftigung, Bildung und Raumstruktur-Typisierung (RegioStaR).</div>
+      </div>
+      <div class="data-card">
+        <div class="data-card__tag">Bildung</div>
+        <div class="data-card__name">NDS-Schuldaten</div>
+        <div class="data-card__desc">Nieders&auml;chsische Schulen, Kitas und Hochschulen mit Standorten und Kapazit&auml;ten.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 11 · DIVIDER 03 ============ -->
+  <section class="slide slide--divider">
+    <span class="slide__number">03</span>
+    <div class="slide__content">
+      <p class="slide__label reveal">Abschnitt drei</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(38px,6.4vw,84px);">Die Bausteine im Detail</h2>
+      <p class="slide__subtitle reveal" style="margin-top:16px;">Sieben Bausteine &middot; 56 nachverfolgte Features &middot; mit Bildern aus dem echten Modell</p>
+    </div>
+  </section>
+
+  <!-- ============ 12 · B1 BEVÖLKERUNG ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 1 / 7</p>
+        <h2 class="slide__heading">Die synthetische Bev&ouml;lkerung</h2>
+      </div>
+      <span class="status status--live">Produktiv &middot; gegen Zensus validiert</span>
+    </div>
+    <div class="chip-grid">
+      <div class="chip chip--hero reveal">
+        <div class="chip__title">Zensusgenau bis zur 100-m-Zelle</div>
+        <div class="chip__desc">Zwei Synthese-Verfahren (IPF und PopulationSim) reproduzieren Haushaltszahlen und -struktur zellgenau auf dem Zensusraster.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Realistische Haushaltszusammensetzung</div>
+        <div class="chip__desc">Gemeinsame Alter&times;Gr&ouml;&szlig;e-Zielwerte, altersbewusste Familienbildung und Paarstrukturen aus amtlicher Demografie.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Deutscher Befragungs-Donor</div>
+        <div class="chip__desc">Die MiD 2023 liefert die Vorlage-Haushalte &mdash; Verhalten und Demografie bleiben in sich konsistent.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Wohnen in realen Geb&auml;uden</div>
+        <div class="chip__desc">Haushalte werden in tats&auml;chliche Wohngeb&auml;ude gesetzt &mdash; typisiert mit Katasterdaten und 3D-H&ouml;hen (ALKIS + LoD2).</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Lokale Einkommensmuster</div>
+        <div class="chip__desc">Haushaltseinkommen spiegeln Mietniveaus der Nachbarschaft und Kreis-Einkommensstatistiken wider.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Automatische Qualit&auml;tskarten</div>
+        <div class="chip__desc">Zellgenaue Fehlerberichte zeigen, wo die synthetische Bev&ouml;lkerung den Zensus trifft &mdash; und wo nicht.</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Methodisch neu aufgesetzt:</strong> PopulationSim-Workflow mit deutschem MiD-2023-Donor statt IPF mit franz&ouml;sischem ENTD-Donor; Verortung von Gemeinde-Niveau auf die 100-m-Zelle und reale Geb&auml;ude verfeinert.</span>
+    </div>
+  </section>
+
+  <!-- ============ 13 · FIG B1 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 1 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Die synthetische Bev&ouml;lkerung &mdash; aus dem echten Modell</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B1__" alt="Karte der synthetischen Bevölkerung"></div>
+    <p class="fig-caption reveal">__CAP_B1__</p>
+  </section>
+
+  <!-- ============ 13a · FIG QA1 SCOREBOARD ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 1 &middot; Validierung 1/4</p>
+    <h2 class="fig-heading reveal">Qualit&auml;tskontrolle: das Scoreboard</h2>
+    <div class="fig-frame reveal"><img src="__FIG_QA1__" alt="Kontroll-Scoreboard der Populationsvalidierung"></div>
+    <p class="fig-caption reveal">__CAP_QA1__</p>
+  </section>
+
+  <!-- ============ 13c · FIG QA3 HHSIZE ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 1 &middot; Validierung 2/4</p>
+    <h2 class="fig-heading reveal">Ehrlich hingeschaut: die gro&szlig;en Haushalte</h2>
+    <div class="fig-frame reveal"><img src="__FIG_QA3__" alt="Haushaltsgrößen-Verteilung synthetisch vs. Referenz"></div>
+    <p class="fig-caption reveal">__CAP_QA3__</p>
+  </section>
+
+  <!-- ============ 13d · FIG QA 100M ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 1 &middot; Validierung 3/4</p>
+    <h2 class="fig-heading reveal">Kontroll-Fit auf der 100-m-Zelle</h2>
+    <div class="fig-frame reveal"><img src="__FIG_QA100M__" alt="Kontroll-Fit je Zensuszelle"></div>
+    <p class="fig-caption reveal">__CAP_QA100M__</p>
+  </section>
+
+  <!-- ============ 13b · FIG QA2 DEVIATION MAP ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 1 &middot; Validierung 4/4</p>
+    <h2 class="fig-heading reveal">Wo weicht die Synthese ab?</h2>
+    <div class="fig-frame reveal"><img src="__FIG_QA2__" alt="Räumliche Abweichungskarte je Gemeinde"></div>
+    <p class="fig-caption reveal">__CAP_QA2__</p>
+  </section>
+
+  <!-- ============ 13f · REFERENZ-QUALITAET ============ -->
+  <section class="slide slide--split">
+    <div class="slide__panels">
+      <div class="slide__panel slide__panel--primary">
+        <p class="slide__label reveal" style="color:var(--green);">Belastbare Referenz</p>
+        <h2 class="slide__heading reveal">Amtliche Register &amp; Vollerhebung</h2>
+        <ul class="panel-list panel-list--good">
+          <li class="reveal"><strong>Alter &amp; Geschlecht</strong> &mdash; DESTATIS 12411 (amtliche Fortschreibung). Abweichung 0,15 / 1,2 pp.</li>
+          <li class="reveal"><strong>Haushaltsgr&ouml;&szlig;e</strong> &mdash; Zensus 2022 (Vollerhebung, 100-m-Raster). Bis 4 Pers. &lt; 1 pp.</li>
+          <li class="reveal"><strong>E-Auto-Anteil</strong> &mdash; KBA-Fahrzeugregister (FZ 27.15). Abweichung 0,10 pp.</li>
+          <li class="reveal"><strong>Erwerbst&auml;tigkeit (Anker)</strong> &mdash; GENESIS/Zensus 2022; passt auf Basis 20+ (0,8&ndash;1,9 pp). F&uuml;r Minderj&auml;hrige l&auml;uft eine Kl&auml;rung (Issue #96).</li>
+        </ul>
+        <p class="fig-caption reveal" style="color:var(--text-dim); margin-top:18px;">Diese Referenzen sind Kalibrierziele: Vollerhebungen bzw. Register ohne Stichprobenfehler.</p>
+      </div>
+      <div class="slide__panel slide__panel--secondary">
+        <p class="slide__label reveal" style="color:var(--amber);">Mit Vorsicht zu lesen</p>
+        <h2 class="slide__heading reveal">MiD-Befragung auf Kreisebene</h2>
+        <ul class="panel-list panel-list--open">
+          <li class="reveal"><strong>Pkw je Haushalt</strong> (MiD H7) &middot; <strong>Fahrr&auml;der je Haushalt</strong> (MiD H12.3) &mdash; beides Befragungswerte je Kreis, nicht Zensus.</li>
+          <li class="reveal"><strong>F&uuml;hrerschein</strong> (P17.1) &middot; <strong>&Ouml;PNV-Ticket</strong> (P24.1) &middot; <strong>Erwerbst&auml;tigkeit-Quervergleich</strong> (P9).</li>
+          <li class="reveal">Quelle: <strong>MiD-2023-Regionalauswertung Gro&szlig;raum Braunschweig</strong> &mdash; aber nur <strong>874&ndash;1.902 Befragte je Kreis</strong>.</li>
+          <li class="reveal">Folge: einzelne Kreiswerte sind <strong>unpr&auml;zise</strong> (Salzgitter Pkw, Wolfsburg &Ouml;PNV/Erwerbst&auml;tigkeit) &mdash; hier wird bewusst <strong>nicht nachkalibriert</strong> (kein &Uuml;beranpassen an Rauschen).</li>
+        </ul>
+        <p class="fig-caption reveal" style="color:var(--text-dim); margin-top:18px;">Der offizielle MiD-Ergebnisbericht best&auml;tigt: unsere Raumtyp-Werte sitzen &mdash; nur die Kreis-Aufl&ouml;sung rauscht.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 13g · FIG MID RAUMTYP ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Validierung &middot; Vertiefung</p>
+    <h2 class="fig-heading reveal">MiD als Referenz: Raumtyp sitzt, Kreis rauscht</h2>
+    <div class="fig-frame reveal"><img src="__FIG_MIDRT__" alt="MiD Raumtyp-Werte vs. Ergebnisbericht und Kreis-Ausreißer"></div>
+    <p class="fig-caption reveal">__CAP_MIDRT__</p>
+  </section>
+
+  <!-- ============ 14 · B2 ATTRIBUTE ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 2 / 7</p>
+        <h2 class="slide__heading">Wer diese Menschen sind</h2>
+      </div>
+      <span class="status status--live">Produktiv &middot; an MiD / amtliche Statistik verankert</span>
+    </div>
+    <div class="chip-grid">
+      <div class="chip reveal">
+        <div class="chip__title">&Ouml;konomischer Status &amp; Einkommen (&euro;)</div>
+        <div class="chip__desc">Aus Befragungsverteilungen nach Haushaltstyp und Raumtyp zugewiesen; monet&auml;res Einkommen inklusive (Details auf der n&auml;chsten Folie).</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">F&uuml;hrerschein &amp; &Ouml;PNV-Abo</div>
+        <div class="chip__desc">An die MiD angepasst &uuml;ber dreidimensionale statistische Randverteilungen (Alter, Geschlecht, Raumtyp).</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Konsistente Pkw-Verf&uuml;gbarkeit</div>
+        <div class="chip__desc">F&uuml;hrerschein, Haushalts-Pkw und angegebene Verf&uuml;gbarkeit werden abgeglichen &mdash; keine widerspr&uuml;chlichen Agenten.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Erwerbst&auml;tigkeit</div>
+        <div class="chip__desc">Erwerbsquoten an die amtliche Besch&auml;ftigungsstatistik (GENESIS) angepasst &mdash; nicht an Befragungsrauschen.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Wohnstatus</div>
+        <div class="chip__desc">Eigentum vs. Miete aus einkommensgekoppelten Befragungstabellen erg&auml;nzt.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Bildungsstatus</div>
+        <div class="chip__desc">Studierende und Sch&uuml;ler mit amtlicher Bildungsstatistik reaktiviert.</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Nahezu vollst&auml;ndig neu:</strong> Die Ausgangsbasis f&uuml;hrt nur Grundattribute. Die systematische Anreicherung aus MiD, Destatis und INKAR &mdash; inklusive Konsistenzpr&uuml;fungen zwischen den Attributen &mdash; ist ein eigener Baustein von eqasim-bs.</span>
+    </div>
+  </section>
+
+  <!-- ============ 15 · FIG B2 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 2 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Mobilit&auml;tsmerkmale im Raum</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B2__" alt="Karten der Mobilitätsmerkmale"></div>
+    <p class="fig-caption reveal">__CAP_B2__</p>
+  </section>
+
+  <!-- ============ 16 · B2b METHODIK ÖKONOMISCHER STATUS ============ -->
+  <section class="slide slide--split">
+    <div class="slide__panels">
+      <div class="slide__panel slide__panel--primary">
+        <p class="slide__label reveal">Methodik-Fokus</p>
+        <h2 class="slide__heading reveal">&Ouml;konomischer Status: deutlich pr&auml;ziser berechnet</h2>
+        <ul class="panel-list panel-list--red">
+          <li class="reveal"><strong>Vorher:</strong> Der Status wurde 1:1 aus der gezogenen Einkommensklasse abgeleitet &mdash; ohne R&uuml;cksicht darauf, wer in dem Haushalt lebt.</li>
+          <li class="reveal"><strong>Jetzt:</strong> Bedingte Zuweisung &uuml;ber den st&auml;rkeren Pr&auml;diktor <strong>Haushaltstyp &times; Region</strong> (Bayes-Update): 11 MiD-Haushaltstypen &mdash; von Alleinlebenden bis zur Familie mit Kindern &mdash; erhalten je Raumtyp ihre reale Statusverteilung aus der MiD 2023.</li>
+          <li class="reveal"><strong>Wirkung:</strong> Alleinerziehende, Rentnerpaare und Familien bekommen realistische, unterschiedliche Statusprofile &mdash; die Grundlage f&uuml;r Einkommen (&euro;), Pkw-Besitz und Wohnstatus.</li>
+          <li class="reveal"><strong>Konsequenz im Modell:</strong> Einkommen, Fahrzeugflotte und Wohnstatus bauen alle auf demselben Status auf &mdash; ein in sich stimmiges Haushaltsbild.</li>
+        </ul>
+      </div>
+      <div class="slide__panel slide__panel--fig">
+        <img src="__FIG_B2B__" alt="Statusverteilung nach Haushaltstyp">
+        <p class="fig-caption reveal">__CAP_B2B__</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 16pre1 · EINKOMMENS-KETTE (METHODIK) ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 2 &middot; Methodik-Fokus</p>
+        <h2 class="slide__heading">Vom Status zum Euro-Betrag &mdash; die Einkommens-Kette</h2>
+      </div>
+      <span class="status status--live">Aktiv im 100-%-Lauf</span>
+    </div>
+    <p class="slide__subtitle reveal" style="margin-top:6px;">Jeder Haushalt bekommt ein monatliches Einkommen in Euro &mdash; regional gef&uuml;hrt und innerorts fein verteilt</p>
+    <div class="pipeline reveal">
+      <div class="pipeline__step">
+        <div class="pipeline__num">01</div>
+        <div class="pipeline__name">MiD-Verteilungen</div>
+        <div class="pipeline__desc">Einkommensklassen-Wahrscheinlichkeit je Haushaltsgr&ouml;&szlig;e &times; &ouml;konomischem Status &times; Raumtyp &mdash; kombiniert.</div>
+        <div class="pipeline__file">MiD 2023 H4</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">02</div>
+        <div class="pipeline__name">Euro-Zug je Haushalt</div>
+        <div class="pipeline__desc">Kontinuierlicher Zug innerhalb der 10 Netto-Klassen; offene Top-Klasse konservativ begrenzt.</div>
+        <div class="pipeline__file">10 Klassen &middot; &euro;/Monat</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">03</div>
+        <div class="pipeline__name">Kreisniveau: INKAR</div>
+        <div class="pipeline__desc">Verteilung je Kreis so gekippt (Max-Entropie), dass der Kreis-Mittelwert das amtliche INKAR-Niveau exakt trifft.</div>
+        <div class="pipeline__file">regionale Unterschiede</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">04</div>
+        <div class="pipeline__name">Innerorts: Mieten-Index</div>
+        <div class="pipeline__desc">Nettokaltmiete je 100-m-Zelle als schwaches Einkommenssignal: konkav (&beta; = 0,3), auf &plusmn;30 % gedeckelt, je Kreis mittelwerttreu normiert.</div>
+        <div class="pipeline__file">Zensus 2022 Mieten</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step" style="border-top-color:var(--green);">
+        <div class="pipeline__num" style="color:var(--green);">05</div>
+        <div class="pipeline__name">Konsistenz</div>
+        <div class="pipeline__desc">Status bleibt unangetastet (Einkommen wird darauf bedingt gezogen); Einkommensklasse und High-Income-Flag werden aus dem Euro-Wert r&uuml;ckabgeleitet.</div>
+        <div class="pipeline__file" style="color:var(--green); background:var(--green-dim);">stimmiges Haushaltsbild</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">Das Datenproblem</span>
+      <span class="delta-bar__text">Unterhalb der Kreisebene existiert <strong>keine zug&auml;ngliche amtliche Einkommensstatistik</strong> (kleinr&auml;umige Daten wie RWI-GEO-GRID sind zugangsbeschr&auml;nkt). Die Nettokaltmiete je 100-m-Zelle ist der einzige fl&auml;chige Proxy &mdash; sie tr&auml;gt ein <strong>schwaches, belegtes Einkommenssignal</strong> und wird deshalb bewusst konservativ eingesetzt (gedeckelt, kreis-mittelwerttreu): lieber ein vorsichtiges echtes Signal als ein erfundenes starkes.</span>
+    </div>
+  </section>
+
+  <!-- ============ 16pre2 · FIG EINKOMMEN IM RAUM ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 2 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Einkommen im Raum</h2>
+    <div class="fig-frame reveal"><img src="__FIG_INCOME_SPACE__" alt="Mittleres Haushaltseinkommen je Zelle, Zoom Braunschweig, Kreisniveaus"></div>
+    <p class="fig-caption reveal">__CAP_INCOME_SPACE__</p>
+  </section>
+
+  <!-- ============ 16a · FIG EINKOMMEN & FAHRZEUGE ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 2 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Einkommen pr&auml;gt die Flotte</h2>
+    <div class="fig-frame reveal"><img src="__FIG_INC__" alt="Einkommensverteilung nach Status und Karte der Motorleistung"></div>
+    <p class="fig-caption reveal">__CAP_INC__</p>
+  </section>
+
+  <!-- ============ 17 · B3 FLOTTE ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 3 / 7</p>
+        <h2 class="slide__heading">Eine realistische Fahrzeugflotte</h2>
+      </div>
+      <span class="status status--live">Produktiv &middot; an KBA kalibriert</span>
+    </div>
+    <div class="slide__inner" style="margin-top:clamp(10px,1.8vh,20px);">
+      <div>
+        <ul class="slide__bullets">
+          <li class="reveal"><strong>Pkw-Besitz je Haushalt</strong> folgt Befragungsmustern nach Einkommen, Alter und Haushaltstyp &mdash; kein pauschaler Standard.</li>
+          <li class="reveal">Jeder Pkw erh&auml;lt einen <strong>realen deutschen Marktmix</strong>: Segment- und Markenanteile aus den KBA-Zulassungszahlen.</li>
+          <li class="reveal"><strong>E-Fahrzeug-Anteil kalibriert</strong> gegen die amtliche Zulassungsstatistik.</li>
+          <li class="reveal"><strong>Motordaten</strong> (Leistung, Hubraum, Kraftstoff) je Fahrzeug hinterlegt &mdash; die Grundlage f&uuml;r sp&auml;tere Emissionsanalysen.</li>
+        </ul>
+      </div>
+      <div class="slide__aside reveal">
+        <div class="stat-stack">
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Je Haushalt</div>
+            <div class="stat-stack__label">Flottenzuweisung statt &bdquo;jeder hat ein Auto&ldquo;</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">KBA + MiD</div>
+            <div class="stat-stack__label">zwei amtliche Quellen abgeglichen</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Emissionsbereit</div>
+            <div class="stat-stack__label">Motordaten f&uuml;r HBEFA-artige Analysen vorbereitet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Komplett neuer Baustein:</strong> In der Ausgangsbasis erhielt jeder Haushalt ein Einheitsfahrzeug. Das gesamte Flottenmodell &mdash; Besitz, Marktmix, E-Anteil, Motordaten &mdash; wurde f&uuml;r eqasim-bs entwickelt.</span>
+    </div>
+  </section>
+
+  <!-- ============ 18 · FIG B3 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 3 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Die simulierte Fahrzeugflotte</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B3__" alt="Marken- und Antriebsverteilung der simulierten Flotte"></div>
+    <p class="fig-caption reveal">__CAP_B3__</p>
+  </section>
+
+  <!-- ============ 18a · B3 ABLAUF (EMISSIONS-FOKUS) ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 3 &middot; Methodik</p>
+        <h2 class="slide__heading">Wie jedes einzelne Auto entsteht &mdash; bis zur Emissionsklasse</h2>
+      </div>
+      <span class="status status--next">Update l&auml;uft &middot; committet, Lauf steht aus</span>
+    </div>
+    <p class="slide__subtitle reveal" style="margin-top:6px;">Eine generative Kette je Fahrzeug &mdash; reproduzierbar (fester Zufalls-Seed), alle Wahrscheinlichkeiten aus committeten KBA-/MiD-Tabellen</p>
+    <div class="pipeline reveal">
+      <div class="pipeline__step">
+        <div class="pipeline__num">01</div>
+        <div class="pipeline__name">Pkw je Haushalt</div>
+        <div class="pipeline__desc">Wie viele Autos? Besitzmuster nach Status, Alter und Haushaltstyp.</div>
+        <div class="pipeline__file">MiD 2023 &middot; KBA</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">02</div>
+        <div class="pipeline__name">Segment</div>
+        <div class="pipeline__desc">Einkommensgekoppelt: Fahrzeugklasse bedingt auf &ouml;konomischem Status und Raumtyp.</div>
+        <div class="pipeline__file">KBA &times; MiD</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">03</div>
+        <div class="pipeline__name">Antrieb</div>
+        <div class="pipeline__desc">Antriebsmix je Segment, je Kreis an den KBA-Bestand angepasst, E-Anteil je Gemeinde.</div>
+        <div class="pipeline__file">KBA FZ 27</div>
+        <div class="pipeline__file" style="color:var(--amber); background:var(--amber-dim); margin-top:5px;">Update: E-Neigung nach Status &middot; Einpendler-Mix</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">04</div>
+        <div class="pipeline__name">Euro-Klasse &amp; Alter</div>
+        <div class="pipeline__desc">Abgasnorm je Antrieb; Fahrzeugalter konsistent zur Euro-Klasse gezogen.</div>
+        <div class="pipeline__file">KBA FZ 27.4 / 27.7</div>
+        <div class="pipeline__file" style="color:var(--amber); background:var(--amber-dim); margin-top:5px;">Update: Euro-6-Feinstufen (6d / 6d-temp)</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step">
+        <div class="pipeline__num">05</div>
+        <div class="pipeline__name">Marke &amp; Modell</div>
+        <div class="pipeline__desc">Modellreihen-Mix je Segment, abgeglichen mit dem Markenprofil des Antriebs.</div>
+        <div class="pipeline__file">KBA FZ 12.1</div>
+      </div>
+      <div class="pipeline__arrow"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14m-4-4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="pipeline__step" style="border-top-color:var(--green);">
+        <div class="pipeline__num" style="color:var(--green);">06</div>
+        <div class="pipeline__name">HBEFA-Emissionstyp</div>
+        <div class="pipeline__desc">Jedes Fahrzeug erh&auml;lt seinen kanonischen Emissionstyp aus Antrieb, Euro-Klasse und Segment.</div>
+        <div class="pipeline__file" style="color:var(--green); background:var(--green-dim);">Emissionsgrundlage</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 18b · FIG FLEET SPACE ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 3 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Die Flotte im Raum und im Sozialprofil</h2>
+    <div class="fig-frame reveal"><img src="__FIG_FLEET1__" alt="E-Auto-Anteil je Gemeinde und Segment-Mix nach Status"></div>
+    <p class="fig-caption reveal">__CAP_FLEET1__</p>
+  </section>
+
+  <!-- ============ 18b2 · FIG CAR EXPLORER ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 3 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Zoom ins Detail: das Modell kennt jedes Auto</h2>
+    <div class="fig-frame reveal"><img src="__FIG_CAREXP__" alt="VW-Golf-Dichte, Sportwagen-Standorte und HBEFA-Typen"></div>
+    <p class="fig-caption reveal">__CAP_CAREXP__</p>
+  </section>
+
+  <!-- ============ 18c · FIG FLEET EMISSIONS ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 3 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Emissionsbereit: die Flotte im Detail</h2>
+    <div class="fig-frame reveal"><img src="__FIG_FLEET2__" alt="Euro-Klassen je Antrieb und Flottenalter"></div>
+    <p class="fig-caption reveal">__CAP_FLEET2__</p>
+  </section>
+
+  <!-- ============ 19 · B4 STANDORTWAHL ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 4 / 7</p>
+        <h2 class="slide__heading">Wo Menschen arbeiten, lernen und einkaufen</h2>
+      </div>
+      <span class="status status--live">Produktiv &middot; passt zu beobachtetem Pendeln</span>
+    </div>
+    <div class="chip-grid">
+      <div class="chip chip--hero reveal">
+        <div class="chip__title">Pendeln an der Realit&auml;t kalibriert</div>
+        <div class="chip__desc">Ein Gravitationsmodell verteilt Arbeitspl&auml;tze &mdash; je Raumtyp (RegioStaR) an der amtlichen Pendlermatrix kalibriert statt mit einem Einheitsparameter.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Reale Schulen, Kitas, Hochschulen</div>
+        <div class="chip__desc">Bildungspl&auml;tze werden tats&auml;chlichen Einrichtungen mit Kapazit&auml;ten aus Landesdaten zugewiesen &mdash; &uuml;ber ein eigenes Bildungs-Gravitationsmodell.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Ziele auf Geb&auml;udeebene</div>
+        <div class="chip__desc">Arbeits-, Einkaufs- und Freizeitorte l&ouml;sen bis auf einzelne Geb&auml;ude auf &mdash; gewichtet nach Funktion und Gr&ouml;&szlig;e.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Berechnete Arbeitsplatz-Potenziale</div>
+        <div class="chip__desc">Aus Geb&auml;udefunktion, Fl&auml;che und Geschossen berechnete Besch&auml;ftigten-Potenziale gehen direkt in die Arbeitsplatzwahl ein &mdash; abgeglichen mit der amtlichen Besch&auml;ftigtenstatistik.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Zweckspezifische Wegedistanzen</div>
+        <div class="chip__desc">Einkaufs-, Erledigungs- und Freizeitwege reproduzieren die Distanzverteilungen der MiD je Wegezweck &mdash; inkl. Trennung t&auml;glicher/nicht-t&auml;glicher Einkauf.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Funktionsbewusste Attraktivit&auml;t</div>
+        <div class="chip__desc">Ein geb&auml;udefunktions-basiertes Attraktivit&auml;tsma&szlig; verhindert, dass Freizeitwege in Industrie-Gro&szlig;strukturen landen.</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Stark erweitert:</strong> Raumtyp-spezifische Kalibrierung an der Pendlerstatistik, Bildungs-Gravitationsmodell und geb&auml;udescharfe Arbeitsplatz-Potenziale sind neu; das Grundverfahren der Sekund&auml;rziel-Wahl wurde &uuml;bernommen und datengetrieben versch&auml;rft.</span>
+    </div>
+  </section>
+
+  <!-- ============ 20 · FIG B4 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 4 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Pendlerbeziehungen und Arbeitsplatz-Schwerpunkte</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B4__" alt="Pendlerbeziehungen und Arbeitsplatzdichte"></div>
+    <p class="fig-caption reveal">__CAP_B4__</p>
+  </section>
+
+  <!-- ============ 21 · B5 EINPENDLER ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 5 / 7</p>
+        <h2 class="slide__heading">Verkehr &uuml;ber die Regionsgrenze</h2>
+      </div>
+      <span class="status status--live">Produktiv</span>
+    </div>
+    <div class="slide__inner" style="margin-top:clamp(10px,1.8vh,20px);">
+      <div>
+        <ul class="slide__bullets">
+          <li class="reveal"><strong>Einpendler werden injiziert</strong>: Personen, die au&szlig;erhalb wohnen und in der Region arbeiten, aus der amtlichen Pendlermatrix der Bundesagentur f&uuml;r Arbeit.</li>
+          <li class="reveal">Sie betreten die Region durch <strong>reale &bdquo;Tore&ldquo;</strong>: Autobahn-&Uuml;berg&auml;nge und Bahnh&ouml;fe am Regionsrand (Kordon).</li>
+          <li class="reveal">Ihre <strong>Verkehrsmittelaufteilung</strong> (Pkw vs. Bahn) folgt den Pendlerangaben des Mikrozensus.</li>
+          <li class="reveal">Das Netz wird daf&uuml;r <strong>&uuml;ber die Region hinaus erweitert und sauber am Kordon beschnitten</strong> &mdash; grenz&uuml;berschreitende Wege bleiben routbar.</li>
+        </ul>
+      </div>
+      <div class="slide__aside reveal">
+        <div class="stat-stack">
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">BA-Matrix</div>
+            <div class="stat-stack__label">beobachtete Pendlerstr&ouml;me als Mengenger&uuml;st</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Stra&szlig;e + Schiene</div>
+            <div class="stat-stack__label">Tore f&uuml;r beide Verkehrstr&auml;ger</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Mikrozensus</div>
+            <div class="stat-stack__label">Referenz f&uuml;r den Einpendler-Modal-Split</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Komplett neuer Baustein von eqasim-bs</strong> &mdash; ohne ihn w&uuml;rde der Berufsverkehr aus dem Umland (z.&thinsp;B. Richtung Wolfsburg und Braunschweig) im Modell fehlen.</span>
+    </div>
+  </section>
+
+  <!-- ============ 22 · FIG B5 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 5 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Die Tore der Region</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B5__" alt="Karte der Einpendler-Tore am Regionsrand"></div>
+    <p class="fig-caption reveal">__CAP_B5__</p>
+  </section>
+
+  <!-- ============ 23 · B6 GÜTERVERKEHR ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 6 / 7</p>
+        <h2 class="slide__heading">G&uuml;terverkehr auf dem Netz</h2>
+      </div>
+      <span class="status status--next">Aktiv &middot; externe Kalibrierung geplant</span>
+    </div>
+    <div class="slide__inner" style="margin-top:clamp(10px,1.8vh,20px);">
+      <div>
+        <ul class="slide__bullets">
+          <li class="reveal"><strong>Deutschlandweiter Lkw-Fernverkehr</strong> wird aus einem publizierten nationalen G&uuml;terverkehrsmodell &uuml;bernommen (german-wide-freight, Lu et al. 2022) und in unser Szenario injiziert.</li>
+          <li class="reveal">Lkw teilen sich das Netz mit dem Personenverkehr &mdash; <strong>Stau- und Kapazit&auml;tseffekte</strong> werden erfasst.</li>
+          <li class="reveal">In allen Auswertungen wird der G&uuml;terverkehr <strong>getrennt ausgewiesen</strong>, damit Personenkennzahlen unverzerrt bleiben.</li>
+          <li class="reveal">Ein Abgleich mit den <strong>Bundes-Dauerz&auml;hlstellen (BASt)</strong> ist als eigener Validierungsschritt eingeplant.</li>
+        </ul>
+      </div>
+      <div class="slide__aside reveal">
+        <div class="stat-stack">
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Java + Python</div>
+            <div class="stat-stack__label">Routen-Extraktion und Injektion &uuml;ber beide Pipeline-Seiten</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Fernverkehr</div>
+            <div class="stat-stack__label">Durchgangs- und Ziel-/Quellverkehr der Region</div>
+          </div>
+          <div class="stat-stack__item">
+            <div class="stat-stack__value">Getrennt</div>
+            <div class="stat-stack__label">eigene Kennzahlen, kein Vermischen mit Pkw-Verkehr</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Komplett neuer Baustein von eqasim-bs</strong> &mdash; die Ausgangsbasis simuliert reinen Personenverkehr.</span>
+    </div>
+  </section>
+
+  <!-- ============ 24 · FIG B6 ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Baustein 6 &middot; Im Bild</p>
+    <h2 class="fig-heading reveal">Lkw-Verkehr im Simulationstag</h2>
+    <div class="fig-frame reveal"><img src="__FIG_B6__" alt="Lkw-Verkehr aus der Simulation"></div>
+    <p class="fig-caption reveal">__CAP_B6__</p>
+  </section>
+
+  <!-- ============ 25 · B7 ANALYSE ============ -->
+  <section class="slide">
+    <div class="feature-head reveal">
+      <div>
+        <p class="slide__label">Baustein 7 / 7</p>
+        <h2 class="slide__heading">Qualit&auml;tssicherung, fest eingebaut</h2>
+      </div>
+      <span class="status status--live">Produktiv &middot; l&auml;uft automatisch mit</span>
+    </div>
+    <div class="chip-grid">
+      <div class="chip reveal">
+        <div class="chip__title">MiD-Validierungsbericht</div>
+        <div class="chip__desc">Jede erzeugte Bev&ouml;lkerung wird automatisch mit der MiD 2023 verglichen: Mobilit&auml;tsquoten, Distanzen, F&uuml;hrerscheinbesitz.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Zensus-Kontrollvalidierung</div>
+        <div class="chip__desc">Systematische Pr&uuml;fung, ob die synthetische Bev&ouml;lkerung ihre statistischen Zielwerte trifft &mdash; Kontrolle f&uuml;r Kontrolle.</div>
+      </div>
+      <div class="chip chip--hero reveal">
+        <div class="chip__title">Interaktive Dashboards</div>
+        <div class="chip__desc">SimWrapper-Web-Dashboards mit 12+ Reitern: Karten, Verkehrsmittelanteile, Pendlerstr&ouml;me &mdash; im Browser erkundbar, ohne Fachsoftware.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Bildungs-Abgleich</div>
+        <div class="chip__desc">Zugewiesene Sch&uuml;ler und Studierende werden gegen Landes-Schulkapazit&auml;ten gepr&uuml;ft.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Zellgenaue Fehlerkarten</div>
+        <div class="chip__desc">Karten zeigen r&auml;umlich, wo die Synthese pr&auml;zise ist und wo Abweichungen liegen.</div>
+      </div>
+      <div class="chip reveal">
+        <div class="chip__title">Volle R&uuml;ckverfolgbarkeit</div>
+        <div class="chip__desc">Lauf-Verzeichnis, 51 dokumentierte Entscheidungen und fixierte Datenquellen machen jedes Ergebnis reproduzierbar.</div>
+      </div>
+    </div>
+    <div class="delta-bar reveal">
+      <span class="delta-bar__tag">&Delta; ggü. Bavaria</span>
+      <span class="delta-bar__text"><strong>Komplett neuer Baustein:</strong> Die gesamte Validierungs- und Dashboard-Schicht &mdash; vom automatischen MiD-Abgleich bis zu den interaktiven Karten &mdash; wurde f&uuml;r eqasim-bs entwickelt.</span>
+    </div>
+  </section>
+
+  <!-- ============ 25a · FIG MOB TRIPS ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Erste Kenngr&ouml;&szlig;en 1/3</p>
+    <h2 class="fig-heading reveal">Mobilit&auml;tskenngr&ouml;&szlig;en der synthetischen Nachfrage</h2>
+    <div class="fig-frame reveal"><img src="__FIG_MOB1__" alt="Mobilitätsquote, Wege je Person und Wegezwecke"></div>
+    <p class="fig-caption reveal">__CAP_MOB1__</p>
+  </section>
+
+  <!-- ============ 25b · FIG MOB DISTANCE ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Erste Kenngr&ouml;&szlig;en 2/3</p>
+    <h2 class="fig-heading reveal">Pendeldistanzen: Modell vs. MiD</h2>
+    <div class="fig-frame reveal"><img src="__FIG_MOB2__" alt="Pendeldistanz-Verteilung Modell vs. MiD P13"></div>
+    <p class="fig-caption reveal">__CAP_MOB2__</p>
+  </section>
+
+  <!-- ============ 25c · FIG MOB DAYCYCLE ============ -->
+  <section class="slide slide--figure">
+    <p class="slide__label reveal">Erste Kenngr&ouml;&szlig;en 3/3</p>
+    <h2 class="fig-heading reveal">Der Tag im Modell</h2>
+    <div class="fig-frame reveal"><img src="__FIG_MOB3__" alt="Wege im Tagesverlauf nach Zweck"></div>
+    <p class="fig-caption reveal">__CAP_MOB3__</p>
+  </section>
+
+  <!-- ============ 26 · DIVIDER 04 ============ -->
+  <section class="slide slide--divider">
+    <span class="slide__number">04</span>
+    <div class="slide__content">
+      <p class="slide__label reveal">Abschnitt vier</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(38px,6.4vw,84px);">Wo wir stehen</h2>
+      <p class="slide__subtitle reveal" style="margin-top:16px;">Status &middot; Validierung &middot; ehrliche L&uuml;cken</p>
+    </div>
+  </section>
+
+  <!-- ============ 27 · KPI ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">Projektumfang</p>
+    <h2 class="slide__heading reveal">Neun Monate Entwicklung in Zahlen</h2>
+    <div class="slide__kpis">
+      <div class="slide__kpi slide__kpi--hero reveal">
+        <div class="slide__kpi-val">776</div>
+        <div class="slide__kpi-label">Commits seit dem Fork (Okt. 2025)</div>
+      </div>
+      <div class="slide__kpi reveal">
+        <div class="slide__kpi-val">56</div>
+        <div class="slide__kpi-label">Modell-Features in der Statusmatrix</div>
+      </div>
+      <div class="slide__kpi reveal">
+        <div class="slide__kpi-val">51</div>
+        <div class="slide__kpi-label">dokumentierte Design-Entscheidungen (ADRs)</div>
+      </div>
+      <div class="slide__kpi slide__kpi--muted reveal">
+        <div class="slide__kpi-val">300+</div>
+        <div class="slide__kpi-label">Dateien im neuen Regionsmodul (~160.000 Zeilen)</div>
+      </div>
+      <div class="slide__kpi slide__kpi--muted reveal">
+        <div class="slide__kpi-val">90+</div>
+        <div class="slide__kpi-label">nachverfolgte Issues &amp; Pull Requests</div>
+      </div>
+      <div class="slide__kpi slide__kpi--muted reveal">
+        <div class="slide__kpi-val">8</div>
+        <div class="slide__kpi-label">amtliche Datenquellen-Familien integriert</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 28 · VALIDIERUNG ============ -->
+  <section class="slide slide--split">
+    <div class="slide__panels">
+      <div class="slide__panel slide__panel--primary">
+        <p class="slide__label reveal" style="color:var(--green);">Heute validiert</p>
+        <h2 class="slide__heading reveal">Was bereits zur Realit&auml;t passt</h2>
+        <ul class="panel-list panel-list--good">
+          <li class="reveal"><strong>Bev&ouml;lkerungsstruktur</strong> &mdash; Haushaltszahlen exakt auf dem 100-m-Zensusraster; Zusammensetzung Kontrolle f&uuml;r Kontrolle gepr&uuml;ft.</li>
+          <li class="reveal"><strong>Pendeldistanzen</strong> &mdash; die Verteilung der Arbeitsweg-Distanzen der Vollbev&ouml;lkerung passt eng zur MiD 2023 (gemessen, EMD &asymp; 0,05).</li>
+          <li class="reveal"><strong>Bildung</strong> &mdash; Einschulungs- und Studierendenzahlen konsistent mit Landes-Schulkapazit&auml;ten.</li>
+          <li class="reveal"><strong>Fahrzeugflotte</strong> &mdash; Segmente und E-Anteil entsprechen den KBA-Zulassungen.</li>
+        </ul>
+      </div>
+      <div class="slide__panel slide__panel--secondary">
+        <p class="slide__label reveal" style="color:var(--amber);">Bewusst noch offen</p>
+        <h2 class="slide__heading reveal">Was planm&auml;&szlig;ig noch aussteht</h2>
+        <ul class="panel-list panel-list--open">
+          <li class="reveal"><strong>Verkehrsmittelwahl</strong> &mdash; das Verhaltensmodell ist noch nicht kalibriert; der simulierte Modal Split ist noch kein validiertes Ergebnis. Das ist die erkl&auml;rte n&auml;chste Phase.</li>
+          <li class="reveal"><strong>Gro&szlig;e Haushalte (5+/6+ Personen)</strong> &mdash; seltene Haushaltstypen sind noch unterrepr&auml;sentiert; die Donor-Anpassung dazu ist der erste Punkt der Roadmap.</li>
+          <li class="reveal"><strong>G&uuml;terverkehrsmengen</strong> &mdash; bislang unver&auml;ndert aus dem nationalen Modell &uuml;bernommen; Abgleich mit Z&auml;hlstellen geplant.</li>
+          <li class="reveal"><strong>&Ouml;PNV-Tarife</strong> &mdash; noch vereinfacht; ein echtes regionales Tarifmodell steht auf der Roadmap.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 29 · STATUSMATRIX ============ -->
+  <section class="slide slide--table">
+    <p class="slide__label reveal">Statusmatrix</p>
+    <h2 class="slide__heading reveal">Alle Bausteine auf einen Blick</h2>
+    <div class="table-wrap reveal">
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Baustein</th><th>Ggü. Bavaria</th><th>Status</th><th>Gepr&uuml;ft gegen</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Synthetische Bev&ouml;lkerung</td><td><span class="dtag dtag--ext">Neu aufgesetzt</span></td><td><span class="status status--live">Produktiv</span></td><td class="dim">Zensus 2022 (100-m-Kontrollen)</td></tr>
+            <tr><td>Personen- &amp; Haushaltsattribute</td><td><span class="dtag dtag--new">Neu</span></td><td><span class="status status--live">Produktiv</span></td><td class="dim">MiD 2023 &middot; Destatis &middot; INKAR</td></tr>
+            <tr><td>Fahrzeugflotte</td><td><span class="dtag dtag--new">Neu</span></td><td><span class="status status--live">Produktiv</span></td><td class="dim">KBA-Zulassungen &middot; MiD</td></tr>
+            <tr><td>Standortwahl (Arbeit / Bildung / Freizeit)</td><td><span class="dtag dtag--ext">Erweitert</span></td><td><span class="status status--live">Produktiv</span></td><td class="dim">BA-Pendlermatrix &middot; MiD-Distanzen</td></tr>
+            <tr><td>Einpendler &uuml;ber die Regionsgrenze</td><td><span class="dtag dtag--new">Neu</span></td><td><span class="status status--live">Produktiv</span></td><td class="dim">BA-Pendleratlas &middot; Mikrozensus</td></tr>
+            <tr><td>G&uuml;terverkehr (Fernverkehr)</td><td><span class="dtag dtag--new">Neu</span></td><td><span class="status status--next">Aktiv &middot; Kalibrierung geplant</span></td><td class="dim">german-wide-freight v3 (BASt geplant)</td></tr>
+            <tr><td>Verkehrsmittelwahl (Verhalten)</td><td><span class="dtag dtag--base">&Uuml;bernommen</span></td><td><span class="status status--plan">N&auml;chste Phase</span></td><td class="dim">MiD-2023-Modal-Split (Ziel)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 30 · DIVIDER 05 ============ -->
+  <section class="slide slide--divider">
+    <span class="slide__number">05</span>
+    <div class="slide__content">
+      <p class="slide__label reveal">Abschnitt f&uuml;nf</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(38px,6.4vw,84px);">Wohin wir gehen</h2>
+      <p class="slide__subtitle reveal" style="margin-top:16px;">Erst die neuen Features, dann der gro&szlig;e Lauf, dann das Verhalten</p>
+    </div>
+  </section>
+
+  <!-- ============ 31 · ROADMAP ============ -->
+  <section class="slide">
+    <p class="slide__label reveal">Roadmap</p>
+    <h2 class="slide__heading reveal">Die n&auml;chsten Schritte, in dieser Reihenfolge</h2>
+    <div class="roadmap-wrap reveal">
+      <div class="roadmap">
+        <div class="roadmap__item roadmap__item--hero">
+          <div class="roadmap__num">01</div>
+          <div>
+            <div class="roadmap__title">Donor-Anpassung: gro&szlig;e Haushalte (5+ / 6+ Personen)</div>
+            <div class="roadmap__desc">Der gr&ouml;&szlig;te Hebel: Der Befragungs-Seed enth&auml;lt zu wenige gro&szlig;e, seltene Haushalte &mdash; die Synthese unterrepr&auml;sentiert sie deshalb systematisch. Ein angepasster Donor behebt diesen bekannten Fehler in der synthetischen Bev&ouml;lkerung.</div>
+          </div>
+          <span class="status status--next roadmap__frame">gr&ouml;&szlig;ter Hebel</span>
+        </div>
+        <div class="roadmap__item">
+          <div class="roadmap__num">02</div>
+          <div>
+            <div class="roadmap__title">Detailliertere Kalibrierung der Gravitationsmodelle</div>
+            <div class="roadmap__desc">Arbeits- und Bildungs-Verflechtungen feiner nachziehen &mdash; auf der dann korrigierten Bev&ouml;lkerung.</div>
+          </div>
+          <span class="status status--next roadmap__frame">vor dem Lauf</span>
+        </div>
+        <div class="roadmap__item">
+          <div class="roadmap__num">03</div>
+          <div>
+            <div class="roadmap__title">Update des Flottenmodells &mdash; mit Fokus Emissionen</div>
+            <div class="roadmap__desc">Fahrzeugflotten-Zuweisung aktualisieren und verfeinern (laufende Fehlerbehebung, neue Zulassungsst&auml;nde) und den HBEFA-Emissions-Anschluss ausbauen &mdash; die Flotte tr&auml;gt daf&uuml;r bereits alle Fahrzeugdaten.</div>
+          </div>
+          <span class="status status--next roadmap__frame">vor dem Lauf</span>
+        </div>
+        <div class="roadmap__item">
+          <div class="roadmap__num">04</div>
+          <div>
+            <div class="roadmap__title">Produktionslauf in voller Gr&ouml;&szlig;e</div>
+            <div class="roadmap__desc">100&thinsp;% Bev&ouml;lkerung, alle Bausteine aktiv, auf dem Rechenserver &mdash; das Referenzszenario f&uuml;r alles Weitere.</div>
+          </div>
+          <span class="status status--next roadmap__frame">danach</span>
+        </div>
+        <div class="roadmap__item">
+          <div class="roadmap__num">05</div>
+          <div>
+            <div class="roadmap__title">Kalibrierung der Verkehrsmittelwahl</div>
+            <div class="roadmap__desc">Das Verhaltensmodell aktivieren und den simulierten Modal Split an der MiD-2023-Referenz verankern.</div>
+          </div>
+          <span class="status status--plan roadmap__frame">n&auml;chste Phase</span>
+        </div>
+        <div class="roadmap__item">
+          <div class="roadmap__num">06</div>
+          <div>
+            <div class="roadmap__title">&Ouml;PNV-Kosten (VRB) &amp; G&uuml;terverkehr-Validierung (BASt)</div>
+            <div class="roadmap__desc">Reales regionales Tarifmodell als Eingang in die Verkehrsmittelwahl; Abgleich des Lkw-Verkehrs mit den Bundes-Dauerz&auml;hlstellen.</div>
+          </div>
+          <span class="status status--plan roadmap__frame">geplant</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 32 · ABSCHLUSS ============ -->
+  <section class="slide slide--closing">
+    <div class="slide__content" style="width:100%;">
+      <p class="title-kicker reveal">Fazit</p>
+      <h2 class="slide__display reveal" style="font-size:clamp(34px,5.6vw,78px); max-width:1100px;">Ein funktionierendes Regionalmodell &mdash; bereit f&uuml;r die <em class="red">Verhaltensphase</em></h2>
+      <div class="title-rule reveal"></div>
+      <div class="closing-points">
+        <div class="closing-point reveal">
+          <div class="closing-point__title">Die Bev&ouml;lkerung steht</div>
+          <div class="closing-point__desc">Zensusgenau, befragungskonsistent, in realen Geb&auml;uden verortet &mdash; und gegen amtliche Statistik validiert.</div>
+        </div>
+        <div class="closing-point reveal">
+          <div class="closing-point__title">Die Pipeline l&auml;uft durchg&auml;ngig</div>
+          <div class="closing-point__desc">Von amtlichen Rohdaten bis zu simuliertem Verkehr und interaktiven Dashboards &mdash; vollautomatisch und reproduzierbar.</div>
+        </div>
+        <div class="closing-point reveal">
+          <div class="closing-point__title">Als N&auml;chstes: Verhalten</div>
+          <div class="closing-point__desc">Erst die neuen Features und der Produktionslauf in voller Gr&ouml;&szlig;e, dann die Kalibrierung der Verkehrsmittelwahl an der MiD &mdash; damit aus simuliertem Verkehr validierte Ergebnisse werden.</div>
+        </div>
+      </div>
+      <p class="slide__subtitle reveal" style="margin-top:clamp(22px,3.6vh,40px);">eqasim-bs &middot; Technische Universit&auml;t Braunschweig &middot; Juli 2026 &middot; Fragen willkommen</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="deck-footer">Technische Universit&auml;t Braunschweig &middot; eqasim-bs &middot; Zwischenstand 07/2026</div>
+
+<script>
+function autoFit() {
+  document.querySelectorAll('.slide__kpi-val').forEach(function(el) {
+    if (el.scrollWidth > el.clientWidth) {
+      var s = el.clientWidth / el.scrollWidth;
+      el.style.transform = 'scale(' + s + ')';
+      el.style.transformOrigin = 'left top';
+    }
+  });
+}
+
+class SlideEngine {
+  constructor() {
+    this.deck = document.querySelector('.deck');
+    this.slides = [].slice.call(document.querySelectorAll('.slide'));
+    this.current = 0;
+    this.total = this.slides.length;
+    this.buildChrome();
+    this.bindEvents();
+    this.observe();
+    this.update();
+  }
+  buildChrome() {
+    var bar = document.createElement('div');
+    bar.className = 'deck-progress';
+    document.body.appendChild(bar);
+    this.bar = bar;
+
+    var dots = document.createElement('div');
+    dots.className = 'deck-dots';
+    var self = this;
+    this.slides.forEach(function(_, i) {
+      var d = document.createElement('button');
+      d.className = 'deck-dot';
+      d.title = 'Folie ' + (i + 1);
+      d.onclick = function() { self.goTo(i); };
+      dots.appendChild(d);
+    });
+    document.body.appendChild(dots);
+    this.dots = [].slice.call(dots.children);
+
+    var ctr = document.createElement('div');
+    ctr.className = 'deck-counter';
+    document.body.appendChild(ctr);
+    this.counter = ctr;
+
+    var hints = document.createElement('div');
+    hints.className = 'deck-hints';
+    hints.textContent = '← → oder scrollen zum Navigieren';
+    document.body.appendChild(hints);
+    this.hints = hints;
+    this.hintTimer = setTimeout(function() { hints.classList.add('faded'); }, 4000);
+  }
+  bindEvents() {
+    var self = this;
+    document.addEventListener('keydown', function(e) {
+      var lb = document.querySelector('.lightbox');
+      if (lb && lb.classList.contains('open')) {
+        if (e.key === 'Escape') { e.preventDefault(); lb.classList.remove('open'); }
+        return;
+      }
+      if (e.target.closest('.table-scroll, input, textarea, [contenteditable]')) return;
+      if (['ArrowDown', 'ArrowRight', ' ', 'PageDown'].indexOf(e.key) >= 0) {
+        e.preventDefault(); self.next();
+      } else if (['ArrowUp', 'ArrowLeft', 'PageUp'].indexOf(e.key) >= 0) {
+        e.preventDefault(); self.prev();
+      } else if (e.key === 'Home') {
+        e.preventDefault(); self.goTo(0);
+      } else if (e.key === 'End') {
+        e.preventDefault(); self.goTo(self.total - 1);
+      }
+      self.fadeHints();
+    });
+    var touchY;
+    this.deck.addEventListener('touchstart', function(e) {
+      touchY = e.touches[0].clientY;
+    }, { passive: true });
+    this.deck.addEventListener('touchend', function(e) {
+      var dy = touchY - e.changedTouches[0].clientY;
+      if (Math.abs(dy) > 50) { dy > 0 ? self.next() : self.prev(); }
+    });
+  }
+  observe() {
+    var self = this;
+    var obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          self.current = self.slides.indexOf(entry.target);
+          self.update();
+        }
+      });
+    }, { threshold: 0.5 });
+    this.slides.forEach(function(s) { obs.observe(s); });
+  }
+  goTo(i) {
+    this.slides[Math.max(0, Math.min(i, this.total - 1))].scrollIntoView({ behavior: 'smooth' });
+  }
+  next() { if (this.current < this.total - 1) this.goTo(this.current + 1); }
+  prev() { if (this.current > 0) this.goTo(this.current - 1); }
+  update() {
+    this.bar.style.width = ((this.current + 1) / this.total * 100) + '%';
+    var self = this;
+    this.dots.forEach(function(d, i) { d.classList.toggle('active', i === self.current); });
+    this.counter.textContent = (this.current + 1) + ' / ' + this.total;
+  }
+  fadeHints() {
+    clearTimeout(this.hintTimer);
+    this.hints.classList.add('faded');
+  }
+}
+
+function initLightbox() {
+  var lb = document.createElement('div');
+  lb.className = 'lightbox';
+  var im = document.createElement('img');
+  lb.appendChild(im);
+  var hint = document.createElement('div');
+  hint.className = 'lightbox__hint';
+  hint.textContent = 'Klick oder Esc zum Schlie\u00dfen';
+  lb.appendChild(hint);
+  lb.addEventListener('click', function() { lb.classList.remove('open'); });
+  document.body.appendChild(lb);
+  document.querySelectorAll('.fig-frame img, .slide__panel--fig img').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+      e.stopPropagation();
+      im.src = el.src;
+      im.alt = el.alt || '';
+      lb.classList.add('open');
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  autoFit();
+  new SlideEngine();
+  initLightbox();
+});
+window.addEventListener('resize', autoFit);
+</script>
+</body>
+</html>
