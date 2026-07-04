@@ -61,6 +61,11 @@ GEO_1KM = "ZENSUS1km"
 GEO_KREIS = "KREIS"
 GEO_GEMEINDE = "GEMEINDE"
 
+# The per-cell household-total census column (tier0 backbone HH_TOTAL control). Exposed at
+# module scope so the economic_status x Kreis control (issue #109) can sum it per Kreis to
+# get the household total its status targets must partition (IPF-consistent).
+HH_TOTAL_CENSUS_COLUMN = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+
 # Nine ten-year age bands as (label, lower_bound, upper_bound). ``None`` marks an
 # open edge: the first band has no lower bound, the last band no upper bound.
 AGE_BANDS: Sequence[tuple] = (
@@ -394,7 +399,7 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
     list[CatalogControl]
         20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km).
     """
-    HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    HH_TOTAL_BASE = HH_TOTAL_CENSUS_COLUMN
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
 
     HH_TOTAL_EXPR = "(households.H_GEW > 0) & (households.H_GEW < np.inf)"

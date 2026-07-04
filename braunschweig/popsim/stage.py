@@ -126,6 +126,13 @@ KEY_INCOME_KC_METHOD = "braunschweig.population.popsim.income_draw_method"
 KEY_INCOME_KC_HHSIZE = "braunschweig.population.popsim.income_kreis_control_hhsize_correct"
 KEY_INCOME_KC_PARETO = "braunschweig.population.popsim.income_open_top_pareto"
 KEY_INCOME_KC_PARETO_ALPHA = "braunschweig.population.popsim.income_open_top_pareto_alpha"
+# economic_status x Kreis control (Level 1, issue #109). Default "on" (project rule:
+# new features default on). "off" -> no status control + seed schema unchanged (byte-
+# identical). MiD-only (oek_status has no ENTD pendant); ignored for source="entd".
+KEY_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.status_kreis_control"
+# Dirichlet shrinkage of the per-Kreis H4 status target toward the ZGB aggregate, in
+# pseudo-households. Default 0.0 = raw per-Kreis H4 (no shrinkage). Range: >= 0.
+KEY_STATUS_KREIS_SHRINKAGE_N = "braunschweig.population.popsim.status_kreis_shrinkage_n"
 # Weekend-plan match: include weekend-surveyed MiD households in the seed by
 # relaxing the day filter to ALL_REPORTING_KERNWO and remapping their
 # source_H_ID/source_P_ID to a matched weekday household.  Default ON
@@ -162,7 +169,7 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
 
 
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
-                      employment_grid=False, importance_profile="uniform"):
+                      employment_grid=False, status_kreis=False, importance_profile="uniform"):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -176,15 +183,25 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
     catalog. Default False = byte-identical to the pre-employment-grid catalog.
 
+    status_kreis: when True (catalog source only), append the five economic_status x Kreis
+    household controls (issue #109). Default False = byte-identical. The hand-edited CSV
+    source cannot express these controls, so status_kreis=True with controls_source="csv"
+    is a fail-fast error (no silent drop of a requested control).
+
     importance_profile: a key of control_spec.IMPORTANCE_PROFILES selecting per-group
     PopulationSim importance weights. Default "uniform" leaves every control's importance
     untouched (byte-identical). Applied to BOTH sources after the frame is built.
     """
     from braunschweig.popsim import control_spec as cs
     if controls_source == "csv":
+        if status_kreis:
+            raise ValueError(
+                "status_kreis=True requires controls_source='catalog'; the hand-edited "
+                "controls.csv cannot express the economic_status x Kreis control.")
         df = pd.read_csv(controls_path, sep=";")
     elif controls_source == "catalog":
-        catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid)
+        catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid,
+                                  include_status_kreis=status_kreis)
         df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     else:
         raise ValueError(f"unknown controls_source {controls_source!r}")
@@ -312,6 +329,12 @@ def configure(context):
     # ensure data_path is declared so the reference CSV can be located; this is a
     # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
     if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
+        context.config("data_path")
+    # economic_status x Kreis control (issue #109). Default "on". When on, the committed
+    # H4 CSV under data_path is needed, so ensure data_path is declared (no-op if already).
+    context.config(KEY_STATUS_KREIS_CONTROL, "on")
+    context.config(KEY_STATUS_KREIS_SHRINKAGE_N, 0.0)
+    if str(context.config(KEY_STATUS_KREIS_CONTROL, "on")).strip().lower() == "on":
         context.config("data_path")
     # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
     context.config(KEY_SEED_DAY_FILTER, "default")
@@ -544,6 +567,11 @@ def execute(context) -> pd.DataFrame:
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     # Employment grid control (Task 5): default "off" -> byte-identical path.
     employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
+    # economic_status x Kreis control (issue #109): default "on". MiD-only (oek_status has
+    # no ENTD pendant); effective only for source="mid" so an ENTD run stays unaffected.
+    status_kreis_on = str(context.config(KEY_STATUS_KREIS_CONTROL)).strip().lower() == "on"
+    status_kreis_effective = status_kreis_on and source_name == "mid"
+    status_prior_n = float(context.config(KEY_STATUS_KREIS_SHRINKAGE_N))
     # Importance profile: default "uniform" -> importance untouched (byte-identical).
     importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
     controls_df = build_controls_df(
@@ -552,6 +580,7 @@ def execute(context) -> pd.DataFrame:
         seed=source_name,
         tiers=control_tiers,
         employment_grid=employment_grid_on,
+        status_kreis=status_kreis_effective,
         importance_profile=importance_profile,
     )
     if importance_profile and importance_profile != "uniform":
@@ -733,6 +762,7 @@ def execute(context) -> pd.DataFrame:
         # load_mid_seed does, so the seed carries it for the household_type control.
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
+            include_status_seed_col=status_kreis_effective,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -748,6 +778,7 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         seed_households, seed_persons, report = mid.load_mid_seed(
             mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
+            include_status_seed_col=status_kreis_effective,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 
@@ -761,6 +792,47 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
+    # economic_status x Kreis control (issue #109): derive the per-Kreis status household
+    # targets from the committed MiD H4 shares x the per-Kreis household total (summed cell
+    # HH_TOTAL, so the 5 status targets partition EXACTLY the household total PopulationSim
+    # controls per Kreis -> IPF-consistent). Merge into the KREIS control totals + map so
+    # run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE the config signature
+    # below so a status toggle invalidates stale batches. MiD-only (status_kreis_effective).
+    if status_kreis_effective:
+        from braunschweig.popsim import status_kreis_control as _skc
+        from braunschweig.popsim import control_spec as _cs_skc
+        from braunschweig.data.mid.status_by_kreis import load_status_by_kreis as _load_h4
+        _skc_data_path = context.config("data_path")
+        _skc_hh_col = _cs_skc.HH_TOTAL_CENSUS_COLUMN
+        if _skc_hh_col not in cells.columns:
+            raise RuntimeError(
+                f"status_kreis_control is ON but the household-total column {_skc_hh_col!r} is "
+                f"absent from the cells frame; cannot derive the per-Kreis status targets "
+                f"(no silent fallback).")
+        _skc_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
+        _skc_hh_by_kreis = cells.groupby(_skc_kreis)[_skc_hh_col].sum().to_dict()
+        _skc_table = _skc.status_kreis_count_table(
+            _load_h4(_skc_data_path), _skc_hh_by_kreis, prior_n=status_prior_n)
+        _skc_map = _kreis_controls_map(_cs_skc.status_kreis_controls())
+        logger.info(
+            "[popsim.stage] economic_status x Kreis control ON: %d Kreise, prior_n=%.1f, "
+            "total households=%d", len(_skc_table), status_prior_n,
+            int(sum(_skc_hh_by_kreis.values())))
+        if kreis_table is None:
+            kreis_table = _skc_table
+            kreis_controls_map = dict(_skc_map)
+        else:
+            kreis_table = kreis_table.merge(
+                _skc_table, on="ARS_kreis", how="left", validate="one_to_one")
+            kreis_controls_map = {**kreis_controls_map, **_skc_map}
+            # Fail-fast: every ZGB Kreis (= the crosswalk Kreise build_kreis_control_totals
+            # will look up) must carry a non-NaN status target after the merge.
+            _skc_used = kreis_table["ARS_kreis"].isin(_skc_table["ARS_kreis"])
+            if kreis_table.loc[_skc_used, list(_skc.STATUS_CONTROL_COLUMNS)].isna().any().any():
+                raise RuntimeError(
+                    "status_kreis merge left NaN status targets for a ZGB Kreis (ARS_kreis key "
+                    "mismatch between the Tier-3 and status tables); refusing to under-constrain.")
+
     # Purge stale batch folders if the popsim config/control set changed since the last
     # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
     # a config change would otherwise leave old completion markers that the batch runner
