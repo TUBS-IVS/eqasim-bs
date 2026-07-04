@@ -56,3 +56,33 @@ def test_count_table_rows_sum_to_hh_total_integer():
 def test_count_table_missing_kreis_raises():
     with pytest.raises(ValueError):
         status_kreis_count_table(_h4(), {"09999": 100.0}, prior_n=0.0)
+
+
+# --- Task 2: catalog controls ---
+from braunschweig.popsim import control_spec as cs  # noqa: E402
+
+
+def test_status_kreis_controls_are_five_kreis_household_controls():
+    controls = cs.status_kreis_controls()
+    assert len(controls) == 5
+    assert [c.name for c in controls] == list(STATUS_CONTROL_COLUMNS)
+    for c in controls:
+        assert c.geography == cs.GEO_KREIS
+        assert c.seed_table == cs.SEED_TABLE_HOUSEHOLDS
+        assert c.census_source == (c.name,)
+        assert c.seed_expressions["entd"] is None
+
+
+def test_status_kreis_control_expressions_map_oek_status_1_to_5():
+    controls = {c.name: c for c in cs.status_kreis_controls()}
+    assert controls["economic_status_very_low"].seed_expressions["mid"] == "(households.oek_status == 1)"
+    assert controls["economic_status_very_high"].seed_expressions["mid"] == "(households.oek_status == 5)"
+
+
+def test_full_catalog_includes_status_only_when_requested():
+    base = cs.full_catalog(include_tiers=("tier0",))
+    with_status = cs.full_catalog(include_tiers=("tier0",), include_status_kreis=True)
+    assert len(with_status) == len(base) + 5
+    # ENTD drops all five (oek_status is a MiD-only seed column).
+    assert not any(c.name in STATUS_CONTROL_COLUMNS for c in cs.controls_for_seed(with_status, "entd"))
+    assert sum(c.name in STATUS_CONTROL_COLUMNS for c in cs.controls_for_seed(with_status, "mid")) == 5
