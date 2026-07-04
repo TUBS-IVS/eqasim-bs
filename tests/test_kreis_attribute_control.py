@@ -1,0 +1,44 @@
+import sys
+from pathlib import Path
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
+    KreisAttributeControl, REGISTRY, control_columns, attribute_kreis_count_table,
+)
+
+
+def _econ_entry():
+    return next(c for c in REGISTRY if c.name == "economic_status")
+
+
+def test_registry_has_economic_status_only():
+    assert [c.name for c in REGISTRY] == ["economic_status"]
+
+
+def test_control_columns_follow_name_category():
+    c = _econ_entry()
+    assert control_columns(c) == tuple(
+        f"economic_status_{k}" for k in ("very_low", "low", "medium", "high", "very_high"))
+
+
+def test_count_table_rows_sum_to_hh_total_integer():
+    c = _econ_entry()
+    tgt = pd.DataFrame([
+        {"ars5": "03ZGB", "very_low": 9, "low": 12, "medium": 31, "high": 36, "very_high": 12},
+        {"ars5": "03102", "very_low": 5, "low": 10, "medium": 29, "high": 42, "very_high": 13},
+    ])
+    out = attribute_kreis_count_table(c, tgt, {"03102": 50000.4}, prior_n=0.0)
+    cols = list(control_columns(c))
+    assert list(out.columns) == ["ARS_kreis", *cols]
+    row = out[out.ARS_kreis == "03102"][cols].to_numpy().ravel()
+    assert row.sum() == 50000 and (row == np.floor(row)).all()
+
+
+def test_count_table_missing_kreis_raises():
+    c = _econ_entry()
+    tgt = pd.DataFrame([{"ars5": "03ZGB", "very_low": 9, "low": 12, "medium": 31, "high": 36, "very_high": 12}])
+    with pytest.raises(ValueError):
+        attribute_kreis_count_table(c, tgt, {"09999": 100.0}, prior_n=0.0)
