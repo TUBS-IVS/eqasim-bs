@@ -792,46 +792,51 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
-    # economic_status x Kreis control (issue #109): derive the per-Kreis status household
-    # targets from the committed MiD H4 shares x the per-Kreis household total (summed cell
-    # HH_TOTAL, so the 5 status targets partition EXACTLY the household total PopulationSim
-    # controls per Kreis -> IPF-consistent). Merge into the KREIS control totals + map so
-    # run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE the config signature
-    # below so a status toggle invalidates stale batches. MiD-only (status_kreis_effective).
+    # KREIS attribute controls (S1a, issue #109 follow-up): derive each ACTIVE registered
+    # attribute's per-Kreis household targets from its committed MiD shares x the per-Kreis
+    # household total (summed cell HH_TOTAL, so the category targets partition EXACTLY the
+    # household total PopulationSim controls per Kreis -> IPF-consistent). Merge into the KREIS
+    # control totals + map so run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE
+    # the config signature below so a control toggle invalidates stale batches. MiD-only
+    # (status_kreis_effective). S1a registers only economic_status -> byte-identical to L1.
     if status_kreis_effective:
-        from braunschweig.popsim import status_kreis_control as _skc
-        from braunschweig.popsim import control_spec as _cs_skc
+        from braunschweig.popsim import kreis_attribute_control as _kac
+        from braunschweig.popsim import control_spec as _cs_kac
         from braunschweig.data.mid.status_by_kreis import load_status_by_kreis as _load_h4
-        _skc_data_path = context.config("data_path")
-        _skc_hh_col = _cs_skc.HH_TOTAL_CENSUS_COLUMN
-        if _skc_hh_col not in cells.columns:
+        _kac_data_path = context.config("data_path")
+        _kac_hh_col = _cs_kac.HH_TOTAL_CENSUS_COLUMN
+        if _kac_hh_col not in cells.columns:
             raise RuntimeError(
-                f"status_kreis_control is ON but the household-total column {_skc_hh_col!r} is "
-                f"absent from the cells frame; cannot derive the per-Kreis status targets "
-                f"(no silent fallback).")
-        _skc_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
-        _skc_hh_by_kreis = cells.groupby(_skc_kreis)[_skc_hh_col].sum().to_dict()
-        _skc_table = _skc.status_kreis_count_table(
-            _load_h4(_skc_data_path), _skc_hh_by_kreis, prior_n=status_prior_n)
-        _skc_map = _kreis_controls_map(_cs_skc.status_kreis_controls())
-        logger.info(
-            "[popsim.stage] economic_status x Kreis control ON: %d Kreise, prior_n=%.1f, "
-            "total households=%d", len(_skc_table), status_prior_n,
-            int(sum(_skc_hh_by_kreis.values())))
-        if kreis_table is None:
-            kreis_table = _skc_table
-            kreis_controls_map = dict(_skc_map)
-        else:
-            kreis_table = kreis_table.merge(
-                _skc_table, on="ARS_kreis", how="left", validate="one_to_one")
-            kreis_controls_map = {**kreis_controls_map, **_skc_map}
-            # Fail-fast: every ZGB Kreis (= the crosswalk Kreise build_kreis_control_totals
-            # will look up) must carry a non-NaN status target after the merge.
-            _skc_used = kreis_table["ARS_kreis"].isin(_skc_table["ARS_kreis"])
-            if kreis_table.loc[_skc_used, list(_skc.STATUS_CONTROL_COLUMNS)].isna().any().any():
-                raise RuntimeError(
-                    "status_kreis merge left NaN status targets for a ZGB Kreis (ARS_kreis key "
-                    "mismatch between the Tier-3 and status tables); refusing to under-constrain.")
+                f"KREIS attribute control is ON but the household-total column {_kac_hh_col!r} is "
+                f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
+        _kac_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
+        _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
+        # Active registry entries (S1a: economic_status only). economic_status uses the committed
+        # H4 loader (ars5 + very_low..very_high == its target_columns); the generic per-attribute
+        # target loader for the other registry entries arrives in S1c.
+        _kac_active = [c for c in _kac.REGISTRY if c.name == "economic_status"]
+        for _ctl in _kac_active:
+            _tgt = _load_h4(_kac_data_path)
+            _tbl = _kac.attribute_kreis_count_table(_ctl, _tgt, _kac_hh_by_kreis, prior_n=status_prior_n)
+            _map = _kreis_controls_map(_cs_kac.attribute_kreis_controls([_ctl]))
+            logger.info(
+                "[popsim.stage] KREIS attribute control ON: %s, %d Kreise, prior_n=%.1f, "
+                "total households=%d", _ctl.name, len(_tbl), status_prior_n,
+                int(sum(_kac_hh_by_kreis.values())))
+            if kreis_table is None:
+                kreis_table = _tbl
+                kreis_controls_map = dict(_map)
+            else:
+                kreis_table = kreis_table.merge(
+                    _tbl, on="ARS_kreis", how="left", validate="one_to_one")
+                kreis_controls_map = {**kreis_controls_map, **_map}
+                # Fail-fast: every crosswalk Kreis build_kreis_control_totals looks up must carry a
+                # non-NaN target after the merge (no silently under-constrained control).
+                _used = kreis_table["ARS_kreis"].isin(_tbl["ARS_kreis"])
+                if kreis_table.loc[_used, list(_kac.control_columns(_ctl))].isna().any().any():
+                    raise RuntimeError(
+                        f"KREIS attribute control merge left NaN targets for {_ctl.name} (ARS_kreis "
+                        f"key mismatch); refusing to under-constrain.")
 
     # Purge stale batch folders if the popsim config/control set changed since the last
     # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
