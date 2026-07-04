@@ -81,3 +81,9 @@ def test_pmf_sums_to_one_and_high_is_modal_in_salzgitter():
 def test_missing_kreis_returns_none():
     df = load_status_by_kreis(DATA_PATH)
     assert status_pmf_by_kreis(df, "09999") is None
+
+
+def test_wolfenbuettel_name_reads_with_correct_umlaut():
+    df = load_status_by_kreis(DATA_PATH)
+    name = df.loc[df["ars5"] == "03158", "kreis"].item()
+    assert name == "Landkreis Wolfenbüttel"  # guards the read_csv utf-8 encoding

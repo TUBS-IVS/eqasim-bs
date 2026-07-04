@@ -46,3 +46,37 @@ def test_donor_replication_flags_clones():
     a = rep[rep["ars5"] == "03102"].iloc[0]
     assert a["n_households"] == 4 and a["n_unique_donors"] == 2
     assert a["max_clones"] == 2
+
+
+def test_srmse_nonzero_matches_hand_computed_value():
+    # realised 03102 = [0.6,0,0,0.4,0]; target percent = [50,0,0,50,0] -> t=[0.5,0,0,0.5,0]
+    realised = pd.DataFrame([{"ars5": "03102", "very_low": 0.6, "low": 0.0,
+                              "medium": 0.0, "high": 0.4, "very_high": 0.0}])
+    h4 = pd.DataFrame([{"ars5": "03102", "very_low": 50, "low": 0, "medium": 0,
+                        "high": 50, "very_high": 0}])
+    srmse = status_srmse_vs_h4(realised, h4)
+    # RMSE = sqrt((0.1^2+0.1^2)/5)=0.063246; /0.2 = 0.316228
+    assert srmse["03102"] == pytest.approx(0.316228, abs=1e-5)
+
+
+def test_srmse_warns_and_skips_ars5_missing_from_target(capsys):
+    realised = pd.DataFrame([{"ars5": "09999", "very_low": 1.0, "low": 0.0,
+                              "medium": 0.0, "high": 0.0, "very_high": 0.0}])
+    h4 = pd.DataFrame([{"ars5": "03102", "very_low": 50, "low": 0, "medium": 0,
+                        "high": 50, "very_high": 0}])
+    srmse = status_srmse_vs_h4(realised, h4)
+    assert "09999" not in srmse
+    assert "absent from the H4 target" in capsys.readouterr().out
+
+
+def test_realised_warns_on_invalid_status_and_keeps_nan_only_kreis(capsys):
+    hh = pd.DataFrame({
+        "ars5": ["03101", "03101", "03102", "03102"],
+        "economic_status": ["high", "BOGUS", None, None],
+        "source_household_id": [1, 2, 3, 4],
+    })
+    r = realised_status_by_kreis(hh)
+    out = capsys.readouterr().out
+    assert "out-of-vocabulary" in out and "NaN" in out
+    # 03102 is all-NaN -> still present as a row (shares NaN), not vanished
+    assert "03102" in set(r["ars5"].astype(str))

@@ -19,13 +19,21 @@ _FILENAME = os.path.join("braunschweig", "mid", "mid2023_H4_status_by_kreis.csv"
 
 
 def load_status_by_kreis(data_path: str) -> pd.DataFrame:
-    """Load the per-Kreis H4 status table; fail-fast on schema drift."""
+    """Load the per-Kreis H4 status table; fail-fast on schema drift or invalid values."""
     path = os.path.join(data_path, _FILENAME)
-    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str}, encoding="utf-8")
     expected = {"kreis", "ars5", "n_weighted", "n_unweighted", *STATUS_KEYS}
     missing = expected - set(df.columns)
     if missing:
         raise RuntimeError(f"{path}: missing columns {sorted(missing)}")
+    known = {"03ZGB", "03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158"}
+    missing_ars5 = known - set(df["ars5"].astype(str))
+    if missing_ars5:
+        raise RuntimeError(f"{path}: missing expected ars5 rows {sorted(missing_ars5)}")
+    row_sums = df[list(STATUS_KEYS)].sum(axis=1)
+    bad = df.loc[(row_sums < 98) | (row_sums > 102), "ars5"].tolist()
+    if bad:
+        raise RuntimeError(f"{path}: status row-% do not sum to ~100 for ars5 {bad} (got {row_sums[(row_sums<98)|(row_sums>102)].tolist()})")
     return df
 
 
