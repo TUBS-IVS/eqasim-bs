@@ -40,3 +40,44 @@ def test_parse_h4_rows_extracts_zgb_and_eight_kreise():
         # of asserting an exact 100, which would fail on genuine source data.
         total = sum(r[k] for k in ("very_low", "low", "medium", "high", "very_high"))
         assert abs(total - 100) <= 1, f"{r['kreis']}: status shares sum to {total}, expected ~100"
+
+
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
+DATA_PATH = os.path.join(str(REPO), "eqasim-data", "data")
+
+from braunschweig.data.mid.status_by_kreis import (  # noqa: E402
+    load_status_by_kreis, status_pmf_by_kreis, STATUS_KEYS,
+)
+
+
+def test_status_keys_are_the_canonical_categories():
+    # Must equal enriched.ECONOMIC_STATUS_CATEGORIES. Import is guarded because the
+    # local system-Python can shadow the repo `matsim`, breaking the enriched import;
+    # the literal tuple IS that canonical order, so the check is meaningful either way.
+    assert STATUS_KEYS == ("very_low", "low", "medium", "high", "very_high")
+    try:
+        from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_CATEGORIES
+    except Exception:
+        pytest.skip("enriched import unavailable in this env (matsim shadow); literal checked")
+    assert STATUS_KEYS == ECONOMIC_STATUS_CATEGORIES
+
+
+def test_load_has_zgb_and_eight_kreise():
+    df = load_status_by_kreis(DATA_PATH)
+    assert set(df["ars5"]) >= {"03ZGB", "03101", "03102", "03103",
+                               "03151", "03153", "03154", "03157", "03158"}
+
+
+def test_pmf_sums_to_one_and_high_is_modal_in_salzgitter():
+    df = load_status_by_kreis(DATA_PATH)
+    p = status_pmf_by_kreis(df, "03102")  # Salzgitter: very_low 5, low 10, medium 29, high 42, very_high 13
+    assert p is not None and p.shape == (5,)
+    assert p.sum() == pytest.approx(1.0)
+    assert int(np.argmax(p)) == list(STATUS_KEYS).index("high")
+
+
+def test_missing_kreis_returns_none():
+    df = load_status_by_kreis(DATA_PATH)
+    assert status_pmf_by_kreis(df, "09999") is None
