@@ -24,6 +24,9 @@ cache/
 output/
 **/output/
 
+# runcontrol GUI local state (SQLite runs/queue DB, generated launch configs)
+runcontrol_data/
+
 # Local pipeline data
 data/nantes_2015/
 data/lyon_2015/

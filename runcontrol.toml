@@ -1,0 +1,14 @@
+# runcontrol.toml  (repo root -- committed example; adjust 'repo' paths per machine)
+db_path = "runcontrol_data/runs.db"
+host = "127.0.0.1"   # bind localhost only; access remotely via ssh -L tunnel
+port = 8099
+poll_seconds = 3.0
+
+[target.local]
+kind = "local"
+repo = "."            # this checkout
+
+[target.server]
+kind = "ssh"
+host = "felix"        # existing ssh alias (key auth, see docs/ONBOARDING.md)
+repo = "~/eqasim-bs"
