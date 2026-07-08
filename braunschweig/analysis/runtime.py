@@ -29,6 +29,12 @@ _EXEC_RE = re.compile(_TS + r".*Executing stage (\S+)")
 _FINISH_RE = re.compile(_TS + r".*Finished running (\S+?)\.?\s*$")
 _HASH_SUFFIX_RE = re.compile(r"__[0-9a-f]+$")
 
+# Public aliases: braunschweig.runcontrol.collectors.synpp_progress reuses these
+# patterns for live-log parsing; keep them in sync with the private names above.
+ISO_EXEC_RE = _EXEC_RE
+ISO_FINISH_RE = _FINISH_RE
+HASH_SUFFIX_RE = _HASH_SUFFIX_RE
+
 _COLUMNS = ["stage", "stage_short", "start", "end", "duration_s"]
 
 

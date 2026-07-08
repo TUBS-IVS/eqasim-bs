@@ -13,12 +13,14 @@ lines come in one of three real-world shapes:
 
 * **console** -- the live coloured-console format from
   ``braunschweig.logging_setup.ColorFormatter`` (``HH:MM:SS`` only, no date,
-  fields separated by U+2502 box-drawing bars). This is what
-  ``run_pipeline.sh`` tees into ``logs/rc_<id>.log`` on a real run, so it is
-  the format runcontrol most commonly has to read live. Example::
+  fields separated by the box-drawing vertical bar U+2502, with padded level
+  and stage columns). This is what ``run_pipeline.sh`` tees into
+  ``logs/rc_<id>.log`` on a real run, so it is the format runcontrol most
+  commonly has to read live. Shape (``|`` below stands in for the U+2502
+  separator; the source stays ASCII-only)::
 
-      13:47:16 │ INFO    │ synpp            │ Executing stage matsim.runtime.java__33163fea50c0df3e4
-      13:47:16 │ INFO    │ synpp            │ Finished running matsim.runtime.java__33163fea50c0df3e
+      13:47:16 | INFO    | synpp            | Executing stage matsim.runtime.java__33163fea50c0df3e4
+      13:47:16 | INFO    | synpp            | Finished running matsim.runtime.java__33163fea50c0df3e
 
 * **bare** -- the legacy plain Python default logging format
   (``%(levelname)s:%(name)s:%(message)s``), with no timestamp at all, seen in
@@ -48,17 +50,15 @@ from datetime import datetime
 
 import pandas as pd
 
-_HASH_RE = re.compile(r"__[0-9a-f]+$")
-
-_ISO_TS = r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
-_ISO_EXEC_RE = re.compile(_ISO_TS + r".*Executing stage (\S+)")
-_ISO_FINISH_RE = re.compile(_ISO_TS + r".*Finished running (\S+?)\.?\s*$")
+# The ISO patterns are shared with the post-run stage_runtime.csv parser so the
+# two log consumers cannot drift apart (single source of truth for the regexes).
+from braunschweig.analysis.runtime import HASH_SUFFIX_RE, ISO_EXEC_RE, ISO_FINISH_RE
 
 # braunschweig.logging_setup.ColorFormatter: "HH:MM:SS | LEVEL | stage | message"
 # (with U+2502 box-drawing bars as separators; color codes auto-disable on the
 # non-tty stream that run_pipeline.sh tees into a file, so no ANSI here).
 _CONSOLE_TS = r"(\d{2}:\d{2}:\d{2})"
-_CONSOLE_SEP = "│"
+_CONSOLE_SEP = "\u2502"  # box-drawing vertical bar used by logging_setup.ColorFormatter
 _CONSOLE_EXEC_RE = re.compile(
     r"^" + _CONSOLE_TS + r"\s*" + _CONSOLE_SEP + r".*" + _CONSOLE_SEP + r".*" + _CONSOLE_SEP
     + r"\s*Executing stage (\S+)")
@@ -89,10 +89,10 @@ def expected_from_runtime_csv(csv_text: str) -> list[tuple[str, float]]:
 
 def _match_line(line: str) -> tuple[str | None, str | None, str | None, str | None]:
     """Try iso, then console, then bare patterns; return (format, kind, timestamp, stage)."""
-    m = _ISO_EXEC_RE.search(line)
+    m = ISO_EXEC_RE.search(line)
     if m:
         return "iso", "exec", m.group(1), m.group(2)
-    m = _ISO_FINISH_RE.search(line)
+    m = ISO_FINISH_RE.search(line)
     if m:
         return "iso", "finish", m.group(1), m.group(2)
     m = _CONSOLE_EXEC_RE.search(line)
@@ -145,7 +145,7 @@ def parse(log_text: str, expected: list[tuple[str, float]] | None) -> StageProgr
             continue
         if log_format is None:
             log_format = line_format
-        short = _HASH_RE.sub("", raw_name)
+        short = HASH_SUFFIX_RE.sub("", raw_name)
         if kind == "exec":
             starts[short] = (line_format, ts)
             active, active_since = short, ts
