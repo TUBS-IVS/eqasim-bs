@@ -36,11 +36,11 @@ def test_pinned_values(table):
     assert k.loc["03102", "high"] == pytest.approx(0.243, abs=0.005)
     assert k.loc["03102", "very_high"] == pytest.approx(0.075, abs=0.005)
     assert k.loc["03101", "very_high"] == pytest.approx(0.147, abs=0.005)
-    assert k.loc["03153", "very_low"] == pytest.approx(0.184, abs=0.005)
+    assert k.loc["03153", "very_low"] == pytest.approx(0.185, abs=0.005)
 
 
 def test_income_missing_share_reported(table):
     total = table[table["level"] == "total"].iloc[0]
-    # ~13.1% of households have no income answer (V_EINK -9/-5); they are
+    # ~12.5% of households have no income answer (V_EINK -9/-5); they are
     # EXCLUDED from the status distribution but reported here.
-    assert total["share_income_missing"] == pytest.approx(0.131, abs=0.01)
+    assert total["share_income_missing"] == pytest.approx(0.1246, abs=0.005)

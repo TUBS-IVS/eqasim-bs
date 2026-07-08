@@ -36,7 +36,7 @@ def test_kreis_pins(by_kreis):
     assert k.loc["03101", "trips_5plus"] == pytest.approx(0.250, abs=0.005)
     assert k.loc["03102", "trips_0"] == pytest.approx(0.120, abs=0.005)
     t = by_kreis[by_kreis["level"] == "total"].iloc[0]
-    assert t["trips_1_2"] == pytest.approx(0.336, abs=0.005)
+    assert t["trips_1_2"] == pytest.approx(0.3368, abs=0.005)
 
 
 def test_age_structure_and_pins(by_age):
@@ -44,6 +44,6 @@ def test_age_structure_and_pins(by_age):
     assert ((by_age[CLS].sum(axis=1) - 1.0).abs() < 0.005).all()
     a = by_age.set_index("age_lo")
     # mobility falls sharply in old age; children rarely have 5+ trips.
-    assert a.loc[75, "trips_0"] == pytest.approx(0.245, abs=0.005)
-    assert a.loc[0, "trips_5plus"] == pytest.approx(0.118, abs=0.005)
+    assert a.loc[75, "trips_0"] == pytest.approx(0.2397, abs=0.005)
+    assert a.loc[0, "trips_5plus"] == pytest.approx(0.1195, abs=0.005)
     assert int(a.loc[0, "n_unweighted"]) == 3070

@@ -2,7 +2,7 @@
 #   (RGB) scientific-use microdata, file SciUse_v4 (delivered 2026-07).
 #   See eqasim-data/data/braunschweig/srv/srv2023_raw/README.md.
 # One row per municipality (AGS) sampled by the household survey.
-# Universe: households with a valid GEWICHT_HH weight.
+# Universe: households with a valid GEWICHT_HH_ZENSUS weight.
 # n_households_unweighted is a raw sample count (not weight-expanded).
 # ASSUMPTION: this is the full list of ~44 municipalities forming the
 #   stratified PSU sample; it defines the coverage that all other
