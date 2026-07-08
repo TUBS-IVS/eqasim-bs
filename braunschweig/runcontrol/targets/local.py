@@ -32,7 +32,7 @@ _LOCAL_RUNNER_PATH = Path(__file__).resolve().parent.parent / "local_runner.py"
 def _git_commit(repo: Path) -> str:
     try:
         out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
-                             capture_output=True, text=True, timeout=10)
+                             capture_output=True, text=True, errors="replace", timeout=10)
         return out.stdout.strip() or "unknown"
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
@@ -84,8 +84,9 @@ class LocalTarget(ExecutionTarget):
         if handle.pid is None:
             return False
         if os.name == "nt":
+            # errors="replace": tasklist emits OEM-codepage bytes that crash strict locale decoding
             out = subprocess.run(["tasklist", "/FI", f"PID eq {handle.pid}"],
-                                 capture_output=True, text=True)
+                                 capture_output=True, text=True, errors="replace")
             return str(handle.pid) in out.stdout
         try:
             os.kill(handle.pid, 0)
