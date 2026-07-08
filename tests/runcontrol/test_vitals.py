@@ -37,3 +37,9 @@ def test_vitals_unavailable_is_honest_not_guessed():
     v = vitals.collect_from_proc(FakeTarget({}), df_output="")
     assert v.cpu_percent is None and v.ram_avail_gb is None
     assert "unavailable" in v.source
+
+
+def test_vitals_disk_parse_failure_is_surfaced_in_source():
+    v = vitals.collect_from_proc(FakeTarget(PROC), df_output="")
+    assert v.disk_avail_gb is None
+    assert "df" in v.source

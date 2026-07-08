@@ -39,6 +39,9 @@ def collect_from_proc(target, df_output: str) -> Vitals:
         parts = line.split()
         if len(parts) >= 4 and parts[3].endswith("G"):
             disk = float(parts[3][:-1])
+    # df yielded no G-suffixed available column -> surface it, never a silent None
+    if disk is None:
+        missing.append("df")
     source = "proc" if not missing else f"proc_unavailable:{','.join(missing)}"
     return Vitals(cpu, ram, disk, source)
 
