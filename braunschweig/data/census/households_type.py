@@ -1,10 +1,14 @@
 """Auxiliary commune × hh-size × hh-type table from Zensus 2022 (1000A-2081).
 
-Used **only** by the validation harness (``scripts.validate_bs_10pct``) to
-cross-check the post-IPF synthesis against the Familien-Haushaltstyp-axis.
-NOT consumed by the IPF itself — adding it as a balanced margin would
-roughly double the cell count for marginal benefit (the dominant signal —
-1P-HH share — is already captured exactly via 1000A-3082).
+The ``(commune, hh_size)`` size margin aggregated from this table (summing over
+``hh_type``) is consumed by the IPF as its optional fifth margin when
+``braunschweig.ipf.use_household_size_margin`` is enabled -- see
+``braunschweig.ipf.prepare._build_household_size_margin`` (the flag defaults to
+off, in which case the IPF is unchanged). The full ``hh_size x hh_type`` cross is
+NOT added as a balanced margin: doing so would roughly double the cell count for
+marginal benefit. The table is also read by the population-validation harness
+(``braunschweig.analysis.population_validation``) to cross-check the synthesized
+household sizes against the Zensus Familien-Haushaltstyp axis.
 
 Output schema::
 
