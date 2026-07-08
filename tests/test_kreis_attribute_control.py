@@ -123,3 +123,24 @@ def test_load_kreis_target_fails_when_shares_do_not_sum_to_one(tmp_path):
     p.write_text(p.read_text(encoding="utf-8").replace("0.7,0.3", "0.7,0.9"), encoding="utf-8")
     with pytest.raises(ValueError, match="sum to 1"):
         load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_file(tmp_path):
+    # No CSV written under tmp_path: the relpath resolves to a nonexistent file.
+    with pytest.raises(FileNotFoundError):
+        load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_target_column(tmp_path):
+    p = _write_target_csv(tmp_path)
+    # drop the "b" target column from header and rows
+    p.write_text(
+        "# comment line one\n"
+        "# CONSUMER NOTE: FINAL target - use with prior_n = 0.\n"
+        "ars5,source,n_effective,a\n"
+        "Gesamt,mid,0,0.6\n"
+        "03101,blend,1000,0.7\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing columns"):
+        load_kreis_target(tmp_path, _TOY)
