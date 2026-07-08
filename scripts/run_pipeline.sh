@@ -86,7 +86,10 @@ if [[ -n "$output_path" ]]; then
 fi
 
 # Timestamp is taken from the server clock at launch time for traceability.
-log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
+# An optional second argument fixes the log path (used by runcontrol so the
+# GUI knows the log location up front); default keeps the timestamped name.
+log_file="${2:-logs/run_$(date +%Y%m%d_%H%M%S).log}"
+mkdir -p "$(dirname "$log_file")"
 
 # PYTHONUTF8=1 avoids UnicodeEncodeError when stages print non-ASCII diagnostics
 # (e.g. the IPF "max |delta| per margin" line) into a redirected/teed stream.
