@@ -29,6 +29,11 @@ def _donor_households_with_tenure_and_building_type():
         "hheink_gr1": [4,  4,  4,  4,  4],
         "H_ANZAUTO":  [1,  0,  1,  0,  1],
         "H_ANZRAD":   [0,  1,  2,  0,  1],
+        # anzpedrad (default number_of_bicycles source, verified 2026-07-08): no
+        # pedelecs in this fixture, so it equals H_ANZRAD.
+        "anzpedrad":  [0,  1,  2,  0,  1],
+        # H_ANZPED (default has_ebike source, verified 2026-07-08): none own an e-bike.
+        "H_ANZPED":   [0,  0,  0,  0,  0],
         "H_MIETE":    [2,  1,  9,  2,  1],   # owner, renter, unknown, owner, renter
         "haustyp":    [1,  2,  3,  4, 95],   # EFH, MFH<12, GWB, sonstiges, n.z.
     })
@@ -243,7 +248,7 @@ def test_assembly_hh_type5_single_person_household():
     })
     hh = pd.DataFrame({
         "H_ID": [99], "oek_status": [3], "hheink_gr1": [4],
-        "H_ANZAUTO": [0], "H_ANZRAD": [0],
+        "H_ANZAUTO": [0], "H_ANZRAD": [0], "anzpedrad": [0], "H_ANZPED": [0],
         "H_MIETE": [2], "haustyp": [1],
     })
     persons_raw = pd.DataFrame({

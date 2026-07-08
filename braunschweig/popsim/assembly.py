@@ -228,6 +228,10 @@ ADULT_AGE = 18
 _HOUSEHOLD_ATTRS = [
     "economic_status", "household_income", "household_income_eur",
     "number_of_cars", "number_of_bicycles",
+    # has_ebike (0/1 int, attributes.map_has_ebike from H_ANZPED): written onto the
+    # persons frame so the has_ebike KREIS control is measurable against the realized
+    # population, not just derivable on the seed (server-verified 2026-07-08).
+    "has_ebike",
     # Tier-2 popsim control attributes: housing_tenure and building_type_3class are
     # derived from H_MIETE / haustyp in attributes.map_housing_tenure /
     # map_building_type_3class and joined from donor_hh onto the persons frame so
@@ -267,7 +271,9 @@ def map_mid_person_attributes(
     mid_households:
         The MiD donor household table (must contain the columns expected by the
         ``attributes.*`` household mappers: ``H_ID``, ``oek_status``,
-        ``hheink_gr1``, ``H_ANZAUTO``, ``H_ANZRAD``).
+        ``hheink_gr1``, ``H_ANZAUTO``, ``anzpedrad`` (bicycles including pedelecs,
+        the ``map_number_of_bicycles`` default source), and ``H_ANZPED`` (the
+        verified e-bike column, the ``map_has_ebike`` default source)).
     donor_col:
         Column name of the donor household key (default ``H_ID``).
     rng:
@@ -292,11 +298,17 @@ def map_mid_person_attributes(
 
     donor_hh = attributes.map_building_type_3class(
         attributes.map_housing_tenure(
-            attributes.map_number_of_bicycles(
-                attributes.map_number_of_cars(
-                    attributes.map_household_income(
-                        attributes.map_household_income_eur(
-                            attributes.map_economic_status(mid_households)
+            attributes.map_has_ebike(
+                # map_number_of_bicycles now defaults to bikes_col="anzpedrad" (bicycles
+                # INCLUDING pedelecs/e-bikes, MiD H12.3 / SrV alle-Raeder construct;
+                # verified 2026-07-08), a deliberate construct change from the previous
+                # H_ANZRAD (conventional-bikes-only) default -- see the function docstring.
+                attributes.map_number_of_bicycles(
+                    attributes.map_number_of_cars(
+                        attributes.map_household_income(
+                            attributes.map_household_income_eur(
+                                attributes.map_economic_status(mid_households)
+                            )
                         )
                     )
                 )
@@ -316,7 +328,8 @@ def map_mid_person_attributes(
     # absent when the donor lacks H_MIETE / haustyp, e.g. on the ENTD path or in
     # existing test fixtures that pre-date the Tier-2 addition). The core attrs
     # (economic_status, household_income, household_income_eur, number_of_cars,
-    # number_of_bicycles) are always present after the attribute mappers above.
+    # number_of_bicycles, has_ebike) are always present after the attribute mappers
+    # above (MiD donor only; map_has_ebike raises if H_ANZPED is absent).
     available_attrs = [a for a in _HOUSEHOLD_ATTRS if a in donor_hh.columns]
     persons = persons.merge(
         donor_hh[[donor_col, *available_attrs]],
@@ -324,6 +337,7 @@ def map_mid_person_attributes(
     )
     persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
     persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
+    persons["has_ebike"] = persons["has_ebike"].fillna(0).astype(int)
 
     persons["car_availability"] = _household_availability(
         persons, count_col="number_of_cars", adults_only=True,

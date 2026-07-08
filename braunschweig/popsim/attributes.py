@@ -484,16 +484,30 @@ def map_pt_subscription_type(
 
 
 def map_number_of_bicycles(
-    households: pd.DataFrame, *, bikes_col: str = "H_ANZRAD", rng=None
+    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", rng=None
 ) -> pd.DataFrame:
-    """Add ``number_of_bicycles`` from MiD ``H_ANZRAD`` via the uniform missing policy.
+    """Add ``number_of_bicycles`` from the MiD combined bicycle column via the uniform missing policy.
 
-    MiD codebook: 0..10 valid bicycle counts. 99 (keine Angabe, item non-response) ->
-    imputed from the valid pool within the same household-size group (hhgr_gr) when
-    present, else from the global valid pool. Previously, 99 was silently mapped to 0
-    (``BIKES_MISSING_CODE``); now it is imputed to avoid a systematic bias toward
-    zero-bicycle households. ``BIKES_MISSING_CODE`` is retained as a module constant
-    for any downstream code that may still reference it.
+    CONSTRUCT (server-verified 2026-07-08 on the MiD B1 household microdata, 218,039
+    valid rows): the committed target construct is bicycles INCLUDING pedelecs/e-bikes
+    -- MiD codebook table H12.3 "Anzahl Fahrraeder/Pedelecs/E-Bikes im Haushalt", and the
+    matching SrV side (``E_ANZ_RAD_ALLE_6``, "alle Raeder", table
+    ``srv2023_bikes_incl_ebikes_by_kreis.csv``). The MiD household file provides this
+    combined count directly as ``anzpedrad`` (default ``bikes_col``), verified to equal
+    ``min(H_ANZRAD + H_ANZPED, 10)`` on ALL 218,039 valid rows (0 mismatches; the 99
+    missing code propagates unchanged). DELIBERATE CONSTRUCT CHANGE: the previous default
+    (``H_ANZRAD``, conventional bicycles EXCLUDING pedelecs) systematically understated
+    household bicycle ownership against the incl-pedelec target (~31 % of households own
+    >= 1 pedelec); this default now matches the popsim control, the written
+    ``number_of_bicycles`` attribute, and the H12.3 reference to ONE construct.
+
+    MiD codebook: 0..10 valid bicycle counts (``anzpedrad`` is top-coded at 10, same as
+    the source columns; irrelevant for the 4+ control clip). 99 (keine Angabe, item
+    non-response) -> imputed from the valid pool within the same household-size group
+    (hhgr_gr) when present, else from the global valid pool. Previously, 99 was silently
+    mapped to 0 (``BIKES_MISSING_CODE``); now it is imputed to avoid a systematic bias
+    toward zero-bicycle households. ``BIKES_MISSING_CODE`` is retained as a module
+    constant for any downstream code that may still reference it.
 
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
@@ -514,14 +528,24 @@ def map_number_of_bicycles(
 
 
 def map_has_ebike(
-    households: pd.DataFrame, *, ebike_col: str = "H_EBIKE", rng=None
+    households: pd.DataFrame, *, ebike_col: str = "H_ANZPED", rng=None
 ) -> pd.DataFrame:
-    """Add a 0/1 ``has_ebike`` household flag from a MiD household e-bike column.
+    """Add a 0/1 ``has_ebike`` household flag from the MiD household e-bike column.
 
-    ASSUMPTION (server-verify): ``ebike_col`` is a household e-bike count or flag; any
-    value >= 1 means the household owns at least one operational e-bike (the SrV
-    target construct). Missing code 99 is imputed within ``hhgr_gr`` (else global pool)
-    before binarisation. Raises KeyError if ``ebike_col`` is absent (no silent fallback).
+    VERIFIED (2026-07-08, MiD B1 household microdata, 218,039 rows): the household
+    e-bike column is ``H_ANZPED`` (Anzahl Pedelecs; values 0..10, missing code 99, the
+    same code schema as ``H_ANZAUTO`` / ``H_ANZRAD``). Any value >= 1 means the
+    household owns at least one operational pedelec, which is treated as the
+    ``has_ebike`` control per the SrV target construct (``V_ANZ_ERAD``, household owns
+    >= 1 operational e-bike). Missing code 99 is imputed within ``hhgr_gr`` (else global
+    pool) before binarisation. Raises KeyError if ``ebike_col`` is absent (no silent
+    fallback).
+
+    Remaining ASSUMPTION (documented, not server-verifiable from the MiD codebook
+    alone): MiD "Pedelec" is treated as equivalent to SrV "E-Rad" for the purpose of
+    this control; the SrV construct may additionally include S-Pedelecs (higher-power
+    e-bikes classed as mofas), which MiD's Pedelec question may not capture. This is a
+    minor construct edge case and is not expected to materially bias the control.
 
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.

@@ -118,7 +118,10 @@ REGISTRY: tuple = (
     ),
     KreisAttributeControl(
         name="number_of_bicycles",
-        seed_column="number_of_bicycles",  # resolved column (H_ANZRAD 99 imputed)
+        # resolved column (attributes.map_number_of_bicycles): 99 imputed within hhgr_gr,
+        # source anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV
+        # alle-Raeder construct, verified 2026-07-08 against the MiD B1 microdata).
+        seed_column="number_of_bicycles",
         level="household",
         categories=(("0", "== 0"), ("1", "== 1"), ("2", "== 2"), ("3", "== 3"), ("4plus", ">= 4")),
         target_csv_relpath=f"{_TARGET_DIR}/target2026_number_of_bicycles_by_kreis.csv",
@@ -127,7 +130,9 @@ REGISTRY: tuple = (
     ),
     KreisAttributeControl(
         name="has_ebike",
-        seed_column="has_ebike",  # 0/1 int derived from the (server-verified) MiD household e-bike column
+        # 0/1 int resolved from H_ANZPED (Anzahl Pedelecs; verified 2026-07-08 against the
+        # MiD B1 household microdata, see attributes.map_has_ebike).
+        seed_column="has_ebike",
         level="household",
         categories=(("yes", "== 1"), ("no", "== 0")),
         target_csv_relpath=f"{_TARGET_DIR}/target2026_has_ebike_by_kreis.csv",

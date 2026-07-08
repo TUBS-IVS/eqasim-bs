@@ -71,6 +71,11 @@ def _mid_households():
         "hheink_gr1": [4, 15],          # 1500-2000 EUR; >7000 EUR
         "H_ANZAUTO":  [1, 0],
         "H_ANZRAD":   [2, 1],
+        # anzpedrad (default number_of_bicycles source, verified 2026-07-08): no
+        # pedelecs here, so it equals H_ANZRAD; H_ANZPED (default has_ebike source):
+        # neither household owns one.
+        "anzpedrad":  [2, 1],
+        "H_ANZPED":   [0, 0],
     })
 
 
@@ -150,7 +155,7 @@ def test_age_range_boundary_conditions():
     })
     hh = pd.DataFrame({
         "H_ID": [99], "oek_status": [3], "hheink_gr1": [4],
-        "H_ANZAUTO": [0], "H_ANZRAD": [0],
+        "H_ANZAUTO": [0], "H_ANZRAD": [0], "anzpedrad": [0], "H_ANZPED": [0],
     })
     # One person per boundary age: 10, 11, 14, 15, 17, 18.
     persons_raw = pd.DataFrame({

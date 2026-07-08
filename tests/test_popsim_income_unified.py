@@ -330,6 +330,8 @@ def test_build_persons_mid_applies_inkar_scaling():
         "hheink_gr1": [4],     # midpoint 1750.0 EUR
         "H_ANZAUTO":  [1],
         "H_ANZRAD":   [1],
+        "anzpedrad":  [1],
+        "H_ANZPED":   [0],
     })
     mid_p = pd.DataFrame({
         "H_ID":      [1],
@@ -376,6 +378,8 @@ def test_build_persons_mid_high_income_uses_numeric_rule():
         "hheink_gr1": [4, 15],
         "H_ANZAUTO":  [0, 0],
         "H_ANZRAD":   [0, 0],
+        "anzpedrad":  [0, 0],
+        "H_ANZPED":   [0, 0],
     })
     mid_p = pd.DataFrame({
         "H_ID":      [1, 2],
@@ -426,7 +430,7 @@ def test_build_persons_skip_inkar_income_scale_keeps_raw_midpoint():
     })
     mid_hh = pd.DataFrame({
         "H_ID": [1], "oek_status": [3], "hheink_gr1": [4],
-        "H_ANZAUTO": [1], "H_ANZRAD": [1],
+        "H_ANZAUTO": [1], "H_ANZRAD": [1], "anzpedrad": [1], "H_ANZPED": [0],
     })
     mid_p = pd.DataFrame({
         "H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1],
@@ -466,7 +470,7 @@ def test_build_persons_skip_inkar_default_false_still_scales():
     })
     mid_hh = pd.DataFrame({
         "H_ID": [1], "oek_status": [3], "hheink_gr1": [4],
-        "H_ANZAUTO": [1], "H_ANZRAD": [1],
+        "H_ANZAUTO": [1], "H_ANZRAD": [1], "anzpedrad": [1], "H_ANZPED": [0],
     })
     mid_p = pd.DataFrame({
         "H_ID": [1], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [1],
@@ -505,6 +509,8 @@ def test_build_persons_no_inkar_uses_scale_one():
         "hheink_gr1": [4],     # midpoint 1750.0 EUR
         "H_ANZAUTO":  [0],
         "H_ANZRAD":   [0],
+        "anzpedrad":  [0],
+        "H_ANZPED":   [0],
     })
     mid_p = pd.DataFrame({
         "H_ID":      [1],

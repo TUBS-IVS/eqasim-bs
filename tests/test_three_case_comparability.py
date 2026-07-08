@@ -144,6 +144,8 @@ def _mid_households_raw():
         "hheink_gr1": [4, 15],      # 1500-2000 EUR; >7000 EUR
         "H_ANZAUTO":  [1, 2],
         "H_ANZRAD":   [2, 0],
+        "anzpedrad":  [2, 0],
+        "H_ANZPED":   [0, 0],
     })
 
 

@@ -156,15 +156,15 @@ class _FakeContext:
         return self._values.get(key, default)
 
 
-def test_active_kreis_entries_default_on_except_has_ebike_for_mid():
+def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> economic_status / number_of_cars / number_of_bicycles default "on"
-    # (project rule); has_ebike defaults "off" (not yet wired into the default
-    # completed-donor seed path, no server-verified source column; issue #116).
+    # Empty config -> all four entries default "on" (project rule: new features default
+    # on). has_ebike's source column (H_ANZPED) was server-verified 2026-07-08 (issue
+    # #116 resolved) and is now wired on both seed paths, so it defaults on too.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
-        "economic_status", "number_of_cars", "number_of_bicycles"
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"
     ]
 
 
@@ -190,25 +190,25 @@ def test_active_kreis_entries_all_off_is_empty():
 def test_active_kreis_entries_individual_toggle():
     from braunschweig.popsim import stage
 
-    # Turning off only number_of_cars keeps economic_status / number_of_bicycles active
-    # (has_ebike defaults off regardless; see test_active_kreis_entries_has_ebike_can_be_turned_on).
+    # Turning off only number_of_cars keeps the other three entries active (all four
+    # default "on"; see test_active_kreis_entries_has_ebike_can_be_turned_off).
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_CARS_KREIS_CONTROL: "off"}), "mid"
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == {"economic_status", "number_of_bicycles"}
+    assert set(names) == {"economic_status", "number_of_bicycles", "has_ebike"}
 
 
-def test_active_kreis_entries_has_ebike_can_be_turned_on():
+def test_active_kreis_entries_has_ebike_can_be_turned_off():
     from braunschweig.popsim import stage
 
-    # An explicit "on" always wins over the per-entry default.
+    # An explicit "off" always wins over the (now "on") per-entry default.
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_EBIKE_KREIS_CONTROL: "on"}), "mid"
+        _FakeContext({stage.KEY_EBIKE_KREIS_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
-    assert "has_ebike" in names
+    assert "has_ebike" not in names
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---

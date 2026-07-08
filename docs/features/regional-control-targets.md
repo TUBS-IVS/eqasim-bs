@@ -71,8 +71,8 @@ KREIS household controls. The registry lives in
 |---|---|---|---|---|---|
 | `economic_status` | hard | `oek_status` (raw, `== k`) | `target2026_economic_status_by_kreis.csv` | `braunschweig.population.popsim.status_kreis_control` | on |
 | `number_of_cars` | hard | `number_of_cars` (resolved from `H_ANZAUTO`) | `target2026_number_of_cars_by_kreis.csv` | `braunschweig.population.popsim.number_of_cars_kreis_control` | on |
-| `number_of_bicycles` | soft | `number_of_bicycles` (resolved from `H_ANZRAD`) | `target2026_number_of_bicycles_by_kreis.csv` | `braunschweig.population.popsim.number_of_bicycles_kreis_control` | on |
-| `has_ebike` | soft | `has_ebike` (0/1) | `target2026_has_ebike_by_kreis.csv` | `braunschweig.population.popsim.has_ebike_kreis_control` | **off** |
+| `number_of_bicycles` | soft | `number_of_bicycles` (resolved from `anzpedrad`, bicycles INCL. pedelecs) | `target2026_number_of_bicycles_by_kreis.csv` | `braunschweig.population.popsim.number_of_bicycles_kreis_control` | on |
+| `has_ebike` | soft | `has_ebike` (0/1, resolved from `H_ANZPED`) | `target2026_has_ebike_by_kreis.csv` | `braunschweig.population.popsim.has_ebike_kreis_control` | on |
 
 `economic_status` was switched from the raw MiD H4 CSV (the old
 `mid2023_H4_status_by_kreis.csv` loader) to the blended
@@ -95,29 +95,41 @@ category is a *range* predicate (`3plus: >= 3` / `4plus: >= 4`). On the raw colu
 code 99 would land in the top range category by construction and bias the fitted control
 toward large fleets; resolving first removes that artifact.
 
+**`number_of_bicycles` construct fix (2026-07-08).** The target CSV
+(`target2026_number_of_bicycles_by_kreis.csv`) counts bicycles INCLUDING pedelecs/e-bikes
+(MiD codebook table H12.3 "Anzahl Fahrraeder/Pedelecs/E-Bikes im Haushalt"; the matching
+SrV side is `E_ANZ_RAD_ALLE_6` "alle Raeder", `srv2023_bikes_incl_ebikes_by_kreis.csv`). The
+seed derivation originally resolved `number_of_bicycles` from `H_ANZRAD`, which EXCLUDES
+pedelecs -- a construct mismatch against the incl-pedelec target, verified against the
+server MiD B1 microdata (218,039 valid rows) to systematically understate ownership (~31 %
+of households own >= 1 pedelec). The fix: `attributes.map_number_of_bicycles` now resolves
+from the MiD-provided combined column `anzpedrad`, verified to equal
+`min(H_ANZRAD + H_ANZPED, 10)` on every valid row (0 mismatches; the 99 missing code
+propagates). `H_ANZRAD` is retained on the donor frames for any consumer that still needs
+the exclusive count.
+
 **Two seed paths, both wired.** The pipeline has two ways to build the PopulationSim
 seed: the raw-seed path (`mid.load_mid_seed`, `complete_members=False`, reads the MiD CSVs
 directly) and the completed-donor path (`mid.project_completed_seed`,
-`complete_members=True`, the pipeline default). Both now derive the
-`number_of_cars`/`number_of_bicycles` seed columns from the donor's raw
-`H_ANZAUTO`/`H_ANZRAD` columns, using a seeded RNG (`random_seed + 24680`, disjoint from
-the other imputation streams) for the group-wise 99-code imputation. Each of the four
-controls is individually toggleable via its config key; with all four toggles off the
-stage output is byte-identical to before this feature.
+`complete_members=True`, the pipeline default). Both derive the
+`number_of_cars`/`number_of_bicycles`/`has_ebike` seed columns from the donor's raw
+`H_ANZAUTO`/`anzpedrad`/`H_ANZPED` columns, using a seeded RNG (`random_seed + 24680`,
+disjoint from the other imputation streams) for the group-wise 99-code imputation. Each of
+the four controls is individually toggleable via its config key; with all four toggles off
+the stage output is byte-identical to before this feature.
 
-**`has_ebike` defaults off -- server dependency.** The `has_ebike` control's full
-machinery (registry entry, target loader, count-table derivation, `attributes.map_has_ebike`
-seed-column resolver) is built and unit-tested, but the toggle defaults to `off` because:
-the MiD household e-bike source column name has not yet been verified against the server
-microdata (`braunschweig.population.popsim.ebike_seed_column` has no default and must be
-set explicitly), and the completed-donor path (`project_completed_seed`) does not carry a
-raw e-bike column at all. Activating `has_ebike` requires (a) confirming the real MiD
-household e-bike column against the server data and setting `ebike_seed_column`
-accordingly, and (b) extending the `completed_donor` stage to carry that raw column so the
-default (`complete_members=True`) pipeline path can derive it too. This is tracked under
-issue #116. On the completed-donor path, force-enabling `has_ebike` today raises
-immediately (no silent fallback to a guessed column or a skipped control); do not treat
-`has_ebike` as an active control in the default pipeline configuration.
+**`has_ebike` now defaults on -- server verification resolved (2026-07-08).** The MiD
+household e-bike column was identified and verified against the server MiD B1 microdata:
+`H_ANZPED` (Anzahl Pedelecs; values 0..10, missing code 99, the same code schema as
+`H_ANZAUTO`/`H_ANZRAD`). `braunschweig.population.popsim.ebike_seed_column` now defaults to
+`H_ANZPED` (still configurable, in case a future MiD delivery renames the column), and both
+seed paths (`mid.load_mid_seed` and `mid.project_completed_seed`) derive `has_ebike` via
+`attributes.map_has_ebike`. `has_ebike` is written onto the persons frame in
+`assembly.map_mid_person_attributes` (alongside `number_of_cars`/`number_of_bicycles`) so
+the control is measurable against the realized population, not just derivable on the seed.
+The remaining documented assumption: MiD "Pedelec" is treated as equivalent to SrV "E-Rad"
+(the SrV construct may additionally include S-Pedelecs); this is a minor construct edge
+case, not expected to materially bias the control. Issue #116 is resolved.
 
 **Provenance and validation caveats carry over from the target tables.** As documented
 above, the SrV inputs feeding these targets are assumption-grade PSU estimates from a
@@ -127,8 +139,8 @@ PopulationSim, not an independent validation reference: PopulationSim fitting a 
 its own target says nothing about whether the fitted population matches reality on any
 other axis, and convergence of the IPF fit is not the same as validation.
 
-**Deferred to the server phase** (tracked under issue #116): the S2-A proxy evidence gate
-(comparing the current-set vs. switched-set targets), a decision on down-weighting the
-assumption-grade SrV rows by measured uncertainty (not by preference), an S2-A validation
-refresh, verification of the `has_ebike` source column, and a 1-Kreis / 1% end-to-end
-smoke test of the `popsim_mid` stage with all four controls active.
+**Remaining follow-ups:** the S2-A proxy evidence gate (comparing the current-set vs.
+switched-set targets), a decision on down-weighting the assumption-grade SrV rows by
+measured uncertainty (not by preference), an S2-A validation refresh, and a 1-Kreis / 1%
+end-to-end smoke test of the `popsim_mid` stage with all four controls active (still
+pending a server run; the unit/integration test suite is green locally).

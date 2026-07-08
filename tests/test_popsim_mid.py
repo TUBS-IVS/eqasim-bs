@@ -451,8 +451,11 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
     # imputation (bugfix wave), so the fixtures must include them.
     # H_GR / H_GEW and P_GEW / kernwo joined the attribute usecols so the
     # member-completed frames can serve BOTH expansion and the PopulationSim seed.
+    # anzpedrad / H_ANZPED joined MID_HOUSEHOLD_ATTR_COLS 2026-07-08 (bikes-incl-pedelec
+    # construct + verified e-bike column), so the fixture must include them too.
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n1,3,4,1,2,72,2,2,1.0,1,1\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        "1,3,4,1,2,2,0,72,2,2,1.0,1,1\n",
         encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
@@ -461,8 +464,8 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
         encoding="utf-8",
     )
     households, persons = mid.load_mid_attributes(tmp_path)
-    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "RegioStaR7", "hhgr_gr",
-            "H_GR", "H_GEW"} <= set(households.columns)
+    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "anzpedrad", "H_ANZPED",
+            "RegioStaR7", "hhgr_gr", "H_GR", "H_GEW"} <= set(households.columns)
     assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1",
             "P_GEW", "kernwo"} <= set(persons.columns)
 

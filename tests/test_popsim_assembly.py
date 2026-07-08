@@ -45,6 +45,12 @@ def _mid_households():
             "hheink_gr1": [4, 9],     # 1500-2000 -> 1750; 4000-4600 -> 4300
             "H_ANZAUTO": [1, 2],
             "H_ANZRAD": [2, 0],
+            # anzpedrad = bicycles INCLUDING pedelecs (default number_of_bicycles source,
+            # verified 2026-07-08); no pedelecs here, so it equals H_ANZRAD.
+            "anzpedrad": [2, 0],
+            # H_ANZPED = Anzahl Pedelecs (default has_ebike source, verified 2026-07-08);
+            # neither household owns one.
+            "H_ANZPED": [0, 0],
         }
     )
 

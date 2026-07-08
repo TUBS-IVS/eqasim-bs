@@ -21,10 +21,10 @@ def _write_mid_attribute_fixture(tmp_path):
     weekend-reporting household (kernwo=4) so the weekend-plan-match branch runs.
     Mirrors tests/test_popsim_member_completion_integration.py."""
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
-        "A,3,4,1,2,73,4,4,1.0,1,1\n"
-        "B,3,4,1,2,73,4,4,1.0,2,2\n"
-        "C,3,4,1,2,73,4,4,1.0,2,2\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        "A,3,4,1,2,2,0,73,4,4,1.0,1,1\n"
+        "B,3,4,1,2,2,0,73,4,4,1.0,2,2\n"
+        "C,3,4,1,2,2,0,73,4,4,1.0,2,2\n",
         encoding="utf-8",
     )
     (tmp_path / "MiD2023_Personen.csv").write_text(
