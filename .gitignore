@@ -102,7 +102,9 @@ zensus_hh_inspect.txt
 # (eqasim-data/data/braunschweig/mid/mid2023_*.csv), the small, derived SrV
 # 2023 Braunschweig+RGB aggregate reference tables
 # (eqasim-data/data/braunschweig/srv/srv2023_*.csv -- NOT srv2023_raw/, which
-# is the local-only scientific-use microdata), and the project's own
+# is the local-only scientific-use microdata), the small LSN income-tax
+# per-Kreis aggregate (eqasim-data/data/braunschweig/lsn/lsn2022_*.csv -- NOT
+# lsn/raw/, which stays local), and the project's own
 # calibration-evaluation outputs (.../mid/education_calibration/*), plus the
 # documentation markdown. Do NOT `git add -f` any other data file here
 # (Mikrozensus tables, NDS school/Hochschule/Kita facility tables, ALKIS/ATKIS,
