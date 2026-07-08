@@ -18,8 +18,15 @@
 # behaviour authority). The offset magnitude is recorded; consumers of
 # MiD-anchored trip statistics must be aware totals shift accordingly.
 #
-# ASSUMPTION (Wolfsburg): 03103 is not covered by SrV; its row uses the SrV
-# region total (same convention as target2026_has_ebike).
+# ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer): 03103 is not covered by
+# SrV. Its trips_0 share is the SrV region total scaled by the RELATIVE
+# immobility of Wolfsburg in the MiD 2023 regional Aufstockung (committed
+# mid2023_P36_1.csv: nicht_mobil WOB / nicht_mobil ZGB-Gesamt, e.g. 21/19);
+# the three mobile classes are rescaled proportionally from the SrV region
+# total so the row sums to 1. This keeps the SrV LEVEL anchoring while
+# injecting Wolfsburg's MiD-measured relative deviation. ASSUMPTION: the
+# WOB-vs-region immobility RATIO transfers across survey methods and day
+# universes (MiD P36.1 = all reporting days; SrV = Di-Do).
 #
 # ASSUMPTION (invalid-share redistribution): the SrV trips_* shares are
 # conditional on the "computable" universe (E_ANZ_WEGE = -7, ~5% of persons
@@ -36,5 +43,5 @@ ars5,source,n_effective,trips_0,trips_1_2,trips_3_4,trips_5plus
 03154,srv,1655,0.1146,0.3314,0.33,0.224
 03157,srv,2301,0.1224,0.3452,0.2989,0.2335
 03158,srv,1772,0.1001,0.3218,0.3509,0.2273
-03103,srv_region_total_assumption,17269,0.1121,0.3368,0.3223,0.2287
+03103,srv_region_total_mid_p36_pattern,930,0.1239,0.3324,0.318,0.2257
 Gesamt,srv,17269,0.1121,0.3368,0.3223,0.2287

@@ -47,13 +47,39 @@ def test_every_row_sums_to_one_within_rounding_tolerance():
     assert ((sums - 1.0).abs() < 1e-3).all()
 
 
+_MID_P36 = _DATA / "mid" / "mid2023_P36_1.csv"
+
+
 @pytest.mark.skipif(not _COMMITTED_CSV.exists(), reason="committed target CSV not present")
-def test_wolfsburg_row_equals_gesamt_row():
+@pytest.mark.skipif(not _SRV_SOURCE.exists(), reason="committed SrV source table not present")
+@pytest.mark.skipif(not _MID_P36.exists(), reason="committed MiD P36.1 table not present")
+def test_wolfsburg_row_is_mid_p36_pattern_transfer_of_gesamt():
+    """WOB pattern transfer, recomputed INDEPENDENTLY from BOTH committed sources:
+    trips_0 = SrV region total trips_0 x (MiD P36.1 nicht_mobil WOB / ZGB-Gesamt);
+    mobile classes rescaled proportionally from the SrV region total (row sums to 1).
+    Never pinned to the script's own output (double-implementation numeric gate)."""
+    srv = pd.read_csv(_SRV_SOURCE, comment="#", dtype={"code": str})
+    total_row = srv[srv["level"] == "total"].iloc[0]
+    raw = {c: float(total_row[c]) for c in TRIP_CLASS_COLUMNS}
+    s = sum(raw.values())
+    gesamt = {c: v / s for c, v in raw.items()}
+
+    p36 = pd.read_csv(_MID_P36, comment="#", dtype={"ars5": str}).set_index("ars5")
+    ratio = float(p36.loc["03103", "nicht_mobil"]) / float(p36.loc["03ZGB", "nicht_mobil"])
+
+    exp_trips_0 = gesamt["trips_0"] * ratio
+    mobile = [c for c in TRIP_CLASS_COLUMNS if c != "trips_0"]
+    mobile_total = sum(gesamt[c] for c in mobile)
+    expected = {"trips_0": exp_trips_0,
+                **{c: (1.0 - exp_trips_0) * gesamt[c] / mobile_total for c in mobile}}
+
     df = pd.read_csv(_COMMITTED_CSV, comment="#", dtype={"ars5": str}).set_index("ars5")
-    wolfsburg = df.loc["03103", list(TRIP_CLASS_COLUMNS)]
-    gesamt = df.loc["Gesamt", list(TRIP_CLASS_COLUMNS)]
-    assert wolfsburg.tolist() == gesamt.tolist()
-    assert df.loc["03103", "source"] == "srv_region_total_assumption"
+    for c in TRIP_CLASS_COLUMNS:
+        assert float(df.loc["03103", c]) == pytest.approx(expected[c], abs=1e-4), c
+    # WOB is deliberately MORE immobile than the region (MiD P36.1: 21% vs 19%).
+    assert float(df.loc["03103", "trips_0"]) > float(df.loc["Gesamt", "trips_0"])
+    assert df.loc["03103", "source"] == "srv_region_total_mid_p36_pattern"
+    assert int(df.loc["03103", "n_effective"]) == int(p36.loc["03103", "n_unweighted"])
     assert df.loc["Gesamt", "source"] == "srv"
 
 
@@ -82,6 +108,6 @@ def test_header_contains_the_three_documented_decisions():
     assert "ASSUMPTION (universe)" in text
     assert "0.63pp" in text
     assert "DECISION (level anchoring)" in text
-    assert "ASSUMPTION (Wolfsburg)" in text
-    assert "03103 is not covered by SrV" in text
+    assert "ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer)" in text
+    assert "03103 is not covered by" in text
     assert "prior_n = 0" in text
