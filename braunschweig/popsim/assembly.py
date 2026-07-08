@@ -273,7 +273,7 @@ def map_mid_person_attributes(
         ``attributes.*`` household mappers: ``H_ID``, ``oek_status``,
         ``hheink_gr1``, ``H_ANZAUTO``, ``anzpedrad`` (bicycles including pedelecs,
         the ``map_number_of_bicycles`` default source), and ``H_ANZPED`` (the
-        verified e-bike column, the ``map_has_ebike`` default source)).
+        verified e-bike column, the ``map_has_ebike`` default source).
     donor_col:
         Column name of the donor household key (default ``H_ID``).
     rng:
