@@ -59,6 +59,7 @@ Each feature's full description — data sources, flags, references, assumptions
 - **Long-haul freight injection (german-wide-freight v3)** -> [docs/features/freight.md](docs/features/freight.md)
 - **Shared persistent stage-cache (cache_share)** -> [docs/features/cache-share.md](docs/features/cache-share.md)
 - **Run analysis + SimWrapper dashboards** -> [docs/features/run-analysis.md](docs/features/run-analysis.md)
+- **Run-management GUI (catalog, live monitor, config studio, launch/queue)** -> [docs/features/runcontrol.md](docs/features/runcontrol.md)
 
 
 ## Language policy
