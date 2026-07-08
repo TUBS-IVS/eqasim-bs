@@ -134,10 +134,13 @@ KEY_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.status_kreis_control"
 # pseudo-households. Default 0.0 = raw per-Kreis H4 (no shrinkage). Range: >= 0.
 KEY_STATUS_KREIS_SHRINKAGE_N = "braunschweig.population.popsim.status_kreis_shrinkage_n"
 # Additional per-Kreis attribute controls (S1c, issue #109 follow-up), each driven by a
-# committed blended target (target2026_*). All default "on" (project rule: new features
-# default on) and individually toggleable; MiD-only (their seed columns have no ENTD
-# pendant). "off" for a given attribute drops its control + its seed column (byte-identical
-# to today for that attribute). The blended targets are FINAL (consumed with prior_n = 0).
+# committed blended target (target2026_*) and individually toggleable; MiD-only (their
+# seed columns have no ENTD pendant). "off" for a given attribute drops its control + its
+# seed column (byte-identical to today for that attribute). The blended targets are FINAL
+# (consumed with prior_n = 0). number_of_cars / number_of_bicycles default "on" (project
+# rule: new features default on); has_ebike defaults "off" -- see _KREIS_CONTROL_DEFAULT
+# for why (not yet wired into the default completed-donor seed path, no server-verified
+# source column; issue #116).
 KEY_CARS_KREIS_CONTROL = "braunschweig.population.popsim.number_of_cars_kreis_control"
 KEY_BIKES_KREIS_CONTROL = "braunschweig.population.popsim.number_of_bicycles_kreis_control"
 KEY_EBIKE_KREIS_CONTROL = "braunschweig.population.popsim.has_ebike_kreis_control"
@@ -188,17 +191,33 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
 }
 
+# Per-entry default for its toggle (project rule: new features default "on"),
+# EXCEPT has_ebike: the completed-donor (complete_members=True, the pipeline
+# default) seed path cannot derive it yet (no raw e-bike column on that donor;
+# see mid.project_completed_seed), and the raw-seed path requires a
+# server-verified MiD household e-bike column name that is not yet configured
+# (ebike_seed_column). Defaulting has_ebike "on" would make the default pipeline
+# non-runnable; keep it "off" until the server verification lands (issue #116).
+_KREIS_CONTROL_DEFAULT = {
+    "economic_status": "on",
+    "number_of_cars": "on",
+    "number_of_bicycles": "on",
+    "has_ebike": "off",  # server-blocked: see the note above and issue #116.
+}
+
 
 def active_kreis_entries(context, source_name):
     """Return the KREIS attribute-control REGISTRY entries active for this run.
 
     An entry is active when its per-attribute toggle resolves to "on" AND the donor
     source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
-    ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults to
-    "on" (project rule: new features default on); resolution mirrors the historical
-    economic_status toggle exactly (``str(context.config(KEY, "on")).strip().lower() ==
-    "on"``), so a missing config value reads as ON while an explicit non-"on" value
-    (e.g. "off") disables that one attribute.
+    ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
+    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- economic_status,
+    number_of_cars, and number_of_bicycles default "on"; has_ebike defaults "off" because
+    it is not yet wired into the default completed-donor seed path and has no verified
+    source column (issue #116). Resolution mirrors the historical economic_status toggle
+    exactly (``str(context.config(KEY, default)).strip().lower() == "on"``), so a missing
+    config value reads as its per-entry default while an explicit "on"/"off" always wins.
 
     Returns the entries in REGISTRY order (economic_status first), so downstream
     catalog rendering and count-table merges are deterministic.
@@ -213,7 +232,8 @@ def active_kreis_entries(context, source_name):
             raise ValueError(
                 f"active_kreis_entries: no config toggle registered for REGISTRY entry "
                 f"{entry.name!r}; add it to _KREIS_CONTROL_TOGGLE_KEY.")
-        if str(context.config(toggle_key, "on")).strip().lower() == "on":
+        default = _KREIS_CONTROL_DEFAULT.get(entry.name, "on")
+        if str(context.config(toggle_key, default)).strip().lower() == "on":
             active.append(entry)
     return active
 
@@ -390,21 +410,29 @@ def configure(context):
     # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
     if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
         context.config("data_path")
-    # KREIS attribute controls (issue #109 + S1c). Each defaults "on" (project rule). When
-    # any is on, the committed per-Kreis target CSV under data_path is needed, so ensure
+    # KREIS attribute controls (issue #109 + S1c). Each defaults per _KREIS_CONTROL_DEFAULT
+    # (project rule: new features default on) -- EXCEPT has_ebike, which defaults "off"
+    # because it is not yet wired into the default completed-donor seed path and has no
+    # server-verified source column (see _KREIS_CONTROL_DEFAULT and issue #116). When any
+    # is on, the committed per-Kreis target CSV under data_path is needed, so ensure
     # data_path is declared (no-op if already). economic_status also carries a configurable
     # Dirichlet shrinkage prior; the S1c targets are FINAL (prior_n = 0, no key).
-    context.config(KEY_STATUS_KREIS_CONTROL, "on")
+    context.config(KEY_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["economic_status"])
     context.config(KEY_STATUS_KREIS_SHRINKAGE_N, 0.0)
-    context.config(KEY_CARS_KREIS_CONTROL, "on")
-    context.config(KEY_BIKES_KREIS_CONTROL, "on")
-    context.config(KEY_EBIKE_KREIS_CONTROL, "on")
+    context.config(KEY_CARS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_cars"])
+    context.config(KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"])
+    context.config(KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"])
     context.config(KEY_EBIKE_SEED_COLUMN, "")
-    _kreis_control_keys = (
-        KEY_STATUS_KREIS_CONTROL, KEY_CARS_KREIS_CONTROL,
-        KEY_BIKES_KREIS_CONTROL, KEY_EBIKE_KREIS_CONTROL,
+    _kreis_control_keys_and_defaults = (
+        (KEY_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["economic_status"]),
+        (KEY_CARS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_cars"]),
+        (KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"]),
+        (KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"]),
     )
-    if any(str(context.config(k, "on")).strip().lower() == "on" for k in _kreis_control_keys):
+    if any(
+        str(context.config(k, default)).strip().lower() == "on"
+        for k, default in _kreis_control_keys_and_defaults
+    ):
         context.config("data_path")
     # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
     context.config(KEY_SEED_DAY_FILTER, "default")
@@ -648,7 +676,6 @@ def execute(context) -> pd.DataFrame:
     # the configurable Dirichlet shrinkage prior. The three S1c targets are FINAL (prior_n=0).
     active_entries = active_kreis_entries(context, source_name)
     active_entry_names = tuple(c.name for c in active_entries)
-    economic_status_effective = "economic_status" in active_entry_names
     status_prior_n = float(context.config(KEY_STATUS_KREIS_SHRINKAGE_N))
     # E-bike seed column (server-verified). "" -> None; the loader fail-fasts if has_ebike
     # is active without it (no silent fallback).
@@ -841,15 +868,17 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
         # load_mid_seed does, so the seed carries it for the household_type control.
-        # NOTE (deferred, server phase): project_completed_seed currently derives only the
-        # economic_status seed column (oek_status pass-through). The count-style seed columns
-        # (number_of_cars / number_of_bicycles / has_ebike) are derived only in load_mid_seed
-        # (below). Wiring those into the complete_members=True donor build (which also requires
-        # the completed_donor stage to carry the raw H_ANZAUTO / H_ANZRAD / e-bike columns) is
-        # part of the deferred server integration; see the Task 4 report.
+        # number_of_cars / number_of_bicycles are derived here too, from the raw
+        # H_ANZAUTO / H_ANZRAD columns the completed_donor stage already carries
+        # (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike remains deferred to the server
+        # phase: the completed-donor households do not carry a raw e-bike column
+        # and the MiD household e-bike column name is server-unverified (#116);
+        # project_completed_seed raises if has_ebike is active on this path.
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
-            include_status_seed_col=economic_status_effective,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).

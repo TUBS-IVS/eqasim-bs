@@ -1,10 +1,17 @@
-"""Tests for the generalised seed-column derivation in load_mid_seed (Task 3).
+"""Tests for the generalised seed-column derivation in load_mid_seed (Task 3) and
+project_completed_seed (Task 4 critical-review fix).
 
 Covers:
 - attributes.map_has_ebike (mirrors map_number_of_cars / map_number_of_bicycles).
 - load_mid_seed deriving clean, MECE seed columns only for ACTIVE registry entries
   (kreis_control_entries), with number_of_cars/number_of_bicycles/has_ebike using the
   RESOLVED (99-imputed) column and economic_status staying a raw oek_status pass-through.
+- project_completed_seed (the default complete_members=True donor path) deriving the same
+  count-style columns from the completed donor's raw H_ANZAUTO/H_ANZRAD, and REJECTING
+  has_ebike (not yet supported on this path; see issue #116) instead of silently skipping it.
+- active_kreis_entries defaulting has_ebike OFF while the other entries stay ON (Task 4
+  critical-review fix: the default pipeline must not crash on a control the default seed
+  path cannot derive).
 """
 from __future__ import annotations
 
@@ -15,6 +22,8 @@ import pandas as pd
 import pytest
 
 from braunschweig.popsim import attributes
+from braunschweig.popsim import mid
+from braunschweig.popsim import sources
 from braunschweig.popsim.kreis_attribute_control import REGISTRY
 
 
@@ -85,3 +94,86 @@ def test_load_mid_seed_include_status_seed_col_alias_matches_economic_status_ent
     assert hh_alias["oek_status"].tolist() == hh_entry["oek_status"].tolist()
     # Raw pass-through: values are exactly the source codes (3, 4), not resolved/imputed.
     assert sorted(hh_alias["oek_status"].tolist()) == [3, 4]
+
+
+# --- Task 4 critical-review fix: project_completed_seed (complete_members=True path) ---
+
+
+def _completed_donor_frames():
+    """Minimal completed-donor households/persons frame, carrying the raw columns
+    (H_ANZAUTO / H_ANZRAD / hhgr_gr / oek_status) that mid.MID_HOUSEHOLD_ATTR_COLS
+    already loads for the completed_donor stage."""
+    cols = sources.get_source("mid").seed_columns()
+    households = pd.DataFrame({
+        cols.household_id: ["h1", "h2", "h3"],
+        cols.household_weight: [1.0, 1.0, 1.0],
+        "H_GR": [1, 2, 2], "H_MIETE": [1, 2, 1], "haustyp": [1, 5, 1],
+        "RegioStaR7": [73, 74, 73],
+        "hhgr_gr": [1, 2, 2],
+        "oek_status": [2, 4, 3],
+        "H_ANZAUTO": [1, 99, 2],  # 99 = keine Angabe -> imputed away
+        "H_ANZRAD": [2, 0, 99],
+    })
+    persons = pd.DataFrame({
+        cols.person_household_id: ["h1", "h2", "h2", "h3"],
+        cols.person_id: ["p1", "p2", "p3", "p4"],
+        cols.person_weight: [1.0, 1.0, 1.0, 1.0],
+        cols.age: [40, 38, 10, 45],
+        cols.sex: [1, 2, 1, 2],
+    })
+    return cols, households, persons
+
+
+def test_project_completed_seed_derives_active_count_columns():
+    cols, households, persons = _completed_donor_frames()
+    entries = [_entry("number_of_cars"), _entry("number_of_bicycles")]
+    seed_hh, _seed_p = mid.project_completed_seed(
+        households, persons, cols,
+        kreis_control_entries=entries, kreis_seed_rng=np.random.RandomState(0),
+    )
+    assert "number_of_cars" in seed_hh.columns
+    assert "number_of_bicycles" in seed_hh.columns
+    # 99 (keine Angabe) is imputed away: every value lies in the valid 0..10 range.
+    assert set(seed_hh["number_of_cars"]).issubset(set(range(0, 11)))
+    assert set(seed_hh["number_of_bicycles"]).issubset(set(range(0, 11)))
+    assert 99 not in set(seed_hh["number_of_cars"])
+    assert 99 not in set(seed_hh["number_of_bicycles"])
+
+
+def test_project_completed_seed_count_style_entry_requires_seeded_rng():
+    cols, households, persons = _completed_donor_frames()
+    entries = [_entry("number_of_cars")]
+    with pytest.raises(ValueError):
+        mid.project_completed_seed(households, persons, cols, kreis_control_entries=entries)
+
+
+def test_project_completed_seed_rejects_has_ebike():
+    cols, households, persons = _completed_donor_frames()
+    entries = [_entry("has_ebike")]
+    with pytest.raises(ValueError, match="116"):
+        mid.project_completed_seed(
+            households, persons, cols,
+            kreis_control_entries=entries, kreis_seed_rng=np.random.RandomState(0),
+        )
+
+
+# --- Task 4 critical-review fix: has_ebike defaults OFF, others stay ON ---
+
+
+class _FakeContext:
+    """Minimal synpp-context stand-in: config(key, default) reads a dict."""
+
+    def __init__(self, values=None):
+        self._values = values or {}
+
+    def config(self, key, default=None):
+        return self._values.get(key, default)
+
+
+def test_has_ebike_defaults_off_others_on():
+    from braunschweig.popsim.stage import active_kreis_entries
+
+    active = active_kreis_entries(_FakeContext(), "mid")
+    names = {c.name for c in active}
+    assert names == {"economic_status", "number_of_cars", "number_of_bicycles"}
+    assert "has_ebike" not in names

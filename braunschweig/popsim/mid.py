@@ -582,19 +582,91 @@ def load_mid_seed(
     return households, persons, report
 
 
-def project_completed_seed(households, persons, columns, *, include_status_seed_col: bool = False):
+def project_completed_seed(
+    households, persons, columns, *,
+    kreis_control_entries: Sequence[KreisAttributeControl] = (),
+    kreis_seed_rng=None,
+    ebike_seed_column: Optional[str] = None,
+    include_status_seed_col: bool = False,
+):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
 
     The complete_members=True path (stage.py) builds the seed from the completed
-    donor frames; without this it called ``select_seed_columns`` WITHOUT deriving
-    ``hh_type5``, so the per-batch seed CSV lacked the column and PopulationSim
-    crashed (``'DataFrame' object has no attribute 'hh_type5'``) once the Tier-1
-    household_type control was enabled. This mirrors load_mid_seed's projection:
-    derive hh_type5 from the persons frame, join it onto households, then select the
-    seed columns retaining the raw control cols (H_GR / H_MIETE / haustyp) plus
-    hh_type5 and RegioStaR7.
+    donor frames; without the hh_type5 derivation below it called
+    ``select_seed_columns`` WITHOUT deriving ``hh_type5``, so the per-batch seed CSV
+    lacked the column and PopulationSim crashed (``'DataFrame' object has no
+    attribute 'hh_type5'``) once the Tier-1 household_type control was enabled.
+    This mirrors load_mid_seed's projection: derive the active count-style KREIS
+    control seed columns from the raw donor columns the completed-donor frame
+    already carries (H_ANZAUTO / H_ANZRAD / hhgr_gr; see
+    :data:`MID_HOUSEHOLD_ATTR_COLS`), derive hh_type5 from the persons frame and
+    join it onto households, then select the seed columns retaining the raw
+    control cols (H_GR / H_MIETE / haustyp) plus hh_type5, RegioStaR7, and each
+    active KREIS control's seed column.
+
+    Args:
+        kreis_control_entries: The ACTIVE :class:`KreisAttributeControl` registry
+            entries (see :mod:`braunschweig.popsim.kreis_attribute_control`) whose
+            ``seed_column`` must be present on the returned seed households.
+            ``economic_status`` is a raw ``oek_status`` pass-through (already
+            present on the completed-donor households). ``number_of_cars`` /
+            ``number_of_bicycles`` are derived here via the corresponding
+            ``attributes.map_*`` resolver (99 missing code imputed) from the raw
+            H_ANZAUTO / H_ANZRAD columns the completed-donor households already
+            carry. ``has_ebike`` is NOT supported on this path: the
+            completed-donor households do not carry a raw e-bike column and the
+            MiD household e-bike column name is server-unverified (issue #116);
+            an active ``has_ebike`` entry raises instead of silently skipping the
+            control (no silent fallback).
+        kreis_seed_rng: Seeded :class:`numpy.random.RandomState` for the
+            count-style entry derivations (``number_of_cars`` /
+            ``number_of_bicycles``). REQUIRED when either is active (seeded
+            randomness rule: no random process without an explicit seed).
+        ebike_seed_column: Accepted for call-site symmetry with
+            :func:`load_mid_seed`; unused here because an active ``has_ebike``
+            entry always raises on this path (see above).
+        include_status_seed_col: DEPRECATED alias for
+            ``kreis_control_entries=(economic_status entry,)``; kept so existing
+            callers/tests stay byte-identical (raw ``oek_status`` pass-through,
+            no resolve/derivation).
     """
+    # Deprecated alias: include_status_seed_col=True is equivalent to activating the
+    # economic_status registry entry (byte-identical to the pre-existing behaviour).
+    effective_kreis_entries: list[KreisAttributeControl] = list(kreis_control_entries)
+    if include_status_seed_col and not any(
+        entry.name == "economic_status" for entry in effective_kreis_entries
+    ):
+        effective_kreis_entries.append(
+            next(entry for entry in KREIS_CONTROL_REGISTRY if entry.name == "economic_status")
+        )
+    active_kreis_entry_names = {entry.name for entry in effective_kreis_entries}
+
+    if "has_ebike" in active_kreis_entry_names:
+        raise ValueError(
+            "project_completed_seed: has_ebike kreis control is not yet supported on the "
+            "complete_members=True completed-donor seed path -- the completed-donor "
+            "households do not carry a raw MiD household e-bike column and its name is "
+            "server-unverified (issue #116). Disable it "
+            "(braunschweig.population.popsim.has_ebike_kreis_control=off) or use "
+            "complete_members=False (load_mid_seed) with a verified ebike_seed_column."
+        )
+
+    # Derive the clean, MECE seed columns for the active count-style kreis controls from
+    # the raw H_ANZAUTO / H_ANZRAD columns the completed-donor households already carry
+    # (see MID_HOUSEHOLD_ATTR_COLS); mirrors the load_mid_seed derivation exactly.
+    _count_style_entries = active_kreis_entry_names & {"number_of_cars", "number_of_bicycles"}
+    if _count_style_entries and kreis_seed_rng is None:
+        raise ValueError(
+            "project_completed_seed: count-style kreis controls "
+            f"{sorted(_count_style_entries)} are active but kreis_seed_rng is not set; "
+            "random imputation of the 99 missing code must use an explicit seed."
+        )
+    if "number_of_cars" in active_kreis_entry_names:
+        households = attributes.map_number_of_cars(households, rng=kreis_seed_rng)
+    if "number_of_bicycles" in active_kreis_entry_names:
+        households = attributes.map_number_of_bicycles(households, rng=kreis_seed_rng)
+
     hh_type5_series = seedmod.derive_hh_type5(
         persons,
         household_id_col=columns.person_household_id,
@@ -605,11 +677,16 @@ def project_completed_seed(households, persons, columns, *, include_status_seed_
         on=columns.household_id,
     )
     _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
-    if include_status_seed_col:
-        # economic_status x Kreis control (issue #109): retain the donor's oek_status
-        # (already present on the completed-donor households) so the control expression
-        # (households.oek_status == k) can be evaluated by PopulationSim.
-        _hh_extra = _hh_extra + ("oek_status",)
+    for _entry in effective_kreis_entries:
+        # All current registry entries are household-level; person-level entries are
+        # not yet supported (no such entry exists in the registry -- YAGNI).
+        if _entry.level != "household":
+            raise NotImplementedError(
+                f"project_completed_seed: person-level kreis control entry {_entry.name!r} is "
+                "not supported yet (only household-level entries are wired)."
+            )
+        if _entry.seed_column not in _hh_extra:
+            _hh_extra = _hh_extra + (_entry.seed_column,)
     return seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=_hh_extra,

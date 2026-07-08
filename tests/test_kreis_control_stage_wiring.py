@@ -156,13 +156,15 @@ class _FakeContext:
         return self._values.get(key, default)
 
 
-def test_active_kreis_entries_all_default_on_for_mid():
+def test_active_kreis_entries_default_on_except_has_ebike_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> every toggle defaults to "on" (project rule).
+    # Empty config -> economic_status / number_of_cars / number_of_bicycles default "on"
+    # (project rule); has_ebike defaults "off" (not yet wired into the default
+    # completed-donor seed path, no server-verified source column; issue #116).
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"
+        "economic_status", "number_of_cars", "number_of_bicycles"
     ]
 
 
@@ -188,13 +190,25 @@ def test_active_kreis_entries_all_off_is_empty():
 def test_active_kreis_entries_individual_toggle():
     from braunschweig.popsim import stage
 
-    # Turning off only number_of_cars keeps the other three active.
+    # Turning off only number_of_cars keeps economic_status / number_of_bicycles active
+    # (has_ebike defaults off regardless; see test_active_kreis_entries_has_ebike_can_be_turned_on).
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_CARS_KREIS_CONTROL: "off"}), "mid"
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == {"economic_status", "number_of_bicycles", "has_ebike"}
+    assert set(names) == {"economic_status", "number_of_bicycles"}
+
+
+def test_active_kreis_entries_has_ebike_can_be_turned_on():
+    from braunschweig.popsim import stage
+
+    # An explicit "on" always wins over the per-entry default.
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_EBIKE_KREIS_CONTROL: "on"}), "mid"
+    )
+    names = {c.name for c in active}
+    assert "has_ebike" in names
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---
