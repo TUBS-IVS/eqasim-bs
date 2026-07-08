@@ -64,6 +64,19 @@ def test_launch_rejects_uncurated_override(tmp_path):
     assert "curated" in r.json()["detail"]
 
 
+def test_template_inspect_rejects_traversal(tmp_path):
+    # Template files live flat in the repo root, so a name containing ".." must be
+    # rejected before it ever reaches read_text() (F-3, security). A literal "/" or "\\"
+    # segment (e.g. "..%2Fsecret.yml") gets dot-segment-normalized away by the HTTP
+    # client before the request is even sent, so it never reaches the route at all
+    # (verified: yields a plain 404, not our validator) -- "..secret.yml" is a single
+    # path segment that reaches _safe_relname() unmodified and still contains "..".
+    c, _, _ = _client(tmp_path)
+    r = c.get("/api/templates/..secret.yml/inspect?target=local")
+    assert r.status_code == 422
+    assert "invalid template name" in r.json()["detail"]
+
+
 def test_status_and_run_detail_and_log(tmp_path):
     c, db, worker = _client(tmp_path)
     c.post("/api/launch", data={"target": "local", "template": "config_local_test.yml",

@@ -17,7 +17,7 @@
       {% if run.stages.active %}&#9673; <b>{{ run.stages.active }}</b>{% endif %}
       {% if run.stages.weights_source == "equal_fallback" %}(stage widths: no history, equal){% endif %}
       {% if run.matsim and run.matsim.iteration is not none %}
-        &middot; iteration <b class="mono">{{ run.matsim.iteration }}/{{ run.matsim.last_iteration }}</b>
+        &middot; iteration <b class="mono">{{ run.matsim.iteration }}/{{ run.matsim.last_iteration if run.matsim.last_iteration is not none else "unknown" }}</b>
         {% if run.matsim.eta_seconds %}&middot; ETA ~<b class="mono">{{ (run.matsim.eta_seconds/3600)|round(1) }} h</b> (estimated){% endif %}
       {% endif %}
     </span>

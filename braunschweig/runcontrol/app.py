@@ -17,8 +17,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import registry
-from .collectors import config_inspect, matsim_progress, synpp_progress, vitals
+from .collectors import catalog, config_inspect, matsim_progress, synpp_progress, vitals
 from .configwriter import compose
 from .daemon import QueueWorker
 from .db import Database
@@ -38,6 +37,19 @@ def require_write(request: Request) -> None:
 def _run_id(label: str) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"{label}_{ts}"
+
+
+def _safe_relname(name: str) -> str:
+    """Reject anything that could escape the repo root when read/written by name alone.
+
+    Template files live flat in the repo root (see ExecutionTarget), so a legitimate
+    template name never contains a path separator or a ".." segment. Rejecting those
+    here -- before the name reaches read_text()/write_text() -- closes a path-traversal
+    opening in /api/templates/{name}/inspect and /api/launch's `template` field.
+    """
+    if not name or "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(422, "invalid template name")
+    return name
 
 
 def create_app(settings: Settings, db: Database, worker: QueueWorker,
@@ -127,6 +139,8 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     @app.get("/api/runs/{run_id}/logstream")
     async def api_logstream(run_id: str):
         row = _run_or_404(run_id)
+        if not row.get("log_path"):
+            raise HTTPException(404, "run has no log yet")
 
         async def gen():
             sent = 0
@@ -155,6 +169,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
 
     @app.get("/api/templates/{name}/inspect")
     def api_template_inspect(name: str, target: str):
+        name = _safe_relname(name)
         t = _target(target)
         try:
             res = config_inspect.inspect(t.read_text(name))
@@ -165,6 +180,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     @app.post("/api/launch", dependencies=[Depends(require_write)])
     def api_launch(target: str = Form(...), template: str = Form(...),
                    label: str = Form(...), overrides: str = Form("{}")):
+        template = _safe_relname(template)
         t = _target(target)
         try:
             template_yaml = t.read_text(template)
@@ -195,6 +211,11 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
             raise HTTPException(422, str(exc))
         return {"ok": True}
 
+    @app.get("/api/catalog")
+    def api_catalog(target: str):
+        res = catalog.scan(_target(target), db.list_runs())
+        return {"runs": res.runs, "n_manifest": res.n_manifest, "n_legacy": res.n_legacy}
+
     # ---- HTML pages ---------------------------------------------------------
     def _home_ctx(request: Request) -> dict:
         status = api_status()
@@ -216,7 +237,17 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         run = _enrich(_run_or_404(run_id))
         events = db.events(run_id)
         return templates.TemplateResponse("run.html", {"request": request, "run": run,
-                                                       "events": events, "tab": tab})
+                                                       "events": events, "tab": tab,
+                                                       "targets": sorted(targets)})
+
+    @app.get("/catalog", response_class=HTMLResponse)
+    def page_catalog(request: Request, target: str):
+        # Loaded on explicit visit only -- no HTMX auto-polling -- because the scan performs
+        # real target I/O (manifest_glob + listdir over the artifact directory) that must not
+        # run in the background on every page.
+        result = api_catalog(target)
+        return templates.TemplateResponse("catalog.html", {
+            "request": request, "target": target, "targets": sorted(targets), "catalog": result})
 
     @app.get("/studio", response_class=HTMLResponse)
     def page_studio(request: Request, target: str, template: str | None = None):

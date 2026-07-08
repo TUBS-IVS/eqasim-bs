@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Run catalog{% endblock %}
+{% block content %}
+  <div class="hero"><a href="/">&lsaquo; Runs</a> / <b>Run catalog</b> &mdash; {{ target }}
+    <span class="vital">target:
+      {% for t in targets %}<a href="/catalog?target={{ t }}" class="badge {{ 'running' if t == target else 'queued' }}">{{ t }}</a>{% endfor %}
+    </span>
+  </div>
+  <div style="padding:16px 24px">
+    <table>
+      <tr>
+        <th>Artifact / run</th><th>Origin</th><th>Kind</th><th>Status</th>
+        <th>Sampling</th><th>Git commit</th><th>Flags</th>
+      </tr>
+      {% for r in catalog.runs %}
+      <tr>
+        <td class="name">
+          {% if r.origin != "legacy_dir" %}<a href="/runs/{{ r.run_id }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}
+        </td>
+        <td class="mono">{{ r.origin }}</td>
+        <td class="mono">{{ r.kind }}</td>
+        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td class="mono">{{ r.sampling_hint }}{{ " (hint)" if r.origin == "legacy_dir" else "" }}</td>
+        <td class="mono">{{ r.git_commit }}</td>
+        <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="vital" style="margin-top:12px">
+      {{ catalog.n_manifest }} with manifest / {{ catalog.n_legacy }} legacy directories (fields unknown)
+    </p>
+  </div>
+{% endblock %}

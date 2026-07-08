@@ -89,3 +89,27 @@ def test_run_detail_tolerates_corrupt_config(tmp_path):
     worker.tick()
     (tmp_path / body["config_path"]).write_text("run: [\nbroken")
     assert c.get(f"/api/runs/{body['run_id']}").status_code == 200
+
+
+def test_catalog_page_lists_legacy_dirs(tmp_path):
+    # Catalog is on-demand (Task/F-1): visiting /catalog performs target I/O only when
+    # explicitly loaded, never via background polling.
+    c, _ = _client(tmp_path)
+    (tmp_path / "eqasim-data" / "output_bs_25pct_demo").mkdir(parents=True)
+    (tmp_path / "eqasim-data" / "cache_bs_1pct_x").mkdir(parents=True)
+    r = c.get("/catalog?target=local")
+    assert r.status_code == 200
+    html = r.text
+    assert "output_bs_25pct_demo" in html
+    assert "cache_bs_1pct_x" in html
+    assert "legacy" in html                                   # origin=legacy_dir shown
+    assert "unknown" in html                                   # legacy git_commit/status
+
+
+def test_catalog_api_counts(tmp_path):
+    c, _ = _client(tmp_path)
+    (tmp_path / "eqasim-data" / "output_bs_25pct_demo").mkdir(parents=True)
+    (tmp_path / "eqasim-data" / "cache_bs_1pct_x").mkdir(parents=True)
+    r = c.get("/api/catalog?target=local")
+    assert r.status_code == 200
+    assert r.json()["n_legacy"] == 2

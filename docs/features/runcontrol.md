@@ -9,7 +9,7 @@ run server via SSH + tmux.
 - **Design spec:** `docs/superpowers/specs/2026-07-08-runcontrol-gui-design.md`
 - **Implementation plan:** `docs/superpowers/plans/2026-07-08-runcontrol-gui.md`
 - **Source:** `braunschweig/runcontrol/`
-- **Tests:** `tests/runcontrol/` (66 tests, unit + local E2E; see "Verification
+- **Tests:** `tests/runcontrol/` (69 tests, unit + local E2E; see "Verification
   status" below)
 
 ## Starting the GUI
@@ -127,6 +127,19 @@ inspector/editor and in `configwriter.compose()`'s validated override path --
 no other file needs to change. Uncurated keys already present in a template
 are still shown (as a count, e.g. "12 uncurated keys"), just not editable.
 
+## Run catalog (`/catalog`)
+
+`collectors/catalog.py::scan()` merges three origins into one table -- runs with a
+`RunManifest` (authoritative), runs known to the SQLite DB without a manifest yet
+(queued), and legacy `output_*`/`cache_*` directories that predate runcontrol (fields
+"unknown", flagged `no_manifest`, sampling rate a directory-name *hint* only). It is
+surfaced on the `/catalog?target=<name>` page (and `GET /api/catalog?target=<name>`
+for the raw JSON), reachable from the "Catalog" link in the topbar next to "+ New run".
+The page performs the scan (a `manifest_glob()` + a `listdir()` over the target's
+`data_dir`) only when explicitly visited or the target switcher is clicked -- there is
+no HTMX auto-polling on this page, unlike the home page's hero, because the scan does
+real target I/O that should not run in the background unattended.
+
 ## V1 queue limitation
 
 The `QueueWorker` advances the queue only while the `serve` process is
@@ -220,7 +233,7 @@ optional infrastructure, not required to use the GUI interactively.
 
 ## Verification status
 
-- **Unit tests:** all 66 tests in `tests/runcontrol/` pass under the `eqasim`
+- **Unit tests:** all 69 tests in `tests/runcontrol/` pass under the `eqasim`
   conda environment (`settings`, `db`, `local_runner`/`LocalTarget`,
   `SshTarget` with an injected fake command runner, `registry`,
   `config_inspect`/`configwriter`, `synpp_progress`/`matsim_progress`/

@@ -1,6 +1,10 @@
 """Detached local run wrapper.
 
-Usage: python -m braunschweig.runcontrol.local_runner <runner> <config> <log> <exit_marker>
+Usage: python <path-to>/local_runner.py <runner> <config> <log> <exit_marker>
+
+Invoked by absolute file path (see targets/local.py), not `python -m`: the launch
+stays independent of the subprocess cwd/sys.path and cannot be shadowed by another
+checkout of this repo on the same machine.
 
 Runs `<python> <runner> <config>` (e.g. scripts/run_synpp.py config_x.yml)
 with stdout+stderr appended to <log>, then writes the exit code

@@ -6,7 +6,7 @@ and a one-line description so the GUI can render safe, self-explanatory
 controls. Keys match the config_*.yml keys verbatim."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _P = "braunschweig.population.popsim."
 
