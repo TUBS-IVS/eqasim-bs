@@ -12,9 +12,18 @@ reads it and writes only small, aggregated, weighted CSVs.
 Key data properties handled here (see the module docstrings of the
 individual ``build_*`` functions for details):
 
-* Weight columns (``GEWICHT_HH``, ``GEWICHT_P``) carry negative missing codes
-  (-9, -6) that must be filtered before any weighted aggregation. The drop
-  rate is logged (see CLAUDE.md "No silent fallbacks").
+* Weight columns (``GEWICHT_HH_ZENSUS``, ``GEWICHT_P_ZENSUS`` -- "fuer
+  stadtuebergreifende Auswertungen", full expansion to Zensus 2022 counts per
+  municipality) are used for ALL aggregation levels. The stratum-internal
+  standard weights (``GEWICHT_HH``, ``GEWICHT_P``) are normalized to mean ~1
+  WITHIN each ``ST_CODE`` stratum and therefore weight strata by sample share
+  instead of population share for any cross-stratum aggregate (total/kreis
+  rows, and per-municipality within the two "kleinstaedtisch-doerflich"
+  strata); they must not be used here (see docs/DECISIONS.md, fixed
+  2026-07-08). Both ZENSUS weight columns carry negative missing codes in
+  principle (-9, -6); this delivery has zero such rows, but the filter and
+  drop-rate logging are kept as a defensive guard (see CLAUDE.md "No silent
+  fallbacks").
 * Several categorical/metric variables carry negative missing codes
   (-10 Unplausibel, -9 Keine Angabe, -8 Nicht erhoben, -7 Berechnung nicht
   moeglich, -6 Nicht definiert, -5 Weiss nicht). These are excluded from the
@@ -24,9 +33,14 @@ individual ``build_*`` functions for details):
   the 7 ZGB Kreise other than Wolfsburg are expected to appear; the script
   fails loudly if this does not hold.
 * The sample is a stratified PSU design covering ~44 selected municipalities
-  within those Kreise (strata = ST_CODE / ST_CODE_NAME). Per-Kreis
-  aggregates are therefore ASSUMPTION-grade; per-stratum aggregates are the
-  design-safe level. Every output table carries rows at all three levels
+  within those Kreise (strata = ST_CODE / ST_CODE_NAME). The ZENSUS weight
+  expands each respondent to the true Zensus 2022 population per
+  municipality, so it is the correct weight for total/kreis/stratum
+  aggregates alike; the remaining caveat is one of COVERAGE, not weighting:
+  per-Kreis (and total) rows extrapolate from the sampled municipalities to
+  the full Kreis (ASSUMPTION-grade), while per-stratum rows are the
+  design-safe aggregation level (ST_CODE partitions exactly the sampled
+  municipalities). Every output table carries rows at all three levels
   (``level`` column: 'total' | 'kreis' | 'stratum') and states this caveat
   in its provenance header.
 
@@ -96,7 +110,7 @@ _CROSS_CHECK_CARS = {
     "03101": {"cars_0": 0.215, "cars_1": 0.584, "cars_2": 0.173, "cars_3plus": 0.028},
     "03102": {"cars_0": 0.143},
 }
-_CROSS_CHECK_EBIKE_HOUSEHOLD = {"03151": 0.331, "03101": 0.181}
+_CROSS_CHECK_EBIKE_HOUSEHOLD = {"03151": 0.3108, "03101": 0.181}
 _CROSS_CHECK_LICENSE = {"03101": 0.921}
 _CROSS_CHECK_DTICKET = {"03101": 0.088}
 
@@ -115,11 +129,11 @@ def load_households(raw_dir: Path) -> tuple[pd.DataFrame, pd.Series]:
     """Load the SrV household file, derive Kreis, and validate the weight.
 
     Returns a tuple ``(households_valid, kreis_by_hhnr)`` where
-    ``households_valid`` has rows with a negative ``GEWICHT_HH`` (missing
-    codes -9/-6) dropped, and ``kreis_by_hhnr`` is a Kreis lookup built from
-    the FULL (weight-unfiltered) household frame -- Kreis is a geography
-    attribute derived from AGS, not from the weight, so persons must be
-    joinable to it even if their household's weight was invalid.
+    ``households_valid`` has rows with a negative ``GEWICHT_HH_ZENSUS``
+    (missing codes -9/-6) dropped, and ``kreis_by_hhnr`` is a Kreis lookup
+    built from the FULL (weight-unfiltered) household frame -- Kreis is a
+    geography attribute derived from AGS, not from the weight, so persons
+    must be joinable to it even if their household's weight was invalid.
     """
     df = _read_srv_csv(raw_dir / HOUSEHOLDS_FILE)
     df["ags8"] = df["AGS"].astype(str).str.zfill(8)
@@ -144,20 +158,20 @@ def load_households(raw_dir: Path) -> tuple[pd.DataFrame, pd.Series]:
     kreis_by_hhnr = df.set_index("HHNR")["kreis"]
 
     n_total = len(df)
-    n_negative_weight = int((df["GEWICHT_HH"] < 0).sum())
+    n_negative_weight = int((df["GEWICHT_HH_ZENSUS"] < 0).sum())
     if n_negative_weight:
         logger.warning(
-            "[households] GEWICHT_HH: dropping %d/%d (%.1f%%) rows with a negative "
+            "[households] GEWICHT_HH_ZENSUS: dropping %d/%d (%.1f%%) rows with a negative "
             "missing code (-9/-6) before any weighted aggregation",
             n_negative_weight, n_total, 100.0 * n_negative_weight / n_total,
         )
     else:
         logger.info(
-            "[households] GEWICHT_HH: primary weight valid for %d/%d (100.0%%) rows, "
+            "[households] GEWICHT_HH_ZENSUS: primary weight valid for %d/%d (100.0%%) rows, "
             "0 fallback/dropped",
             n_total, n_total,
         )
-    households_valid = df[df["GEWICHT_HH"] >= 0].copy()
+    households_valid = df[df["GEWICHT_HH_ZENSUS"] >= 0].copy()
     logger.info(
         "[households] loaded %d households (%d after weight validation) across %d Kreise",
         n_total, len(households_valid), len(EXPECTED_KREIS_CODES),
@@ -166,7 +180,8 @@ def load_households(raw_dir: Path) -> tuple[pd.DataFrame, pd.Series]:
 
 
 def load_persons(raw_dir: Path, kreis_by_hhnr: pd.Series) -> pd.DataFrame:
-    """Load the SrV person file, attach Kreis via HHNR, and validate the weight."""
+    """Load the SrV person file, attach Kreis via HHNR, and validate the
+    ``GEWICHT_P_ZENSUS`` weight."""
     df = _read_srv_csv(raw_dir / PERSONS_FILE)
 
     df["kreis"] = df["HHNR"].map(kreis_by_hhnr)
@@ -179,20 +194,20 @@ def load_persons(raw_dir: Path, kreis_by_hhnr: pd.Series) -> pd.DataFrame:
         )
 
     n_total = len(df)
-    n_negative_weight = int((df["GEWICHT_P"] < 0).sum())
+    n_negative_weight = int((df["GEWICHT_P_ZENSUS"] < 0).sum())
     if n_negative_weight:
         logger.warning(
-            "[persons] GEWICHT_P: dropping %d/%d (%.1f%%) rows with a negative "
+            "[persons] GEWICHT_P_ZENSUS: dropping %d/%d (%.1f%%) rows with a negative "
             "missing code (-9/-6) before any weighted aggregation",
             n_negative_weight, n_total, 100.0 * n_negative_weight / n_total,
         )
     else:
         logger.info(
-            "[persons] GEWICHT_P: primary weight valid for %d/%d (100.0%%) rows, "
+            "[persons] GEWICHT_P_ZENSUS: primary weight valid for %d/%d (100.0%%) rows, "
             "0 fallback/dropped",
             n_total, n_total,
         )
-    persons_valid = df[df["GEWICHT_P"] >= 0].copy()
+    persons_valid = df[df["GEWICHT_P_ZENSUS"] >= 0].copy()
     logger.info(
         "[persons] loaded %d persons (%d after weight validation)",
         n_total, len(persons_valid),
@@ -250,12 +265,15 @@ def _provenance_header(universe: str, weight_col: str, missing_handling: str) ->
         f"# Missing-code handling: {missing_handling}",
         "# Coverage: 7 of the 8 ZGB Kreise; Wolfsburg (03103) is NOT covered by",
         "#   this survey and therefore never appears in this table.",
-        "# ASSUMPTION: the survey is a stratified PSU design over ~44 selected",
-        "#   municipalities within those Kreise (strata = ST_CODE/ST_CODE_NAME; see",
-        "#   srv2023_covered_municipalities.csv). Per-Kreis (level=kreis) rows",
-        "#   aggregate across strata and are therefore an ASSUMPTION-grade estimate",
-        "#   of the true Kreis population. Per-stratum (level=stratum) rows are the",
-        "#   design-safe aggregation level for this survey.",
+        "# ASSUMPTION (coverage, not weighting): the survey is a stratified PSU",
+        "#   design over ~44 selected municipalities within those Kreise (strata =",
+        "#   ST_CODE/ST_CODE_NAME; see srv2023_covered_municipalities.csv). The",
+        "#   GEWICHT_*_ZENSUS weight expands per municipality to the true Zensus",
+        "#   2022 population, so it is the correct weight for total/kreis/stratum",
+        "#   rows alike. Per-Kreis (level=kreis) rows still extrapolate from the",
+        "#   sampled municipalities to the full Kreis and are therefore an",
+        "#   ASSUMPTION-grade coverage estimate; per-stratum (level=stratum) rows",
+        "#   are the design-safe aggregation level for this survey.",
         "# Generated by: scripts/extract_srv_kreis_tables.py",
     ]
 
@@ -277,7 +295,7 @@ def build_cars_table(households_valid: pd.DataFrame) -> pd.DataFrame:
     """Household shares of car ownership (V_ANZ_PKW), clipped to {0,1,2,3+}.
 
     V_ANZ_PKW carries no negative missing codes in this file, so no
-    additional rows are excluded beyond the GEWICHT_HH weight validation
+    additional rows are excluded beyond the GEWICHT_HH_ZENSUS weight validation
     already applied to ``households_valid``.
     """
     df = households_valid.copy()
@@ -287,11 +305,11 @@ def build_cars_table(households_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(df):
-        shares = _weighted_class_shares(group, "GEWICHT_HH", "cars_class", class_values)
+        shares = _weighted_class_shares(group, "GEWICHT_HH_ZENSUS", "cars_class", class_values)
         row = {
             "level": level, "code": code, "name": name,
             "n_unweighted": len(group),
-            "n_weighted": round(float(group["GEWICHT_HH"].sum()), 2),
+            "n_weighted": round(float(group["GEWICHT_HH_ZENSUS"].sum()), 2),
         }
         for value, column in class_columns.items():
             row[column] = round(shares[value], 4)
@@ -326,11 +344,11 @@ def build_bikes_table(households_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(valid):
-        shares = _weighted_class_shares(group, "GEWICHT_HH", "bikes_class", class_values)
+        shares = _weighted_class_shares(group, "GEWICHT_HH_ZENSUS", "bikes_class", class_values)
         row = {
             "level": level, "code": code, "name": name,
             "n_unweighted": len(group),
-            "n_weighted": round(float(group["GEWICHT_HH"].sum()), 2),
+            "n_weighted": round(float(group["GEWICHT_HH_ZENSUS"].sum()), 2),
         }
         for value, column in class_columns.items():
             row[column] = round(shares[value], 4)
@@ -362,11 +380,11 @@ def build_ebike_household_table(households_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(valid):
-        shares = _weighted_class_shares(group, "GEWICHT_HH", "has_ebike", [0, 1])
+        shares = _weighted_class_shares(group, "GEWICHT_HH_ZENSUS", "has_ebike", [0, 1])
         rows.append({
             "level": level, "code": code, "name": name,
             "n_unweighted": len(group),
-            "n_weighted": round(float(group["GEWICHT_HH"].sum()), 2),
+            "n_weighted": round(float(group["GEWICHT_HH_ZENSUS"].sum()), 2),
             "share_hh_with_ebike": round(shares[1], 4),
         })
     return pd.DataFrame(rows)
@@ -404,11 +422,11 @@ def build_income_table(households_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(households_valid):
-        total_weight = group["GEWICHT_HH"].sum()
+        total_weight = group["GEWICHT_HH_ZENSUS"].sum()
         valid_group = group[group["E_EINK_5"] > 0]
-        valid_weight = valid_group["GEWICHT_HH"].sum()
+        valid_weight = valid_group["GEWICHT_HH_ZENSUS"].sum()
         missing_weight = total_weight - valid_weight
-        shares = _weighted_class_shares(valid_group, "GEWICHT_HH", "E_EINK_5", class_values)
+        shares = _weighted_class_shares(valid_group, "GEWICHT_HH_ZENSUS", "E_EINK_5", class_values)
 
         row = {
             "level": level, "code": code, "name": name,
@@ -449,11 +467,11 @@ def build_license_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(universe):
-        shares = _weighted_class_shares(group, "GEWICHT_P", "V_FUEHR_PKW", [1, 2])
+        shares = _weighted_class_shares(group, "GEWICHT_P_ZENSUS", "V_FUEHR_PKW", [1, 2])
         rows.append({
             "level": level, "code": code, "name": name,
             "n_unweighted": len(group),
-            "n_weighted": round(float(group["GEWICHT_P"].sum()), 2),
+            "n_weighted": round(float(group["GEWICHT_P_ZENSUS"].sum()), 2),
             "share_with_license": round(shares[1], 4),
         })
     return pd.DataFrame(rows)
@@ -491,8 +509,8 @@ def build_dticket_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
 
     rows = []
     for level, code, name, group in _iter_levels(universe):
-        total_weight = group["GEWICHT_P"].sum()
-        dticket_weight = group.loc[group["E_OEV_FK"] == 50, "GEWICHT_P"].sum()
+        total_weight = group["GEWICHT_P_ZENSUS"].sum()
+        dticket_weight = group.loc[group["E_OEV_FK"] == 50, "GEWICHT_P_ZENSUS"].sum()
         share = (dticket_weight / total_weight) if total_weight > 0 else float("nan")
         rows.append({
             "level": level, "code": code, "name": name,
@@ -616,8 +634,8 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(
         cars_df, args.out_dir / "srv2023_cars_by_kreis.csv",
         _provenance_header(
-            universe="households with a valid GEWICHT_HH weight",
-            weight_col="GEWICHT_HH",
+            universe="households with a valid GEWICHT_HH_ZENSUS weight",
+            weight_col="GEWICHT_HH_ZENSUS",
             missing_handling="V_ANZ_PKW has no missing codes in this file; classes "
                               "clipped to {0,1,2,3+}",
         ),
@@ -625,9 +643,9 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(
         bikes_df, args.out_dir / "srv2023_bikes_incl_ebikes_by_kreis.csv",
         _provenance_header(
-            universe="households with a valid GEWICHT_HH weight and a valid "
+            universe="households with a valid GEWICHT_HH_ZENSUS weight and a valid "
                      "E_ANZ_RAD_ALLE_6 response",
-            weight_col="GEWICHT_HH",
+            weight_col="GEWICHT_HH_ZENSUS",
             missing_handling="E_ANZ_RAD_ALLE_6 == -7 (Berechnung nicht moeglich) "
                               "excluded; classes clipped to {0,1,2,3,4+}",
         ),
@@ -635,19 +653,19 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(
         ebike_household_df, args.out_dir / "srv2023_ebike_household_by_kreis.csv",
         _provenance_header(
-            universe="households with a valid GEWICHT_HH weight and a valid "
+            universe="households with a valid GEWICHT_HH_ZENSUS weight and a valid "
                      "V_ANZ_ERAD response",
-            weight_col="GEWICHT_HH",
+            weight_col="GEWICHT_HH_ZENSUS",
             missing_handling="V_ANZ_ERAD == -10 (Unplausibel) excluded",
         ),
     )
     write_csv(
         income_df, args.out_dir / "srv2023_income5_by_kreis.csv",
         _provenance_header(
-            universe="households with a valid GEWICHT_HH weight; the 5 income-class "
+            universe="households with a valid GEWICHT_HH_ZENSUS weight; the 5 income-class "
                      "shares are computed over respondents with a valid E_EINK_5 "
                      "code only (n_unweighted/n_weighted refer to this valid subset)",
-            weight_col="GEWICHT_HH",
+            weight_col="GEWICHT_HH_ZENSUS",
             missing_handling="E_EINK_5 in {-9 Keine Angabe, -5 Weiss nicht} excluded "
                               "from the income-class shares and reported separately "
                               "as share_income_missing (fraction of ALL weighted "
@@ -657,9 +675,9 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(
         license_df, args.out_dir / "srv2023_car_license_17plus_by_kreis.csv",
         _provenance_header(
-            universe="persons aged >= 17 (V_ALTER) with a valid GEWICHT_P weight "
+            universe="persons aged >= 17 (V_ALTER) with a valid GEWICHT_P_ZENSUS weight "
                      "and V_FUEHR_PKW in {1 ja, 2 nein}",
-            weight_col="GEWICHT_P",
+            weight_col="GEWICHT_P_ZENSUS",
             missing_handling="V_FUEHR_PKW == -8 (Nicht erhoben) excluded from the "
                               "universe",
         ),
@@ -667,11 +685,11 @@ def main(argv: list[str] | None = None) -> int:
     write_csv(
         dticket_df, args.out_dir / "srv2023_dticket_by_kreis.csv",
         _provenance_header(
-            universe="persons with a valid GEWICHT_P weight and E_OEV_FK != -10 "
+            universe="persons with a valid GEWICHT_P_ZENSUS weight and E_OEV_FK != -10 "
                      "(Unplausibel); E_OEV_FK == -8 'nicht erhoben' (no PT use in "
                      "the past 12 months) is KEPT and counted as 'no "
                      "Deutschlandticket', not excluded",
-            weight_col="GEWICHT_P",
+            weight_col="GEWICHT_P_ZENSUS",
             missing_handling="only E_OEV_FK == -10 (Unplausibel) excluded",
         ),
     )
@@ -682,7 +700,7 @@ def main(argv: list[str] | None = None) -> int:
             "#   (RGB) scientific-use microdata, file SciUse_v4 (delivered 2026-07).",
             "#   See eqasim-data/data/braunschweig/srv/srv2023_raw/README.md.",
             "# One row per municipality (AGS) sampled by the household survey.",
-            "# Universe: households with a valid GEWICHT_HH weight.",
+            "# Universe: households with a valid GEWICHT_HH_ZENSUS weight.",
             "# n_households_unweighted is a raw sample count (not weight-expanded).",
             "# ASSUMPTION: this is the full list of ~44 municipalities forming the",
             "#   stratified PSU sample; it defines the coverage that all other",

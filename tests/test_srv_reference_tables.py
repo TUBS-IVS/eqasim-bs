@@ -175,7 +175,7 @@ def test_pin_cars_salzgitter():
 
 def test_pin_ebike_household_gifhorn_and_braunschweig():
     gifhorn = _kreis_row("srv2023_ebike_household_by_kreis.csv", "03151")
-    assert abs(gifhorn["share_hh_with_ebike"] - 0.331) < _PIN_TOLERANCE
+    assert abs(gifhorn["share_hh_with_ebike"] - 0.3108) < _PIN_TOLERANCE
 
     braunschweig = _kreis_row("srv2023_ebike_household_by_kreis.csv", "03101")
     assert abs(braunschweig["share_hh_with_ebike"] - 0.181) < _PIN_TOLERANCE

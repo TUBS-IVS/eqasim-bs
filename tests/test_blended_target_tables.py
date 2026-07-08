@@ -43,8 +43,10 @@ def test_status_salzgitter_is_srv_arbitrated():
     # LSN register: SZ poorest Kreis -> SrV ranking wins over the thin MiD cell.
     assert t.loc["03102", "source"] == "srv_arbitrated"
     assert t.loc["03102", "high"] == pytest.approx(0.243, abs=0.01)
-    # Braunschweig: MiD rank matches the register better -> mid_arbitrated.
-    assert t.loc["03101", "source"] == "mid_arbitrated"
+    # Braunschweig: under ZENSUS weights, the SrV rebuild agrees with MiD H4
+    # within the precision-blend tolerance -> blend (was mid_arbitrated under
+    # the stratum-internal standard weights, fixed 2026-07-08).
+    assert t.loc["03101", "source"] == "blend"
 
 
 def test_cars_sources():
@@ -61,6 +63,6 @@ def test_cars_sources():
 def test_ebike_is_srv_with_wob_assumption():
     t = load("target2026_has_ebike_by_kreis.csv").set_index("ars5")
     assert t.loc["03151", "source"] == "srv"
-    assert t.loc["03151", "ebike_yes"] == pytest.approx(0.3313, abs=0.005)
+    assert t.loc["03151", "ebike_yes"] == pytest.approx(0.3108, abs=0.005)
     assert t.loc["03103", "source"] == "srv_region_total_assumption"
-    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.2659, abs=0.005)
+    assert t.loc["03103", "ebike_yes"] == pytest.approx(0.2450, abs=0.005)

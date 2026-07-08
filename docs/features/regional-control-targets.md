@@ -25,6 +25,22 @@ Outputs (committed, `eqasim-data/data/braunschweig/targets/`):
 They are FINAL targets: the `kreis_attribute_control` registry must consume
 them with `prior_n = 0`.
 
+## Weights
+
+All SrV aggregates use `GEWICHT_HH_ZENSUS` / `GEWICHT_P_ZENSUS` ("fuer
+stadtuebergreifende Auswertungen"), the full expansion to Zensus 2022 counts
+per municipality -- not the stratum-internal Standard weights
+(`GEWICHT_HH`/`GEWICHT_P`, "fuer Standardauswertungen"). The Standard weights
+are normalized to mean ~1 WITHIN each `ST_CODE` stratum, so any cross-stratum
+aggregate (every `total` and per-Kreis row, and per-municipality rows within
+the two "kleinstaedtisch-doerflich" strata) weights strata by SAMPLE share
+instead of population share, while the true expansion factor varies 18x-70x
+across strata. This was discovered and fixed 2026-07-08, after the initial
+tables shipped with the Standard weights (see `docs/DECISIONS.md`). Both
+ZENSUS columns carry zero negative/NaN values in this delivery; the
+missing-code filter and drop-rate logging are kept as a defensive guard per
+CLAUDE.md "No silent fallbacks".
+
 Key facts feeding the rules (2026-07-08 analysis):
 - The MiD H4 Salzgitter status cell (42% high, n_weighted 167) is contradicted
   by BOTH the SrV rebuild (24.3% high) and the LSN register (SZ = poorest ZGB
