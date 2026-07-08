@@ -65,3 +65,61 @@ def test_status_kreis_controls_still_returns_five_identical():
     s = cs.status_kreis_controls()
     assert [c.name for c in s] == list(control_columns(_econ_entry()))
     assert all(c.geography == cs.GEO_KREIS and c.seed_table == cs.SEED_TABLE_HOUSEHOLDS for c in s)
+
+
+# --- Task 1: generic per-Kreis target loader ---
+from braunschweig.popsim.kreis_attribute_control import load_kreis_target  # noqa: E402
+
+
+def _write_target_csv(tmp_path: Path) -> Path:
+    root = tmp_path / "braunschweig" / "targets"
+    root.mkdir(parents=True)
+    p = root / "target2026_toy_by_kreis.csv"
+    p.write_text(
+        "# comment line one\n"
+        "# CONSUMER NOTE: FINAL target - use with prior_n = 0.\n"
+        "ars5,source,n_effective,a,b\n"
+        "Gesamt,mid,0,0.6,0.4\n"
+        "03101,blend,1000,0.7,0.3\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+_TOY = KreisAttributeControl(
+    name="toy", seed_column="toy_col", level="household",
+    categories=(("a", "== 0"), ("b", ">= 1")),
+    target_csv_relpath="braunschweig/targets/target2026_toy_by_kreis.csv",
+    target_columns=("a", "b"), tier="soft",
+)
+
+
+def test_load_kreis_target_drops_comments_and_meta_columns(tmp_path):
+    _write_target_csv(tmp_path)
+    df = load_kreis_target(tmp_path, _TOY)
+    assert list(df.columns) == ["ars5", "a", "b"]
+    assert set(df["ars5"]) == {"Gesamt", "03101"}
+    row = df[df["ars5"] == "03101"].iloc[0]
+    assert row["a"] == pytest.approx(0.7)
+
+
+def test_load_kreis_target_requires_aggregate_row(tmp_path):
+    p = _write_target_csv(tmp_path)
+    # strip the Gesamt row
+    lines = [l for l in p.read_text(encoding="utf-8").splitlines() if not l.startswith("Gesamt")]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="aggregate row"):
+        load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_expected_kreis(tmp_path):
+    _write_target_csv(tmp_path)
+    with pytest.raises(ValueError, match="missing Kreis"):
+        load_kreis_target(tmp_path, _TOY, expected_ars5=("03101", "03102"))
+
+
+def test_load_kreis_target_fails_when_shares_do_not_sum_to_one(tmp_path):
+    p = _write_target_csv(tmp_path)
+    p.write_text(p.read_text(encoding="utf-8").replace("0.7,0.3", "0.7,0.9"), encoding="utf-8")
+    with pytest.raises(ValueError, match="sum to 1"):
+        load_kreis_target(tmp_path, _TOY)

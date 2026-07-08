@@ -9,7 +9,8 @@ that partition the household total (IPF-consistent), plus the control-column nam
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from pathlib import Path
+from typing import Mapping, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -38,6 +39,53 @@ class KreisAttributeControl:
 def control_columns(ctl: KreisAttributeControl) -> tuple:
     """The KREIS control / census-source column names (one per category), in category order."""
     return tuple(f"{ctl.name}_{label}" for label, _ in ctl.categories)
+
+
+def load_kreis_target(
+    data_path: Union[str, Path],
+    ctl: KreisAttributeControl,
+    *,
+    expected_ars5: Sequence[str] | None = None,
+    share_tolerance: float = 1e-6,
+) -> pd.DataFrame:
+    """Load a committed per-Kreis control target CSV for a registry entry.
+
+    Reads ``ctl.target_csv_relpath`` (relative to ``data_path``), a comment-headed
+    ``ars5,source,n_effective,<category shares...>`` CSV (the ``target2026_*`` blended
+    tables). Returns a frame with columns ``["ars5", *ctl.target_columns]`` (comment
+    lines and the ``source``/``n_effective`` provenance columns dropped). No silent
+    fallback: fails fast if the file, a target category column, the region-aggregate
+    row, an ``expected_ars5`` Kreis, or the per-row share normalisation is missing/invalid.
+    """
+    path = Path(data_path) / ctl.target_csv_relpath
+    if not path.exists():
+        raise FileNotFoundError(f"load_kreis_target[{ctl.name}]: target CSV not found at {path}.")
+    df = pd.read_csv(path, comment="#")
+    missing_cols = [c for c in ("ars5", *ctl.target_columns) if c not in df.columns]
+    if missing_cols:
+        raise ValueError(
+            f"load_kreis_target[{ctl.name}]: target CSV {path} missing columns {missing_cols}; "
+            f"has {list(df.columns)}.")
+    df = df.copy()
+    df["ars5"] = df["ars5"].astype(str)
+    out = df[["ars5", *ctl.target_columns]].reset_index(drop=True)
+    if not out["ars5"].isin(_AGG_ARS5).any():
+        raise ValueError(
+            f"load_kreis_target[{ctl.name}]: no region-aggregate row {_AGG_ARS5} in {path} "
+            f"(required as the shrinkage prior mean).")
+    if expected_ars5 is not None:
+        have = set(out["ars5"])
+        missing_kreise = [k for k in expected_ars5 if str(k) not in have]
+        if missing_kreise:
+            raise ValueError(
+                f"load_kreis_target[{ctl.name}]: target {path} missing Kreis rows {missing_kreise}.")
+    sums = out[list(ctl.target_columns)].to_numpy(dtype=float).sum(axis=1)
+    bad = np.abs(sums - 1.0) > share_tolerance
+    if bad.any():
+        raise ValueError(
+            f"load_kreis_target[{ctl.name}]: rows {out.loc[bad, 'ars5'].tolist()} do not "
+            f"sum to 1 (got {sums[bad].tolist()}).")
+    return out
 
 
 # The economic_status entry reproduces the L1 status_kreis_control exactly: seed column oek_status
