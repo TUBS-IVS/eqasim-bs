@@ -355,6 +355,7 @@ def load_mid_seed(
     day_filter_values: Optional[Sequence[int]] = None,
     complete_members: bool = False,
     completion_rng=None,
+    include_status_seed_col: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -411,6 +412,10 @@ def load_mid_seed(
         # Member completion additionally needs the mirror match keys
         # (hhgr_gr -> oek_status; RegioStaR7 and H_GR are already loaded above).
         household_cols.extend(("hhgr_gr", "oek_status"))
+    if include_status_seed_col and "oek_status" not in household_cols:
+        # economic_status x Kreis control (issue #109): load oek_status so the seed
+        # households can carry it for the control expression (households.oek_status == k).
+        household_cols.append("oek_status")
     households = pd.read_csv(
         households_path,
         usecols=list(dict.fromkeys(household_cols)),
@@ -479,15 +484,18 @@ def load_mid_seed(
         on=columns.household_id,
     )
 
+    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    if include_status_seed_col:
+        _hh_extra = _hh_extra + ("oek_status",)
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
+        extra_household_cols=_hh_extra,
         extra_person_cols=extra_person_cols + _tier3_seed_cols,
     )
     return households, persons, report
 
 
-def project_completed_seed(households, persons, columns):
+def project_completed_seed(households, persons, columns, *, include_status_seed_col: bool = False):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
 
@@ -509,9 +517,15 @@ def project_completed_seed(households, persons, columns):
         hh_type5_series.rename("hh_type5"),
         on=columns.household_id,
     )
+    _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    if include_status_seed_col:
+        # economic_status x Kreis control (issue #109): retain the donor's oek_status
+        # (already present on the completed-donor households) so the control expression
+        # (households.oek_status == k) can be evaluated by PopulationSim.
+        _hh_extra = _hh_extra + ("oek_status",)
     return seedmod.select_seed_columns(
         households, persons, columns,
-        extra_household_cols=("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp"),
+        extra_household_cols=_hh_extra,
         extra_person_cols=tuple(
             c for c in ("P_TAET", "bildung1", "bildung2") if c in persons.columns
         ),

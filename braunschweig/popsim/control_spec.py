@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 import pandas as pd
 
+from braunschweig.data.mid.status_by_kreis import STATUS_KEYS
+
 # The exact PopulationSim controls.csv column order. Renderers must preserve it.
 CONTROLS_CSV_COLUMNS: Sequence[str] = (
     "target",
@@ -58,6 +60,11 @@ GEO_100M = "ZENSUS100m"
 GEO_1KM = "ZENSUS1km"
 GEO_KREIS = "KREIS"
 GEO_GEMEINDE = "GEMEINDE"
+
+# The per-cell household-total census column (tier0 backbone HH_TOTAL control). Exposed at
+# module scope so the economic_status x Kreis control (issue #109) can sum it per Kreis to
+# get the household total its status targets must partition (IPF-consistent).
+HH_TOTAL_CENSUS_COLUMN = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
 
 # Nine ten-year age bands as (label, lower_bound, upper_bound). ``None`` marks an
 # open edge: the first band has no lower bound, the last band no upper bound.
@@ -392,7 +399,7 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
     list[CatalogControl]
         20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km).
     """
-    HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    HH_TOTAL_BASE = HH_TOTAL_CENSUS_COLUMN
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
 
     HH_TOTAL_EXPR = "(households.H_GEW > 0) & (households.H_GEW < np.inf)"
@@ -897,7 +904,37 @@ def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
     return out
 
 
-def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False) -> List[CatalogControl]:
+# economic_status x Kreis controls (Level 1, issue #109). One GEO_KREIS household
+# control per status class; the per-Kreis target counts are derived at stage time from
+# the committed MiD H4 table (status_kreis_control.status_kreis_count_table) and injected
+# as the census_source columns economic_status_{class}. MiD-only: oek_status has no ENTD
+# pendant, so ENTD -> None (controls_for_seed drops them).
+def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
+    """Five economic_status x Kreis household controls (very_low..very_high).
+
+    oek_status codes 1..5 map to STATUS_KEYS very_low..very_high (the BMDV quintile
+    order; identical to attributes.OEK_STATUS_TO_ECONOMIC_STATUS). The census_source
+    column equals the control name, so folders.build_kreis_control_totals sums a single
+    identity column that stage.py injects from the H4-derived count table.
+    """
+    out: List[CatalogControl] = []
+    for k, key in enumerate(STATUS_KEYS, start=1):
+        name = f"economic_status_{key}"
+        out.append(
+            CatalogControl(
+                name=name,
+                geography=GEO_KREIS,
+                seed_table=SEED_TABLE_HOUSEHOLDS,
+                importance=importance,
+                census_source=(name,),
+                seed_expressions={"mid": f"(households.oek_status == {k})", "entd": None},
+            )
+        )
+    return out
+
+
+def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,
+                 include_status_kreis: bool = False) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -927,6 +964,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         catalog.extend(tier3_controls())
     if include_employment_grid:
         catalog.extend(employment_grid_controls())
+    if include_status_kreis:
+        catalog.extend(status_kreis_controls())
     return catalog
 
 
