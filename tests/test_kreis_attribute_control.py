@@ -15,7 +15,10 @@ def _econ_entry():
 
 
 def test_registry_has_economic_status_only():
-    assert [c.name for c in REGISTRY] == ["economic_status"]
+    # Superseded by test_registry_has_four_entries_with_expected_tiers (Task 2 extends the
+    # REGISTRY with number_of_cars/number_of_bicycles/has_ebike); economic_status itself is
+    # unchanged and must still be the first entry.
+    assert [c.name for c in REGISTRY][0] == "economic_status"
 
 
 def test_control_columns_follow_name_category():
@@ -65,3 +68,132 @@ def test_status_kreis_controls_still_returns_five_identical():
     s = cs.status_kreis_controls()
     assert [c.name for c in s] == list(control_columns(_econ_entry()))
     assert all(c.geography == cs.GEO_KREIS and c.seed_table == cs.SEED_TABLE_HOUSEHOLDS for c in s)
+
+
+# --- Task 1: generic per-Kreis target loader ---
+from braunschweig.popsim.kreis_attribute_control import load_kreis_target  # noqa: E402
+
+
+def _write_target_csv(tmp_path: Path) -> Path:
+    root = tmp_path / "braunschweig" / "targets"
+    root.mkdir(parents=True)
+    p = root / "target2026_toy_by_kreis.csv"
+    p.write_text(
+        "# comment line one\n"
+        "# CONSUMER NOTE: FINAL target - use with prior_n = 0.\n"
+        "ars5,source,n_effective,a,b\n"
+        "Gesamt,mid,0,0.6,0.4\n"
+        "03101,blend,1000,0.7,0.3\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+_TOY = KreisAttributeControl(
+    name="toy", seed_column="toy_col", level="household",
+    categories=(("a", "== 0"), ("b", ">= 1")),
+    target_csv_relpath="braunschweig/targets/target2026_toy_by_kreis.csv",
+    target_columns=("a", "b"), tier="soft",
+)
+
+
+def test_load_kreis_target_drops_comments_and_meta_columns(tmp_path):
+    _write_target_csv(tmp_path)
+    df = load_kreis_target(tmp_path, _TOY)
+    assert list(df.columns) == ["ars5", "a", "b"]
+    assert set(df["ars5"]) == {"Gesamt", "03101"}
+    row = df[df["ars5"] == "03101"].iloc[0]
+    assert row["a"] == pytest.approx(0.7)
+
+
+def test_load_kreis_target_requires_aggregate_row(tmp_path):
+    p = _write_target_csv(tmp_path)
+    # strip the Gesamt row
+    lines = [l for l in p.read_text(encoding="utf-8").splitlines() if not l.startswith("Gesamt")]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="aggregate row"):
+        load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_expected_kreis(tmp_path):
+    _write_target_csv(tmp_path)
+    with pytest.raises(ValueError, match="missing Kreis"):
+        load_kreis_target(tmp_path, _TOY, expected_ars5=("03101", "03102"))
+
+
+def test_load_kreis_target_fails_when_shares_do_not_sum_to_one(tmp_path):
+    p = _write_target_csv(tmp_path)
+    p.write_text(p.read_text(encoding="utf-8").replace("0.7,0.3", "0.7,0.9"), encoding="utf-8")
+    with pytest.raises(ValueError, match="sum to 1"):
+        load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_file(tmp_path):
+    # No CSV written under tmp_path: the relpath resolves to a nonexistent file.
+    with pytest.raises(FileNotFoundError):
+        load_kreis_target(tmp_path, _TOY)
+
+
+def test_load_kreis_target_fails_on_missing_target_column(tmp_path):
+    p = _write_target_csv(tmp_path)
+    # drop the "b" target column from header and rows
+    p.write_text(
+        "# comment line one\n"
+        "# CONSUMER NOTE: FINAL target - use with prior_n = 0.\n"
+        "ars5,source,n_effective,a\n"
+        "Gesamt,mid,0,0.6\n"
+        "03101,blend,1000,0.7\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing columns"):
+        load_kreis_target(tmp_path, _TOY)
+
+
+# --- Task 2: cars (hard) + bicycles/has_ebike (soft) registry entries ---
+
+
+def _entry(name):
+    return next(c for c in REGISTRY if c.name == name)
+
+
+def test_registry_has_four_entries_with_expected_tiers():
+    by_name = {c.name: c for c in REGISTRY}
+    assert set(by_name) == {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"}
+    assert by_name["number_of_cars"].tier == "hard"
+    assert by_name["number_of_bicycles"].tier == "soft"
+    assert by_name["has_ebike"].tier == "soft"
+
+
+def test_cars_control_columns_and_predicates():
+    cars = _entry("number_of_cars")
+    assert control_columns(cars) == (
+        "number_of_cars_0", "number_of_cars_1", "number_of_cars_2", "number_of_cars_3plus")
+    preds = [p for _, p in cars.categories]
+    assert preds == ["== 0", "== 1", "== 2", ">= 3"]
+    assert cars.target_columns == ("cars_0", "cars_1", "cars_2", "cars_3plus")
+    assert cars.seed_column == "number_of_cars"
+    assert cars.level == "household"
+
+
+def test_bicycles_and_ebike_shapes():
+    bikes = _entry("number_of_bicycles")
+    assert control_columns(bikes) == (
+        "number_of_bicycles_0", "number_of_bicycles_1", "number_of_bicycles_2",
+        "number_of_bicycles_3", "number_of_bicycles_4plus")
+    assert bikes.target_columns == ("bikes_0", "bikes_1", "bikes_2", "bikes_3", "bikes_4plus")
+    ebike = _entry("has_ebike")
+    assert control_columns(ebike) == ("has_ebike_yes", "has_ebike_no")
+    assert ebike.target_columns == ("ebike_yes", "ebike_no")
+    assert [p for _, p in ebike.categories] == ["== 1", "== 0"]
+
+
+def test_cars_count_table_partitions_household_total():
+    cars = _entry("number_of_cars")
+    tgt = pd.DataFrame({
+        "ars5": ["Gesamt", "03101"],
+        "cars_0": [0.2, 0.25], "cars_1": [0.5, 0.5],
+        "cars_2": [0.2, 0.2], "cars_3plus": [0.1, 0.05],
+    })
+    tbl = attribute_kreis_count_table(cars, tgt, {"03101": 1000}, prior_n=0.0)
+    cols = list(control_columns(cars))
+    assert int(tbl[cols].sum(axis=1).iloc[0]) == 1000
