@@ -83,6 +83,12 @@ HEADER = """\
 # ASSUMPTION (Wolfsburg): 03103 is not covered by SrV; its row uses the SrV
 # region total (same convention as target2026_has_ebike).
 #
+# ASSUMPTION (invalid-share redistribution): the SrV trips_* shares are
+# conditional on the "computable" universe (E_ANZ_WEGE = -7, ~5% of persons
+# incl. those away from home, excluded); applying them to the FULL per-Kreis
+# person total implicitly redistributes that ~5% proportionally across the
+# four classes.
+#
 # CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
 """
 
