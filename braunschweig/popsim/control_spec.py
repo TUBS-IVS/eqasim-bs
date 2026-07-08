@@ -904,33 +904,44 @@ def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
     return out
 
 
-# economic_status x Kreis controls (Level 1, issue #109). One GEO_KREIS household
-# control per status class; the per-Kreis target counts are derived at stage time from
-# the committed MiD H4 table (status_kreis_control.status_kreis_count_table) and injected
-# as the census_source columns economic_status_{class}. MiD-only: oek_status has no ENTD
-# pendant, so ENTD -> None (controls_for_seed drops them).
+# Generic per-Kreis attribute controls (S1a, issue #109 follow-up). A registered
+# KreisAttributeControl (kreis_attribute_control.REGISTRY) yields one GEO_KREIS control per
+# category: expression f"({table}.{seed_column} {predicate})" over the household/person seed
+# table; census_source = the derived per-Kreis count column (name_{label}) that stage.py injects
+# from the committed target CSV. MiD-only (ENTD cannot express the donor columns -> None, dropped
+# by controls_for_seed).
+def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogControl]:
+    """Build GEO_KREIS controls for a list of KreisAttributeControl."""
+    from braunschweig.popsim.kreis_attribute_control import control_columns as _cols
+    table_of = {"household": SEED_TABLE_HOUSEHOLDS, "person": SEED_TABLE_PERSONS}
+    out: List[CatalogControl] = []
+    for ctl in controls:
+        table = table_of[ctl.level]
+        for (label, predicate), col in zip(ctl.categories, _cols(ctl)):
+            out.append(
+                CatalogControl(
+                    name=col,
+                    geography=GEO_KREIS,
+                    seed_table=table,
+                    importance=importance,
+                    census_source=(col,),
+                    seed_expressions={"mid": f"({table}.{ctl.seed_column} {predicate})", "entd": None},
+                )
+            )
+    return out
+
+
 def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
     """Five economic_status x Kreis household controls (very_low..very_high).
 
-    oek_status codes 1..5 map to STATUS_KEYS very_low..very_high (the BMDV quintile
-    order; identical to attributes.OEK_STATUS_TO_ECONOMIC_STATUS). The census_source
-    column equals the control name, so folders.build_kreis_control_totals sums a single
-    identity column that stage.py injects from the H4-derived count table.
+    Delegates to the generic registry factory (S1a); output byte-identical to the Phase 2 L1
+    controls. oek_status codes 1..5 map to very_low..very_high; census_source == control name,
+    so folders.build_kreis_control_totals sums a single identity column that stage.py injects
+    from the H4-derived count table.
     """
-    out: List[CatalogControl] = []
-    for k, key in enumerate(STATUS_KEYS, start=1):
-        name = f"economic_status_{key}"
-        out.append(
-            CatalogControl(
-                name=name,
-                geography=GEO_KREIS,
-                seed_table=SEED_TABLE_HOUSEHOLDS,
-                importance=importance,
-                census_source=(name,),
-                seed_expressions={"mid": f"(households.oek_status == {k})", "entd": None},
-            )
-        )
-    return out
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY
+    econ = [c for c in REGISTRY if c.name == "economic_status"]
+    return attribute_kreis_controls(econ, importance=importance)
 
 
 def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,

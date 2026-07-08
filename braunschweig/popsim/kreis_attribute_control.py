@@ -1,0 +1,110 @@
+"""Generic per-Kreis attribute controls for popsim_mid (registry-driven).
+
+Generalizes the L1 economic_status x Kreis control: any donor-inherited household/person
+attribute with a committed per-Kreis MiD target (row-% shares) becomes a KREIS PopulationSim
+control via a REGISTRY entry. This module turns one entry's shares (optionally Dirichlet-shrunk
+toward the region-aggregate row) x the per-Kreis household total into integer per-Kreis counts
+that partition the household total (IPF-consistent), plus the control-column naming. Pure module.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping
+
+import numpy as np
+import pandas as pd
+
+# Canonical low->high economic-status order (identical to
+# braunschweig.synthesis.population.enriched.ECONOMIC_STATUS_CATEGORIES).
+_ECON_CATEGORIES = ("very_low", "low", "medium", "high", "very_high")
+
+# The region-aggregate row label used as the Dirichlet shrinkage prior mean. The H4 CSV uses
+# the ars5 code "03ZGB"; other committed regional tables use "Gesamt". Both are accepted.
+_AGG_ARS5 = ("03ZGB", "Gesamt")
+
+
+@dataclass(frozen=True)
+class KreisAttributeControl:
+    """One registered per-Kreis attribute control (household or person level)."""
+    name: str
+    seed_column: str
+    level: str  # "household" | "person"
+    categories: tuple  # ((label, predicate on seed_column), ...), e.g. ("3", ">= 3")
+    target_csv_relpath: str  # under data_path, e.g. "braunschweig/mid/mid2023_H4_status_by_kreis.csv"
+    target_columns: tuple  # CSV share columns, in category order
+    tier: str  # "hard" | "soft"
+
+
+def control_columns(ctl: KreisAttributeControl) -> tuple:
+    """The KREIS control / census-source column names (one per category), in category order."""
+    return tuple(f"{ctl.name}_{label}" for label, _ in ctl.categories)
+
+
+# The economic_status entry reproduces the L1 status_kreis_control exactly: seed column oek_status
+# (coded 1..5 -> very_low..very_high), the committed H4 CSV, and control columns
+# economic_status_{class}. The per-category predicate "== k" (k = 1..5) is applied downstream in the
+# catalog factory using the code; the labels + CSV columns are the canonical status classes.
+REGISTRY: tuple = (
+    KreisAttributeControl(
+        name="economic_status",
+        seed_column="oek_status",
+        level="household",
+        categories=tuple((k, f"== {i}") for i, k in enumerate(_ECON_CATEGORIES, start=1)),
+        target_csv_relpath="braunschweig/mid/mid2023_H4_status_by_kreis.csv",
+        target_columns=_ECON_CATEGORIES,
+        tier="hard",
+    ),
+)
+
+
+def _shrunk_shares(ctl: KreisAttributeControl, target_df: pd.DataFrame, prior_n: float) -> pd.DataFrame:
+    """Per-Kreis category shares (rows sum to 1), Dirichlet-shrunk toward the region-aggregate row."""
+    cols = list(ctl.target_columns)
+    agg = target_df[target_df["ars5"].astype(str).isin(_AGG_ARS5)]
+    if agg.empty:
+        raise ValueError(f"target for {ctl.name}: no region-aggregate row {_AGG_ARS5} for shrinkage prior.")
+    agg_vec = agg.iloc[0][cols].to_numpy(dtype=float)
+    agg_share = agg_vec / agg_vec.sum()
+    rows = []
+    for _, r in target_df.iterrows():
+        raw = r[cols].to_numpy(dtype=float)
+        total = raw.sum()
+        if str(r["ars5"]) in _AGG_ARS5 or prior_n <= 0.0:
+            share = raw / total if total > 0 else agg_share.copy()
+        else:
+            share = (raw + prior_n * agg_share) / (total + prior_n)
+        rows.append({"ars5": str(r["ars5"]), **dict(zip(cols, share))})
+    return pd.DataFrame(rows)
+
+
+def _largest_remainder(shares: np.ndarray, total: int) -> np.ndarray:
+    if total <= 0:
+        return np.zeros(len(shares), dtype=int)
+    exact = shares * total
+    floor = np.floor(exact).astype(int)
+    rem = int(total - floor.sum())
+    if rem > 0:
+        floor[np.argsort(-(exact - floor))[:rem]] += 1
+    return floor
+
+
+def attribute_kreis_count_table(
+    ctl: KreisAttributeControl,
+    target_df: pd.DataFrame,
+    hh_total_by_ars5: Mapping[str, float],
+    *,
+    prior_n: float = 0.0,
+) -> pd.DataFrame:
+    """Per-Kreis integer counts per category, summing to round(hh_total[k]); columns ARS_kreis +
+    control_columns(ctl). Fail-fast if a Kreis is absent from the target (no under-constrained control)."""
+    shares = _shrunk_shares(ctl, target_df, prior_n).set_index("ars5")
+    cols = list(ctl.target_columns)
+    out_cols = list(control_columns(ctl))
+    out = []
+    for ars5, hh_total in hh_total_by_ars5.items():
+        key = str(ars5)
+        if key not in shares.index:
+            raise ValueError(f"attribute_kreis_count_table[{ctl.name}]: Kreis {key} absent from the target frame.")
+        counts = _largest_remainder(shares.loc[key, cols].to_numpy(dtype=float), int(round(float(hh_total))))
+        out.append({"ARS_kreis": key, **dict(zip(out_cols, counts))})
+    return pd.DataFrame(out)
