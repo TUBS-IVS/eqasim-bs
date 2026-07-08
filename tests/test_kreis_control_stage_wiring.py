@@ -44,6 +44,22 @@ def test_attribute_controls_render_range_predicate_for_cars():
     assert all(c.expression_for("entd") is None for c in controls)
 
 
+def test_attribute_controls_render_person_predicate_for_trip_class():
+    # trip_class is the first PERSON-level entry: its control expressions must reference
+    # the PERSONS seed table (persons.trip_class == k) for the four int-coded classes.
+    controls = cs.attribute_kreis_controls([_entry("trip_class")])
+    exprs = {c.name: c.expression_for("mid") for c in controls}
+    assert exprs["trip_class_0"] == "(persons.trip_class == 0)"
+    assert exprs["trip_class_1_2"] == "(persons.trip_class == 1)"
+    assert exprs["trip_class_3_4"] == "(persons.trip_class == 2)"
+    assert exprs["trip_class_5plus"] == "(persons.trip_class == 3)"
+    # The controls sit on the persons seed table + KREIS geography.
+    assert all(c.seed_table == "persons" for c in controls)
+    assert all(c.geography == "KREIS" for c in controls)
+    # ENTD cannot express the MiD donor diary column -> dropped.
+    assert all(c.expression_for("entd") is None for c in controls)
+
+
 def test_off_path_builds_no_kreis_controls():
     # all toggles off -> catalog has no economic_status_* / number_of_cars_* controls
     controls = cs.full_catalog(("tier0",), include_status_kreis=False)
@@ -95,6 +111,7 @@ def test_build_controls_df_off_path_has_no_kreis_controls():
     assert not any(
         f.startswith("economic_status_") or f.startswith("number_of_cars_")
         or f.startswith("number_of_bicycles_") or f.startswith("has_ebike_")
+        or f.startswith("trip_class_")
         for f in fields
     )
 
@@ -112,6 +129,22 @@ def test_build_controls_df_renders_requested_kreis_controls():
     rows = on[on["control_field"].isin(expected)]
     assert (rows["geography"] == "KREIS").all()
     assert (rows["seed_table"] == "households").all()
+
+
+def test_build_controls_df_renders_trip_class_person_controls():
+    # The person-level trip_class entry renders four KREIS controls on the persons table.
+    from braunschweig.popsim.stage import build_controls_df
+
+    on = build_controls_df(
+        controls_source="catalog", seed="mid", tiers=("tier0",),
+        kreis_control_names=("trip_class",),
+    )
+    fields = set(on["control_field"])
+    expected = {f"{c}_KREIS" for c in control_columns(_entry("trip_class"))}
+    assert expected <= fields
+    rows = on[on["control_field"].isin(expected)]
+    assert (rows["geography"] == "KREIS").all()
+    assert (rows["seed_table"] == "persons").all()
 
 
 def test_build_controls_df_status_kreis_alias_still_renders_economic_status():
@@ -172,12 +205,12 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all four entries default "on" (project rule: new features default
-    # on). has_ebike's source column (H_ANZPED) was server-verified 2026-07-08 (issue
-    # #116 resolved) and is now wired on both seed paths, so it defaults on too.
+    # Empty config -> all five entries default "on" (project rule: new features default
+    # on), in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
+    # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class"
     ]
 
 
@@ -196,6 +229,7 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_CARS_KREIS_CONTROL: "off",
         stage.KEY_BIKES_KREIS_CONTROL: "off",
         stage.KEY_EBIKE_KREIS_CONTROL: "off",
+        stage.KEY_TRIPS_KREIS_CONTROL: "off",
     }
     assert stage.active_kreis_entries(_FakeContext(off), "mid") == []
 
@@ -203,14 +237,14 @@ def test_active_kreis_entries_all_off_is_empty():
 def test_active_kreis_entries_individual_toggle():
     from braunschweig.popsim import stage
 
-    # Turning off only number_of_cars keeps the other three entries active (all four
+    # Turning off only number_of_cars keeps the other four entries active (all five
     # default "on"; see test_active_kreis_entries_has_ebike_can_be_turned_off).
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_CARS_KREIS_CONTROL: "off"}), "mid"
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == {"economic_status", "number_of_bicycles", "has_ebike"}
+    assert set(names) == {"economic_status", "number_of_bicycles", "has_ebike", "trip_class"}
 
 
 def test_active_kreis_entries_has_ebike_can_be_turned_off():
@@ -222,6 +256,18 @@ def test_active_kreis_entries_has_ebike_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "has_ebike" not in names
+
+
+def test_active_kreis_entries_trip_class_can_be_turned_off():
+    from braunschweig.popsim import stage
+
+    # An explicit "off" for the person-level trip_class entry drops only that entry.
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_TRIPS_KREIS_CONTROL: "off"}), "mid"
+    )
+    names = {c.name for c in active}
+    assert "trip_class" not in names
+    assert names == {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"}
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---

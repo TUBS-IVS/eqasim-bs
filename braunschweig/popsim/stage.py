@@ -144,6 +144,13 @@ KEY_STATUS_KREIS_SHRINKAGE_N = "braunschweig.population.popsim.status_kreis_shri
 KEY_CARS_KREIS_CONTROL = "braunschweig.population.popsim.number_of_cars_kreis_control"
 KEY_BIKES_KREIS_CONTROL = "braunschweig.population.popsim.number_of_bicycles_kreis_control"
 KEY_EBIKE_KREIS_CONTROL = "braunschweig.population.popsim.has_ebike_kreis_control"
+# trip_class x Kreis control (first PERSON-level KREIS attribute control, issue #116
+# follow-on, 2026-07-08): steers the per-Kreis distribution of trips-on-the-reporting-day
+# (0 / 1-2 / 3-4 / 5+), targeted at the committed SrV 2023 aggregate. Default "on"
+# (project rule: new features default on). "off" drops its control + seed column
+# (byte-identical for that attribute). MiD-only (its seed column, anzwege1, has no ENTD
+# pendant); ignored for source="entd".
+KEY_TRIPS_KREIS_CONTROL = "braunschweig.population.popsim.trip_class_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -192,6 +199,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "number_of_cars": KEY_CARS_KREIS_CONTROL,
     "number_of_bicycles": KEY_BIKES_KREIS_CONTROL,
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
+    "trip_class": KEY_TRIPS_KREIS_CONTROL,
 }
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
@@ -204,6 +212,7 @@ _KREIS_CONTROL_DEFAULT = {
     "number_of_cars": "on",
     "number_of_bicycles": "on",
     "has_ebike": "on",
+    "trip_class": "on",
 }
 
 
@@ -213,10 +222,12 @@ def active_kreis_entries(context, source_name):
     An entry is active when its per-attribute toggle resolves to "on" AND the donor
     source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
     ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
-    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all four entries
-    (economic_status, number_of_cars, number_of_bicycles, has_ebike) default "on"; the
-    has_ebike source column (H_ANZPED) was server-verified 2026-07-08 (issue #116), so it
-    is wired on both seed paths and defaults on like the rest.
+    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all five entries
+    (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class) default
+    "on". The has_ebike source column (H_ANZPED) was server-verified 2026-07-08 (issue
+    #116). trip_class (2026-07-08 follow-on) is the first PERSON-level entry; it is wired
+    on both seed paths (its per-Kreis target partitions the PERSON total, not the household
+    total -- see the KREIS block in execute()).
 
     Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
     argument (a positional default raises ``TypeError``; the same pitfall was fixed for
@@ -303,6 +314,58 @@ def _kreis_controls_map(controls):
     PopulationSim errors ``<field> not in index``.
     """
     return {f"{c.name}_{c.geography}": tuple(c.census_source) for c in controls}
+
+
+def person_band_census_columns():
+    """The 18 age-x-sex 100m band census-source column names (tier0 backbone).
+
+    Person-level KREIS attribute controls (e.g. ``trip_class``) partition the per-Kreis
+    PERSON total, not the household total. That person total is the per-Kreis sum over ALL
+    18 age-x-sex 100m band controls of the tier0 backbone (9 ten-year bands x {male,
+    female}), whose census-source column names are derived HERE from the backbone catalog
+    rather than hardcoded, so a backbone change (renamed/added bands) propagates
+    automatically instead of drifting out of sync.
+    """
+    from braunschweig.popsim import control_spec as cs
+    cols: list[str] = []
+    for control in cs.tier0_backbone_catalog():
+        if control.geography == cs.GEO_100M and control.seed_table == cs.SEED_TABLE_PERSONS:
+            cols.extend(control.census_source)
+    return tuple(cols)
+
+
+def person_total_by_kreis(cells, kreis_by_row):
+    """Per-Kreis PERSON total = per-Kreis sum over the 18 age-x-sex 100m band columns.
+
+    Parameters
+    ----------
+    cells:
+        The loaded (ZGB-filtered) cells frame; must carry all 18 band census-source
+        columns (:func:`person_band_census_columns`).
+    kreis_by_row:
+        A Series aligned to ``cells`` giving the 5-digit Kreis code per row (e.g.
+        ``cells[ARS][:5]``).
+
+    Returns
+    -------
+    dict[str, float]
+        ``{ars5: person_total}`` summed over the 18 band columns per Kreis.
+
+    Raises
+    ------
+    RuntimeError
+        If any of the 18 band columns is absent from ``cells`` (no silent fallback:
+        a person-level control cannot be constrained without the person totals).
+    """
+    band_cols = list(person_band_census_columns())
+    missing = [c for c in band_cols if c not in cells.columns]
+    if missing:
+        raise RuntimeError(
+            "person_total_by_kreis: a person-level KREIS control is ON but the age-x-sex "
+            f"band columns {missing} are absent from the cells frame (has "
+            f"{[c for c in band_cols if c in cells.columns]} of the 18 bands); cannot derive "
+            "the per-Kreis PERSON total (no silent fallback).")
+    return cells.groupby(kreis_by_row)[band_cols].sum().sum(axis=1).to_dict()
 
 
 def _grid_geography_controls(controls, cs):
@@ -426,6 +489,9 @@ def configure(context):
     context.config(KEY_CARS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_cars"])
     context.config(KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"])
     context.config(KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"])
+    # trip_class (first PERSON-level KREIS control, 2026-07-08). Default "on"; its
+    # committed SrV target lives under data_path (declared below via the any()-gate).
+    context.config(KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -434,6 +500,7 @@ def configure(context):
         (KEY_CARS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_cars"]),
         (KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"]),
         (KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"]),
+        (KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"
@@ -936,6 +1003,10 @@ def execute(context) -> pd.DataFrame:
                 f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
         _kac_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
         _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
+        # Per-Kreis PERSON totals (sum over the 18 age-x-sex 100m band columns) are needed
+        # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
+        # time such an entry is seen (fail-fast on a missing band column; no silent fallback).
+        _kac_persons_by_kreis = None
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
         _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
@@ -951,13 +1022,25 @@ def execute(context) -> pd.DataFrame:
             _tgt = _kac.load_kreis_target(
                 _kac_data_path, _ctl, expected_ars5=_kac_expected_ars5,
                 share_tolerance=_kac_share_tol)
+            # Per-entry total by level: household entries partition the per-Kreis household
+            # total; person entries (e.g. trip_class) partition the per-Kreis PERSON total
+            # (sum of the 18 age-x-sex 100m band columns), so the category targets partition
+            # EXACTLY the population PopulationSim controls per Kreis -> IPU-consistent.
+            if _ctl.level == "person":
+                if _kac_persons_by_kreis is None:
+                    _kac_persons_by_kreis = person_total_by_kreis(cells, _kac_kreis)
+                _total_by_kreis = _kac_persons_by_kreis
+                _total_label = "persons"
+            else:
+                _total_by_kreis = _kac_hh_by_kreis
+                _total_label = "households"
             _tbl = _kac.attribute_kreis_count_table(
-                _ctl, _tgt, _kac_hh_by_kreis, prior_n=_entry_prior_n)
+                _ctl, _tgt, _total_by_kreis, prior_n=_entry_prior_n)
             _map = _kreis_controls_map(_cs_kac.attribute_kreis_controls([_ctl]))
             logger.info(
-                "[popsim.stage] KREIS attribute control ON: %s (%s), %d Kreise, prior_n=%.1f, "
-                "total households=%d", _ctl.name, _ctl.tier, len(_tbl), _entry_prior_n,
-                int(sum(_kac_hh_by_kreis.values())))
+                "[popsim.stage] KREIS attribute control ON: %s (%s, %s-level), %d Kreise, "
+                "prior_n=%.1f, total %s=%d", _ctl.name, _ctl.tier, _ctl.level, len(_tbl),
+                _entry_prior_n, _total_label, int(sum(_total_by_kreis.values())))
             if kreis_table is None:
                 kreis_table = _tbl
                 kreis_controls_map = dict(_map)

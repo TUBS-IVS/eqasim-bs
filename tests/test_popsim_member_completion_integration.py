@@ -41,14 +41,16 @@ def _write_mid_attribute_fixture(tmp_path):
         "B,3,4,1,2,2,0,73,4,4,1.0,2,2\n",
         encoding="utf-8",
     )
+    # anzwege1 (diary trip count) is part of MID_PERSON_ATTR_COLS (person-level
+    # trip_class control), so the fixture includes it after alter_gr1.
     (tmp_path / "MiD2023_Personen.csv").write_text(
-        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,P_GEW,kernwo\n"
-        "A,1,40,1,1,1,3,1,5,1.0,1\n"
-        "A,2,38,2,1,1,3,1,5,1.0,1\n"
-        "B,1,41,1,1,1,3,1,5,1.0,1\n"
-        "B,2,39,2,1,1,3,1,5,1.0,1\n"
-        "B,3,10,1,5,2,3,4,2,1.0,1\n"
-        "B,4,8,2,5,2,3,4,1,1.0,1\n",
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo\n"
+        "A,1,40,1,1,1,3,1,5,3,1.0,1\n"
+        "A,2,38,2,1,1,3,1,5,2,1.0,1\n"
+        "B,1,41,1,1,1,3,1,5,4,1.0,1\n"
+        "B,2,39,2,1,1,3,1,5,0,1.0,1\n"
+        "B,3,10,1,5,2,3,4,2,1,1.0,1\n"
+        "B,4,8,2,5,2,3,4,1,1,1.0,1\n",
         encoding="utf-8",
     )
 

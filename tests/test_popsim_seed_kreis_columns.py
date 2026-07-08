@@ -96,9 +96,12 @@ def _write_mini_mid(tmp: Path):
     # as literally shown in the brief -- the brief's fixture header used a column name
     # that does not exist in the seed column mapping, which would make load_mid_seed
     # fail with an unrelated "usecols do not match columns" error. See task-3-report.md.
+    # anzwege1 (diary trip count) + alter_gr1 (age band) are added for the person-level
+    # trip_class control: 2->class 1, 0->class 0, 5->class 3. Extra columns are harmless
+    # for the household-only tests (usecols reads only what each control needs).
     pers.write_text(
-        "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo\n"
-        "11;1;1.0;40;1;1\n12;2;1.0;35;2;1\n13;2;1.0;38;1;1\n", encoding="utf-8")
+        "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1\n"
+        "11;1;1.0;40;1;1;2;5\n12;2;1.0;35;2;1;0;4\n13;2;1.0;38;1;1;5;4\n", encoding="utf-8")
 
 
 def test_load_mid_seed_derives_only_active_kreis_columns(tmp_path):
@@ -119,6 +122,37 @@ def test_load_mid_seed_count_style_entry_requires_seeded_rng(tmp_path):
     entries = [_entry("number_of_cars")]
     with pytest.raises(ValueError):
         load_mid_seed(tmp_path, day_filter_values=(), kreis_control_entries=entries)
+
+
+# --- Task 2 (2026-07-08 plan): person-level trip_class seed derivation ---
+
+
+def test_load_mid_seed_derives_trip_class_only_when_active(tmp_path):
+    from braunschweig.popsim.mid import load_mid_seed
+    _write_mini_mid(tmp_path)
+    # Active -> the PERSONS frame carries a clean int-coded trip_class (0..3).
+    _hh, pers_on, _rep = load_mid_seed(
+        tmp_path, day_filter_values=(), kreis_control_entries=[_entry("trip_class")],
+        kreis_seed_rng=np.random.RandomState(0))
+    assert "trip_class" in pers_on.columns
+    assert set(pers_on["trip_class"]).issubset({0, 1, 2, 3})
+    # anzwege1 [2, 0, 5] -> classes [1, 0, 3] (the raw diary column is not kept).
+    assert sorted(pers_on["trip_class"].tolist()) == [0, 1, 3]
+    assert "anzwege1" not in pers_on.columns
+    # Inactive -> no trip_class column on the persons seed (byte-identical for that attr).
+    _hh2, pers_off, _rep2 = load_mid_seed(
+        tmp_path, day_filter_values=(), kreis_control_entries=[_entry("number_of_cars")],
+        kreis_seed_rng=np.random.RandomState(0))
+    assert "trip_class" not in pers_off.columns
+
+
+def test_load_mid_seed_trip_class_requires_seeded_rng(tmp_path):
+    # The seeded-RNG guard must cover the person-level trip_class entry (803/804 imputation).
+    from braunschweig.popsim.mid import load_mid_seed
+    _write_mini_mid(tmp_path)
+    with pytest.raises(ValueError):
+        load_mid_seed(
+            tmp_path, day_filter_values=(), kreis_control_entries=[_entry("trip_class")])
 
 
 def test_load_mid_seed_include_status_seed_col_alias_matches_economic_status_entry(tmp_path):
@@ -165,6 +199,11 @@ def _completed_donor_frames():
         cols.person_weight: [1.0, 1.0, 1.0, 1.0],
         cols.age: [40, 38, 10, 45],
         cols.sex: [1, 2, 1, 2],
+        # anzwege1 (raw diary trip count) + alter_gr1 (age band) feed the person-level
+        # trip_class control on the completed-donor path (anzwege1 is in
+        # MID_PERSON_ATTR_COLS, so the completed frame carries it): 2->1, 0->0, 4->2, 5->3.
+        "anzwege1": [2, 0, 4, 5],
+        "alter_gr1": [5, 4, 1, 5],
     })
     return cols, households, persons
 
@@ -190,6 +229,27 @@ def test_project_completed_seed_count_style_entry_requires_seeded_rng():
     entries = [_entry("number_of_cars")]
     with pytest.raises(ValueError):
         mid.project_completed_seed(households, persons, cols, kreis_control_entries=entries)
+
+
+def test_project_completed_seed_derives_trip_class():
+    # The completed-donor path derives trip_class on the completed persons from their raw
+    # anzwege1 (carried via MID_PERSON_ATTR_COLS): anzwege1 [2, 0, 4, 5] -> [1, 0, 2, 3].
+    cols, households, persons = _completed_donor_frames()
+    _seed_hh, seed_p = mid.project_completed_seed(
+        households, persons, cols,
+        kreis_control_entries=[_entry("trip_class")], kreis_seed_rng=np.random.RandomState(0),
+    )
+    assert "trip_class" in seed_p.columns
+    assert set(seed_p["trip_class"]).issubset({0, 1, 2, 3})
+    assert sorted(seed_p["trip_class"].tolist()) == [0, 1, 2, 3]
+
+
+def test_project_completed_seed_trip_class_requires_seeded_rng():
+    # The seeded-RNG guard covers the person-level trip_class entry on this path too.
+    cols, households, persons = _completed_donor_frames()
+    with pytest.raises(ValueError):
+        mid.project_completed_seed(
+            households, persons, cols, kreis_control_entries=[_entry("trip_class")])
 
 
 def test_project_completed_seed_derives_has_ebike():
@@ -240,11 +300,49 @@ class _FakeContext:
         raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
 
 
-def test_all_four_kreis_entries_default_on():
+def test_all_kreis_entries_default_on():
     from braunschweig.popsim.stage import active_kreis_entries
 
     active = active_kreis_entries(_FakeContext(), "mid")
     names = {c.name for c in active}
     assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
+        "trip_class",
     }
+
+
+# --- Task 2: person-level per-Kreis total helper (partitions the PERSON total) ---
+
+
+def _cells_with_person_bands(kreis_codes, per_band_value=1):
+    """A minimal cells frame carrying all 18 age-x-sex 100m band columns.
+
+    Each band column gets ``per_band_value`` per row, so the per-Kreis person total is
+    ``18 * per_band_value * (rows in that Kreis)``.
+    """
+    from braunschweig.popsim.stage import person_band_census_columns
+
+    band_cols = person_band_census_columns()
+    assert len(band_cols) == 18, band_cols
+    data = {c: [per_band_value] * len(kreis_codes) for c in band_cols}
+    return pd.DataFrame(data), band_cols
+
+
+def test_person_total_by_kreis_sums_18_bands():
+    from braunschweig.popsim.stage import person_total_by_kreis
+
+    kreis = pd.Series(["03101", "03101", "03102"])
+    cells, _band_cols = _cells_with_person_bands(kreis, per_band_value=2)
+    totals = person_total_by_kreis(cells, kreis)
+    # 18 bands x 2 per band: 03101 has 2 rows -> 72; 03102 has 1 row -> 36.
+    assert totals == {"03101": 72, "03102": 36}
+
+
+def test_person_total_by_kreis_raises_on_missing_band_column():
+    from braunschweig.popsim.stage import person_total_by_kreis
+
+    kreis = pd.Series(["03101", "03102"])
+    cells, band_cols = _cells_with_person_bands(kreis)
+    cells = cells.drop(columns=[band_cols[0]])  # drop one band -> no silent fallback
+    with pytest.raises(RuntimeError, match="band columns"):
+        person_total_by_kreis(cells, kreis)

@@ -459,15 +459,18 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
         encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
+    # anzwege1 (diary trip count) joined MID_PERSON_ATTR_COLS 2026-07-08 (person-level
+    # trip_class KREIS control), so the fixture must include it too.
     (tmp_path / "MiD2023_Personen.csv").write_text(
-        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,P_GEW,kernwo\n1,1,40,1,1,1,3,1,5,1.0,1\n",
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo\n"
+        "1,1,40,1,1,1,3,1,5,2,1.0,1\n",
         encoding="utf-8",
     )
     households, persons = mid.load_mid_attributes(tmp_path)
     assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "anzpedrad", "H_ANZPED",
             "RegioStaR7", "hhgr_gr", "H_GR", "H_GEW"} <= set(households.columns)
     assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1",
-            "P_GEW", "kernwo"} <= set(persons.columns)
+            "anzwege1", "P_GEW", "kernwo"} <= set(persons.columns)
 
 
 # ---------------------------------------------------------------------------
