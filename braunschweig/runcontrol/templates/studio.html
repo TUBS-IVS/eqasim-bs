@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Config Studio{% endblock %}
+{% block content %}
+  <div class="hero"><a href="/">&lsaquo; Runs</a> / <b>New run - Config Studio</b>
+    <span class="vital">target:
+      {% for t in targets %}<a href="/studio?target={{ t }}" class="badge {{ 'running' if t == target else 'queued' }}">{{ t }}</a>{% endfor %}
+    </span>
+  </div>
+  <div class="zone">
+    <div class="queue">
+      <div class="zlabel">Template</div>
+      {% for tpl in templates_list %}
+        <div class="frow"><a class="mono" href="/studio?target={{ target }}&template={{ tpl.name }}">{{ tpl.name }}</a></div>
+      {% endfor %}
+    </div>
+    <div style="flex:1">
+      {% if inspected %}
+      <form method="post" action="/api/launch" id="launchform">
+        <input type="hidden" name="target" value="{{ target }}">
+        <input type="hidden" name="template" value="{{ selected }}">
+        <div class="frow"><label>Label <input name="label" required placeholder="prod-100"></label>
+          <span class="vital">{{ inspected.uncurated_count }} uncurated keys stay as in the template</span></div>
+        {% for group, flags in inspected.groups.items() %}
+          <details class="grp" {% if loop.first %}open{% endif %}>
+            <summary>{{ group }}</summary>
+            {% for f in flags %}
+              <div class="frow">
+                <span style="flex:1">{{ f.description }}<small class="mono">{{ f.key }}{% if f.unit %} [{{ f.unit }}]{% endif %}</small></span>
+                <input data-flag="{{ f.key }}" data-type="{{ f.type }}"
+                       value="{{ f.value if f.value is not none else '' }}"
+                       placeholder="{{ 'not in template' if not f.in_template else '' }}">
+              </div>
+            {% endfor %}
+          </details>
+        {% endfor %}
+        <input type="hidden" name="overrides" id="overrides" value="{}">
+        <div style="padding:14px"><button class="cta" onclick="collectOverrides()">Save &amp; enqueue &#9654;</button></div>
+      </form>
+      <script>
+        function collectOverrides() {
+          const o = {};
+          document.querySelectorAll("input[data-flag]").forEach(el => {
+            if (el.value === "" || el.value === el.defaultValue) { return; }
+            const t = el.dataset.type;
+            o[el.dataset.flag] = t === "int" ? parseInt(el.value)
+              : t === "float" ? parseFloat(el.value)
+              : t === "bool" ? el.value === "true"
+              : el.value;
+          });
+          document.getElementById("overrides").value = JSON.stringify(o);
+        }
+      </script>
+      {% else %}
+        <p class="vital" style="padding:16px 24px">Select a template on the left.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

@@ -100,7 +100,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
             cfg = yaml.safe_load(t.read_text(row["config_path"])) or {}
             last_it = cfg.get("config", {}).get("matsim_last_iteration")
             output_path = cfg.get("config", {}).get("output_path")
-        except (FileNotFoundError, RuntimeError, ValueError):
+        except (FileNotFoundError, RuntimeError, ValueError, yaml.YAMLError):
             pass
         out["matsim"] = matsim_progress.parse(log, last_it).__dict__
         out["output_path"] = output_path        # meta tab links/copy path; None -> "unknown"
@@ -194,5 +194,43 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         except ValueError as exc:
             raise HTTPException(422, str(exc))
         return {"ok": True}
+
+    # ---- HTML pages ---------------------------------------------------------
+    def _home_ctx(request: Request) -> dict:
+        status = api_status()
+        history = [r for r in db.list_runs() if r["status"] in ("done", "failed", "stopped", "unknown")]
+        queued = [db.get_run(rid) for rid in db.queue_ids()]
+        return {"request": request, "status": status, "history": history[:20],
+                "queued": queued, "targets": sorted(targets)}
+
+    @app.get("/", response_class=HTMLResponse)
+    def page_home(request: Request):
+        return templates.TemplateResponse("home.html", _home_ctx(request))
+
+    @app.get("/fragments/hero", response_class=HTMLResponse)
+    def fragment_hero(request: Request):
+        return templates.TemplateResponse("_hero.html", _home_ctx(request))
+
+    @app.get("/runs/{run_id}", response_class=HTMLResponse)
+    def page_run(request: Request, run_id: str, tab: str = "overview"):
+        run = _enrich(_run_or_404(run_id))
+        events = db.events(run_id)
+        return templates.TemplateResponse("run.html", {"request": request, "run": run,
+                                                       "events": events, "tab": tab})
+
+    @app.get("/studio", response_class=HTMLResponse)
+    def page_studio(request: Request, target: str, template: str | None = None):
+        t = _target(target)
+        entries = api_templates(target)
+        # Default to the first available template so a bare "/studio?target=x" visit shows
+        # a populated inspector immediately, instead of an empty "select a template" state.
+        if template is None and entries:
+            template = entries[0]["name"]
+        inspected = None
+        if template:
+            inspected = api_template_inspect(template, target)
+        return templates.TemplateResponse("studio.html", {
+            "request": request, "target": target, "targets": sorted(targets),
+            "templates_list": entries, "selected": template, "inspected": inspected})
 
     return app

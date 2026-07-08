@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Mission Control{% endblock %}
+{% block topbar_extra %}
+  {% for name, v in status.vitals.items() %}
+    <span class="vital">{{ name }}:
+      CPU <b class="mono">{{ v.cpu_percent if v.cpu_percent is not none else "unknown" }}%</b>
+      RAM <b class="mono">{{ v.ram_avail_gb if v.ram_avail_gb is not none else "unknown" }} G free</b>
+      Disk <b class="mono">{{ v.disk_avail_gb if v.disk_avail_gb is not none else "unknown" }} G free</b>
+    </span>
+  {% endfor %}
+{% endblock %}
+{% block content %}
+  <div class="hero" hx-get="/fragments/hero" hx-trigger="every 3s" hx-swap="innerHTML">
+    {% include "_hero.html" %}
+  </div>
+  <div class="zone">
+    <div class="queue">
+      <div class="zlabel">Queue</div>
+      {% if queued %}
+        {% for q in queued %}<div class="frow"><span class="name">{{ q.label }}</span>
+          <small class="mono">{{ q.config_path }}</small></div>{% endfor %}
+      {% else %}<span class="vital">Queue empty</span>{% endif %}
+    </div>
+    <div style="flex:1">
+      <div class="zlabel">History</div>
+      <table>
+        <tr><th>Run</th><th>Status</th><th>Finished</th><th>Config</th></tr>
+        {% for r in history %}
+        <tr>
+          <td class="name"><a href="/runs/{{ r.run_id }}">{{ r.label }}</a></td>
+          <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+          <td class="mono">{{ r.finished_at or "unknown" }}</td>
+          <td class="mono">{{ r.config_path }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{# templates/_hero.html -- shared by home page and the HTMX fragment #}
+{% set run = status.active_run %}
+{% if run %}
+  <span class="dot"></span> <b style="font-size:19px">{{ run.label }}</b>
+  <span class="badge running">running</span>
+  <span class="vital">git <span class="mono">{{ run.git_commit or "unknown" }}</span>
+    &middot; config <span class="mono">{{ run.config_path }}</span></span>
+  <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">
+    <button class="stopbtn">&#9632; Stop</button></form>
+  {% if run.progress_available and run.stages %}
+    <div class="dna">
+      {% for s in run.stages.expected %}
+        <span class="seg {{ s.state }}" style="flex:{{ s.weight }}" title="{{ s.stage_short }}"></span>
+      {% endfor %}
+    </div>
+    <span class="vital">
+      {% if run.stages.active %}&#9673; <b>{{ run.stages.active }}</b>{% endif %}
+      {% if run.stages.weights_source == "equal_fallback" %}(stage widths: no history, equal){% endif %}
+      {% if run.matsim and run.matsim.iteration is not none %}
+        &middot; iteration <b class="mono">{{ run.matsim.iteration }}/{{ run.matsim.last_iteration }}</b>
+        {% if run.matsim.eta_seconds %}&middot; ETA ~<b class="mono">{{ (run.matsim.eta_seconds/3600)|round(1) }} h</b> (estimated){% endif %}
+      {% endif %}
+    </span>
+  {% endif %}
+{% else %}
+  <span class="vital">No run active.</span>
+{% endif %}

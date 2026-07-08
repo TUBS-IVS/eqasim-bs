@@ -1,0 +1,19 @@
+{# templates/base.html #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}runcontrol{% endblock %} - eqasim-bs</title>
+  <link rel="stylesheet" href="/static/runcontrol.css">
+  <script src="/static/vendor/htmx.min.js"></script>
+</head>
+<body>
+  <div class="topbar">
+    <span class="wordmark">EQASIM<span class="slash"> &#x2AFD; </span>RUN CONTROL</span>
+    {% block topbar_extra %}{% endblock %}
+    <a class="cta" href="/studio?target={{ targets[0] if targets is defined and targets else 'local' }}">+ New run</a>
+  </div>
+  {% block content %}{% endblock %}
+</body>
+</html>

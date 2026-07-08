@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ run.label }}{% endblock %}
+{% block content %}
+  <div class="hero">
+    <a href="/">&lsaquo; Runs</a> / <b>{{ run.label }}</b>
+    <span class="badge {{ run.status }}">{{ run.status }}</span>
+    {% if run.status in ("running", "launching") %}
+      <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">
+        <button class="stopbtn">&#9632; Stop</button></form>
+    {% endif %}
+  </div>
+  <div class="tabs">
+    {% for t in ["overview", "stages", "log", "resources", "meta"] %}
+      <a class="tab {{ 'on' if tab == t }}" href="/runs/{{ run.run_id }}?tab={{ t }}">{{ t|capitalize }}</a>
+    {% endfor %}
+  </div>
+  {% if tab == "overview" %}
+    <div class="kpis">
+      <div class="kpi"><div class="v">{{ run.matsim.iteration if run.matsim and run.matsim.iteration is not none else "-" }}</div><div class="l">Iteration</div></div>
+      <div class="kpi"><div class="v">{{ (run.matsim.eta_seconds/3600)|round(1) if run.matsim and run.matsim.eta_seconds else "-" }}</div><div class="l">ETA h (est.)</div></div>
+      <div class="kpi"><div class="v">{{ run.exit_code if run.exit_code is not none else "-" }}</div><div class="l">Exit code</div></div>
+    </div>
+  {% elif tab == "stages" %}
+    <table style="margin:16px 24px; width:auto">
+      <tr><th>Stage</th><th>State</th><th>Duration s</th></tr>
+      {% for d in (run.stages.done if run.stages else []) %}
+        <tr><td class="name mono">{{ d.stage_short }}</td><td>done</td><td class="mono">{{ d.duration_s|round(0) if d.duration_s is not none else "-" }}</td></tr>
+      {% endfor %}
+      {% if run.stages and run.stages.active %}
+        <tr><td class="name mono">{{ run.stages.active }}</td><td>active</td><td class="mono">-</td></tr>
+      {% endif %}
+    </table>
+  {% elif tab == "log" %}
+    <div class="logpane" id="log"
+         hx-get="/api/runs/{{ run.run_id }}/log?tail_bytes=65536"
+         hx-trigger="load, every 3s" hx-swap="innerHTML"></div>
+  {% elif tab == "resources" %}
+    <p class="vital" style="padding:16px 24px">Samples CSV (when present):
+      <span class="mono">logs/rc_{{ run.run_id }}_samples.csv</span></p>
+  {% elif tab == "meta" %}
+    <table style="margin:16px 24px; width:auto">
+      {% for k in ["run_id", "target", "config_path", "status", "created_at", "finished_at", "log_path"] %}
+        <tr><td class="name">{{ k }}</td><td class="mono">{{ run[k] if run[k] is not none else "unknown" }}</td></tr>
+      {% endfor %}
+      <tr><td class="name">output_path</td>
+          <td class="mono">{{ run.output_path if run.output_path else "unknown" }}
+            {% if run.output_path %}<small>(simwrapper/ and analysis/ live under this path)</small>{% endif %}</td></tr>
+    </table>
+    <div style="padding:0 24px 12px">
+      <div class="zlabel">RUNS.md row (copy-paste for the human-curated ledger at /close)</div>
+      <code class="mono">| {{ run.run_id }} | {{ run.created_at[:10] if run.created_at else "unknown" }} | `{{ run.config_path }}` | unknown | {{ run.target }} | see config | unknown | not yet validated | `{{ run.output_path or "unknown" }}` | {{ run.status }} | runcontrol |</code>
+    </div>
+    <div style="padding:0 24px">
+      <div class="zlabel">Events</div>
+      <table style="width:auto">
+        {% for e in events %}<tr><td class="mono">{{ e.at }}</td><td>{{ e.kind }}</td><td>{{ e.message }}</td></tr>{% endfor %}
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}
