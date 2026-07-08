@@ -282,16 +282,19 @@ def test_pt_subscription_no_rng_backward_compatible():
 
 
 def test_number_of_bicycles_valid_codes_map_correctly():
-    """H_ANZRAD 0..10 map identity; no NaN for valid codes."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 3, 10]})
+    """anzpedrad 0..10 map identity; no NaN for valid codes.
+
+    anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV alle-Raeder
+    construct; the default source column since the 2026-07-08 construct fix)."""
+    hh = pd.DataFrame({"anzpedrad": [0, 3, 10]})
     out = a.map_number_of_bicycles(hh, rng=np.random.RandomState(0))
     assert list(out["number_of_bicycles"]) == [0, 3, 10]
     assert out["number_of_bicycles"].isna().sum() == 0
 
 
 def test_number_of_bicycles_missing_is_imputed_not_silently_zero():
-    """H_ANZRAD=99 is imputed from the valid pool in the same hhgr_gr group, not forced to 0."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 2, 99], "hhgr_gr": [1, 2, 2]})
+    """anzpedrad=99 is imputed from the valid pool in the same hhgr_gr group, not forced to 0."""
+    hh = pd.DataFrame({"anzpedrad": [0, 2, 99], "hhgr_gr": [1, 2, 2]})
     out = a.map_number_of_bicycles(hh, rng=np.random.RandomState(0))
     assert out["number_of_bicycles"].isna().sum() == 0
     assert (out["number_of_bicycles"] >= 0).all()
@@ -301,7 +304,7 @@ def test_number_of_bicycles_missing_is_imputed_not_silently_zero():
 
 def test_number_of_bicycles_no_rng_backward_compatible():
     """Callers that omit rng must not raise."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 1, 99]})
+    hh = pd.DataFrame({"anzpedrad": [0, 1, 99]})
     out = a.map_number_of_bicycles(hh)
     assert out["number_of_bicycles"].isna().sum() == 0
     assert (out["number_of_bicycles"] >= 0).all()

@@ -36,19 +36,21 @@ def _write_mid_attribute_fixture(tmp_path):
     household B is a complete 4-person mirror.  All persons report on a
     weekday (kernwo=1) so the day filter keeps both households."""
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
-        "A,3,4,1,2,73,4,4,1.0,1,1\n"
-        "B,3,4,1,2,73,4,4,1.0,2,2\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        "A,3,4,1,2,2,0,73,4,4,1.0,1,1\n"
+        "B,3,4,1,2,2,0,73,4,4,1.0,2,2\n",
         encoding="utf-8",
     )
+    # anzwege1 (diary trip count) is part of MID_PERSON_ATTR_COLS (person-level
+    # trip_class control), so the fixture includes it after alter_gr1.
     (tmp_path / "MiD2023_Personen.csv").write_text(
-        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,P_GEW,kernwo\n"
-        "A,1,40,1,1,1,3,1,5,1.0,1\n"
-        "A,2,38,2,1,1,3,1,5,1.0,1\n"
-        "B,1,41,1,1,1,3,1,5,1.0,1\n"
-        "B,2,39,2,1,1,3,1,5,1.0,1\n"
-        "B,3,10,1,5,2,3,4,2,1.0,1\n"
-        "B,4,8,2,5,2,3,4,1,1.0,1\n",
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo\n"
+        "A,1,40,1,1,1,3,1,5,3,1.0,1\n"
+        "A,2,38,2,1,1,3,1,5,2,1.0,1\n"
+        "B,1,41,1,1,1,3,1,5,4,1.0,1\n"
+        "B,2,39,2,1,1,3,1,5,0,1.0,1\n"
+        "B,3,10,1,5,2,3,4,2,1,1.0,1\n"
+        "B,4,8,2,5,2,3,4,1,1,1.0,1\n",
         encoding="utf-8",
     )
 
@@ -237,6 +239,8 @@ def test_build_persons_keeps_completion_columns_and_mirror_surrogate():
         "hheink_gr1": [4, 4],
         "H_ANZAUTO": [1, 1],
         "H_ANZRAD": [2, 2],
+        "anzpedrad": [2, 2],
+        "H_ANZPED": [0, 0],
     })
 
     persons, mapping = assembly.build_persons(merged, mid_households, mid_persons)
@@ -296,6 +300,8 @@ def _rs7_fixture(cell_rs7: bool):
         "hheink_gr1": [4, 4],
         "H_ANZAUTO": [1, 1],
         "H_ANZRAD": [2, 2],
+        "anzpedrad": [2, 2],
+        "H_ANZPED": [0, 0],
         # The DONOR's home-region RS7 (MID_HOUSEHOLD_ATTR_COLS): deliberately
         # DIFFERENT from the cell value so a leak onto persons is detectable.
         "RegioStaR7": [77, 77],

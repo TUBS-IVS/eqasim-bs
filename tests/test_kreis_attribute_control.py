@@ -157,11 +157,24 @@ def _entry(name):
 
 
 def test_registry_has_four_entries_with_expected_tiers():
+    # Superseded by test_registry_has_five_entries_with_expected_tiers (Task 1 of the
+    # 2026-07-08 trip-class-kreis-control plan adds the person-level trip_class entry);
+    # kept (renamed in spirit, not name) so the historical four remain covered too.
     by_name = {c.name: c for c in REGISTRY}
-    assert set(by_name) == {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"}
+    assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"} <= set(by_name)
     assert by_name["number_of_cars"].tier == "hard"
     assert by_name["number_of_bicycles"].tier == "soft"
     assert by_name["has_ebike"].tier == "soft"
+
+
+def test_registry_has_five_entries_with_expected_tiers():
+    by_name = {c.name: c for c in REGISTRY}
+    assert set(by_name) == {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+    }
+    assert by_name["trip_class"].tier == "soft"
+    assert by_name["trip_class"].level == "person"
+    assert by_name["trip_class"].seed_column == "trip_class"
 
 
 def test_cars_control_columns_and_predicates():
@@ -197,3 +210,33 @@ def test_cars_count_table_partitions_household_total():
     tbl = attribute_kreis_count_table(cars, tgt, {"03101": 1000}, prior_n=0.0)
     cols = list(control_columns(cars))
     assert int(tbl[cols].sum(axis=1).iloc[0]) == 1000
+
+
+# --- Task 1 (2026-07-08 plan): trip_class, the first PERSON-level registry entry ---
+
+
+def test_trip_class_control_columns_and_predicates():
+    trip_class = _entry("trip_class")
+    assert control_columns(trip_class) == (
+        "trip_class_0", "trip_class_1_2", "trip_class_3_4", "trip_class_5plus")
+    preds = [p for _, p in trip_class.categories]
+    assert preds == ["== 0", "== 1", "== 2", "== 3"]
+    assert trip_class.target_columns == ("trips_0", "trips_1_2", "trips_3_4", "trips_5plus")
+    assert trip_class.target_csv_relpath == "braunschweig/targets/target2026_trip_class_by_kreis.csv"
+
+
+def test_trip_class_count_table_partitions_a_person_total():
+    # Person-level entries partition a PERSON total, not a household total; the
+    # count-table machinery is level-agnostic (the mapping key is just "the totals to
+    # partition"), so this proves the generic helper already supports the new level.
+    trip_class = _entry("trip_class")
+    tgt = pd.DataFrame({
+        "ars5": ["Gesamt", "03101"],
+        "trips_0": [0.11, 0.10], "trips_1_2": [0.34, 0.31],
+        "trips_3_4": [0.32, 0.34], "trips_5plus": [0.23, 0.25],
+    })
+    person_total_by_kreis = {"03101": 20000}  # a PERSON total, unlike the household totals above
+    tbl = attribute_kreis_count_table(trip_class, tgt, person_total_by_kreis, prior_n=0.0)
+    cols = list(control_columns(trip_class))
+    row = tbl[tbl.ARS_kreis == "03101"][cols].to_numpy().ravel()
+    assert row.sum() == 20000 and (row == np.floor(row)).all()

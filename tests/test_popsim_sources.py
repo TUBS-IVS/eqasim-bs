@@ -71,6 +71,8 @@ def _mid_households():
         "hheink_gr1": [4, 15],
         "H_ANZAUTO":  [1, 0],
         "H_ANZRAD":   [2, 1],
+        "anzpedrad":  [2, 1],
+        "H_ANZPED":   [0, 0],
     })
 
 

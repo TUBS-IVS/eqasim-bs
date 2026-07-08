@@ -218,6 +218,8 @@ def _mid_households():
         "hheink_gr1": [4, 15],
         "H_ANZAUTO":  [1, 0],
         "H_ANZRAD":   [2, 1],
+        "anzpedrad":  [2, 1],
+        "H_ANZPED":   [0, 0],
     })
 
 
@@ -363,6 +365,8 @@ def _mid_hh_single():
         "hheink_gr1": [4],
         "H_ANZAUTO":  [1],
         "H_ANZRAD":   [1],
+        "anzpedrad":  [1],
+        "H_ANZPED":   [0],
     })
 
 
@@ -435,6 +439,8 @@ def test_is_urban_resident_no_nulls():
         "hheink_gr1": [4, 4],
         "H_ANZAUTO":  [1, 0],
         "H_ANZRAD":   [1, 1],
+        "anzpedrad":  [1, 1],
+        "H_ANZPED":   [0, 0],
     })
     persons, _map = assembly.build_persons(
         merged, mid_hh, mid_p,

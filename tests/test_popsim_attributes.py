@@ -99,7 +99,9 @@ def test_map_has_pt_subscription_from_p_fkarte():
 
 
 def test_map_number_of_bicycles():
-    hh = pd.DataFrame({"H_ANZRAD": [0, 3, 99]})
+    # anzpedrad is the default source column (bicycles INCLUDING pedelecs/e-bikes,
+    # MiD H12.3 / SrV alle-Raeder construct; verified 2026-07-08).
+    hh = pd.DataFrame({"anzpedrad": [0, 3, 99]})
     out = attr.map_number_of_bicycles(hh)
     # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently 0). With no
     # hhgr_gr column the global valid pool {0, 3} is used; imputed value is in {0, 3}.
@@ -107,6 +109,18 @@ def test_map_number_of_bicycles():
     assert out["number_of_bicycles"].iloc[1] == 3
     assert out["number_of_bicycles"].iloc[2] in (0, 3)
     assert out["number_of_bicycles"].isna().sum() == 0
+
+
+def test_map_number_of_bicycles_uses_incl_pedelec_construct_not_h_anzrad():
+    """Construct regression (2026-07-08 fix): number_of_bicycles must resolve from the
+    combined anzpedrad column (bicycles INCLUDING pedelecs/e-bikes, MiD H12.3 / SrV
+    alle-Raeder), NOT from the conventional-bikes-only H_ANZRAD. A household with
+    H_ANZRAD=1 (1 conventional bike) and H_ANZPED=1 (1 pedelec) has anzpedrad=2 (the
+    verified min(H_ANZRAD + H_ANZPED, 10) relation); the resolved value must be 2, not
+    the H_ANZRAD-only value of 1 (the pre-fix construct mismatch)."""
+    hh = pd.DataFrame({"H_ANZRAD": [1], "H_ANZPED": [1], "anzpedrad": [2]})
+    out = attr.map_number_of_bicycles(hh)
+    assert out["number_of_bicycles"].iloc[0] == 2
 
 
 def test_derive_bicycle_availability():

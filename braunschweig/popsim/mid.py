@@ -462,7 +462,10 @@ def load_mid_seed(
     if "number_of_cars" in active_kreis_entry_names:
         household_cols.append("H_ANZAUTO")
     if "number_of_bicycles" in active_kreis_entry_names:
-        household_cols.append("H_ANZRAD")
+        # anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV alle-Raeder
+        # construct; verified 2026-07-08 to equal min(H_ANZRAD + H_ANZPED, 10) on all
+        # 218,039 valid MiD B1 household rows). See attributes.map_number_of_bicycles.
+        household_cols.append("anzpedrad")
     if "has_ebike" in active_kreis_entry_names:
         if not ebike_seed_column:
             raise ValueError(
@@ -492,6 +495,14 @@ def load_mid_seed(
         if c in _persons_header and c not in person_cols
     )
     person_cols.extend(_tier3_seed_cols)
+    # trip_class (first PERSON-level KREIS control): load the raw diary trip count
+    # (anzwege1) and the age-band conditioning column (alter_gr1) so the class can be
+    # derived + the 803/804 item-nonresponse imputed within alter_gr1 after the
+    # complete-household filter. Dedup-safe (alter_gr1 may already be present).
+    if "trip_class" in active_kreis_entry_names:
+        for _tc_col in ("anzwege1", "alter_gr1"):
+            if _tc_col not in person_cols:
+                person_cols.append(_tc_col)
     persons = pd.read_csv(
         persons_path,
         usecols=list(dict.fromkeys(person_cols)),
@@ -517,14 +528,18 @@ def load_mid_seed(
     # only the kept seed households). economic_status needs no derivation here -- its
     # seed column (oek_status) is used RAW by the == k predicate (byte-identical to the
     # pre-existing include_status_seed_col=True behaviour).
+    # Count-style entries impute the 99 missing code (household level); the person-level
+    # trip_class entry imputes the 803/804 diary-nonresponse codes (within alter_gr1). Both
+    # are random processes that REQUIRE the seeded kreis_seed_rng (no unseeded randomness).
     _count_style_entries = active_kreis_entry_names & {
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
-    if _count_style_entries and kreis_seed_rng is None:
+    _rng_style_entries = _count_style_entries | (active_kreis_entry_names & {"trip_class"})
+    if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
-            "load_mid_seed: count-style kreis controls "
-            f"{sorted(_count_style_entries)} are active but kreis_seed_rng is not set; "
-            "random imputation of the 99 missing code must use an explicit seed."
+            "load_mid_seed: kreis controls with seeded imputation "
+            f"{sorted(_rng_style_entries)} are active but kreis_seed_rng is not set; "
+            "random imputation of the missing/nonresponse codes must use an explicit seed."
         )
     if "number_of_cars" in active_kreis_entry_names:
         households = attributes.map_number_of_cars(households, rng=kreis_seed_rng)
@@ -547,6 +562,14 @@ def load_mid_seed(
         )
         extra_person_cols = ("member_imputed", "source_H_ID", "source_P_ID")
 
+    # trip_class (person-level KREIS control): derive the int-coded class (0..3) from the
+    # raw diary trip count AFTER the complete-household filter + member completion, so the
+    # 803/804 diary-nonresponse imputation pool reflects only the kept seed persons and any
+    # mirror-imputed member inherits the mirror donor's diary (documented, see
+    # MID_PERSON_ATTR_COLS). The rng guard above ensures kreis_seed_rng is set.
+    if "trip_class" in active_kreis_entry_names:
+        persons = attributes.map_trip_class(persons, rng=kreis_seed_rng)
+
     # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
     # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
     # (11-class) then collapses to the 5 Zensus Familientyp labels.  The result
@@ -564,20 +587,27 @@ def load_mid_seed(
     )
 
     _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    _person_extra: tuple[str, ...] = ()
     for _entry in effective_kreis_entries:
-        # All current registry entries are household-level; person-level entries are
-        # not yet supported (no such entry exists in the registry -- YAGNI).
-        if _entry.level != "household":
+        # Household-level entries retain their seed column on the households frame; the
+        # first PERSON-level entry (trip_class) retains its derived seed column on the
+        # persons frame so the population control expression (persons.trip_class == k)
+        # can be evaluated by PopulationSim.
+        if _entry.level == "household":
+            if _entry.seed_column not in _hh_extra:
+                _hh_extra = _hh_extra + (_entry.seed_column,)
+        elif _entry.level == "person":
+            if _entry.seed_column not in _person_extra:
+                _person_extra = _person_extra + (_entry.seed_column,)
+        else:
             raise NotImplementedError(
-                f"load_mid_seed: person-level kreis control entry {_entry.name!r} is not "
-                "supported yet (only household-level entries are wired)."
+                f"load_mid_seed: kreis control entry {_entry.name!r} has unsupported level "
+                f"{_entry.level!r} (expected 'household' or 'person')."
             )
-        if _entry.seed_column not in _hh_extra:
-            _hh_extra = _hh_extra + (_entry.seed_column,)
     households, persons = seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=_hh_extra,
-        extra_person_cols=extra_person_cols + _tier3_seed_cols,
+        extra_person_cols=extra_person_cols + _tier3_seed_cols + _person_extra,
     )
     return households, persons, report
 
@@ -599,7 +629,7 @@ def project_completed_seed(
     attribute 'hh_type5'``) once the Tier-1 household_type control was enabled.
     This mirrors load_mid_seed's projection: derive the active count-style KREIS
     control seed columns from the raw donor columns the completed-donor frame
-    already carries (H_ANZAUTO / H_ANZRAD / hhgr_gr; see
+    already carries (H_ANZAUTO / anzpedrad / H_ANZPED / hhgr_gr; see
     :data:`MID_HOUSEHOLD_ATTR_COLS`), derive hh_type5 from the persons frame and
     join it onto households, then select the seed columns retaining the raw
     control cols (H_GR / H_MIETE / haustyp) plus hh_type5, RegioStaR7, and each
@@ -611,21 +641,23 @@ def project_completed_seed(
             ``seed_column`` must be present on the returned seed households.
             ``economic_status`` is a raw ``oek_status`` pass-through (already
             present on the completed-donor households). ``number_of_cars`` /
-            ``number_of_bicycles`` are derived here via the corresponding
-            ``attributes.map_*`` resolver (99 missing code imputed) from the raw
-            H_ANZAUTO / H_ANZRAD columns the completed-donor households already
-            carry. ``has_ebike`` is NOT supported on this path: the
-            completed-donor households do not carry a raw e-bike column and the
-            MiD household e-bike column name is server-unverified (issue #116);
-            an active ``has_ebike`` entry raises instead of silently skipping the
-            control (no silent fallback).
+            ``number_of_bicycles`` / ``has_ebike`` are derived here via the
+            corresponding ``attributes.map_*`` resolver (99 missing code imputed)
+            from the raw H_ANZAUTO / anzpedrad / ``ebike_seed_column`` columns the
+            completed-donor households already carry (``anzpedrad`` = bicycles
+            INCLUDING pedelecs, MiD H12.3 / SrV alle-Raeder construct; the raw
+            e-bike column was VERIFIED 2026-07-08 on the MiD B1 microdata to be
+            ``H_ANZPED``, see :mod:`braunschweig.popsim.attributes`). has_ebike is
+            now fully wired on this path (formerly deferred, issue #116).
         kreis_seed_rng: Seeded :class:`numpy.random.RandomState` for the
             count-style entry derivations (``number_of_cars`` /
-            ``number_of_bicycles``). REQUIRED when either is active (seeded
-            randomness rule: no random process without an explicit seed).
-        ebike_seed_column: Accepted for call-site symmetry with
-            :func:`load_mid_seed`; unused here because an active ``has_ebike``
-            entry always raises on this path (see above).
+            ``number_of_bicycles`` / ``has_ebike``). REQUIRED when any is active
+            (seeded randomness rule: no random process without an explicit seed).
+        ebike_seed_column: Name of the (server-verified) MiD household e-bike
+            column feeding the ``has_ebike`` entry (default ``H_ANZPED`` at the
+            stage config layer, see ``stage.KEY_EBIKE_SEED_COLUMN``). REQUIRED
+            when ``has_ebike`` is active (no silent fallback to a guessed column
+            name), mirroring :func:`load_mid_seed`.
         include_status_seed_col: DEPRECATED alias for
             ``kreis_control_entries=(economic_status entry,)``; kept so existing
             callers/tests stay byte-identical (raw ``oek_status`` pass-through,
@@ -642,30 +674,45 @@ def project_completed_seed(
         )
     active_kreis_entry_names = {entry.name for entry in effective_kreis_entries}
 
-    if "has_ebike" in active_kreis_entry_names:
+    if "has_ebike" in active_kreis_entry_names and not ebike_seed_column:
         raise ValueError(
-            "project_completed_seed: has_ebike kreis control is not yet supported on the "
-            "complete_members=True completed-donor seed path -- the completed-donor "
-            "households do not carry a raw MiD household e-bike column and its name is "
-            "server-unverified (issue #116). Disable it "
-            "(braunschweig.population.popsim.has_ebike_kreis_control=off) or use "
-            "complete_members=False (load_mid_seed) with a verified ebike_seed_column."
+            "project_completed_seed: has_ebike kreis control is active but ebike_seed_column "
+            "is not configured; set braunschweig.population.popsim.ebike_seed_column to the "
+            "verified MiD household e-bike column (no silent fallback)."
         )
 
     # Derive the clean, MECE seed columns for the active count-style kreis controls from
-    # the raw H_ANZAUTO / H_ANZRAD columns the completed-donor households already carry
-    # (see MID_HOUSEHOLD_ATTR_COLS); mirrors the load_mid_seed derivation exactly.
-    _count_style_entries = active_kreis_entry_names & {"number_of_cars", "number_of_bicycles"}
-    if _count_style_entries and kreis_seed_rng is None:
+    # the raw H_ANZAUTO / anzpedrad / ebike_seed_column columns the completed-donor
+    # households already carry (see MID_HOUSEHOLD_ATTR_COLS); mirrors the load_mid_seed
+    # derivation exactly.
+    # Count-style entries impute the 99 missing code (household level); trip_class imputes
+    # the 803/804 diary-nonresponse codes (person level). Both REQUIRE the seeded rng.
+    _count_style_entries = active_kreis_entry_names & {
+        "number_of_cars", "number_of_bicycles", "has_ebike"
+    }
+    _rng_style_entries = _count_style_entries | (active_kreis_entry_names & {"trip_class"})
+    if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
-            "project_completed_seed: count-style kreis controls "
-            f"{sorted(_count_style_entries)} are active but kreis_seed_rng is not set; "
-            "random imputation of the 99 missing code must use an explicit seed."
+            "project_completed_seed: kreis controls with seeded imputation "
+            f"{sorted(_rng_style_entries)} are active but kreis_seed_rng is not set; "
+            "random imputation of the missing/nonresponse codes must use an explicit seed."
         )
     if "number_of_cars" in active_kreis_entry_names:
         households = attributes.map_number_of_cars(households, rng=kreis_seed_rng)
     if "number_of_bicycles" in active_kreis_entry_names:
+        # Default bikes_col="anzpedrad" (bicycles INCLUDING pedelecs/e-bikes; MiD H12.3 /
+        # SrV alle-Raeder construct); see attributes.map_number_of_bicycles.
         households = attributes.map_number_of_bicycles(households, rng=kreis_seed_rng)
+    if "has_ebike" in active_kreis_entry_names:
+        households = attributes.map_has_ebike(
+            households, ebike_col=ebike_seed_column, rng=kreis_seed_rng
+        )
+    if "trip_class" in active_kreis_entry_names:
+        # Derive trip_class from the completed persons' raw diary trip count. anzwege1 is
+        # part of MID_PERSON_ATTR_COLS, so the completed-donor frame carries it; a
+        # mirror-imputed member inherits the mirror donor's anzwege1 (documented).
+        # map_trip_class fail-fasts (KeyError) if anzwege1 is absent (no silent fallback).
+        persons = attributes.map_trip_class(persons, rng=kreis_seed_rng)
 
     hh_type5_series = seedmod.derive_hh_type5(
         persons,
@@ -677,22 +724,28 @@ def project_completed_seed(
         on=columns.household_id,
     )
     _hh_extra = ("RegioStaR7", "H_GR", "hh_type5", "H_MIETE", "haustyp")
+    _person_extra: tuple[str, ...] = ()
     for _entry in effective_kreis_entries:
-        # All current registry entries are household-level; person-level entries are
-        # not yet supported (no such entry exists in the registry -- YAGNI).
-        if _entry.level != "household":
+        # Household-level entries retain their seed column on the households frame; the
+        # first PERSON-level entry (trip_class) retains its derived seed column on the
+        # persons frame (mirrors load_mid_seed).
+        if _entry.level == "household":
+            if _entry.seed_column not in _hh_extra:
+                _hh_extra = _hh_extra + (_entry.seed_column,)
+        elif _entry.level == "person":
+            if _entry.seed_column not in _person_extra:
+                _person_extra = _person_extra + (_entry.seed_column,)
+        else:
             raise NotImplementedError(
-                f"project_completed_seed: person-level kreis control entry {_entry.name!r} is "
-                "not supported yet (only household-level entries are wired)."
+                f"project_completed_seed: kreis control entry {_entry.name!r} has unsupported "
+                f"level {_entry.level!r} (expected 'household' or 'person')."
             )
-        if _entry.seed_column not in _hh_extra:
-            _hh_extra = _hh_extra + (_entry.seed_column,)
     return seedmod.select_seed_columns(
         households, persons, columns,
         extra_household_cols=_hh_extra,
         extra_person_cols=tuple(
             c for c in ("P_TAET", "bildung1", "bildung2") if c in persons.columns
-        ),
+        ) + _person_extra,
     )
 
 
@@ -700,6 +753,13 @@ def project_completed_seed(
 MID_PERSON_ATTR_COLS = (
     "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_TAET", "P_FSCHEIN", "P_FKARTE", "P_BKAT",
     "alter_gr1",  # conditioning column for grouped item-nonresponse imputation
+    # anzwege1: raw MiD diary trip count (Anzahl Wege am Stichtag; valid 0..50, missing
+    # codes 803/804 = trip module not covered) feeding the person-level trip_class KREIS
+    # control (attributes.map_trip_class). Carried on the completed-donor frames so
+    # project_completed_seed can derive trip_class; a mirror-imputed member inherits the
+    # mirror donor's diary trip count (documented -- the completion samples whole donor
+    # person rows, so the filler's anzwege1 is the donor's).
+    "anzwege1",
     # P_GEW (seed person weight) + kernwo (day filter): needed so the completed
     # donor frames (load_completed_donor) can serve BOTH the expansion AND the
     # PopulationSim seed from ONE member-completion pass.
@@ -710,6 +770,16 @@ MID_PERSON_ATTR_COLS = (
 MID_PERSON_OPTIONAL_COLS = ("bildung1", "bildung2")
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
+    # anzpedrad: MiD-provided combined bicycle count INCLUDING pedelecs/e-bikes
+    # (verified 2026-07-08 to equal min(H_ANZRAD + H_ANZPED, 10) on all 218,039 valid
+    # MiD B1 household rows). This is the number_of_bicycles construct (MiD H12.3 /
+    # SrV alle-Raeder); H_ANZRAD (conventional bikes only) is retained for any
+    # downstream consumer that still needs the exclusive count.
+    "anzpedrad",
+    # H_ANZPED: verified MiD household e-bike (Pedelec) column feeding has_ebike
+    # (attributes.map_has_ebike); see the module docstring there for the full
+    # verification note.
+    "H_ANZPED",
     "RegioStaR7",  # Phase 4A: RegioStaR-7 code for donor urban/rural stratification
     "hhgr_gr",  # conditioning column for grouped item-nonresponse imputation
     # H_GR (declared household size; drives member completion) + H_GEW (seed

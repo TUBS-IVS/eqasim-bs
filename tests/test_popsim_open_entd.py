@@ -549,6 +549,8 @@ def test_build_persons_default_mapper_is_mid():
         "hheink_gr1": [4],
         "H_ANZAUTO":  [1],
         "H_ANZRAD":   [2],
+        "anzpedrad":  [2],
+        "H_ANZPED":   [0],
     })
     mid_p = pd.DataFrame({
         "H_ID":      [1],
