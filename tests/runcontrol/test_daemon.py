@@ -14,6 +14,7 @@ class FakeTarget:
         self.stopped = []
         self.manifests = {}          # relpath -> RunManifest JSON text
         self.alive_raises = set()    # run_ids whose is_alive raises
+        self.manifest_glob_raises = False
 
     def launch(self, spec):
         self.launched.append(spec.run_id)
@@ -36,6 +37,8 @@ class FakeTarget:
         self.exit_codes[h.run_id] = 130
 
     def manifest_glob(self):
+        if self.manifest_glob_raises:
+            raise RuntimeError("target unreachable")
         return sorted(self.manifests)
 
     def exists(self, relpath):
@@ -165,10 +168,41 @@ def test_reconcile_unknown_when_no_handle_no_manifest(tmp_path):
     db = Database(tmp_path / "runs.db")
     t = FakeTarget()
     db.insert_run(RunSpec("r1", "local", "one", "c1.yml"), RunStatus.LAUNCHING)
+    db.insert_run(RunSpec("r2", "local", "two", "c2.yml"), RunStatus.QUEUED)
+    db.enqueue("r2")
     w = QueueWorker(db, {"local": t})
     w.reconcile()
     assert db.get_run("r1")["status"] == "unknown"
     assert any(e["kind"] == "warning" for e in db.events("r1"))
+    w.tick()                                    # unresolved ghost blocks the queue
+    assert db.get_run("r2")["status"] == "queued"
+    assert t.launched == []
+
+
+def test_stop_unknown_run_without_handle_unblocks_queue(tmp_path):
+    db = Database(tmp_path / "runs.db")
+    t = FakeTarget()
+    db.insert_run(RunSpec("r1", "local", "one", "c1.yml"), RunStatus.LAUNCHING)
+    db.insert_run(RunSpec("r2", "local", "two", "c2.yml"), RunStatus.QUEUED)
+    db.enqueue("r2")
+    w = QueueWorker(db, {"local": t})
+    w.reconcile()                               # r1 -> unknown (no handle, no manifest)
+    w.stop_run("r1")                            # human resolves the ghost
+    assert db.get_run("r1")["status"] == "stopped"
+    assert t.stopped == []                      # target never called with a null handle
+    w.tick()
+    assert t.launched == ["r2"]
+    assert db.get_run("r2")["status"] == "running"
+
+
+def test_reconcile_survives_recovery_exception(tmp_path):
+    db = Database(tmp_path / "runs.db")
+    t = FakeTarget()
+    db.insert_run(RunSpec("r1", "local", "one", "c1.yml"), RunStatus.LAUNCHING)
+    t.manifest_glob_raises = True
+    w = QueueWorker(db, {"local": t})
+    w.reconcile()                               # must not raise
+    assert any(e["kind"] == "error" for e in db.events("r1"))
 
 
 def test_reconcile_purges_stale_queue_entries(tmp_path):

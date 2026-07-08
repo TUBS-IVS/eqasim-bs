@@ -2,8 +2,10 @@
 
 State machine per run: queued -> launching -> running -> done|failed|stopped,
 plus 'unknown' when a process disappeared without an exit marker (surfaced as
-a warning event -- never guessed into done/failed). One run executes at a
-time per QueueWorker (matches the single-box 64c/128G reality); the queue
+a warning event -- never guessed into done/failed). An UNKNOWN run with
+unverifiable process state (no handle and no manifest) blocks the queue until
+a human resolves it (stop_run marks it stopped and unblocks). One run executes
+at a time per QueueWorker (matches the single-box 64c/128G reality); the queue
 advances only while this process lives -- documented V1 limitation."""
 from __future__ import annotations
 
@@ -45,6 +47,12 @@ class QueueWorker:
             self.db.remove_from_queue(run_id)
             self.db.set_status(run_id, RunStatus.STOPPED)
             return
+        if not row["log_path"]:
+            # No handle was ever persisted (unverifiable ghost); never call the target
+            # with a fabricated handle. Marking it stopped also unblocks the queue.
+            self.db.set_status(run_id, RunStatus.STOPPED)
+            self.db.add_event(run_id, "status", "stopped without handle (state was unverifiable)")
+            return
         target = self.targets[row["target"]]
         handle = _handle_from_row(row)
         target.stop(handle)
@@ -56,28 +64,46 @@ class QueueWorker:
         queued_ids = set(self.db.queue_ids())
         for row in self.db.list_runs():
             run_id = row["run_id"]
-            if row["status"] in _ACTIVE:
-                self._settle(row)
-            elif row["status"] == RunStatus.QUEUED.value and run_id not in queued_ids:
-                # Crash window: dequeued but never marked LAUNCHING, so no process was
-                # ever started -- safe to retry by putting the run back into the queue.
-                self.db.enqueue(run_id)
-                self.db.add_event(run_id, "warning",
-                                  "re-enqueued stranded queued run (daemon restart during launch window)")
-                logger.warning("run %s: re-enqueued stranded queued run", run_id)
+            try:
+                if row["status"] in _ACTIVE:
+                    self._settle(row)
+                elif row["status"] == RunStatus.QUEUED.value and run_id not in queued_ids:
+                    # Crash window: dequeued but never marked LAUNCHING, so no process was
+                    # ever started -- safe to retry. The run goes to the BACK of the queue
+                    # (accepted simplification; original position is not preserved).
+                    self.db.enqueue(run_id)
+                    self.db.add_event(run_id, "warning",
+                                      "re-enqueued stranded queued run (daemon restart during launch window)")
+                    logger.warning("run %s: re-enqueued stranded queued run", run_id)
+            except Exception as exc:
+                # Startup must survive one unreachable target / corrupt manifest; the
+                # remaining rows are still reconciled.
+                logger.exception("run %s: reconcile failed", run_id)
+                self.db.add_event(run_id, "error", f"reconcile failed: {exc}")
         # Purge queue entries whose run is no longer QUEUED (e.g. crashed after a successful
         # launch); leaving them would re-launch an already-running/finished run.
         for run_id in self.db.queue_ids():
-            row = self.db.get_run(run_id)
-            if row is None or row["status"] != RunStatus.QUEUED.value:
-                self.db.remove_from_queue(run_id)
-                self.db.add_event(run_id, "warning", "removed non-queued run from queue (stale entry)")
-                logger.warning("run %s: removed stale queue entry (status %s)",
-                               run_id, row["status"] if row else "missing")
+            try:
+                row = self.db.get_run(run_id)
+                if row is None:
+                    self.db.remove_from_queue(run_id)
+                    logger.warning("run %s: removed queue entry without a run row", run_id)
+                elif row["status"] != RunStatus.QUEUED.value:
+                    self.db.remove_from_queue(run_id)
+                    self.db.add_event(run_id, "warning", "removed non-queued run from queue (stale entry)")
+                    logger.warning("run %s: removed stale queue entry (status %s)", run_id, row["status"])
+            except Exception as exc:
+                logger.exception("run %s: queue purge failed", run_id)
+                self.db.add_event(run_id, "error", f"queue purge failed: {exc}")
 
     def tick(self) -> None:
         active = False
         for row in self.db.list_runs():
+            if row["status"] == RunStatus.UNKNOWN.value and not row["log_path"]:
+                # Unverifiable ghost (no handle, no manifest): a process may still be
+                # running, so it blocks the queue until a human resolves it via stop_run.
+                active = True
+                continue
             if row["status"] in _ACTIVE:
                 try:
                     active = self._settle(row) or active
@@ -103,7 +129,9 @@ class QueueWorker:
             # fabricated/empty handle.
             row = self._recover_handle(row, target)
             if row is None:
-                return False
+                # Unverifiable ghost: count as active so no new launch happens over a
+                # possibly-live process (conservative bias; see module docstring).
+                return True
         handle = _handle_from_row(row)
         if target.is_alive(handle):
             if row["status"] != RunStatus.RUNNING.value:
@@ -132,7 +160,9 @@ class QueueWorker:
         """
         run_id = row["run_id"]
         wanted = f"rc_{run_id}.manifest.json"
-        match = next((p for p in target.manifest_glob() if p.rsplit("/", 1)[-1] == wanted), None)
+        # Normalize separators: a Windows local target may glob backslash paths.
+        match = next((p for p in target.manifest_glob()
+                      if p.replace("\\", "/").rsplit("/", 1)[-1] == wanted), None)
         if match is None:
             self.db.set_status(run_id, RunStatus.UNKNOWN)
             self.db.add_event(run_id, "warning",
