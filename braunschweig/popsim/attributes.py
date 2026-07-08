@@ -513,6 +513,34 @@ def map_number_of_bicycles(
     return out
 
 
+def map_has_ebike(
+    households: pd.DataFrame, *, ebike_col: str = "H_EBIKE", rng=None
+) -> pd.DataFrame:
+    """Add a 0/1 ``has_ebike`` household flag from a MiD household e-bike column.
+
+    ASSUMPTION (server-verify): ``ebike_col`` is a household e-bike count or flag; any
+    value >= 1 means the household owns at least one operational e-bike (the SrV
+    target construct). Missing code 99 is imputed within ``hhgr_gr`` (else global pool)
+    before binarisation. Raises KeyError if ``ebike_col`` is absent (no silent fallback).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if ebike_col not in households.columns:
+        raise KeyError(
+            f"map_has_ebike: source column {ebike_col!r} absent from the household frame "
+            f"(has {list(households.columns)}); cannot seed the has_ebike control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="_ebike_count", source_col=ebike_col,
+        value_map={i: i for i in range(0, 11)}, structural={},
+        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (), default=0)
+    out = households.copy()
+    counts, _ = missing.resolve(out, spec, rng=rng)
+    out["has_ebike"] = (counts.astype(int) >= 1).astype(int)
+    return out
+
+
 def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
     """Derive bicycle availability {none, some, all} from bikes vs. household size.
 
