@@ -101,7 +101,9 @@ REGISTRY: tuple = (
         seed_column="oek_status",
         level="household",
         categories=tuple((k, f"== {i}") for i, k in enumerate(_ECON_CATEGORIES, start=1)),
-        target_csv_relpath="braunschweig/mid/mid2023_H4_status_by_kreis.csv",  # swapped in Task 4
+        # Blended per-Kreis target (target2026_*): FINAL row-% shares (fractions summing to 1),
+        # consumed via load_kreis_target. Replaces the old raw MiD H4 percentage CSV (Task 4).
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_economic_status_by_kreis.csv",
         target_columns=_ECON_CATEGORIES,
         tier="hard",
     ),

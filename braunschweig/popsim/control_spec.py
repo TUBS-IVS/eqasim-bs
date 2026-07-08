@@ -945,7 +945,8 @@ def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
 
 
 def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,
-                 include_status_kreis: bool = False) -> List[CatalogControl]:
+                 include_status_kreis: bool = False,
+                 kreis_control_names: Sequence[str] = ()) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -975,8 +976,22 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         catalog.extend(tier3_controls())
     if include_employment_grid:
         catalog.extend(employment_grid_controls())
-    if include_status_kreis:
-        catalog.extend(status_kreis_controls())
+    # Generic per-Kreis attribute controls (S1c). ``kreis_control_names`` is the generalised
+    # knob (a list of REGISTRY entry names to render as GEO_KREIS controls). ``include_status_kreis``
+    # is kept as a backward-compat alias for ``kreis_control_names=("economic_status",)`` so
+    # existing callers/tests stay byte-identical.
+    _kreis_names = list(kreis_control_names)
+    if include_status_kreis and "economic_status" not in _kreis_names:
+        _kreis_names.append("economic_status")
+    if _kreis_names:
+        from braunschweig.popsim.kreis_attribute_control import REGISTRY as _KREIS_REGISTRY
+        _by_name = {c.name: c for c in _KREIS_REGISTRY}
+        _missing = [n for n in _kreis_names if n not in _by_name]
+        if _missing:
+            raise ValueError(
+                f"full_catalog: unknown KREIS attribute control name(s) {_missing}; "
+                f"known entries are {sorted(_by_name)}.")
+        catalog.extend(attribute_kreis_controls([_by_name[n] for n in _kreis_names]))
     return catalog
 
 

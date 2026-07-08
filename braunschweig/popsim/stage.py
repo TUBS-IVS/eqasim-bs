@@ -133,6 +133,17 @@ KEY_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.status_kreis_control"
 # Dirichlet shrinkage of the per-Kreis H4 status target toward the ZGB aggregate, in
 # pseudo-households. Default 0.0 = raw per-Kreis H4 (no shrinkage). Range: >= 0.
 KEY_STATUS_KREIS_SHRINKAGE_N = "braunschweig.population.popsim.status_kreis_shrinkage_n"
+# Additional per-Kreis attribute controls (S1c, issue #109 follow-up), each driven by a
+# committed blended target (target2026_*). All default "on" (project rule: new features
+# default on) and individually toggleable; MiD-only (their seed columns have no ENTD
+# pendant). "off" for a given attribute drops its control + its seed column (byte-identical
+# to today for that attribute). The blended targets are FINAL (consumed with prior_n = 0).
+KEY_CARS_KREIS_CONTROL = "braunschweig.population.popsim.number_of_cars_kreis_control"
+KEY_BIKES_KREIS_CONTROL = "braunschweig.population.popsim.number_of_bicycles_kreis_control"
+KEY_EBIKE_KREIS_CONTROL = "braunschweig.population.popsim.has_ebike_kreis_control"
+# Name of the (server-verified) MiD household e-bike column feeding the has_ebike control.
+# Default "" = not configured; REQUIRED (no silent fallback) when has_ebike is active.
+KEY_EBIKE_SEED_COLUMN = "braunschweig.population.popsim.ebike_seed_column"
 # Weekend-plan match: include weekend-surveyed MiD households in the seed by
 # relaxing the day filter to ALL_REPORTING_KERNWO and remapping their
 # source_H_ID/source_P_ID to a matched weekday household.  Default ON
@@ -168,8 +179,48 @@ def _resolve_source(source_name: str) -> sources.PopsimSource:
     return sources.get_source(source_name)
 
 
+# Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
+# economic_status keeps its historical key; the S1c additions get their own keys.
+_KREIS_CONTROL_TOGGLE_KEY = {
+    "economic_status": KEY_STATUS_KREIS_CONTROL,
+    "number_of_cars": KEY_CARS_KREIS_CONTROL,
+    "number_of_bicycles": KEY_BIKES_KREIS_CONTROL,
+    "has_ebike": KEY_EBIKE_KREIS_CONTROL,
+}
+
+
+def active_kreis_entries(context, source_name):
+    """Return the KREIS attribute-control REGISTRY entries active for this run.
+
+    An entry is active when its per-attribute toggle resolves to "on" AND the donor
+    source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
+    ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults to
+    "on" (project rule: new features default on); resolution mirrors the historical
+    economic_status toggle exactly (``str(context.config(KEY, "on")).strip().lower() ==
+    "on"``), so a missing config value reads as ON while an explicit non-"on" value
+    (e.g. "off") disables that one attribute.
+
+    Returns the entries in REGISTRY order (economic_status first), so downstream
+    catalog rendering and count-table merges are deterministic.
+    """
+    from braunschweig.popsim import kreis_attribute_control as _kac
+    if source_name != "mid":
+        return []
+    active = []
+    for entry in _kac.REGISTRY:
+        toggle_key = _KREIS_CONTROL_TOGGLE_KEY.get(entry.name)
+        if toggle_key is None:
+            raise ValueError(
+                f"active_kreis_entries: no config toggle registered for REGISTRY entry "
+                f"{entry.name!r}; add it to _KREIS_CONTROL_TOGGLE_KEY.")
+        if str(context.config(toggle_key, "on")).strip().lower() == "on":
+            active.append(entry)
+    return active
+
+
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
-                      employment_grid=False, status_kreis=False, importance_profile="uniform"):
+                      employment_grid=False, kreis_control_names=(), status_kreis=False,
+                      importance_profile="uniform"):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -183,25 +234,34 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
     catalog. Default False = byte-identical to the pre-employment-grid catalog.
 
-    status_kreis: when True (catalog source only), append the five economic_status x Kreis
-    household controls (issue #109). Default False = byte-identical. The hand-edited CSV
-    source cannot express these controls, so status_kreis=True with controls_source="csv"
-    is a fail-fast error (no silent drop of a requested control).
+    kreis_control_names: names of the active KREIS attribute-control REGISTRY entries
+    (kreis_attribute_control.REGISTRY) to render as GEO_KREIS household controls (catalog
+    source only), e.g. ("economic_status", "number_of_cars"). Default () = none appended
+    (byte-identical). The hand-edited CSV source cannot express these controls, so a
+    non-empty kreis_control_names with controls_source="csv" is a fail-fast error (no
+    silent drop of a requested control).
+
+    status_kreis: backward-compat alias for kreis_control_names=("economic_status",).
+    Default False. Kept so existing callers/tests stay byte-identical.
 
     importance_profile: a key of control_spec.IMPORTANCE_PROFILES selecting per-group
     PopulationSim importance weights. Default "uniform" leaves every control's importance
     untouched (byte-identical). Applied to BOTH sources after the frame is built.
     """
     from braunschweig.popsim import control_spec as cs
+    # status_kreis is the historical alias for the economic_status entry.
+    effective_kreis_names = list(kreis_control_names)
+    if status_kreis and "economic_status" not in effective_kreis_names:
+        effective_kreis_names.append("economic_status")
     if controls_source == "csv":
-        if status_kreis:
+        if effective_kreis_names:
             raise ValueError(
-                "status_kreis=True requires controls_source='catalog'; the hand-edited "
-                "controls.csv cannot express the economic_status x Kreis control.")
+                "KREIS attribute controls require controls_source='catalog'; the hand-edited "
+                f"controls.csv cannot express {effective_kreis_names}.")
         df = pd.read_csv(controls_path, sep=";")
     elif controls_source == "catalog":
         catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid,
-                                  include_status_kreis=status_kreis)
+                                  kreis_control_names=effective_kreis_names)
         df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     else:
         raise ValueError(f"unknown controls_source {controls_source!r}")
@@ -330,11 +390,21 @@ def configure(context):
     # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
     if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
         context.config("data_path")
-    # economic_status x Kreis control (issue #109). Default "on". When on, the committed
-    # H4 CSV under data_path is needed, so ensure data_path is declared (no-op if already).
+    # KREIS attribute controls (issue #109 + S1c). Each defaults "on" (project rule). When
+    # any is on, the committed per-Kreis target CSV under data_path is needed, so ensure
+    # data_path is declared (no-op if already). economic_status also carries a configurable
+    # Dirichlet shrinkage prior; the S1c targets are FINAL (prior_n = 0, no key).
     context.config(KEY_STATUS_KREIS_CONTROL, "on")
     context.config(KEY_STATUS_KREIS_SHRINKAGE_N, 0.0)
-    if str(context.config(KEY_STATUS_KREIS_CONTROL, "on")).strip().lower() == "on":
+    context.config(KEY_CARS_KREIS_CONTROL, "on")
+    context.config(KEY_BIKES_KREIS_CONTROL, "on")
+    context.config(KEY_EBIKE_KREIS_CONTROL, "on")
+    context.config(KEY_EBIKE_SEED_COLUMN, "")
+    _kreis_control_keys = (
+        KEY_STATUS_KREIS_CONTROL, KEY_CARS_KREIS_CONTROL,
+        KEY_BIKES_KREIS_CONTROL, KEY_EBIKE_KREIS_CONTROL,
+    )
+    if any(str(context.config(k, "on")).strip().lower() == "on" for k in _kreis_control_keys):
         context.config("data_path")
     # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
     context.config(KEY_SEED_DAY_FILTER, "default")
@@ -553,6 +623,11 @@ def execute(context) -> pd.DataFrame:
     # (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
     random_seed = int(context.config("random_seed"))
     rng = np.random.RandomState(random_seed + 74511)
+    # Seeded RNG for the count-style KREIS-control seed-column derivations
+    # (number_of_cars / number_of_bicycles / has_ebike group-wise 99-code imputation in
+    # load_mid_seed). Offset +24680 keeps the stream disjoint from the +74511 imputation
+    # stream above; derived from the pipeline random_seed so the seed is reproducible.
+    kreis_seed_rng = np.random.RandomState(random_seed + 24680)
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
@@ -567,11 +642,17 @@ def execute(context) -> pd.DataFrame:
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     # Employment grid control (Task 5): default "off" -> byte-identical path.
     employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
-    # economic_status x Kreis control (issue #109): default "on". MiD-only (oek_status has
-    # no ENTD pendant); effective only for source="mid" so an ENTD run stays unaffected.
-    status_kreis_on = str(context.config(KEY_STATUS_KREIS_CONTROL)).strip().lower() == "on"
-    status_kreis_effective = status_kreis_on and source_name == "mid"
+    # KREIS attribute controls (issue #109 + S1c): the active REGISTRY entries whose toggle
+    # is "on" (each default "on"), MiD-only (their seed columns have no ENTD pendant), so an
+    # ENTD run is unaffected (empty list). economic_status is one of them; it alone carries
+    # the configurable Dirichlet shrinkage prior. The three S1c targets are FINAL (prior_n=0).
+    active_entries = active_kreis_entries(context, source_name)
+    active_entry_names = tuple(c.name for c in active_entries)
+    economic_status_effective = "economic_status" in active_entry_names
     status_prior_n = float(context.config(KEY_STATUS_KREIS_SHRINKAGE_N))
+    # E-bike seed column (server-verified). "" -> None; the loader fail-fasts if has_ebike
+    # is active without it (no silent fallback).
+    ebike_seed_column_cfg = str(context.config(KEY_EBIKE_SEED_COLUMN, "")).strip() or None
     # Importance profile: default "uniform" -> importance untouched (byte-identical).
     importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
     controls_df = build_controls_df(
@@ -580,7 +661,7 @@ def execute(context) -> pd.DataFrame:
         seed=source_name,
         tiers=control_tiers,
         employment_grid=employment_grid_on,
-        status_kreis=status_kreis_effective,
+        kreis_control_names=active_entry_names,
         importance_profile=importance_profile,
     )
     if importance_profile and importance_profile != "uniform":
@@ -760,9 +841,15 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         # project_completed_seed derives hh_type5 (Tier-1 household_type) like
         # load_mid_seed does, so the seed carries it for the household_type control.
+        # NOTE (deferred, server phase): project_completed_seed currently derives only the
+        # economic_status seed column (oek_status pass-through). The count-style seed columns
+        # (number_of_cars / number_of_bicycles / has_ebike) are derived only in load_mid_seed
+        # (below). Wiring those into the complete_members=True donor build (which also requires
+        # the completed_donor stage to carry the raw H_ANZAUTO / H_ANZRAD / e-bike columns) is
+        # part of the deferred server integration; see the Task 4 report.
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
-            include_status_seed_col=status_kreis_effective,
+            include_status_seed_col=economic_status_effective,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -778,7 +865,9 @@ def execute(context) -> pd.DataFrame:
         seed_columns = source.seed_columns()
         seed_households, seed_persons, report = mid.load_mid_seed(
             mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
-            include_status_seed_col=status_kreis_effective,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
 
@@ -792,17 +881,17 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
-    # KREIS attribute controls (S1a, issue #109 follow-up): derive each ACTIVE registered
-    # attribute's per-Kreis household targets from its committed MiD shares x the per-Kreis
+    # KREIS attribute controls (issue #109 + S1c): derive each ACTIVE registered attribute's
+    # per-Kreis household targets from its committed blended MiD shares x the per-Kreis
     # household total (summed cell HH_TOTAL, so the category targets partition EXACTLY the
     # household total PopulationSim controls per Kreis -> IPF-consistent). Merge into the KREIS
     # control totals + map so run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE
     # the config signature below so a control toggle invalidates stale batches. MiD-only
-    # (status_kreis_effective). S1a registers only economic_status -> byte-identical to L1.
-    if status_kreis_effective:
+    # (active_kreis_entries returns [] for non-MiD sources). With only economic_status active,
+    # this is byte-identical to the L1 wiring except the target now comes from the blended CSV.
+    if active_entries:
         from braunschweig.popsim import kreis_attribute_control as _kac
         from braunschweig.popsim import control_spec as _cs_kac
-        from braunschweig.data.mid.status_by_kreis import load_status_by_kreis as _load_h4
         _kac_data_path = context.config("data_path")
         _kac_hh_col = _cs_kac.HH_TOTAL_CENSUS_COLUMN
         if _kac_hh_col not in cells.columns:
@@ -811,17 +900,27 @@ def execute(context) -> pd.DataFrame:
                 f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
         _kac_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
         _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
-        # Active registry entries (S1a: economic_status only). economic_status uses the committed
-        # H4 loader (ars5 + very_low..very_high == its target_columns); the generic per-attribute
-        # target loader for the other registry entries arrives in S1c.
-        _kac_active = [c for c in _kac.REGISTRY if c.name == "economic_status"]
-        for _ctl in _kac_active:
-            _tgt = _load_h4(_kac_data_path)
-            _tbl = _kac.attribute_kreis_count_table(_ctl, _tgt, _kac_hh_by_kreis, prior_n=status_prior_n)
+        # The crosswalk Kreise the per-Kreis control totals are built over; each active
+        # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
+        _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
+        # The committed blended targets (target2026_*) store shares rounded to 4 decimals, so a
+        # row can sum to 0.9999 / 1.0001 (max observed deviation 1e-4). Accept that rounding via
+        # a 1e-3 share tolerance (still catches a genuinely mis-normalised row, e.g. 0.9 / 1.1);
+        # the per-Kreis counts are renormalised + integer-partitioned downstream regardless.
+        _kac_share_tol = 1e-3
+        for _ctl in active_entries:
+            # economic_status keeps the configurable Dirichlet shrinkage prior (status_prior_n);
+            # the S1c blended targets are FINAL (CONSUMER NOTE in the CSV headers) -> prior_n = 0.
+            _entry_prior_n = status_prior_n if _ctl.name == "economic_status" else 0.0
+            _tgt = _kac.load_kreis_target(
+                _kac_data_path, _ctl, expected_ars5=_kac_expected_ars5,
+                share_tolerance=_kac_share_tol)
+            _tbl = _kac.attribute_kreis_count_table(
+                _ctl, _tgt, _kac_hh_by_kreis, prior_n=_entry_prior_n)
             _map = _kreis_controls_map(_cs_kac.attribute_kreis_controls([_ctl]))
             logger.info(
-                "[popsim.stage] KREIS attribute control ON: %s, %d Kreise, prior_n=%.1f, "
-                "total households=%d", _ctl.name, len(_tbl), status_prior_n,
+                "[popsim.stage] KREIS attribute control ON: %s (%s), %d Kreise, prior_n=%.1f, "
+                "total households=%d", _ctl.name, _ctl.tier, len(_tbl), _entry_prior_n,
                 int(sum(_kac_hh_by_kreis.values())))
             if kreis_table is None:
                 kreis_table = _tbl
@@ -846,7 +945,7 @@ def execute(context) -> pd.DataFrame:
     # batching/stratification, the donor source, the KREIS controls, the seed-day filter).
     import hashlib as _hashlib
     import json as _json
-    _config_signature = _hashlib.sha256(_json.dumps({
+    _signature_payload = {
         "controls": controls_df.to_csv(index=False),
         "settings": Path(settings_path).read_text(encoding="utf-8"),
         "max_cells": max_cells,
@@ -855,7 +954,18 @@ def execute(context) -> pd.DataFrame:
         "employment_grid": employment_grid_on,
         "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
         "seed_day_filter": str(seed_day_filter),
-    }, sort_keys=True).encode("utf-8")).hexdigest()
+    }
+    # Active KREIS attribute-control toggles + each entry's prior_n, so flipping a toggle
+    # (or the economic_status shrinkage prior) purges stale batches. Only added when at
+    # least one control is active, so the all-OFF signature stays byte-identical to the
+    # pre-task payload (which had no such key).
+    if active_entries:
+        _signature_payload["kreis_attribute_controls"] = {
+            c.name: (status_prior_n if c.name == "economic_status" else 0.0)
+            for c in active_entries
+        }
+    _config_signature = _hashlib.sha256(
+        _json.dumps(_signature_payload, sort_keys=True).encode("utf-8")).hexdigest()
     purge_stale_batches_on_config_change(work_dir, _config_signature)
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
