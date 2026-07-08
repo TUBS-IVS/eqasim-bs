@@ -1,6 +1,6 @@
 """LocalTarget: run on this machine as a detached subprocess.
 
-The run itself is `python -m braunschweig.runcontrol.local_runner <config>
+The run itself is `python <path-to>/local_runner.py <runner> <config>
 <log> <exit_marker>` -- a tiny wrapper that executes the configured runner
 script, tees output to the log, and writes the exit code to the marker file.
 Detachment: CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS on Windows,
@@ -23,12 +23,10 @@ from .base import ExecutionTarget
 
 _STOP_ESCALATE_SECONDS = 30.0
 
-# Root of the checkout that provides the "braunschweig" package (i.e. this file's own repo),
-# NOT the target's configured repo (cfg.repo is a plain data directory in tests and may be any
-# other checkout). `python -m braunschweig.runcontrol.local_runner` is launched with cwd set to
-# the target's repo, so this path is injected via PYTHONPATH to keep the import resolvable
-# regardless of the launch cwd.
-_RUNCONTROL_PACKAGE_ROOT = Path(__file__).resolve().parents[3]
+# local_runner.py has no intra-package imports, so it is invoked by absolute file path
+# (not `python -m`): the launch stays independent of the subprocess cwd/sys.path and
+# cannot be shadowed by another checkout of this repo on the same machine.
+_LOCAL_RUNNER_PATH = Path(__file__).resolve().parent.parent / "local_runner.py"
 
 
 def _git_commit(repo: Path) -> str:
@@ -36,7 +34,7 @@ def _git_commit(repo: Path) -> str:
         out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
                              capture_output=True, text=True, timeout=10)
         return out.stdout.strip() or "unknown"
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return "unknown"
 
 
@@ -64,14 +62,9 @@ class LocalTarget(ExecutionTarget):
         logs.mkdir(parents=True, exist_ok=True)
         log_rel = f"{self.cfg.logs_dir}/rc_{spec.run_id}.log"
         exit_rel = f"{self.cfg.logs_dir}/rc_{spec.run_id}.exit"
-        argv = [self.python, "-m", "braunschweig.runcontrol.local_runner",
+        argv = [self.python, str(_LOCAL_RUNNER_PATH),
                 self.cfg.runner, spec.config_path, log_rel, exit_rel]
-        env = os.environ.copy()
-        package_root = str(_RUNCONTROL_PACKAGE_ROOT)
-        existing_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (package_root if not existing_pythonpath
-                             else f"{package_root}{os.pathsep}{existing_pythonpath}")
-        kwargs: dict = dict(cwd=self.repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        kwargs: dict = dict(cwd=self.repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
         else:

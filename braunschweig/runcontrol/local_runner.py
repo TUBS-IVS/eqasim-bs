@@ -3,7 +3,7 @@
 Usage: python -m braunschweig.runcontrol.local_runner <runner> <config> <log> <exit_marker>
 
 Runs `<python> <runner> <config>` (e.g. scripts/run_synpp.py config_x.yml)
-with stdout+stderr appended line-buffered to <log>, then writes the exit code
+with stdout+stderr appended to <log>, then writes the exit code
 to <exit_marker>. This is the local equivalent of the server's
 `run_pipeline.sh ... ; echo $? > marker` tmux invocation: the marker file is
 how runcontrol distinguishes done/failed from crashed-without-trace.
