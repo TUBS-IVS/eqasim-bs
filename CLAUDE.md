@@ -48,6 +48,7 @@ Deep per-feature documentation has been split out of this file (which is now rul
 Each feature's full description — data sources, flags, references, assumptions — lives in `docs/features/`:
 
 - **MiD 2023 reference tables, economic status, PT/licence IPF** -> [docs/features/mid-reference-tables.md](docs/features/mid-reference-tables.md)
+- **Blended regional control targets (MiD x SrV 2023 x LSN arbiter)** -> [docs/features/regional-control-targets.md](docs/features/regional-control-targets.md)
 - **IPF household synthesis (joint age x size, age-aware composition)** -> [docs/features/household-synthesis.md](docs/features/household-synthesis.md)
 - **Gravity model: per-RegioStaR-7 slope** -> [docs/features/gravity.md](docs/features/gravity.md)
 - **Calibration corner + commute distribution** -> [docs/features/calibration-corner.md](docs/features/calibration-corner.md)

@@ -1,0 +1,22 @@
+# Source: LSN-Online Tabelle A9170102 "Lohn- und Einkommensteuer in
+#   Niedersachsen, einheitliche Schichtung der Steuerpflichtigen", tax year
+#   2022, Gebietsstand 01.11.2021. Extracted from the SpreadsheetML XML in
+#   eqasim-data/data/braunschweig/lsn/raw/ (local-only) by
+#   scripts/extract_lsn_income_tax_kreis.py.
+# Universe: Lohn- und Einkommensteuerpflichtige (taxpayer units), first
+#   "Insgesamt" block per region (later blocks are subgroup breakdowns).
+# mean_gde_eur = Gesamtbetrag der Einkuenfte (1000 EUR column x 1000) / taxpayers.
+# share_ge_50k = taxpayers with Gesamtbetrag der Einkuenfte >= 50000 EUR / all.
+# CAVEAT: taxable income of taxpayer units != net household income. Use ONLY
+#   as an ordering / relative-level arbiter across Kreise (register-grade),
+#   never as an absolute household-income reference.
+kreis,ars5,n_taxpayers,mean_gde_eur,share_ge_50k
+Braunschweig,03101,138238,47957.3,0.3214
+Salzgitter,03102,51062,37263.5,0.2527
+Wolfsburg,03103,67606,48564.2,0.3397
+Gifhorn,03151,91264,50538.9,0.3511
+Goslar,03153,67959,40433.2,0.2494
+Helmstedt,03154,48345,45196.4,0.3102
+Peine,03157,70685,45166.3,0.3149
+Wolfenbuettel,03158,61491,48597.2,0.3349
+Niedersachsen,03NDS,4186734,46040.7,0.2874
