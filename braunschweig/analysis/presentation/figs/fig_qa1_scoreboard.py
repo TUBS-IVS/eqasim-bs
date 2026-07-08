@@ -252,9 +252,9 @@ FN1 = ("* Erwerbstätigkeit-Anker: Basis 20+ wegen des bekannten "
        "Minderjährigen-Flag-Befunds (Issue #96); kreisgenaue Zensus-Referenz "
        "liegt nur für die 3 kreisfreien Städte vor\n"
        "  (Abweichungen +0,8 / +1,1 / +1,9 pp).")
-FN2 = ("* Haushaltsgröße: Messwert durch ein Basis-Artefakt des Validierungstools "
-       "überzeichnet (Issue #97); der reale Engpass liegt bei 5+/6+-Haushalten "
-       "(siehe Folgefolie).")
+FN2 = ("* Haushaltsgröße: auf gemeinsamer Personen-Basis validiert "
+       "(Basis-Mismatch #97 behoben); der verbleibende Restfehler liegt bei "
+       "den 5+/6+-Haushalten (siehe Folgefolie).")
 FN3 = ("MiD-Kreiswerte: Regionalauswertung Großraum Braunschweig, nur 874–1.902 "
        "Befragte je Kreis — bewusst kein Kalibrierziel.")
 
@@ -267,7 +267,8 @@ fig.text(0.032, 0.072, FN3, ha="left", va="top", color=INK_SUB,
 
 fig.text(0.032, 0.032,
          "Daten: quality_summary.csv — analysis/population_validation, "
-         "Lauf output_bs_100pct_allfeat_popsim (100 % Synthese, Export 2026-06-30); "
+         "Lauf output_bs_100pct_allfeat_popsim (100 % Synthese, Export 2026-06-30; "
+         "Haushaltsgröße nach #97-Fix am 2026-07-03 nachvalidiert); "
          "Zensus-Anker aus GENESIS 13111 je Kreis × Altersband",
          ha="left", va="top", color=INK_FAINT, fontsize=7.5)
 

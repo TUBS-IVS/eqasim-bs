@@ -5,8 +5,9 @@
 # controls (age_group, sex) and the mobility controls (driving_license_type,
 # pt_ticket_type, cars_per_hh) are defined and validated at KREIS level only
 # (controls_long.csv; see braunschweig/analysis/population_validation/controls.py).
-# The only Gemeinde-level control is household_size (Zensus), which the task
-# explicitly excludes (basis artifact), as is employment (P9 noise). The maps
+# The only Gemeinde-level control is household_size (Zensus); it is excluded here
+# because these maps are Kreis-level (household_size binds at Gemeinde level), as
+# is employment (P9 noise). The maps
 # therefore show Kreis-level composites -- the level at which the targets bind.
 # No Gemeinde-level reference values are invented.
 #

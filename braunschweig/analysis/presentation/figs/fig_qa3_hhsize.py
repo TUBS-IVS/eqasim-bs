@@ -2,14 +2,14 @@
 """Figure QA-3: synthetic vs reference household-size distribution on a COMMON
 PERSON basis (share of persons living in households of size n).
 
-Basis note (verified against the validation tool source):
-  - controls_long.csv control=="household_size": synthetic_count counts
-    HOUSEHOLDS per size class, but target_pct/target_count come from Zensus
-    2022 table 1000A-2081 (statistic family 1000A = "Bevoelkerung kompakt",
-    value = PERSONS in private households) -> the target is a PERSON share.
-  - Therefore the synthetic side is converted to person shares using the exact
-    person sums from households.csv (household_size column; 6+ uses the actual
-    sum, not 6*count).
+Basis note:
+  - Since #97 (person-basis fix, PR #103), controls_long.csv
+    control=="household_size" reports synthetic_count PERSON-weighted, matching
+    its Zensus 2022 1000A-2081 target (a PERSON share: persons in private
+    households by size class).
+  - This figure computes the synthetic person shares directly and exactly from
+    households.csv (household_size column; 6+ uses the actual person sum, not
+    6*count), independent of the control's own aggregation.
 """
 import matplotlib
 matplotlib.use("Agg")
