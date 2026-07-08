@@ -147,13 +147,26 @@ def test_build_controls_df_kreis_control_rejected_for_csv_source(tmp_path):
 
 
 class _FakeContext:
-    """Minimal synpp-context stand-in: config(key, default) reads a dict."""
+    """Minimal synpp ExecuteContext stand-in.
+
+    Mirrors the REAL execute-time contract: ``config(key)`` takes NO default argument
+    (synpp's ``ExecuteContext.config`` raises ``TypeError`` on a positional default --
+    the exact bug the 2026-07-08 server smoke caught). Values are resolved as configure()
+    declares them: an explicit value wins, otherwise the per-entry default from
+    ``stage._KREIS_CONTROL_DEFAULT`` (the same map configure() declares).
+    """
 
     def __init__(self, values):
         self._values = values
 
-    def config(self, key, default=None):
-        return self._values.get(key, default)
+    def config(self, key):
+        if key in self._values:
+            return self._values[key]
+        from braunschweig.popsim import stage
+        for name, toggle_key in stage._KREIS_CONTROL_TOGGLE_KEY.items():
+            if key == toggle_key:
+                return stage._KREIS_CONTROL_DEFAULT[name]
+        raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
 
 
 def test_active_kreis_entries_all_default_on_for_mid():

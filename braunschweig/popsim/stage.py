@@ -216,10 +216,13 @@ def active_kreis_entries(context, source_name):
     ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all four entries
     (economic_status, number_of_cars, number_of_bicycles, has_ebike) default "on"; the
     has_ebike source column (H_ANZPED) was server-verified 2026-07-08 (issue #116), so it
-    is wired on both seed paths and defaults on like the rest. Resolution mirrors the
-    historical economic_status toggle exactly
-    (``str(context.config(KEY, default)).strip().lower() == "on"``), so a missing
-    config value reads as its per-entry default while an explicit "on"/"off" always wins.
+    is wired on both seed paths and defaults on like the rest.
+
+    Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
+    argument (a positional default raises ``TypeError``; the same pitfall was fixed for
+    home_cell's ``KEY_HOME_MATCHING`` before). The per-entry defaults are therefore
+    declared once in :func:`configure` (``context.config(KEY, default)`` on the
+    ConfigContext) and this function reads the RESOLVED value by key only.
 
     Returns the entries in REGISTRY order (economic_status first), so downstream
     catalog rendering and count-table merges are deterministic.
@@ -234,8 +237,7 @@ def active_kreis_entries(context, source_name):
             raise ValueError(
                 f"active_kreis_entries: no config toggle registered for REGISTRY entry "
                 f"{entry.name!r}; add it to _KREIS_CONTROL_TOGGLE_KEY.")
-        default = _KREIS_CONTROL_DEFAULT.get(entry.name, "on")
-        if str(context.config(toggle_key, default)).strip().lower() == "on":
+        if str(context.config(toggle_key)).strip().lower() == "on":
             active.append(entry)
     return active
 
@@ -681,10 +683,11 @@ def execute(context) -> pd.DataFrame:
     active_entries = active_kreis_entries(context, source_name)
     active_entry_names = tuple(c.name for c in active_entries)
     status_prior_n = float(context.config(KEY_STATUS_KREIS_SHRINKAGE_N))
-    # E-bike seed column (server-verified default "H_ANZPED", configurable). An empty
-    # string (explicitly cleared config) -> None; the loader fail-fasts if has_ebike is
-    # active without it (no silent fallback).
-    ebike_seed_column_cfg = str(context.config(KEY_EBIKE_SEED_COLUMN, "")).strip() or None
+    # E-bike seed column (server-verified default "H_ANZPED", declared in configure;
+    # ExecuteContext.config takes no default argument). An empty string (explicitly
+    # cleared config) -> None; the loader fail-fasts if has_ebike is active without it
+    # (no silent fallback).
+    ebike_seed_column_cfg = str(context.config(KEY_EBIKE_SEED_COLUMN)).strip() or None
     # Importance profile: default "uniform" -> importance untouched (byte-identical).
     importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
     controls_df = build_controls_df(
