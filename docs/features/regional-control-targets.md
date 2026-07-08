@@ -168,9 +168,15 @@ Global Constraints -- also recorded verbatim in the target CSV header):
    SrV level, per project decision (regional survey = regional behaviour authority), rather
    than correcting to the MiD level. Consumers of MiD-anchored trip statistics (e.g. tour or
    activity-chain analyses seeded from MiD) must be aware totals shift accordingly.
-3. **ASSUMPTION (Wolfsburg).** ARS 03103 is not covered by the SrV Braunschweig+RGB survey;
-   its row uses the SrV region total, the same convention already used for
-   `target2026_has_ebike_by_kreis.csv`.
+3. **ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer).** ARS 03103 is not covered by the
+   SrV Braunschweig+RGB survey. Its `trips_0` share is the SrV region total scaled by
+   Wolfsburg's RELATIVE immobility in the MiD 2023 regional Aufstockung (committed
+   `mid2023_P36_1.csv`: `nicht_mobil` WOB 21% vs ZGB-Gesamt 19% -> ratio ~1.105); the three
+   mobile classes are rescaled proportionally from the SrV region total so the row sums to 1.
+   This keeps the SrV LEVEL anchoring while injecting Wolfsburg's MiD-measured relative
+   deviation (WOB is the region's most-immobile city per MiD). ASSUMPTION: the WOB-vs-region
+   immobility ratio transfers across survey methods and day universes (MiD P36.1 = all
+   reporting days; SrV = Di-Do).
 
 *Evidence for adding this control.* The 2026-07-08 S2-A proxy gate measured that the four
 STRUCTURAL controls (`economic_status`, `number_of_cars`, `number_of_bicycles`, `has_ebike`)

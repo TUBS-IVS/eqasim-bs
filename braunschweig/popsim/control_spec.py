@@ -521,6 +521,14 @@ IMPORTANCE_PROFILES: dict[str, dict[str, int]] = {
         "age": 200,               # age x sex (well-fit -> down-weighted)
         "size15": 500,            # HH size 1-5
         "hhtype": 200,            # HH type
+        # KREIS attribute controls (registry tier -> group kreis_hard / kreis_soft, see
+        # importance_group_for_field): HARD entries (economic_status #109, number_of_cars
+        # #99) at the level of the other Kreis-scale socio controls ("employed" = 2000);
+        # SOFT entries (bikes / ebike / trip_class) carry NO profile entry and keep the
+        # uniform 1000, so they yield gracefully in small cells instead of fighting the
+        # Zensus backbone. Added 2026-07-08 with the registry wiring; NOT part of the
+        # 2026-06-30 offline search (the KREIS attribute controls did not exist then).
+        "kreis_hard": 2_000,
     },
 }
 
@@ -553,6 +561,14 @@ def importance_group_for_field(control_field: str) -> str:
         return "employed"
     if s.startswith(("schulabschluss", "beruflabschluss")):
         return "edu"
+    # KREIS attribute controls (kreis_attribute_control.REGISTRY): the entry's tier
+    # ("hard"/"soft") maps to the group kreis_hard / kreis_soft, so a future registry
+    # entry is classified automatically. Matched by the rendered control-column prefix
+    # f"{entry.name}_" (e.g. "number_of_cars_3plus_KREIS" -> number_of_cars, hard).
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY as _KREIS_REGISTRY
+    for _entry in _KREIS_REGISTRY:
+        if s.startswith(f"{_entry.name}_"):
+            return f"kreis_{_entry.tier}"
     return "other"
 
 

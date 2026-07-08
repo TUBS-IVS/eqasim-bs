@@ -25,8 +25,10 @@ see docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md, Global Constr
    SrV level per user decision (regional survey = regional behaviour authority).
    The offset magnitude is recorded; consumers of MiD-anchored trip statistics
    must be aware totals shift accordingly.
-3. ASSUMPTION (Wolfsburg): 03103 is not covered by SrV; its row uses the SrV
-   region total (same convention as target2026_has_ebike).
+3. ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer): 03103 is not covered by
+   SrV; its trips_0 is the SrV region total scaled by Wolfsburg's RELATIVE
+   immobility in the committed MiD regional table mid2023_P36_1.csv (WOB
+   nicht_mobil / ZGB nicht_mobil), mobile classes rescaled proportionally.
 
 Output (committed): eqasim-data/data/braunschweig/targets/target2026_trip_class_by_kreis.csv
 with columns ars5,source,n_effective,trips_0,trips_1_2,trips_3_4,trips_5plus
@@ -80,8 +82,15 @@ HEADER = """\
 # behaviour authority). The offset magnitude is recorded; consumers of
 # MiD-anchored trip statistics must be aware totals shift accordingly.
 #
-# ASSUMPTION (Wolfsburg): 03103 is not covered by SrV; its row uses the SrV
-# region total (same convention as target2026_has_ebike).
+# ASSUMPTION (Wolfsburg, MiD-P36.1 pattern transfer): 03103 is not covered by
+# SrV. Its trips_0 share is the SrV region total scaled by the RELATIVE
+# immobility of Wolfsburg in the MiD 2023 regional Aufstockung (committed
+# mid2023_P36_1.csv: nicht_mobil WOB / nicht_mobil ZGB-Gesamt, e.g. 21/19);
+# the three mobile classes are rescaled proportionally from the SrV region
+# total so the row sums to 1. This keeps the SrV LEVEL anchoring while
+# injecting Wolfsburg's MiD-measured relative deviation. ASSUMPTION: the
+# WOB-vs-region immobility RATIO transfers across survey methods and day
+# universes (MiD P36.1 = all reporting days; SrV = Di-Do).
 #
 # ASSUMPTION (invalid-share redistribution): the SrV trips_* shares are
 # conditional on the "computable" universe (E_ANZ_WEGE = -7, ~5% of persons
@@ -117,10 +126,43 @@ def _renormalise(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def read_mid_p36_immobility_ratio(path: Path, *, wob_ars5: str = "03103") -> tuple[float, int]:
+    """Wolfsburg's relative immobility from the committed MiD P36.1 regional table.
+
+    Returns ``(nicht_mobil[WOB] / nicht_mobil[ZGB-Gesamt], n_unweighted[WOB])``.
+    The ratio (not the level) is used for the WOB pattern transfer: MiD and SrV
+    measure mobility LEVELS differently (documented method offset), but the
+    within-study WOB-vs-region deviation is the best committed regional evidence
+    for Wolfsburg's trip behaviour. Fails fast on missing rows/columns or a
+    non-positive regional share (no silent fallback).
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"build_trip_class_target: required committed input missing: {path}")
+    p36 = pd.read_csv(path, comment="#", dtype={"ars5": str})
+    for col in ("ars5", "nicht_mobil", "n_unweighted"):
+        if col not in p36.columns:
+            raise ValueError(f"build_trip_class_target: {path} misses column {col!r}; has {list(p36.columns)}.")
+    total = p36[p36["ars5"] == "03ZGB"]
+    wob = p36[p36["ars5"] == wob_ars5]
+    if len(total) != 1 or len(wob) != 1:
+        raise ValueError(
+            f"build_trip_class_target: P36.1 table must carry exactly one 03ZGB and one {wob_ars5} row "
+            f"(found {len(total)}/{len(wob)}).")
+    total_share = float(total.iloc[0]["nicht_mobil"])
+    wob_share = float(wob.iloc[0]["nicht_mobil"])
+    if total_share <= 0 or wob_share <= 0:
+        raise ValueError(
+            f"build_trip_class_target: non-positive nicht_mobil share in P36.1 "
+            f"(ZGB {total_share}, WOB {wob_share}).")
+    return wob_share / total_share, int(wob.iloc[0]["n_unweighted"])
+
+
 def build_trip_class_target(data: Path) -> pd.DataFrame:
     """Build the trip_class target frame (ars5, source, n_effective, trips_*) from
-    the committed SrV aggregate. Fails fast if the region-total row or any Kreis
-    row is missing (no under-constrained control)."""
+    the committed SrV aggregate; the Wolfsburg row is the SrV region total adjusted
+    by the MiD-P36.1 relative-immobility ratio (pattern transfer, see header).
+    Fails fast if the region-total row or any Kreis row is missing (no
+    under-constrained control)."""
     src = read_srv_source(data / "srv" / "srv2023_trip_classes_by_kreis.csv")
 
     total_rows = src[src["level"] == "total"]
@@ -144,10 +186,25 @@ def build_trip_class_target(data: Path) -> pd.DataFrame:
             "ars5": r["code"], "source": "srv", "n_effective": int(r["n_unweighted"]),
             **{c: float(r[c]) for c in TRIP_CLASS_COLUMNS},
         })
+    # Wolfsburg pattern transfer: trips_0 = SrV region total x the MiD-P36.1
+    # WOB/region immobility RATIO; mobile classes rescaled proportionally from the
+    # SrV region total (row sums to 1). n_effective = the MiD WOB person count
+    # (the adjustment's precision driver).
+    ratio, n_wob = read_mid_p36_immobility_ratio(data / "mid" / "mid2023_P36_1.csv")
+    wob_trips_0 = float(total_row["trips_0"]) * ratio
+    if not (0.0 < wob_trips_0 < 1.0):
+        raise ValueError(
+            f"build_trip_class_target: WOB pattern-transfer trips_0 out of (0,1): {wob_trips_0} "
+            f"(ratio {ratio}).")
+    mobile_cols = [c for c in TRIP_CLASS_COLUMNS if c != "trips_0"]
+    mobile_total = float(sum(total_row[c] for c in mobile_cols))
+    wob_row = {"trips_0": wob_trips_0}
+    for c in mobile_cols:
+        wob_row[c] = (1.0 - wob_trips_0) * float(total_row[c]) / mobile_total
     rows.append({
-        "ars5": WOLFSBURG_ARS5, "source": "srv_region_total_assumption",
-        "n_effective": int(total_row["n_unweighted"]),
-        **{c: float(total_row[c]) for c in TRIP_CLASS_COLUMNS},
+        "ars5": WOLFSBURG_ARS5, "source": "srv_region_total_mid_p36_pattern",
+        "n_effective": n_wob,
+        **wob_row,
     })
     rows.append({
         "ars5": "Gesamt", "source": "srv", "n_effective": int(total_row["n_unweighted"]),
