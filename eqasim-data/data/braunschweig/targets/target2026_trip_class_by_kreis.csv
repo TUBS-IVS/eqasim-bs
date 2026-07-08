@@ -1,0 +1,34 @@
+# SrV 2023 trip-class per-Kreis control target, built by
+# scripts/build_trip_class_target.py from the COMMITTED SrV aggregate
+# (eqasim-data/data/braunschweig/srv/srv2023_trip_classes_by_kreis.csv; NO raw
+# microdata). Classes: 0 / 1-2 / 3-4 / 5+ trips on the reporting day (SrV
+# E_ANZ_WEGE; matched on the MiD side by attributes.map_trip_class on anzwege1).
+# Shares are the SrV trips_* columns renormalised to sum to 1 over the four
+# classes (share_trips_invalid dropped).
+#
+# ASSUMPTION (universe): target = SrV Di-Do mittlerer Werktag; seed universe =
+# MiD kernwo (1,2,3) = Mo-Fr. Measured difference of MiD trip-class shares
+# Mo-Fr vs Di-Do: <= 0.63pp per class (2026-07-08, P_GEW-weighted) --
+# immaterial, no correction applied.
+#
+# DECISION (level anchoring): SrV and MiD measure mobility rates differently
+# (uniform ~+5..+8pp immobile-share offset across ALL Kreise, method not
+# region). This control DELIBERATELY anchors the synthetic trip-class
+# distribution to the SrV level per user decision (regional survey = regional
+# behaviour authority). The offset magnitude is recorded; consumers of
+# MiD-anchored trip statistics must be aware totals shift accordingly.
+#
+# ASSUMPTION (Wolfsburg): 03103 is not covered by SrV; its row uses the SrV
+# region total (same convention as target2026_has_ebike).
+#
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
+ars5,source,n_effective,trips_0,trips_1_2,trips_3_4,trips_5plus
+03101,srv,4292,0.0997,0.3144,0.3358,0.2502
+03102,srv,1732,0.1199,0.3687,0.3242,0.1871
+03151,srv,3391,0.122,0.3515,0.3128,0.2138
+03153,srv,2126,0.1211,0.3491,0.2961,0.2338
+03154,srv,1655,0.1146,0.3314,0.33,0.224
+03157,srv,2301,0.1224,0.3452,0.2989,0.2335
+03158,srv,1772,0.1001,0.3218,0.3509,0.2273
+03103,srv_region_total_assumption,17269,0.1121,0.3368,0.3223,0.2287
+Gesamt,srv,17269,0.1121,0.3368,0.3223,0.2287

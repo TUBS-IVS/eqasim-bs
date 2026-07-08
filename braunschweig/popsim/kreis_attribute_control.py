@@ -139,6 +139,30 @@ REGISTRY: tuple = (
         target_columns=("ebike_yes", "ebike_no"),
         tier="soft",
     ),
+    # The first PERSON-level entry (2026-07-08, issue #116 follow-on): trip_class
+    # steers the per-Kreis distribution of trips-on-the-reporting-day (0 / 1-2 / 3-4 /
+    # 5+), int-coded 0..3 by attributes.map_trip_class from MiD anzwege1 (missing codes
+    # 803/804 imputed within alter_gr1; see docs/data/MID2023_HANDBOOK_REFERENCE.md).
+    # The committed target is built purely from the SrV 2023 Braunschweig+RGB aggregate
+    # (scripts/build_trip_class_target.py; NO MiD blending) -- see that script's header
+    # and docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md for the three
+    # documented decisions:
+    #   (1) ASSUMPTION (universe): SrV Di-Do mittlerer Werktag vs. MiD kernwo Mo-Fr
+    #       seed universe -- measured difference <= 0.63pp per class, immaterial.
+    #   (2) DECISION (level anchoring): the synthetic distribution is DELIBERATELY
+    #       anchored to the SrV level (regional survey = regional behaviour authority),
+    #       not corrected to the MiD mobility-rate level (uniform ~+5..+8pp offset).
+    #   (3) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
+    #       total, same convention as target2026_has_ebike.
+    KreisAttributeControl(
+        name="trip_class",
+        seed_column="trip_class",
+        level="person",
+        categories=(("0", "== 0"), ("1_2", "== 1"), ("3_4", "== 2"), ("5plus", "== 3")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_trip_class_by_kreis.csv",
+        target_columns=("trips_0", "trips_1_2", "trips_3_4", "trips_5plus"),
+        tier="soft",
+    ),
 )
 
 

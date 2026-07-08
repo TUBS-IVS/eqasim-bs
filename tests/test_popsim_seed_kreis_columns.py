@@ -45,6 +45,45 @@ def test_map_has_ebike_fails_on_absent_column():
         attributes.map_has_ebike(hh, ebike_col="H_EBIKE")
 
 
+# --- Task 1 (2026-07-08 plan): attributes.map_trip_class (person-level, anzwege1) ---
+
+
+def test_map_trip_class_classes_0_to_3_on_valid_trip_counts():
+    persons = pd.DataFrame({"anzwege1": [0, 1, 2, 3, 4, 5, 50]})
+    out = attributes.map_trip_class(persons, rng=np.random.RandomState(0))
+    assert out["trip_class"].tolist() == [0, 1, 1, 2, 2, 3, 3]
+
+
+def test_map_trip_class_imputes_missing_codes_803_804_away():
+    # 803/804 mark trip-module-not-covered persons (item non-response), never a
+    # deterministic class; they must be imputed from the valid pool (here: single
+    # age band, so the global-within-group pool is [0, 1, 2, 3, 4, 5, 50]).
+    persons = pd.DataFrame({
+        "anzwege1": [0, 1, 2, 3, 4, 5, 50, 803, 804],
+        "alter_gr1": [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    })
+    out = attributes.map_trip_class(persons, rng=np.random.RandomState(0))
+    assert set(out["trip_class"].unique()) <= {0, 1, 2, 3}
+    imputed = out["trip_class"].iloc[7:9]
+    assert imputed.isin([0, 1, 2, 3]).all()
+
+
+def test_map_trip_class_imputation_is_seeded_and_deterministic():
+    persons = pd.DataFrame({
+        "anzwege1": [0, 1, 2, 3, 4, 5, 50, 803, 804],
+        "alter_gr1": [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    })
+    out_a = attributes.map_trip_class(persons, rng=np.random.RandomState(42))
+    out_b = attributes.map_trip_class(persons, rng=np.random.RandomState(42))
+    assert out_a["trip_class"].tolist() == out_b["trip_class"].tolist()
+
+
+def test_map_trip_class_fails_on_absent_column():
+    persons = pd.DataFrame({"other": [1, 2]})
+    with pytest.raises(KeyError):
+        attributes.map_trip_class(persons)
+
+
 def _write_mini_mid(tmp: Path):
     hh = tmp / "MiD2023_Haushalte.csv"
     pers = tmp / "MiD2023_Personen.csv"

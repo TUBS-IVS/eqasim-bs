@@ -565,6 +565,52 @@ def map_has_ebike(
     return out
 
 
+def map_trip_class(
+    persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None
+) -> pd.DataFrame:
+    """Add an int-coded ``trip_class`` (0..3) from MiD ``anzwege1`` via the uniform missing policy.
+
+    Class scheme (matches the SrV 2023 trip-class target, ``target2026_trip_class_by_kreis.csv``,
+    built by ``scripts/build_trip_class_target.py`` from ``E_ANZ_WEGE``): 0 trips -> class 0;
+    1-2 trips -> class 1; 3-4 trips -> class 2; 5+ trips -> class 3.
+
+    MiD codebook: ``anzwege1`` (Anzahl Wege am Stichtag) is valid over 0..50. The codes
+    803 (30,041 weekday persons, server-verified 2026-07-08 on MiD B1) and 804 (2,714)
+    mark persons whose trip module is not covered (no diary / rueckwirkende Wegeerhebung
+    only) -- item non-response, NOT zero trips. Diary non-response correlates with
+    mobility (persons who could not be surveyed on their trips are not a random subset
+    of the mobile/immobile population), so these codes must never be dropped or forced to
+    a class; they are declared in ``impute_codes`` and imputed from the valid pool within
+    the same age band (``alter_gr1``) when present, else the global valid pool.
+    ``default=1`` (the modal SrV class, 1-2 trips) is used only if the valid pool is empty.
+
+    Raises ``KeyError`` if ``trips_col`` is absent (no silent fallback to a guessed
+    column name).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if trips_col not in persons.columns:
+        raise KeyError(
+            f"map_trip_class: source column {trips_col!r} absent from the person frame "
+            f"(has {list(persons.columns)}); cannot seed the trip_class control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = {n: (0 if n == 0 else 1 if n <= 2 else 2 if n <= 4 else 3) for n in range(0, 51)}
+    spec = missing.AttributeSpec(
+        name="trip_class",
+        source_col=trips_col,
+        value_map=value_map,
+        structural={},
+        impute_codes=(803, 804),          # trip module not covered (no diary): impute
+        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        default=1,
+    )
+    out = persons.copy()
+    out["trip_class"], _ = missing.resolve(out, spec, rng=rng)
+    out["trip_class"] = out["trip_class"].astype(int)
+    return out
+
+
 def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
     """Derive bicycle availability {none, some, all} from bikes vs. household size.
 
