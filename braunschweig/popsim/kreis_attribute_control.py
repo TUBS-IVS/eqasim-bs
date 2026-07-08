@@ -88,6 +88,9 @@ def load_kreis_target(
     return out
 
 
+# Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
+_TARGET_DIR = "braunschweig/targets"
+
 # The economic_status entry reproduces the L1 status_kreis_control exactly: seed column oek_status
 # (coded 1..5 -> very_low..very_high), the committed H4 CSV, and control columns
 # economic_status_{class}. The per-category predicate "== k" (k = 1..5) is applied downstream in the
@@ -98,9 +101,36 @@ REGISTRY: tuple = (
         seed_column="oek_status",
         level="household",
         categories=tuple((k, f"== {i}") for i, k in enumerate(_ECON_CATEGORIES, start=1)),
-        target_csv_relpath="braunschweig/mid/mid2023_H4_status_by_kreis.csv",
+        target_csv_relpath="braunschweig/mid/mid2023_H4_status_by_kreis.csv",  # swapped in Task 4
         target_columns=_ECON_CATEGORIES,
         tier="hard",
+    ),
+    KreisAttributeControl(
+        name="number_of_cars",
+        seed_column="number_of_cars",  # resolved column (H_ANZAUTO 99 imputed), see mid.load_mid_seed
+        level="household",
+        categories=(("0", "== 0"), ("1", "== 1"), ("2", "== 2"), ("3plus", ">= 3")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_number_of_cars_by_kreis.csv",
+        target_columns=("cars_0", "cars_1", "cars_2", "cars_3plus"),
+        tier="hard",
+    ),
+    KreisAttributeControl(
+        name="number_of_bicycles",
+        seed_column="number_of_bicycles",  # resolved column (H_ANZRAD 99 imputed)
+        level="household",
+        categories=(("0", "== 0"), ("1", "== 1"), ("2", "== 2"), ("3", "== 3"), ("4plus", ">= 4")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_number_of_bicycles_by_kreis.csv",
+        target_columns=("bikes_0", "bikes_1", "bikes_2", "bikes_3", "bikes_4plus"),
+        tier="soft",
+    ),
+    KreisAttributeControl(
+        name="has_ebike",
+        seed_column="has_ebike",  # 0/1 int derived from the (server-verified) MiD household e-bike column
+        level="household",
+        categories=(("yes", "== 1"), ("no", "== 0")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_has_ebike_by_kreis.csv",
+        target_columns=("ebike_yes", "ebike_no"),
+        tier="soft",
     ),
 )
 

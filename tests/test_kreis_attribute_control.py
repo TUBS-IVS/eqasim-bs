@@ -15,7 +15,10 @@ def _econ_entry():
 
 
 def test_registry_has_economic_status_only():
-    assert [c.name for c in REGISTRY] == ["economic_status"]
+    # Superseded by test_registry_has_four_entries_with_expected_tiers (Task 2 extends the
+    # REGISTRY with number_of_cars/number_of_bicycles/has_ebike); economic_status itself is
+    # unchanged and must still be the first entry.
+    assert [c.name for c in REGISTRY][0] == "economic_status"
 
 
 def test_control_columns_follow_name_category():
@@ -144,3 +147,53 @@ def test_load_kreis_target_fails_on_missing_target_column(tmp_path):
     )
     with pytest.raises(ValueError, match="missing columns"):
         load_kreis_target(tmp_path, _TOY)
+
+
+# --- Task 2: cars (hard) + bicycles/has_ebike (soft) registry entries ---
+
+
+def _entry(name):
+    return next(c for c in REGISTRY if c.name == name)
+
+
+def test_registry_has_four_entries_with_expected_tiers():
+    by_name = {c.name: c for c in REGISTRY}
+    assert set(by_name) == {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"}
+    assert by_name["number_of_cars"].tier == "hard"
+    assert by_name["number_of_bicycles"].tier == "soft"
+    assert by_name["has_ebike"].tier == "soft"
+
+
+def test_cars_control_columns_and_predicates():
+    cars = _entry("number_of_cars")
+    assert control_columns(cars) == (
+        "number_of_cars_0", "number_of_cars_1", "number_of_cars_2", "number_of_cars_3plus")
+    preds = [p for _, p in cars.categories]
+    assert preds == ["== 0", "== 1", "== 2", ">= 3"]
+    assert cars.target_columns == ("cars_0", "cars_1", "cars_2", "cars_3plus")
+    assert cars.seed_column == "number_of_cars"
+    assert cars.level == "household"
+
+
+def test_bicycles_and_ebike_shapes():
+    bikes = _entry("number_of_bicycles")
+    assert control_columns(bikes) == (
+        "number_of_bicycles_0", "number_of_bicycles_1", "number_of_bicycles_2",
+        "number_of_bicycles_3", "number_of_bicycles_4plus")
+    assert bikes.target_columns == ("bikes_0", "bikes_1", "bikes_2", "bikes_3", "bikes_4plus")
+    ebike = _entry("has_ebike")
+    assert control_columns(ebike) == ("has_ebike_yes", "has_ebike_no")
+    assert ebike.target_columns == ("ebike_yes", "ebike_no")
+    assert [p for _, p in ebike.categories] == ["== 1", "== 0"]
+
+
+def test_cars_count_table_partitions_household_total():
+    cars = _entry("number_of_cars")
+    tgt = pd.DataFrame({
+        "ars5": ["Gesamt", "03101"],
+        "cars_0": [0.2, 0.25], "cars_1": [0.5, 0.5],
+        "cars_2": [0.2, 0.2], "cars_3plus": [0.1, 0.05],
+    })
+    tbl = attribute_kreis_count_table(cars, tgt, {"03101": 1000}, prior_n=0.0)
+    cols = list(control_columns(cars))
+    assert int(tbl[cols].sum(axis=1).iloc[0]) == 1000
