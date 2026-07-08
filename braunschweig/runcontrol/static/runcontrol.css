@@ -32,6 +32,8 @@ a { color:var(--t2); }
 .badge.failed  { color:var(--fail); border-color:rgba(240,112,63,.4); }
 .badge.done    { color:var(--run-dim); border-color:var(--line2); }
 .badge.queued, .badge.unknown { color:var(--t3); border-color:var(--line2); }
+.badge.launching { color:var(--warn); border-color:rgba(232,185,62,.4); }
+.badge.stopped { color:var(--t3); border-color:var(--line2); }
 .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--run);
   box-shadow:0 0 10px var(--run); animation:pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }

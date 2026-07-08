@@ -10,7 +10,8 @@ from braunschweig.runcontrol.db import Database
 from braunschweig.runcontrol.settings import Settings, TargetConfig
 from braunschweig.runcontrol.targets.local import LocalTarget
 
-TEMPLATE = "run:\n  - synthesis.output\nconfig:\n  sampling_rate: 0.25\n  matsim_last_iteration: 9\n"
+TEMPLATE = ("run:\n  - synthesis.output\nconfig:\n  sampling_rate: 0.25\n"
+            "  matsim_last_iteration: 9\n  freight_enabled: true\n")
 
 
 def _client(tmp_path):
@@ -71,3 +72,20 @@ def test_studio_lists_templates_and_curated_groups(tmp_path):
     assert "config_local_test.yml" in html
     assert "sampling_rate" in html and "MATSim runtime" in html
     assert "Save &amp; enqueue" in html or "Save & enqueue" in html
+    # Bool flags must render as a <select>, never a free-text input: Jinja prints
+    # Python bools as "True"/"False" while the JS coercion only recognizes lowercase
+    # "true", so a text input would let a user silently invert a scientific flag.
+    assert 'data-type="bool"' in html
+    assert "<select" in html
+
+
+def test_run_detail_tolerates_corrupt_config(tmp_path):
+    # Regression for _enrich(): yaml.YAMLError is not a ValueError subclass, so a
+    # corrupt composed config must degrade (matsim/output_path unknown), not 500.
+    c, worker = _client(tmp_path)
+    r = c.post("/api/launch", data={"target": "local", "template": "config_local_test.yml",
+                                    "label": "demo", "overrides": "{}"})
+    body = r.json()
+    worker.tick()
+    (tmp_path / body["config_path"]).write_text("run: [\nbroken")
+    assert c.get(f"/api/runs/{body['run_id']}").status_code == 200

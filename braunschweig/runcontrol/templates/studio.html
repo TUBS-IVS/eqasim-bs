@@ -26,9 +26,21 @@
             {% for f in flags %}
               <div class="frow">
                 <span style="flex:1">{{ f.description }}<small class="mono">{{ f.key }}{% if f.unit %} [{{ f.unit }}]{% endif %}</small></span>
-                <input data-flag="{{ f.key }}" data-type="{{ f.type }}"
-                       value="{{ f.value if f.value is not none else '' }}"
-                       placeholder="{{ 'not in template' if not f.in_template else '' }}">
+                {% if f.type == "bool" %}
+                  {# Bool flags as a select, never free text: Jinja prints Python bools as
+                     "True"/"False" while the JS coercion only accepts lowercase "true", so a
+                     text input would let a user silently invert a scientific flag. #}
+                  <select data-flag="{{ f.key }}" data-type="bool"
+                          data-default="{{ '' if f.value is none else ('true' if f.value else 'false') }}">
+                    <option value="" {{ 'selected' if f.value is none }}>(not in template)</option>
+                    <option value="true" {{ 'selected' if f.value is true }}>true</option>
+                    <option value="false" {{ 'selected' if f.value is false }}>false</option>
+                  </select>
+                {% else %}
+                  <input data-flag="{{ f.key }}" data-type="{{ f.type }}"
+                         value="{{ f.value if f.value is not none else '' }}"
+                         placeholder="{{ 'not in template' if not f.in_template else '' }}">
+                {% endif %}
               </div>
             {% endfor %}
           </details>
@@ -39,13 +51,22 @@
       <script>
         function collectOverrides() {
           const o = {};
-          document.querySelectorAll("input[data-flag]").forEach(el => {
-            if (el.value === "" || el.value === el.defaultValue) { return; }
+          document.querySelectorAll("[data-flag]").forEach(el => {
+            if (el.value === "") { return; }                       // untouched / cleared
+            // Unchanged from the template value -> not an override. Selects carry the
+            // template value in data-default; text inputs in the DOM defaultValue.
+            if (el.value === (el.dataset.default ?? el.defaultValue)) { return; }
             const t = el.dataset.type;
-            o[el.dataset.flag] = t === "int" ? parseInt(el.value)
-              : t === "float" ? parseFloat(el.value)
-              : t === "bool" ? el.value === "true"
-              : el.value;
+            if (t === "bool") {
+              o[el.dataset.flag] = el.value === "true";
+            } else if (t === "int" || t === "float") {
+              // Non-numeric entry: submit the raw string so the server-side validator
+              // rejects it with a clean 422 instead of JSON.stringify(NaN) -> null -> 500.
+              const n = t === "int" ? parseInt(el.value, 10) : parseFloat(el.value);
+              o[el.dataset.flag] = Number.isNaN(n) ? el.value : n;
+            } else {
+              o[el.dataset.flag] = el.value;
+            }
           });
           document.getElementById("overrides").value = JSON.stringify(o);
         }
