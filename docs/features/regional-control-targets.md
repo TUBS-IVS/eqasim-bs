@@ -63,16 +63,17 @@ exists.
 ## Wiring into the popsim controls (registry)
 
 The blended `target2026_*` tables above are consumed by `popsim_mid` as registry-driven
-KREIS household controls. The registry lives in
+KREIS controls (household AND, since 2026-07-08, person level). The registry lives in
 `braunschweig/popsim/kreis_attribute_control.py` (`REGISTRY`, `load_kreis_target`,
-`attribute_kreis_count_table`) and currently declares four entries:
+`attribute_kreis_count_table`) and currently declares five entries:
 
-| control | tier | seed column (MiD) | target CSV | config toggle | default |
-|---|---|---|---|---|---|
-| `economic_status` | hard | `oek_status` (raw, `== k`) | `target2026_economic_status_by_kreis.csv` | `braunschweig.population.popsim.status_kreis_control` | on |
-| `number_of_cars` | hard | `number_of_cars` (resolved from `H_ANZAUTO`) | `target2026_number_of_cars_by_kreis.csv` | `braunschweig.population.popsim.number_of_cars_kreis_control` | on |
-| `number_of_bicycles` | soft | `number_of_bicycles` (resolved from `anzpedrad`, bicycles INCL. pedelecs) | `target2026_number_of_bicycles_by_kreis.csv` | `braunschweig.population.popsim.number_of_bicycles_kreis_control` | on |
-| `has_ebike` | soft | `has_ebike` (0/1, resolved from `H_ANZPED`) | `target2026_has_ebike_by_kreis.csv` | `braunschweig.population.popsim.has_ebike_kreis_control` | on |
+| control | level | tier | seed column (MiD) | target CSV | config toggle | default |
+|---|---|---|---|---|---|---|
+| `economic_status` | household | hard | `oek_status` (raw, `== k`) | `target2026_economic_status_by_kreis.csv` | `braunschweig.population.popsim.status_kreis_control` | on |
+| `number_of_cars` | household | hard | `number_of_cars` (resolved from `H_ANZAUTO`) | `target2026_number_of_cars_by_kreis.csv` | `braunschweig.population.popsim.number_of_cars_kreis_control` | on |
+| `number_of_bicycles` | household | soft | `number_of_bicycles` (resolved from `anzpedrad`, bicycles INCL. pedelecs) | `target2026_number_of_bicycles_by_kreis.csv` | `braunschweig.population.popsim.number_of_bicycles_kreis_control` | on |
+| `has_ebike` | household | soft | `has_ebike` (0/1, resolved from `H_ANZPED`) | `target2026_has_ebike_by_kreis.csv` | `braunschweig.population.popsim.has_ebike_kreis_control` | on |
+| `trip_class` | person | soft | `trip_class` (int 0..3, resolved from `anzwege1` via `map_trip_class`) | `target2026_trip_class_by_kreis.csv` | `braunschweig.population.popsim.trip_class_kreis_control` | on |
 
 `economic_status` was switched from the raw MiD H4 CSV (the old
 `mid2023_H4_status_by_kreis.csv` loader) to the blended
@@ -131,6 +132,58 @@ The remaining documented assumption: MiD "Pedelec" is treated as equivalent to S
 (the SrV construct may additionally include S-Pedelecs); this is a minor construct edge
 case, not expected to materially bias the control. Issue #116 is resolved.
 
+**`trip_class` -- the first person-level entry (2026-07-08).** Every entry above partitions a
+per-Kreis HOUSEHOLD total. `trip_class` steers the region-specific travel-behaviour character
+instead -- how many trips a person makes on the reporting day (classes `0` / `1-2` / `3-4` /
+`5+`) -- at the population INPUT, because end-of-pipe validation cannot change the input
+(project decision 2026-07-08). Purpose-built target: `target2026_trip_class_by_kreis.csv`,
+produced by `scripts/build_trip_class_target.py` from the COMMITTED SrV aggregate
+`srv2023_trip_classes_by_kreis.csv` only (no raw microdata, no MiD blending); the four
+`trips_*` share columns are renormalised over the four classes (`share_trips_invalid`
+dropped) and, like the other four entries, consumed with `prior_n = 0` (FINAL target). Seed
+column: the person-level MiD column `trip_class` (int codes 0..3), derived by
+`attributes.map_trip_class` from `anzwege1` (Anzahl Wege am Stichtag). The missing codes 803
+(trip module not covered, no diary) and 804 (rueckwirkende Wegeerhebung only) are IMPUTED
+within the age band `alter_gr1` using a seeded RNG -- never dropped, because diary
+non-response correlates with mobility. The mapper is applied on both seed paths
+(`mid.load_mid_seed` and `mid.project_completed_seed`, stage key
+`braunschweig.population.popsim.trip_class_kreis_control`); on the completed-donor path a
+mirror-imputed household member inherits the mirror donor's diary trip count.
+
+*Person-level mechanics.* Unlike the four household entries, which partition the per-Kreis
+household total, the `trip_class` count table partitions the per-Kreis PERSON total (the sum
+of the 18 age-x-sex 100m band census columns for that Kreis).
+
+*Three documented decisions* (from `docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md`,
+Global Constraints -- also recorded verbatim in the target CSV header):
+1. **ASSUMPTION (universe).** The target is built from the SrV Di-Do mittlerer Werktag
+   universe, while the MiD seed universe is `kernwo` (1,2,3) = Mo-Fr. The measured difference
+   between MiD trip-class shares Mo-Fr vs. Di-Do is <= 0.63 pp per class (2026-07-08,
+   `P_GEW`-weighted) -- immaterial, no correction applied.
+2. **DECISION (level anchoring).** MiD and SrV measure mobility differently: a uniform
+   ~+5..+8 pp immobile-share offset appears across ALL Kreise, i.e. it is a survey-method
+   effect, not a regional difference. Measured under the structural controls (economic
+   status, cars, bicycles, e-bike): MiD immobile share 16.6-19.0% vs. SrV 10.0-12.2% across
+   Kreise. This control deliberately anchors the synthetic trip-class distribution to the
+   SrV level, per project decision (regional survey = regional behaviour authority), rather
+   than correcting to the MiD level. Consumers of MiD-anchored trip statistics (e.g. tour or
+   activity-chain analyses seeded from MiD) must be aware totals shift accordingly.
+3. **ASSUMPTION (Wolfsburg).** ARS 03103 is not covered by the SrV Braunschweig+RGB survey;
+   its row uses the SrV region total, the same convention already used for
+   `target2026_has_ebike_by_kreis.csv`.
+
+*Evidence for adding this control.* The 2026-07-08 S2-A proxy gate measured that the four
+STRUCTURAL controls (`economic_status`, `number_of_cars`, `number_of_bicycles`, `has_ebike`)
+do NOT move the trips axis: mean SRMSE against the trip-class reference stayed ~0.17 across
+all tested arms. Regional travel behaviour needs its own dedicated control; that null result
+is what motivated building `trip_class`.
+
+*Honest limits.* Fitting `trip_class` to its own SrV target is not an independent
+validation of the resulting travel-behaviour distribution -- it is calibration, not
+verification, per the "convergence is not validation" rule above. The D-Ticket and driving-licence
+axes remain validation-only (not controls), for the same measurement-artifact reasons given
+above for `economic_status`.
+
 **Provenance and validation caveats carry over from the target tables.** As documented
 above, the SrV inputs feeding these targets are assumption-grade PSU estimates from a
 stratified design over a subset of municipalities, and Wolfsburg (03103) and the region
@@ -142,5 +195,6 @@ other axis, and convergence of the IPF fit is not the same as validation.
 **Remaining follow-ups:** the S2-A proxy evidence gate (comparing the current-set vs.
 switched-set targets), a decision on down-weighting the assumption-grade SrV rows by
 measured uncertainty (not by preference), an S2-A validation refresh, and a 1-Kreis / 1%
-end-to-end smoke test of the `popsim_mid` stage with all four controls active (still
-pending a server run; the unit/integration test suite is green locally).
+end-to-end smoke test of the `popsim_mid` stage with all five controls (including
+`trip_class`) active (still pending a server run; the unit/integration test suite is green
+locally).
