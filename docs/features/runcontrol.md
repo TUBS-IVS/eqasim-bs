@@ -261,6 +261,48 @@ fallbacks" rules:
   "error:<exc>"` and `None` fields rather than a stale or fabricated number
   (`app.py::_collect_vitals`).
 
+### Adopt running run
+
+The "Adopt" feature monitors an externally-started pipeline run from its
+catalog directory into runcontrol as a monitor-only ("external") run without
+killing or controlling the external process. This is useful for observing runs
+that were launched outside the GUI.
+
+**How adoption works:** A legacy `cache_*` or `output_*` directory can be
+adopted from the catalog page by clicking "Adopt". The adoption records the
+artifact's current directory mtime and begins polling for changes. The run
+shows on the home hero with an `adopted` badge, remains `running` while the
+directory is being modified, and transitions to `ENDED` when the directory
+stops changing for `adopt_alive_window_s` (default 300 seconds, configurable in
+`runcontrol.toml`). The adoption searches for a fresh `logs/run_*.log` matching
+the artifact's mtime (within the window) and links it if found; if no such log
+exists, the progress display shows only the cache timeline without live
+iteration/stage metadata.
+
+**Liveness is inferred from directory activity.** The daemon compares the
+server-side artifact directory's mtime to its previously-stored value (advancing
+mtime = still running; no change for `adopt_alive_window_s` on the daemon's own
+clock = ENDED). This approach is clock-skew-free: both the current and stored
+mtime values come from the server's filesystem, and the "stale-check" interval
+uses only the daemon's local clock. The exit code of the external process is
+not queried and remains unknown; the terminal status is always `ENDED`, never
+`DONE` or `FAILED`.
+
+**Queue blocking and monitor-only semantics:** An adopted running run blocks
+the daemon queue, preventing new launches on the same target until the adopted
+run ends. The "Stop" button marks the run as `ENDED` and stops monitoring -- it
+does **not** kill the external process. The external process continues running
+unaffected. If the process completes and the directory becomes active again
+(e.g. a restart or retry of the same run), the run can be re-adopted from the
+catalog and the daemon resumes monitoring.
+
+**Limitation:** Without a matching `logs/run_*.log`, the GUI cannot infer
+per-stage timing or iteration counts from a live log stream. The cache timeline
+(derived from `pipeline.json` stage completion timestamps) remains the only
+progress indicator. This is an honest limitation: the run may have started
+before runcontrol was running, or the log may be on a different host or in a
+non-standard location, so inferring its path is not reliable.
+
 ## SSH-tunnel access
 
 The server binds `host = 127.0.0.1` by design -- there is no built-in
