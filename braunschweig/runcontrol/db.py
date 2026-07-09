@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS events (
     kind TEXT NOT NULL,
     message TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS enrichment (
+    artifact_key TEXT PRIMARY KEY,
+    dir_mtime REAL NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 _TERMINAL = (RunStatus.DONE, RunStatus.FAILED, RunStatus.STOPPED)
@@ -121,3 +127,21 @@ class Database:
     def events(self, run_id: str) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM events WHERE run_id=? ORDER BY id", (run_id,)).fetchall()
         return [dict(r) for r in rows]
+
+    # -- enrichment cache -------------------------------------------------
+    def get_enrichment(self, key: str, dir_mtime: float) -> dict | None:
+        row = self._conn.execute(
+            "SELECT dir_mtime, payload FROM enrichment WHERE artifact_key=?", (key,)).fetchone()
+        if row is None or row["dir_mtime"] != dir_mtime:
+            return None
+        import json
+        return json.loads(row["payload"])
+
+    def put_enrichment(self, key: str, dir_mtime: float, payload: dict) -> None:
+        import json
+        self._conn.execute(
+            "INSERT INTO enrichment (artifact_key, dir_mtime, payload, created_at) "
+            "VALUES (?,?,?,?) ON CONFLICT(artifact_key) DO UPDATE SET "
+            "dir_mtime=excluded.dir_mtime, payload=excluded.payload, created_at=excluded.created_at",
+            (key, dir_mtime, json.dumps(payload), _now()))
+        self._conn.commit()
