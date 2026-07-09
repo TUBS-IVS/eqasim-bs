@@ -346,3 +346,52 @@ def test_person_total_by_kreis_raises_on_missing_band_column():
     cells = cells.drop(columns=[band_cols[0]])  # drop one band -> no silent fallback
     with pytest.raises(RuntimeError, match="band columns"):
         person_total_by_kreis(cells, kreis)
+
+
+# --- Audit 2026-07-09: trip_class seed derives from the REALISED weekday plan source ---
+# The default pipeline keeps all reporting days in the donor (weekend_plan_match forces
+# ALL_REPORTING_KERNWO); a weekend reporter's own anzwege1 is a Sat/Sun count. The control
+# must be seeded from the person's plan source (a weekday donor after the A2 sweep), not
+# their own reporting-day diary, so it matches the SrV weekday target and the realised trips.
+
+def _plan_source_persons():
+    """A real weekday donor (p1, anzwege1=5) and a weekend reporter (p2, own anzwege1=0)
+    whose plan source was remapped to the weekday donor (source -> h1/p1)."""
+    return pd.DataFrame({
+        "H_ID": ["h1", "h2"],
+        "P_ID": ["p1", "p2"],
+        "anzwege1": [5, 0],                 # p2's OWN (weekend) count is 0 trips
+        "alter_gr1": [5, 5],
+        "member_imputed": [False, False],
+        "source_H_ID": ["h1", "h1"],        # p2's realised plan is the weekday donor p1
+        "source_P_ID": ["p1", "p1"],
+    })
+
+
+def test_derive_trip_class_seed_uses_realised_plan_source_not_own():
+    persons = _plan_source_persons()
+    out = mid.derive_trip_class_seed(persons, rng=np.random.RandomState(0))
+    by_pid = dict(zip(out["P_ID"], out["trip_class"]))
+    # p1 (weekday donor, 5 trips) -> class 3; p2's realised plan is p1's (5 trips) -> 3,
+    # NOT class 0 from its own weekend anzwege1=0. This is the whole fix.
+    assert by_pid["p1"] == 3
+    assert by_pid["p2"] == 3
+    # The temporary plan-source column must not leak into the seed.
+    assert "_plan_source_anzwege1" not in out.columns
+
+
+def test_derive_trip_class_seed_falls_back_to_own_without_source_columns():
+    # No plan-source columns (no member completion / weekend match) -> the seed is already
+    # weekday-filtered, so trip_class comes from the person's own anzwege1 (logged path).
+    persons = _plan_source_persons().drop(columns=["source_H_ID", "source_P_ID", "member_imputed"])
+    out = mid.derive_trip_class_seed(persons, rng=np.random.RandomState(0))
+    by_pid = dict(zip(out["P_ID"], out["trip_class"]))
+    assert by_pid["p1"] == 3       # own 5 trips -> 3
+    assert by_pid["p2"] == 0       # own 0 trips -> 0 (own-anzwege1 fallback branch)
+
+
+def test_derive_trip_class_seed_raises_on_unresolved_plan_source():
+    persons = _plan_source_persons()
+    persons.loc[persons["P_ID"] == "p2", "source_P_ID"] = "does_not_exist"
+    with pytest.raises(ValueError, match="absent from the donor frame"):
+        mid.derive_trip_class_seed(persons, rng=np.random.RandomState(0))
