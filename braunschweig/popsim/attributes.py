@@ -130,8 +130,35 @@ FKARTE_TO_CATEGORY: dict[int, str] = {
 PT_TICKET_NEVER = "fahre_nie"
 
 
+def imputation_group_cols(
+    frame: pd.DataFrame, base_col: str, *, rs7_conditioning: bool = True,
+    rs7_col: str = "RegioStaR7",
+) -> tuple:
+    """Conditioning-group columns for item-nonresponse imputation (issue #131).
+
+    Returns ``(base_col,)`` as before, extended by ``RegioStaR7`` when the frame
+    carries it and ``rs7_conditioning`` is on (default, project rule): licence /
+    PT subscription / cars / income of a rural household are then imputed from a
+    pool of the SAME urban-rural region type instead of a national pool including
+    big-city respondents. On donor household frames RS7 is the survey home
+    region; on expanded synthetic persons it is the PLACED home cell's RS7
+    (``stage.join_cell_attributes``). RS7 is only appended IN ADDITION to the
+    base column -- frames without the base column keep the old empty grouping
+    (minimal deviation from the previous per-mapper guards). Thin (base, RS7)
+    cells fall back to the global pool inside ``missing.resolve``, which counts
+    and logs that rate (``MissingReport.n_group_fallback``).
+    """
+    if base_col not in frame.columns:
+        return ()
+    cols = [base_col]
+    if rs7_conditioning and rs7_col in frame.columns:
+        cols.append(rs7_col)
+    return tuple(cols)
+
+
 def map_employed(
-    persons: pd.DataFrame, *, taet_col: str = "P_TAET", rng=None
+    persons: pd.DataFrame, *, taet_col: str = "P_TAET", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``employed`` from MiD ``P_TAET`` via the uniform missing policy.
 
@@ -160,7 +187,7 @@ def map_employed(
         source_col=taet_col,
         value_map=value_map,
         structural={},
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
@@ -214,7 +241,8 @@ def map_studies(
 
 
 def map_has_license(
-    persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None
+    persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
 
@@ -240,7 +268,7 @@ def map_has_license(
         value_map={1: True, 2: False},
         structural={403: False},          # under legal age: deterministic False
         impute_codes=(202, 404),          # interview-mode / coverage on adults: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
@@ -250,7 +278,8 @@ def map_has_license(
 
 
 def map_economic_status(
-    households: pd.DataFrame, *, status_col: str = "oek_status", rng=None
+    households: pd.DataFrame, *, status_col: str = "oek_status", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``economic_status`` (very_low..very_high) from MiD ``oek_status`` via the uniform missing policy.
 
@@ -270,7 +299,7 @@ def map_economic_status(
         source_col=status_col,
         value_map=ECONOMIC_STATUS_BY_OEK_STATUS,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -279,7 +308,8 @@ def map_economic_status(
 
 
 def map_household_income(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add the categorical ``household_income`` class from the MiD income group via the uniform missing policy.
 
@@ -297,7 +327,7 @@ def map_household_income(
         source_col=group_col,
         value_map=INCOME_CLASS_BY_GROUP,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -306,7 +336,8 @@ def map_household_income(
 
 
 def map_household_income_eur(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``household_income_eur`` from the MiD ``hheink_gr1`` group midpoints via the uniform missing policy.
 
@@ -325,7 +356,7 @@ def map_household_income_eur(
         source_col=group_col,
         value_map=INCOME_GROUP_MIDPOINT_EUR,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -336,7 +367,8 @@ def map_household_income_eur(
 
 
 def map_number_of_cars(
-    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO", rng=None
+    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``number_of_cars`` from MiD ``H_ANZAUTO`` via the uniform missing policy.
 
@@ -356,7 +388,7 @@ def map_number_of_cars(
         source_col=cars_col,
         value_map={i: i for i in range(0, 11)},
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=0,
     )
     out = households.copy()
@@ -380,7 +412,8 @@ def derive_car_availability(n_cars: int, n_adults: int) -> str:
 
 
 def map_has_pt_subscription(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
@@ -417,7 +450,7 @@ def map_has_pt_subscription(
         value_map=value_map,
         structural={402: False},          # Kind unter 14: deterministic under-14 floor
         impute_codes=(202, 206),          # interview-mode / adult proxy coverage: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
@@ -427,7 +460,8 @@ def map_has_pt_subscription(
 
 
 def map_pt_subscription_type(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a categorical ``pt_subscription_type`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
@@ -464,7 +498,7 @@ def map_pt_subscription_type(
         value_map=FKARTE_TO_CATEGORY,
         structural={402: PT_TICKET_NEVER},   # Kind unter 14: deterministic under-14 floor
         impute_codes=(202, 206),             # interview-mode / adult proxy coverage: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=PT_TICKET_NEVER,
     )
     out = persons.copy()
@@ -484,7 +518,8 @@ def map_pt_subscription_type(
 
 
 def map_number_of_bicycles(
-    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", rng=None
+    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``number_of_bicycles`` from the MiD combined bicycle column via the uniform missing policy.
 
@@ -518,7 +553,7 @@ def map_number_of_bicycles(
         source_col=bikes_col,
         value_map={i: i for i in range(0, 11)},
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=0,
     )
     out = households.copy()
@@ -528,7 +563,8 @@ def map_number_of_bicycles(
 
 
 def map_has_ebike(
-    households: pd.DataFrame, *, ebike_col: str = "H_ANZPED", rng=None
+    households: pd.DataFrame, *, ebike_col: str = "H_ANZPED", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a 0/1 ``has_ebike`` household flag from the MiD household e-bike column.
 
@@ -558,7 +594,7 @@ def map_has_ebike(
     spec = missing.AttributeSpec(
         name="_ebike_count", source_col=ebike_col,
         value_map={i: i for i in range(0, 11)}, structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (), default=0)
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning), default=0)
     out = households.copy()
     counts, _ = missing.resolve(out, spec, rng=rng)
     out["has_ebike"] = (counts.astype(int) >= 1).astype(int)
@@ -566,7 +602,8 @@ def map_has_ebike(
 
 
 def map_trip_class(
-    persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None
+    persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add an int-coded ``trip_class`` (0..3) from MiD ``anzwege1`` via the uniform missing policy.
 
@@ -602,7 +639,7 @@ def map_trip_class(
         value_map=value_map,
         structural={},
         impute_codes=(803, 804),          # trip module not covered (no diary): impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=1,
     )
     out = persons.copy()
