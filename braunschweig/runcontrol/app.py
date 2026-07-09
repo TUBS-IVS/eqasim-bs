@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import targetstore
+from . import registry, targetstore
 from .collectors import catalog, config_inspect, enrich, matsim_progress, synpp_progress, vitals
 from .configwriter import compose
 from .daemon import QueueWorker
@@ -299,6 +299,40 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         payload["size_bytes"] = size
         db.put_enrichment(key, mtime, payload)
         return {"size_bytes": size, "source": source}
+
+    @app.get("/api/catalog/{target}/diff")
+    def api_diff(target: str, a: str, b: str):
+        t = _target(target)
+        _safe_relname(a)
+        _safe_relname(b)
+        pa = _enrich_cached(t, a, _artifact_kind(a))
+        pb = _enrich_cached(t, b, _artifact_kind(b))
+        ca, cb = pa.get("effective_config", {}), pb.get("effective_config", {})
+        by = registry.by_key()
+        diff = []
+        for key in sorted(set(ca) | set(cb)):
+            va, vb = ca.get(key), cb.get(key)
+            if va != vb:
+                grp = by[key].group if key in by else "other"
+                diff.append({"key": key, "group": grp, "a": va, "b": vb})
+        return {"a": pa, "b": pb, "diff": diff}
+
+    @app.get("/api/logs")
+    def api_logs(target: str):
+        t = _target(target)
+        wanted = (".log", "_stage_runtime.csv")
+        out = [e for e in t.listdir(t.cfg.logs_dir)
+               if e["name"].endswith(wanted) or "_stage_runtime" in e["name"]]
+        return sorted(out, key=lambda e: e["mtime"], reverse=True)
+
+    @app.get("/api/logs/{name}/view", response_class=PlainTextResponse)
+    def api_log_view(target: str, name: str, tail_bytes: int = 200000):
+        t = _target(target)
+        _safe_relname(name)
+        try:
+            return t.read_text(f"{t.cfg.logs_dir}/{name}", tail_bytes=tail_bytes)
+        except (FileNotFoundError, RuntimeError):
+            raise HTTPException(404, "log not found")
 
     # ---- dynamic execution targets (Task 14) -------------------------------
     def _target_row(name: str, t: ExecutionTarget) -> dict:
