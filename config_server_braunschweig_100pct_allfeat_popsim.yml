@@ -66,6 +66,14 @@ config:
   # byte-identical. See docs/superpowers/specs/2026-06-25-purpose-resolved-secondary-distances-design.md
   secondary_distance_by_purpose: true
   secondary_shop_daily_split: true
+  # Tier 2 leisure (4-group: local/visit/activity/excursion) + other/errand
+  # subtype split (issue #127). Defaults False elsewhere -> byte-identical.
+  # See docs/superpowers/specs/2026-07-09-wzwd-leisure-errand-split-design.md
+  secondary_leisure_subtype_split: true
+  secondary_other_subtype_split: true
+  # Places leisure_visit legs on residential building potential (pot_visit)
+  # instead of the generic leisure potential; requires the leisure split above.
+  leisure_visit_building_potential: true
   secondary_distance_min_obs: 30
   education_building_distribution: true
 
