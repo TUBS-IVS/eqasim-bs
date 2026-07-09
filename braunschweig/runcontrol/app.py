@@ -417,7 +417,25 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         # run in the background on every page.
         result = api_catalog(target)
         return templates.TemplateResponse("catalog.html", {
-            "request": request, "target": target, "targets": sorted(targets), "catalog": result})
+            "request": request, "target": target, "targets": sorted(targets),
+            "runs": result["runs"], "n_manifest": result["n_manifest"], "n_legacy": result["n_legacy"]})
+
+    @app.get("/catalog/{target}/{name}/details", response_class=HTMLResponse)
+    def page_catalog_details(request: Request, target: str, name: str):
+        # Enrichment is computed/served-from-cache only on this explicit expand action --
+        # never eagerly for the whole catalog page (see the no-auto-polling constraint).
+        t = _target(target)
+        _safe_relname(name)
+        payload = _enrich_cached(t, name, _artifact_kind(name))
+        return templates.TemplateResponse("_catalog_details.html",
+                                          {"request": request, "target": target, "e": payload})
+
+    @app.get("/catalog/diff", response_class=HTMLResponse)
+    def page_catalog_diff(request: Request, target: str, a: str, b: str):
+        result = api_diff(target, a, b)     # reuse the API logic
+        return templates.TemplateResponse("catalog_diff.html",
+                                          {"request": request, "target": target,
+                                           "a_name": a, "b_name": b, "result": result})
 
     @app.get("/studio", response_class=HTMLResponse)
     def page_studio(request: Request, target: str, template: str | None = None):

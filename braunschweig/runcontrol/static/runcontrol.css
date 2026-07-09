@@ -73,3 +73,9 @@ td.name { color:var(--t1); font-weight:500; }
 .frow small { display:block; color:var(--t3); font-size:11px; }
 .frow input, .frow select { background:var(--bg2); color:var(--t1); border:1px solid var(--line);
   border-radius:5px; padding:3px 8px; font-family:'Fira Code', monospace; }
+.mock-input { background:var(--bg2); color:var(--t1); border:1px solid var(--line); border-radius:5px;
+  padding:4px 8px; font-family:'Fira Sans',sans-serif; }
+#cat th[data-sort] { cursor:pointer; user-select:none; }
+#cat th[data-sort]:hover { color:var(--t1); }
+.chip-stale { color:var(--warn); border:1px solid rgba(232,185,62,.4); border-radius:999px;
+  padding:0 8px; font-size:10px; }

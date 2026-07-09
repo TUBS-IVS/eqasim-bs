@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Config diff{% endblock %}
+{% block content %}
+<div class="hero"><a href="/catalog?target={{ target }}">&lsaquo; Catalog</a> /
+  <b>{{ a_name }}</b> vs <b>{{ b_name }}</b></div>
+<p class="vital" style="padding:0 24px">
+  Both configs are effective reconstructions (partial): A from
+  {{ result.a.effective_config_stage_count }} stages, B from
+  {{ result.b.effective_config_stage_count }} stages.</p>
+<table style="margin:12px 24px; width:auto">
+  <tr><th>Group</th><th>Key</th><th>{{ a_name }}</th><th>{{ b_name }}</th></tr>
+  {% for d in result.diff %}
+    <tr><td>{{ d.group }}</td><td class="name mono">{{ d.key }}</td>
+      <td class="mono">{{ d.a if d.a is not none else "-" }}</td>
+      <td class="mono">{{ d.b if d.b is not none else "-" }}</td></tr>
+  {% else %}
+    <tr><td colspan="4" class="vital">No differences in the reconstructed configs.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

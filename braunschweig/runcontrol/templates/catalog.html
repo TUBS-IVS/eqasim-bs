@@ -1,33 +1,99 @@
 {% extends "base.html" %}
 {% block title %}Run catalog{% endblock %}
 {% block content %}
-  <div class="hero"><a href="/">&lsaquo; Runs</a> / <b>Run catalog</b> &mdash; {{ target }}
-    <span class="vital">target:
-      {% for t in targets %}<a href="/catalog?target={{ t }}" class="badge {{ 'running' if t == target else 'queued' }}">{{ t }}</a>{% endfor %}
-    </span>
-  </div>
-  <div style="padding:16px 24px">
-    <table>
-      <tr>
-        <th>Artifact / run</th><th>Origin</th><th>Kind</th><th>Status</th>
-        <th>Sampling</th><th>Git commit</th><th>Flags</th>
-      </tr>
-      {% for r in catalog.runs %}
-      <tr>
-        <td class="name">
-          {% if r.origin != "legacy_dir" %}<a href="/runs/{{ r.run_id }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}
-        </td>
-        <td class="mono">{{ r.origin }}</td>
-        <td class="mono">{{ r.kind }}</td>
-        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
-        <td class="mono">{{ r.sampling_hint }}{{ " (hint)" if r.origin == "legacy_dir" else "" }}</td>
-        <td class="mono">{{ r.git_commit }}</td>
-        <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-    <p class="vital" style="margin-top:12px">
-      {{ catalog.n_manifest }} with manifest / {{ catalog.n_legacy }} legacy directories (fields unknown)
-    </p>
-  </div>
+<div class="hero"><b>Run catalog - {{ target }}</b>
+  <span class="vital">
+    {% for tname in targets %}<a href="/catalog?target={{ tname }}"
+       class="badge {{ 'running' if tname == target else 'queued' }}">{{ tname }}</a>{% endfor %}
+  </span>
+</div>
+
+<div class="section" style="padding:12px 24px">
+  <input id="filter" class="mock-input" placeholder="filter by name..." onkeyup="applyFilter()"
+         style="max-width:260px">
+  <select id="kindf" onchange="applyFilter()"><option value="">all kinds</option>
+    <option value="output">output</option><option value="cache">cache</option></select>
+  <button class="cta" style="margin-left:auto" onclick="enrichAll()">Enrich all</button>
+  <button class="stopbtn" id="cmpbtn" disabled onclick="compareSelected()">Compare configs</button>
+  <span id="enrichprog" class="vital"></span>
+</div>
+
+<table id="cat">
+  <thead><tr>
+    <th></th>
+    <th data-sort="name" onclick="sortTable('name')">Name</th>
+    <th data-sort="kind" onclick="sortTable('kind')">Kind</th>
+    <th data-sort="sampling_hint" onclick="sortTable('sampling_hint')">Sampling</th>
+    <th data-sort="mtime" onclick="sortTable('mtime')">Modified</th>
+    <th>Config / details</th>
+    <th>Flags</th>
+  </tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr data-name="{{ r.run_id }}" data-kind="{{ r.kind }}"
+        data-sampling_hint="{{ r.sampling_hint }}" data-mtime="{{ r.mtime or 0 }}">
+      <td>{% if r.origin == "legacy_dir" %}<input type="checkbox" class="cmp" value="{{ r.run_id }}"
+             onchange="onCmpChange()">{% endif %}</td>
+      <td class="name">{{ r.run_id }}</td>
+      <td>{{ r.kind }}</td>
+      <td class="mono">{{ r.sampling_hint }}{% if r.origin == "legacy_dir" %} (hint){% endif %}</td>
+      <td class="mono">{{ r.mtime|round(0) if r.mtime else "unknown" }}</td>
+      <td>
+        {% if r.origin == "legacy_dir" %}
+          <button class="tab" hx-get="/catalog/{{ target }}/{{ r.run_id }}/details"
+                  hx-target="#d-{{ loop.index }}" hx-swap="innerHTML">Enrich &raquo;</button>
+        {% else %}<a class="tab" href="/runs/{{ r.run_id }}">open run</a>{% endif %}
+      </td>
+      <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}</td>
+    </tr>
+    <tr><td colspan="7"><div id="d-{{ loop.index }}"></div></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="vital" style="padding:12px 24px">{{ n_manifest }} with manifest / {{ n_legacy }} legacy directories (fields unknown)</p>
+
+<script>
+function applyFilter() {
+  const q = document.getElementById('filter').value.toLowerCase();
+  const k = document.getElementById('kindf').value;
+  document.querySelectorAll('#cat tbody tr[data-name]').forEach(tr => {
+    const show = tr.dataset.name.toLowerCase().includes(q) && (!k || tr.dataset.kind === k);
+    tr.style.display = show ? '' : 'none';
+    tr.nextElementSibling.style.display = show ? '' : 'none';
+  });
+}
+let sortDir = {};
+function sortTable(col) {
+  const tb = document.querySelector('#cat tbody');
+  const rows = [...tb.querySelectorAll('tr[data-name]')];
+  const dir = sortDir[col] = -(sortDir[col] || 1);
+  rows.sort((a, b) => {
+    let x = a.dataset[col], y = b.dataset[col];
+    if (col === 'mtime') { x = +x; y = +y; return (x - y) * dir; }
+    return x.localeCompare(y) * dir;
+  });
+  rows.forEach(r => { const d = r.nextElementSibling; tb.appendChild(r); tb.appendChild(d); });
+}
+function onCmpChange() {
+  const n = document.querySelectorAll('.cmp:checked').length;
+  document.getElementById('cmpbtn').disabled = (n !== 2);
+}
+function compareSelected() {
+  const sel = [...document.querySelectorAll('.cmp:checked')].map(c => c.value);
+  if (sel.length === 2)
+    location.href = `/catalog/diff?target={{ target }}&a=${sel[0]}&b=${sel[1]}`;
+}
+async function enrichAll() {
+  const rows = [...document.querySelectorAll('#cat tbody tr[data-name]')]
+    .filter(tr => tr.style.display !== 'none' && tr.querySelector('.cmp'));
+  const prog = document.getElementById('enrichprog');
+  let done = 0;
+  for (const tr of rows) {
+    prog.textContent = `enriching ${++done}/${rows.length}...`;
+    try { await fetch(`/api/catalog/{{ target }}/${tr.dataset.name}/enrich`, {method: 'POST'}); }
+    catch (e) { /* honest: leave row un-enriched, continue */ }
+  }
+  prog.textContent = `enriched ${done}/${rows.length} (open a row to view)`;
+}
+</script>
 {% endblock %}

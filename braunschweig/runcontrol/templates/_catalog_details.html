@@ -1,0 +1,33 @@
+<div class="section" style="border:1px solid var(--line); border-radius:8px; margin:6px 0; padding:12px">
+  <div class="vital">
+    date <b class="mono">{{ e.run_date_iso or "unknown" }}</b> &middot;
+    commit <b class="mono">{{ e.meta.commit if e.meta and e.meta.commit else "unknown" }}</b> &middot;
+    seed <b class="mono">{{ e.meta.random_seed if e.meta and e.meta.random_seed is not none else "unknown" }}</b> &middot;
+    <button class="tab" hx-post="/api/catalog/{{ target }}/{{ e.name }}/size" hx-swap="none"
+            onclick="this.textContent='sizing...'">size</button>
+    {% if e.size_bytes is not none %}<span class="mono">{{ (e.size_bytes / 1e9)|round(2) }} G</span>{% endif %}
+  </div>
+  <div class="zlabel" style="margin-top:10px">Effective config
+    <span class="vital">(from {{ e.effective_config_stage_count }} cached stages -- partial)</span></div>
+  {% for group, flags in e.curated_view.items() %}
+    <details class="grp"><summary>{{ group }}</summary>
+      {% for f in flags %}<div class="frow"><span style="flex:1">{{ f.description }}
+        <small class="mono">{{ f.key }}</small></span>
+        <span class="mono">{{ f.value }}</span></div>{% endfor %}
+    </details>
+  {% endfor %}
+  {% if e.config_conflicts %}<p class="vital">conflicts across stages:
+    <span class="mono">{{ e.config_conflicts|join(", ") }}</span></p>{% endif %}
+  <div class="zlabel" style="margin-top:10px">Stages
+    <span class="vital">(derived from cache completion timestamps)</span></div>
+  <div class="dna">
+    {% for s in e.timeline %}<span class="seg done" title="{{ s.stage_short }} - {{ s.approx_duration_s or '?' }}s"
+        style="flex:{{ s.approx_duration_s or 1 }}"></span>{% endfor %}
+  </div>
+  <table style="width:auto"><tr><th>Stage</th><th>Completed</th><th>~Duration s</th></tr>
+    {% for s in e.timeline %}<tr><td class="name mono">{{ s.stage_short }}</td>
+      <td class="mono">{{ s.completed_at_iso }}</td>
+      <td class="mono">{{ s.approx_duration_s if s.approx_duration_s is not none else "-" }}</td></tr>{% endfor %}
+  </table>
+  <p class="vital">sources: {% for k, v in e.sources.items() %}{{ k }}={{ v }} {% endfor %}</p>
+</div>

@@ -1,0 +1,54 @@
+import json, sys, pathlib
+from fastapi.testclient import TestClient
+from braunschweig.runcontrol.app import create_app
+from braunschweig.runcontrol.daemon import QueueWorker
+from braunschweig.runcontrol.db import Database
+from braunschweig.runcontrol.settings import Settings, TargetConfig
+from braunschweig.runcontrol.targets.local import LocalTarget
+
+
+def _pipeline(stages):
+    return json.dumps({f"{s}__{i:032x}": {"config": c, "updated": u, "dependencies": [],
+            "info": {}, "module_hash": "h"} for i, (s, u, c) in enumerate(stages)})
+
+
+def _client(tmp_path):
+    data = tmp_path / "eqasim-data"
+    (data / "cache_bs_25pct").mkdir(parents=True)
+    (data / "cache_bs_25pct" / "pipeline.json").write_text(
+        _pipeline([("a", 1000.0, {"sampling_rate": 0.25, "freight_enabled": True})]))
+    (tmp_path / "logs").mkdir()
+    cfg = TargetConfig(name="local", kind="local", repo=str(tmp_path), runner="scripts/run_synpp.py")
+    settings = Settings(db_path=tmp_path / "runs.db", targets={"local": cfg})
+    db = Database(settings.db_path)
+    targets = {"local": LocalTarget(cfg, python=sys.executable)}
+    return TestClient(create_app(settings, db, QueueWorker(db, targets), targets))
+
+
+def test_catalog_page_has_sort_filter_and_checkboxes(tmp_path):
+    c = _client(tmp_path)
+    html = c.get("/catalog?target=local").text
+    assert "cache_bs_25pct" in html
+    assert 'data-sort' in html or 'onclick="sortTable' in html   # sortable headers
+    assert 'Compare configs' in html
+    assert 'Enrich all' in html
+
+
+def test_details_partial_renders_effective_config_partial_label(tmp_path):
+    c = _client(tmp_path)
+    html = c.get("/catalog/local/cache_bs_25pct/details").text
+    assert "partial" in html.lower()
+    assert "freight_enabled" in html
+    assert "Stages" in html or "timeline" in html.lower()
+
+
+def test_diff_page_renders_two_columns(tmp_path):
+    c = _client(tmp_path)
+    import pathlib
+    data = pathlib.Path(str(tmp_path)) / "eqasim-data"
+    (data / "cache_bs_10pct").mkdir()
+    (data / "cache_bs_10pct" / "pipeline.json").write_text(
+        _pipeline([("a", 1.0, {"sampling_rate": 0.10, "freight_enabled": True})]))
+    html = c.get("/catalog/diff", params={"target": "local", "a": "cache_bs_25pct", "b": "cache_bs_10pct"}).text
+    assert "cache_bs_25pct" in html and "cache_bs_10pct" in html
+    assert "sampling_rate" in html
