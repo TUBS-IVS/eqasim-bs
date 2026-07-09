@@ -13,6 +13,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from .collectors import enrich
 from .db import Database
 from .models import LaunchHandle, RunManifest, RunSpec, RunStatus
 from .targets.base import ExecutionTarget
@@ -177,23 +178,19 @@ class QueueWorker:
             return self._window_override
         return getattr(self, "_settings_window", 300)
 
-    def _watch_mtime(self, target: ExecutionTarget, watch_path: str) -> float | None:
-        """Dir mtime of the watched artifact directory, read via one listdir call on
-        its parent (the target's data_dir). Returns None when the entry is gone."""
-        parent = watch_path.rsplit("/", 1)[0]
-        base = watch_path.rsplit("/", 1)[-1]
-        for entry in target.listdir(parent):
-            if entry["name"] == base:
-                return float(entry["mtime"])
-        return None
-
     def _settle_external(self, row: dict, target: ExecutionTarget) -> bool:
-        """Liveness for an adopted external run: the watched dir mtime advancing
-        (server clock, compared to its own stored value) means still running; no
-        advance for _window_seconds() on the daemon clock means ENDED. The external
-        process is never queried via a handle and never killed."""
+        """Liveness for an adopted external run: the newest top-level child mtime
+        across the watched artifact's cache/output dir pair advancing (server clock,
+        compared to its own stored value) means still running; no advance for
+        _window_seconds() on the daemon clock means ENDED. Watching child mtimes
+        rather than the artifact dir's own entry mtime is deliberate -- see
+        enrich.newest_activity_mtime: a directory entry's own mtime does not change
+        while a long-running stage/iteration writes deep inside it, which previously
+        caused genuinely running runs to be marked ENDED after just one window. The
+        external process is never queried via a handle and never killed."""
         run_id = row["run_id"]
-        current = self._watch_mtime(target, row["watch_path"])
+        name = row["watch_path"].rsplit("/", 1)[-1]
+        current = enrich.newest_activity_mtime(target, name)
         stored = row["watch_mtime"]
         if current is not None and stored is not None and current > stored:
             self.db.update_watch(run_id, current, self._now_iso())

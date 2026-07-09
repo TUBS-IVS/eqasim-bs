@@ -270,23 +270,34 @@ that were launched outside the GUI.
 
 **How adoption works:** A legacy `cache_*` or `output_*` directory can be
 adopted from the catalog page by clicking "Adopt". The adoption records the
-artifact's current directory mtime and begins polling for changes. The run
-shows on the home hero with an `adopted` badge, remains `running` while the
-directory is being modified, and transitions to `ENDED` when the directory
-stops changing for `adopt_alive_window_s` (default 300 seconds, configurable in
+newest top-level-child activity mtime of the artifact's cache/output dir pair
+(see below) and begins polling for changes. The run shows on the home hero
+with an `adopted` badge, remains `running` while that activity signal keeps
+advancing, and transitions to `ENDED` when it stops advancing for
+`adopt_alive_window_s` (default 1800 seconds, configurable in
 `runcontrol.toml`). The adoption searches for a fresh `logs/run_*.log` matching
 the artifact's mtime (within the window) and links it if found; if no such log
 exists, the progress display shows only the cache timeline without live
 iteration/stage metadata.
 
-**Liveness is inferred from directory activity.** The daemon compares the
-server-side artifact directory's mtime to its previously-stored value (advancing
-mtime = still running; no change for `adopt_alive_window_s` on the daemon's own
-clock = ENDED). This approach is clock-skew-free: both the current and stored
-mtime values come from the server's filesystem, and the "stale-check" interval
-uses only the daemon's local clock. The exit code of the external process is
-not queried and remains unknown; the terminal status is always `ENDED`, never
-`DONE` or `FAILED`.
+**Liveness is inferred from directory activity, not the directory's own mtime.**
+A directory entry's own mtime (as reported when listing its parent) only
+changes when its DIRECT children are added or removed -- not while files deep
+inside it grow, which is exactly what happens for minutes at a time during a
+single synpp stage or MATSim iteration. Watching that entry mtime alone
+previously caused a genuinely running 100% run to be falsely marked `ENDED`
+(issue #119). Instead the daemon watches
+`enrich.newest_activity_mtime(target, name)`: the MAX top-level-child mtime
+across both `cache_<name>` (a fresh `*.cache` file and updated `pipeline.json`
+per completed synpp stage) and the paired `output_<name>` (fresh per-iteration
+files written into the output dir root while MATSim runs) -- two cheap
+`listdir` calls, never a recursive scan. Advancing since its previously-stored
+value = still running; no advance for `adopt_alive_window_s` on the daemon's
+own clock = `ENDED`. This approach is clock-skew-free: both the current and
+stored values come from the server's filesystem, and the "stale-check"
+interval uses only the daemon's local clock. The exit code of the external
+process is not queried and remains unknown; the terminal status is always
+`ENDED`, never `DONE` or `FAILED`.
 
 **Queue blocking and monitor-only semantics:** An adopted running run blocks
 the daemon queue, preventing new launches on the same target until the adopted

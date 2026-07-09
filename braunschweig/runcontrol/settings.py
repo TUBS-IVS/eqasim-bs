@@ -42,10 +42,14 @@ class Settings:
     # applied where a size has already been fetched (details drawer), never inferred.
     stale_age_days: int = 30
     stale_size_gb: float = 5.0
-    # Adopt-running-run (issue #119): how many seconds of no advance in the watched
-    # artifact directory's mtime (daemon clock) before an adopted external run is
-    # declared ENDED. See daemon.QueueWorker._settle_external for the liveness rule.
-    adopt_alive_window_s: int = 300
+    # Adopt-running-run (issue #119): how many seconds of no advance in the newest
+    # top-level child mtime across the watched artifact's cache/output dir pair
+    # (daemon clock) before an adopted external run is declared ENDED. 1800s (not
+    # 300s) because a single synpp stage or MATSim iteration can legitimately write
+    # for many minutes without touching either dir's top-level child set -- a
+    # shorter window falsely marks a genuinely running run ENDED. See
+    # enrich.newest_activity_mtime and daemon.QueueWorker._settle_external.
+    adopt_alive_window_s: int = 1800
 
 
 def load_settings(path: Path) -> Settings:
@@ -85,5 +89,5 @@ def load_settings(path: Path) -> Settings:
         targets_store_path=Path(raw.get("targets_store_path", "runcontrol_data/targets.json")),
         stale_age_days=int(raw.get("stale_age_days", 30)),
         stale_size_gb=float(raw.get("stale_size_gb", 5.0)),
-        adopt_alive_window_s=int(raw.get("adopt_alive_window_s", 300)),
+        adopt_alive_window_s=int(raw.get("adopt_alive_window_s", 1800)),
     )

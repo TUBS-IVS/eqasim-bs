@@ -58,6 +58,40 @@ def paired_artifact_name(name: str) -> str | None:
     return None
 
 
+def newest_activity_mtime(target, name: str) -> float | None:
+    """Newest top-level child mtime across an artifact's cache/output dir pair.
+
+    Watching the artifact directory's OWN mtime (as `listdir` on its parent
+    reports it) is unreliable liveness: a directory entry's mtime only advances
+    when its DIRECT children are added or removed, not when files deep inside it
+    grow. A long synpp stage or MATSim iteration can write for many minutes
+    without ever touching the top-level child set of `cache_<name>` or
+    `output_<name>`, which makes a genuinely running run look stale.
+
+    Instead this looks at the newest mtime among the TOP-LEVEL children of both
+    the cache dir and the paired output dir (two cheap `listdir` calls, never a
+    recursive scan): the cache dir gets a fresh top-level `*.cache` file (and an
+    updated `pipeline.json`) each time a synpp stage completes, and the output
+    dir gets fresh per-iteration files written directly into its root while
+    MATSim runs. Together these two signals track real activity without
+    walking either tree.
+
+    Returns None only when neither directory has any top-level child (nothing
+    to observe yet, e.g. right after the run started).
+    """
+    data_dir = target.cfg.data_dir
+    paired = paired_artifact_name(name)
+    newest: float | None = None
+    for candidate in (name, paired):
+        if candidate is None:
+            continue
+        for entry in target.listdir(f"{data_dir}/{candidate}"):
+            mtime = float(entry["mtime"])
+            if newest is None or mtime > newest:
+                newest = mtime
+    return newest
+
+
 def merge_stage_configs(pipeline: dict) -> tuple[dict, list[str], int]:
     merged: dict = {}
     conflicts: set[str] = set()

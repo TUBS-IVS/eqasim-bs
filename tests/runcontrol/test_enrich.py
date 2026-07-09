@@ -41,6 +41,25 @@ def test_paired_artifact_name():
     assert enrich.paired_artifact_name("weird_name") is None
 
 
+def test_newest_activity_mtime_max_over_pair():
+    t = FakeTarget(
+        files={},
+        dirs={
+            "eqasim-data/cache_x": [{"name": "a.cache", "size": 1, "mtime": 100.0},
+                                    {"name": "pipeline.json", "size": 1, "mtime": 200.0}],
+            "eqasim-data/output_x": [{"name": "it.5", "size": 1, "mtime": 500.0}],
+        },
+    )
+    assert enrich.newest_activity_mtime(t, "cache_x") == 500.0
+    # queried from the output-dir side, the pairing must still reach the cache dir
+    assert enrich.newest_activity_mtime(t, "output_x") == 500.0
+
+
+def test_newest_activity_mtime_none_when_no_children():
+    t = FakeTarget(files={}, dirs={})
+    assert enrich.newest_activity_mtime(t, "cache_empty") is None
+
+
 def test_merge_stage_configs_union_and_conflict():
     pj = json.loads(_pipeline([
         ("a", 1.0, {"sampling_rate": 0.25, "random_seed": 1234}),

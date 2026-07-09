@@ -4,11 +4,19 @@ from braunschweig.runcontrol.models import RunSpec, RunStatus
 
 
 class FakeTarget:
+    """Fakes the two listdir calls liveness now depends on: the artifact dir's
+    own entry (via listing its parent, `data_dir`) and its top-level children
+    (via listing the dir itself). `dir_mtime` drives the CHILD listing -- the
+    signal daemon._settle_external now watches (see enrich.newest_activity_mtime)
+    -- while `entry_mtime` drives the artifact dir's OWN entry mtime and stays
+    fixed by default, reproducing the exact bug this fixture guards against: a
+    directory's own mtime does not move while files deep inside it change."""
     kind = "ssh"
     name = "server"
 
-    def __init__(self, dir_mtime):
+    def __init__(self, dir_mtime, entry_mtime=1.0):
         self._m = dir_mtime
+        self._entry_mtime = entry_mtime
         self.cfg = type("C", (), {"data_dir": "eqasim-data", "logs_dir": "logs"})()
         self.stopped = []
 
@@ -16,9 +24,12 @@ class FakeTarget:
         self._m = m
 
     def listdir(self, path):
-        # only the data_dir listing matters; expose one artifact dir
+        if self._m is None:
+            return []                                          # the artifact dir (and its contents) is gone
         if path == "eqasim-data":
-            return [{"name": "cache_x", "size": 0, "mtime": self._m}] if self._m is not None else []
+            return [{"name": "cache_x", "size": 0, "mtime": self._entry_mtime}]
+        if path == "eqasim-data/cache_x":
+            return [{"name": "stage.cache", "size": 0, "mtime": self._m}]
         return []
 
     def stop(self, handle):
@@ -86,3 +97,20 @@ def test_external_dir_gone_ends(tmp_path):
     _adopt(db, watch_mtime=2000.0, checked_at=w._iso(10_000.0))
     w.tick()
     assert db.get_run("ext1")["status"] == RunStatus.ENDED.value
+
+
+def test_external_alive_when_child_advances_though_dir_static(tmp_path):
+    """Regression test for issue #119's liveness bug: the artifact directory's
+    own entry mtime (as seen via listdir on its parent) is frozen at 1.0 for the
+    whole test -- exactly the real-world case of a long synpp stage / MATSim
+    iteration writing deep inside the dir without touching its top-level child
+    set. The daemon-clock window has already elapsed (would previously have
+    forced ENDED), but a top-level child inside cache_x has genuinely advanced,
+    so the run must stay RUNNING."""
+    t = FakeTarget(dir_mtime=2000.0, entry_mtime=1.0)
+    w, db = _worker(tmp_path, t, window=300, clock=lambda: 10_000.0)
+    _adopt(db, watch_mtime=1000.0, checked_at=w._iso(9_000.0))   # last checked 1000s ago -- window already elapsed
+    t.set_mtime(5000.0)                                          # a top-level child inside cache_x has since advanced
+    w.tick()
+    assert db.get_run("ext1")["status"] == RunStatus.RUNNING.value
+    assert db.get_run("ext1")["watch_mtime"] == 5000.0
