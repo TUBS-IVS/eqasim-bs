@@ -176,11 +176,26 @@ def configure(context):
     # its own MiD-estimated daily probability; thinner cells fall back to the
     # MiD marginal share (logged, no silent fallback).
     context.config("secondary_distance_min_obs", 30)
-    # MiD Wege directory: only consumed (and only declared) when the daily
-    # split is ON, so non-real configs that leave the flag off never require
-    # the local-only MiD delivery.
+
+    # Leisure / other errand+escort subtype splits (Task 4, issue #127). Mirror
+    # secondary_shop_daily_split's structure: each ON flag tags legs of that
+    # purpose with an internal MiD-estimated subtype that drives BOTH the
+    # distance-distribution layer (braunschweig.popsim.distance_distributions'
+    # secondary_leisure_subtype_split / secondary_other_subtype_split there) AND
+    # the building placement (pot_leisure / pot_other candidates -- shared across
+    # all subtypes of the same purpose for now, see _ACTIVITY_POTENTIAL_COLUMN).
+    # The eqasim output purpose stays "leisure" / "other"; the subtype is
+    # internal to the chainsolver. OFF (default) is byte-identical.
+    context.config("secondary_leisure_subtype_split", False)
+    context.config("secondary_other_subtype_split", False)
+
+    # MiD Wege directory: only consumed (and only declared) when at least one
+    # subtype split is ON, so non-real configs that leave all three flags off
+    # never require the local-only MiD delivery.
     shop_daily_split = context.config("secondary_shop_daily_split")
-    if shop_daily_split:
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split")
+    other_subtype_split = context.config("secondary_other_subtype_split")
+    if shop_daily_split or leisure_subtype_split or other_subtype_split:
         context.config("braunschweig.population.popsim.mid_dir")
 
 
@@ -368,10 +383,34 @@ def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bo
     return purpose in distributions
 
 
+# Internal shop subtype activities (chainsolver-only). They never leak into the
+# eqasim output: _extract_locations maps them back to the "shop" purpose.
+SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
+
+# Internal leisure subtype activities (chainsolver-only; Task 4, issue #127).
+# Mirror the four purpose_subtype.LEISURE_GROUPS keys exactly (kept as literal
+# strings here, not imported, matching how SHOP_SUBTYPE_ACTIVITIES mirrors
+# shop_subtype's daily/non-daily vocabulary without importing it). They never
+# leak into the eqasim output: _extract_locations maps them back to "leisure".
+LEISURE_SUBTYPE_ACTIVITIES = (
+    "leisure_local", "leisure_visit", "leisure_activity", "leisure_excursion",
+)
+
+# Internal "other" errand/escort subtype activities (chainsolver-only; Task 4,
+# issue #127). Mirror the two purpose_subtype.OTHER_ERRAND_GROUPS keys plus the
+# always-labelled escort outcome. "other_rest" is deliberately NOT included: it
+# keeps the plain "other" activity rather than becoming its own chainsolver
+# activity name (see _build_other_subtype_decider). They never leak into the
+# eqasim output: _extract_locations maps them back to "other".
+OTHER_SUBTYPE_ACTIVITIES = ("other_errand_short", "other_errand_long", "other_escort")
+
 # Maps each secondary chainsolver activity to its attached candidate-potential
-# column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to the
-# split retail potentials; the aggregate "shop" maps to the summed pot_shop and
-# is the only shop key on the OFF path.
+# column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
+# genuinely distinct split retail potentials; the aggregate "shop" maps to the
+# summed pot_shop and is the only shop key on the OFF path. The leisure/other
+# subtypes (Task 4) map to the SAME aggregate potential as their parent purpose
+# -- there is no per-subtype building potential yet (a dedicated "pot_visit"
+# column is deferred to a later task).
 _ACTIVITY_POTENTIAL_COLUMN = {
     "shop": "pot_shop",
     "shop_daily": "pot_shop_daily",
@@ -379,10 +418,8 @@ _ACTIVITY_POTENTIAL_COLUMN = {
     "leisure": "pot_leisure",
     "other": "pot_other",
 }
-
-# Internal shop subtype activities (chainsolver-only). They never leak into the
-# eqasim output: _extract_locations maps them back to the "shop" purpose.
-SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
+_ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_leisure" for name in LEISURE_SUBTYPE_ACTIVITIES})
+_ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_other" for name in OTHER_SUBTYPE_ACTIVITIES})
 
 
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
@@ -590,7 +627,9 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
 
 
 def _build_locations_df(df_secondary, with_potentials: bool = False,
-                        shop_daily_split: bool = False):
+                        shop_daily_split: bool = False,
+                        leisure_subtype_split: bool = False,
+                        other_subtype_split: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -608,6 +647,26 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     ``shop_daily_split`` requires ``with_potentials`` (the split is meaningless
     without the per-subtype potentials). OFF (default) is byte-identical to the
     pre-feature behaviour (a single ``shop`` activity at ``pot_shop``).
+
+    When ``leisure_subtype_split`` is True (Task 4, issue #127) a building that
+    offers leisure is emitted under the four internal subtype activities
+    (``LEISURE_SUBTYPE_ACTIVITIES``: leisure_local/visit/activity/excursion)
+    INSTEAD OF the aggregate ``leisure`` activity. Unlike the shop split there is
+    no per-subtype building potential yet -- all four share the SAME
+    ``pot_leisure`` value (a dedicated ``pot_visit`` column is deferred to a
+    later task), so no offer is ever dropped for a non-positive potential here
+    (that zero-skip only applies to the genuinely distinct
+    ``SHOP_SUBTYPE_ACTIVITIES`` potentials). ``leisure_subtype_split`` requires
+    ``with_potentials``. OFF (default) is byte-identical.
+
+    When ``other_subtype_split`` is True (Task 4, issue #127) a building that
+    offers "other" is emitted under the three internal errand/escort subtype
+    activities (``OTHER_SUBTYPE_ACTIVITIES``: other_errand_short/long,
+    other_escort) IN ADDITION TO the aggregate ``other`` activity -- kept so
+    ``other_rest`` legs (which the decider deliberately never subtypes, see
+    ``_build_other_subtype_decider``) still find a candidate. All three subtypes
+    share the SAME ``pot_other`` value. ``other_subtype_split`` requires
+    ``with_potentials``. OFF (default) is byte-identical.
     """
     if shop_daily_split and not with_potentials:
         raise ValueError(
@@ -615,27 +674,49 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "with_potentials (the daily/non-daily split needs the per-subtype "
             "retail potential columns)."
         )
+    if leisure_subtype_split and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_subtype_split requires "
+            "with_potentials (the leisure subtype placement needs the pot_leisure "
+            "potential column)."
+        )
+    if other_subtype_split and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] other_subtype_split requires "
+            "with_potentials (the other subtype placement needs the pot_other "
+            "potential column)."
+        )
     activities = []
     potentials = []
-    # Activity emission order. With the split ON the single "shop" offer is
-    # replaced by the two subtype activities (shop_daily/shop_non_daily); the
-    # leisure/other activities are unchanged.
-    if shop_daily_split:
-        offer_specs = (("shop_daily", "offers_shop"),
-                       ("shop_non_daily", "offers_shop"),
-                       ("leisure", "offers_leisure"),
-                       ("other", "offers_other"))
-    else:
-        offer_specs = (("shop", "offers_shop"),
-                       ("leisure", "offers_leisure"),
-                       ("other", "offers_other"))
+    # Activity emission order. With a split ON, the aggregate offer is either
+    # REPLACED (shop, leisure -- every leg of that purpose gets a subtype) or
+    # EXTENDED (other -- other_rest legs still need the plain "other" offer);
+    # a purpose whose split is OFF keeps its single aggregate offer.
+    shop_offer_specs = (
+        (("shop_daily", "offers_shop"), ("shop_non_daily", "offers_shop"))
+        if shop_daily_split else (("shop", "offers_shop"),)
+    )
+    leisure_offer_specs = (
+        tuple((name, "offers_leisure") for name in LEISURE_SUBTYPE_ACTIVITIES)
+        if leisure_subtype_split else (("leisure", "offers_leisure"),)
+    )
+    other_offer_specs = (
+        tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
+        if other_subtype_split else (("other", "offers_other"),)
+    )
+    offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs
     cols = ["offers_shop", "offers_leisure", "offers_other"]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
-        # offer_specs, so the non-split path does not demand the subtype
-        # potential columns (byte-identical + no spurious KeyError on candidate
-        # frames that carry only the summed pot_shop).
-        cols = cols + [_ACTIVITY_POTENTIAL_COLUMN[act] for act, _ in offer_specs]
+        # offer_specs, so a non-split path does not demand subtype potential
+        # columns (byte-identical + no spurious KeyError on candidate frames
+        # that carry only the aggregate potentials). Deduplicated (preserving
+        # first-seen order) because the leisure/other subtypes intentionally
+        # SHARE one potential column across several offer_specs entries --
+        # selecting a duplicated column name from df_secondary would otherwise
+        # yield a multi-column slice instead of a per-row scalar below.
+        potential_cols = [_ACTIVITY_POTENTIAL_COLUMN[act] for act, _ in offer_specs]
+        cols = cols + list(dict.fromkeys(potential_cols))
     for _, row in df_secondary[cols].iterrows():
         acts, pots = [], []
         for act, offer in offer_specs:
@@ -645,8 +726,11 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                 pot = float(row[_ACTIVITY_POTENTIAL_COLUMN[act]])
                 # A shop subtype with a zero potential is not a candidate for
                 # that subtype (the building has no daily / no non-daily retail
-                # floor area). Without the split the aggregate shop offer is
-                # kept regardless so the OFF path is byte-identical.
+                # floor area). The aggregate shop/leisure/other offers, and the
+                # leisure/other subtypes (which share one undifferentiated
+                # potential column), are kept regardless of sign so the OFF
+                # path -- and the leisure/other ON paths, pending a per-subtype
+                # potential -- stay byte-identical / unchanged here.
                 if shop_daily_split and act in SHOP_SUBTYPE_ACTIVITIES and pot <= 0.0:
                     continue
                 acts.append(act)
@@ -735,7 +819,9 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     distributions: Dict[str, Any],
                     leisure_correction_factor: float,
                     random: np.random.RandomState,
-                    shop_subtype_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    shop_subtype_decider=None,
+                    leisure_subtype_decider=None,
+                    other_subtype_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
     Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
@@ -755,6 +841,17 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     legs were labelled daily / non_daily and how many fell back from a missing
     subtype distance layer to the aggregate ``"shop"`` layer (no silent
     fallback).
+
+    ``leisure_subtype_decider`` / ``other_subtype_decider`` (Task 4, issue #127)
+    mirror ``shop_subtype_decider`` exactly for the leisure and other purposes,
+    each with its own dedicated seeded RNG (again NOT ``random``). The leisure
+    decider returns one of ``LEISURE_SUBTYPE_ACTIVITIES``; the other decider
+    returns one of ``OTHER_SUBTYPE_ACTIVITIES`` or ``"other_rest"``. The
+    ``other_rest`` outcome is the one asymmetry versus shop/leisure: it is NOT a
+    chainsolver activity name, so both the placement activity and the distance
+    purpose stay at the plain ``"other"`` default (unchanged from the OFF path)
+    -- only the realised-outcome count in ``subtype_stats`` changes. Both
+    deciders default to None (OFF), leaving the leg loop byte-identical.
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -776,14 +873,21 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
 
-    # Tier-2 subtype accounting (fallback transparency). Allocated only when the
-    # subtype decider is active (ON path); on the OFF path an empty dict is
-    # returned so the caller's logging gate (shop_subtype_decider is not None)
-    # stays consistent with the allocation gate here.
-    subtype_stats: Dict[str, int] = (
-        {"shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0}
-        if shop_subtype_decider is not None else {}
-    )
+    # Subtype accounting (fallback transparency). Each decider's counters are
+    # allocated only when that decider is active (ON path); on the fully-OFF
+    # path (all three deciders None) subtype_stats stays the empty dict, so the
+    # caller's logging gates (e.g. ``shop_subtype_decider is not None``) stay
+    # consistent with the allocation gates here.
+    subtype_stats: Dict[str, int] = {}
+    if shop_subtype_decider is not None:
+        subtype_stats.update({"shop_daily": 0, "shop_non_daily": 0, "distance_layer_fallback": 0})
+    if leisure_subtype_decider is not None:
+        subtype_stats.update({name: 0 for name in LEISURE_SUBTYPE_ACTIVITIES})
+        subtype_stats["leisure_distance_layer_fallback"] = 0
+    if other_subtype_decider is not None:
+        subtype_stats.update({name: 0 for name in OTHER_SUBTYPE_ACTIVITIES})
+        subtype_stats["other_rest"] = 0
+        subtype_stats["other_distance_layer_fallback"] = 0
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -846,6 +950,38 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 else:
                     distance_purpose = "shop"
                     subtype_stats["distance_layer_fallback"] += 1
+
+            # Task 4 (issue #127): resolve a leisure leg to one of the four
+            # LEISURE_SUBTYPE_ACTIVITIES groups. Sibling to the shop block above:
+            # the group is BOTH the chainsolver activity AND (with a logged
+            # fallback to the aggregate "leisure" layer when the subtype
+            # distance layer is absent) the distance purpose.
+            if leisure_subtype_decider is not None and to_act_type == "leisure":
+                group = leisure_subtype_decider(leg["mode"], leg["travel_time"])
+                placement_act = group
+                subtype_stats[group] += 1
+                if _purpose_in_distributions(distributions, group):
+                    distance_purpose = group
+                else:
+                    distance_purpose = "leisure"
+                    subtype_stats["leisure_distance_layer_fallback"] += 1
+
+            # Task 4 (issue #127): resolve an "other" leg to one of
+            # OTHER_SUBTYPE_ACTIVITIES, or to "other_rest". Unlike shop/leisure,
+            # "other_rest" is NOT itself a chainsolver activity or distance-layer
+            # key -- placement_act and distance_purpose deliberately stay at
+            # their to_act_type == "other" default for that outcome, so rest
+            # legs are placed and distance-sampled exactly as on the OFF path.
+            if other_subtype_decider is not None and to_act_type == "other":
+                outcome = other_subtype_decider(leg["mode"], leg["travel_time"])
+                subtype_stats[outcome] += 1
+                if outcome != "other_rest":
+                    placement_act = outcome
+                    if _purpose_in_distributions(distributions, outcome):
+                        distance_purpose = outcome
+                    else:
+                        distance_purpose = "other"
+                        subtype_stats["other_distance_layer_fallback"] += 1
 
             distance_m = _sample_leg_distance(
                 distributions, leg["mode"], leg["travel_time"],
@@ -1165,13 +1301,21 @@ def _extract_locations(result_df: pd.DataFrame,
     known_prob = np.array(
         [valid_split[i] and (prob_idx_int[i] in meta_by_idx) for i in range(n_rows)]
     )
-    # Tier 2: the internal shop subtype activities (shop_daily / shop_non_daily)
-    # are secondary too -- they map back to the eqasim "shop" purpose. Include
-    # them here so a subtype-tagged leg is not silently dropped at extraction.
-    # The subtype label never reaches the output schema (which carries no
-    # purpose: [person_id, activity_index, location_id, geometry]); this is the
-    # implicit map-back to "shop".
-    secondary_acts = set(SECONDARY_PURPOSES) | set(SHOP_SUBTYPE_ACTIVITIES)
+    # Tier 2 / Task 4: the internal subtype activities (shop_daily/non_daily;
+    # leisure_local/visit/activity/excursion; other_errand_short/long,
+    # other_escort) are secondary too -- they map back to the eqasim "shop" /
+    # "leisure" / "other" purpose respectively. Include them here so a
+    # subtype-tagged leg is not silently dropped at extraction. The subtype
+    # label never reaches the output schema (which carries no purpose:
+    # [person_id, activity_index, location_id, geometry]); this is the implicit
+    # map-back ("other_rest" needs no entry here: it is never a chainsolver
+    # activity name, see _build_other_subtype_decider).
+    secondary_acts = (
+        set(SECONDARY_PURPOSES)
+        | set(SHOP_SUBTYPE_ACTIVITIES)
+        | set(LEISURE_SUBTYPE_ACTIVITIES)
+        | set(OTHER_SUBTYPE_ACTIVITIES)
+    )
     is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
 
@@ -1573,6 +1717,16 @@ def _fallback_accounting_summary(n_total_problems: int,
 # stays byte-identical.
 SHOP_SUBTYPE_SEED_OFFSET = 90211
 
+# Task 4 (issue #127): one further dedicated offset per NEW subtype decider,
+# each one more than the last, so leisure and other each draw from their own
+# separate RNG stream -- distinct from SHOP_SUBTYPE_SEED_OFFSET, from
+# ``random`` (distance sampling), and from each other. None of the three
+# subtype streams can perturb another, so any subset of {shop, leisure, other}
+# splits being ON/OFF leaves the others' draws (and the distance RNG / OFF
+# path) unchanged.
+LEISURE_SUBTYPE_SEED_OFFSET = 90212  # SHOP_SUBTYPE_SEED_OFFSET + 1
+OTHER_SUBTYPE_SEED_OFFSET = 90213    # SHOP_SUBTYPE_SEED_OFFSET + 2
+
 
 def _build_shop_subtype_decider(context, random_seed: int):
     """Build the per-leg shop daily/non-daily decider, or return None when OFF.
@@ -1662,6 +1816,205 @@ def _build_shop_subtype_decider(context, random_seed: int):
 
 
 # ---------------------------------------------------------------------------
+# Task 4 (issue #127): leisure / other subtype imputation deciders
+# ---------------------------------------------------------------------------
+
+def _inverse_cdf_choice(probs: Dict[str, float], group_names, draw: float) -> str:
+    """Return the name in ``group_names`` whose cumulative probability first
+    exceeds ``draw`` (standard inverse-CDF sampling): walk ``group_names`` in
+    the given fixed order while accumulating a running sum, and pick the first
+    entry whose cumulative probability exceeds ``draw``.
+
+    This is exactly the per-leg selection rule
+    ``braunschweig.popsim.purpose_subtype.impute_groups`` applies internally
+    (see that function's determinism note) -- reused here as a plain one-leg
+    helper INSTEAD OF calling ``impute_groups`` once per leg, because
+    ``impute_groups`` is designed for a single BATCHED call over many legs and
+    logs an aggregate marginal-fallback-rate message on every invocation.
+    Calling it with a length-1 batch (as the per-leg decider architecture
+    requires, mirroring ``_build_shop_subtype_decider``) would therefore emit
+    one log line per fallback leg -- log spam at population scale (millions of
+    legs). This helper performs the identical maths (one draw, a fixed-order
+    cumulative sum, first-exceeding-index selection) without that per-call
+    logging; the MODEL-level fallback rate (how many (mode, tt_band) cells got
+    their own estimate vs. the marginal) is already logged once, at
+    decider-build time, by ``estimate_group_probabilities`` itself -- so no
+    fallback-rate signal is lost, only the per-leg spam.
+    """
+    cumulative = np.cumsum([probs.get(name, 0.0) for name in group_names])
+    choice = int(np.clip(np.searchsorted(cumulative, draw, side="right"), 0, len(group_names) - 1))
+    return group_names[choice]
+
+
+def _build_leisure_subtype_decider(context, random_seed: int):
+    """Build the per-leg leisure subtype decider, or return None when OFF.
+
+    Sibling to ``_build_shop_subtype_decider``. Returns a callable
+    ``(mode: str, travel_time_s: float) -> str``, one of
+    ``LEISURE_SUBTYPE_ACTIVITIES`` (the ``purpose_subtype.LEISURE_GROUPS``
+    keys), when ``secondary_leisure_subtype_split`` is ON, else ``None`` (the
+    byte-identical OFF path). ``P(group | mode, tt_band)`` is estimated from
+    the MiD 2023 Wege survey via
+    ``braunschweig.popsim.purpose_subtype.estimate_group_probabilities`` (Task
+    2, issue #127); that call logs the labelled-leg share and the (mode,
+    tt_band) cell coverage ONCE, here, at decider-build time. Per leg the
+    decider draws exactly one uniform sample from a dedicated seeded RNG
+    (``LEISURE_SUBTYPE_SEED_OFFSET``, NOT ``random``) and resolves it via
+    ``_inverse_cdf_choice`` -- see that helper's docstring for why the per-leg
+    draw is done inline rather than via a per-leg call to ``impute_groups``.
+    """
+    if not context.config("secondary_leisure_subtype_split"):
+        return None
+
+    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.purpose_subtype import (
+        LEISURE_SPEC,
+        estimate_group_probabilities,
+        tt_band,
+    )
+    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+
+    min_obs = int(context.config("secondary_distance_min_obs"))
+    mid_dir = context.config("braunschweig.population.popsim.mid_dir")
+    mid_wege = mid_module.load_mid_wege(mid_dir)
+    # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
+    # W_ZWD. map_mode derives "mode" from hvm_imp; travel_time is arrival -
+    # departure in seconds (the same derivation as the shop decider / the
+    # distance distributions stage).
+    mid_wege = map_mode(mid_wege)
+    dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
+    arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
+    tt = arr - dep
+    tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
+    mid_wege = mid_wege.assign(travel_time=tt)
+
+    cell_probs, marginal = estimate_group_probabilities(mid_wege, LEISURE_SPEC, min_obs=min_obs)
+    group_names = sorted(marginal)
+    print(
+        "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
+        + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
+    )
+
+    rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)
+
+    def decide(mode: str, travel_time_s: float) -> str:
+        probs = cell_probs.get((mode, tt_band(travel_time_s)), marginal)
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+
+    return decide
+
+
+def _build_other_subtype_decider(context, random_seed: int):
+    """Build the per-leg "other" errand/escort/rest subtype decider, or None
+    when OFF.
+
+    Sibling to ``_build_shop_subtype_decider`` / ``_build_leisure_subtype_decider``.
+    Returns a callable ``(mode: str, travel_time_s: float) -> str``, one of
+    ``OTHER_SUBTYPE_ACTIVITIES`` (``"other_errand_short"``/``"other_errand_long"``/
+    ``"other_escort"``) or ``"other_rest"``, when ``secondary_other_subtype_split``
+    is ON, else ``None`` (the byte-identical OFF path).
+
+    The MiD "other" umbrella (following_purpose == "other", i.e. raw W_ZWECK in
+    {5, 6, 10}) is split in TWO composed stages, mirroring how the
+    distance-distribution layer treats it (Task 3, issue #127 --
+    ``braunschweig.popsim.distance_distributions``):
+
+    1. A coarse, ALWAYS-labelled 3-way split {errand, escort, rest} estimated
+       directly from the raw W_ZWECK code via a local
+       ``purpose_subtype.SubtypeSpec`` with ``group_col="W_ZWECK"``: escort =
+       W_ZWECK in ``purpose_subtype.OTHER_ESCORT_ZWECK`` ({6}); errand =
+       W_ZWECK in ``purpose_subtype.OTHER_ERRAND_ZWECK`` ({5}); rest = the
+       remaining "other" W_ZWECK codes. "rest" is derived from
+       ``braunschweig.popsim.trips.PURPOSE_BY_W_ZWECK`` -- the single source of
+       truth for which raw W_ZWECK codes map to the eqasim "other" purpose --
+       rather than hardcoded, so it can never silently drift from that
+       mapping. No W_ZWD is needed for this split, so it is never thinned by a
+       missing detail code (escort legs in particular carry no W_ZWD at all).
+    2. Within errand (W_ZWECK == 5) legs only, the existing W_ZWD-based
+       short/long split (``purpose_subtype.OTHER_ERRAND_SPEC``, Task 2), with
+       its own marginal fallback for unlabelled-W_ZWD errand legs.
+
+    Both stages are estimated conditionally on (mode, tt_band); each logs its
+    own labelled-leg share and cell coverage ONCE, here, at decider-build time.
+    Per leg the two stages are composed into ONE 4-outcome probability vector
+    -- P(escort), P(rest), P(errand) * P(short | errand), P(errand) * P(long |
+    errand) -- and exactly one uniform draw from a dedicated seeded RNG
+    (``OTHER_SUBTYPE_SEED_OFFSET``, NOT ``random``) selects the outcome via
+    ``_inverse_cdf_choice``, so every "other" leg -- errand, escort, or rest --
+    consumes the same single draw per leg as the shop/leisure deciders.
+    """
+    if not context.config("secondary_other_subtype_split"):
+        return None
+
+    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.purpose_subtype import (
+        OTHER_ERRAND_SPEC,
+        OTHER_ERRAND_ZWECK,
+        OTHER_ESCORT_ZWECK,
+        SubtypeSpec,
+        estimate_group_probabilities,
+        tt_band,
+    )
+    from braunschweig.popsim.trips import PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds
+
+    min_obs = int(context.config("secondary_distance_min_obs"))
+    mid_dir = context.config("braunschweig.population.popsim.mid_dir")
+    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = map_mode(mid_wege)
+    dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
+    arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
+    tt = arr - dep
+    tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
+    mid_wege = mid_wege.assign(travel_time=tt)
+
+    # Stage 1: coarse errand/escort/rest split, labelled directly by the raw
+    # W_ZWECK code (never thinned by a missing W_ZWD).
+    other_zweck = frozenset(
+        code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == "other"
+    )
+    rest_zweck = other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK
+    coarse_spec = SubtypeSpec(
+        purpose_label="other_coarse",
+        zweck_values=other_zweck,
+        groups={"errand": OTHER_ERRAND_ZWECK, "escort": OTHER_ESCORT_ZWECK, "rest": rest_zweck},
+        sentinels=frozenset(),
+        group_col="W_ZWECK",
+    )
+    coarse_cell_probs, coarse_marginal = estimate_group_probabilities(
+        mid_wege, coarse_spec, min_obs=min_obs)
+
+    # Stage 2: within errand legs, the existing W_ZWD-based short/long split.
+    errand_cell_probs, errand_marginal = estimate_group_probabilities(
+        mid_wege, OTHER_ERRAND_SPEC, min_obs=min_obs)
+
+    print(
+        "[braunschweig.secondary_chainsolvers] other subtype: coarse marginal shares "
+        f"escort={coarse_marginal['escort']:.3f}, errand={coarse_marginal['errand']:.3f}, "
+        f"rest={coarse_marginal['rest']:.3f}; errand marginal shares "
+        f"other_errand_short={errand_marginal['other_errand_short']:.3f}, "
+        f"other_errand_long={errand_marginal['other_errand_long']:.3f}"
+    )
+
+    group_names = tuple(sorted(("other_errand_short", "other_errand_long", "other_escort", "other_rest")))
+    rng = np.random.RandomState(int(random_seed) + OTHER_SUBTYPE_SEED_OFFSET)
+
+    def decide(mode: str, travel_time_s: float) -> str:
+        band = tt_band(travel_time_s)
+        coarse = coarse_cell_probs.get((mode, band), coarse_marginal)
+        errand = errand_cell_probs.get((mode, band), errand_marginal)
+        p_errand = coarse.get("errand", 0.0)
+        probs = {
+            "other_escort": coarse.get("escort", 0.0),
+            "other_rest": coarse.get("rest", 0.0),
+            "other_errand_short": p_errand * errand.get("other_errand_short", 0.0),
+            "other_errand_long": p_errand * errand.get("other_errand_long", 0.0),
+        }
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+
+    return decide
+
+
+# ---------------------------------------------------------------------------
 # synpp execute
 # ---------------------------------------------------------------------------
 
@@ -1698,11 +2051,16 @@ def execute(context):
     random = np.random.RandomState(random_seed)
     leisure_corr = float(context.config("leisure_correction_factor"))
 
-    # Tier 2: daily / non-daily shop subtype decider (None when the flag is OFF,
-    # so the leg loop and the candidate build stay byte-identical). Built before
-    # solving so its MiD load / probability-estimation logging happens once.
+    # Tier 2 / Task 4: shop / leisure / other subtype deciders (each None when
+    # its flag is OFF, so the leg loop and the candidate build stay
+    # byte-identical). Built before solving so their MiD load /
+    # probability-estimation logging happens exactly once, up front.
     shop_daily_split = bool(context.config("secondary_shop_daily_split"))
     shop_subtype_decider = _build_shop_subtype_decider(context, random_seed)
+    leisure_subtype_split = bool(context.config("secondary_leisure_subtype_split"))
+    leisure_subtype_decider = _build_leisure_subtype_decider(context, random_seed)
+    other_subtype_split = bool(context.config("secondary_other_subtype_split"))
+    other_subtype_decider = _build_other_subtype_decider(context, random_seed)
 
     fallback_strategy = (
         context.config("braunschweig.chainsolvers.fallback") or "rda"
@@ -1750,6 +2108,8 @@ def execute(context):
     plans_df, problem_meta, unbounded_idx, subtype_stats = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
         shop_subtype_decider=shop_subtype_decider,
+        leisure_subtype_decider=leisure_subtype_decider,
+        other_subtype_decider=other_subtype_decider,
     )
     print(
         f"[braunschweig.secondary_chainsolvers] bounded problems: "
@@ -1770,6 +2130,38 @@ def execute(context):
             f"distance-layer fallback to aggregate 'shop' "
             f"{n_dist_fb:,}/{n_shop_legs:,} "
             f"({100.0 * n_dist_fb / n_shop_legs if n_shop_legs else 0.0:.1f}%)"
+        )
+    if leisure_subtype_decider is not None:
+        n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
+        n_leisure_legs = sum(n_by_group.values())
+        n_dist_fb = subtype_stats["leisure_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({100.0 * count / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+            for name, count in n_by_group.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] leisure subtype labelling "
+            "(bounded leisure legs only; unbounded go to fallback untagged): "
+            f"{n_leisure_legs:,} bounded leisure legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'leisure' "
+            f"{n_dist_fb:,}/{n_leisure_legs:,} "
+            f"({100.0 * n_dist_fb / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+        )
+    if other_subtype_decider is not None:
+        n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
+        n_other_legs = sum(n_by_outcome.values())
+        n_dist_fb = subtype_stats["other_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({100.0 * count / n_other_legs if n_other_legs else 0.0:.1f}%)"
+            for name, count in n_by_outcome.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] other subtype labelling "
+            "(bounded other legs only; unbounded go to fallback untagged): "
+            f"{n_other_legs:,} bounded other legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'other' "
+            f"{n_dist_fb:,}/{n_other_legs:,} "
+            f"({100.0 * n_dist_fb / n_other_legs if n_other_legs else 0.0:.1f}%)"
         )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
@@ -1875,11 +2267,13 @@ def execute(context):
                 context.stage("braunschweig.data.building_potentials"),
                 df_external=df_external,
             )
-    # Tier 2 requires the building-potential candidate set: the subtype legs
-    # (shop_daily / shop_non_daily) can only be placed at buildings tagged with
-    # those subtype activities, which exist only on the with_potentials path. A
-    # subtype split without building potentials would leave carla with no
-    # candidates for the subtype activities -> fail fast (no silent fallback).
+    # Tier 2 / Task 4 require the building-potential candidate set: the subtype
+    # legs (shop_daily/non_daily; leisure_local/visit/activity/excursion;
+    # other_errand_short/long, other_escort) can only be placed at buildings
+    # carrying those subtype activities, which exist only on the
+    # with_potentials path. A subtype split without building potentials would
+    # leave carla with no candidates for the subtype activities -> fail fast
+    # (no silent fallback).
     if shop_daily_split and not sec_enabled:
         raise RuntimeError(
             "[braunschweig.secondary_chainsolvers] secondary_shop_daily_split "
@@ -1888,9 +2282,26 @@ def execute(context):
             "building candidates). Enable secondary_building_potentials or "
             "disable secondary_shop_daily_split."
         )
+    if leisure_subtype_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_leisure_subtype_split "
+            "requires secondary_building_potentials to be ON (the leisure subtype "
+            "placement needs the pot_leisure building candidates). Enable "
+            "secondary_building_potentials or disable secondary_leisure_subtype_split."
+        )
+    if other_subtype_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_other_subtype_split "
+            "requires secondary_building_potentials to be ON (the other "
+            "errand/escort subtype placement needs the pot_other building "
+            "candidates). Enable secondary_building_potentials or disable "
+            "secondary_other_subtype_split."
+        )
     locations_df = _build_locations_df(
         df_secondary, with_potentials=sec_enabled,
         shop_daily_split=shop_daily_split,
+        leisure_subtype_split=leisure_subtype_split,
+        other_subtype_split=other_subtype_split,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
