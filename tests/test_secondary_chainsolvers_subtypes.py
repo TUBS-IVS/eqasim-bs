@@ -651,3 +651,177 @@ def test_build_other_subtype_decider_reproducible_across_builds(monkeypatch, cap
     out = capsys.readouterr().out
     assert "other subtype: coarse marginal shares" in out
     assert "errand marginal shares" in out
+
+
+# ---------------------------------------------------------------------------
+# Task 5, issue #127: residential pot_visit placement for leisure_visit legs.
+#
+# (a) flag ON -> leisure_visit targets rows with pot_visit > 0 only.
+# (b) flag ON + residential source absent -> ValueError mentioning the flag.
+# (c) flag OFF -> locations frame byte-identical to the Task-4 state.
+# (d) growth-guard WARN fires above VISIT_CANDIDATE_WARN_FACTOR.
+# ---------------------------------------------------------------------------
+
+
+def _residential_buildings(n=2, weight=9.0, start_id=0):
+    return gpd.GeoDataFrame(
+        {
+            "building_id": list(range(start_id, start_id + n)),
+            "weight": [weight] * n,
+            "commune_id": ["03101000"] * n,
+            "iris_id": ["03101000"] * n,
+        },
+        geometry=[geo.Point(10.0 * i, 10.0 * i) for i in range(n)],
+        crs="EPSG:25832",
+    )
+
+
+def test_append_residential_visit_candidates_adds_pot_visit_rows(capsys):
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1, weight=9.0, start_id=5)
+
+    out = sc.append_residential_visit_candidates(candidates, residential)
+
+    assert len(out) == len(candidates) + 1
+    # Pre-existing rows: offers_visit / pot_visit added with neutral defaults.
+    assert list(out.loc[[0, 1], "offers_visit"]) == [False, False]
+    assert list(out.loc[[0, 1], "pot_visit"]) == [0.0, 0.0]
+    # The appended residential row offers ONLY "visit", with pot_visit = weight,
+    # and 0.0/False for every other purpose.
+    res_row = out.iloc[-1]
+    assert res_row["location_id"] == "sec_res_5"
+    assert bool(res_row["offers_visit"]) is True
+    assert float(res_row["pot_visit"]) == 9.0
+    for col in ("offers_shop", "offers_leisure", "offers_other"):
+        assert bool(res_row[col]) is False
+    for col in ("pot_shop", "pot_shop_daily", "pot_shop_non_daily", "pot_leisure", "pot_other"):
+        assert float(res_row[col]) == 0.0
+
+    out_log = capsys.readouterr().out
+    assert "leisure_visit_building_potential" in out_log
+
+
+def test_append_residential_visit_candidates_missing_column_raises():
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1).drop(columns=["weight"])
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc.append_residential_visit_candidates(candidates, residential)
+
+
+def test_append_residential_visit_candidates_growth_guard_warns(capsys):
+    # 2 base candidates + 10 residential rows -> 12 total, growth x6.0 > 3.0.
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=10, weight=5.0)
+
+    sc.append_residential_visit_candidates(candidates, residential)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "VISIT_CANDIDATE_WARN_FACTOR" in out
+
+
+def test_append_residential_visit_candidates_below_threshold_no_warning(capsys):
+    # 2 base candidates + 1 residential row -> 3 total, growth x1.5 < 3.0.
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1, weight=5.0)
+
+    sc.append_residential_visit_candidates(candidates, residential)
+
+    out = capsys.readouterr().out
+    assert "WARNING" not in out
+
+
+def _post_append_visit_candidates():
+    """Three-row candidate frame mimicking the output of
+    ``append_residential_visit_candidates``: sec_0 offers leisure (pot_leisure),
+    sec_1 offers other (pot_other), sec_res_2 offers ONLY visit (pot_visit)."""
+    base = _leisure_other_split_candidates()
+    base["offers_visit"] = [False, False]
+    base["pot_visit"] = [0.0, 0.0]
+    residential_row = gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_res_2"],
+            "offers_shop": [False],
+            "offers_leisure": [False],
+            "offers_other": [False],
+            "offers_visit": [True],
+            "pot_shop": [0.0],
+            "pot_shop_daily": [0.0],
+            "pot_shop_non_daily": [0.0],
+            "pot_leisure": [0.0],
+            "pot_other": [0.0],
+            "pot_visit": [9.0],
+        },
+        geometry=[geo.Point(25, 25)],
+        crs="EPSG:25832",
+    )
+    return gpd.GeoDataFrame(pd.concat([base, residential_row], ignore_index=True), crs=base.crs)
+
+
+def test_build_locations_df_leisure_visit_building_potential_targets_pot_visit_rows_only():
+    out = sc._build_locations_df(
+        _post_append_visit_candidates(), with_potentials=True,
+        leisure_subtype_split=True, leisure_visit_building_potential=True,
+    )
+    # sec_0: leisure_visit dropped (offers_visit is False there); the other
+    # three leisure groups are unaffected (still keyed on offers_leisure).
+    assert out.loc[0, "activities"] == "leisure_local; leisure_activity; leisure_excursion"
+    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0"
+    # sec_1: unaffected ("other" only).
+    assert out.loc[1, "activities"] == "other"
+    # sec_res_2: the ONLY row offering leisure_visit, at its pot_visit value.
+    assert out.loc[2, "activities"] == "leisure_visit"
+    assert out.loc[2, "potentials"] == "9.0"
+
+
+def test_build_locations_df_leisure_visit_building_potential_requires_leisure_split():
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc._build_locations_df(
+            _post_append_visit_candidates(), with_potentials=True,
+            leisure_subtype_split=False, leisure_visit_building_potential=True,
+        )
+
+
+def test_build_locations_df_leisure_visit_building_potential_requires_pot_visit_column():
+    # Candidates WITHOUT the pot_visit column (residential source absent) ->
+    # fail-fast ValueError naming the flag, no silent fallback to pot_leisure.
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc._build_locations_df(
+            _leisure_other_split_candidates(), with_potentials=True,
+            leisure_subtype_split=True, leisure_visit_building_potential=True,
+        )
+
+
+def test_build_locations_df_leisure_visit_building_potential_off_byte_identical():
+    candidates = _leisure_other_split_candidates()
+    explicit_off = sc._build_locations_df(
+        candidates, with_potentials=True, leisure_subtype_split=True,
+        leisure_visit_building_potential=False,
+    )
+    default = sc._build_locations_df(
+        candidates, with_potentials=True, leisure_subtype_split=True,
+    )
+    pd.testing.assert_frame_equal(explicit_off, default)
+    # Task-4 behaviour preserved: leisure_visit still shares pot_leisure.
+    assert explicit_off.loc[0, "activities"] == \
+        "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
+    assert explicit_off.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
+
+
+def test_visit_column_constants():
+    assert sc.VISIT_OFFER_COLUMN == "offers_visit"
+    assert sc.VISIT_POTENTIAL_COLUMN == "pot_visit"
+    assert sc.VISIT_CANDIDATE_WARN_FACTOR == 3.0
+
+
+def test_configure_declares_leisure_visit_building_potential_default_false():
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered["leisure_visit_building_potential"] is False
+    assert "braunschweig.data.buildings" not in ctx.staged
+
+
+def test_configure_stages_buildings_when_leisure_visit_building_potential_on():
+    ctx = _FakeContext({"leisure_visit_building_potential": True})
+    sc.configure(ctx)
+    assert "braunschweig.data.buildings" in ctx.staged

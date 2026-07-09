@@ -198,6 +198,20 @@ def configure(context):
     if shop_daily_split or leisure_subtype_split or other_subtype_split:
         context.config("braunschweig.population.popsim.mid_dir")
 
+    # Residential ``pot_visit`` placement for leisure_visit legs (Task 5,
+    # issue #127). When ON, ``leisure_visit`` candidates are the ALKIS
+    # residential building stock (``braunschweig.data.buildings`` -- the SAME
+    # GFK-filtered, area-weighted frame ``synthesis/locations/home_cell.py``
+    # consumes for home placement) instead of the generic pot_leisure
+    # buildings; the other three leisure groups are unaffected. Requires
+    # secondary_leisure_subtype_split AND secondary_building_potentials
+    # (checked, fail-fast, in execute()). OFF (default) is byte-identical to
+    # the Task-4 behaviour: leisure_visit maps to pot_leisure like the other
+    # three leisure groups.
+    context.config("leisure_visit_building_potential", False)
+    if context.config("leisure_visit_building_potential"):
+        context.stage("braunschweig.data.buildings")
+
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors of the legacy stage)
@@ -421,6 +435,127 @@ _ACTIVITY_POTENTIAL_COLUMN = {
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_leisure" for name in LEISURE_SUBTYPE_ACTIVITIES})
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_other" for name in OTHER_SUBTYPE_ACTIVITIES})
 
+# Offer / potential columns used for the "leisure_visit" activity ONLY when
+# ``leisure_visit_building_potential`` is ON (Task 5, issue #127). Residential
+# candidates appended by ``append_residential_visit_candidates`` carry
+# ``offers_visit`` / ``pot_visit`` instead of the generic ``offers_leisure`` /
+# ``pot_leisure`` shared by the other three leisure groups, so a residential
+# building is a candidate for "leisure_visit" and NOTHING else. This dict
+# stays fixed (does not update ``_ACTIVITY_POTENTIAL_COLUMN``, which is the
+# OFF-path / default mapping tested by
+# ``test_activity_potential_column_covers_all_subtype_activities``); the
+# override is applied locally inside ``_build_locations_df``.
+VISIT_OFFER_COLUMN = "offers_visit"
+VISIT_POTENTIAL_COLUMN = "pot_visit"
+
+# Warn if appending residential visit candidates multiplies the locations-
+# frame row count by more than this factor (CLAUDE.md "Fallback
+# transparency" / growth-guard requirement: a large, unforeseen growth of the
+# carla candidate universe is a runtime-cost and correctness risk that must
+# be surfaced, not hidden).
+VISIT_CANDIDATE_WARN_FACTOR = 3.0
+
+
+def append_residential_visit_candidates(candidates: gpd.GeoDataFrame,
+                                        df_residential_buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append one residential-building candidate row per building for the
+    "leisure_visit" placement (Task 5, issue #127).
+
+    "leisure_visit" legs (MiD W_ZWD 701, "visiting someone") are destined for a
+    private household, not a leisure-activity building, so their candidate set
+    is the residential building stock reused verbatim from the home-assignment
+    path -- ``braunschweig.data.buildings`` (the SAME ALKIS/GFK-filtered,
+    area-weighted frame ``synthesis/locations/home_cell.py`` consumes for home
+    placement; no new data source). Each residential building becomes one
+    candidate row carrying ``offers_visit=True`` / ``pot_visit=weight`` (the
+    footprint-area dwelling-capacity proxy already used by the legacy
+    area-weighted home sampler) and ``False`` / ``0.0`` for every other
+    purpose's offer/potential column, so it is NEVER a candidate for
+    shop / leisure (non-visit) / other.
+
+    Parameters
+    ----------
+    candidates:
+        The existing secondary-candidate GeoDataFrame (the return value of
+        :func:`build_secondary_candidates`), missing the ``offers_visit`` /
+        ``pot_visit`` columns (added here, defaulting to ``False`` / ``0.0``
+        on the pre-existing rows).
+    df_residential_buildings:
+        ``braunschweig.data.buildings`` output: ``building_id``, ``weight``,
+        ``commune_id`` (and, if present, ``iris_id``), ``geometry`` (point,
+        same CRS as ``candidates`` or reprojectable to it).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        ``candidates`` with ``offers_visit`` / ``pot_visit`` columns added,
+        concatenated with one residential-candidate row per building.
+
+    Raises
+    ------
+    ValueError
+        If ``df_residential_buildings`` is missing a required column
+        (fail-fast; no silent fallback to an empty/degenerate residential
+        candidate set -- see the ``leisure_visit_building_potential`` caller
+        in ``execute()``).
+    """
+    required = ["building_id", "weight", "commune_id", "geometry"]
+    missing = [c for c in required if c not in df_residential_buildings.columns]
+    if missing:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "residential candidate source (braunschweig.data.buildings) is missing "
+            "column(s) %s; available: %s." % (missing, list(df_residential_buildings.columns))
+        )
+
+    n_before = len(candidates)
+
+    base = candidates.copy()
+    base[VISIT_OFFER_COLUMN] = False
+    base[VISIT_POTENTIAL_COLUMN] = 0.0
+
+    res = df_residential_buildings
+    if res.crs is not None and candidates.crs is not None and res.crs != candidates.crs:
+        res = res.to_crs(candidates.crs)
+    iris_col = "iris_id" if "iris_id" in res.columns else "commune_id"
+    residential_rows = gpd.GeoDataFrame({
+        "location_id": ("sec_res_" + res["building_id"].astype(str)).values,
+        "commune_id": res["commune_id"].astype(str).values,
+        "iris_id": res[iris_col].astype(str).values,
+        "offers_shop": False,
+        "offers_leisure": False,
+        "offers_other": False,
+        VISIT_OFFER_COLUMN: True,
+        "pot_shop": 0.0,
+        "pot_shop_daily": 0.0,
+        "pot_shop_non_daily": 0.0,
+        "pot_leisure": 0.0,
+        "pot_other": 0.0,
+        VISIT_POTENTIAL_COLUMN: res["weight"].astype(float).values,
+        "geometry": res.geometry.values,
+    }, crs=candidates.crs)
+
+    out = gpd.GeoDataFrame(
+        pd.concat([base, residential_rows], ignore_index=True), crs=candidates.crs)
+    n_after = len(out)
+    n_residential = len(residential_rows)
+    growth_factor = (n_after / n_before) if n_before else float("inf")
+    print(
+        "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential: "
+        "locations frame %d -> %d rows after appending %d residential visit "
+        "candidates (growth x%.2f)"
+        % (n_before, n_after, n_residential, growth_factor)
+    )
+    if growth_factor > VISIT_CANDIDATE_WARN_FACTOR:
+        print(
+            "WARNING: [braunschweig.secondary_chainsolvers] residential visit-candidate "
+            "growth factor x%.2f exceeds VISIT_CANDIDATE_WARN_FACTOR=%.1f -- this "
+            "materially increases the carla candidate universe and solve cost; "
+            "verify braunschweig.data.buildings is scoped to the expected region."
+            % (growth_factor, VISIT_CANDIDATE_WARN_FACTOR)
+        )
+    return out
+
 
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
                  attr_transform: str = "linear"):
@@ -629,7 +764,8 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
 def _build_locations_df(df_secondary, with_potentials: bool = False,
                         shop_daily_split: bool = False,
                         leisure_subtype_split: bool = False,
-                        other_subtype_split: bool = False):
+                        other_subtype_split: bool = False,
+                        leisure_visit_building_potential: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -651,13 +787,26 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     When ``leisure_subtype_split`` is True (Task 4, issue #127) a building that
     offers leisure is emitted under the four internal subtype activities
     (``LEISURE_SUBTYPE_ACTIVITIES``: leisure_local/visit/activity/excursion)
-    INSTEAD OF the aggregate ``leisure`` activity. Unlike the shop split there is
-    no per-subtype building potential yet -- all four share the SAME
-    ``pot_leisure`` value (a dedicated ``pot_visit`` column is deferred to a
-    later task), so no offer is ever dropped for a non-positive potential here
-    (that zero-skip only applies to the genuinely distinct
-    ``SHOP_SUBTYPE_ACTIVITIES`` potentials). ``leisure_subtype_split`` requires
-    ``with_potentials``. OFF (default) is byte-identical.
+    INSTEAD OF the aggregate ``leisure`` activity. Unless
+    ``leisure_visit_building_potential`` is also ON, there is no per-subtype
+    building potential -- all four share the SAME ``pot_leisure`` value, so no
+    offer is ever dropped for a non-positive potential here (that zero-skip
+    only applies to the genuinely distinct ``SHOP_SUBTYPE_ACTIVITIES``
+    potentials). ``leisure_subtype_split`` requires ``with_potentials``. OFF
+    (default) is byte-identical.
+
+    When ``leisure_visit_building_potential`` is also True (Task 5, issue #127)
+    the ``leisure_visit`` subtype is REROUTED onto the dedicated residential
+    candidate set: its offer column becomes ``VISIT_OFFER_COLUMN``
+    ("offers_visit") instead of "offers_leisure", and its potential column
+    becomes ``VISIT_POTENTIAL_COLUMN`` ("pot_visit") instead of "pot_leisure",
+    so it only targets residential buildings appended by
+    ``append_residential_visit_candidates`` (a "leisure_visit" offer with a
+    non-positive ``pot_visit`` is dropped, mirroring the shop-subtype
+    zero-skip). The other three leisure groups are unaffected (still
+    "offers_leisure" / "pot_leisure"). Requires ``leisure_subtype_split`` and
+    ``with_potentials``; fails fast if ``pot_visit`` is absent from
+    ``df_secondary`` (no silent fallback to ``pot_leisure``).
 
     When ``other_subtype_split`` is True (Task 4, issue #127) a building that
     offers "other" is emitted under the three internal errand/escort subtype
@@ -686,6 +835,24 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "with_potentials (the other subtype placement needs the pot_other "
             "potential column)."
         )
+    if leisure_visit_building_potential and not leisure_subtype_split:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "requires leisure_subtype_split (there is no 'leisure_visit' activity "
+            "without the leisure subtype split)."
+        )
+    if leisure_visit_building_potential and VISIT_POTENTIAL_COLUMN not in df_secondary.columns:
+        # Fail-fast (CLAUDE.md "Fallback transparency"): the flag promises a
+        # dedicated residential potential; silently falling back to pot_leisure
+        # here would hide a broken wiring (e.g. append_residential_visit_candidates
+        # not called upstream) behind an apparently-working run.
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential is ON "
+            "but the locations frame has no '%s' column (residential visit candidates "
+            "were not appended -- call append_residential_visit_candidates() on "
+            "df_secondary before _build_locations_df, or disable "
+            "leisure_visit_building_potential)." % VISIT_POTENTIAL_COLUMN
+        )
     activities = []
     potentials = []
     # Activity emission order. With a split ON, the aggregate offer is either
@@ -696,15 +863,26 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         (("shop_daily", "offers_shop"), ("shop_non_daily", "offers_shop"))
         if shop_daily_split else (("shop", "offers_shop"),)
     )
-    leisure_offer_specs = (
-        tuple((name, "offers_leisure") for name in LEISURE_SUBTYPE_ACTIVITIES)
-        if leisure_subtype_split else (("leisure", "offers_leisure"),)
-    )
+    if leisure_subtype_split:
+        leisure_offer_specs = tuple(
+            (name, VISIT_OFFER_COLUMN if (leisure_visit_building_potential and name == "leisure_visit")
+             else "offers_leisure")
+            for name in LEISURE_SUBTYPE_ACTIVITIES
+        )
+    else:
+        leisure_offer_specs = (("leisure", "offers_leisure"),)
     other_offer_specs = (
         tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
         if other_subtype_split else (("other", "offers_other"),)
     )
     offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs
+    # Per-activity potential column, overriding "leisure_visit" -> pot_visit
+    # ONLY when leisure_visit_building_potential is ON (the OFF-path/default
+    # mapping in _ACTIVITY_POTENTIAL_COLUMN stays leisure_visit -> pot_leisure,
+    # see test_activity_potential_column_covers_all_subtype_activities).
+    potential_column_by_activity = dict(_ACTIVITY_POTENTIAL_COLUMN)
+    if leisure_visit_building_potential:
+        potential_column_by_activity["leisure_visit"] = VISIT_POTENTIAL_COLUMN
     cols = ["offers_shop", "offers_leisure", "offers_other"]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
@@ -715,23 +893,30 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         # SHARE one potential column across several offer_specs entries --
         # selecting a duplicated column name from df_secondary would otherwise
         # yield a multi-column slice instead of a per-row scalar below.
-        potential_cols = [_ACTIVITY_POTENTIAL_COLUMN[act] for act, _ in offer_specs]
+        potential_cols = [potential_column_by_activity[act] for act, _ in offer_specs]
         cols = cols + list(dict.fromkeys(potential_cols))
+    if leisure_visit_building_potential:
+        cols = cols + [VISIT_OFFER_COLUMN]
+    cols = list(dict.fromkeys(cols))
     for _, row in df_secondary[cols].iterrows():
         acts, pots = [], []
         for act, offer in offer_specs:
             if not bool(row[offer]):
                 continue
             if with_potentials:
-                pot = float(row[_ACTIVITY_POTENTIAL_COLUMN[act]])
+                pot = float(row[potential_column_by_activity[act]])
                 # A shop subtype with a zero potential is not a candidate for
                 # that subtype (the building has no daily / no non-daily retail
-                # floor area). The aggregate shop/leisure/other offers, and the
-                # leisure/other subtypes (which share one undifferentiated
-                # potential column), are kept regardless of sign so the OFF
-                # path -- and the leisure/other ON paths, pending a per-subtype
-                # potential -- stay byte-identical / unchanged here.
+                # floor area); the same zero-skip applies to "leisure_visit"
+                # once it is rerouted onto pot_visit (a row offering
+                # "leisure_visit" with a non-positive residential potential is
+                # not a real candidate). The aggregate shop/leisure/other
+                # offers, and the remaining leisure/other subtypes (which
+                # share one undifferentiated potential column), are kept
+                # regardless of sign so the OFF path stays byte-identical.
                 if shop_daily_split and act in SHOP_SUBTYPE_ACTIVITIES and pot <= 0.0:
+                    continue
+                if leisure_visit_building_potential and act == "leisure_visit" and pot <= 0.0:
                     continue
                 acts.append(act)
                 pots.append(pot)
@@ -2061,6 +2246,7 @@ def execute(context):
     leisure_subtype_decider = _build_leisure_subtype_decider(context, random_seed)
     other_subtype_split = bool(context.config("secondary_other_subtype_split"))
     other_subtype_decider = _build_other_subtype_decider(context, random_seed)
+    leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
 
     fallback_strategy = (
         context.config("braunschweig.chainsolvers.fallback") or "rda"
@@ -2297,11 +2483,43 @@ def execute(context):
             "candidates). Enable secondary_building_potentials or disable "
             "secondary_other_subtype_split."
         )
+    # Task 5, issue #127: residential pot_visit placement for leisure_visit
+    # legs. Fail-fast (no silent fallback to pot_leisure) on every
+    # precondition -- a broken wiring here must never quietly degrade to the
+    # Task-4 shared-potential behaviour.
+    if leisure_visit_building_potential and not leisure_subtype_split:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "requires secondary_leisure_subtype_split to be ON (there is no "
+            "'leisure_visit' activity without the leisure subtype split). Enable "
+            "secondary_leisure_subtype_split or disable "
+            "leisure_visit_building_potential."
+        )
+    if leisure_visit_building_potential and not sec_enabled:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "requires secondary_building_potentials to be ON (the residential visit "
+            "placement needs the pot_visit candidate column on the building-potential "
+            "candidate frame). Enable secondary_building_potentials or disable "
+            "leisure_visit_building_potential."
+        )
+    if leisure_visit_building_potential:
+        try:
+            df_residential_buildings = context.stage("braunschweig.data.buildings")
+        except Exception as exc:
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+                "is ON but the residential candidate source "
+                "(braunschweig.data.buildings) could not be resolved (%s); no silent "
+                "fallback to pot_leisure is performed." % exc
+            ) from exc
+        df_secondary = append_residential_visit_candidates(df_secondary, df_residential_buildings)
     locations_df = _build_locations_df(
         df_secondary, with_potentials=sec_enabled,
         shop_daily_split=shop_daily_split,
         leisure_subtype_split=leisure_subtype_split,
         other_subtype_split=other_subtype_split,
+        leisure_visit_building_potential=leisure_visit_building_potential,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
