@@ -2,7 +2,9 @@
 {% set run = status.active_run %}
 {% if run %}
   <span class="dot"></span> <b style="font-size:19px">{{ run.label }}</b>
-  <span class="badge running">running</span>
+  {% if run.external %}<span class="badge adopted">adopted</span>
+    {% if not run.log_path %}<span class="vital">(no live log; progress from cache timeline)</span>{% endif %}
+  {% else %}<span class="badge running">running</span>{% endif %}
   <span class="vital">git <span class="mono">{{ run.git_commit or "unknown" }}</span>
     &middot; config <span class="mono">{{ run.config_path }}</span></span>
   <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">

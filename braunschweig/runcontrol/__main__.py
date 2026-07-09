@@ -63,6 +63,7 @@ def cmd_serve(settings, db: Database) -> None:
 
     targets = {name: get_target(cfg) for name, cfg in target_configs.items()}
     worker = QueueWorker(db, targets)
+    worker._settings_window = settings.adopt_alive_window_s
     thread = threading.Thread(target=worker.run_forever, args=(settings.poll_seconds,),
                               daemon=True, name="runcontrol-queue")
     thread.start()

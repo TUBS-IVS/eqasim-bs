@@ -42,6 +42,10 @@ class Settings:
     # applied where a size has already been fetched (details drawer), never inferred.
     stale_age_days: int = 30
     stale_size_gb: float = 5.0
+    # Adopt-running-run (issue #119): how many seconds of no advance in the watched
+    # artifact directory's mtime (daemon clock) before an adopted external run is
+    # declared ENDED. See daemon.QueueWorker._settle_external for the liveness rule.
+    adopt_alive_window_s: int = 300
 
 
 def load_settings(path: Path) -> Settings:
@@ -81,4 +85,5 @@ def load_settings(path: Path) -> Settings:
         targets_store_path=Path(raw.get("targets_store_path", "runcontrol_data/targets.json")),
         stale_age_days=int(raw.get("stale_age_days", 30)),
         stale_size_gb=float(raw.get("stale_size_gb", 5.0)),
+        adopt_alive_window_s=int(raw.get("adopt_alive_window_s", 300)),
     )

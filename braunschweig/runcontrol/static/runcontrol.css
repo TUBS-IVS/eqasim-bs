@@ -79,3 +79,5 @@ td.name { color:var(--t1); font-weight:500; }
 #cat th[data-sort]:hover { color:var(--t1); }
 .chip-stale { color:var(--warn); border:1px solid rgba(232,185,62,.4); border-radius:999px;
   padding:0 8px; font-size:10px; }
+.badge.adopted { color:#8FB4E3; border:1px solid rgba(143,180,227,.4); background:rgba(143,180,227,.08); }
+.badge.ended   { color:var(--t3); border:1px solid var(--line2); }

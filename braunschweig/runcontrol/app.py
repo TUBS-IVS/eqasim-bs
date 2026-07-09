@@ -310,6 +310,40 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         db.put_enrichment(key, mtime, payload)
         return {"size_bytes": size, "source": source}
 
+    @app.post("/api/catalog/{target}/{name}/adopt", dependencies=[Depends(require_write)])
+    def api_adopt(target: str, name: str):
+        """Adopt an externally-started run (issue #119): register the catalog artifact
+        directory `name` as a monitor-only RUNNING run. Liveness is inferred later from
+        the watched directory's mtime (see daemon.QueueWorker._settle_external); the
+        process itself is never launched, queried via a handle, or stopped by the GUI."""
+        t = _target(target)
+        _safe_relname(name)
+        if not _LABEL_RE.match(name):
+            raise HTTPException(422, "artifact name is not a valid run label")
+        run_id = name                                   # the artifact name is stable + unique per target
+        existing = db.get_run(run_id)
+        if existing is not None and existing["status"] in ("running", "launching"):
+            raise HTTPException(422, f"'{name}' is already adopted and active")
+        watch_path = f"{t.cfg.data_dir}/{name}"
+        watch_mtime = _artifact_dir_mtime(t, name)
+        # Find a fresh run_*.log whose mtime is close to the artifact dir mtime -- best
+        # effort only: without a matching log, progress falls back to the cache timeline.
+        log_path = None
+        try:
+            for e in api_logs(target):
+                if e["name"].startswith("run_") and e["name"].endswith(".log") \
+                        and abs(e["mtime"] - watch_mtime) < settings.adopt_alive_window_s:
+                    log_path = f"{t.cfg.logs_dir}/{e['name']}"
+                    break
+        except Exception:
+            log_path = None
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        db.insert_external_run(run_id, target, name, "unknown", log_path,
+                               watch_path, watch_mtime, now_iso)
+        db.add_event(run_id, "status", f"adopted external run (watch {watch_path}, "
+                                       f"log {log_path or 'none found'})")
+        return {"run_id": run_id, "log_path": log_path, "watch_path": watch_path}
+
     @app.get("/api/catalog/{target}/diff")
     def api_diff(target: str, a: str, b: str):
         t = _target(target)

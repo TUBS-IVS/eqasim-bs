@@ -4,6 +4,7 @@
   <div class="hero">
     <a href="/">&lsaquo; Runs</a> / <b>{{ run.label }}</b>
     <span class="badge {{ run.status }}">{{ run.status }}</span>
+    {% if run.external %}<span class="badge adopted">adopted</span>{% endif %}
     {% if run.status in ("running", "launching") %}
       <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">
         <button class="stopbtn">&#9632; Stop</button></form>

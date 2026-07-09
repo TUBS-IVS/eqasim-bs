@@ -42,6 +42,9 @@
         {% if r.origin == "legacy_dir" %}
           <button class="tab" hx-get="/catalog/{{ target }}/{{ r.run_id }}/details"
                   hx-target="#d-{{ loop.index }}" hx-swap="innerHTML">Enrich &raquo;</button>
+          <form method="post" action="/api/catalog/{{ target }}/{{ r.run_id }}/adopt"
+                style="display:inline" onsubmit="this.querySelector('button').textContent='adopting...'">
+            <button class="tab">Adopt</button></form>
         {% else %}<a class="tab" href="/runs/{{ r.run_id }}">open run</a>{% endif %}
       </td>
       <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}
