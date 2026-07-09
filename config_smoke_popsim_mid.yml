@@ -63,8 +63,18 @@ config:
   braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # local-only, set to your path
   braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # local-only, same dir as mid_raw_path
 
+  # Control source: the typed catalog (control_spec) is REQUIRED because the per-Kreis
+  # attribute controls (economic_status / number_of_cars / number_of_bicycles / has_ebike /
+  # trip_class) default ON and the hand-edited CSV cannot express them (build_controls_df
+  # fail-fasts on csv + active kreis controls). tier0-2 + the default-on kreis attribute
+  # controls run from committed data; tier3 + employment_grid are omitted (need the local
+  # kreis_controls_dir -- see config_server_*_allfeat_popsim.yml).
+  braunschweig.population.popsim.controls_source: catalog
+  braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
+
   # PopulationSim control spec and run configs from the popsimprep repo.
-  # Canonical: popsimprep/popsim/configs/
+  # Canonical: popsimprep/popsim/configs/ (controls_path is UNUSED under controls_source:
+  # catalog above -- kept for the csv opt-out / reference).
   braunschweig.population.popsim.controls_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/_prep3_controls.csv  # local-only, set to your path
   braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings.yaml  # local-only, set to your path
   braunschweig.population.popsim.logging_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/logging.yaml  # local-only, set to your path
