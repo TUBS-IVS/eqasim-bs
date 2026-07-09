@@ -597,6 +597,13 @@ def build_persons(
             persons, inkar_scale, midpoint_series=midpoint_series,
         )
 
+    # OECD-modified consumption units per synthetic household (issue #130),
+    # reusing the upstream eqasim implementation. Pure age-structure -- stable
+    # under the later income overwrites (Kreis-Income-Control, spatial tilt);
+    # the equivalised income view is derived from the FINAL income in
+    # stage.execute (income.add_income_per_consumption_unit).
+    persons = _income_module.add_consumption_units(persons)
+
     schema.validate_person_columns(persons.columns)
     return persons, donor_map
 

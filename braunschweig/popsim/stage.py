@@ -48,6 +48,7 @@ from braunschweig.data.mid.income_by_status import (
 )
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
+from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import mid
@@ -1488,6 +1489,14 @@ def execute(context) -> pd.DataFrame:
     # (≈ INKAR income-je-Einwohner ordering) are available downstream.
     if {"household_income_eur", "household_size"}.issubset(persons.columns):
         persons = _kic.add_per_capita_income(persons)
+
+    # Equivalised income view (issue #130): FINAL household_income_eur divided by
+    # the OECD-modified consumption_units set in assembly.build_persons. Additive
+    # column only -- high_income deliberately keeps the household-level 5000 EUR
+    # rule (no traceable per-consumption-unit threshold reference exists; no
+    # invented references).
+    if {"household_income_eur", "consumption_units"}.issubset(persons.columns):
+        persons = _income.add_income_per_consumption_unit(persons)
 
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
