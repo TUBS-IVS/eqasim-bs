@@ -7,7 +7,54 @@ re-assembled inputs no longer match the stale outputs, so they must be purged.
 """
 import os
 
+import pandas as pd
+
 from braunschweig.popsim import stage
+
+
+def _sig(**overrides):
+    """Build a batch-config signature with sensible defaults, overriding named inputs.
+
+    Covers the audit gap: the signature must reflect the CONTENT of the seed frames and
+    the per-Kreis target table, not just the config-knob names.
+    """
+    base = dict(
+        controls_df=pd.DataFrame({"target": ["total_households"], "importance": [1000]}),
+        settings_text="geographies: [ZENSUS100m]\n",
+        max_cells=1500,
+        stratify_regiostar=False,
+        source_name="mid",
+        employment_grid_on=False,
+        kreis_controls_map={"economic_status_very_low_KREIS": ("economic_status_very_low_KREIS",)},
+        seed_day_filter=(1, 2, 3),
+        seed_households=pd.DataFrame({"H_ID": [1, 2], "H_GEW": [1.0, 2.0]}),
+        seed_persons=pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "trip_class": [0, 3]}),
+        kreis_table=pd.DataFrame({"ARS_kreis": ["03101"], "economic_status_very_low_KREIS": [100]}),
+        active_entries=None,
+        status_prior_n=0.0,
+    )
+    base.update(overrides)
+    return stage.compute_batch_config_signature(**base)
+
+
+def test_signature_is_deterministic():
+    assert _sig() == _sig()
+
+
+def test_signature_changes_when_kreis_target_values_change():
+    # Editing a committed target2026_* CSV changes the per-Kreis count values; the
+    # signature MUST change so stale batches are purged (audit finding, 2026-07-09).
+    a = _sig(kreis_table=pd.DataFrame({"ARS_kreis": ["03101"], "economic_status_very_low_KREIS": [100]}))
+    b = _sig(kreis_table=pd.DataFrame({"ARS_kreis": ["03101"], "economic_status_very_low_KREIS": [200]}))
+    assert a != b
+
+
+def test_signature_changes_when_seed_content_changes():
+    # A seed toggle (weekend_plan_match / complete_members / ebike column) flows into the
+    # seed VALUES; changing them MUST change the signature even at the same control names.
+    a = _sig(seed_persons=pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "trip_class": [0, 3]}))
+    b = _sig(seed_persons=pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 2], "trip_class": [1, 2]}))
+    assert a != b
 
 
 def _make_batch(work_dir, name):

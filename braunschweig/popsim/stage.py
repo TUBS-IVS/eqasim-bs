@@ -29,6 +29,8 @@ structural PopulationSim orchestration.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -740,6 +742,66 @@ def purge_stale_batches_on_config_change(work_dir, signature: str) -> int:
     return purged
 
 
+def _frame_content_signature(df):
+    """Content signature of a seed/target frame (row values + column layout).
+
+    Hashes the actual VALUES (via pandas' row hash) plus the column names and dtypes.
+    Returns ``None`` for ``None`` (an inactive optional input). Used by
+    :func:`compute_batch_config_signature` so that any change to the seed tables or the
+    per-Kreis control target counts flips the work-dir signature.
+    """
+    if df is None:
+        return None
+    row_hash = hashlib.sha256(
+        pd.util.hash_pandas_object(df, index=True).values.tobytes()
+    ).hexdigest()
+    return {
+        "columns": [str(c) for c in df.columns],
+        "dtypes": [str(t) for t in df.dtypes],
+        "n_rows": int(len(df)),
+        "rows": row_hash,
+    }
+
+
+def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
+                                   stratify_regiostar, source_name, employment_grid_on,
+                                   kreis_controls_map, seed_day_filter, seed_households,
+                                   seed_persons, kreis_table, active_entries=None,
+                                   status_prior_n=0.0) -> str:
+    """Compute the work-dir batch-input signature (sha256 hex).
+
+    The signature captures EVERYTHING that determines a batch's inputs, so that a change
+    since the last run in the same ``work_dir`` purges the stale completed batches
+    (:func:`purge_stale_batches_on_config_change`). Beyond the control set, settings,
+    batching and source, it hashes the CONTENT of the seed frames and the per-Kreis
+    target table: the seed content captures the full seed identity (weekend_plan_match /
+    complete_members / e-bike column / imputation seed all flow into the seed VALUES), and
+    ``kreis_table`` captures the per-Kreis control target COUNTS. Hashing content (not just
+    the config-knob names) closes the audit gap where editing a ``target2026_*`` CSV or a
+    seed toggle in the same work_dir left completed batches silently reused with outdated
+    inputs (2026-07-09).
+    """
+    payload = {
+        "controls": controls_df.to_csv(index=False),
+        "settings": settings_text,
+        "max_cells": max_cells,
+        "stratify_regiostar": stratify_regiostar,
+        "source": source_name,
+        "employment_grid": employment_grid_on,
+        "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
+        "seed_day_filter": str(seed_day_filter),
+        "seed_households": _frame_content_signature(seed_households),
+        "seed_persons": _frame_content_signature(seed_persons),
+        "kreis_targets": _frame_content_signature(kreis_table),
+    }
+    if active_entries:
+        payload["kreis_attribute_controls"] = {
+            c.name: (status_prior_n if c.name == "economic_status" else 0.0)
+            for c in active_entries
+        }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def execute(context) -> pd.DataFrame:
     """Run popsim_mid and return the merged expanded-household table."""
     cells_path = context.config(KEY_CELLS)
@@ -965,6 +1027,35 @@ def execute(context) -> pd.DataFrame:
         _eg_kreise = sorted(cells[_folders.GEO_KREIS].astype(str).unique())
         _eg_age_shares = {k: _za.load_age_shares(_eg_ref, k) for k in _eg_kreise}
 
+        # Fallback observability (CLAUDE.md, no silent fallback): load_age_shares
+        # silently substitutes the national "DE_large_gemeinden" shape for a Kreis absent
+        # from the reference. The Landkreise fall back BY DESIGN (only the kreisfreie
+        # Staedte 03101/02/03 have an exact 2001 shape), so log the exact-vs-fallback split
+        # at info; escalate to warning ONLY if a known-exact kreisfreie Stadt fell back
+        # (that signals a broken/renamed reference, not the expected Landkreis fallback).
+        _eg_ref_regions = set(
+            pd.read_csv(_eg_ref, dtype={"region": str})["region"].astype(str).unique()
+        )
+        _eg_exact = [k for k in _eg_kreise if k in _eg_ref_regions]
+        _eg_fallback = [k for k in _eg_kreise if k not in _eg_ref_regions]
+        _eg_kreisfrei_exact = {"03101", "03102", "03103"}
+        _eg_unexpected = sorted(_eg_kreisfrei_exact.intersection(_eg_fallback))
+        _eg_msg = (
+            "[popsim.stage] employment grid age-shape: %d/%d Kreise exact, %d used the "
+            "national DE_large_gemeinden fallback %s"
+        )
+        if _eg_unexpected:
+            logger.warning(
+                _eg_msg + " -- INCLUDING kreisfreie Stadt/Staedte %s that should be exact; "
+                "check the reference CSV region coding.",
+                len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback, _eg_unexpected,
+            )
+        else:
+            logger.info(
+                _eg_msg + " (Landkreis fallback is by design).",
+                len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
+            )
+
         cells = _eg.add_employment_grid_columns(
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
         )
@@ -1115,13 +1206,22 @@ def execute(context) -> pd.DataFrame:
                 kreis_table = kreis_table.merge(
                     _tbl, on="ARS_kreis", how="left", validate="one_to_one")
                 kreis_controls_map = {**kreis_controls_map, **_map}
-                # Fail-fast: every crosswalk Kreis build_kreis_control_totals looks up must carry a
-                # non-NaN target after the merge (no silently under-constrained control).
-                _used = kreis_table["ARS_kreis"].isin(_tbl["ARS_kreis"])
-                if kreis_table.loc[_used, list(_kac.control_columns(_ctl))].isna().any().any():
+                # Fail-fast: every accumulator Kreis must carry a non-NaN target for this
+                # control after the LEFT merge (no silently under-constrained control). A
+                # NaN appears exactly for a Kreis present in kreis_table but ABSENT from
+                # _tbl (an ARS_kreis key/format mismatch between two controls). The earlier
+                # guard masked to `_tbl` membership, which by construction of a left join
+                # excludes precisely the rows that could be NaN -- so it could never fire.
+                # Check ALL accumulator rows against the new control's columns instead.
+                _new_cols = list(_kac.control_columns(_ctl))
+                if kreis_table[_new_cols].isna().any().any():
+                    _bad = kreis_table.loc[
+                        kreis_table[_new_cols].isna().any(axis=1), "ARS_kreis"
+                    ].tolist()
                     raise RuntimeError(
-                        f"KREIS attribute control merge left NaN targets for {_ctl.name} (ARS_kreis "
-                        f"key mismatch); refusing to under-constrain.")
+                        f"KREIS attribute control merge left NaN targets for {_ctl.name} at "
+                        f"ARS_kreis {_bad} (key/format mismatch between controls); refusing to "
+                        f"under-constrain.")
 
     # Purge stale batch folders if the popsim config/control set changed since the last
     # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
@@ -1129,29 +1229,21 @@ def execute(context) -> pd.DataFrame:
     # skips -> stale-config population for those cells). Signature = everything that
     # determines a batch's inputs (the full control set, the PopulationSim settings, the
     # batching/stratification, the donor source, the KREIS controls, the seed-day filter).
-    import hashlib as _hashlib
-    import json as _json
-    _signature_payload = {
-        "controls": controls_df.to_csv(index=False),
-        "settings": Path(settings_path).read_text(encoding="utf-8"),
-        "max_cells": max_cells,
-        "stratify_regiostar": stratify_regiostar,
-        "source": source_name,
-        "employment_grid": employment_grid_on,
-        "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
-        "seed_day_filter": str(seed_day_filter),
-    }
-    # Active KREIS attribute-control toggles + each entry's prior_n, so flipping a toggle
-    # (or the economic_status shrinkage prior) purges stale batches. Only added when at
-    # least one control is active, so the all-OFF signature stays byte-identical to the
-    # pre-task payload (which had no such key).
-    if active_entries:
-        _signature_payload["kreis_attribute_controls"] = {
-            c.name: (status_prior_n if c.name == "economic_status" else 0.0)
-            for c in active_entries
-        }
-    _config_signature = _hashlib.sha256(
-        _json.dumps(_signature_payload, sort_keys=True).encode("utf-8")).hexdigest()
+    _config_signature = compute_batch_config_signature(
+        controls_df=controls_df,
+        settings_text=Path(settings_path).read_text(encoding="utf-8"),
+        max_cells=max_cells,
+        stratify_regiostar=stratify_regiostar,
+        source_name=source_name,
+        employment_grid_on=employment_grid_on,
+        kreis_controls_map=kreis_controls_map,
+        seed_day_filter=seed_day_filter,
+        seed_households=seed_households,
+        seed_persons=seed_persons,
+        kreis_table=kreis_table,
+        active_entries=active_entries,
+        status_prior_n=status_prior_n,
+    )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
