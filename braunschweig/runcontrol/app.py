@@ -512,7 +512,10 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         # Legacy log viewer (issue #119): lists run_*.log / rc_*.log / *_stage_runtime.csv
         # in the target's logs_dir and lets the user read one on demand -- no auto-polling,
         # the same explicit-action discipline as the rest of catalog v2.
-        entries = api_logs(target)
+        raw = api_logs(target)
+        # Add formatted modification date (UTC) to each entry for display. Render in UTC
+        # so server-side mtime is unambiguous regardless of viewer's timezone.
+        entries = [{**e, "when": datetime.fromtimestamp(e["mtime"], timezone.utc).strftime("%Y-%m-%d %H:%M UTC")} for e in raw]
         return templates.TemplateResponse("logs.html", {
             "request": request, "target": target, "targets": sorted(targets), "entries": entries})
 

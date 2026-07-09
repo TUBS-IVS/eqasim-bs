@@ -61,3 +61,38 @@ def test_logs_page_lists_and_links(tmp_path):
     html = c.get("/logs?target=local").text
     assert "run_20260101_000000.log" in html
     assert "Logs" in html
+
+
+def test_logs_page_shows_dates_newest_first(tmp_path):
+    c = _client(tmp_path)
+    import os
+    import re
+    import pathlib
+    logs_dir = pathlib.Path(str(tmp_path)) / "logs"
+
+    # Create two logs with different mtimes: older first, then newer.
+    older_path = logs_dir / "run_20260101_000000.log"
+    newer_path = logs_dir / "run_20260630_120000.log"
+
+    older_path.write_text("old content")
+    newer_path.write_text("new content")
+
+    # Set explicit mtimes (epoch seconds): older file at 2024-01-01, newer at 2024-06-30.
+    older_mtime = 1704067200  # 2024-01-01 00:00:00 UTC
+    newer_mtime = 1719748800  # 2024-06-30 12:00:00 UTC
+    os.utime(str(older_path), (older_mtime, older_mtime))
+    os.utime(str(newer_path), (newer_mtime, newer_mtime))
+
+    html = c.get("/logs?target=local").text
+
+    # Both filenames should appear in the response.
+    assert "run_20260101_000000.log" in html
+    assert "run_20260630_120000.log" in html
+
+    # A formatted date pattern (YYYY-MM-DD HH:MM UTC) should appear.
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC", html), "Date format not found in HTML"
+
+    # Newer file's name should appear before older file's name (newest-first order).
+    newer_index = html.index("run_20260630_120000.log")
+    older_index = html.index("run_20260101_000000.log")
+    assert newer_index < older_index, "Newer log file should appear before older log file (newest-first order)"

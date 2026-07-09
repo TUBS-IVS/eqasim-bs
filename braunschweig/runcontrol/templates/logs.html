@@ -8,10 +8,11 @@
 <div class="zone">
   <div class="queue" style="flex:0 0 40%">
     <div class="zlabel">Log files</div>
-    <table><tr><th>Name</th><th>Size</th></tr>
+    <table><tr><th>Name</th><th>Size</th><th>Modified</th></tr>
     {% for e in entries %}
       <tr><td class="name"><a href="#" class="logname mono" data-name="{{ e.name }}">{{ e.name }}</a></td>
-          <td class="mono">{{ (e.size / 1024)|round(0) }} kB</td></tr>
+          <td class="mono">{{ (e.size / 1024)|round(0) }} kB</td>
+          <td class="mono">{{ e.when }}</td></tr>
     {% else %}<tr><td class="vital">No logs on this target.</td></tr>{% endfor %}
     </table>
   </div>
