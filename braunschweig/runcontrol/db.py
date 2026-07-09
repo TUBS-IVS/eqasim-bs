@@ -114,6 +114,22 @@ class Database:
              watch_path, watch_mtime, watch_checked_at, _now()))
         self._conn.commit()
 
+    def reactivate_external_run(self, run_id: str, log_path: str | None, watch_path: str,
+                                watch_mtime: float, watch_checked_at: str) -> None:
+        """Re-adopt a previously terminal external run by resetting its existing row back to
+        an active (RUNNING, external=1) state, clearing the prior terminal outcome.
+
+        Used when a name whose run already exists in a terminal state (ENDED/DONE/FAILED/
+        STOPPED) is adopted again: an INSERT would violate the run_id primary key, so the
+        existing row is updated in place. finished_at and exit_code are cleared because the
+        run is being watched afresh; both are honestly unknown for an external run.
+        """
+        self._conn.execute(
+            "UPDATE runs SET status=?, external=1, log_path=?, watch_path=?, watch_mtime=?, "
+            "watch_checked_at=?, finished_at=NULL, exit_code=NULL WHERE run_id=?",
+            (RunStatus.RUNNING.value, log_path, watch_path, watch_mtime, watch_checked_at, run_id))
+        self._conn.commit()
+
     def update_watch(self, run_id: str, watch_mtime: float, watch_checked_at: str) -> None:
         self._conn.execute("UPDATE runs SET watch_mtime=?, watch_checked_at=? WHERE run_id=?",
                            (watch_mtime, watch_checked_at, run_id))

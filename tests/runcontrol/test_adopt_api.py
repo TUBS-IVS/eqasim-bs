@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from braunschweig.runcontrol.app import create_app
 from braunschweig.runcontrol.daemon import QueueWorker
 from braunschweig.runcontrol.db import Database
+from braunschweig.runcontrol.models import RunStatus
 from braunschweig.runcontrol.settings import Settings, TargetConfig
 from braunschweig.runcontrol.targets.local import LocalTarget
 
@@ -46,3 +47,15 @@ def test_readopt_active_is_rejected(tmp_path):
 def test_adopt_rejects_bad_name(tmp_path):
     c, _ = _client(tmp_path)
     assert c.post("/api/catalog/local/x;rm/adopt").status_code == 422
+
+
+def test_readopt_after_terminal_reactivates(tmp_path):
+    c, db = _client(tmp_path)
+    body = c.post("/api/catalog/local/cache_bs_25pct/adopt").json()
+    run_id = body["run_id"]
+    db.set_status(run_id, RunStatus.ENDED)                # simulate a finished adopted run
+    r = c.post("/api/catalog/local/cache_bs_25pct/adopt")
+    assert r.status_code == 200, r.text                   # re-adopt cleanly, not a 500
+    row = db.get_run(run_id)
+    assert row["status"] == "running" and row["external"] == 1
+    assert row["finished_at"] is None

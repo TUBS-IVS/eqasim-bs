@@ -7,7 +7,7 @@
     {% if run.external %}<span class="badge adopted">adopted</span>{% endif %}
     {% if run.status in ("running", "launching") %}
       <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">
-        <button class="stopbtn">&#9632; Stop</button></form>
+        <button class="stopbtn">&#9632; {{ "Stop monitoring" if run.external else "Stop" }}</button></form>
     {% endif %}
   </div>
   <div class="tabs">

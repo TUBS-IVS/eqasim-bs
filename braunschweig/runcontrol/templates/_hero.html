@@ -8,7 +8,7 @@
   <span class="vital">git <span class="mono">{{ run.git_commit or "unknown" }}</span>
     &middot; config <span class="mono">{{ run.config_path }}</span></span>
   <form method="post" action="/api/runs/{{ run.run_id }}/stop" style="display:inline">
-    <button class="stopbtn">&#9632; Stop</button></form>
+    <button class="stopbtn">&#9632; {{ "Stop monitoring" if run.external else "Stop" }}</button></form>
   {% if run.progress_available and run.stages %}
     <div class="dna">
       {% for s in run.stages.expected %}

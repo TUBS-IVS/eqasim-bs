@@ -338,10 +338,18 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         except Exception:
             log_path = None
         now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        db.insert_external_run(run_id, target, name, "unknown", log_path,
-                               watch_path, watch_mtime, now_iso)
-        db.add_event(run_id, "status", f"adopted external run (watch {watch_path}, "
-                                       f"log {log_path or 'none found'})")
+        if existing is not None:
+            # A row exists but is in a terminal state (the running/launching case already
+            # 422'd above): re-adopt by resetting the row in place, since an INSERT would
+            # violate the run_id primary key.
+            db.reactivate_external_run(run_id, log_path, watch_path, watch_mtime, now_iso)
+            db.add_event(run_id, "status", f"re-adopted (was {existing['status']}); watch "
+                                           f"{watch_path}, log {log_path or 'none found'}")
+        else:
+            db.insert_external_run(run_id, target, name, "unknown", log_path,
+                                   watch_path, watch_mtime, now_iso)
+            db.add_event(run_id, "status", f"adopted external run (watch {watch_path}, "
+                                           f"log {log_path or 'none found'})")
         return {"run_id": run_id, "log_path": log_path, "watch_path": watch_path}
 
     @app.get("/api/catalog/{target}/diff")
