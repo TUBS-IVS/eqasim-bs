@@ -131,19 +131,33 @@ def _draw_workdir(workdir_root: Path, seed: int) -> Path:
 def _cleanup_draw_workdir(workdir: Path, workdir_root: Path) -> None:
     """Delete a draw's working/output directory after a successful harvest.
 
-    Refuses (WARN, no-op) unless ``workdir`` resolves to a path strictly under
-    ``workdir_root`` -- a guard against ever recursively deleting an unrelated
-    directory should the caller ever pass something unexpected. Never raises:
-    a failed cleanup must not abort an otherwise-successful sweep.
+    Refuses (WARN, no-op) unless ``workdir`` resolves to a path STRICTLY
+    UNDER ``workdir_root`` -- i.e. ``workdir`` must differ from ``workdir_root``
+    AND ``workdir_root`` must be one of its parents. Both conditions are
+    required: without the equality check, calling this with ``workdir ==
+    workdir_root`` (e.g. a caller bug that resolves a draw's workdir to the
+    root itself) would fall through and recursively delete the shared
+    ``--workdir-root`` -- along with every other draw's not-yet-cleaned-up
+    output -- instead of refusing. Never raises: a failed cleanup must not
+    abort an otherwise-successful sweep, but any deletion failure is logged
+    as a WARNING naming the path so it is never silent.
     """
     resolved_workdir = workdir.resolve()
     resolved_root = workdir_root.resolve()
-    if resolved_workdir != resolved_root and resolved_root not in resolved_workdir.parents:
+    is_strict_descendant = (
+        resolved_workdir != resolved_root and resolved_root in resolved_workdir.parents
+    )
+    if not is_strict_descendant:
         logger.warning(
-            "[noise_bands] refusing to delete %s: not under --workdir-root %s.",
+            "[noise_bands] refusing to delete %s: not strictly under --workdir-root %s.",
             resolved_workdir, resolved_root)
         return
-    shutil.rmtree(resolved_workdir, ignore_errors=True)
+    try:
+        shutil.rmtree(resolved_workdir)
+    except OSError as exc:
+        logger.warning(
+            "[noise_bands] failed to delete %s during draw cleanup: %s",
+            resolved_workdir, exc)
 
 
 def run_draw(base_doc: dict, seed: int, workdir_root: Path) -> pd.DataFrame | None:
@@ -266,10 +280,31 @@ def main(argv=None) -> int:
     )
 
     frames: list[pd.DataFrame] = []
+    first_keyset: frozenset | None = None
     for i in range(args.n_draws):
         seed = base_seed + i
         frame = run_draw(base_doc, seed, workdir_root)
         if frame is None:
+            continue
+        keyset = nb.metric_keyset(frame)
+        if first_keyset is None:
+            first_keyset = keyset
+        elif keyset != first_keyset:
+            # Fail fast PER DRAW: catching this here (right after the harvest,
+            # before the workdir is deleted) means the draw that produced the
+            # inconsistent keyset is still on disk for inspection, and the
+            # sweep can keep going with min-draws still governing. Without
+            # this check the mismatch would only surface once every workdir
+            # had already been cleaned up and aggregate_draw_metrics raised
+            # its own ValueError at the very end -- by which point there is
+            # nothing left to inspect. aggregate_draw_metrics keeps its own
+            # check as the final backstop in case a caller invokes it directly.
+            symmetric_difference = sorted(keyset ^ first_keyset, key=str)
+            logger.error(
+                "[noise_bands] draw seed=%d metric/group keyset differs from the "
+                "first successful draw's by %d entries %s -- treating this draw "
+                "as failed (skipped).",
+                seed, len(symmetric_difference), symmetric_difference)
             continue
         draw_csv = workdir_root / f"draw_metrics_seed_{seed}.csv"
         frame.to_csv(draw_csv, index=False)

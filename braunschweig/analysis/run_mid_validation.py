@@ -878,7 +878,9 @@ def _print_noise_band_note(bands: pd.DataFrame) -> None:
         f"Noise bands measured at sampling_rate={sampling_rate} (N={n_draws}, "
         f"commit {pipeline_commit}): a deviation INSIDE the band is "
         "indistinguishable from sampling noise at that rate; outside is a "
-        "triage signal, not a significance test."
+        "triage signal, not a significance test. Bands measured at a low "
+        "sampling rate are a conservative upper bound of the noise at "
+        "higher rates."
     )
 
 

@@ -46,6 +46,20 @@ MID_METRIC_IDS: tuple[str, ...] = (
 )
 
 
+def metric_keyset(frame: pd.DataFrame) -> frozenset:
+    """Return the set of ``(metric_id, group)`` pairs carried by a draw frame.
+
+    Shared by ``aggregate_draw_metrics`` below (the final backstop, run once
+    all draws are already collected) and ``scripts/run_noise_bands.py``'s
+    sweep loop (which compares each draw's keyset against the first
+    successful draw's IMMEDIATELY after harvesting it, so an inconsistent
+    draw is caught and dropped before its working directory is deleted,
+    rather than only surfacing once aggregation runs after every workdir is
+    already gone).
+    """
+    return frozenset(zip(frame["metric_id"], frame["group"]))
+
+
 def aggregate_draw_metrics(frames: list) -> pd.DataFrame:
     if not frames:
         raise ValueError("[noise_bands] no draw frames to aggregate.")
@@ -54,7 +68,7 @@ def aggregate_draw_metrics(frames: list) -> pd.DataFrame:
         missing = [c for c in REQUIRED_DRAW_COLUMNS if c not in f.columns]
         if missing:
             raise ValueError(f"[noise_bands] draw frame missing columns {missing}.")
-        keysets.append(frozenset(zip(f["metric_id"], f["group"])))
+        keysets.append(metric_keyset(f))
     if len(set(keysets)) != 1:
         raise ValueError(
             "[noise_bands] draws carry inconsistent metric/group sets -- a "

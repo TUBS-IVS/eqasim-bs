@@ -178,6 +178,7 @@ def test_apply_noise_bands_annotates_writes_csv_and_prints_note(tmp_path, capsys
     assert "commit abc1234" in printed
     assert "indistinguishable from sampling noise" in printed
     assert "not a significance test" in printed
+    assert "conservative upper bound of the noise at higher rates" in printed
 
 
 def test_apply_noise_bands_report_is_json_serialisable_when_band_coverage_is_partial(tmp_path):
