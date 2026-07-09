@@ -44,6 +44,8 @@ def cmd_serve(settings, db: Database) -> None:
     from .app import create_app
 
     config_target_names = set(settings.targets)
+    # Config targets are inserted first: dict insertion order then keeps them ahead of
+    # user-added dynamic targets everywhere they are iterated (e.g. the topbar vitals row).
     target_configs = dict(settings.targets)
     dynamic_configs = load_dynamic_targets(settings.targets_store_path)
     added, skipped = 0, 0

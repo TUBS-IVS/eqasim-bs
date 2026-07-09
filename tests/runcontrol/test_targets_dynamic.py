@@ -1,9 +1,15 @@
-"""Task 14: dynamic ssh targets -- store roundtrip, validation, probe(), API wiring."""
+"""Task 14/15: dynamic ssh targets -- store roundtrip, validation, probe(), API + UI wiring."""
 import json
+import sys
 
 import pytest
+from fastapi.testclient import TestClient
 
-from braunschweig.runcontrol.settings import TargetConfig
+from braunschweig.runcontrol.app import create_app
+from braunschweig.runcontrol.daemon import QueueWorker
+from braunschweig.runcontrol.db import Database
+from braunschweig.runcontrol.settings import Settings, TargetConfig
+from braunschweig.runcontrol.targets.local import LocalTarget
 from braunschweig.runcontrol.targets.ssh import SshTarget
 from braunschweig.runcontrol.targetstore import (
     load_dynamic_targets,
@@ -126,3 +132,35 @@ def test_probe_failure_truncates_long_message():
     result = t.probe()
     assert result["ok"] is False
     assert len(result["message"]) <= 320
+
+
+# ---- Task 15: dynamically added targets appear in the topbar vitals row ---
+
+def test_added_target_shows_in_home_topbar_vitals(tmp_path, monkeypatch):
+    """A target added via POST /api/targets must appear on the very next home render
+    (same live `targets` dict as `_home_ctx`), without a server restart. Its vitals
+    collection is forced to fail fast (FileNotFoundError instead of real ssh), so the
+    row must still render -- with honest 'unknown' fields -- rather than be absent."""
+    (tmp_path / "logs").mkdir()
+    local_cfg = TargetConfig(name="local", kind="local", repo=str(tmp_path), runner="fake_runner.py")
+    settings = Settings(db_path=tmp_path / "runs.db", targets={"local": local_cfg},
+                        targets_store_path=tmp_path / "runcontrol_data" / "targets.json")
+    db = Database(settings.db_path)
+    targets = {"local": LocalTarget(local_cfg, python=sys.executable)}
+    worker = QueueWorker(db, targets)
+    c = TestClient(create_app(settings, db, worker, targets))
+
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": True, "message": "connected", "git_commit": "abc123"})
+
+    def _raise(self, *args, **kwargs):
+        raise FileNotFoundError("no real ssh in tests")
+
+    monkeypatch.setattr(SshTarget, "read_text_command", _raise)
+    monkeypatch.setattr(SshTarget, "read_text", _raise)
+
+    r = c.post("/api/targets", data={"name": "newbox", "host": "1.2.3.4", "repo": "~/eqasim-bs"})
+    assert r.status_code == 200, r.text
+    html = c.get("/").text
+    assert "newbox:" in html                     # rendered in the topbar vitals row
+    assert "unknown" in html                     # failed vitals shown honestly, not hidden
