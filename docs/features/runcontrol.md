@@ -240,9 +240,15 @@ fallbacks" rules:
   measurement, and is `None` when zero iterations have been observed yet.
 - **`meta_inconsistent` flags a known data issue, it does not fix it.** When a
   legacy run directory's name implies one sampling rate (e.g. `..._25pct...`)
-  but its `*_meta.json` records a different `sampling_rate`, the catalog entry
-  gets `flags: ["meta_inconsistent"]` (a known server-side issue, see
-  `RUNS.md`) rather than silently trusting either source.
+  but its `*_meta.json` records a different `sampling_rate`, the enrichment for
+  that artifact (`collectors/enrich.py::enrich_artifact`) adds
+  `flags: ["meta_inconsistent"]` (a known server-side issue, see `RUNS.md`)
+  rather than silently trusting either source. This check is deferred to the
+  lazy per-artifact enrichment (not the bulk `catalog.py::scan()` list) because
+  it needs `meta.json`'s contents, which enrichment already reads for other
+  reasons -- see #119, where doing this eagerly per legacy directory during
+  `scan()` cost one extra ssh round-trip per directory and made switching the
+  catalog to the `server` target take multiple seconds.
 - **Log-format degradation is surfaced, not hidden.** `StageProgress.log_format`
   is one of `iso` / `console` / `bare` / `unknown`; only the `iso` format (the
   file-log timestamp written by `braunschweig.logging_setup`) carries a full

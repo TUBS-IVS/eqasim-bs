@@ -6,12 +6,18 @@ Three origins, merged by run_id / directory name:
   legacy_dir  output_*/cache_* directories from pre-runcontrol runs -- fields
               are 'unknown', a sampling hint is derived from the directory
               name and labelled as such, flags=['no_manifest'].
-A *_meta.json whose sampling contradicts the directory-name hint gets
-'meta_inconsistent' (known server issue, see RUNS.md) -- flagged, not fixed.
+`scan()` performs exactly ONE `listdir(data_dir)` call and no per-directory I/O:
+legacy entries are built purely from the directory-listing fields already
+returned by that single call (name, mtime). Over an ssh target, one round-trip
+per legacy directory made the catalog list take multiple seconds (issue #119),
+so any check that needs to read inside a directory (e.g. whether a
+`*_meta.json`'s sampling rate contradicts the directory-name hint --
+'meta_inconsistent', a known server issue, see RUNS.md) is deferred to
+`collectors/enrich.py`, which is only invoked lazily for a single artifact's
+detail view and already reads that artifact's meta.json for other reasons.
 Counts of manifest vs legacy are returned AND logged (no silent degradation)."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -21,7 +27,6 @@ from ..models import RunManifest
 logger = logging.getLogger(__name__)
 
 _SAMPLING_RE = re.compile(r"(\d+)pct")
-_META_SAMPLING = {"1pct": 0.01, "10pct": 0.10, "25pct": 0.25, "100pct": 1.0}
 
 
 @dataclass
@@ -37,24 +42,13 @@ def _sampling_hint(dirname: str) -> str:
 
 
 def _legacy_entry(target, entry: dict) -> dict:
+    # Built ONLY from the directory-listing entry already returned by the single
+    # bulk listdir(data_dir) call in scan() below -- no per-directory I/O here.
     name = entry["name"]
-    run = {"run_id": name, "target": target.name, "label": name, "origin": "legacy_dir",
-           "status": "unknown", "git_commit": "unknown", "config_path": "unknown",
-           "sampling_hint": _sampling_hint(name), "mtime": entry["mtime"],
-           "kind": "output" if name.startswith("output_") else "cache", "flags": ["no_manifest"]}
-    subdir = f"{target.cfg.data_dir}/{name}"
-    for sub in target.listdir(subdir):
-        if sub["name"].endswith("_meta.json"):
-            try:
-                meta = json.loads(target.read_text(f"{subdir}/{sub['name']}"))
-            except (ValueError, FileNotFoundError):
-                run["flags"].append("meta_unreadable")
-                continue
-            hint = run["sampling_hint"]
-            meta_rate = meta.get("sampling_rate")
-            if hint in _META_SAMPLING and meta_rate is not None and float(meta_rate) != _META_SAMPLING[hint]:
-                run["flags"].append("meta_inconsistent")
-    return run
+    return {"run_id": name, "target": target.name, "label": name, "origin": "legacy_dir",
+            "status": "unknown", "git_commit": "unknown", "config_path": "unknown",
+            "sampling_hint": _sampling_hint(name), "mtime": entry["mtime"],
+            "kind": "output" if name.startswith("output_") else "cache", "flags": ["no_manifest"]}
 
 
 def scan(target, db_runs: list[dict]) -> CatalogResult:

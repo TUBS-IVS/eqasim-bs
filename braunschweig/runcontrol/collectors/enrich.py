@@ -20,6 +20,15 @@ from datetime import datetime, timezone
 from .. import registry
 
 _META_RE = re.compile(r"_meta\.json$")
+_SAMPLING_RE = re.compile(r"(\d+)pct")
+# Mirrors the hint->fraction mapping catalog.py uses for its directory-name-derived
+# sampling_hint; kept local to avoid a cross-module dependency on private names.
+_META_SAMPLING = {"1pct": 0.01, "10pct": 0.10, "25pct": 0.25, "100pct": 1.0}
+
+
+def _sampling_hint(name: str) -> str:
+    m = _SAMPLING_RE.search(name)
+    return f"{m.group(1)}pct" if m else "unknown"
 
 
 @dataclass
@@ -140,6 +149,16 @@ def enrich_artifact(target, name: str, kind: str) -> Enrichment:
     else:
         e.presence = {"matsim_config": False, "analysis": False, "simwrapper": False}
     e.sources["meta_json"] = meta_status
+
+    # A legacy directory name implying one sampling rate (e.g. '..._25pct...') whose
+    # meta.json records a different sampling_rate is a known server-side data issue
+    # (see RUNS.md) -- flagged, not fixed, and not silently trusted either way. This
+    # check needs meta.json anyway, which is already read above, so it adds no I/O.
+    if e.meta is not None:
+        hint = _sampling_hint(output_name or name)
+        meta_rate = e.meta.get("sampling_rate")
+        if hint in _META_SAMPLING and meta_rate is not None and float(meta_rate) != _META_SAMPLING[hint]:
+            e.flags.append("meta_inconsistent")
 
     # run date: meta.created, else latest timeline epoch, else None
     if e.meta and e.meta.get("created"):

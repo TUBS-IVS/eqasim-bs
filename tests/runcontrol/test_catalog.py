@@ -5,17 +5,25 @@ from braunschweig.runcontrol.models import RunManifest
 
 
 class FakeTarget:
+    """Counts per-subdir `listdir` calls and all `read_text` calls so tests can
+    assert `scan()` performs exactly one bulk `listdir(data_dir)` and no reads --
+    ssh round-trips are the whole point of the bug this guards against."""
+
     kind = "local"
     name = "local"
 
     def __init__(self, dirs, files):
         self.dirs, self.files = dirs, files
         self.cfg = type("C", (), {"data_dir": "eqasim-data", "logs_dir": "logs"})()
+        self.listdir_calls: list[str] = []
+        self.read_text_calls: list[str] = []
 
     def listdir(self, path):
+        self.listdir_calls.append(path)
         return self.dirs.get(path, [])
 
     def read_text(self, path, tail_bytes=None):
+        self.read_text_calls.append(path)
         return self.files[path]
 
     def exists(self, path):
@@ -52,14 +60,26 @@ def test_scan_merges_manifest_runs_and_legacy_dirs():
     assert all(not r["run_id"] == "data" for r in res.runs)
 
 
-def test_inconsistent_meta_json_is_flagged_not_hidden():
-    meta = json.dumps({"sampling_rate": 1.0})                    # dir name says 25pct
+def test_scan_does_no_per_directory_io():
+    """The bulk catalog list must cost exactly one listdir(data_dir) and zero
+    read_text calls -- meta-consistency checking is lazy (see collectors/enrich.py),
+    not done eagerly per legacy directory. Regression test for #119 (multi-second
+    stall when switching to the ssh `server` target: N legacy dirs -> N round-trips)."""
     t = FakeTarget(
-        dirs={"eqasim-data": [{"name": "output_bs_25pct_x", "size": 0, "mtime": 2.0}]},
-        files={"eqasim-data/output_bs_25pct_x/braunschweig_25pct_x_meta.json": meta},
+        dirs={
+            "eqasim-data": [
+                {"name": "output_bs_25pct_x", "size": 0, "mtime": 2.0},
+                {"name": "cache_bs_100pct_old", "size": 0, "mtime": 1751000000.0},
+            ],
+            # Present to prove scan() never touches these per-artifact subdirs.
+            "eqasim-data/output_bs_25pct_x": [{"name": "braunschweig_25pct_x_meta.json", "size": 9, "mtime": 2.0}],
+        },
+        files={"eqasim-data/output_bs_25pct_x/braunschweig_25pct_x_meta.json": json.dumps({"sampling_rate": 1.0})},
     )
-    t.dirs["eqasim-data/output_bs_25pct_x"] = [{"name": "braunschweig_25pct_x_meta.json", "size": 9, "mtime": 2.0}]
     res = catalog.scan(t, db_runs=[])
-    (run,) = res.runs
-    assert "meta_inconsistent" in run["flags"]
+    assert t.listdir_calls == ["eqasim-data"]                    # exactly one bulk listdir, no per-subdir calls
+    assert t.read_text_calls == []                                # meta.json is never read during scan
+    (run,) = [r for r in res.runs if r["run_id"] == "output_bs_25pct_x"]
     assert run["sampling_hint"] == "25pct"                       # from dir name, labelled a hint
+    assert "meta_inconsistent" not in run["flags"]                # scan cannot know this -- checked lazily on enrich
+    assert "no_manifest" in run["flags"]

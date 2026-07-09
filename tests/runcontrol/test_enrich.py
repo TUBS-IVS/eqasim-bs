@@ -110,3 +110,26 @@ def test_enrich_artifact_corrupt_pipeline_flagged():
     e = enrich.enrich_artifact(t, "cache_x", "cache")
     assert e.sources["pipeline_json"].startswith("error:")
     assert e.effective_config == {}
+
+
+def test_enrich_flags_meta_inconsistent():
+    # Dir name says 25pct but meta.json records sampling_rate 1.0 -- a known
+    # server-side issue (RUNS.md); enrich must flag it without any extra I/O
+    # beyond the meta.json read it already performs.
+    meta = json.dumps({"sampling_rate": 1.0})
+    t = FakeTarget(
+        files={"eqasim-data/output_bs_25pct_x/braunschweig_25pct_x_meta.json": meta},
+        dirs={"eqasim-data/output_bs_25pct_x": [{"name": "braunschweig_25pct_x_meta.json", "size": 9, "mtime": 2.0}]},
+    )
+    e = enrich.enrich_artifact(t, "output_bs_25pct_x", "output")
+    assert "meta_inconsistent" in e.flags
+
+
+def test_enrich_does_not_flag_consistent_meta():
+    meta = json.dumps({"sampling_rate": 0.25})
+    t = FakeTarget(
+        files={"eqasim-data/output_bs_25pct_y/braunschweig_25pct_y_meta.json": meta},
+        dirs={"eqasim-data/output_bs_25pct_y": [{"name": "braunschweig_25pct_y_meta.json", "size": 9, "mtime": 2.0}]},
+    )
+    e = enrich.enrich_artifact(t, "output_bs_25pct_y", "output")
+    assert "meta_inconsistent" not in e.flags
