@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS runs (
     pid INTEGER,
     log_path TEXT,
     exit_marker_path TEXT,
+    external INTEGER NOT NULL DEFAULT 0,
+    watch_path TEXT,
+    watch_mtime REAL,
+    watch_checked_at TEXT,
     created_at TEXT NOT NULL,
     finished_at TEXT
 );
@@ -59,6 +63,20 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        self._ensure_columns()
+
+    def _ensure_columns(self) -> None:
+        """Idempotent migration for pre-existing DBs created before the external-run columns
+        were added to the ``runs`` CREATE TABLE statement above. A fresh DB gets the columns
+        directly from the CREATE; an existing DB gets them via ALTER TABLE here."""
+        existing = {r["name"] for r in self._conn.execute("PRAGMA table_info(runs)")}
+        for col, ddl in (("external", "external INTEGER NOT NULL DEFAULT 0"),
+                         ("watch_path", "watch_path TEXT"),
+                         ("watch_mtime", "watch_mtime REAL"),
+                         ("watch_checked_at", "watch_checked_at TEXT")):
+            if col not in existing:
+                self._conn.execute(f"ALTER TABLE runs ADD COLUMN {ddl}")
+        self._conn.commit()
 
     def insert_run(self, spec: RunSpec, status: RunStatus) -> None:
         self._conn.execute(
@@ -77,6 +95,28 @@ class Database:
         self._conn.execute(
             "UPDATE runs SET tmux_session=?, pid=?, log_path=?, exit_marker_path=? WHERE run_id=?",
             (h.tmux_session, h.pid, h.log_path, h.exit_marker_path, run_id))
+        self._conn.commit()
+
+    def insert_external_run(self, run_id: str, target: str, label: str, config_path: str,
+                            log_path: str | None, watch_path: str, watch_mtime: float,
+                            watch_checked_at: str) -> None:
+        """Register an adopted run that was started outside runcontrol.
+
+        The row is created directly as RUNNING with external=1; liveness is inferred later
+        from the watched artifact directory's mtime (see daemon.QueueWorker._settle_external),
+        never from a LaunchHandle or exit marker, because the process was not launched by us.
+        """
+        self._conn.execute(
+            "INSERT INTO runs (run_id, target, label, config_path, status, log_path, "
+            "external, watch_path, watch_mtime, watch_checked_at, created_at) "
+            "VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+            (run_id, target, label, config_path, RunStatus.RUNNING.value, log_path,
+             watch_path, watch_mtime, watch_checked_at, _now()))
+        self._conn.commit()
+
+    def update_watch(self, run_id: str, watch_mtime: float, watch_checked_at: str) -> None:
+        self._conn.execute("UPDATE runs SET watch_mtime=?, watch_checked_at=? WHERE run_id=?",
+                           (watch_mtime, watch_checked_at, run_id))
         self._conn.commit()
 
     def get_run(self, run_id: str) -> dict | None:

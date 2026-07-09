@@ -14,6 +14,7 @@ class RunStatus(str, Enum):
     FAILED = "failed"
     STOPPED = "stopped"
     UNKNOWN = "unknown"
+    ENDED = "ended"
 
 
 @dataclass(frozen=True)
