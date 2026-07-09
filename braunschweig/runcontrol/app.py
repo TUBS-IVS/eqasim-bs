@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import shlex
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,15 +44,23 @@ def _run_id(label: str) -> str:
     return f"{label}_{ts}"
 
 
-def _safe_relname(name: str) -> str:
-    """Reject anything that could escape the repo root when read/written by name alone.
+# Single flat path segment: letters, digits, dot, underscore, hyphen only. This whitelist
+# blocks BOTH path traversal (no "/", "\\", ".." segments survive) AND shell metacharacters
+# (";", "`", "$", "|", "&", spaces, ...), because the name reaches the local filesystem AND
+# -- on ssh targets -- remote shell commands (e.g. the /size route's `du`). Legitimate names
+# in this project (config_*.yml, output_bs_25pct, cache_bs_100pct_allfeat_synth, run_*.log,
+# rc_*.log, *_stage_runtime.csv) all match.
+_SAFE_RELNAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
-    Template files live flat in the repo root (see ExecutionTarget), so a legitimate
-    template name never contains a path separator or a ".." segment. Rejecting those
-    here -- before the name reaches read_text()/write_text() -- closes a path-traversal
-    opening in /api/templates/{name}/inspect and /api/launch's `template` field.
+
+def _safe_relname(name: str) -> str:
+    """Reject anything that could escape the repo root or reach a shell when used by name alone.
+
+    Guards /api/templates/{name}/inspect, /api/launch's `template`, the catalog v2
+    enrich/size routes, and the log viewer. The ".." check is kept explicit (belt and
+    braces) even though the whitelist already excludes it.
     """
-    if not name or "/" in name or "\\" in name or ".." in name:
+    if not name or ".." in name or not _SAFE_RELNAME_RE.match(name):
         raise HTTPException(422, "invalid template name")
     return name
 
@@ -268,7 +278,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         size, source = None, "ok"
         try:
             if t.kind == "ssh":
-                out = t.read_text_command(f"du -sb {rel} | cut -f1")
+                out = t.read_text_command(f"du -sb {shlex.quote(rel)} | cut -f1")
                 size = int(out.strip().split()[0])
             else:
                 import os
@@ -281,7 +291,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
                         except OSError:
                             pass
                 size = total
-        except (OSError, ValueError, RuntimeError) as exc:
+        except (OSError, ValueError, RuntimeError, IndexError) as exc:
             source = f"error:{exc}"
         key = f"{t.name}:{name}"
         mtime = _artifact_dir_mtime(t, name)

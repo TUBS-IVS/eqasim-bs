@@ -67,3 +67,16 @@ def test_size_endpoint(tmp_path):
     r = c.post("/api/catalog/local/output_bs_25pct/size")
     assert r.status_code == 200
     assert r.json()["size_bytes"] >= 0
+
+
+def test_size_rejects_metachar_name(tmp_path):
+    c, _ = _client(tmp_path)
+    # `;` is a shell metacharacter; the relname whitelist must reject it before it can
+    # reach a remote shell (the /size ssh branch embeds the name in a `du` command).
+    assert c.post("/api/catalog/local/x;rm/size").status_code == 422
+
+
+def test_enrich_rejects_metachar_name(tmp_path):
+    c, _ = _client(tmp_path)
+    # Backtick command substitution must be rejected on the enrich route too.
+    assert c.post("/api/catalog/local/x`id`/enrich").status_code == 422
