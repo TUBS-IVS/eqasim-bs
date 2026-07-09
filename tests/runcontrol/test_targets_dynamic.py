@@ -164,3 +164,64 @@ def test_added_target_shows_in_home_topbar_vitals(tmp_path, monkeypatch):
     html = c.get("/").text
     assert "newbox:" in html                     # rendered in the topbar vitals row
     assert "unknown" in html                     # failed vitals shown honestly, not hidden
+
+
+# ---- Security review fixes: C-1 repo quoting, I-1 robust store, M-1 messages
+
+def test_ssh_command_quotes_repo_preserving_tilde_home():
+    ssh = FakeSsh()
+    t = SshTarget(_cfg(repo="~/eqasim-bs"), run_command=ssh)
+    t.git_commit()
+    assert ssh.calls[-1][-1].startswith('cd "$HOME"/eqasim-bs && ')
+
+
+def test_ssh_command_quotes_repo_with_space():
+    ssh = FakeSsh()
+    t = SshTarget(_cfg(repo="/opt/x y"), run_command=ssh)
+    t.git_commit()
+    assert ssh.calls[-1][-1].startswith("cd '/opt/x y' && ")
+
+
+def test_malicious_repo_is_neutralized_in_ssh_and_probe():
+    # A repo like "~/x; rm -rf /tmp/z" must never yield an executable ";" on the
+    # remote: the tail after "~" is shell-quoted, so the ";" stays inside quotes.
+    import shlex
+    ssh = FakeSsh()
+    t = SshTarget(_cfg(repo="~/x; rm -rf /tmp/z"), run_command=ssh)
+    expected = '"$HOME"' + shlex.quote("/x; rm -rf /tmp/z")
+    t.git_commit()
+    assert f"cd {expected} && " in ssh.calls[-1][-1]
+    t.probe()
+    assert f"cd {expected} && " in ssh.calls[-1][-1]
+
+
+@pytest.mark.parametrize("repo", ["~/x; y", "a && b", "x`y", "/opt/x y"])
+def test_validate_rejects_repo_shell_metacharacters(repo):
+    with pytest.raises(ValueError, match="repo"):
+        validate_new_target("ok", "1.2.3.4", repo, existing=set())
+
+
+def test_validate_rejects_host_with_semicolon_regression():
+    with pytest.raises(ValueError, match="host"):
+        validate_new_target("ok", "1.2.3.4;id", "~/eqasim-bs", existing=set())
+
+
+def test_validate_collision_message_distinguishes_config_and_user():
+    existing = {"server", "mine"}
+    with pytest.raises(ValueError, match="runcontrol.toml"):
+        validate_new_target("server", "1.2.3.4", "~/x", existing=existing, config_names={"server"})
+    with pytest.raises(ValueError, match="targets page"):
+        validate_new_target("mine", "1.2.3.4", "~/x", existing=existing, config_names={"server"})
+
+
+def test_load_corrupt_store_raises_actionable_valueerror(tmp_path):
+    p = tmp_path / "targets.json"
+    p.write_text('{"targets": "garbage"', encoding="utf-8")          # invalid JSON
+    with pytest.raises(ValueError, match="targets.json"):
+        load_dynamic_targets(p)
+    p.write_text('{"nope": 1}', encoding="utf-8")                    # missing "targets" key
+    with pytest.raises(ValueError, match="targets.json"):
+        load_dynamic_targets(p)
+    p.write_text('{"targets": "garbage"}', encoding="utf-8")         # wrong type for "targets"
+    with pytest.raises(ValueError, match="targets.json"):
+        load_dynamic_targets(p)

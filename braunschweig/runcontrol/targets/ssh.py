@@ -43,8 +43,25 @@ class SshTarget(ExecutionTarget):
             raise RuntimeError(f"remote command failed on '{self.cfg.host}' (rc={rc}): {out.strip()}")
         return out
 
+    def _quoted_repo(self) -> str:
+        """Shell-quote the repo path while preserving tilde-home expansion.
+
+        The repo path is interpolated into a remote shell command line, so it must
+        be quoted at this seam (defense in depth: protects config-file values too,
+        not only web-form input). shlex.quote("~/x") would make the tilde literal,
+        breaking the common "~/eqasim-bs" config value -- so a leading ~ is
+        rewritten to "$HOME" (double-quoted, expanded by the remote shell) and only
+        the remainder is quoted. Everything else is quoted verbatim.
+        """
+        r = self.cfg.repo
+        if r == "~":
+            return '"$HOME"'
+        if r.startswith("~/"):
+            return '"$HOME"' + shlex.quote(r[1:])
+        return shlex.quote(r)
+
     def _ssh(self, remote_cmd: str) -> tuple[int, str]:
-        return self._run(["ssh", self.cfg.host, f"cd {self.cfg.repo} && {remote_cmd}"])
+        return self._run(["ssh", self.cfg.host, f"cd {self._quoted_repo()} && {remote_cmd}"])
 
     # -- lifecycle ---------------------------------------------------------
     def launch(self, spec: RunSpec) -> LaunchHandle:
@@ -80,7 +97,7 @@ class SshTarget(ExecutionTarget):
         whether to persist the new target.
         """
         argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.cfg.host,
-                f"cd {self.cfg.repo} && echo RC_PROBE_OK && git rev-parse --short HEAD"]
+                f"cd {self._quoted_repo()} && echo RC_PROBE_OK && git rev-parse --short HEAD"]
         rc, out = self._run(argv)
         if rc == 0 and "RC_PROBE_OK" in out:
             lines = [line.strip() for line in out.strip().splitlines() if line.strip()]

@@ -31,6 +31,11 @@ _NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 # could use; the leading-'-' check below additionally blocks "-oProxyCommand=..." style
 # ssh option injection even though such an option string could technically match this class.
 _HOST_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
+# repo is interpolated (quoted, see SshTarget._quoted_repo) into a remote shell command.
+# The quoting is the real defense; this charset is the earlier, clearer 422: no spaces
+# and no shell metacharacters, while still covering "~/eqasim-bs", absolute paths,
+# dots and dashes.
+_REPO_PATTERN = re.compile(r"^[A-Za-z0-9_./~-]+$")
 
 # Fixed for all dynamically-added targets; matches the [target.server] example in
 # runcontrol.toml. Kept as a module constant so app.py does not duplicate the literal.
@@ -47,19 +52,25 @@ def load_dynamic_targets(path: Path) -> dict[str, TargetConfig]:
     if not path.exists():
         logger.info("no dynamic target store at %s (no user-added targets yet)", path)
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    targets: dict[str, TargetConfig] = {}
-    for name, t in raw.get("targets", {}).items():
-        targets[name] = TargetConfig(
-            name=name,
-            kind=t.get("kind", "ssh"),
-            repo=t["repo"],
-            host=t.get("host"),
-            runner=t.get("runner", DEFAULT_SSH_RUNNER),
-            data_dir=t.get("data_dir", "eqasim-data"),
-            logs_dir=t.get("logs_dir", "logs"),
-        )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        targets: dict[str, TargetConfig] = {}
+        for name, t in raw["targets"].items():
+            targets[name] = TargetConfig(
+                name=name,
+                kind=t.get("kind", "ssh"),
+                repo=t["repo"],
+                host=t.get("host"),
+                runner=t.get("runner", DEFAULT_SSH_RUNNER),
+                data_dir=t.get("data_dir", "eqasim-data"),
+                logs_dir=t.get("logs_dir", "logs"),
+            )
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        # Fail early WITH an actionable message; silently skipping entries would hide
+        # that previously-added targets vanished (no-silent-fallbacks policy).
+        raise ValueError(f"targets store {path} is corrupt or has an invalid schema: {exc!r}. "
+                         "Fix or delete the file and re-add targets via the /targets page.") from exc
     logger.info("loaded %d dynamic target(s) from %s", len(targets), path)
     return targets
 
@@ -86,21 +97,28 @@ def save_dynamic_targets(path: Path, targets: dict[str, TargetConfig]) -> None:
     logger.info("saved %d dynamic target(s) to %s", len(targets), path)
 
 
-def validate_new_target(name: str, host: str, repo: str, existing: set[str]) -> None:
+def validate_new_target(name: str, host: str, repo: str, existing: set[str],
+                        config_names: set[str] | None = None) -> None:
     """Reject anything unsafe or colliding before a TargetConfig is ever built.
 
-    host and repo are interpolated straight into an ssh argv / remote shell command
+    host and repo end up in an ssh argv / a (quoted) remote shell command
     (see targets.ssh.SshTarget), so this is a security boundary, not just a UX
     convenience: reject option-injection attempts (leading '-') and anything that
-    could smuggle extra shell tokens (whitespace, newlines) in host or repo.
+    could smuggle extra shell tokens (whitespace, metacharacters) in host or repo.
+
+    ``config_names`` (subset of ``existing``) identifies the immutable runcontrol.toml
+    targets so a collision message can say precisely what the name clashes with;
+    when omitted, all of ``existing`` is treated as config-defined.
     """
     if not _NAME_PATTERN.match(name):
         raise ValueError(f"target name '{name}' is invalid; must match ^[A-Za-z0-9_-]{{1,32}}$")
     if name in existing:
-        raise ValueError(f"target name '{name}' is already defined in runcontrol.toml or already added; choose another name")
+        if config_names is not None and name not in config_names:
+            raise ValueError(f"target name '{name}' is already added via the targets page; choose another name")
+        raise ValueError(f"target name '{name}' is already defined in runcontrol.toml; choose another name")
     if not host or host.startswith("-") or any(ch.isspace() for ch in host) or not _HOST_PATTERN.match(host):
         raise ValueError(f"host '{host}' is invalid; must be an ssh alias, IP, or user@host with no whitespace, "
                          "and must not start with '-' (ssh option injection)")
-    if not repo or repo.startswith("-") or "\n" in repo or "\r" in repo:
-        raise ValueError(f"repo '{repo}' is invalid; must be a non-empty path, must not start with '-', "
-                         "and must not contain a newline")
+    if not repo or repo.startswith("-") or not _REPO_PATTERN.match(repo):
+        raise ValueError(f"repo '{repo}' is invalid; only the characters A-Z a-z 0-9 _ . / ~ - are allowed "
+                         "(no spaces or shell metacharacters) and it must not start with '-'")

@@ -236,7 +236,8 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     @app.post("/api/targets", dependencies=[Depends(require_write)])
     def api_add_target(name: str = Form(...), host: str = Form(...), repo: str = Form(...)):
         try:
-            targetstore.validate_new_target(name, host, repo, existing=set(targets))
+            targetstore.validate_new_target(name, host, repo, existing=set(targets),
+                                            config_names=config_target_names)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
         cfg = TargetConfig(name=name, kind="ssh", repo=repo, host=host,
