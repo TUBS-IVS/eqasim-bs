@@ -27,6 +27,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from braunschweig import parallelism
 from braunschweig.progress import progress_parallel
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -316,12 +317,9 @@ DEFAULT_POPSIM_TIMEOUT_S = 3600
 # oversubscription crashed numpy with segfaults in libc (12 batches lost in one 25%
 # run). Pinning each subprocess to a single BLAS/OpenMP thread removes the
 # oversubscription; batch-level parallelism is then governed solely by num_workers.
-_SINGLE_THREAD_BLAS_ENV = {
-    "OPENBLAS_NUM_THREADS": "1",
-    "OMP_NUM_THREADS": "1",
-    "MKL_NUM_THREADS": "1",
-    "NUMEXPR_NUM_THREADS": "1",
-}
+# Single source of truth in braunschweig.parallelism (shared with the chainsolvers
+# worker pool, issue #122); the old private name is kept as an alias.
+_SINGLE_THREAD_BLAS_ENV = parallelism.SINGLE_THREAD_BLAS_ENV
 
 
 def make_populationsim_run_one(

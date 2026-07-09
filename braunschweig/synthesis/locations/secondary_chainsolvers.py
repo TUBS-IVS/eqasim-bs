@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 import shapely.geometry as geo
 
+from braunschweig import parallelism
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -1337,6 +1338,13 @@ def _derive_shard_seed(base_seed: int, shard_index: int) -> int:
 
 
 def _init_chain_worker(locations_df, solver, scorer_spec=None) -> None:
+    # Pin BLAS/OpenMP to one thread FIRST (issue #122): with up to ~62 workers
+    # each opening an ncores-sized BLAS pool, the box oversubscribes to
+    # n_workers x ncores threads -- the exact failure class that segfaulted the
+    # PopulationSim batches (see braunschweig.parallelism / popsim.batch).
+    # Under fork the parent's BLAS is already initialised, so the helper also
+    # applies a threadpoolctl runtime limit, not just the env variables.
+    parallelism.limit_worker_blas_threads()
     global _WORKER_LOCATIONS_DF, _WORKER_SOLVER, _WORKER_SCORER_SPEC
     _WORKER_LOCATIONS_DF = locations_df
     _WORKER_SOLVER = solver
