@@ -42,6 +42,7 @@ import pandas as pd
 import shapely.geometry as geo
 
 from braunschweig import parallelism
+from braunschweig.calibration.secondary_measurement import boundary_clip_share
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -1893,6 +1894,143 @@ def _fallback_accounting_summary(n_total_problems: int,
 
 
 # ---------------------------------------------------------------------------
+# Excursion boundary-clip transparency (issue #127, Task 6)
+#
+# The measured "leisure_excursion" MiD donor distances (45-100 km, design
+# spec Taxonomy table) may exceed the farthest candidate actually available
+# to a given leg's anchor -- buildings plus the external Gemeinde centroids
+# appended by build_secondary_candidates "so carla can match desired
+# distances beyond the study area instead of truncating to the area edge"
+# (see the comment there). When the desired distance exceeds even that
+# farthest candidate, the leg cannot be placed at its desired distance and
+# necessarily clips to the edge of the candidate universe. This is measured
+# and logged ONLY -- it changes no placement, sampling, or RNG draw.
+# ---------------------------------------------------------------------------
+
+# Clip share above which the summary line is flagged. Mirrors
+# DEFAULT_FALLBACK_WARNING_SHARE's role: a "leisure_excursion" clip share at
+# or above this fraction means most excursion legs cannot reach their
+# measured donor distance with the current candidate set (region extent /
+# external-candidate reach), and the resulting realised distances should not
+# be read as if they matched the MiD donor tail without noting this.
+DEFAULT_EXCURSION_CLIP_WARNING_SHARE = 0.50
+
+
+def _excursion_desired_distances_and_anchors_m(plans_df: pd.DataFrame,
+                                                problems: List[Dict[str, Any]]
+                                                ) -> Tuple[np.ndarray, np.ndarray]:
+    """Desired distances (metres) and anchors for ``"leisure_excursion"`` legs.
+
+    ``plans_df`` must still carry ``_problem_idx`` (i.e. be the frame returned
+    by ``_build_plans_df``, before the caller drops the helper columns for
+    ``cs.solve()``). Every BOUNDED problem has both ``origin`` and
+    ``destination`` fixed -- ``_build_plans_df`` routes any problem missing
+    either anchor to ``unbounded_idx`` before this frame is built -- so
+    ``problem["origin"]`` is always available here. The fixed origin (the
+    person's actual anchor for that chain, e.g. home) is used as the leg's
+    reference point for the candidate-reach ceiling: it is always available,
+    unlike an intermediate, still-unresolved secondary location.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``(desired_m, anchors_xy)``, parallel arrays of length
+        n_excursion_legs; ``anchors_xy`` has shape ``(n, 2)``. Both are empty
+        when no ``"leisure_excursion"`` leg is present (the flag is OFF, or
+        no bounded leg happened to draw that group).
+    """
+    if plans_df.empty or "to_act_type" not in plans_df.columns:
+        return np.array([], dtype=float), np.empty((0, 2), dtype=float)
+    mask = (plans_df["to_act_type"] == "leisure_excursion").to_numpy()
+    if not mask.any():
+        return np.array([], dtype=float), np.empty((0, 2), dtype=float)
+    desired_m = plans_df.loc[mask, "distance_meters"].to_numpy(dtype=float)
+    prob_idx = plans_df.loc[mask, "_problem_idx"].to_numpy()
+    anchors_xy = np.array(
+        [
+            (float(problems[p]["origin"][0, 0]), float(problems[p]["origin"][0, 1]))
+            for p in prob_idx
+        ],
+        dtype=float,
+    )
+    return desired_m, anchors_xy
+
+
+def _candidate_reach_ceiling_m(anchors_xy: np.ndarray, candidate_xy: np.ndarray) -> np.ndarray:
+    """Per-anchor farthest-candidate distance (metres): the candidate-radius ceiling.
+
+    For each anchor in ``anchors_xy`` (shape ``(n, 2)``), returns the maximum
+    Euclidean distance to any row of ``candidate_xy`` (shape ``(m, 2)``, both
+    in the same projected CRS, e.g. EPSG:25832 metres). This is a hard upper
+    bound on what any placement could achieve from that anchor: no candidate
+    lies farther away, so a desired distance exceeding it can never be
+    matched. This does NOT model chainsolvers' own internal candidate-search
+    radius (an implementation detail of the third-party ``chainsolvers``
+    package, which adaptively widens its search) -- it is a purely
+    geometric, data-driven ceiling derived from the candidate coordinates we
+    actually feed into the solver, independent of solver internals.
+
+    Raises
+    ------
+    ValueError
+        If ``candidate_xy`` is empty (no ceiling can be computed).
+    """
+    if len(candidate_xy) == 0:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] cannot compute the "
+            "leisure_excursion candidate-reach ceiling: the candidate "
+            "coordinate set is empty."
+        )
+    # A small per-anchor loop rather than materialising the full (n x m)
+    # distance matrix at once: anchor counts are the (comparatively small)
+    # 'leisure_excursion' leg count, so this stays cheap even against the
+    # full candidate set (tens of thousands of buildings + external
+    # centroids).
+    ceilings = np.empty(len(anchors_xy), dtype=float)
+    for i in range(len(anchors_xy)):
+        dx = candidate_xy[:, 0] - anchors_xy[i, 0]
+        dy = candidate_xy[:, 1] - anchors_xy[i, 1]
+        ceilings[i] = np.sqrt(dx * dx + dy * dy).max()
+    return ceilings
+
+
+def _excursion_boundary_clip_summary(n_clipped: int, n_total: int,
+                                     warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE) -> str:
+    """Build the one-line ``"leisure_excursion"`` boundary-clip transparency summary.
+
+    Pure (no I/O, no randomness, no side effects) -- mirrors
+    ``_fallback_accounting_summary``'s style. ``n_clipped`` counts
+    ``"leisure_excursion"`` legs whose sampled desired distance exceeds the
+    candidate-radius ceiling (``_candidate_reach_ceiling_m``): these legs
+    cannot be placed at their desired distance and clip to the edge of the
+    candidate universe. Measurement only; never influences placement,
+    sampling, or the RNG. Logged even when ``n_clipped`` is 0 (CLAUDE.md
+    "fallback transparency": the rate must always be observable, not only
+    when it is non-zero).
+
+    Args:
+        n_clipped: legs whose desired distance exceeds the ceiling.
+        n_total: total ``"leisure_excursion"`` legs measured this run.
+        warning_share: clip share (in [0, 1]) at or above which the line is
+            prefixed with ``"WARNING: "``.
+    """
+    if n_total == 0:
+        return (
+            "[braunschweig.secondary_chainsolvers] leisure_excursion "
+            "boundary-clip: 0 bounded 'leisure_excursion' legs this run "
+            "(nothing to measure)."
+        )
+    share = n_clipped / n_total
+    prefix = "WARNING: " if share >= warning_share else ""
+    return (
+        f"[braunschweig.secondary_chainsolvers] {prefix}leisure_excursion "
+        f"boundary-clip: {n_clipped:,}/{n_total:,} ({share * 100.0:.1f}%) "
+        "bounded excursion legs sample a desired distance beyond the "
+        "farthest available candidate and clip to the region edge."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tier 2: daily / non-daily shop subtype decider
 # ---------------------------------------------------------------------------
 
@@ -2372,6 +2510,11 @@ def execute(context):
             ),
             flush=True,
         )
+        # Task 6, issue #127: no bounded legs at all -> no "leisure_excursion"
+        # legs either; still print the (0/0) line so the rate stays
+        # observable on this early-return path too (no silent gap).
+        if leisure_subtype_decider is not None:
+            print(_excursion_boundary_clip_summary(0, 0), flush=True)
         df_loc = gpd.GeoDataFrame(
             pd.DataFrame.from_records(
                 fallback_rows,
@@ -2514,6 +2657,35 @@ def execute(context):
                 "fallback to pot_leisure is performed." % exc
             ) from exc
         df_secondary = append_residential_visit_candidates(df_secondary, df_residential_buildings)
+
+    # Task 6, issue #127: excursion boundary-clip transparency. Reads the
+    # already-sampled desired distances (plans_df["distance_meters"]) and the
+    # already-finalised candidate set (df_secondary) -- this block places
+    # nothing and draws no random number; see the module-level comment above
+    # _excursion_boundary_clip_summary.
+    if leisure_subtype_decider is not None:
+        desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
+        if desired_m.size > 0:
+            excursion_candidates = df_secondary.loc[df_secondary["pot_leisure"] > 0.0]
+            if len(excursion_candidates) == 0:
+                raise RuntimeError(
+                    "[braunschweig.secondary_chainsolvers] leisure_excursion "
+                    "boundary-clip check found zero candidates with "
+                    "pot_leisure > 0, but leisure_subtype_split sampled "
+                    "bounded 'leisure_excursion' legs -- the building-"
+                    "potentials wiring is broken (this is not an expected "
+                    "empty-candidate run)."
+                )
+            candidate_xy = np.column_stack((
+                excursion_candidates.geometry.x.to_numpy(),
+                excursion_candidates.geometry.y.to_numpy(),
+            ))
+            ceiling_m = _candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+            _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
+        else:
+            n_clipped, n_total = 0, 0
+        print(_excursion_boundary_clip_summary(n_clipped, n_total))
+
     locations_df = _build_locations_df(
         df_secondary, with_potentials=sec_enabled,
         shop_daily_split=shop_daily_split,

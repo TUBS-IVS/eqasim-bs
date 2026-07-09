@@ -825,3 +825,155 @@ def test_configure_stages_buildings_when_leisure_visit_building_potential_on():
     ctx = _FakeContext({"leisure_visit_building_potential": True})
     sc.configure(ctx)
     assert "braunschweig.data.buildings" in ctx.staged
+
+
+# ---------------------------------------------------------------------------
+# Excursion boundary-clip transparency (issue #127, Task 6).
+#
+# TDD: written BEFORE the implementation. Covers the three pure helpers wired
+# into solve_secondary_locations (_excursion_desired_distances_and_anchors_m,
+# _candidate_reach_ceiling_m, _excursion_boundary_clip_summary) with
+# hand-built, synthetic data only -- no MiD/ALKIS data. Together they
+# reproduce, outside the full stage context, exactly what the production
+# wiring computes.
+# ---------------------------------------------------------------------------
+
+
+def test_excursion_desired_distances_and_anchors_extracts_only_excursion_legs():
+    layered = {
+        "leisure_excursion": _single_value_distribution(77_000.0),
+        "leisure": _single_value_distribution(1_000.0),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    problems = _leisure_problem()  # origin=(0,0), destination=(1000,1000)
+    plans_df, meta, unbounded, stats = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.tolist() == [77_000.0]
+    assert anchors_xy.shape == (1, 2)
+    # The anchor is the problem's fixed origin (0, 0), not the destination.
+    assert anchors_xy[0].tolist() == [0.0, 0.0]
+
+
+def test_excursion_desired_distances_and_anchors_empty_when_no_excursion_legs():
+    layered = {
+        "leisure": _single_value_distribution(1_000.0),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    problems = _leisure_problem()
+    plans_df, meta, unbounded, stats = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_local",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.shape == (0,)
+    assert anchors_xy.shape == (0, 2)
+
+
+def test_excursion_desired_distances_and_anchors_empty_plans_df():
+    empty = pd.DataFrame.from_records([])
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(empty, [])
+    assert desired_m.shape == (0,)
+    assert anchors_xy.shape == (0, 2)
+
+
+def test_candidate_reach_ceiling_matches_hand_computed_max_distance():
+    # One anchor at the origin, three candidates at known distances (3-4-5
+    # triangle + a farther point) -> the ceiling is the max, 100.0.
+    anchors_xy = np.array([[0.0, 0.0]])
+    candidate_xy = np.array([[3.0, 4.0], [6.0, 8.0], [60.0, 80.0]])  # dist 5, 10, 100
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    assert ceilings.shape == (1,)
+    assert ceilings[0] == pytest.approx(100.0)
+
+
+def test_candidate_reach_ceiling_per_anchor_independent():
+    anchors_xy = np.array([[0.0, 0.0], [100.0, 0.0]])
+    candidate_xy = np.array([[10.0, 0.0], [90.0, 0.0]])
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    # Anchor 0 (x=0): farthest candidate is x=90 -> distance 90.
+    # Anchor 1 (x=100): farthest candidate is x=10 -> distance 90.
+    assert ceilings.tolist() == pytest.approx([90.0, 90.0])
+
+
+def test_candidate_reach_ceiling_empty_candidates_raises():
+    with pytest.raises(ValueError, match="empty"):
+        sc._candidate_reach_ceiling_m(np.array([[0.0, 0.0]]), np.empty((0, 2)))
+
+
+def test_excursion_boundary_clip_summary_zero_total():
+    message = sc._excursion_boundary_clip_summary(0, 0)
+    assert "0 bounded 'leisure_excursion' legs" in message
+    assert "WARNING" not in message
+
+
+def test_excursion_boundary_clip_summary_below_warning_threshold():
+    message = sc._excursion_boundary_clip_summary(1, 10)
+    assert "1/10" in message
+    assert "(10.0%)" in message
+    assert "WARNING" not in message
+
+
+def test_excursion_boundary_clip_summary_at_or_above_warning_threshold():
+    message = sc._excursion_boundary_clip_summary(6, 10, warning_share=0.5)
+    assert "WARNING: " in message
+    assert "6/10" in message
+    assert "(60.0%)" in message
+
+
+def test_excursion_boundary_clip_summary_all_clipped_is_100_percent():
+    message = sc._excursion_boundary_clip_summary(5, 5)
+    assert "5/5" in message
+    assert "(100.0%)" in message
+    assert "WARNING: " in message
+
+
+def test_excursion_boundary_clip_end_to_end_on_synthetic_scenario():
+    """Assembles the three helpers exactly as solve_secondary_locations does,
+    on a small synthetic scenario with a known, hand-computable clip share."""
+    layered = {
+        "leisure_excursion": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    # Two bounded excursion problems, both anchored at the origin. Desired
+    # distances are drawn from _flat_distribution's values (800/1000/1200/1500 m).
+    problems = [
+        {
+            "person_id": 1, "activity_index": 1, "size": 1,
+            "purposes": ["leisure"], "modes": ["car", "car"],
+            "travel_times": np.array([600.0, 600.0]),
+            "origin": np.array([[0.0, 0.0]]),
+            "destination": np.array([[10.0, 10.0]]),
+        },
+        {
+            "person_id": 2, "activity_index": 1, "size": 1,
+            "purposes": ["leisure"], "modes": ["car", "car"],
+            "travel_times": np.array([600.0, 600.0]),
+            "origin": np.array([[0.0, 0.0]]),
+            "destination": np.array([[10.0, 10.0]]),
+        },
+    ]
+    plans_df, meta, unbounded, stats = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.shape == (2,)
+    # A single candidate only 500 m away from the anchor -- every desired
+    # distance (>= 800 m, see _flat_distribution) exceeds this ceiling, so
+    # both legs must clip.
+    candidate_xy = np.array([[500.0, 0.0]])
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    from braunschweig.calibration.secondary_measurement import boundary_clip_share
+    share, n_clipped, n_total = boundary_clip_share(desired_m, ceilings)
+    assert n_total == 2
+    assert n_clipped == 2
+    assert share == pytest.approx(1.0)
+    message = sc._excursion_boundary_clip_summary(n_clipped, n_total)
+    assert "2/2" in message and "WARNING: " in message
