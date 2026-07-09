@@ -17,8 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.shop_subtype import tt_band  # noqa: F401 (re-exported for callers)
-from braunschweig.popsim.shop_subtype import TT_BANDS  # noqa: F401 (re-exported for callers)
+from braunschweig.popsim.shop_subtype import TT_BANDS, tt_band  # noqa: F401 (re-exported for callers)
 
 logger = logging.getLogger(__name__)
 
