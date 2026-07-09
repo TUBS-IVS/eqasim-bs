@@ -506,9 +506,13 @@ def configure(context):
     # Seeded attribute imputation in build_persons; declaring the key also makes
     # synpp invalidate the stage cache when the pipeline random_seed changes.
     context.config("random_seed")
-    # RegioStaR donor stratification (Phase 4B): default ON (project rule: features
-    # default on). Set False for the byte-identical pre-4B path (full seed per batch).
-    context.config(KEY_STRATIFY, True)
+    # RegioStaR donor stratification (Phase 4B): default OFF (user decision 2026-07-09).
+    # The FULL donor pool is the core of the popsim_mid design: PopulationSim selects
+    # suitable donor households by their mobility-relevant characteristics from the
+    # ENTIRE national pool; restricting donors to the cell's RegioStaR class breaks
+    # that (e.g. Salzgitter's mobility character is rural-like despite its statistical
+    # urban class). Set True to opt back into the Phase 4B stratified path.
+    context.config(KEY_STRATIFY, False)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
