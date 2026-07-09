@@ -15,6 +15,7 @@ from .daemon import QueueWorker
 from .db import Database
 from .settings import load_settings
 from .targets import get_target
+from .targetstore import load_dynamic_targets
 
 logger = logging.getLogger("runcontrol")
 
@@ -42,14 +43,31 @@ def cmd_serve(settings, db: Database) -> None:
 
     from .app import create_app
 
-    targets = {name: get_target(cfg) for name, cfg in settings.targets.items()}
+    config_target_names = set(settings.targets)
+    target_configs = dict(settings.targets)
+    dynamic_configs = load_dynamic_targets(settings.targets_store_path)
+    added, skipped = 0, 0
+    for name, cfg in dynamic_configs.items():
+        if name in target_configs:
+            # Config-file targets are immutable seeds and always take precedence; a
+            # collision here means the store was edited or copied from another config.
+            logger.warning("dynamic target '%s' collides with a config-file target; keeping the config one", name)
+            skipped += 1
+            continue
+        target_configs[name] = cfg
+        added += 1
+    logger.info("dynamic targets: %d loaded, %d added, %d skipped (config collision)",
+               len(dynamic_configs), added, skipped)
+
+    targets = {name: get_target(cfg) for name, cfg in target_configs.items()}
     worker = QueueWorker(db, targets)
     thread = threading.Thread(target=worker.run_forever, args=(settings.poll_seconds,),
                               daemon=True, name="runcontrol-queue")
     thread.start()
     logger.info("runcontrol serving on http://%s:%d (targets: %s, db: %s)",
                 settings.host, settings.port, ", ".join(sorted(targets)), settings.db_path)
-    uvicorn.run(create_app(settings, db, worker, targets), host=settings.host, port=settings.port)
+    uvicorn.run(create_app(settings, db, worker, targets, config_target_names=config_target_names),
+               host=settings.host, port=settings.port)
 
 
 def main() -> None:

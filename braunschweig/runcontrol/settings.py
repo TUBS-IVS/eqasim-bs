@@ -34,6 +34,9 @@ class Settings:
     port: int = 8099
     poll_seconds: float = 3.0
     targets: dict[str, TargetConfig] = field(default_factory=dict)
+    # Dynamic ssh targets added at runtime through the web UI (Task 14) are persisted here,
+    # separately from the config-file targets above, which stay immutable seeds.
+    targets_store_path: Path = field(default_factory=lambda: Path("runcontrol_data/targets.json"))
 
 
 def load_settings(path: Path) -> Settings:
@@ -70,4 +73,5 @@ def load_settings(path: Path) -> Settings:
         port=int(raw.get("port", 8099)),
         poll_seconds=float(raw.get("poll_seconds", 3.0)),
         targets=targets,
+        targets_store_path=Path(raw.get("targets_store_path", "runcontrol_data/targets.json")),
     )

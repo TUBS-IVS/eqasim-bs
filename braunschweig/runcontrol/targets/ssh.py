@@ -69,6 +69,26 @@ class SshTarget(ExecutionTarget):
         rc, out = self._ssh("git rev-parse --short HEAD")
         return out.strip() if rc == 0 and out.strip() else "unknown"
 
+    def probe(self) -> dict:
+        """Connectivity + repo-path check for a target that has not been trusted yet.
+
+        Runs ONE round trip (BatchMode so a password prompt fails fast instead of
+        hanging, ConnectTimeout so an unreachable host does not stall the web
+        request) and reports the outcome honestly. This method is the failure
+        detector itself, so it must never raise on a connection failure -- the
+        caller (POST /api/targets) relies on the returned "ok" flag to decide
+        whether to persist the new target.
+        """
+        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.cfg.host,
+                f"cd {self.cfg.repo} && echo RC_PROBE_OK && git rev-parse --short HEAD"]
+        rc, out = self._run(argv)
+        if rc == 0 and "RC_PROBE_OK" in out:
+            lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
+            git_commit = lines[-1] if len(lines) >= 2 else "unknown"
+            return {"ok": True, "message": "connected", "git_commit": git_commit}
+        message = f"rc={rc}: {out.strip()}"[:300]
+        return {"ok": False, "message": message, "git_commit": None}
+
     def is_alive(self, handle: LaunchHandle) -> bool:
         rc, _ = self._ssh(f"tmux has-session -t {handle.tmux_session} 2>/dev/null")
         return rc == 0

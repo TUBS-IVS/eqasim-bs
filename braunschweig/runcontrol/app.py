@@ -17,12 +17,14 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import targetstore
 from .collectors import catalog, config_inspect, matsim_progress, synpp_progress, vitals
 from .configwriter import compose
 from .daemon import QueueWorker
 from .db import Database
 from .models import RunSpec
-from .settings import Settings
+from .settings import Settings, TargetConfig
+from .targets import get_target
 from .targets.base import ExecutionTarget
 
 logger = logging.getLogger(__name__)
@@ -53,10 +55,16 @@ def _safe_relname(name: str) -> str:
 
 
 def create_app(settings: Settings, db: Database, worker: QueueWorker,
-               targets: dict[str, ExecutionTarget]) -> FastAPI:
+               targets: dict[str, ExecutionTarget],
+               config_target_names: set[str] | None = None) -> FastAPI:
     app = FastAPI(title="eqasim-bs runcontrol")
     app.mount("/static", StaticFiles(directory=_PKG / "static"), name="static")
     templates = Jinja2Templates(directory=_PKG / "templates")
+    # Names seeded from runcontrol.toml (immutable); everything else in `targets` was
+    # added at runtime through POST /api/targets and may be removed through DELETE.
+    # Defaulting to set(targets) keeps every existing caller (tests, __main__ before
+    # Task 14) working unchanged: with no dynamic targets ever added, "config" is correct.
+    config_target_names = set(targets) if config_target_names is None else set(config_target_names)
 
     def _target(name: str) -> ExecutionTarget:
         if name not in targets:
@@ -216,6 +224,57 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         res = catalog.scan(_target(target), db.list_runs())
         return {"runs": res.runs, "n_manifest": res.n_manifest, "n_legacy": res.n_legacy}
 
+    # ---- dynamic execution targets (Task 14) -------------------------------
+    def _target_row(name: str, t: ExecutionTarget) -> dict:
+        return {"name": name, "kind": t.kind, "host": t.cfg.host, "repo": t.cfg.repo,
+                "origin": "config" if name in config_target_names else "user"}
+
+    @app.get("/api/targets")
+    def api_targets():
+        return sorted((_target_row(name, t) for name, t in targets.items()), key=lambda r: r["name"])
+
+    @app.post("/api/targets", dependencies=[Depends(require_write)])
+    def api_add_target(name: str = Form(...), host: str = Form(...), repo: str = Form(...)):
+        try:
+            targetstore.validate_new_target(name, host, repo, existing=set(targets))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        cfg = TargetConfig(name=name, kind="ssh", repo=repo, host=host,
+                           runner=targetstore.DEFAULT_SSH_RUNNER)
+        candidate = get_target(cfg)
+        probe_result = candidate.probe()
+        if not probe_result["ok"]:
+            # Deliberately NOT persisted: a target that fails its connectivity test on
+            # the very first probe cannot be scientifically relied upon for a launch,
+            # so it must not silently enter the store (see fallback-transparency policy).
+            raise HTTPException(422, f"connection test failed: {probe_result['message']}")
+        store = targetstore.load_dynamic_targets(settings.targets_store_path)
+        store[name] = cfg
+        targetstore.save_dynamic_targets(settings.targets_store_path, store)
+        targets[name] = candidate
+        logger.info("added dynamic ssh target '%s' (host=%s, repo=%s, git=%s)",
+                    name, host, repo, probe_result["git_commit"])
+        return {"ok": True, "name": name, "git_commit": probe_result["git_commit"]}
+
+    @app.post("/api/targets/{name}/test")
+    def api_test_target(name: str):
+        t = _target(name)
+        if t.kind == "local":
+            return {"ok": True, "message": "local filesystem"}
+        return t.probe()
+
+    @app.delete("/api/targets/{name}", dependencies=[Depends(require_write)])
+    def api_delete_target(name: str):
+        _target(name)
+        if name in config_target_names:
+            raise HTTPException(422, "config-file targets are immutable; edit runcontrol.toml")
+        store = targetstore.load_dynamic_targets(settings.targets_store_path)
+        store.pop(name, None)
+        targetstore.save_dynamic_targets(settings.targets_store_path, store)
+        del targets[name]
+        logger.info("removed dynamic ssh target '%s'", name)
+        return {"ok": True}
+
     # ---- HTML pages ---------------------------------------------------------
     def _home_ctx(request: Request) -> dict:
         status = api_status()
@@ -263,5 +322,10 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         return templates.TemplateResponse("studio.html", {
             "request": request, "target": target, "targets": sorted(targets),
             "templates_list": entries, "selected": template, "inspected": inspected})
+
+    @app.get("/targets", response_class=HTMLResponse)
+    def page_targets(request: Request):
+        return templates.TemplateResponse("targets.html", {
+            "request": request, "targets": sorted(targets), "target_rows": api_targets()})
 
     return app

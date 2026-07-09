@@ -9,6 +9,7 @@ from braunschweig.runcontrol.daemon import QueueWorker
 from braunschweig.runcontrol.db import Database
 from braunschweig.runcontrol.settings import Settings, TargetConfig
 from braunschweig.runcontrol.targets.local import LocalTarget
+from braunschweig.runcontrol.targets.ssh import SshTarget
 
 TEMPLATE = ("run:\n  - synthesis.output\nconfig:\n  sampling_rate: 0.25\n"
             "  matsim_last_iteration: 9\n  freight_enabled: true\n")
@@ -113,3 +114,110 @@ def test_catalog_api_counts(tmp_path):
     r = c.get("/api/catalog?target=local")
     assert r.status_code == 200
     assert r.json()["n_legacy"] == 2
+
+
+# ---- Task 14: dynamic execution targets ----------------------------------
+
+def _client_with_config_ssh_target(tmp_path):
+    """Adds a config-file ssh target ('server') alongside the usual local target,
+    so collision-with-config and immutability behavior can be exercised."""
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "config_local_test.yml").write_text(TEMPLATE)
+    (tmp_path / "fake_runner.py").write_text("import time\ntime.sleep(3)\n")
+    local_cfg = TargetConfig(name="local", kind="local", repo=str(tmp_path), runner="fake_runner.py")
+    server_cfg = TargetConfig(name="server", kind="ssh", repo="~/eqasim-bs", host="felix",
+                              runner="scripts/run_pipeline.sh")
+    settings = Settings(db_path=tmp_path / "runs.db",
+                        targets={"local": local_cfg, "server": server_cfg},
+                        targets_store_path=tmp_path / "runcontrol_data" / "targets.json")
+    db = Database(settings.db_path)
+    targets = {"local": LocalTarget(local_cfg, python=sys.executable), "server": SshTarget(server_cfg)}
+    worker = QueueWorker(db, targets)
+    app = create_app(settings, db, worker, targets)
+    return TestClient(app), settings, targets
+
+
+def test_get_targets_lists_config_targets_with_origin_config(tmp_path):
+    c, _, _ = _client_with_config_ssh_target(tmp_path)
+    rows = {r["name"]: r for r in c.get("/api/targets").json()}
+    assert rows["local"]["origin"] == "config" and rows["local"]["kind"] == "local"
+    assert rows["server"]["origin"] == "config" and rows["server"]["host"] == "felix"
+
+
+def test_post_target_success_persists_and_appears_as_user(tmp_path, monkeypatch):
+    c, settings, targets = _client_with_config_ssh_target(tmp_path)
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": True, "message": "connected", "git_commit": "abc123"})
+    r = c.post("/api/targets", data={"name": "felix2", "host": "user@1.2.3.4", "repo": "~/eqasim-bs"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True, "name": "felix2", "git_commit": "abc123"}
+    rows = {row["name"]: row for row in c.get("/api/targets").json()}
+    assert rows["felix2"]["origin"] == "user" and rows["felix2"]["host"] == "user@1.2.3.4"
+    stored = json.loads(settings.targets_store_path.read_text())
+    assert "felix2" in stored["targets"]
+
+
+def test_post_target_probe_failure_rejects_and_does_not_persist(tmp_path, monkeypatch):
+    c, settings, targets = _client_with_config_ssh_target(tmp_path)
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": False, "message": "rc=255: connection refused", "git_commit": None})
+    r = c.post("/api/targets", data={"name": "felix3", "host": "1.2.3.4", "repo": "~/eqasim-bs"})
+    assert r.status_code == 422
+    assert "connection test failed" in r.json()["detail"]
+    names = {row["name"] for row in c.get("/api/targets").json()}
+    assert "felix3" not in names
+    assert not settings.targets_store_path.exists()
+
+
+def test_post_target_collision_with_config_target_rejected(tmp_path, monkeypatch):
+    c, settings, targets = _client_with_config_ssh_target(tmp_path)
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": True, "message": "connected", "git_commit": "x"})
+    r = c.post("/api/targets", data={"name": "server", "host": "1.2.3.4", "repo": "~/eqasim-bs"})
+    assert r.status_code == 422
+    assert "runcontrol.toml" in r.json()["detail"]
+
+
+def test_delete_user_target_removes_it_from_api_and_store(tmp_path, monkeypatch):
+    c, settings, targets = _client_with_config_ssh_target(tmp_path)
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": True, "message": "connected", "git_commit": "x"})
+    c.post("/api/targets", data={"name": "felix4", "host": "1.2.3.4", "repo": "~/eqasim-bs"})
+    r = c.delete("/api/targets/felix4")
+    assert r.status_code == 200
+    names = {row["name"] for row in c.get("/api/targets").json()}
+    assert "felix4" not in names
+    stored = json.loads(settings.targets_store_path.read_text())
+    assert "felix4" not in stored["targets"]
+
+
+def test_delete_config_target_rejected_as_immutable(tmp_path):
+    c, _, _ = _client_with_config_ssh_target(tmp_path)
+    r = c.delete("/api/targets/server")
+    assert r.status_code == 422
+    assert "immutable" in r.json()["detail"]
+
+
+def test_test_endpoint_reports_honest_probe_failure(tmp_path, monkeypatch):
+    c, _, _ = _client_with_config_ssh_target(tmp_path)
+    monkeypatch.setattr(SshTarget, "probe",
+                        lambda self: {"ok": False, "message": "boom", "git_commit": None})
+    r = c.post("/api/targets/server/test")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False and "boom" in body["message"]
+
+
+def test_test_endpoint_local_target_reports_local_filesystem(tmp_path):
+    c, _, _ = _client_with_config_ssh_target(tmp_path)
+    r = c.post("/api/targets/local/test")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "message": "local filesystem"}
+
+
+def test_targets_page_renders_form_and_existing_targets(tmp_path):
+    c, _, _ = _client_with_config_ssh_target(tmp_path)
+    html = c.get("/targets").text
+    assert "server" in html and "local" in html
+    assert "Connect &amp; save" in html or "Connect & save" in html
+    assert "<form" in html or "id=\"new-name\"" in html

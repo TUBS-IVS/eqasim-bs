@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Execution targets{% endblock %}
+{% block content %}
+  <div class="hero"><a href="/">&lsaquo; Runs</a> / <b>Execution targets</b>
+    <span class="vital">config-file targets from runcontrol.toml are immutable seeds;
+      ssh targets added here persist across restarts</span>
+  </div>
+  <div style="padding:16px 24px">
+    <table id="targets-table">
+      <tr>
+        <th>Name</th><th>Kind</th><th>Host</th><th>Repo</th><th>Origin</th><th>Connection</th><th></th>
+      </tr>
+      {% for r in target_rows %}
+      <tr data-target-row="{{ r.name }}">
+        <td class="name mono">{{ r.name }}</td>
+        <td class="mono">{{ r.kind }}</td>
+        <td class="mono">{{ r.host if r.host else "-" }}</td>
+        <td class="mono">{{ r.repo }}</td>
+        <td><span class="badge {{ 'running' if r.origin == 'config' else 'queued' }}">{{ r.origin }}</span></td>
+        <td>
+          <button class="stopbtn" style="color:var(--t2);border-color:var(--line2)"
+                  onclick="testTarget('{{ r.name }}')">Test</button>
+          <span class="mono vital" id="test-result-{{ r.name }}"></span>
+        </td>
+        <td>
+          {% if r.origin == "user" %}
+            <button class="stopbtn" onclick="removeTarget('{{ r.name }}')">Remove</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <div class="grp" style="margin-top:20px;max-width:520px">
+      <div style="padding:9px 14px;background:rgba(22,35,60,.45);font-weight:600">Add ssh target</div>
+      <div class="frow"><label style="flex:1">Name <input id="new-name" placeholder="felix2" required></label></div>
+      <div class="frow"><label style="flex:1">Host
+        <input id="new-host" placeholder="user@134.169.x.x or ssh alias" required></label></div>
+      <div class="frow"><label style="flex:1">Repo <input id="new-repo" placeholder="~/eqasim-bs" required></label></div>
+      <div class="frow"><button class="cta" style="margin-left:0" onclick="addTarget()">Connect &amp; save</button></div>
+      <div class="frow" id="add-target-error" style="display:none;color:var(--fail)"></div>
+    </div>
+  </div>
+
+  <script>
+    async function testTarget(name) {
+      const el = document.getElementById("test-result-" + name);
+      el.textContent = "testing...";
+      try {
+        const r = await fetch(`/api/targets/${name}/test`, { method: "POST" });
+        const body = await r.json();
+        // Honest reporting: show the failure message too, never paper over a bad connection.
+        el.textContent = body.ok ? ("ok" + (body.git_commit ? " (" + body.git_commit + ")" : "")) : ("failed: " + body.message);
+        el.style.color = body.ok ? "var(--run)" : "var(--fail)";
+      } catch (e) {
+        el.textContent = "failed: " + e;
+        el.style.color = "var(--fail)";
+      }
+    }
+
+    async function removeTarget(name) {
+      const r = await fetch(`/api/targets/${name}`, { method: "DELETE" });
+      if (r.ok) {
+        location.reload();
+      } else {
+        const body = await r.json();
+        alert("could not remove target: " + body.detail);
+      }
+    }
+
+    async function addTarget() {
+      const errorEl = document.getElementById("add-target-error");
+      errorEl.style.display = "none";
+      const data = new FormData();
+      data.append("name", document.getElementById("new-name").value);
+      data.append("host", document.getElementById("new-host").value);
+      data.append("repo", document.getElementById("new-repo").value);
+      const r = await fetch("/api/targets", { method: "POST", body: data });
+      if (r.ok) {
+        location.reload();
+        return;
+      }
+      const body = await r.json();
+      errorEl.textContent = body.detail;
+      errorEl.style.display = "block";
+    }
+  </script>
+{% endblock %}
