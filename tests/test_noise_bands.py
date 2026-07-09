@@ -49,3 +49,25 @@ def test_merge_flags_within_and_outside():
     assert bool(out.loc[0, "within_noise_band"]) is True
     assert bool(out.loc[1, "within_noise_band"]) is False
     assert pd.isna(out.loc[2, "within_noise_band"])
+
+
+def test_harvest_quality_summary(tmp_path):
+    (tmp_path / "quality_summary.csv").write_text(
+        "control,mean_abs_delta_pp,srmse\nhousehold_size,1.44,0.18\n",
+        encoding="utf-8",
+    )
+    out = nb.harvest_draw_metrics(str(tmp_path), draw_seed=7, mid_validation=False)
+    got = out.set_index("metric_id")["value"]
+    assert got["control_household_size"] == pytest.approx(1.44)
+    assert got["control_srmse_household_size"] == pytest.approx(0.18)
+    assert (out["draw_seed"] == 7).all()
+
+
+def test_harvest_asserts_expected_metrics(tmp_path):
+    (tmp_path / "quality_summary.csv").write_text(
+        "control,mean_abs_delta_pp,srmse\nhousehold_size,1.44,0.18\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="expected metric"):
+        nb.harvest_draw_metrics(str(tmp_path), draw_seed=7, mid_validation=False,
+                                expected_metric_ids={"control_cars"})
