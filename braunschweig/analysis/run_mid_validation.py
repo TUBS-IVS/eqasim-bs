@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from braunschweig.analysis import spatial
+from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
@@ -96,6 +96,7 @@ class _Args:
     analysis_out: Path
     label: str
     sim_cache: Path | None
+    noise_bands: Path | None
 
 
 def _parse_args(argv: list[str] | None) -> _Args:
@@ -134,6 +135,17 @@ def _parse_args(argv: list[str] | None) -> _Args:
         "split is read from the MATSim simulation output (the eqasim pipeline "
         "trips.csv carries no mode). Omitted -> the modal-split block is skipped.",
     )
+    ap.add_argument(
+        "--noise-bands",
+        required=False,
+        default=None,
+        help="Path to a Monte-Carlo sampling-noise-band CSV, as written by "
+        "scripts/run_noise_bands.py (issue #126). When given, the tidy "
+        "metric_id/group view of this report is annotated with "
+        "band_q05/band_q95/within_noise_band and the honest-reporting note is "
+        "printed. Omitted (default) -> output is byte-identical to a run "
+        "without this flag.",
+    )
     ns = ap.parse_args(argv)
 
     output_dir = Path(ns.output_dir).resolve()
@@ -161,12 +173,17 @@ def _parse_args(argv: list[str] | None) -> _Args:
     if sim_cache is not None and not sim_cache.is_dir():
         ap.error(f"--sim-cache does not exist: {sim_cache}")
 
+    noise_bands_path = Path(ns.noise_bands).resolve() if ns.noise_bands is not None else None
+    if noise_bands_path is not None and not noise_bands_path.is_file():
+        ap.error(f"--noise-bands file does not exist: {noise_bands_path}")
+
     return _Args(
         output_dir=output_dir,
         prefix=prefix,
         analysis_out=analysis_out,
         label=ns.label or prefix.rstrip("_"),
         sim_cache=sim_cache,
+        noise_bands=noise_bands_path,
     )
 
 
@@ -747,6 +764,175 @@ def _plot_homes_map(
 
 
 # ---------------------------------------------------------------------------
+# Optional Monte-Carlo noise-band annotation (issue #126, task 4)
+# ---------------------------------------------------------------------------
+#
+# A noise band (built by scripts/run_noise_bands.py) quantifies how much a
+# validation metric moves under pure re-seeding at a FIXED sampling rate. It
+# is a triage signal, never a significance test and never a calibration
+# input -- see braunschweig/analysis/noise_bands.py's module docstring and
+# CLAUDE.md "No invented reference values; convergence is not validation".
+
+NOISE_BAND_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "metric_id", "group", "mean", "q05", "q95", "n_draws",
+    "sampling_rate", "pipeline_commit", "created_utc",
+)
+
+
+def annotate_with_bands(
+    tables: dict[str, pd.DataFrame],
+    bands: pd.DataFrame,
+    *,
+    metric_col: str = "metric_id",
+    group_col: str = "group",
+    value_col: str = "value",
+) -> dict[str, pd.DataFrame]:
+    """Annotate every tidy metric/group table in ``tables`` with noise bands.
+
+    Design choice (see the task brief for issue #126, task 4): this function
+    annotates the TIDY metric_id/group/value view of a report, not the wide
+    per-Kreis tables ``run()`` writes to CSV (``commute_mean_vs_p13.csv``,
+    ``license_vs_p17_1.csv``, ``employment_vs_p9.csv``, ...). Those wide
+    tables each use their own per-metric column names (``mean_synthetic_km``,
+    ``delta_pp``, ``delta_km``, ...), so mapping a band onto each one directly
+    would require a bespoke melt/merge/unmelt per table shape -- duplicating
+    the join ``noise_bands.merge_bands_into_report`` already implements once.
+    Instead, the caller (``_apply_noise_bands`` below) flattens the report
+    into the SAME tidy metric_id/group convention ``noise_bands.
+    _flatten_mid_report`` already defines for the Monte-Carlo sweep, and
+    passes only that single tidy table here -- ``merge_bands_into_report``
+    stays the ONE place the metric/group join happens.
+
+    Any table in ``tables`` that does not carry all of ``metric_col``,
+    ``group_col`` and ``value_col`` is not expressible in that convention
+    (e.g. a raw pass-through frame) and is returned UNCHANGED; no attempt is
+    made to guess a mapping for it, so callers can safely pass a mix of
+    banded and non-banded tables through one call.
+
+    Parameters
+    ----------
+    tables:
+        Mapping of table name -> DataFrame.
+    bands:
+        A noise-band frame as validated by ``_load_noise_bands`` (columns
+        ``metric_id``, ``group``, ``mean``, ``q05``, ``q95``, ``n_draws``,
+        plus provenance columns).
+
+    Returns
+    -------
+    A NEW dict with the same keys as ``tables``. Tables expressible in the
+    tidy convention carry the added ``band_q05``, ``band_q95``,
+    ``within_noise_band`` columns (via ``noise_bands.merge_bands_into_report``);
+    every other table is passed through as the SAME object, unmodified.
+    """
+    required_columns = {metric_col, group_col, value_col}
+    out: dict[str, pd.DataFrame] = {}
+    for name, table in tables.items():
+        if required_columns.issubset(table.columns):
+            out[name] = noise_bands.merge_bands_into_report(
+                table, bands,
+                metric_col=metric_col, group_col=group_col, value_col=value_col,
+            )
+        else:
+            out[name] = table
+    return out
+
+
+def _load_noise_bands(path: Path) -> pd.DataFrame:
+    """Load and validate a noise-band CSV (as written by ``scripts/run_noise_bands.py``).
+
+    Fails fast, listing every missing column, rather than letting a malformed
+    file silently produce all-NaN band columns downstream (see CLAUDE.md
+    "Fallback transparency" -- a missing column here must never look like "no
+    matching band" further down the pipeline).
+    """
+    # "group" carries ars5 Kreis codes with a leading zero (e.g. "03101") and
+    # "<regiostar7>_<level>" strings. dtype=str is passed at READ time (not
+    # via a later .astype(str)) because pandas' own int64 inference during
+    # pd.read_csv already strips the leading zero irreversibly for a
+    # purely-numeric "group" column -- a post-hoc cast would just re-stringify
+    # the already-wrong "3101". A silently mismatched group would otherwise
+    # show up only as an unexplained 100 % "no matching band" rate downstream.
+    bands = pd.read_csv(path, dtype={"group": str})
+    missing = [c for c in NOISE_BAND_REQUIRED_COLUMNS if c not in bands.columns]
+    if missing:
+        raise ValueError(
+            f"[mid_validation] --noise-bands file {path} is missing required "
+            f"column(s) {missing}; expected the schema written by "
+            f"scripts/run_noise_bands.py: {', '.join(NOISE_BAND_REQUIRED_COLUMNS)}."
+        )
+    return bands
+
+
+def _print_noise_band_note(bands: pd.DataFrame) -> None:
+    """Print the mandatory honest-reporting caveat for noise-band annotation.
+
+    ``scripts/run_noise_bands.py`` stamps the same ``sampling_rate`` /
+    ``pipeline_commit`` / ``created_utc`` on every row of one band file, so
+    the first row's values are representative of the whole file.
+    """
+    sampling_rate = bands["sampling_rate"].iloc[0]
+    n_draws = bands["n_draws"].iloc[0]
+    pipeline_commit = bands["pipeline_commit"].iloc[0]
+    print(
+        f"Noise bands measured at sampling_rate={sampling_rate} (N={n_draws}, "
+        f"commit {pipeline_commit}): a deviation INSIDE the band is "
+        "indistinguishable from sampling noise at that rate; outside is a "
+        "triage signal, not a significance test. Bands measured at a low "
+        "sampling rate are a conservative upper bound of the noise at "
+        "higher rates."
+    )
+
+
+def _apply_noise_bands(
+    report: dict[str, Any], noise_bands_path: Path | None, analysis_out: Path
+) -> dict[str, Any]:
+    """Optionally annotate ``report`` with pre-measured Monte-Carlo noise bands.
+
+    When ``noise_bands_path`` is ``None`` (the default -- no ``--noise-bands``
+    CLI flag): returns ``report`` UNCHANGED, as the SAME object. No file is
+    written and nothing is printed, so ``run()``'s output stays byte-identical
+    to a run without this feature.
+
+    When a path is given: loads and validates the band CSV (see
+    ``_load_noise_bands``), flattens ``report`` into the tidy metric_id/group
+    convention shared with ``noise_bands._flatten_mid_report`` -- the same
+    flattening the Monte-Carlo sweep (``scripts/run_noise_bands.py`` via
+    ``noise_bands.harvest_draw_metrics``) uses to harvest metrics from each
+    draw, so a band file produced by that sweep actually joins onto this
+    report -- annotates it via ``annotate_with_bands``, writes it to
+    ``<analysis_out>/noise_band_annotated_metrics.csv``, adds it to the
+    returned report dict under ``"noise_band_annotated_metrics"``, and PRINTS
+    the honest-reporting note (see ``_print_noise_band_note``).
+    """
+    if noise_bands_path is None:
+        return report
+    bands = _load_noise_bands(noise_bands_path)
+    # draw_seed=0 is a placeholder: this ``report`` is one finished run, not a
+    # Monte-Carlo draw, but _flatten_mid_report's shared REQUIRED_DRAW_COLUMNS
+    # schema always carries a draw_seed column; it is dropped again below
+    # because it carries no meaning here.
+    flattened = noise_bands._flatten_mid_report(report, draw_seed=0).drop(columns=["draw_seed"])
+    annotated = annotate_with_bands({"mid_metrics": flattened}, bands)
+    annotated_metrics = annotated["mid_metrics"]
+    annotated_metrics.to_csv(analysis_out / "noise_band_annotated_metrics.csv", index=False)
+    _print_noise_band_note(bands)
+    out_report = dict(report)
+    # merge_bands_into_report leaves within_noise_band as pandas' nullable
+    # "boolean" pd.NA for any report metric/group absent from the band file
+    # (a real case: a band sweep never has to cover every metric this report
+    # can produce). json.dumps cannot serialise pd.NA (TypeError), so it is
+    # converted to plain None here -- report.json must stay writable even
+    # when the band file only partially covers this report's metrics.
+    records = annotated_metrics.copy()
+    records["within_noise_band"] = records["within_noise_band"].apply(
+        lambda v: None if pd.isna(v) else bool(v)
+    )
+    out_report["noise_band_annotated_metrics"] = records.to_dict(orient="records")
+    return out_report
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1017,6 +1203,12 @@ def run(args: _Args) -> dict[str, Any]:
             if not mode_commute_cmp.empty else []
         ),
     }
+
+    # --- Optional Monte-Carlo noise-band annotation (issue #126, task 4). ---
+    # No-op (returns `report` unchanged) when --noise-bands was not given, so
+    # report.json / summary.md stay byte-identical to a run without this flag.
+    report = _apply_noise_bands(report, args.noise_bands, out)
+
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # --- summary.md ---
