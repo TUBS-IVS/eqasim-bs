@@ -55,6 +55,18 @@ def test_launch_writes_config_and_queues_run(tmp_path):
     assert db.get_run(body["run_id"])["status"] == "queued"
 
 
+def test_launch_rejects_bad_label(tmp_path):
+    # The label flows into _run_id() -> the rc_<run_id>.log filename; an unvalidated label
+    # with shell/JS metacharacters (here `';alert(1)//`) could produce a filename that later
+    # executes when rendered. It must be rejected at the source before compose/submit.
+    c, _, _ = _client(tmp_path)
+    r = c.post("/api/launch", data={
+        "target": "local", "template": "config_local_test.yml", "label": "x';alert(1)//",
+        "overrides": "{}"})
+    assert r.status_code == 422
+    assert "label" in r.json()["detail"]
+
+
 def test_launch_rejects_uncurated_override(tmp_path):
     c, _, _ = _client(tmp_path)
     r = c.post("/api/launch", data={

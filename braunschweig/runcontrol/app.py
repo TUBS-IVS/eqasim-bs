@@ -53,6 +53,13 @@ def _run_id(label: str) -> str:
 # rc_*.log, *_stage_runtime.csv) all match.
 _SAFE_RELNAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# The launch label is not just a display string: _run_id(label) embeds it in the run id,
+# which becomes the rc_<run_id>.log filename on disk. An unvalidated label with shell or
+# JS metacharacters (e.g. "x';alert(1)//") would produce a filename that later executes
+# when rendered into the log viewer. Restricting the label to the same safe alphabet as
+# target/relative names keeps every derived run id and filename safe by construction.
+_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
 
 def _safe_relname(name: str) -> str:
     """Reject anything that could escape the repo root or reach a shell when used by name alone.
@@ -200,6 +207,8 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     @app.post("/api/launch", dependencies=[Depends(require_write)])
     def api_launch(target: str = Form(...), template: str = Form(...),
                    label: str = Form(...), overrides: str = Form("{}")):
+        if not _LABEL_RE.match(label):
+            raise HTTPException(422, "label must be 1-64 chars of letters, digits, dot, underscore, hyphen")
         template = _safe_relname(template)
         t = _target(target)
         try:

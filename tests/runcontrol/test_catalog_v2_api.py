@@ -113,3 +113,16 @@ def test_logs_listing_and_view(tmp_path):
 def test_logs_view_rejects_traversal(tmp_path):
     c, _ = _client(tmp_path)
     assert c.get("/api/logs/..secret/view", params={"target": "local"}).status_code == 422
+
+
+def test_logs_filter_excludes_unrelated_files(tmp_path):
+    c, _ = _client(tmp_path)
+    import pathlib
+    logs = pathlib.Path(str(tmp_path)) / "logs"
+    (logs / "run_x_20260101_000000.log").write_text("run log")
+    (logs / "other.log").write_text("unrelated log without run_/rc_ prefix")
+    (logs / "system.txt").write_text("not a log at all")
+    names = [e["name"] for e in c.get("/api/logs", params={"target": "local"}).json()]
+    assert "run_x_20260101_000000.log" in names
+    assert "other.log" not in names       # *.log but no run_/rc_ prefix -> excluded
+    assert "system.txt" not in names      # not a log artifact -> excluded

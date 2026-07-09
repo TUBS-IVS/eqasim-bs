@@ -10,8 +10,7 @@
     <div class="zlabel">Log files</div>
     <table><tr><th>Name</th><th>Size</th></tr>
     {% for e in entries %}
-      <tr><td class="name"><a href="#" onclick="viewLog('{{ e.name }}'); return false;"
-              class="mono">{{ e.name }}</a></td>
+      <tr><td class="name"><a href="#" class="logname mono" data-name="{{ e.name }}">{{ e.name }}</a></td>
           <td class="mono">{{ (e.size / 1024)|round(0) }} kB</td></tr>
     {% else %}<tr><td class="vital">No logs on this target.</td></tr>{% endfor %}
     </table>
@@ -28,5 +27,11 @@ async function viewLog(name) {
     p.textContent = r.ok ? await r.text() : `error: ${r.status}`;
   } catch (e) { p.textContent = 'error: ' + e; }
 }
+// Delegated listener: the log name is read from data-name (never string-interpolated into
+// a JS handler), so a filename containing quotes/JS cannot break out into executable code.
+document.addEventListener('click', function (ev) {
+  const el = ev.target.closest('.logname');
+  if (el) { ev.preventDefault(); viewLog(el.dataset.name); }
+});
 </script>
 {% endblock %}

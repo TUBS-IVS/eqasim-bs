@@ -18,13 +18,13 @@
         <td class="mono">{{ r.repo }}</td>
         <td><span class="badge {{ 'running' if r.origin == 'config' else 'queued' }}">{{ r.origin }}</span></td>
         <td>
-          <button class="stopbtn" style="color:var(--t2);border-color:var(--line2)"
-                  onclick="testTarget('{{ r.name }}')">Test</button>
+          <button class="stopbtn test-target" style="color:var(--t2);border-color:var(--line2)"
+                  data-name="{{ r.name }}">Test</button>
           <span class="mono vital" id="test-result-{{ r.name }}"></span>
         </td>
         <td>
           {% if r.origin == "user" %}
-            <button class="stopbtn" onclick="removeTarget('{{ r.name }}')">Remove</button>
+            <button class="stopbtn remove-target" data-name="{{ r.name }}">Remove</button>
           {% endif %}
         </td>
       </tr>
@@ -84,5 +84,15 @@
       errorEl.textContent = body.detail;
       errorEl.style.display = "block";
     }
+
+    // Delegated listeners: target names are read from data-name, never interpolated into an
+    // inline handler, so a name cannot inject executable JS into the page (defense-in-depth;
+    // the API also whitelists target names).
+    document.addEventListener("click", function (ev) {
+      const testEl = ev.target.closest(".test-target");
+      if (testEl) { testTarget(testEl.dataset.name); return; }
+      const removeEl = ev.target.closest(".remove-target");
+      if (removeEl) { removeTarget(removeEl.dataset.name); }
+    });
   </script>
 {% endblock %}
