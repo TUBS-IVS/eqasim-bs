@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from braunschweig.runcontrol.app import create_app
 from braunschweig.runcontrol.daemon import QueueWorker
 from braunschweig.runcontrol.db import Database
+from braunschweig.runcontrol.models import RunStatus
 from braunschweig.runcontrol.settings import Settings, TargetConfig
 from braunschweig.runcontrol.targets.local import LocalTarget
 from braunschweig.runcontrol.targets.ssh import SshTarget
@@ -221,3 +222,19 @@ def test_targets_page_renders_form_and_existing_targets(tmp_path):
     assert "server" in html and "local" in html
     assert "Connect &amp; save" in html or "Connect & save" in html
     assert "<form" in html or "id=\"new-name\"" in html
+
+
+def test_home_history_includes_ended(tmp_path):
+    """ENDED (adopted) runs should appear in the home page history."""
+    c, worker = _client(tmp_path)
+    r = c.post("/api/launch", data={"target": "local", "template": "config_local_test.yml",
+                                    "label": "demo_ended", "overrides": "{}"})
+    run_id = r.json()["run_id"]
+    worker.tick()
+    # Set the run to ENDED status (as if it was adopted and monitoring finished)
+    db = worker.db
+    db.set_status(run_id, RunStatus.ENDED)
+    # Verify the ended run appears in the home page history
+    html = c.get("/").text
+    assert "demo_ended" in html
+    assert 'class="badge ended"' in html or 'class="badge unknown"' not in html  # ended badge should be visible

@@ -181,7 +181,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
                     sent = len(text)
                     yield f"data: {json.dumps(chunk)}\n\n"
                 current = db.get_run(run_id)
-                if current and current["status"] in ("done", "failed", "stopped", "unknown"):
+                if current and current["status"] in ("done", "failed", "stopped", "ended", "unknown"):
                     yield "event: end\ndata: {}\n\n"
                     return
                 await asyncio.sleep(2.0)
@@ -451,7 +451,7 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     # ---- HTML pages ---------------------------------------------------------
     def _home_ctx(request: Request) -> dict:
         status = api_status()
-        history = [r for r in db.list_runs() if r["status"] in ("done", "failed", "stopped", "unknown")]
+        history = [r for r in db.list_runs() if r["status"] in ("done", "failed", "stopped", "ended", "unknown")]
         queued = [db.get_run(rid) for rid in db.queue_ids()]
         return {"request": request, "status": status, "history": history[:20],
                 "queued": queued, "targets": sorted(targets)}
