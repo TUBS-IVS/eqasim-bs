@@ -48,8 +48,10 @@ from braunschweig.data.mid.income_by_status import (
 )
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
+from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
+from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import sources
@@ -117,6 +119,59 @@ KEY_SEED_DAY_FILTER = "braunschweig.population.popsim.seed_day_filter"
 KEY_INCOME_TILT = "braunschweig.population.popsim.income_spatial_tilt"
 KEY_INCOME_TILT_BETA = "braunschweig.population.popsim.income_tilt_beta"
 KEY_INCOME_TILT_CLIP = "braunschweig.population.popsim.income_tilt_clip"
+
+# Tilt-specific cell columns (cleaned parquet names; see prepared_cells.clean_col_name):
+#   raw: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m-Gitter"
+#     -> clean: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
+#   raw: "Eigentuemerquote_Eigentuemerquote_100m-Gitter"
+#     -> clean: "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
+# Suppression-ADJUSTED household totals are the correct tilt weight: the raw cell
+# totals suppress small cells (NaN), making them 0-weight and biasing the Kreis-mean
+# normalization toward large dense cells only. The _adj column fills suppressed cells
+# with the cleancensus imputed estimates so every cell carries a proper weight.
+_TILT_RENT_COL = "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
+_TILT_QUOTE_COL = "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
+_TILT_HH_COL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+_TILT_ARS_COL = "RegionalSchlussel_ARS"
+
+
+def tilt_extra_load_columns(enabled: bool, load_cols: list[str]) -> list[str]:
+    """Extend the parquet load column list with the income-tilt cell columns.
+
+    Issue #136: the tilt columns are fetched in the SINGLE ``load_control_cells``
+    read instead of a second national parquet scan. When ``enabled`` is False the
+    input list is returned as an unchanged copy (OFF path byte-identical);
+    ``load_control_cells`` silently skips columns absent from the parquet, exactly
+    like the old raw-name mapping did.
+    """
+    out = list(load_cols)
+    if not enabled:
+        return out
+    for column in (_TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL):
+        if column not in out:
+            out.append(column)
+    return out
+
+
+def extract_tilt_cells(cells: pd.DataFrame) -> pd.DataFrame:
+    """Build the income-tilt working frame from the already-loaded cells frame.
+
+    Selects the cell id + the tilt columns (rent, Eigentuemerquote, HH weight,
+    ARS) that are present; absent optional columns stay absent, matching the old
+    raw-parquet mapping (the downstream code then warns and uses a neutral
+    index / uniform weight). The cells frame is already ZGB-filtered, so no
+    row filtering is needed (this replaces a full national-row parquet re-read).
+    """
+    if "ZENSUS100m" not in cells.columns:
+        raise ValueError(
+            "[popsim.stage] cells frame carries no 'ZENSUS100m' column; cannot "
+            "build the income-tilt cell frame from it."
+        )
+    columns = ["ZENSUS100m"] + [
+        c for c in (_TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL, _TILT_ARS_COL)
+        if c in cells.columns
+    ]
+    return cells[columns].copy()
 # Kreis-Income-Control: real MiD income draw + max-entropy per-Kreis calibration.
 # Default ON (project rule). When ON it OVERWRITES the apply_inkar_income_eur output
 # (build_persons) with a real continuous draw reshaped to the per-Kreis INKAR target.
@@ -825,6 +880,14 @@ def execute(context) -> pd.DataFrame:
             },
         )
 
+    # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
+    # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
+    # the national parquet later. When the tilt is OFF, load_cols is returned
+    # unchanged (byte-identical).
+    load_cols = tilt_extra_load_columns(
+        bool(context.config(KEY_INCOME_TILT)), list(load_cols)
+    )
+
     cells = mid.load_control_cells(cells_path, load_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
 
@@ -1291,58 +1354,13 @@ def execute(context) -> pd.DataFrame:
                 n_nan, len(persons), 100.0 * n_nan / max(len(persons), 1),
             )
 
-        # Load the tilt-specific cell columns (rent + eigentümerquote) from the
-        # 100 m parquet. These are NOT part of the PopulationSim control columns
-        # and are NOT loaded by load_control_cells, so we read them separately.
-        # The column names are the cleaned versions of the raw parquet names:
-        #   raw: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m-Gitter"
-        #     -> clean: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
-        #   raw: "Eigentuemerquote_Eigentuemerquote_100m-Gitter"
-        #     -> clean: "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
-        #   HH weight column (always present in cells from load_control_cells):
-        #     "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
-        _TILT_RENT_COL = "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
-        _TILT_QUOTE_COL = "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
-        # Suppression-ADJUSTED household totals are the correct weight: the raw cell
-        # totals suppress small cells (NaN), making them 0-weight and biasing the
-        # Kreis-mean normalization toward large dense cells only. The _adj column
-        # fills suppressed cells with the cleancensus imputed estimates so every cell
-        # carries a proper (non-zero) weight in the index normalization.
-        _TILT_HH_COL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
-        _TILT_ARS_COL = "RegionalSchlussel_ARS"
-
-        # Load only the columns needed for the tilt from the raw parquet.
-        # We cannot assume they are present in the already-loaded cells frame,
-        # so we do a targeted partial-column read here. The cells frame itself
-        # is ZGB-filtered; we replicate that by filtering on ZENSUS100m membership.
-        import pyarrow.parquet as _pq
-
-        _raw_schema_names = _pq.ParquetFile(cells_path).schema.names
-        _clean_to_raw: dict[str, str] = {}
-        for _rn in _raw_schema_names:
-            _clean_to_raw.setdefault(prepared_cells.clean_col_name(_rn), _rn)
-
-        _tilt_cols_needed = [
-            _TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL, _TILT_ARS_COL,
-        ]
-        _id_raw = _raw_schema_names[0]
-        _raw_tilt = [_id_raw]
-        for _clean in _tilt_cols_needed:
-            _r = _clean_to_raw.get(_clean)
-            if _r is not None and _r not in _raw_tilt:
-                _raw_tilt.append(_r)
-
-        _tilt_cells_raw = pd.read_parquet(cells_path, columns=_raw_tilt)
-        _tilt_cells_raw.columns = [
-            prepared_cells.clean_col_name(c) for c in _tilt_cells_raw.columns
-        ]
-        _tilt_cells_raw = _tilt_cells_raw.rename(
-            columns={prepared_cells.clean_col_name(_id_raw): "ZENSUS100m"}
-        )
-        # Filter to ZGB cells (same membership as the cells frame used by PopulationSim).
-        _zgb_cell_ids = set(cells["ZENSUS100m"].tolist())
-        _zgb_cells_mask = _tilt_cells_raw["ZENSUS100m"].isin(_zgb_cell_ids)
-        _tilt_cells = _tilt_cells_raw[_zgb_cells_mask].copy()
+        # Build the tilt working frame (rent + eigentuemerquote + HH weight +
+        # ARS) from the already-loaded, already-ZGB-filtered cells frame. The
+        # tilt columns were fetched by the single load_control_cells read via
+        # tilt_extra_load_columns (issue #136) -- no second parquet scan.
+        # Columns absent from the parquet are simply absent here; the checks
+        # below then warn and fall back to a neutral index / uniform weight.
+        _tilt_cells = extract_tilt_cells(cells)
 
         # Derive 5-digit Kreis ARS from the 12-digit ARS column.
         if _TILT_ARS_COL in _tilt_cells.columns:
@@ -1473,6 +1491,14 @@ def execute(context) -> pd.DataFrame:
     if {"household_income_eur", "household_size"}.issubset(persons.columns):
         persons = _kic.add_per_capita_income(persons)
 
+    # Equivalised income view (issue #130): FINAL household_income_eur divided by
+    # the OECD-modified consumption_units set in assembly.build_persons. Additive
+    # column only -- high_income deliberately keeps the household-level 5000 EUR
+    # rule (no traceable per-consumption-unit threshold reference exists; no
+    # invented references).
+    if {"household_income_eur", "consumption_units"}.issubset(persons.columns):
+        persons = _income.add_income_per_consumption_unit(persons)
+
     # Write the local-only pseudonym map for MiD so internal re-linking is possible.
     # This file maps each surrogate source_person_id / source_household_id back
     # to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it
@@ -1486,5 +1512,12 @@ def execute(context) -> pd.DataFrame:
         "pseudonymise=%s).",
         pseudonym_map_path, len(pseudonym_map), pseudonymise,
     )
+
+    # Joint (cross-attribute) plausibility invariants (issue #133): run LAST so
+    # every attribute overwrite above (income control, tilt, tenure parity) is
+    # covered. WARN-only (measure-before-harden, like the minor-employment
+    # guard); the report is attached to persons.attrs so it survives the synpp
+    # cache and can feed a validation summary without re-running the stage.
+    persons.attrs["joint_plausibility"] = _plausibility.check_joint_plausibility(persons)
 
     return persons

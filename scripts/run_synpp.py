@@ -115,9 +115,15 @@ def main(argv=None) -> int:
         print("usage: python scripts/run_synpp.py <config.yml>", file=sys.stderr)
         return 1
     from braunschweig.logging_setup import setup_logging
+    from braunschweig.provenance import log_and_write_run_provenance
 
     log_path = setup_logging(level="INFO")
     logging.getLogger("braunschweig").info("Run log: %s", log_path)
+    # Crash-proof provenance BEFORE synpp starts (issue #125): git commits of
+    # this repo + eqasim_source_path, config path, sampling_rate / hts / seed /
+    # population.method -- logged and persisted into the working_directory so
+    # even a killed run is traceable (meta_output.py only writes on success).
+    log_and_write_run_provenance(argv[0])
     prime_from_config(argv[0])
     synpp.run_from_yaml(argv[0])
     # Export the shareable stage caches into the shared store ONLY after a successful

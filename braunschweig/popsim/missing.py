@@ -62,10 +62,20 @@ class MissingReport:
     n_valid: int
     n_structural: int
     n_nonresponse: int
+    # Nonresponse rows whose conditioning-group key had NO valid pool and that
+    # therefore fell back to the GLOBAL valid pool (or spec.default). Logged so
+    # thin-cell fallbacks are observable (no-silent-fallback rule); 0 when the
+    # spec has no group_cols. Appended with a default so existing positional
+    # constructions stay valid.
+    n_group_fallback: int = 0
 
     @property
     def nonresponse_share(self) -> float:
         return self.n_nonresponse / self.n_total if self.n_total else 0.0
+
+    @property
+    def group_fallback_share(self) -> float:
+        return self.n_group_fallback / self.n_nonresponse if self.n_nonresponse else 0.0
 
 
 def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, MissingReport]:
@@ -147,21 +157,31 @@ def resolve(df: pd.DataFrame, spec: AttributeSpec, *, rng) -> tuple[pd.Series, M
     else:
         nonresp_keys = [None] * len(nonresp_idx)
 
+    n_group_fallback = 0
     for idx, key in zip(nonresp_idx, nonresp_keys):
         pool = valid_pool
         if spec.group_cols:
             grouped = grouped_pools.get(key)
             if grouped is not None:
                 pool = grouped
+            else:
+                # Thin/unseen conditioning cell -> global valid pool. Counted and
+                # logged below (no-silent-fallback rule).
+                n_group_fallback += 1
         out.at[idx] = pool.iloc[rng.randint(len(pool))] if len(pool) > 0 else spec.default
 
     n_struct = int(is_structural.sum())
     n_nonresp = int(is_nonresponse.sum())
-    report = MissingReport(spec.name, len(df), int(is_valid.sum()), n_struct, n_nonresp)
+    report = MissingReport(
+        spec.name, len(df), int(is_valid.sum()), n_struct, n_nonresp,
+        n_group_fallback=n_group_fallback,
+    )
     logger.info(
         "[popsim.missing] %s: %d/%d structural (deterministic), %d (%.2f%%) item-nonresponse "
-        "(imputed from %s group)",
+        "(imputed from %s group; %d/%d (%.1f%%) fell back to the global pool on an "
+        "unseen group key)",
         spec.name, n_struct, len(df), n_nonresp, 100.0 * report.nonresponse_share,
         spec.group_cols or "global",
+        n_group_fallback, n_nonresp, 100.0 * report.group_fallback_share,
     )
     return out, report

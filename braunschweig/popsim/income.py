@@ -233,3 +233,61 @@ def apply_inkar_income_eur(
     ).astype(bool)
 
     return out
+
+
+def add_consumption_units(
+    persons: pd.DataFrame,
+    *,
+    household_col: str = "household_id",
+    age_col: str = "age",
+) -> pd.DataFrame:
+    """Attach OECD-modified ``consumption_units`` per synthetic household (issue #130).
+
+    Reuses the upstream eqasim implementation
+    (:func:`data.hts.hts.calculate_consumption_units`: 1.0 + 0.3 per child
+    under 14 + 0.5 per additional person aged 14+) instead of reimplementing
+    it, so the popsim path is arithmetically identical to the upstream HTS
+    sources. Any pre-existing ``consumption_units`` column (legacy placeholder
+    1.0) is overwritten. Returns a copy; the input frame is not mutated.
+    """
+    from data.hts.hts import calculate_consumption_units
+
+    if household_col not in persons.columns or age_col not in persons.columns:
+        raise ValueError(
+            f"[popsim.income] add_consumption_units needs columns "
+            f"{household_col!r} and {age_col!r}; got {sorted(persons.columns)[:20]}."
+        )
+    units = calculate_consumption_units(
+        persons[[household_col, age_col]].rename(
+            columns={household_col: "household_id", age_col: "age"}
+        )
+    ).rename(columns={"household_id": household_col})
+    out = persons.copy()
+    if "consumption_units" in out.columns:
+        out = out.drop(columns=["consumption_units"])
+    out = out.merge(units, on=household_col, how="left")
+    return out
+
+
+def add_income_per_consumption_unit(persons: pd.DataFrame) -> pd.DataFrame:
+    """Derive the equivalised income view ``income_per_consumption_unit_eur``.
+
+    Must be called on the FINAL ``household_income_eur`` (i.e. after the
+    Kreis-Income-Control overwrite and the spatial tilt in ``stage.execute``),
+    otherwise the ratio would be computed on a value that is later replaced.
+    NaN incomes (missing income class) stay NaN. Returns a copy.
+    """
+    missing = [
+        c for c in ("household_income_eur", "consumption_units")
+        if c not in persons.columns
+    ]
+    if missing:
+        raise ValueError(
+            f"[popsim.income] add_income_per_consumption_unit needs columns "
+            f"{missing}; compute consumption_units first (add_consumption_units)."
+        )
+    out = persons.copy()
+    out["income_per_consumption_unit_eur"] = (
+        out["household_income_eur"] / out["consumption_units"]
+    )
+    return out

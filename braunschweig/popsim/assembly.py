@@ -248,6 +248,7 @@ def map_mid_person_attributes(
     *,
     donor_col: str = "H_ID",
     rng=None,
+    rs7_conditioning: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply the MiD attribute-mapping sequence to a pre-expanded, pre-zoned persons frame.
 
@@ -280,6 +281,11 @@ def map_mid_person_attributes(
         Random state for stochastic attribute imputation (employment, licence,
         PT subscription).  Defaults to ``np.random.RandomState(0)`` for backward
         compatibility.
+    rs7_conditioning:
+        Condition the item-nonresponse imputation pools additionally on
+        ``RegioStaR7`` (issue #131; default ON). Person-level mappers use the
+        PLACED home cell's RS7, household-level mappers the donor's survey home
+        region. ``False`` restores the one-dimensional pools (A/B escape hatch).
 
     Returns
     -------
@@ -288,13 +294,13 @@ def map_mid_person_attributes(
     """
     rng = rng if rng is not None else np.random.RandomState(0)
 
-    persons = attributes.map_employed(persons, rng=rng)
+    persons = attributes.map_employed(persons, rng=rng, rs7_conditioning=rs7_conditioning)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
     # map_socioprofessional_class, which uses the studies flag in its fallback path.
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.
     persons = attributes.map_studies(persons)
-    persons = attributes.map_has_license(persons, rng=rng)
-    persons = attributes.map_has_pt_subscription(persons, rng=rng)
+    persons = attributes.map_has_license(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    persons = attributes.map_has_pt_subscription(persons, rng=rng, rs7_conditioning=rs7_conditioning)
 
     donor_hh = attributes.map_building_type_3class(
         attributes.map_housing_tenure(
@@ -307,11 +313,18 @@ def map_mid_person_attributes(
                     attributes.map_number_of_cars(
                         attributes.map_household_income(
                             attributes.map_household_income_eur(
-                                attributes.map_economic_status(mid_households)
-                            )
-                        )
-                    )
-                )
+                                attributes.map_economic_status(
+                                    mid_households, rs7_conditioning=rs7_conditioning
+                                ),
+                                rs7_conditioning=rs7_conditioning,
+                            ),
+                            rs7_conditioning=rs7_conditioning,
+                        ),
+                        rs7_conditioning=rs7_conditioning,
+                    ),
+                    rs7_conditioning=rs7_conditioning,
+                ),
+                rs7_conditioning=rs7_conditioning,
             )
         )
     )
@@ -413,7 +426,7 @@ def map_mid_person_attributes(
     persons, donor_map = assign_donor_surrogates(persons, donor_col=donor_col)
 
     persons = attributes.map_socioprofessional_class(persons)
-    persons = attributes.map_pt_subscription_type(persons, rng=rng)
+    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
 
     # weight = 1.0: popsim_mid produces an already-expanded population (each row
     # is one synthetic person, no stochastic rounding needed). synthesis.population.sampled
@@ -583,6 +596,13 @@ def build_persons(
         persons = _income_module.apply_inkar_income_eur(
             persons, inkar_scale, midpoint_series=midpoint_series,
         )
+
+    # OECD-modified consumption units per synthetic household (issue #130),
+    # reusing the upstream eqasim implementation. Pure age-structure -- stable
+    # under the later income overwrites (Kreis-Income-Control, spatial tilt);
+    # the equivalised income view is derived from the FINAL income in
+    # stage.execute (income.add_income_per_consumption_unit).
+    persons = _income_module.add_consumption_units(persons)
 
     schema.validate_person_columns(persons.columns)
     return persons, donor_map

@@ -67,6 +67,11 @@ python scripts/run_synpp.py config_local_braunschweig.yml
 bash scripts/run_pipeline.sh config_server_braunschweig_100pct.yml
 ```
 
+`run_pipeline.sh` first runs `scripts/verify_braunschweig_inputs.py --matsim` as a
+preflight gate (fail-fast checklist of all required input data, with download sources
+for anything missing); set `EQASIM_SKIP_VERIFY=1` to skip it when missing inputs are
+known to be served from cached stages.
+
 A **1% smoke** is the intended fast end-to-end test vehicle before claiming a stage works
 (mocked unit tests miss real wiring bugs). Run analysis with
 `python -m braunschweig.analysis.run_full_analysis --output-dir ... --sim-cache ...`.
