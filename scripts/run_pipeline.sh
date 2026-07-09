@@ -72,6 +72,25 @@ fi
 
 mkdir -p logs
 
+# Preflight: verify ALL required pipeline input data up front (issue #135).
+# Data completeness was previously only discovered as a stage crash deep in
+# the DAG, hours into a 64-core run. verify_braunschweig_inputs.py prints a
+# checklist with download sources for anything missing and exits non-zero.
+# Escape hatch: EQASIM_SKIP_VERIFY=1 skips the gate (e.g. for a deliberately
+# partial data tree feeding only cached stages).
+if [[ "${EQASIM_SKIP_VERIFY:-0}" != "1" ]]; then
+    echo "==> Preflight: verifying pipeline input data (EQASIM_SKIP_VERIFY=1 to skip)"
+    if ! PYTHONUTF8=1 python scripts/verify_braunschweig_inputs.py --matsim; then
+        echo "ERROR: input verification failed. Fix the missing inputs above" >&2
+        echo "       (download sources are listed per dataset), or re-run with" >&2
+        echo "       EQASIM_SKIP_VERIFY=1 if the missing inputs are known to be" >&2
+        echo "       served from cached stages." >&2
+        exit 1
+    fi
+else
+    echo "==> Preflight SKIPPED (EQASIM_SKIP_VERIFY=1)"
+fi
+
 # synpp's output stage (synthesis/output.py validate()) requires the configured
 # output directory to already exist and aborts the whole run otherwise. Extract
 # output_path from the YAML config and create it up front so a fresh server
