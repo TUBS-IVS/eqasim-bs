@@ -54,26 +54,67 @@ def test_code_coverage_guard_raises_on_unmapped_code():
         ps.code_coverage_guard(df, SPEC)
 
 
-def _fixture_wege_for_spec(spec: ps.SubtypeSpec) -> pd.DataFrame:
-    """Build a minimal W_ZWECK/W_ZWD frame covering every code in `spec` exactly once.
+def _leisure_measured_wege() -> pd.DataFrame:
+    """One row per W_ZWD code observed for W_ZWECK=7 (leisure) in the 2026-07-09
+    measured code inventory (design spec's table).
 
-    One row per group code and one row per sentinel, all under `spec.zweck_values`
-    (using the first value if several apply). This encodes the REAL measured code
-    inventory declared by the module-level LEISURE_SPEC / OTHER_ERRAND_SPEC constants,
-    so `code_coverage_guard` breaks loudly if a future MiD delivery introduces a code
-    that is neither grouped nor a documented sentinel.
+    NOTE: these code lists are transcribed independently from the measurement, NOT
+    derived from ps.LEISURE_SPEC/ps.LEISURE_GROUPS/ps.LEISURE_SENTINELS -- this is
+    deliberate anti-circularity. A fixture built from `spec.group_codes | spec.sentinels`
+    would trivially pass the coverage guard even if a module constant were miscopied,
+    because it always equals the codes the guard is checking against. Hard-coding the
+    measured codes here means a future miscopy of LEISURE_GROUPS/LEISURE_SENTINELS makes
+    this test fail for real.
     """
-    zweck = sorted(spec.zweck_values)[0]
-    codes = sorted(spec.group_codes) + sorted(spec.sentinels)
-    return pd.DataFrame({"W_ZWECK": [zweck] * len(codes), spec.group_col: codes})
+    codes = [701, 702, 703, 704, 706, 707, 708, 709, 710, 711, 713, 716, 720, 721, 722,
+             799, 2202, 4402, 503, 603, 605]
+    df = pd.DataFrame({
+        "W_ZWECK": [7] * len(codes),
+        "W_ZWD": codes,
+        "mode": ["car"] * len(codes),
+        "travel_time": [200.0] * len(codes),
+    })
+    df["W_GEW"] = 1.0
+    return df
+
+
+def _other_errand_measured_wege() -> pd.DataFrame:
+    """One row per W_ZWD code observed for W_ZWECK=5 (other errand) in the 2026-07-09
+    measured code inventory (design spec's table).
+
+    Independently transcribed, not derived from ps.OTHER_ERRAND_SPEC -- see the
+    anti-circularity note on `_leisure_measured_wege`.
+    """
+    codes = [601, 602, 603, 604, 605, 699, 503, 504, 701, 706, 711, 713, 716, 721,
+             2202, 4402]
+    df = pd.DataFrame({
+        "W_ZWECK": [5] * len(codes),
+        "W_ZWD": codes,
+        "mode": ["car"] * len(codes),
+        "travel_time": [200.0] * len(codes),
+    })
+    df["W_GEW"] = 1.0
+    return df
 
 
 def test_code_coverage_guard_passes_for_leisure_and_other_errand_specs():
-    # Exercises the guard against the REAL measured W_ZWD code inventory of #127's two
-    # module-level specs, not a synthetic toy spec -- this is the actual regression net
-    # against a future MiD delivery introducing an unmapped code.
-    ps.code_coverage_guard(_fixture_wege_for_spec(ps.LEISURE_SPEC), ps.LEISURE_SPEC)
-    ps.code_coverage_guard(_fixture_wege_for_spec(ps.OTHER_ERRAND_SPEC), ps.OTHER_ERRAND_SPEC)
+    # Exercises the guard against an INDEPENDENTLY hard-coded transcription of the
+    # 2026-07-09 measured W_ZWD code inventory (see _leisure_measured_wege /
+    # _other_errand_measured_wege), not a fixture derived from LEISURE_SPEC /
+    # OTHER_ERRAND_SPEC -- this is a real cross-check: every measured code must be
+    # classified (group or sentinel) by the module-level constants under test.
+    ps.code_coverage_guard(_leisure_measured_wege(), ps.LEISURE_SPEC)
+    ps.code_coverage_guard(_other_errand_measured_wege(), ps.OTHER_ERRAND_SPEC)
+
+
+def test_code_coverage_guard_raises_on_unmapped_code_in_measured_inventory():
+    # Same independently hard-coded inventory as above, plus one code the module-level
+    # LEISURE_SPEC does not classify; confirms the guard still fails loudly when a real
+    # future MiD delivery introduces an unmapped code.
+    df = _leisure_measured_wege()
+    df.loc[len(df)] = (7, 777, "car", 200.0, 1.0)
+    with pytest.raises(ValueError, match="777"):
+        ps.code_coverage_guard(df, ps.LEISURE_SPEC)
 
 
 def test_impute_groups_fractional_draw_is_deterministic():
