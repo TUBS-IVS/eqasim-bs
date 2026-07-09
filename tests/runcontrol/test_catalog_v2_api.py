@@ -85,7 +85,7 @@ def test_enrich_rejects_metachar_name(tmp_path):
 def test_diff_reports_only_differing_keys(tmp_path):
     c, _ = _client(tmp_path)
     # add a second artifact with a different sampling_rate + extra flag
-    import json as _j, pathlib
+    import pathlib
     data = pathlib.Path(str(tmp_path)) / "eqasim-data"
     (data / "cache_bs_10pct").mkdir()
     (data / "cache_bs_10pct" / "pipeline.json").write_text(_pipeline([

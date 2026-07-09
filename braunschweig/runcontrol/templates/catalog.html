@@ -44,7 +44,10 @@
                   hx-target="#d-{{ loop.index }}" hx-swap="innerHTML">Enrich &raquo;</button>
         {% else %}<a class="tab" href="/runs/{{ r.run_id }}">open run</a>{% endif %}
       </td>
-      <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}</td>
+      <td class="mono">{{ r.flags|join(", ") if r.flags else "-" }}
+        {% if r.kind == "cache" and r.mtime and (r.mtime < (now_epoch - stale_age_days * 86400)) %}
+          <span class="chip-stale" title="old cache -- review for cleanup">stale?</span>{% endif %}
+      </td>
     </tr>
     <tr><td colspan="7"><div id="d-{{ loop.index }}"></div></td></tr>
   {% endfor %}

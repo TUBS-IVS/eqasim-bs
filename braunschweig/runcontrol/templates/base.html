@@ -13,6 +13,7 @@
     <span class="wordmark">EQASIM<span class="slash"> &#x2AFD; </span>RUN CONTROL</span>
     {% block topbar_extra %}{% endblock %}
     <a class="tab" href="/catalog?target={{ targets[0] if targets is defined and targets else 'local' }}">Catalog</a>
+    <a class="tab" href="/logs?target={{ targets[0] if targets is defined and targets else 'local' }}">Logs</a>
     <a class="tab" href="/targets">Targets</a>
     <a class="cta" href="/studio?target={{ targets[0] if targets is defined and targets else 'local' }}">+ New run</a>
   </div>

@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import shlex
+import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -317,12 +318,22 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
                 diff.append({"key": key, "group": grp, "a": va, "b": vb})
         return {"a": pa, "b": pb, "diff": diff}
 
+    def _is_log_name(n: str) -> bool:
+        """Restrict the log viewer to the documented artifact naming scheme.
+
+        A bare `*.log` / `*_stage_runtime` substring match (the earlier version of this
+        filter) would also surface unrelated `*.log` files that happen to live in
+        `logs_dir` -- e.g. third-party or ad-hoc logs never produced by this pipeline.
+        Only `run_*.log` / `rc_*.log` (written by `LocalTarget`/`SshTarget`) and
+        `*_stage_runtime.csv` (written by the synpp stage-timing collector) are surfaced.
+        """
+        return ((n.startswith(("run_", "rc_")) and n.endswith(".log"))
+                or n.endswith("_stage_runtime.csv"))
+
     @app.get("/api/logs")
     def api_logs(target: str):
         t = _target(target)
-        wanted = (".log", "_stage_runtime.csv")
-        out = [e for e in t.listdir(t.cfg.logs_dir)
-               if e["name"].endswith(wanted) or "_stage_runtime" in e["name"]]
+        out = [e for e in t.listdir(t.cfg.logs_dir) if _is_log_name(e["name"])]
         return sorted(out, key=lambda e: e["mtime"], reverse=True)
 
     @app.get("/api/logs/{name}/view", response_class=PlainTextResponse)
@@ -418,7 +429,10 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         result = api_catalog(target)
         return templates.TemplateResponse("catalog.html", {
             "request": request, "target": target, "targets": sorted(targets),
-            "runs": result["runs"], "n_manifest": result["n_manifest"], "n_legacy": result["n_legacy"]})
+            "runs": result["runs"], "n_manifest": result["n_manifest"], "n_legacy": result["n_legacy"],
+            # Consumed by the "stale?" chip: an age-based hint (dir mtime, always available)
+            # on legacy cache directories that have not been touched in a long time.
+            "now_epoch": time.time(), "stale_age_days": settings.stale_age_days})
 
     @app.get("/catalog/{target}/{name}/details", response_class=HTMLResponse)
     def page_catalog_details(request: Request, target: str, name: str):
@@ -436,6 +450,15 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         return templates.TemplateResponse("catalog_diff.html",
                                           {"request": request, "target": target,
                                            "a_name": a, "b_name": b, "result": result})
+
+    @app.get("/logs", response_class=HTMLResponse)
+    def page_logs(request: Request, target: str):
+        # Legacy log viewer (issue #119): lists run_*.log / rc_*.log / *_stage_runtime.csv
+        # in the target's logs_dir and lets the user read one on demand -- no auto-polling,
+        # the same explicit-action discipline as the rest of catalog v2.
+        entries = api_logs(target)
+        return templates.TemplateResponse("logs.html", {
+            "request": request, "target": target, "targets": sorted(targets), "entries": entries})
 
     @app.get("/studio", response_class=HTMLResponse)
     def page_studio(request: Request, target: str, template: str | None = None):

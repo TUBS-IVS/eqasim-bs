@@ -140,6 +140,64 @@ The page performs the scan (a `manifest_glob()` + a `listdir()` over the target'
 no HTMX auto-polling on this page, unlike the home page's hero, because the scan does
 real target I/O that should not run in the background unattended.
 
+## Catalog v2 (legacy-run enrichment, issue #119)
+
+Catalog v2 adds an opt-in enrichment layer on top of the V1 scan above,
+scoped to legacy `output_*`/`cache_*` directories that predate runcontrol
+(`origin == "legacy_dir"`, `kind` `"output"`/`"cache"`) -- runs with a
+`RunManifest` already carry their real config and need no reconstruction.
+
+- **Effective config is a reconstruction, always labelled partial.**
+  `collectors/enrich.py::enrich_artifact()` builds the "effective config" as
+  the UNION of the per-stage `config` dicts recorded in the synpp
+  `pipeline.json` at the artifact's cache root; only stages still cached
+  contribute. It is never presented as the run's real config file -- the
+  details drawer (`_catalog_details.html`) always renders it under the label
+  "(from N cached stages -- partial)", and `merge_stage_configs()` records
+  which keys disagree across stages as `config_conflict:<key>` flags rather
+  than silently picking one value.
+- **Timeline is derived, not measured.** `timeline_from_pipeline()` turns
+  consecutive `updated` epochs in `pipeline.json` into a per-stage
+  `approx_duration_s` (the delta to the previous stage's completion); the
+  first stage's duration is always `None` (no predecessor to delta against).
+  This is presented as "derived from cache completion timestamps", never as
+  a measured runtime.
+- **Config-diff flow.** Checking exactly two legacy rows' checkboxes on
+  `/catalog` enables "Compare configs", which navigates to
+  `/catalog/diff?target=&a=&b=`; `GET /api/catalog/{target}/diff?a=&b=`
+  reconstructs both artifacts' effective configs and returns only the keys
+  whose values differ (`registry.by_key()` supplies the group, else
+  `"other"`). Equal keys are omitted so the diff table stays focused on what
+  actually differs between the two runs being compared.
+- **Legacy log viewer (`/logs`).** `GET /api/logs?target=` lists log-like
+  files in the target's `logs_dir` and `GET /api/logs/{name}/view` streams
+  one back as plain text (tail-bounded, `_safe_relname`-guarded). The listing
+  is restricted to the documented naming scheme -- `run_*.log` / `rc_*.log`
+  (written by `LocalTarget`/`SshTarget`) or `*_stage_runtime.csv` (written by
+  the synpp stage-timing collector) -- rather than any `*.log` file or any
+  name merely containing `_stage_runtime`, so unrelated logs that happen to
+  live in the same directory are not surfaced as if they were pipeline runs.
+  The `/logs` page is read-only and view-only: there is no delete action.
+- **Stale-cache chip (display only, no delete).** The catalog table flags a
+  legacy `cache_*` row `stale?` when its directory mtime is older than
+  `stale_age_days` (default 30, configurable in `runcontrol.toml`). This is
+  purely an age-based hint always available from the directory listing; it
+  is a suggestion to review for manual cleanup, not an automated or
+  size-aware judgement. A size-based threshold (`stale_size_gb`, default 5)
+  is applied only in the details drawer once a size has actually been
+  fetched via the on-demand "size" button (`POST
+  /api/catalog/{target}/{name}/size`) -- size is never inferred or
+  estimated, and the GUI never deletes anything itself.
+- **On-demand, SQLite-cached, mtime-invalidated.** Every enrichment/size/
+  diff/log call happens only on an explicit user action (row expand,
+  "Enrich all", "Compare configs", opening a log) -- there is no
+  auto-polling in catalog v2, consistent with the V1 catalog scan. Computed
+  payloads are cached in the `enrichment` SQLite table keyed by
+  `"<target>:<name>"`; `Database.get_enrichment()` returns the cached payload
+  only when the stored `dir_mtime` still matches the artifact directory's
+  current mtime, so a payload is recomputed exactly when the underlying
+  directory has actually changed.
+
 ## V1 queue limitation
 
 The `QueueWorker` advances the queue only while the `serve` process is

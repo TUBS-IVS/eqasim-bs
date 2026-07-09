@@ -52,3 +52,12 @@ def test_diff_page_renders_two_columns(tmp_path):
     html = c.get("/catalog/diff", params={"target": "local", "a": "cache_bs_25pct", "b": "cache_bs_10pct"}).text
     assert "cache_bs_25pct" in html and "cache_bs_10pct" in html
     assert "sampling_rate" in html
+
+
+def test_logs_page_lists_and_links(tmp_path):
+    c = _client(tmp_path)
+    import pathlib
+    (pathlib.Path(str(tmp_path)) / "logs" / "run_20260101_000000.log").write_text("x")
+    html = c.get("/logs?target=local").text
+    assert "run_20260101_000000.log" in html
+    assert "Logs" in html

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<div class="hero"><b>Logs - {{ target }}</b>
+  <span class="vital">{% for tname in targets %}<a href="/logs?target={{ tname }}"
+     class="badge {{ 'running' if tname == target else 'queued' }}">{{ tname }}</a>{% endfor %}</span>
+</div>
+<div class="zone">
+  <div class="queue" style="flex:0 0 40%">
+    <div class="zlabel">Log files</div>
+    <table><tr><th>Name</th><th>Size</th></tr>
+    {% for e in entries %}
+      <tr><td class="name"><a href="#" onclick="viewLog('{{ e.name }}'); return false;"
+              class="mono">{{ e.name }}</a></td>
+          <td class="mono">{{ (e.size / 1024)|round(0) }} kB</td></tr>
+    {% else %}<tr><td class="vital">No logs on this target.</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div style="flex:1"><div class="zlabel">Content</div>
+    <div class="logpane" id="logview">Select a log file.</div></div>
+</div>
+<script>
+async function viewLog(name) {
+  const p = document.getElementById('logview');
+  p.textContent = 'loading...';
+  try {
+    const r = await fetch(`/api/logs/${encodeURIComponent(name)}/view?target={{ target }}&tail_bytes=200000`);
+    p.textContent = r.ok ? await r.text() : `error: ${r.status}`;
+  } catch (e) { p.textContent = 'error: ' + e; }
+}
+</script>
+{% endblock %}
