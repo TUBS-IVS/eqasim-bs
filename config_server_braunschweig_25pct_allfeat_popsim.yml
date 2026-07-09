@@ -81,7 +81,7 @@ config:
   # (a superset of the normal settings: WELT/STAAT/KREIS/ZENSUS1km/ZENSUS100m) and the
   # imported cleancensus kreis_controls data (kreis_controls_dir below).
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
-  braunschweig.population.popsim.stratify_regiostar: true
+  braunschweig.population.popsim.stratify_regiostar: false
   # Per-cell employment grid (EMPLOYED_{M,F} x 5 age bands; Zensus age shapes rescaled
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".

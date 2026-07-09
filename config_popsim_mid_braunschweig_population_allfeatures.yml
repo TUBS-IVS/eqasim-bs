@@ -50,7 +50,7 @@ config:
   braunschweig.population.popsim.controls_source: catalog
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2
   # RegioStaR donor stratification: rural/urban-matched donors -> better building_type/tenure fit.
-  braunschweig.population.popsim.stratify_regiostar: true
+  braunschweig.population.popsim.stratify_regiostar: false
   # ============================================================================
 
   java_memory: 32G
