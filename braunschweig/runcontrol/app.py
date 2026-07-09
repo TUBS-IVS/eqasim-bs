@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import targetstore
-from .collectors import catalog, config_inspect, matsim_progress, synpp_progress, vitals
+from .collectors import catalog, config_inspect, enrich, matsim_progress, synpp_progress, vitals
 from .configwriter import compose
 from .daemon import QueueWorker
 from .db import Database
@@ -223,6 +224,71 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
     def api_catalog(target: str):
         res = catalog.scan(_target(target), db.list_runs())
         return {"runs": res.runs, "n_manifest": res.n_manifest, "n_legacy": res.n_legacy}
+
+    # ---- catalog v2: legacy-artifact enrichment (issue #119) ---------------
+    def _artifact_dir_mtime(t: ExecutionTarget, name: str) -> float:
+        """mtime of the artifact's own directory entry, used as the enrichment cache key.
+
+        Reusing the directory's own mtime (rather than a wall-clock timestamp) means the
+        cached payload is invalidated exactly when the artifact directory itself changes.
+        """
+        for entry in t.listdir(t.cfg.data_dir):
+            if entry["name"] == name:
+                return float(entry["mtime"])
+        return 0.0
+
+    def _enrich_cached(t: ExecutionTarget, name: str, kind: str) -> dict:
+        """Return the enrichment payload, serving from the SQLite cache when the artifact
+        directory's mtime has not changed since it was last computed, else recompute and
+        persist. Always a dict (never raises) -- enrich_artifact() itself is honest about
+        partial/missing sources via the `sources` field."""
+        key = f"{t.name}:{name}"
+        mtime = _artifact_dir_mtime(t, name)
+        cached = db.get_enrichment(key, mtime)
+        if cached is not None:
+            return cached
+        payload = asdict(enrich.enrich_artifact(t, name, kind))
+        db.put_enrichment(key, mtime, payload)
+        return payload
+
+    def _artifact_kind(name: str) -> str:
+        return "output" if name.startswith("output_") else "cache"
+
+    @app.post("/api/catalog/{target}/{name}/enrich", dependencies=[Depends(require_write)])
+    def api_enrich(target: str, name: str):
+        t = _target(target)
+        _safe_relname(name)
+        return _enrich_cached(t, name, _artifact_kind(name))
+
+    @app.post("/api/catalog/{target}/{name}/size", dependencies=[Depends(require_write)])
+    def api_size(target: str, name: str):
+        t = _target(target)
+        _safe_relname(name)
+        rel = f"{t.cfg.data_dir}/{name}"
+        size, source = None, "ok"
+        try:
+            if t.kind == "ssh":
+                out = t.read_text_command(f"du -sb {rel} | cut -f1")
+                size = int(out.strip().split()[0])
+            else:
+                import os
+                total = 0
+                base = t.repo / rel
+                for root, _dirs, files in os.walk(base):
+                    for f in files:
+                        try:
+                            total += os.path.getsize(os.path.join(root, f))
+                        except OSError:
+                            pass
+                size = total
+        except (OSError, ValueError, RuntimeError) as exc:
+            source = f"error:{exc}"
+        key = f"{t.name}:{name}"
+        mtime = _artifact_dir_mtime(t, name)
+        payload = db.get_enrichment(key, mtime) or asdict(enrich.enrich_artifact(t, name, _artifact_kind(name)))
+        payload["size_bytes"] = size
+        db.put_enrichment(key, mtime, payload)
+        return {"size_bytes": size, "source": source}
 
     # ---- dynamic execution targets (Task 14) -------------------------------
     def _target_row(name: str, t: ExecutionTarget) -> dict:

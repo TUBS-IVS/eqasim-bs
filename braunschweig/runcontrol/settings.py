@@ -37,6 +37,11 @@ class Settings:
     # Dynamic ssh targets added at runtime through the web UI (Task 14) are persisted here,
     # separately from the config-file targets above, which stay immutable seeds.
     targets_store_path: Path = field(default_factory=lambda: Path("runcontrol_data/targets.json"))
+    # Catalog v2 (issue #119): thresholds for the "stale?" chip on legacy cache/output dirs.
+    # Age is always available (dir mtime); size needs an on-demand /size call, so it is only
+    # applied where a size has already been fetched (details drawer), never inferred.
+    stale_age_days: int = 30
+    stale_size_gb: float = 5.0
 
 
 def load_settings(path: Path) -> Settings:
@@ -74,4 +79,6 @@ def load_settings(path: Path) -> Settings:
         poll_seconds=float(raw.get("poll_seconds", 3.0)),
         targets=targets,
         targets_store_path=Path(raw.get("targets_store_path", "runcontrol_data/targets.json")),
+        stale_age_days=int(raw.get("stale_age_days", 30)),
+        stale_size_gb=float(raw.get("stale_size_gb", 5.0)),
     )
