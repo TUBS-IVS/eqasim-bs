@@ -51,6 +51,7 @@ from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
+from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import sources
@@ -1511,5 +1512,12 @@ def execute(context) -> pd.DataFrame:
         "pseudonymise=%s).",
         pseudonym_map_path, len(pseudonym_map), pseudonymise,
     )
+
+    # Joint (cross-attribute) plausibility invariants (issue #133): run LAST so
+    # every attribute overwrite above (income control, tilt, tenure parity) is
+    # covered. WARN-only (measure-before-harden, like the minor-employment
+    # guard); the report is attached to persons.attrs so it survives the synpp
+    # cache and can feed a validation summary without re-running the stage.
+    persons.attrs["joint_plausibility"] = _plausibility.check_joint_plausibility(persons)
 
     return persons
