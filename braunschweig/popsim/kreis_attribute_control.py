@@ -140,15 +140,21 @@ REGISTRY: tuple = (
         tier="soft",
     ),
     # The first PERSON-level entry (2026-07-08, issue #116 follow-on): trip_class
-    # steers the per-Kreis distribution of trips-on-the-reporting-day (0 / 1-2 / 3-4 /
-    # 5+), int-coded 0..3 by attributes.map_trip_class from MiD anzwege1 (missing codes
-    # 803/804 imputed within alter_gr1; see docs/data/MID2023_HANDBOOK_REFERENCE.md).
-    # The committed target is built purely from the SrV 2023 Braunschweig+RGB aggregate
+    # steers the per-Kreis distribution of weekday trips (0 / 1-2 / 3-4 / 5+), int-coded
+    # 0..3 by attributes.map_trip_class from MiD anzwege1 (missing codes 803/804 imputed
+    # within alter_gr1; see docs/data/MID2023_HANDBOOK_REFERENCE.md). The committed target
+    # is built purely from the SrV 2023 Braunschweig+RGB aggregate
     # (scripts/build_trip_class_target.py; NO MiD blending) -- see that script's header
-    # and docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md for the three
-    # documented decisions:
-    #   (1) ASSUMPTION (universe): SrV Di-Do mittlerer Werktag vs. MiD kernwo Mo-Fr
-    #       seed universe -- measured difference <= 0.63pp per class, immaterial.
+    # and docs/superpowers/plans/2026-07-08-trip-class-kreis-control.md for the documented
+    # decisions:
+    #   (1) UNIVERSE (weekday): the seed class is derived from each person's REALISED
+    #       weekday plan source (mid.derive_trip_class_seed), not their own reporting-day
+    #       diary. After weekend_plan_match every plan source is a weekday (kernwo 1-3)
+    #       donor, so the seed class matches the SrV Di-Do mittlerer-Werktag target AND
+    #       the trips the synthetic person actually executes. (The earlier "SrV Di-Do vs.
+    #       MiD kernwo Mo-Fr seed <= 0.63pp" note was WRONG for the default pipeline, which
+    #       keeps ALL reporting days in the donor -- ~29% weekend reporters, measured ~2pp
+    #       more immobile; audit 2026-07-09 fixed the derivation.)
     #   (2) DECISION (level anchoring): the synthetic distribution is DELIBERATELY
     #       anchored to the SrV level (regional survey = regional behaviour authority),
     #       not corrected to the MiD mobility-rate level (uniform ~+5..+8pp offset).

@@ -351,6 +351,64 @@ def build_control_totals(
 # Seed
 # --------------------------------------------------------------------------- #
 
+def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID"):
+    """Derive the ``trip_class`` control seed from each person's REALISED weekday plan.
+
+    A synthetic person executes the MiD plan identified by ``(source_H_ID, source_P_ID)``.
+    After ``weekend_plan_match`` every plan source resolves to a weekday (kernwo 1-3)
+    donor (its A2 sweep guarantees no person sources a weekend diary), so that source's
+    diary trip count (``anzwege1``) is BOTH the weekday universe the SrV Di-Do target
+    measures AND the trips the synthetic person actually realises. The control must
+    therefore be seeded from the SOURCE's ``anzwege1``, not the person's own
+    reporting-day ``anzwege1``.
+
+    Rationale (audit 2026-07-09): the default pipeline keeps ALL reporting days in the
+    donor (``weekend_plan_match`` forces ``ALL_REPORTING_KERNWO``), so ~29% of donor
+    persons are weekend reporters whose OWN ``anzwege1`` is a Saturday/Sunday count
+    (measured ~2pp more immobile than weekday). Seeding ``trip_class`` from their own
+    weekend count fit a weekday-anchored control to the wrong universe AND steered on a
+    variable the person never realises (their plan is a remapped weekday donor). Sourcing
+    the plan's ``anzwege1`` removes both mismatches.
+
+    When the plan-source columns are absent (no member completion / weekend match ran),
+    the seed is already weekday-filtered, so ``trip_class`` is derived from the person's
+    own ``anzwege1``; the path taken is logged (no silent fallback). The 803/804 diary
+    non-response codes on the resolved trip count are imputed within the PERSON's own
+    ``alter_gr1`` age band, exactly as before.
+    """
+    has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
+    if not has_source:
+        logger.info(
+            "[popsim.mid] trip_class seed: derived from each person's own anzwege1 "
+            "(no plan-source columns present -> seed is weekday-filtered).")
+        return attributes.map_trip_class(persons, rng=rng)
+
+    # Real (non-imputed) donor persons are the only valid plan sources; a filler's source
+    # points at its mirror donor, which is one of these real persons.
+    real = persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
+    source_anzwege1 = real.set_index([household_id, person_id])["anzwege1"]
+    src_idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+    mapped = pd.Series(source_anzwege1.reindex(src_idx).to_numpy(), index=persons.index)
+    n_unresolved = int(mapped.isna().sum())
+    if n_unresolved:
+        # Defense-in-depth (no silent fallback): a plan source MUST resolve to a real
+        # donor person; a NaN means upstream donor/source corruption (mirrors the
+        # weekend_plan_match A2-sweep guard). Fail loudly rather than seed a NaN class.
+        raise ValueError(
+            f"derive_trip_class_seed: {n_unresolved} person(s) have a plan source "
+            f"(source_H_ID, source_P_ID) absent from the donor frame; cannot derive "
+            "trip_class from the realised plan (upstream donor/source corruption).")
+    persons = persons.copy()
+    persons["_plan_source_anzwege1"] = mapped.to_numpy()
+    logger.info(
+        "[popsim.mid] trip_class seed: derived from the realised weekday plan source "
+        "(source anzwege1) for %d persons -- aligns the control with the SrV weekday "
+        "target universe and the trips the synthetic person actually executes.",
+        len(persons))
+    out = attributes.map_trip_class(persons, trips_col="_plan_source_anzwege1", rng=rng)
+    return out.drop(columns=["_plan_source_anzwege1"])
+
+
 def load_mid_seed(
     mid_dir: Union[str, Path],
     *,
@@ -566,9 +624,14 @@ def load_mid_seed(
     # raw diary trip count AFTER the complete-household filter + member completion, so the
     # 803/804 diary-nonresponse imputation pool reflects only the kept seed persons and any
     # mirror-imputed member inherits the mirror donor's diary (documented, see
-    # MID_PERSON_ATTR_COLS). The rng guard above ensures kreis_seed_rng is set.
+    # MID_PERSON_ATTR_COLS). The rng guard above ensures kreis_seed_rng is set. The class
+    # is seeded from the person's REALISED weekday plan source (not their own reporting-day
+    # diary) so the control matches the SrV weekday target universe -- see
+    # derive_trip_class_seed (audit 2026-07-09).
     if "trip_class" in active_kreis_entry_names:
-        persons = attributes.map_trip_class(persons, rng=kreis_seed_rng)
+        persons = derive_trip_class_seed(
+            persons, rng=kreis_seed_rng,
+            household_id=columns.person_household_id, person_id=columns.person_id)
 
     # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
     # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
@@ -708,11 +771,15 @@ def project_completed_seed(
             households, ebike_col=ebike_seed_column, rng=kreis_seed_rng
         )
     if "trip_class" in active_kreis_entry_names:
-        # Derive trip_class from the completed persons' raw diary trip count. anzwege1 is
-        # part of MID_PERSON_ATTR_COLS, so the completed-donor frame carries it; a
-        # mirror-imputed member inherits the mirror donor's anzwege1 (documented).
-        # map_trip_class fail-fasts (KeyError) if anzwege1 is absent (no silent fallback).
-        persons = attributes.map_trip_class(persons, rng=kreis_seed_rng)
+        # Derive trip_class from each person's REALISED weekday plan source, not their own
+        # reporting-day diary: after weekend_plan_match the completed-donor frame's
+        # source_(H_ID,P_ID) point to weekday donors, so the source's anzwege1 is both the
+        # SrV Di-Do target universe and the trips the synthetic person executes. See
+        # derive_trip_class_seed (audit 2026-07-09; ~29% weekend reporters otherwise
+        # carried a weekend diary count into the weekday-anchored control).
+        persons = derive_trip_class_seed(
+            persons, rng=kreis_seed_rng,
+            household_id=columns.person_household_id, person_id=columns.person_id)
 
     hh_type5_series = seedmod.derive_hh_type5(
         persons,
