@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS enrichment (
 );
 """
 
-_TERMINAL = (RunStatus.DONE, RunStatus.FAILED, RunStatus.STOPPED)
+_TERMINAL = (RunStatus.DONE, RunStatus.FAILED, RunStatus.STOPPED, RunStatus.ENDED)
 
 
 def _now() -> str:

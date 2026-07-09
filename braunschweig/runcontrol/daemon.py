@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 
 from .db import Database
 from .models import LaunchHandle, RunManifest, RunSpec, RunStatus
@@ -30,6 +31,8 @@ class QueueWorker:
     def __init__(self, db: Database, targets: dict[str, ExecutionTarget]):
         self.db = db
         self.targets = targets
+        self._clock = time.time                  # injectable daemon wall clock (epoch seconds)
+        self._window_override = None              # tests set an explicit window
 
     # -- public API ---------------------------------------------------------
     def submit(self, spec: RunSpec) -> None:
@@ -46,6 +49,14 @@ class QueueWorker:
         if row["status"] == RunStatus.QUEUED.value:
             self.db.remove_from_queue(run_id)
             self.db.set_status(run_id, RunStatus.STOPPED)
+            return
+        if row["external"]:
+            # Monitor-only: the process was never launched by us, so it is never stopped.
+            # "Stop" here means "stop monitoring" -- the run ends honestly as ENDED
+            # (exit code unknowable) while the external process keeps running untouched.
+            self.db.set_status(run_id, RunStatus.ENDED)
+            self.db.add_event(run_id, "status",
+                              "monitoring stopped; external process left running")
             return
         if not row["log_path"]:
             # No handle was ever persisted (unverifiable ghost); never call the target
@@ -123,6 +134,8 @@ class QueueWorker:
     def _settle(self, row: dict) -> bool:
         """Update one active run from target reality; True while still running."""
         target = self.targets[row["target"]]
+        if row["external"]:
+            return self._settle_external(row, target)
         if not row["log_path"]:
             # Crash window: status went active but the handle was never persisted.
             # Recover it from the on-host manifest; never query the target with a
@@ -148,6 +161,60 @@ class QueueWorker:
             self.db.set_status(row["run_id"], status, exit_code=code)
             self.db.add_event(row["run_id"], "status", f"finished with exit code {code}")
         return False
+
+    # -- clock/window seams (injectable for tests; production uses real time) -----
+    def _now_epoch(self) -> float:
+        return self._clock()
+
+    def _iso(self, epoch: float) -> str:
+        return datetime.fromtimestamp(epoch, timezone.utc).isoformat(timespec="seconds")
+
+    def _now_iso(self) -> str:
+        return self._iso(self._now_epoch())
+
+    def _window_seconds(self) -> int:
+        if self._window_override is not None:
+            return self._window_override
+        return getattr(self, "_settings_window", 300)
+
+    def _watch_mtime(self, target: ExecutionTarget, watch_path: str) -> float | None:
+        """Dir mtime of the watched artifact directory, read via one listdir call on
+        its parent (the target's data_dir). Returns None when the entry is gone."""
+        parent = watch_path.rsplit("/", 1)[0]
+        base = watch_path.rsplit("/", 1)[-1]
+        for entry in target.listdir(parent):
+            if entry["name"] == base:
+                return float(entry["mtime"])
+        return None
+
+    def _settle_external(self, row: dict, target: ExecutionTarget) -> bool:
+        """Liveness for an adopted external run: the watched dir mtime advancing
+        (server clock, compared to its own stored value) means still running; no
+        advance for _window_seconds() on the daemon clock means ENDED. The external
+        process is never queried via a handle and never killed."""
+        run_id = row["run_id"]
+        current = self._watch_mtime(target, row["watch_path"])
+        stored = row["watch_mtime"]
+        if current is not None and stored is not None and current > stored:
+            self.db.update_watch(run_id, current, self._now_iso())
+            return True
+        # no advance (or dir gone): has the change-window elapsed on our clock?
+        checked = row["watch_checked_at"]
+        try:
+            checked_epoch = datetime.fromisoformat(checked).timestamp() if checked else None
+        except ValueError:
+            checked_epoch = None
+        if checked_epoch is None:
+            # first observation with no baseline time -> record now, stay running
+            self.db.update_watch(run_id, current if current is not None else (stored or 0.0), self._now_iso())
+            return True
+        if self._now_epoch() - checked_epoch > self._window_seconds():
+            self.db.set_status(run_id, RunStatus.ENDED)
+            gone = " (artifact dir no longer present)" if current is None else ""
+            self.db.add_event(run_id, "status",
+                              f"adopted run no longer active; exit code unavailable{gone}")
+            return False
+        return True
 
     def _recover_handle(self, row: dict, target: ExecutionTarget) -> dict | None:
         """Rebuild a lost handle from the per-run manifest on the execution host.
