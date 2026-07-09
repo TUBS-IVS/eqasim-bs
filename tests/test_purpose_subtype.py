@@ -52,3 +52,49 @@ def test_code_coverage_guard_raises_on_unmapped_code():
     df.loc[len(df)] = (7, 777, "car", 200.0, 1.0)  # unmapped labelled code
     with pytest.raises(ValueError, match="777"):
         ps.code_coverage_guard(df, SPEC)
+
+
+def _fixture_wege_for_spec(spec: ps.SubtypeSpec) -> pd.DataFrame:
+    """Build a minimal W_ZWECK/W_ZWD frame covering every code in `spec` exactly once.
+
+    One row per group code and one row per sentinel, all under `spec.zweck_values`
+    (using the first value if several apply). This encodes the REAL measured code
+    inventory declared by the module-level LEISURE_SPEC / OTHER_ERRAND_SPEC constants,
+    so `code_coverage_guard` breaks loudly if a future MiD delivery introduces a code
+    that is neither grouped nor a documented sentinel.
+    """
+    zweck = sorted(spec.zweck_values)[0]
+    codes = sorted(spec.group_codes) + sorted(spec.sentinels)
+    return pd.DataFrame({"W_ZWECK": [zweck] * len(codes), spec.group_col: codes})
+
+
+def test_code_coverage_guard_passes_for_leisure_and_other_errand_specs():
+    # Exercises the guard against the REAL measured W_ZWD code inventory of #127's two
+    # module-level specs, not a synthetic toy spec -- this is the actual regression net
+    # against a future MiD delivery introducing an unmapped code.
+    ps.code_coverage_guard(_fixture_wege_for_spec(ps.LEISURE_SPEC), ps.LEISURE_SPEC)
+    ps.code_coverage_guard(_fixture_wege_for_spec(ps.OTHER_ERRAND_SPEC), ps.OTHER_ERRAND_SPEC)
+
+
+def test_impute_groups_fractional_draw_is_deterministic():
+    # Task-1 review flagged that the vectorised cumsum/searchsorted path in
+    # impute_groups was validated for fractional probabilities only out-of-band; this
+    # puts a genuinely fractional (non-degenerate) split under CI.
+    cell_probs = {("car", 0): {"a": 0.3, "b": 0.7}}
+    marginal = {"a": 0.3, "b": 0.7}
+    modes = np.array(["car"] * 200)
+    tt_values = np.array([100.0] * 200)
+
+    rng_first = np.random.RandomState(42)
+    out_first = ps.impute_groups(modes, tt_values, cell_probs, marginal, rng_first)
+
+    rng_second = np.random.RandomState(42)
+    out_second = ps.impute_groups(modes, tt_values, cell_probs, marginal, rng_second)
+
+    # Same seed, same inputs -> bit-identical output (determinism).
+    assert out_first.tolist() == out_second.tolist()
+
+    # Sanity, not exactness: the drawn shares should be roughly in line with the
+    # requested probabilities.
+    share_a = float((out_first == "a").mean())
+    assert abs(share_a - 0.3) < 0.1

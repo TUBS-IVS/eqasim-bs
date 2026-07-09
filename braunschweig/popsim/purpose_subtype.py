@@ -7,6 +7,31 @@ Estimation reuses the same W_GEW-weighted, (mode, travel-time-band)-conditioned 
 as shop_subtype; see that module and reference-mid-detail-purposes for the underlying
 MiD coding. `tt_band` / `TT_BANDS` are imported from shop_subtype rather than copied so
 both models share exactly one definition of the travel-time bands.
+
+Taxonomy provenance (LEISURE_SPEC / OTHER_ERRAND_SPEC, issue #127 Task 2):
+    The group boundaries in LEISURE_GROUPS / OTHER_ERRAND_GROUPS below were derived
+    from a MEASURED 2026-07-09 W_GEW-weighted mean-distance clustering over the raw
+    MiD Wege table (wegkm_imp, clipped at 200 km), NOT from the MiD 2023 codeplan's
+    semantic category descriptions. The MiD 2023 codeplan xlsx
+    (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx) was not available in this repository
+    or session, and docs/data/MID2023_HANDBOOK_REFERENCE.md does not enumerate
+    individual W_ZWD category labels (its "7xx"/"6xx" table entries are unrelated
+    designbedingt missing-value codes, not W_ZWD purpose-detail codes). Every
+    per-code comment below is therefore a distance-based grouping observation, not a
+    verified semantic label; comments marked "label to verify (codeplan)" have NOT
+    been checked against the codeplan and must not be read as an established purpose
+    description until they are.
+
+    Two boundary decisions were resolved by measured distance alone, pending codeplan
+    confirmation:
+    - W_ZWD 799 is placed in "leisure_activity" (~10-18 km band): boundary decision,
+      measured mean, semantics to verify. If the codeplan shows 799 to be a
+      no-assignment / residual code rather than a genuine activity code, it must move
+      to LEISURE_SENTINELS and the estimation goldens re-run.
+    - W_ZWD 601 is placed in "other_errand_short" (~5-9 km band): boundary decision,
+      measured mean, semantics to verify. Its measured mean sits close to the
+      errand_short/errand_long boundary; codeplan review may reassign it to
+      "other_errand_long".
 """
 from __future__ import annotations
 
@@ -280,3 +305,42 @@ def code_coverage_guard(mid_wege: pd.DataFrame, spec: SubtypeSpec) -> None:
             f"on legs with W_ZWECK in {sorted(spec.zweck_values)} but are mapped to neither a group "
             f"nor a sentinel; add them explicitly to avoid a silent NaN bucket."
         )
+
+
+# Measured 2026-07-09 on the raw MiD Wege (W_GEW-weighted mean km, wegkm_imp
+# clipped at 200; see the spec table). Semantic labels: verify each against the
+# MiD 2023 codeplan; if 799 turns out to be a no-assignment code, move it to
+# LEISURE_SENTINELS (then re-run the estimation goldens).
+LEISURE_ZWECK = frozenset({7})
+LEISURE_GROUPS = {
+    "leisure_local":     frozenset({706, 710, 711, 713, 716}),   # ~4-7 km, label to verify (codeplan)
+    "leisure_visit":     frozenset({701}),                        # 19.1 km, label to verify (codeplan)
+    "leisure_activity":  frozenset({702, 703, 704, 707, 720, 721, 799}),  # ~10-18 km, label to verify (codeplan)
+    "leisure_excursion": frozenset({708, 709, 722}),              # 45-100 km, label to verify (codeplan)
+}
+LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
+
+OTHER_ERRAND_ZWECK = frozenset({5})   # private Erledigung, label to verify (codeplan)
+OTHER_ESCORT_ZWECK = frozenset({6})   # Bringen/Holen (no W_ZWD detail), label to verify (codeplan)
+OTHER_ERRAND_GROUPS = {
+    "other_errand_short": frozenset({601, 602}),            # ~5-9 km (601 borderline: verify), label to verify (codeplan)
+    "other_errand_long":  frozenset({603, 604, 605, 699}),  # ~11-16 km, label to verify (codeplan)
+}
+OTHER_ERRAND_SENTINELS = frozenset({2202, 4402, 7704, 7705, 599, 999,
+                                    503, 504, 701, 706, 711, 713, 716, 721})
+
+# Module-level specs built from the constants above; later tasks import these exact
+# names rather than re-declaring the code sets.
+LEISURE_SPEC = SubtypeSpec(
+    purpose_label="leisure",
+    zweck_values=LEISURE_ZWECK,
+    groups=LEISURE_GROUPS,
+    sentinels=LEISURE_SENTINELS,
+)
+
+OTHER_ERRAND_SPEC = SubtypeSpec(
+    purpose_label="other_errand",
+    zweck_values=OTHER_ERRAND_ZWECK,
+    groups=OTHER_ERRAND_GROUPS,
+    sentinels=OTHER_ERRAND_SENTINELS,
+)
