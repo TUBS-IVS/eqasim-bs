@@ -1206,22 +1206,25 @@ def execute(context) -> pd.DataFrame:
                 kreis_table = kreis_table.merge(
                     _tbl, on="ARS_kreis", how="left", validate="one_to_one")
                 kreis_controls_map = {**kreis_controls_map, **_map}
-                # Fail-fast: every accumulator Kreis must carry a non-NaN target for this
-                # control after the LEFT merge (no silently under-constrained control). A
-                # NaN appears exactly for a Kreis present in kreis_table but ABSENT from
-                # _tbl (an ARS_kreis key/format mismatch between two controls). The earlier
-                # guard masked to `_tbl` membership, which by construction of a left join
-                # excludes precisely the rows that could be NaN -- so it could never fire.
-                # Check ALL accumulator rows against the new control's columns instead.
+                # Fail-fast: every Kreis the run actually uses (_kac_expected_ars5 = the
+                # cells' Kreise, which is exactly what build_kreis_control_totals looks up
+                # via the crosswalk) must carry a non-NaN target for this control after the
+                # LEFT merge (no silently under-constrained control). We check ONLY those
+                # Kreise on purpose: kreis_table may already carry a national reference row
+                # set (the tier3 kreis-control table loaded upstream spans all German Kreise),
+                # whose NaN for a run that covers only a subset is HARMLESS because those rows
+                # are never looked up downstream. The earlier guard masked to `_tbl` membership,
+                # which by construction of a left join could never fire; checking every
+                # accumulator row instead false-positives on those harmless national rows.
                 _new_cols = list(_kac.control_columns(_ctl))
-                if kreis_table[_new_cols].isna().any().any():
-                    _bad = kreis_table.loc[
-                        kreis_table[_new_cols].isna().any(axis=1), "ARS_kreis"
-                    ].tolist()
+                _relevant = kreis_table["ARS_kreis"].astype(str).isin(_kac_expected_ars5)
+                _relevant_na = _relevant & kreis_table[_new_cols].isna().any(axis=1)
+                if _relevant_na.any():
+                    _bad = kreis_table.loc[_relevant_na, "ARS_kreis"].tolist()
                     raise RuntimeError(
                         f"KREIS attribute control merge left NaN targets for {_ctl.name} at "
-                        f"ARS_kreis {_bad} (key/format mismatch between controls); refusing to "
-                        f"under-constrain.")
+                        f"ARS_kreis {_bad} (missing from this control's target; refusing to "
+                        f"under-constrain a Kreis the run synthesises).")
 
     # Purge stale batch folders if the popsim config/control set changed since the last
     # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
