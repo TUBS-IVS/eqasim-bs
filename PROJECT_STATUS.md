@@ -5,7 +5,36 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-01 · `origin/main` = `c8655b1` (PR #89 merged) · no open PRs.
+> **Last updated:** 2026-07-10 (on branch `docs/status-presentation`; older bullets below may lag `main`).
+> **2026-07-10 — kreis5 100% run RELAUNCHED with full-pool perf fix (ADR-0056, ~40x measured):** root
+> cause of the ~8-day projection = upstream default `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: true` (float
+> parent weights strictly >0 everywhere → every 1km cell balanced all 53,459 signature rows x 1000
+> iterations) + unused `USE_NUMBA` (2.4x, identical to 1e-13). A/B on a batch_000 copy: **32.6 min vs
+> ~22 h**; production relaunched 14:11 from `b6ba420` with `settings_tier3_mef100_intseed_numba.yaml`,
+> ~28 min/batch confirmed, popsim phase ETA same evening. **PENDING: quality A/B vs float reference
+> batch** (running niced on felix, ~2026-07-11) — until clean, the speedup is operational, not
+> scientifically validated. Disk side-find: per-batch `pipeline.h5` ~15 GB dead weight at full pool →
+> interim watcher on felix + **issue #153** (stage.py `cleanup_batch_pipeline` flag, PR after the run).
+> Two verified upstream populationsim v0.10.0 bugs (MIN_GAMMA clamp missing, `converged=True` on
+> no-progress) — bypassed by numba; upstream reports optional. Memory `project-popsim-fullpool-perf-fix`.
+> **2026-07-04 status:** `origin/main` = `141284e` (PRs #101 + #102 + #103 merged) · open PRs: **#106** (#105 docstring), **#107** (#104 deck refresh).
+> **2026-07-04 — income-placement design (issues #108 hub / #109 L1-L2 / #110 L3, ADR-0054):** make the popsim_mid income geography emerge from WHICH real MiD donor households are placed where (economic_status × Kreis control on MiD H4, retire the post-hoc `income_kreis_control` overwrite), not post-hoc scaling. Measured: income number tracks INKAR (ρ=1.0) but inert; status flat (CV 0.033); cars = tenure/size not income; trip-purpose/mobility "gaps" are metric artifacts. **Phase 0/1 built** (H4 extraction+CSV, loader, Phase-0 gate diagnostic; 11 tests; final review fixed 1 Critical + 3 Important) on backup branch **`worktree-income-placement-refdata-gate` @ `2d8e8aa`** (pushed to fork, NO PR/merge). Backlog 3.1 → #108. **Next:** run the Phase-0 gate on the server (needs MiD seed) → decide #109-build vs just-drop-overwrite.
+> **Issue #97 FIXED** (PR #103, merged): the population-validation `household_size` control compared a
+> HOUSEHOLD-based synthetic count against the PERSON-based Zensus 1000A-2081 target. Fix = a
+> `weight_column` option on `bucket_household_control` making the realized side person-weighted. A
+> felix validation re-run on the 100% output moves household_size from **7.7pp/"needs improvement" to
+> 1.44pp/"good"** (classes 1-4 <1.2pp; residual = 5/6+ donor tail); all other controls byte-identical.
+> Follow-ups: **#105** (correct the `households_type` "NOT consumed by IPF" docstring, PR #106) and
+> **#104** (refresh the status-deck QA figures + rebuild, PR #107). With #96 + #97 both fixed, the
+> **Phase-0 blockers of #99 (regional-correct popsim) are cleared**.
+> **Issue #96 FIXED** (PR #101, merged): the synthetic `employed` flag was inflated for minors
+> (14-17yo ~96%, region +7-9pp) by a field-width missing-code collision in `missing.resolve`
+> (substantive `P_TAET=9` Schueler treated as generic keine-Angabe and imputed). The popsim Tier-3
+> employment control was already correct (raw `P_TAET.isin`); only the written attribute +
+> population-validation were affected. **#25 closed** (stale erwerb test, fixed independently). A
+> **minor-employment plausibility guard** (PR #102, merged; default WARN) now watches the under-15
+> employed rate. **Next:** 100% re-run with the fix on main, then flip the guard to `raise=True`
+> (measure-before-harden; Phase-0 for #99).
 > **TAZ sub-zonal work location choice** (eqasim IRIS-analog): **Phase 1+2 MERGED to main** (PR #85 merge `f5f52d1` + PR #89 FutureWarning fix), flag `taz_work_location_choice` default OFF byte-identical, flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT but measured unnecessary** — branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, pushed as backup, PARKED as gated-off infra, not merged); the aggregate commute distribution already fits MiD P13 (measured EMD ~0.054 on the 100% `popsim_mid` pop; see ADR-0050). Remaining Phase-3 = **validate flag-ON TAZ at 100%** (full synthesis + scenario, 0 MATSim iterations) + a spatial validation map.
 > Open issues: **#79** (TAZ feature, Phase 1+2 merged), **#80** (open-data pseudo-zone alt), **#83** (Phase-3 validation, re-scoped), **#81** (config cleanup), **#78** (secondary scorer calib), **#76** (data re-sync), **#86/#91** (analysis-suite), **#22/#23/#26/#25** (production run / mode-choice / 25% gate / test). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed). See ADR-0049, ADR-0050.
 > Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
@@ -73,6 +102,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | BEV/electric calibration | `fleet_electric_calibration` | `synthesis/vehicles/fleet_sampling_de.py` | 🟢 | KBA FZ 27.15/27.17 |
 | HSN/TSN engine attrs (kW/ccm/fuel) | `fleet_hsn_tsn_attributes` | `synthesis/vehicles/hbefa.py` | 🟢 | KBA HSN/TSN scraper |
 | Fleet consistency v2 + income-age | (folded into household fleet) | `synthesis/vehicles/` | ✅ (PR #12/#13) | KBA/MiD |
+| Fleet realism upgrade (EV-income tilt, all-Kreise 46251, Euro-6 substage, RS7 cross-check, no-NA) | `fleet_ev_income_tilt` / `fleet_euro6_substage` (default-on) | `synthesis/vehicles/fleet_sampling_de.py`, `data/kba/fleet_tables.py` | 🟡 pushed `feature/fleet-quality-and-data`, final opus review done; **server-verify + merge pending** | KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB |
 | Carless routing re-mode | `remode_carless_car_legs` | `matsim/simulation/prepare.py` | 🟢 | routing consistency |
 
 ### 2.4 Location choice / gravity
@@ -133,6 +163,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 - **Deleted 2026-06-27** (feature-superseded prototypes, verified): `feature/secondary-external-candidates`, `feature/cordon-supply`, `feature/cordon-incommuters` (local + origin).
 - **Retirable after #20 merges:** `feature/calibration-corner` (stale pre-squash), `worktree-calibration-corner`.
 - **Active worktrees** (`.claude/worktrees/`): calibration-corner, cordon-whole-region-gates, employment-age, employment-grid, fleet-consistency, fleet-income-age, popsim-g5, simwrapper, tier3-part2 — most merged; clean these up as part of the loop.
+- **Open branch (unmerged): `feature/fleet-quality-and-data`** (fork, tip `5e0a6e4`, 41 commits stacked on `fix/fleet-age-joint-ipf` PR #92; worktree `eqasim-bs-fleet`). Fleet realism upgrade (Plans 1–3): EV-income tilt, all-Kreise 46251, Euro-6 substage, RS7 logging-only cross-check, degenerate-Kreis NaN guard, no-NA guarantee (euro="electric"). Final opus review done; local suite 290✓ / 2 stale-OFF-golden✗ / 35 skip. **Pending:** server phase (run extractors + full pytest + 1% smoke + **regenerate the 2 OFF goldens**) then `git pr` — **resolve the ADR-0050 number collision** (fleet ceiling vs TAZ friction). Also merge the stacked fleet PRs #90/#93 (close #86/#91/#92). Full state: memory `project-fleet-quality-realism`, ADR-0051.
 - **PR rule:** always `git pr` (alias → base `TUBS-IVS/eqasim-bs`, never the eqasim-org upstream).
 
 ---

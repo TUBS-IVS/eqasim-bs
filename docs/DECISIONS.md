@@ -869,6 +869,143 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   `eqasim-data/data/braunschweig/mid/mid2023_P13.csv`; memory `project-taz-subzonal-work-location`,
   `feedback-measure-before-calibrating`, `feedback-robust-reference-not-perkreis-noise`. Follows ADR-0049.
 
+### ADR-0052 — Explicit value_map codes win over the generic MiD nonresponse set (issue #96 fix)
+
+> ADR-0051 is reserved for the fleet-quality branch (`fix/fleet-age-joint-ipf`), not yet merged; this
+> ADR takes 0052 to avoid a second number collision (cf. the ADR-0050 fleet/TAZ collision noted above).
+
+- **Decision:** in `braunschweig/popsim/missing.resolve`, an attribute's explicitly enumerated
+  `value_map` codes are removed from the generic item-nonresponse set before classification:
+  `nonresponse_set = (NONRESPONSE_CODES - set(spec.value_map)) | set(spec.impute_codes)`. An explicit
+  substantive code always beats the generic convention; a per-spec `impute_codes` entry still forces
+  imputation.
+- **Why:** MiD missing codes are field-width dependent (Handbuch Kap. 5.1: "index digit 9 prefixed to
+  the field width" -> bare `9` = keine Angabe only for single-digit fields). The flat
+  `NONRESPONSE_CODES = {9, 99, ...}` ignored width, so for two-digit `P_TAET` (1..17) the substantive
+  code **9 = Schueler/in** (keine Angabe = 99) was classified as nonresponse and imputed. Because
+  `resolve` classifies nonresponse before the `value_map` lookup, every pupil was imputed from the
+  non-pupil valid pool of its `alter_gr1` band (14-17 dominated by Azubis P_TAET=8 -> True), inflating
+  the written `employed` flag for 14-17yo to ~96% and the region rate ~7-9pp over Zensus (issue #96).
+  The same latent collision affected `hheink_gr1=9` (4000-4600 EUR) and `H_ANZAUTO/H_ANZRAD=9`.
+- **Scope:** OUTPUT attribute mappers only. The popsim Tier-3 employment control (`control_spec.py`)
+  evaluates raw `P_TAET.isin([1,2,3,4,6,8])` and was already correct; the population-validation
+  employment control read the broken `employed` column and inherited the inflation. So this was neither
+  the controls nor the calibration — it was `attributes.map_employed`.
+- **Consequence / follow-up:** may change scientific outputs (minor employment -> ~0, region rate
+  -7-9pp closer to Zensus, income distribution slightly corrected; 20+ rate ~unchanged). A 100% re-run
+  is required to regenerate corrected outputs (Phase-0 blocker for #99). A new minor-employment
+  plausibility guard (`controls.check_minor_employment`, PR #102) watches the under-15 employed rate,
+  default WARN; flip to `raise=True` after the re-run measures the true post-fix rate
+  (`feedback-measure-before-calibrating`; the 0.5% bound is an ASSUMPTION).
+- **Evidence:** PR **#101** (merged `8f652c4`); canonical pytest on felix 320 passed; TDD tests in
+  `tests/test_popsim_missing.py` + `test_popsim_attributes_missing.py`; real pre-fix 100% output
+  measured at age<=14 employed = 19.84%. Distinct from **#25** (stale erwerb test, fixed independently
+  by `d6556b6`+`aaafc60`). Memory `project-employed-code9-fix`, `feedback-no-silent-fallbacks`.
+
+### ADR-0053 — Validate the household_size control on a PERSON basis, not a household count (issue #97 fix)
+
+- **Decision:** the population-validation `household_size` control is registered person-weighted.
+  `bucket_household_control` gains an optional `weight_column`; `household_size` passes
+  `weight_column="household_size"`, so the realized `synthetic_count` is the SUM of household sizes per
+  bin (persons living in a household of that size class) instead of a household count. Default
+  `weight_column=None` keeps `cars_per_hh` / `bicycles_per_hh` byte-identical. The
+  `households_type.load_household_size_by_commune` docstrings/log were corrected (weight = persons).
+- **Why:** Zensus 2022 table 1000A-2081 reports PERSONS in private households by size class, not
+  household counts — pinned by the committed test
+  `tests/test_hh_size_margin.py::TestHouseholdTypeLoader.test_zgb_persons_match_zensus_reference`
+  (ZGB total ~1.135M persons, not ~0.56M households), and `braunschweig/ipf/prepare.py` consumes it
+  "in persons". The control's target loader is therefore a person share, while the realized side
+  counted households — comparing household-shares against person-shares produced a spurious deviation
+  (region 1-person: household basis 43.5% vs person target 21.6%). The apples-to-apples fix is to make
+  the realized side persons too (the unconditional reason; the IPF-margin argument is secondary — the
+  validated 100% run is `popsim_mid`, and the simple-IPF size margin is default-off).
+- **Consequence:** the `household_size` control values in every population-validation report change
+  (person basis). On `output_bs_100pct_allfeat_popsim` a felix re-validation moved household_size from
+  **7.7pp/"needs improvement" to 1.44pp/"good"** (SRMSE 2.07→0.18); classes 1-4 fit <1.2pp, exposing
+  the true residual = 5/6+ donor-bound underrepresentation (a real modelling limitation, #99 territory).
+  All OTHER controls stayed byte-identical (diff), confirming the change is isolated. Status-deck QA
+  figures refreshed (#104). No synthesis output changed — the IPF/synthesis was always correct.
+- **Evidence:** PR **#103** (merged `141284e`), TDD tests in `tests/test_population_controls.py`; the
+  felix re-validation diff (only household_size rows changed); follow-ups #105 (PR #106, docstring) +
+  #104 (PR #107, deck). Memory `project-status-presentation`, `feedback-felix-isolated-worktree-rerun`,
+  `feedback-no-invented-reference-values`.
+
+---
+
+### ADR-0054 — Placement-based income geography: economic_status × Kreis control (MiD H4), retiring the post-hoc income overwrite (design; Phase 0/1 built, gated)
+
+- **Status:** accepted (design + Phase-0/1 reference data & gate diagnostic built on branch
+  `worktree-income-placement-refdata-gate`, pushed to the fork as backup, **not merged**); the model
+  change (L1/L2) is **gated** on a server Phase-0 measurement — not yet on `main`.
+- **Decision:** the spatial income geography of `popsim_mid` must emerge from WHICH real MiD donor
+  households PopulationSim places where — an `economic_status` × Kreis control (target = **MiD H4
+  status-by-Kreis**) with a within-(Kreis,status) reconciliation of the income LEVEL to INKAR via the
+  real class-internal donor income spread — and the post-hoc `income_kreis_control` EUR overwrite is
+  bypassed (flag `placement_income`, default-ON, OFF byte-identical). Scope **deliberately excludes**
+  SAE/Fay-Herriot/Bayes-fusion/net-wealth/FDZ: a direct per-Kreis target exists (H4) and the population
+  is donor-based, so Raking/IPF suffices. A sub-Kreis wealth surface (LSN income-tax + BORIS
+  Bodenrichtwerte + Zensus Wohnfläche + SGB-II, dasymetric, mean-preserving), validated against KBA
+  EV/Gemeinde, revisits the rejected ADR-0045 with a Gemeinde anchor + a validation path.
+- **Why:** measured on `output_bs_100pct_allfeat_popsim` — the income NUMBER already tracks INKAR
+  (Spearman 1.00 per-capita) but is INERT: `economic_status` composition is nearly flat across Kreise
+  (CV 0.033), and car ownership follows tenure/household-size (ρ 0.98 / 0.91), not income (ρ 0.14) — so
+  the post-hoc overwrite carries no coherent household bundle. The MiD regional study gives a direct
+  per-Kreis status target the synthetic does not reproduce (Salzgitter synthetic `hoch 33 / very_low 12`
+  vs H4 `hoch 42 / very_low 5`). User requirement (2026-07-04): placement-based, not post-hoc ("a scaled
+  number afterwards is useless"). Also established this session: the trip-purpose / mobility "gaps"
+  (work +21pp, leisure −20pp, mobility −8pp) are **metric artifacts** (eqasim `work`=arbeit+dienstlich
+  vs W1 arbeit; `freizeit` folds W_ZWECK-10 into `other`; unweighted synthetic vs P_GEW-weighted P36_1),
+  not synthesis errors — the twin reproduces the MiD purpose mix to ~3pp on a consistent taxonomy.
+- **Consequences:** Phase 0/1 built + tested (H4 extraction+CSV, `status_by_kreis` loader, Phase-0
+  `placement_income_gate` diagnostic; 11 tests) and pushed as backup. Issues **#108** (hub) / **#109**
+  (Phase 2 L1/L2) / **#110** (Phase 3 L3); PROJECT_BACKLOG 3.1 now points to #108. The model change is
+  NOT yet built — gated on the server Phase-0 gate (with the overwrite off, does the existing placement
+  already reproduce per-Kreis income + status, and is the donor pool sufficient?).
+- **Evidence:** branch `worktree-income-placement-refdata-gate` @ `2d8e8aa` (origin fork, no PR); spec
+  `docs/superpowers/specs/2026-07-04-income-weighted-household-placement-design.md`; plan
+  `docs/superpowers/plans/2026-07-04-income-placement-reference-data-and-gate.md`; diagnostics
+  `scratchpad/{phase0_income_geo,mobility_by_age,purpose_decomp}.py`; MiD H4 (infas 7555 PDF, page 20);
+  issues #108/#109/#110; memory `project-income-placement-control`, `feedback-validate-metric-apples-to-apples`.
+
+### ADR-0056 — Full-pool PopulationSim runs use integer sub-balance seeds + numba (measured 40x; float-seed default is a full-pool trap)
+
+> Numbering: 0055 is taken on `origin/main` (SrV ZENSUS-weight fix); this ADR takes 0056.
+
+- **Date:** 2026-07-10 · **Status:** accepted (quality A/B vs float reference PENDING)
+- **Problem:** the kreis5 100% popsim campaign (full national donor pool, `stratify_regiostar=false` —
+  deliberate quality decision, per-stratum donors fit worse) projected ~8 days for 30 batches. Measured
+  root cause (batch_000 live logs + pipeline.h5 inspection + shape-exact micro-benchmark on felix): with
+  upstream default `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: true`, parent-level float weights are strictly
+  positive for EVERY household in EVERY zone (observed down to 1e-248), so the sub-balancer's
+  `weight > 0` filter never drops rows — every 1km cell (~148 households) balanced all 53,459 signature
+  rows x 1000 iterations (~741 s/parent; python balancer benchmarked at 741 ms/iter at exactly this
+  shape). The balancer can never converge-exit at fine geographies (requires `max_gamma_dif < 1e-5`,
+  observed 7–190), so the 1000-iteration ceiling is always paid in full.
+- **Decision:** for full-pool runs, the popsim settings file
+  (`settings_tier3_mef100_intseed_numba.yaml` on felix, referenced by `config_run_kreis5_100pct.yml`) sets
+  (1) `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` — sub-balances seed from the parent's INTEGER weights
+  (mean 143 positive rows per 1km parent instead of 53,459; upstream's own code comment supports this:
+  "using balanced_weight slows down simul and doesn't improve results"), and
+  (2) `USE_NUMBA: true` — measured 2.4x/iteration, numerically identical to 1e-13, `cache=True`.
+  Iteration capping (`MAX_BALANCE_ITERATIONS_SIMULTANEOUS`) was considered and REJECTED: the importance
+  schedule decays every 100 iterations, so truncation changes results; unnecessary after lever 1.
+- **Measured evidence (A/B, batch_000 copy, felix, 2026-07-10):** full batch in **1,958 s (32.6 min)** vs
+  the float production run's >14 h unfinished (~22 h projected) = ~40x. 1km household totals fit EXACTLY
+  in both regimes (93 zones, 13,767 HH, zero deviation). The stopped float run was relaunched 14:11 with
+  the new settings; ~28 min/batch confirmed in production.
+- **Honest limitation:** integer seeds change the donor-selection cascade, i.e. results differ from the
+  float regime. The fine-grained quality comparison (100m composition, donor diversity, person marginals)
+  runs against a dedicated float reference batch (`bench_batch_float` on felix, done ~2026-07-11); until
+  that comparison is clean, the speedup is operational, not scientifically validated.
+- **Related:** per-batch `pipeline.h5` is ~15 GB at full pool (12.1 GB = dense `ZENSUS100m_weights`,
+  ~215 M rows, 99.9% zeros) and verified dead after batch completion — interim server watcher deletes it;
+  permanent stage.py flag tracked as **issue #153**. Two verified upstream bugs (populationsim v0.10.0):
+  missing `MIN_GAMMA` clamp in the python single balancer (NaN risk; `balancers.py:84-89`) and hardcoded
+  `converged=True` on no-progress exits (`balancers.py:111-112`) — both bypassed by `USE_NUMBA: true`.
+- **Evidence:** felix `~/wt-kreis-run/logs/run_kreis5.log` (stop/relaunch markers), A/B outputs
+  `~/bench_batch_int/output/timing_log.csv`, benchmark `~/bench_balancer.py`, watcher
+  `~/cleanup_batch_h5.log`; issue #153; memory `project-popsim-fullpool-perf-fix`.
+
 ---
 
 ### ADR-0055 — SrV 2023 aggregates use ZENSUS expansion weights; standard weights are stratum-internal

@@ -137,3 +137,4 @@ eqasim-data/data/braunschweig/schools/geocode_cache*.json
 
 # Claude Code plugin lock file (machine-local, not project code)
 skills-lock.json
+.superpowers/

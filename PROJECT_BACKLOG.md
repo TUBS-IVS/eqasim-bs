@@ -40,6 +40,109 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-10) — Full-pool popsim perf regime (ADR-0056) + follow-ups #153 / quality A/B / upstream reports
+
+The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true`
+(measured ~40x per batch, A/B 32.6 min vs ~22 h; see ADR-0056 for the float-seed trap mechanics).
+Open follow-ups, in order:
+
+1. **Quality A/B vs float reference (BLOCKS calling the speedup validated).** Float reference batch
+   running niced on felix (`~/bench_batch_float`, done ~2026-07-11). Compare vs the INT batch_000:
+   100m composition, donor diversity (INT: 3,140 distinct donors / 13,845 HH), person marginals,
+   control fit. 1km HH totals already exact in both.
+2. **Issue #153 — stage.py `cleanup_batch_pipeline` flag (default ON):** delete per-batch
+   `pipeline.h5` (~15 GB dead weight at full pool) after verified completion. Interim server watcher
+   (`~/cleanup_batch_h5.sh`) covers the current run only and must be restarted for future full-pool
+   runs until this lands. PR after the current run finishes.
+3. **Optional upstream reports (activitysim/populationsim v0.10.0):** (a) missing `MIN_GAMMA` clamp
+   in the python single balancer (NaN risk), (b) hardcoded `converged=True` on no-progress exit,
+   (c) dense final-geography weight table checkpointed but never read. Draft on request.
+
+### Resolved (2026-07-03) — Issue #97 household_size validation basis FIXED (PR #103 merged) + follow-ups #104/#105
+
+  **#97 FIXED, merged to main (`141284e`).** The population-validation `household_size` control
+  compared a HOUSEHOLD-based synthetic count (`bucket_household_control` counting households) against
+  the PERSON-based Zensus 1000A-2081 target (which reports persons in private households by size class,
+  pinned by `test_hh_size_margin.py`: ~1.135M ZGB persons). Basis mismatch → a large spurious deviation
+  (7.7pp/"needs improvement"). Fix = a `weight_column` option on `bucket_household_control`; the
+  `household_size` control is registered with `weight_column="household_size"` so the realized side is
+  person-weighted (default None keeps cars/bikes byte-identical). TDD (3 new tests); reproduced on the
+  100% run (person basis: classes 1-4 <1.2pp, e.g. 1-person 22.1% vs 21.6%). See ADR (household_size basis).
+  - **Verified via a felix validation re-run** (isolated detached worktree, non-disruptive): on
+    `output_bs_100pct_allfeat_popsim` household_size moves **7.7pp → 1.44pp, "needs improvement" → "good"**
+    (SRMSE 2.07→0.18); all OTHER controls byte-identical (diff). See ADR + `feedback-felix-isolated-worktree-rerun`.
+  - **#105 (PR #106, open):** correct the `households_type.py` module docstring — the table IS consumed
+    by the IPF size margin (aggregated over hh_type) when `use_household_size_margin` is on; it wrongly
+    said "NOT consumed by the IPF itself". Doc-only.
+  - **#104 (PR #107, open):** refresh the status-deck QA figures now that household_size is person-basis
+    (fig_qa1 scoreboard now shows it "gut"/1.4pp; FN2 reworded from "#97 artifact" to "resolved";
+    fig_qa2/qa3 comments + README + deck HTML rebuilt). Regenerated from the corrected `quality_summary.csv`.
+  - With #96 + #97 both fixed, the **Phase-0 blockers of #99 (regional-correct popsim) are cleared.**
+
+### Resolved (2026-07-03) — Issue #96 minor-employment inflation FIXED (PR #101 merged) + guard (PR #102 open) + #25 closed
+
+  **#96 FIXED, merged to main (`8f652c4`).** Root cause = a field-width missing-code collision in
+  `braunschweig/popsim/missing.resolve`: the generic `NONRESPONSE_CODES = {9,99,...}` ignored MiD
+  field width, so substantive `P_TAET=9` (Schueler; keine Angabe = 99 for the two-digit field) was
+  classified as nonresponse and imputed from the non-pupil pool of its `alter_gr1` band (14-17
+  dominated by Azubis -> True), inflating the written `employed` flag (14-17yo ~96%, region +7-9pp).
+  Fix: `nonresponse_set = (NONRESPONSE_CODES - set(spec.value_map)) | set(spec.impute_codes)` — explicit
+  value_map codes win over the generic convention (also fixes latent `hheink_gr1=9` / `H_ANZAUTO=9`).
+  The Tier-3 employment control was already correct (raw `P_TAET.isin`); only the written attribute +
+  population-validation were affected. TDD; felix pytest 320 passed. See ADR-0052.
+  **#25 closed** (stale `test_employed_valid_codes_map_to_existing_semantics`, fixed independently by
+  `d6556b6`+`aaafc60`; distinct bug from #96).
+  - **MERGED — guard (PR #102, on main):** `controls.check_minor_employment` watches the under-15
+    employed rate, default-ON WARN (`analysis_minor_employment_max_rate=0.005`,
+    `analysis_minor_employment_raise=False`), writes `minor_employment_guard.csv`. **NEXT:** (1) **100%
+    re-run with the fix on main** (Phase-0 blocker for #99 regional-correct popsim redesign); (2) then
+    flip `analysis_minor_employment_raise=True` once the re-run confirms the true post-fix under-15 rate
+    (measure-before-harden — the 0.5% bound is an ASSUMPTION).
+
+### New (2026-07-03) — E-bike/pedelec ownership as person attribute (spec + issue, NOT built)
+
+- **E-bike/pedelec ownership** — GitHub issue **#100** (fork). Designed, not implemented.
+  Add `ebike_ownership ∈ {ja,nein,keine_angabe}` + derived `has_ebike` per person (≥14) via a
+  **configurable multi-margin IPF (raking)** on **MiD 2023 P21** ("Besitz Elektrofahrrad/Pedelec"),
+  written to MATSim as `ebikeOwnership`/`hasEbike`. Mirrors the existing licence (P17.1) / PT
+  (P24.1) categorical-IPF blocks exactly. **Default 6 margins** (all toggleable via
+  `ebike_ownership_margins` so each margin's contribution is *measured*, not assumed):
+  Kreis × sex × age (P21 Tab. A) × economic_status × household_type × license (P21 Tab. B).
+  Data via a **new Tabelle-B extraction path** in `scripts/extract_mid_tables.py` (currently only
+  Tab. A is parsed; P21 Tab. A = PDF page 99, Tab. B = page 100); new committed CSVs
+  `mid2023_P21{,_by_sex,_by_age,_by_economic_status,_by_household_type,_by_license}.csv`.
+  Honest caveats (in spec): age dominates; econ-status flat except "sehr niedrig"; strongest raw
+  gradients (Mobilitätssegmente, HH mobility equipment) **excluded as data leakage/circular**;
+  licence is the one worthwhile age-orthogonal extra control. Master flag `ebike_ownership`
+  default-ON, OFF = attribute absent (otherwise byte-identical). Spec (gitignored):
+  `docs/superpowers/specs/2026-07-03-ebike-ownership-ipf-design.md`.
+  - **NEXT:** writing-plans → worktree → TDD implementation. Follow-ups (separate): e-bike as a
+    distinct MATSim mode + calibration; education as a synthesised attribute (would add a margin).
+
+### New (2026-07-03) — Fleet-quality realism upgrade (pushed, server-verify + merge pending)
+
+- **Fleet realism upgrade** — branch `feature/fleet-quality-and-data` (fork, tip `5e0a6e4`, 41
+  commits stacked on `fix/fleet-age-joint-ipf` PR #92; worktree `eqasim-bs-fleet`). Integrated into
+  the EXISTING fleet model (IPF-based), default-ON flags, byte-identical when a derived CSV is absent,
+  **no NAs anywhere** (pure-electric uses euro="electric"). Adds: EV-income tilt (MiD A_ANTRIEB ×
+  oek_status, within-Kreis, aggregate preserved), all-Kreise 46251 (in-commuter home-Kreis mix +
+  `LazyKreisEuroJoint`), Euro-6 substage draw (distinct HBEFA concepts), RegioStaR7 logging-only EV
+  cross-check, plus three whole-model review fixes (model-fuel scale-neutral weight, validator
+  effective-segment target, same-vintage 2026 Gemeinde-EV tilt). Final opus whole-branch review done;
+  **Finding #2 fixed** (degenerate-Kreis NaN-pmf crash → `_rake_per_kreis_powertrain` guard, 9 tests).
+  Decisions in **ADR-0051** (worktree `docs/DECISIONS.md`); user signed off that OFF is intentionally
+  not byte-identical (shared segment-seed improvement `9eb2050` kept; 2 OFF goldens regenerate on
+  server).
+  - **PENDING (deferred by user; "nur pushen"):** (1) **server phase** (`ssh felix`): scp raw kba/ +
+    MiD Autos, run `scripts/extract_kba_fleet.py` + `scripts/build_mid_antrieb_by_status.py`, full
+    canonical pytest, 1% smoke (per-Kreis euro varies, NO NaN, age ~10.6–10.9, EV↑ with income within
+    Kreis, in-commuter home-Kreis mix, euro6 substage, combustion-split vs 46251-02, OFF-equivalence),
+    **regenerate the 2 stale OFF goldens** (`test_off_path_byte_identical`, `test_age_income_off_unchanged`);
+    (2) **merge via `git pr`** — **resolve the ADR-0050 number collision** (this branch's ADR-0050 =
+    fleet data-regionalization ceiling; `main`'s ADR-0050 = TAZ friction); also merge the stacked
+    fleet PRs #90/#93 (close #86/#91/#92); (3) then the **100% re-run**. Full state: memory
+    `project-fleet-quality-realism`.
+
 ### New (2026-06-30) — TAZ sub-zonal work location choice + commute-fit diagnostics
 
 - **TAZ sub-zonal work location choice (eqasim IRIS-analog)** — issue **#79**, spec
@@ -280,7 +383,7 @@ remains available via an unattended run if required.
 
 | # | Item | Note |
 |---|------|------|
-| 3.1 | **Kreis-level income control** (income as a PopulationSim control via INKAR Kreis targets, instead of post-hoc scaling). | Feasible-but-nontrivial; deferred. Within-Kreis *extra* signal already dropped (existing controls dominate). |
+| 3.1 | **Kreis-level income control** (income as a PopulationSim control via MiD H4 status-per-Kreis + INKAR, instead of post-hoc scaling; retire the overwrite so income geography is placement-based). | **Now specced + tracked: #108** (income/status sibling of #99). Direct target found — MiD H4 status-per-Kreis (regional-study PDF p.20) → no SAE needed. Within-Kreis *extra* signal (#73/ADR-0045, rejected) revisited at **Gemeinde** level via LSN income-tax + KBA-EV-per-Gemeinde validation. Spec: `docs/superpowers/specs/2026-07-04-income-weighted-household-placement-design.md`. |
 | 3.2 | **BASt Dauerzählstellen HGV-count calibration** for the injected freight. | Future external-validation wave; freight currently taken as-is from german-wide-freight v3. |
 | 3.3 | **Real VRB/DELFI GTFS + VRB PT tariff (B2)** + MATSim termination/iteration tuning. | Supply-side + behaviour wave; uncalibrated cordon gate-gravity beta/capacity_exponent also lives here. |
 | 3.4 | **Cordon sub-projects 3 & 4** (external *visitors*, non-freight *through-traffic*). | Never started; explicitly out of scope in the original roadmap. Through-freight is already covered by the freight module. |
