@@ -50,6 +50,13 @@ class Settings:
     # shorter window falsely marks a genuinely running run ENDED. See
     # enrich.newest_activity_mtime and daemon.QueueWorker._settle_external.
     adopt_alive_window_s: int = 1800
+    # Auto-detect active runs (issue #119): shell glob patterns that match run root directory
+    # names to auto-detect and monitor. Default includes popsim_work_* (populationsim batch runs),
+    # output_* (legacy analysis artifacts), and cache_* (pipeline caches).
+    active_run_globs: list = field(default_factory=lambda: ["output_*", "cache_*", "popsim_work_*"])
+    # Auto-detect active runs (issue #119): throttle interval in seconds for scanning targets for
+    # fresh glob-matching run roots. A scan is performed at most once per target per this interval.
+    autodetect_interval_s: int = 60
 
 
 def load_settings(path: Path) -> Settings:
@@ -90,4 +97,6 @@ def load_settings(path: Path) -> Settings:
         stale_age_days=int(raw.get("stale_age_days", 30)),
         stale_size_gb=float(raw.get("stale_size_gb", 5.0)),
         adopt_alive_window_s=int(raw.get("adopt_alive_window_s", 1800)),
+        active_run_globs=list(raw.get("active_run_globs", ["output_*", "cache_*", "popsim_work_*"])),
+        autodetect_interval_s=int(raw.get("autodetect_interval_s", 60)),
     )

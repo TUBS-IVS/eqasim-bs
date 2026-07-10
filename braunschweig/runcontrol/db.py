@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS runs (
     watch_path TEXT,
     watch_mtime REAL,
     watch_checked_at TEXT,
+    auto_detected INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     finished_at TEXT
 );
@@ -73,7 +74,8 @@ class Database:
         for col, ddl in (("external", "external INTEGER NOT NULL DEFAULT 0"),
                          ("watch_path", "watch_path TEXT"),
                          ("watch_mtime", "watch_mtime REAL"),
-                         ("watch_checked_at", "watch_checked_at TEXT")):
+                         ("watch_checked_at", "watch_checked_at TEXT"),
+                         ("auto_detected", "auto_detected INTEGER NOT NULL DEFAULT 0")):
             if col not in existing:
                 self._conn.execute(f"ALTER TABLE runs ADD COLUMN {ddl}")
         self._conn.commit()
@@ -99,7 +101,7 @@ class Database:
 
     def insert_external_run(self, run_id: str, target: str, label: str, config_path: str,
                             log_path: str | None, watch_path: str, watch_mtime: float,
-                            watch_checked_at: str) -> None:
+                            watch_checked_at: str, auto_detected: bool = False) -> None:
         """Register an adopted run that was started outside runcontrol.
 
         The row is created directly as RUNNING with external=1; liveness is inferred later
@@ -108,10 +110,10 @@ class Database:
         """
         self._conn.execute(
             "INSERT INTO runs (run_id, target, label, config_path, status, log_path, "
-            "external, watch_path, watch_mtime, watch_checked_at, created_at) "
-            "VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+            "external, watch_path, watch_mtime, watch_checked_at, auto_detected, created_at) "
+            "VALUES (?,?,?,?,?,?,1,?,?,?,?,?)",
             (run_id, target, label, config_path, RunStatus.RUNNING.value, log_path,
-             watch_path, watch_mtime, watch_checked_at, _now()))
+             watch_path, watch_mtime, watch_checked_at, 1 if auto_detected else 0, _now()))
         self._conn.commit()
 
     def reactivate_external_run(self, run_id: str, log_path: str | None, watch_path: str,
