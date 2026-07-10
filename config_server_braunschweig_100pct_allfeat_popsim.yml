@@ -215,6 +215,10 @@ config:
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0
+  # Delete each batch's dead pipeline.h5 checkpoint store after verified completion
+  # (issue #153: ~15 GB/batch at full donor pool would overflow the run server's disk).
+  # true is the code default; stated explicitly here because it is disk-critical at 100%.
+  braunschweig.population.popsim.cleanup_batch_pipeline: true
 
   # --- Gravity calibration ---
   gravity_slope: -0.065
