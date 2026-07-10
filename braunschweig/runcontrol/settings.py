@@ -43,12 +43,12 @@ class Settings:
     stale_age_days: int = 30
     stale_size_gb: float = 5.0
     # Adopt-running-run (issue #119): how many seconds of no advance in the newest
-    # top-level child mtime across the watched artifact's cache/output dir pair
-    # (daemon clock) before an adopted external run is declared ENDED. 1800s (not
-    # 300s) because a single synpp stage or MATSim iteration can legitimately write
-    # for many minutes without touching either dir's top-level child set -- a
-    # shorter window falsely marks a genuinely running run ENDED. See
-    # enrich.newest_activity_mtime and daemon.QueueWorker._settle_external.
+    # descendant mtime under the watched run-root (daemon clock, depth-aware scan)
+    # before an adopted external run is declared ENDED. 1800s (not 300s) because a
+    # single synpp stage or MATSim iteration can legitimately write for many minutes
+    # without touching the run-root's own top-level child set -- a shorter window
+    # falsely marks a genuinely running run ENDED. See
+    # daemon.QueueWorker._external_liveness_mtime and ._settle_external.
     adopt_alive_window_s: int = 1800
     # Auto-detect active runs (issue #119): shell glob patterns that match run root directory
     # names to auto-detect and monitor. Default includes popsim_work_* (populationsim batch runs),

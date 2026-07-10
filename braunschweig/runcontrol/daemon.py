@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 
-from .collectors import enrich
 from .db import Database
 from .models import LaunchHandle, RunManifest, RunSpec, RunStatus
 from .targets.base import ExecutionTarget
@@ -34,6 +34,12 @@ class QueueWorker:
         self.targets = targets
         self._clock = time.time                  # injectable daemon wall clock (epoch seconds)
         self._window_override = None              # tests set an explicit window
+        # Auto-detect active runs (issue #119): glob patterns matched against run-root
+        # directory names, the throttle interval, and the per-target last-scan clock.
+        # __main__ overwrites the first two from Settings; sane defaults hold otherwise.
+        self._active_run_globs = ["output_*", "cache_*", "popsim_work_*"]
+        self._autodetect_interval = 60
+        self._last_autodetect: dict[str, float] = {}
 
     # -- public API ---------------------------------------------------------
     def submit(self, spec: RunSpec) -> None:
@@ -109,6 +115,13 @@ class QueueWorker:
                 self.db.add_event(run_id, "error", f"queue purge failed: {exc}")
 
     def tick(self) -> None:
+        for tname in list(self.targets):
+            try:
+                self.autodetect(tname)
+            except Exception:
+                # A scan failure on one target (unreachable host, filesystem hiccup) must
+                # not stop the settle/launch pass below for every other run and target.
+                logger.exception("autodetect failed for target %s", tname)
         active = False
         for row in self.db.list_runs():
             if row["status"] == RunStatus.UNKNOWN.value and not row["log_path"]:
@@ -178,19 +191,29 @@ class QueueWorker:
             return self._window_override
         return getattr(self, "_settings_window", 300)
 
+    def _external_liveness_mtime(self, target: ExecutionTarget, watch_path: str) -> float | None:
+        """Newest descendant mtime under the watched run-root, up to 3 levels deep.
+
+        Depth-aware (unlike watching the run-root directory's own entry mtime, or only
+        its direct children): a long synpp stage, a MATSim iteration, or a populationsim
+        batch (`popsim_work_*/batch_N/output/...`) writes several levels below the
+        run-root without ever touching the root's own top-level child set, which
+        previously made a genuinely running run look stale. Bounded (maxdepth=3,
+        limit=50) so this stays a cheap, read-only scan per active external run per tick.
+        Returns None only when the watched path has no descendant file at all (e.g. it
+        was just adopted before any activity, or the directory is gone)."""
+        rows = target.newest_files(watch_path, maxdepth=3, limit=50)
+        return rows[0][0] if rows else None
+
     def _settle_external(self, row: dict, target: ExecutionTarget) -> bool:
-        """Liveness for an adopted external run: the newest top-level child mtime
-        across the watched artifact's cache/output dir pair advancing (server clock,
-        compared to its own stored value) means still running; no advance for
-        _window_seconds() on the daemon clock means ENDED. Watching child mtimes
-        rather than the artifact dir's own entry mtime is deliberate -- see
-        enrich.newest_activity_mtime: a directory entry's own mtime does not change
-        while a long-running stage/iteration writes deep inside it, which previously
-        caused genuinely running runs to be marked ENDED after just one window. The
+        """Liveness for an adopted external run: the newest descendant mtime under the
+        watched run-root advancing (server clock, compared to its own stored value)
+        means still running; no advance for _window_seconds() on the daemon clock means
+        ENDED. See _external_liveness_mtime for why a depth-aware scan is used instead
+        of the run-root directory's own entry mtime or only its direct children. The
         external process is never queried via a handle and never killed."""
         run_id = row["run_id"]
-        name = row["watch_path"].rsplit("/", 1)[-1]
-        current = enrich.newest_activity_mtime(target, name)
+        current = self._external_liveness_mtime(target, row["watch_path"])
         stored = row["watch_mtime"]
         if current is not None and stored is not None and current > stored:
             self.db.update_watch(run_id, current, self._now_iso())
@@ -212,6 +235,51 @@ class QueueWorker:
                               f"adopted run no longer active; exit code unavailable{gone}")
             return False
         return True
+
+    def autodetect(self, target_name: str) -> None:
+        """Auto-create external runs for fresh, glob-matching run-roots on a target.
+
+        One bounded newest_files scan of the target's data dir per target per
+        _autodetect_interval seconds. Freshness is skew-free: a root is considered
+        active if its newest file is within the change window of the newest file
+        anywhere on the target (both read from the same scan, so both are on the
+        target's own clock -- the daemon's local clock never enters the comparison).
+        A root already tracked as LAUNCHING/RUNNING is left alone (no duplicate row,
+        no reset). Detected runs are created via insert_external_run/reactivate_external_run,
+        the same monitor-only external-run path adopt uses -- never launched, queried
+        via a handle, or stopped by this GUI."""
+        now = self._now_epoch()
+        last = self._last_autodetect.get(target_name, 0.0)
+        if now - last < self._autodetect_interval:
+            return
+        self._last_autodetect[target_name] = now
+        target = self.targets[target_name]
+        files = target.newest_files(target.cfg.data_dir)
+        if not files:
+            return
+        now_ref = max(m for m, _ in files)              # skew-free "server now"
+        root_mtime: dict[str, float] = {}
+        for m, rel in files:
+            root = rel.split("/", 1)[0]
+            if m > root_mtime.get(root, 0.0):
+                root_mtime[root] = m
+        window = self._window_seconds()
+        for root, m in root_mtime.items():
+            if not any(fnmatch(root, g) for g in self._active_run_globs):
+                continue
+            if now_ref - m > window:
+                continue                                # stale root, not currently active
+            existing = self.db.get_run(root)
+            if existing is not None and existing["status"] in _ACTIVE:
+                continue                                # already tracked and active
+            watch_path = f"{target.cfg.data_dir}/{root}"
+            if existing is None:
+                self.db.insert_external_run(root, target_name, root, "unknown", None,
+                                            watch_path, m, self._now_iso(), auto_detected=True)
+            else:
+                self.db.reactivate_external_run(root, None, watch_path, m, self._now_iso())
+            self.db.add_event(root, "status", "auto-detected active run (filesystem activity)")
+            logger.info("run %s: auto-detected on target %s (watch %s)", root, target_name, watch_path)
 
     def _recover_handle(self, row: dict, target: ExecutionTarget) -> dict | None:
         """Rebuild a lost handle from the per-run manifest on the execution host.

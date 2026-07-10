@@ -325,12 +325,12 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
         if existing is not None and existing["status"] in ("running", "launching"):
             raise HTTPException(422, f"'{name}' is already adopted and active")
         watch_path = f"{t.cfg.data_dir}/{name}"
-        # Same signal the daemon will poll (enrich.newest_activity_mtime), so the adopt-time
-        # baseline and the running daemon's liveness check are apples-to-apples; falls back to
-        # the artifact dir's own entry mtime (then 0.0) only when neither dir has a child yet.
-        watch_mtime = enrich.newest_activity_mtime(t, name)
-        if watch_mtime is None:
-            watch_mtime = _artifact_dir_mtime(t, name)
+        # Same depth-aware signal the daemon polls (daemon.QueueWorker._external_liveness_mtime),
+        # so the adopt-time baseline and the running daemon's liveness check are apples-to-apples;
+        # falls back to the artifact dir's own entry mtime (then 0.0) only when the watched
+        # directory has no descendant file yet (e.g. adopted right after it was created).
+        rows = t.newest_files(watch_path, maxdepth=3, limit=50)
+        watch_mtime = rows[0][0] if rows else _artifact_dir_mtime(t, name)
         # Find a fresh run_*.log whose mtime is close to the artifact dir mtime -- best
         # effort only: without a matching log, progress falls back to the cache timeline.
         log_path = None

@@ -4,12 +4,11 @@ from braunschweig.runcontrol.models import RunSpec, RunStatus
 
 
 class FakeTarget:
-    """Fakes the two listdir calls liveness now depends on: the artifact dir's
-    own entry (via listing its parent, `data_dir`) and its top-level children
-    (via listing the dir itself). `dir_mtime` drives the CHILD listing -- the
-    signal daemon._settle_external now watches (see enrich.newest_activity_mtime)
-    -- while `entry_mtime` drives the artifact dir's OWN entry mtime and stays
-    fixed by default, reproducing the exact bug this fixture guards against: a
+    """Fakes the depth-aware scan liveness now depends on: `newest_files(watch_path)`
+    (via daemon.QueueWorker._external_liveness_mtime). `dir_mtime` drives that scan's
+    result -- the signal daemon._settle_external now watches -- while `entry_mtime`
+    drives the artifact dir's OWN entry mtime (as seen via listdir on its parent) and
+    stays fixed by default, reproducing the exact bug this fixture guards against: a
     directory's own mtime does not move while files deep inside it change."""
     kind = "ssh"
     name = "server"
@@ -31,6 +30,11 @@ class FakeTarget:
         if path == "eqasim-data/cache_x":
             return [{"name": "stage.cache", "size": 0, "mtime": self._m}]
         return []
+
+    def newest_files(self, reldir, maxdepth=3, limit=50):
+        if self._m is None or reldir != "eqasim-data/cache_x":
+            return []                                          # the watched dir is gone / not this dir
+        return [(self._m, "stage.cache")]
 
     def stop(self, handle):
         self.stopped.append(handle.run_id)
