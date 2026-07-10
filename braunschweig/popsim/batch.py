@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 # The output file PopulationSim writes; its presence marks a finished batch.
 COMPLETION_MARKER = "output/final_expanded_household_ids.csv"
 
+# PopulationSim's per-batch checkpoint store. Once the completion marker exists it is
+# dead weight: the merge stage reads only the marker CSV, no repo code reads the h5,
+# and PopulationSim itself reopens it only to RESUME an *aborted* batch. At full donor
+# pool it grows to ~15 GB per batch (a dense per-signature x per-100m-cell weight
+# table, ~99.9% zeros), enough to fill the run server's disk mid-campaign (issue #153),
+# so the runner deletes it after verified completion when cleanup is enabled.
+PIPELINE_STORE = "output/pipeline.h5"
+
 # Valid batch run statuses.
 _VALID_STATUSES = frozenset({"succeeded", "failed", "skipped"})
 
@@ -322,6 +330,37 @@ DEFAULT_POPSIM_TIMEOUT_S = 3600
 _SINGLE_THREAD_BLAS_ENV = parallelism.SINGLE_THREAD_BLAS_ENV
 
 
+def _cleanup_pipeline_store(folder: Path) -> None:
+    """Delete a COMPLETED batch's ``pipeline.h5``, logging the freed size.
+
+    Callers must only invoke this after :func:`is_completed` verified the
+    completion marker, so a resumable (aborted) batch never loses its checkpoint
+    store. A missing store is not an error (e.g. an external watcher or a
+    previous run already removed it).
+    """
+    store = folder / PIPELINE_STORE
+    if not store.is_file():
+        return
+    # Cleanup must never fail a batch that already completed successfully: an
+    # OSError here (e.g. a race with an external cleanup watcher deleting the
+    # same file, or a transient filesystem error) is logged and swallowed --
+    # the worst case is a leftover file, not a lost batch/run.
+    try:
+        size_bytes = store.stat().st_size
+        store.unlink(missing_ok=True)
+    except OSError as error:
+        logger.warning(
+            "[popsim.batch] could not delete completed batch checkpoint store %s "
+            "(%s); leaving it in place.", store, error,
+        )
+        return
+    logger.info(
+        "[popsim.batch] deleted completed batch checkpoint store %s "
+        "(freed %d bytes = %.2f GB); the merge reads only %s.",
+        store, size_bytes, size_bytes / 1e9, COMPLETION_MARKER,
+    )
+
+
 def make_populationsim_run_one(
     *,
     command_prefix: Sequence[str] = DEFAULT_POPSIM_COMMAND,
@@ -329,6 +368,7 @@ def make_populationsim_run_one(
     cwd: Optional[Union[str, Path]] = None,
     dry_run: bool = False,
     subprocess_run: Callable = subprocess.run,
+    cleanup_pipeline_h5: bool = True,
 ) -> Callable[[str], BatchResult]:
     """Build a concrete ``run_one`` that runs PopulationSim on a batch folder.
 
@@ -347,6 +387,12 @@ def make_populationsim_run_one(
     ``timeout_s <= 0`` (or ``None``) disables the per-batch timeout entirely: the
     PopulationSim subprocess runs to completion no matter how long it takes (use this
     for heavy control sets where convergence matters more than wall-clock).
+
+    ``cleanup_pipeline_h5`` (default ``True``, issue #153): after a batch is VERIFIED
+    complete (marker present) delete its ``output/pipeline.h5`` checkpoint store --
+    ~15 GB of dead weight per batch at full donor pool. Applied to fresh successes AND
+    to skipped already-completed batches (leftovers from runs without cleanup). A
+    failed or incomplete batch always keeps the store so PopulationSim can resume it.
     """
     effective_timeout = timeout_s if (timeout_s is None or timeout_s > 0) else None
 
@@ -355,6 +401,8 @@ def make_populationsim_run_one(
         start = time.monotonic()
 
         if is_completed(folder_path):
+            if cleanup_pipeline_h5:
+                _cleanup_pipeline_store(folder_path)
             return BatchResult(str(folder), "skipped", "already completed",
                                time.monotonic() - start)
         if dry_run:
@@ -388,6 +436,8 @@ def make_populationsim_run_one(
             return BatchResult(str(folder), "failed",
                                f"no output file created; {_error_detail(result)}",
                                time.monotonic() - start)
+        if cleanup_pipeline_h5:
+            _cleanup_pipeline_store(folder_path)
         return BatchResult(str(folder), "succeeded", "completed",
                            time.monotonic() - start)
 
