@@ -160,3 +160,20 @@ class SshTarget(ExecutionTarget):
     def manifest_glob(self) -> list[str]:
         rc, out = self._ssh(f"ls {self.cfg.logs_dir}/rc_*.manifest.json 2>/dev/null || true")
         return [line.strip() for line in out.splitlines() if line.strip()]
+
+    def newest_files(self, reldir: str, maxdepth: int = 4, limit: int = 200) -> list[tuple[float, str]]:
+        cmd = (f"find {shlex.quote(reldir)} -maxdepth {int(maxdepth)} -type f "
+               f"-printf '%T@ %P\\n' 2>/dev/null | sort -rn | head -{int(limit)}")
+        rc, out = self._ssh(cmd)
+        if rc != 0:
+            return []
+        rows: list[tuple[float, str]] = []
+        for line in out.splitlines():
+            parts = line.split(" ", 1)
+            if len(parts) != 2:
+                continue
+            try:
+                rows.append((float(parts[0]), parts[1].strip()))
+            except ValueError:
+                continue
+        return rows

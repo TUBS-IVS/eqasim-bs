@@ -149,3 +149,24 @@ class LocalTarget(ExecutionTarget):
         if not logs.is_dir():
             return []
         return [f"{self.cfg.logs_dir}/{p.name}" for p in sorted(logs.glob("rc_*.manifest.json"))]
+
+    def newest_files(self, reldir: str, maxdepth: int = 4, limit: int = 200) -> list[tuple[float, str]]:
+        base = self._abs(reldir)
+        if not base.is_dir():
+            return []
+        rows: list[tuple[float, str]] = []
+        base_str = str(base)
+        for root, _dirs, files in os.walk(base_str):
+            rel = os.path.relpath(root, base_str)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            if depth >= maxdepth:
+                _dirs[:] = []            # prune deeper traversal
+            for f in files:
+                try:
+                    m = os.path.getmtime(os.path.join(root, f))
+                except OSError:
+                    continue
+                rp = (f if rel == "." else f"{rel}{os.sep}{f}").replace(os.sep, "/")
+                rows.append((m, rp))
+        rows.sort(key=lambda x: x[0], reverse=True)
+        return rows[:limit]

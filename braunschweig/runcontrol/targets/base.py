@@ -50,3 +50,11 @@ class ExecutionTarget(ABC):
     @abstractmethod
     def git_commit(self) -> str:
         """Short git commit of the target's repo checkout; 'unknown' when undeterminable."""
+
+    @abstractmethod
+    def newest_files(self, reldir: str, maxdepth: int = 4, limit: int = 200) -> list[tuple[float, str]]:
+        """Newest files under reldir as (mtime_epoch, relpath) sorted desc, <= limit.
+
+        relpath is relative to reldir with forward slashes. Read-only; a missing
+        or empty dir yields []. Used by auto-detection (newest activity across a
+        target) and depth-aware liveness (newest descendant of a watch dir)."""
