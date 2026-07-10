@@ -341,8 +341,19 @@ def _cleanup_pipeline_store(folder: Path) -> None:
     store = folder / PIPELINE_STORE
     if not store.is_file():
         return
-    size_bytes = store.stat().st_size
-    store.unlink()
+    # Cleanup must never fail a batch that already completed successfully: an
+    # OSError here (e.g. a race with an external cleanup watcher deleting the
+    # same file, or a transient filesystem error) is logged and swallowed --
+    # the worst case is a leftover file, not a lost batch/run.
+    try:
+        size_bytes = store.stat().st_size
+        store.unlink(missing_ok=True)
+    except OSError as error:
+        logger.warning(
+            "[popsim.batch] could not delete completed batch checkpoint store %s "
+            "(%s); leaving it in place.", store, error,
+        )
+        return
     logger.info(
         "[popsim.batch] deleted completed batch checkpoint store %s "
         "(freed %d bytes = %.2f GB); the merge reads only %s.",
