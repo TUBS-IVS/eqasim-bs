@@ -272,6 +272,12 @@ class QueueWorker:
             existing = self.db.get_run(root)
             if existing is not None and existing["status"] in _ACTIVE:
                 continue                                # already tracked and active
+            if existing is not None and not existing["external"]:
+                # A finished daemon-launched run happens to share this dir name: never
+                # overwrite its honest terminal state (exit_code/finished_at) by flipping
+                # it into a monitor-only external row. Auto-detection must be impossible
+                # to confuse with a real launched run's recorded outcome, so skip it here.
+                continue
             watch_path = f"{target.cfg.data_dir}/{root}"
             if existing is None:
                 self.db.insert_external_run(root, target_name, root, "unknown", None,

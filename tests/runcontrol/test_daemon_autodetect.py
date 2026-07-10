@@ -1,7 +1,7 @@
 from fnmatch import fnmatch
 from braunschweig.runcontrol.daemon import QueueWorker
 from braunschweig.runcontrol.db import Database
-from braunschweig.runcontrol.models import RunStatus
+from braunschweig.runcontrol.models import RunSpec, RunStatus
 
 
 class FakeTarget:
@@ -84,3 +84,32 @@ def test_depth_aware_liveness_alive_on_deep_write(tmp_path):
     w.tick()   # deep descendant 6000 > stored 5000 -> advance -> RUNNING
     assert db.get_run("popsim_work_x")["status"] == RunStatus.RUNNING.value
     assert db.get_run("popsim_work_x")["watch_mtime"] == 6000.0
+
+
+def test_autodetect_never_reactivates_launched_run(tmp_path):
+    # A finished daemon-launched (external=0) run happens to share a glob-matching
+    # dir name; a fresh file under that dir must NOT flip its honest terminal state.
+    t = FakeTarget({"eqasim-data": [(5000.0, "cache_bs_x/pipeline.json")]})
+    w, db = _worker(tmp_path, t, window=1800)
+    db.insert_run(RunSpec("cache_bs_x", "server", "cache_bs_x", "c.yml"), RunStatus.QUEUED)
+    db.set_status("cache_bs_x", RunStatus.DONE, exit_code=0)
+    w.autodetect("server")
+    r = db.get_run("cache_bs_x")
+    assert r["status"] == RunStatus.DONE.value       # terminal state preserved
+    assert r["external"] == 0                         # never flipped to monitor-only external
+    assert r["exit_code"] == 0                        # honest exit code preserved
+
+
+def test_autodetect_reactivates_terminal_external_run(tmp_path):
+    # An ENDED EXTERNAL run with the same name IS re-adopted to RUNNING when fresh
+    # activity reappears (its terminal state carried no real exit code to protect).
+    t = FakeTarget({"eqasim-data": [(5000.0, "cache_bs_x/pipeline.json")]})
+    w, db = _worker(tmp_path, t, window=1800)
+    db.insert_external_run("cache_bs_x", "server", "cache_bs_x", "unknown", None,
+                           "eqasim-data/cache_bs_x", 1.0, w._iso(0.0))
+    db.set_status("cache_bs_x", RunStatus.ENDED)
+    w.autodetect("server")
+    r = db.get_run("cache_bs_x")
+    assert r["status"] == RunStatus.RUNNING.value    # re-adopted
+    assert r["external"] == 1
+    assert r["watch_mtime"] == 5000.0
