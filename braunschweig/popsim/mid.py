@@ -54,12 +54,14 @@ MID_SEED_COLUMNS = seedmod.MID_SEED_COLUMNS
 _EXTRA_CELL_COLUMNS = ("POP_TOTAL_100m_adj", "RegionalSchlussel_ARS", "RegioStaR7")
 _ARS_COLUMN = "RegionalSchlussel_ARS"
 
-# A PopulationSim run is only scientifically usable if (nearly) all batches
-# produced output. Some recoverable misses are tolerated, but above this fraction
-# the producer raises instead of returning a partial/empty population that would
-# crash much later with an opaque "missing ZENSUS100m" merge error
+# A PopulationSim run is only scientifically usable if EVERY batch produced
+# output: batches partition the 100 m cells, so one missing batch silently
+# removes whole regions from the synthetic population. Decision 2026-07-10
+# (after OOM-killed batch workers went unnoticed mid-run): no tolerated miss
+# rate -- any missing batch raises instead of returning a partial population
+# that would surface much later as an opaque "missing ZENSUS100m" merge error
 # (no-silent-fallback policy).
-MAX_MISSING_BATCH_RATE = 0.10
+MAX_MISSING_BATCH_RATE = 0.0
 
 # Above this share of zone-integerizations falling back to smart-rounding
 # (PopulationSim returning INFEASIBLE), the popsim stage logs a WARNING instead of
@@ -119,29 +121,31 @@ def summarize_integerizer_feasibility(work_dir: Union[str, Path]) -> dict:
 def _run_batches_and_merge(
     batch_folders: Sequence[str], run_one, *, num_workers: int
 ) -> "mergemod.MergeReport":
-    """Run every batch, merge the outputs, and fail loudly on a high miss rate.
+    """Run every batch, merge the outputs, and fail loudly on ANY missing batch.
 
     ``batch.run_batches`` already logs each failed batch's captured PopulationSim
-    error. Here the merged report is checked: if no batch produced output, or the
-    missing fraction exceeds ``MAX_MISSING_BATCH_RATE``, a ValueError is raised
-    naming the rate (the PopulationSim step is broken -- e.g. a bad seed, an
-    environment problem, or a control mismatch -- and the result is not usable).
+    error. Here the merged report is checked: if any batch produced no output
+    (miss rate above ``MAX_MISSING_BATCH_RATE``, which is 0), a ValueError is
+    raised naming the miss count. Batches partition the 100 m cells, so a single
+    missing batch (e.g. an OOM-killed worker) means whole regions are absent from
+    the population -- scientifically unusable, never merely "a recoverable miss".
     """
     batch.run_batches(batch_folders, run_one, num_workers=num_workers)
     report = mergemod.merge_batch_folders(batch_folders)
     n_total = len(batch_folders)
     n_missing = int(getattr(report, "n_missing", 0) or 0)
-    # A "missing" batch wrote no output file at all (the broken-PopulationSim
-    # signal). This is distinct from a batch that ran but produced an empty
-    # table, so the guard keys on the missing rate, not on combined content.
+    # A "missing" batch wrote no output file at all (the broken-PopulationSim /
+    # killed-worker signal). This is distinct from a batch that ran but produced
+    # an empty table, so the guard keys on the missing count, not on content.
     rate = n_missing / n_total if n_total else 1.0
     if n_total == 0 or rate > MAX_MISSING_BATCH_RATE:
         raise ValueError(
-            f"PopulationSim produced no usable output: {n_missing}/{n_total} "
-            f"batches missing ({100.0 * rate:.1f}%, threshold "
-            f"{100.0 * MAX_MISSING_BATCH_RATE:.0f}%). Check the per-batch failure "
-            "messages logged above (captured PopulationSim stderr) -- the "
-            "PopulationSim step is broken, not merely a few recoverable misses."
+            f"PopulationSim batch run incomplete: {n_missing}/{n_total} batches "
+            f"missing their output ({100.0 * rate:.1f}%; ALL batches are required "
+            "-- each covers a disjoint set of 100 m cells). Check the per-batch "
+            "failure messages logged above (captured PopulationSim stderr / an "
+            "OOM-killed worker leaves no output). Re-running the pipeline skips "
+            "completed batches and re-runs only the missing ones."
         )
     logger.info(
         "[popsim.mid] merged %d/%d batches (%d missing, %.1f%%).",

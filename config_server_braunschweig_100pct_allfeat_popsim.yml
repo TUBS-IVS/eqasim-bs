@@ -56,6 +56,18 @@ config:
   building_potentials_path: braunschweig/buildings/building_activity_potentials.parquet
   work_building_potentials: true
   secondary_building_potentials: true
+  # Function-aware 'other' potential (PR #77): wired into the 1%/25% configs on
+  # 2026-06-28 (2732c18), but this config was created two days later WITHOUT the
+  # block (wiring-audit find, 2026-07-10) -- 'other' activities silently fell back
+  # to the generic VW-plant-dominated potential. Values mirror the 25% config.
+  secondary_other_smart_potential: true
+  secondary_other_broad_share: 0.54
+  secondary_other_errand_share: 0.46
+  secondary_other_min_volume_m3: 50.0
+  secondary_other_cap_percentile: 0.99
+  # Part B scorer scale-alignment -- byte-identical defaults until calibrated:
+  secondary_scorer_attr_transform: linear
+  secondary_scorer_selection: top_n
   secondary_external_candidates: true
   secondary_scorer_mode: combined
   secondary_scorer_pot_weight: 1.0
@@ -202,16 +214,23 @@ config:
   # cache_share can share the donor build + the per-1km batches. The stale-batch guard
   # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
-  braunschweig.population.popsim.max_cells: 1500
+  # 750 (was 1500): the per-batch peak RSS is dominated by the DENSE ZENSUS100m weight
+  # table (signature rows x cells in batch; measured 2026-07-10 at full pool: 235M rows
+  # = 16.9 GB in-table, 48-62 GB process peak at the checkpoint write -- two workers'
+  # peaks coinciding OOM-killed both on the 128 GB box). Peak scales ~linearly with
+  # max_cells, so halving bounds the spike to ~25-30 GB per worker.
+  braunschweig.population.popsim.max_cells: 750
   # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is now pinned to a
   # single BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch),
   # which fixed the real failure -- at 62-way parallelism each batch's OpenBLAS spawned
   # 64 threads, oversubscribing the box (~4000 threads / 64 cores) and crashing numpy
   # with segfaults in libc (12 batches lost in one run). With 1 thread per batch the
-  # batch-level parallelism is governed purely by this number; 16 single-threaded
-  # batches use the cores well and keep peak RAM (~5 GB/batch) safe on 128 GB. A fixed
-  # integer (not the 0 sentinel) also stabilises the popsim.stage hash for cache reuse.
-  braunschweig.population.popsim.num_workers: 16
+  # batch-level parallelism is governed purely by this number. 3 (was 16): at the FULL
+  # donor pool (stratify_regiostar=false) a worker peaks at ~25-30 GB with max_cells=750
+  # (see above), so 3 workers bound the worst case to ~90 GB on the 128 GB box
+  # (2026-07-10 OOM post-mortem). A fixed integer (not the 0 sentinel) also stabilises
+  # the popsim.stage hash for cache reuse.
+  braunschweig.population.popsim.num_workers: 3
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0
