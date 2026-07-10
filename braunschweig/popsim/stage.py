@@ -76,6 +76,11 @@ KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 # killed and flagged "failed (timeout)". Heavy control sets (tier1/2 + stratify) make
 # big batches slow; raise this so they finish + converge cleanly instead of being killed.
 KEY_BATCH_TIMEOUT = "braunschweig.population.popsim.batch_timeout_s"
+# Delete each batch's dead PopulationSim checkpoint store (output/pipeline.h5) once the
+# batch is VERIFIED complete (issue #153: ~15 GB/batch at full donor pool would overflow
+# the run server's disk mid-campaign). Default ON (project rule: new features default on).
+# Set False to keep the stores, e.g. for balancer forensics on a small run.
+KEY_CLEANUP_H5 = "braunschweig.population.popsim.cleanup_batch_pipeline"
 KEY_KREISE = "braunschweig.political_prefix"
 # Donor source identifier: "mid" (default) or a future registered source name.
 KEY_SOURCE = "braunschweig.population.popsim.source"
@@ -503,6 +508,8 @@ def configure(context):
     context.config(KEY_WORKERS, 3)
     context.config(KEY_WORK_DIR)
     context.config(KEY_BATCH_TIMEOUT, batch.DEFAULT_POPSIM_TIMEOUT_S)
+    # Cleanup of the dead per-batch pipeline.h5 checkpoint store (issue #153).
+    context.config(KEY_CLEANUP_H5, True)
     context.config(KEY_KREISE)
     context.config(KEY_SOURCE, "mid")
     # Seeded attribute imputation in build_persons; declaring the key also makes
@@ -1136,6 +1143,7 @@ def execute(context) -> pd.DataFrame:
         command_prefix=(str(uv_path), "run", "--no-sync", "populationsim"),
         cwd=popsimprep_dir,
         timeout_s=int(context.config(KEY_BATCH_TIMEOUT)),
+        cleanup_pipeline_h5=bool(context.config(KEY_CLEANUP_H5)),
     )
 
     logger.info(
