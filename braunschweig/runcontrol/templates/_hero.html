@@ -2,7 +2,9 @@
 {% set run = status.active_run %}
 {% if run %}
   <span class="dot"></span> <b style="font-size:19px">{{ run.label }}</b>
-  {% if run.external %}<span class="badge adopted">adopted</span>
+  {% if run.external %}
+    <span class="badge {{ 'detected' if run.auto_detected else 'adopted' }}">{{ 'detected' if run.auto_detected else 'adopted' }}</span>
+    {% if run.auto_detected %}<span class="vital">auto-detected from filesystem activity; not launched by runcontrol</span>{% endif %}
     {% if not run.log_path %}<span class="vital">(no live log; open the catalog details to reconstruct stage progress)</span>{% endif %}
   {% else %}<span class="badge running">running</span>{% endif %}
   <span class="vital">git <span class="mono">{{ run.git_commit or "unknown" }}</span>

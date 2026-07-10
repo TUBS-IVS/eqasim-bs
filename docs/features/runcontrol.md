@@ -314,6 +314,51 @@ progress indicator. This is an honest limitation: the run may have started
 before runcontrol was running, or the log may be on a different host or in a
 non-standard location, so inferring its path is not reliable.
 
+### Auto-detect active runs
+
+The daemon continuously scans each target's data directory for fresh
+directories matching configurable glob patterns and automatically creates
+monitored external runs for them, eliminating the need to manually adopt runs
+launched outside the GUI. This is particularly useful for background pipeline
+runs that start while the GUI is not running.
+
+**How auto-detection works:** Every `autodetect_interval_s` (default 60,
+configurable in `runcontrol.toml`), the daemon scans the target's data
+directory once using a bounded `newest_files()` query (a single `find` or
+`os.walk` at most 4 levels deep, sorted by mtime, limited to 200 files).
+Freshness is skew-free: a directory's newest file is compared against the
+newest file found anywhere on the target (both from the server's clock),
+and if that file is within the `adopt_alive_window_s` (the same window used
+for adoption), a matching directory is considered active and auto-created
+as an external run. Directory names are matched against `active_run_globs`
+(default `["output_*", "cache_*", "popsim_work_*"]`, configurable in
+`runcontrol.toml`).
+
+**The `detected` badge:** Auto-detected runs are displayed on the home hero
+and run detail pages with a `detected` badge and an honest note: "auto-detected
+from filesystem activity; not launched by runcontrol". This distinguishes
+them from manually adopted runs (which show an `adopted` badge). Both are
+external runs (monitor-only, never killed by the GUI).
+
+**Depth-aware liveness:** Like adoptions, auto-detected runs track liveness
+by watching the newest descendant mtime (not the directory entry's own mtime)
+across the entire monitored tree, up to 3 levels deep and 50 most-recent
+files per scan. This ensures that deep batch writes (e.g. `popsim_work_*/
+batch_N/output/populationsim.log`) keep the run marked `RUNNING` until they
+stop advancing for `adopt_alive_window_s`, at which point the run transitions
+to `ENDED`.
+
+**Configuration:** Tune auto-detection in `runcontrol.toml`:
+
+```toml
+active_run_globs = ["output_*", "cache_*", "popsim_work_*"]  # Directory name patterns to detect
+autodetect_interval_s = 60                                    # Daemon scan interval (seconds)
+adopt_alive_window_s = 1800                                   # Window for freshness; auto-detected runs become ENDED after this silence
+```
+
+All three settings are optional and use sensible defaults. Set
+`active_run_globs = []` to disable auto-detection entirely.
+
 ## SSH-tunnel access
 
 The server binds `host = 127.0.0.1` by design -- there is no built-in
