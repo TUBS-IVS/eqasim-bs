@@ -25,17 +25,24 @@ def test_local_newest_files_missing_dir_returns_empty(tmp_path):
 
 
 def test_local_newest_files_respects_maxdepth(tmp_path):
+    # Tight boundary tree matching find -maxdepth semantics (start dir = level 0):
+    #   eqasim-data/d1.txt      -> find-depth 1
+    #   eqasim-data/a/d2.txt    -> find-depth 2
+    #   eqasim-data/a/b/d3.txt  -> find-depth 3
     base = tmp_path / "eqasim-data"
-    (base / "shallow.txt").parent.mkdir(parents=True, exist_ok=True)
-    (base / "shallow.txt").write_text("s")
-    deep = base / "a" / "b" / "c" / "d" / "e"
-    deep.mkdir(parents=True)
-    (deep / "deep.txt").write_text("d")
+    (base / "a" / "b").mkdir(parents=True)
+    d1 = base / "d1.txt"; d2 = base / "a" / "d2.txt"; d3 = base / "a" / "b" / "d3.txt"
+    d1.write_text("1"); d2.write_text("2"); d3.write_text("3")
+    os.utime(d1, (1000, 1000)); os.utime(d2, (2000, 2000)); os.utime(d3, (3000, 3000))
     cfg = TargetConfig(name="local", kind="local", repo=str(tmp_path), runner="r")
     t = LocalTarget(cfg, python=sys.executable)
-    names = [p for _, p in t.newest_files("eqasim-data", maxdepth=2, limit=50)]
-    assert any("shallow.txt" in n for n in names)
-    assert not any("deep.txt" in n for n in names)   # below maxdepth
+
+    def basenames(maxdepth):
+        return {p.rsplit("/", 1)[-1] for _, p in t.newest_files("eqasim-data", maxdepth=maxdepth, limit=50)}
+
+    assert basenames(1) == {"d1.txt"}
+    assert basenames(2) == {"d1.txt", "d2.txt"}
+    assert basenames(3) == {"d1.txt", "d2.txt", "d3.txt"}
 
 
 class FakeSsh:

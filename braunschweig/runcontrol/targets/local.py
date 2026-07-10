@@ -156,17 +156,23 @@ class LocalTarget(ExecutionTarget):
             return []
         rows: list[tuple[float, str]] = []
         base_str = str(base)
+        # Match GNU `find -maxdepth N` exactly (the ssh backend used in production):
+        # find counts the start dir as level 0, so a file directly in reldir is
+        # find-depth 1, one subdir deeper is find-depth 2, etc. Here `depth` is the
+        # count of directory components below base (base=0, "a"=1, "a/b"=2), so a file
+        # in that dir has find-depth depth+1.
         for root, _dirs, files in os.walk(base_str):
             rel = os.path.relpath(root, base_str)
             depth = 0 if rel == "." else rel.count(os.sep) + 1
-            if depth >= maxdepth:
-                _dirs[:] = []            # prune deeper traversal
-            for f in files:
-                try:
-                    m = os.path.getmtime(os.path.join(root, f))
-                except OSError:
-                    continue
-                rp = (f if rel == "." else f"{rel}{os.sep}{f}").replace(os.sep, "/")
-                rows.append((m, rp))
+            if depth + 1 >= maxdepth:
+                _dirs[:] = []            # no deeper dir can contribute includable files
+            if depth < maxdepth:         # this dir's files are at find-depth depth+1 <= maxdepth
+                for f in files:
+                    try:
+                        m = os.path.getmtime(os.path.join(root, f))
+                    except OSError:
+                        continue
+                    rp = (f if rel == "." else f"{rel}{os.sep}{f}").replace(os.sep, "/")
+                    rows.append((m, rp))
         rows.sort(key=lambda x: x[0], reverse=True)
         return rows[:limit]
