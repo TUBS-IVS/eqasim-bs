@@ -113,3 +113,18 @@ def test_autodetect_reactivates_terminal_external_run(tmp_path):
     assert r["status"] == RunStatus.RUNNING.value    # re-adopted
     assert r["external"] == 1
     assert r["watch_mtime"] == 5000.0
+
+
+def test_reactivation_sets_auto_detected(tmp_path):
+    # A prior manual adopt (auto_detected=0) that later ENDED must NOT keep its stale
+    # badge once the daemon's own autodetect loop re-adopts it: the daemon always
+    # reactivates with auto_detected=True, since it is the one detecting the activity.
+    t = FakeTarget({"eqasim-data": [(5000.0, "cache_bs_x/pipeline.json")]})
+    w, db = _worker(tmp_path, t, window=1800)
+    db.insert_external_run("cache_bs_x", "server", "cache_bs_x", "unknown", None,
+                           "eqasim-data/cache_bs_x", 1.0, w._iso(0.0), auto_detected=False)
+    db.set_status("cache_bs_x", RunStatus.ENDED)
+    w.autodetect("server")
+    r = db.get_run("cache_bs_x")
+    assert r["status"] == RunStatus.RUNNING.value
+    assert r["auto_detected"] == 1

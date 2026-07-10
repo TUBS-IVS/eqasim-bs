@@ -283,7 +283,8 @@ class QueueWorker:
                 self.db.insert_external_run(root, target_name, root, "unknown", None,
                                             watch_path, m, self._now_iso(), auto_detected=True)
             else:
-                self.db.reactivate_external_run(root, None, watch_path, m, self._now_iso())
+                self.db.reactivate_external_run(root, None, watch_path, m, self._now_iso(),
+                                                auto_detected=True)
             self.db.add_event(root, "status", "auto-detected active run (filesystem activity)")
             logger.info("run %s: auto-detected on target %s (watch %s)", root, target_name, watch_path)
 

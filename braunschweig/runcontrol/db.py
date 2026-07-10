@@ -117,7 +117,8 @@ class Database:
         self._conn.commit()
 
     def reactivate_external_run(self, run_id: str, log_path: str | None, watch_path: str,
-                                watch_mtime: float, watch_checked_at: str) -> None:
+                                watch_mtime: float, watch_checked_at: str,
+                                auto_detected: bool = False) -> None:
         """Re-adopt a previously terminal external run by resetting its existing row back to
         an active (RUNNING, external=1) state, clearing the prior terminal outcome.
 
@@ -125,11 +126,17 @@ class Database:
         STOPPED) is adopted again: an INSERT would violate the run_id primary key, so the
         existing row is updated in place. finished_at and exit_code are cleared because the
         run is being watched afresh; both are honestly unknown for an external run.
+
+        auto_detected must be set explicitly by the caller: the daemon's autodetect loop
+        reactivates with auto_detected=True, while a manual adopt via the API reactivates
+        with auto_detected=False, so the badge on the run does not go stale (keep showing an
+        old detected/adopted state after the run's provenance changed on reactivation).
         """
         self._conn.execute(
             "UPDATE runs SET status=?, external=1, log_path=?, watch_path=?, watch_mtime=?, "
-            "watch_checked_at=?, finished_at=NULL, exit_code=NULL WHERE run_id=?",
-            (RunStatus.RUNNING.value, log_path, watch_path, watch_mtime, watch_checked_at, run_id))
+            "watch_checked_at=?, finished_at=NULL, exit_code=NULL, auto_detected=? WHERE run_id=?",
+            (RunStatus.RUNNING.value, log_path, watch_path, watch_mtime, watch_checked_at,
+             1 if auto_detected else 0, run_id))
         self._conn.commit()
 
     def update_watch(self, run_id: str, watch_mtime: float, watch_checked_at: str) -> None:

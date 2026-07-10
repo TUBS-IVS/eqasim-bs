@@ -347,7 +347,8 @@ def create_app(settings: Settings, db: Database, worker: QueueWorker,
             # A row exists but is in a terminal state (the running/launching case already
             # 422'd above): re-adopt by resetting the row in place, since an INSERT would
             # violate the run_id primary key.
-            db.reactivate_external_run(run_id, log_path, watch_path, watch_mtime, now_iso)
+            db.reactivate_external_run(run_id, log_path, watch_path, watch_mtime, now_iso,
+                                       auto_detected=False)
             db.add_event(run_id, "status", f"re-adopted (was {existing['status']}); watch "
                                            f"{watch_path}, log {log_path or 'none found'}")
         else:

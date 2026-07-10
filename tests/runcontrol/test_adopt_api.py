@@ -59,3 +59,4 @@ def test_readopt_after_terminal_reactivates(tmp_path):
     row = db.get_run(run_id)
     assert row["status"] == "running" and row["external"] == 1
     assert row["finished_at"] is None
+    assert row["auto_detected"] == 0                      # manual adopt must not masquerade as auto-detected
