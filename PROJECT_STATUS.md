@@ -5,7 +5,28 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-03 · `origin/main` = `141284e` (PRs #101 + #102 merged) · no open PRs.
+> **Last updated:** 2026-07-10 (on branch `docs/status-presentation`; older bullets below may lag `main`).
+> **2026-07-10 — kreis5 100% run RELAUNCHED with full-pool perf fix (ADR-0056, ~40x measured):** root
+> cause of the ~8-day projection = upstream default `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: true` (float
+> parent weights strictly >0 everywhere → every 1km cell balanced all 53,459 signature rows x 1000
+> iterations) + unused `USE_NUMBA` (2.4x, identical to 1e-13). A/B on a batch_000 copy: **32.6 min vs
+> ~22 h**; production relaunched 14:11 from `b6ba420` with `settings_tier3_mef100_intseed_numba.yaml`,
+> ~28 min/batch confirmed, popsim phase ETA same evening. **PENDING: quality A/B vs float reference
+> batch** (running niced on felix, ~2026-07-11) — until clean, the speedup is operational, not
+> scientifically validated. Disk side-find: per-batch `pipeline.h5` ~15 GB dead weight at full pool →
+> interim watcher on felix + **issue #153** (stage.py `cleanup_batch_pipeline` flag, PR after the run).
+> Two verified upstream populationsim v0.10.0 bugs (MIN_GAMMA clamp missing, `converged=True` on
+> no-progress) — bypassed by numba; upstream reports optional. Memory `project-popsim-fullpool-perf-fix`.
+> **2026-07-04 status:** `origin/main` = `141284e` (PRs #101 + #102 + #103 merged) · open PRs: **#106** (#105 docstring), **#107** (#104 deck refresh).
+> **2026-07-04 — income-placement design (issues #108 hub / #109 L1-L2 / #110 L3, ADR-0054):** make the popsim_mid income geography emerge from WHICH real MiD donor households are placed where (economic_status × Kreis control on MiD H4, retire the post-hoc `income_kreis_control` overwrite), not post-hoc scaling. Measured: income number tracks INKAR (ρ=1.0) but inert; status flat (CV 0.033); cars = tenure/size not income; trip-purpose/mobility "gaps" are metric artifacts. **Phase 0/1 built** (H4 extraction+CSV, loader, Phase-0 gate diagnostic; 11 tests; final review fixed 1 Critical + 3 Important) on backup branch **`worktree-income-placement-refdata-gate` @ `2d8e8aa`** (pushed to fork, NO PR/merge). Backlog 3.1 → #108. **Next:** run the Phase-0 gate on the server (needs MiD seed) → decide #109-build vs just-drop-overwrite.
+> **Issue #97 FIXED** (PR #103, merged): the population-validation `household_size` control compared a
+> HOUSEHOLD-based synthetic count against the PERSON-based Zensus 1000A-2081 target. Fix = a
+> `weight_column` option on `bucket_household_control` making the realized side person-weighted. A
+> felix validation re-run on the 100% output moves household_size from **7.7pp/"needs improvement" to
+> 1.44pp/"good"** (classes 1-4 <1.2pp; residual = 5/6+ donor tail); all other controls byte-identical.
+> Follow-ups: **#105** (correct the `households_type` "NOT consumed by IPF" docstring, PR #106) and
+> **#104** (refresh the status-deck QA figures + rebuild, PR #107). With #96 + #97 both fixed, the
+> **Phase-0 blockers of #99 (regional-correct popsim) are cleared**.
 > **Issue #96 FIXED** (PR #101, merged): the synthetic `employed` flag was inflated for minors
 > (14-17yo ~96%, region +7-9pp) by a field-width missing-code collision in `missing.resolve`
 > (substantive `P_TAET=9` Schueler treated as generic keine-Angabe and imputed). The popsim Tier-3

@@ -40,6 +40,45 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-10) — Full-pool popsim perf regime (ADR-0056) + follow-ups #153 / quality A/B / upstream reports
+
+The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true`
+(measured ~40x per batch, A/B 32.6 min vs ~22 h; see ADR-0056 for the float-seed trap mechanics).
+Open follow-ups, in order:
+
+1. **Quality A/B vs float reference (BLOCKS calling the speedup validated).** Float reference batch
+   running niced on felix (`~/bench_batch_float`, done ~2026-07-11). Compare vs the INT batch_000:
+   100m composition, donor diversity (INT: 3,140 distinct donors / 13,845 HH), person marginals,
+   control fit. 1km HH totals already exact in both.
+2. **Issue #153 — stage.py `cleanup_batch_pipeline` flag (default ON):** delete per-batch
+   `pipeline.h5` (~15 GB dead weight at full pool) after verified completion. Interim server watcher
+   (`~/cleanup_batch_h5.sh`) covers the current run only and must be restarted for future full-pool
+   runs until this lands. PR after the current run finishes.
+3. **Optional upstream reports (activitysim/populationsim v0.10.0):** (a) missing `MIN_GAMMA` clamp
+   in the python single balancer (NaN risk), (b) hardcoded `converged=True` on no-progress exit,
+   (c) dense final-geography weight table checkpointed but never read. Draft on request.
+
+### Resolved (2026-07-03) — Issue #97 household_size validation basis FIXED (PR #103 merged) + follow-ups #104/#105
+
+  **#97 FIXED, merged to main (`141284e`).** The population-validation `household_size` control
+  compared a HOUSEHOLD-based synthetic count (`bucket_household_control` counting households) against
+  the PERSON-based Zensus 1000A-2081 target (which reports persons in private households by size class,
+  pinned by `test_hh_size_margin.py`: ~1.135M ZGB persons). Basis mismatch → a large spurious deviation
+  (7.7pp/"needs improvement"). Fix = a `weight_column` option on `bucket_household_control`; the
+  `household_size` control is registered with `weight_column="household_size"` so the realized side is
+  person-weighted (default None keeps cars/bikes byte-identical). TDD (3 new tests); reproduced on the
+  100% run (person basis: classes 1-4 <1.2pp, e.g. 1-person 22.1% vs 21.6%). See ADR (household_size basis).
+  - **Verified via a felix validation re-run** (isolated detached worktree, non-disruptive): on
+    `output_bs_100pct_allfeat_popsim` household_size moves **7.7pp → 1.44pp, "needs improvement" → "good"**
+    (SRMSE 2.07→0.18); all OTHER controls byte-identical (diff). See ADR + `feedback-felix-isolated-worktree-rerun`.
+  - **#105 (PR #106, open):** correct the `households_type.py` module docstring — the table IS consumed
+    by the IPF size margin (aggregated over hh_type) when `use_household_size_margin` is on; it wrongly
+    said "NOT consumed by the IPF itself". Doc-only.
+  - **#104 (PR #107, open):** refresh the status-deck QA figures now that household_size is person-basis
+    (fig_qa1 scoreboard now shows it "gut"/1.4pp; FN2 reworded from "#97 artifact" to "resolved";
+    fig_qa2/qa3 comments + README + deck HTML rebuilt). Regenerated from the corrected `quality_summary.csv`.
+  - With #96 + #97 both fixed, the **Phase-0 blockers of #99 (regional-correct popsim) are cleared.**
+
 ### Resolved (2026-07-03) — Issue #96 minor-employment inflation FIXED (PR #101 merged) + guard (PR #102 open) + #25 closed
 
   **#96 FIXED, merged to main (`8f652c4`).** Root cause = a field-width missing-code collision in
@@ -344,7 +383,7 @@ remains available via an unattended run if required.
 
 | # | Item | Note |
 |---|------|------|
-| 3.1 | **Kreis-level income control** (income as a PopulationSim control via INKAR Kreis targets, instead of post-hoc scaling). | Feasible-but-nontrivial; deferred. Within-Kreis *extra* signal already dropped (existing controls dominate). |
+| 3.1 | **Kreis-level income control** (income as a PopulationSim control via MiD H4 status-per-Kreis + INKAR, instead of post-hoc scaling; retire the overwrite so income geography is placement-based). | **Now specced + tracked: #108** (income/status sibling of #99). Direct target found — MiD H4 status-per-Kreis (regional-study PDF p.20) → no SAE needed. Within-Kreis *extra* signal (#73/ADR-0045, rejected) revisited at **Gemeinde** level via LSN income-tax + KBA-EV-per-Gemeinde validation. Spec: `docs/superpowers/specs/2026-07-04-income-weighted-household-placement-design.md`. |
 | 3.2 | **BASt Dauerzählstellen HGV-count calibration** for the injected freight. | Future external-validation wave; freight currently taken as-is from german-wide-freight v3. |
 | 3.3 | **Real VRB/DELFI GTFS + VRB PT tariff (B2)** + MATSim termination/iteration tuning. | Supply-side + behaviour wave; uncalibrated cordon gate-gravity beta/capacity_exponent also lives here. |
 | 3.4 | **Cordon sub-projects 3 & 4** (external *visitors*, non-freight *through-traffic*). | Never started; explicitly out of scope in the original roadmap. Through-freight is already covered by the freight module. |
