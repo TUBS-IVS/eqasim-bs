@@ -19,9 +19,16 @@ class FakeContext:
         self.declared_stages = []
 
     def config(self, key, *default):
+        # Mirrors real synpp semantics: the (key, default) form REGISTERS the
+        # default (configure-time); the single-arg form is a strict lookup
+        # (execute-time). Tests call AS.configure(ctx) before run_stage(ctx)
+        # exactly like the pipeline does -- the old stub silently accepted the
+        # two-argument form inside execute and thereby masked the TypeError
+        # that killed the 2026-07-11 kreis5 run in its last stage.
         if key in self._config:
             return self._config[key]
         if default:
+            self._config[key] = default[0]
             return default[0]
         raise KeyError(key)
 
@@ -31,6 +38,12 @@ class FakeContext:
 
     def path(self, name):
         return self._paths[name]
+
+
+def run_stage(ctx):
+    """configure() then execute(), exactly like the synpp pipeline lifecycle."""
+    AS.configure(ctx)
+    return AS.execute(ctx)
 
 
 def _base_config(output_path, **overrides):
@@ -55,7 +68,7 @@ def _write_min_output(tmp_path):
 
 def test_disabled_is_noop(tmp_path):
     ctx = FakeContext(_base_config(tmp_path, analysis_suite_enabled=False))
-    assert AS.execute(ctx) is None
+    assert run_stage(ctx) is None
     assert not (tmp_path / "analysis").exists()
 
 
@@ -63,7 +76,7 @@ def test_malformed_output_raises(tmp_path):
     # enabled but no *_persons.csv in output_path -> hard error
     ctx = FakeContext(_base_config(tmp_path))
     with pytest.raises(FileNotFoundError):
-        AS.execute(ctx)
+        run_stage(ctx)
 
 
 def _install_pop_spy(monkeypatch, calls, raise_exc=None):
@@ -81,7 +94,7 @@ def test_population_validation_runs_by_default(tmp_path, monkeypatch):
     calls = []
     _install_pop_spy(monkeypatch, calls)
     ctx = FakeContext(_base_config(tmp_path))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert len(calls) == 1
     assert "--run-output-dir" in calls[0]["argv"]
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -93,7 +106,7 @@ def test_population_validation_flag_off(tmp_path, monkeypatch):
     calls = []
     _install_pop_spy(monkeypatch, calls)
     ctx = FakeContext(_base_config(tmp_path, analysis_population_validation=False))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert any(s["analysis"] == "population_validation" for s in summary["skipped"])
@@ -104,7 +117,7 @@ def test_sub_analysis_failure_is_caught(tmp_path, monkeypatch):
     calls = []
     _install_pop_spy(monkeypatch, calls, raise_exc=RuntimeError("boom"))
     ctx = FakeContext(_base_config(tmp_path))
-    result = AS.execute(ctx)  # must NOT raise
+    result = run_stage(ctx)  # must NOT raise
     assert result is not None
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert any(f["analysis"] == "population_validation" for f in summary["failed"])
@@ -123,7 +136,7 @@ def test_mid_and_household_run_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(MID, "main", lambda argv: mid_calls.append(argv))
     monkeypatch.setattr(HH, "main", lambda argv: hh_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert len(mid_calls) == 1 and "--output-dir" in mid_calls[0]
     assert "--sim-cache" not in mid_calls[0]        # no MATSim -> no sim cache passed
     assert len(hh_calls) == 1
@@ -141,7 +154,7 @@ def test_popsim_skipped_when_not_popsim(tmp_path, monkeypatch):
     monkeypatch.setattr(PV, "run", lambda ns: pv_calls.append(ns))
     monkeypatch.setattr(IQ, "main", lambda argv: iq_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path))  # method=None -> not popsim
-    AS.execute(ctx)
+    run_stage(ctx)
     assert pv_calls == [] and iq_calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
@@ -164,7 +177,7 @@ def test_popsim_and_integerizer_run_when_ready(tmp_path, monkeypatch):
         **{"braunschweig.population.method": "popsim_mid",
            "braunschweig.population.popsim.work_dir": str(work),
            "data_path": str(tmp_path)}))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert len(pv_calls) == 1
     assert len(iq_calls) == 1 and "--work-dir" in iq_calls[0] and "--mid-dir" in iq_calls[0]
 
@@ -178,7 +191,7 @@ def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path))  # no matsim, no working dir
-    AS.execute(ctx)
+    run_stage(ctx)
     assert dash_calls == [] and edu_calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
@@ -196,7 +209,7 @@ def test_dashboard_runs_with_sim_cache(tmp_path, monkeypatch):
     ctx = FakeContext(
         _base_config(tmp_path, simwrapper_include_matsim=True),
         paths={"matsim.simulation.run": str(run_cache)})
-    AS.execute(ctx)
+    run_stage(ctx)
     assert len(dash_calls) == 1
     assert "--sim-cache" in dash_calls[0]
 
@@ -214,7 +227,7 @@ def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):
     edu_calls = []
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert len(edu_calls) == 1
     assert "--working-directory" in edu_calls[0]
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -230,7 +243,7 @@ def test_education_skips_when_cache_incomplete(tmp_path, monkeypatch):
     edu_calls = []
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
     ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
-    AS.execute(ctx)
+    run_stage(ctx)
     assert edu_calls == []  # skipped, not run (and not a red failure)
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert not any(f["analysis"] == "education_validation" for f in summary["failed"])

@@ -117,12 +117,12 @@ def execute(context):
         )
         argv = ["--run-output-dir", str(output_path), "--prefix", prefix,
                 "--minor-employment-max-rate",
-                str(context.config(KEY_MINOR_EMP_MAX_RATE, DEFAULT_MINOR_EMPLOYMENT_MAX_RATE))]
-        if context.config(KEY_MINOR_EMP_RAISE, False):
+                str(context.config(KEY_MINOR_EMP_MAX_RATE))]
+        if context.config(KEY_MINOR_EMP_RAISE):
             argv.append("--minor-employment-raise")
         R.run(R._parse_args(argv))
     _run(summary, "population_validation",
-         context.config(KEY_POPULATION_VALIDATION, True), True, "", _pop)
+         context.config(KEY_POPULATION_VALIDATION), True, "", _pop)
 
     def _mid():
         from braunschweig.analysis import run_mid_validation as R
@@ -131,19 +131,19 @@ def execute(context):
             argv += ["--sim-cache", sim_cache]
         R.main(argv)
     _run(summary, "mid_validation",
-         context.config(KEY_MID_VALIDATION, True), True, "", _mid)
+         context.config(KEY_MID_VALIDATION), True, "", _mid)
 
     def _hh():
         from braunschweig.analysis import run_household_composition as R
         R.main(["--output-dir", str(output_path), "--prefix", prefix])
     _run(summary, "household_composition",
-         context.config(KEY_HOUSEHOLD_COMPOSITION, True), True, "", _hh)
+         context.config(KEY_HOUSEHOLD_COMPOSITION), True, "", _hh)
 
     def _popsim():
         from braunschweig.analysis.popsim_validation import run_popsim_control_validation as R
         R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
     _run(summary, "popsim_validation",
-         context.config(KEY_POPSIM_VALIDATION, True), is_popsim, "not a popsim run", _popsim)
+         context.config(KEY_POPSIM_VALIDATION), is_popsim, "not a popsim run", _popsim)
 
     mid_dir = (str(Path(data_path) / "braunschweig" / "popsim" / "mid2023_raw")
                if data_path else None)
@@ -153,7 +153,7 @@ def execute(context):
         from braunschweig.analysis import run_integerizer_quality as R
         R.main(["--work-dir", work_dir, "--mid-dir", mid_dir, "--output-dir", str(output_path)])
     _run(summary, "integerizer_quality",
-         context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
+         context.config(KEY_INTEGERIZER_QUALITY), iq_ready,
          "popsim work_dir / mid_dir not resolvable", _iq)
 
     # education_validation uniquely reads synpp CACHE stage pickles (named
@@ -180,7 +180,7 @@ def execute(context):
                 "--sampling-rate", str(sampling_rate),
                 "--output-dir", str(output_path / "analysis" / "education_validation")])
     _run(summary, "education_validation",
-         context.config(KEY_EDUCATION_VALIDATION, True), edu_ready, edu_reason, _edu)
+         context.config(KEY_EDUCATION_VALIDATION), edu_ready, edu_reason, _edu)
 
     def _dash():
         import sys as _sys
@@ -194,7 +194,7 @@ def execute(context):
         finally:
             _sys.argv = old
     _run(summary, "dashboard",
-         context.config(KEY_DASHBOARD, True), bool(sim_cache), "no MATSim sim cache", _dash)
+         context.config(KEY_DASHBOARD), bool(sim_cache), "no MATSim sim cache", _dash)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)
