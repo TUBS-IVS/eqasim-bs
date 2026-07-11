@@ -360,7 +360,8 @@ def execute(context):
     df_spec, df_vehicle_types = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands, consistency_v2=consistency_v2,
-        age_income_coupling=age_income_coupling)
+        age_income_coupling=age_income_coupling,
+        population_label="residents")
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the
