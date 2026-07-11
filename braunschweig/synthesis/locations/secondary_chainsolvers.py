@@ -132,31 +132,16 @@ def configure(context):
     # temperature field, so this key is registered but NOT wired into cs.setup.
     context.config("secondary_scorer_mnl_temperature", 1.0)
     if sec_enabled:
-        context.stage("braunschweig.data.building_potentials")
+        # The assembled candidate set (gpkg sec_b_* + legacy other + external
+        # centroids + residential visit rows) is built by a dedicated stage that
+        # the facilities writer ALSO consumes, so a location the chainsolvers can
+        # realise always exists as a MATSim facility (2026-07-11 LinkAssignment
+        # fix: sec_b_* ids were realised but never written to facilities.xml).
+        context.stage("braunschweig.synthesis.locations.secondary_candidates")
 
-    # External Gemeinde centroids for long-distance secondary trips (flag-gated,
-    # default ON). Only consumed when the building-potential candidate set is built.
-    external_on = context.config("secondary_external_candidates", True)
-    if sec_enabled and external_on:
-        context.stage("braunschweig.data.external_secondary_points")
-    context.config("cordon_enabled", False)
-
-    # Smart `other` potential (flag-gated; default OFF). When ON (and when
-    # secondary_building_potentials is also ON), the `other` candidate
-    # potential is derived via the Bosserhof function-class mapping
-    # (derive_other_potential): a capped, whitelist-boosted potential that
-    # prevents industrial-volume giants (e.g. VW factory) from dominating
-    # the generic potential. The footprint-join fallback is the median of the
-    # positive other-potential values (logged; no silent fallback). When OFF
-    # (default) the raw potential_generic is used — byte-identical to the
-    # pre-feature behaviour.
-    context.config("secondary_other_smart_potential", False)
-    context.config("secondary_other_broad_share", 0.54)
-    context.config("secondary_other_errand_share", 0.46)
-    context.config("secondary_other_min_volume_m3", 50.0)
-    context.config("secondary_other_cap_percentile", 0.99)
-    if sec_enabled and context.config("secondary_other_smart_potential"):
-        context.stage("braunschweig.data.bosserhof_purpose")
+    # Smart `other` potential, external candidates and the cordon warning are
+    # properties of the CANDIDATE SET and are declared/consumed by the
+    # braunschweig.synthesis.locations.secondary_candidates stage above.
 
     # Daily / non-daily shopping subtype (Tier 2). When ON, each shop leg is
     # tagged with a daily/non-daily subtype that drives BOTH its desired
@@ -209,9 +194,10 @@ def configure(context):
     # (checked, fail-fast, in execute()). OFF (default) is byte-identical to
     # the Task-4 behaviour: leisure_visit maps to pot_leisure like the other
     # three leisure groups.
+    # Flag still read in execute() (fail-fast guards + locations_df schema); the
+    # residential candidate rows themselves are appended by the
+    # secondary_candidates stage, which owns the braunschweig.data.buildings dep.
     context.config("leisure_visit_building_potential", False)
-    if context.config("leisure_visit_building_potential"):
-        context.stage("braunschweig.data.buildings")
 
 
 # ---------------------------------------------------------------------------
@@ -2359,7 +2345,11 @@ def execute(context):
     distance_distributions = context.stage(
         "synthesis.population.spatial.secondary.distance_distributions"
     )
-    df_secondary = context.stage("synthesis.locations.secondary")
+    # The LEGACY candidate frame stays a separate, named variable: the
+    # RDA/unbounded fallback intentionally places on it (stable sec_* ids),
+    # while the primary solve uses the assembled REPLACE candidate set below.
+    df_secondary_legacy = context.stage("synthesis.locations.secondary")
+    df_secondary = df_secondary_legacy
 
     # Apply the same calibration tweaks as the legacy stage so the
     # input-side distributions are bit-comparable. ``_resample_distributions``
@@ -2409,13 +2399,18 @@ def execute(context):
             return [], []
         if fallback_strategy == "rda":
             if "index" not in rda_index_cache:
-                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary)
+                # Always the LEGACY frame: previously the closure late-bound
+                # df_secondary, so a run with zero unbounded chains but some
+                # carla-failed problems would have built the index on the
+                # REPLACE set instead -- pinning to legacy makes the fallback
+                # candidate set deterministic regardless of call order.
+                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary_legacy)
             return _rda_fallback_place(
                 problems, problem_indices, rda_index_cache["index"],
                 distance_distributions, leisure_corr, random, crs,
             )
         return _fallback_place(
-            problems, problem_indices, df_secondary, random, crs,
+            problems, problem_indices, df_secondary_legacy, random, crs,
         )
 
     print(
@@ -2559,43 +2554,16 @@ def execute(context):
         }
     else:
         scorer_spec = None
-    # NOTE: the RDA/unbounded fallback above intentionally uses the LEGACY df_secondary
-    # candidate set; only the primary chainsolver solve uses these REPLACE candidates.
+    # NOTE: the RDA/unbounded fallback intentionally uses the LEGACY frame
+    # (df_secondary_legacy); only the primary chainsolver solve uses the
+    # REPLACE candidates. The assembled set (gpkg sec_b_* + legacy other +
+    # external centroids + residential visit rows) comes from the dedicated
+    # secondary_candidates stage -- the SAME stage the facilities writer
+    # consumes, so every realisable location id is guaranteed to exist as a
+    # MATSim facility (2026-07-11 LinkAssignment fix).
     if sec_enabled:
-        external_on = context.config("secondary_external_candidates")
-        df_external = (context.stage("braunschweig.data.external_secondary_points")
-                       if external_on else None)
-        warning = external_candidates_cordon_warning(
-            external_on, context.config("cordon_enabled"))
-        if warning:
-            print(warning, flush=True)
-        # Smart other potential (flag-gated). When ON, pass the Bosserhof
-        # mapping and the derived-potential parameters so build_secondary_candidates
-        # computes the capped, whitelist-boosted potential_other instead of the
-        # raw potential_generic. When OFF (default), pass neither kwarg so the
-        # call is byte-identical to the pre-feature behaviour.
-        smart_other = bool(context.config("secondary_other_smart_potential"))
-        if smart_other:
-            _mapping = context.stage("braunschweig.data.bosserhof_purpose")
-            _other_params = dict(
-                broad_share=float(context.config("secondary_other_broad_share")),
-                errand_share=float(context.config("secondary_other_errand_share")),
-                min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
-                cap_percentile=float(context.config("secondary_other_cap_percentile")),
-            )
-            df_secondary = build_secondary_candidates(
-                df_secondary,
-                context.stage("braunschweig.data.building_potentials"),
-                df_external=df_external,
-                mapping=_mapping,
-                other_potential_params=_other_params,
-            )
-        else:
-            df_secondary = build_secondary_candidates(
-                df_secondary,
-                context.stage("braunschweig.data.building_potentials"),
-                df_external=df_external,
-            )
+        df_secondary = context.stage(
+            "braunschweig.synthesis.locations.secondary_candidates")
     # Tier 2 / Task 4 require the building-potential candidate set: the subtype
     # legs (shop_daily/non_daily; leisure_local/visit/activity/excursion;
     # other_errand_short/long, other_escort) can only be placed at buildings
@@ -2646,17 +2614,10 @@ def execute(context):
             "candidate frame). Enable secondary_building_potentials or disable "
             "leisure_visit_building_potential."
         )
-    if leisure_visit_building_potential:
-        try:
-            df_residential_buildings = context.stage("braunschweig.data.buildings")
-        except Exception as exc:
-            raise ValueError(
-                "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
-                "is ON but the residential candidate source "
-                "(braunschweig.data.buildings) could not be resolved (%s); no silent "
-                "fallback to pot_leisure is performed." % exc
-            ) from exc
-        df_secondary = append_residential_visit_candidates(df_secondary, df_residential_buildings)
+    # The residential visit candidates themselves are appended by the
+    # secondary_candidates stage (df_secondary above already carries them when
+    # the flag is ON); _build_locations_df below still needs the flag for the
+    # offers_visit/pot_visit schema wiring and its own fail-fast check.
 
     # Task 6, issue #127: excursion boundary-clip transparency. Reads the
     # already-sampled desired distances (plans_df["distance_meters"]) and the
