@@ -39,8 +39,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from braunschweig.gravity.model import (  # noqa: E402
+    _append_outbound_flows,
     _build_origin_slope_vector,
     apply_sector_aware_attraction,
+    compute_work_od,
     evaluate_gravity,
 )
 
@@ -272,6 +274,108 @@ def test_sector_aware_missing_betriebe_raises_when_enabled():
         assert "n_betriebe" in str(error)
     else:
         raise AssertionError("expected ValueError when betriebe table missing")
+
+
+# --- zero-total-origin self-loop fallback: observability (no-silent-fallback) --
+
+def test_compute_work_od_zero_population_origin_logs_and_keeps_self_loop(caplog):
+    """A zero-population origin has an all-zero flow row (Furness leaves it at 0),
+    so the row-normalisation would divide 0/0; the self-loop is forced to weight
+    1.0 instead. The fallback must be counted and logged (CLAUDE.md
+    "Fallback transparency"), and the forced weight must be exactly 1.0 while the
+    other (non-zero) origins are unaffected."""
+    df_population = pd.DataFrame({
+        "origin_id": ["A", "B", "C"],
+        "population": [10.0, 20.0, 0.0],
+    })
+    df_employees = pd.DataFrame({
+        "destination_id": ["A", "B", "C"],
+        "employees": [15.0, 15.0, 0.0],
+    })
+    municipalities = ["A", "B", "C"]
+    df_distances = pd.DataFrame(
+        [(o, d, 5.0) for o in municipalities for d in municipalities],
+        columns=["origin_id", "destination_id", "distance_km"],
+    )
+
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.gravity.model"):
+        df_matrix = compute_work_od(
+            df_population, df_employees, df_distances,
+            df_regiostar=None, rs7_by_zone=None,
+            slope=-0.065, constant=0.0, diagonal=1.0,
+            slope_overrides=None, friction_factors=None,
+            max_iterations=1000,
+        )
+
+    assert any(
+        "zero-total origins forced to self-loop" in r.message for r in caplog.records
+    )
+    row_c = df_matrix[(df_matrix["origin_id"] == "C") & (df_matrix["destination_id"] == "C")]
+    assert np.isclose(row_c["weight"].iloc[0], 1.0)
+    # Origin A's weights are unaffected by the fallback and still sum to 1.0.
+    row_a = df_matrix[df_matrix["origin_id"] == "A"]
+    assert np.isclose(row_a["weight"].sum(), 1.0)
+
+
+def test_compute_work_od_no_zero_origins_stays_silent(caplog):
+    """No zero-population origin -> no fallback log line is emitted."""
+    df_population = pd.DataFrame({
+        "origin_id": ["A", "B"],
+        "population": [10.0, 20.0],
+    })
+    df_employees = pd.DataFrame({
+        "destination_id": ["A", "B"],
+        "employees": [15.0, 15.0],
+    })
+    df_distances = pd.DataFrame(
+        [(o, d, 5.0) for o in ["A", "B"] for d in ["A", "B"]],
+        columns=["origin_id", "destination_id", "distance_km"],
+    )
+
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.gravity.model"):
+        compute_work_od(
+            df_population, df_employees, df_distances,
+            df_regiostar=None, rs7_by_zone=None,
+            slope=-0.065, constant=0.0, diagonal=1.0,
+            slope_overrides=None, friction_factors=None,
+            max_iterations=1000,
+        )
+
+    assert not any(
+        "zero-total origins forced to self-loop" in r.message for r in caplog.records
+    )
+
+
+def test_append_outbound_flows_zero_total_origin_logs_and_keeps_self_loop(caplog):
+    """Same fallback in the outbound-injection path: an origin with an all-zero
+    outbound OD row (and no BA-Pendler outbound flow to inject) gets its self-loop
+    forced to weight 1.0, and the event is counted and logged."""
+    df_od = pd.DataFrame({
+        "origin_id": ["A", "A", "B"],
+        "destination_id": ["A", "B", "B"],
+        "flow": [0.0, 0.0, 5.0],
+    })
+    df_population = pd.DataFrame({
+        "commune_id": ["A", "B"],
+        "weight": [10.0, 20.0],
+    })
+    # Empty BA-Pendler outbound frame -> df_out_pendler stays empty -> df_all = df_od.
+    df_pendler = pd.DataFrame(columns=["orig_ars", "dest_ars", "flow"])
+    df_external = pd.DataFrame(columns=["ars5", "commune_id", "employees"])
+
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.gravity.model"):
+        df_all = _append_outbound_flows(
+            df_od, df_population, df_pendler, df_external, scope=["A", "B"],
+        )
+
+    assert any(
+        "zero-total origins forced to self-loop" in r.message for r in caplog.records
+    )
+    row_a_self = df_all[(df_all["origin_id"] == "A") & (df_all["destination_id"] == "A")]
+    assert np.isclose(row_a_self["weight"].iloc[0], 1.0)
 
 
 def test_sector_aware_gemeinde_without_betriebe_keeps_neutral_tilt():
