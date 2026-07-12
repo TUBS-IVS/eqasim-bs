@@ -165,10 +165,30 @@ def w1_scored_target(data_path):
     return renormalize_scored(raw)
 
 
+def _p36_mobile_share(row) -> float:
+    """Mobility share from a P36_1 row, excluding item-nonresponse.
+
+    The published P36.1 rows sum mobil + nicht_mobil + unbekannt = 100 with
+    1-3% 'unbekannt' (item-nonresponse). The synthetic side has no 'unknown'
+    state, so the like-for-like target is mobil / (mobil + nicht_mobil);
+    keeping 'unbekannt' in the denominator understated the mobility target by
+    up to 2.35pp per Kreis (2026-07-12 validation audit).
+    """
+    mobil = float(row["mobil"])
+    nicht_mobil = float(row["nicht_mobil"])
+    denominator = mobil + nicht_mobil
+    if denominator <= 0:
+        raise ValueError(
+            "P36_1 row has non-positive mobil + nicht_mobil "
+            f"({mobil} + {nicht_mobil}); cannot form a mobility share.")
+    return mobil / denominator
+
+
 def p36_mobility_target(data_path):
-    """MiD P36_1 ZGB-overall mobility rate (share of persons that are 'mobil')."""
+    """MiD P36_1 ZGB-overall mobility rate: share of persons that are 'mobil',
+    with the 'unbekannt' item-nonresponse excluded from the denominator."""
     row = _zgb_overall_row(data_path, "mid2023_P36_1")
-    return float(row["mobil"]) / 100.0
+    return _p36_mobile_share(row)
 
 
 # -- MiD W12 mean-trip-length-by-purpose coherence ---------------------------
@@ -466,9 +486,10 @@ def w1_scored_target_by_kreis(data_path):
 
 
 def p36_mobility_target_by_kreis(data_path):
-    """MiD P36_1 mobility rate per Kreis: {ars5 -> share mobile}."""
+    """MiD P36_1 mobility rate per Kreis: {ars5 -> share mobile}, 'unbekannt'
+    excluded from the denominator (see _p36_mobile_share)."""
     df = _mid_table_by_kreis(data_path, "mid2023_P36_1")
-    return {row["ars5"]: float(row["mobil"]) / 100.0 for _, row in df.iterrows()}
+    return {row["ars5"]: _p36_mobile_share(row) for _, row in df.iterrows()}
 
 
 def trip_coherence_by_kreis(persons, trips, data_path, geo_col="ars5",

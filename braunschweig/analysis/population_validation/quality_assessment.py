@@ -12,8 +12,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# Default grade thresholds on |mean_delta_pp| (percentage points). Documented and
-# overridable by the caller; no hard-coded magic at call sites.
+# Default grade thresholds on the mean |delta_pp| (mean of per-cell absolute
+# deviations, percentage points -- NOT |mean(delta_pp)|, which would let
+# opposite-signed cell errors cancel). Documented and overridable by the
+# caller; no hard-coded magic at call sites.
 DEFAULT_GRADE_BOUNDS_PP = (1.0, 3.0, 5.0)
 GRADE_LABELS = ("very good", "good", "acceptable", "needs improvement")
 
@@ -25,13 +27,15 @@ CAUSE_HINTS = {
         "MiD P24.1 margins are rounded to integer percent and raked across "
         "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
     "employment": (
-        "The synthetic employment rate is raked to the OFFICIAL GENESIS "
-        "Regionalstatistik (13111, per Gemeinde x age x sex), not to MiD P9. P9 is "
-        "shown here as a cross-check, but its per-Kreis rate is noisy (MiD sample "
-        "~900/Kreis -> 43-59% spread vs the synthetic's stable ~44-49%), so most of "
-        "this deviation is P9 survey noise plus a ~4pp GENESIS-vs-P9 definitional "
-        "level difference -- NOT a synthesis error. Raking to P9 would overfit the "
-        "survey noise and is intentionally avoided."),
+        "The synthetic employment rate is anchored to OFFICIAL statistics, not "
+        "to MiD P9 (popsim_mid: Zensus 2022 kreis_erwerbsstatus levels + the "
+        "employment_grid age shape; simple_ipf: GENESIS 13111). P9 is an "
+        "INDEPENDENT cross-check with two known caveats: its per-Kreis rate is "
+        "survey-noisy (MiD sample is a few hundred to ~2000 per Kreis), and its "
+        "taxonomy counts 'in_ausbildung' as not employed while the synthetic "
+        "employed flag may include apprentices. Part of any deviation here is "
+        "therefore definitional, not a synthesis error; raking to P9 would "
+        "overfit survey noise and is intentionally avoided."),
     # economic_status is intentionally NOT registered as a validation control
     # (no hard Kreis target exists -- it is Bayes-modelled from hhtype x region
     # and exported spatially via geo_export instead). Its hint key was removed
@@ -71,8 +75,11 @@ def assess(long: pd.DataFrame, grade_bounds=DEFAULT_GRADE_BOUNDS_PP) -> pd.DataF
     """Per-control fit measures + grade + cause hint. Empty in -> empty out."""
     if long.empty:
         return pd.DataFrame()
+    if "independence" not in long.columns:
+        long = long.assign(independence="independent")
     rows = []
-    for (control, family), sub in long.groupby(["control", "family"]):
+    for (control, family, independence), sub in long.groupby(
+            ["control", "family", "independence"]):
         synth = sub["synthetic_count"].to_numpy(dtype=float)
         target = sub["target_count"].to_numpy(dtype=float)
         dp = sub["delta_pp"].to_numpy(dtype=float)
@@ -90,7 +97,8 @@ def assess(long: pd.DataFrame, grade_bounds=DEFAULT_GRADE_BOUNDS_PP) -> pd.DataF
         mean_abs_dp = float(np.mean(np.abs(dp)))
         same_sign = bool(np.all(dp >= 0) or np.all(dp <= 0)) and len(sub) > 1
         rows.append({
-            "control": control, "family": family, "n_cells": int(len(sub)),
+            "control": control, "family": family,
+            "independence": independence, "n_cells": int(len(sub)),
             "srmse": rmse / mean_target if mean_target > 0 else np.nan,
             "tae": tae,
             "rae": tae / float(np.sum(target)) if np.sum(target) > 0 else np.nan,
@@ -105,10 +113,29 @@ def assess(long: pd.DataFrame, grade_bounds=DEFAULT_GRADE_BOUNDS_PP) -> pd.DataF
 
 
 def family_scores(quality: pd.DataFrame) -> pd.DataFrame:
-    """Mean SRMSE + mean |delta_pp| per family (the headline roll-up)."""
+    """Mean SRMSE + mean |delta_pp| per family (the headline roll-up).
+
+    NOTE: this is an UNWEIGHTED mean over controls (each control counts once
+    regardless of its cell count) -- a deliberate, documented convention so a
+    678-cell control cannot drown out a 16-cell one in the headline.
+    """
     if quality.empty:
         return pd.DataFrame()
     return (quality.groupby("family")
+            .agg(mean_srmse=("srmse", "mean"),
+                 mean_abs_delta_pp=("mean_abs_delta_pp", "mean"),
+                 n_controls=("control", "count"))
+            .reset_index())
+
+
+def independence_scores(quality: pd.DataFrame) -> pd.DataFrame:
+    """Roll-up per independence class (fit_check / partially_independent /
+    independent), so convergence-to-own-targets is never conflated with
+    agreement with independent references (2026-07-12 validation audit).
+    Unweighted over controls, like family_scores."""
+    if quality.empty or "independence" not in quality.columns:
+        return pd.DataFrame()
+    return (quality.groupby("independence")
             .agg(mean_srmse=("srmse", "mean"),
                  mean_abs_delta_pp=("mean_abs_delta_pp", "mean"),
                  n_controls=("control", "count"))

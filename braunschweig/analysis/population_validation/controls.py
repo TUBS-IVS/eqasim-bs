@@ -41,6 +41,15 @@ class Control:
     categories: tuple[str, ...]
     realized: RealizedExtractor
     target: TargetLoader | None
+    # Honesty-of-framing class (2026-07-12 validation audit): a control whose
+    # target ALSO steers the synthesis is a FIT CHECK (it measures IPF/raking
+    # convergence, not agreement with independent reality); only controls with
+    # a target the synthesis never consumed are independent validation.
+    #   "independent"           target not used anywhere in synthesis
+    #   "partially_independent" target is an input to (but not identical with)
+    #                           the steering source (e.g. one table of a blend)
+    #   "fit_check"             target (or its direct source) steers synthesis
+    independence: str = "independent"
 
 
 def _geo_col(geography: str) -> str:
@@ -52,7 +61,8 @@ def _geo_col(geography: str) -> str:
 
 
 def categorical_person_control(name, family, geography, column, categories, target,
-                               age_min=None, age_max=None, derive=None):
+                               age_min=None, age_max=None, derive=None,
+                               independence="independent"):
     """Categorical control on ``frames.persons``.
 
     Optional parameters keep existing callers byte-identical (they pass none):
@@ -88,10 +98,11 @@ def categorical_person_control(name, family, geography, column, categories, targ
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, tuple(categories), realized, target)
+    return Control(name, family, geography, tuple(categories), realized, target, independence=independence)
 
 
 def bucket_household_control(name, family, geography, column, top, target, top_label=None,
+                             independence="independent",
                              weight_column=None):
     """Bucket a numeric household column into ``[0, 1, ..., top-1, top_lab]`` categories.
 
@@ -164,7 +175,7 @@ def bucket_household_control(name, family, geography, column, top, target, top_l
                      .rename(columns={"_weight": "synthetic_count"}))
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, cats, realized, target)
+    return Control(name, family, geography, cats, realized, target, independence=independence)
 
 
 def _band_labels(bounds: tuple[int, ...]) -> tuple[str, ...]:
@@ -183,7 +194,8 @@ def _band_labels(bounds: tuple[int, ...]) -> tuple[str, ...]:
     return tuple(labels)
 
 
-def banded_person_control(name, family, geography, column, bounds, target):
+def banded_person_control(name, family, geography, column, bounds, target,
+                          independence="independent"):
     """Realized control that bins a numeric person column into age-style bands.
 
     ``bounds`` are the right-open band edges (e.g. ``(15, 30, 45, 60, 75)``);
@@ -218,10 +230,11 @@ def banded_person_control(name, family, geography, column, bounds, target):
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, cats, realized, target)
+    return Control(name, family, geography, cats, realized, target, independence=independence)
 
 
-def categorical_household_control(name, family, geography, column, categories, target):
+def categorical_household_control(name, family, geography, column, categories, target,
+                                  independence="independent"):
     """Categorical control on ``frames.households`` (mirror of the person variant)."""
     geo_col = _geo_col(geography)
 
@@ -236,10 +249,11 @@ def categorical_household_control(name, family, geography, column, categories, t
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, tuple(categories), realized, target)
+    return Control(name, family, geography, tuple(categories), realized, target, independence=independence)
 
 
 def categorical_vehicle_control(name, family, geography, column, categories, target,
+                                independence="independent",
                                 derive=None):
     """Categorical control on ``frames.vehicles``.
 
@@ -263,7 +277,14 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
         if column not in frames.vehicles.columns:
             LOGGER.warning("control %s: column %r absent in vehicles; skipped", name, column)
             return empty
-        veh = frames.vehicles.copy()
+        # Fleet-universe controls (bev_share) must compare the household FLEET
+        # only. Apply the explicit fleet filter instead of relying on the geo
+        # join to shed the routing vehicles by accident: in the 2026-07 kreis5
+        # run the routing rows carried a filler household_id and were dropped
+        # ONLY because the filler failed the geo join -- correct result, wrong
+        # (silent, fragile) mechanism.
+        from braunschweig.analysis import fleet_filter as _fleet_filter
+        veh = _fleet_filter.fleet_vehicles(frames.vehicles, context=f"control {name}").copy()
         # Resolve household_id: use it directly when present (German household
         # fleet), else map owner_id -> person_id -> household_id (legacy fleet).
         # Doing the owner_id join when household_id already exists would create
@@ -276,8 +297,18 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
                 return empty
             persons = frames.persons[["person_id", "household_id"]].drop_duplicates("person_id")
             veh = veh.merge(persons, left_on="owner_id", right_on="person_id", how="left")
+        n_before_geo = len(veh)
         veh = veh.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         veh = veh.dropna(subset=[geo_col]).copy()
+        n_dropped_geo = n_before_geo - len(veh)
+        # No-silent-fallback rule: the geo join must not silently shed rows. A
+        # large drop now means broken household keys, not the fleet/routing
+        # split (that split happens explicitly in fleet_vehicles above).
+        (LOGGER.warning if n_before_geo and n_dropped_geo / n_before_geo > 0.01
+         else LOGGER.info)(
+            "control %s: geo join kept %d/%d fleet vehicles (%d dropped, %.1f%%)",
+            name, len(veh), n_before_geo, n_dropped_geo,
+            (100.0 * n_dropped_geo / n_before_geo) if n_before_geo else 0.0)
         if derive is not None:
             veh["category"] = derive(veh[column]).astype(str)
         else:
@@ -286,7 +317,7 @@ def categorical_vehicle_control(name, family, geography, column, categories, tar
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, tuple(categories), realized, target)
+    return Control(name, family, geography, tuple(categories), realized, target, independence=independence)
 
 
 # Eqasim run-output booleans are written as strings; treat these (case-folded,
@@ -407,7 +438,8 @@ def check_minor_employment(
             "max_rate": max_rate, "exceeded": exceeded}
 
 
-def license_control(name, family, geography, target, age_min=None, age_max=None):
+def license_control(name, family, geography, target, age_min=None, age_max=None,
+                    independence="independent"):
     """Driving-licence control that is robust to the run-output schema.
 
     The categorical ``license_type`` column (values from ``RT.LICENSE_CATEGORIES``)
@@ -467,7 +499,7 @@ def license_control(name, family, geography, target, age_min=None, age_max=None)
                  .rename("synthetic_count").reset_index())
         return out.rename(columns={geo_col: "geo_id"})
 
-    return Control(name, family, geography, RT.LICENSE_CATEGORIES, realized, target)
+    return Control(name, family, geography, RT.LICENSE_CATEGORIES, realized, target, independence=independence)
 
 
 def _kreis_categorical_target(by_kreis: dict[str, np.ndarray], cats: tuple[str, ...]) -> pd.DataFrame:
@@ -488,14 +520,40 @@ def pt_ticket_target(data_path: str) -> pd.DataFrame:
     return _kreis_categorical_target(by_kreis, RT.PT_TICKET_CATEGORIES)
 
 
+def _renormalized_by_kreis(by_kreis: dict, filename: str) -> dict:
+    """Renormalise each Kreis's share row to sum exactly 1.
+
+    The published MiD H7/H12.3 rows are integer-rounded and sum to 99-101%
+    per Kreis; comparing unnormalised targets against realized shares (which
+    always sum to 1) injects ~0.2-0.5pp of spurious delta per cell
+    (2026-07-12 validation audit). Same convention as the license/PT loaders,
+    which renormalise on load. Raw row sums off by >0.5% are logged.
+    Renormalisation happens HERE (validation side) and not in
+    RT.load_kreis_share_table because the synthesis (enriched.py) consumes the
+    same loader and must stay byte-identical.
+    """
+    out = {}
+    for ars5, shares in by_kreis.items():
+        total = float(np.sum(shares))
+        if total <= 0:
+            raise ValueError(f"{filename}: Kreis {ars5} share row sums to {total}")
+        if abs(total - 1.0) > 0.005:
+            LOGGER.info("%s: Kreis %s target row sums to %.3f; renormalised to 1",
+                        filename, ars5, total)
+        out[ars5] = np.asarray(shares, dtype=float) / total
+    return out
+
+
 def cars_target(data_path: str) -> pd.DataFrame:
     by_kreis, _, values = RT.load_kreis_share_table(data_path, "mid2023_H7_cars_by_kreis.csv")
+    by_kreis = _renormalized_by_kreis(by_kreis, "mid2023_H7_cars_by_kreis.csv")
     cats = tuple(str(v) for v in values)
     return _kreis_categorical_target(by_kreis, cats)
 
 
 def bikes_target(data_path: str) -> pd.DataFrame:
     by_kreis, _, values = RT.load_kreis_share_table(data_path, "mid2023_H12_3_bikes_by_kreis.csv")
+    by_kreis = _renormalized_by_kreis(by_kreis, "mid2023_H12_3_bikes_by_kreis.csv")
     cats = tuple(str(v) for v in values)
     return _kreis_categorical_target(by_kreis, cats)
 
@@ -522,8 +580,24 @@ def employment_target(data_path: str) -> pd.DataFrame:
     df = pd.read_csv(path, comment="#", dtype={"ars5": str})
     df = df[df["ars5"] != "03ZGB"].copy()
     employ_cols = ["vollzeit", "teilzeit", "geringfuegig", "sonstiges", "erwerbstaetig_unspec"]
-    employed = df[employ_cols].fillna(0.0).sum(axis=1) / 100.0
-    employed = employed.clip(lower=0.0, upper=1.0)
+    # Divide by the ACTUAL substantive row total, not a literal 100: the
+    # published integer-rounded P9 rows sum to 99-101 per Kreis, and a
+    # literal-100 denominator biased the employed-share target by up to
+    # -0.5pp on the 99-sum rows (2026-07-12 validation audit). 'keine_angabe'
+    # (item-nonresponse) is excluded from the denominator, consistent with the
+    # P36.1 mobility target convention.
+    non_employ_cols = ["in_ausbildung", "nicht_erwerbstaetig"]
+    employed_pct = df[employ_cols].fillna(0.0).sum(axis=1)
+    row_total = employed_pct + df[non_employ_cols].fillna(0.0).sum(axis=1)
+    if (row_total <= 0).any():
+        bad = df.loc[row_total <= 0, "ars5"].tolist()
+        raise ValueError(f"mid2023_P9.csv: non-positive substantive row total for Kreise {bad}")
+    off = row_total[(row_total - 100.0).abs() > 0.5]
+    if len(off) > 0:
+        LOGGER.info("mid2023_P9.csv: %d Kreis row(s) have substantive totals %s; "
+                    "using the actual row total as denominator", len(off),
+                    sorted(off.round(1).unique().tolist()))
+    employed = (employed_pct / row_total).clip(lower=0.0, upper=1.0)
     rows = []
     for ars5, share in zip(df["ars5"], employed):
         rows.append({"geo_id": str(ars5), "category": "employed", "target_share": float(share)})
@@ -681,21 +755,30 @@ def build_registry(data_path: str) -> list[Control]:
     reg: list[Control] = []
 
     reg.append(license_control(
-        "driving_license_type", "mid_person", "kreis", license_target, age_min=14))
+        "driving_license_type", "mid_person", "kreis", license_target, age_min=14,
+        # Synthesis rakes the licence flag to this very P17.1 table (enriched IPF).
+        independence="fit_check"))
     # MiD P24.1 survey base is age 14+; restrict the realized distribution to
     # match (persons <14 are deterministically assigned fahre_nie in synthesis).
     reg.append(categorical_person_control(
         "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
-        RT.PT_TICKET_CATEGORIES, pt_ticket_target, age_min=14))
+        RT.PT_TICKET_CATEGORIES, pt_ticket_target, age_min=14,
+        # Synthesis rakes PT tickets to this very P24.1 table (enriched IPF).
+        independence="fit_check"))
 
     _, _, car_vals = RT.load_kreis_share_table(data_path, "mid2023_H7_cars_by_kreis.csv")
     reg.append(bucket_household_control(
         "cars_per_hh", "mid_household", "kreis", "number_of_cars",
-        top=int(max(car_vals)), target=cars_target))
+        top=int(max(car_vals)), target=cars_target,
+        # popsim steers number_of_cars per Kreis via the target2026 blend; this
+        # MiD H7 table is one INPUT to that blend, so the comparison mostly
+        # measures the blend/shrinkage distance, not independent reality.
+        independence="partially_independent"))
     _, _, bike_vals = RT.load_kreis_share_table(data_path, "mid2023_H12_3_bikes_by_kreis.csv")
     reg.append(bucket_household_control(
         "bicycles_per_hh", "mid_household", "kreis", "number_of_bicycles",
-        top=int(max(bike_vals)), target=bikes_target))
+        top=int(max(bike_vals)), target=bikes_target,
+        independence="partially_independent"))
 
     # --- Census distribution controls (REAL targets) -------------------------
     reg.append(banded_person_control(
@@ -715,7 +798,11 @@ def build_registry(data_path: str) -> list[Control]:
     reg.append(bucket_household_control(
         "household_size", "census", "gemeinde", "household_size",
         top=6, top_label="6+", target=household_size_target,
-        weight_column="household_size"))
+        weight_column="household_size",
+        # popsim controls household-size margins from the same Zensus 2022
+        # product at cell level; per-Gemeinde agreement is convergence, not
+        # an independent check.
+        independence="fit_check"))
 
     # --- Employment (REAL target, MiD 2023 P9; age 14+ base, no upper cap) ----
     # The MiD P9 percentages are over the "Personen ab 14 Jahre" basis, so the
@@ -734,6 +821,8 @@ def build_registry(data_path: str) -> list[Control]:
     # not break registry construction (it only fails if a comparison is run).
     reg.append(categorical_vehicle_control(
         "bev_share", "distribution", "kreis", "technology",
-        ("bev", "not_bev"), bev_share_target, derive=_bev_not_bev))
+        ("bev", "not_bev"), bev_share_target, derive=_bev_not_bev,
+        # The fleet powertrain raking calibrates to this very KBA table.
+        independence="fit_check"))
 
     return reg

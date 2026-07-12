@@ -173,7 +173,18 @@ def write_geo_package(out_dir, persons, households, vehicles,
     # Per-Kreis trip-coherence (realised vs MiD W1/P36 + signed deltas) so the
     # purpose/mobility gaps are mappable alongside the demographic deviations.
     if trip_coherence_kreis is not None:
-        agg_kreis = agg_kreis.merge(trip_coherence_kreis, on="ars5", how="left")
+        # Prefix the trip-coherence columns so shared names (e.g. n_persons)
+        # cannot silently split into _x/_y pairs in agg_kreis (2026-07-12
+        # validation audit: the collision produced n_persons_x/n_persons_y).
+        tc = trip_coherence_kreis.rename(columns={
+            c: (c if c == "ars5" or c.startswith("tc_") else f"tc_{c}")
+            for c in trip_coherence_kreis.columns})
+        overlap = (set(agg_kreis.columns) & set(tc.columns)) - {"ars5"}
+        if overlap:
+            raise ValueError(
+                "geo_export: trip-coherence columns still collide after "
+                f"prefixing: {sorted(overlap)}")
+        agg_kreis = agg_kreis.merge(tc, on="ars5", how="left")
     kreis = kreis_poly.merge(agg_kreis, on="ars5", how="left")
     kreis.to_file(str(gpkg), layer="kreis_aggregat", driver="GPKG", mode="a")
 

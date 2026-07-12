@@ -181,7 +181,32 @@ def _multi_col_kreis_target(
         kreis_totals = cells.groupby("ars5")[total_col].apply(
             lambda s: pd.to_numeric(s, errors="coerce").fillna(0.0).sum()
         )
+        # The category counts and the dedicated total column come from
+        # DIFFERENT census columns (raw vs '_adj' / M_TOTAL); when they
+        # disagree, the target shares do not sum to 1 while realized shares
+        # always do -- surface the ratio instead of letting the mismatch
+        # masquerade as model error (no-silent-fallback rule).
+        cat_sum = None
+        for s in kreis_counts.values():
+            cat_sum = s.copy() if cat_sum is None else cat_sum.add(s, fill_value=0.0)
+        if cat_sum is not None and len(kreis_totals) > 0:
+            ratio = (cat_sum.reindex(kreis_totals.index).fillna(0.0)
+                     / kreis_totals.replace(0.0, np.nan))
+            off = ratio[(ratio - 1.0).abs() > 0.01].dropna()
+            if len(off) > 0:
+                LOGGER.warning(
+                    "[popsim_validation] %d Kreis(e): category sum deviates >1%% "
+                    "from total column %r (ratio min %.3f, max %.3f) -- target "
+                    "shares will not sum to 1 there",
+                    len(off), total_col, float(off.min()), float(off.max()))
     else:
+        if total_col is not None:
+            # No-silent-fallback rule: a requested total column that is ABSENT
+            # must not silently degrade to the category-sum denominator.
+            LOGGER.warning(
+                "[popsim_validation] requested total column %r is absent from "
+                "the cells frame; falling back to the SUM OF CATEGORY COUNTS "
+                "as the denominator", total_col)
         # Sum the category counts as the total.
         all_series = list(kreis_counts.values())
         kreis_totals = all_series[0].copy().rename("total")
@@ -337,9 +362,13 @@ def seniorenstatus_target(data_path: str) -> pd.DataFrame:
                 "[popsim_validation] seniorenstatus target column %r absent from prepared "
                 "cells; mit_senioren share will be underestimated.", col,
             )
-    # Build merged column (sum of mit + nur, coercing missing to 0).
-    mit_series = pd.to_numeric(cells.get(_COL_MIT, 0), errors="coerce").fillna(0.0)
-    nur_series = pd.to_numeric(cells.get(_COL_NUR, 0), errors="coerce").fillna(0.0)
+    # Build merged column (sum of mit + nur, coercing missing to 0). The
+    # absent-column default must be a SERIES: `cells.get(col, 0)` returns a
+    # scalar 0 whose pd.to_numeric(...) result has no .fillna -> latent
+    # AttributeError the moment a column is missing (2026-07-12 audit).
+    _zeros = pd.Series(0.0, index=cells.index)
+    mit_series = pd.to_numeric(cells.get(_COL_MIT, _zeros), errors="coerce").fillna(0.0)
+    nur_series = pd.to_numeric(cells.get(_COL_NUR, _zeros), errors="coerce").fillna(0.0)
     cells = cells.copy()
     cells["_mit_senioren_merged"] = mit_series + nur_series
 
