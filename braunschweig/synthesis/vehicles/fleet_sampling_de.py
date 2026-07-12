@@ -41,6 +41,7 @@ prohibited (see CLAUDE.md).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
@@ -62,6 +63,69 @@ POWERTRAINS: tuple[str, ...] = ft.POWERTRAIN_LABELS
 
 #: Electric (plug-in) powertrains tilted by the Gemeinde private BEV/PHEV share.
 ELECTRIC_POWERTRAINS: tuple[str, ...] = ("bev", "phev")
+
+
+# --------------------------------------------------------------------------- #
+# Gemeinde-name normalisation for the FZ 27.17 tilt join (issue #161)
+# --------------------------------------------------------------------------- #
+#: Municipal-status suffix tokens that appear appended to a Gemeinde name after
+#: a comma in BOTH source vocabularies of the Gemeinde-tilt join -- the KBA
+#: FZ 27.17 sheet (:func:`braunschweig.data.kba.fleet_tables.load_gemeinde_private_bev`,
+#: already ASCII-transliterated and frequently ABBREVIATED, e.g.
+#: ``"GIFHORN,ST."``, ``"BROME,FLECKEN"``) and the BBSR RegioStaR ``name_20``
+#: reference the household home Gemeinde is derived from (proper unicode
+#: umlauts, spelled out in full, e.g. ``"Gifhorn, Stadt"``,
+#: ``"Brome, Flecken"``). Stripping the suffix on BOTH sides lets the two
+#: vocabularies join on the base Gemeinde name.
+_GEMEINDE_SUFFIX_TOKENS = ("STADT", "ST", "FLECKEN")
+_GEMEINDE_SUFFIX_PATTERN = re.compile(
+    r",\s*(?:" + "|".join(_GEMEINDE_SUFFIX_TOKENS) + r")\s*$"
+)
+
+
+def normalize_gemeinde_name(name: Optional[str]) -> str:
+    """Canonicalise a Gemeinde name for the cross-source Gemeinde-tilt join.
+
+    Fixes issue #161: :meth:`PowertrainModel.powertrain_probabilities` looks up
+    ``(kreis_ags5, gemeinde)`` in a dict built from the KBA FZ 27.17 Gemeinde
+    tilt table, while the household home Gemeinde comes from the BBSR RegioStaR
+    ``name_20`` reference. Without normalisation the two vocabularies almost
+    never agree: FZ 27.17 is ASCII-transliterated and often abbreviated
+    (``"RUEHEN"``, ``"GIFHORN,ST."``), while RegioStaR carries proper unicode
+    umlauts and the full suffix (``"Ruehen"`` written as "Rühen",
+    ``"Gifhorn, Stadt"``) -- a 100 %-uppercase-only join therefore missed ~69 %
+    of vehicles (live 100 % run: primary 209285/684762, fallback 69.4 %).
+    Applying this SAME function to BOTH key producers
+    (:meth:`PowertrainModel._gemeinde_private_electric_share`, which builds the
+    FZ 27.17 side, and :meth:`PowertrainModel._apply_gemeinde_tilt`, which
+    builds the household-side lookup key) folds both vocabularies onto one
+    canonical form so the join actually succeeds.
+
+    Steps (fixed order):
+
+    1. Upper-case (Python's ``str.upper()`` already maps German sz -> ``SS``).
+    2. Fold the remaining upper-case umlauts (``Ae -> AE``, ``Oe -> OE``,
+       ``Ue -> UE``) to the KBA sheet's own two-letter transliteration.
+    3. Drop periods (``"ST." -> "ST"``).
+    4. Strip a trailing municipal-status suffix (``", STADT"``, ``", ST"``,
+       ``", FLECKEN"``, with or without the space after the comma), so
+       ``"WITTINGEN,ST."`` and ``"Wittingen, Stadt"`` both reduce to
+       ``"WITTINGEN"``.
+    5. Collapse internal whitespace.
+
+    Returns ``""`` for ``None`` / ``NaN`` so a missing Gemeinde is never
+    silently coerced into a spurious match; the caller treats an empty key as
+    "no Gemeinde tilt applicable" (counted as the existing Gemeinde fallback).
+    """
+    if name is None or pd.isna(name):
+        return ""
+    text = str(name).strip().upper()
+    text = text.replace("Ä", "AE").replace("Ö", "OE").replace("Ü", "UE")
+    text = text.replace(".", "")
+    text = _GEMEINDE_SUFFIX_PATTERN.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
 
 #: Vehicle-age band -> representative age in years (band midpoint; ``30_plus``
 #: uses a conservative 32). Used to attach a numeric ``age`` column alongside the
@@ -291,13 +355,16 @@ class PowertrainModel:
     ) -> dict[tuple[str, str], dict[str, float]]:
         """(kreis, gemeinde) -> private bev/phev share (FZ 27.17).
 
-        The Gemeinde name is upper-cased for a case-insensitive join with the
-        home Gemeinde label. Missing (coerced) shares are dropped so the tilt
-        falls back to the Kreis level for that Gemeinde.
+        The Gemeinde name is normalised via :func:`normalize_gemeinde_name`
+        (issue #161) so the join is robust to the KBA sheet's
+        ASCII-transliterated, abbreviated spelling versus the BBSR RegioStaR
+        proper-unicode home Gemeinde label. Missing (coerced) shares are
+        dropped so the tilt falls back to the Kreis level for that Gemeinde.
         """
         out: dict[tuple[str, str], dict[str, float]] = {}
+        collisions: list[tuple[str, str]] = []
         for _, row in df_gem.iterrows():
-            key = (str(row["kreis_ags5"]), str(row["gemeinde"]).strip().upper())
+            key = (str(row["kreis_ags5"]), normalize_gemeinde_name(row["gemeinde"]))
             shares: dict[str, float] = {}
             for col, pt in (("private_bev_share", "bev"),
                             ("private_phev_share", "phev")):
@@ -305,7 +372,20 @@ class PowertrainModel:
                 if pd.notna(val):
                     shares[pt] = float(val)
             if shares:
+                # Two distinct source rows collapsing onto one normalised key would
+                # silently keep only the last row's shares; the committed FZ 27.17
+                # table has no such pair today, so any collision signals either a
+                # data update or an over-aggressive normalize_gemeinde_name rule.
+                if key in out:
+                    collisions.append(key)
                 out[key] = shares
+        if collisions:
+            logger.warning(
+                "[fleet_de] Gemeinde tilt table: %d normalised (kreis, gemeinde) key "
+                "collision(s) -- later rows overwrote earlier ones (first examples: %s). "
+                "Check normalize_gemeinde_name against the FZ 27.17 source names.",
+                len(collisions), collisions[:5],
+            )
         return out
 
     @staticmethod
@@ -349,11 +429,17 @@ class PowertrainModel:
         non-electric mass untouched; the whole vector is renormalised by the
         caller. The tilt is a relative re-weighting, so a Gemeinde with a higher
         private BEV share than its Kreis gets proportionally more BEVs.
+
+        The lookup key is normalised via :func:`normalize_gemeinde_name`
+        (issue #161) -- the SAME function used to build
+        ``gemeinde_private_electric_share`` -- so the household's BBSR
+        RegioStaR Gemeinde label joins the KBA FZ 27.17 sheet's
+        ASCII-transliterated, abbreviated spelling.
         """
         if gemeinde is None:
             self._gemeinde_fallback += 1
             return pmf
-        key = (kreis_ags5, str(gemeinde).strip().upper())
+        key = (kreis_ags5, normalize_gemeinde_name(gemeinde))
         gem_shares = self.gemeinde_private_electric_share.get(key)
         kreis_shares = self.kreis_private_electric_share.get(kreis_ags5)
         if gem_shares is None or kreis_shares is None:
@@ -899,10 +985,15 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     # feasible powertrain set. powertrain_feasibility_list carries per-row
     # provenance ("model_constrained" | "segment_fallback") for the Task 8 hook;
     # _feasibility_fallback counts cars whose mask zeroed the whole pmf (no
-    # overlap) so the unmasked pmf was kept.
+    # overlap) so the unmasked pmf was kept. _feasibility_tier_count splits the
+    # "model_constrained" cars into Tier 1 (exact brand+family hit) vs Tier 2
+    # (brand-wide fallback) so a Tier1 -> Tier2 drift is observable in the
+    # aggregate log (issue #163; the plain "model_constrained" count alone
+    # cannot show that the HSN/TSN lookup is losing family-level resolution).
     _feasible_fuels = sampler.feasible_fuels if consistency_v2 else None
     powertrain_feasibility_list: list[str] = ["segment_fallback"] * n
     _feasibility_fallback = 0
+    _feasibility_tier_count: dict[str, int] = {"family": 0, "brand": 0}
     _powertrain_idx = {p: i for i, p in enumerate(POWERTRAINS)}
 
     records = df_cars.to_dict(orient="records")
@@ -1020,8 +1111,9 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 segment, kreis, gemeinde)
             unmasked_pmf = pt_pmf.copy()  # Task 7 rake target (tilt-preserving).
             feasible = None
+            feasibility_tier = None
             if _feasible_fuels is not None and model:
-                feasible = _feasible_fuels.model_feasible_powertrains(
+                feasible, feasibility_tier = _feasible_fuels.model_feasible_powertrains_with_tier(
                     brand, model_family(canonical_brand(brand) or "", model))
             if feasible is not None:
                 mask = np.array(
@@ -1032,6 +1124,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 if pt_pmf_masked.sum() > 0:
                     pt_pmf = pt_pmf_masked
                     powertrain_feasibility_list[i] = "model_constrained"
+                    if feasibility_tier in _feasibility_tier_count:
+                        _feasibility_tier_count[feasibility_tier] += 1
                 else:
                     # No overlap: keep the UNMASKED pmf and count the fallback.
                     _feasibility_fallback += 1
@@ -1157,15 +1251,25 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         )
 
     # Task 6: model-feasible powertrain mask observability (consistency_v2).
+    # Issue #163: the Tier-1 (exact brand+family) vs Tier-2 (brand-wide
+    # fallback) split is logged alongside the aggregate "model_constrained"
+    # count -- see FeasibleFuels.model_feasible_powertrains_with_tier -- so a
+    # rising Tier1 -> Tier2 drift (the HSN/TSN lookup losing family-level
+    # resolution for more of the fleet) is observable, not hidden inside a
+    # single combined count.
     if consistency_v2 and _feasible_fuels is not None:
         n_constrained = sum(
             1 for s in powertrain_feasibility_list if s == "model_constrained")
         c_rate = n_constrained / n if n else 0.0
+        n_tier_family = _feasibility_tier_count["family"]
+        n_tier_brand = _feasibility_tier_count["brand"]
         logger.info(
             "[fleet_de] model-feasible powertrain mask (consistency_v2, Bug 2): "
-            "%d/%d vehicles (%.1f%%) model-constrained; %d (%.1f%%) "
+            "%d/%d vehicles (%.1f%%) model-constrained "
+            "(tier1 exact-family=%d, tier2 brand-fallback=%d); %d (%.1f%%) "
             "no-overlap fallbacks (unmasked pmf kept).",
             n_constrained, n, 100.0 * c_rate,
+            n_tier_family, n_tier_brand,
             _feasibility_fallback,
             100.0 * (_feasibility_fallback / n if n else 0.0),
         )
