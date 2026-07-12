@@ -373,21 +373,29 @@ class PowertrainModel:
             tilted[idx[pt]] *= factor
         return tilted
 
-    def log_fallback_rate(self) -> None:
-        """Log the primary-vs-fallback rates (no-silent-fallback rule)."""
+    def log_fallback_rate(self, population_label: str = "") -> None:
+        """Log the primary-vs-fallback rates (no-silent-fallback rule).
+
+        ``population_label`` distinguishes multiple sampler invocations in one
+        run log (e.g. "residents" vs "in-commuters" -- the latter legitimately
+        hits 100% Kreis fallback because origin Kreise lie outside the ZGB KBA
+        tables; without the label the two blocks are indistinguishable and the
+        in-commuter one reads like a broken primary path).
+        """
+        tag = "[fleet_de][%s]" % population_label if population_label else "[fleet_de]"
         ktot = self._kreis_primary + self._kreis_fallback
         gtot = self._gemeinde_primary + self._gemeinde_fallback
         krate = (self._kreis_fallback / ktot) if ktot else 0.0
         grate = (self._gemeinde_fallback / gtot) if gtot else 0.0
         (logger.warning if krate > 0.05 else logger.info)(
-            "[fleet_de] powertrain Kreis lookup: primary %d/%d (%.1f%%), "
-            "fallback %d (%.1f%%)", self._kreis_primary, ktot,
+            "%s powertrain Kreis lookup: primary %d/%d (%.1f%%), "
+            "fallback %d (%.1f%%)", tag, self._kreis_primary, ktot,
             100.0 * self._kreis_primary / ktot if ktot else 0.0,
             self._kreis_fallback, 100.0 * krate,
         )
         (logger.warning if grate > 0.50 else logger.info)(
-            "[fleet_de] powertrain Gemeinde tilt: primary %d/%d (%.1f%%), "
-            "fallback %d (%.1f%%)", self._gemeinde_primary, gtot,
+            "%s powertrain Gemeinde tilt: primary %d/%d (%.1f%%), "
+            "fallback %d (%.1f%%)", tag, self._gemeinde_primary, gtot,
             100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
             self._gemeinde_fallback, 100.0 * grate,
         )
@@ -770,7 +778,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  model_brands: bool = True,
                  consistency_v2: bool = True,
                  age_income_coupling: bool = True,
-                 age_euro_joint: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+                 age_euro_joint: bool = True,
+                 population_label: str = "") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Draw a full vehicle specification for every household car.
 
     Parameters
@@ -1142,7 +1151,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     )
 
     # Fallback observability (project no-silent-fallback rule).
-    sampler.powertrain_model.log_fallback_rate()
+    sampler.powertrain_model.log_fallback_rate(population_label)
     if age_model is not None:
         age_model.log_fallback_rate()
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)

@@ -175,6 +175,11 @@ class AgeIncomeModel:
     # Mutable fallback counters.
     _primary_count: int = field(default=0)
     _fallback_count: int = field(default=0)
+    # Cells already warned about: each missing (segment, status) cell is
+    # warned ONCE (2026-07-11: the per-draw warning spammed the kreis5 run log
+    # with thousands of identical 'wohnmobile' lines); the aggregate rate in
+    # log_fallback_rate stays the observable no-silent-fallback signal.
+    _warned_cells: set = field(default_factory=set)
 
     # -- construction --------------------------------------------------------
 
@@ -246,16 +251,22 @@ class AgeIncomeModel:
             if pool is None:
                 # Level-3 fallback: all-ones.
                 self._fallback_count += 1
-                logger.warning(
-                    "[age_income] no (segment,status) cell AND no (status) pool "
-                    "for (%r, %r) -> all-ones tilt (KBA-only)", segment, status,
-                )
+                if (segment, status) not in self._warned_cells:
+                    self._warned_cells.add((segment, status))
+                    logger.warning(
+                        "[age_income] no (segment,status) cell AND no (status) pool "
+                        "for (%r, %r) -> all-ones tilt (KBA-only); further draws of "
+                        "this cell counted silently", segment, status,
+                    )
                 return np.ones(_N_BANDS, dtype=float)
             self._fallback_count += 1
-            logger.warning(
-                "[age_income] missing/low-base (segment,status) cell for "
-                "(%r, %r) -> (status)-only pool fallback", segment, status,
-            )
+            if (segment, status) not in self._warned_cells:
+                self._warned_cells.add((segment, status))
+                logger.warning(
+                    "[age_income] missing/low-base (segment,status) cell for "
+                    "(%r, %r) -> (status)-only pool fallback; further draws of "
+                    "this cell counted silently", segment, status,
+                )
             return _safe_ratio(pool, self._marginal)
 
         self._primary_count += 1
