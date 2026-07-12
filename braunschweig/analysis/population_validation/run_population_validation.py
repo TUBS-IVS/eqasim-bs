@@ -171,6 +171,11 @@ def run(ns) -> dict:
     summary.to_csv(out / "controls_summary.csv", index=False)
     quality.to_csv(out / "quality_summary.csv", index=False)
     fam.to_csv(out / "quality_by_family.csv", index=False)
+    # Fit checks (targets that steer the synthesis) rolled up SEPARATELY from
+    # genuinely independent references, so convergence is never reported as
+    # validation (2026-07-12 audit; see Control.independence).
+    QA.independence_scores(quality).to_csv(
+        out / "quality_by_independence.csv", index=False)
     if minor_emp is not None:
         pd.DataFrame([{"control": "employment_minor_plausibility", **minor_emp}]).to_csv(
             out / "minor_employment_guard.csv", index=False)

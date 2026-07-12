@@ -338,9 +338,14 @@ def _commute_distances(
     commute = work.merge(home_lookup, on="household_id", how="inner")
     if commute.empty:
         return commute.assign(distance_km=[], ars5=[], kreis_name=[])
-    commute["distance_km"] = commute.apply(
+    # Apples-to-apples with MiD P13 (self-reported ROUTE lengths): apply the
+    # project's constant detour factor to the Euclidean home->work distance,
+    # exactly like the calibration corner does. Comparing raw Euclidean km to
+    # P13 fabricated a ~-23% mean-distance gap (2026-07-12 validation audit).
+    from braunschweig.calibration.metrics import apply_detour
+    commute["distance_km"] = apply_detour(commute.apply(
         lambda r: r["home_geom"].distance(r["work_geom"]) / 1000.0, axis=1
-    )
+    ).to_numpy())
     commute = commute.merge(
         persons_kreis[["person_id", "ars5", "kreis_name"]],
         on="person_id",
@@ -353,6 +358,7 @@ def _commute_band_table(
     commute: pd.DataFrame, mid_p13: pd.DataFrame
 ) -> pd.DataFrame:
     p13 = mid_p13.set_index("ars5")
+    band_names = [name for _, _, name in BANDS]
     rows: list[dict[str, Any]] = []
     for ars5, label in ZGB8.items():
         sub = commute[commute["ars5"] == ars5]
@@ -360,14 +366,24 @@ def _commute_band_table(
             continue
         syn = band_share(sub["distance_km"].values)
         ref = p13.loc[ars5]
-        for _, _, name in BANDS:
+        # Renormalise the P13 distance bands to 100 over the 8 distance
+        # classes: the published rows include keine_feste_arbeit/keine_angabe
+        # mass (band sums 85-99 per Kreis), while the synthetic side is
+        # conditioned on having a work place. Without renormalisation every
+        # synthetic band carries a spurious positive offset (2026-07-12 audit;
+        # same convention as calibration targets._p13_row_to_band_shares).
+        ref_bands = np.array([float(ref.get(name, np.nan)) for name in band_names])
+        ref_total = np.nansum(ref_bands)
+        if ref_total > 0:
+            ref_bands = ref_bands * (100.0 / ref_total)
+        for name, mid_pct in zip(band_names, ref_bands):
             rows.append(
                 {
                     "ars5": ars5,
                     "kreis": label,
                     "band": name,
                     "synthetic_pct": syn[name],
-                    "mid_pct": float(ref.get(name, np.nan)),
+                    "mid_pct": float(mid_pct),
                 }
             )
     return pd.DataFrame(rows)
@@ -492,20 +508,26 @@ def _mode_share_table(
 # was measured immaterial for ZGB (EMD delta ~0.003) and is opt-in only:
 # pass mode="curve" to build_target_table / _education_distance_table explicitly.
 
-# Pupil-age -> school level, matching braunschweig.data.mid.school_distance
-# AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
-# same basis the gravity slopes were calibrated to. BBS / university pupils
-# (ages 18+) have no MiD Tabelle 43 target and are therefore not validated here.
+# Pupil-age -> school level, matching the SYNTHESIS assignment bands
+# (braunschweig.synthesis.locations.education_gravity._SCHOOL_BANDS: 0-5 / 6-9 /
+# 10-15 / 16-19), so each realised education distance is validated against the
+# T43 target of the level the pupil was actually ASSIGNED to. The previous local
+# bands (0-6/7-10/11-13/14-17) mislabelled the 6, 10, 14 and 15 year olds
+# (2026-07-12 validation audit). KNOWN CAVEAT: the 16-19 band ('oberstufe'
+# target) unavoidably includes BBS-assigned pupils because the run output does
+# not carry the realised school level; T43 has no BBS target, so their
+# (typically longer) distances bias the oberstufe comparison upward.
+# University pupils (20+) have no T43 target and are not validated here.
 _EDU_AGE_LEVELS: list[tuple[int, int, str]] = [
-    (0, 6, "kindergarten"),
-    (7, 10, "grundschule"),
-    (11, 13, "sekundar_1"),
-    (14, 17, "oberstufe"),
+    (0, 5, "kindergarten"),
+    (6, 9, "grundschule"),
+    (10, 15, "sekundar_1"),
+    (16, 19, "oberstufe"),
 ]
 
 
 def education_level_for_age(age: Any) -> str | None:
-    """MiD Tabelle 43 school level for a pupil age, or None outside its scope."""
+    """MiD Tabelle 43 school level for a pupil age (synthesis banding), or None."""
     if pd.isna(age):
         return None
     a = int(age)
