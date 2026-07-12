@@ -362,9 +362,13 @@ def seniorenstatus_target(data_path: str) -> pd.DataFrame:
                 "[popsim_validation] seniorenstatus target column %r absent from prepared "
                 "cells; mit_senioren share will be underestimated.", col,
             )
-    # Build merged column (sum of mit + nur, coercing missing to 0).
-    mit_series = pd.to_numeric(cells.get(_COL_MIT, 0), errors="coerce").fillna(0.0)
-    nur_series = pd.to_numeric(cells.get(_COL_NUR, 0), errors="coerce").fillna(0.0)
+    # Build merged column (sum of mit + nur, coercing missing to 0). The
+    # absent-column default must be a SERIES: `cells.get(col, 0)` returns a
+    # scalar 0 whose pd.to_numeric(...) result has no .fillna -> latent
+    # AttributeError the moment a column is missing (2026-07-12 audit).
+    _zeros = pd.Series(0.0, index=cells.index)
+    mit_series = pd.to_numeric(cells.get(_COL_MIT, _zeros), errors="coerce").fillna(0.0)
+    nur_series = pd.to_numeric(cells.get(_COL_NUR, _zeros), errors="coerce").fillna(0.0)
     cells = cells.copy()
     cells["_mit_senioren_merged"] = mit_series + nur_series
 
