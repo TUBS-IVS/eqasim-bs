@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.sampling import weighted_choice
 
 logger = logging.getLogger(__name__)
@@ -129,9 +130,11 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
         "age_band": _age_band(persons["HP_ALTER"]),
         "sex": persons["HP_SEX"].to_numpy(),
         "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
-        # P_TAET 1..6 = employed (MiD codeplan); 7 = Wehr-/Bundesfreiwilligendienst/FSJ
-        # is NOT ILO-employment, consistent with the Tier-3 employment control.
-        "employed": persons["P_TAET"].between(1, 6).to_numpy(),
+        # Canonical MiD employment (ILO-style `erwerb`), same single source of truth
+        # as the Tier-3 employment control (attributes.EMPLOYED_TAET, control_spec.py):
+        # P_TAET in {1, 2, 3, 4, 6, 8} = employed, incl. 8 = Azubi/Ausbildung.
+        # 5 = Elternzeit and 7 = Wehr-/Bundesfreiwilligendienst/FSJ are NOT employed.
+        "employed": persons["P_TAET"].isin(EMPLOYED_TAET).to_numpy(),
         "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES).to_numpy(),
     }, index=persons.index)
 
