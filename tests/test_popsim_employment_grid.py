@@ -1,5 +1,9 @@
 # tests/test_popsim_employment_grid.py
+import logging
+
 import pandas as pd
+import pytest
+
 from braunschweig.popsim import employment_grid as eg
 
 
@@ -162,3 +166,48 @@ def test_per_cell_targets_per_kreis_no_bleed():
 
     # The two totals must differ — confirming they are not cross-contaminated.
     assert total_03102 != total_03103
+
+
+def test_per_cell_targets_warns_on_partially_unmatched_kreis(caplog):
+    """A cell whose Kreis is absent from census_levels must log an observable warning.
+
+    Cell c3 carries a Kreis key ("99999") that has no row in census_levels; it
+    silently receives 0.0 for every EMPLOYED_* column, which must be surfaced as
+    a fallback per CLAUDE.md rather than passed through quietly.
+    """
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2", "c3"],
+        "KREIS": ["03102", "03102", "99999"],
+        "M_AGE_40": [100, 300, 50],
+        "F_AGE_40": [0, 0, 0],
+    })
+    census = pd.DataFrame({
+        "ARS_kreis": ["03102"],
+        "ERWERBSTAT_KURZ_STP__11_M": [200.0], "ERWERBSTAT_KURZ_STP__11_W": [0.0],
+    })
+    shares = {"03102": {"16_29": 0.0, "30_39": 0.0, "40_49": 1.0, "50_59": 0.0, "60plus": 0.0}}
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.employment_grid"):
+        out = eg.per_cell_employment_targets(cells, census, shares)
+
+    # Unmatched cell gets zero for every EMPLOYED_* column, not an exception.
+    m = out.set_index("ZENSUS100m")
+    assert m.loc["c3", "EMPLOYED_M_40_49_agg"] == 0.0
+    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("1/3" in w and "99999" in w for w in warnings), warnings
+
+
+def test_per_cell_targets_raises_when_all_cells_unmatched():
+    """If EVERY cell's Kreis is absent from census_levels, this is a broken join,
+    not a legitimate all-zero result -- CLAUDE.md mandates raising, not silently
+    returning zeros for the whole frame."""
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["c1"], "KREIS": ["99999"],
+        "M_AGE_40": [100], "F_AGE_40": [0],
+    })
+    census = pd.DataFrame({
+        "ARS_kreis": ["03102"],
+        "ERWERBSTAT_KURZ_STP__11_M": [200.0], "ERWERBSTAT_KURZ_STP__11_W": [0.0],
+    })
+    shares = {"03102": {"16_29": 0.0, "30_39": 0.0, "40_49": 1.0, "50_59": 0.0, "60plus": 0.0}}
+    with pytest.raises(ValueError, match="99999"):
+        eg.per_cell_employment_targets(cells, census, shares)

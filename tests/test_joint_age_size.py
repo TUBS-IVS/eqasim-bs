@@ -140,3 +140,35 @@ class TestBuildJointAgeSizeMargin:
         df_joint, df_population, df_size = self._inputs()
         out = jas.build_joint_age_size_margin(df_joint, df_population, df_size)
         assert out["weight"].sum() == pytest.approx(190.0, rel=1e-4)
+
+    def test_zero_marginal_kreis_is_skipped_with_warning_and_others_unaffected(
+        self, capsys
+    ) -> None:
+        """A Kreis with a zero population row total is silently 'continue'-d out of
+        the joint margin (legacy path); this must now be surfaced as a warning
+        naming the skipped Kreis, while every OTHER Kreis stays unaffected."""
+        df_joint, df_population, df_size = self._inputs()
+        # Kreis "03102" has a size margin but ZERO population weight -> row_total <= 0.
+        df_population_with_zero = pd.concat([
+            df_population,
+            pd.DataFrame([["031020000001", 6, 0.0]],
+                         columns=["commune_id", "age_class", "weight"]),
+        ], ignore_index=True)
+        df_size_with_zero_dep = pd.concat([
+            df_size,
+            pd.DataFrame([["031020000001", "1", 5.0]],
+                         columns=["commune_id", "hh_size", "weight"]),
+        ], ignore_index=True)
+
+        out = jas.build_joint_age_size_margin(
+            df_joint, df_population_with_zero, df_size_with_zero_dep
+        )
+
+        # "03102" produced no rows; "03101" is unaffected (same totals as before).
+        assert "03102" not in set(out["departement_id"])
+        children = out[out["age_group_lower"] == 0]["weight"].sum()
+        assert children == pytest.approx(100.0, rel=1e-4)
+
+        captured = capsys.readouterr()
+        assert "joint_age_size" in captured.out
+        assert "03102" in captured.out

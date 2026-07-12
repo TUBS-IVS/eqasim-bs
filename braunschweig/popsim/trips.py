@@ -306,6 +306,30 @@ def expand_persons_to_trips(
     merged["trip_id"] = (
         merged["person_id"].astype(str) + "_" + merged[trip_col].astype(str)
     )
+
+    # Instrument the inner join: persons whose donor (H_ID, P_ID) has no Wege
+    # row are silently dropped (they become trip-less home-only persons). A
+    # low match rate almost always signals a broken donor-key join rather than
+    # a genuinely immobile donor population, so log it as an explicit rate
+    # (mirrors the ENTD twin, sources/entd.py build_trips).
+    n_persons_total = len(persons)
+    n_persons_with_trips = merged["person_id"].nunique() if n_persons_total > 0 else 0
+    n_persons_without_trips = n_persons_total - n_persons_with_trips
+    match_rate = n_persons_with_trips / max(n_persons_total, 1)
+    logger.info(
+        "[popsim.trips] expand_persons_to_trips: %d/%d persons (%.1f%%) have donor "
+        "trips; %d persons without trips.",
+        n_persons_with_trips, n_persons_total, 100.0 * match_rate, n_persons_without_trips,
+    )
+    if n_persons_total > 0 and match_rate < MIN_EXPECTED_TRIP_MATCH_RATE:
+        logger.warning(
+            "[popsim.trips] expand_persons_to_trips: donor-trip match rate %.1f%% is "
+            "below the expected minimum %.1f%% -- this usually indicates a broken "
+            "(H_ID, P_ID) join between synthetic persons and MiD Wege, not a "
+            "genuinely immobile donor population.",
+            100.0 * match_rate, 100.0 * MIN_EXPECTED_TRIP_MATCH_RATE,
+        )
+
     return merged.reset_index(drop=True)
 
 
@@ -534,6 +558,12 @@ _MATCHED_REPLACEMENT_SOURCE_COLUMN = {"age_class": "age"}
 # the jitter / legacy-resample streams (RandomState(random_seed)) and the
 # stage A imputation stream (random_seed + TIME_IMPUTATION_SEED_OFFSET = 4159).
 MATCHED_REPLACEMENT_SEED_OFFSET = 7211
+
+# Below this donor-match rate, expand_persons_to_trips is assumed to be hitting a
+# join defect (wrong key, format mismatch) rather than the expected small share of
+# genuinely immobile / unmatched MiD donors. ASSUMPTION: chosen conservatively, not
+# fitted to observed data; revisit if a legitimate high-immobility scenario trips it.
+MIN_EXPECTED_TRIP_MATCH_RATE = 0.5
 
 
 def _recompute_chain_ids(table: pd.DataFrame) -> pd.DataFrame:

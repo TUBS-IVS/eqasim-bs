@@ -788,6 +788,16 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
     seed toggle in the same work_dir left completed batches silently reused with outdated
     inputs (2026-07-09).
     """
+    # NOTE (one-time signature change): hashing (key, census_source) PAIRS instead of
+    # just the sorted keys means a catalog composition change (same control names,
+    # different census_source columns) now invalidates a persistent work_dir's
+    # completed batches exactly once on the next run. Before this fix, a KEY-only
+    # hash could not see such a change and silently reused stale batches built
+    # against the OLD census_source composition.
+    kreis_controls_signature = (
+        sorted((key, list(census_source)) for key, census_source in kreis_controls_map.items())
+        if kreis_controls_map else None
+    )
     payload = {
         "controls": controls_df.to_csv(index=False),
         "settings": settings_text,
@@ -795,7 +805,7 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
         "stratify_regiostar": stratify_regiostar,
         "source": source_name,
         "employment_grid": employment_grid_on,
-        "kreis_controls": sorted(kreis_controls_map) if kreis_controls_map else None,
+        "kreis_controls": kreis_controls_signature,
         "seed_day_filter": str(seed_day_filter),
         "seed_households": _frame_content_signature(seed_households),
         "seed_persons": _frame_content_signature(seed_persons),
@@ -807,6 +817,20 @@ def compute_batch_config_signature(*, controls_df, settings_text, max_cells,
             for c in active_entries
         }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def derive_geo_kreis_from_ars(ars: pd.Series) -> pd.Series:
+    """Derive the 5-digit Kreis ARS from a (nominally) 12-digit cell ARS column.
+
+    Zero-pads to the full 12-digit Regionalschluessel BEFORE slicing the first
+    five digits: an ARS that lost a leading zero (e.g. round-tripped through an
+    integer column) would otherwise truncate the wrong five characters and
+    silently join to the wrong Kreis. Mirrors ``mid.filter_zgb_cells`` and
+    ``assembly.derive_zone_ids``, which both ``zfill(12)`` before deriving the
+    Kreis-level ARS -- kept as a single reusable helper so the three call sites
+    cannot drift apart.
+    """
+    return ars.astype(str).str.zfill(12).str[:5]
 
 
 def execute(context) -> pd.DataFrame:
@@ -1016,7 +1040,7 @@ def execute(context) -> pd.DataFrame:
                 f"{mid._ARS_COLUMN!r} column; cannot derive the Kreis code."
             )
         cells = cells.copy()
-        cells[_folders.GEO_KREIS] = cells[mid._ARS_COLUMN].astype(str).str[:5]
+        cells[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN])
 
         # SHAPE: Zensus 2000S-2001 employment-by-age-group shares per Kreis, loaded from
         # the committed reference CSV under data_path. Built once per distinct Kreis on
@@ -1167,7 +1191,7 @@ def execute(context) -> pd.DataFrame:
             raise RuntimeError(
                 f"KREIS attribute control is ON but the household-total column {_kac_hh_col!r} is "
                 f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
-        _kac_kreis = cells[mid._ARS_COLUMN].astype(str).str[:5]
+        _kac_kreis = derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN])
         _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
         # Per-Kreis PERSON totals (sum over the 18 age-x-sex 100m band columns) are needed
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
@@ -1471,7 +1495,7 @@ def execute(context) -> pd.DataFrame:
 
         # Derive 5-digit Kreis ARS from the 12-digit ARS column.
         if _TILT_ARS_COL in _tilt_cells.columns:
-            _tilt_cells["_ars5"] = _tilt_cells[_TILT_ARS_COL].astype(str).str[:5]
+            _tilt_cells["_ars5"] = derive_geo_kreis_from_ars(_tilt_cells[_TILT_ARS_COL])
         else:
             logger.warning(
                 "[popsim.stage] income_spatial_tilt: ARS column %r absent from "

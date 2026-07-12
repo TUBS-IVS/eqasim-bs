@@ -64,6 +64,35 @@ def test_expand_persons_to_trips_joins_donor_wege():
     assert out["trip_id"].is_unique
 
 
+def test_expand_persons_to_trips_logs_match_rate(caplog):
+    """The inner join in expand_persons_to_trips must log an observable match rate.
+
+    Two of three synthetic persons have a donor with no Wege row (silently
+    dropped by the inner join); the match rate (~33.3%) must be logged and,
+    since it falls below MIN_EXPECTED_TRIP_MATCH_RATE, a warning must also fire.
+    """
+    import logging
+
+    persons = pd.DataFrame(
+        {
+            "person_id": ["A_1_0_1", "A_1_0_2", "A_1_0_3"],
+            "H_ID": [1, 1, 1],
+            "P_ID": [1, 2, 3],
+        }
+    )
+    wege = pd.DataFrame(
+        {"H_ID": [1], "P_ID": [1], "W_ID": [1], "W_ZWECK": [1], "hvm_imp": [4]}
+    )
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        out = trips.expand_persons_to_trips(persons, wege)
+
+    assert len(out) == 1
+    info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("1/3" in m and "33.3%" in m for m in info_messages), info_messages
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("below the expected minimum" in m for m in warning_messages), warning_messages
+
+
 def test_expand_persons_to_trips_person_without_wege_is_dropped():
     persons = pd.DataFrame(
         {"household_id": ["A_1_0"], "person_id": ["A_1_0_9"], "H_ID": [1], "P_ID": [9]}

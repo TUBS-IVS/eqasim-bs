@@ -49,6 +49,18 @@ def test_signature_changes_when_kreis_target_values_change():
     assert a != b
 
 
+def test_signature_changes_when_kreis_controls_census_source_composition_changes():
+    # Same control NAME (same dict key), but the underlying census_source column
+    # composition changed (e.g. the catalog now feeds the control from a different
+    # set of source columns). The old key-only hash was blind to this; a persistent
+    # work_dir would silently reuse batches built against the OLD composition.
+    a = _sig(kreis_controls_map={"economic_status_very_low_KREIS": ("economic_status_very_low_KREIS",)})
+    b = _sig(kreis_controls_map={
+        "economic_status_very_low_KREIS": ("economic_status_very_low_KREIS", "economic_status_low_KREIS"),
+    })
+    assert a != b
+
+
 def test_signature_changes_when_seed_content_changes():
     # A seed toggle (weekend_plan_match / complete_members / ebike column) flows into the
     # seed VALUES; changing them MUST change the signature even at the same control names.
