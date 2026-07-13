@@ -25,26 +25,27 @@ def test_socioprofessional_falls_back_when_no_p_bkat():
 def test_p_bkat_in_mid_person_attr_cols():
     """P_BKAT must be in MID_PERSON_ATTR_COLS so it is loaded for attribute mapping.
 
-    Bug D4: P_BKAT was absent from this list, so map_socioprofessional_class
-    always used the broad-activity fallback (100% fallback rate).
+    P_BKAT ("Umfang der Erwerbstaetigkeit") is the donor column for the
+    categorical ``employment_status`` attribute (EMPLOYMENT_STATUS_BY_P_BKAT). It
+    is NOT an occupation variable and must NOT be used for socioprofessional_class
+    (issue #167 -- the former SPC_BY_P_BKAT crosswalk was removed).
     """
     assert "P_BKAT" in MID_PERSON_ATTR_COLS, (
-        "P_BKAT (MiD Berufskategorie) must be included in MID_PERSON_ATTR_COLS "
-        "so that map_socioprofessional_class can use the real occupation crosswalk "
-        "(SPC_BY_P_BKAT) instead of the broad-activity fallback for every person."
+        "P_BKAT (MiD Umfang der Erwerbstaetigkeit) must be included in "
+        "MID_PERSON_ATTR_COLS so that map_employment_status can derive the "
+        "employment_status attribute from it."
     )
 
 
-def test_socioprofessional_uses_p_bkat_when_present():
-    """When P_BKAT is present, the P_BKAT crosswalk must be used, not the fallback.
-
-    SPC_BY_P_BKAT mapping:
-      P_BKAT=1 (Angestellte) -> CS1 6
-      P_BKAT=2 (Beamte)      -> CS1 5
-      P_BKAT=3 (Selbststaendig) -> CS1 3
-    The fallback derive_socioprofessional_class would produce different CS1 codes
-    for the same employed/age combination, so we can assert the exact P_BKAT value.
+def test_socioprofessional_does_not_use_p_bkat_crosswalk():
+    """#167: P_BKAT is employment EXTENT (Umfang der Erwerbstaetigkeit), NOT an
+    occupation "Berufskategorie". socioprofessional_class must therefore be the
+    broad-activity derivation ``derive_socioprofessional_class(employed, age,
+    studies)`` -- identical whether or not P_BKAT is present -- and must NOT apply
+    the removed SPC_BY_P_BKAT occupation crosswalk.
     """
+    from braunschweig.ipf.attributed import derive_socioprofessional_class
+
     persons = pd.DataFrame({
         "P_BKAT":    [1,  2,  3],
         "employed":  [True, True, True],
@@ -52,21 +53,30 @@ def test_socioprofessional_uses_p_bkat_when_present():
         "studies":   [False, False, False],
     })
     out = a.map_socioprofessional_class(persons)
-    # P_BKAT=1 -> CS1 6 (Angestellte -> Worker)
-    assert out.loc[0, "socioprofessional_class"] == 6, (
-        f"P_BKAT=1 should map to CS1 6 (Worker/Angestellte), "
-        f"got {out.loc[0, 'socioprofessional_class']}"
+    expected = derive_socioprofessional_class(
+        persons["employed"], persons["age"], persons["studies"]
+    ).astype(int)
+    assert list(out["socioprofessional_class"]) == list(expected), (
+        "socioprofessional_class must equal the broad-activity derivation, not the "
+        f"(removed) P_BKAT crosswalk. got {list(out['socioprofessional_class'])}, "
+        f"expected {list(expected)}"
     )
-    # P_BKAT=2 -> CS1 5 (Beamte -> Employee)
-    assert out.loc[1, "socioprofessional_class"] == 5, (
-        f"P_BKAT=2 should map to CS1 5 (Employee/Beamte), "
-        f"got {out.loc[1, 'socioprofessional_class']}"
-    )
-    # P_BKAT=3 -> CS1 3 (Selbststaendig -> Science/professionals)
-    assert out.loc[2, "socioprofessional_class"] == 3, (
-        f"P_BKAT=3 should map to CS1 3 (Science/Selbststaendig), "
-        f"got {out.loc[2, 'socioprofessional_class']}"
-    )
+
+
+def test_socioprofessional_invariant_to_p_bkat():
+    """P_BKAT must have NO effect on socioprofessional_class (it is not occupation):
+    the same (employed, age, studies) yields the same SPC with or without P_BKAT."""
+    base = pd.DataFrame({
+        "employed": [True, False, True],
+        "age":      [40, 70, 20],
+        "studies":  [False, False, True],
+    })
+    with_bkat = base.assign(P_BKAT=[1, 7, 6])
+    out_with = a.map_socioprofessional_class(with_bkat)
+    out_without = a.map_socioprofessional_class(base)
+    assert list(out_with["socioprofessional_class"]) == list(
+        out_without["socioprofessional_class"]
+    ), "P_BKAT presence must not change socioprofessional_class (issue #167)."
 
 
 def test_studies_from_p_taet():

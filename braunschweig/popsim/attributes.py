@@ -23,19 +23,14 @@ from braunschweig.popsim import missing
 
 logger = logging.getLogger(__name__)
 
-# MiD P_BKAT (Berufskategorie) -> eqasim/INSEE CS1 occupation class.
-# P_BKAT has 6 substantive categories; the CS1 detail is collapsed to this coarse
-# crosswalk (documented assumption: no finer occupation distinction is available in
-# the standard MiD respondent table). MiD codebook codes:
-#   1 Angestellte/Arbeiter (White+Blue collar workers, largest group) -> 6 Worker
-#   2 Beamte (Civil servants)                                         -> 5 Employee
-#   3 Selbststaendige/Freiberufler (Self-employed, liberal professions)-> 3 Science
-#   4 mithelfende Familienangehoerige (Contributing family member)    -> 4 Intermediate
-#   5 in Ausbildung (Trainee/apprenticeship, employed)                -> 4 Intermediate
-#   6 geringfuegig Beschaeftigte (Marginal employment)               -> 6 Worker
-#   7 Nicht berufstaetig (not employed)   -- NOT in map -> fallback
-#  95 Nicht zuzuordnen (unclassifiable)   -- NOT in map -> fallback
-SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
+# NOTE (issue #167): there is NO occupation ("Berufskategorie") variable in the
+# standard MiD respondent table. P_BKAT is "Umfang der Erwerbstaetigkeit"
+# (employment EXTENT; see EMPLOYMENT_STATUS_BY_P_BKAT below), NOT an occupation
+# code. The former SPC_BY_P_BKAT crosswalk mis-read P_BKAT as an occupation and is
+# removed; socioprofessional_class is derived from broad activity status via
+# braunschweig.ipf.attributed.derive_socioprofessional_class (see
+# map_socioprofessional_class), which is the eqasim/IPF path and documents that no
+# occupation data exists upstream of the HTS in this fork.
 
 # MiD P_TAET (Taetigkeit der Person): MiD official `erwerb` definition (Erwerbstätigkeit
 # ja/nein per MiD methodology). Source: MiD 2023 Codeplan B1 (Personen sheet, P_TAET):
@@ -914,32 +909,25 @@ def map_beruflabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def map_socioprofessional_class(
-    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT"
-) -> pd.DataFrame:
-    """Add ``socioprofessional_class`` (CS1 1-8) from MiD occupation, with fallback.
+def map_socioprofessional_class(persons: pd.DataFrame) -> pd.DataFrame:
+    """Add ``socioprofessional_class`` (eqasim/INSEE CS1 1-8) from broad activity status.
 
-    Primary path: MiD ``P_BKAT`` (Berufskategorie) is mapped to the eqasim/INSEE CS1
-    code via ``SPC_BY_P_BKAT`` (codes 1..6 -> CS1 codes 3..6; ~0 % structural
-    missing in the MiD). Codes 7 (nicht berufstaetig) and 95 (nicht zuzuordnen) are
-    NOT in the map and fall through to the broad-activity fallback.
+    There is NO occupation variable in the standard MiD respondent table, so CS1 is
+    derived from the broad activity status the synthesis DOES carry --
+    ``derive_socioprofessional_class(employed, age, studies)`` from
+    ``braunschweig.ipf.attributed`` -- exactly the eqasim/IPF path, so the popsim and
+    IPF populations share one CS1 code space. Age is a documented coarse seniority
+    proxy for the active classes (NOT measured occupation).
 
-    Fallback path: ``derive_socioprofessional_class(employed, age, studies)`` from
-    ``braunschweig.ipf.attributed`` is used when (a) the ``P_BKAT`` column is absent
-    entirely, or (b) the code for a given person does not resolve via ``SPC_BY_P_BKAT``
-    (i.e. code 7 or 95). This is consistent with the IPF path and re-uses the same
-    function, so both paths produce values in the same CS1 code space.
-
-    The fallback rate is printed for transparency (CLAUDE.md: no silent fallbacks).
-    ``derive_socioprofessional_class`` resets its index to 0-based internally, so the
-    returned Series is realigned to the input DataFrame's index before ``.fillna`` to
-    avoid a misaligned join.
+    Issue #167: the former ``SPC_BY_P_BKAT`` primary path mis-read MiD ``P_BKAT``
+    ("Umfang der Erwerbstaetigkeit" = employment EXTENT; see
+    ``EMPLOYMENT_STATUS_BY_P_BKAT``) as an occupation "Berufskategorie" crosswalk. That
+    crosswalk was semantically invalid and is removed; ``P_BKAT`` no longer influences
+    ``socioprofessional_class`` at all (it feeds only ``map_employment_status``).
 
     Args:
         persons: DataFrame with at least ``employed`` (bool) and ``age`` (int).
-            ``studies`` (bool) is used by the fallback if present; defaults to False.
-            ``bkat_col`` is optional (absent column -> all fallback).
-        bkat_col: name of the MiD Berufskategorie column (default ``P_BKAT``).
+            ``studies`` (bool) is used if present; defaults to False.
 
     Returns:
         A copy of ``persons`` with the integer ``socioprofessional_class`` column added.
@@ -947,31 +935,9 @@ def map_socioprofessional_class(
     out = persons.copy()
     studies = out["studies"] if "studies" in out.columns else pd.Series(False, index=out.index)
 
-    # derive_socioprofessional_class resets the index to 0-based internally
-    # (pd.Series(...).reset_index(drop=True) at every input), so the returned Series
-    # has index 0..N-1. Realign to out.index before .fillna to prevent a silent
-    # misaligned join when the input has a non-default index.
-    fallback = derive_socioprofessional_class(out["employed"], out["age"], studies)
-    fallback = pd.Series(fallback.to_numpy(), index=out.index)
-    import logging
-    logger = logging.getLogger(__name__)
-
-    if bkat_col in out.columns:
-        mapped = out[bkat_col].map(SPC_BY_P_BKAT)
-        n_primary = int(mapped.notna().sum())
-        n_fallback = int(mapped.isna().sum())
-        n_total = len(out)
-        logger.info(
-            "socioprofessional_class: primary (P_BKAT) %d/%d (%.1f%%), "
-            "fallback (broad-activity) %d/%d (%.1f%%).",
-            n_primary, n_total, 100.0 * n_primary / max(n_total, 1),
-            n_fallback, n_total, 100.0 * n_fallback / max(n_total, 1),
-        )
-        out["socioprofessional_class"] = mapped.fillna(fallback).astype(int)
-    else:
-        logger.info(
-            "socioprofessional_class: P_BKAT column absent -> all %d persons "
-            "use the broad-activity fallback.", len(out),
-        )
-        out["socioprofessional_class"] = fallback.astype(int)
+    # derive_socioprofessional_class resets the index to 0-based internally, so realign
+    # the returned Series to out.index before assignment to avoid a misaligned join
+    # when the input has a non-default index.
+    spc = derive_socioprofessional_class(out["employed"], out["age"], studies)
+    out["socioprofessional_class"] = pd.Series(spc.to_numpy(), index=out.index).astype(int)
     return out
