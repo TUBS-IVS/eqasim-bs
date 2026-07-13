@@ -582,10 +582,19 @@ def employment_target(data_path: str) -> pd.DataFrame:
     """Per-Kreis employed share from MiD 2023 Tabelle P9.
 
     Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` (percentages summing to
-    ~100 per Kreis). The employed share is the sum of the five employment columns
+    ~100 per Kreis). The employed share is the sum of the SIX employment columns
     (``vollzeit`` + ``teilzeit`` + ``geringfuegig`` + ``sonstiges`` +
-    ``erwerbstaetig_unspec``) / 100, clipped to [0, 1]; ``not_employed`` is the
-    complement. Two long rows per Kreis (``employed`` / ``not_employed``).
+    ``erwerbstaetig_unspec`` + ``in_ausbildung``) over the substantive row total,
+    clipped to [0, 1]; ``not_employed`` is the complement. Two long rows per
+    Kreis (``employed`` / ``not_employed``).
+
+    ``in_ausbildung`` (Auszubildende) counts as EMPLOYED here, matching the MiD
+    official ``erwerb`` definition (P_TAET in {1,2,3,4,6,8}, incl. Azubi) that the
+    realized ``employed`` flag uses (``attributes.EMPLOYED_TAET``). Excluding it
+    from the target while the realized side includes it produced a ~1-3pp
+    systematic positive bias in the employed delta (issue #169, 2026-07-13). The
+    seven-class ``employment_status`` control keeps ``in_ausbildung`` as its own
+    category and is unaffected either way.
 
     ``geo_id`` is the 5-digit Kreis ``ars5``; the ZGB aggregate row (``03ZGB``)
     is excluded. The MiD P9 percentages are over the **"Personen ab 14 Jahre"**
@@ -599,14 +608,16 @@ def employment_target(data_path: str) -> pd.DataFrame:
     path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
     df = pd.read_csv(path, comment="#", dtype={"ars5": str})
     df = df[df["ars5"] != "03ZGB"].copy()
-    employ_cols = ["vollzeit", "teilzeit", "geringfuegig", "sonstiges", "erwerbstaetig_unspec"]
+    # in_ausbildung is on the EMPLOYED side (MiD erwerb definition; issue #169).
+    employ_cols = ["vollzeit", "teilzeit", "geringfuegig", "sonstiges",
+                   "erwerbstaetig_unspec", "in_ausbildung"]
     # Divide by the ACTUAL substantive row total, not a literal 100: the
     # published integer-rounded P9 rows sum to 99-101 per Kreis, and a
     # literal-100 denominator biased the employed-share target by up to
     # -0.5pp on the 99-sum rows (2026-07-12 validation audit). 'keine_angabe'
     # (item-nonresponse) is excluded from the denominator, consistent with the
     # P36.1 mobility target convention.
-    non_employ_cols = ["in_ausbildung", "nicht_erwerbstaetig"]
+    non_employ_cols = ["nicht_erwerbstaetig"]
     employed_pct = df[employ_cols].fillna(0.0).sum(axis=1)
     row_total = employed_pct + df[non_employ_cols].fillna(0.0).sum(axis=1)
     if (row_total <= 0).any():

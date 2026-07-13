@@ -74,8 +74,26 @@ def test_employment_target_divides_by_substantive_row_total(tmp_path):
     target = C.employment_target(str(tmp_path))
     employed = target[(target["geo_id"] == "03101")
                       & (target["category"] == "employed")]["target_share"].iloc[0]
-    # 51 employed / 99 substantive total -- NOT 51/100.
-    assert employed == pytest.approx(51.0 / 99.0)
+    # employed = vollzeit+teilzeit+geringfuegig+sonstiges+erwerbstaetig_unspec
+    # + in_ausbildung = 35+12+3+1+0+2 = 53, over the substantive total 99 (NOT
+    # /100, and in_ausbildung IS on the employed side per issue #169).
+    assert employed == pytest.approx(53.0 / 99.0)
+
+
+def test_employment_target_counts_in_ausbildung_as_employed(tmp_path):
+    """issue #169: Azubi (in_ausbildung) is EMPLOYED, matching the MiD erwerb
+    definition + the realized `employed` flag; else a ~1-3pp bias."""
+    mid_dir = tmp_path / "braunschweig" / "mid"
+    mid_dir.mkdir(parents=True)
+    # 60 vollzeit + 5 in_ausbildung employed, 35 nicht_erwerbstaetig -> 65/100.
+    (mid_dir / "mid2023_P9.csv").write_text(
+        "kreis,ars5,n_weighted,n_unweighted,vollzeit,teilzeit,geringfuegig,"
+        "sonstiges,erwerbstaetig_unspec,in_ausbildung,nicht_erwerbstaetig,keine_angabe\n"
+        "A,03101,1,1,60,0,0,0,0,5,35,0\n", encoding="utf-8")
+    target = C.employment_target(str(tmp_path))
+    employed = target[(target["geo_id"] == "03101")
+                      & (target["category"] == "employed")]["target_share"].iloc[0]
+    assert employed == pytest.approx(65.0 / 100.0)
 
 
 def test_education_bands_match_synthesis_bands():
