@@ -13,6 +13,10 @@ Attributes built:
 - has_ebike {yes,no}: SrV only (no MiD per-Kreis source exists).
   ASSUMPTION: Wolfsburg uses the SrV region-total share.
 - number_of_bicycles {0..4+}: MiD H12.3 x SrV bikes; no arbiter.
+- employment_status {vollzeit,teilzeit,geringfuegig,sonstiges,erwerbstaetig_unspec,
+  in_ausbildung,nicht_erwerbstaetig}: MiD P9 x SrV V_ERW (feature #172); no arbiter
+  -> disagreement shrinks MiD. Wolfsburg (03103, not covered by SrV) and Gesamt
+  fall back to MiD automatically.
 
 Outputs (committed): eqasim-data/data/braunschweig/targets/target2026_*.csv
 with columns ars5,source,n_effective,<categories> (fractions, rows = 8 Kreise
@@ -33,7 +37,9 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_BY_P_BKAT  # noqa: E402
 from braunschweig.popsim.blended_targets import BlendConfig, blend_kreis_target  # noqa: E402
+from braunschweig.popsim.mid_p9 import mid_p9_employment_status_by_kreis  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_targets")
@@ -42,6 +48,11 @@ REPO = Path(__file__).resolve().parents[1]
 DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
 
 STATUS_CATS = ["very_low", "low", "medium", "high", "very_high"]
+
+# Class taxonomy imported from the source of truth (feature #172), never
+# re-listed literally: vollzeit, teilzeit, geringfuegig, sonstiges,
+# erwerbstaetig_unspec, in_ausbildung, nicht_erwerbstaetig (P_BKAT code order).
+EMPLOYMENT_STATUS_CATS = list(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
 HEADER_COMMON = """\
 # Blended per-Kreis control target, built by scripts/build_blended_kreis_targets.py
@@ -119,6 +130,20 @@ def build_number_of_bicycles(data: Path, config: BlendConfig) -> pd.DataFrame:
                               cats, config=config)
 
 
+def build_employment_status(data: Path, config: BlendConfig) -> pd.DataFrame:
+    # mid_p9_employment_status_by_kreis expects the data_path ONE LEVEL ABOVE
+    # `data` (it joins "braunschweig/mid/mid2023_P9.csv" itself), unlike the
+    # other build_* helpers here, which already take the "braunschweig" dir.
+    mid = mid_p9_employment_status_by_kreis(str(data.parent)).rename(
+        columns={"code": "ars5"})
+    srv = read_csv(data / "srv" / "srv2023_employment_status_by_kreis.csv",
+                   dtype={"code": str})
+    return blend_kreis_target(
+        mid[["ars5", "n_unweighted", *EMPLOYMENT_STATUS_CATS]],
+        srv[["code", "n_unweighted", *EMPLOYMENT_STATUS_CATS]],
+        EMPLOYMENT_STATUS_CATS, config=config)
+
+
 def build_has_ebike(data: Path) -> pd.DataFrame:
     # SrV is the ONLY per-Kreis source; no blending. Wolfsburg = region total.
     srv = read_csv(data / "srv" / "srv2023_ebike_household_by_kreis.csv",
@@ -173,6 +198,8 @@ def main(argv=None) -> int:
                  ebike=True)
     write_target(build_number_of_bicycles(args.data, config),
                  args.out_dir / "target2026_number_of_bicycles_by_kreis.csv", config)
+    write_target(build_employment_status(args.data, config),
+                 args.out_dir / "target2026_employment_status_by_kreis.csv", config)
     return 0
 
 
