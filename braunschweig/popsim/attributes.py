@@ -12,12 +12,16 @@ and bicycle availability need additional MiD columns and are a follow-on.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
+
+logger = logging.getLogger(__name__)
 
 # MiD P_BKAT (Berufskategorie) -> eqasim/INSEE CS1 occupation class.
 # P_BKAT has 6 substantive categories; the CS1 detail is collapsed to this coarse
@@ -51,6 +55,24 @@ SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 # MiD official `erwerb` = Erwerbstätigkeit ja/nein (inkl. Auszubildende). P_TAET 1,2,3,4,6,8.
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
+
+# MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen):
+#   1 Vollzeit -> vollzeit
+#   2 Teilzeit (18-<35 h/week) -> teilzeit
+#   3 geringfuegig (11-<18 h/week) -> geringfuegig
+#   4 sonstiger Erwerbsumfang -> sonstiges
+#   5 erwerbstaetig ohne Angabe zum Umfang -> erwerbstaetig_unspec
+#   7 nicht erwerbstaetig -> nicht_erwerbstaetig
+# Persons with P_TAET==8 (in Ausbildung) are overlaid to in_ausbildung AFTERWARDS,
+# because P9 reports apprentices in a separate class (not folded into vollzeit).
+EMPLOYMENT_STATUS_BY_P_BKAT = {
+    1: "vollzeit", 2: "teilzeit", 3: "geringfuegig",
+    4: "sonstiges", 5: "erwerbstaetig_unspec", 7: "nicht_erwerbstaetig",
+}
+EMPLOYMENT_STATUS_CATEGORIES = (
+    "vollzeit", "teilzeit", "geringfuegig", "sonstiges",
+    "erwerbstaetig_unspec", "in_ausbildung", "nicht_erwerbstaetig",
+)
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
@@ -193,6 +215,40 @@ def map_employed(
     out = persons.copy()
     out["employed"], _ = missing.resolve(out, spec, rng=rng)
     out["employed"] = out["employed"].astype(bool)
+    return out
+
+
+def map_employment_status(
+    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT", taet_col: str = "P_TAET",
+    rng=None, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add a categorical ``employment_status`` (P9 taxonomy) from MiD ``P_BKAT``.
+
+    P_BKAT (Umfang der Erwerbstaetigkeit) maps 1:1 onto the P9 columns via
+    ``EMPLOYMENT_STATUS_BY_P_BKAT``; persons with ``P_TAET == 8`` (in Ausbildung)
+    are overlaid to ``in_ausbildung`` (P9 reports apprentices separately, not
+    inside vollzeit). Missing / code-6 / code-99 P_BKAT is imputed from the valid
+    pool within the same age group via the uniform missing policy (rate logged;
+    no silent fallback). Additive: the boolean ``employed`` is untouched. This is
+    NOT a popsim control -- it rides along from the donor for analysis/validation.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = dict(EMPLOYMENT_STATUS_BY_P_BKAT)
+    spec = missing.AttributeSpec(
+        name="employment_status",
+        source_col=bkat_col,
+        value_map=value_map,
+        structural={},
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default="nicht_erwerbstaetig",
+    )
+    out = persons.copy()
+    out["employment_status"], _rate = missing.resolve(out, spec, rng=rng)
+    # Azubi overlay: P_TAET==8 -> in_ausbildung, regardless of P_BKAT.
+    if taet_col in out.columns:
+        azubi = pd.to_numeric(out[taet_col], errors="coerce") == 8
+        out.loc[azubi, "employment_status"] = "in_ausbildung"
+    out["employment_status"] = out["employment_status"].astype(str)
     return out
 
 
