@@ -5,7 +5,17 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-10 (on branch `docs/status-presentation`; older bullets below may lag `main`).
+> **Last updated:** 2026-07-12 (on branch `docs/status-presentation`; older bullets below may lag `main`).
+> **2026-07-12 — Full-pipeline bug audit -> PR #165 (OPEN):** orchestrated read-only multi-agent audit vs
+> `origin/main` `d92328e` found **19 verified bugs** (1 critical, 11 major, 7 minor). Fixed same day on
+> `fix/audit-wave-20260712` (6 commits `f212d73`..`1a4a874`, 51 new tests, suite = baseline 11 known-fail /
+> 2780 pass). **#160** (crit) distance_distributions silently dropped ~11% MiD coded-time Wege (99/701) ->
+> now rescued from `wegmin_imp1` with observed/imputed/dropped rate log. **#161** powertrain Gemeinde tilt
+> joined only 30.6% (umlaut/suffix mismatch, live kreis5 log) -> shared `normalize_gemeinde_name`. **#162**
+> weekend_plan_match wrong employment set -> canonical `EMPLOYED_TAET`. **#163** 14 fallback-transparency
+> items instrumented. PR Closes #160/#161/#162, works #163. **Caveats:** batch-signature fix purges popsim
+> `work_dir` batches ONCE (don't deploy mid-run); kreis5 ran fleet/distance stages on old code; pre-merge =
+> felix pytest. Memory `project-audit-wave-2026-07-12`.
 > **2026-07-10 — kreis5 100% run RELAUNCHED with full-pool perf fix (ADR-0056, ~40x measured):** root
 > cause of the ~8-day projection = upstream default `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: true` (float
 > parent weights strictly >0 everywhere → every 1km cell balanced all 53,459 signature rows x 1000
@@ -14,9 +24,22 @@
 > ~28 min/batch confirmed, popsim phase ETA same evening. **PENDING: quality A/B vs float reference
 > batch** (running niced on felix, ~2026-07-11) — until clean, the speedup is operational, not
 > scientifically validated. Disk side-find: per-batch `pipeline.h5` ~15 GB dead weight at full pool →
-> interim watcher on felix + **issue #153** (stage.py `cleanup_batch_pipeline` flag, PR after the run).
+> interim watcher on felix + **PR #155 OPEN (Closes #153)**: `cleanup_batch_pipeline` flag default ON
+> in batch.py/stage.py (TDD, 9 tests; delete after VERIFIED completion incl. skipped leftovers, failed
+> batches keep the h5 for resume; OSError-hardened; flag explicit in both server configs). Pre-merge:
+> canonical popsim pytest on felix after the run ends. **A/B harness READY + self-tested** on felix
+> (`~/ab_quality/run_ab.sh`; batch_000-vs-itself: 44/44 controls resolved, all diffs exactly 0;
+> float-bench inputs verified byte-identical to batch_000).
 > Two verified upstream populationsim v0.10.0 bugs (MIN_GAMMA clamp missing, `converged=True` on
 > no-progress) — bypassed by numba; upstream reports optional. Memory `project-popsim-fullpool-perf-fix`.
+> **2026-07-13 — employment_status Phase-0 MEASURED (ADR-0058):** the shipped `employment_status`
+> attribute (PR #168) matches the independent MiD 2023 P9 reference well WITHOUT calibration — SRMSE
+> 0.194, mean|Δ| 1.88pp, grade "good", all 56 Kreis×class cells <10pp, r² 0.979 (8 ZGB Kreise, 1.12M
+> persons, age 14+). Measured cheaply by reusing the kreis5 balancing (no re-balance) and computing
+> directly off the cached `popsim.stage` frame with the real validation code. **Decision: Phase-1 soft
+> control NOT built** (fit already good; measure-before-calibrating). Only notable deltas: `in_ausbildung`
+> +1.7pp, `vollzeit` +1.6pp. Open: re-confirm on the full-main run (post-#170/zfill); #167 (SPC) still
+> open/dormant. See PROJECT_BACKLOG "New (2026-07-13)".
 > **2026-07-04 status:** `origin/main` = `141284e` (PRs #101 + #102 + #103 merged) · open PRs: **#106** (#105 docstring), **#107** (#104 deck refresh).
 > **2026-07-04 — income-placement design (issues #108 hub / #109 L1-L2 / #110 L3, ADR-0054):** make the popsim_mid income geography emerge from WHICH real MiD donor households are placed where (economic_status × Kreis control on MiD H4, retire the post-hoc `income_kreis_control` overwrite), not post-hoc scaling. Measured: income number tracks INKAR (ρ=1.0) but inert; status flat (CV 0.033); cars = tenure/size not income; trip-purpose/mobility "gaps" are metric artifacts. **Phase 0/1 built** (H4 extraction+CSV, loader, Phase-0 gate diagnostic; 11 tests; final review fixed 1 Critical + 3 Important) on backup branch **`worktree-income-placement-refdata-gate` @ `2d8e8aa`** (pushed to fork, NO PR/merge). Backlog 3.1 → #108. **Next:** run the Phase-0 gate on the server (needs MiD seed) → decide #109-build vs just-drop-overwrite.
 > **Issue #97 FIXED** (PR #103, merged): the population-validation `household_size` control compared a
