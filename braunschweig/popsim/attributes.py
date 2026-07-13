@@ -73,10 +73,10 @@ EMPLOYMENT_STATUS_BY_P_BKAT = {
     1: "vollzeit", 2: "teilzeit", 3: "geringfuegig", 4: "sonstiges",
     5: "erwerbstaetig_unspec", 6: "in_ausbildung", 7: "nicht_erwerbstaetig",
 }
-EMPLOYMENT_STATUS_CATEGORIES = (
-    "vollzeit", "teilzeit", "geringfuegig", "sonstiges",
-    "erwerbstaetig_unspec", "in_ausbildung", "nicht_erwerbstaetig",
-)
+# Derived from EMPLOYMENT_STATUS_BY_P_BKAT (not re-listed literally) so the two
+# stay in sync by construction; dict insertion order (Python 3.7+) preserves the
+# codebook code order 1..7 above.
+EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
@@ -250,8 +250,20 @@ def map_employment_status(
     out = persons.copy()
     # taet_col is kept only for API symmetry with map_employed; P_BKAT code 6 IS
     # in_ausbildung directly, so this function does not read P_TAET at all.
-    out["employment_status"], _rate = missing.resolve(out, spec, rng=rng)
+    out["employment_status"], _ = missing.resolve(out, spec, rng=rng)
     out["employment_status"] = out["employment_status"].astype(str)
+
+    # Observability (no silent fallback): the boolean `employed` (from P_TAET)
+    # and `employment_status` (from P_BKAT) are DISTINCT MiD variables; log how
+    # often they agree so a low rate surfaces as a data-quality signal.
+    if "employed" in out.columns:
+        employed_side = out["employment_status"].isin(
+            [c for c in EMPLOYMENT_STATUS_CATEGORIES if c != "nicht_erwerbstaetig"])
+        agree = float((employed_side == out["employed"].astype(bool)).mean())
+        _log = logger.warning if agree < 0.9 else logger.info
+        _log("[attributes] employment_status vs employed agreement: %.1f%% "
+             "(distinct MiD vars P_BKAT vs P_TAET)", 100.0 * agree)
+
     return out
 
 

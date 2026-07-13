@@ -295,6 +295,10 @@ def map_mid_person_attributes(
     rng = rng if rng is not None else np.random.RandomState(0)
 
     persons = attributes.map_employed(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    # employment_status (P9 taxonomy, MiD P_BKAT) rides alongside the boolean
+    # employed flag -- NOT a popsim control, additive for analysis/validation
+    # (see attributes.map_employment_status docstring).
+    persons = attributes.map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
     # map_socioprofessional_class, which uses the studies flag in its fallback path.
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.

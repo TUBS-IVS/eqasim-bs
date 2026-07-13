@@ -44,3 +44,17 @@ def test_p_bkat_missing_code_9_is_imputed_not_raised():
     persons = _persons(P_BKAT=[1, 2, 9], alter_gr1=[3, 3, 3])
     out = A.map_employment_status(persons, rng=np.random.RandomState(0))
     assert out["employment_status"].isin(A.EMPLOYMENT_STATUS_CATEGORIES).all()
+
+
+def test_agreement_rate_logged_and_status_present(caplog):
+    import logging
+    persons = pd.DataFrame({
+        "P_BKAT": [1, 7, 2],
+        "P_TAET": [1, 12, 2],
+        "employed": [True, False, True],
+        "alter_gr1": [3, 3, 3],
+    })
+    with caplog.at_level(logging.INFO):
+        out = A.map_employment_status(persons, rng=np.random.RandomState(0))
+    assert "employment_status" in out.columns
+    assert any("agreement" in r.message.lower() for r in caplog.records)
