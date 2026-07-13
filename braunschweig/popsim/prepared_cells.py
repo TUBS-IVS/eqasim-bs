@@ -173,7 +173,12 @@ def add_aggregated_controls(
     For each ``(derived_name, source_cols)`` pair in ``aggregation_map``:
     - Finds which source columns are present in ``cells`` (logs a WARNING for each
       missing source column; no silent fallback).
-    - Sets ``cells[derived_name] = cells[present_source_cols].sum(axis=1)``.
+    - Sets ``cells[derived_name]`` to the row-sum of the present source columns via
+      :func:`braunschweig.popsim.cells.sum_columns_logging_nan`, which logs any NaN
+      cells suppressed by ``skipna`` (issue #150).
+    - If *all* source columns are missing, raises ``ValueError`` instead of emitting a
+      constant-0 target (issue #149): a permanently-zero control would be balanced to 0
+      by PopulationSim unnoticed, violating the no-silent-fallback rule (CLAUDE.md).
     - A single-source entry (len==1) is an identity: if the source already exists
       as ``derived_name`` it is overwritten with itself (no-op).
     - An empty ``aggregation_map`` returns the cells frame unchanged (tier0-only
@@ -209,15 +214,20 @@ def add_aggregated_controls(
                 col, derived_name,
             )
         if present:
-            result[derived_name] = result[present].sum(axis=1)
+            # skipna suppression (NaN -> 0) is made observable per issue #150.
+            result[derived_name] = _cells.sum_columns_logging_nan(
+                result, present, f"derived control {derived_name!r}")
         else:
-            # All sources missing: derived column is 0 (no contributing units).
-            logger.warning(
-                "[popsim.prepared_cells] All source columns for derived control %r "
-                "are missing from the cells frame; setting column to 0.",
-                derived_name,
+            # All sources missing: a renamed/removed census column would otherwise
+            # yield a permanently-zero target that PopulationSim balances to 0
+            # unnoticed. Per the mandatory no-silent-fallback rule (CLAUDE.md,
+            # issue #149) this is a hard error, not a silent 0-column.
+            raise ValueError(
+                f"[popsim.prepared_cells] All {len(source_cols)} source column(s) "
+                f"{list(source_cols)} for derived control {derived_name!r} are absent "
+                f"from the cells frame; refusing to emit a constant-0 control. "
+                f"Check the census parquet column names against the active catalog."
             )
-            result[derived_name] = 0.0
     return result
 
 

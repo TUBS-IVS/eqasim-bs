@@ -56,6 +56,16 @@ def _resolve_parent_kreis(
     (each 1 km maps to exactly one parent Kreis), so each parent is assigned the
     Kreis with the largest summed ``weights`` across its cells; ties break on the
     higher Kreis id (deterministic). Reassigned (boundary) cells are logged.
+
+    Known universe inconsistency (issue #147, documented not corrected): the batch
+    KREIS backbone built here uses this RESOLVED dominant Kreis per 1 km parent,
+    whereas the per-Kreis attribute-control targets in ``stage.py`` partition
+    households by the RAW ``ARS[:5]`` of each 100 m cell. For border cells reassigned
+    above, the category targets therefore sum to the raw-ARS Kreis total while the
+    100 m backbone sums the resolved cells. The magnitude is ~0.1 % of cells (100 %
+    run: ~48/43598), region-wide sums remain exact, and no silent scientific impact
+    was identified, so the two universes are left unaligned pending a measured need
+    rather than changed here (measure-first; avoids a behaviour change on a hot path).
     """
     work = xwalk[[GEO_1KM, GEO_KREIS]].copy()
     work["_w"] = weights
@@ -292,7 +302,11 @@ def build_kreis_control_totals(
 
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
-        values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        # skipna suppression (NaN -> 0) in the multi-source row-sum is made
+        # observable per issue #150 (fallback-transparency rule, CLAUDE.md).
+        values = cells.sum_columns_logging_nan(
+            table.loc[kreise], list(source_cols), f"KREIS control {name!r}"
+        ).to_numpy()
         if apportion_weights is not None:
             weights = np.array(
                 [float(apportion_weights.get(k, 1.0)) for k in kreise], dtype=float
