@@ -366,30 +366,31 @@ def test_build_persons_has_studies_column():
     )
 
 
-def test_build_persons_spc_uses_p_bkat_crosswalk():
-    """When the donor has a valid P_BKAT code, SPC must come from SPC_BY_P_BKAT.
+def test_build_persons_spc_ignores_p_bkat():
+    """#167: P_BKAT is employment EXTENT (Umfang der Erwerbstaetigkeit), not an
+    occupation code, so socioprofessional_class must come from the broad-activity
+    derivation ``derive_socioprofessional_class(employed, age, studies)`` and NOT
+    from the (removed) SPC_BY_P_BKAT crosswalk.
 
-    Bug D4: P_BKAT was absent from MID_PERSON_ATTR_COLS, so SPC always used
-    the broad-activity fallback. After the fix, P_BKAT=1 (Angestellte) must
-    yield CS1 6, not whatever the fallback derives from employed/age.
-
-    The _mid_persons() fixture has:
-      H_ID=1, P_ID=1, age=40, P_TAET=1 (employed), P_BKAT=1 (Angestellte) -> CS1 6
-    source_household_id is now an integer surrogate: H_ID=1 -> 1.
+    The _mid_persons() fixture has H_ID=1, P_ID=1, age=40, P_TAET=1 (employed),
+    P_BKAT=1. The old crosswalk mapped P_BKAT=1 -> CS1 6; the correct broad-activity
+    derivation for an employed 40-year-old (non-student) is CS1 4 (Intermediate).
     """
-    from braunschweig.popsim.attributes import SPC_BY_P_BKAT
+    from braunschweig.ipf.attributed import derive_socioprofessional_class
 
     persons, _map = assembly.build_persons(
         _merged_households(), _mid_households(), _mid_persons(),
         rng=np.random.RandomState(0),
     )
-    # The first person: H_ID=1 (surrogate 1), age=40, P_BKAT=1 -> CS1 6
     row = persons[
         (persons["source_household_id"] == 1) & (persons["age"] == 40)
     ].iloc[0]
-    expected_spc = SPC_BY_P_BKAT[1]  # P_BKAT=1 -> 6
+    expected_spc = int(derive_socioprofessional_class(
+        pd.Series([row["employed"]]), pd.Series([row["age"]]),
+        pd.Series([bool(row["studies"])]),
+    ).iloc[0])
     assert row["socioprofessional_class"] == expected_spc, (
-        f"P_BKAT=1 (Angestellte) should give SPC={expected_spc} (CS1 6), "
-        f"got {row['socioprofessional_class']}. "
-        "This indicates P_BKAT is not reaching the persons frame (bug D4)."
+        f"socioprofessional_class must be the broad-activity value {expected_spc}, "
+        f"not a P_BKAT crosswalk value; got {row['socioprofessional_class']} "
+        "(issue #167)."
     )
