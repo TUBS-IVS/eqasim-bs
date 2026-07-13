@@ -85,7 +85,17 @@ def categorical_person_control(name, family, geography, column, categories, targ
             return pd.DataFrame(columns=["geo_id", "category", "synthetic_count"])
         df = frames.persons.merge(geo[["household_id", geo_col]], on="household_id", how="left")
         df = df.dropna(subset=[geo_col]).copy()
-        if (age_min is not None or age_max is not None) and "age" in df.columns:
+        if age_min is not None or age_max is not None:
+            # No-silent-fallback / #97-class universe guard: an age-based MiD
+            # control MUST restrict the synthetic side to the survey base. If
+            # the 'age' column is missing we cannot, and silently comparing the
+            # FULL population against a 14+ target is exactly the universe
+            # mismatch #97 was about -- fail fast instead (2026-07-12 audit).
+            if "age" not in df.columns:
+                raise KeyError(
+                    f"control {name}: age base [{age_min}, {age_max}] requested "
+                    "but the persons frame has no 'age' column; cannot form an "
+                    "apples-to-apples universe (no silent full-population fallback).")
             ages = pd.to_numeric(df["age"], errors="coerce")
             lower = -np.inf if age_min is None else float(age_min)
             upper = np.inf if age_max is None else float(age_max)
@@ -490,7 +500,17 @@ def license_control(name, family, geography, target, age_min=None, age_max=None,
             )
             return empty
         # Restrict to the MiD survey age base when age_min / age_max are set.
-        if (age_min is not None or age_max is not None) and "age" in df.columns:
+        if age_min is not None or age_max is not None:
+            # No-silent-fallback / #97-class universe guard: an age-based MiD
+            # control MUST restrict the synthetic side to the survey base. If
+            # the 'age' column is missing we cannot, and silently comparing the
+            # FULL population against a 14+ target is exactly the universe
+            # mismatch #97 was about -- fail fast instead (2026-07-12 audit).
+            if "age" not in df.columns:
+                raise KeyError(
+                    f"control {name}: age base [{age_min}, {age_max}] requested "
+                    "but the persons frame has no 'age' column; cannot form an "
+                    "apples-to-apples universe (no silent full-population fallback).")
             ages = pd.to_numeric(df["age"], errors="coerce")
             lower = -np.inf if age_min is None else float(age_min)
             upper = np.inf if age_max is None else float(age_max)
@@ -723,7 +743,15 @@ def _bev_not_bev(powertrain: pd.Series) -> pd.Series:
 
     The fleet writer stores the canonical powertrain label (e.g. "bev") in the
     vehicles ``technology`` column; everything that is not exactly "bev" (case-
-    insensitive) is reported as ``not_bev``."""
+    insensitive) is reported as ``not_bev``. NaN technology is counted as
+    not_bev; since the fleet filter now excludes attribute-less routing rows
+    upstream, a non-trivial NaN share here signals a real fleet-attribute gap
+    and is logged (no-silent-fallback rule, 2026-07-12 audit)."""
+    n_nan = int(powertrain.isna().sum())
+    if n_nan:
+        LOGGER.warning(
+            "bev_share: %d/%d fleet vehicles have NaN technology -> counted as "
+            "not_bev; check the fleet powertrain assignment", n_nan, len(powertrain))
     return np.where(powertrain.astype(str).str.lower() == "bev", "bev", "not_bev")
 
 

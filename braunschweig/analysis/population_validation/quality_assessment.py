@@ -21,8 +21,14 @@ GRADE_LABELS = ("very good", "good", "acceptable", "needs improvement")
 
 CAUSE_HINTS = {
     "driving_license_type": (
-        "MiD P17.1 base is age 14+ incl. ~19% BF17 holders, while the synthesis "
-        "floor is 18 (BF17 ignored) -> a structural ~1pp shortfall is expected."),
+        "FIT CHECK: the synthesis rakes the licence flag to this very MiD P17.1 "
+        "table, so agreement is convergence, not independent validation. Two "
+        "structural caveats (direction, not magnitude -- the exact pp figures "
+        "are not committed anywhere and are deliberately not stated): P17.1's "
+        "base is age 14+ and includes BF17 (accompanied driving from 17) while "
+        "the synthesis assigns licences from 18, and the boolean has_driving_"
+        "license fallback cannot represent the 'keine_angabe' category, so that "
+        "target cell is scored against a structural 0."),
     "pt_ticket_type": (
         "MiD P24.1 margins are rounded to integer percent and raked across "
         "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
