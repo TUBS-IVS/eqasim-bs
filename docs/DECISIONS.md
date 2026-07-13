@@ -999,12 +999,89 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   that comparison is clean, the speedup is operational, not scientifically validated.
 - **Related:** per-batch `pipeline.h5` is ~15 GB at full pool (12.1 GB = dense `ZENSUS100m_weights`,
   ~215 M rows, 99.9% zeros) and verified dead after batch completion — interim server watcher deletes it;
-  permanent stage.py flag tracked as **issue #153**. Two verified upstream bugs (populationsim v0.10.0):
+  permanent stage.py flag tracked as **issue #153** (fix shipped 2026-07-10 as **PR #155**, default-ON
+  `cleanup_batch_pipeline`; merge pending the felix pytest after the run). Two verified upstream bugs (populationsim v0.10.0):
   missing `MIN_GAMMA` clamp in the python single balancer (NaN risk; `balancers.py:84-89`) and hardcoded
   `converged=True` on no-progress exits (`balancers.py:111-112`) — both bypassed by `USE_NUMBA: true`.
 - **Evidence:** felix `~/wt-kreis-run/logs/run_kreis5.log` (stop/relaunch markers), A/B outputs
   `~/bench_batch_int/output/timing_log.csv`, benchmark `~/bench_balancer.py`, watcher
   `~/cleanup_batch_h5.log`; issue #153; memory `project-popsim-fullpool-perf-fix`.
+
+---
+
+### ADR-0057 — Secondary distance distributions rescue MiD coded-time Wege from `wegmin_imp1` instead of dropping them
+
+- **Status:** accepted 2026-07-12 (PR #165, commit `f212d73`; Closes #160). Changes scientific outputs.
+- **Context:** `braunschweig/popsim/distance_distributions.py` built the empirical secondary distance /
+  travel-time distributions (consumed by `CustomDistanceSampler` for all shop/leisure/other/education
+  secondary-activity placement) from MiD Wege clock times `W_SZS/W_SZM/W_AZS/W_AZM`. Those columns carry
+  the MiD design codes 99 ("keine Angabe", ~1%) and 701 ("bei regelmaessigen beruflichen Wegen nicht
+  erhoben" — rbW summary records of regular commuters, ~10%). `mid_time_seconds` NaN'd `travel_time` for
+  these rows and the `travel_time >= 0` filter then silently removed all of them BEFORE any logging — a
+  ~11% loss that is NOT missing-at-random (systematically commuters), biasing the distributions away from
+  the commuter travel profile. This is the same MiD-code pathology for which the sibling consumer
+  `trips.py` already has the dedicated `time_imputation.py` Stage-A cascade; that fix had never been
+  ported to this second, independent consumer.
+- **Decision:** reconstruct `travel_time` for coded-time rows from `wegmin_imp1` (MiD's own imputed
+  per-trip duration in minutes; `* 60` -> seconds), the exact same primary source Stage A trusts for a
+  trip's OWN duration. Only rows whose `wegmin_imp1` is itself coded/missing
+  (`>= WEGMIN_CODE_THRESHOLD`, reused from `time_imputation.py`) are dropped. An explicit
+  observed / imputed / dropped rate is logged every run, with a `CODED_TIME_DROP_WARN_RATE = 2%`
+  escalation (per the mandatory no-silent-fallback rule).
+- **Rejected alternative:** reusing the full `time_imputation.impute_chain_times` cascade — it
+  reconstructs whole per-person day schedules (RNG-seeded anchor/duration pools) because `trips.py` needs
+  valid absolute clock times; this aggregate stage only needs a DURATION as a binning key, so the
+  lighter, fully-deterministic `wegmin_imp1` reuse is preferred (no RNG, no chain machinery).
+- **Consequence:** future `popsim_mid` runs using the by-purpose / shop / leisure / other secondary
+  distance distributions change quantitatively (commuter-relevant trips now included). The running kreis5
+  100% run produced its secondary-distance stage with the old code — a re-run decision is tracked in
+  PROJECT_BACKLOG.md. Part of the same wave: **#161** (fleet Gemeinde-tilt name normalization),
+  **#162** (canonical `EMPLOYED_TAET` in weekend matching), **#163** (14 fallback-transparency items) —
+  those are bug/instrumentation fixes, not separate architectural decisions.
+- **Evidence:** PR #165; commit `f212d73`; `braunschweig/popsim/distance_distributions.py` Step 3b +
+  module docstring; `braunschweig/popsim/time_imputation.py`; memory `project-audit-wave-2026-07-12`.
+
+---
+
+### ADR-0058 — employment_status Phase-0 measured: uncalibrated P_BKAT donor already fits MiD P9 well; do NOT build the Phase-1 soft control
+
+- **Status:** accepted 2026-07-13. Measurement only — no code/output change. Supersedes the
+  "Phase 1 conditional on Phase-0" clause in the employment_status feature (PR #168 MERGED).
+- **Context:** `employment_status` (7-class MiD-P9 taxonomy, derived in `assembly.build_persons`
+  from the MiD `P_BKAT` donor column) was shipped deliberately as Phase 0 = MEASURE FIRST, no
+  calibration. The open question was whether to add a Phase-1 per-Kreis SOFT popsim control on the
+  collapsed robust classes (vollzeit / teilzeit / marginal+azubi / not). That decision was made
+  conditional on how well the UNCALIBRATED attribute already matches the independent MiD 2023 P9
+  reference (`eqasim-data/data/braunschweig/mid/mid2023_P9.csv`, "Personen ab 14 Jahre"). NB:
+  `employment_status` is never raked/steered to P9, so this is genuine INDEPENDENT validation, not
+  a fit check.
+- **Decision:** the Phase-0 fit is already good, so **Phase 1 (soft control) is NOT built** — in
+  line with the project's measure-before-calibrating / anti-overfitting principle. Measured on the
+  existing kreis5 100% population (8 ZGB Kreise, 1,124,108 persons, age 14+), reusing the real
+  validation code (`controls.build_registry` -> `control_validation.evaluate_all` ->
+  `quality_assessment.assess`): **SRMSE 0.194, mean |Δ| 1.88 pp, grade "good", 100% of the 56
+  Kreis×class cells within 10 pp, 92.9% within 5 pp, r² 0.979.** Region-wide class deltas are all
+  small; the only notable ones are `in_ausbildung` +1.7 pp (3.6% vs 1.9%) and `vollzeit` +1.6 pp,
+  with `geringfuegig` -1.2 pp and `nicht_erwerbstaetig` -1.2 pp. A soft control would mostly only
+  move `in_ausbildung`, which is better addressed at the source (P_BKAT code 6 vs the P9
+  in_ausbildung definition / age base) than by raking.
+- **How measured (honesty caveats):** reused the cached kreis5 balancing (verified: single process,
+  no populationsim workers, no signature purge — the 60 batches were reused, no ~4.5 h re-balance).
+  The employment_status column was regenerated by force-recomputing `braunschweig.popsim.stage`
+  (a trivial source-comment bump, since synpp `get_stage_hash` only hashes the stage module, not
+  the `assembly.py`/`attributes.py` helpers). The measurement was computed DIRECTLY off the cached
+  `popsim.stage` persons frame (Kreis = home-cell `KREIS`, equivalent to the homes.gpkg spatial join
+  `run_population_validation` uses), skipping the irrelevant secondary/work location chainsolvers and
+  MATSim — employment_status is a pure person attribute consumed by neither. This population predates
+  **#170** (Azubi employment_target fix, MERGED 2026-07-13) and the GEO_KREIS zfill fix, so the
+  canonical number should be re-confirmed on the next full-main run.
+- **Consequence / open points:** (1) the definitive employment_status validation drops out of the
+  next full "everything on main" 100% run (via `analysis_suite` population_validation) — re-confirm
+  the fit and whether #170 changed the `in_ausbildung` skew; (2) **#167** (SPC_BY_P_BKAT misreads
+  P_BKAT as Berufskategorie) remains OPEN and dormant — a separate P_BKAT-meaning bug.
+- **Evidence:** measurement script `measure_empstatus.py` (scratchpad; reuses committed validation
+  code); MiD reference `mid2023_P9.csv`; PR #168 (feature); memory
+  `project-employment-status-and-pbkat-bugs`.
 
 ---
 

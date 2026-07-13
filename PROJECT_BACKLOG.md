@@ -40,6 +40,49 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-13) — employment_status Phase-0 measured (ADR-0058); open follow-ups
+
+The `employment_status` attribute (PR #168, MERGED) was measured against the independent MiD 2023 P9
+reference: **uncalibrated fit already good** (SRMSE 0.194, mean|Δ| 1.88pp, grade "good", all 56
+Kreis×class cells <10pp, r² 0.979). See ADR-0058 + RUNS `empstatus-measure-2026-07-13`. Open items:
+
+1. **Phase-1 soft control on employment_status — DROPPED (not dead-ended, just not worth it).** Given
+   the good uncalibrated fit, a per-Kreis soft control adds little (measure-before-calibrating). No
+   issue opened. Re-open only if the full-main re-measurement (item 3) shows a materially worse fit.
+2. **#167 (OPEN, dormant) — SPC_BY_P_BKAT misreads P_BKAT as Berufskategorie.** `socioprofessional_class`
+   (INSEE CS1) is derived from the wrong variable; scrambled for employed persons but NOT consumed
+   anywhere (mode_choice OFF, not a control) → dormant. Fix before CS1 is ever consumed: needs a real
+   occupation variable (likely absent from the standard MiD table) or drop the invented crosswalk.
+3. **Re-confirm the P9 fit on the next full "everything on main" 100% run.** This session's number used
+   the kreis5 balancing, which predates **#170** (Azubi employment_target fix, MERGED 2026-07-13) and the
+   GEO_KREIS zfill fix. The canonical employment_status validation drops out of the full-main run
+   (`analysis_suite` population_validation) — check whether #170 moved the `in_ausbildung` +1.7pp skew.
+4. **`in_ausbildung` +1.7pp / `vollzeit` +1.6pp** are the only notable class deltas. If they persist on
+   main, address `in_ausbildung` at the SOURCE (P_BKAT code 6 vs the P9 in_ausbildung definition / age
+   base), not by raking.
+5. **Trivial:** a few orphaned synpp cache entries (bumped-hash `popsim.stage`/`sampled`/`enriched`) from
+   this measurement sit in the shared `cache_bs_100pct_allfeat_popsim`; harmless, ignored by future runs.
+
+> **Note:** this whole thread is downstream of the deferred **"everything on main" full 100% run** (see
+> §"produce results" / TL;DR 4) — that run delivers the canonical employment_status number for free.
+
+### New (2026-07-12) — Full-pipeline bug-audit wave -> PR #165 (OPEN), issues #160-#163
+
+An orchestrated read-only audit of the whole synthesis pipeline (vs `origin/main` `d92328e`) surfaced
+**19 verified bugs**, all fixed the same day on `fix/audit-wave-20260712` -> **PR #165 (OPEN)**. Open
+follow-ups:
+
+1. **Merge PR #165** after the canonical popsim pytest passes on felix (local env has 11 known
+   pre-existing failures). PR Closes **#160** (crit, distance_distributions coded-time drop), **#161**
+   (powertrain Gemeinde tilt umlaut/suffix join), **#162** (weekend_plan_match employment set); works the
+   14-item **#163** fallback-transparency checklist.
+2. **One-time popsim batch purge on next server run.** The #163 batch-config-signature fix now hashes the
+   `census_source` composition, so the first run against a persistent `work_dir` after this merges will
+   purge + rebuild all completed batches. Schedule it so it does NOT collide with the live kreis5 run.
+3. **Re-run decision for kreis5 stages built on old code.** The running 100% kreis5 run produced the fleet
+   powertrain (2026-07-11) and secondary-distance stages with the pre-#160/#161 code. Decide whether to
+   selectively re-run those stages after the merge. See memory `project-audit-wave-2026-07-12`.
+
 ### New (2026-07-10) — Full-pool popsim perf regime (ADR-0056) + follow-ups #153 / quality A/B / upstream reports
 
 The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true`
@@ -47,13 +90,18 @@ The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: fa
 Open follow-ups, in order:
 
 1. **Quality A/B vs float reference (BLOCKS calling the speedup validated).** Float reference batch
-   running niced on felix (`~/bench_batch_float`, done ~2026-07-11). Compare vs the INT batch_000:
-   100m composition, donor diversity (INT: 3,140 distinct donors / 13,845 HH), person marginals,
-   control fit. 1km HH totals already exact in both.
-2. **Issue #153 — stage.py `cleanup_batch_pipeline` flag (default ON):** delete per-batch
-   `pipeline.h5` (~15 GB dead weight at full pool) after verified completion. Interim server watcher
-   (`~/cleanup_batch_h5.sh`) covers the current run only and must be restarted for future full-pool
-   runs until this lands. PR after the current run finishes.
+   running niced on felix (`~/bench_batch_float`, launched 2026-07-10 14:11, done ~2026-07-11 midday).
+   Compare vs the INT batch_000: 100m control fit (MAE/SRMSE/paired win-tie-loss), donor diversity
+   (INT: 3,140 distinct donors / 13,845 HH), person marginals. 1km HH totals already exact in both.
+   **Harness READY + self-tested (2026-07-10):** one command, `ssh felix '~/ab_quality/run_ab.sh'`
+   (script reuses `integerizer_quality.cell_error`; self-test batch_000-vs-itself all-zero, 44/44
+   controls resolved; float-bench inputs verified byte-identical to batch_000).
+2. **Issue #153 — DONE pending merge: PR #155 OPEN.** `cleanup_batch_pipeline` flag (default ON,
+   explicit in both server configs) deletes per-batch `pipeline.h5` (~15 GB dead weight at full pool)
+   after VERIFIED completion (incl. skipped leftovers; failed batches keep the h5 for PopulationSim
+   resume; OSError-hardened). TDD, 9 new tests, 44 batch tests green locally. Pre-merge: canonical
+   popsim pytest on felix (local matsim shadowing) after the current run ends. Interim server watcher
+   (`~/cleanup_batch_h5.sh`) still covers the CURRENT run (its code predates the fix).
 3. **Optional upstream reports (activitysim/populationsim v0.10.0):** (a) missing `MIN_GAMMA` clamp
    in the python single balancer (NaN risk), (b) hardcoded `converged=True` on no-progress exit,
    (c) dense final-geography weight table checkpointed but never read. Draft on request.
