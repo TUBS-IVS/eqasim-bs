@@ -205,12 +205,14 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all five entries default "on" (project rule: new features default
+    # Empty config -> all six entries default "on" (project rule: new features default
     # on), in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
-    # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on.
+    # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on;
+    # employment_status (second person-level entry, 14+ universe) is feature #172 task 4.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class"
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+        "employment_status",
     ]
 
 
@@ -230,6 +232,7 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_BIKES_KREIS_CONTROL: "off",
         stage.KEY_EBIKE_KREIS_CONTROL: "off",
         stage.KEY_TRIPS_KREIS_CONTROL: "off",
+        stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
     }
     assert stage.active_kreis_entries(_FakeContext(off), "mid") == []
 
@@ -237,14 +240,16 @@ def test_active_kreis_entries_all_off_is_empty():
 def test_active_kreis_entries_individual_toggle():
     from braunschweig.popsim import stage
 
-    # Turning off only number_of_cars keeps the other four entries active (all five
+    # Turning off only number_of_cars keeps the other five entries active (all six
     # default "on"; see test_active_kreis_entries_has_ebike_can_be_turned_off).
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_CARS_KREIS_CONTROL: "off"}), "mid"
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == {"economic_status", "number_of_bicycles", "has_ebike", "trip_class"}
+    assert set(names) == {
+        "economic_status", "number_of_bicycles", "has_ebike", "trip_class", "employment_status",
+    }
 
 
 def test_active_kreis_entries_has_ebike_can_be_turned_off():
@@ -267,7 +272,25 @@ def test_active_kreis_entries_trip_class_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "trip_class" not in names
-    assert names == {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike"}
+    assert names == {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
+        "employment_status",
+    }
+
+
+def test_active_kreis_entries_employment_status_can_be_turned_off():
+    from braunschweig.popsim import stage
+
+    # An explicit "off" for the second person-level entry (employment_status, feature
+    # #172 task 4) drops only that entry.
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off"}), "mid"
+    )
+    names = {c.name for c in active}
+    assert "employment_status" not in names
+    assert names == {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+    }
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---

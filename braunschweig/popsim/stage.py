@@ -213,6 +213,16 @@ KEY_EBIKE_KREIS_CONTROL = "braunschweig.population.popsim.has_ebike_kreis_contro
 # (byte-identical for that attribute). MiD-only (its seed column, anzwege1, has no ENTD
 # pendant); ignored for source="entd".
 KEY_TRIPS_KREIS_CONTROL = "braunschweig.population.popsim.trip_class_kreis_control"
+# employment_status x Kreis control (feature #172 task 4, second PERSON-level entry):
+# steers the per-Kreis distribution of the seven MiD P_BKAT employment-extent classes
+# (vollzeit/teilzeit/geringfuegig/sonstiges/erwerbstaetig_unspec/in_ausbildung/
+# nicht_erwerbstaetig) to the committed MiD-P9 x SrV-V_ERW blended target. Default "on"
+# (project rule: new features default on). "off" drops its control + seed column
+# (byte-identical for that attribute). MiD-only (employment_status has no ENTD pendant);
+# ignored for source="entd". Its committed target + seed universe are BOTH restricted to
+# age >= 14 (kreis_attribute_control.REGISTRY entry min_age=14) -- see
+# person_total_by_kreis_min_age below.
+KEY_EMPLOYMENT_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.employment_status_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -262,6 +272,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "number_of_bicycles": KEY_BIKES_KREIS_CONTROL,
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
     "trip_class": KEY_TRIPS_KREIS_CONTROL,
+    "employment_status": KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
 }
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
@@ -275,6 +286,7 @@ _KREIS_CONTROL_DEFAULT = {
     "number_of_bicycles": "on",
     "has_ebike": "on",
     "trip_class": "on",
+    "employment_status": "on",
 }
 
 
@@ -284,12 +296,15 @@ def active_kreis_entries(context, source_name):
     An entry is active when its per-attribute toggle resolves to "on" AND the donor
     source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
     ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
-    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all five entries
-    (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class) default
-    "on". The has_ebike source column (H_ANZPED) was server-verified 2026-07-08 (issue
-    #116). trip_class (2026-07-08 follow-on) is the first PERSON-level entry; it is wired
-    on both seed paths (its per-Kreis target partitions the PERSON total, not the household
-    total -- see the KREIS block in execute()).
+    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all six entries
+    (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class,
+    employment_status) default "on". The has_ebike source column (H_ANZPED) was
+    server-verified 2026-07-08 (issue #116). trip_class (2026-07-08 follow-on) and
+    employment_status (feature #172 task 4) are PERSON-level entries; each is wired on
+    both seed paths (its per-Kreis target partitions the PERSON total, not the household
+    total -- see the KREIS block in execute()). employment_status additionally restricts
+    that PERSON total to age >= 14 (its REGISTRY entry's min_age), see
+    person_total_by_kreis_min_age.
 
     Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
     argument (a positional default raises ``TypeError``; the same pitfall was fixed for
@@ -430,6 +445,65 @@ def person_total_by_kreis(cells, kreis_by_row):
     return cells.groupby(kreis_by_row)[band_cols].sum().sum(axis=1).to_dict()
 
 
+def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_max=100):
+    """Per-Kreis PERSON total restricted to age >= ``min_age``.
+
+    Sums the single-year ``{M,F}_AGE_<year>`` cell columns (the same age-SHAPE columns
+    ``employment_grid`` reads; see its ``_group_cell_pop``) for ``year`` in
+    ``[min_age, single_year_max]``, grouped by Kreis. Unlike :func:`person_total_by_kreis`
+    (which sums the 18 ten-year age x sex BAND columns), this uses the finer single-year
+    columns so the total can be restricted to an arbitrary age boundary that does not
+    align with a ten-year band edge -- e.g. "age >= 14" cannot be expressed as a sum of
+    whole ``AGE_0_9`` / ``AGE_10_19`` bands.
+
+    Used for KREIS attribute controls whose committed target's shares are reported over
+    an age-restricted base (e.g. ``employment_status``: MiD P9 / SrV 14+, feature #172
+    task 4). Without this restriction, persons below ``min_age`` would be counted into
+    the per-Kreis total the category counts partition, silently distorting the target
+    shares -- the same universe mismatch as the #97 bug.
+
+    Parameters
+    ----------
+    cells:
+        The loaded (ZGB-filtered) cells frame; expected to carry the single-year
+        ``{M,F}_AGE_<year>`` columns.
+    kreis_by_row:
+        A Series aligned to ``cells`` giving the 5-digit Kreis code per row.
+    min_age:
+        Inclusive lower age bound in years.
+    single_year_max:
+        Inclusive upper age bound in years. Default 100, mirroring the single-year cap
+        ``employment_grid.per_cell_employment_targets`` uses.
+
+    Returns
+    -------
+    dict[str, float]
+        ``{ars5: person_total}`` summed over the single-year columns with
+        ``year >= min_age`` per Kreis.
+
+    Raises
+    ------
+    RuntimeError
+        If NO single-year ``{M,F}_AGE_<year>`` column for ``year >= min_age`` is present
+        in ``cells`` at all (no silent fallback: a min_age-restricted person-level
+        control cannot be constrained without at least some of its denominator columns).
+    """
+    cols = [
+        f"{prefix}_AGE_{year}"
+        for prefix in ("M", "F")
+        for year in range(min_age, single_year_max + 1)
+        if f"{prefix}_AGE_{year}" in cells.columns
+    ]
+    if not cols:
+        raise RuntimeError(
+            "person_total_by_kreis_min_age: a min_age-restricted person-level KREIS "
+            f"control is ON (min_age={min_age}) but NO single-year age columns "
+            f"{{M,F}}_AGE_<year> for year in [{min_age}, {single_year_max}] are present "
+            "in the cells frame; cannot derive the per-Kreis age-restricted PERSON total "
+            "(no silent fallback).")
+    return cells.groupby(kreis_by_row)[cols].sum().sum(axis=1).to_dict()
+
+
 def _grid_geography_controls(controls, cs):
     """Keep only controls sourced from the GRID parquet (ZENSUS100m / ZENSUS1km).
 
@@ -560,6 +634,11 @@ def configure(context):
     # trip_class (first PERSON-level KREIS control, 2026-07-08). Default "on"; its
     # committed SrV target lives under data_path (declared below via the any()-gate).
     context.config(KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"])
+    # employment_status (second PERSON-level KREIS control, feature #172 task 4).
+    # Default "on"; its committed MiD-P9 x SrV-V_ERW blended target lives under
+    # data_path (declared below via the any()-gate). 14+ universe restriction (min_age)
+    # is carried on the REGISTRY entry itself, not a separate config key.
+    context.config(KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -569,6 +648,7 @@ def configure(context):
         (KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"]),
         (KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"]),
         (KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"]),
+        (KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"
@@ -1197,6 +1277,12 @@ def execute(context) -> pd.DataFrame:
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
         # time such an entry is seen (fail-fast on a missing band column; no silent fallback).
         _kac_persons_by_kreis = None
+        # Age-restricted PERSON totals (min_age is not None, e.g. employment_status: 14+)
+        # use the single-year age columns instead (person_total_by_kreis_min_age) and are
+        # cached PER min_age value, so two entries sharing the same min_age reuse one
+        # computation while a different min_age recomputes correctly (no cross-entry reuse
+        # of the wrong universe -- the #97 universe trap this whole field exists to avoid).
+        _kac_persons_by_kreis_min_age: dict = {}
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
         _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
@@ -1216,11 +1302,23 @@ def execute(context) -> pd.DataFrame:
             # total; person entries (e.g. trip_class) partition the per-Kreis PERSON total
             # (sum of the 18 age-x-sex 100m band columns), so the category targets partition
             # EXACTLY the population PopulationSim controls per Kreis -> IPU-consistent.
+            # Entries with min_age set (e.g. employment_status: 14+, feature #172 task 4)
+            # instead partition the min_age-restricted PERSON total (single-year age
+            # columns) -- using the ALL-ages total here would let <min_age persons distort
+            # the category counts (the #97 universe trap).
             if _ctl.level == "person":
-                if _kac_persons_by_kreis is None:
-                    _kac_persons_by_kreis = person_total_by_kreis(cells, _kac_kreis)
-                _total_by_kreis = _kac_persons_by_kreis
-                _total_label = "persons"
+                _entry_min_age = getattr(_ctl, "min_age", None)
+                if _entry_min_age is not None:
+                    if _entry_min_age not in _kac_persons_by_kreis_min_age:
+                        _kac_persons_by_kreis_min_age[_entry_min_age] = person_total_by_kreis_min_age(
+                            cells, _kac_kreis, _entry_min_age)
+                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_min_age]
+                    _total_label = f"persons (age>={_entry_min_age})"
+                else:
+                    if _kac_persons_by_kreis is None:
+                        _kac_persons_by_kreis = person_total_by_kreis(cells, _kac_kreis)
+                    _total_by_kreis = _kac_persons_by_kreis
+                    _total_label = "persons"
             else:
                 _total_by_kreis = _kac_hh_by_kreis
                 _total_label = "households"
