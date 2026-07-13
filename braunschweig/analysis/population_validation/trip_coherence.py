@@ -408,8 +408,19 @@ def synthetic_commute_band_distribution(persons, trips, *,
         on=person_id_col, how="left")
 
     def _shares(sub):
-        counts = sub["band"].value_counts()
+        # value_counts() drops NaN bands (commuters with no usable distance) by
+        # default, silently shrinking the denominator. Count them explicitly and
+        # log, so the share base is the full commuter universe minus a VISIBLE
+        # no-distance remainder (2026-07-12 validation audit).
+        n_total = len(sub)
+        n_nan = int(sub["band"].isna().sum())
+        counts = sub["band"].value_counts(dropna=True)
         total = int(counts.sum())
+        if n_nan:
+            LOGGER.warning(
+                "P38.2 commute bands: %d/%d commuter(s) have no usable distance "
+                "(NaN band) and are excluded from the share denominator",
+                n_nan, n_total)
         if total == 0:
             return {col: float("nan") for col, _, _ in P38_2_BANDS}, 0
         return ({col: float(counts.get(col, 0)) / total
@@ -505,7 +516,16 @@ def trip_coherence_by_kreis(persons, trips, data_path, geo_col="ars5",
     tp = trips.merge(persons[[person_id_col, geo_col]], on=person_id_col, how="left")
 
     rows = []
-    for geo, grp in persons.groupby(geo_col, dropna=False):
+    # Persons without a Kreis join (geo is NaN) must not become an undocumented
+    # 9th "ars5=NaN" output row -- count and log them, then skip (2026-07-12
+    # validation audit). dropna=True on the groupby drops the NaN group; the
+    # explicit count keeps the drop observable (no-silent-fallback rule).
+    n_no_geo = int(persons[geo_col].isna().sum())
+    if n_no_geo:
+        LOGGER.warning(
+            "trip_coherence_by_kreis: %d person(s) have no %s (Kreis) assignment "
+            "and are excluded from the per-Kreis table", n_no_geo, geo_col)
+    for geo, grp in persons.groupby(geo_col, dropna=True):
         geo_trips = tp[tp[geo_col] == geo]
         mobile_ids = set(geo_trips[person_id_col].unique())
         work_ids = set(geo_trips.loc[geo_trips[purpose_col] == "work", person_id_col])

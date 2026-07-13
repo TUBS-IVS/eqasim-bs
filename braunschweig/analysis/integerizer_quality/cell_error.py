@@ -45,15 +45,19 @@ def realised_counts(
 
     Returns
     -------
-    tuple[pd.DataFrame, int, int]
-        ``(frame, n_resolved, n_skipped)`` so the caller can enforce a
-        primary-vs-fallback rate guard (CLAUDE.md mandatory).
+    tuple[pd.DataFrame, int, int, set[str]]
+        ``(frame, n_resolved, n_skipped, resolved_fields)`` so the caller can
+        enforce a primary-vs-fallback rate guard (CLAUDE.md mandatory) AND
+        restrict the target side to controls that were actually evaluated --
+        otherwise a skipped control's target merges against realised=0 and
+        fabricates a 100% error (2026-07-12 validation audit).
     """
     from braunschweig.popsim import control_spec
 
     rows = []
     n_resolved = 0
     n_skipped = 0
+    resolved_fields: set = set()
 
     # Deduplicate the household donor on H_ID so the household-table join is
     # one row per synthetic household (no silent fan-out).  Log a warning when
@@ -100,11 +104,13 @@ def realised_counts(
         # ``control.name`` made the target<-realised merge in cell_error_table never
         # match, so realised was filled 0 everywhere (fabricated -100% fit).
         control_field = f"{control.name}_{control.geography}"
+        resolved_fields.add(control_field)
         counts = frame.loc[mask].groupby(_CELL).size()
         for cell, n in counts.items():
             rows.append({"zensus100m": cell, "control": control_field, "realised": int(n)})
 
-    return pd.DataFrame(rows, columns=["zensus100m", "control", "realised"]), n_resolved, n_skipped
+    return (pd.DataFrame(rows, columns=["zensus100m", "control", "realised"]),
+            n_resolved, n_skipped, resolved_fields)
 
 
 def _load_targets(control_totals_path: Union[str, Path]) -> pd.DataFrame:
@@ -162,10 +168,23 @@ def cell_error_table(work_dir, mid_dir, *, random_seed: int, tiers, employment_g
                            batch_dir.name)
             continue
         syn_hh = pd.read_csv(syn_hh_path)
-        realised, n_resolved, n_skipped = realised_counts(syn_hh, donor_hh, donor_p, controls)
+        realised, n_resolved, n_skipped, resolved_fields = realised_counts(
+            syn_hh, donor_hh, donor_p, controls)
         total_resolved += n_resolved
         total_skipped += n_skipped
         target = _load_targets(targets_path)
+        # Only score controls that were actually EVALUATED against the synthetic
+        # population. A skipped control (missing donor column / no expression)
+        # produces no realised rows; keeping its target and filling realised=0
+        # fabricates a 100% error for a control we simply could not measure
+        # (2026-07-12 validation audit). Dropped target controls are logged.
+        dropped = sorted(set(target["control"]) - resolved_fields)
+        if dropped:
+            logger.warning(
+                "batch %s: %d target control(s) were not evaluated and are "
+                "EXCLUDED from the error table (not scored as 100%% error): %s",
+                batch_dir.name, len(dropped), dropped[:5])
+        target = target[target["control"].isin(resolved_fields)]
         merged = target.merge(realised, on=["zensus100m", "control"], how="left")
         merged["realised"] = merged["realised"].fillna(0).astype(int)
         merged["abs_error"] = (merged["realised"] - merged["target"]).abs()
