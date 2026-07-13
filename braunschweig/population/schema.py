@@ -105,6 +105,13 @@ REQUIRED_HOUSEHOLD_COLUMNS: tuple[str, ...] = (
 # MiD-rich extras: populated where the data allows, optional in open workflows.
 # Note: high_income and pt_subscription_type have been promoted to GAP_COLUMNS
 # (required) and are therefore intentionally absent from this optional list.
+# employment_status (P9 taxonomy, MiD P_BKAT) is popsim_mid-only -- like
+# economic_status / housing_tenure it is NOT produced by the ENTD donor path
+# (braunschweig.popsim.sources.entd.EntdSource.map_person_attributes has no P_BKAT
+# equivalent), so it belongs here and NOT in GAP_COLUMNS: build_persons' schema
+# validation (validate_person_columns) runs unconditionally for both the MiD and
+# ENTD popsim sources, and promoting it to required would raise
+# PopulationSchemaError on every ENTD/popsim_open run.
 OPTIONAL_PERSON_COLUMNS: tuple[str, ...] = (
     "household_income_eur",
     "economic_status",
@@ -112,6 +119,7 @@ OPTIONAL_PERSON_COLUMNS: tuple[str, ...] = (
     "housing_tenure",
     "number_of_cars",
     "number_of_bicycles",
+    "employment_status",
 )
 
 # Optional columns that MUST be promoted to required when a consuming MATSim

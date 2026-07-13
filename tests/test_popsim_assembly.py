@@ -33,6 +33,7 @@ def _mid_persons():
             "P_TAET": [1, 9, 11],     # employed, pupil, retired
             "P_FSCHEIN": [1, 2, 1],   # licence yes/no/yes
             "P_FKARTE": [3, 8, 5],    # Deutschlandticket, never, monthly-abo
+            "P_BKAT": [1, 7, 7],      # vollzeit, nicht_erwerbstaetig, nicht_erwerbstaetig
         }
     )
 

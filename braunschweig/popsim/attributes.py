@@ -12,12 +12,16 @@ and bicycle availability need additional MiD columns and are a follow-on.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 
 from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
+
+logger = logging.getLogger(__name__)
 
 # MiD P_BKAT (Berufskategorie) -> eqasim/INSEE CS1 occupation class.
 # P_BKAT has 6 substantive categories; the CS1 detail is collapsed to this coarse
@@ -51,6 +55,28 @@ SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 # MiD official `erwerb` = Erwerbstätigkeit ja/nein (inkl. Auszubildende). P_TAET 1,2,3,4,6,8.
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
+
+# MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen col
+# 121; VERIFIED against the raw MiD2023_Personen.csv cross-tab with `erwerb`:
+# codes 1-6 all erwerb=1, code 7 erwerb=0). P9's seven reference columns are the
+# P_BKAT value labels 1..7 verbatim, so this is an exact apples-to-apples match
+# with NO P_TAET overlay needed -- code 6 IS in Ausbildung:
+#   1 Vollzeit erwerbstaetig                      -> vollzeit
+#   2 Teilzeit (18-<35 h/week)                    -> teilzeit
+#   3 geringfuegig (11-<18 h/week)                -> geringfuegig
+#   4 sonstiger Erwerbsumfang                     -> sonstiges
+#   5 erwerbstaetig ohne Angabe zum Umfang        -> erwerbstaetig_unspec
+#   6 in Ausbildung                               -> in_ausbildung
+#   7 nicht erwerbstaetig                         -> nicht_erwerbstaetig
+#   9 keine Angabe (item non-response)            -> imputed (missing policy)
+EMPLOYMENT_STATUS_BY_P_BKAT = {
+    1: "vollzeit", 2: "teilzeit", 3: "geringfuegig", 4: "sonstiges",
+    5: "erwerbstaetig_unspec", 6: "in_ausbildung", 7: "nicht_erwerbstaetig",
+}
+# Derived from EMPLOYMENT_STATUS_BY_P_BKAT (not re-listed literally) so the two
+# stay in sync by construction; dict insertion order (Python 3.7+) preserves the
+# codebook code order 1..7 above.
+EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
@@ -193,6 +219,51 @@ def map_employed(
     out = persons.copy()
     out["employed"], _ = missing.resolve(out, spec, rng=rng)
     out["employed"] = out["employed"].astype(bool)
+    return out
+
+
+def map_employment_status(
+    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT", taet_col: str = "P_TAET",
+    rng=None, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add a categorical ``employment_status`` (P9 taxonomy) from MiD ``P_BKAT``.
+
+    P_BKAT (Umfang der Erwerbstaetigkeit) maps 1:1 onto the P9 columns via
+    ``EMPLOYMENT_STATUS_BY_P_BKAT`` -- code 6 IS ``in_ausbildung`` directly, no
+    overlay from another column is needed (verified against the MiD 2023
+    Codeplan B1 and the raw MiD2023_Personen.csv cross-tab with `erwerb`).
+    Missing / code-9 P_BKAT (keine Angabe) is imputed from the valid pool within
+    the same age group via the uniform missing policy (rate logged; no silent
+    fallback). Additive: the boolean ``employed`` is untouched. This is NOT a
+    popsim control -- it rides along from the donor for analysis/validation.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = dict(EMPLOYMENT_STATUS_BY_P_BKAT)
+    spec = missing.AttributeSpec(
+        name="employment_status",
+        source_col=bkat_col,
+        value_map=value_map,
+        structural={},
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default="nicht_erwerbstaetig",
+    )
+    out = persons.copy()
+    # taet_col is kept only for API symmetry with map_employed; P_BKAT code 6 IS
+    # in_ausbildung directly, so this function does not read P_TAET at all.
+    out["employment_status"], _ = missing.resolve(out, spec, rng=rng)
+    out["employment_status"] = out["employment_status"].astype(str)
+
+    # Observability (no silent fallback): the boolean `employed` (from P_TAET)
+    # and `employment_status` (from P_BKAT) are DISTINCT MiD variables; log how
+    # often they agree so a low rate surfaces as a data-quality signal.
+    if "employed" in out.columns:
+        employed_side = out["employment_status"].isin(
+            [c for c in EMPLOYMENT_STATUS_CATEGORIES if c != "nicht_erwerbstaetig"])
+        agree = float((employed_side == out["employed"].astype(bool)).mean())
+        _log = logger.warning if agree < 0.9 else logger.info
+        _log("[attributes] employment_status vs employed agreement: %.1f%% "
+             "(distinct MiD vars P_BKAT vs P_TAET)", 100.0 * agree)
+
     return out
 
 

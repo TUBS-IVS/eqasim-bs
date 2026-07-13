@@ -229,6 +229,7 @@ def test_build_persons_keeps_completion_columns_and_mirror_surrogate():
         "P_TAET":         [1, 1, 1],
         "P_FSCHEIN":      [1, 1, 1],
         "P_FKARTE":       [3, 8, 8],
+        "P_BKAT":         [1, 1, 1],
         "member_imputed": [False, True, False],
         "source_H_ID":    ["A", "B", "B"],
         "source_P_ID":    [1, 1, 1],
@@ -293,6 +294,7 @@ def _rs7_fixture(cell_rs7: bool):
         "P_TAET":    [1, 1],
         "P_FSCHEIN": [1, 1],
         "P_FKARTE":  [3, 8],
+        "P_BKAT":    [1, 1],
     })
     mid_households = pd.DataFrame({
         "H_ID": ["A", "B"],

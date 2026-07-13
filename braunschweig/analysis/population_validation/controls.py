@@ -625,6 +625,59 @@ def employment_target(data_path: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# MiD P9 seven-class employment-extent taxonomy (Umfang der Erwerbstaetigkeit).
+# Order MUST mirror braunschweig.popsim.attributes.EMPLOYMENT_STATUS_CATEGORIES
+# (Task 1): both are keyed to the MiD P_BKAT codebook order 1..7, so a silent
+# reordering here would misalign the realized categories against this target.
+_EMPLOYMENT_STATUS_CATEGORIES: tuple[str, ...] = (
+    "vollzeit", "teilzeit", "geringfuegig", "sonstiges",
+    "erwerbstaetig_unspec", "in_ausbildung", "nicht_erwerbstaetig",
+)
+
+
+def employment_status_target(data_path: str) -> pd.DataFrame:
+    """Per-Kreis seven-class employment-extent target from MiD 2023 P9.
+
+    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` (the same file
+    :func:`employment_target` reads, but keeping the full P_BKAT-derived class
+    detail instead of collapsing it to a binary employed/not_employed split).
+    Each class share = class value / substantive-row-total (the sum of the
+    seven class columns), EXCLUDING ``keine_angabe`` -- the same denominator
+    convention as :func:`employment_target`. ``geo_id`` is the 5-digit Kreis
+    ``ars5``; the ZGB aggregate row (``03ZGB``) is excluded.
+
+    This target is registered ``independence="independent"``: the synthetic
+    ``employment_status`` attribute (derived from the MiD P_BKAT donor column
+    during synthesis) is never raked/steered to this P9 table by popsim, so a
+    deviation measures agreement with a real reference the synthesis was not
+    fit to, not IPF/raking convergence (CLAUDE.md: convergence is not
+    validation).
+
+    Raises
+    ------
+    ValueError
+        If any Kreis row's seven class columns sum to a non-positive total (a
+        malformed/corrupt input row) -- per the project's no-silent-fallback
+        rule, this cannot be masked by e.g. dividing by zero into NaN shares.
+    """
+    path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
+    df = df[df["ars5"] != "03ZGB"].copy()
+    cats = list(_EMPLOYMENT_STATUS_CATEGORIES)
+    denom = df[cats].fillna(0.0).sum(axis=1)
+    if (denom <= 0).any():
+        bad = df.loc[denom <= 0, "ars5"].tolist()
+        raise ValueError(f"mid2023_P9.csv: non-positive class total for {bad}")
+    rows = []
+    for i, ars5 in enumerate(df["ars5"]):
+        for c in cats:
+            rows.append({
+                "geo_id": str(ars5), "category": c,
+                "target_share": float(df[c].fillna(0.0).iloc[i]) / float(denom.iloc[i]),
+            })
+    return pd.DataFrame(rows)
+
+
 def _shares_within_geo(df: pd.DataFrame, geo_col: str, cat_col: str,
                        weight_col: str) -> pd.DataFrame:
     """Reshape a (geo, category, weight) frame to long target shares.
@@ -767,6 +820,8 @@ def build_registry(data_path: str) -> list[Control]:
     * age_group / sex -> DESTATIS 12411-0018 (Kreis).
     * cars/bikes/license/pt -> MiD reference CSVs.
     * employment -> MiD 2023 P9 (Kreis), age 14+ (no upper bound) base.
+    * employment_status -> MiD 2023 P9 seven-class detail (Kreis), same 14+
+      base; registered independent (Phase 0 cross-check, not a popsim control).
     * bev_share -> KBA FZ 27.15 (Kreis) -- lazy target loader; a missing
       non-redistributable fleet file does not break registry construction (it
       only fails if a comparison is run).
@@ -843,6 +898,17 @@ def build_registry(data_path: str) -> list[Control]:
         "employment", "mid_person", "kreis", "employed",
         ("employed", "not_employed"), employment_target,
         age_min=14, age_max=None, derive=_employed_label))
+
+    # --- Employment status detail (REAL target, MiD 2023 P9; independent) ----
+    # Seven-class employment-extent cross-check (Phase 0) alongside the coarse
+    # binary "employment" control above. employment_status is derived from the
+    # MiD P_BKAT donor column during synthesis but is never raked/steered to
+    # this P9 table -- independence="independent" (a genuine cross-check, not a
+    # fit check). Same age 14+ (no upper bound) P9 person base as "employment".
+    reg.append(categorical_person_control(
+        "employment_status", "mid_person", "kreis", "employment_status",
+        _EMPLOYMENT_STATUS_CATEGORIES, employment_status_target,
+        age_min=14, age_max=None, independence="independent"))
 
     # --- Fleet BEV share (REAL target, KBA FZ 27.15) -------------------------
     # The target loader is lazy: a missing non-redistributable fleet file does

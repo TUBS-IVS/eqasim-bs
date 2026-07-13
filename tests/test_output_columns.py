@@ -45,6 +45,23 @@ def test_person_columns_append_license_type_and_economic_status_when_present():
     assert "economic_status" in cols
 
 
+def test_person_columns_append_employment_status_when_present():
+    # employment_status (P9 taxonomy, MiD P_BKAT; popsim_mid only) follows the same
+    # additive-optional-attribute contract as license_type / economic_status.
+    available = set(BASE_PERSON) | {"employment_status"}
+    cols = select_person_output_columns(available, "is_urban_resident")
+    assert cols[:len(BASE_PERSON)] == BASE_PERSON
+    assert "employment_status" in cols
+
+
+def test_person_columns_legacy_byte_identical_when_employment_status_absent():
+    # Non-MiD sources (ENTD / simple_ipf_open) never produce employment_status;
+    # its absence must not perturb the legacy column set (byte-identical output).
+    cols = select_person_output_columns(set(BASE_PERSON), "is_urban_resident")
+    assert "employment_status" not in cols
+    assert cols == BASE_PERSON
+
+
 def test_household_columns_legacy_byte_identical_when_optionals_absent():
     cols = select_household_output_columns(set(BASE_HOUSEHOLD))
     assert cols == BASE_HOUSEHOLD
