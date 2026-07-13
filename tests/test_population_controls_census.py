@@ -76,7 +76,7 @@ def test_registry_includes_census_and_distribution_controls():
     assert names == {
         "household_size", "age_group", "sex", "cars_per_hh",
         "driving_license_type", "pt_ticket_type", "bicycles_per_hh",
-        "employment", "bev_share",
+        "employment", "employment_status", "bev_share",
     }
     # economic_status / housing_tenure / income_class are exported spatially
     # (geo_export), not validated -> they must NOT be registered as controls.
