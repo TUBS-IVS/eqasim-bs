@@ -100,6 +100,16 @@ LANDUSE_SUPPLEMENTS = {
     "ln_oeffentlicheeinrichtungen": ("education", "school"),
 }
 
+# A building/landuse centroid whose spatial join to the Gemeinde polygons
+# (``predicate="within"``) finds no containing polygon is dropped from the
+# candidate location pool without any diagnostic -- a boundary sliver, a
+# stale VG250 vintage, or a CRS mismatch would silently shrink the location
+# catalogue with no visible signal. A small drop rate is expected (tile-edge
+# topology artefacts); a large one means the join itself is broken. Mirrors
+# ``braunschweig.data.buildings.COMMUNE_AGS_FALLBACK_WARN_THRESHOLD``, the
+# documented template for this exact failure mode.
+GEMEINDE_SJOIN_DROP_WARN_THRESHOLD: float = 0.01
+
 
 def configure(context):
     context.stage("braunschweig.data.alkis")
@@ -201,6 +211,33 @@ def _prepare_osm(df_osm: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
                "location_type", "commune_id", "iris_id"]]
 
 
+def _log_gemeinde_sjoin_drop_rate(kept_count: int, total_count: int) -> None:
+    """Log the share of candidate locations dropped by the Gemeinde sjoin.
+
+    ``kept_count`` is the number of rows that matched a Gemeinde polygon
+    (``predicate="within"``); ``total_count`` is the number of candidate rows
+    fed into the join. Pure logging -- this never changes the join result
+    (CLAUDE.md "Fallback transparency"), it only makes an otherwise-silent
+    drop observable.
+    """
+    dropped_count = total_count - kept_count
+    fraction = (dropped_count / total_count) if total_count else 0.0
+    message = (
+        "[braunschweig.data.locations] Gemeinde sjoin: "
+        f"{kept_count:,}/{total_count:,} candidate locations matched a Gemeinde "
+        f"polygon, {dropped_count:,} dropped ({fraction:.2%})"
+    )
+    if fraction > GEMEINDE_SJOIN_DROP_WARN_THRESHOLD:
+        print(
+            "WARNING: " + message
+            + f" (exceeds {GEMEINDE_SJOIN_DROP_WARN_THRESHOLD:.0%} threshold; the "
+            "Gemeinde polygon join may be broken -- e.g. a CRS mismatch or stale "
+            "VG250 vintage -- rather than dropping a few boundary artefacts)"
+        )
+    else:
+        print(message)
+
+
 def execute(context) -> gpd.GeoDataFrame:
     df_alkis = context.stage("braunschweig.data.alkis")
     df_landuse = context.stage("braunschweig.data.landuse")
@@ -219,12 +256,14 @@ def execute(context) -> gpd.GeoDataFrame:
     )
 
     # Spatial join to Gemeinde polygons to attach commune_id / iris_id.
+    candidate_count = len(df_bld_lu)
     df_bld_lu = gpd.sjoin(
         df_bld_lu,
         df_zones[["geometry", "commune_id", "iris_id"]],
         how="inner",
         predicate="within",
     ).drop(columns=["index_right"]).reset_index(drop=True)
+    _log_gemeinde_sjoin_drop_rate(len(df_bld_lu), candidate_count)
 
     # OSM POIs already carry commune_id/iris_id from the preprocessor.
     if df_osm.crs != df_alkis.crs:

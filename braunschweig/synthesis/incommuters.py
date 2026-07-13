@@ -66,6 +66,14 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
     has_pt_subscription=False, pt_subscription_type="fahre_nie",
     high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
+    # In-commuters live outside the ZGB cordon, so the MiD-derived
+    # ``housing_tenure`` completeness attribute (synthesise_housing_tenure,
+    # braunschweig.synthesis.population.enriched) is not applicable to them.
+    # Without an explicit default, ``concat_frame``'s reindex to the resident
+    # columns fills NaN for this column, and the MATSim writer's ``str(NaN)``
+    # then emits the literal string "nan" as the housingTenure attribute
+    # value. "unknown" documents the gap explicitly instead.
+    housing_tenure="unknown",
 )
 
 

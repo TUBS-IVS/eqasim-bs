@@ -188,34 +188,55 @@ class FeasibleFuels:
 
         Returns the SET of canonical powertrains that ``(brand, family)`` can
         carry per the HSN/TSN lookup, or ``None`` when the brand is truly
-        unknown (no HSN/TSN rows at all; caller keeps the unmasked pmf).
+        unknown (no HSN/TSN rows at all; caller keeps the unmasked pmf). This is
+        a thin convenience wrapper around
+        :meth:`model_feasible_powertrains_with_tier` that drops the resolution
+        tier; callers that need to distinguish the exact-family hit (Tier 1)
+        from the brand-wide fallback (Tier 2) -- e.g. the Bug 2 aggregate log in
+        :mod:`braunschweig.synthesis.vehicles.fleet_sampling_de` (issue #163) --
+        should call that method directly instead.
+        """
+        feasible, _tier = self.model_feasible_powertrains_with_tier(brand, family)
+        return feasible
 
-        Resolution order
-        ----------------
-        1. ``(canonical_brand, family)`` hit  — tightest, family-specific set.
-        2. ``canonical_brand`` hit  — union across ALL families of that brand.
-           Constrains single-fuel exotics (Lamborghini -> {petrol}, Tesla ->
-           {bev}) and is harmlessly permissive for multi-fuel brands (VW ->
-           {petrol, diesel, bev, ...}).
-        3. ``None`` — brand not in HSN/TSN at all; caller keeps unmasked pmf.
+    def model_feasible_powertrains_with_tier(
+        self, brand: str, family: str
+    ) -> tuple[Optional[set[str]], Optional[str]]:
+        """Like :meth:`model_feasible_powertrains`, plus the resolution tier.
+
+        Returns ``(feasible_set_or_None, tier)`` where ``tier`` is:
+
+        1. ``"family"`` — Tier 1, an exact ``(canonical_brand, family)`` hit
+           (tightest, family-specific set).
+        2. ``"brand"`` — Tier 2, the brand-level fallback (union across ALL
+           families of that brand). Constrains single-fuel exotics
+           (Lamborghini -> {petrol}, Tesla -> {bev}) and is harmlessly
+           permissive for multi-fuel brands (VW -> {petrol, diesel, bev, ...}).
+        3. ``(None, None)`` — Tier 3, the brand is not in HSN/TSN at all; the
+           caller keeps the unmasked pmf.
+
+        Exposing the tier lets a caller count Tier-1-vs-Tier-2 hits separately
+        (issue #163): a rising Tier-1 -> Tier-2 drift means the HSN/TSN lookup
+        is losing family-level resolution for an increasing share of the fleet,
+        which the aggregate ``"model_constrained"`` count alone cannot show.
         """
         cb = canonical_brand(brand)
         if cb is None or not family:
-            return None
+            return None, None
 
         # Tier 1 — (brand, family) exact hit
         feasible = self._family_powertrains.get((cb, str(family)))
         if feasible is not None:
-            return set(feasible)
+            return set(feasible), "family"
 
-        # Tier 2 — brand-level fallback (new)
+        # Tier 2 — brand-level fallback
         brand_feasible = self._brand_powertrains.get(cb)
         if brand_feasible is not None:
             logger.debug(
                 "[feasible_fuels] brand-level fallback for (%s, %s) -> %s",
                 cb, family, brand_feasible,
             )
-            return set(brand_feasible)
+            return set(brand_feasible), "brand"
 
         # Tier 3 — truly unknown brand
-        return None
+        return None, None

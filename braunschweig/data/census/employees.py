@@ -28,6 +28,16 @@ COLUMN_NAMES = [
     "foreign_total", "foreign_male", "foreign_female",
 ]
 
+# An 8-digit AGS from the GENESIS export that does not match a ``commune_id``
+# in the eqasim_common codes table is dropped by the inner merge below without
+# any signal -- its SvB-Arbeitsort total simply disappears from the attraction
+# vector. A small drop rate is expected (Gemeinde mergers / territorial
+# reform lag between the two sources); a large one means the AGS scope
+# filtering above is broken and the gravity model would run on an incomplete
+# attraction vector.
+EMPLOYEES_AGS_DROP_WARN_FRACTION: float = 0.02
+EMPLOYEES_AGS_DROP_RAISE_FRACTION: float = 0.25
+
 
 def configure(context):
     context.config("data_path")
@@ -71,10 +81,37 @@ def execute(context):
 
     # Map AGS (8-digit) -> ARS/commune_id (12-digit) via the codes table.
     df_codes_scope = df_codes[df_codes["departement_id"].astype(str).isin(scope_kreise)]
+    rows_before = len(df)
+    ags_before = set(df["ags"].unique())
+    weight_before = df["weight"].sum()
     df = df.merge(
         df_codes_scope[["ags", "commune_id"]].astype(str),
         on="ags", how="inner",
     )
+
+    ags_unmatched = sorted(ags_before - set(df["ags"].unique()))
+    weight_after = df["weight"].sum()
+    lost_weight = weight_before - weight_after
+    lost_fraction = lost_weight / weight_before if weight_before else 0.0
+    print(f"[braunschweig.employees] AGS->commune_id merge: {len(df)}/{rows_before} rows "
+          f"matched, {len(ags_unmatched)} AGS unmatched, lost SvB Arbeitsort = "
+          f"{lost_weight:,.0f} ({100.0 * lost_fraction:.2f}%)")
+    if ags_unmatched:
+        print(f"[braunschweig.employees] unmatched AGS (sample up to 20): "
+              f"{ags_unmatched[:20]}")
+    if lost_fraction >= EMPLOYEES_AGS_DROP_RAISE_FRACTION:
+        raise RuntimeError(
+            f"AGS->commune_id merge lost {100.0 * lost_fraction:.1f}% of the SvB "
+            f"Arbeitsort total (limit {100.0 * EMPLOYEES_AGS_DROP_RAISE_FRACTION:.0f}%). "
+            f"This implausibly high loss almost certainly means the eqasim_common codes "
+            f"table does not cover the ZGB Gemeinden -- refusing to continue with a "
+            f"corrupted attraction vector."
+        )
+    if lost_fraction >= EMPLOYEES_AGS_DROP_WARN_FRACTION:
+        print(f"[braunschweig.employees] WARNING: AGS->commune_id merge dropped "
+              f"{100.0 * lost_fraction:.2f}% of the SvB Arbeitsort total, above the "
+              f"{100.0 * EMPLOYEES_AGS_DROP_WARN_FRACTION:.0f}% threshold. Verify the "
+              f"eqasim_common codes table is complete for the ZGB scope.")
 
     df = df[["commune_id", "weight"]].copy()
     df["weight"] = df["weight"].astype(float)

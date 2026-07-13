@@ -175,8 +175,17 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
     # present in the person tuple (i.e. the flag is ON), so the output is
     # byte-identical when off. NOT consumed by the simulation (documentation only).
     if "housing_tenure" in person_fields:
-        writer.add_attribute("housingTenure", "java.lang.String",
-                             str(person[person_fields.index("housing_tenure")]))
+        _housing_tenure = person[person_fields.index("housing_tenure")]
+        # Guard against a NaN/None value reaching the writer as the literal
+        # string "nan"/"None": in-commuter rows injected via the cordon merge
+        # (braunschweig.synthesis.incommuter_merge._base.concat_frame) are
+        # reindexed onto the resident column set, and any resident-only
+        # column an in-commuter frame does not set becomes NaN for those
+        # rows. "unknown" documents the gap explicitly instead of leaking a
+        # Python float-NaN stringification into the MATSim attribute.
+        if _housing_tenure is None or pd.isna(_housing_tenure):
+            _housing_tenure = "unknown"
+        writer.add_attribute("housingTenure", "java.lang.String", str(_housing_tenure))
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])

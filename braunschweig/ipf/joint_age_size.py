@@ -184,6 +184,13 @@ def build_joint_age_size_margin(
     size["departement_id"] = size["commune_id"].astype(str).str[:5]
 
     rows: list[dict] = []
+    # A Kreis with a zero row or column total (no population in any age group, or
+    # no size margin) is skipped below (rake_2d has no feasible target to fit
+    # against) -- it is dropped from the joint margin entirely rather than raising,
+    # since a genuinely empty Kreis is expected in small-region test fixtures. Any
+    # skip in real Zensus/IPF data is unexpected, so it is collected and reported
+    # (CLAUDE.md "no silent fallbacks") rather than passing through unnoticed.
+    skipped_departments: list[tuple[str, str]] = []
     for dep in sorted(pop["departement_id"].unique()):
         # Row margin: population per age group (authoritative ages).
         pop_dep = pop[pop["departement_id"] == dep]
@@ -203,6 +210,8 @@ def build_joint_age_size_margin(
         row_total = row_targets.sum()
         col_total = col_targets.sum()
         if row_total <= 0 or col_total <= 0:
+            reason = "zero population row total" if row_total <= 0 else "zero size column total"
+            skipped_departments.append((dep, reason))
             continue
         col_targets = col_targets * (row_total / col_total)
 
@@ -228,6 +237,13 @@ def build_joint_age_size_margin(
                     "hh_size": s,
                     "weight": float(fitted[gi, si]),
                 })
+
+    if skipped_departments:
+        print(
+            f"[joint_age_size] WARNING: {len(skipped_departments)} Kreis(e) skipped "
+            "(no joint age x hh_size margin produced) due to a zero row/column total: "
+            + ", ".join(f"{dep} ({reason})" for dep, reason in skipped_departments)
+        )
 
     return pd.DataFrame(
         rows, columns=["departement_id", "age_group_lower", "hh_size", "weight"]

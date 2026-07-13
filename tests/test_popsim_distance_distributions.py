@@ -335,6 +335,103 @@ class TestMidDistributionSampler:
         assert (distances > 0).all(), "sampled distances must be positive"
 
 
+class TestMidDistributionCodedTimeRescue:
+    """Issue #160: MiD design/non-response coded times (99, 701) must not be
+    silently dropped from the distance distributions -- they are rescued via
+    the MiD-imputed own duration ``wegmin_imp1`` instead, mirroring how
+    ``braunschweig.popsim.time_imputation`` treats the same coded rows for the
+    trips.py consumer."""
+
+    def _coded_time_row(self, *, person_id: int, wegkm: float, wegmin_imp1: float,
+                          time_code: int = 701) -> dict:
+        """One car-mode shop trip with a fully coded time (rbW code 701 on all
+        four time fields) but a valid, code-free ``wegmin_imp1``."""
+        return {
+            "H_ID": person_id, "P_ID": person_id, "W_ID": 1,
+            "W_ZWECK": 4,  # shop (secondary)
+            "hvm_imp": 4,  # car
+            "wegkm_imp": wegkm,
+            "W_SZS": time_code, "W_SZM": time_code,
+            "W_AZS": time_code, "W_AZM": time_code,
+            "W_GEW": 1.0,
+            "wegmin_imp1": wegmin_imp1,
+        }
+
+    def _valid_time_row(self, *, person_id: int, wegkm: float) -> dict:
+        """One car-mode shop trip with valid, uncoded clock times."""
+        return {
+            "H_ID": person_id, "P_ID": person_id, "W_ID": 1,
+            "W_ZWECK": 4, "hvm_imp": 4,
+            "wegkm_imp": wegkm,
+            "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 20,
+            "W_GEW": 1.0,
+            "wegmin_imp1": 20.0,
+        }
+
+    def test_coded_time_rows_are_rescued_not_dropped(self):
+        """A rbW (code 701) trip with a valid wegmin_imp1 must still contribute
+        its (correctly derived) euclidean_distance to the car distribution --
+        previously the whole row was silently dropped by the
+        ``travel_time >= 0`` filter because mid_time_seconds NaNs coded times."""
+        detour = 1.3
+        rescued_distance_m = 8.0 * 1000.0 / detour  # the coded-time trip: 8 km
+
+        rows = [self._valid_time_row(person_id=i, wegkm=1.0) for i in range(20)]
+        rows.append(self._coded_time_row(person_id=99, wegkm=8.0, wegmin_imp1=45.0))
+
+        wege = pd.DataFrame(rows)
+        result = mid_stage.run(wege)
+
+        assert "car" in result, "car mode missing from result"
+        all_car_values = np.concatenate([
+            d["values"] for d in result["car"]["distributions"]
+        ])
+        assert any(abs(v - rescued_distance_m) < 1.0 for v in all_car_values), (
+            f"Coded-time (701) trip with valid wegmin_imp1 was dropped instead of "
+            f"rescued; expected euclidean_distance ~{rescued_distance_m:.0f} m in "
+            f"the car distribution, got (first 10): {all_car_values[:10]}"
+        )
+
+    def test_coded_time_row_with_invalid_wegmin_is_dropped_and_counted(self):
+        """When wegmin_imp1 is ALSO coded/missing, the row cannot be rescued
+        and must be dropped -- but the drop must be counted/logged, never silent."""
+        rows = [self._valid_time_row(person_id=i, wegkm=1.0) for i in range(20)]
+        # wegmin_imp1 itself carries a MiD design code (>= WEGMIN_CODE_THRESHOLD):
+        # genuinely unrecoverable, must be dropped.
+        rows.append(self._coded_time_row(person_id=99, wegkm=8.0, wegmin_imp1=9999.0))
+
+        wege = pd.DataFrame(rows)
+        result = mid_stage.run(wege)
+
+        exclusion_target_m = 8.0 * 1000.0 / 1.3
+        all_car_values = np.concatenate([
+            d["values"] for d in result["car"]["distributions"]
+        ])
+        assert not any(abs(v - exclusion_target_m) < 1.0 for v in all_car_values), (
+            "A row with both coded clock time AND invalid wegmin_imp1 cannot be "
+            "reconstructed and must be dropped."
+        )
+
+    def test_coded_time_rescue_rate_is_logged(self, caplog):
+        """The observed/imputed/dropped travel_time source rate must be logged
+        explicitly (no silent fallback), per CLAUDE.md fallback-transparency rule."""
+        import logging
+
+        rows = [self._valid_time_row(person_id=i, wegkm=1.0) for i in range(20)]
+        rows.append(self._coded_time_row(person_id=99, wegkm=8.0, wegmin_imp1=45.0))
+
+        wege = pd.DataFrame(rows)
+        with caplog.at_level(logging.INFO, logger="braunschweig.popsim.distance_distributions"):
+            mid_stage.run(wege)
+
+        messages = " ".join(r.message for r in caplog.records)
+        assert "travel_time source" in messages, (
+            "Expected an explicit observed/imputed/dropped travel_time source "
+            f"rate log; got log messages: {messages}"
+        )
+        assert "imputed" in messages and "dropped" in messages and "observed" in messages
+
+
 class TestMidDistributionStageInterface:
     """The synpp stage configure/execute interface is correct."""
 

@@ -43,6 +43,11 @@ DEFAULT_SLOPE = -0.2
 DEFAULT_CONSTANT = -2.4
 DEFAULT_DIAGONAL = 1.0
 
+# Escalation threshold (percent of origins) for the zero-total self-loop fallback
+# rate log (no-silent-fallback rule). ASSUMPTION: above ~5% of origins the cause is
+# almost certainly a broken friction/attraction join rather than genuinely empty zones.
+ZERO_TOTAL_SELF_LOOP_WARN_PERCENT = 5.0
+
 
 # --- Sector-aware destination attraction (model-improvement item #8) --------
 #
@@ -621,6 +626,21 @@ def compute_work_od(
     df_matrix = pd.merge(df_matrix, df_total, on="origin_id")
 
     f_missing_total = df_matrix["total"] == 0.0
+    # No-silent-fallback (CLAUDE.md): an origin with zero total outbound flow (no
+    # population, no reachable employees, or a fully-masked friction row) would
+    # otherwise divide 0/0 below; the self-loop is forced to weight 1.0 instead.
+    # Count and log the rate so a systematically empty friction matrix (a real
+    # bug, e.g. a broken distance join) is visible rather than silently "working".
+    n_missing_origins = int(df_matrix.loc[f_missing_total, "origin_id"].nunique())
+    n_total_origins = len(municipalities)
+    if n_missing_origins:
+        share = 100.0 * n_missing_origins / max(n_total_origins, 1)
+        level = logger.warning if share > ZERO_TOTAL_SELF_LOOP_WARN_PERCENT else logger.info
+        level(
+            "[gravity] zero-total origins forced to self-loop: %d/%d (%.1f%%)",
+            n_missing_origins, n_total_origins, share,
+        )
+
     df_matrix.loc[
         f_missing_total & (df_matrix["origin_id"] == df_matrix["destination_id"]),
         "weight",
@@ -1140,6 +1160,19 @@ def _append_outbound_flows(df_od: pd.DataFrame,
     totals = df_all.groupby("origin_id")["flow"].sum().rename("total").reset_index()
     df_all = df_all.merge(totals, on="origin_id", how="left")
     f_missing = df_all["total"] <= 0.0
+    # No-silent-fallback (CLAUDE.md): an origin with zero total flow (no BA-Pendler
+    # row, no EXT injection) would otherwise divide 0/0 below; the self-loop is
+    # forced to weight 1.0 instead. Count and log the rate so a systematically
+    # empty outbound-flow set (e.g. a broken scope/ars join) is visible.
+    n_missing_origins = int(df_all.loc[f_missing, "origin_id"].nunique())
+    n_total_origins = int(df_all["origin_id"].nunique())
+    if n_missing_origins:
+        share = 100.0 * n_missing_origins / max(n_total_origins, 1)
+        level = logger.warning if share > ZERO_TOTAL_SELF_LOOP_WARN_PERCENT else logger.info
+        level(
+            "[gravity] zero-total origins forced to self-loop: %d/%d (%.1f%%)",
+            n_missing_origins, n_total_origins, share,
+        )
     df_all.loc[f_missing & (df_all["origin_id"] == df_all["destination_id"]), "flow"] = 1.0
     df_all.loc[f_missing, "total"] = 1.0
     df_all["weight"] = df_all["flow"] / df_all["total"]
