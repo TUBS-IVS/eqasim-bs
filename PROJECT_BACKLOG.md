@@ -66,6 +66,23 @@ Kreis×class cells <10pp, r² 0.979). See ADR-0058 + RUNS `empstatus-measure-202
 > **Note:** this whole thread is downstream of the deferred **"everything on main" full 100% run** (see
 > §"produce results" / TL;DR 4) — that run delivers the canonical employment_status number for free.
 
+### New (2026-07-13) — Large-HH (6+) validation gap: donor-bound, levers narrowed (ADR-0059)
+
+The `household_size` 6+ class still under-fits on the newest kreis5 100% run (2.92% vs ref 4.75% =
+61.5% of reference); the 5-person gap is now essentially closed. Two levers ruled out this session
+(see ADR-0059, memory `project-large-hh-6plus-donor-bound`):
+
+1. **Importance is EXHAUSTED — do not raise `six` further.** The run already weights 6+ at importance
+   2000 with `max_expansion_factor: 100` and still hits only 61.5%; the gap is donor-bound, not
+   weight-fixable.
+2. **SrV rejected as a donor supplement.** SrV Braunschweig+RGB has only 63 six-plus HH (0.78%) — the
+   same rarity as MiD (1,661 / 0.76%) — plus circularity (SrV is already our per-Kreis TARGET source,
+   ADR-0055) and schema/weight-harmonization cost. Not worth it.
+3. **Candidate lever (UNVERIFIED, verify-first before any issue):** control 6+ at a coarser geography
+   (1km / Kreis) so its integer targets survive 100m integerization rounding. Must first verify whether
+   PopulationSim integerizes at 100m regardless of control geography — if so the fix is blunted. Under
+   #99 (regional-correct popsim); no issue opened yet.
+
 ### New (2026-07-12) — Full-pipeline bug-audit wave -> PR #165 (OPEN), issues #160-#163
 
 An orchestrated read-only audit of the whole synthesis pipeline (vs `origin/main` `d92328e`) surfaced
