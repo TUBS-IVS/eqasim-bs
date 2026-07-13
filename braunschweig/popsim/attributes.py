@@ -56,18 +56,22 @@ SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
 
-# MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen):
-#   1 Vollzeit -> vollzeit
-#   2 Teilzeit (18-<35 h/week) -> teilzeit
-#   3 geringfuegig (11-<18 h/week) -> geringfuegig
-#   4 sonstiger Erwerbsumfang -> sonstiges
-#   5 erwerbstaetig ohne Angabe zum Umfang -> erwerbstaetig_unspec
-#   7 nicht erwerbstaetig -> nicht_erwerbstaetig
-# Persons with P_TAET==8 (in Ausbildung) are overlaid to in_ausbildung AFTERWARDS,
-# because P9 reports apprentices in a separate class (not folded into vollzeit).
+# MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen col
+# 121; VERIFIED against the raw MiD2023_Personen.csv cross-tab with `erwerb`:
+# codes 1-6 all erwerb=1, code 7 erwerb=0). P9's seven reference columns are the
+# P_BKAT value labels 1..7 verbatim, so this is an exact apples-to-apples match
+# with NO P_TAET overlay needed -- code 6 IS in Ausbildung:
+#   1 Vollzeit erwerbstaetig                      -> vollzeit
+#   2 Teilzeit (18-<35 h/week)                    -> teilzeit
+#   3 geringfuegig (11-<18 h/week)                -> geringfuegig
+#   4 sonstiger Erwerbsumfang                     -> sonstiges
+#   5 erwerbstaetig ohne Angabe zum Umfang        -> erwerbstaetig_unspec
+#   6 in Ausbildung                               -> in_ausbildung
+#   7 nicht erwerbstaetig                         -> nicht_erwerbstaetig
+#   9 keine Angabe (item non-response)            -> imputed (missing policy)
 EMPLOYMENT_STATUS_BY_P_BKAT = {
-    1: "vollzeit", 2: "teilzeit", 3: "geringfuegig",
-    4: "sonstiges", 5: "erwerbstaetig_unspec", 7: "nicht_erwerbstaetig",
+    1: "vollzeit", 2: "teilzeit", 3: "geringfuegig", 4: "sonstiges",
+    5: "erwerbstaetig_unspec", 6: "in_ausbildung", 7: "nicht_erwerbstaetig",
 }
 EMPLOYMENT_STATUS_CATEGORIES = (
     "vollzeit", "teilzeit", "geringfuegig", "sonstiges",
@@ -225,12 +229,13 @@ def map_employment_status(
     """Add a categorical ``employment_status`` (P9 taxonomy) from MiD ``P_BKAT``.
 
     P_BKAT (Umfang der Erwerbstaetigkeit) maps 1:1 onto the P9 columns via
-    ``EMPLOYMENT_STATUS_BY_P_BKAT``; persons with ``P_TAET == 8`` (in Ausbildung)
-    are overlaid to ``in_ausbildung`` (P9 reports apprentices separately, not
-    inside vollzeit). Missing / code-6 / code-99 P_BKAT is imputed from the valid
-    pool within the same age group via the uniform missing policy (rate logged;
-    no silent fallback). Additive: the boolean ``employed`` is untouched. This is
-    NOT a popsim control -- it rides along from the donor for analysis/validation.
+    ``EMPLOYMENT_STATUS_BY_P_BKAT`` -- code 6 IS ``in_ausbildung`` directly, no
+    overlay from another column is needed (verified against the MiD 2023
+    Codeplan B1 and the raw MiD2023_Personen.csv cross-tab with `erwerb`).
+    Missing / code-9 P_BKAT (keine Angabe) is imputed from the valid pool within
+    the same age group via the uniform missing policy (rate logged; no silent
+    fallback). Additive: the boolean ``employed`` is untouched. This is NOT a
+    popsim control -- it rides along from the donor for analysis/validation.
     """
     rng = rng if rng is not None else np.random.RandomState(0)
     value_map = dict(EMPLOYMENT_STATUS_BY_P_BKAT)
@@ -243,11 +248,9 @@ def map_employment_status(
         default="nicht_erwerbstaetig",
     )
     out = persons.copy()
+    # taet_col is kept only for API symmetry with map_employed; P_BKAT code 6 IS
+    # in_ausbildung directly, so this function does not read P_TAET at all.
     out["employment_status"], _rate = missing.resolve(out, spec, rng=rng)
-    # Azubi overlay: P_TAET==8 -> in_ausbildung, regardless of P_BKAT.
-    if taet_col in out.columns:
-        azubi = pd.to_numeric(out[taet_col], errors="coerce") == 8
-        out.loc[azubi, "employment_status"] = "in_ausbildung"
     out["employment_status"] = out["employment_status"].astype(str)
     return out
 
