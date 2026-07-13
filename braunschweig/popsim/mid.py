@@ -565,6 +565,15 @@ def load_mid_seed(
         for _tc_col in ("anzwege1", "alter_gr1"):
             if _tc_col not in person_cols:
                 person_cols.append(_tc_col)
+    # employment_status (second PERSON-level KREIS control, task 4b / feature #172): load
+    # the raw MiD Umfang-der-Erwerbstaetigkeit code (P_BKAT) and the age-band conditioning
+    # column (alter_gr1) so the P9 seven-class label can be derived + the ~0.13% code-9
+    # (keine Angabe) cases imputed within alter_gr1, mirroring the trip_class block above
+    # exactly. Dedup-safe (alter_gr1 may already be present via trip_class or tier3).
+    if "employment_status" in active_kreis_entry_names:
+        for _es_col in ("P_BKAT", "alter_gr1"):
+            if _es_col not in person_cols:
+                person_cols.append(_es_col)
     persons = pd.read_csv(
         persons_path,
         usecols=list(dict.fromkeys(person_cols)),
@@ -591,12 +600,16 @@ def load_mid_seed(
     # seed column (oek_status) is used RAW by the == k predicate (byte-identical to the
     # pre-existing include_status_seed_col=True behaviour).
     # Count-style entries impute the 99 missing code (household level); the person-level
-    # trip_class entry imputes the 803/804 diary-nonresponse codes (within alter_gr1). Both
-    # are random processes that REQUIRE the seeded kreis_seed_rng (no unseeded randomness).
+    # trip_class entry imputes the 803/804 diary-nonresponse codes (within alter_gr1); the
+    # person-level employment_status entry imputes the P_BKAT code-9 (keine Angabe) cases
+    # (also within alter_gr1). All are random processes that REQUIRE the seeded
+    # kreis_seed_rng (no unseeded randomness).
     _count_style_entries = active_kreis_entry_names & {
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
-    _rng_style_entries = _count_style_entries | (active_kreis_entry_names & {"trip_class"})
+    _rng_style_entries = _count_style_entries | (
+        active_kreis_entry_names & {"trip_class", "employment_status"}
+    )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
             "load_mid_seed: kreis controls with seeded imputation "
@@ -636,6 +649,19 @@ def load_mid_seed(
         persons = derive_trip_class_seed(
             persons, rng=kreis_seed_rng,
             household_id=columns.person_household_id, person_id=columns.person_id)
+
+    # employment_status (second PERSON-level KREIS control): derive the P9 seven-class
+    # string from the raw P_BKAT code AFTER the complete-household filter + member
+    # completion, so a mirror-imputed filler's employment_status matches its inherited
+    # (donor-mirrored) P_BKAT and the code-9 imputation pool reflects only the kept seed
+    # persons -- exactly mirroring the trip_class derivation above. The rng guard above
+    # ensures kreis_seed_rng is set. Uses the SAME attributes.map_employment_status as the
+    # post-expansion assembly.build_persons, so seed and expanded values agree
+    # deterministically for the 99.87% of persons with a valid (non-9) P_BKAT; the code-9
+    # imputed cases may differ by an independent rng draw -- acceptable for a control
+    # (matches the trip_class precedent, task 4b).
+    if "employment_status" in active_kreis_entry_names:
+        persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
 
     # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
     # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
@@ -753,11 +779,14 @@ def project_completed_seed(
     # households already carry (see MID_HOUSEHOLD_ATTR_COLS); mirrors the load_mid_seed
     # derivation exactly.
     # Count-style entries impute the 99 missing code (household level); trip_class imputes
-    # the 803/804 diary-nonresponse codes (person level). Both REQUIRE the seeded rng.
+    # the 803/804 diary-nonresponse codes (person level); employment_status imputes the
+    # P_BKAT code-9 (keine Angabe) cases (also person level). All REQUIRE the seeded rng.
     _count_style_entries = active_kreis_entry_names & {
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
-    _rng_style_entries = _count_style_entries | (active_kreis_entry_names & {"trip_class"})
+    _rng_style_entries = _count_style_entries | (
+        active_kreis_entry_names & {"trip_class", "employment_status"}
+    )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
             "project_completed_seed: kreis controls with seeded imputation "
@@ -784,6 +813,14 @@ def project_completed_seed(
         persons = derive_trip_class_seed(
             persons, rng=kreis_seed_rng,
             household_id=columns.person_household_id, person_id=columns.person_id)
+    if "employment_status" in active_kreis_entry_names:
+        # Derive employment_status from the completed donor's P_BKAT (already loaded via
+        # MID_PERSON_ATTR_COLS -- see mid.MID_PERSON_ATTR_COLS); mirrors load_mid_seed's
+        # derivation exactly. A mirror-imputed filler inherits the mirror donor's P_BKAT
+        # (member completion samples whole donor person rows, same as anzwege1/trip_class),
+        # so this reflects the full completed population, agreeing deterministically with
+        # assembly.build_persons for the 99.87% of persons with a valid (non-9) P_BKAT.
+        persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
 
     hh_type5_series = seedmod.derive_hh_type5(
         persons,
