@@ -56,6 +56,17 @@ def _resolve_parent_kreis(
     (each 1 km maps to exactly one parent Kreis), so each parent is assigned the
     Kreis with the largest summed ``weights`` across its cells; ties break on the
     higher Kreis id (deterministic). Reassigned (boundary) cells are logged.
+
+    Universe alignment (issue #147, sub-item 1, corrected): the batch KREIS backbone
+    built here uses this RESOLVED dominant Kreis per 1 km parent, and the per-Kreis
+    attribute-control targets in ``stage.py`` now partition households/persons by the
+    SAME resolved Kreis (via :func:`braunschweig.popsim.mid.resolved_kreis_per_cell`),
+    rather than the raw ``ARS[:5]`` of each 100 m cell. Previously the two universes
+    disagreed for the ~0.1 % of border cells reassigned above (100 % run: ~48/43598):
+    the category targets summed the raw-ARS Kreis total while the 100 m backbone summed
+    the resolved cells. Region-wide per-Kreis sums are unchanged either way (a 1 km
+    parent is atomic to one resolved Kreis); the alignment only moves those border
+    cells' target attribution onto the Kreis that actually constrains them.
     """
     work = xwalk[[GEO_1KM, GEO_KREIS]].copy()
     work["_w"] = weights
@@ -136,7 +147,11 @@ def build_geo_crosswalk(
     # per-cell Kreis is then collapsed to one dominant Kreis per 1 km parent so the
     # WELT > STAAT > KREIS > ZENSUS1km > ZENSUS100m hierarchy nests strictly.
     if ars_col is not None and ars_col in df_100m.columns:
-        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+        # zfill(12) before slicing the Kreis prefix so an ARS that lost a leading
+        # zero (e.g. read as an int) cannot silently join to the wrong Kreis --
+        # the same guard `stage.derive_geo_kreis_from_ars` applies, kept consistent
+        # here so this crosswalk and `mid.resolved_kreis_per_cell` never drift.
+        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str.zfill(12).str[:5].to_numpy()
         if resolve_parent_kreis:
             if kreis_weight_col is not None and kreis_weight_col in df_100m.columns:
                 weights = pd.to_numeric(
@@ -292,7 +307,11 @@ def build_kreis_control_totals(
 
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
-        values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
+        # skipna suppression (NaN -> 0) in the multi-source row-sum is made
+        # observable per issue #150 (fallback-transparency rule, CLAUDE.md).
+        values = cells.sum_columns_logging_nan(
+            table.loc[kreise], list(source_cols), f"KREIS control {name!r}"
+        ).to_numpy()
         if apportion_weights is not None:
             weights = np.array(
                 [float(apportion_weights.get(k, 1.0)) for k in kreise], dtype=float

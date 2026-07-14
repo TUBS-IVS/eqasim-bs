@@ -172,6 +172,59 @@ def test_add_aggregated_controls_missing_source_logs_warning_and_partial_sum(cap
 
 
 # ---------------------------------------------------------------------------
+# 2b. add_aggregated_controls: ALL sources missing -> raise (issue #149)
+# ---------------------------------------------------------------------------
+
+def test_add_aggregated_controls_all_sources_missing_raises():
+    """When EVERY source column of a derived control is absent, raise instead of
+    silently emitting a constant-0 target (no-silent-fallback rule, issue #149).
+
+    A renamed/removed Gebaeudetyp column in a re-prepared parquet would otherwise
+    yield a permanently-zero control that PopulationSim balances to 0 unnoticed.
+    """
+    cells = _make_cells_with_10_sources()
+    aggregation_map = {
+        "building_type_ghost": (
+            "COLUMN_THAT_DOES_NOT_EXIST_1",
+            "COLUMN_THAT_DOES_NOT_EXIST_2",
+        ),
+    }
+    with pytest.raises(ValueError, match="building_type_ghost"):
+        prepared_cells.add_aggregated_controls(cells, aggregation_map)
+
+
+# ---------------------------------------------------------------------------
+# 2c. add_aggregated_controls: NaN in a present source is observable (issue #150)
+# ---------------------------------------------------------------------------
+
+def test_add_aggregated_controls_nan_in_source_is_logged(caplog):
+    """A NaN (e.g. Zensus-suppressed) cell in a present source column is counted and
+    logged; the sum still treats it as 0 (skipna) but the suppression is observable
+    per the fallback-transparency rule (issue #150)."""
+    cells = _make_cells_with_10_sources()
+    cells.loc[0, "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = float("nan")
+    aggregation_map = {
+        "building_type_mehrfamilienhaus": (
+            "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "MFH_7bis12Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+            "MFH_13undmehrWohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        ),
+    }
+    with caplog.at_level(logging.INFO):
+        result = prepared_cells.add_aggregated_controls(cells, aggregation_map)
+
+    # A NaN-count log for this derived column must appear (observable suppression).
+    nan_logs = [r for r in caplog.records if "NaN" in r.message
+                and "building_type_mehrfamilienhaus" in r.message]
+    assert nan_logs, "No NaN-count log emitted for the suppressed source cell"
+
+    # Behaviour preserved: NaN treated as 0 -> row 0 = 0(nan)+5+2 = 7.
+    assert result.loc[0, "building_type_mehrfamilienhaus"] == pytest.approx(7.0)
+    # Row 1 unaffected: 10+3+1 = 14.
+    assert result.loc[1, "building_type_mehrfamilienhaus"] == pytest.approx(14.0)
+
+
+# ---------------------------------------------------------------------------
 # 3. Single-source identity: name already in cells -> must be identity (no copy overhead)
 # ---------------------------------------------------------------------------
 

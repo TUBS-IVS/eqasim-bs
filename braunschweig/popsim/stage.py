@@ -1019,10 +1019,16 @@ def execute(context) -> pd.DataFrame:
                 "control_tiers includes 'tier3' but "
                 f"{KEY_KREIS_CONTROLS} is not set; cannot source the KREIS controls."
             )
-        kreis_table = mid.load_kreis_control_table(kreis_dir)
+        # Restrict the national Tier-3 table (~400 Kreise) to the run's Kreise at load
+        # time so the accumulator carries only rows looked up downstream (issue #147);
+        # the resolved dominant Kreis of any in-scope cell is itself in `kreise`
+        # (cells are filtered to `kreise` before the crosswalk is built), so no needed
+        # Kreis row is dropped.
+        kreis_table = mid.load_kreis_control_table(kreis_dir, restrict_to_kreise=kreise)
         logger.info(
-            "[popsim.stage] Tier-3 KREIS controls active: %d controls, kreis table %d rows from %s",
-            len(kreis_controls_map), len(kreis_table), kreis_dir,
+            "[popsim.stage] Tier-3 KREIS controls active: %d controls, kreis table %d rows "
+            "(restricted to the run's %d Kreise) from %s",
+            len(kreis_controls_map), len(kreis_table), len(kreise), kreis_dir,
         )
 
     # For catalog-based controls with multi-column census sources (e.g. building_type),
@@ -1271,7 +1277,14 @@ def execute(context) -> pd.DataFrame:
             raise RuntimeError(
                 f"KREIS attribute control is ON but the household-total column {_kac_hh_col!r} is "
                 f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
-        _kac_kreis = derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN])
+        # Align the per-Kreis attribute-control universe with the batch KREIS backbone
+        # (issue #147, sub-item 1): partition the household/person targets over the SAME
+        # RESOLVED dominant Kreis per 1 km parent that folders.build_kreis_control_totals
+        # keys on, not the raw ARS[:5]. NOTE (scientific output change): this reassigns the
+        # target attribution of the ~0.1% of cells that sit on a Kreis border and whose
+        # 1 km parent is dominated by a neighbouring Kreis; region-wide per-Kreis sums are
+        # unchanged (a 1 km parent is atomic to one resolved Kreis).
+        _kac_kreis = mid.resolved_kreis_per_cell(cells)
         _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
         # Per-Kreis PERSON totals (sum over the 18 age-x-sex 100m band columns) are needed
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
@@ -1339,13 +1352,12 @@ def execute(context) -> pd.DataFrame:
                 # Fail-fast: every Kreis the run actually uses (_kac_expected_ars5 = the
                 # cells' Kreise, which is exactly what build_kreis_control_totals looks up
                 # via the crosswalk) must carry a non-NaN target for this control after the
-                # LEFT merge (no silently under-constrained control). We check ONLY those
-                # Kreise on purpose: kreis_table may already carry a national reference row
-                # set (the tier3 kreis-control table loaded upstream spans all German Kreise),
-                # whose NaN for a run that covers only a subset is HARMLESS because those rows
-                # are never looked up downstream. The earlier guard masked to `_tbl` membership,
-                # which by construction of a left join could never fire; checking every
-                # accumulator row instead false-positives on those harmless national rows.
+                # LEFT merge (no silently under-constrained control). We mask to those
+                # Kreise defensively: the tier3 kreis-control table is now restricted to the
+                # run's Kreise at load time (issue #147), so national reference rows no longer
+                # enter the accumulator, but masking keeps the guard correct even if a future
+                # caller reintroduces out-of-scope rows (whose NaN would be harmless -- they
+                # are never looked up downstream).
                 _new_cols = list(_kac.control_columns(_ctl))
                 _relevant = kreis_table["ARS_kreis"].astype(str).isin(_kac_expected_ars5)
                 _relevant_na = _relevant & kreis_table[_new_cols].isna().any(axis=1)

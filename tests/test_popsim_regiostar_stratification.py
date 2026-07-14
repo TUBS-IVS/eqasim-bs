@@ -438,7 +438,10 @@ class TestStratifyOff:
             # No output file written -> the batch is "missing".
             return batchmod.BatchResult(folder, "failed", "exit code 1: boom", 0.0)
 
-        with pytest.raises(ValueError, match="no usable output"):
+        # The require-all-batches work replaced the old "no usable output" wording with
+        # an explicit missing-batch report; match the current message (issue #147 PR
+        # housekeeping: this stale expectation was left behind by that change).
+        with pytest.raises(ValueError, match="batches missing their output"):
             run_popsim_mid(
                 cells, base_cols, controls_df, hh, persons,
                 work_dir=tmp_path,
