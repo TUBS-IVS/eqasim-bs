@@ -141,7 +141,7 @@ def test_registry_labels_fit_checks(tmp_path):
         "age_group": "independent",
         "sex": "independent",
         "employment": "independent",
-        "employment_status": "independent",
+        "employment_status": "partially_independent",
         "bev_share": "fit_check",
     }
     # build_registry needs the H7/H12.3 CSVs to size the buckets; synthesise them.

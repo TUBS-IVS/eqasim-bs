@@ -234,8 +234,9 @@ def map_employment_status(
     Codeplan B1 and the raw MiD2023_Personen.csv cross-tab with `erwerb`).
     Missing / code-9 P_BKAT (keine Angabe) is imputed from the valid pool within
     the same age group via the uniform missing policy (rate logged; no silent
-    fallback). Additive: the boolean ``employed`` is untouched. This is NOT a
-    popsim control -- it rides along from the donor for analysis/validation.
+    fallback). Additive: the boolean ``employed`` is untouched. This is now the
+    seed column for the per-Kreis ``employment_status`` popsim control (issue
+    #172), still also written for analysis/validation.
     """
     rng = rng if rng is not None else np.random.RandomState(0)
     value_map = dict(EMPLOYMENT_STATUS_BY_P_BKAT)

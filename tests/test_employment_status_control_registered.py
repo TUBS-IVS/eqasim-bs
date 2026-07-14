@@ -1,6 +1,9 @@
 """Task 4 (feature #172): register ``employment_status`` as a per-Kreis PopulationSim
-STEERING control (distinct from the Task-3 INDEPENDENT validation control in
-tests/test_employment_status_control.py, which never raked the synthesis).
+STEERING control (distinct from the Task-3 validation control in
+tests/test_employment_status_control.py, which compares against the pure MiD P9
+table alone -- registered independence="partially_independent" since that P9
+table is only one INPUT to this control's blended target, not a fully
+independent reference).
 
 THE KEY CORRECTNESS REQUIREMENT (the #97 universe trap): the committed blended target
 (target2026_employment_status_by_kreis.csv) reports shares over persons aged 14+ (MiD

@@ -660,12 +660,13 @@ def employment_status_target(data_path: str) -> pd.DataFrame:
     convention as :func:`employment_target`. ``geo_id`` is the 5-digit Kreis
     ``ars5``; the ZGB aggregate row (``03ZGB``) is excluded.
 
-    This target is registered ``independence="independent"``: the synthetic
-    ``employment_status`` attribute (derived from the MiD P_BKAT donor column
-    during synthesis) is never raked/steered to this P9 table by popsim, so a
-    deviation measures agreement with a real reference the synthesis was not
-    fit to, not IPF/raking convergence (CLAUDE.md: convergence is not
-    validation).
+    This target is registered ``independence="partially_independent"``: popsim
+    steers the synthetic ``employment_status`` attribute per Kreis (feature
+    #172) via the ``target2026_employment_status_by_kreis.csv`` blend (MiD P9
+    x SrV V_ERW); this pure-MiD-P9 table is only ONE input to that blend, so
+    the comparison mostly measures the blend/shrinkage distance, not fully
+    independent agreement with reality (same framing as the ``cars_per_hh`` /
+    ``bicycles_per_hh`` controls; CLAUDE.md: convergence is not validation).
 
     Raises
     ------
@@ -909,16 +910,19 @@ def build_registry(data_path: str) -> list[Control]:
         ("employed", "not_employed"), employment_target,
         age_min=14, age_max=None, derive=_employed_label))
 
-    # --- Employment status detail (REAL target, MiD 2023 P9; independent) ----
-    # Seven-class employment-extent cross-check (Phase 0) alongside the coarse
-    # binary "employment" control above. employment_status is derived from the
-    # MiD P_BKAT donor column during synthesis but is never raked/steered to
-    # this P9 table -- independence="independent" (a genuine cross-check, not a
-    # fit check). Same age 14+ (no upper bound) P9 person base as "employment".
+    # --- Employment status detail (REAL target, MiD 2023 P9; partially indep.) ----
+    # Seven-class employment-extent cross-check alongside the coarse binary
+    # "employment" control above. popsim now steers employment_status per Kreis
+    # (feature #172) via the target2026_employment_status_by_kreis.csv blend
+    # (MiD P9 x SrV V_ERW); this pure-MiD-P9 table is only ONE input to that
+    # blend, so the comparison mostly measures the blend/shrinkage distance,
+    # not independent reality -- independence="partially_independent", same
+    # framing as cars_per_hh/bicycles_per_hh above (NOT a genuine cross-check
+    # anymore). Same age 14+ (no upper bound) P9 person base as "employment".
     reg.append(categorical_person_control(
         "employment_status", "mid_person", "kreis", "employment_status",
         _EMPLOYMENT_STATUS_CATEGORIES, employment_status_target,
-        age_min=14, age_max=None, independence="independent"))
+        age_min=14, age_max=None, independence="partially_independent"))
 
     # --- Fleet BEV share (REAL target, KBA FZ 27.15) -------------------------
     # The target loader is lazy: a missing non-redistributable fleet file does

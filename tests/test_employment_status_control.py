@@ -1,14 +1,15 @@
-"""Tests for the Task-3 independent per-Kreis employment_status validation control.
+"""Tests for the Task-3 per-Kreis employment_status validation control.
 
 Phase 0 adds a genuine per-Kreis reference (MiD 2023 P9, seven employment-extent
 classes) plus a registered validation control that compares it against the
 synthetic ``employment_status`` person attribute (Task 1/2). The control is
-registered ``independence="independent"``: ``employment_status`` is derived from
-the MiD P_BKAT donor column during synthesis but is never raked/steered to this
-P9 target by popsim, so a deviation here measures agreement with a real reference
-the synthesis was not fit to -- NOT IPF/raking convergence (CLAUDE.md: convergence
-is not validation). This does not make employment_status a popsim steering
-control; ``popsim/control_spec.py`` is untouched.
+registered ``independence="partially_independent"``: popsim now steers the
+synthetic ``employment_status`` attribute per Kreis (feature #172, tasks 3/4)
+via the ``target2026_employment_status_by_kreis.csv`` blend, of which this pure
+MiD P9 table is only ONE input -- so a deviation here mostly measures the
+blend/shrinkage distance, not fully independent agreement with reality (same
+framing as the ``cars_per_hh`` / ``bicycles_per_hh`` controls; CLAUDE.md:
+convergence is not validation).
 """
 from __future__ import annotations
 
@@ -90,16 +91,17 @@ def test_employment_status_target_on_real_p9_data_sums_to_one_per_kreis():
     assert set(tgt["category"]) == set(C._EMPLOYMENT_STATUS_CATEGORIES)
 
 
-def test_registry_registers_employment_status_control_as_independent():
+def test_registry_registers_employment_status_control_as_partially_independent():
     """The employment_status control must be registered as family=mid_person,
-    geography=kreis, independence='independent' (Phase 0: a cross-check only --
-    P9 does not feed/steer the synthesis)."""
+    geography=kreis, independence='partially_independent': popsim steers
+    employment_status per Kreis via the target2026 blend, of which this pure
+    MiD P9 table is only one input (same framing as cars_per_hh/bicycles_per_hh)."""
     reg = {c.name: c for c in C.build_registry(DATA)}
     assert "employment_status" in reg
     ctrl = reg["employment_status"]
     assert ctrl.family == "mid_person"
     assert ctrl.geography == "kreis"
-    assert ctrl.independence == "independent"
+    assert ctrl.independence == "partially_independent"
     assert ctrl.categories == C._EMPLOYMENT_STATUS_CATEGORIES
 
 
