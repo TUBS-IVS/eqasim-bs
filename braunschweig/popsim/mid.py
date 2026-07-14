@@ -1257,6 +1257,7 @@ def load_kreis_control_table(
     kreis_dir: Union[str, Path],
     *,
     files: Sequence[str] = _KREIS_CONTROL_FILES,
+    restrict_to_kreise: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Load + merge the imported Tier-3 kreis_* control tables from ``kreis_dir``.
 
@@ -1264,6 +1265,16 @@ def load_kreis_control_table(
     merges them on ``ARS_kreis`` (re-padded to the 5-digit zero-padded string that
     matches the crosswalk's KREIS = ARS[:5]) into one table whose columns are the
     census_source classes the Tier-3 controls sum.
+
+    The committed cleancensus kreis_* tables span ALL German Kreise (~400 rows).
+    When ``restrict_to_kreise`` is given, the merged table is filtered to that set
+    (each entry normalised to the 5-digit zero-padded ARS the table stores) so the
+    accumulator carries only the rows the run actually looks up downstream, rather
+    than ~390 national rows that ``build_kreis_control_totals`` never reads
+    (issue #147; these carried rows were the cause of a KREIS-merge guard
+    false-positive). Kreise in ``restrict_to_kreise`` that are absent from the
+    national table are simply not present in the result (no phantom rows); the
+    downstream per-Kreis target loaders fail-fast on a genuinely missing Kreis.
     """
     base = Path(kreis_dir)
     tables: list[pd.DataFrame] = []
@@ -1277,7 +1288,17 @@ def load_kreis_control_table(
         table = pd.read_parquet(path)
         table["ARS_kreis"] = table["ARS_kreis"].astype(str).str.zfill(5)
         tables.append(table)
-    return merge_kreis_control_tables(tables)
+    merged = merge_kreis_control_tables(tables)
+    if restrict_to_kreise is not None:
+        wanted = {str(k).zfill(5) for k in restrict_to_kreise}
+        n_before = len(merged)
+        merged = merged[merged["ARS_kreis"].isin(wanted)].reset_index(drop=True)
+        logger.info(
+            "[popsim.mid] load_kreis_control_table: restricted national Tier-3 table "
+            "from %d to %d Kreis row(s) matching the run's %d Kreis(e) (issue #147).",
+            n_before, len(merged), len(wanted),
+        )
+    return merged
 
 
 # --------------------------------------------------------------------------- #
