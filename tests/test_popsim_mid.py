@@ -428,6 +428,99 @@ def test_run_popsim_mid_tier3_apportions_kreis_across_batches(tmp_path):
     assert sorted(captured) == pytest.approx([400.0, 600.0])
 
 
+def test_run_popsim_mid_household_control_uses_hh_share_and_sums_to_full_marginal(tmp_path):
+    # issue #148 end-to-end: one Kreis over two 1km parents forced into two batches
+    # (max_cells=1). Parent pA: pop 60 / hh 30; pB: pop 40 / hh 70 (persons-per-household
+    # differs across the batches). A HOUSEHOLD-level control (economic_status) must be
+    # apportioned by the hh share (0.3 / 0.7) and a PERSON-level control (employed) by
+    # the pop share (0.6 / 0.4); both must sum across batches to the full Kreis marginal.
+    from braunschweig.popsim import control_spec
+    hh_col = control_spec.HH_TOTAL_CENSUS_COLUMN
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["pA_c1", "pB_c1"],
+        "ZENSUS1km": ["pA", "pB"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP_TOTAL_100m_adj": [60.0, 40.0],
+        hh_col: [30.0, 70.0],
+        "POP": [60.0, 40.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0], "EMP": [500.0]})
+
+    econ: list[float] = []
+    emp: list[float] = []
+
+    def fake_run_one(folder):
+        from braunschweig.popsim import batch as b
+        df = pd.read_csv(Path(folder) / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+        by = df.set_index("KREIS")
+        econ.append(float(by["economic_status_KREIS"]["03101"]))
+        emp.append(float(by["employed_KREIS"]["03101"]))
+        xwalk = pd.read_csv(Path(folder) / "data" / "geo_cross_walk.csv", dtype=str)
+        out_dir = Path(folder) / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        xwalk.assign(H_ID=1).to_csv(out_dir / "final_expanded_household_ids.csv", index=False)
+        return b.BatchResult(str(folder), "succeeded", "ok", 0.0)
+
+    mid.run_popsim_mid(
+        cells, ["POP"], controls_df, seed_hh, seed_p,
+        work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        max_cells=1, run_one=fake_run_one, num_workers=1,
+        kreis_table=kreis_table,
+        kreis_controls_map={"economic_status_KREIS": ("ECON",), "employed_KREIS": ("EMP",)},
+        household_control_names={"economic_status_KREIS"},
+    )
+    # household control -> hh share {0.3, 0.7} of 1000, summing to the full marginal.
+    assert sorted(econ) == pytest.approx([300.0, 700.0])
+    assert sum(econ) == pytest.approx(1000.0)
+    # person control -> pop share {0.6, 0.4} of 500, summing to the full marginal.
+    assert sorted(emp) == pytest.approx([200.0, 300.0])
+    assert sum(emp) == pytest.approx(500.0)
+    # The two control types were apportioned by DIFFERENT shares (the whole point of #148).
+    assert sorted(econ) != pytest.approx(sorted([500.0 * 0.6, 500.0 * 0.4]))
+
+
+def test_run_popsim_mid_raises_when_household_column_absent_with_household_controls(tmp_path):
+    # No-silent-fallback (CLAUDE.md): household controls active but the household-total
+    # column absent must RAISE, not silently apportion household controls by pop share.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["pA_c1"],
+        "ZENSUS1km": ["pA"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000"],
+        "POP_TOTAL_100m_adj": [60.0],   # note: no HH_TOTAL_CENSUS_COLUMN
+        "POP": [60.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0]})
+
+    def never_called(folder):  # the guard must fire before any batch runs
+        raise AssertionError("run_one must not be reached; the HH-column guard should raise first")
+
+    with pytest.raises(ValueError, match="household-total column"):
+        mid.run_popsim_mid(
+            cells, ["POP"], controls_df, seed_hh, seed_p,
+            work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+            max_cells=1, run_one=never_called, num_workers=1,
+            kreis_table=kreis_table,
+            kreis_controls_map={"economic_status_KREIS": ("ECON",)},
+            household_control_names={"economic_status_KREIS"},
+        )
+
+
 def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
     # No kreis_table -> tier0-2 path: no KREIS control file (byte-identical baseline).
     cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()

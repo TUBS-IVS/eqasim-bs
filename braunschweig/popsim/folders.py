@@ -276,7 +276,7 @@ def build_kreis_control_totals(
         is the correct basis. ``None`` (default) -> household controls fall back to
         ``apportion_weights`` (legacy population-share behaviour, byte-identical).
     household_control_names:
-        Optional set of control names (keys of ``controls_map``) that are household-level
+        Optional set/iterable of control names (keys of ``controls_map``) that are household-level
         and must use ``household_apportion_weights``. Controls not listed here keep
         ``apportion_weights``. ``None`` (default) -> every control uses
         ``apportion_weights`` (legacy).
@@ -308,6 +308,15 @@ def build_kreis_control_totals(
         raise ValueError(f"kreis_table is missing source column(s): {missing_cols}")
 
     household_names = set(household_control_names) if household_control_names else set()
+    if household_names and household_apportion_weights is None and apportion_weights is not None:
+        # Observability (CLAUDE.md no-silent-fallback): household controls were named but
+        # no household share was supplied, so they fall back to the population share. Not
+        # reachable via run_popsim_mid (which always supplies the household total when
+        # household controls are active); only a direct caller can hit this.
+        logger.debug(
+            "[popsim.folders] household controls %s apportioned by POPULATION share "
+            "(no household_apportion_weights supplied).", sorted(household_names),
+        )
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
         values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
