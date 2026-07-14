@@ -29,6 +29,7 @@ import pyarrow.parquet as pq
 from braunschweig.popsim import attributes
 from braunschweig.popsim import batch
 from braunschweig.popsim import cells as cellmod
+from braunschweig.popsim import control_spec
 from braunschweig.popsim import controls as ctrl
 from braunschweig.popsim import folders
 from braunschweig.popsim import member_completion as completion
@@ -1404,6 +1405,9 @@ def assemble_batch_folder(
     ars_col: str = _ARS_COLUMN,
     kreis_weight_col: str = "POP_TOTAL_100m_adj",
     kreis_total_pop: Mapping[str, float] | None = None,
+    kreis_total_hh: Mapping[str, float] | None = None,
+    hh_weight_col: str = control_spec.HH_TOTAL_CENSUS_COLUMN,
+    household_control_names: Iterable[str] | None = None,
 ) -> dict[str, Path]:
     """Assemble one PopulationSim run folder for a subset of cells.
 
@@ -1454,9 +1458,21 @@ def assemble_batch_folder(
                 cells_subset, geo_crosswalk, kreis_total_pop,
                 weight_col=kreis_weight_col,
             )
+        # Household-level KREIS controls are apportioned across batches by the batch's
+        # HOUSEHOLD share, not the population share (issue #148): where persons-per-
+        # household varies across a Kreis's batches, a pop-share split mis-allocates the
+        # household-level targets. Person-level controls keep the pop share above.
+        household_apportion_weights = None
+        if kreis_total_hh is not None:
+            household_apportion_weights = _batch_kreis_apportion_weights(
+                cells_subset, geo_crosswalk, kreis_total_hh,
+                weight_col=hh_weight_col,
+            )
         control_totals[folders.GEO_KREIS] = folders.build_kreis_control_totals(
             kreis_table, geo_crosswalk, controls_map=kreis_controls_map,
             apportion_weights=apportion_weights,
+            household_apportion_weights=household_apportion_weights,
+            household_control_names=household_control_names,
         )
     return folders.write_popsim_folder(
         folder,
@@ -1495,6 +1511,7 @@ def run_popsim_mid(
     stratify_regiostar: bool = False,
     kreis_table: pd.DataFrame | None = None,
     kreis_controls_map: Mapping[str, Sequence[str]] | None = None,
+    household_control_names: Iterable[str] | None = None,
 ) -> mergemod.MergeReport:
     """Batch the cells into PopulationSim runs, execute them, and merge the output.
 
@@ -1562,6 +1579,7 @@ def run_popsim_mid(
     # batch, so the batch pops partition this total). None for tier0-2 (no KREIS).
     tier3 = kreis_table is not None and bool(kreis_controls_map)
     kreis_total_pop: dict[str, float] | None = None
+    kreis_total_hh: dict[str, float] | None = None
     if tier3:
         if _ARS_COLUMN not in cells.columns:
             raise ValueError(
@@ -1577,6 +1595,21 @@ def run_popsim_mid(
             kreis_weight_col="POP_TOTAL_100m_adj",
         )
         kreis_total_pop = _kreis_pop_from_crosswalk(cells, full_xwalk)
+        # Household-level KREIS controls need the region-wide HOUSEHOLD total per
+        # resolved Kreis so each batch can be apportioned by its household share, not
+        # its population share (issue #148). Only computed when such controls are
+        # active; a missing household-total column with household controls active is a
+        # hard error, not a silent fall-back to the population share (CLAUDE.md).
+        if household_control_names:
+            _hh_col = control_spec.HH_TOTAL_CENSUS_COLUMN
+            if _hh_col not in cells.columns:
+                raise ValueError(
+                    f"Household-level KREIS controls {sorted(household_control_names)} require "
+                    f"the household-total column {_hh_col!r} for household-share apportionment "
+                    f"(issue #148), but it is absent from the cells frame; refusing to fall back "
+                    f"to the population share silently."
+                )
+            kreis_total_hh = _kreis_pop_from_crosswalk(cells, full_xwalk, weight_col=_hh_col)
 
     if not stratify_regiostar:
         # Default OFF path: unchanged behaviour (byte-identical to pre-4B).
@@ -1591,6 +1624,8 @@ def run_popsim_mid(
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
                 kreis_total_pop=kreis_total_pop,
+                kreis_total_hh=kreis_total_hh,
+                household_control_names=household_control_names,
             )
             batch_folders.append(str(folder))
 
@@ -1651,6 +1686,8 @@ def run_popsim_mid(
                 settings_yaml=settings_yaml, logging_yaml=logging_yaml,
                 kreis_table=kreis_table, kreis_controls_map=kreis_controls_map,
                 kreis_total_pop=kreis_total_pop,
+                kreis_total_hh=kreis_total_hh,
+                household_control_names=household_control_names,
             )
             batch_folders_stratified.append(str(folder))
             global_batch_index += 1
