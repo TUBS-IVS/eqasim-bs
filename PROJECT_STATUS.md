@@ -5,7 +5,18 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-12 (on branch `docs/status-presentation`; older bullets below may lag `main`).
+> **Last updated:** 2026-07-14 (older bullets below may lag `main`).
+> **2026-07-14 — popsim KREIS-control apportionment + fallback-transparency wave:** four audit-follow-up
+> issues, verify-first each. **#163** (14 fallback-transparency items) was found ALREADY done+merged via
+> PR #165 -> verify-closed, no code. **#147 + #149 + #150 -> PR #175 (MERGED):** #150 helper
+> `cells.sum_columns_logging_nan` wired into all 4 multi-column row-sum sites; #149 raise-on-all-missing;
+> #147 sub-2 kreis_table restricted to run's Kreise (no output change) + sub-1 `_kac_kreis` aligned to the
+> RESOLVED dominant Kreis (`mid.resolved_kreis_per_cell`, **output change ~0.1% border cells**, ADR-0061).
+> **#148 -> PR #176 (OPEN):** household-level KREIS controls apportioned by HOUSEHOLD share not population
+> share (measure-first found ~5.9% economic_status mis-apportioned within-Kreis; **output change**, ADR-0062).
+> **Caveat:** both #147-sub1 and #148 change the within-Kreis spatial apportionment (region-wide sums provably
+> unchanged); the realized synthetic effect needs a small A/B rerun of one multi-batch Kreis on felix before
+> trusting. Memory `project-popsim-controls-audit-fix`.
 > **2026-07-12 — Full-pipeline bug audit -> PR #165 (MERGED):** orchestrated read-only multi-agent audit vs
 > `origin/main` `d92328e` found **19 verified bugs** (1 critical, 11 major, 7 minor). Fixed same day on
 > `fix/audit-wave-20260712` (6 commits `f212d73`..`1a4a874`, 51 new tests, suite = baseline 11 known-fail /

@@ -1188,6 +1188,61 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   **2.98% (unraked kreis5) -> 2.09%** (target 2.01%); commits 400c344..453cd59; spec/plan under
   `docs/superpowers/`; memory `project-employment-status-and-pbkat-bugs`, `feedback-popsim-smoke-scoping`.
 
+## ADR-0061 — popsim KREIS-control universe hygiene: align per-Kreis targets to the resolved dominant Kreis (#147); complete fallback-transparency (#149/#150) (2026-07-14, PR #175 MERGED)
+
+- **Context (issue #147):** two per-Kreis universe inconsistencies in the popsim_mid KREIS attribute-control
+  path. (sub-1) The per-Kreis household/person totals the category targets partition were grouped by the RAW
+  `ARS[:5]` of each 100 m cell (`stage._kac_kreis`), while the batch KREIS backbone
+  (`folders.build_kreis_control_totals`) and its apportionment key on the RESOLVED dominant Kreis per 1 km
+  parent (`_resolve_parent_kreis`, POP_TOTAL_100m_adj weight). For border cells reassigned to a neighbouring
+  Kreis the two universes disagreed. (sub-2) The Tier-3 `kreis_table` was pre-populated with the full national
+  set (~400 Kreise) and left-merged, carrying rows never read downstream. The original authors deliberately
+  DEFERRED sub-1 "measure-first" (documented in `_resolve_parent_kreis`).
+- **Decision:** align sub-1 now (user-approved). `stage._kac_kreis` uses `mid.resolved_kreis_per_cell`, which
+  builds the identical region-wide crosswalk the backbone uses (resolve_parent_kreis=True, same weight), so the
+  category targets partition the SAME Kreis universe the 100 m backbone constrains. sub-2:
+  `mid.load_kreis_control_table(restrict_to_kreise=)` filters the national table to the run's Kreise at load.
+- **Consequence / honesty note:** sub-1 is a **scientific-output change of ~0.1% of cells** (100% run
+  ~48/43598 border cells) — their household/person target attribution moves onto their parent's dominant
+  Kreis. **Region-wide per-Kreis sums are provably unchanged** (a 1 km parent is atomic to one resolved Kreis).
+  sub-2 is pure hygiene, no output change (dropped rows were never read). The **realized** synthetic effect is
+  not verifiable in unit tests and needs a small resolved-Kreis A/B rerun of one multi-batch Kreis on felix
+  before it is treated as validated (tracked in memory + SESSION_LOG, not as a separate issue by choice).
+- **Also in PR #175 (#149/#150, fallback-transparency, not output-changing):** shared helper
+  `cells.sum_columns_logging_nan` wired into all four multi-column row-sum sites (make the skipna NaN->0
+  suppression observable); `add_aggregated_controls` raises when ALL source columns are missing. **#163**
+  (14-item fallback-transparency wave 2) was found already implemented+merged via PR #165 and verify-closed.
+- **Evidence:** PR #175 (merged, origin/main 5466b74); TDD (`resolved_kreis_per_cell` border-cell + no-border
+  equivalence, `restrict_to_kreise`); senior-reviewer subagent confirmed identical crosswalk params + 1 km
+  atomicity + `resolved ⊆ kreise`; 1108 popsim tests green. Memory `project-popsim-controls-audit-fix`.
+
+## ADR-0062 — popsim: apportion household-level KREIS controls by household share, not population share (#148) (2026-07-14, PR #176 OPEN)
+
+- **Context (issue #148, measure-first DONE):** when a Kreis is split across PopulationSim batches, each batch
+  targets its share of the Kreis marginal. The share was ALWAYS the batch's population share
+  (POP_TOTAL_100m_adj), applied uniformly — including to HOUSEHOLD-level controls (economic_status,
+  number_of_cars, number_of_bicycles, has_ebike). Where persons-per-household varies across a Kreis's batches
+  the household-level targets are mis-apportioned. Measured on the completed 100% run `popsim_work_allfeat_opt`
+  (60 batches, 8 all-multi-batch Kreise): persons-per-household 1.85-2.25 across Kreise; **~5.9% of the region
+  economic_status household total reallocated across the spatial batches within each Kreis** (max 2046 HH in
+  one batch) — MATERIAL, not the originally-hedged "immaterial".
+- **Decision:** apportion household-level KREIS controls by the batch's HOUSEHOLD share
+  (`HH_TOTAL_CENSUS_COLUMN`); keep the population share for person-level controls (employment / education /
+  trip_class). `folders.build_kreis_control_totals` gains `household_apportion_weights` + `household_control_names`
+  (both default None -> byte-identical legacy); `mid.run_popsim_mid` computes the region-wide household total per
+  resolved Kreis (`kreis_total_hh`) when household controls are active, and RAISES if the HH column is absent
+  with household controls active (no silent fall-back to pop share); `stage.py` collects the household-level
+  attribute-control names (`_ctl.level == "household"`).
+- **Consequence / honesty note:** **scientific-output change** to the WITHIN-Kreis spatial distribution of
+  household-level controls (and anything downstream, e.g. income placement #108). **Region-wide sums provably
+  unchanged** (per-batch household shares partition to 1, same machinery as the pop path). The REALIZED effect
+  needs a small hh-share A/B rerun of one multi-batch Kreis on felix (the measured KPI is the target
+  apportionment, an upper-bound proxy).
+- **Evidence:** PR #176 (open; merges origin/main cleanly after resolving the folders.py conflict with PR #175
+  — combined #150 NaN-logging sum + #148 level-aware weights); TDD incl. end-to-end cross-batch sum invariant
+  + raise guard; senior-reviewer subagent found no correctness defects; 1121 popsim tests green. Memory
+  `project-popsim-controls-audit-fix`.
+
 ---
 
 > **Live status note.** This log is the retrospective *why*. For the current state of every feature
