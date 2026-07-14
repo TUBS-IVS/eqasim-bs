@@ -34,8 +34,9 @@ def _agents():
 
 
 def test_writes_csv_and_gpkg(tmp_path):
-    od_target = pd.DataFrame([("03241", "ein", "car", 5)],
-                             columns=["ars5", "direction", "mode", "n_target"])
+    # Mode-agnostic OD target (BA Pendler has no mode dimension): [ars5, direction, n_target].
+    od_target = pd.DataFrame([("03241", "ein", 5)],
+                             columns=["ars5", "direction", "n_target"])
     paths = write_cordon_validation(str(tmp_path), _agents(), od_target=od_target,
                                     sampling_rate=0.5, crs="EPSG:25832")
     for key in ("commuter_validation", "gates_csv", "gates_gpkg", "summary"):

@@ -341,6 +341,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     if the residual > 0 (rail access too scarce to fully restore the target).
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
+    # OD validation target for the per-run cordon analysis (#134): the full-population
+    # BA inbound SvB flow per external source Kreis, direction "ein". Derived from the
+    # SAME select_inbound_flows frame the agents are expanded from, so the downstream
+    # realized-vs-target check (od_deviation_vs_target) is a consistency / coverage
+    # check rather than an independent validation. Schema [ars5, direction, n_target].
+    od_target = (
+        inbound.groupby("orig_ars", as_index=False)["flow"].sum()
+        .rename(columns={"orig_ars": "ars5", "flow": "n_target"})
+    )
+    od_target["direction"] = "ein"
+    od_target = od_target[["ars5", "direction", "n_target"]]
     agents = expand_to_agents(inbound, sampling_rate)
     n = len(agents)
     if n == 0:
@@ -682,7 +693,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     return dict(persons=persons, trips=trips, activities=activities,
                 locations=locations, vehicles=vehicles,
                 vehicle_types=vehicle_types, households=households,
-                validation=validation, mode_target=mode_target)
+                validation=validation, mode_target=mode_target,
+                od_target=od_target)
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
@@ -1005,7 +1017,8 @@ def _empty_frames(crs):
         households=pd.DataFrame(columns=["household_id", "person_id"]),
         validation=pd.DataFrame(columns=["ars5", "direction", "mode", "entry_kind",
                                          "entry_x", "entry_y", "gate_id"]),
-        mode_target=pd.DataFrame(columns=["direction", "mode", "share_pct_target"]))
+        mode_target=pd.DataFrame(columns=["direction", "mode", "share_pct_target"]),
+        od_target=pd.DataFrame(columns=["ars5", "direction", "n_target"]))
 
 
 def configure(context):
