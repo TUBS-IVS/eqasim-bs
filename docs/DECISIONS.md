@@ -999,7 +999,8 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   that comparison is clean, the speedup is operational, not scientifically validated.
 - **Related:** per-batch `pipeline.h5` is ~15 GB at full pool (12.1 GB = dense `ZENSUS100m_weights`,
   ~215 M rows, 99.9% zeros) and verified dead after batch completion — interim server watcher deletes it;
-  permanent stage.py flag tracked as **issue #153**. Two verified upstream bugs (populationsim v0.10.0):
+  permanent stage.py flag tracked as **issue #153** (fix shipped 2026-07-10 as **PR #155**, default-ON
+  `cleanup_batch_pipeline`; merge pending the felix pytest after the run). Two verified upstream bugs (populationsim v0.10.0):
   missing `MIN_GAMMA` clamp in the python single balancer (NaN risk; `balancers.py:84-89`) and hardcoded
   `converged=True` on no-progress exits (`balancers.py:111-112`) — both bypassed by `USE_NUMBA: true`.
 - **Evidence:** felix `~/wt-kreis-run/logs/run_kreis5.log` (stop/relaunch markers), A/B outputs
@@ -1032,6 +1033,160 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
 - **Evidence:** weight audit scripts (session scratchpad `srv_weight_audit{,2}.py`,
   `srv_zensus_reference_values.py`); codebook weight definitions (SrV2023_Datenkodierung_SciUse.xlsx);
   memory `project-srv2023-braunschweig-data`.
+
+---
+
+### ADR-0057 — Secondary distance distributions rescue MiD coded-time Wege from `wegmin_imp1` instead of dropping them
+
+- **Status:** accepted 2026-07-12 (PR #165, commit `f212d73`; Closes #160). Changes scientific outputs.
+- **Context:** `braunschweig/popsim/distance_distributions.py` built the empirical secondary distance /
+  travel-time distributions (consumed by `CustomDistanceSampler` for all shop/leisure/other/education
+  secondary-activity placement) from MiD Wege clock times `W_SZS/W_SZM/W_AZS/W_AZM`. Those columns carry
+  the MiD design codes 99 ("keine Angabe", ~1%) and 701 ("bei regelmaessigen beruflichen Wegen nicht
+  erhoben" — rbW summary records of regular commuters, ~10%). `mid_time_seconds` NaN'd `travel_time` for
+  these rows and the `travel_time >= 0` filter then silently removed all of them BEFORE any logging — a
+  ~11% loss that is NOT missing-at-random (systematically commuters), biasing the distributions away from
+  the commuter travel profile. This is the same MiD-code pathology for which the sibling consumer
+  `trips.py` already has the dedicated `time_imputation.py` Stage-A cascade; that fix had never been
+  ported to this second, independent consumer.
+- **Decision:** reconstruct `travel_time` for coded-time rows from `wegmin_imp1` (MiD's own imputed
+  per-trip duration in minutes; `* 60` -> seconds), the exact same primary source Stage A trusts for a
+  trip's OWN duration. Only rows whose `wegmin_imp1` is itself coded/missing
+  (`>= WEGMIN_CODE_THRESHOLD`, reused from `time_imputation.py`) are dropped. An explicit
+  observed / imputed / dropped rate is logged every run, with a `CODED_TIME_DROP_WARN_RATE = 2%`
+  escalation (per the mandatory no-silent-fallback rule).
+- **Rejected alternative:** reusing the full `time_imputation.impute_chain_times` cascade — it
+  reconstructs whole per-person day schedules (RNG-seeded anchor/duration pools) because `trips.py` needs
+  valid absolute clock times; this aggregate stage only needs a DURATION as a binning key, so the
+  lighter, fully-deterministic `wegmin_imp1` reuse is preferred (no RNG, no chain machinery).
+- **Consequence:** future `popsim_mid` runs using the by-purpose / shop / leisure / other secondary
+  distance distributions change quantitatively (commuter-relevant trips now included). The running kreis5
+  100% run produced its secondary-distance stage with the old code — a re-run decision is tracked in
+  PROJECT_BACKLOG.md. Part of the same wave: **#161** (fleet Gemeinde-tilt name normalization),
+  **#162** (canonical `EMPLOYED_TAET` in weekend matching), **#163** (14 fallback-transparency items) —
+  those are bug/instrumentation fixes, not separate architectural decisions.
+- **Evidence:** PR #165; commit `f212d73`; `braunschweig/popsim/distance_distributions.py` Step 3b +
+  module docstring; `braunschweig/popsim/time_imputation.py`; memory `project-audit-wave-2026-07-12`.
+
+---
+
+### ADR-0058 — employment_status Phase-0 measured: uncalibrated P_BKAT donor already fits MiD P9 well; do NOT build the Phase-1 soft control
+
+- **Status:** accepted 2026-07-13. Measurement only — no code/output change. Supersedes the
+  "Phase 1 conditional on Phase-0" clause in the employment_status feature (PR #168 MERGED).
+- **Context:** `employment_status` (7-class MiD-P9 taxonomy, derived in `assembly.build_persons`
+  from the MiD `P_BKAT` donor column) was shipped deliberately as Phase 0 = MEASURE FIRST, no
+  calibration. The open question was whether to add a Phase-1 per-Kreis SOFT popsim control on the
+  collapsed robust classes (vollzeit / teilzeit / marginal+azubi / not). That decision was made
+  conditional on how well the UNCALIBRATED attribute already matches the independent MiD 2023 P9
+  reference (`eqasim-data/data/braunschweig/mid/mid2023_P9.csv`, "Personen ab 14 Jahre"). NB:
+  `employment_status` is never raked/steered to P9, so this is genuine INDEPENDENT validation, not
+  a fit check.
+- **Decision:** the Phase-0 fit is already good, so **Phase 1 (soft control) is NOT built** — in
+  line with the project's measure-before-calibrating / anti-overfitting principle. Measured on the
+  existing kreis5 100% population (8 ZGB Kreise, 1,124,108 persons, age 14+), reusing the real
+  validation code (`controls.build_registry` -> `control_validation.evaluate_all` ->
+  `quality_assessment.assess`): **SRMSE 0.194, mean |Δ| 1.88 pp, grade "good", 100% of the 56
+  Kreis×class cells within 10 pp, 92.9% within 5 pp, r² 0.979.** Region-wide class deltas are all
+  small; the only notable ones are `in_ausbildung` +1.7 pp (3.6% vs 1.9%) and `vollzeit` +1.6 pp,
+  with `geringfuegig` -1.2 pp and `nicht_erwerbstaetig` -1.2 pp. A soft control would mostly only
+  move `in_ausbildung`, which is better addressed at the source (P_BKAT code 6 vs the P9
+  in_ausbildung definition / age base) than by raking.
+- **How measured (honesty caveats):** reused the cached kreis5 balancing (verified: single process,
+  no populationsim workers, no signature purge — the 60 batches were reused, no ~4.5 h re-balance).
+  The employment_status column was regenerated by force-recomputing `braunschweig.popsim.stage`
+  (a trivial source-comment bump, since synpp `get_stage_hash` only hashes the stage module, not
+  the `assembly.py`/`attributes.py` helpers). The measurement was computed DIRECTLY off the cached
+  `popsim.stage` persons frame (Kreis = home-cell `KREIS`, equivalent to the homes.gpkg spatial join
+  `run_population_validation` uses), skipping the irrelevant secondary/work location chainsolvers and
+  MATSim — employment_status is a pure person attribute consumed by neither. This population predates
+  **#170** (Azubi employment_target fix, MERGED 2026-07-13) and the GEO_KREIS zfill fix, so the
+  canonical number should be re-confirmed on the next full-main run.
+- **Consequence / open points:** (1) the definitive employment_status validation drops out of the
+  next full "everything on main" 100% run (via `analysis_suite` population_validation) — re-confirm
+  the fit and whether #170 changed the `in_ausbildung` skew; (2) **#167** (SPC_BY_P_BKAT misreads
+  P_BKAT as Berufskategorie) remains OPEN and dormant — a separate P_BKAT-meaning bug.
+- **Evidence:** measurement script `measure_empstatus.py` (scratchpad; reuses committed validation
+  code); MiD reference `mid2023_P9.csv`; PR #168 (feature); memory
+  `project-employment-status-and-pbkat-bugs`.
+
+### ADR-0059 — Large-HH (6+) validation gap is donor-bound, not weight-fixable; SrV rejected as a donor supplement
+
+- **Status:** accepted 2026-07-13. Diagnostic session — no code/output change. Refines the
+  standing "household composition is donor-bound" note (§ backlog, ADR-0056) with concrete numbers
+  and a specific rejected option.
+- **Context:** the `household_size` validation control on the newest synthesis (**kreis5 100% run**,
+  2026-07-10, controls export 2026-07-12, `output_bs_100pct_allfeat_popsim_kreis5`) still shows the
+  6+ class under target: **2.92% of persons vs Zensus-2022 reference 4.75% = 61.5% of reference,
+  Δ -1.83 pp** — the one material outlier. The 5-person gap is now essentially closed (96.5%, was
+  88.5% in the 06-30 export). Question raised: can we (a) weight the 6+ control harder, and/or
+  (b) enrich the donor pool with SrV 2023 households to close it?
+- **Decision — (a) importance is exhausted:** the kreis5 run already used importance profile
+  `optimized_2026_06_30`, in which the 6+ control (`6_Personen_und_mehr_..._ZENSUS100m`) carries
+  **importance 2000** (4× the size-1-5 controls at 500) with `max_expansion_factor: 100`, and 6+
+  still hits only 61.5%. This empirically confirms the gap is **donor-bound, not weight-fixable**:
+  raising importance further only makes the balancer sacrifice the well-fit controls (age×sex, HH
+  total) for a target the seed's fixed person-bundles cannot express. Do NOT raise `six` further.
+- **Decision — (b) SrV rejected as a donor supplement:** we DO hold SrV 2023 record-level microdata
+  (`eqasim-data/data/braunschweig/srv/srv2023_raw/` — Haushalte/Personen/Wege.csv + SPSS + codebook),
+  so it is technically feasible. But **SrV Braunschweig+RGB has only 63 six-plus households = 0.78%**
+  of 8,106 — the SAME rarity as the MiD full-pool seed (1,661 distinct 6+ = 0.76%). Large HH are
+  ~1% of the real population; every general-population survey mirrors that scarcity, so SrV adds no
+  large-HH depth (~+4% distinct records at identical share). Three further costs: (1) **circularity**
+  — SrV is already our per-Kreis TARGET source (ADR-0055 MiD=donor / SrV=targets); SrV-as-donor would
+  fit SrV to SrV and destroy validation independence; (2) **schema harmonization** — the donor supplies
+  person attributes AND trip chains, and SrV uses different variable coding (`V_ANZ_PERS`, `GEWICHT_HH_*`,
+  its own Wege taxonomy) vs MiD (`H_GR`, `H_GEW`, `P_TAET`, `bildung1/2`); (3) different weight base
+  (national MiD vs regional SrV). ADR-0056 also found the full national pool fits better than
+  regional/per-stratum donors. SrV's genuine value stays where it is: per-Kreis targets and a local
+  trip/mobility source — not the donor.
+- **Candidate lever (UNVERIFIED, deferred):** the plausible mechanism is that 6+ is controlled at
+  ZENSUS100m, where per-cell targets are tiny (~0.3-0.4 HH) and integerization rounds them to 0 across
+  thousands of cells, "crumbling away" the rare class. Controlling 6+ at a COARSER geography
+  (1km / Kreis) would give integer-friendly targets. **Not yet verified** whether PopulationSim
+  integerizes at 100m regardless of control geography (which would blunt the fix) — must be checked
+  before any implementation. Tracked under #99 (regional-correct popsim); no issue opened yet
+  (verify-first).
+- **Evidence:** kreis5 controls `output_bs_100pct_allfeat_popsim_kreis5/analysis/population_validation/`
+  (on felix); seed 6+ count from `popsim_work_allfeat_opt/batch_000/data/seed_households.csv`; SrV 6+
+  count from `SrV2023_Haushalte.csv` (`V_ANZ_PERS`); importance in the run's `controls.csv`;
+  `control_spec.py` IMPORTANCE_PROFILES; ADR-0055 (SrV=targets), ADR-0056 (full-pool > per-stratum);
+  memory `project-large-hh-6plus-donor-bound`.
+
+---
+
+### ADR-0060 — Correct the in_ausbildung over-representation with an SrV+MiD per-Kreis employment_status control (14+)
+
+- **Status:** accepted 2026-07-13/14. PR #173 (Closes #172, MERGED). Changes scientific outputs (flag default-on;
+  OFF byte-identical). Follows ADR-0058 (which measured the attribute and deferred a Phase-1 control); this
+  ADR builds a control for the ONE class that materially deviated (in_ausbildung), not the whole taxonomy.
+- **Context:** synthetic `employment_status = in_ausbildung` is ~1.9x over-represented (3.6% vs the regional
+  truth ~1.9%). Root cause (issue #172): NOT an age-structure or reference artifact — two independent regional
+  references agree (MiD P9 1.93% and the newly extracted **SrV V_ERW=8** 1.87%). It is a two-stage
+  compositional inflation of Azubis among young employed persons: MiD survey 24% -> completed-donor SEED 32%
+  (member completion) -> balanced 40% (balancer up-weighting). Because `employment_status` was not a control,
+  it floated free of the regional evidence.
+- **Decision:** register `employment_status` as a per-Kreis soft PopulationSim control raked to a blended
+  MiD-P9 + SrV-V_ERW target (`target2026_employment_status_by_kreis.csv`, via `blend_kreis_target` with
+  Dirichlet shrinkage for the thin per-Kreis Azubi cells). The SrV `V_ERW` variable (codeplan
+  `SrV2023_Datenkodierung_SciUse.xlsx`) cleanly separates Schueler(6)/Student(7)/**In Ausbildung(8)**; only
+  V_ERW=8 maps to `in_ausbildung`, apples-to-apples with the P_BKAT-derived seed. The control uses a **14+
+  age universe on BOTH halves** (an `& (persons.HP_ALTER >= 14)` clause in the seed expression AND a
+  14+ per-Kreis total, `person_total_by_kreis_min_age`) so target and realized share the P9/SrV "ab 14 Jahre"
+  base — avoiding the #97-class universe mismatch. `employment_status` is derived onto the popsim seed in both
+  seed paths (load_mid_seed + project_completed_seed), mirroring trip_class.
+- **Consequence / honesty note:** making `employment_status` a steering control means its
+  population_validation control is now `independence="partially_independent"` (its P9 target is one input to
+  the steering blend), NOT `independent` — corrected per the MANDATORY "convergence != independent validation"
+  rule (final-review finding, commit 453cd59). The canonical in_ausbildung re-measure drops out of the next
+  full "everything on main" run.
+- **Rejected alternatives:** (a) fixing member completion alone (the balancer half would remain; a control
+  pins the output regardless); (b) an SrV PT-subscription (`V_OEV_FK`) control — it is a usage-conditional
+  ticket-TYPE, not a population Abo-ownership rate, and MiD is the better source; (c) SrV migration (`V_MIGR`)
+  — a separate feature, dropped.
+- **Evidence:** PR #173; 1-Kreis popsim smoke (Braunschweig, 8 workers): control rakes in_ausbildung
+  **2.98% (unraked kreis5) -> 2.09%** (target 2.01%); commits 400c344..453cd59; spec/plan under
+  `docs/superpowers/`; memory `project-employment-status-and-pbkat-bugs`, `feedback-popsim-smoke-scoping`.
 
 ---
 

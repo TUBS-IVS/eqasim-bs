@@ -67,6 +67,35 @@ def test_select_load_columns_no_duplicate_when_input_already_present():
 
 # --- Task 3: 6-column Zensus age-share targets ---
 
+def test_group_cell_pop_logs_nan_suppression(caplog):
+    """The employment-grid single-year row-sum is the third aggregation site of
+    issue #150. ``_group_cell_pop`` sums ``{prefix}_AGE_<year>`` columns with the
+    pandas default ``skipna=True``, so a Zensus privacy-suppressed (NaN) component
+    silently becomes 0. It must route through ``cells.sum_columns_logging_nan`` so
+    that suppression is observable (CLAUDE.md fallback-transparency rule)."""
+    cells = pd.DataFrame({
+        "M_AGE_40": [1.0, float("nan")],
+        "M_AGE_41": [10.0, 20.0],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.cells"):
+        out = eg._group_cell_pop(cells, "M", 40, 41, min_age=16, single_year_max=100)
+    # skipna behaviour is preserved: the NaN is treated as 0 inside the sum.
+    assert out.iloc[0] == pytest.approx(11.0)
+    assert out.iloc[1] == pytest.approx(20.0)
+    # ...but it is now counted and logged rather than passing through silently.
+    nan_logs = [r for r in caplog.records if "NaN" in r.message]
+    assert nan_logs, "NaN suppression in _group_cell_pop was not logged"
+
+
+def test_group_cell_pop_no_matching_columns_yields_zero_series():
+    """No present single-year column -> all-zero Series aligned to the index
+    (behaviour preserved when routed through the helper)."""
+    cells = pd.DataFrame({"OTHER": [1.0, 2.0]}, index=[7, 8])
+    out = eg._group_cell_pop(cells, "M", 40, 49, min_age=16, single_year_max=100)
+    assert list(out.index) == [7, 8]
+    assert (out == 0.0).all()
+
+
 def test_per_cell_targets_5groups_sum_to_kreis_level_times_ageshare():
     # 1 Kreis, 2 cells. Males: cell c1 has 100 in 40_49 band, c2 has 300 in 40_49 + 50 in 16_29.
     cells = pd.DataFrame({

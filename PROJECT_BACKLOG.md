@@ -40,6 +40,64 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-13/14) — employment_status: Phase-0 measured (ADR-0058), then #167 fixed + in_ausbildung control built
+
+Phase-0 measurement (ADR-0058, RUNS `empstatus-measure-2026-07-13`): the uncalibrated attribute fit the
+independent MiD P9 well overall (SRMSE 0.194, grade "good"); only `in_ausbildung` deviated materially
+(+1.7pp). Two threads shipped on 2026-07-13/14:
+
+1. **`in_ausbildung` over-representation — ADDRESSED with an SrV+MiD per-Kreis control → PR #173 (MERGED, Closes #172, ADR-0060).**
+   RCA confirmed a real ~1.9× inflation (synthetic 3.6% vs regional truth ~1.9%, MiD P9 AND SrV V_ERW=8
+   agree), 2-stage compositional (member completion + balancer), NOT age/reference. Built a per-Kreis
+   soft control raked to a blended MiD-P9 + SrV-V_ERW target, 14+ universe on both halves, seed derived in
+   both paths, flag default-on. Smoke: rakes in_ausbildung 2.98%→2.09% (target 2.01%). This SUPERSEDES the
+   earlier "Phase-1 dropped" note for the in_ausbildung class specifically (the rest of the taxonomy fit
+   fine, so only this class is controlled). PR #173 MERGED. **Follow-up: factor a reusable
+   1km-cell control smoke (planned in the spec, not yet done).**
+2. **#167 SPC_BY_P_BKAT misread — FIXED → PR #171 (MERGED).** Dropped the invalid occupation crosswalk;
+   `socioprofessional_class` now always from broad activity (no occupation var exists in MiD). Correction:
+   NOT dormant — SPC is an active `trips.py` Stage-B chain-matching key, so the fix changes trip-chain
+   outputs for the replaced subset. PR #171 MERGED.
+3. **Re-confirm on the next full "everything on main" run.** Both the employment_status control effect and
+   the SPC fix land canonically there; `analysis_suite` population_validation re-measures in_ausbildung
+   (now labeled `partially_independent`, since it is a steering control — ADR-0060).
+4. **Trivial:** orphaned synpp cache entries from the Phase-0 measurement remain in the shared cache;
+   harmless. PT-Abo (SrV `V_OEV_FK`) and migration (`V_MIGR`) considered and NOT pursued (see ADR-0060).
+
+### New (2026-07-13) — Large-HH (6+) validation gap: donor-bound, levers narrowed (ADR-0059)
+
+The `household_size` 6+ class still under-fits on the newest kreis5 100% run (2.92% vs ref 4.75% =
+61.5% of reference); the 5-person gap is now essentially closed. Two levers ruled out this session
+(see ADR-0059, memory `project-large-hh-6plus-donor-bound`):
+
+1. **Importance is EXHAUSTED — do not raise `six` further.** The run already weights 6+ at importance
+   2000 with `max_expansion_factor: 100` and still hits only 61.5%; the gap is donor-bound, not
+   weight-fixable.
+2. **SrV rejected as a donor supplement.** SrV Braunschweig+RGB has only 63 six-plus HH (0.78%) — the
+   same rarity as MiD (1,661 / 0.76%) — plus circularity (SrV is already our per-Kreis TARGET source,
+   ADR-0055) and schema/weight-harmonization cost. Not worth it.
+3. **Candidate lever (UNVERIFIED, verify-first before any issue):** control 6+ at a coarser geography
+   (1km / Kreis) so its integer targets survive 100m integerization rounding. Must first verify whether
+   PopulationSim integerizes at 100m regardless of control geography — if so the fix is blunted. Under
+   #99 (regional-correct popsim); no issue opened yet.
+
+### New (2026-07-12) — Full-pipeline bug-audit wave -> PR #165 (MERGED), issues #160-#163
+
+An orchestrated read-only audit of the whole synthesis pipeline (vs `origin/main` `d92328e`) surfaced
+**19 verified bugs**, all fixed the same day on `fix/audit-wave-20260712` -> **PR #165 (MERGED)**. Open
+follow-ups:
+
+1. **Merge PR #165** after the canonical popsim pytest passes on felix (local env has 11 known
+   pre-existing failures). PR Closes **#160** (crit, distance_distributions coded-time drop), **#161**
+   (powertrain Gemeinde tilt umlaut/suffix join), **#162** (weekend_plan_match employment set); works the
+   14-item **#163** fallback-transparency checklist.
+2. **One-time popsim batch purge on next server run.** The #163 batch-config-signature fix now hashes the
+   `census_source` composition, so the first run against a persistent `work_dir` after this merges will
+   purge + rebuild all completed batches. Schedule it so it does NOT collide with the live kreis5 run.
+3. **Re-run decision for kreis5 stages built on old code.** The running 100% kreis5 run produced the fleet
+   powertrain (2026-07-11) and secondary-distance stages with the pre-#160/#161 code. Decide whether to
+   selectively re-run those stages after the merge. See memory `project-audit-wave-2026-07-12`.
+
 ### New (2026-07-10) — Full-pool popsim perf regime (ADR-0056) + follow-ups #153 / quality A/B / upstream reports
 
 The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true`
@@ -47,13 +105,18 @@ The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: fa
 Open follow-ups, in order:
 
 1. **Quality A/B vs float reference (BLOCKS calling the speedup validated).** Float reference batch
-   running niced on felix (`~/bench_batch_float`, done ~2026-07-11). Compare vs the INT batch_000:
-   100m composition, donor diversity (INT: 3,140 distinct donors / 13,845 HH), person marginals,
-   control fit. 1km HH totals already exact in both.
-2. **Issue #153 — stage.py `cleanup_batch_pipeline` flag (default ON):** delete per-batch
-   `pipeline.h5` (~15 GB dead weight at full pool) after verified completion. Interim server watcher
-   (`~/cleanup_batch_h5.sh`) covers the current run only and must be restarted for future full-pool
-   runs until this lands. PR after the current run finishes.
+   running niced on felix (`~/bench_batch_float`, launched 2026-07-10 14:11, done ~2026-07-11 midday).
+   Compare vs the INT batch_000: 100m control fit (MAE/SRMSE/paired win-tie-loss), donor diversity
+   (INT: 3,140 distinct donors / 13,845 HH), person marginals. 1km HH totals already exact in both.
+   **Harness READY + self-tested (2026-07-10):** one command, `ssh felix '~/ab_quality/run_ab.sh'`
+   (script reuses `integerizer_quality.cell_error`; self-test batch_000-vs-itself all-zero, 44/44
+   controls resolved; float-bench inputs verified byte-identical to batch_000).
+2. **Issue #153 — DONE: PR #155 MERGED.** `cleanup_batch_pipeline` flag (default ON,
+   explicit in both server configs) deletes per-batch `pipeline.h5` (~15 GB dead weight at full pool)
+   after VERIFIED completion (incl. skipped leftovers; failed batches keep the h5 for PopulationSim
+   resume; OSError-hardened). TDD, 9 new tests, 44 batch tests green locally. Pre-merge: canonical
+   popsim pytest on felix (local matsim shadowing) after the current run ends. Interim server watcher
+   (`~/cleanup_batch_h5.sh`) still covers the CURRENT run (its code predates the fix).
 3. **Optional upstream reports (activitysim/populationsim v0.10.0):** (a) missing `MIN_GAMMA` clamp
    in the python single balancer (NaN risk), (b) hardcoded `converged=True` on no-progress exit,
    (c) dense final-geography weight table checkpointed but never read. Draft on request.

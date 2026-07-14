@@ -531,6 +531,82 @@ def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
     assert not (tmp_path / "b0" / "data" / "control_totals_KREIS.csv").exists()
 
 
+def _write_kreis_control_parquets(kreis_dir, ars_kreis):
+    """Write the three cleancensus kreis_* topic parquets for ``ars_kreis``.
+
+    Mirrors the shapes ``merge_kreis_control_tables`` expects so
+    ``load_kreis_control_table`` can be exercised end-to-end from disk.
+    """
+    n = len(ars_kreis)
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "ERWERBSTAT_KURZ_STP__11": [10.0] * n}).to_parquet(
+        kreis_dir / "kreis_erwerbsstatus.parquet")
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "SCHULABS_STP__21": [1.0] * n}).to_parquet(
+        kreis_dir / "kreis_schulabschluss.parquet")
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "BERUFABS_AUSF_STP__2": [3.0] * n}).to_parquet(
+        kreis_dir / "kreis_berufl_abschluss.parquet")
+
+
+def test_load_kreis_control_table_loads_all_national_rows_by_default(tmp_path):
+    # Without a restriction the full national table (all Kreise on disk) is returned.
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102", "09999", "16077"])
+    table = mid.load_kreis_control_table(tmp_path)
+    assert set(table["ARS_kreis"]) == {"03101", "03102", "09999", "16077"}
+
+
+def test_load_kreis_control_table_restricts_to_run_kreise(tmp_path):
+    # issue #147: the national tier3 table (~400 Kreise) is restricted to the run's
+    # Kreise at load time so the accumulator carries only rows that are actually
+    # looked up downstream. Kreise not on disk are simply absent (no phantom rows).
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102", "09999", "16077"])
+    table = mid.load_kreis_control_table(
+        tmp_path, restrict_to_kreise=["03101", "03102", "03153"])
+    assert set(table["ARS_kreis"]) == {"03101", "03102"}
+    # The out-of-scope national Kreise are dropped.
+    assert "09999" not in set(table["ARS_kreis"])
+    assert "16077" not in set(table["ARS_kreis"])
+
+
+def test_load_kreis_control_table_restrict_normalises_kreis_width(tmp_path):
+    # The run scope may arrive as ints / unpadded strings; restriction must match the
+    # zero-padded 5-digit ARS_kreis the table stores (e.g. 3101 -> "03101").
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102"])
+    table = mid.load_kreis_control_table(tmp_path, restrict_to_kreise=[3101])
+    assert set(table["ARS_kreis"]) == {"03101"}
+
+
+def test_resolved_kreis_per_cell_uses_dominant_kreis_per_1km_parent():
+    # issue #147 sub-item 1: the per-Kreis attribute-control universe must key on the
+    # RESOLVED dominant Kreis per 1 km parent (matching folders.build_kreis_control_totals),
+    # not the raw ARS[:5]. A border cell whose 1 km parent is dominated (by
+    # POP_TOTAL_100m_adj) by a neighbouring Kreis is attributed to that dominant Kreis.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB", "cC"],
+        "ZENSUS1km": ["P1", "P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031020000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 10.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    # Parent P1 is dominated by Kreis 03101 (100 vs 10), so cB (raw 03102) -> 03101.
+    assert list(resolved) == ["03101", "03101", "03153"]
+    assert list(resolved.index) == list(cells.index)
+
+
+def test_resolved_kreis_per_cell_matches_raw_when_no_border_cells():
+    # Each 1 km parent wholly inside one Kreis -> resolved Kreis equals raw ARS[:5]
+    # (interior cells unchanged; only border cells shift under the alignment).
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB"],
+        "ZENSUS1km": ["P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    assert list(resolved) == ["03101", "03153"]
+
+
 def test_merge_kreis_control_tables_joins_topics_on_ars():
     # The three cleancensus kreis_* topic tables (erwerb/schul/berufl) merge into one
     # table keyed by ARS_kreis carrying all STP source columns; duplicate label cols

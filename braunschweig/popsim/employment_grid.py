@@ -19,6 +19,7 @@ import logging
 
 import pandas as pd
 
+from braunschweig.popsim import cells as _cells
 from braunschweig.popsim.zensus_employment_age import AGE_GROUPS
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,12 @@ def _group_cell_pop(cells, prefix, lo, hi, min_age, single_year_max):
     top = single_year_max if hi >= single_year_max else hi
     cols = [f"{prefix}_AGE_{y}" for y in range(max(lo, min_age), top + 1)
             if f"{prefix}_AGE_{y}" in cells.columns]
-    return cells[cols].sum(axis=1) if cols else pd.Series(0.0, index=cells.index)
+    # skipna suppression (a Zensus-suppressed single-year cell -> 0 inside the
+    # row-sum) is made observable per issue #150 (fallback-transparency rule,
+    # CLAUDE.md); the helper preserves the identical skipna sum and returns an
+    # all-zero Series when no single-year column is present.
+    return _cells.sum_columns_logging_nan(
+        cells, cols, f"employment-grid single-year sum {prefix} {lo}-{hi}")
 
 
 def select_load_columns(
