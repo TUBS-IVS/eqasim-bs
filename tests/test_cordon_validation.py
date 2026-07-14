@@ -20,6 +20,7 @@ from braunschweig.data.cordon.validation import (  # noqa: E402
     deviation_vs_target,
     gate_flows,
     modal_split_deviation,
+    od_deviation_vs_target,
 )
 
 
@@ -59,6 +60,38 @@ def test_deviation_vs_target_scales_by_sampling_rate():
     assert row["n_scaled"] == 6
     assert row["abs_dev"] == 1
     assert abs(row["pct_dev"] - 20.0) < 1e-6
+
+
+def test_od_deviation_vs_target_aggregates_over_mode():
+    """od_deviation_vs_target sums realized counts over mode before comparing.
+
+    The BA Pendler OD target has no mode dimension, so the per-(Kreis, direction)
+    realized count is the sum over modes. Kreis 03241 ein = 3 car + 1 pt = 4;
+    scaled at 0.5 -> 8; target 10 -> abs_dev -2, pct_dev -20 %.
+    """
+    c = counts_by_kreis_direction_mode(_agents())
+    od_target = pd.DataFrame([
+        ("03241", "ein", 10),
+    ], columns=["ars5", "direction", "n_target"])
+    dev = od_deviation_vs_target(c, od_target, sampling_rate=0.5)
+    # No mode column in the OD-level output.
+    assert "mode" not in dev.columns
+    row = dev[(dev["ars5"] == "03241") & (dev["direction"] == "ein")].iloc[0]
+    assert row["n"] == 4            # 3 car + 1 pt, summed over mode
+    assert row["n_scaled"] == 8     # 4 / 0.5
+    assert row["abs_dev"] == -2     # 8 - 10
+    assert abs(row["pct_dev"] + 20.0) < 1e-6
+
+
+def test_od_deviation_vs_target_zero_target_is_nan():
+    """A realized direction absent from the target (n_target=0) yields NaN pct_dev, not inf."""
+    c = counts_by_kreis_direction_mode(_agents())   # has an "aus" direction too
+    od_target = pd.DataFrame([("03241", "ein", 8)],
+                             columns=["ars5", "direction", "n_target"])
+    dev = od_deviation_vs_target(c, od_target, sampling_rate=1.0)
+    aus = dev[(dev["ars5"] == "03241") & (dev["direction"] == "aus")].iloc[0]
+    assert aus["n_target"] == 0
+    assert pd.isna(aus["pct_dev"])
 
 
 def test_modal_split_deviation_pp():
