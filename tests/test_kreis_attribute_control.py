@@ -168,13 +168,28 @@ def test_registry_has_four_entries_with_expected_tiers():
 
 
 def test_registry_has_five_entries_with_expected_tiers():
+    # Superseded by test_registry_has_six_entries_with_expected_tiers (feature #172 task 4
+    # adds the person-level employment_status entry); kept (renamed in spirit, not name)
+    # so the historical five remain covered too.
     by_name = {c.name: c for c in REGISTRY}
-    assert set(by_name) == {
+    assert {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-    }
+    } <= set(by_name)
     assert by_name["trip_class"].tier == "soft"
     assert by_name["trip_class"].level == "person"
     assert by_name["trip_class"].seed_column == "trip_class"
+
+
+def test_registry_has_six_entries_with_expected_tiers():
+    by_name = {c.name: c for c in REGISTRY}
+    assert set(by_name) == {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+        "employment_status",
+    }
+    assert by_name["employment_status"].tier == "soft"
+    assert by_name["employment_status"].level == "person"
+    assert by_name["employment_status"].seed_column == "employment_status"
+    assert by_name["employment_status"].min_age == 14
 
 
 def test_cars_control_columns_and_predicates():

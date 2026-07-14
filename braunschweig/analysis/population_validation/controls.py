@@ -12,6 +12,7 @@ import pandas as pd
 
 from braunschweig.data.mid import reference_tables as RT
 from braunschweig.data.cordon.network import ZGB_KREIS_PREFIXES
+from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_CATEGORIES
 
 if TYPE_CHECKING:
     from braunschweig.analysis.population_validation.population_source import PopulationFrames
@@ -581,8 +582,9 @@ def bikes_target(data_path: str) -> pd.DataFrame:
 def employment_target(data_path: str) -> pd.DataFrame:
     """Per-Kreis employed share from MiD 2023 Tabelle P9.
 
-    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` (percentages summing to
-    ~100 per Kreis). The employed share is the sum of the SIX employment columns
+    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` via the shared
+    :func:`braunschweig.popsim.mid_p9.read_p9_kreis_table` reader (percentages
+    summing to ~100 per Kreis). The employed share is the sum of the SIX employment columns
     (``vollzeit`` + ``teilzeit`` + ``geringfuegig`` + ``sonstiges`` +
     ``erwerbstaetig_unspec`` + ``in_ausbildung``) over the substantive row total,
     clipped to [0, 1]; ``not_employed`` is the complement. Two long rows per
@@ -605,9 +607,9 @@ def employment_target(data_path: str) -> pd.DataFrame:
     non-employed -- from the synthetic denominator while MiD keeps it, biasing
     the realized employed share upward.)
     """
-    path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
-    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
-    df = df[df["ars5"] != "03ZGB"].copy()
+    from braunschweig.popsim.mid_p9 import read_p9_kreis_table
+
+    df = read_p9_kreis_table(data_path)
     # in_ausbildung is on the EMPLOYED side (MiD erwerb definition; issue #169).
     employ_cols = ["vollzeit", "teilzeit", "geringfuegig", "sonstiges",
                    "erwerbstaetig_unspec", "in_ausbildung"]
@@ -637,19 +639,20 @@ def employment_target(data_path: str) -> pd.DataFrame:
 
 
 # MiD P9 seven-class employment-extent taxonomy (Umfang der Erwerbstaetigkeit).
-# Order MUST mirror braunschweig.popsim.attributes.EMPLOYMENT_STATUS_CATEGORIES
-# (Task 1): both are keyed to the MiD P_BKAT codebook order 1..7, so a silent
-# reordering here would misalign the realized categories against this target.
-_EMPLOYMENT_STATUS_CATEGORIES: tuple[str, ...] = (
-    "vollzeit", "teilzeit", "geringfuegig", "sonstiges",
-    "erwerbstaetig_unspec", "in_ausbildung", "nicht_erwerbstaetig",
-)
+# Imported directly from braunschweig.popsim.attributes.EMPLOYMENT_STATUS_CATEGORIES
+# (Task 1) instead of re-listed here, so the two class lists cannot silently
+# diverge -- both are keyed to the MiD P_BKAT codebook order 1..7 (2026-07-13
+# DRY refactor onto the shared braunschweig.popsim.mid_p9 reader, feature #172
+# Task 2).
+_EMPLOYMENT_STATUS_CATEGORIES: tuple[str, ...] = EMPLOYMENT_STATUS_CATEGORIES
 
 
 def employment_status_target(data_path: str) -> pd.DataFrame:
     """Per-Kreis seven-class employment-extent target from MiD 2023 P9.
 
-    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` (the same file
+    Reads ``<data_path>/braunschweig/mid/mid2023_P9.csv`` via the shared
+    :func:`braunschweig.popsim.mid_p9.read_p9_kreis_table` /
+    :func:`braunschweig.popsim.mid_p9.p9_class_shares` readers (the same file
     :func:`employment_target` reads, but keeping the full P_BKAT-derived class
     detail instead of collapsing it to a binary employed/not_employed split).
     Each class share = class value / substantive-row-total (the sum of the
@@ -657,12 +660,13 @@ def employment_status_target(data_path: str) -> pd.DataFrame:
     convention as :func:`employment_target`. ``geo_id`` is the 5-digit Kreis
     ``ars5``; the ZGB aggregate row (``03ZGB``) is excluded.
 
-    This target is registered ``independence="independent"``: the synthetic
-    ``employment_status`` attribute (derived from the MiD P_BKAT donor column
-    during synthesis) is never raked/steered to this P9 table by popsim, so a
-    deviation measures agreement with a real reference the synthesis was not
-    fit to, not IPF/raking convergence (CLAUDE.md: convergence is not
-    validation).
+    This target is registered ``independence="partially_independent"``: popsim
+    steers the synthetic ``employment_status`` attribute per Kreis (feature
+    #172) via the ``target2026_employment_status_by_kreis.csv`` blend (MiD P9
+    x SrV V_ERW); this pure-MiD-P9 table is only ONE input to that blend, so
+    the comparison mostly measures the blend/shrinkage distance, not fully
+    independent agreement with reality (same framing as the ``cars_per_hh`` /
+    ``bicycles_per_hh`` controls; CLAUDE.md: convergence is not validation).
 
     Raises
     ------
@@ -671,20 +675,16 @@ def employment_status_target(data_path: str) -> pd.DataFrame:
         malformed/corrupt input row) -- per the project's no-silent-fallback
         rule, this cannot be masked by e.g. dividing by zero into NaN shares.
     """
-    path = f"{data_path}/braunschweig/mid/mid2023_P9.csv"
-    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
-    df = df[df["ars5"] != "03ZGB"].copy()
-    cats = list(_EMPLOYMENT_STATUS_CATEGORIES)
-    denom = df[cats].fillna(0.0).sum(axis=1)
-    if (denom <= 0).any():
-        bad = df.loc[denom <= 0, "ars5"].tolist()
-        raise ValueError(f"mid2023_P9.csv: non-positive class total for {bad}")
+    from braunschweig.popsim.mid_p9 import p9_class_shares, read_p9_kreis_table
+
+    df = read_p9_kreis_table(data_path)
+    shares = p9_class_shares(df)
     rows = []
     for i, ars5 in enumerate(df["ars5"]):
-        for c in cats:
+        for c in shares.columns:
             rows.append({
                 "geo_id": str(ars5), "category": c,
-                "target_share": float(df[c].fillna(0.0).iloc[i]) / float(denom.iloc[i]),
+                "target_share": float(shares[c].iloc[i]),
             })
     return pd.DataFrame(rows)
 
@@ -910,16 +910,19 @@ def build_registry(data_path: str) -> list[Control]:
         ("employed", "not_employed"), employment_target,
         age_min=14, age_max=None, derive=_employed_label))
 
-    # --- Employment status detail (REAL target, MiD 2023 P9; independent) ----
-    # Seven-class employment-extent cross-check (Phase 0) alongside the coarse
-    # binary "employment" control above. employment_status is derived from the
-    # MiD P_BKAT donor column during synthesis but is never raked/steered to
-    # this P9 table -- independence="independent" (a genuine cross-check, not a
-    # fit check). Same age 14+ (no upper bound) P9 person base as "employment".
+    # --- Employment status detail (REAL target, MiD 2023 P9; partially indep.) ----
+    # Seven-class employment-extent cross-check alongside the coarse binary
+    # "employment" control above. popsim now steers employment_status per Kreis
+    # (feature #172) via the target2026_employment_status_by_kreis.csv blend
+    # (MiD P9 x SrV V_ERW); this pure-MiD-P9 table is only ONE input to that
+    # blend, so the comparison mostly measures the blend/shrinkage distance,
+    # not independent reality -- independence="partially_independent", same
+    # framing as cars_per_hh/bicycles_per_hh above (NOT a genuine cross-check
+    # anymore). Same age 14+ (no upper bound) P9 person base as "employment".
     reg.append(categorical_person_control(
         "employment_status", "mid_person", "kreis", "employment_status",
         _EMPLOYMENT_STATUS_CATEGORIES, employment_status_target,
-        age_min=14, age_max=None, independence="independent"))
+        age_min=14, age_max=None, independence="partially_independent"))
 
     # --- Fleet BEV share (REAL target, KBA FZ 27.15) -------------------------
     # The target loader is lazy: a missing non-redistributable fleet file does

@@ -927,13 +927,26 @@ def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
 # from the committed target CSV. MiD-only (ENTD cannot express the donor columns -> None, dropped
 # by controls_for_seed).
 def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogControl]:
-    """Build GEO_KREIS controls for a list of KreisAttributeControl."""
+    """Build GEO_KREIS controls for a list of KreisAttributeControl.
+
+    When an entry carries ``min_age`` (not ``None``), its rendered MiD expression ANDs
+    in a person-age clause ``(persons.HP_ALTER >= min_age)`` so the control's universe
+    matches the age-restricted base its committed target's shares are reported over
+    (e.g. employment_status is MiD P9 / SrV 14+, feature #172 task 4) -- without this,
+    the seed attribute assigned to ALL persons (incl. <14) would let those persons
+    distort the category counts (the #97 universe trap). Entries with ``min_age=None``
+    (every pre-existing REGISTRY entry) are unaffected: their rendered expression is
+    byte-identical to before this field existed.
+    """
     from braunschweig.popsim.kreis_attribute_control import control_columns as _cols
     table_of = {"household": SEED_TABLE_HOUSEHOLDS, "person": SEED_TABLE_PERSONS}
     out: List[CatalogControl] = []
     for ctl in controls:
         table = table_of[ctl.level]
         for (label, predicate), col in zip(ctl.categories, _cols(ctl)):
+            expr = f"({table}.{ctl.seed_column} {predicate})"
+            if getattr(ctl, "min_age", None) is not None:
+                expr = f"{expr} & ({table}.HP_ALTER >= {ctl.min_age})"
             out.append(
                 CatalogControl(
                     name=col,
@@ -941,7 +954,7 @@ def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogCo
                     seed_table=table,
                     importance=importance,
                     census_source=(col,),
-                    seed_expressions={"mid": f"({table}.{ctl.seed_column} {predicate})", "entd": None},
+                    seed_expressions={"mid": expr, "entd": None},
                 )
             )
     return out

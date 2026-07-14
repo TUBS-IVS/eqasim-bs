@@ -15,9 +15,18 @@ from typing import Mapping, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_BY_P_BKAT
+
 # Canonical low->high economic-status order (identical to
 # braunschweig.synthesis.population.enriched.ECONOMIC_STATUS_CATEGORIES).
 _ECON_CATEGORIES = ("very_low", "low", "medium", "high", "very_high")
+
+# The seven MiD P_BKAT (Umfang der Erwerbstaetigkeit) employment-status classes, in
+# codebook code order 1..7 (see attributes.EMPLOYMENT_STATUS_BY_P_BKAT for the full
+# code->label mapping and provenance). Reused here (not re-listed literally) so the
+# REGISTRY entry's category/target-column order stays in sync with the seed column's
+# actual value set by construction.
+_EMP_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
 # The region-aggregate row label used as the Dirichlet shrinkage prior mean. The H4 CSV uses
 # the ars5 code "03ZGB"; other committed regional tables use "Gesamt". Both are accepted.
@@ -34,6 +43,17 @@ class KreisAttributeControl:
     target_csv_relpath: str  # under data_path, e.g. "braunschweig/mid/mid2023_H4_status_by_kreis.csv"
     target_columns: tuple  # CSV share columns, in category order
     tier: str  # "hard" | "soft"
+    # Minimum person age the control's universe is restricted to (inclusive), or None for
+    # no restriction (the default, and the behaviour of every pre-existing entry). Set this
+    # when the committed target's shares are reported over an age-restricted base (e.g. MiD
+    # P9 / SrV "employment_status" is 14+) while the seed attribute itself is assigned to ALL
+    # persons -- without this the control's per-Kreis universe would silently include
+    # under-min_age persons and distort the target shares (the #97 universe trap). When set,
+    # BOTH the rendered seed expression (control_spec.attribute_kreis_controls) and the
+    # per-Kreis total the category counts partition (stage.person_total_by_kreis_min_age)
+    # must apply this restriction; level must be "person" for min_age to have any effect
+    # (household-level entries have no natural per-person age to restrict on).
+    min_age: int | None = None
 
 
 def control_columns(ctl: KreisAttributeControl) -> tuple:
@@ -168,6 +188,26 @@ REGISTRY: tuple = (
         target_csv_relpath=f"{_TARGET_DIR}/target2026_trip_class_by_kreis.csv",
         target_columns=("trips_0", "trips_1_2", "trips_3_4", "trips_5plus"),
         tier="soft",
+    ),
+    # employment_status x Kreis control (feature #172, task 4): the second PERSON-level
+    # entry. seed_column employment_status is the P_BKAT-derived seven-class string
+    # (attributes.map_employment_status), assigned to ALL persons including <14 (0%
+    # structural missing). Its committed blended target (MiD P9 x SrV V_ERW, tasks 1-3)
+    # reports shares over the MiD P9 / SrV base of persons aged 14+ ONLY. min_age=14
+    # restricts BOTH the rendered seed expression (control_spec.attribute_kreis_controls
+    # AND-s in "(persons.HP_ALTER >= 14)") and the per-Kreis person total this control's
+    # category counts partition (stage.person_total_by_kreis_min_age) to that same 14+
+    # universe -- omitting either half would let <14 children distort
+    # nicht_erwerbstaetig (the #97 universe trap this mirrors).
+    KreisAttributeControl(
+        name="employment_status",
+        seed_column="employment_status",
+        level="person",
+        categories=tuple((k, f"== '{k}'") for k in _EMP_STATUS_CATEGORIES),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_employment_status_by_kreis.csv",
+        target_columns=_EMP_STATUS_CATEGORIES,
+        tier="soft",
+        min_age=14,
     ),
 )
 
