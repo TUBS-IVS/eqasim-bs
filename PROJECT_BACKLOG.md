@@ -98,6 +98,22 @@ follow-ups:
    powertrain (2026-07-11) and secondary-distance stages with the pre-#160/#161 code. Decide whether to
    selectively re-run those stages after the merge. See memory `project-audit-wave-2026-07-12`.
 
+**RESOLVED 2026-07-14 — the popsim audit-follow-up issues #147/#148/#149/#150/#163:**
+- **#163** (14 fallback-transparency items) — found ALREADY implemented+merged via PR #165; verify-closed
+  (item-by-item file:line -> commit, tests green). No code.
+- **#147 + #149 + #150 -> PR #175 (MERGED):** #150 helper `cells.sum_columns_logging_nan` wired into all 4
+  multi-column row-sum sites; #149 raise-on-all-missing; #147 sub-2 kreis_table restricted to run's Kreise
+  (no output change) + sub-1 `_kac_kreis` aligned to the RESOLVED dominant Kreis (**output change ~0.1%
+  border cells**, ADR-0061).
+- **#148 -> PR #176 (OPEN):** household-level KREIS controls apportioned by HOUSEHOLD share not population
+  share; measure-first (100% run) found ~5.9% economic_status mis-apportioned within-Kreis, MATERIAL
+  (**output change**, ADR-0062). Merges cleanly after resolving the folders.py conflict with PR #175.
+- **OPEN follow-up (not a separate issue by choice; tracked here + memory):** both #147-sub1 and #148 change
+  the WITHIN-Kreis spatial apportionment; region-wide sums provably unchanged, but the REALIZED synthetic
+  effect needs a small resolved-Kreis + hh-share A/B rerun of one multi-batch Kreis on felix before trusting.
+- The **one-time batch purge** (#163 signature fix, item 2 above) still applies on the next persistent-`work_dir`
+  server run. Memory `project-popsim-controls-audit-fix`.
+
 ### New (2026-07-10) — Full-pool popsim perf regime (ADR-0056) + follow-ups #153 / quality A/B / upstream reports
 
 The kreis5 100% run was relaunched with `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true`
