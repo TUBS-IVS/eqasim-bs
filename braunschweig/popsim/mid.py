@@ -1306,6 +1306,37 @@ def load_kreis_control_table(
 # --------------------------------------------------------------------------- #
 
 
+def resolved_kreis_per_cell(
+    cells: pd.DataFrame,
+    *,
+    ars_col: str = _ARS_COLUMN,
+    weight_col: str = "POP_TOTAL_100m_adj",
+) -> pd.Series:
+    """Per-cell RESOLVED dominant Kreis (one dominant Kreis per 1 km parent).
+
+    Returns a Series aligned to ``cells.index`` giving each 100 m cell's resolved
+    Kreis, built from the identical region-wide crosswalk the batch backbone uses
+    (:func:`folders.build_geo_crosswalk` with ``resolve_parent_kreis=True`` and the
+    same ``POP_TOTAL_100m_adj`` weight). This is what ``folders.build_kreis_control_totals``
+    keys on, so grouping the per-Kreis attribute-control household/person totals by
+    this Series -- instead of the raw ``ARS[:5]`` -- makes the category targets
+    partition the SAME Kreis universe the 100 m backbone constrains (issue #147,
+    sub-item 1). A border cell whose 1 km parent's dominant Kreis differs from its
+    own ARS[:5] is attributed here to that dominant Kreis; region-wide per-Kreis
+    sums are unchanged because a 1 km parent is atomic to one Kreis after resolution.
+    """
+    xwalk = folders.build_geo_crosswalk(
+        cells,
+        id_col_100m="ZENSUS100m",
+        parent_col="ZENSUS1km",
+        ars_col=ars_col,
+        resolve_parent_kreis=True,
+        kreis_weight_col=weight_col,
+    )
+    kreis_of = xwalk.set_index(folders.GEO_100M)[folders.GEO_KREIS]
+    return cells["ZENSUS100m"].astype(str).map(kreis_of)
+
+
 def _kreis_pop_from_crosswalk(
     cells_subset: pd.DataFrame,
     geo_crosswalk: pd.DataFrame,

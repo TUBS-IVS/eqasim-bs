@@ -422,6 +422,36 @@ def test_load_kreis_control_table_restrict_normalises_kreis_width(tmp_path):
     assert set(table["ARS_kreis"]) == {"03101"}
 
 
+def test_resolved_kreis_per_cell_uses_dominant_kreis_per_1km_parent():
+    # issue #147 sub-item 1: the per-Kreis attribute-control universe must key on the
+    # RESOLVED dominant Kreis per 1 km parent (matching folders.build_kreis_control_totals),
+    # not the raw ARS[:5]. A border cell whose 1 km parent is dominated (by
+    # POP_TOTAL_100m_adj) by a neighbouring Kreis is attributed to that dominant Kreis.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB", "cC"],
+        "ZENSUS1km": ["P1", "P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031020000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 10.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    # Parent P1 is dominated by Kreis 03101 (100 vs 10), so cB (raw 03102) -> 03101.
+    assert list(resolved) == ["03101", "03101", "03153"]
+    assert list(resolved.index) == list(cells.index)
+
+
+def test_resolved_kreis_per_cell_matches_raw_when_no_border_cells():
+    # Each 1 km parent wholly inside one Kreis -> resolved Kreis equals raw ARS[:5]
+    # (interior cells unchanged; only border cells shift under the alignment).
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB"],
+        "ZENSUS1km": ["P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    assert list(resolved) == ["03101", "03153"]
+
+
 def test_merge_kreis_control_tables_joins_topics_on_ars():
     # The three cleancensus kreis_* topic tables (erwerb/schul/berufl) merge into one
     # table keyed by ARS_kreis carrying all STP source columns; duplicate label cols

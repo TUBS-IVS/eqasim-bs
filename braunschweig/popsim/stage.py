@@ -1277,7 +1277,14 @@ def execute(context) -> pd.DataFrame:
             raise RuntimeError(
                 f"KREIS attribute control is ON but the household-total column {_kac_hh_col!r} is "
                 f"absent from the cells frame; cannot derive the per-Kreis targets (no silent fallback).")
-        _kac_kreis = derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN])
+        # Align the per-Kreis attribute-control universe with the batch KREIS backbone
+        # (issue #147, sub-item 1): partition the household/person targets over the SAME
+        # RESOLVED dominant Kreis per 1 km parent that folders.build_kreis_control_totals
+        # keys on, not the raw ARS[:5]. NOTE (scientific output change): this reassigns the
+        # target attribution of the ~0.1% of cells that sit on a Kreis border and whose
+        # 1 km parent is dominated by a neighbouring Kreis; region-wide per-Kreis sums are
+        # unchanged (a 1 km parent is atomic to one resolved Kreis).
+        _kac_kreis = mid.resolved_kreis_per_cell(cells)
         _kac_hh_by_kreis = cells.groupby(_kac_kreis)[_kac_hh_col].sum().to_dict()
         # Per-Kreis PERSON totals (sum over the 18 age-x-sex 100m band columns) are needed
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first

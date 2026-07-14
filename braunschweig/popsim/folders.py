@@ -57,15 +57,16 @@ def _resolve_parent_kreis(
     Kreis with the largest summed ``weights`` across its cells; ties break on the
     higher Kreis id (deterministic). Reassigned (boundary) cells are logged.
 
-    Known universe inconsistency (issue #147, documented not corrected): the batch
-    KREIS backbone built here uses this RESOLVED dominant Kreis per 1 km parent,
-    whereas the per-Kreis attribute-control targets in ``stage.py`` partition
-    households by the RAW ``ARS[:5]`` of each 100 m cell. For border cells reassigned
-    above, the category targets therefore sum to the raw-ARS Kreis total while the
-    100 m backbone sums the resolved cells. The magnitude is ~0.1 % of cells (100 %
-    run: ~48/43598), region-wide sums remain exact, and no silent scientific impact
-    was identified, so the two universes are left unaligned pending a measured need
-    rather than changed here (measure-first; avoids a behaviour change on a hot path).
+    Universe alignment (issue #147, sub-item 1, corrected): the batch KREIS backbone
+    built here uses this RESOLVED dominant Kreis per 1 km parent, and the per-Kreis
+    attribute-control targets in ``stage.py`` now partition households/persons by the
+    SAME resolved Kreis (via :func:`braunschweig.popsim.mid.resolved_kreis_per_cell`),
+    rather than the raw ``ARS[:5]`` of each 100 m cell. Previously the two universes
+    disagreed for the ~0.1 % of border cells reassigned above (100 % run: ~48/43598):
+    the category targets summed the raw-ARS Kreis total while the 100 m backbone summed
+    the resolved cells. Region-wide per-Kreis sums are unchanged either way (a 1 km
+    parent is atomic to one resolved Kreis); the alignment only moves those border
+    cells' target attribution onto the Kreis that actually constrains them.
     """
     work = xwalk[[GEO_1KM, GEO_KREIS]].copy()
     work["_w"] = weights
