@@ -259,6 +259,68 @@ def test_assemble_batch_folder_apportions_kreis_by_pop_share(tmp_path):
     assert by["03153"] == pytest.approx(200.0)
 
 
+def test_assemble_batch_folder_household_control_uses_hh_share(tmp_path):
+    # issue #148: a household-level KREIS control is apportioned across batches by the
+    # batch's HOUSEHOLD share, a person-level control by the POPULATION share. This batch
+    # holds Kreis 03101 with pop 20 / full 50 (pop-share 0.4) but hh 30 / full 50
+    # (hh-share 0.6), so the two control types scale by different weights end-to-end.
+    from braunschweig.popsim import control_spec
+    hh_col = control_spec.HH_TOTAL_CENSUS_COLUMN
+    cells_subset = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2"],
+        "ZENSUS1km": ["p", "p"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP_TOTAL_100m_adj": [10.0, 10.0],   # batch pop = 20
+        hh_col: [15.0, 15.0],                 # batch households = 30
+        "POP": [1.0, 2.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0], "EMP": [500.0]})
+    mid.assemble_batch_folder(
+        tmp_path / "h", cells_subset, ["POP"], controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table,
+        kreis_controls_map={"economic_status_KREIS": ("ECON",), "employed_KREIS": ("EMP",)},
+        kreis_total_pop={"03101": 50.0},
+        kreis_total_hh={"03101": 50.0},
+        household_control_names={"economic_status_KREIS"},
+    )
+    df = pd.read_csv(tmp_path / "h" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    by = df.set_index("KREIS")
+    # household control -> hh-share 30/50 = 0.6 -> 1000*0.6 = 600
+    assert by.loc["03101", "economic_status_KREIS"] == pytest.approx(600.0)
+    # person control -> pop-share 20/50 = 0.4 -> 500*0.4 = 200
+    assert by.loc["03101", "employed_KREIS"] == pytest.approx(200.0)
+
+
+def test_assemble_batch_folder_kreis_total_hh_none_household_uses_pop_share(tmp_path):
+    # Legacy / byte-identical: with kreis_total_hh=None (no household apportionment basis
+    # supplied) even a named household control falls back to the population share, so the
+    # tier0-2 and pre-#148 behaviour is preserved exactly.
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "ECON": [100.0, 200.0]})
+    mid.assemble_batch_folder(
+        tmp_path / "hn", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"economic_status_KREIS": ("ECON",)},
+        kreis_total_pop={"03101": 50.0, "03153": 5.0},
+        kreis_total_hh=None,
+        household_control_names={"economic_status_KREIS"},
+    )
+    df = pd.read_csv(tmp_path / "hn" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    by = df.set_index("KREIS")["economic_status_KREIS"]
+    # pop-share fallback: 03101 batch pop 20 / full 50 = 0.4 -> 100*0.4 = 40; 03153 5/5 -> 200
+    assert by["03101"] == pytest.approx(40.0)
+    assert by["03153"] == pytest.approx(200.0)
+
+
 def test_assemble_batch_folder_kreis_total_pop_none_is_full_marginal(tmp_path):
     # kreis_total_pop=None -> legacy full marginal (no apportionment), unchanged.
     cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()

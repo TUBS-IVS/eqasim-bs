@@ -1009,6 +1009,11 @@ def execute(context) -> pd.DataFrame:
     # absent both stay None -> the tier0-2 folder is byte-identical.
     kreis_table = None
     kreis_controls_map = None
+    # Household-level KREIS control names (keys of kreis_controls_map) that must be
+    # apportioned across batches by the batch's HOUSEHOLD share, not the population
+    # share (issue #148). Populated from the active household-level attribute controls
+    # below; empty otherwise (person-level / tier0-2 -> pop-share everywhere, unchanged).
+    household_control_names: set[str] = set()
     if "tier3" in control_tiers and controls_source == "catalog":
         from braunschweig.popsim import control_spec as _cs
         tier3 = [c for c in _cs.tier3_controls() if c.expression_for(source_name) is not None]
@@ -1325,6 +1330,11 @@ def execute(context) -> pd.DataFrame:
             _tbl = _kac.attribute_kreis_count_table(
                 _ctl, _tgt, _total_by_kreis, prior_n=_entry_prior_n)
             _map = _kreis_controls_map(_cs_kac.attribute_kreis_controls([_ctl]))
+            # Household-level entries (economic_status, number_of_cars, number_of_bicycles,
+            # has_ebike) are apportioned across batches by the household share (issue #148);
+            # person-level entries (e.g. trip_class) keep the population share.
+            if _ctl.level == "household":
+                household_control_names.update(_map.keys())
             logger.info(
                 "[popsim.stage] KREIS attribute control ON: %s (%s, %s-level), %d Kreise, "
                 "prior_n=%.1f, total %s=%d", _ctl.name, _ctl.tier, _ctl.level, len(_tbl),
@@ -1390,6 +1400,7 @@ def execute(context) -> pd.DataFrame:
         stratify_regiostar=stratify_regiostar,
         kreis_table=kreis_table,
         kreis_controls_map=kreis_controls_map,
+        household_control_names=household_control_names,
     )
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
