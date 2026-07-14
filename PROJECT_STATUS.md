@@ -32,6 +32,13 @@
 > float-bench inputs verified byte-identical to batch_000).
 > Two verified upstream populationsim v0.10.0 bugs (MIN_GAMMA clamp missing, `converged=True` on
 > no-progress) — bypassed by numba; upstream reports optional. Memory `project-popsim-fullpool-perf-fix`.
+> **2026-07-14 — employment_status follow-ons (2 open PRs):** (1) **PR #173** (Closes #172, ADR-0060) —
+> SrV+MiD per-Kreis `employment_status` control correcting the ~1.9× `in_ausbildung` over-rep; new SrV
+> `V_ERW` per-Kreis table + blended `target2026_employment_status_by_kreis.csv`; 14+ universe on both
+> halves; flag default-on/OFF byte-identical; 1-Kreis smoke rakes in_ausbildung 2.98%→2.09% (target 2.01%);
+> 5 tasks + per-task reviews + opus whole-branch review. (2) **PR #171** (#167) — dropped the invalid
+> SPC_BY_P_BKAT crosswalk; socioprofessional_class now from broad activity (it IS consumed — trips Stage-B).
+> Both await review/merge; canonical re-measure on the next full-main run.
 > **2026-07-13 — employment_status Phase-0 MEASURED (ADR-0058):** the shipped `employment_status`
 > attribute (PR #168) matches the independent MiD 2023 P9 reference well WITHOUT calibration — SRMSE
 > 0.194, mean|Δ| 1.88pp, grade "good", all 56 Kreis×class cells <10pp, r² 0.979 (8 ZGB Kreise, 1.12M

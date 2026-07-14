@@ -40,31 +40,29 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
-### New (2026-07-13) — employment_status Phase-0 measured (ADR-0058); open follow-ups
+### New (2026-07-13/14) — employment_status: Phase-0 measured (ADR-0058), then #167 fixed + in_ausbildung control built
 
-The `employment_status` attribute (PR #168, MERGED) was measured against the independent MiD 2023 P9
-reference: **uncalibrated fit already good** (SRMSE 0.194, mean|Δ| 1.88pp, grade "good", all 56
-Kreis×class cells <10pp, r² 0.979). See ADR-0058 + RUNS `empstatus-measure-2026-07-13`. Open items:
+Phase-0 measurement (ADR-0058, RUNS `empstatus-measure-2026-07-13`): the uncalibrated attribute fit the
+independent MiD P9 well overall (SRMSE 0.194, grade "good"); only `in_ausbildung` deviated materially
+(+1.7pp). Two threads shipped on 2026-07-13/14:
 
-1. **Phase-1 soft control on employment_status — DROPPED (not dead-ended, just not worth it).** Given
-   the good uncalibrated fit, a per-Kreis soft control adds little (measure-before-calibrating). No
-   issue opened. Re-open only if the full-main re-measurement (item 3) shows a materially worse fit.
-2. **#167 (OPEN, dormant) — SPC_BY_P_BKAT misreads P_BKAT as Berufskategorie.** `socioprofessional_class`
-   (INSEE CS1) is derived from the wrong variable; scrambled for employed persons but NOT consumed
-   anywhere (mode_choice OFF, not a control) → dormant. Fix before CS1 is ever consumed: needs a real
-   occupation variable (likely absent from the standard MiD table) or drop the invented crosswalk.
-3. **Re-confirm the P9 fit on the next full "everything on main" 100% run.** This session's number used
-   the kreis5 balancing, which predates **#170** (Azubi employment_target fix, MERGED 2026-07-13) and the
-   GEO_KREIS zfill fix. The canonical employment_status validation drops out of the full-main run
-   (`analysis_suite` population_validation) — check whether #170 moved the `in_ausbildung` +1.7pp skew.
-4. **`in_ausbildung` +1.7pp / `vollzeit` +1.6pp** are the only notable class deltas. If they persist on
-   main, address `in_ausbildung` at the SOURCE (P_BKAT code 6 vs the P9 in_ausbildung definition / age
-   base), not by raking.
-5. **Trivial:** a few orphaned synpp cache entries (bumped-hash `popsim.stage`/`sampled`/`enriched`) from
-   this measurement sit in the shared `cache_bs_100pct_allfeat_popsim`; harmless, ignored by future runs.
-
-> **Note:** this whole thread is downstream of the deferred **"everything on main" full 100% run** (see
-> §"produce results" / TL;DR 4) — that run delivers the canonical employment_status number for free.
+1. **`in_ausbildung` over-representation — ADDRESSED with an SrV+MiD per-Kreis control → PR #173 (OPEN, Closes #172, ADR-0060).**
+   RCA confirmed a real ~1.9× inflation (synthetic 3.6% vs regional truth ~1.9%, MiD P9 AND SrV V_ERW=8
+   agree), 2-stage compositional (member completion + balancer), NOT age/reference. Built a per-Kreis
+   soft control raked to a blended MiD-P9 + SrV-V_ERW target, 14+ universe on both halves, seed derived in
+   both paths, flag default-on. Smoke: rakes in_ausbildung 2.98%→2.09% (target 2.01%). This SUPERSEDES the
+   earlier "Phase-1 dropped" note for the in_ausbildung class specifically (the rest of the taxonomy fit
+   fine, so only this class is controlled). **Follow-up: review + merge PR #173; factor a reusable
+   1km-cell control smoke (planned in the spec, not yet done).**
+2. **#167 SPC_BY_P_BKAT misread — FIXED → PR #171 (OPEN).** Dropped the invalid occupation crosswalk;
+   `socioprofessional_class` now always from broad activity (no occupation var exists in MiD). Correction:
+   NOT dormant — SPC is an active `trips.py` Stage-B chain-matching key, so the fix changes trip-chain
+   outputs for the replaced subset. **Follow-up: review + merge PR #171.**
+3. **Re-confirm on the next full "everything on main" run.** Both the employment_status control effect and
+   the SPC fix land canonically there; `analysis_suite` population_validation re-measures in_ausbildung
+   (now labeled `partially_independent`, since it is a steering control — ADR-0060).
+4. **Trivial:** orphaned synpp cache entries from the Phase-0 measurement remain in the shared cache;
+   harmless. PT-Abo (SrV `V_OEV_FK`) and migration (`V_MIGR`) considered and NOT pursued (see ADR-0060).
 
 ### New (2026-07-13) — Large-HH (6+) validation gap: donor-bound, levers narrowed (ADR-0059)
 
