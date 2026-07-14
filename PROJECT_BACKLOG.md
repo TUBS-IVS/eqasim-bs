@@ -46,18 +46,18 @@ Phase-0 measurement (ADR-0058, RUNS `empstatus-measure-2026-07-13`): the uncalib
 independent MiD P9 well overall (SRMSE 0.194, grade "good"); only `in_ausbildung` deviated materially
 (+1.7pp). Two threads shipped on 2026-07-13/14:
 
-1. **`in_ausbildung` over-representation — ADDRESSED with an SrV+MiD per-Kreis control → PR #173 (OPEN, Closes #172, ADR-0060).**
+1. **`in_ausbildung` over-representation — ADDRESSED with an SrV+MiD per-Kreis control → PR #173 (MERGED, Closes #172, ADR-0060).**
    RCA confirmed a real ~1.9× inflation (synthetic 3.6% vs regional truth ~1.9%, MiD P9 AND SrV V_ERW=8
    agree), 2-stage compositional (member completion + balancer), NOT age/reference. Built a per-Kreis
    soft control raked to a blended MiD-P9 + SrV-V_ERW target, 14+ universe on both halves, seed derived in
    both paths, flag default-on. Smoke: rakes in_ausbildung 2.98%→2.09% (target 2.01%). This SUPERSEDES the
    earlier "Phase-1 dropped" note for the in_ausbildung class specifically (the rest of the taxonomy fit
-   fine, so only this class is controlled). **Follow-up: review + merge PR #173; factor a reusable
+   fine, so only this class is controlled). PR #173 MERGED. **Follow-up: factor a reusable
    1km-cell control smoke (planned in the spec, not yet done).**
-2. **#167 SPC_BY_P_BKAT misread — FIXED → PR #171 (OPEN).** Dropped the invalid occupation crosswalk;
+2. **#167 SPC_BY_P_BKAT misread — FIXED → PR #171 (MERGED).** Dropped the invalid occupation crosswalk;
    `socioprofessional_class` now always from broad activity (no occupation var exists in MiD). Correction:
    NOT dormant — SPC is an active `trips.py` Stage-B chain-matching key, so the fix changes trip-chain
-   outputs for the replaced subset. **Follow-up: review + merge PR #171.**
+   outputs for the replaced subset. PR #171 MERGED.
 3. **Re-confirm on the next full "everything on main" run.** Both the employment_status control effect and
    the SPC fix land canonically there; `analysis_suite` population_validation re-measures in_ausbildung
    (now labeled `partially_independent`, since it is a steering control — ADR-0060).
@@ -81,10 +81,10 @@ The `household_size` 6+ class still under-fits on the newest kreis5 100% run (2.
    PopulationSim integerizes at 100m regardless of control geography — if so the fix is blunted. Under
    #99 (regional-correct popsim); no issue opened yet.
 
-### New (2026-07-12) — Full-pipeline bug-audit wave -> PR #165 (OPEN), issues #160-#163
+### New (2026-07-12) — Full-pipeline bug-audit wave -> PR #165 (MERGED), issues #160-#163
 
 An orchestrated read-only audit of the whole synthesis pipeline (vs `origin/main` `d92328e`) surfaced
-**19 verified bugs**, all fixed the same day on `fix/audit-wave-20260712` -> **PR #165 (OPEN)**. Open
+**19 verified bugs**, all fixed the same day on `fix/audit-wave-20260712` -> **PR #165 (MERGED)**. Open
 follow-ups:
 
 1. **Merge PR #165** after the canonical popsim pytest passes on felix (local env has 11 known
@@ -111,7 +111,7 @@ Open follow-ups, in order:
    **Harness READY + self-tested (2026-07-10):** one command, `ssh felix '~/ab_quality/run_ab.sh'`
    (script reuses `integerizer_quality.cell_error`; self-test batch_000-vs-itself all-zero, 44/44
    controls resolved; float-bench inputs verified byte-identical to batch_000).
-2. **Issue #153 — DONE pending merge: PR #155 OPEN.** `cleanup_batch_pipeline` flag (default ON,
+2. **Issue #153 — DONE: PR #155 MERGED.** `cleanup_batch_pipeline` flag (default ON,
    explicit in both server configs) deletes per-batch `pipeline.h5` (~15 GB dead weight at full pool)
    after VERIFIED completion (incl. skipped leftovers; failed batches keep the h5 for PopulationSim
    resume; OSError-hardened). TDD, 9 new tests, 44 batch tests green locally. Pre-merge: canonical

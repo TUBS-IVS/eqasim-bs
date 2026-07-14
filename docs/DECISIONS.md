@@ -1157,7 +1157,7 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
 
 ### ADR-0060 — Correct the in_ausbildung over-representation with an SrV+MiD per-Kreis employment_status control (14+)
 
-- **Status:** accepted 2026-07-13/14. PR #173 (Closes #172, OPEN). Changes scientific outputs (flag default-on;
+- **Status:** accepted 2026-07-13/14. PR #173 (Closes #172, MERGED). Changes scientific outputs (flag default-on;
   OFF byte-identical). Follows ADR-0058 (which measured the attribute and deferred a Phase-1 control); this
   ADR builds a control for the ONE class that materially deviated (in_ausbildung), not the whole taxonomy.
 - **Context:** synthetic `employment_status = in_ausbildung` is ~1.9x over-represented (3.6% vs the regional
