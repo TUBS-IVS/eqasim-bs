@@ -101,7 +101,12 @@ def add_age_sex_band_aggregates(
                 if f"{prefix}_AGE_{year}" in result.columns
             ]
             target = f"{prefix}_AGE_{label}_agg"
-            result[target] = result[source].sum(axis=1) if source else 0.0
+            # skipna suppression (a Zensus-suppressed single-year cell -> 0 inside the
+            # row-sum) is made observable per issue #150; the helper returns an
+            # index-aligned zero Series when no source column is present (equivalent to
+            # the previous scalar-0.0 broadcast).
+            result[target] = _cells.sum_columns_logging_nan(
+                result, source, f"age-sex band {target!r}")
     return result
 
 

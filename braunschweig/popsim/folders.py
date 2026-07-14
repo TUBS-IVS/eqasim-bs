@@ -147,7 +147,11 @@ def build_geo_crosswalk(
     # per-cell Kreis is then collapsed to one dominant Kreis per 1 km parent so the
     # WELT > STAAT > KREIS > ZENSUS1km > ZENSUS100m hierarchy nests strictly.
     if ars_col is not None and ars_col in df_100m.columns:
-        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+        # zfill(12) before slicing the Kreis prefix so an ARS that lost a leading
+        # zero (e.g. read as an int) cannot silently join to the wrong Kreis --
+        # the same guard `stage.derive_geo_kreis_from_ars` applies, kept consistent
+        # here so this crosswalk and `mid.resolved_kreis_per_cell` never drift.
+        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str.zfill(12).str[:5].to_numpy()
         if resolve_parent_kreis:
             if kreis_weight_col is not None and kreis_weight_col in df_100m.columns:
                 weights = pd.to_numeric(

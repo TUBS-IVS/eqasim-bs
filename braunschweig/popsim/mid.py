@@ -1271,8 +1271,9 @@ def load_kreis_control_table(
     (each entry normalised to the 5-digit zero-padded ARS the table stores) so the
     accumulator carries only the rows the run actually looks up downstream, rather
     than ~390 national rows that ``build_kreis_control_totals`` never reads
-    (issue #147; these carried rows were the cause of a KREIS-merge guard
-    false-positive). Kreise in ``restrict_to_kreise`` that are absent from the
+    (issue #147; historically, before the KREIS-merge guard was scoped to the run's
+    Kreise, these carried national rows caused a guard false-positive). Kreise in
+    ``restrict_to_kreise`` that are absent from the
     national table are simply not present in the result (no phantom rows); the
     downstream per-Kreis target loaders fail-fast on a genuinely missing Kreis.
     """
