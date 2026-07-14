@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from scripts.extract_bbs_share_by_age import (
+    ALLGEMEINBILDEND_PARTICIPATION,
     build_rows,
     extract_beruflich_numerator,
     extract_oberstufe_by_age,
@@ -99,17 +100,23 @@ def test_parser_picks_first_niedersachsen_occurrence_not_subregion(tmp_path):
     assert (total, teilzeit, numerator) == (400, 120, 280)  # Niedersachsen, not the region
 
 
-def test_build_rows_flat_bbs_and_rising_share():
+def test_build_rows_synthetic_rising_bbs():
+    # BBS is distributed with weights (1 - allgemeinbildend-participation), so the
+    # per-age BBS counts RISE with age (not the old flat BBS/4), conserving the total.
     ob = {16: 16000, 17: 12000, 18: 8000, 19: 3000}
-    rows = build_rows(280 * 4, ob)  # numerator so bbs/yr = 280
+    weights = {a: 1.0 - ALLGEMEINBILDEND_PARTICIPATION[a] for a in (16, 17, 18, 19)}
+    weight_sum = sum(weights.values())
+    numerator = 10000
+    rows = build_rows(numerator, ob)
     ages = [r[0] for r in rows]
     bbs = [r[1] for r in rows]
     shares = [r[3] for r in rows]
     assert ages == [16, 17, 18, 19]
-    assert bbs == [280.0, 280.0, 280.0, 280.0]          # flat BBS/4
-    assert shares == sorted(shares)                      # rising with declining Oberstufe
-    assert shares[0] == pytest.approx(280 / (280 + 16000))
-    assert shares[-1] == pytest.approx(280 / (280 + 3000))
+    assert bbs == sorted(bbs) and bbs[0] < bbs[-1]        # rising, not flat
+    assert sum(bbs) == pytest.approx(numerator)           # conserves the 16-20 total
+    assert bbs[0] == pytest.approx(numerator * weights[16] / weight_sum)
+    assert bbs[-1] == pytest.approx(numerator * weights[19] / weight_sum)
+    assert shares == sorted(shares)                       # share rises with age
 
 
 def test_build_rows_rejects_nonpositive_oberstufe():
@@ -125,5 +132,7 @@ def test_committed_csv_activates_primary_path():
     assert sorted(shares) == [16, 17, 18, 19]
     vals = [shares[a] for a in (16, 17, 18, 19)]
     assert vals == sorted(vals), f"shares not rising with age: {vals}"
-    # All well below the old scalar 0.681 (the scalar over-allocated to BBS).
-    assert max(vals) < 0.681
+    # 16-year-olds are now mostly in the gymnasiale Oberstufe (the old flat scalar
+    # 0.681 badly over-allocated them to BBS); BBS only comes to dominate towards 19.
+    assert vals[0] < 0.2, f"16-year BBS share too high: {vals[0]}"
+    assert vals[-1] > 0.681, f"19-year BBS share should exceed the old scalar: {vals[-1]}"

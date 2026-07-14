@@ -31,12 +31,27 @@ the FULL-TIME vocational enrollment ``bbs_total_16_20 - berufsschule_teilzeit_16
 (Berufsfachschule, Berufliches Gymnasium, Fachoberschule, Berufsschule Vollzeit,
 Fachschule, ...).
 
-Age resolution (documented ASSUMPTION): BBS enrollment is not available per single
-year, so it is distributed UNIFORMLY across the four years 16..19
-(``bbs_per_year = numerator / 4``). The age-resolved rise of the share
-(``bbs / (bbs + oberstufe)``) is therefore driven by the real, steeply declining
-single-year Oberstufe counts. This is a transparent approximation; real BBS
-enrollment also rises with age, so the true profile is likely somewhat steeper.
+Age resolution (documented ASSUMPTION): single-year vocational (BBS) enrollment is
+NOT published in the German school statistics -- both the LSN table K3050311 and the
+federal Fachserie 11 R2 report berufliche Schulen only in the coarse "16 - 20" age
+GROUP (verified: no single-year berufliche-Schulen age series exists at Land or Bund
+level). A flat BBS/4 split would therefore mis-state the young end (at 16 almost all
+upper-secondary pupils are still in the gymnasiale Oberstufe; BBS only comes to
+dominate towards 19). To reflect that without inventing free numbers, the 16-20 BBS
+total is distributed across ages 16..19 with weights proportional to the share of
+each age cohort NO LONGER in an allgemeinbildende Schule,
+``1 - ALLGEMEINBILDEND_PARTICIPATION[age]`` (Destatis "Schulen auf einen Blick" 2018,
+p.6, Bildungsbeteiligung an allgemeinbildenden Schulen nach Alter, Germany 2016/17:
+16 J. 72 %, 17 J. 46 %, 18 J. 23 %, 19 J. 7 %). That non-general-school share is the
+pool BBS is drawn from and rises steeply with age, giving a plausible rising profile.
+The ABSOLUTE BBS level stays the real NDS 16-20 total; only the age SHAPE is synthetic.
+
+Caveat (kept explicit): the non-general-school pool also contains employed people,
+Hochschule entrants and NEETs whose share grows with age, so these weights are an
+UPPER BOUND on the steepness of the true BBS profile -- the real profile lies between
+flat BBS/4 and this anchor. Combining a Germany-2016/17 shape with NDS-2024/25 levels
+is a further documented approximation. The share still rests on the real, steeply
+declining single-year Oberstufe counts.
 
 Output CSV schema (consumed by ``braunschweig.data.schools.bbs_share``):
 ``age,bbs_pupils,oberstufe_pupils`` with a ``#``-prefixed provenance header.
@@ -62,6 +77,15 @@ _DATA = f"{{{_SS}}}Data"
 _INDEX = f"{{{_SS}}}Index"
 
 AGES = (16, 17, 18, 19)
+
+# Share of each single-year age cohort still enrolled in an allgemeinbildende
+# Schule (Germany, school year 2016/17). Source: Destatis "Schulen auf einen
+# Blick" 2018, p.6 (Bildungsbeteiligung an allgemeinbildenden Schulen nach Alter).
+# Used only as the SHAPE anchor for the synthetic BBS age profile (see
+# build_rows); the absolute BBS level stays the real NDS 16-20 total. These are
+# published, cited reference figures, not invented values.
+ALLGEMEINBILDEND_PARTICIPATION = {16: 0.72, 17: 0.46, 18: 0.23, 19: 0.07}
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCHOOLS = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "schools"
 DEFAULT_ALLGEMEIN = _SCHOOLS / "raw" / "lsn_K3005010_allgemeinbildende_schulen_nach_alter_nds.xml"
@@ -171,24 +195,35 @@ def extract_oberstufe_by_age(allgemeinbildend_path):
 
 
 def build_rows(numerator, oberstufe_by_age):
-    """Build the (age, bbs_pupils, oberstufe_pupils) rows (flat BBS/4 assumption).
+    """Build the (age, bbs_pupils, oberstufe_pupils) rows (synthetic rising BBS).
 
-    ``bbs_pupils`` is the full-time vocational numerator spread uniformly over the
-    four years; ``oberstufe_pupils`` is the real single-year general-school count.
-    The resulting ``bbs / (bbs + oberstufe)`` share (computed downstream by
-    ``bbs_share.load_bbs_share_by_age``) is age-resolved via the declining
-    Oberstufe. Validates the derived shares lie strictly in (0, 1).
+    The full-time vocational ``numerator`` (16-20 total, single years unavailable)
+    is distributed across ages 16..19 with weights proportional to the share of
+    each cohort NO LONGER in an allgemeinbildende Schule,
+    ``1 - ALLGEMEINBILDEND_PARTICIPATION[age]`` -- a monotonically rising, cited
+    anchor (see the module docstring for the source and its caveats). This
+    replaces a flat BBS/4 split, which over-allocated BBS at 16 where nearly all
+    pupils are still in the gymnasiale Oberstufe. ``oberstufe_pupils`` is the real
+    single-year general-school count. The resulting share
+    (``bbs / (bbs + oberstufe)``, computed downstream by
+    ``bbs_share.load_bbs_share_by_age``) rises with age via BOTH the synthetic BBS
+    profile and the real declining Oberstufe. Validates shares lie strictly in
+    (0, 1) and that the distributed BBS totals to the numerator.
     """
-    bbs_per_year = numerator / len(AGES)
+    weights = {age: 1.0 - ALLGEMEINBILDEND_PARTICIPATION[age] for age in AGES}
+    weight_sum = sum(weights.values())
+    if weight_sum <= 0:
+        raise ValueError(f"[extract_bbs] non-positive BBS weight sum: {weights}.")
     rows = []
     for age in AGES:
         oberstufe = oberstufe_by_age[age]
         if oberstufe <= 0:
             raise ValueError(f"[extract_bbs] non-positive Oberstufe count at age {age}: {oberstufe}.")
-        share = bbs_per_year / (bbs_per_year + oberstufe)
+        bbs = numerator * weights[age] / weight_sum
+        share = bbs / (bbs + oberstufe)
         if not (0.0 < share < 1.0):
             raise ValueError(f"[extract_bbs] derived share out of (0,1) at age {age}: {share}.")
-        rows.append((age, bbs_per_year, oberstufe, share))
+        rows.append((age, bbs, oberstufe, share))
     return rows
 
 
@@ -222,18 +257,27 @@ def main(argv=None):
     oberstufe_by_age = extract_oberstufe_by_age(ns.allgemeinbildend)
     rows = build_rows(numerator, oberstufe_by_age)
 
+    weights = {age: 1.0 - ALLGEMEINBILDEND_PARTICIPATION[age] for age in AGES}
     provenance = [
         "Age-resolved vocational-BBS enrollment share for the 16-19 education cohort (issue #139).",
         "Region: Niedersachsen. School year 2024/2025.",
         "Sources (LSN-Online, Landesamt fuer Statistik Niedersachsen):",
         "  oberstufe_pupils = K3005010 'allgemeinbildende Schulen', column 'insgesamt',",
-        "                     Niedersachsen, single age years 16..19.",
+        "                     Niedersachsen, single age years 16..19 (real, steeply declining).",
         f"  bbs_pupils       = K3050311 'berufsbildende Schulen', age group '16 - 20' total",
         f"                     ({bbs_total}) minus dual-system 'Berufsschule (Teilzeit)' ({teilzeit})",
-        f"                     = {numerator} full-time vocational pupils, spread uniformly over",
-        "                     ages 16..19 (BBS not published per single year -- documented",
-        "                     ASSUMPTION; the age-resolved rise comes from the declining Oberstufe).",
-        "Dual-system apprentices are excluded because they enter the synthetic population as",
+        f"                     = {numerator} full-time vocational pupils.",
+        "BBS is published ONLY for the '16 - 20' age group (no single-year berufliche-Schulen",
+        "series exists at Land or Bund level), so the total is distributed across ages 16..19",
+        "with a synthetic, monotonically RISING profile (ASSUMPTION), weights proportional to",
+        f"  1 - allgemeinbildend-participation(age): 16={weights[16]:.2f} 17={weights[17]:.2f}"
+        f" 18={weights[18]:.2f} 19={weights[19]:.2f}",
+        "  where allgemeinbildend-participation = Destatis 'Schulen auf einen Blick' 2018, p.6",
+        "  (share of each age cohort still in an allgemeinbildende Schule; Germany 2016/17).",
+        "Caveat: that non-general-school pool also holds workers/Hochschule/NEETs whose share",
+        "grows with age, so this is an UPPER BOUND on steepness; the true profile lies between",
+        "flat BBS/4 and this anchor. Absolute BBS level = real NDS total; only the age shape is",
+        "synthetic. Dual-system apprentices are excluded: they enter the synthetic population as",
         "workers (in_ausbildung), not the has_education_trip pupil pool (issue #172 cross-check).",
         "Generated by scripts/extract_bbs_share_by_age.py -- do not edit by hand.",
     ]
