@@ -153,3 +153,44 @@ def test_build_zones_frames_raises_on_uncovered_commune(tmp_path):
     with pytest.raises(RuntimeError, match="coverage"):
         build_zones_frames(gdf_raw, df_mun, scope=ZGB_SCOPE,
                            max_fallback_share=0.60)
+
+
+# --- work_od loader ----------------------------------------------------------
+
+def test_clip_qzm_keeps_internal_and_reports_boundary(tmp_path):
+    from braunschweig.data.verbindungen.work_od import clip_qzm_to_cells, read_qzm_csv
+    from tests.fixtures.verbindungen_fixtures import write_qzm_csv
+    p = tmp_path / "qzm.csv"
+    write_qzm_csv(p, [
+        ("stadtteil-1", "stadtteil-1", 100),
+        ("stadtteil-1", "vg250-3", 20),
+        ("stadtteil-1", "vg250-999", 30),   # outbound (dest outside)
+        ("vg250-999", "vg250-3", 40),       # inbound (origin outside)
+        ("vg250-777", "vg250-888", 50),     # fully external
+    ])
+    df = read_qzm_csv(str(p))
+    clipped, stats = clip_qzm_to_cells(df, {"stadtteil-1", "stadtteil-2", "vg250-3"})
+    assert len(clipped) == 2
+    assert clipped["commuters"].sum() == 120
+    assert stats["outbound_commuters"] == 30
+    assert stats["inbound_commuters"] == 40
+    assert list(clipped.columns) == ["origin_cell_id", "destination_cell_id", "commuters"]
+
+
+def test_clip_qzm_raises_on_empty_internal_result(tmp_path):
+    from braunschweig.data.verbindungen.work_od import clip_qzm_to_cells, read_qzm_csv
+    from tests.fixtures.verbindungen_fixtures import write_qzm_csv
+    p = tmp_path / "qzm.csv"
+    write_qzm_csv(p, [("vg250-777", "vg250-888", 50)])
+    df = read_qzm_csv(str(p))
+    with pytest.raises(RuntimeError):
+        clip_qzm_to_cells(df, {"stadtteil-1"})
+
+
+def test_read_qzm_rejects_censoring_violation(tmp_path):
+    from braunschweig.data.verbindungen.work_od import read_qzm_csv
+    from tests.fixtures.verbindungen_fixtures import write_qzm_csv
+    p = tmp_path / "qzm.csv"
+    write_qzm_csv(p, [("stadtteil-1", "stadtteil-1", 5)])  # < 10 impossible upstream
+    with pytest.raises(RuntimeError):
+        read_qzm_csv(str(p))
