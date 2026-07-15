@@ -119,6 +119,10 @@ def test_build_zones_frames_clips_scope_and_maps_communes(tmp_path):
     assert bool(mapping.loc[("vg250-3", "031510029999"), "via_fallback"]) is True
     # 3 primary AGS matches (03101000 x2 + 03151001), 1 fallback (03151002).
     assert stats["n_ags_primary"] == 3 and stats["n_ags_fallback"] == 1
+    # full commune coverage: every in-scope fixture commune is reachable from
+    # at least one cell (nothing silently dropped from the mapping).
+    assert set(df_cell_commune["commune_id"]) == {
+        "031010001000", "031510000001", "031510029999"}
 
 
 def test_build_zones_frames_raises_above_fallback_bound(tmp_path):
@@ -128,3 +132,24 @@ def test_build_zones_frames_raises_above_fallback_bound(tmp_path):
     with pytest.raises(RuntimeError):
         build_zones_frames(gdf_raw, make_municipalities_gdf(), scope=ZGB_SCOPE,
                            max_fallback_share=0.10)
+
+
+def test_build_zones_frames_raises_on_uncovered_commune(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+    from braunschweig.data.verbindungen.zones import build_zones_frames
+    from tests.fixtures.verbindungen_fixtures import make_municipalities_gdf
+    gdf_raw = _load_fixture_cells(tmp_path)
+    # A 4th in-scope commune (Kreis prefix 03151) far OUTSIDE every fixture
+    # cell: its AGS-8 (ars_to_ags8('031510099000') = '03151000') matches no
+    # cell AGS and its representative point falls in no cell polygon, so it
+    # can never appear in df_cell_commune -> the coverage check must raise.
+    far_away = gpd.GeoDataFrame(
+        {"commune_id": ["031510099000"]},
+        geometry=[box(700000.0, 5900000.0, 701000.0, 5901000.0)],
+        crs="EPSG:25832",
+    )
+    df_mun = pd.concat([make_municipalities_gdf(), far_away], ignore_index=True)
+    with pytest.raises(RuntimeError, match="coverage"):
+        build_zones_frames(gdf_raw, df_mun, scope=ZGB_SCOPE,
+                           max_fallback_share=0.60)

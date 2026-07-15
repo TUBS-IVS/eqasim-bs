@@ -115,6 +115,7 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
 
     # Geometric fallback: municipalities whose representative point lies in a
     # cell that has unmatched AGS (Gebietsreform since 2019).
+    n_fallback_resolved = 0
     if unmatched_by_cell:
         mapped = {(c, m) for c, m, _ in rows}
         cells_fb = gdf[gdf["cell_id"].isin(unmatched_by_cell)][["cell_id", "geometry"]]
@@ -122,9 +123,20 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
         pts["geometry"] = pts.geometry.representative_point()
         hit = gpd.sjoin(pts, cells_fb.set_geometry("geometry"),
                         how="inner", predicate="within")
+        hit_cells = set(hit["cell_id"])
         for commune, cell_id in zip(hit["commune_id"], hit["cell_id"]):
             if (cell_id, commune) not in mapped:
                 rows.append((cell_id, commune, True))
+        # An unmatched AGS counts as geometrically resolved when the sjoin
+        # found at least one commune inside its cell. An unresolved AGS is
+        # acceptable ONLY while its cell keeps commune coverage through its
+        # other AGS matches AND the commune completeness check below passes;
+        # otherwise the coverage check raises.
+        n_fallback_resolved = sum(
+            len(ags_codes)
+            for fb_cell_id, ags_codes in unmatched_by_cell.items()
+            if fb_cell_id in hit_cells
+        )
 
     n_total = n_primary + n_fallback
     fallback_share = n_fallback / n_total if n_total else 0.0
@@ -135,6 +147,12 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
         f"fallback (geometric) {n_fallback}/{n_total} "
         f"({100.0 * fallback_share:.1f}%)"
     )
+    if n_fallback:
+        print(
+            "[braunschweig.data.verbindungen.zones] geometric fallback outcome: "
+            f"{n_fallback_resolved}/{n_fallback} unmatched AGS resolved via "
+            f"sjoin, {n_fallback - n_fallback_resolved}/{n_fallback} unresolved"
+        )
     if fallback_share > max_fallback_share:
         raise RuntimeError(
             "[braunschweig.data.verbindungen.zones] AGS fallback share "
@@ -150,6 +168,29 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
     df_cell_commune = pd.DataFrame(
         rows, columns=["cell_id", "commune_id", "via_fallback"]
     ).drop_duplicates(["cell_id", "commune_id"]).reset_index(drop=True)
+
+    # Commune-coverage completeness (fail-early): every in-scope commune must
+    # appear in the cell->commune mapping at least once. The 2019 cells tile
+    # the scope territory, so a hole means broken geometry or scope input; a
+    # commune silently absent from df_cell_commune would otherwise drop its
+    # commuters from the OD reference with zero signal.
+    in_scope_communes = set(
+        df_mun.loc[df_mun["commune_id"].str[:5].isin(scope), "commune_id"]
+    )
+    uncovered = sorted(in_scope_communes - set(df_cell_commune["commune_id"]))
+    if uncovered:
+        examples = uncovered[:10]
+        print(
+            f"[braunschweig.data.verbindungen.zones] {len(uncovered)} in-scope "
+            f"commune(s) without cell coverage, e.g. {examples}"
+        )
+        raise RuntimeError(
+            "[braunschweig.data.verbindungen.zones] commune coverage check "
+            f"failed: {len(uncovered)} in-scope commune(s) missing from the "
+            f"cell->commune mapping (e.g. {examples}); the 2019 cells must "
+            "tile the scope territory -- check the cell shapefile and the "
+            "municipalities input."
+        )
 
     stats = dict(n_cells=len(df_cells), n_ags_primary=n_primary,
                  n_ags_fallback=n_fallback, fallback_share=fallback_share)
