@@ -67,8 +67,19 @@ def execute(context):
     df_codes = context.stage("eqasim_common.spatial.codes")
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
 
-    # Normalize 5-digit kreisfreie AGS to 8-digit (BS 03101 -> 03101000).
-    mask_krfr = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    # Normalize 5-digit kreisfreie AGS to 8-digit (BS 03101 -> 03101000). Only
+    # a 5-digit AGS whose padded form is a real Gemeinde in the codes table is
+    # a kreisfreie Stadt. Other 5-digit scope rows are LANDKREIS aggregate
+    # totals; padding those fabricates non-existent AGS that the merge below
+    # would drop and the loss accounting would misreport as lost SvB weight
+    # (~27% on the full ZGB-8 scope -> spurious raise, #128 follow-up).
+    valid_gemeinde_ags = set(df_codes["ags"].astype(str))
+    mask_5digit_scope = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    mask_krfr = mask_5digit_scope & (df["ags"] + "000").isin(valid_gemeinde_ags)
+    n_aggregate_rows = int((mask_5digit_scope & ~mask_krfr).sum())
+    if n_aggregate_rows:
+        print(f"[braunschweig.employees] excluded {n_aggregate_rows} five-digit "
+              f"Landkreis aggregate rows (Kreis totals, not Gemeinden)")
     df.loc[mask_krfr, "ags"] = df.loc[mask_krfr, "ags"] + "000"
 
     # Restrict to 8-digit AGS inside ZGB scope.

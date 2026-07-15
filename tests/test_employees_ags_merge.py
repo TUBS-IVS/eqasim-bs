@@ -107,3 +107,41 @@ def test_ags_missing_from_codes_table_is_counted_and_warned(tmp_path, monkeypatc
     # warn (CLAUDE.md "high fallback rate is a failure signal").
     with pytest.raises(RuntimeError, match="implausibly high"):
         employees.execute(ctx)
+
+
+def test_landkreis_aggregate_rows_are_excluded_not_counted_as_lost(
+    tmp_path, monkeypatch, capsys
+):
+    """#128 follow-up: the GENESIS export carries 5-digit LANDKREIS aggregate
+    rows (e.g. "03151" = LK Gifhorn total). Only kreisfreie Staedte (whose
+    padded AGS exists as a real Gemeinde in the codes table) may be normalised
+    to 8 digits; padding LK aggregates fabricates non-existent AGS that the
+    merge then drops and the loss accounting reports as lost SvB weight. On
+    the full ZGB-8 scope those aggregates sum to ~27% "loss", tripping the 25%
+    raise threshold and aborting every full-region run."""
+    raw = _employees_raw_frame([
+        # kreisfreie Stadt: 5-digit row, padded AGS exists in codes -> keep.
+        ["03101", "Braunschweig, krfr. Stadt", 1000, 600, 400, 50, 30, 20],
+        # Landkreis AGGREGATE row: padded AGS 03151000 is NOT a Gemeinde.
+        ["03151", "Gifhorn, Landkreis", 500, 300, 200, 20, 10, 10],
+        # The LK's actual Gemeinden, fully covered by the codes table.
+        ["03151009", "Gifhorn, Stadt", 300, 200, 100, 10, 5, 5],
+        ["03151016", "Meine", 200, 100, 100, 10, 5, 5],
+    ])
+    monkeypatch.setattr(employees.pd, "read_excel", lambda *a, **k: raw)
+    (tmp_path / "employees.xlsx").touch()
+    df_codes = _codes_frame(["03101000", "03151009", "03151016"])
+    ctx = _FakeContext(
+        {"data_path": str(tmp_path), "braunschweig.employees_path": "employees.xlsx"},
+        {"eqasim_common.spatial.codes": df_codes},
+    )
+
+    out_df = employees.execute(ctx)
+    out = capsys.readouterr().out
+
+    # The aggregate row is excluded up front: it neither survives into the
+    # output nor counts as "lost" merge weight (which would trip the raise).
+    assert len(out_df) == 3
+    assert out_df["weight"].sum() == 1500
+    assert "0 AGS unmatched" in out
+    assert "WARNING" not in out

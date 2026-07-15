@@ -474,7 +474,17 @@ def _read_betriebe_per_commune(context) -> pd.DataFrame:
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
 
     # Normalise 5-digit kreisfreie AGS to 8-digit (e.g. 03101 -> 03101000).
-    mask_krfr = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    # Same guard as braunschweig.data.census.employees: only a 5-digit AGS
+    # whose padded form is a real Gemeinde is kreisfrei; other 5-digit rows
+    # are Landkreis aggregate totals and must not be padded into fabricated
+    # AGS (the merge below would silently drop them -- and a Kreis aggregate
+    # must never enter the per-Gemeinde establishment counts).
+    valid_gemeinde_ags = set(df_codes["ags"].astype(str))
+    mask_krfr = (
+        (df["ags"].str.len() == 5)
+        & df["ags"].isin(scope_kreise)
+        & (df["ags"] + "000").isin(valid_gemeinde_ags)
+    )
     df.loc[mask_krfr, "ags"] = df.loc[mask_krfr, "ags"] + "000"
     df = df[(df["ags"].str.len() == 8) & df["ags"].str[:5].isin(scope_kreise)].copy()
 
