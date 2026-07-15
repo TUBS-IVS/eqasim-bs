@@ -40,6 +40,20 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-15) — #129 per-Bundesland in-commuter mode (PR #180) + #156 MATSim output archive (PR #181), both MERGED
+
+1. **#129 per-Bundesland in-commuter commute-mode reference -> PR #180 (MERGED `2490c37`, ADR-0063).**
+   Wired the previously dead `build_mode_reference_by_bundesland` into `incommuters.execute`: each cross-cordon
+   in-commuter now draws its fixed mode from a reference selected by origin Bundesland (ARS-prefix), national
+   fallback logged. Default ON, OFF byte-identical. Real 25% impact **tiny (-0.13 pp PT)** — the big NDS/ST
+   shift premise did NOT hold (measure, don't assert); primary 100% / fallback 0%.
+2. **#156 archive MATSim `simulation_output/` -> PR #181 (MERGED `f83a81f`, ADR-0064).** `matsim.output` now
+   mirrors `simulation_output/` into a stable `<output_path>/matsim_output/` (hardlink + copy-fallback, flag
+   `archive_matsim_output` default ON, `ARCHIVE_INFO.json` provenance, fail-clean RuntimeError on empty/missing).
+   Prevents the fragile-hash-cache loss that nearly destroyed the 100%/25% outputs on 2026-07-10.
+   **Follow-up: server pytest (`eqasim` env — local blocked by matsim-tools shadowing) + e2e** to get the
+   formal GREEN (behaviours verified via importlib; final opus review = Ready to merge).
+
 ### New (2026-07-13/14) — employment_status: Phase-0 measured (ADR-0058), then #167 fixed + in_ausbildung control built
 
 Phase-0 measurement (ADR-0058, RUNS `empstatus-measure-2026-07-13`): the uncalibrated attribute fit the

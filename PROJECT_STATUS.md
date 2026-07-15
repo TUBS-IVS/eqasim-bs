@@ -5,7 +5,12 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-14 (older bullets below may lag `main`).
+> **Last updated:** 2026-07-15 (older bullets below may lag `main`).
+> **2026-07-15 — two features MERGED:** **#129** per-Bundesland in-commuter commute-mode reference (PR #180,
+> ADR-0063; default-ON, OFF byte-identical; real 25% impact -0.13 pp PT — premise did not hold) and **#156**
+> MATSim `simulation_output/` archive to a stable `<output_path>/matsim_output/` (PR #181, ADR-0064; hardlink +
+> copy-fallback, flag `archive_matsim_output` default-ON, `ARCHIVE_INFO.json` provenance, fail-clean). #156
+> follow-up: server pytest (`eqasim` env; local blocked by matsim-tools shadowing) + e2e for the formal GREEN.
 > **2026-07-14 — popsim KREIS-control apportionment + fallback-transparency wave:** four audit-follow-up
 > issues, verify-first each. **#163** (14 fallback-transparency items) was found ALREADY done+merged via
 > PR #165 -> verify-closed, no code. **#147 + #149 + #150 -> PR #175 (MERGED):** #150 helper
@@ -194,6 +199,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | Urban parking (BS inner ring) | `enable_urban_parking` | `matsim/simulation/prepare.py` + Java | 🟢 |
 | Parallel chainsolvers | `chainsolvers.parallel` / `.processes` | `synthesis/locations/secondary_chainsolvers` | 🟢 |
 | Mode choice | `mode_choice: false` | eqasim core | ⚪ OFF in all configs (no modal-split target) |
+| MATSim output archive (run-named durable copy) | `archive_matsim_output` (true) | `matsim/output.py` | ✅ PR #181 MERGED (#156, ADR-0064; server pytest+e2e follow-up) |
 
 ---
 
