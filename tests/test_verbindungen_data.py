@@ -222,6 +222,23 @@ def test_read_statisch_parses_semicolon_and_dominanz(tmp_path):
     assert pd.isna(df.loc["vg250-3", "workers_at_home"])
 
 
+def test_read_statisch_rejects_unparseable_values(tmp_path):
+    # '*' is the ONLY documented Dominanz suppression marker; any other
+    # unparseable token is a data-quality regression and must fail loudly
+    # (naming the file and the offending token), never be silently NA'd.
+    from braunschweig.data.verbindungen.margins import read_statisch_csv
+    from tests.fixtures.verbindungen_fixtures import write_statisch_csv
+    p = tmp_path / "wo.csv"
+    write_statisch_csv(p, [
+        {"WO_verb_zell_id": "stadtteil-1", "SvB_aGeB": 5240},
+        {"WO_verb_zell_id": "vg250-3", "SvB_aGeB": "abc"},
+    ])
+    with pytest.raises(RuntimeError) as exc_info:
+        read_statisch_csv(str(p), value_name="workers_at_home")
+    assert "abc" in str(exc_info.value)
+    assert "wo.csv" in str(exc_info.value)
+
+
 def test_margins_outer_merge_covers_all_cells(tmp_path):
     from braunschweig.data.verbindungen.margins import build_margins_frame, read_statisch_csv
     from tests.fixtures.verbindungen_fixtures import write_statisch_csv

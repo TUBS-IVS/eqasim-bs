@@ -6,6 +6,11 @@ multiples of 10, Dominanz suppression as ``*``):
 ``SvBaGeB_Statisch_AO_Verkehrszellen.csv`` (workers at WORKPLACE per cell).
 Universe: SvB + aGeB only (NO Beamte/Selbststaendige), 31.12.2019. Only the
 ``SvB_aGeB`` total is loaded; breakdown columns are ignored for now.
+
+``*`` is the ONLY documented suppression marker: it maps to NA and is counted
+and logged as Dominanz suppression. Any OTHER unparseable ``SvB_aGeB`` token
+(garbage text, empty field) raises, so a data-quality regression can never
+hide inside the legitimate suppression bucket.
 """
 from __future__ import annotations
 
@@ -26,17 +31,30 @@ def read_statisch_csv(path: str, value_name: str) -> pd.DataFrame:
             f"{path}: need one *_verb_zell_id column and SvB_aGeB, got "
             f"{list(df.columns)}"
         )
+    values_raw = df["SvB_aGeB"]
+    is_star = values_raw == "*"
+    n_star = int(is_star.sum())
+    parsed = pd.to_numeric(values_raw.mask(is_star), errors="coerce")
+    # NA that did NOT come from the documented '*' marker is unparseable
+    # garbage (bad token, empty/whitespace field) -> fail loudly, never fold
+    # it into the Dominanz suppression bucket.
+    bad_mask = parsed.isna() & ~is_star
+    if bad_mask.any():
+        examples = [repr(v) for v in values_raw[bad_mask].head(5).tolist()]
+        raise RuntimeError(
+            f"[braunschweig.data.verbindungen.margins] {int(bad_mask.sum())} "
+            f"non-Dominanz unparseable SvB_aGeB value(s) in {path} "
+            f"(e.g. {examples}); only '*' is the documented suppression "
+            "marker -- upstream format changed?"
+        )
     out = pd.DataFrame({
         "cell_id": df[id_cols[0]].astype(str),
-        value_name: pd.to_numeric(
-            df["SvB_aGeB"].replace("*", pd.NA), errors="coerce"
-        ).astype("Int64"),
+        value_name: parsed.astype("Int64"),
     })
-    n_supp = int(out[value_name].isna().sum())
     print(
         f"[braunschweig.data.verbindungen.margins] {os.path.basename(path)}: "
-        f"{len(out)} rows, {n_supp} suppressed ('*'/unparseable) "
-        f"({100.0 * n_supp / len(out) if len(out) else 0.0:.1f}%)"
+        f"{len(out)} rows, {n_star} suppressed ('*' Dominanz) "
+        f"({100.0 * n_star / len(out) if len(out) else 0.0:.1f}%)"
     )
     return out
 
