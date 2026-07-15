@@ -32,9 +32,12 @@ from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon.plans import (
-    assign_fixed_mode, build_incommuter_activities, build_incommuter_locations,
-    build_incommuter_trips, extract_commute_times, sample_donors,
-    select_commuter_donors, straight_line_distance_km)
+    assign_fixed_mode, assign_fixed_mode_per_agent, build_incommuter_activities,
+    build_incommuter_locations, build_incommuter_trips, extract_commute_times,
+    sample_donors, select_commuter_donors, straight_line_distance_km)
+# Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
+# mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
+from braunschweig.data.mikrozensus.reference import bundesland_of_ars
 # NOTE: braunschweig.data.cordon.pt_reachability imports RAIL_LIKE_MODES from this
 # module (incommuters), which creates a circular dependency if imported at module level.
 # weight_entry_stations and sample_pt_station_per_agent are therefore imported LOCALLY
@@ -279,7 +282,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             inkar_income=None, data_path=None,
                             real_origin=False, gemeinden=None,
                             zgb_polygon=None, source_buffer_m=45000.0,
-                            mode_balance=False):
+                            mode_balance=False,
+                            mode_reference_by_bundesland=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -378,9 +382,43 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # cordon are negligible, so the reference is restricted to ``commute_modes`` (the
     # dropped probability mass is redistributed proportionally; see restrict_to_modes).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
-    restricted_reference = restrict_to_modes(mode_reference, allowed=commute_modes)
+    restricted_national = restrict_to_modes(mode_reference, allowed=commute_modes)
     band_fn = lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges)
-    modes_mikro = list(assign_fixed_mode(dist_km, restricted_reference, band_fn, rng))
+
+    # Per-agent restricted mode reference (#129).  Default (mode_reference_by_bundesland
+    # is None): every agent uses the single national reference and the region-neutral
+    # assign_fixed_mode is called -> byte-identical to the pre-#129 behaviour.  When a
+    # per-Bundesland reference dict is supplied, each agent is assigned the restricted
+    # reference of its origin Bundesland (first 2 ARS digits), falling back to the
+    # national reference (observably, logged) for any Bundesland absent from the dict.
+    if mode_reference_by_bundesland is None:
+        restricted_reference = restricted_national
+        agent_references = None
+        modes_mikro = list(assign_fixed_mode(dist_km, restricted_reference, band_fn, rng))
+    else:
+        restricted_by_bl = {
+            bl: restrict_to_modes(ref, allowed=commute_modes)
+            for bl, ref in mode_reference_by_bundesland.items()
+        }
+        agent_bl = [bundesland_of_ars(a) for a in orig_ars]
+        agent_references = [
+            restricted_by_bl.get(bl, restricted_national) for bl in agent_bl
+        ]
+        n_fallback = sum(1 for bl in agent_bl if bl not in restricted_by_bl)
+        if n:
+            share = 100.0 * n_fallback / n
+            level = "WARNING: " if share > 5.0 else ""
+            print(
+                f"[braunschweig.incommuters] {level}per-Bundesland mode reference: "
+                f"primary {n - n_fallback}/{n} ({100.0 - share:.1f}%), "
+                f"national fallback {n_fallback} ({share:.1f}%) in-commuters had no "
+                f"per-Bundesland reference for their origin Land -> national blend. A "
+                f"high rate means a systematic ARS-prefix vs Bundesland-name key "
+                f"mismatch.",
+                flush=True,
+            )
+        modes_mikro = list(assign_fixed_mode_per_agent(
+            dist_km, agent_references, band_fn, rng))
 
     # 3a) Mode balancer (flag-gated, default OFF via mode_balance=False).
     # When ON: pass Mikrozensus modes through balance_incommuter_modes so the global PT
@@ -411,10 +449,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         # Per-agent reachability: True iff source Kreis has a station.
         can_board_pt = np.array([str(a) in _rail_kreise for a in orig_ars], dtype=bool)
 
-        # Per-agent PT propensity: P(pt | distance band) from the restricted reference.
+        # Per-agent PT propensity: P(pt | distance band) from the agent's restricted
+        # reference (per-Bundesland when active, else the single national reference).
         pt_propensity = np.array([
-            restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
-            for d in dist_km
+            (agent_references[i] if agent_references is not None
+             else restricted_reference).get(band_fn(d), {}).get("pt", 0.0)
+            for i, d in enumerate(dist_km)
         ], dtype=float)
 
         modes_balanced, _bal_stats = balance_incommuter_modes(
@@ -680,8 +720,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # the expected outcome. Expressed as a [direction, mode, share_pct_target]
     # frame consumed by write_cordon_validation's modal_split_deviation.
     _pt_target_shares = np.array([
-        restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
-        for d in dist_km
+        (agent_references[i] if agent_references is not None
+         else restricted_reference).get(band_fn(d), {}).get("pt", 0.0)
+        for i, d in enumerate(dist_km)
     ], dtype=float)
     _pt_target_share_pct = float(100.0 * _pt_target_shares.mean()) if n > 0 else 0.0
     _car_target_share_pct = 100.0 - _pt_target_share_pct

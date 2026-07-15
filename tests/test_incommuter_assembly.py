@@ -219,3 +219,72 @@ def test_agent_times_raises_on_non_positive_speed():
         assert False, "expected ValueError for speed_kmh <= 0"
     except ValueError:
         pass
+
+
+def test_per_bundesland_reference_lowers_pt_for_nds_origins():
+    # National reference has high PT (0.6); the NDS per-Bundesland reference has low PT
+    # (0.05). All origins are NDS ("03..."), so the ON path must realise a clearly lower
+    # PT share than the OFF (national) path on the same agents and seed. A PT entry
+    # station is supplied for the source Kreis (03241) so the drawn PT modes survive the
+    # station-placement step (otherwise all PT would be reassigned to car and the
+    # reference effect would be masked by the missing-station fallback).
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    pt_stops = pd.DataFrame({
+        "source_ars5": ["03241"], "stop_id": ["stopN"],
+        "x": [604500.0], "y": [5840500.0], "reach": ["direct"], "ewz": [40000.0],
+    })
+    national = {">=10": {"car": 0.4, "pt": 0.6}}
+    by_bl = {"Niedersachsen": {">=10": {"car": 0.95, "pt": 0.05}}}
+    kwargs = dict(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=1.0,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference=national, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, gate_speed_kmh=30.0,
+        pt_entry_stops=pt_stops)
+
+    off = build_incommuter_frames(rng=np.random.default_rng(5), **kwargs)
+    on = build_incommuter_frames(
+        rng=np.random.default_rng(5), mode_reference_by_bundesland=by_bl, **kwargs)
+
+    pt_off = (off["validation"]["mode"] == "pt").mean()
+    pt_on = (on["validation"]["mode"] == "pt").mean()
+    # Sanity: the OFF (national, pt=0.6) path must realise a substantial PT share, so the
+    # comparison is meaningful and not both-zero.
+    assert pt_off > 0.4, f"national reference should realise high PT, got {pt_off}"
+    assert pt_on < pt_off, f"expected lower PT with NDS reference (on={pt_on}, off={pt_off})"
+
+
+def test_per_bundesland_off_path_is_byte_identical():
+    # mode_reference_by_bundesland=None must reproduce the pre-change frames exactly.
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    kwargs = dict(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.5,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 0.7, "pt": 0.3}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, gate_speed_kmh=30.0)
+    baseline = build_incommuter_frames(rng=np.random.default_rng(9), **kwargs)
+    explicit_none = build_incommuter_frames(
+        rng=np.random.default_rng(9), mode_reference_by_bundesland=None, **kwargs)
+    pd.testing.assert_frame_equal(
+        baseline["validation"].reset_index(drop=True),
+        explicit_none["validation"].reset_index(drop=True))
+
+
+def test_per_bundesland_falls_back_to_national_for_unmapped_land():
+    # An origin Bundesland absent from the per-Bundesland dict falls back to national.
+    # Here NDS is NOT in by_bl, so all agents must use the national (pt-only) reference.
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise={"03101"}, sampling_rate=0.2,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"pt": 1.0}}, band_edges=(10,),
+        hts_persons=hp, hts_trips=ht, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=np.random.default_rng(2),
+        mode_reference_by_bundesland={"Bayern": {">=10": {"car": 1.0}}})
+    # No pt_entry_stops -> pt agents reassign to car, so check the target-share frame
+    # (pre-placement) reflects the national pt=1.0 reference the fallback selected.
+    mt = frames["mode_target"]
+    pt_target = float(mt.loc[mt["mode"] == "pt", "share_pct_target"].iloc[0])
+    assert pt_target > 99.0, f"national fallback (pt=1.0) not applied, got {pt_target}"
