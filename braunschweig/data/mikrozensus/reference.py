@@ -14,6 +14,57 @@ from braunschweig.data.cordon.mode_reference import mode_reference_from_table, r
 
 MZ_SUBDIR = os.path.join("braunschweig", "mikrozensus")
 
+# Official 2-digit AGS/ARS Bundesland prefixes (amtlicher Regionalschluessel) mapped to
+# the Bundesland names EXACTLY as spelled in the committed Mikrozensus margin CSVs
+# (mid_mode_margin_by_bundesland.csv / mid_distance_margin_by_bundesland.csv, UTF-8).
+# The dict lookup in build_mode_reference_by_bundesland keys on these exact strings, so
+# the two names carrying a u-umlaut must match the CSV byte-for-byte. To keep this source
+# file ASCII-only (CLAUDE.md), that character is spliced in via chr(0xFC) (LATIN SMALL
+# LETTER U WITH DIAERESIS) rather than written as a literal umlaut byte.
+_UE = chr(0xFC)  # u-umlaut; == the CSV byte sequence for "Baden-Wuerttemberg"/"Thueringen"
+BUNDESLAND_BY_ARS2 = {
+    "01": "Schleswig-Holstein",
+    "02": "Hamburg",
+    "03": "Niedersachsen",
+    "04": "Bremen",
+    "05": "Nordrhein-Westfalen",
+    "06": "Hessen",
+    "07": "Rheinland-Pfalz",
+    "08": "Baden-W" + _UE + "rttemberg",
+    "09": "Bayern",
+    "10": "Saarland",
+    "11": "Berlin",
+    "12": "Brandenburg",
+    "13": "Mecklenburg-Vorpommern",
+    "14": "Sachsen",
+    "15": "Sachsen-Anhalt",
+    "16": "Th" + _UE + "ringen",
+}
+
+
+def bundesland_of_ars(ars):
+    """Bundesland name for an ARS/AGS code, from its first two digits.
+
+    Returns the Bundesland name (verbatim CSV spelling) or ``None`` if the two-digit
+    prefix is not one of the 16 German states. ``ars`` is coerced to a string; a code
+    shorter than two characters returns ``None``.
+    """
+    s = str(ars)
+    if len(s) < 2:
+        return None
+    return BUNDESLAND_BY_ARS2.get(s[:2])
+
+
+def source_bundeslaender(orig_ars):
+    """Sorted distinct Bundesland names present among an iterable of origin ARS.
+
+    Origin ARS whose two-digit prefix is not a known Bundesland are dropped. Used to
+    build only the per-Bundesland references actually needed by the in-commuter origins.
+    """
+    names = {bundesland_of_ars(a) for a in orig_ars}
+    names.discard(None)
+    return sorted(names)
+
 
 def _path(data_path: str, filename: str) -> str:
     """Resolve a reference CSV. Normally under ``<data_path>/braunschweig/mikrozensus/``;
