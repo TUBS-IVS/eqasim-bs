@@ -77,6 +77,9 @@ config:
 
   data_path: eqasim-data/data
   output_path: eqasim-data/output_bs_25pct_allfeat_popsim
+  # Archive simulation_output/ into <output_path>/matsim_output/ after the run
+  # (hardlink; survives a synpp cache-dir wipe). Default ON (issue #156).
+  archive_matsim_output: true
   # Feeds education_validation in the analysis_suite stage (synpp cache dir).
   analysis_working_directory: eqasim-data/cache_bs_25pct_allfeat_popsim
   output_prefix: braunschweig_25pct_allfeat_popsim_
