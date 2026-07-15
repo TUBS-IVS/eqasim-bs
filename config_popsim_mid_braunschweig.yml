@@ -16,6 +16,10 @@ working_directory: eqasim-data/cache_bs_popsim_mid
 run:
   - synthesis.output
   - matsim.output
+  # VerBindungen sub-Kreis work-OD validation (#124): compares the synthetic
+  # home->work assignment against the 2019 VerBindungen QZM reference.
+  # Requires eqasim-data/data/verbindungen/ (scripts/download_verbindungen.py).
+  - braunschweig.analysis.verbindungen_validation
 
 config:
   processes: 8

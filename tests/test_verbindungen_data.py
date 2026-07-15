@@ -256,3 +256,12 @@ def test_margins_outer_merge_covers_all_cells(tmp_path):
     assert pd.isna(df.loc["vg250-3", "workers_at_home"])
     assert int(df.loc["stadtteil-2", "workers_at_workplace"]) == 50
     assert len(df) == 3
+
+
+# --- config wiring -----------------------------------------------------------
+
+def test_popsim_mid_config_runs_verbindungen_validation():
+    import yaml
+    with open(REPO_ROOT / "config_popsim_mid_braunschweig.yml", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    assert "braunschweig.analysis.verbindungen_validation" in cfg["run"]
