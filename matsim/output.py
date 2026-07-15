@@ -1,4 +1,46 @@
 import shutil
+import os
+import os.path
+
+
+def mirror_directory_tree(source_dir, target_dir):
+    """Recursively mirror source_dir into target_dir.
+
+    Each file is hardlinked (os.link) where the filesystem allows it and
+    copied (shutil.copy2) as a fallback (e.g. cross-volume, OSError/EXDEV),
+    so the archive costs zero extra disk on the same volume. An existing
+    target_dir is removed first, so the archive always reflects the latest
+    run.
+
+    :param source_dir: directory to mirror (e.g. .../simulation_output)
+    :param target_dir: destination directory (e.g. <output_path>/matsim_output)
+    :returns: (hardlink_count, copy_count, file_count)
+    """
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir)
+
+    hardlink_count = 0
+    copy_count = 0
+    file_count = 0
+
+    for current_dir, _sub_dirs, file_names in os.walk(source_dir):
+        relative_dir = os.path.relpath(current_dir, source_dir)
+        destination_dir = os.path.join(target_dir, relative_dir)
+        os.makedirs(destination_dir, exist_ok=True)
+
+        for file_name in file_names:
+            source_file = os.path.join(current_dir, file_name)
+            destination_file = os.path.join(destination_dir, file_name)
+            file_count += 1
+            try:
+                os.link(source_file, destination_file)
+                hardlink_count += 1
+            except OSError:
+                shutil.copy2(source_file, destination_file)
+                copy_count += 1
+
+    return hardlink_count, copy_count, file_count
+
 
 def configure(context):
     if context.config("run_matsim", True):
