@@ -44,6 +44,59 @@ def mirror_directory_tree(source_dir, target_dir):
     return hardlink_count, copy_count, file_count
 
 
+def archive_simulation_output(run_path, output_path):
+    """Mirror <run_path>/simulation_output into <output_path>/matsim_output.
+
+    Logs the hardlink-vs-copy rate (fallback transparency, CLAUDE.md), writes an
+    ARCHIVE_INFO.json provenance file next to the archive, and raises
+    RuntimeError if the run stage produced no simulation output (e.g. a stale or
+    wiped hash cache -- the exact failure issue #156 guards against).
+
+    :param run_path: matsim.simulation.run stage cache dir (contains simulation_output/)
+    :param output_path: scenario-export output dir (archive goes to <output_path>/matsim_output)
+    :returns: (hardlink_count, copy_count, file_count)
+    """
+    source_dir = "%s/simulation_output" % run_path
+    target_dir = "%s/matsim_output" % output_path
+
+    if os.path.exists(target_dir):
+        print("[matsim.output] overwriting existing matsim_output archive at %s" % target_dir)
+
+    hardlink_count, copy_count, file_count = mirror_directory_tree(source_dir, target_dir)
+
+    if file_count == 0:
+        raise RuntimeError(
+            "[matsim.output] no files found under %s -- the MATSim run stage "
+            "produced no simulation_output (stale or wiped hash cache?); cannot "
+            "archive. See issue #156." % source_dir)
+
+    hardlink_rate = 100.0 * hardlink_count / file_count
+    copy_rate = 100.0 * copy_count / file_count
+    print("[matsim.output] archived %d files from %s to %s: hardlink %d (%.1f%%), copy %d (%.1f%%)" % (
+        file_count, source_dir, target_dir, hardlink_count, hardlink_rate, copy_count, copy_rate))
+    if hardlink_count == 0:
+        # 100% copy means source and target sit on different volumes; the
+        # zero-extra-disk property was lost -- surface it loudly.
+        print("[matsim.output] WARNING! 0%% hardlinks -- source and target are on different volumes; archive used extra disk")
+
+    # Provenance: record the opaque source hash dir next to the archive,
+    # mirroring the documentation.meta_output *meta.json pattern.
+    archive_info = dict(
+        source_hash_dir=run_path,
+        created=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        file_count=file_count,
+        hardlink_count=hardlink_count,
+        copy_count=copy_count,
+    )
+    with open("%s/ARCHIVE_INFO.json" % target_dir, "w") as f:
+        json.dump(archive_info, f, indent=4)
+
+    assert os.path.exists("%s/output_events.xml.gz" % target_dir), (
+        "[matsim.output] archive at %s is missing output_events.xml.gz" % target_dir)
+
+    return hardlink_count, copy_count, file_count
+
+
 def configure(context):
     if context.config("run_matsim", True):
         # allow disabling performing one run of the simulation
@@ -104,42 +157,10 @@ def execute(context):
         )
 
     # Mirror the MATSim simulation output into a stable, run-named location so
-    # it survives a synpp hash-cache wipe (issue #156). Only when a run
-    # actually happened (run_matsim) and the archive flag is on.
+    # it survives a synpp hash-cache wipe (issue #156). Only when a run actually
+    # happened (run_matsim) and the archive flag is on.
     if context.config("run_matsim", True) and context.config("archive_matsim_output"):
-        run_path = context.path("matsim.simulation.run")
-        source_dir = "%s/simulation_output" % run_path
-        target_dir = "%s/matsim_output" % context.config("output_path")
-
-        if os.path.exists(target_dir):
-            print("[matsim.output] overwriting existing matsim_output archive at %s" % target_dir)
-
-        hardlink_count, copy_count, file_count = mirror_directory_tree(source_dir, target_dir)
-
-        # Fallback transparency (CLAUDE.md): report primary (hardlink) vs
-        # fallback (copy) as an explicit rate.
-        if file_count > 0:
-            hardlink_rate = 100.0 * hardlink_count / file_count
-            copy_rate = 100.0 * copy_count / file_count
-            print("[matsim.output] archived %d files from %s to %s: hardlink %d (%.1f%%), copy %d (%.1f%%)" % (
-                file_count, source_dir, target_dir, hardlink_count, hardlink_rate, copy_count, copy_rate))
-            if hardlink_count == 0:
-                # 100% copy means source and target sit on different volumes;
-                # the zero-extra-disk property was lost -- surface it loudly.
-                print("[matsim.output] WARNING! 0%% hardlinks -- source and target are on different volumes; archive used extra disk")
-        else:
-            print("[matsim.output] WARNING! no files found under %s to archive" % source_dir)
-
-        # Provenance: record the opaque source hash dir next to the archive,
-        # mirroring the documentation.meta_output *meta.json pattern.
-        archive_info = dict(
-            source_hash_dir=run_path,
-            created=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            file_count=file_count,
-            hardlink_count=hardlink_count,
-            copy_count=copy_count,
+        archive_simulation_output(
+            context.path("matsim.simulation.run"),
+            context.config("output_path"),
         )
-        with open("%s/ARCHIVE_INFO.json" % target_dir, "w") as f:
-            json.dump(archive_info, f, indent=4)
-
-        assert os.path.exists("%s/output_events.xml.gz" % target_dir)

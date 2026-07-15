@@ -84,3 +84,43 @@ def test_mirror_falls_back_to_copy(tmp_path, monkeypatch):
     assert hardlink_count == 0
     assert copy_count == 3
     assert (target / "ITERS" / "it.0" / "0.plans.xml.gz").is_file()
+
+
+def test_archive_writes_provenance_and_returns_counts(tmp_path):
+    from matsim.output import archive_simulation_output
+    run_path = tmp_path / "matsim.simulation.run__abc.cache"
+    output_path = tmp_path / "output"
+    os.makedirs(str(output_path))
+    _build_source_tree(str(run_path / "simulation_output"))
+
+    hardlink_count, copy_count, file_count = archive_simulation_output(
+        str(run_path), str(output_path)
+    )
+
+    target = output_path / "matsim_output"
+    assert (target / "output_events.xml.gz").is_file()
+    assert (target / "ITERS" / "it.0" / "0.plans.xml.gz").is_file()
+    assert file_count == 3
+
+    import json as _json
+    with open(str(target / "ARCHIVE_INFO.json")) as fh:
+        info = _json.load(fh)
+    assert info["source_hash_dir"] == str(run_path)
+    assert info["file_count"] == 3
+    assert info["hardlink_count"] == hardlink_count
+    assert info["copy_count"] == copy_count
+    assert "created" in info
+
+
+def test_archive_raises_when_source_missing(tmp_path):
+    from matsim.output import archive_simulation_output
+    import pytest
+    run_path = tmp_path / "matsim.simulation.run__missing.cache"  # no simulation_output/
+    output_path = tmp_path / "output"
+    os.makedirs(str(output_path))
+
+    with pytest.raises(RuntimeError) as excinfo:
+        archive_simulation_output(str(run_path), str(output_path))
+    assert "156" in str(excinfo.value)
+    # No half-written archive left behind.
+    assert not (output_path / "matsim_output" / "ARCHIVE_INFO.json").exists()
