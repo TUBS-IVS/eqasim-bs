@@ -20,6 +20,16 @@ FALLBACK for Gebietsreform cases assigns every in-scope municipality whose
 representative point falls inside the cell polygon. The primary/fallback rate
 is logged; above ``braunschweig.verbindungen.max_ags_fallback_share`` the
 stage raises (a high rate means the AGS join is broken, not reformed).
+
+DBF truncation caveat: the shapefile's DBF format caps string attributes at
+254 characters, and 34 of the 3,189 cells (none in ZGB scope; the longest
+in-scope ``ags_0`` is 125 chars) carry an ``ags_0`` list cut off mid-code,
+e.g. ``...,07233055,07``. ``parse_ags_list`` drops such fragments instead of
+zero-padding them into fake AGS codes. Truncation may also have cut
+ADDITIONAL complete AGS entries entirely -- unknowable from the DBF alone.
+Dropping is still safe for this stage because for in-scope cells the
+commune-coverage completeness check below fails loudly on any resulting
+hole in the cell->commune mapping.
 """
 from __future__ import annotations
 
@@ -35,18 +45,45 @@ SHAPE_ZIP = "Shapefiles_VerBindungen_Zellen.zip"
 TARGET_CRS = "EPSG:25832"
 
 
+def _is_valid_ags_segment(segment: str) -> bool:
+    """Whether a stripped ``ags_0`` segment is a genuine AGS code.
+
+    This shapefile carries 8-digit AGS exclusively (verified on all 3,189
+    rows); 7 digits are tolerated as a leading-zero loss and padded back.
+    Anything else (shorter, longer, non-digit) is DBF-truncation residue.
+    """
+    return segment.isdigit() and len(segment) in (7, 8)
+
+
 def parse_ags_list(raw) -> list[str]:
     """Split the comma-separated ``ags_0`` attribute into padded AGS-8 codes.
 
     Deduplicates while preserving order (Stadtteil rows repeat the parent
-    Gemeinde AGS).
+    Gemeinde AGS). Segments that are not 7-8 digit codes are dropped as
+    DBF-truncation fragments (see module docstring) -- they are never
+    zero-padded into fake AGS codes.
     """
     out: list[str] = []
     for part in str(raw).split(","):
-        code = part.strip().zfill(8)
-        if code and code not in out:
+        segment = part.strip()
+        if not _is_valid_ags_segment(segment):
+            continue
+        code = segment.zfill(8)
+        if code not in out:
             out.append(code)
     return out
+
+
+def count_dropped_segments(raw) -> int:
+    """Number of non-empty ``ags_0`` segments ``parse_ags_list`` drops.
+
+    Dropped segments are DBF-truncation residue (a code cut off at the DBF
+    254-char field limit); deduplicated repeats are NOT counted as dropped.
+    """
+    return sum(
+        1 for part in str(raw).split(",")
+        if part.strip() and not _is_valid_ags_segment(part.strip())
+    )
 
 
 def cell_kreis_id(ags_list: list[str]) -> str:
@@ -76,6 +113,29 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
 
     gdf = gdf_raw.to_crs(TARGET_CRS).copy()
     gdf["ags_list"] = gdf["ags_0"].map(parse_ags_list)
+
+    # Surface DBF-truncation drops (see module docstring): affected cells keep
+    # their valid AGS prefix codes; the cut-off fragment is discarded.
+    dropped_per_cell = gdf["ags_0"].map(count_dropped_segments)
+    n_truncated_cells = int((dropped_per_cell > 0).sum())
+    if n_truncated_cells:
+        print(
+            f"[braunschweig.data.verbindungen.zones] {n_truncated_cells} cells "
+            f"with DBF-truncated ags_0 ({int(dropped_per_cell.sum())} fragment "
+            "segments dropped)"
+        )
+
+    # A cell with no valid AGS at all cannot be Kreis-assigned; that would be
+    # a new upstream format, not truncation residue -> fail early.
+    no_ags = gdf[gdf["ags_list"].map(len) == 0]
+    if len(no_ags):
+        examples = no_ags["zell_id"].astype(str).head(10).tolist()
+        raise RuntimeError(
+            f"[braunschweig.data.verbindungen.zones] {len(no_ags)} cell(s) have "
+            f"no valid AGS after dropping truncated fragments (e.g. {examples}); "
+            "cannot assign a Kreis -- upstream ags_0 format changed?"
+        )
+
     gdf["kreis_id"] = gdf["ags_list"].map(cell_kreis_id)
 
     scope = [str(p) for p in scope]

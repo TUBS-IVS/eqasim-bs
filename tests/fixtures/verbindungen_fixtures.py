@@ -1,15 +1,18 @@
 """Synthetic mini-fixtures for the VerBindungen data layer tests.
 
 Geometry layout (EPSG:4326 in the shapefile, as upstream; the loader
-reprojects to EPSG:25832). Four cells on a 2x2 unit-ish grid near 10.5E/52.2N:
+reprojects to EPSG:25832). Five cells on a unit-ish grid near 10.5E/52.2N:
 
     stadtteil-1  (03101000)          | vg250-3 (03151001,03151002)
     stadtteil-2  (03101000)          | vg250-9 (09999999)   <- out of scope
+                                     | vg250-99 (09999001,09) <- out of scope,
+                                       DBF-truncated ags_0 (trailing fragment)
 
 Municipalities (EPSG:25832): three in-scope communes; commune 031510029999
 ("renamed" since 2019 -- its AGS 03151002 is deliberately ABSENT from the
 municipalities frame under that key) exercises the geometric fallback of the
-AGS->commune mapping.
+AGS->commune mapping. Cell vg250-99 mimics the real file's DBF 254-char
+``ags_0`` truncation (a cut-off trailing segment) on an out-of-scope cell.
 """
 from __future__ import annotations
 
@@ -26,21 +29,22 @@ _CELLS_4326 = [
     ("stadtteil-2", "03101000", 10.50, 52.22),
     ("vg250-3", "03151001,03151002", 10.53, 52.20),
     ("vg250-9", "09999999", 10.53, 52.26),
+    ("vg250-99", "09999001,09", 10.53, 52.28),
 ]
 _W, _H = 0.02, 0.02
 
 
 def write_cells_shapefile_zip(dirpath) -> str:
-    """Write the 4-cell shapefile as a zip; return the zip path."""
+    """Write the 5-cell shapefile as a zip; return the zip path."""
     dirpath = str(dirpath)
     shp_dir = os.path.join(dirpath, "shp")
     os.makedirs(shp_dir, exist_ok=True)
     gdf = gpd.GeoDataFrame(
         {
             "ags_0": [ags for _, ags, _, _ in _CELLS_4326],
-            "ewz": [None, None, 5000.0, 7000.0],
+            "ewz": [None, None, 5000.0, 7000.0, 3000.0],
             "zell_id": [cid for cid, _, _, _ in _CELLS_4326],
-            "rs7": [72, 72, 74, 77],
+            "rs7": [72, 72, 74, 77, 77],
         },
         geometry=[box(x, y, x + _W, y + _H) for _, _, x, y in _CELLS_4326],
         crs="EPSG:4326",

@@ -88,6 +88,14 @@ def test_parse_ags_list_splits_pads_dedupes():
     assert parse_ags_list(" 3101000 ") == ["03101000"]          # pad + strip
 
 
+def test_parse_ags_list_drops_dbf_truncation_fragments():
+    # The DBF ags_0 field truncates at 254 chars; a cut-off trailing segment
+    # must be DROPPED, never zero-padded into a fake AGS code.
+    from braunschweig.data.verbindungen.zones import parse_ags_list
+    assert parse_ags_list("03151001,03") == ["03151001"]
+    assert parse_ags_list("07233055,07233") == ["07233055"]  # 5-digit fragment
+
+
 def test_cell_kreis_id_raises_on_mixed_kreise():
     from braunschweig.data.verbindungen.zones import cell_kreis_id
     assert cell_kreis_id(["03151001", "03151002"]) == "03151"
@@ -103,8 +111,10 @@ def test_build_zones_frames_clips_scope_and_maps_communes(tmp_path):
         gdf_raw, make_municipalities_gdf(), scope=ZGB_SCOPE,
         max_fallback_share=0.60,
     )
-    # vg250-9 (09999) is out of scope
+    # vg250-9 (09999) and vg250-99 (09999, DBF-truncated ags_0) are out of
+    # scope; the truncated cell must be clipped away, not crash the stage.
     assert set(df_cells["cell_id"]) == {"stadtteil-1", "stadtteil-2", "vg250-3"}
+    assert "vg250-99" not in set(df_cells["cell_id"])
     assert df_cells.crs.to_epsg() == 25832
     assert bool(df_cells.set_index("cell_id").loc["stadtteil-1", "is_stadtteil"]) is True
     assert df_cells.set_index("cell_id").loc["vg250-3", "kreis_id"] == "03151"
