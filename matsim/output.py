@@ -65,6 +65,10 @@ def archive_simulation_output(run_path, output_path):
     hardlink_count, copy_count, file_count = mirror_directory_tree(source_dir, target_dir)
 
     if file_count == 0:
+        # mirror_directory_tree may have created an empty target_dir (from an
+        # existing-but-empty source) before finding no files; remove it so the
+        # failure leaves no stray empty archive behind.
+        shutil.rmtree(target_dir, ignore_errors=True)
         raise RuntimeError(
             "[matsim.output] no files found under %s -- the MATSim run stage "
             "produced no simulation_output (stale or wiped hash cache?); cannot "

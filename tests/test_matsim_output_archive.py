@@ -124,3 +124,18 @@ def test_archive_raises_when_source_missing(tmp_path):
     assert "156" in str(excinfo.value)
     # No half-written archive left behind.
     assert not (output_path / "matsim_output" / "ARCHIVE_INFO.json").exists()
+
+
+def test_archive_raises_and_leaves_no_dir_when_source_empty(tmp_path):
+    from matsim.output import archive_simulation_output
+    import pytest
+    run_path = tmp_path / "matsim.simulation.run__empty.cache"
+    output_path = tmp_path / "output"
+    os.makedirs(str(run_path / "simulation_output"))  # exists but contains no files
+    os.makedirs(str(output_path))
+
+    with pytest.raises(RuntimeError) as excinfo:
+        archive_simulation_output(str(run_path), str(output_path))
+    assert "156" in str(excinfo.value)
+    # The failure is fully clean: no stray (empty) archive directory remains.
+    assert not (output_path / "matsim_output").exists()
