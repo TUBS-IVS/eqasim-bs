@@ -34,6 +34,36 @@ def assign_fixed_mode(distance_km, reference, band_of, rng):
     return out
 
 
+def assign_fixed_mode_per_agent(distance_km, references, band_of, rng):
+    """Fixed travel mode per agent, each drawn from that agent's OWN mode reference.
+
+    Like :func:`assign_fixed_mode`, but ``references`` is a per-agent list of
+    ``{band: {mode: prob}}`` dicts (one per agent, in the same order as
+    ``distance_km``). Used by the in-commuter synthesis to draw each agent's mode from
+    its origin Bundesland's reference. The inner draw logic is identical to
+    ``assign_fixed_mode``, so passing a homogeneous list ``[R] * n`` reproduces
+    ``assign_fixed_mode(distance_km, R, band_of, rng)`` exactly (same rng consumption,
+    agent-sequential). Returns a list of modes in input order.
+
+    Raises ValueError if ``references`` and ``distance_km`` differ in length.
+    """
+    distance_km = list(distance_km)
+    references = list(references)
+    if len(references) != len(distance_km):
+        raise ValueError(
+            f"references length {len(references)} != distance_km length "
+            f"{len(distance_km)}")
+    out = []
+    for d, reference in zip(distance_km, references):
+        dist = reference[band_of(float(d))]
+        modes = list(dist.keys())
+        probs = np.array([dist[m] for m in modes], dtype=float)
+        probs = probs / probs.sum()
+        probs[-1] = max(0.0, 1.0 - probs[:-1].sum())   # clamp float residue
+        out.append(modes[int(rng.choice(len(modes), p=probs))])
+    return out
+
+
 def select_commuter_donors(hts_persons, hts_trips, person_col):
     """HTS persons usable as in-commuter donors: employed AND with a home->work
     trip. Returns the qualifying subset; raises ValueError if none qualify."""
