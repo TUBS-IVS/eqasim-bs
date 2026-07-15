@@ -204,3 +204,38 @@ def test_read_qzm_rejects_censoring_violation(tmp_path):
     write_qzm_csv(p, [("stadtteil-1", "stadtteil-1", 5)])  # < 10 impossible upstream
     with pytest.raises(RuntimeError):
         read_qzm_csv(str(p))
+
+
+# --- margins loader ----------------------------------------------------------
+
+def test_read_statisch_parses_semicolon_and_dominanz(tmp_path):
+    from braunschweig.data.verbindungen.margins import read_statisch_csv
+    from tests.fixtures.verbindungen_fixtures import write_statisch_csv
+    p = tmp_path / "wo.csv"
+    write_statisch_csv(p, [
+        {"WO_verb_zell_id": "stadtteil-1", "SvB_aGeB": 5240},
+        {"WO_verb_zell_id": "vg250-3", "SvB_aGeB": "*"},
+    ])
+    df = read_statisch_csv(str(p), value_name="workers_at_home")
+    df = df.set_index("cell_id")
+    assert int(df.loc["stadtteil-1", "workers_at_home"]) == 5240
+    assert pd.isna(df.loc["vg250-3", "workers_at_home"])
+
+
+def test_margins_outer_merge_covers_all_cells(tmp_path):
+    from braunschweig.data.verbindungen.margins import build_margins_frame, read_statisch_csv
+    from tests.fixtures.verbindungen_fixtures import write_statisch_csv
+    wo, ao = tmp_path / "wo.csv", tmp_path / "ao.csv"
+    write_statisch_csv(wo, [{"WO_verb_zell_id": "stadtteil-1", "SvB_aGeB": 100}])
+    # AO file uses the same id column name convention with AO prefix
+    write_statisch_csv(ao, [{"WO_verb_zell_id": "stadtteil-2", "SvB_aGeB": 50}])
+    df = build_margins_frame(
+        read_statisch_csv(str(wo), "workers_at_home"),
+        read_statisch_csv(str(ao), "workers_at_workplace"),
+        cell_ids=["stadtteil-1", "stadtteil-2", "vg250-3"],
+    )
+    df = df.set_index("cell_id")
+    assert int(df.loc["stadtteil-1", "workers_at_home"]) == 100
+    assert pd.isna(df.loc["vg250-3", "workers_at_home"])
+    assert int(df.loc["stadtteil-2", "workers_at_workplace"]) == 50
+    assert len(df) == 3
