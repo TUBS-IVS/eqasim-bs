@@ -1103,6 +1103,13 @@ def configure(context):
     # Default True: the feature is active by default.  Set to False to reproduce the
     # legacy lossy PT->car reassignment (byte-identical for same rng seed).
     context.config("cordon_incommuter_mode_balance", True)
+    # Per-Bundesland in-commuter mode reference (#129).  When True, each in-commuter
+    # draws its commute mode from its origin Bundesland's Mikrozensus reference
+    # (GENESIS 12251-0105/0106) instead of one national blend; origin Laender missing
+    # from the margin CSVs fall back to the national reference (logged).  Default True:
+    # the traceable regional reference is used by default.  Set to False to reproduce
+    # the single-national-reference behaviour (byte-identical for the same seed).
+    context.config("cordon_incommuter_mode_reference_by_bundesland", True)
     # Declared unconditionally (independent of real_origin) so execute() can verify the
     # pre-clipped osm/cordon ring was built with the configured source buffer
     # (verify_clip_signature) -- a stale clip would silently change the road extent.
@@ -1151,7 +1158,9 @@ def execute(context):
         float(context.config("cordon_network_source_buffer_m")),
     )
 
-    from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
+    from braunschweig.data.mikrozensus.reference import (
+        build_mode_reference_by_bundesland, load_commute_mode_by_distance,
+        source_bundeslaender)
 
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
     residents = context.stage("synthesis.population.enriched")
@@ -1180,8 +1189,31 @@ def execute(context):
             flush=True,
         )
 
+    # Resolve the BA-Pendler flows once (reused for the OD-target frame inside
+    # build_incommuter_frames and to derive the source Bundeslaender below).
+    flows = context.stage("braunschweig.data.census.pendler")
+
+    # Per-Bundesland mode reference (#129, default ON).  Build ONLY the references for
+    # the Bundeslaender actually present among the in-commuter source Kreise (fewer IPF
+    # fits); origin Laender without a reference fall back to national inside
+    # build_incommuter_frames (logged).  When the flag is off, pass None so the mode
+    # draw is byte-identical to the single-national-reference behaviour.
+    if bool(context.config("cordon_incommuter_mode_reference_by_bundesland")):
+        present_bundeslaender = source_bundeslaender(flows["orig_ars"])
+        mode_reference_by_bundesland = build_mode_reference_by_bundesland(
+            context.config("data_path"), bundeslaender=present_bundeslaender)
+        print(
+            f"[braunschweig.synthesis.incommuters] per-Bundesland mode reference ON: "
+            f"built references for {len(mode_reference_by_bundesland)}/"
+            f"{len(present_bundeslaender)} source Bundeslaender "
+            f"{present_bundeslaender} (others -> national fallback)",
+            flush=True,
+        )
+    else:
+        mode_reference_by_bundesland = None
+
     frames = build_incommuter_frames(
-        flows=context.stage("braunschweig.data.census.pendler"),
+        flows=flows,
         zgb_kreise={str(p) for p in context.config("braunschweig.political_prefix")},
         sampling_rate=float(context.config("sampling_rate")),
         gates=gate_volume["gates"], assignment=gate_volume["assignment"],
@@ -1211,6 +1243,7 @@ def execute(context):
         zgb_polygon=zgb_polygon,
         source_buffer_m=source_buffer_m,
         mode_balance=mode_balance,
+        mode_reference_by_bundesland=mode_reference_by_bundesland,
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")
