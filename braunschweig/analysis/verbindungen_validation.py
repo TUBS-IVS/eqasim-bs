@@ -62,7 +62,15 @@ def conditional_od_check(df_model_od: pd.DataFrame,
     ``censored_model_share`` (of the full model row mass), never silently
     dropped. Origins without reference mass are skipped (reported in stats).
     Overall ``weighted_tvd`` weights origins by reference row mass.
+
+    An empty reference frame raises ValueError (fail-early): it means the
+    upstream loader/clip produced no relations, not that the model fits.
     """
+    if df_ref_od.empty:
+        raise ValueError(
+            "[verbindungen_validation] reference OD frame is empty -- no "
+            "relations to compare against (check the work_od loader/clip)"
+        )
     ref = df_ref_od.groupby(["origin_cell_id", "destination_cell_id"])["commuters"].sum()
     model = df_model_od.groupby(["origin_cell_id", "destination_cell_id"])["commuters"].sum()
 
@@ -134,7 +142,10 @@ def margin_check(model_counts: pd.Series, ref_counts: pd.Series) -> dict:
     m = df["model"] / df["model"].sum()
     r = df["ref"] / df["ref"].sum()
     srmse = float(np.sqrt(((m - r) ** 2).mean()) / r.mean())
-    pearson = float(np.corrcoef(m, r)[0, 1]) if len(df) > 1 else np.nan
+    # A constant share vector has zero variance; its Pearson r is undefined
+    # and stays NaN -- suppress only numpy's divide warning, not the NaN.
+    with np.errstate(invalid="ignore"):
+        pearson = float(np.corrcoef(m, r)[0, 1]) if len(df) > 1 else np.nan
     return dict(srmse=srmse, pearson_r=pearson, n_cells=int(len(df)))
 
 

@@ -67,6 +67,16 @@ def test_conditional_od_check_hand_computed():
     assert math.isclose(stats["censored_model_share"], 10.0 / 110.0, abs_tol=1e-9)
 
 
+def test_conditional_od_check_raises_on_empty_reference():
+    from braunschweig.analysis.verbindungen_validation import conditional_od_check
+    model = _od([("A", "A", 50)])
+    empty_ref = _od([])
+    # Fail-early contract: an empty reference means the loader/clip upstream
+    # broke; comparing against nothing must never return silently.
+    with pytest.raises(ValueError, match="reference OD frame is empty"):
+        conditional_od_check(model, empty_ref)
+
+
 def test_band_shares_and_emd_hand_computed():
     from braunschweig.analysis.verbindungen_validation import band_shares, emd_1d
     cells = _cells()
