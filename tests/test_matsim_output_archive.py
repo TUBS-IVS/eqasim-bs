@@ -45,3 +45,42 @@ def test_mirror_recreates_tree_and_hardlinks(tmp_path):
     src_ino = (source / "output_events.xml.gz").stat().st_ino
     dst_ino = (target / "output_events.xml.gz").stat().st_ino
     assert src_ino == dst_ino
+
+
+def test_mirror_overwrites_existing_target(tmp_path):
+    source = tmp_path / "simulation_output"
+    target = tmp_path / "matsim_output"
+    _build_source_tree(str(source))
+
+    # Pre-existing archive with a stale file that is NOT in the source tree.
+    os.makedirs(str(target))
+    with open(os.path.join(str(target), "stale_old_run.txt"), "w") as fh:
+        fh.write("stale")
+
+    mirror_directory_tree(str(source), str(target))
+
+    # Overwrite is clean: stale content gone, current tree present.
+    assert not (target / "stale_old_run.txt").exists()
+    assert (target / "output_events.xml.gz").is_file()
+
+
+def test_mirror_falls_back_to_copy(tmp_path, monkeypatch):
+    source = tmp_path / "simulation_output"
+    target = tmp_path / "matsim_output"
+    _build_source_tree(str(source))
+
+    # Simulate a cross-volume filesystem where hardlinks are impossible.
+    def _raise_oserror(src, dst):
+        raise OSError("simulated cross-device link (EXDEV)")
+
+    monkeypatch.setattr("matsim.output.os.link", _raise_oserror)
+
+    hardlink_count, copy_count, file_count = mirror_directory_tree(
+        str(source), str(target)
+    )
+
+    # All files still present, all via copy, none hardlinked.
+    assert file_count == 3
+    assert hardlink_count == 0
+    assert copy_count == 3
+    assert (target / "ITERS" / "it.0" / "0.plans.xml.gz").is_file()
