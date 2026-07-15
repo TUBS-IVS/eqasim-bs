@@ -181,3 +181,163 @@ def vintage_drift_check(df_ref_od: pd.DataFrame, df_cells: gpd.GeoDataFrame,
     out["share_2025"] = out["flow_2025"] / out["flow_2025"].sum()
     out["share_drift"] = out["share_2019"] - out["share_2025"]
     return out.reset_index()
+
+
+def build_validation_outputs(df_home: gpd.GeoDataFrame,
+                             df_work: gpd.GeoDataFrame,
+                             df_persons: pd.DataFrame,
+                             df_cells: gpd.GeoDataFrame,
+                             df_ref_od: pd.DataFrame,
+                             df_margins: pd.DataFrame,
+                             df_pendler: pd.DataFrame) -> dict:
+    """Assemble all validation outputs from raw stage frames (pure, testable)."""
+    # --- realised potential OD: employed persons with a work location -------
+    df = df_work[["person_id", "geometry"]].merge(
+        df_persons[["person_id", "household_id"]], on="person_id", how="left")
+    df = df.merge(
+        df_home[["household_id", "geometry"]].rename(
+            columns={"geometry": "home_geometry"}),
+        on="household_id", how="left")
+
+    work_pts = gpd.GeoDataFrame(df[["person_id"]], geometry=df["geometry"],
+                                crs=df_work.crs)
+    home_pts = gpd.GeoDataFrame(df[["person_id"]], geometry=df["home_geometry"],
+                                crs=df_home.crs)
+    df["work_cell_id"] = assign_points_to_cells(work_pts, df_cells).to_numpy()
+    df["home_cell_id"] = assign_points_to_cells(home_pts, df_cells).to_numpy()
+
+    n_total = len(df)
+    assigned = df.dropna(subset=["home_cell_id", "work_cell_id"])
+    unassigned_share = 1.0 - (len(assigned) / n_total) if n_total else np.nan
+    print(
+        "[braunschweig.analysis.verbindungen_validation] workers: "
+        f"{len(assigned)}/{n_total} inside ZGB cells "
+        f"(unassigned share {100.0 * unassigned_share:.2f}%)"
+    )
+
+    df_model_od = (assigned.groupby(["home_cell_id", "work_cell_id"])
+                   .size().rename("commuters").reset_index()
+                   .rename(columns={"home_cell_id": "origin_cell_id",
+                                    "work_cell_id": "destination_cell_id"}))
+
+    # --- check B: conditional OD + bands + intra share ----------------------
+    per_origin, od_stats = conditional_od_check(df_model_od, df_ref_od)
+    s_model = band_shares(df_model_od, df_cells, DISTANCE_BANDS_KM)
+    s_ref = band_shares(df_ref_od, df_cells, DISTANCE_BANDS_KM)
+    band_emd = emd_1d(s_model, s_ref)
+    intra_model = float(
+        df_model_od.loc[df_model_od["origin_cell_id"]
+                        == df_model_od["destination_cell_id"], "commuters"].sum()
+    ) / max(float(df_model_od["commuters"].sum()), 1.0)
+    intra_ref = float(
+        df_ref_od.loc[df_ref_od["origin_cell_id"]
+                      == df_ref_od["destination_cell_id"], "commuters"].sum()
+    ) / max(float(df_ref_od["commuters"].sum()), 1.0)
+
+    # per-Kreis-pair divergence (feeds the stage-3 gate)
+    kreis = df_cells.set_index("cell_id")["kreis_id"]
+    m = df_model_od.copy()
+    m["orig_kreis"] = m["origin_cell_id"].map(kreis)
+    m["dest_kreis"] = m["destination_cell_id"].map(kreis)
+    r = df_ref_od.copy()
+    r["orig_kreis"] = r["origin_cell_id"].map(kreis)
+    r["dest_kreis"] = r["destination_cell_id"].map(kreis)
+    by_pair = []
+    for (ok, dk), r_pair in r.groupby(["orig_kreis", "dest_kreis"]):
+        m_pair = m[(m["orig_kreis"] == ok) & (m["dest_kreis"] == dk)]
+        _, pair_stats = conditional_od_check(
+            m_pair[["origin_cell_id", "destination_cell_id", "commuters"]],
+            r_pair[["origin_cell_id", "destination_cell_id", "commuters"]])
+        by_pair.append(dict(orig_kreis=ok, dest_kreis=dk,
+                            ref_commuters=float(r_pair["commuters"].sum()),
+                            model_commuters=float(m_pair["commuters"].sum()),
+                            weighted_tvd=pair_stats["weighted_tvd"]))
+    od_by_kreis_pair = pd.DataFrame(by_pair)
+
+    # --- check A: production margins ----------------------------------------
+    model_margin = assigned.groupby("home_cell_id").size()
+    ref_margin = df_margins.set_index("cell_id")["workers_at_home"].astype("Float64")
+    margin_stats = margin_check(
+        model_margin.reindex(df_margins["cell_id"]).fillna(0.0),
+        ref_margin,
+    )
+    margin_frame = pd.DataFrame({
+        "cell_id": df_margins["cell_id"],
+        "model_workers_at_home": model_margin.reindex(df_margins["cell_id"]).fillna(0).to_numpy(),
+        "reference_workers_at_home_2019": df_margins["workers_at_home"].to_numpy(),
+    })
+
+    # --- check C: vintage drift ---------------------------------------------
+    drift = vintage_drift_check(df_ref_od, df_cells, df_pendler)
+
+    summary = pd.DataFrame(
+        [
+            ("unassigned_person_share", unassigned_share),
+            ("weighted_tvd", od_stats["weighted_tvd"]),
+            ("censored_model_share", od_stats["censored_model_share"]),
+            ("n_origins_compared", od_stats["n_origins_compared"]),
+            ("band_emd", band_emd),
+            ("intra_cell_share_model", intra_model),
+            ("intra_cell_share_reference", intra_ref),
+            ("margin_srmse", margin_stats["srmse"]),
+            ("margin_pearson_r", margin_stats["pearson_r"]),
+            ("margin_n_cells", margin_stats["n_cells"]),
+            ("vintage_max_abs_share_drift",
+             float(drift["share_drift"].abs().max()) if len(drift) else np.nan),
+        ],
+        columns=["metric", "value"],
+    )
+    print("[braunschweig.analysis.verbindungen_validation] "
+          + ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+                      for k, v in summary.itertuples(index=False)))
+    return dict(summary=summary, margin=margin_frame, od_per_origin=per_origin,
+                od_by_kreis_pair=od_by_kreis_pair, vintage_drift=drift)
+
+
+_PROVENANCE_HEADER = (
+    "# VerBindungen validation (#124). Reference: VerBindungen 2019 "
+    "(31.12.2019, potential commutes, relations<10 censored; QZM universe = "
+    "all workers, BA margins = SvB+aGeB only). Model: synthetic employed "
+    "persons with assigned work location (potential assignment, uniform "
+    "sample, share-based). Shares only -- never compare absolute counts.\n"
+)
+
+
+def configure(context):
+    context.stage("synthesis.population.spatial.home.locations")
+    context.stage("synthesis.population.spatial.primary.locations")
+    context.stage("synthesis.population.spatial.primary.candidates")
+    context.stage("braunschweig.data.verbindungen.zones")
+    context.stage("braunschweig.data.verbindungen.work_od")
+    context.stage("braunschweig.data.verbindungen.margins")
+    context.stage("braunschweig.data.census.pendler")
+
+
+def execute(context):
+    df_home = context.stage("synthesis.population.spatial.home.locations")
+    df_work, _ = context.stage("synthesis.population.spatial.primary.locations")
+    df_persons = context.stage(
+        "synthesis.population.spatial.primary.candidates")["persons"]
+    df_cells, _ = context.stage("braunschweig.data.verbindungen.zones")
+    df_ref_od = context.stage("braunschweig.data.verbindungen.work_od")
+    df_margins = context.stage("braunschweig.data.verbindungen.margins")
+    df_pendler = context.stage("braunschweig.data.census.pendler")
+
+    outputs = build_validation_outputs(
+        df_home, df_work, df_persons, df_cells, df_ref_od, df_margins,
+        df_pendler)
+
+    names = dict(
+        summary="verbindungen_validation_summary.csv",
+        margin="verbindungen_margin_check.csv",
+        od_per_origin="verbindungen_od_check.csv",
+        od_by_kreis_pair="verbindungen_od_check_by_kreis_pair.csv",
+        vintage_drift="verbindungen_vintage_drift.csv",
+    )
+    for key, name in names.items():
+        target = os.path.join(context.path(), name)
+        with open(target, "w", encoding="utf-8", newline="") as f:
+            f.write(_PROVENANCE_HEADER)
+            outputs[key].to_csv(f, index=False)
+        print(f"[braunschweig.analysis.verbindungen_validation] wrote {target}")
+    return outputs

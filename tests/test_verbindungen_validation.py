@@ -121,3 +121,79 @@ def test_vintage_drift_cross_kreis_shares():
     assert math.isclose(d.loc[("03101", "03151"), "share_2019"], 1.0)
     assert math.isclose(d.loc[("03101", "03151"), "share_2025"], 0.5)
     assert math.isclose(d.loc[("03151", "03101"), "share_2019"], 0.0)
+
+
+def _synthetic_population():
+    """4 employed persons: 3 in cell A (2 work A, 1 works B), 1 outside cells."""
+    df_home = gpd.GeoDataFrame({
+        "household_id": [10, 11, 12, 13],
+        "commune_id": ["031010001000"] * 4,
+        "home_location_id": [1, 2, 3, 4],
+    }, geometry=[Point(400, 400), Point(600, 600), Point(700, 300),
+                 Point(9000, 9000)], crs="EPSG:25832")
+    df_persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "household_id": [10, 11, 12, 13],
+        "age_range": ["adult"] * 4,
+        "commune_id": ["031010001000"] * 4,
+        "has_work_trip": [True, True, True, True],
+        "has_education_trip": [False] * 4,
+    })
+    df_work = gpd.GeoDataFrame({
+        "person_id": [1, 2, 3, 4],
+        "commune_id": ["031010001000"] * 4,
+        "location_id": [101, 102, 103, 104],
+    }, geometry=[Point(450, 450), Point(650, 650), Point(1500, 500),
+                 Point(500, 500)], crs="EPSG:25832")
+    return df_home, df_work, df_persons
+
+
+def test_build_validation_outputs_end_to_end():
+    from braunschweig.analysis.verbindungen_validation import build_validation_outputs
+    df_home, df_work, df_persons = _synthetic_population()
+    cells = _cells()
+    ref = _od([("A", "A", 60), ("A", "B", 40)])
+    margins = pd.DataFrame({
+        "cell_id": ["A", "B"],
+        "workers_at_home": pd.array([100, 50], dtype="Int64"),
+        "workers_at_workplace": pd.array([80, 70], dtype="Int64"),
+    })
+    pendler = pd.DataFrame({
+        "orig_ars": ["03101"], "dest_ars": ["03151"], "flow": [100.0],
+    })
+    out = build_validation_outputs(
+        df_home, df_work, df_persons, cells, ref, margins, pendler)
+    assert set(out) == {"summary", "margin", "od_per_origin",
+                        "od_by_kreis_pair", "vintage_drift"}
+    summary = out["summary"].set_index("metric")["value"]
+    # person 4: home outside every cell -> unassigned share 1/4
+    assert math.isclose(float(summary["unassigned_person_share"]), 0.25)
+    # realised OD (persons 1-3): A->A 2, A->B 1
+    # ref-conditional p_ref=(0.6,0.4); model p=(2/3,1/3)
+    # TVD = 0.5*(|2/3-0.6|+|1/3-0.4|) = 0.5*(0.0666..+0.0666..) = 0.0666..
+    assert math.isclose(float(summary["weighted_tvd"]), 1.0 / 15.0, abs_tol=1e-9)
+    # margin check present with 2 cells
+    assert int(out["margin"].shape[0]) == 2
+    # intra-cell shares: model 2/3, ref 0.6
+    assert math.isclose(float(summary["intra_cell_share_model"]), 2.0 / 3.0)
+    assert math.isclose(float(summary["intra_cell_share_reference"]), 0.6)
+
+
+def test_build_validation_outputs_tolerates_zero_mass_cell():
+    from braunschweig.analysis.verbindungen_validation import build_validation_outputs
+    df_home, df_work, df_persons = _synthetic_population()
+    cells = _cells()
+    # reference has no row for origin B (like the gemeindefreie ZGB cells)
+    ref = _od([("A", "A", 60), ("A", "B", 40)])
+    margins = pd.DataFrame({
+        "cell_id": ["A", "B"],
+        "workers_at_home": pd.array([100, pd.NA], dtype="Int64"),
+        "workers_at_workplace": pd.array([80, 70], dtype="Int64"),
+    })
+    pendler = pd.DataFrame({
+        "orig_ars": ["03101"], "dest_ars": ["03151"], "flow": [100.0],
+    })
+    out = build_validation_outputs(
+        df_home, df_work, df_persons, cells, ref, margins, pendler)
+    # must not raise; margin check silently drops the NA cell (n_cells == 1)
+    assert int(out["summary"].set_index("metric").loc["margin_n_cells", "value"]) == 1
