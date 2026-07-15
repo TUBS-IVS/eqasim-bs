@@ -35,3 +35,18 @@ origins receive a typed slope.
 Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 `tests/test_gravity_slope_config.py` (the `None` default / flatten contract).
+
+## Sector-aware attraction tilt (PARKED, default OFF — ADR-0065)
+
+`braunschweig.gravity.sector_aware_enabled` (default `False`) tilts the
+per-Gemeinde work attraction by establishment density (`n_betriebe` per
+employee vs the Kreis mean; Kreis totals preserved). Measured 2026-07-15
+(issue #128, gravity-only A/B on ZGB-8): no effect on the commute distance
+distribution, but a 9x worse fit of per-Gemeinde work inflows against the
+OBSERVED SvB-am-Arbeitsort counts — the attraction vector IS that observation,
+so the tilt can only distort it. PARKED; do not enable in run configs. The
+underlying concern is covered by building work potentials (within-Gemeinde)
+and, if ever needed, WZ-sectoral friction (issue #128 phase 2, deferred).
+See ADR-0065 in docs/DECISIONS.md. Entry point:
+`build_destination_attraction` in `braunschweig/gravity/model.py`; tests in
+`tests/test_work_sector_aware.py`.

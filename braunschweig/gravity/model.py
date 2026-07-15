@@ -188,6 +188,31 @@ def apply_sector_aware_attraction(
     return df
 
 
+def build_destination_attraction(
+    df_employees_raw: pd.DataFrame,
+    df_betriebe: pd.DataFrame | None,
+    sector_aware_enabled: bool,
+) -> pd.DataFrame:
+    """Build the gravity destination attraction from the raw employees stage output.
+
+    Owns the schema handoff between ``braunschweig.data.census.employees``
+    (columns ``commune_id``/``weight``) and ``apply_sector_aware_attraction``
+    (which reads ``employees``): the rename happens BEFORE the flag-gated tilt.
+    Applying the tilt to the raw stage frame crashed the ON path with
+    ``KeyError: 'employees'`` because the rename only happened downstream
+    (issue #128).
+
+    Returns a frame with columns ``commune_id`` and ``employees``; on the OFF
+    path the values are byte-identical to the legacy headcount attraction.
+    """
+    df_employees = df_employees_raw.rename(columns={"weight": "employees"})[
+        ["commune_id", "employees"]
+    ]
+    return apply_sector_aware_attraction(
+        df_employees, df_betriebe, enabled=sector_aware_enabled,
+    )
+
+
 # Iteration cap for the doubly-constrained balancing in ``evaluate_gravity``.
 # Deliberately high so convergence (the 1e-3 per-step delta test below) is
 # always reached before the cap on realistic inputs -- the cap only guards
@@ -449,7 +474,17 @@ def _read_betriebe_per_commune(context) -> pd.DataFrame:
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
 
     # Normalise 5-digit kreisfreie AGS to 8-digit (e.g. 03101 -> 03101000).
-    mask_krfr = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    # Same guard as braunschweig.data.census.employees: only a 5-digit AGS
+    # whose padded form is a real Gemeinde is kreisfrei; other 5-digit rows
+    # are Landkreis aggregate totals and must not be padded into fabricated
+    # AGS (the merge below would silently drop them -- and a Kreis aggregate
+    # must never enter the per-Gemeinde establishment counts).
+    valid_gemeinde_ags = set(df_codes["ags"].astype(str))
+    mask_krfr = (
+        (df["ags"].str.len() == 5)
+        & df["ags"].isin(scope_kreise)
+        & (df["ags"] + "000").isin(valid_gemeinde_ags)
+    )
     df.loc[mask_krfr, "ags"] = df.loc[mask_krfr, "ags"] + "000"
     df = df[(df["ags"].str.len() == 8) & df["ags"].str[:5].isin(scope_kreise)].copy()
 
@@ -684,17 +719,18 @@ def _execute_gravity_base(context):
     df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
 
     # Sector-aware destination attraction (flag-gated; OFF -> byte-identical).
-    # Tilts the per-Gemeinde ``employees`` attraction by establishment density
-    # while preserving Kreis totals (see ``apply_sector_aware_attraction``).
+    # ``build_destination_attraction`` renames the stage's ``weight`` column to
+    # ``employees`` BEFORE the flag-gated tilt (issue #128: tilting the raw
+    # stage frame crashed with KeyError 'employees') and tilts the per-Gemeinde
+    # attraction by establishment density while preserving Kreis totals.
     # synpp's ExecuteContext.config() takes only the key (no default argument);
     # the default False is declared in configure(). Passing a default here raises
     # "config() takes 2 positional arguments but 3 were given" and aborts the run.
-    df_employees_gemeinde = df_employees_raw
-    if context.config("braunschweig.gravity.sector_aware_enabled"):
-        df_betriebe = _read_betriebe_per_commune(context)
-        df_employees_gemeinde = apply_sector_aware_attraction(
-            df_employees_gemeinde, df_betriebe, enabled=True,
-        )
+    sector_aware_enabled = context.config("braunschweig.gravity.sector_aware_enabled")
+    df_betriebe = _read_betriebe_per_commune(context) if sector_aware_enabled else None
+    df_employees_gemeinde = build_destination_attraction(
+        df_employees_raw, df_betriebe, sector_aware_enabled,
+    )
 
     # Rename to the schema expected by compute_work_od.
     df_pop_gemeinde = df_population_raw.rename(columns={
@@ -704,7 +740,6 @@ def _execute_gravity_base(context):
 
     df_emp_gemeinde = df_employees_gemeinde.rename(columns={
         "commune_id": "destination_id",
-        "weight": "employees",
     })[["destination_id", "employees"]]
 
     slope = context.config("gravity_slope")
