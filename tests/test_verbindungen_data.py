@@ -66,3 +66,65 @@ def test_render_provenance_contains_all_fields():
     assert "abc123" in text
     assert "31.12.2019" in text          # reference date note
     assert "LICENSE_FREE_USE_OPEN_DATA" in text
+
+
+# --- zones loader -----------------------------------------------------------
+
+ZGB_SCOPE = ["03101", "03151"]
+
+
+def _load_fixture_cells(tmp_path):
+    import geopandas as gpd
+    from tests.fixtures.verbindungen_fixtures import write_cells_shapefile_zip
+    zip_path = write_cells_shapefile_zip(tmp_path)
+    return gpd.read_file(f"zip://{zip_path}!verbindungen-verkehrszellen.shp")
+
+
+def test_parse_ags_list_splits_pads_dedupes():
+    from braunschweig.data.verbindungen.zones import parse_ags_list
+    assert parse_ags_list("03101000") == ["03101000"]
+    assert parse_ags_list("03151001,03151002") == ["03151001", "03151002"]
+    assert parse_ags_list("02000000,02000000") == ["02000000"]  # dedupe
+    assert parse_ags_list(" 3101000 ") == ["03101000"]          # pad + strip
+
+
+def test_cell_kreis_id_raises_on_mixed_kreise():
+    from braunschweig.data.verbindungen.zones import cell_kreis_id
+    assert cell_kreis_id(["03151001", "03151002"]) == "03151"
+    with pytest.raises(ValueError):
+        cell_kreis_id(["03151001", "03101000"])
+
+
+def test_build_zones_frames_clips_scope_and_maps_communes(tmp_path):
+    from braunschweig.data.verbindungen.zones import build_zones_frames
+    from tests.fixtures.verbindungen_fixtures import make_municipalities_gdf
+    gdf_raw = _load_fixture_cells(tmp_path)
+    df_cells, df_cell_commune, stats = build_zones_frames(
+        gdf_raw, make_municipalities_gdf(), scope=ZGB_SCOPE,
+        max_fallback_share=0.60,
+    )
+    # vg250-9 (09999) is out of scope
+    assert set(df_cells["cell_id"]) == {"stadtteil-1", "stadtteil-2", "vg250-3"}
+    assert df_cells.crs.to_epsg() == 25832
+    assert bool(df_cells.set_index("cell_id").loc["stadtteil-1", "is_stadtteil"]) is True
+    assert df_cells.set_index("cell_id").loc["vg250-3", "kreis_id"] == "03151"
+    # direct AGS matches: 03101000 -> 031010001000 (both stadtteil cells),
+    # 03151001 -> 031510000001
+    mapping = df_cell_commune.set_index(["cell_id", "commune_id"])
+    assert ("stadtteil-1", "031010001000") in mapping.index
+    assert ("vg250-3", "031510000001") in mapping.index
+    # geometric fallback: AGS 03151002 has no dict match; commune 031510029999
+    # lies inside vg250-3 and must be recovered via the fallback with the flag.
+    assert ("vg250-3", "031510029999") in mapping.index
+    assert bool(mapping.loc[("vg250-3", "031510029999"), "via_fallback"]) is True
+    # 3 primary AGS matches (03101000 x2 + 03151001), 1 fallback (03151002).
+    assert stats["n_ags_primary"] == 3 and stats["n_ags_fallback"] == 1
+
+
+def test_build_zones_frames_raises_above_fallback_bound(tmp_path):
+    from braunschweig.data.verbindungen.zones import build_zones_frames
+    from tests.fixtures.verbindungen_fixtures import make_municipalities_gdf
+    gdf_raw = _load_fixture_cells(tmp_path)
+    with pytest.raises(RuntimeError):
+        build_zones_frames(gdf_raw, make_municipalities_gdf(), scope=ZGB_SCOPE,
+                           max_fallback_share=0.10)
