@@ -60,6 +60,9 @@ def test_render_provenance_contains_all_fields():
     text = render_provenance(entries)
     assert "QZM-Berufspendler-VerBindungen-Verkehrszellen.csv" in text
     assert "767413386339078144" in text
+    # The full per-file URL must be rendered literally, not just its components.
+    assert ("https://mobilithek.info/mdp-api/files/aux/767413386339078144/"
+            "QZM-Berufspendler-VerBindungen-Verkehrszellen.csv") in text
     assert "abc123" in text
     assert "31.12.2019" in text          # reference date note
     assert "LICENSE_FREE_USE_OPEN_DATA" in text

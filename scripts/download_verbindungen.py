@@ -107,12 +107,12 @@ def render_provenance(entries: list[dict]) -> str:
         "Files keep their original upstream names for traceability.",
         "Fetched by scripts/download_verbindungen.py.",
         "",
-        "| filename | mobilithek offer id | sha256 | size (bytes) | downloaded at |",
-        "|---|---|---|---|---|",
+        "| filename | mobilithek offer id | url | sha256 | size (bytes) | downloaded at |",
+        "|---|---|---|---|---|---|",
     ]
     for e in entries:
         lines.append(
-            f"| {e['filename']} | {e['offer_id']} | {e['sha256']} "
+            f"| {e['filename']} | {e['offer_id']} | {e['url']} | {e['sha256']} "
             f"| {e['size_bytes']} | {e['downloaded_at']} |"
         )
     lines += [
