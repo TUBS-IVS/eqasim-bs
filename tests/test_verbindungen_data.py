@@ -277,8 +277,20 @@ def test_margins_outer_merge_covers_all_cells(tmp_path):
 
 # --- config wiring -----------------------------------------------------------
 
-def test_popsim_mid_config_runs_verbindungen_validation():
+_VERBINDUNGEN_WIRED_CONFIGS = [
+    # dev config (wired in #124 phase 1) + the three allfeat server configs
+    # (wired after the server data drop; the stage fail-earlies on missing
+    # reference files by design, so wiring must follow the data).
+    "config_popsim_mid_braunschweig.yml",
+    "config_server_braunschweig_1pct_allfeat_popsim.yml",
+    "config_server_braunschweig_25pct_allfeat_popsim.yml",
+    "config_server_braunschweig_100pct_allfeat_popsim.yml",
+]
+
+
+@pytest.mark.parametrize("config_name", _VERBINDUNGEN_WIRED_CONFIGS)
+def test_configs_run_verbindungen_validation(config_name):
     import yaml
-    with open(REPO_ROOT / "config_popsim_mid_braunschweig.yml", encoding="utf-8") as f:
+    with open(REPO_ROOT / config_name, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    assert "braunschweig.analysis.verbindungen_validation" in cfg["run"]
+    assert "braunschweig.analysis.verbindungen_validation" in cfg["run"], config_name
