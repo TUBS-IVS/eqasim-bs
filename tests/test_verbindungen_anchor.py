@@ -93,3 +93,35 @@ def test_build_anchor_targets_shares_and_coverage():
     # shares sum to 1 within every anchorable row
     sums = targets.groupby(["origin_zone_id", "dest_kreis"])["target_share"].sum()
     assert np.allclose(sums.to_numpy(), 1.0)
+
+
+def test_build_anchor_targets_warns_on_high_coverage_skip(capsys):
+    """CLAUDE.md fallback transparency rule #2: a high coverage-skip rate
+    must be escalated (WARNING), not just reported at a flat informational
+    level (#193 Task 2 review finding).
+
+    High-skip fixture (hand-computed, 3 (origin, dest_kreis) row groups):
+        (A, 03101) <- A->A only, mass 5    (below threshold 20 -> skipped)
+        (A, 03151) <- A->C only, mass 8    (below threshold 20 -> skipped)
+        (B, 03101) <- B->A only, mass 50   (>= threshold 20 -> anchorable)
+    With min_observed_commuters=20: 2 of 3 rows skipped = 0.667 > 0.5
+    (HIGH_COVERAGE_SKIP_WARN_FRACTION) -> the log line must carry "WARNING".
+    """
+    from braunschweig.gravity.verbindungen_anchor import build_anchor_targets
+
+    ref_od_high_skip = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "B"],
+        "destination_zone_id": ["A", "C", "A"],
+        "commuters": [5, 8, 50],
+    })
+    _, stats = build_anchor_targets(
+        ref_od_high_skip, _zones(), min_observed_commuters=20)
+    assert stats["n_rows_total"] == 3
+    assert stats["n_rows_anchorable"] == 1
+    assert stats["n_rows_skipped_coverage"] == 2
+    assert "WARNING" in capsys.readouterr().out
+
+    # The existing low-skip fixture (row (B, 03101) mass 12 < 20 is the only
+    # skip: 1/3 rows = 0.33 < 0.5) must NOT trigger the escalation.
+    build_anchor_targets(_ref_od_zones(), _zones(), min_observed_commuters=20)
+    assert "WARNING" not in capsys.readouterr().out

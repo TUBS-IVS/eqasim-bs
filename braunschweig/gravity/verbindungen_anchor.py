@@ -30,6 +30,13 @@ import pandas as pd
 CONSERVATION_RTOL = 1e-9
 # Model mass below this is "zero" for the zero-mass guard (flows are floats).
 ZERO_MASS_EPS = 1e-12
+# TRANSPARENCY HEURISTIC (CLAUDE.md fallback transparency), NOT a scientific
+# reference/target value: warn when more than this fraction of (origin,
+# dest-Kreis) rows are dropped by the coverage guard. A high coverage-skip
+# rate is a data-quality signal (e.g. a stale reference year or an id-join
+# mismatch), not something to compare model output against; it also fires
+# near a ~100% skip rate, the case CLAUDE.md calls out explicitly.
+HIGH_COVERAGE_SKIP_WARN_FRACTION = 0.5
 
 
 def collapse_od_to_zones(df_od_cells: pd.DataFrame,
@@ -93,8 +100,11 @@ def build_anchor_targets(df_ref_od_zones: pd.DataFrame,
             q: float(row_mass.quantile(q)) for q in (0.1, 0.25, 0.5, 0.75, 0.9)
         } if n_rows_total else {},
     )
+    skip_fraction = (stats["n_rows_skipped_coverage"] / n_rows_total
+                     if n_rows_total else 0.0)
+    warn_prefix = "WARNING: " if skip_fraction > HIGH_COVERAGE_SKIP_WARN_FRACTION else ""
     print(
-        "[braunschweig.gravity.verbindungen_anchor] targets: "
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix}targets: "
         f"{stats['n_rows_anchorable']}/{stats['n_rows_total']} rows anchorable "
         f"(min_observed_commuters={min_observed_commuters}), "
         f"{stats['n_rows_skipped_coverage']} skipped by coverage"
