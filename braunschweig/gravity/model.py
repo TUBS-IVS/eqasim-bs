@@ -970,8 +970,15 @@ def configure(context):
         # build_work_production_mass / tilt_taz_production_by_gemeinde_rate
         # escalate their rate log to a WARNING. Declared only under this
         # conditional -- like the keys above -- so the "population" OFF path
-        # needs no new config key.
-        context.config("braunschweig.gravity.svb_wohn_fallback_warn_share", 0.05)
+        # needs no new config key. The default is the single source of truth
+        # in production_mass (lazy import, consistent with the execute paths).
+        from braunschweig.gravity.production_mass import (  # noqa: PLC0415
+            SVB_FALLBACK_WARN_SHARE,
+        )
+        context.config(
+            "braunschweig.gravity.svb_wohn_fallback_warn_share",
+            SVB_FALLBACK_WARN_SHARE,
+        )
 
     # TAZ-specific stages: only declared when the flag is ON so the OFF path
     # (all existing configs) needs no new keys or stages.

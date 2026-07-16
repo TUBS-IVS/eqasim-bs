@@ -60,9 +60,12 @@ def read_statisch_csv(path: str, value_name: str) -> pd.DataFrame:
 
 
 def _raise_on_duplicate_cell_id(df: pd.DataFrame, side: str) -> None:
-    """Fail loudly, naming the offending ids, instead of letting a duplicate
-    ``cell_id`` silently fan out the one_to_one merge below (CLAUDE.md:
-    fail-early on invalid input rather than corrupting downstream margins)."""
+    """Fail loudly on duplicate ``cell_id`` rows, naming the offending ids.
+
+    The ``validate="one_to_one"`` merges below would also raise on a
+    duplicate (pandas ``MergeError``), so this pre-check exists purely to
+    replace that generic error with an actionable one that names the source
+    file side and the duplicated ids (CLAUDE.md: clear exception messages)."""
     dup_mask = df["cell_id"].duplicated(keep=False)
     if dup_mask.any():
         dup_ids = sorted(df.loc[dup_mask, "cell_id"].unique())
@@ -81,10 +84,10 @@ def build_margins_frame(df_wo: pd.DataFrame, df_ao: pd.DataFrame,
 
     Both merges are ``validate="one_to_one"``: the cell universe (*cell_ids*)
     is unique by construction (the zones stage guards against duplicate
-    cells), so a duplicate ``cell_id`` in *df_wo* or *df_ao* would otherwise
-    silently fan out the joined row across both copies instead of raising --
-    corrupting every downstream margin. Checked explicitly first so the error
-    names the offending ids rather than surfacing pandas' generic MergeError.
+    cells), and a duplicate ``cell_id`` in *df_wo* or *df_ao* would violate
+    the one-row-per-cell output contract. ``validate`` makes pandas raise on
+    that; the explicit pre-check runs first so the error names the offending
+    ids and source side rather than surfacing pandas' generic MergeError.
     """
     _raise_on_duplicate_cell_id(df_wo, "WO (workers_at_home)")
     _raise_on_duplicate_cell_id(df_ao, "AO (workers_at_workplace)")

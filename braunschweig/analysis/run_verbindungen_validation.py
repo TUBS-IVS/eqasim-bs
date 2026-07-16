@@ -7,7 +7,7 @@ Usage::
 
     python -m braunschweig.analysis.run_verbindungen_validation \
         --working-directory eqasim-data/cache_bs_popsim_mid \
-        --output-dir eqasim-data/output_bs_popsim_mid/verbindungen_validation
+        --output-dir eqasim-data/output_bs_popsim_mid/analysis/verbindungen
 """
 from __future__ import annotations
 
