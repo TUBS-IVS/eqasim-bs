@@ -163,6 +163,8 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | Calibration: purpose-resolved secondary | `secondary_distance_by_purpose` / `_shop_daily_split` | `popsim/distance_distributions.py` | 🟢 (allfeat_popsim) | MiD W12 per-purpose |
 | Calibration: per-band commute friction | `gravity_friction_factors` (None) | `gravity/friction.py`, `calibration/commute.py` | 🟡 infra, **not activated** (model already <0.08 EMD) | MiD P13 |
 | Sector-aware attraction tilt (#128) | `braunschweig.gravity.sector_aware_enabled` (False) | `gravity/model.py` (`build_destination_attraction`) | ⏸ **PARKED** (A/B 2026-07-15: distance unchanged, Gemeinde-inflow fit 9x worse vs observed SvB — ADR-0065; ON-path crash + LK-aggregate loss bug fixed, PR #184) | GENESIS 13111-01-03-5 (SvB Arbeitsort) |
+| VerBindungen sub-Kreis OD validation (#124) | run-list stage (default-ON) | `data/verbindungen/*`, `analysis/verbindungen_validation.py` | ✅ **MERGED** PR #189/#190; 100pct baseline: check-B weighted TVD 0.137, home-margin r 0.9968, vintage r 0.9984 (ADR-0066) | **VerBindungen 2019 QZM (open data)** |
+| svb_wohn work production mass (#132) | `braunschweig.gravity.work_production_mass` (`population`) | `gravity/production_mass.py`, `gravity/model.py` | ⏸ **PARKED default OFF** (A/B 2026-07-16: weighted TVD 0.1136→0.1137, negligible — Kreis-IPF anchor dominates; ADR-0066) | VerBindungen 2019 QZM |
 | Calibration: Tier-3 detour/circuity curve | `mode="curve"` (default constant 1.3) | `calibration/circuity.py` | 🟡 opt-in infra (measured immaterial) | OSM graph, Giacomin&Levinson 2015 |
 
 ### 2.5 Cordon / cross-border (Einpendler)
