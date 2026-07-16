@@ -140,6 +140,19 @@ def _build(working_directory, sampling_rate, output_dir):
         activities[["person_id", "activity_index", "purpose"]],
         on=["person_id", "activity_index"], how="left",
     )
+    # Join-coverage transparency: rows that miss the activities join get
+    # purpose=NaN and silently vanish from all three per-purpose reports --
+    # a cross-run pickle mix (disjoint person_id spaces) would otherwise look
+    # like a plausible zero-activity table.
+    n_unmatched = int(realised["purpose"].isna().sum())
+    if n_unmatched:
+        LOGGER.warning(
+            "%d/%d realised secondary rows (%.1f%%) found no (person_id, "
+            "activity_index) match in the activities stage -> excluded from "
+            "every per-purpose report. A dominant rate means the loaded stage "
+            "pickles come from different runs.",
+            n_unmatched, len(realised), 100.0 * n_unmatched / len(realised),
+        )
 
     summary_blocks = []
     for purpose in ("shop", "leisure", "other"):

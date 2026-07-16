@@ -218,6 +218,42 @@ def run_ipf_iterations(selectors, targets, weights, *, max_iterations, tolerance
     return weights, iteration, converged, iteration_factors
 
 
+def _map_departement_index(emp_targets_long, dep_id_to_index):
+    """Map the employment-margin ``departement_id`` onto the IPF Kreis index.
+
+    Join-coverage transparency (CLAUDE.md no-silent-fallback): rows whose
+    ``departement_id`` is absent from the population's Kreis set are dropped
+    (legitimate when the CSV covers more Kreise than the scope), but the drop
+    is COUNTED and logged -- and if NOTHING matches, the configured margin
+    would be silently inert (zero constraints appended, feature "on" doing
+    nothing), which raises instead.
+    """
+    emp_targets_long = emp_targets_long.copy()
+    emp_targets_long["departement_index"] = (
+        emp_targets_long["departement_id"].astype(str).map(dep_id_to_index)
+    )
+    dropped = emp_targets_long[emp_targets_long["departement_index"].isna()]
+    kept = emp_targets_long.dropna(subset=["departement_index"]).copy()
+    if len(kept) == 0:
+        raise RuntimeError(
+            "[braunschweig.ipf.model] employment-by-hhsize margin: 0 of "
+            f"{len(emp_targets_long)} target rows matched the population Kreis "
+            f"set {sorted(dep_id_to_index)} (CSV departement_id sample: "
+            f"{sorted(dropped['departement_id'].astype(str).unique())[:5]}). "
+            "The configured margin would be silently inert -- most likely a "
+            "key-format mismatch (e.g. un-padded Kreis codes)."
+        )
+    if len(dropped):
+        print(
+            "[braunschweig.ipf.model] employment-by-hhsize margin: matched "
+            f"{len(kept)}/{len(emp_targets_long)} target rows; dropped "
+            f"{len(dropped)} rows outside the population Kreis set: "
+            f"{sorted(dropped['departement_id'].astype(str).unique())[:5]}"
+        )
+    kept["departement_index"] = kept["departement_index"].astype(int)
+    return kept
+
+
 def configure(context):
     context.stage("braunschweig.ipf.prepare")
     context.config("braunschweig.minimum_age.employment", 16)
@@ -636,14 +672,7 @@ def execute(context):
             df_population["departement_id"].astype(str),
             df_population["departement_index"],
         ))
-        emp_targets_long = emp_targets_long.copy()
-        emp_targets_long["departement_index"] = (
-            emp_targets_long["departement_id"].astype(str).map(dep_id_to_index)
-        )
-        emp_targets_long = emp_targets_long.dropna(subset=["departement_index"])
-        emp_targets_long["departement_index"] = (
-            emp_targets_long["departement_index"].astype(int)
-        )
+        emp_targets_long = _map_departement_index(emp_targets_long, dep_id_to_index)
 
         emp_margin_indices = _build_group_indices(
             df_model, ["departement_index", "hh_size", "employed"])

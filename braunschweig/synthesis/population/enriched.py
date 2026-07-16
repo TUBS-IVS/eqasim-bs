@@ -2403,6 +2403,20 @@ def _apply_distribution_income(df_persons, df_inkar, df_bundesland, df_raumtyp,
     hh_kreis = pd.Series(hh_ids).map(kreis_by_hh).to_numpy()
     scale_lookup = dict(zip(df_inkar["ars5"], df_inkar["scale"]))
     raw_scale = pd.Series(hh_kreis).map(scale_lookup).astype(float)
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): a household
+    # Kreis absent from the INKAR table falls back to fine_tilt=1.0 below. A
+    # format drift of the INKAR ars5 keys would silently no-op the WHOLE
+    # spatial income tilt (mean scale 1.0 looks legitimate), so count it.
+    _n_scale_miss = int(raw_scale.isna().sum())
+    if _n_scale_miss:
+        _miss_rate = _n_scale_miss / len(raw_scale) if len(raw_scale) else 0.0
+        print(
+            f"[braunschweig.enriched] {'WARNING: ' if _miss_rate > 0.05 else ''}"
+            f"INKAR fine income tilt: {_n_scale_miss}/{len(raw_scale)} households "
+            f"({100.0 * _miss_rate:.1f}%) have no INKAR scale for their Kreis -> "
+            f"tilt 1.0. A high rate means an ars5 key mismatch "
+            f"(INKAR keys: {sorted(map(str, scale_lookup))[:5]})."
+        )
     # Mean over the IN-SCOPE kreise present in the population (not the national
     # INKAR mean) so the fine tilt has a population mean of ~1.0.
     in_scope_scales = [
@@ -2684,7 +2698,21 @@ def _apply_inkar_income_scale(df_persons, df_inkar, class_midpoint_eur,
     if kreis is None:
         kreis = _derive_kreis_ars5(df_persons)
     scale_lookup = dict(zip(df_inkar["ars5"], df_inkar["scale"]))
-    scale = kreis.map(scale_lookup).fillna(1.0).astype(float)
+    scale_raw = kreis.map(scale_lookup)
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): misses fall
+    # back to scale 1.0; a wholesale ars5 mismatch would silently disable the
+    # entire Kreis income scaling, so the miss rate must be visible.
+    n_scale_miss = int(scale_raw.isna().sum())
+    if n_scale_miss:
+        miss_rate = n_scale_miss / len(scale_raw) if len(scale_raw) else 0.0
+        print(
+            f"[braunschweig.enriched] {'WARNING: ' if miss_rate > 0.05 else ''}"
+            f"INKAR income scale: {n_scale_miss}/{len(scale_raw)} persons "
+            f"({100.0 * miss_rate:.1f}%) have no INKAR scale for their Kreis -> "
+            f"scale 1.0. A high rate means an ars5 key mismatch "
+            f"(INKAR keys: {sorted(map(str, scale_lookup))[:5]})."
+        )
+    scale = scale_raw.fillna(1.0).astype(float)
 
     df_persons["household_income_eur"] = (midpoint.astype(float) * scale).round(0)
     return df_persons

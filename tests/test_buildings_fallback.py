@@ -72,60 +72,81 @@ def test_all_buildings_inside_polygons_zero_ags_fallback():
     assert list(out["commune_id"]) == ["03101000", "03102000", "03101000"]
 
 
-def test_building_outside_polygons_with_ags_is_counted_as_fallback():
-    # The middle building missed the join but carries an AGS -> 1 fallback.
+# Production-path zone lookup: AGS8 -> (commune_id ARS-12, iris_id ARS-12+"0000").
+_AGS_TO_ZONE = {
+    "03101000": ("031010000000", "0310100000000000"),
+    "03154999": ("031549990000", "0315499900000000"),
+}
+
+
+def test_building_outside_polygons_with_ags_maps_to_zone_vocabulary():
+    # The middle building missed the join but carries an AGS -> 1 fallback,
+    # mapped to the ARS-12 commune_id / iris_id vocabulary (NOT the raw AGS).
     df = _post_sjoin_frame(
-        commune_ids=["03101000", None, "03101000"],
+        commune_ids=["031010000000", None, "031010000000"],
         ags_values=["03101000", "03154999", "03101000"],
     )
-    out, primary, fallback = buildings.impute_commune_with_ags_fallback(df)
+    out, primary, fallback = buildings.impute_commune_with_ags_fallback(
+        df, ags_to_zone=_AGS_TO_ZONE
+    )
 
     assert primary == 2
     assert fallback == 1
-    # The NaN row was back-filled from its AGS, primary rows untouched.
-    assert list(out["commune_id"]) == ["03101000", "03154999", "03101000"]
-    assert list(out["iris_id"]) == ["03101000", "03154999", "03101000"]
+    # The NaN row was back-filled in the ZONE vocabulary, primary rows untouched.
+    assert list(out["commune_id"]) == ["031010000000", "031549990000", "031010000000"]
+    assert list(out["iris_id"]) == ["031010000000", "0315499900000000", "031010000000"]
 
 
-def test_building_outside_polygons_without_ags_is_not_counted_as_fallback():
-    # Missed the join AND no AGS -> NOT counted as a fallback (the AGS
-    # back-fill only rescues rows with a non-null AGS).
-    #
-    # Legacy-behaviour note (preserved, NOT changed by this instrumentation):
-    # the original code does ``df.loc[missing, "commune_id"] =
-    # df.loc[missing, "AGS"].astype(str)`` unconditionally over all missing
-    # rows, so a None AGS becomes the literal string "None". The helper
-    # reproduces this byte-for-byte; the fallback COUNT, however, only tallies
-    # rows whose AGS is genuinely non-null, which is the meaningful rate.
+def test_building_ags_not_in_zone_lookup_is_dropped():
+    # An AGS with no matching zone (e.g. an out-of-scope / stale code) must
+    # stay NaN so the caller's notna() filter drops it -- never a dead-weight
+    # building in the wrong vocabulary.
     df = _post_sjoin_frame(
-        commune_ids=["03101000", None],
-        ags_values=["03101000", None],
+        commune_ids=["031010000000", None],
+        ags_values=["03101000", "09999999"],  # 09999999 not in the lookup
     )
-    out, primary, fallback = buildings.impute_commune_with_ags_fallback(df)
+    out, primary, fallback = buildings.impute_commune_with_ags_fallback(
+        df, ags_to_zone=_AGS_TO_ZONE
+    )
 
     assert primary == 1
     assert fallback == 0
-    # Output-preserving: the None-AGS row is stringified to "None" exactly as
-    # the legacy inline block did (the caller's notna() filter then keeps it,
-    # which is unchanged pre-existing behaviour).
-    assert out["commune_id"].iloc[1] == "None"
+    assert pd.isna(out["commune_id"].iloc[1])
+
+
+def test_building_outside_polygons_without_ags_stays_nan():
+    # Missed the join AND no AGS -> stays NaN (dropped by the caller), NOT the
+    # literal string "None" (the fixed legacy bug).
+    df = _post_sjoin_frame(
+        commune_ids=["031010000000", None],
+        ags_values=["03101000", None],
+    )
+    out, primary, fallback = buildings.impute_commune_with_ags_fallback(
+        df, ags_to_zone=_AGS_TO_ZONE
+    )
+
+    assert primary == 1
+    assert fallback == 0
+    assert pd.isna(out["commune_id"].iloc[1])
 
 
 def test_categorical_commune_column_is_handled():
     # The real sjoin yields categorical commune/iris columns; the helper must
-    # cast them to object before injecting an arbitrary AGS value.
+    # cast them to object before injecting the mapped zone value.
     df = _post_sjoin_frame(
-        commune_ids=["03101000", None],
+        commune_ids=["031010000000", None],
         ags_values=["03101000", "03154999"],
     )
     df["commune_id"] = df["commune_id"].astype("category")
     df["iris_id"] = df["iris_id"].astype("category")
 
-    out, primary, fallback = buildings.impute_commune_with_ags_fallback(df)
+    out, primary, fallback = buildings.impute_commune_with_ags_fallback(
+        df, ags_to_zone=_AGS_TO_ZONE
+    )
 
     assert primary == 1
     assert fallback == 1
-    assert list(out["commune_id"]) == ["03101000", "03154999"]
+    assert list(out["commune_id"]) == ["031010000000", "031549990000"]
 
 
 def test_commune_fallback_rate_logged_without_warning(capsys):

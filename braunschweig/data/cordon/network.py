@@ -201,6 +201,10 @@ def read_external_gemeinden(vg250_path: str, crs: str = "EPSG:25832",
         gem = gem[gem["GF"] == 4]   # land area
     if "EWZ" not in gem.columns:
         raise ValueError("vg250_gem has no EWZ (population) column")
-    ext = gem[~gem["ARS"].str[:5].isin(set(zgb_prefixes))].to_crs(crs).copy()
+    # str-cast the prefixes: an int-typed config value ("- 3101" unquoted in
+    # YAML) would make isin match NOTHING and silently return ZGB Gemeinden
+    # as "external" (same cast the sibling consumers apply).
+    zgb = {str(p) for p in zgb_prefixes}
+    ext = gem[~gem["ARS"].str[:5].isin(zgb)].to_crs(crs).copy()
     ext["ars5"] = ext["ARS"].str[:5]
     return ext.rename(columns={"EWZ": "ewz"})[["ars5", "ewz", "geometry"]]

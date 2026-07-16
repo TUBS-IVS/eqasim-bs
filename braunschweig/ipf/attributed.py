@@ -42,6 +42,20 @@ household intact.
 _HH_SIZE_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6+": 6}
 
 
+def _hh_size_to_int(household_size: "pd.Series") -> "pd.Series":
+    """Map hh_size bin labels ("1".."5", "6+") to ints with a REACHABLE guard.
+
+    The isna check must run BEFORE the int cast: ``.map(...).astype(np.int64)``
+    on an unknown label raises pandas' cryptic ``IntCastingNaNError`` first,
+    making the descriptive RuntimeError below dead code.
+    """
+    mapped = household_size.astype(str).map(_HH_SIZE_INT)
+    if mapped.isna().any():
+        bad = household_size[mapped.isna()].unique()
+        raise RuntimeError(f"Unknown hh_size labels in IPF output: {bad}")
+    return mapped.astype(np.int64)
+
+
 # ---------------------------------------------------------------------------
 # Person-attribute reactivation (Task A3): couple / studies / SPC.
 #
@@ -241,12 +255,7 @@ def _form_households(df: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     # IPF input order), making household_id assignment non-reproducible.
     repeated["commune_id"] = repeated["commune_id"].astype(str)
 
-    repeated["_hh_size_int"] = (
-        repeated["household_size"].astype(str).map(_HH_SIZE_INT).astype(np.int64)
-    )
-    if repeated["_hh_size_int"].isna().any():
-        bad = repeated.loc[repeated["_hh_size_int"].isna(), "household_size"].unique()
-        raise RuntimeError(f"Unknown hh_size labels in IPF output: {bad}")
+    repeated["_hh_size_int"] = _hh_size_to_int(repeated["household_size"])
 
     # Deterministic shuffle within each (commune_id, hh_size) bucket so
     # that the chunking does not produce e.g. a 6-person all-children
@@ -576,12 +585,7 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     counts = floor + (rng.random_sample(len(weights)) < frac).astype(np.int64)
     repeated = df.iloc[np.repeat(np.arange(len(df)), counts)].reset_index(drop=True)
     repeated["commune_id"] = repeated["commune_id"].astype(str)
-    repeated["_hh_size_int"] = (
-        repeated["household_size"].astype(str).map(_HH_SIZE_INT).astype(np.int64)
-    )
-    if repeated["_hh_size_int"].isna().any():
-        bad = repeated.loc[repeated["_hh_size_int"].isna(), "household_size"].unique()
-        raise RuntimeError(f"Unknown hh_size labels in IPF output: {bad}")
+    repeated["_hh_size_int"] = _hh_size_to_int(repeated["household_size"])
 
     # Deterministic bucket order.
     repeated = repeated.sort_values(

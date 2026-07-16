@@ -74,6 +74,17 @@ def _load_stage(working_directory, stage_name):
             f"[run_building_fit] no cached pickle for stage '{stage_name}' in "
             f"'{working_directory}'. Run the synpp pipeline first (stage must be complete)."
         )
+    if len(hits) > 1:
+        # Multiple config-hash generations of one stage: the mtime pick can mix
+        # pickles from DIFFERENT runs across stages (work location_id is
+        # positional, so a cross-run mix silently misattributes workers to the
+        # wrong buildings while the id join still looks ~100% matched).
+        LOGGER.warning(
+            "_load_stage: %d cached pickles found for stage '%s'; picking the "
+            "newest by mtime. Verify ALL loaded stages come from the SAME run "
+            "(candidates: %s).", len(hits), stage_name,
+            [os.path.basename(h) for h in sorted(hits)],
+        )
     path = max(hits, key=os.path.getmtime)
     LOGGER.info("Loading stage '%s' from %s", stage_name, path)
     with open(path, "rb") as fh:

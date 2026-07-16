@@ -54,6 +54,15 @@ def sum_columns_logging_nan(frame: "pd.DataFrame", columns, label: str) -> "pd.S
     """
     cols = list(columns)
     if not cols:
+        # An EMPTY column list yields an all-zero aggregate -- downstream that
+        # is indistinguishable from "zero employment/population", so it must
+        # never happen silently (e.g. a renamed parquet column making every
+        # pick miss; the #149 failure class).
+        logger.warning(
+            "[popsim.cells] %s: EMPTY column list -> all-zero row-sum. If this "
+            "aggregate is expected to carry data, the source columns were not "
+            "found (schema drift?).", label,
+        )
         return pd.Series(0.0, index=frame.index)
     block = frame[cols]
     n_nan = int(block.isna().to_numpy().sum())
