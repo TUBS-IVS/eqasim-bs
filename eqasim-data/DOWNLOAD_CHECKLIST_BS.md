@@ -279,3 +279,30 @@ Notes:
   python scripts/extract_mit_commute_mode_by_distance.py
   python scripts/extract_mikrozensus_bundesland_margins.py
   ```
+
+## VerBindungen (mobilithek, #124)
+
+Sub-Kreis commuter OD validation reference (VerBindungen research project,
+BMDV FuE 97.421/2019) at Verkehrszelle resolution, for #124. All files are
+local-only (gitignored) and fetched with the committed download script
+(writes a `PROVENANCE.md` + sha256 log next to them):
+
+```bash
+python scripts/download_verbindungen.py
+```
+
+| # | Dataset | Target path | Licence |
+|---|---------|-------------|---------|
+| V1 | `Shapefiles_VerBindungen_Zellen.zip` (Verkehrszelle cell geometry, EPSG:4326, + AGS) | `verbindungen/Shapefiles_VerBindungen_Zellen.zip` | LICENSE_FREE_USE_OPEN_DATA |
+| V2 | `QZM-Berufspendler-VerBindungen-Verkehrszellen.csv` (primary commuter OD reference) | `verbindungen/QZM-Berufspendler-VerBindungen-Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
+| V3 | `SvBaGeB_Statisch_WO_Verkehrszellen.csv` (workers at home per cell) | `verbindungen/SvBaGeB_Statisch_WO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
+| V4 | `SvBaGeB_Statisch_AO_Verkehrszellen.csv` (workers at workplace per cell) | `verbindungen/SvBaGeB_Statisch_AO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
+| V5 | `SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv` (OD with breakdowns; not consumed by the pipeline yet) | `verbindungen/SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv` | LICENSE_FREE_USE_OPEN_DATA |
+| V6 | `QZM-Berufspendler-VerBindungen-Verkehrszellen-Einpendler-Ausland.csv` (foreign in-commuters; not consumed yet) | `verbindungen/QZM-Berufspendler-VerBindungen-Verkehrszellen-Einpendler-Ausland.csv` | LICENSE_FREE_USE_OPEN_DATA |
+
+Provenance: VerBindungen Abschlussbericht v1.3 (Dec 2024), data products
+chapter 6. Publisher: Bundesministerium fuer Digitales und Verkehr (BMDV) via
+mobilithek.info. Reference date of all tables: 31.12.2019 (Gebietsstand
+31.12.2019). Direct URL pattern:
+`https://mobilithek.info/mdp-api/files/aux/<offer_id>/<filename>`. See
+[`CLAUDE.md`](../CLAUDE.md) for the consuming loaders once they land.
