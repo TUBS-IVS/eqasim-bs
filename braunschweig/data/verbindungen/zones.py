@@ -266,6 +266,84 @@ def build_zones_frames(gdf_raw: gpd.GeoDataFrame,
     return df_cells, df_cell_commune, stats
 
 
+def build_comparison_zones(df_cells: gpd.GeoDataFrame,
+                           df_cell_commune: pd.DataFrame):
+    """Collapse the VerBindungen cells into the anchor comparison zones (#193).
+
+    Zone rule: stadtteil cells (BS, SZ) collapse to their PARENT COMMUNE
+    (``zone_id = commune_id``) because the Gemeinde-level gravity cannot
+    resolve within-city structure; vg250 cells stay themselves
+    (``zone_id = cell_id``), including cells that bundle several Gemeinden.
+    ZGB-8 real data yields 41 zones (39 vg250 + Braunschweig + Salzgitter).
+
+    Returns ``(df_zone_map, df_cell_zone, df_zones)``:
+    - ``df_zone_map``  [commune_id, zone_id]  every mapped commune exactly once
+    - ``df_cell_zone`` [cell_id, zone_id]     every cell exactly once
+    - ``df_zones``     GeoDataFrame [zone_id, kreis_id, centroid_x, centroid_y,
+                       geometry] (EPSG:25832), stadtteil geometries dissolved.
+
+    Raises RuntimeError when a zone's cells disagree on the Kreis (corrupted
+    upstream mapping) or when a commune would map to more than one zone.
+    """
+    cells = df_cells.copy()
+    cc = df_cell_commune.copy()
+    cc["commune_id"] = cc["commune_id"].astype(str)
+
+    # Parent commune of each stadtteil cell (stadtteil rows carry exactly the
+    # parent Gemeinde in df_cell_commune, by construction of the source data).
+    stadtteil_ids = set(cells.loc[cells["is_stadtteil"], "cell_id"])
+    parent = (cc[cc["cell_id"].isin(stadtteil_ids)]
+              .drop_duplicates(["cell_id", "commune_id"]))
+    multi_parent = parent["cell_id"].duplicated()
+    if multi_parent.any():
+        raise RuntimeError(
+            "[braunschweig.data.verbindungen.zones] stadtteil cell(s) with "
+            "more than one parent commune: "
+            + str(sorted(parent.loc[multi_parent, "cell_id"])[:5])
+        )
+    parent_of_cell = dict(zip(parent["cell_id"], parent["commune_id"]))
+
+    cells["zone_id"] = [
+        parent_of_cell[cid] if cid in stadtteil_ids else cid
+        for cid in cells["cell_id"]
+    ]
+    df_cell_zone = cells[["cell_id", "zone_id"]].reset_index(drop=True)
+
+    # Zone -> Kreis must be unique (cells of one zone share one Kreis).
+    kreis_per_zone = cells.groupby("zone_id")["kreis_id"].nunique()
+    bad = kreis_per_zone[kreis_per_zone > 1]
+    if len(bad):
+        raise RuntimeError(
+            "[braunschweig.data.verbindungen.zones] zone(s) spanning multiple "
+            f"kreis ids: {sorted(bad.index)[:5]}"
+        )
+
+    df_zones = cells.dissolve(by="zone_id", aggfunc={"kreis_id": "first"}).reset_index()
+    df_zones = gpd.GeoDataFrame(
+        df_zones[["zone_id", "kreis_id", "geometry"]], crs=cells.crs)
+    df_zones["centroid_x"] = df_zones.geometry.centroid.x
+    df_zones["centroid_y"] = df_zones.geometry.centroid.y
+
+    zone_of_cell = dict(zip(df_cell_zone["cell_id"], df_cell_zone["zone_id"]))
+    df_zone_map = cc[["commune_id", "cell_id"]].copy()
+    df_zone_map["zone_id"] = df_zone_map["cell_id"].map(zone_of_cell)
+    df_zone_map = df_zone_map[["commune_id", "zone_id"]].drop_duplicates()
+    dup = df_zone_map["commune_id"].duplicated()
+    if dup.any():
+        raise RuntimeError(
+            "[braunschweig.data.verbindungen.zones] commune(s) mapping to more "
+            "than one comparison zone: "
+            + str(sorted(df_zone_map.loc[dup, "commune_id"])[:5])
+        )
+    print(
+        "[braunschweig.data.verbindungen.zones] comparison zones: "
+        f"{len(df_zones)} zones from {len(cells)} cells "
+        f"({len(stadtteil_ids)} stadtteil collapsed), "
+        f"{len(df_zone_map)} communes mapped"
+    )
+    return df_zone_map.reset_index(drop=True), df_cell_zone, df_zones
+
+
 def configure(context):
     context.config("data_path")
     context.config("braunschweig.verbindungen_path", "verbindungen")
