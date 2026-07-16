@@ -142,3 +142,30 @@ def test_calibrate_accepts_production_frame_schema():
         out["origin_id"].str[:5].rename("o")
     )["flow"].sum()
     assert np.isclose(got.loc["03101"], 400.0)
+
+
+def test_taz_tilt_preserves_within_gemeinde_proportions():
+    from braunschweig.gravity.production_mass import (
+        tilt_taz_production_by_gemeinde_rate,
+    )
+    pop_taz = pd.DataFrame({
+        "taz_id": ["t1", "t2", "t3"],
+        "commune_id": ["031010001000", "031010001000", "031510018000"],
+        "population": [300.0, 700.0, 500.0],
+    })
+    df_pop_gem = pd.DataFrame({
+        "origin_id": ["031010001000", "031510018000"],
+        "population": [1000.0, 500.0],
+    })
+    df_svb = pd.DataFrame({
+        "commune_id": ["031010001000", "031510018000"],
+        "svb_wohn": [400, 100],
+    })
+    out = tilt_taz_production_by_gemeinde_rate(pop_taz, df_pop_gem, df_svb)
+    out = out.set_index("taz_id")["population"]
+    # Gemeinde 03101...: rate 0.4 -> t1 120, t2 280 (ratio 3:7 preserved,
+    # Gemeinde total = svb_wohn 400)
+    assert np.isclose(out["t1"], 120.0)
+    assert np.isclose(out["t2"], 280.0)
+    # Gemeinde 03151...: rate 0.2 -> t3 100
+    assert np.isclose(out["t3"], 100.0)

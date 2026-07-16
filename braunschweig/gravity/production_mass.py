@@ -119,3 +119,41 @@ def build_work_production_mass(df_population: pd.DataFrame,
         "origin_id": df["origin_id"],
         "population": production.astype(float),
     })
+
+
+def tilt_taz_production_by_gemeinde_rate(pop_taz: pd.DataFrame,
+                                         df_population_gemeinde: pd.DataFrame,
+                                         df_svb: pd.DataFrame,
+                                         warn_share: float = SVB_FALLBACK_WARN_SHARE) -> pd.DataFrame:
+    """Scale each TAZ's production by its parent Gemeinde's employment rate.
+
+    svb_wohn carries NO sub-Gemeinde information, so the tilt changes only
+    the BETWEEN-Gemeinde masses and preserves the within-Gemeinde home-point
+    distribution: production_taz = population_taz * (svb_wohn_gem / pop_gem).
+    Reuses ``build_work_production_mass`` for the Gemeinde-level masses (and
+    thereby its fallback + logging semantics).
+    """
+    gem_production = build_work_production_mass(
+        df_population_gemeinde, df_svb, mode="svb_wohn", warn_share=warn_share,
+    ).rename(columns={"population": "gem_production"})
+    gem = df_population_gemeinde.rename(
+        columns={"population": "gem_population"}
+    ).merge(gem_production, on="origin_id", how="left")
+    gem["rate"] = gem["gem_production"] / gem["gem_population"]
+
+    out = pop_taz.copy()
+    out["commune_id"] = out["commune_id"].astype(str)
+    out = out.merge(
+        gem[["origin_id", "rate"]].rename(columns={"origin_id": "commune_id"}),
+        on="commune_id", how="left",
+    )
+    n_missing = int(out["rate"].isna().sum())
+    if n_missing:
+        # A TAZ whose commune is absent from the Gemeinde population frame
+        # cannot be tilted -- keep its population mass and log it.
+        print(
+            f"[braunschweig.gravity.production_mass] WARNING: {n_missing} TAZ "
+            "without a Gemeinde rate keep their population mass"
+        )
+    out["population"] = out["population"] * out["rate"].fillna(1.0)
+    return out[["taz_id", "commune_id", "population"]]

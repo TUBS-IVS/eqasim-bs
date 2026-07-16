@@ -692,11 +692,6 @@ def _execute_gravity_base(context):
             f"braunschweig.gravity.work_production_mass {production_mode!r}; "
             f"expected one of {PRODUCTION_MASS_MODES}"
         )
-    if taz_on and production_mode != "population":
-        raise RuntimeError(
-            "[braunschweig.gravity.model] work_production_mass=svb_wohn is "
-            "not yet wired for the TAZ path (see #132 Task 9)"
-        )
 
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
     # data.census.filtered resolves to the configured population producer
@@ -730,6 +725,19 @@ def _execute_gravity_base(context):
         "commune_id": "destination_id",
         "weight": "employees",
     })[["destination_id", "employees"]]
+
+    # #132: svb_wohn production needs a Gemeinde-AGGREGATED population frame.
+    # data.census.filtered is per-PERSON (multiple rows per origin_id), but
+    # build_work_production_mass documents a one-row-per-Gemeinde input: merging
+    # svb per person-row would multiply each Gemeinde's svb_wohn by its person
+    # count downstream. Aggregate ONCE here so both the Gemeinde svb path (OFF)
+    # and the TAZ svb tilt (ON) consume the SAME frame. Left None on the
+    # "population" default so the byte-identical path does no extra work.
+    df_pop_gemeinde_aggregated = None
+    if production_mode != "population":
+        df_pop_gemeinde_aggregated = (
+            df_pop_gemeinde.groupby("origin_id", as_index=False)["population"].sum()
+        )
 
     slope = context.config("gravity_slope")
     constant = context.config("gravity_constant")
@@ -766,15 +774,9 @@ def _execute_gravity_base(context):
             build_work_production_mass, read_svb_wohn_per_commune,
         )
         df_svb = read_svb_wohn_per_commune(context)
-        # data.census.filtered is a per-PERSON frame (multiple rows per
-        # origin_id; compute_work_od aggregates internally), but
-        # build_work_production_mass documents a Gemeinde-aggregated input:
-        # merging svb per person-row would multiply each Gemeinde's svb_wohn
-        # by its person count downstream. Aggregate to one row per Gemeinde
-        # first (a no-op if the frame is already aggregated).
-        df_pop_gemeinde_aggregated = (
-            df_pop_gemeinde.groupby("origin_id", as_index=False)["population"].sum()
-        )
+        # df_pop_gemeinde_aggregated (one row per Gemeinde) was built above so
+        # the SAME aggregated mass seeds the Gemeinde svb path here and the TAZ
+        # tilt on the ON path.
         df_work_production = build_work_production_mass(
             df_pop_gemeinde_aggregated, df_svb, mode=production_mode)
         work_od = compute_work_od(
@@ -814,6 +816,23 @@ def _execute_gravity_base(context):
     df_municipalities = context.stage("data.spatial.municipalities")
 
     pop_taz, _, _ = build_origin_population_per_taz(df_homes, df_population_raw, df_taz)
+
+    # #132: svb_wohn production tilt for the TAZ path. svb_wohn carries NO
+    # sub-Gemeinde information, so each TAZ's population is scaled by its parent
+    # Gemeinde's employment rate (svb_wohn_gem / pop_gem): this shifts the
+    # BETWEEN-Gemeinde masses while preserving the within-Gemeinde home
+    # distribution. Tilting pop_taz HERE -- before df_pop_taz (gravity margin)
+    # and the returned pop_taz_from_base (Kreis-IPF _calibrate, _append_outbound_flows)
+    # both derive from it -- keeps all three mass entry points consistent with a
+    # single edit. The Gemeinde-aggregated frame is reused (see above).
+    if production_mode != "population":
+        from braunschweig.gravity.production_mass import (  # noqa: PLC0415
+            read_svb_wohn_per_commune, tilt_taz_production_by_gemeinde_rate,
+        )
+        df_svb = read_svb_wohn_per_commune(context)
+        pop_taz = tilt_taz_production_by_gemeinde_rate(
+            pop_taz, df_pop_gemeinde_aggregated, df_svb)
+
     att_taz, _, _ = build_dest_attraction_per_taz(
         df_buildings, df_employees_raw, df_taz, df_municipalities)
 
@@ -845,10 +864,11 @@ def _execute_gravity_base(context):
         max_iterations=max_iterations,
     )
 
-    # Return pop_taz as the third element so execute() can reuse it without
-    # calling build_origin_population_per_taz a second time (sjoin is expensive).
-    # The fourth element (work production frame) is None: the TAZ path never
-    # reaches here with a non-population production mode (guard above, #132).
+    # Return the (possibly svb-tilted) pop_taz as the third element so execute()
+    # can reuse it without calling build_origin_population_per_taz a second time
+    # (sjoin is expensive). The fourth element (Gemeinde work production frame) is
+    # None on the TAZ path: the #132 production mass travels INSIDE pop_taz, so
+    # _calibrate / _append_outbound_flows read it via df_population_for_od (#132).
     return work_od, education_od, pop_taz, None
 
 
