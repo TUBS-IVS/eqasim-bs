@@ -661,7 +661,9 @@ def _execute_gravity_base(context):
     probabilities; ``pop_taz`` is the TAZ origin margin (non-None only on the
     TAZ ON path); ``df_work_production`` is the #132 work production frame
     (schema ``origin_id``, ``population``; non-None only when
-    ``braunschweig.gravity.work_production_mass`` is ``svb_wohn``).
+    ``braunschweig.gravity.work_production_mass`` is ``svb_wohn`` AND the TAZ
+    flag is OFF -- on the TAZ-ON + svb_wohn path it is None because the
+    production mass travels inside ``pop_taz`` instead).
 
     When ``taz_work_location_choice`` is OFF (default) the function runs the
     gravity once on the Gemeinde universe and returns the same frame for both
@@ -774,11 +776,16 @@ def _execute_gravity_base(context):
             build_work_production_mass, read_svb_wohn_per_commune,
         )
         df_svb = read_svb_wohn_per_commune(context)
+        # Read with the key alone: configure() declares this key only inside
+        # the "production_mode != population" conditional we are already in,
+        # so the OFF path never has to request it.
+        warn_share = context.config("braunschweig.gravity.svb_wohn_fallback_warn_share")
         # df_pop_gemeinde_aggregated (one row per Gemeinde) was built above so
         # the SAME aggregated mass seeds the Gemeinde svb path here and the TAZ
         # tilt on the ON path.
         df_work_production = build_work_production_mass(
-            df_pop_gemeinde_aggregated, df_svb, mode=production_mode)
+            df_pop_gemeinde_aggregated, df_svb, mode=production_mode,
+            warn_share=warn_share)
         work_od = compute_work_od(
             df_population=df_work_production,
             df_employees=df_emp_gemeinde,
@@ -830,8 +837,11 @@ def _execute_gravity_base(context):
             read_svb_wohn_per_commune, tilt_taz_production_by_gemeinde_rate,
         )
         df_svb = read_svb_wohn_per_commune(context)
+        # Same key-only read as the non-TAZ svb branch above (declared under
+        # the same "production_mode != population" conditional in configure()).
+        warn_share = context.config("braunschweig.gravity.svb_wohn_fallback_warn_share")
         pop_taz = tilt_taz_production_by_gemeinde_rate(
-            pop_taz, df_pop_gemeinde_aggregated, df_svb)
+            pop_taz, df_pop_gemeinde_aggregated, df_svb, warn_share=warn_share)
 
     att_taz, _, _ = build_dest_attraction_per_taz(
         df_buildings, df_employees_raw, df_taz, df_municipalities)
@@ -955,6 +965,13 @@ def configure(context):
             "braunschweig/gemband-dlk-0-202506-xlsx.xlsx",
         )
         context.stage("eqasim_common.spatial.codes")
+        # Fallback-transparency threshold (CLAUDE.md): share of Gemeinden
+        # falling back to the Kreis-mean employment rate above which
+        # build_work_production_mass / tilt_taz_production_by_gemeinde_rate
+        # escalate their rate log to a WARNING. Declared only under this
+        # conditional -- like the keys above -- so the "population" OFF path
+        # needs no new config key.
+        context.config("braunschweig.gravity.svb_wohn_fallback_warn_share", 0.05)
 
     # TAZ-specific stages: only declared when the flag is ON so the OFF path
     # (all existing configs) needs no new keys or stages.

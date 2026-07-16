@@ -177,6 +177,10 @@ def test_build_validation_outputs_end_to_end():
     # intra-cell shares: model 2/3, ref 0.6
     assert math.isclose(float(summary["intra_cell_share_model"]), 2.0 / 3.0)
     assert math.isclose(float(summary["intra_cell_share_reference"]), 0.6)
+    # vintage_pearson_r: spec-promised check-C metric must be present (this
+    # fixture's drift table has a single Kreis-pair row, so the correlation
+    # is undefined -- NaN -- but the key must still exist).
+    assert "vintage_pearson_r" in summary.index
 
 
 def test_build_validation_outputs_tolerates_zero_mass_cell():
@@ -197,6 +201,30 @@ def test_build_validation_outputs_tolerates_zero_mass_cell():
         df_home, df_work, df_persons, cells, ref, margins, pendler)
     # must not raise; margin check silently drops the NA cell (n_cells == 1)
     assert int(out["summary"].set_index("metric").loc["margin_n_cells", "value"]) == 1
+
+
+def test_write_validation_outputs_writes_five_csvs_with_provenance_header(tmp_path):
+    from braunschweig.analysis.verbindungen_validation import (
+        _OUTPUT_FILE_NAMES, _PROVENANCE_HEADER, write_validation_outputs,
+    )
+    outputs = {
+        "summary": pd.DataFrame({"metric": ["a"], "value": [1.0]}),
+        "margin": pd.DataFrame({"cell_id": ["A"]}),
+        "od_per_origin": pd.DataFrame({"origin_cell_id": ["A"]}),
+        "od_by_kreis_pair": pd.DataFrame({"orig_kreis": ["03101"]}),
+        "vintage_drift": pd.DataFrame({"orig_kreis": ["03101"]}),
+    }
+    directory = tmp_path / "analysis" / "verbindungen"
+    write_validation_outputs(outputs, str(directory))
+
+    assert directory.is_dir()
+    for name in _OUTPUT_FILE_NAMES.values():
+        path = directory / name
+        assert path.is_file(), f"missing output file {name}"
+        with open(path, encoding="utf-8") as f:
+            first_line = f.readline()
+        assert first_line.startswith("#")
+        assert first_line == _PROVENANCE_HEADER
 
 
 def test_compare_ab_renders_delta_table(tmp_path):

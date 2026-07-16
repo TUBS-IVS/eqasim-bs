@@ -269,6 +269,15 @@ def build_validation_outputs(df_home: gpd.GeoDataFrame,
 
     # --- check C: vintage drift ---------------------------------------------
     drift = vintage_drift_check(df_ref_od, df_cells, df_pendler)
+    # A single Kreis-pair (or none) cannot define a correlation; NaN is the
+    # correct "not applicable" signal here, not a fabricated 0/1 (same
+    # errstate guard as margin_check's Pearson r -- suppress only numpy's
+    # divide warning, not the NaN itself).
+    with np.errstate(invalid="ignore"):
+        vintage_pearson = (
+            float(np.corrcoef(drift["share_2019"], drift["share_2025"])[0, 1])
+            if len(drift) > 1 else np.nan
+        )
 
     summary = pd.DataFrame(
         [
@@ -282,6 +291,7 @@ def build_validation_outputs(df_home: gpd.GeoDataFrame,
             ("margin_srmse", margin_stats["srmse"]),
             ("margin_pearson_r", margin_stats["pearson_r"]),
             ("margin_n_cells", margin_stats["n_cells"]),
+            ("vintage_pearson_r", vintage_pearson),
             ("vintage_max_abs_share_drift",
              float(drift["share_drift"].abs().max()) if len(drift) else np.nan),
         ],
@@ -302,6 +312,35 @@ _PROVENANCE_HEADER = (
     "sample, share-based). Shares only -- never compare absolute counts.\n"
 )
 
+# Output file names, shared by the synpp stage (execute()) and the standalone
+# cache re-run entry point (run_verbindungen_validation.py) so the two never
+# drift apart.
+_OUTPUT_FILE_NAMES = dict(
+    summary="verbindungen_validation_summary.csv",
+    margin="verbindungen_margin_check.csv",
+    od_per_origin="verbindungen_od_check.csv",
+    od_by_kreis_pair="verbindungen_od_check_by_kreis_pair.csv",
+    vintage_drift="verbindungen_vintage_drift.csv",
+)
+
+
+def write_validation_outputs(outputs: dict, directory: str) -> None:
+    """Write the 5 validation CSVs (with the provenance header) into *directory*.
+
+    Creates *directory* if it does not exist yet. Shared by the synpp stage
+    (``execute()``, writing under ``<output_path>/analysis/verbindungen``) and
+    the standalone cache re-run entry point (``run_verbindungen_validation.py``)
+    so the file names, header and directory-creation semantics never drift
+    apart between the two call sites.
+    """
+    os.makedirs(directory, exist_ok=True)
+    for key, name in _OUTPUT_FILE_NAMES.items():
+        target = os.path.join(directory, name)
+        with open(target, "w", encoding="utf-8", newline="") as f:
+            f.write(_PROVENANCE_HEADER)
+            outputs[key].to_csv(f, index=False)
+        print(f"[braunschweig.analysis.verbindungen_validation] wrote {target}")
+
 
 def configure(context):
     context.stage("synthesis.population.spatial.home.locations")
@@ -311,6 +350,7 @@ def configure(context):
     context.stage("braunschweig.data.verbindungen.work_od")
     context.stage("braunschweig.data.verbindungen.margins")
     context.stage("braunschweig.data.census.pendler")
+    context.config("output_path")
 
 
 def execute(context):
@@ -327,17 +367,10 @@ def execute(context):
         df_home, df_work, df_persons, df_cells, df_ref_od, df_margins,
         df_pendler)
 
-    names = dict(
-        summary="verbindungen_validation_summary.csv",
-        margin="verbindungen_margin_check.csv",
-        od_per_origin="verbindungen_od_check.csv",
-        od_by_kreis_pair="verbindungen_od_check_by_kreis_pair.csv",
-        vintage_drift="verbindungen_vintage_drift.csv",
-    )
-    for key, name in names.items():
-        target = os.path.join(context.path(), name)
-        with open(target, "w", encoding="utf-8", newline="") as f:
-            f.write(_PROVENANCE_HEADER)
-            outputs[key].to_csv(f, index=False)
-        print(f"[braunschweig.analysis.verbindungen_validation] wrote {target}")
+    # User-facing validation output goes under <output_path>/analysis/... (the
+    # cordon_validation / analysis_suite convention), NOT context.path() (the
+    # synpp cache dir), so it survives cache cleanup and is where a researcher
+    # actually looks for run outputs.
+    directory = os.path.join(context.config("output_path"), "analysis", "verbindungen")
+    write_validation_outputs(outputs, directory)
     return outputs

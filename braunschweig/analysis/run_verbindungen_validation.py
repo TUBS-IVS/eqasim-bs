@@ -17,7 +17,7 @@ import os
 import pickle
 
 from braunschweig.analysis.verbindungen_validation import (
-    _PROVENANCE_HEADER, build_validation_outputs,
+    build_validation_outputs, write_validation_outputs,
 )
 
 
@@ -59,20 +59,7 @@ def main(argv=None) -> int:
         df_home, df_work, df_persons, df_cells, df_ref_od, df_margins,
         df_pendler)
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    names = dict(
-        summary="verbindungen_validation_summary.csv",
-        margin="verbindungen_margin_check.csv",
-        od_per_origin="verbindungen_od_check.csv",
-        od_by_kreis_pair="verbindungen_od_check_by_kreis_pair.csv",
-        vintage_drift="verbindungen_vintage_drift.csv",
-    )
-    for key, name in names.items():
-        target = os.path.join(args.output_dir, name)
-        with open(target, "w", encoding="utf-8", newline="") as f:
-            f.write(_PROVENANCE_HEADER)
-            outputs[key].to_csv(f, index=False)
-        print(f"  WROTE {target}")
+    write_validation_outputs(outputs, args.output_dir)
     return 0
 
 

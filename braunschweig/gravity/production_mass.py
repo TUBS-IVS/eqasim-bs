@@ -147,13 +147,18 @@ def tilt_taz_production_by_gemeinde_rate(pop_taz: pd.DataFrame,
         gem[["origin_id", "rate"]].rename(columns={"origin_id": "commune_id"}),
         on="commune_id", how="left",
     )
+    n_total = len(out)
     n_missing = int(out["rate"].isna().sum())
     if n_missing:
         # A TAZ whose commune is absent from the Gemeinde population frame
-        # cannot be tilted -- keep its population mass and log it.
+        # cannot be tilted -- keep its population mass and log it. Report the
+        # rate (not a bare count) so a systematically broken TAZ->Gemeinde
+        # join is visible as a high share, not just "some number of TAZ"
+        # (CLAUDE.md fallback-transparency: no silent fallbacks).
+        share = 100.0 * n_missing / n_total if n_total else 0.0
         print(
-            f"[braunschweig.gravity.production_mass] WARNING: {n_missing} TAZ "
-            "without a Gemeinde rate keep their population mass"
+            f"[braunschweig.gravity.production_mass] WARNING: {n_missing}/{n_total} "
+            f"({share:.1f}%) TAZ without a Gemeinde rate keep their population mass"
         )
     out["population"] = out["population"] * out["rate"].fillna(1.0)
     return out[["taz_id", "commune_id", "population"]]

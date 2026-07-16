@@ -59,12 +59,38 @@ def read_statisch_csv(path: str, value_name: str) -> pd.DataFrame:
     return out
 
 
+def _raise_on_duplicate_cell_id(df: pd.DataFrame, side: str) -> None:
+    """Fail loudly, naming the offending ids, instead of letting a duplicate
+    ``cell_id`` silently fan out the one_to_one merge below (CLAUDE.md:
+    fail-early on invalid input rather than corrupting downstream margins)."""
+    dup_mask = df["cell_id"].duplicated(keep=False)
+    if dup_mask.any():
+        dup_ids = sorted(df.loc[dup_mask, "cell_id"].unique())
+        shown = ", ".join(dup_ids[:10])
+        more = f" (+{len(dup_ids) - 10} more)" if len(dup_ids) > 10 else ""
+        raise RuntimeError(
+            f"[braunschweig.data.verbindungen.margins] duplicate cell_id in the "
+            f"{side} margins source: {shown}{more}; each cell must appear at "
+            "most once per source file"
+        )
+
+
 def build_margins_frame(df_wo: pd.DataFrame, df_ao: pd.DataFrame,
                         cell_ids: list) -> pd.DataFrame:
-    """One row per ZGB cell; cells absent from a file carry NA (logged)."""
+    """One row per ZGB cell; cells absent from a file carry NA (logged).
+
+    Both merges are ``validate="one_to_one"``: the cell universe (*cell_ids*)
+    is unique by construction (the zones stage guards against duplicate
+    cells), so a duplicate ``cell_id`` in *df_wo* or *df_ao* would otherwise
+    silently fan out the joined row across both copies instead of raising --
+    corrupting every downstream margin. Checked explicitly first so the error
+    names the offending ids rather than surfacing pandas' generic MergeError.
+    """
+    _raise_on_duplicate_cell_id(df_wo, "WO (workers_at_home)")
+    _raise_on_duplicate_cell_id(df_ao, "AO (workers_at_workplace)")
     base = pd.DataFrame({"cell_id": [str(c) for c in cell_ids]})
-    out = base.merge(df_wo, on="cell_id", how="left")
-    out = out.merge(df_ao, on="cell_id", how="left")
+    out = base.merge(df_wo, on="cell_id", how="left", validate="one_to_one")
+    out = out.merge(df_ao, on="cell_id", how="left", validate="one_to_one")
     for col in ("workers_at_home", "workers_at_workplace"):
         n_missing = int(out[col].isna().sum())
         if n_missing:

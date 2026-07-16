@@ -239,6 +239,23 @@ def test_read_statisch_rejects_unparseable_values(tmp_path):
     assert "wo.csv" in str(exc_info.value)
 
 
+def test_build_margins_frame_raises_on_duplicate_cell_id_in_wo():
+    # A duplicate cell_id in the WO source (data-quality regression upstream)
+    # must raise -- a naive left-merge would otherwise silently fan out the
+    # joined row instead of corrupting every downstream margin invisibly.
+    from braunschweig.data.verbindungen.margins import build_margins_frame
+    df_wo = pd.DataFrame({
+        "cell_id": ["stadtteil-1", "stadtteil-1"],
+        "workers_at_home": pd.array([100, 110], dtype="Int64"),
+    })
+    df_ao = pd.DataFrame({
+        "cell_id": ["stadtteil-1"],
+        "workers_at_workplace": pd.array([80], dtype="Int64"),
+    })
+    with pytest.raises(RuntimeError, match="duplicate cell_id"):
+        build_margins_frame(df_wo, df_ao, cell_ids=["stadtteil-1", "stadtteil-2"])
+
+
 def test_margins_outer_merge_covers_all_cells(tmp_path):
     from braunschweig.data.verbindungen.margins import build_margins_frame, read_statisch_csv
     from tests.fixtures.verbindungen_fixtures import write_statisch_csv
