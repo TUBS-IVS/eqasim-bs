@@ -605,7 +605,11 @@ def _realized_beruflabschluss(frames: "PopulationFrames", geo: pd.DataFrame) -> 
 def employed_25_64_rate(persons):
     """Employment rate within the 25-64 age band, per Kreis (ARS[:5])."""
     band = persons[(persons["HP_ALTER"] >= 25) & (persons["HP_ALTER"] <= 64)].copy()
-    band["KREIS"] = band["RegionalSchlussel_ARS"].astype(str).str[:5]
+    # zfill(12) before slicing: a numeric-typed ARS loses its leading zero, so
+    # the 5-digit Kreis key would come out as e.g. "3101" and never match the
+    # zero-padded target keys (2026-07-12 validation audit; matches the zfill in
+    # the primary popsim helpers above).
+    band["KREIS"] = band["RegionalSchlussel_ARS"].astype(str).str.zfill(12).str[:5]
     band["is_emp"] = band["P_TAET"].isin(_EMPLOYED_PTAET)
     grp = band.groupby("KREIS")["is_emp"]
     return (grp.sum() / grp.count()).to_dict()
@@ -619,7 +623,9 @@ def employed_by_age_group(persons):
     kreis5 is the 5-digit ARS prefix (``RegionalSchlussel_ARS[:5]``).
     """
     df = persons.copy()
-    df["K"] = df["RegionalSchlussel_ARS"].astype(str).str[:5]
+    # zfill(12) before slicing so a numeric ARS keeps its leading zero (see
+    # employed_25_64_rate; 2026-07-12 validation audit).
+    df["K"] = df["RegionalSchlussel_ARS"].astype(str).str.zfill(12).str[:5]
     df["is_emp"] = df["P_TAET"].isin(_EMPLOYED_PTAET)
     out = {}
     for g, lo, hi in _AGE_GROUPS3:
