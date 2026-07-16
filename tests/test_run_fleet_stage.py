@@ -32,6 +32,14 @@ import matsim.scenario.vehicles as writer  # noqa: E402
 from braunschweig.synthesis.vehicles.cars import household as hh  # noqa: E402
 
 DATA_PATH = str(DATA)
+
+# The hsn/tsn attach path reads the local-only (gitignored) HSN/TSN lookup;
+# on a machine without the raw data drop those tests SKIP (they run on the
+# data-carrying machines), everything else runs with the attach OFF.
+_needs_hsn_tsn_lookup = pytest.mark.skipif(
+    not (DATA / "braunschweig" / "kba" / "hsn_tsn_lookup.csv").exists(),
+    reason="local-only raw data absent: braunschweig/kba/hsn_tsn_lookup.csv",
+)
 MATSIM_NS = "{http://www.matsim.org/files/dtd}"
 
 
@@ -155,7 +163,9 @@ def test_stage_configure_declares_dependencies():
 
 
 def test_stage_execute_produces_valid_fleet():
-    ctx = _stub()
+    # hsn/tsn attributes OFF: they require the local-only (gitignored)
+    # hsn_tsn_lookup.csv; the fleet base behaviour under test here does not.
+    ctx = _stub({"fleet_hsn_tsn_attributes": False})
     df_vehicle_types, df_vehicles = hh.execute(ctx)
 
     # 4 typed household cars (2 + 0 + 1 + 1) PLUS 1 routing default_car for the carless
@@ -177,7 +187,8 @@ def test_stage_execute_produces_valid_fleet():
 # 2. The produced frames write a valid MATSim vehicles file (stage -> writer).
 # --------------------------------------------------------------------------- #
 def test_stage_output_writes_valid_matsim_vehicles(tmp_path):
-    ctx = _stub()
+    # hsn/tsn attributes OFF (needs the local-only hsn_tsn_lookup.csv).
+    ctx = _stub({"fleet_hsn_tsn_attributes": False})
     df_vehicle_types, df_vehicles = hh.execute(ctx)
 
     # Add the dummy passenger type the real vehicles stage concatenates so the
@@ -264,6 +275,7 @@ HSN_TSN_COLUMNS = [
 ]
 
 
+@_needs_hsn_tsn_lookup
 def test_hsn_tsn_attributes_on_adds_engine_columns():
     ctx = _stub()  # fleet_hsn_tsn_attributes defaults True
     _, df_vehicles = hh.execute(ctx)
@@ -301,6 +313,7 @@ def test_hsn_tsn_attributes_off_writes_no_engine_attributes(tmp_path):
             f"engine attributes leaked into the OFF XML: {set(HSN_TSN_COLUMNS) & names}")
 
 
+@_needs_hsn_tsn_lookup
 def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path):
     """ON -> at least one vehicle carries the engine attributes in the XML."""
     ctx = _stub()

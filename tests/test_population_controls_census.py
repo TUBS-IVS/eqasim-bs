@@ -9,12 +9,27 @@ the census source tables both live under ``eqasim-data/data`` on this machine.
 from __future__ import annotations
 
 import logging
+import os
 
 import pandas as pd
+import pytest
 from braunschweig.analysis.population_validation import controls as C
 from braunschweig.analysis.population_validation.population_source import PopulationFrames
 
 DATA = "eqasim-data/data"
+
+# The target-loader schema tests read the REAL (local-only, gitignored) census
+# source files under eqasim-data/data. On a machine without the raw data drop
+# they must SKIP (visible, honest), not fail -- they run on the data-carrying
+# machines (server).
+_needs_destatis_12411 = pytest.mark.skipif(
+    not os.path.exists(os.path.join(DATA, "braunschweig", "12411-0018_de.csv")),
+    reason="local-only raw data absent: braunschweig/12411-0018_de.csv",
+)
+_needs_zensus_2081 = pytest.mark.skipif(
+    not os.path.exists(os.path.join(DATA, "braunschweig", "1000A-2081_de_flat.zip")),
+    reason="local-only raw data absent: braunschweig/1000A-2081_de_flat.zip",
+)
 
 
 def _frames():
@@ -54,13 +69,20 @@ def test_vehicle_control_uses_household_id_when_present():
         "bev", "distribution", "kreis", "technology", ("bev", "not_bev"),
         target=None, derive=C._bev_not_bev)
 
-    veh_de = pd.DataFrame({"vehicle_id": ["v1", "v2"], "household_id": [10, 20],
-                           "owner_id": [1, 2], "technology": ["bev", "diesel"]})
+    # Realistic fleet rows: the analysis-side fleet_filter discriminates fleet
+    # vs routing vehicles structurally (segment.notna, else the
+    # '<hh>:car:<idx>' vehicle_id shape) -- a bare "v1" id would be classified
+    # as a routing vehicle and silently filtered out of the control.
+    veh_de = pd.DataFrame({"vehicle_id": ["10:car:0", "20:car:0"],
+                           "household_id": [10, 20],
+                           "owner_id": [1, 2], "segment": ["kompakt", "suv"],
+                           "technology": ["bev", "diesel"]})
     out_de = ctrl.realized(
         PopulationFrames(persons, pd.DataFrame(), None, veh_de, "run_output", "x", "p_"), geo)
     assert dict(zip(out_de["category"], out_de["synthetic_count"])) == {"bev": 1, "not_bev": 1}
 
-    veh_legacy = pd.DataFrame({"vehicle_id": ["v1"], "owner_id": [1], "technology": ["bev"]})
+    veh_legacy = pd.DataFrame({"vehicle_id": ["1:car:0"], "owner_id": [1],
+                               "segment": ["kompakt"], "technology": ["bev"]})
     out_legacy = ctrl.realized(
         PopulationFrames(persons, pd.DataFrame(), None, veh_legacy, "run_output", "x", "p_"), geo)
     assert dict(zip(out_legacy["category"], out_legacy["synthetic_count"])) == {"bev": 1}
@@ -87,6 +109,7 @@ def test_registry_includes_census_and_distribution_controls():
 
 # --- target loader schemas ---------------------------------------------------
 
+@_needs_zensus_2081
 def test_household_size_target_schema():
     t = C.household_size_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}
@@ -94,6 +117,7 @@ def test_household_size_target_schema():
     assert (abs(s - 1.0) < 1e-6).all()
 
 
+@_needs_destatis_12411
 def test_age_group_target_schema_and_bounds_match():
     t = C.age_group_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}
@@ -105,6 +129,7 @@ def test_age_group_target_schema_and_bounds_match():
     assert set(t["category"].unique()) == set(registered["age_group"].categories)
 
 
+@_needs_destatis_12411
 def test_sex_target_schema():
     t = C.sex_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}

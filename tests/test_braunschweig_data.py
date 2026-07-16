@@ -814,6 +814,10 @@ class TestInkarFullPanel:
         assert list(df.columns) == ["ars5", "raumeinheit"]
         assert len(df) == 0
 
+    @pytest.mark.skipif(
+        not os.path.exists("eqasim-data/data/braunschweig/E_Haushaltseinkommen.xls"),
+        reason="local-only raw data absent: braunschweig/E_Haushaltseinkommen.xls",
+    )
     def test_existing_income_xls_round_trips(self):
         """Reuse the shipped E_Haushaltseinkommen.xls as a smoke test."""
         from braunschweig.data.inkar import full_panel
