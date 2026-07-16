@@ -475,3 +475,34 @@ def test_seniorenstatus_target_non_empty(monkeypatch):
     assert abs(row_mit["target_share"].iloc[0] - expected_mit) < 1e-6, (
         f"mit_senioren share mismatch: {row_mit['target_share'].iloc[0]} != {expected_mit}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Employed-rate extractors: ARS leading-zero regression (2026-07-12 audit)
+# ---------------------------------------------------------------------------
+
+def test_employed_rate_extractors_keep_ars_leading_zero():
+    """A numeric-typed ARS loses its leading zero, so slicing without zfill(12)
+    yields Kreis keys like '3101' that never match the zero-padded target keys
+    ('03101' -- every Lower Saxony Kreis). Both employed-rate extractors must
+    zero-pad before slicing, consistent with the other extractors in this
+    module (see e.g. the ars5 derivation) and the primary popsim helpers."""
+    persons = pd.DataFrame({
+        # numeric ARS: str() gives 11 digits, the leading zero is gone
+        "RegionalSchlussel_ARS": [31010000000, 31010000000, 31010000000],
+        "HP_ALTER": [30, 40, 65],
+        "P_TAET": [1, 9, 1],  # employed, not employed, employed (60plus band)
+    })
+
+    rate = C.employed_25_64_rate(persons)
+    assert rate == {"03101": 0.5}, (
+        f"Kreis key must keep the leading zero ('03101'), got {rate}"
+    )
+
+    by_group = C.employed_by_age_group(persons)
+    assert ("03101", "30_39") in by_group and by_group[("03101", "30_39")] == 1.0
+    assert ("03101", "40_49") in by_group and by_group[("03101", "40_49")] == 0.0
+    assert ("03101", "60plus") in by_group and by_group[("03101", "60plus")] == 1.0
+    assert not any(k.startswith("3101") for k, _ in by_group), (
+        "found an un-padded Kreis key -- zfill(12) missing before the [:5] slice"
+    )

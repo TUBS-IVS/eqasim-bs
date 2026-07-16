@@ -216,10 +216,11 @@ def test_realised_counts_none_expr_increments_skipped():
     syn_hh = pd.DataFrame({"ZENSUS100m": ["cellA"], "H_ID": [10]})
     donor_hh = pd.DataFrame({"H_ID": [10], "H_ANZAUTO": [1]})
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
-    _, n_resolved, n_skipped, _resolved = ce.realised_counts(
+    _, n_resolved, n_skipped, resolved = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_no_expr_control()])
     assert n_resolved == 0
     assert n_skipped == 1
+    assert resolved == set()
 
 
 # ---------------------------------------------------------------------------
