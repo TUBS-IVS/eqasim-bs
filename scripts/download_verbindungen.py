@@ -82,11 +82,18 @@ def needs_download(path: str, expected_sha256: str | None, force: bool) -> bool:
     return _sha256_of(path) != expected_sha256
 
 
+# Network timeout per request. Generous because the largest file
+# (SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv, ~112 MB) must complete a
+# single streaming response within it on slow links.
+DOWNLOAD_TIMEOUT_SECONDS = 300
+
+
 def _download(url: str, target: str) -> None:
     print(f"  GET  {url}")
     print(f"  ->   {target}")
     request = urllib.request.Request(url, headers={"User-Agent": "eqasim-bs data fetch"})
-    with urllib.request.urlopen(request) as response, open(target, "wb") as out:
+    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response, \
+            open(target, "wb") as out:
         while True:
             chunk = response.read(1 << 20)
             if not chunk:
@@ -141,7 +148,16 @@ def main(argv: list[str] | None = None) -> int:
         url = f"{BASE_URL}/{offer_id}/{filename}"
 
         if needs_download(target, expected, args.force):
-            _download(url, target)
+            # One failing file must not abort the whole run: the remaining
+            # files still download and PROVENANCE.md still records every
+            # success (the non-zero exit code reports the failure).
+            try:
+                _download(url, target)
+            except OSError as error:
+                print(f"  ERROR {filename}: download failed ({error})",
+                      file=sys.stderr)
+                failures += 1
+                continue
 
         size = os.path.getsize(target)
         if size < min_size:
@@ -165,7 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         entries.append(dict(
             filename=filename, offer_id=offer_id, url=url, sha256=actual,
             size_bytes=size,
-            downloaded_at=datetime.datetime.now().isoformat(timespec="seconds"),
+            # UTC so the provenance record is unambiguous across the dev
+            # machine and the run server.
+            downloaded_at=datetime.datetime.now(datetime.timezone.utc)
+                                           .isoformat(timespec="seconds"),
         ))
 
     provenance_path = os.path.join(args.dest, PROVENANCE_NAME)

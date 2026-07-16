@@ -21,6 +21,12 @@ representative point falls inside the cell polygon. The primary/fallback rate
 is logged; above ``braunschweig.verbindungen.max_ags_fallback_share`` the
 stage raises (a high rate means the AGS join is broken, not reformed).
 
+Deliberate deviation from the design spec: the spec proposed a geometric
+centroid fallback for the ZGB SCOPE CLIP itself; implemented is the plain
+AGS-prefix clip plus the fail-early commune-coverage completeness check
+below. A coverage hole thereby raises loudly instead of being silently
+patched by geometry -- stronger than the spec's proposal, same intent.
+
 DBF truncation caveat: the shapefile's DBF format caps string attributes at
 254 characters, and 34 of the 3,189 cells (none in ZGB scope; the longest
 in-scope ``ags_0`` is 125 chars) carry an ``ags_0`` list cut off mid-code,

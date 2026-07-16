@@ -1,17 +1,23 @@
 """Validate the synthetic home->work assignment against VerBindungen (#124).
 
-Compares the model's POTENTIAL commute OD (every employed synthetic person's
-home cell x work cell; NOT MATSim trips) against the 2019 VerBindungen QZM on
-the 44 ZGB Verkehrszellen, share-based and censoring-aware, plus a
-production-margin check against the BA workers-at-home margins and a
-Kreis-level vintage-drift diagnostic (2019 reference vs. 2025 Pendleratlas).
+Compares the model's POTENTIAL commute OD (home cell x work cell of every
+synthetic person WITH AN ASSIGNED WORK LOCATION; NOT MATSim trips) against
+the 2019 VerBindungen QZM on the 44 ZGB Verkehrszellen, share-based and
+censoring-aware, plus a production-margin check against the BA
+workers-at-home margins and a Kreis-level vintage-drift diagnostic (2019
+reference vs. 2025 Pendleratlas).
 
 Universe notes (carried into every output):
 - QZM = ALL workers incl. Beamte/Selbststaendige (2019, potential commutes,
   relations < 10 censored).
 - BA margins = SvB + aGeB only (2019, rounded to 10s, Dominanz-suppressed).
-- Model = all employed synthetic persons with an assigned work location
-  (uniform sample; share-based metrics, sampling rate cancels).
+- Model = synthetic persons with an assigned work location (uniform sample;
+  share-based metrics, sampling rate cancels). ASSUMPTION: eqasim assigns
+  work locations only to persons whose realised plan contains a work trip
+  (``has_work_trip``), so employed persons without a work trip that day are
+  absent from the model side -- the "potential commutes" analogy to the QZM
+  is therefore approximate, and the comparison is only mostly (not fully)
+  insensitive to home office on the model side.
 
 Checks:
 A. margin_check          -- workers per home cell, model vs. BA WO margins.
@@ -115,7 +121,15 @@ def conditional_od_check(df_model_od: pd.DataFrame,
 
 def band_shares(df_od: pd.DataFrame, df_cells: gpd.GeoDataFrame,
                 bands_km: list) -> pd.Series:
-    """Commuter-mass share per centroid-distance band (index = band label)."""
+    """Commuter-mass share per centroid-distance band (index = band label).
+
+    Censoring note: unlike ``conditional_od_check`` (which restricts the model
+    to reference-observed relations and renormalises), the band shares use the
+    FULL mass of whichever OD frame is passed in. The reference frame is
+    censored (< 10 removed upstream) while the model frame is not, so the
+    ``band_emd`` summary metric carries a small asymmetry -- interpret it
+    together with ``censored_model_share`` (small censored mass = negligible
+    asymmetry)."""
     cx = df_cells.set_index("cell_id")["centroid_x"]
     cy = df_cells.set_index("cell_id")["centroid_y"]
     dx = df_od["origin_cell_id"].map(cx) - df_od["destination_cell_id"].map(cx)
