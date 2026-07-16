@@ -57,8 +57,10 @@ for ttf in sorted(FONT_DIR.glob("SpaceMono-*.ttf")):
     SPACE_MONO = fm.FontProperties(fname=str(ttf)).get_name()
 plt.rcParams["font.family"] = SPACE_MONO
 
-KREIS_LABEL = {"3101": "Braunschweig", "3102": "Salzgitter", "3103": "Wolfsburg",
-               "3151": "Gifhorn", "3157": "Peine", "3158": "Wolfenbüttel"}
+# Keys are the zero-padded 5-digit Kreis ARS, matching the ``ars5`` property
+# written into kreis_socio.geojson by the SimWrapper spatial export.
+KREIS_LABEL = {"03101": "Braunschweig", "03102": "Salzgitter", "03103": "Wolfsburg",
+               "03151": "Gifhorn", "03157": "Peine", "03158": "Wolfenbüttel"}
 LABEL_THESE = set(KREIS_LABEL)
 
 # --- design tokens (style-selected) ----------------------------------------
@@ -146,6 +148,9 @@ def load():
 
     log("kreis ...")
     kreis = gpd.read_file(KREIS_PATH).to_crs(CRS_METRIC).reset_index(drop=True)
+    # Normalise the Kreis key to the zero-padded 5-char ARS so the KREIS_LABEL
+    # lookups match regardless of string/numeric coercion in the GeoJSON.
+    kreis["ars5"] = kreis["ars5"].astype(str).str.zfill(5)
     kreis["cx"] = kreis.geometry.centroid.x
     kreis["cy"] = kreis.geometry.centroid.y
 

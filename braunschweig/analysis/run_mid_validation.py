@@ -245,9 +245,10 @@ def _load_mid() -> dict[str, pd.DataFrame]:
                 f"Missing MiD reference table: {path}. "
                 "Run scripts/seed_mid_constraint_tables.py first."
             )
-        df = pd.read_csv(path)
-        df["ars5"] = df["ars5"].astype(str)
-        df["kreis"] = df["kreis"].astype(str)
+        # dtype=str at READ time (same rationale as _load_noise_bands below):
+        # int64 inference would strip the ars5 leading zero irreversibly; a
+        # post-hoc .astype(str) cannot repair it.
+        df = pd.read_csv(path, dtype={"ars5": str, "kreis": str})
         tables[code] = df
     return tables
 

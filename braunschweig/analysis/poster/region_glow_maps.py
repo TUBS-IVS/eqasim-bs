@@ -105,10 +105,17 @@ def extent_for(kreis: gpd.GeoDataFrame, which: str):
     if which == "region":
         xmin, ymin, xmax, ymax = kreis.total_bounds
         return xmin, xmax, ymin, ymax
-    # city: Braunschweig kreisfreie Stadt = ars5 '03101'
-    city = kreis[kreis["ars5"].astype(str) == "3101"]
+    # city: Braunschweig kreisfreie Stadt = ars5 '03101'. Zero-pad before
+    # comparing so the lookup works regardless of whether the GeoJSON property
+    # survived as a padded string ("03101") or was coerced numeric (3101);
+    # the previous un-padded equality + str.contains fallback silently
+    # depended on the fallback for the padded (correct) export.
+    city = kreis[kreis["ars5"].astype(str).str.zfill(5) == "03101"]
     if city.empty:
-        city = kreis[kreis["ars5"].astype(str).str.contains("3101")]
+        raise RuntimeError(
+            "kreis_socio.geojson: no feature with ars5 == '03101' "
+            f"(Braunschweig); got ars5 values {sorted(set(kreis['ars5'].astype(str)))}"
+        )
     xmin, ymin, xmax, ymax = city.total_bounds
     pad = 0.06 * max(xmax - xmin, ymax - ymin)
     return xmin - pad, xmax + pad, ymin - pad, ymax + pad

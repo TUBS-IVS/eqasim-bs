@@ -59,13 +59,15 @@ for ttf in sorted(FONT_DIR.glob("SpaceMono-*.ttf")):
     SPACE_MONO = fm.FontProperties(fname=str(ttf)).get_name()
 plt.rcParams["font.family"] = SPACE_MONO
 
+# Keys are the zero-padded 5-digit Kreis ARS, matching the ``ars5`` property
+# written into kreis_socio.geojson by the SimWrapper spatial export.
 KREIS_NAME = {
-    "3101": "Braunschweig", "3102": "Salzgitter", "3103": "Wolfsburg",
-    "3151": "Gifhorn", "3153": "Goslar", "3154": "Helmstedt",
-    "3157": "Peine", "3158": "Wolfenbuettel",
+    "03101": "Braunschweig", "03102": "Salzgitter", "03103": "Wolfsburg",
+    "03151": "Gifhorn", "03153": "Goslar", "03154": "Helmstedt",
+    "03157": "Peine", "03158": "Wolfenbuettel",
 }
-KREIS_LABEL = {**KREIS_NAME, "3158": "Wolfenbüttel"}
-LABEL_THESE = {"3101", "3103", "3102", "3158", "3157", "3151"}
+KREIS_LABEL = {**KREIS_NAME, "03158": "Wolfenbüttel"}
+LABEL_THESE = {"03101", "03103", "03102", "03158", "03157", "03151"}
 
 # Day-cycle colormap for departure time (0..24 h): night -> morning -> noon -> evening.
 CMAP_TIME = LinearSegmentedColormap.from_list("time", [
@@ -144,6 +146,9 @@ def load():
 
     log("kreis ...")
     kreis = gpd.read_file(KREIS_PATH).to_crs(CRS_METRIC)
+    # Normalise the Kreis key to the zero-padded 5-char ARS so the KREIS_LABEL
+    # lookups match regardless of string/numeric coercion in the GeoJSON.
+    kreis["ars5"] = kreis["ars5"].astype(str).str.zfill(5)
     kreis["cx"] = kreis.geometry.centroid.x
     kreis["cy"] = kreis.geometry.centroid.y
     return (hx, hy), pt_layer, (road_segs, road_spd, rail_segs), kreis

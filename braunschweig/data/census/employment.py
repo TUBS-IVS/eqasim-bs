@@ -123,6 +123,20 @@ def execute(context):
     scope = set(df_codes["departement_id"].astype(str).unique())
     df = df[df["departement_id"].isin(scope)].copy()
 
+    # Fail fast on an empty result: zero rows after the 5-digit/scope filter
+    # means the AGS column lost its text form (e.g. numeric Excel cells strip
+    # the leading zero: "03101" -> 3101, length 4 -> every row dropped) or the
+    # table layout changed. Returning an empty marginal would silently feed
+    # "zero employment" into IPF downstream.
+    if df.empty:
+        raise RuntimeError(
+            "[braunschweig.employment] 0 rows left after the 5-digit AGS / "
+            f"scope filter (scope Kreise: {sorted(scope)}). The AGS column of "
+            "the GENESIS 13111-06-02-4 XLSX most likely lost its leading zero "
+            "(numeric cells) or the column layout shifted -- refusing to "
+            "return an empty employment marginal."
+        )
+
     # Drop "Insgesamt" totals, keep the seven bucket rows.
     df = df[df["age_class"].isin(AGE_CLASS_MAP)].copy()
     df["age_class"] = df["age_class"].map(AGE_CLASS_MAP).astype(int)

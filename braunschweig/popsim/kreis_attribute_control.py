@@ -80,7 +80,11 @@ def load_kreis_target(
     path = Path(data_path) / ctl.target_csv_relpath
     if not path.exists():
         raise FileNotFoundError(f"load_kreis_target[{ctl.name}]: target CSV not found at {path}.")
-    df = pd.read_csv(path, comment="#")
+    # dtype=str at READ time: int64 inference would strip the ars5 leading
+    # zero irreversibly; the later .astype(str) could not repair it. Today the
+    # mandatory region-aggregate row forces object dtype, but the key padding
+    # must not depend on that.
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
     missing_cols = [c for c in ("ars5", *ctl.target_columns) if c not in df.columns]
     if missing_cols:
         raise ValueError(
