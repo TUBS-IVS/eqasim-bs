@@ -40,6 +40,31 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### Resolved (2026-07-16) — #124 VerBindungen sub-Kreis OD reference (PR #189/#190) + #132 svb_wohn A/B (ADR-0066)
+
+- **#124 phase 1 DONE, MERGED (PR #189 + server-config wiring PR #190).** Download + loaders
+  (`data/verbindungen/`) + default-ON validation stage (`analysis/verbindungen_validation.py`,
+  checks A margin / B conditional-OD / C vintage-drift) + A/B script. Baseline validation of the
+  100pct all-features run vs the **real VerBindungen 2019 QZM** (RUNS `verbindungen-ab-2026-07-16`):
+  check-B weighted TVD 0.137, home-margin Pearson r 0.9968, vintage 2019↔2025 Pearson r 0.9984
+  (drift ≤ 0.0076). The sub-Kreis work-OD structure fits the reference reasonably and the vintage
+  is stable.
+- **#132 svb_wohn production mass: measured, PARKED default OFF (ADR-0066).** Paired OD-level A/B:
+  weighted TVD 0.1136 → 0.1137 (negligible) — the Kreis-level Pendleratlas IPF anchor dominates.
+  Flag stays available. Same pattern as #128/#129.
+- **OPEN follow-ups (issue-first; propose before creating):**
+  1. **Stage-3 calibration-anchor decision (proposed issue).** Both gate criteria are technically met
+     (check-B gap real + not censoring-explained at 1.6%; vintage drift small), but there is **no
+     committed threshold** for "substantial enough to calibrate" and TVD ~0.14 is already a reasonable
+     gravity fit — so promoting VerBindungen from validation reference to a sub-Kreis calibration
+     anchor is a **team judgment**, not auto-taken. If ever built, sub-Kreis OD becomes labelled *fit*,
+     not validated. Deep-dive per-Kreis-pair table exists (`ab_out/realised_100pct/`).
+  2. **#124 phase 2** (Erreichbarkeiten/Reisezeitverhältnis matrices as pair-specific impedance
+     crosscheck) — deliberately deferred, honest expectation "probably small".
+  3. Minor code follow-ups from the #189 final review (accepted, non-blocking): download-robustness
+     already done; consider `SVB_FALLBACK_WARN_SHARE` as a config key; the not-yet-consumed breakdown
+     table `SvBaGeB_Relationen_WO_AO_Verkehrszellen.csv` (~112 MB) is downloaded for later segment checks.
+
 ### Resolved (2026-07-16) — worktree cleanup rescue: NDS Kreis-key leading-zero fix (PR #187)
 
 - The popsim-validation employed-rate extractors (`employed_25_64_rate`, `employed_by_age_group` in
