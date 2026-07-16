@@ -348,13 +348,9 @@ def map_mid_person_attributes(
     # number_of_bicycles, has_ebike) are always present after the attribute mappers
     # above (MiD donor only; map_has_ebike raises if H_ANZPED is absent).
     available_attrs = [a for a in _HOUSEHOLD_ATTRS if a in donor_hh.columns]
-    persons = persons.merge(
-        donor_hh[[donor_col, *available_attrs]],
-        on=donor_col, how="left", suffixes=("", "_hh"),
+    persons = _attach_donor_household_attrs(
+        persons, donor_hh, donor_col, available_attrs,
     )
-    persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
-    persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
-    persons["has_ebike"] = persons["has_ebike"].fillna(0).astype(int)
 
     persons["car_availability"] = _household_availability(
         persons, count_col="number_of_cars", adults_only=True,
@@ -440,6 +436,44 @@ def map_mid_person_attributes(
     persons["weight"] = 1.0
 
     return persons, donor_map
+
+
+def _attach_donor_household_attrs(
+    persons: pd.DataFrame,
+    donor_hh: pd.DataFrame,
+    donor_col: str,
+    available_attrs: list,
+) -> pd.DataFrame:
+    """Left-merge donor household attributes onto persons, with join-coverage logging.
+
+    Every synthetic person's ``donor_col`` should reference an existing donor
+    household row (referential integrity of the expansion). An unmatched donor
+    id leaves the count attributes NaN, which the fills below silently turn
+    into "0 cars / 0 bicycles / no e-bike" -- so the match coverage is counted
+    and any unmatched person is surfaced as a WARNING instead of silently
+    zero-filled (CLAUDE.md no-silent-fallback).
+    """
+    persons = persons.merge(
+        donor_hh[[donor_col, *available_attrs]],
+        on=donor_col, how="left", suffixes=("", "_hh"),
+    )
+    unmatched = persons["number_of_cars"].isna()
+    n_unmatched = int(unmatched.sum())
+    n_total = len(persons)
+    if n_unmatched:
+        sample = sorted(persons.loc[unmatched, donor_col].astype(str).unique())[:5]
+        print(
+            f"[popsim.assembly] WARNING: donor household attrs: "
+            f"{n_unmatched}/{n_total} persons "
+            f"({100.0 * n_unmatched / n_total:.2f}%) reference a {donor_col} "
+            f"absent from the donor household frame -> count attributes "
+            f"zero-filled. Example ids: {sample}. A non-zero rate means the "
+            f"expansion and the donor pool diverged (key mismatch)."
+        )
+    persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
+    persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
+    persons["has_ebike"] = persons["has_ebike"].fillna(0).astype(int)
+    return persons
 
 
 def build_persons(
