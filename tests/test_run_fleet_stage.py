@@ -162,10 +162,12 @@ def test_stage_configure_declares_dependencies():
     assert "random_seed" in ctx.requested_configs
 
 
+@_needs_hsn_tsn_lookup
 def test_stage_execute_produces_valid_fleet():
-    # hsn/tsn attributes OFF: they require the local-only (gitignored)
-    # hsn_tsn_lookup.csv; the fleet base behaviour under test here does not.
-    ctx = _stub({"fleet_hsn_tsn_attributes": False})
+    # Runs with the production default (fleet_hsn_tsn_attributes=True) so the
+    # all-features path is what gets tested; skips only where the local-only
+    # hsn_tsn_lookup.csv is absent.
+    ctx = _stub()
     df_vehicle_types, df_vehicles = hh.execute(ctx)
 
     # 4 typed household cars (2 + 0 + 1 + 1) PLUS 1 routing default_car for the carless
@@ -186,9 +188,10 @@ def test_stage_execute_produces_valid_fleet():
 # --------------------------------------------------------------------------- #
 # 2. The produced frames write a valid MATSim vehicles file (stage -> writer).
 # --------------------------------------------------------------------------- #
+@_needs_hsn_tsn_lookup
 def test_stage_output_writes_valid_matsim_vehicles(tmp_path):
-    # hsn/tsn attributes OFF (needs the local-only hsn_tsn_lookup.csv).
-    ctx = _stub({"fleet_hsn_tsn_attributes": False})
+    # Production default (hsn/tsn ON); skips only without the local lookup.
+    ctx = _stub()
     df_vehicle_types, df_vehicles = hh.execute(ctx)
 
     # Add the dummy passenger type the real vehicles stage concatenates so the
