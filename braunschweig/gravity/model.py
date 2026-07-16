@@ -656,12 +656,19 @@ def compute_work_od(
 def _execute_gravity_base(context):
     """Run the bavaria-style Gemeinde x Gemeinde gravity model.
 
-    Returns ``(df_work_od, df_education_od)`` of row-normalised conditional
-    probabilities.
+    Returns a 4-tuple ``(df_work_od, df_education_od, pop_taz,
+    df_work_production)``. The first two are row-normalised conditional
+    probabilities; ``pop_taz`` is the TAZ origin margin (non-None only on the
+    TAZ ON path); ``df_work_production`` is the #132 work production frame
+    (schema ``origin_id``, ``population``; non-None only when
+    ``braunschweig.gravity.work_production_mass`` is ``svb_wohn``).
 
     When ``taz_work_location_choice`` is OFF (default) the function runs the
     gravity once on the Gemeinde universe and returns the same frame for both
-    work and education -- byte-identical to the pre-TAZ behaviour.
+    work and education -- byte-identical to the pre-TAZ behaviour. With
+    ``work_production_mass: svb_wohn`` a SECOND Gemeinde gravity is run for
+    work using employed residents (svb_wohn) as the production mass; education
+    always keeps the population-based OD.
 
     When ON the gravity is run TWICE:
     - Gemeinde pass (``education_od``): standard Gemeinde x Gemeinde gravity.
@@ -673,6 +680,23 @@ def _execute_gravity_base(context):
     # "config() takes 2 positional arguments but 3 were given".  The default
     # False is declared in configure().
     taz_on = context.config("taz_work_location_choice")
+
+    # #132: work production mass, read once and validated BEFORE any gravity
+    # computation (build_work_production_mass validates again -- belt and
+    # braces). The default "population" is declared in configure().
+    production_mode = context.config("braunschweig.gravity.work_production_mass")
+    from braunschweig.gravity.production_mass import PRODUCTION_MASS_MODES  # noqa: PLC0415
+    if production_mode not in PRODUCTION_MASS_MODES:
+        raise ValueError(
+            "[braunschweig.gravity.model] unknown "
+            f"braunschweig.gravity.work_production_mass {production_mode!r}; "
+            f"expected one of {PRODUCTION_MASS_MODES}"
+        )
+    if taz_on and production_mode != "population":
+        raise RuntimeError(
+            "[braunschweig.gravity.model] work_production_mass=svb_wohn is "
+            "not yet wired for the TAZ path (see #132 Task 9)"
+        )
 
     df_distances = context.stage("eqasim_common.gravity.distance_matrix")
     # data.census.filtered resolves to the configured population producer
@@ -732,9 +756,41 @@ def _execute_gravity_base(context):
     )
 
     if not taz_on:
-        # OFF path: byte-identical to the pre-extraction behaviour.
-        # Third element is None so execute() can unpack uniformly.
-        return education_od, education_od, None
+        if production_mode == "population":
+            # OFF path: byte-identical to the pre-extraction behaviour.
+            # Trailing elements are None so execute() can unpack uniformly.
+            return education_od, education_od, None, None
+        # svb_wohn: run a SEPARATE work gravity with the svb production mass;
+        # education keeps the population-based OD computed above.
+        from braunschweig.gravity.production_mass import (  # noqa: PLC0415
+            build_work_production_mass, read_svb_wohn_per_commune,
+        )
+        df_svb = read_svb_wohn_per_commune(context)
+        # data.census.filtered is a per-PERSON frame (multiple rows per
+        # origin_id; compute_work_od aggregates internally), but
+        # build_work_production_mass documents a Gemeinde-aggregated input:
+        # merging svb per person-row would multiply each Gemeinde's svb_wohn
+        # by its person count downstream. Aggregate to one row per Gemeinde
+        # first (a no-op if the frame is already aggregated).
+        df_pop_gemeinde_aggregated = (
+            df_pop_gemeinde.groupby("origin_id", as_index=False)["population"].sum()
+        )
+        df_work_production = build_work_production_mass(
+            df_pop_gemeinde_aggregated, df_svb, mode=production_mode)
+        work_od = compute_work_od(
+            df_population=df_work_production,
+            df_employees=df_emp_gemeinde,
+            df_distances=df_distances,
+            df_regiostar=df_regiostar,
+            rs7_by_zone=None,
+            slope=slope,
+            constant=constant,
+            diagonal=diagonal,
+            slope_overrides=slope_overrides,
+            friction_factors=friction_factors,
+            max_iterations=max_iterations,
+        )
+        return work_od, education_od, None, df_work_production
 
     # TAZ pass for work-location gravity (ON path).
     # The origin margin splits each commune's census weight across its TAZ by the
@@ -791,7 +847,9 @@ def _execute_gravity_base(context):
 
     # Return pop_taz as the third element so execute() can reuse it without
     # calling build_origin_population_per_taz a second time (sjoin is expensive).
-    return work_od, education_od, pop_taz
+    # The fourth element (work production frame) is None: the TAZ path never
+    # reaches here with a non-population production mode (guard above, #132).
+    return work_od, education_od, pop_taz, None
 
 
 # --- Braunschweig-specific -------------------------------------------------
@@ -854,6 +912,23 @@ def configure(context):
     if context.config("braunschweig.gravity.sector_aware_enabled", False):
         # Only declared as required when the flag is on, so the legacy OFF path
         # needs no new config keys or stages.
+        context.config("data_path")
+        context.config(
+            "braunschweig.employment_gemband_path",
+            "braunschweig/gemband-dlk-0-202506-xlsx.xlsx",
+        )
+        context.stage("eqasim_common.spatial.codes")
+
+    # #132: production mass for the WORK gravity ("population" reproduces the
+    # legacy behaviour byte-identically; "svb_wohn" uses employed residents,
+    # see braunschweig/gravity/production_mass.py). Education always uses
+    # population (pupils/students are not SvB).
+    context.config("braunschweig.gravity.work_production_mass", "population")
+    if context.config("braunschweig.gravity.work_production_mass", "population") != "population":
+        # Only declared as required when the svb_wohn mode is active, so the
+        # default "population" path needs no new config keys or stages. These
+        # duplicate the sector-aware declarations above on purpose (synpp
+        # tolerates repeated declaration); either flag alone must suffice.
         context.config("data_path")
         context.config(
             "braunschweig.employment_gemband_path",
@@ -1187,11 +1262,16 @@ def _append_outbound_flows(df_od: pd.DataFrame,
 
 
 def execute(context):
-    # _execute_gravity_base returns a 3-tuple: (work_od, education_od, pop_taz).
+    # _execute_gravity_base returns a 4-tuple:
+    # (work_od, education_od, pop_taz, df_work_production).
     # pop_taz is the TAZ origin-margin DataFrame (non-None only on the ON path);
     # it is threaded out here so execute() does not call build_origin_population_per_taz
-    # a second time (the sjoin is expensive).
-    df_work_od, df_education_od, pop_taz_from_base = _execute_gravity_base(context)
+    # a second time (the sjoin is expensive). df_work_production is the #132 work
+    # production frame (non-None only when work_production_mass=svb_wohn); it is
+    # threaded out so the SAME mass that seeded the gravity also seeds the
+    # Kreis-IPF (_calibrate) and the outbound flows (_append_outbound_flows).
+    df_work_od, df_education_od, pop_taz_from_base, df_work_production = \
+        _execute_gravity_base(context)
     # data.census.filtered resolves to the configured population producer
     # (braunschweig.ipf.attributed in the legacy config -- unchanged behaviour --
     # or braunschweig.popsim.stage in the popsim configs), so the gravity weights
@@ -1228,7 +1308,16 @@ def execute(context):
         zone_to_kreis = None
         population_key = "commune_id"
         population_value = "weight"
-        df_population_for_od = df_population
+        if df_work_production is None:
+            df_population_for_od = df_population
+        else:
+            # #132: the SAME production mass that seeded the gravity must
+            # seed the Kreis-IPF and the outbound flows (consistency across
+            # all three mass entry points).
+            df_population_for_od = df_work_production.rename(columns={
+                "origin_id": "commune_id",
+                "population": "weight",
+            })
 
     print(
         "[braunschweig.gravity.model] calibrating {:,} zone-pairs "
