@@ -77,7 +77,10 @@ def filter_residential_buildings(df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return df
 
 
-def impute_commune_with_ags_fallback(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
+def impute_commune_with_ags_fallback(
+    df: pd.DataFrame,
+    ags_to_zone: dict[str, tuple[str, str]] | None = None,
+) -> tuple[pd.DataFrame, int, int]:
     """Back-fill ``commune_id`` / ``iris_id`` from the ``AGS`` attribute for
 
     buildings whose centroid missed every Gemeinde polygon in the spatial
@@ -86,7 +89,16 @@ def impute_commune_with_ags_fallback(df: pd.DataFrame) -> tuple[pd.DataFrame, in
 
     ``df`` is the post-sjoin frame: ``commune_id`` / ``iris_id`` are NaN for
     buildings that landed outside all polygons, and an ``AGS`` column (if
-    present) carries the building's own commune code from the source data.
+    present) carries the building's own 8-digit commune code from the source
+    data.
+
+    ``ags_to_zone`` maps the building's 8-digit ``AGS`` to the zone system's
+    ``(commune_id, iris_id)`` (12-digit ARS and ARS+"0000"). It MUST be supplied
+    on the production path: the building AGS is in a different vocabulary than
+    the ARS-keyed zone system, so writing the raw AGS would make every rescued
+    building unmatchable downstream. When omitted (legacy callers/tests that
+    already pass AGS in the commune vocabulary) the raw AGS is written, but a
+    NaN AGS is left NaN (dropped) rather than stringified to "None".
 
     Returns ``(df, primary_count, fallback_count)`` where ``primary_count`` is
     the number of buildings that matched a polygon directly and
@@ -107,9 +119,38 @@ def impute_commune_with_ags_fallback(df: pd.DataFrame) -> tuple[pd.DataFrame, in
     if "AGS" in df.columns:
         missing = df["commune_id"].isna()
         if missing.any():
-            fallback_count = int((missing & df["AGS"].notna()).sum())
-            df.loc[missing, "commune_id"] = df.loc[missing, "AGS"].astype(str)
-            df.loc[missing, "iris_id"] = df.loc[missing, "AGS"].astype(str)
+            ags = df.loc[missing, "AGS"].astype(str)
+            if ags_to_zone is not None:
+                # Correct-vocabulary fallback: the building AGS is the 8-digit
+                # AGS, but the zone system keys on the 12-digit ARS commune_id
+                # (and ARS+"0000" iris_id). Writing the raw AGS here would make
+                # every rescued building unmatchable downstream (dead weight in
+                # the commune fallback pool). Map AGS -> (commune_id, iris_id)
+                # through the zone lookup; an AGS (or NaN) not in the lookup
+                # stays NaN and is dropped by the caller's notna() filter.
+                mapped_commune = ags.map(lambda a: ags_to_zone.get(a, (None, None))[0])
+                mapped_iris = ags.map(lambda a: ags_to_zone.get(a, (None, None))[1])
+                fallback_count = int(mapped_commune.notna().sum())
+                n_unmappable = int(mapped_commune.isna().sum())
+                if n_unmappable:
+                    print(
+                        f"[braunschweig.data.buildings] {n_unmappable} building(s) "
+                        f"missed the polygon join and have an AGS with no matching "
+                        f"zone (e.g. {sorted(ags[mapped_commune.isna()].unique())[:5]}) "
+                        f"-> dropped."
+                    )
+                df.loc[missing, "commune_id"] = mapped_commune
+                df.loc[missing, "iris_id"] = mapped_iris
+            else:
+                # Legacy path (no lookup supplied): retained only for callers
+                # that pass an AGS already in the commune_id vocabulary. A NaN
+                # AGS stays NaN (not the literal string "None") so it is dropped
+                # by the caller's notna() filter, as the docstring promises.
+                valid = df.loc[missing, "AGS"].notna()
+                fallback_count = int(valid.sum())
+                fill_idx = df.loc[missing].index[valid.to_numpy()]
+                df.loc[fill_idx, "commune_id"] = df.loc[fill_idx, "AGS"].astype(str)
+                df.loc[fill_idx, "iris_id"] = df.loc[fill_idx, "AGS"].astype(str)
 
     return df, primary_count, fallback_count
 
@@ -233,9 +274,21 @@ def execute(context) -> gpd.GeoDataFrame:
     ).reset_index(drop=True).drop(columns=["index_right"])
 
     # Fallback: for buildings whose centroid landed outside any Gemeinde
-    # polygon (tiny topology artefacts) use the AGS attribute directly.
+    # polygon (tiny topology artefacts) map the 8-digit AGS attribute back to
+    # the zone system's 12-digit ARS commune_id / iris_id. The building AGS and
+    # the zone commune_id are DIFFERENT vocabularies, so the mapping is built
+    # from df_zones (AGS8 = ARS[:5] + ARS[9:12], the codes.py rule) rather than
+    # writing the raw AGS (which would make rescued buildings unmatchable).
     # PRIMARY = direct polygon sjoin match; FALLBACK = AGS-attribute back-fill.
-    df, primary_count, fallback_count = impute_commune_with_ags_fallback(df)
+    zone_commune = df_zones["commune_id"].astype(str)
+    zone_iris = df_zones["iris_id"].astype(str)
+    ags_to_zone = {
+        cid[:5] + cid[9:12]: (cid, iid)
+        for cid, iid in zip(zone_commune, zone_iris)
+    }
+    df, primary_count, fallback_count = impute_commune_with_ags_fallback(
+        df, ags_to_zone=ags_to_zone
+    )
     _log_commune_fallback_rate(primary_count, fallback_count)
 
     df = df[df["commune_id"].notna()].copy()

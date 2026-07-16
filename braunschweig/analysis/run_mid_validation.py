@@ -714,21 +714,33 @@ def _plot_rs7_kpis(table: pd.DataFrame, path: Path) -> None:
     _save_fig(fig, path)
 
 
+def _hhsize_counts(households: pd.DataFrame) -> pd.Series:
+    """Household-size counts in natural order WITHOUT dropping any label.
+
+    The previous hardcoded ``reindex(["1","2","3","4","5+"])`` silently
+    dropped every household of size >= 5 on the popsim_mid path (raw counts
+    "5","6","7",...) and the "6+" bin of the 6-bin IPF scheme -- the labels
+    present in the data define the axis, not a fixed list.
+    """
+    counts = households["household_size"].astype(str).value_counts()
+
+    def _order_key(label: str):
+        stripped = label.rstrip("+")
+        try:
+            return (float(stripped), label.endswith("+"))
+        except ValueError:
+            return (float("inf"), True)
+
+    return counts.reindex(sorted(counts.index, key=_order_key))
+
+
 def _plot_demographics(
     persons: pd.DataFrame, households: pd.DataFrame, path: Path
 ) -> None:
-    hhsize_order = ["1", "2", "3", "4", "5+"]
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.5))
     persons["age"].hist(bins=30, ax=axes[0])
     axes[0].set_title("Age")
-    (
-        households["household_size"]
-        .astype(str)
-        .value_counts()
-        .reindex(hhsize_order)
-        .fillna(0)
-        .plot.bar(ax=axes[1])
-    )
+    _hhsize_counts(households).plot.bar(ax=axes[1])
     axes[1].set_title("Household size")
     households["number_of_cars"].value_counts().sort_index().plot.bar(ax=axes[2])
     axes[2].set_title("Cars per HH")

@@ -421,7 +421,11 @@ class HsnTsnLookup:
                 f"HSN/TSN lookup not found: {path} (run scripts/scrape_hsn_tsn.py "
                 f"to (re)generate it; the CSV is local-only / gitignored)."
             )
-        df = pd.read_csv(path)
+        # dtype=str at READ time: HSN is a purely numeric 4-digit code with a
+        # leading zero ("0603"); int64 inference strips it irreversibly and the
+        # later astype(str) would emit "603" on every vehicle. TSN only stays
+        # correct by the accident of letter TSNs forcing object dtype.
+        df = pd.read_csv(path, dtype={"hsn": str, "tsn": str})
         missing = set(REQUIRED_COLUMNS) - set(df.columns)
         if missing:
             raise RuntimeError(

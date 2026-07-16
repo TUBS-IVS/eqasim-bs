@@ -194,6 +194,22 @@ def build_dest_attraction_per_taz(df_buildings, df_employees, df_taz, df_municip
 
     grid["pot_sum"] = grid.groupby("commune_ars")["pot"].transform("sum")
     grid["n_taz"] = grid.groupby("commune_ars")["taz_id"].transform("count")
+    # Fallback transparency (CLAUDE.md): a commune with zero total building
+    # potential falls back to a uniform 1/n_taz split. That is designed for
+    # single communes, but a broken building->TAZ potential join upstream would
+    # silently flatten EVERY commune's attraction to uniform -- so the rate is
+    # counted and logged, with a WARNING when it dominates.
+    zero_pot_communes = grid.loc[grid["pot_sum"] <= 0, "commune_ars"].nunique()
+    n_communes = grid["commune_ars"].nunique()
+    if zero_pot_communes:
+        rate = zero_pot_communes / n_communes if n_communes else 0.0
+        log = logger.warning if rate > 0.5 else logger.info
+        log(
+            "[taz_margins.attraction] %d/%d communes (%.1f%%) have zero total "
+            "building potential -> uniform 1/n_taz split (fallback). A dominant "
+            "rate means the building potential join upstream is broken.",
+            zero_pot_communes, n_communes, 100.0 * rate,
+        )
     share = (grid["pot"] / grid["pot_sum"].where(grid["pot_sum"] > 0)).fillna(1.0 / grid["n_taz"])
     grid["attraction"] = share * grid["emp"]
     grid["taz_id"] = grid["taz_id"].astype(str)
@@ -266,4 +282,24 @@ def build_origin_population_per_taz(df_homes, df_population, df_taz):
     out = (m[["taz_id", "home_commune", "population"]]
            .rename(columns={"home_commune": "commune_id"}))
     out["taz_id"] = out["taz_id"].astype(str)
+    # Conservation transparency: a commune with census population but ZERO
+    # sampled home points never enters `counts`, so its whole census weight
+    # silently vanishes from the origin margin (the docstring promises
+    # per-commune conservation). Expected at low sampling rates for tiny
+    # communes -- but the lost mass must be visible, not silent.
+    lost = pop_by_commune[~pop_by_commune["commune_id"]
+                          .isin(set(counts["home_commune"]))]
+    if len(lost):
+        lost_weight = float(lost["commune_pop"].sum())
+        total_weight = float(pop_by_commune["commune_pop"].sum())
+        lost_share = lost_weight / total_weight if total_weight else 0.0
+        log = logger.warning if lost_share > 0.01 else logger.info
+        log(
+            "[taz_margins.origin] %d commune(s) have census population but no "
+            "sampled home point -> %.0f persons (%.2f%% of total) missing from "
+            "the origin margin (e.g. %s). Expected for tiny communes at low "
+            "sampling rates; a large share means a commune_id mismatch.",
+            len(lost), lost_weight, 100.0 * lost_share,
+            sorted(lost["commune_id"].astype(str))[:5],
+        )
     return out[["taz_id", "commune_id", "population"]], primary, fallback

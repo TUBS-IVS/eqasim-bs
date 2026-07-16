@@ -726,6 +726,12 @@ def test_age_income_off_unchanged():
         "
 
     The golden is committed to tests/fixtures/feature_b_age_off_golden.parquet.
+
+    Refresh history: regenerated 2026-06-18 after the brand-feasibility merge
+    (0d43aa5) and again 2026-07-16 after commit 0bcba37 (issue #92, reviewed)
+    deliberately replaced the independent age draw with the joint (age, euro)
+    IPF matched to the KBA age marginal -- the old golden froze the pre-#92
+    distribution (mean age 6.7 vs 9.8 years) and was never refreshed with it.
     """
     golden = _load_golden("feature_b_age_off_golden.parquet")
 

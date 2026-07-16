@@ -821,10 +821,20 @@ def test_configure_declares_leisure_visit_building_potential_default_false():
     assert "braunschweig.data.buildings" not in ctx.staged
 
 
-def test_configure_stages_buildings_when_leisure_visit_building_potential_on():
+def test_configure_does_not_stage_buildings_when_leisure_visit_building_potential_on():
+    # Ownership moved (commit ce85d5e): the residential candidate rows are
+    # appended by the shared braunschweig.synthesis.locations.secondary_candidates
+    # stage, which owns the braunschweig.data.buildings dependency (its
+    # configure() stages it when the flag is ON -- covered in
+    # tests/test_secondary_candidates_stage.py). The chainsolvers stage itself
+    # only reads the flag for its fail-fast guards and must NOT re-stage the
+    # buildings dependency.
     ctx = _FakeContext({"leisure_visit_building_potential": True})
     sc.configure(ctx)
-    assert "braunschweig.data.buildings" in ctx.staged
+    assert "braunschweig.data.buildings" not in ctx.staged
+    # The shared candidate stage itself is staged under the
+    # secondary_building_potentials flag (the candidate-set owner), covered by
+    # its own tests; nothing more to assert here.
 
 
 # ---------------------------------------------------------------------------

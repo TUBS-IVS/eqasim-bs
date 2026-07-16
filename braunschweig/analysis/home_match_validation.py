@@ -15,6 +15,7 @@ population on ``household_id``, with at least the following columns:
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 
 import numpy as np
@@ -39,6 +40,16 @@ _OCCUPIED_COL = "BewohntWhg_Leerstand_100m_Gitter"
 
 def home_match_metrics(placed: pd.DataFrame, buildings_btype: pd.DataFrame) -> dict:
     df = placed.merge(buildings_btype, left_on="home_location_id", right_on="building_id", how="inner")
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): households
+    # whose home_location_id is pd.NA (zero-building-cell fallback) or matches
+    # no building silently drop out of the inner join, while n_households
+    # still counts the full universe -- the matched rate must be visible.
+    n_matched, n_total = len(df), len(placed)
+    logging.getLogger(__name__).info(
+        "[home_match] building join: matched %d/%d placed households (%.1f%%); "
+        "unmatched are excluded from type_match_share/size_assortativity.",
+        n_matched, n_total, 100.0 * n_matched / n_total if n_total else 0.0,
+    )
     hh_btype = df["building_type_3class"].map(_BTYPE_MAP)
     match = (hh_btype == df["btype"]).mean() if len(df) else float("nan")
     finite_mask = df["household_size"].notna() & df["size"].notna() & (df["size"] > 0)

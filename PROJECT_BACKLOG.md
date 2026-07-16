@@ -302,17 +302,15 @@ Open follow-ups, in order:
   BA stays Kreis-anchor. **Flag-gated default OFF; TAZ data local-only (proprietary VISUM,
   not publishable).** Open-data pseudo-zone alternative = issue **#80** (TODO, deferred).
   - **STATUS 2026-07-01: Phase 1+2 MERGED to `main`** (PR #85 merge `f5f52d1` + PR #89 FutureWarning
-    fix); flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT then measured unnecessary.**
-    Branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, all SDD tasks + final opus review
-    clean) adds a `--taz` mode to `calibrate_gravity_distribution.py` (work-pass-scoped per-RS7 friction
-    on the TAZ work-OD). But the aggregate commute distribution **already fits MiD P13** (measured EMD
-    ~0.054 on the current 100% `popsim_mid` pop, flag-OFF, ZGB-resident; WOB per-Kreis ~0.21 = n=39
-    noise, ADR-0049); a 1% flag-ON A/B even IMPROVES the aggregate (0.057->0.033). So the branch is
-    **PARKED (pushed to the fork as backup, not merged), gated-off infra** — reuse only if a future measurement shows a real
-    gap (ADR-0050). **Remaining Phase-3 = validate the flag-ON TAZ at 100%** (`taz_work_location_choice:
-    true`, `matsim_last_iteration: 0`; multi-hour — origin/main's popsim/secondary sources differ from
-    the commit that built the 24G flag-OFF cache, so it rebuilds) + a **spatial validation map** (OSM
-    basemap) of the TAZ commute / work-location distribution.
+    fix); flag-ON 1% e2e green. Phase 3 friction re-fit BUILT then measured unnecessary; branch
+    `feature/taz-gravity-calibration` @ `3c2ebb5` PARKED as gated-off backup (ADR-0050).
+  - **DECIDED / CLOSED 2026-07-16 (ADR-0067): TAZ stays permanently OFF — feature not pursued further.**
+    Rationale: the building-level activity potentials (PR #16, ON in production) already resolve the
+    within-commune work location TAZ targeted; the flag-OFF model already fits MiD P13 (EMD ~0.054); the
+    RVB VISUM data is proprietary / non-publishable. The outstanding same-commit 25%/100% A/B was
+    deliberately NOT run — the decision is made. TAZ code stays on `main` (OFF byte-identical, zero
+    runtime cost), reactivatable only if a future measurement shows a real intra-city gap. Issues
+    **#79 (completed), #80, #83, #95 (not planned) CLOSED**; parked friction branch kept as backup only.
 - **Distance-fit diagnostics module** (this session, NOT yet landed): `braunschweig/calibration/distance_fit/`
   (Phases 0-5.1 built + 26 local tests green + real-data-validated on the 25% cache via slim
   parquet) on worktree branch `worktree-fix+gravity-calib-popsim-mid`, plus the

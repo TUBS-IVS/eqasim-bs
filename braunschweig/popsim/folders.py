@@ -158,6 +158,20 @@ def build_geo_crosswalk(
                     df_100m[kreis_weight_col], errors="coerce"
                 ).fillna(0.0).to_numpy()
             else:
+                if kreis_weight_col is not None:
+                    # Fallback transparency (CLAUDE.md): the caller asked for a
+                    # population-weighted dominant-Kreis resolution but the
+                    # column is absent (e.g. silently skipped at parquet load)
+                    # -- uniform weights change which Kreis border cells
+                    # resolve to, so this must never happen silently.
+                    logger.warning(
+                        "[popsim.folders] build_geo_crosswalk: requested "
+                        "kreis_weight_col %r is absent from the cells frame -> "
+                        "falling back to UNIFORM weights for the dominant-Kreis "
+                        "resolution of 1 km parents (border-cell Kreis "
+                        "assignment may differ from the population-weighted "
+                        "intent).", kreis_weight_col,
+                    )
                 weights = np.ones(len(df_100m))
             xwalk = _resolve_parent_kreis(xwalk, weights)
     return xwalk
