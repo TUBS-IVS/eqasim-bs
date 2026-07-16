@@ -104,6 +104,21 @@ def test_margin_check_hand_computed():
     assert got["n_cells"] == 2
 
 
+def test_margin_check_handles_nullable_float64_reference():
+    # build_validation_outputs passes the reference margin as a nullable
+    # Float64 Series (BA counts carry Dominanz-suppressed NAs). np.corrcoef
+    # crashes on a masked/nullable-backed Series under the run server's older
+    # numpy; margin_check must coerce to plain float64 first. Distinct,
+    # well-conditioned shares so pearson_r is a real value, not NaN.
+    from braunschweig.analysis.verbindungen_validation import margin_check
+    model = pd.Series([30.0, 50.0, 20.0], index=["A", "B", "C"])
+    ref = pd.array([60.0, 30.0, 10.0], dtype="Float64")
+    got = margin_check(model, pd.Series(ref, index=["A", "B", "C"]))
+    assert got["n_cells"] == 3
+    assert math.isfinite(got["srmse"])
+    assert math.isfinite(got["pearson_r"])  # must not be NaN and must not crash
+
+
 def test_vintage_drift_cross_kreis_shares():
     from braunschweig.analysis.verbindungen_validation import vintage_drift_check
     cells = _cells()  # A -> Kreis 03101, B -> Kreis 03151

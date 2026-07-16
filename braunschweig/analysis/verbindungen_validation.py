@@ -150,16 +150,24 @@ def emd_1d(shares_a: pd.Series, shares_b: pd.Series) -> float:
 
 
 def margin_check(model_counts: pd.Series, ref_counts: pd.Series) -> dict:
-    """Share-based SRMSE + Pearson r of per-cell margins (NA cells dropped)."""
+    """Share-based SRMSE + Pearson r of per-cell margins (NA cells dropped).
+
+    The share vectors are materialised as plain ``float64`` numpy arrays
+    before any numpy reduction. ``build_validation_outputs`` passes the
+    reference margin as a nullable ``Float64`` Series (BA counts carry
+    Dominanz-suppressed NAs); older numpy (the run server's) crashes in
+    ``np.corrcoef`` on a masked/nullable-backed Series, so the explicit
+    ``to_numpy(dtype=float)`` is a correctness fix, not cosmetics.
+    """
     df = pd.DataFrame({"model": model_counts, "ref": ref_counts}).dropna()
     df = df[df["ref"] > 0]
-    m = df["model"] / df["model"].sum()
-    r = df["ref"] / df["ref"].sum()
-    srmse = float(np.sqrt(((m - r) ** 2).mean()) / r.mean())
+    m = (df["model"] / df["model"].sum()).to_numpy(dtype=float)
+    r = (df["ref"] / df["ref"].sum()).to_numpy(dtype=float)
+    srmse = float(np.sqrt(np.mean((m - r) ** 2)) / np.mean(r)) if len(df) else float("nan")
     # A constant share vector has zero variance; its Pearson r is undefined
     # and stays NaN -- suppress only numpy's divide warning, not the NaN.
     with np.errstate(invalid="ignore"):
-        pearson = float(np.corrcoef(m, r)[0, 1]) if len(df) > 1 else np.nan
+        pearson = float(np.corrcoef(m, r)[0, 1]) if len(df) > 1 else float("nan")
     return dict(srmse=srmse, pearson_r=pearson, n_cells=int(len(df)))
 
 
