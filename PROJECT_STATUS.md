@@ -162,6 +162,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | Building potentials — education | `education_building_distribution` | `synthesis/locations/education_gravity.py` | 🟢 | within-facility |
 | Calibration: purpose-resolved secondary | `secondary_distance_by_purpose` / `_shop_daily_split` | `popsim/distance_distributions.py` | 🟢 (allfeat_popsim) | MiD W12 per-purpose |
 | Calibration: per-band commute friction | `gravity_friction_factors` (None) | `gravity/friction.py`, `calibration/commute.py` | 🟡 infra, **not activated** (model already <0.08 EMD) | MiD P13 |
+| Sector-aware attraction tilt (#128) | `braunschweig.gravity.sector_aware_enabled` (False) | `gravity/model.py` (`build_destination_attraction`) | ⏸ **PARKED** (A/B 2026-07-15: distance unchanged, Gemeinde-inflow fit 9x worse vs observed SvB — ADR-0065; ON-path crash + LK-aggregate loss bug fixed, PR #184) | GENESIS 13111-01-03-5 (SvB Arbeitsort) |
 | Calibration: Tier-3 detour/circuity curve | `mode="curve"` (default constant 1.3) | `calibration/circuity.py` | 🟡 opt-in infra (measured immaterial) | OSM graph, Giacomin&Levinson 2015 |
 
 ### 2.5 Cordon / cross-border (Einpendler)
@@ -205,7 +206,8 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 
 ## 3. Branches, PRs & worktrees (current)
 
-- **`origin/main` = `031aefc`** (PR #19). Recent merges: PR #16/#17 building potentials, **#18 + #19 calibration corner**.
+- **Merged 2026-07-16: [PR #184](https://github.com/TUBS-IVS/eqasim-bs/pull/184)** `worktree-fix-128-sector-aware-callsite` (closes #128): sector-aware tilt PARKED (ADR-0065) + ON-path KeyError fix + `employees.py` LK-aggregate false-loss fix (**full-ZGB-8 run blocker** — every 8-Kreis run would have aborted at the 25% threshold). Follow-up **[PR #185](https://github.com/TUBS-IVS/eqasim-bs/pull/185)** (merged 2026-07-16, closes #183): analysis_suite execute-path `context.config()` contract fix.
+- **`origin/main` = `031aefc`** (PR #19). *(Section below this line is stale — pre-dates the July PM syncs; trust git + newer entries above.)* Recent merges: PR #16/#17 building potentials, **#18 + #19 calibration corner**.
 - **Open PR: [#20](https://github.com/TUBS-IVS/eqasim-bs/pull/20)** `reconcile/calibration-remainder` (+441/−20: leisure-correction fix, `_load_stage` alias, scorer-sweep, income-scaling skip). Local tests green; pending server full-suite before merge.
 - **Deleted 2026-06-27** (feature-superseded prototypes, verified): `feature/secondary-external-candidates`, `feature/cordon-supply`, `feature/cordon-incommuters` (local + origin).
 - **Retirable after #20 merges:** `feature/calibration-corner` (stale pre-squash), `worktree-calibration-corner`.

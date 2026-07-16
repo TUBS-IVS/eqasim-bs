@@ -40,6 +40,24 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### Resolved (2026-07-15) — #128 sector-aware tilt: measured, PARKED (ADR-0065); 2 bugs fixed on PR #184 (MERGED 2026-07-16)
+
+- **Decision:** `braunschweig.gravity.sector_aware_enabled` stays OFF permanently. Gravity-only pipeline A/B
+  (felix `~/wt-128-ab`, ZGB-8, private cache, only the flag differing): commute-distance distribution unchanged
+  (TV 0.003), per-Gemeinde work inflows vs OBSERVED SvB am Arbeitsort **9x worse** (mean within-Kreis TV
+  0.009 -> 0.087; Gifhorn Stadt 20,299 observed -> 12,909 ON). By construction: the attraction vector IS the
+  observed Gemeinde marginal. Valid rest of the idea = WZ-sectoral friction (issue #128 phase 2, deferred).
+- **Bugs fixed (PR #184, closes #128):** (a) flag ON always crashed (`KeyError 'employees'`, tilt ran on the
+  pre-rename stage schema; unit tests fed the post-rename schema — primary-path test gap); (b) `employees.py`
+  padded 5-digit LK aggregate rows into fabricated AGS -> 26.9% false "lost" SvB -> **every full ZGB-8 run
+  would have aborted** at the 25% raise threshold (kreis-subset runs stayed under it). Output byte-identical;
+  only accounting/raise corrected. PR #184 MERGED 2026-07-16 (`0669229`). **Next:** remove felix worktree
+  `~/wt-128-ab` + its A/B cache entries.
+- **Spin-off:** #183 — `analysis_suite.py` had two-arg `context.config()` calls in the execute path (static
+  contract test red on main, pre-existing). FIXED via PR #185 (MERGED 2026-07-16): execute path reads
+  key-only; test stub made strict (key-only ExecuteContext stand-in + defaults resolved via the stage's
+  real `configure()`).
+
 ### New (2026-07-15) — #129 per-Bundesland in-commuter mode (PR #180) + #156 MATSim output archive (PR #181), both MERGED
 
 1. **#129 per-Bundesland in-commuter commute-mode reference -> PR #180 (MERGED `2490c37`, ADR-0063).**
@@ -503,6 +521,7 @@ These were tried or designed and **deliberately killed** — the model already d
 | **Raking employment to MiD P9** | P9 is survey noise (~900/Kreis, 43–59% spread, 4pp definitional diff). Employment stays raked to **GENESIS 13111**. Raking to P9 would overfit. |
 | **Within-Kreis *extra* income signal** | No external sub-Kreis ground truth exists (RWI-GEO-GRID is FDZ-restricted); size/tenure/age controls already dominate. Rent tilt (+0.032 Pearson) kept; nothing beyond it. |
 | **ATTACH strategy for building potentials** | Replaced by REPLACE (gpkg buildings as candidate set) after mid-session pivot. |
+| **Sector-aware work-attraction tilt** (#128, ADR-0065) | Measured 2026-07-15 (offline + pipeline A/B): distance distribution unchanged, per-Gemeinde inflow fit vs OBSERVED SvB **9x worse** — the attraction IS the observed marginal, the tilt can only distort it. Within-Gemeinde structure already covered by building potentials; commute-SHAPE idea survives only as deferred WZ-sectoral friction (phase 2). Code stays as gated-off, now-runnable infra. |
 | **HTS-matching step 1 for aggregate purpose fit** | Improves *coherence* (non-employed-with-work 14%→0.5%) but aggregate SRMSE is donor-pool-bound → see 2.1, not step 1. |
 
 ---
