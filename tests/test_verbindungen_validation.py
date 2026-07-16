@@ -197,3 +197,18 @@ def test_build_validation_outputs_tolerates_zero_mass_cell():
         df_home, df_work, df_persons, cells, ref, margins, pendler)
     # must not raise; margin check silently drops the NA cell (n_cells == 1)
     assert int(out["summary"].set_index("metric").loc["margin_n_cells", "value"]) == 1
+
+
+def test_compare_ab_renders_delta_table(tmp_path):
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from compare_verbindungen_ab import render_comparison
+    a = tmp_path / "a.csv"
+    b = tmp_path / "b.csv"
+    header = "# provenance line\n"
+    a.write_text(header + "metric,value\nweighted_tvd,0.30\nband_emd,0.20\n")
+    b.write_text(header + "metric,value\nweighted_tvd,0.25\nband_emd,0.22\n")
+    table = render_comparison(str(a), str(b), label_a="population",
+                              label_b="svb_wohn")
+    assert "weighted_tvd" in table
+    assert "-0.05" in table   # tvd improved by 0.05
+    assert "population" in table and "svb_wohn" in table
