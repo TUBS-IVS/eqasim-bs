@@ -40,6 +40,16 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### Resolved (2026-07-16) — worktree cleanup rescue: NDS Kreis-key leading-zero fix (PR #187)
+
+- The popsim-validation employed-rate extractors (`employed_25_64_rate`, `employed_by_age_group` in
+  `popsim_validation/controls.py`) sliced the 5-digit Kreis prefix without `zfill(12)`: a numeric-typed
+  ARS loses its leading zero, so the keys (`3101`) never match the zero-padded targets (`03101`) — every
+  Lower-Saxony Kreis affected. Fixed + red-verified regression test on **PR #187 (MERGED 2026-07-16)**.
+  Provenance: uncommitted 2026-07-12 validation-audit (#159) work found in the `fix-validation-audit`
+  worktree during the 2026-07-16 cleanup; it had never reached PR #165/#166. All other uncommitted
+  content in the removed worktrees was verified redundant (identical to main commits) or stale.
+
 ### Resolved (2026-07-15) — #128 sector-aware tilt: measured, PARKED (ADR-0065); 2 bugs fixed on PR #184 (MERGED 2026-07-16)
 
 - **Decision:** `braunschweig.gravity.sector_aware_enabled` stays OFF permanently. Gravity-only pipeline A/B
