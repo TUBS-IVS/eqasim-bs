@@ -79,13 +79,13 @@ Also in this PR:
   needs `xlrd`, absent under system Python 3.13), NOT missing data. `_income_xls_readable()` now guards on
   file existence AND `xlrd` importability, path anchored to `DATA_ROOT`. Conforms to
   `feedback-never-disable-tests-to-pass` (mark a non-runnable env honestly, never weaken the assertion).
-- **Open (proposed, issue pending user OK): latent FRAGILE hardening batch** from the audit — items
+- **SHIPPED (PR #196, commit bf8a2f1): latent FRAGILE hardening batch** from the audit — items
   verified NOT live bugs today but one input-drift away from silent failure: `inkar/full_panel.py` +
   `ba/pendler_detailed.py` lack a `\d{5}`-fullmatch key guard (`census/pendler.py` has one);
   `inspire/landuse.py` flag-ON-but-missing-file returns an empty frame with `validate()==0` instead of
   raising (stage currently unconsumed); `home_cell` legacy path renumbers building ids so
   `home_match_validation.compare_typed_vs_legacy` joins the WRONG buildings (analysis-only, legacy flag
-  only); `network.py` link-skip counter. One small PR, TDD each.
+  only); `network.py` link-skip counter. Shipped as PR #196 (`fix/audit-fragile-hardening`, `bf8a2f1`): shared `data/kreis_key_guard.keep_valid_kreis5` wired into inkar/pendler; landuse raises when flag ON + file missing; network counts+logs dangling-node link skips; home_match raises on zero-overlap join (legacy positional ids are test-protected -> guarded the analysis, not the model). TDD (RED verified for home_match); affected suite 65 passed / 9 skipped under the eqasim env; byte-identical on clean inputs.
 
 ### Resolved (2026-07-16) — #124 VerBindungen sub-Kreis OD reference (PR #189/#190) + #132 svb_wohn A/B (ADR-0066)
 

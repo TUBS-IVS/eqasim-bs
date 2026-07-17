@@ -241,7 +241,7 @@ Full ranked detail in [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md). Headlines:
 2. **100% production run** on newest code (Tier-A/B caching makes it affordable).
 3. **Mode-choice ASC calibration** (DMC is OFF → no behaviourally valid modal split).
 4. **German MiD Wege trip donor** (replace French ENTD-2008) — highest-value lever, blocked on MiD microdata.
-5. ~~Pre-existing local test failures~~ — RESOLVED 2026-07-16 (PR #191/#194): all standing failures root-caused, full suite 2986/0 green under the `eqasim` conda env. Issue-backlog cleaned 2026-07-17: #130/#76/#137 closed (already-done / superseded), #124 corrected to phase-2-only. Proposed follow-up (issue pending user OK): latent FRAGILE hardening batch from the audit (see backlog).
+5. ~~Pre-existing local test failures~~ — RESOLVED 2026-07-16 (PR #191/#194): all standing failures root-caused, full suite 2986/0 green under the `eqasim` conda env. Issue-backlog cleaned 2026-07-17: #130/#76/#137 closed (already-done / superseded), #124 corrected to phase-2-only. FRAGILE hardening batch shipped as PR #196 (see backlog).
 
 **Deliberately dropped (do not re-attempt):** commute friction pinning, f(d) detour curve as default, scorer `pot_weight` tuning, raking employment to P9, within-Kreis extra income signal, PopulationSim *importance* calibration (design only) — see backlog §1 Tier 5.
 
