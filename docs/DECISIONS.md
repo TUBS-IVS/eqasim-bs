@@ -1426,10 +1426,21 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
 - **Class-72 diagnosis (`scripts/diagnose_anchor_p13.py`, reproduces the verdict EMDs exactly):**
   the shift is a SMALL SYSTEMATIC SHORTENING spread over all 8 (BS-origin, dest-Kreis) blocks
   (mean-km shifts -1.7 to -4.3; leave-one-in contributions each <= 0.0006): the 2019 QZM observes
-  BS residents working in NEARER zones within each dest Kreis than gravity predicts. The "regression"
-  is measured against the NATIONAL MiD RS7-72 class reference, whose mid-band gap (model 0.109 vs
-  target 0.191 at 30-50km) pre-exists the anchor and is ~10x the anchor's shift; the distance axis
-  itself is a detour-scaled Euclidean proxy, identical for both variants.
+  BS residents working in NEARER zones within each dest Kreis than gravity predicts. Cross-checked
+  against BOTH reference flavours (user question 2026-07-17): vs the NATIONAL MiD RS7-72 class AND
+  vs the REGIONAL per-Kreis P38.2 tables from the MiD 2023 Braunschweig report -- the three cities
+  also worsen slightly against their own regional references (03101 +0.0019, 03102 +0.0045,
+  03103 +0.0029) while ALL FIVE Landkreise improve (up to -0.0263) and 03ZGB improves; the
+  city-side signals sit inside the thin-n directional range this project itself assigns to the
+  per-Kreis tables. KNOWN LIMITATION of the distance axes as ABSOLUTE measures (user-identified):
+  the holdout compares the INTERNAL ZGB-to-ZGB OD only (the CLI runs before
+  `_append_outbound_flows`), while the MiD references describe ALL commutes of residents incl.
+  out-of-region destinations (~13% cross-cordon per the 2019 QZM), which land disproportionately
+  in the 30km+ bands -- so the pre-existing mid-band gap (model 0.109 vs target 0.191 at 30-50km)
+  is to a substantial degree a STUDY-AREA-TRUNCATION artifact, not purely model misfit
+  (scale-plausible, not decomposed). Both variants share the same truncation, so the A/B DELTAS
+  remain internally consistent; the axes are used as deltas only. The distance axis itself is a
+  detour-scaled Euclidean proxy, identical for both variants.
 - **Decision (HUMAN OVERRIDE, explicitly NOT "gate passed"):** default ON
   (`braunschweig.gravity.verbindungen_anchor_enabled = True` in both declaring stages). Rationale:
   evidence judged net-positive (5/6 P13 classes + P38.2 ZGB improve; AO neutral, not worse; the one

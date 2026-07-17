@@ -1024,10 +1024,14 @@ def configure(context):
     # evidence judged net-positive -- 5/6 P13-by-RS7 classes and the P38.2
     # ZGB aggregate improve; the AO axis is neutral within fold noise; the
     # single class-72 shift (+0.0036 EMD) is a small systematic shortening
-    # toward the LOCALLY OBSERVED 2019 QZM destination structure, measured
-    # against the NATIONAL MiD class reference (diagnosed in
-    # scripts/diagnose_anchor_p13.py output, 2026-07-17). Set False per
-    # config to disable; requires the verbindungen raw data when ON.
+    # toward the LOCALLY OBSERVED 2019 QZM destination structure (diagnosed
+    # in scripts/diagnose_anchor_p13.py, 2026-07-17). Checked against BOTH
+    # reference flavours: the NATIONAL MiD RS7-72 class AND the REGIONAL
+    # per-Kreis P38.2 tables -- the three cities also worsen slightly vs
+    # their own regional refs (+0.002..+0.005, thin-n directional range)
+    # while all five Landkreise improve (up to -0.026) and the ZGB aggregate
+    # improves; the trade is documented in ADR-0068. Set False per config to
+    # disable; requires the verbindungen raw data when ON.
     context.config("braunschweig.gravity.verbindungen_anchor_enabled", True)
     if context.config("braunschweig.gravity.verbindungen_anchor_enabled", True):
         # Reference stages only required when the anchor is ON, so the OFF

@@ -101,10 +101,23 @@ in 6/9 regions (03ZGB 0.229 -> 0.225), BUT (i') fails (AO srmse 0.1300 ->
 OFF; ADR-0068 (2026-07-17) records the HUMAN OVERRIDE to default ON: the AO
 axis is neutral-within-noise (not a worsening), and the class-72 shift was
 diagnosed (`scripts/diagnose_anchor_p13.py`) as a small systematic shortening
-toward the LOCALLY OBSERVED 2019 QZM destination structure, measured against
-the NATIONAL MiD RS7-class reference whose mid-band gap (model 0.109 vs
-target 0.191 at 30-50km) pre-exists the anchor and is 10x larger than the
-anchor's shift. Artefacts: `~/wt/verbindungen-anchor/holdout_out_seed*/`
+toward the LOCALLY OBSERVED 2019 QZM destination structure. Checked against
+BOTH reference flavours: vs the NATIONAL MiD RS7-72 class (whose mid-band gap,
+model 0.109 vs target 0.191 at 30-50km, pre-exists the anchor and is 10x the
+shift) AND vs the REGIONAL per-Kreis P38.2 tables, where the three cities
+also worsen slightly against their own references (03101 +0.0019, 03102
++0.0045, 03103 +0.0029 -- within the thin-n directional range) while ALL
+FIVE Landkreise improve (03153 -0.0263, 03157 -0.0131, 03154 -0.0061, 03151
+-0.0044, 03158 -0.0014) and the 03ZGB aggregate improves. The accepted trade:
+a small, consistent city-side distance cost for larger Landkreis-side gains
+and a net regional improvement. KNOWN LIMITATION of the distance axes as
+absolute measures: the holdout OD is INTERNAL (ZGB-to-ZGB, before
+`_append_outbound_flows`) while the MiD references cover ALL commutes of
+residents incl. out-of-region destinations (~13% cross-cordon), which land
+mostly in the 30km+ bands -- absolute EMD levels vs MiD are therefore partly
+a study-area-truncation artifact; both variants share the truncation, so
+only the A/B deltas are interpreted. Artefacts:
+`~/wt/verbindungen-anchor/holdout_out_seed*/`
 on the run server (verdict.md, coverage, censored-bound, intra-Kreis, P38
 tables). Spec/plan: docs/superpowers/{specs,plans}/2026-07-16-verbindungen-
 calibration-anchor-*.md (local); issue #193. Entry points:
