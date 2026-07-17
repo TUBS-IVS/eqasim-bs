@@ -45,6 +45,36 @@ ZGB_KREISE = ["03101", "03102", "03103", "03151",
               "03153", "03154", "03157", "03158"]
 
 
+def _income_xls_readable() -> bool:
+    """Whether the INKAR income smoke test can run on this machine.
+
+    Two conditions must hold, and a plain ``os.path.exists`` check covers
+    only the first:
+
+    1. The local-only raw file ``E_Haushaltseinkommen.xls`` is present. It is
+       gitignored (see the 2026-07-16 raw-data-loss note) and absent on
+       data-less machines.
+    2. The ``xlrd`` engine is importable. The file is a legacy BIFF/OLE2
+       ``.xls`` (not a renamed ``.xlsx``), which ``openpyxl`` cannot read;
+       ``pandas.read_excel`` therefore needs ``xlrd`` (declared in
+       ``environment.yml`` for the ``eqasim`` env). Without it the read
+       raises ``ImportError`` and the test FAILS instead of skipping.
+
+    Anchoring the path to ``DATA_ROOT`` (repo root) also makes the guard
+    independent of the pytest working directory. Returning ``False`` yields an
+    honest skip on a broken/data-less environment while the ``eqasim`` env,
+    which satisfies both conditions, still exercises the primary read path.
+    """
+    xls_path = DATA_ROOT / "braunschweig" / "E_Haushaltseinkommen.xls"
+    if not xls_path.exists():
+        return False
+    try:
+        import xlrd  # noqa: F401  (legacy .xls engine; openpyxl cannot read BIFF)
+    except ImportError:
+        return False
+    return True
+
+
 def _latest_cache(pattern: str):
     """Return the newest cache file matching *pattern*, or None.
 
@@ -815,8 +845,9 @@ class TestInkarFullPanel:
         assert len(df) == 0
 
     @pytest.mark.skipif(
-        not os.path.exists("eqasim-data/data/braunschweig/E_Haushaltseinkommen.xls"),
-        reason="local-only raw data absent: braunschweig/E_Haushaltseinkommen.xls",
+        not _income_xls_readable(),
+        reason="INKAR income smoke skipped: E_Haushaltseinkommen.xls absent "
+        "or xlrd engine unavailable (legacy .xls needs xlrd, not openpyxl)",
     )
     def test_existing_income_xls_round_trips(self):
         """Reuse the shipped E_Haushaltseinkommen.xls as a smoke test."""
