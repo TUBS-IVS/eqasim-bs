@@ -71,19 +71,54 @@ recompute point, not mid-run (cf. the no-divergent-branch-against-shared-cache r
   `eqasim:termination`; valuable for long felix runs.
 - **VDF overhaul** (tested static/dynamic engine) — potential large speedup for 100% ZGB.
 
-### Execution plan (needs a green light; heavy, cannot be done autonomously here)
+### EXECUTED (2026-07-17): migration branch built locally against v2.2.0
 
-1. Inventory the fork's commit delta vs its 1.5.0 base (`git log 3f7da9b..HEAD` in the
-   fork) and categorize each BS patch (freight, DMC, parking, simwrapper).
-2. Create a rebase/merge branch of the fork onto upstream 2.2.x; resolve conflicts,
-   especially around the renamed constraint API and activity-analysis events.
-3. Update `DEFAULT_EQASIM_VERSION`/`COMMIT`/`BRANCH` in `matsim/runtime/eqasim.py`;
-   port the `--activity-types` config wiring (eqasim-france #531) needed for custom
-   purposes (couples to #201 escort).
-4. Maven rebuild; run the fork's Java tests.
-5. One 1% e2e smoke (Python pipeline against the new jar) and sanity-check outputs vs a
-   pre-update reference run (harness-validation rule) before any production run.
-6. Record the eqasim version bump in RUNS provenance (reproducibility).
+Branch `feature/upgrade-eqasim-2.2.0` in `../eqasim-java-bs` (from tag `v2.2.0`):
 
-Follow-up issues to file once the jar is updated: actually *use* standalone mode choice
-and travel-time comparison in the mode-choice calibration wave.
+- **Histories are unrelated** (our fork's initial commit imported the code fresh, not
+  branched from upstream), so a `git merge` is impossible. Strategy used: start from
+  `v2.2.0`, carry our `braunschweig` module over (`git checkout main -- braunschweig`),
+  re-apply the one core patch, wire the pom.
+- **pom wiring**: added `<module>braunschweig</module>` to the root pom; bumped
+  `braunschweig/pom.xml` parent + core dependency `1.5.0 -> 2.2.0`. Upstream v2.2.0
+  removed the `bavaria` and `examples` modules — our `braunschweig` module now stands on
+  its own against `core`.
+- **core patch re-applied**: `DefaultPersonAnalysisFilter` freight-agent exclusion
+  (`03a9194b0`) — the v2.2.0 file was byte-identical to our base, applied cleanly.
+- **API migrations (the real work)**:
+  1. `RunFleetSimulation.java` **removed** — it was an unused bavaria DRT artifact (not
+     referenced by the Python pipeline; `ile_de_france` carries no such runner), and it
+     accounted for 6 of 9 compile errors (DRT constraints-set relocation + now-private
+     `DrtConfigGroup` fields).
+  2. `RunSimulation.java` VDF engine (upstream #544): `setGenerateNetworkEvents(false)`
+     -> `setGenerateNetworkEventsInterval(0)`. The module computes
+     `generateNetworkEvents = interval > 0 && (it % interval == 0)`, so `0` preserves the
+     old "never emit network events" behaviour exactly.
+  3. `RunAdaptConfig.java`: `AdaptConfigForEpsilon.run(Config)` was removed upstream
+     (only `main` remains) -> inlined its two mutations (DMC selector `MAXIMUM` +
+     `setUsePseudoRandomErrors(true)`), verified identical to the old `run()` body.
+- **Java version**: v2.2.0 sets `maven.compiler.source/target = 25` (was 21). **Building
+  requires JDK 25.** Installed Temurin JDK 25.0.3 locally; **felix must also get a JDK 25**
+  for the production build.
+- **Build result**: `mvn -pl braunschweig -am clean compile` -> **BUILD SUCCESS** (core +
+  braunschweig) under JDK 25. Remaining: only deprecation warnings in `RunInjectFreight`
+  (non-blocking; follow-up to de-deprecate).
+- **Python side**: `matsim/runtime/eqasim.py` `DEFAULT_EQASIM_VERSION 1.5.0 -> 2.2.0`
+  (drives the `braunschweig-<version>.jar` path), branch `main`, commit `ab938aaac`.
+
+### Remaining before production (needs a green light)
+
+- [ ] Run the braunschweig module tests under JDK 25 (`mvn -pl braunschweig -am test`) —
+      esp. `BraunschweigIncomeUtilityTest` (income-elastic cost patch).
+- [ ] `mvn package` to confirm the shaded jar assembles.
+- [ ] Port the `--activity-types` config wiring (eqasim-france #531) — couples to #201
+      (escort); not required for the build, needed for custom purposes.
+- [ ] Provision **JDK 25 on felix**; full Java test suite there.
+- [ ] One 1% e2e smoke (Python pipeline against the new jar) vs a pre-update reference
+      run (harness-validation rule) before any production run.
+- [ ] Record the eqasim version bump in RUNS provenance (reproducibility).
+- [ ] Decide merge strategy for `feature/upgrade-eqasim-2.2.0` -> fork `main` (the
+      unrelated-histories fact means this replaces `main`'s tree rather than merging).
+
+Follow-up issues to file once the jar is in production: actually *use* standalone mode
+choice and travel-time comparison in the mode-choice calibration wave.
