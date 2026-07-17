@@ -801,13 +801,52 @@ def test_p38_band_shares_edges():
     assert math.isclose(shares.sum(), 1.0)
 
 
-def test_verdict_pre_registered_rule():
+def test_verdict_pre_registered_rule_v2():
+    """Rule v2 (#193, amended 2026-07-17 BEFORE any measurement run; v1's
+    held-out-CV criterion (i) was proven structurally inert, see
+    test_heldout_cv_is_inert_by_construction). The only axes the anchor can
+    move are (a) zone-level AO margins (never fitted by the anchor) and
+    (b) the distance distributions; everything else is conserved by the
+    anchor's own invariants. Rule v2 therefore requires
+    (i') AO-margin corroboration beyond measured fold noise AND
+    (ii) no P13-by-RS7 EMD regression beyond that class's measured fold
+    noise. All noise scales are MEASURED (fold-to-fold std), never invented.
+    """
     from braunschweig.calibration.anchor_holdout import verdict
-    good = verdict(cv_baseline=0.20, cv_anchored=0.15,
+
+    # (i') satisfied: 0.20 -> 0.15 improves by 0.05 > ao_noise 0.01;
+    # (ii) satisfied: EMD unchanged.
+    good = verdict(ao_srmse_before=0.20, ao_srmse_after=0.15, ao_noise=0.01,
                    p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.05},
-                   p13_noise=0.005)
+                   p13_noise_by_rs7={"72": 0.005})
+    assert good["ao_improves"] is True
+    assert good["no_distance_regression"] is True
     assert good["default_flip_supported"] is True
-    bad = verdict(cv_baseline=0.20, cv_anchored=0.15,
-                  p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.10},
-                  p13_noise=0.005)
-    assert bad["default_flip_supported"] is False
+
+    # (i') fails: the AO improvement (0.005) is WITHIN the measured noise
+    # (0.01) -> not corroborated -> no flip, even without any P13 regression.
+    within_noise = verdict(
+        ao_srmse_before=0.20, ao_srmse_after=0.195, ao_noise=0.01,
+        p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.05},
+        p13_noise_by_rs7={"72": 0.005})
+    assert within_noise["ao_improves"] is False
+    assert within_noise["default_flip_supported"] is False
+
+    # (ii) fails: RS7 class 72 regresses 0.05 -> 0.10 beyond its noise
+    # 0.005 -> no flip, even though the AO axis corroborates.
+    regressed = verdict(
+        ao_srmse_before=0.20, ao_srmse_after=0.15, ao_noise=0.01,
+        p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.10},
+        p13_noise_by_rs7={"72": 0.005})
+    assert regressed["p13_regressions"] == {"72": (0.10, 0.05)}
+    assert regressed["no_distance_regression"] is False
+    assert regressed["default_flip_supported"] is False
+
+    # Fail-loud contract: a baseline RS7 class WITHOUT a measured noise value
+    # must raise (a silently-defaulted noise would make the regression gate
+    # vacuous for that class -- the NaN-poisoning failure mode all over again).
+    with pytest.raises(RuntimeError, match="noise"):
+        verdict(ao_srmse_before=0.20, ao_srmse_after=0.15, ao_noise=0.01,
+                p13_emd_baseline={"72": 0.05, "73": 0.04},
+                p13_emd_anchored={"72": 0.05, "73": 0.04},
+                p13_noise_by_rs7={"72": 0.005})
