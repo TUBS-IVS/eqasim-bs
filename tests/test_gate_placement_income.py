@@ -4,14 +4,19 @@ These tests verify the placement_income OFF/ON gate's invariant-checking code on
 synthetic frames, independently of any pipeline run or local data. They must pass in CI.
 
 Coverage:
-  - household_level: household collapse, missing-column guard, within-household
-    source_household_id consistency guard
-  - signature_group_counts: per-(cell, signature) / per-(Kreis, signature) counting,
-    fail-fast on unmapped surrogate or unmapped signature
-  - clone_profile: per-donor clone counting, fail-fast on unmapped surrogate
+  - household_level: household collapse (household_id, H_ID, ZENSUS100m, departement_id,
+    economic_status, number_of_cars, household_income_eur), missing-column guard,
+    within-household primary-donor H_ID consistency guard, and the regression case that
+    a varying PER-PERSON source_household_id within one household_id (member completion
+    borrowing from another donor) is FINE and never checked here.
   - compare_counts: aligned-reindex diff arithmetic (equal keys, value mismatch,
     key-only-on-one-side, both-empty)
-  - decide_gate: PASS/FAIL verdict + reasons for each of the five hard invariants
+  - realized_invariants: household- and person-level realized-aggregate comparison
+    (identical frames -> all equal; a perturbed attribute -> only the affected
+    invariants flip; member-completion-style source_household_id variation and the
+    absence of the imputed binary sex column do not affect the result)
+  - decide_gate: PASS/FAIL verdict + reasons from the realized invariants plus the
+    ON-present / OFF-absent diag-CSV checks
 """
 from __future__ import annotations
 
@@ -40,9 +45,8 @@ _gate_mod = _ilu.module_from_spec(_gate_spec)  # type: ignore[arg-type]
 _gate_spec.loader.exec_module(_gate_mod)  # type: ignore[union-attr]
 
 household_level = _gate_mod.household_level
-signature_group_counts = _gate_mod.signature_group_counts
-clone_profile = _gate_mod.clone_profile
 compare_counts = _gate_mod.compare_counts
+realized_invariants = _gate_mod.realized_invariants
 decide_gate = _gate_mod.decide_gate
 
 
@@ -52,130 +56,75 @@ decide_gate = _gate_mod.decide_gate
 
 class TestHouseholdLevel:
     def test_basic_collapse_takes_first_per_household(self) -> None:
-        """One row per household_id; household-level columns carried through unchanged."""
+        """One row per household_id; household-level columns carried through unchanged;
+        source_household_id (a per-person attribute) is not part of the output."""
         persons = pd.DataFrame({
             "household_id": [1, 1, 2, 2],
+            "H_ID": [10, 10, 20, 20],
             "source_household_id": [10, 10, 20, 20],
             "ZENSUS100m": ["c1", "c1", "c2", "c2"],
             "departement_id": ["03101", "03101", "03102", "03102"],
-            "household_income_eur": [2000.0, 2000.0, 3500.0, 3500.0],
             "economic_status": ["low", "low", "high", "high"],
             "number_of_cars": [1, 1, 2, 2],
+            "household_income_eur": [2000.0, 2000.0, 3500.0, 3500.0],
         })
         hh = household_level(persons)
         assert len(hh) == 2, f"expected 1 row per household_id, got {len(hh)}"
         assert set(hh["household_id"]) == {1, 2}
+        assert "source_household_id" not in hh.columns
         row1 = hh.loc[hh["household_id"] == 1].iloc[0]
-        assert row1["source_household_id"] == 10
+        assert row1["H_ID"] == 10
         assert row1["ZENSUS100m"] == "c1"
         assert row1["departement_id"] == "03101"
-        assert row1["household_income_eur"] == pytest.approx(2000.0)
         assert row1["economic_status"] == "low"
         assert row1["number_of_cars"] == 1
+        assert row1["household_income_eur"] == pytest.approx(2000.0)
         row2 = hh.loc[hh["household_id"] == 2].iloc[0]
         assert row2["household_income_eur"] == pytest.approx(3500.0)
 
     def test_missing_required_column_raises(self) -> None:
         """A frame missing a required household-level column must fail fast."""
-        persons = pd.DataFrame({"household_id": [1], "source_household_id": [10]})
+        persons = pd.DataFrame({"household_id": [1], "H_ID": [10]})
         with pytest.raises(ValueError, match="requires columns"):
             household_level(persons)
 
-    def test_inconsistent_source_household_id_raises(self) -> None:
-        """Members of the SAME synthetic household disagreeing on source_household_id
-        indicates a corrupted expansion (every person in a household must share one
-        donor household) -- this must fail fast, never silently pick a value."""
+    def test_inconsistent_h_id_raises(self) -> None:
+        """Members of the SAME synthetic household disagreeing on the PRIMARY donor
+        H_ID indicates a corrupted expansion (household_id is built as
+        '<cell>_<H_ID>_<occurrence>', so every person in it must share one H_ID) --
+        this must fail fast, never silently pick a value."""
         persons = pd.DataFrame({
             "household_id": [1, 1],
-            "source_household_id": [10, 11],  # inconsistent within household_id == 1
+            "H_ID": [10, 11],  # inconsistent within household_id == 1
             "ZENSUS100m": ["c1", "c1"],
             "departement_id": ["03101", "03101"],
-            "household_income_eur": [2000.0, 2000.0],
             "economic_status": ["low", "low"],
             "number_of_cars": [1, 1],
+            "household_income_eur": [2000.0, 2000.0],
         })
-        with pytest.raises(ValueError, match="source_household_id"):
+        with pytest.raises(ValueError, match="H_ID"):
             household_level(persons)
 
-
-# ---------------------------------------------------------------------------
-# signature_group_counts
-# ---------------------------------------------------------------------------
-
-class TestSignatureGroupCounts:
-    def test_basic_counts(self) -> None:
-        """Households are grouped correctly per (cell, signature) and (Kreis, signature)."""
-        hh = pd.DataFrame({
-            "household_id": [1, 2, 3, 4],
-            "source_household_id": [10, 20, 10, 30],
-            "ZENSUS100m": ["c1", "c1", "c2", "c2"],
-            "departement_id": ["03101", "03101", "03102", "03102"],
+    def test_varying_source_household_id_within_household_is_fine(self) -> None:
+        """Regression test for the L2 harness bug: member completion (D3) fills a
+        synthetic household with members borrowed from OTHER donor households, so
+        source_household_id (a PER-PERSON surrogate) legitimately varies within one
+        household_id even though the PRIMARY donor H_ID (which household_id is built
+        from) stays constant. household_level must NOT raise on this, and must not
+        require or carry source_household_id at all."""
+        persons = pd.DataFrame({
+            "household_id": [1, 1, 2],
+            "H_ID": [10, 10, 20],  # constant per household_id
+            "source_household_id": [10, 77, 20],  # varies within household_id == 1
+            "ZENSUS100m": ["c1", "c1", "c2"],
+            "departement_id": ["03101", "03101", "03102"],
+            "economic_status": ["low", "low", "high"],
+            "number_of_cars": [1, 1, 2],
+            "household_income_eur": [2000.0, 2000.0, 3500.0],
         })
-        raw_id_by_surrogate = {10: "H10", 20: "H20", 30: "H30"}
-        signature_by_raw_id = {"H10": (1, 0), "H20": (1, 0), "H30": (0, 1)}
-        cell_counts, kreis_counts = signature_group_counts(
-            hh, raw_id_by_surrogate, signature_by_raw_id
-        )
-        # .to_dict() on a MultiIndex Series yields {(level0, level1): value, ...} --
-        # avoids any ambiguity of bracket-indexing a MultiIndex whose second level is
-        # itself tuple-valued (the control signature).
-        cell_dict = cell_counts.to_dict()
-        kreis_dict = kreis_counts.to_dict()
-        assert cell_dict[("c1", (1, 0))] == 2
-        assert cell_dict[("c2", (1, 0))] == 1
-        assert cell_dict[("c2", (0, 1))] == 1
-        assert kreis_dict[("03101", (1, 0))] == 2
-        assert kreis_dict[("03102", (1, 0))] == 1
-        assert kreis_dict[("03102", (0, 1))] == 1
-
-    def test_missing_surrogate_mapping_raises(self) -> None:
-        """A household surrogate absent from the pseudonym map must fail fast (a
-        silently-dropped household would understate its control contribution)."""
-        hh = pd.DataFrame({
-            "household_id": [1],
-            "source_household_id": [999],
-            "ZENSUS100m": ["c1"],
-            "departement_id": ["03101"],
-        })
-        with pytest.raises(ValueError, match="raw-id mapping"):
-            signature_group_counts(hh, {}, {})
-
-    def test_missing_signature_raises(self) -> None:
-        """A raw donor id absent from the signature map must fail fast."""
-        hh = pd.DataFrame({
-            "household_id": [1],
-            "source_household_id": [10],
-            "ZENSUS100m": ["c1"],
-            "departement_id": ["03101"],
-        })
-        raw_id_by_surrogate = {10: "H10"}
-        with pytest.raises(ValueError, match="control signature"):
-            signature_group_counts(hh, raw_id_by_surrogate, {})
-
-
-# ---------------------------------------------------------------------------
-# clone_profile
-# ---------------------------------------------------------------------------
-
-class TestCloneProfile:
-    def test_basic_clone_counts(self) -> None:
-        """Per raw donor id, the number of synthetic households cloned from it."""
-        hh = pd.DataFrame({
-            "household_id": [1, 2, 3, 4],
-            "source_household_id": [10, 10, 20, 30],
-        })
-        mapping = {10: "H10", 20: "H20", 30: "H30"}
-        result = clone_profile(hh, mapping)
-        assert result["H10"] == 2
-        assert result["H20"] == 1
-        assert result["H30"] == 1
-
-    def test_missing_surrogate_raises(self) -> None:
-        """A household surrogate absent from the pseudonym map must fail fast."""
-        hh = pd.DataFrame({"household_id": [1, 2], "source_household_id": [10, 99]})
-        mapping = {10: "H10"}
-        with pytest.raises(ValueError, match="raw-id mapping"):
-            clone_profile(hh, mapping)
+        hh = household_level(persons)  # must not raise
+        assert len(hh) == 2
+        assert "source_household_id" not in hh.columns
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +181,108 @@ class TestCompareCounts:
 
 
 # ---------------------------------------------------------------------------
+# realized_invariants
+# ---------------------------------------------------------------------------
+
+_REALIZED_INVARIANT_NAMES = {
+    "economic_status_x_departement_id",
+    "number_of_cars_x_departement_id",
+    "economic_status_x_ZENSUS100m",
+    "ZENSUS100m_household_count",
+    "age_x_sex_raw_x_ZENSUS100m",
+    "age_x_ZENSUS100m",
+    "clone_counts_by_H_ID",
+}
+
+
+def _sample_persons() -> pd.DataFrame:
+    """Four persons across three synthetic households (two donors, one cloned once),
+    two 100 m cells, two Kreise -- enough structure to exercise every realized
+    invariant without any real pipeline data."""
+    return pd.DataFrame({
+        "household_id": ["c1_10_0", "c1_10_0", "c2_20_0", "c2_30_0"],
+        "H_ID": [10, 10, 20, 30],
+        "ZENSUS100m": ["c1", "c1", "c2", "c2"],
+        "departement_id": ["03101", "03101", "03102", "03102"],
+        "economic_status": ["low", "low", "high", "medium"],
+        "number_of_cars": [1, 1, 2, 0],
+        "household_income_eur": [2000.0, 2000.0, 3500.0, 1200.0],
+        "age": [40, 12, 55, 30],
+        "sex_raw": ["male", "female", "female", "male"],
+    })
+
+
+class TestRealizedInvariants:
+    def test_identical_frames_all_equal(self) -> None:
+        off = _sample_persons()
+        on = off.copy()
+        result = realized_invariants(off, on)
+        assert set(result) == _REALIZED_INVARIANT_NAMES
+        assert all(cmp_["equal"] for cmp_ in result.values()), result
+
+    def test_economic_status_perturbation_flags_only_the_affected_invariants(self) -> None:
+        """Changing one household's economic_status must flip exactly the invariants
+        that cross economic_status with a geography, and leave every other realized
+        invariant (cars, cell counts, clone counts, age/sex) equal."""
+        off = _sample_persons()
+        on = off.copy()
+        on.loc[on["household_id"] == "c2_20_0", "economic_status"] = "medium"
+        result = realized_invariants(off, on)
+        assert result["economic_status_x_departement_id"]["equal"] is False
+        assert result["economic_status_x_ZENSUS100m"]["equal"] is False
+        assert result["number_of_cars_x_departement_id"]["equal"] is True
+        assert result["ZENSUS100m_household_count"]["equal"] is True
+        assert result["age_x_sex_raw_x_ZENSUS100m"]["equal"] is True
+        assert result["age_x_ZENSUS100m"]["equal"] is True
+        assert result["clone_counts_by_H_ID"]["equal"] is True
+
+    def test_donor_relocation_flags_clone_and_cell_invariants(self) -> None:
+        """Moving a donor H_ID's household to a different cell/Kreis (simulating a
+        BROKEN reallocation that changes WHERE a donor is used, not just which
+        equal-signature donor fills a slot) must be caught by the cell/Kreis and
+        clone-count invariants."""
+        off = _sample_persons()
+        on = off.copy()
+        on.loc[on["household_id"] == "c2_30_0", "ZENSUS100m"] = "c1"
+        result = realized_invariants(off, on)
+        assert result["ZENSUS100m_household_count"]["equal"] is False
+        assert result["economic_status_x_ZENSUS100m"]["equal"] is False
+        # H_ID 30 still exists exactly once overall -- only its CELL moved -- so the
+        # region-wide clone profile (households per H_ID, no geography) is unaffected.
+        assert result["clone_counts_by_H_ID"]["equal"] is True
+
+    def test_member_completion_source_household_id_variation_is_transparent(self) -> None:
+        """The bug this rework fixes: a per-person source_household_id that varies
+        within one household_id (member completion borrowing from another donor) must
+        not raise and must not affect any realized invariant, since H_ID (what the
+        invariants and household_level key on) stays constant per household_id."""
+        off = _sample_persons()
+        off["source_household_id"] = [10, 999, 20, 30]  # varies within c1_10_0
+        on = off.copy()
+        result = realized_invariants(off, on)  # must not raise
+        assert all(cmp_["equal"] for cmp_ in result.values()), result
+
+    def test_realized_invariants_does_not_require_the_imputed_binary_sex_column(self) -> None:
+        """sex_raw (not the imputed binary sex) drives the person-level checks: a frame
+        without a 'sex' column at all must still work, matching the documented reason
+        the harness does not use it (HP_SEX 3/9 get a seeded order-dependent binary-sex
+        imputation that reallocation reordering can perturb; sex_raw cannot)."""
+        off = _sample_persons()
+        assert "sex" not in off.columns
+        on = off.copy()
+        result = realized_invariants(off, on)  # must not raise despite no 'sex' column
+        assert result["age_x_sex_raw_x_ZENSUS100m"]["equal"] is True
+
+    def test_missing_person_level_column_raises(self) -> None:
+        """A frame missing a required person-level column (sex_raw/age/ZENSUS100m)
+        must fail fast, naming which of the two frames is at fault."""
+        off = _sample_persons().drop(columns=["sex_raw"])
+        on = _sample_persons()
+        with pytest.raises(ValueError, match="off_persons"):
+            realized_invariants(off, on)
+
+
+# ---------------------------------------------------------------------------
 # decide_gate
 # ---------------------------------------------------------------------------
 
@@ -245,52 +296,44 @@ class TestDecideGate:
             "n_diff_keys": 0, "max_abs_diff": 0,
         }
 
+    @classmethod
+    def _all_equal_invariants(cls) -> dict:
+        return {
+            "economic_status_x_departement_id": cls._equal_cmp(),
+            "number_of_cars_x_departement_id": cls._equal_cmp(),
+            "clone_counts_by_H_ID": cls._equal_cmp(),
+        }
+
     def test_all_pass_returns_pass_empty_reasons(self) -> None:
-        cell_cmp, kreis_cmp, clone_cmp = self._equal_cmp(), self._equal_cmp(), self._equal_cmp()
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, True, True)
+        verdict, reasons = decide_gate(self._all_equal_invariants(), True, True)
         assert verdict == "PASS"
         assert reasons == []
 
-    def test_cell_mismatch_fails_with_reason(self) -> None:
-        cell_cmp = {**self._equal_cmp(), "equal": False, "n_diff_keys": 3, "max_abs_diff": 4}
-        kreis_cmp, clone_cmp = self._equal_cmp(), self._equal_cmp()
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, True, True)
+    def test_invariant_mismatch_fails_with_reason(self) -> None:
+        invariants = self._all_equal_invariants()
+        invariants["economic_status_x_departement_id"] = {
+            **self._equal_cmp(), "equal": False, "n_diff_keys": 3, "max_abs_diff": 4,
+        }
+        verdict, reasons = decide_gate(invariants, True, True)
         assert verdict == "FAIL"
-        assert any("cell" in r for r in reasons), reasons
-
-    def test_kreis_mismatch_fails_with_reason(self) -> None:
-        cell_cmp, clone_cmp = self._equal_cmp(), self._equal_cmp()
-        kreis_cmp = {**self._equal_cmp(), "equal": False, "n_diff_keys": 2}
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, True, True)
-        assert verdict == "FAIL"
-        assert any("Kreis" in r for r in reasons), reasons
-
-    def test_clone_mismatch_fails_with_reason(self) -> None:
-        cell_cmp, kreis_cmp = self._equal_cmp(), self._equal_cmp()
-        clone_cmp = {**self._equal_cmp(), "equal": False, "n_diff_keys": 1}
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, True, True)
-        assert verdict == "FAIL"
-        assert any(("clone" in r or "donor" in r) for r in reasons), reasons
+        assert any("economic_status_x_departement_id" in r for r in reasons), reasons
 
     def test_on_diag_missing_fails_with_reason(self) -> None:
-        cell_cmp, kreis_cmp, clone_cmp = self._equal_cmp(), self._equal_cmp(), self._equal_cmp()
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, False, True)
+        verdict, reasons = decide_gate(self._all_equal_invariants(), False, True)
         assert verdict == "FAIL"
         assert any("MISSING" in r for r in reasons), reasons
 
     def test_off_diag_present_fails_with_reason(self) -> None:
-        cell_cmp, kreis_cmp, clone_cmp = self._equal_cmp(), self._equal_cmp(), self._equal_cmp()
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, True, False)
+        verdict, reasons = decide_gate(self._all_equal_invariants(), True, False)
         assert verdict == "FAIL"
         assert any("PRESENT" in r for r in reasons), reasons
 
     def test_multiple_failures_all_reported(self) -> None:
         """Every violated condition contributes its own reason -- none are hidden by an
         early return once any single condition fails."""
-        cell_cmp = {**self._equal_cmp(), "equal": False}
-        kreis_cmp = self._equal_cmp()
-        clone_cmp = {**self._equal_cmp(), "equal": False}
-        verdict, reasons = decide_gate(cell_cmp, kreis_cmp, clone_cmp, False, False)
+        invariants = self._all_equal_invariants()
+        invariants["clone_counts_by_H_ID"] = {**self._equal_cmp(), "equal": False}
+        verdict, reasons = decide_gate(invariants, False, False)
         assert verdict == "FAIL"
-        # cell + clone + ON-missing + OFF-present = 4 independent reasons.
-        assert len(reasons) == 4, reasons
+        # 1 invariant mismatch + ON-missing + OFF-present = 3 independent reasons.
+        assert len(reasons) == 3, reasons

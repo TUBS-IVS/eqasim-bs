@@ -4,26 +4,53 @@ via signature-preserving donor reallocation).
 Compares TWO independent synpp caches of the SAME 2-Kreis popsim_mid pipeline (Salzgitter
 ars5 03102, Wolfsburg ars5 03103; random_seed=1234) where
 ``braunschweig.population.popsim.placement_income`` (false / true) is the ONLY config
-difference, and verifies the feature's HARD invariants on the real ``data.census.filtered``
-(``braunschweig.popsim.stage``) output:
+difference, and verifies the feature's HARD invariants DIRECTLY on the two REALIZED
+``data.census.filtered`` (``braunschweig.popsim.stage``) populations -- no signature
+rebuild, no per-run pseudonym map:
 
-  1. Per-(100 m cell, control signature) household counts are IDENTICAL OFF vs ON: the
-     reallocation only permutes WHICH equal-signature donor occupies a cell/Kreis slot,
-     so every PopulationSim control aggregate at every geography must be unchanged.
-  2. Per-(Kreis, control signature) household counts are IDENTICAL OFF vs ON (the same
-     invariant at the coarser Kreis geography).
-  3. Every donor's total clone count (summed over the whole 2-Kreis region) is IDENTICAL
-     OFF vs ON: the reallocation must relocate clones, never create or destroy them.
-  4. The ON cache's ``popsim_work/placement_income_diag.csv`` is present (the stage only
+  1. Every PopulationSim control aggregate this gate can check from the realized
+     population -- economic_status x Kreis, number_of_cars x Kreis, economic_status x
+     100 m cell, household count x 100 m cell, person age-band x sex_raw x 100 m cell,
+     person age-band x 100 m cell -- is IDENTICAL OFF vs ON: the reallocation only
+     permutes WHICH donor occupies a cell/Kreis slot inside an exact control-signature
+     group, so every control aggregate it could affect must come out unchanged.
+  2. Every donor's total clone count (households per primary donor ``H_ID``, summed
+     over the whole 2-Kreis region) is IDENTICAL OFF vs ON: the reallocation must
+     relocate clones, never create or destroy them.
+  3. The ON cache's ``popsim_work/placement_income_diag.csv`` is present (the stage only
      writes it when the reallocation actually ran).
-  5. The OFF cache's ``popsim_work/placement_income_diag.csv`` is ABSENT (must not be
+  4. The OFF cache's ``popsim_work/placement_income_diag.csv`` is ABSENT (must not be
      produced when the flag is off).
 
-PASS requires ALL FIVE; see ``decide_gate``. Income-attainment (realized vs INKAR-derived
-target per Kreis) and within-cell income coherence (Spearman income-vs-car-ownership) are
-additionally REPORTED, never as pass/fail thresholds: this gate checks exactness
-invariants, not a fit-to-target bound (no invented reference values; convergence is not
-validation -- see CLAUDE.md "No invented reference values; convergence is not validation").
+PASS requires ALL of the above; see ``decide_gate``. Income-attainment (realized vs
+INKAR-derived target per Kreis) and within-cell income coherence (Spearman income-vs-
+car-ownership) are additionally REPORTED, never as pass/fail thresholds: this gate
+checks exactness invariants, not a fit-to-target bound (no invented reference values;
+convergence is not validation -- see CLAUDE.md "No invented reference values;
+convergence is not validation").
+
+Why realized aggregates, not donor control signatures
+-------------------------------------------------------
+An earlier version of this harness rebuilt each donor's PopulationSim control signature
+and compared households through a per-run ``source_household_id -> raw H_ID`` pseudonym
+map (``household_level`` asserted exactly one ``source_household_id`` per
+``household_id``). That assertion is WRONG for the popsim_mid completed-donor path:
+member completion (D3, ``braunschweig.popsim.member_completion``) fills an under-sized
+donor household with members borrowed from OTHER donor households, so a filler's
+``source_household_id`` (its own donor lineage) legitimately differs from its synthetic
+household's other members. ``source_household_id`` is a PER-PERSON attribute, not a
+per-household one, and enforcing uniqueness on it crashed the harness ("14488
+household_id(s) carry more than one distinct source_household_id") even though the
+reallocation was perfectly correct.
+
+The per-household donor key that IS constant by construction is the PRIMARY donor
+``H_ID``: ``braunschweig.popsim.expand.assign_synthetic_household_ids`` builds
+``household_id = "<cell>_<H_ID>_<occurrence>"``, so every person copied from that one
+placement shares the same ``H_ID`` regardless of member completion. Keying the
+household-level frame on ``H_ID`` and comparing REALIZED aggregate counts directly
+(this module's ``realized_invariants``) needs no signature catalog, no seed tables, and
+no pseudonym map -- and is exactly the invariant the feature actually promises: every
+control aggregate and every donor's clone count, unchanged.
 
 Usage (from the repo root, with the eqasim env python, PYTHONUTF8=1)::
 
@@ -43,9 +70,9 @@ the pipeline via --config-base). Exit codes: 0 = PASS, 1 = FAIL (an invariant wa
 violated), 2 = BLOCKED (a required cache directory or artifact is missing -- the message
 names exactly what).
 
-The pure analysis functions (``household_level``, ``signature_group_counts``,
-``clone_profile``, ``compare_counts``, ``decide_gate``) can be imported and unit-tested
-independently of any pipeline run (see tests/test_gate_placement_income.py).
+The pure analysis functions (``household_level``, ``realized_invariants``,
+``compare_counts``, ``decide_gate``) can be imported and unit-tested independently of
+any pipeline run (see tests/test_gate_placement_income.py).
 """
 from __future__ import annotations
 
@@ -54,7 +81,7 @@ import logging
 import pathlib
 import pickle
 import sys
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -73,13 +100,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CACHE_OFF = "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/cache_gate_l2_off"
 _DEFAULT_CACHE_ON = "C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/cache_gate_l2_on"
 
-# The control-tier / employment-grid configuration used by BOTH gate runs (see
-# config_gate_placement_income_{off,on}.yml: control_tiers: tier0,tier1,tier2; the
-# employment grid toggle is not set by either config, so it stays at its "off" default).
-_CONTROL_TIERS = ("tier0", "tier1", "tier2")
-_INCLUDE_EMPLOYMENT_GRID = False
-_SEED_NAME = "mid"
-
 
 # ---------------------------------------------------------------------------
 # Pure analysis functions (unit-testable without any pipeline run)
@@ -87,12 +107,12 @@ _SEED_NAME = "mid"
 
 _HOUSEHOLD_LEVEL_COLUMNS = (
     "household_id",
-    "source_household_id",
+    "H_ID",
     "ZENSUS100m",
     "departement_id",
-    "household_income_eur",
     "economic_status",
     "number_of_cars",
+    "household_income_eur",
 )
 
 
@@ -100,18 +120,25 @@ def household_level(persons: pd.DataFrame) -> pd.DataFrame:
     """Collapse a synthetic persons frame to one row per ``household_id``.
 
     Takes the first row (by ``household_id`` sort order) for each household-level
-    column -- the same idiom ``braunschweig.popsim.placement_income.apply_own_income``
-    uses to collapse persons to households. Fails fast if any household mixes more than
-    one ``source_household_id``: every person in a synthetic household must be expanded
-    from the SAME donor household, so disagreement indicates a corrupted expansion, not
-    something to silently paper over by picking an arbitrary value.
+    column. Fails fast if any ``household_id`` mixes more than one distinct primary
+    donor ``H_ID``: ``braunschweig.popsim.expand.assign_synthetic_household_ids`` builds
+    ``household_id = "<cell>_<H_ID>_<occurrence>"``, so every person copied from one
+    synthetic-household placement must share the SAME ``H_ID`` by construction --
+    disagreement indicates a corrupted expansion, not something to silently paper over.
+
+    Note: the per-PERSON ``source_household_id`` (present on the input frame but NOT
+    part of this function's output) is deliberately NOT checked for consistency here.
+    It legitimately varies within one ``household_id`` when member completion (D3)
+    filled an under-sized donor household with members borrowed from ANOTHER donor
+    household -- that is expected and correct, not a corruption (see the module
+    docstring, "Why realized aggregates, not donor control signatures").
 
     Parameters
     ----------
     persons:
         Synthetic persons frame (``braunschweig.popsim.stage`` output) carrying at least
-        ``household_id, source_household_id, ZENSUS100m, departement_id,
-        household_income_eur, economic_status, number_of_cars``.
+        ``household_id, H_ID, ZENSUS100m, departement_id, economic_status,
+        number_of_cars, household_income_eur``.
 
     Returns
     -------
@@ -122,20 +149,22 @@ def household_level(persons: pd.DataFrame) -> pd.DataFrame:
     ------
     ValueError
         If a required column is missing, or if any ``household_id`` carries more than
-        one distinct ``source_household_id``.
+        one distinct primary donor ``H_ID``.
     """
     missing = [c for c in _HOUSEHOLD_LEVEL_COLUMNS if c not in persons.columns]
     if missing:
         raise ValueError(
             f"household_level requires columns {missing}; got {sorted(persons.columns)[:20]}."
         )
-    n_distinct_donor = persons.groupby("household_id")["source_household_id"].nunique()
-    inconsistent = n_distinct_donor[n_distinct_donor > 1]
+    n_distinct_hid = persons.groupby("household_id")["H_ID"].nunique()
+    inconsistent = n_distinct_hid[n_distinct_hid > 1]
     if len(inconsistent):
         raise ValueError(
             f"household_level: {len(inconsistent)} household_id(s) carry more than one "
-            f"distinct source_household_id (e.g. {inconsistent.index[:5].tolist()}); every "
-            f"person in a synthetic household must share one donor household."
+            f"distinct primary donor H_ID (e.g. {inconsistent.index[:5].tolist()}); "
+            "household_id is constructed as '<cell>_<H_ID>_<occurrence>' so every person "
+            "in a synthetic household must share the same H_ID -- a mismatch means the "
+            "expansion is corrupted."
         )
     hh = (
         persons[list(_HOUSEHOLD_LEVEL_COLUMNS)]
@@ -147,112 +176,10 @@ def household_level(persons: pd.DataFrame) -> pd.DataFrame:
     return hh
 
 
-def signature_group_counts(
-    hh: pd.DataFrame,
-    raw_id_by_surrogate: Mapping,
-    signature_by_raw_id: Mapping,
-    *,
-    cell_col: str = "ZENSUS100m",
-    kreis_col: str = "departement_id",
-) -> tuple[pd.Series, pd.Series]:
-    """Count households per (cell, signature) and per (Kreis, signature).
-
-    Each household's run-local surrogate ``source_household_id`` is mapped to its raw
-    MiD donor household id (via ``raw_id_by_surrogate``, THIS run's own pseudonym map --
-    never share a mapping across runs) and then to its control signature (via
-    ``signature_by_raw_id``, rebuilt once and shared across both runs since the seed is
-    identical). Two households with equal (cell, signature) [or (Kreis, signature)]
-    counts OFF vs ON contribute identically to every PopulationSim control aggregate at
-    that geography; this is the per-run invariant the placement_income reallocation must
-    preserve exactly.
-
-    Parameters
-    ----------
-    hh:
-        Household-level frame (``household_level`` output) with at least
-        ``source_household_id``, ``cell_col``, ``kreis_col``.
-    raw_id_by_surrogate:
-        Mapping from this run's surrogate ``source_household_id`` to the raw MiD donor
-        household id.
-    signature_by_raw_id:
-        Mapping from raw donor household id to its control signature.
-    cell_col, kreis_col:
-        Column names for the cell and Kreis geography keys.
-
-    Returns
-    -------
-    tuple[pandas.Series, pandas.Series]
-        ``(cell_signature_counts, kreis_signature_counts)``, each indexed by a
-        ``(geography, signature)`` MultiIndex with integer household counts.
-
-    Raises
-    ------
-    ValueError
-        If any surrogate id has no raw-id mapping, or any raw id has no signature
-        (fail-fast: a silently-dropped household would understate its control
-        contribution and hide a broken exactness guarantee).
-    """
-    surrogates = hh["source_household_id"]
-    missing_surrogate = sorted(set(surrogates.unique()) - set(raw_id_by_surrogate.keys()))
-    if missing_surrogate:
-        raise ValueError(
-            f"signature_group_counts: {len(missing_surrogate)} surrogate household id(s) "
-            f"have no raw-id mapping (e.g. {missing_surrogate[:10]}); the pseudonym map "
-            f"must cover every synthetic household's donor."
-        )
-    raw_ids = surrogates.map(raw_id_by_surrogate)
-    missing_signature = sorted(set(raw_ids.unique()) - set(signature_by_raw_id.keys()))
-    if missing_signature:
-        raise ValueError(
-            f"signature_group_counts: {len(missing_signature)} raw donor id(s) have no "
-            f"control signature (e.g. {missing_signature[:10]}); signatures must cover "
-            f"every donor the seed carries."
-        )
-    work = pd.DataFrame({
-        cell_col: hh[cell_col].to_numpy(),
-        kreis_col: hh[kreis_col].to_numpy(),
-        "_signature": raw_ids.map(signature_by_raw_id).to_numpy(),
-    })
-    cell_counts = work.groupby([cell_col, "_signature"]).size()
-    kreis_counts = work.groupby([kreis_col, "_signature"]).size()
-    return cell_counts, kreis_counts
-
-
-def clone_profile(hh: pd.DataFrame, raw_id_by_surrogate: Mapping) -> pd.Series:
-    """Per raw donor household id, the total number of synthetic households cloned from it.
-
-    Parameters
-    ----------
-    hh:
-        Household-level frame with at least ``source_household_id``.
-    raw_id_by_surrogate:
-        Mapping from this run's surrogate ``source_household_id`` to the raw donor id.
-
-    Returns
-    -------
-    pandas.Series
-        Indexed by raw donor id, values = clone count, sorted by index (deterministic).
-
-    Raises
-    ------
-    ValueError
-        If any surrogate id has no raw-id mapping (fail-fast; same rationale as
-        ``signature_group_counts``).
-    """
-    surrogates = hh["source_household_id"]
-    missing_surrogate = sorted(set(surrogates.unique()) - set(raw_id_by_surrogate.keys()))
-    if missing_surrogate:
-        raise ValueError(
-            f"clone_profile: {len(missing_surrogate)} surrogate household id(s) have no "
-            f"raw-id mapping (e.g. {missing_surrogate[:10]})."
-        )
-    raw_ids = surrogates.map(raw_id_by_surrogate)
-    return raw_ids.value_counts().sort_index()
-
-
 def compare_counts(off: pd.Series, on: pd.Series) -> dict:
-    """Compare two count Series (per-(cell,signature), per-(Kreis,signature), or
-    per-donor clone counts) via an aligned reindex over the union of their keys.
+    """Compare two count Series (e.g. per-(cell, economic_status), per-(Kreis,
+    number_of_cars), or per-donor clone counts) via an aligned reindex over the union
+    of their keys.
 
     A key present in only one of the two series is treated as (value, 0) rather than
     being silently ignored, so a household/donor that disappeared (or appeared) between
@@ -280,21 +207,122 @@ def compare_counts(off: pd.Series, on: pd.Series) -> dict:
     }
 
 
+def _person_ageband_frame(persons: pd.DataFrame) -> pd.DataFrame:
+    """Build the small ``(ageband, sex_raw, ZENSUS100m)`` frame used by the person-level
+    realized invariants, from Series rather than copying the (potentially large) full
+    persons frame.
+
+    ``ageband`` is the same 10-year banding (0-8, i.e. 0-9, 10-19, ..., 80+) as the
+    tier0 100 m age x sex census-source control columns
+    (``braunschweig.popsim.stage._TIER0_AGE_SEX_100M_COLUMNS``), so this check operates
+    at the same granularity as the real control it stands in for.
+    """
+    return pd.DataFrame({
+        "ageband": (pd.to_numeric(persons["age"]) // 10).clip(0, 8),
+        "sex_raw": persons["sex_raw"].to_numpy(),
+        "ZENSUS100m": persons["ZENSUS100m"].to_numpy(),
+    })
+
+
+def realized_invariants(off_persons: pd.DataFrame, on_persons: pd.DataFrame) -> dict[str, dict]:
+    """Compare the OFF/ON realized populations on the PopulationSim control aggregates
+    and the donor clone profile -- directly, with NO signature rebuild and NO per-run
+    pseudonym map.
+
+    The placement_income reallocation only permutes WHICH real donor household occupies
+    a given (100 m cell, Kreis) slot inside an exact control-signature group, so every
+    PopulationSim control aggregate at every geography, and every donor's total clone
+    count, must come out EXACTLY unchanged between the OFF and ON realized populations.
+    A household's control-relevant attributes (``economic_status``, ``number_of_cars``,
+    its cell, its Kreis) already ARE its aggregate-level signature, so this is checked
+    directly on the two realized frames -- there is no need to reconstruct the donor
+    control signature catalog or a ``source_household_id -> raw H_ID`` pseudonym map
+    (see the module docstring for why the OLD approach was retired).
+
+    NOTE on sex: the person-level checks use ``sex_raw`` (the untouched HP_SEX
+    category: male/female/diverse/not_specified), NOT the imputed BINARY ``sex``.
+    HP_SEX codes 3/9 (diverse / no answer, ~977 persons in the Task-7 gate region) are
+    resolved to a binary male/female by a SEEDED draw that consumes frame order
+    (``braunschweig.popsim.expand.map_demographics``); the reallocation changes person
+    order, so it perturbs a handful of these draws -- a harmless cosmetic MATSim
+    tie-break, NOT a control (the real 100 m sex controls only ever count HP_SEX==1/2).
+    ``sex_raw`` is unaffected by reallocation-induced reordering and is therefore the
+    control-faithful check; age x sex_raw x cell is expected to be preserved exactly.
+
+    Parameters
+    ----------
+    off_persons, on_persons:
+        Persons frames loaded from the OFF/ON synpp caches (see
+        :func:`_load_persons_from_cache`); each row is one synthetic person.
+
+    Returns
+    -------
+    dict[str, dict]
+        Keyed by a short invariant name; each value is a :func:`compare_counts` result
+        (``equal``, ``n_keys_off``, ``n_keys_on``, ``n_diff_keys``, ``max_abs_diff``).
+
+    Raises
+    ------
+    ValueError
+        If a required column is missing from either persons frame, or if
+        :func:`household_level` finds a household with more than one distinct primary
+        donor ``H_ID`` (see its docstring).
+    """
+    required_person_columns = {"age", "sex_raw", "ZENSUS100m"}
+    for label, persons in (("off_persons", off_persons), ("on_persons", on_persons)):
+        missing = sorted(required_person_columns - set(persons.columns))
+        if missing:
+            raise ValueError(f"realized_invariants: {label} is missing columns {missing}.")
+
+    hh_off = household_level(off_persons)
+    hh_on = household_level(on_persons)
+    pp_off = _person_ageband_frame(off_persons)
+    pp_on = _person_ageband_frame(on_persons)
+
+    return {
+        "economic_status_x_departement_id": compare_counts(
+            hh_off.groupby(["economic_status", "departement_id"]).size(),
+            hh_on.groupby(["economic_status", "departement_id"]).size(),
+        ),
+        "number_of_cars_x_departement_id": compare_counts(
+            hh_off.groupby(["number_of_cars", "departement_id"]).size(),
+            hh_on.groupby(["number_of_cars", "departement_id"]).size(),
+        ),
+        "economic_status_x_ZENSUS100m": compare_counts(
+            hh_off.groupby(["economic_status", "ZENSUS100m"]).size(),
+            hh_on.groupby(["economic_status", "ZENSUS100m"]).size(),
+        ),
+        "ZENSUS100m_household_count": compare_counts(
+            hh_off.groupby("ZENSUS100m").size(),
+            hh_on.groupby("ZENSUS100m").size(),
+        ),
+        "age_x_sex_raw_x_ZENSUS100m": compare_counts(
+            pp_off.groupby(["ageband", "sex_raw", "ZENSUS100m"]).size(),
+            pp_on.groupby(["ageband", "sex_raw", "ZENSUS100m"]).size(),
+        ),
+        "age_x_ZENSUS100m": compare_counts(
+            pp_off.groupby(["ageband", "ZENSUS100m"]).size(),
+            pp_on.groupby(["ageband", "ZENSUS100m"]).size(),
+        ),
+        "clone_counts_by_H_ID": compare_counts(
+            hh_off["H_ID"].value_counts(),
+            hh_on["H_ID"].value_counts(),
+        ),
+    }
+
+
 def decide_gate(
-    cell_counts_cmp: dict,
-    kreis_counts_cmp: dict,
-    clone_cmp: dict,
+    invariants: dict[str, dict],
     diag_present_on: bool,
     diag_absent_off: bool,
 ) -> tuple[str, list[str]]:
-    """Decide PASS/FAIL from the placement_income hard invariants.
+    """Decide PASS/FAIL from the placement_income realized-aggregate invariants.
 
     PASS requires ALL of:
-      1. per-(cell, signature) household counts equal OFF vs ON;
-      2. per-(Kreis, signature) household counts equal OFF vs ON;
-      3. per-donor clone profile equal OFF vs ON;
-      4. the ON cache's ``placement_income_diag.csv`` is present;
-      5. the OFF cache's ``placement_income_diag.csv`` is ABSENT.
+      1. every entry of ``invariants`` (see :func:`realized_invariants`) has
+         ``equal == True``;
+      2. the ON cache's ``placement_income_diag.csv`` is present;
+      3. the OFF cache's ``placement_income_diag.csv`` is ABSENT.
 
     Income-attainment and within-cell coherence metrics are deliberately NOT inputs
     here: they are REPORTED only (see ``run_gate``'s metrics section) -- this function
@@ -303,8 +331,9 @@ def decide_gate(
 
     Parameters
     ----------
-    cell_counts_cmp, kreis_counts_cmp, clone_cmp:
-        ``compare_counts`` output dicts.
+    invariants:
+        :func:`realized_invariants` output: a mapping from invariant name to a
+        :func:`compare_counts`-shaped dict.
     diag_present_on:
         Whether the ON cache's ``popsim_work/placement_income_diag.csv`` exists.
     diag_absent_off:
@@ -317,27 +346,14 @@ def decide_gate(
         ``reasons`` lists every violated condition (empty on PASS).
     """
     reasons: list[str] = []
-    if not cell_counts_cmp.get("equal", False):
-        reasons.append(
-            "per-(cell, signature) household counts differ OFF vs ON "
-            f"(n_diff_keys={cell_counts_cmp.get('n_diff_keys')}, "
-            f"max_abs_diff={cell_counts_cmp.get('max_abs_diff')}): a 100 m control "
-            "aggregate was not preserved by the reallocation."
-        )
-    if not kreis_counts_cmp.get("equal", False):
-        reasons.append(
-            "per-(Kreis, signature) household counts differ OFF vs ON "
-            f"(n_diff_keys={kreis_counts_cmp.get('n_diff_keys')}, "
-            f"max_abs_diff={kreis_counts_cmp.get('max_abs_diff')}): a Kreis-level "
-            "control aggregate was not preserved by the reallocation."
-        )
-    if not clone_cmp.get("equal", False):
-        reasons.append(
-            "per-donor clone profile differs OFF vs ON "
-            f"(n_diff_keys={clone_cmp.get('n_diff_keys')}, "
-            f"max_abs_diff={clone_cmp.get('max_abs_diff')}): at least one donor's total "
-            "clone count changed, which the reallocation must never do."
-        )
+    for name, cmp_ in invariants.items():
+        if not cmp_.get("equal", False):
+            reasons.append(
+                f"realized aggregate {name!r} differs OFF vs ON "
+                f"(n_diff_keys={cmp_.get('n_diff_keys')}, max_abs_diff={cmp_.get('max_abs_diff')}): "
+                "a PopulationSim control aggregate or the donor clone profile was not "
+                "preserved by the reallocation."
+            )
     if not diag_present_on:
         reasons.append(
             "placement_income_diag.csv is MISSING from the ON cache's popsim_work "
@@ -370,13 +386,6 @@ def _require_dir(path: pathlib.Path, what: str) -> pathlib.Path:
     return path
 
 
-def _require_file(path: pathlib.Path, what: str) -> pathlib.Path:
-    """Fail fast with a clear message naming exactly what is missing."""
-    if not path.is_file():
-        raise GateBlockedError(f"{what} not found: {path}")
-    return path
-
-
 def _load_persons_from_cache(working_directory: pathlib.Path) -> pd.DataFrame:
     """Load the ``data.census.filtered`` (``braunschweig.popsim.stage``) output from a
     synpp cache directory.
@@ -400,128 +409,6 @@ def _load_persons_from_cache(working_directory: pathlib.Path) -> pd.DataFrame:
     latest = max(matches, key=lambda p: p.stat().st_mtime)
     with open(latest, "rb") as f:
         return pickle.load(f)
-
-
-def _load_pseudonym_map(work_dir: pathlib.Path) -> dict:
-    """Load ``<work_dir>/pseudonym_map.csv`` into a ``{source_household_id: H_ID}`` dict.
-
-    Both sides are cast to plain ``int``. ``H_ID`` is a MiD respondent id (no
-    leading-zero risk, unlike AGS/ARS area codes), but different seed-construction code
-    paths have been observed to serialise it as int64 in one CSV and float64 (e.g.
-    "10000010.0") in another; casting to ``int`` normalises both so the join never
-    silently misses a valid match purely because of a numeric-dtype mismatch.
-    """
-    path = _require_file(work_dir / "pseudonym_map.csv", "pseudonym_map.csv")
-    df = pd.read_csv(path)
-    required = {"source_household_id", "H_ID"}
-    missing = required - set(df.columns)
-    if missing:
-        raise GateBlockedError(f"{path} is missing columns {sorted(missing)}.")
-    mapping: dict = {}
-    for surrogate, raw_id in zip(df["source_household_id"].to_numpy(), df["H_ID"].to_numpy()):
-        mapping[int(surrogate)] = int(raw_id)
-    return mapping
-
-
-def _find_one_batch_dir(work_dir: pathlib.Path) -> pathlib.Path:
-    """Return the first (sorted) ``batch_*`` PopulationSim run folder under ``work_dir``."""
-    batches = sorted(work_dir.glob("batch_*"))
-    if not batches:
-        raise GateBlockedError(f"no batch_* PopulationSim run folders found in {work_dir}.")
-    return batches[0]
-
-
-def _load_seed_tables(batch_dir: pathlib.Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load the seed households/persons CSVs PopulationSim consumed for one batch."""
-    hh_path = _require_file(batch_dir / "data" / "seed_households.csv", "seed_households.csv")
-    pp_path = _require_file(batch_dir / "data" / "seed_persons.csv", "seed_persons.csv")
-    return pd.read_csv(hh_path), pd.read_csv(pp_path)
-
-
-def _sort_key_columns(df: pd.DataFrame) -> list[str]:
-    """Deterministic sort key for a seed table: (H_ID, P_ID) when both exist, else H_ID."""
-    if "H_ID" in df.columns and "P_ID" in df.columns:
-        return ["H_ID", "P_ID"]
-    if "H_ID" in df.columns:
-        return ["H_ID"]
-    return [df.columns[0]]
-
-
-def _assert_seed_tables_identical(
-    off_households: pd.DataFrame,
-    off_persons: pd.DataFrame,
-    on_households: pd.DataFrame,
-    on_persons: pd.DataFrame,
-) -> None:
-    """Fail loudly if the OFF and ON batch seed tables are not identical.
-
-    placement_income runs strictly AFTER the per-batch PopulationSim synthesis that
-    consumes these seed tables (see ``braunschweig.popsim.stage``), so with the SAME
-    random_seed and region the seed tables must be byte-identical between the two runs.
-    A difference would mean the OFF/ON configs differ in more than the placement_income
-    flag, invalidating the whole gate premise (signatures rebuilt from one run's seed
-    would not necessarily apply to the other).
-    """
-    for label, off_df, on_df in (
-        ("seed_households.csv", off_households, on_households),
-        ("seed_persons.csv", off_persons, on_persons),
-    ):
-        if list(off_df.columns) != list(on_df.columns):
-            raise GateBlockedError(
-                f"{label} column sets differ between the OFF and ON cache batch folders "
-                f"(OFF={list(off_df.columns)}, ON={list(on_df.columns)}); the two runs "
-                "must differ ONLY in placement_income."
-            )
-        if off_df.shape != on_df.shape:
-            raise GateBlockedError(
-                f"{label} shapes differ between the OFF ({off_df.shape}) and ON "
-                f"({on_df.shape}) cache batch folders."
-            )
-        sort_cols = _sort_key_columns(off_df)
-        off_sorted = off_df.sort_values(sort_cols).reset_index(drop=True)
-        on_sorted = on_df.sort_values(sort_cols).reset_index(drop=True)
-        if not off_sorted.equals(on_sorted):
-            raise GateBlockedError(
-                f"{label} content differs between the OFF and ON cache batch folders; "
-                "the two runs must differ ONLY in placement_income."
-            )
-
-
-# Per-attribute KREIS-control toggles the GATE CONFIGS override away from their declared
-# defaults. Must stay in sync with config_gate_placement_income_{off,on}.yml: the gate
-# runs disable employment_status because its min_age=14 person total requires single-year
-# {M,F}_AGE_<year> cell columns that the gate cells setup does not load (stage fail-fast).
-# Signatures must cover exactly the controls the runs ENFORCED, so the harness applies
-# the same override when deriving the active entry names.
-GATE_KREIS_CONTROL_OVERRIDES: dict[str, bool] = {"employment_status": False}
-
-
-def _default_active_kreis_control_names() -> list[str]:
-    """Replicate ``braunschweig.popsim.stage.active_kreis_entries``'s outcome for the
-    OFF/ON gate configs: every ``*_kreis_control`` key at its declared default EXCEPT
-    the explicit gate overrides in :data:`GATE_KREIS_CONTROL_OVERRIDES` (currently
-    ``employment_status`` OFF -- see the constant's comment).
-
-    Returns the REGISTRY entry names (in REGISTRY order) whose effective toggle is on,
-    read from ``stage._KREIS_CONTROL_DEFAULT`` / ``stage._KREIS_CONTROL_TOGGLE_KEY``
-    rather than hard-coded, so a future registry change is picked up automatically.
-    """
-    from braunschweig.popsim import stage as _stage
-
-    class _GateConfigContext:
-        """Minimal synpp ExecuteContext stand-in mirroring the gate configs' toggles."""
-
-        @staticmethod
-        def config(key: str):
-            for name, toggle_key in _stage._KREIS_CONTROL_TOGGLE_KEY.items():
-                if key == toggle_key:
-                    if name in GATE_KREIS_CONTROL_OVERRIDES:
-                        return GATE_KREIS_CONTROL_OVERRIDES[name]
-                    return _stage._KREIS_CONTROL_DEFAULT[name]
-            raise KeyError(f"_GateConfigContext: no declared default for config key {key!r}.")
-
-    active = _stage.active_kreis_entries(_GateConfigContext(), _SEED_NAME)
-    return [entry.name for entry in active]
 
 
 def _fmt(x: Any, spec: str = "{:.4f}") -> str:
@@ -548,8 +435,8 @@ def run_gate(
         ``popsim_work`` folder).
     skip_metrics:
         When True, skip the REPORTED-only metrics section (income attainment, within-
-        cell coherence, diag-CSV echo, persons.attrs echo) and return only the hard
-        invariant comparisons + verdict.
+        cell coherence, persons.attrs echo) and return only the realized-invariant
+        comparisons + verdict.
 
     Returns
     -------
@@ -575,6 +462,25 @@ def run_gate(
     persons_on = _load_persons_from_cache(cache_on)
     logger.info("Loaded ON persons frame: %d rows.", len(persons_on))
 
+    invariants = realized_invariants(persons_off, persons_on)
+    for name, cmp_ in invariants.items():
+        logger.info(
+            "Realized invariant %r: equal=%s n_keys_off=%d n_keys_on=%d n_diff_keys=%d "
+            "max_abs_diff=%d",
+            name, cmp_["equal"], cmp_["n_keys_off"], cmp_["n_keys_on"], cmp_["n_diff_keys"],
+            cmp_["max_abs_diff"],
+        )
+
+    diag_path_on = work_on / "placement_income_diag.csv"
+    diag_path_off = work_off / "placement_income_diag.csv"
+    diag_present_on = diag_path_on.is_file()
+    diag_absent_off = not diag_path_off.is_file()
+
+    verdict, reasons = decide_gate(invariants, diag_present_on, diag_absent_off)
+    for reason in reasons:
+        logger.warning("GATE FAIL reason: %s", reason)
+    logger.info("GATE verdict: %s", verdict)
+
     hh_off = household_level(persons_off)
     hh_on = household_level(persons_on)
     logger.info(
@@ -582,76 +488,16 @@ def run_gate(
         len(hh_off), len(hh_on),
     )
 
-    raw_id_by_surrogate_off = _load_pseudonym_map(work_off)
-    raw_id_by_surrogate_on = _load_pseudonym_map(work_on)
-
-    batch_off = _find_one_batch_dir(work_off)
-    batch_on = _find_one_batch_dir(work_on)
-    seed_hh_off, seed_pp_off = _load_seed_tables(batch_off)
-    seed_hh_on, seed_pp_on = _load_seed_tables(batch_on)
-    _assert_seed_tables_identical(seed_hh_off, seed_pp_off, seed_hh_on, seed_pp_on)
-    logger.info(
-        "Verified OFF (%s) / ON (%s) seed tables are identical.", batch_off.name, batch_on.name,
-    )
-
-    active_entry_names = _default_active_kreis_control_names()
-    logger.info(
-        "Active KREIS attribute-control registry entries used for the signature catalog "
-        "(default-ON, no toggle overrides in either gate config): %s", active_entry_names,
-    )
-
-    from braunschweig.popsim import control_spec as _cs
-    from braunschweig.popsim import placement_income as _pi
-
-    catalog = _cs.full_catalog(
-        include_tiers=_CONTROL_TIERS,
-        include_employment_grid=_INCLUDE_EMPLOYMENT_GRID,
-        kreis_control_names=active_entry_names,
-    )
-    controls = _cs.controls_for_seed(catalog, _SEED_NAME)
-    signatures = _pi.donor_control_signatures(controls, seed_hh_off, seed_pp_off, seed=_SEED_NAME)
-    signature_by_raw_id = {int(k): v for k, v in signatures.items()}
-    logger.info(
-        "Rebuilt %d donor control signatures (%d distinct groups) from batch %s.",
-        len(signature_by_raw_id), len(set(signature_by_raw_id.values())), batch_off.name,
-    )
-
-    cell_counts_off, kreis_counts_off = signature_group_counts(
-        hh_off, raw_id_by_surrogate_off, signature_by_raw_id)
-    cell_counts_on, kreis_counts_on = signature_group_counts(
-        hh_on, raw_id_by_surrogate_on, signature_by_raw_id)
-    cell_counts_cmp = compare_counts(cell_counts_off, cell_counts_on)
-    kreis_counts_cmp = compare_counts(kreis_counts_off, kreis_counts_on)
-
-    clone_off = clone_profile(hh_off, raw_id_by_surrogate_off)
-    clone_on = clone_profile(hh_on, raw_id_by_surrogate_on)
-    clone_cmp = compare_counts(clone_off, clone_on)
-
-    diag_path_on = work_on / "placement_income_diag.csv"
-    diag_path_off = work_off / "placement_income_diag.csv"
-    diag_present_on = diag_path_on.is_file()
-    diag_absent_off = not diag_path_off.is_file()
-
-    verdict, reasons = decide_gate(
-        cell_counts_cmp, kreis_counts_cmp, clone_cmp, diag_present_on, diag_absent_off)
-    for reason in reasons:
-        logger.warning("GATE FAIL reason: %s", reason)
-    logger.info("GATE verdict: %s", verdict)
-
     results: dict[str, Any] = {
         "cache_off": str(cache_off),
         "cache_on": str(cache_on),
         "verdict": verdict,
         "reasons": reasons,
-        "cell_counts_cmp": cell_counts_cmp,
-        "kreis_counts_cmp": kreis_counts_cmp,
-        "clone_cmp": clone_cmp,
+        "invariants": invariants,
         "diag_present_on": diag_present_on,
         "diag_absent_off": diag_absent_off,
-        "active_kreis_control_names": active_entry_names,
         "n_households_off": int(len(hh_off)),
         "n_households_on": int(len(hh_on)),
-        "batch_used": batch_off.name,
         "metrics_skipped": bool(skip_metrics),
     }
 
@@ -667,7 +513,14 @@ def run_gate(
         )
         results["diag_rows"] = None
     else:
+        # NOTE (dtype gotcha): the diag CSV's ars5 column is written from Python str
+        # keys ("03102", ...), but a plain pd.read_csv WITHOUT a dtype hint auto-infers
+        # the column as int64 and silently drops the leading zero (3102). Casting to
+        # str at read time AND re-zero-padding to 5 digits defends against either
+        # representation ending up on disk, so the join key always matches the
+        # household frame's zero-padded departement_id (e.g. "03102").
         diag_df = pd.read_csv(diag_path_on, dtype={"ars5": str})
+        diag_df["ars5"] = diag_df["ars5"].astype(str).str.zfill(5)
         results["diag_rows"] = diag_df.to_dict("records")
         target_mean_eur = dict(zip(diag_df["ars5"], diag_df["target_mean_eur"]))
 
@@ -730,29 +583,15 @@ def _render_report(results: dict[str, Any]) -> str:
     lines.append("## Provenance")
     lines.append(f"- OFF cache: `{results.get('cache_off')}`")
     lines.append(f"- ON cache: `{results.get('cache_on')}`")
-    lines.append(f"- Batch folder used to rebuild signatures: `{results.get('batch_used')}`")
-    lines.append(
-        f"- Active KREIS control names (default-ON, no toggle overrides): "
-        f"{results.get('active_kreis_control_names')}"
-    )
-    lines.append(
-        f"- Control tiers: {list(_CONTROL_TIERS)}; employment_grid: "
-        f"{_INCLUDE_EMPLOYMENT_GRID}; seed: {_SEED_NAME!r}"
-    )
     lines.append(
         f"- Households: OFF={results.get('n_households_off')}, "
         f"ON={results.get('n_households_on')}"
     )
     lines.append("")
-    lines.append("## Hard invariants")
-    for key, label in (
-        ("cell_counts_cmp", "Per-(cell, signature) household counts"),
-        ("kreis_counts_cmp", "Per-(Kreis, signature) household counts"),
-        ("clone_cmp", "Per-donor clone profile"),
-    ):
-        cmp_ = results.get(key, {})
+    lines.append("## Realized-aggregate invariants (OFF vs ON)")
+    for name, cmp_ in results.get("invariants", {}).items():
         lines.append(
-            f"- {label}: equal={cmp_.get('equal')}, n_keys_off={cmp_.get('n_keys_off')}, "
+            f"- {name}: equal={cmp_.get('equal')}, n_keys_off={cmp_.get('n_keys_off')}, "
             f"n_keys_on={cmp_.get('n_keys_on')}, n_diff_keys={cmp_.get('n_diff_keys')}, "
             f"max_abs_diff={cmp_.get('max_abs_diff')}"
         )
