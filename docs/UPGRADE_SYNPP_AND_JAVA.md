@@ -1,11 +1,11 @@
-# Upgrade prep: synpp 1.5.1 -> 1.6.3 (#205) and eqasim-java 1.5.0 -> 2.2.x (#204)
+# Upgrade prep: synpp 1.5.1 -> 1.6.2 (#205) and eqasim-java 1.5.0 -> 2.2.x (#204)
 
 > Investigation-only, 2026-07-17. Neither upgrade is executed here: both are multi-step
 > infra changes (env recreation / Maven build + server smoke) that must be run
 > deliberately with a green light. This doc records the decisive findings so the actual
 > upgrade is low-surprise.
 
-## #205 — synpp 1.5.1 -> 1.6.3
+## #205 — synpp 1.5.1 -> 1.6.2
 
 ### Decisive finding: the upgrade is cache-safe by default
 
@@ -36,11 +36,11 @@ recompute point, not mid-run (cf. the no-divergent-branch-against-shared-cache r
 
 ### Execution checklist (needs a green light)
 
-- [ ] Bump `synpp==1.6.3` in `environment.yml`; update the `eqasim` env locally + on felix.
+- [ ] Bump `synpp==1.6.2` in `environment.yml`; update the `eqasim` env locally + on felix.
 - [ ] Verify the new `calculate_identification_hash` / resolution logic does not change
       which stages are considered stale on our pipeline (run a resolve dry-run against a
       primed cache and confirm 0 unexpected recomputes).
-- [ ] Full pytest suite green under 1.6.3 (local + felix).
+- [ ] Full pytest suite green under 1.6.2 (local + felix).
 - [ ] 1-Kreis smoke: outputs byte-identical vs 1.5.1.
 - [ ] Then (optional, separate PR): mark `num_workers`/`processes` volatile.
 
