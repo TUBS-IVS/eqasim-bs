@@ -40,6 +40,53 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### Resolved (2026-07-17) — issue-backlog cleanup (cross-checked against merged code) + key-matching-audit PM record
+
+Cross-checked every open issue against the actual code/commit state and closed those already covered
+(the recurring "solution shipped, issue never closed" drift):
+
+- **#130** (OECD consumption_units) — already on `main` (`6cdad97`): `income.add_consumption_units`
+  (reuses upstream `data.hts.hts.calculate_consumption_units`) + `add_income_per_consumption_unit`,
+  wired in `assembly.build_persons` + `stage.execute` on the FINAL income. `high_income` deliberately
+  kept at the flat household threshold (no traceable per-CU reference); the primary income variable
+  `economic_status` is already OECD-equivalised by MiD construction. **Closed.**
+- **#76** (raw-data re-sync) — the raw drop was fully restored from felix on 2026-07-16 (24G,
+  diff-verified). **Closed.**
+- **#137** (extend Stage-B trip-donor matching keys) — **superseded**: production runs `popsim_mid`,
+  where each synthetic person IS a specific MiD donor `(H_ID, P_ID)` whose real Wege become the trip
+  chain (`braunschweig/popsim/trips.py`) — no attribute matching at all. On the legacy statistical-
+  matching path the richer keys (`employed`, `household_size_class`, `socioprofessional_class`) already
+  exist ("step 1", `tests/test_matching_keys.py`); car/pt/economic_status are deliberately excluded
+  (placeholders at matching time = matching on invented data). **Closed.**
+- **#124** — corrected: phase 1 (sub-Kreis OD reference) merged (PR #189/#190/#192); only phase 2
+  (accessibility matrices) remains open.
+
+Confirmed genuinely open (not re-attempt candidates for a quick win):
+
+- **#108** (placement-based income geography) is architecturally right — economic_status × Kreis control,
+  retire the post-hoc `income_kreis_control` overwrite — but measured **low expected impact** (income
+  inert: rho(INKAR, income)=1.0 yet status CV=0.033; cars = tenure/size, not income). Phase 0/1 built on
+  `worktree-income-placement-refdata-gate`; cheap next step is the server Phase-0 gate, then decide
+  build-vs-drop-overwrite. Kept open.
+
+Also in this PR:
+
+- **Recorded the 2026-07-16 key-matching / fallback audit** (PR #191 + #194 MERGED; project-wide AGS/ARS +
+  join/fallback sweep; join-coverage logging on every silent left-merge+fillna(0); all 14 standing test
+  failures root-caused; full suite **2986 passed / 0 failed** under the `eqasim` env) + the raw-data-loss-
+  and-restore incident, which `main`'s PM docs had not yet captured.
+- **Honest-skip guard** for the INKAR income smoke test: the failure was an env issue (legacy BIFF `.xls`
+  needs `xlrd`, absent under system Python 3.13), NOT missing data. `_income_xls_readable()` now guards on
+  file existence AND `xlrd` importability, path anchored to `DATA_ROOT`. Conforms to
+  `feedback-never-disable-tests-to-pass` (mark a non-runnable env honestly, never weaken the assertion).
+- **Open (proposed, issue pending user OK): latent FRAGILE hardening batch** from the audit — items
+  verified NOT live bugs today but one input-drift away from silent failure: `inkar/full_panel.py` +
+  `ba/pendler_detailed.py` lack a `\d{5}`-fullmatch key guard (`census/pendler.py` has one);
+  `inspire/landuse.py` flag-ON-but-missing-file returns an empty frame with `validate()==0` instead of
+  raising (stage currently unconsumed); `home_cell` legacy path renumbers building ids so
+  `home_match_validation.compare_typed_vs_legacy` joins the WRONG buildings (analysis-only, legacy flag
+  only); `network.py` link-skip counter. One small PR, TDD each.
+
 ### Resolved (2026-07-16) — #124 VerBindungen sub-Kreis OD reference (PR #189/#190) + #132 svb_wohn A/B (ADR-0066)
 
 - **#124 phase 1 DONE, MERGED (PR #189 + server-config wiring PR #190).** Download + loaders
