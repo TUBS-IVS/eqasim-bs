@@ -501,23 +501,58 @@ def test_intra_kreis_diagnostic_zero_qzm_mass_guard(capsys):
 
 def test_gravity_configure_declares_anchor_flag_off():
     # Static contract: the flag is declared with default False and the
-    # reference stages are declared only under the conditional (source scan,
-    # same style as the repo's config-contract tests).
+    # reference stages plus anchor_min_observed_commuters are declared ONLY
+    # inside the conditional block (source scan, same style as the repo's
+    # config-contract tests).
+    #
+    # Indentation-aware on purpose (#193 Task 5 review finding): a plain
+    # substring check on "everything between the if-line and the next def"
+    # cannot tell nested code from a DEDENTED, unconditionally-running copy.
+    # We instead walk the source line by line, record the "if" line's own
+    # indent, and collect only the subsequent non-blank lines that are
+    # indented strictly deeper than it -- stopping at the first line that
+    # falls back to (or below) the "if" indent. A regression that dedents the
+    # two stage() calls or the anchor_min_observed_commuters config so they
+    # run unconditionally drops them out of this collected block, and the
+    # assertions below fail.
     src = (REPO_ROOT / "braunschweig" / "gravity" / "model.py").read_text(
         encoding="utf-8")
     assert 'context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)' in src
-    anchor_block = src.split(
-        'braunschweig.gravity.verbindungen_anchor_enabled", False):')[1]
-    head = anchor_block.split("def ")[0]
-    assert 'context.stage("braunschweig.data.verbindungen.zones")' in head
-    assert 'context.stage("braunschweig.data.verbindungen.work_od")' in head
-    assert "anchor_min_observed_commuters" in head
+
+    lines = src.splitlines()
+    guard_text = 'if context.config("braunschweig.gravity.verbindungen_anchor_enabled", False):'
+    i_guard = next(i for i, line in enumerate(lines) if guard_text in line)
+    guard_indent = len(lines[i_guard]) - len(lines[i_guard].lstrip())
+
+    nested_block_lines = []
+    for line in lines[i_guard + 1:]:
+        if not line.strip():
+            continue  # blank lines carry no indentation signal; skip over them
+        indent = len(line) - len(line.lstrip())
+        if indent <= guard_indent:
+            break  # back to (or above) the "if" level -> end of its nested block
+        nested_block_lines.append(line)
+    nested_block = "\n".join(nested_block_lines)
+
+    assert 'context.stage("braunschweig.data.verbindungen.zones")' in nested_block
+    assert 'context.stage("braunschweig.data.verbindungen.work_od")' in nested_block
+    # Assert the full declare-call prefix, not just the bare config key, so a
+    # rename that turns this into e.g. a comment or a different call still fails.
+    assert ('context.config("braunschweig.verbindungen.anchor_min_observed_commuters"'
+            in nested_block)
 
 
 def test_execute_calls_anchor_between_calibrate_and_outbound():
     src = (REPO_ROOT / "braunschweig" / "gravity" / "model.py").read_text(
         encoding="utf-8")
     i_cal = src.index("df_work_calibrated = _calibrate(")
+    i_guard = src.index(
+        'if context.config("braunschweig.gravity.verbindungen_anchor_enabled"):')
     i_anchor = src.index("run_inner_anchor")
     i_out = src.index("df_work_extended = _append_outbound_flows(")
-    assert i_cal < i_anchor < i_out
+    # Defense in depth (#193 Task 5 review, Minor): also require the anchor
+    # call to be reached through its own guard -- not merely present
+    # somewhere between calibrate and outbound -- so a regression that hoists
+    # run_inner_anchor above (or otherwise outside) the flag check still fails
+    # this test even though the calibrate/outbound ordering alone would pass.
+    assert i_cal < i_guard < i_anchor < i_out
