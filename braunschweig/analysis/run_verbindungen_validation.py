@@ -3,11 +3,20 @@
 Loads the cached stage pickles from a completed pipeline run (no pipeline
 re-execution) and writes the five validation CSVs into ``--output-dir``.
 
+Note on ``--reference-role``: this cache runner reads pickled stage OUTPUTS,
+not the synpp config the run was executed with, so it cannot detect whether
+``braunschweig.gravity.verbindungen_anchor_enabled`` was ON when the cached OD
+was produced (#193). The caller must state the correct role explicitly --
+``fit`` if the cache was built with the inner anchor ON (the OD was
+calibrated to this same VerBindungen reference, so check B measures fit, not
+independent validation), ``independent`` (the default) otherwise.
+
 Usage::
 
     python -m braunschweig.analysis.run_verbindungen_validation \
         --working-directory eqasim-data/cache_bs_popsim_mid \
-        --output-dir eqasim-data/output_bs_popsim_mid/analysis/verbindungen
+        --output-dir eqasim-data/output_bs_popsim_mid/analysis/verbindungen \
+        --reference-role independent
 """
 from __future__ import annotations
 
@@ -43,6 +52,12 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--working-directory", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--reference-role", choices=("independent", "fit"), default="independent",
+        help="Whether the cached OD was calibrated to the VerBindungen "
+             "reference (the inner anchor was ON, #193): 'fit' or "
+             "'independent' (default). This runner cannot read the run's "
+             "config, so the caller must state the correct value.")
     args = parser.parse_args(argv)
 
     wd = args.working_directory
@@ -57,9 +72,10 @@ def main(argv=None) -> int:
 
     outputs = build_validation_outputs(
         df_home, df_work, df_persons, df_cells, df_ref_od, df_margins,
-        df_pendler)
+        df_pendler, reference_role=args.reference_role)
 
-    write_validation_outputs(outputs, args.output_dir)
+    write_validation_outputs(outputs, args.output_dir,
+                             reference_role=args.reference_role)
     return 0
 
 

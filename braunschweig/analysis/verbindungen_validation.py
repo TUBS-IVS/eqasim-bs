@@ -211,8 +211,22 @@ def build_validation_outputs(df_home: gpd.GeoDataFrame,
                              df_cells: gpd.GeoDataFrame,
                              df_ref_od: pd.DataFrame,
                              df_margins: pd.DataFrame,
-                             df_pendler: pd.DataFrame) -> dict:
-    """Assemble all validation outputs from raw stage frames (pure, testable)."""
+                             df_pendler: pd.DataFrame,
+                             reference_role: str = "independent") -> dict:
+    """Assemble all validation outputs from raw stage frames (pure, testable).
+
+    *reference_role* records whether the VerBindungen reference OD (df_ref_od)
+    served only as an independent validation target (``"independent"``, the
+    default) or was also used to calibrate the model OD via the inner anchor
+    (``"fit"``, #193) -- in the latter case check B measures fit, not
+    out-of-sample validation. Stamped as the last row of the summary frame so
+    every consumer of the CSV can see which regime produced it.
+    """
+    if reference_role not in ("independent", "fit"):
+        raise ValueError(
+            "[verbindungen_validation] reference_role must be 'independent' "
+            f"or 'fit', got {reference_role!r}"
+        )
     # --- realised potential OD: employed persons with a work location -------
     df = df_work[["person_id", "geometry"]].merge(
         df_persons[["person_id", "household_id"]], on="person_id", how="left")
@@ -316,6 +330,7 @@ def build_validation_outputs(df_home: gpd.GeoDataFrame,
             ("vintage_pearson_r", vintage_pearson),
             ("vintage_max_abs_share_drift",
              float(drift["share_drift"].abs().max()) if len(drift) else np.nan),
+            ("reference_role", reference_role),
         ],
         columns=["metric", "value"],
     )
@@ -334,6 +349,16 @@ _PROVENANCE_HEADER = (
     "sample, share-based). Shares only -- never compare absolute counts.\n"
 )
 
+
+def render_provenance_header(reference_role: str) -> str:
+    """Provenance header, prefixed with a FIT warning when the anchor is ON."""
+    if reference_role == "fit":
+        return ("# REFERENCE ROLE: FIT -- the OD was calibrated to this "
+                "reference (verbindungen_anchor_enabled); check B is a fit "
+                "metric, not independent validation.\n" + _PROVENANCE_HEADER)
+    return _PROVENANCE_HEADER
+
+
 # Output file names, shared by the synpp stage (execute()) and the standalone
 # cache re-run entry point (run_verbindungen_validation.py) so the two never
 # drift apart.
@@ -346,7 +371,8 @@ _OUTPUT_FILE_NAMES = dict(
 )
 
 
-def write_validation_outputs(outputs: dict, directory: str) -> None:
+def write_validation_outputs(outputs: dict, directory: str,
+                             reference_role: str = "independent") -> None:
     """Write the 5 validation CSVs (with the provenance header) into *directory*.
 
     Creates *directory* if it does not exist yet. Shared by the synpp stage
@@ -354,12 +380,19 @@ def write_validation_outputs(outputs: dict, directory: str) -> None:
     the standalone cache re-run entry point (``run_verbindungen_validation.py``)
     so the file names, header and directory-creation semantics never drift
     apart between the two call sites.
+
+    *reference_role* selects the provenance header via
+    ``render_provenance_header``: when ``"fit"`` (the anchor was ON when the
+    OD being validated was produced), every CSV is prefixed with an explicit
+    FIT warning so a reader never mistakes check B for out-of-sample
+    validation.
     """
+    header = render_provenance_header(reference_role)
     os.makedirs(directory, exist_ok=True)
     for key, name in _OUTPUT_FILE_NAMES.items():
         target = os.path.join(directory, name)
         with open(target, "w", encoding="utf-8", newline="") as f:
-            f.write(_PROVENANCE_HEADER)
+            f.write(header)
             outputs[key].to_csv(f, index=False)
         print(f"[braunschweig.analysis.verbindungen_validation] wrote {target}")
 
@@ -373,6 +406,11 @@ def configure(context):
     context.stage("braunschweig.data.verbindungen.margins")
     context.stage("braunschweig.data.census.pendler")
     context.config("output_path")
+    # #193: read-only mirror of the gravity stage's anchor flag so this
+    # (separate) stage can stamp whether check B is an independent
+    # validation or a fit metric. Same key, same default -- each synpp stage
+    # declares the config keys it reads.
+    context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)
 
 
 def execute(context):
@@ -385,14 +423,20 @@ def execute(context):
     df_margins = context.stage("braunschweig.data.verbindungen.margins")
     df_pendler = context.stage("braunschweig.data.census.pendler")
 
+    # #193: when the inner anchor calibrated the OD to this same VerBindungen
+    # reference, check B measures fit, not independent validation -- stamp it
+    # so downstream readers of the CSVs cannot miss the distinction.
+    role = ("fit" if context.config("braunschweig.gravity.verbindungen_anchor_enabled")
+            else "independent")
+
     outputs = build_validation_outputs(
         df_home, df_work, df_persons, df_cells, df_ref_od, df_margins,
-        df_pendler)
+        df_pendler, reference_role=role)
 
     # User-facing validation output goes under <output_path>/analysis/... (the
     # cordon_validation / analysis_suite convention), NOT context.path() (the
     # synpp cache dir), so it survives cache cleanup and is where a researcher
     # actually looks for run outputs.
     directory = os.path.join(context.config("output_path"), "analysis", "verbindungen")
-    write_validation_outputs(outputs, directory)
+    write_validation_outputs(outputs, directory, reference_role=role)
     return outputs
