@@ -937,7 +937,14 @@ class TestInspireLanduse:
         assert len(df) == 0
         assert df.crs is not None and df.crs.to_epsg() == 3035
 
-    def test_flag_on_missing_file_returns_empty(self, tmp_path):
+    def test_flag_on_missing_file_raises(self, tmp_path):
+        # Behaviour change (2026-07-17 FRAGILE hardening): with the flag ON but
+        # the tile missing, the stage used to return an empty frame + notice --
+        # a silent fallback that ran the whole pipeline as if the prior were
+        # merely uninformative (CLAUDE.md forbids silent fallbacks). It now fails
+        # loudly; the OFF path is the intended way to run without the prior.
+        import pytest
+
         from braunschweig.data.inspire import landuse
 
         ctx = StubContext(config={
@@ -945,8 +952,10 @@ class TestInspireLanduse:
             "braunschweig.inspire_landuse_path": "nope.parquet",
             "braunschweig.use_landuse_prior": True,
         })
-        df = landuse.execute(ctx)
-        assert len(df) == 0
+        with pytest.raises(RuntimeError, match="use_landuse_prior is ON"):
+            landuse.execute(ctx)
+        with pytest.raises(RuntimeError, match="use_landuse_prior is ON"):
+            landuse.validate(ctx)
 
 
 # ---------------------------------------------------------------------------

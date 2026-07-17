@@ -43,6 +43,8 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from braunschweig.data.kreis_key_guard import keep_valid_kreis5
+
 
 def configure(context):
     context.config("data_path")
@@ -90,6 +92,10 @@ def _read_indicator(path: str, year_cfg) -> pd.DataFrame:
     df.columns = ["kennziffer", "raumeinheit", "aggregat", "value"]
     df = df[df["aggregat"] == "Kreise"].copy()
     df["ars5"] = df["kennziffer"].astype(str).str.zfill(5)
+    # Guard the key: a float-formatted Kennziffer ("3101.0") survives zfill as a
+    # non-joining garbage key. Enforce the 5-digit contract explicitly and log
+    # any drop (CLAUDE.md no-silent-fallback); raises if every row is malformed.
+    df = keep_valid_kreis5(df, "ars5", source="braunschweig.data.inkar.full_panel")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     return df[["ars5", "raumeinheit", "value"]].dropna(subset=["value"])
 

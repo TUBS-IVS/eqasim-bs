@@ -50,6 +50,24 @@ def home_match_metrics(placed: pd.DataFrame, buildings_btype: pd.DataFrame) -> d
         "unmatched are excluded from type_match_share/size_assortativity.",
         n_matched, n_total, 100.0 * n_matched / n_total if n_total else 0.0,
     )
+    if n_total > 0 and n_matched == 0:
+        # Zero overlap between home_location_id and buildings_btype.building_id is
+        # never a legitimate placement outcome (a real run matches almost every
+        # household). It is the id-space mismatch flagged in the audit: the legacy
+        # home draw emits positional 0-based building indices (see
+        # home_cell._legacy_capped_buildings), NOT real building_id, so joining a
+        # legacy `placed` frame against a real-building_id btype table matches
+        # nothing (or, worse, coincidental wrong buildings). Fail loudly rather
+        # than return a meaningless nan type_match_share (CLAUDE.md no-silent-fallback).
+        raise RuntimeError(
+            "[home_match] building join produced ZERO matches for {n} placed "
+            "households: home_location_id does not overlap "
+            "buildings_btype.building_id. If this is the legacy home path, its "
+            "home_location_id is a positional 0-based index into the capped "
+            "building subset (home_cell._legacy_capped_buildings), not a real "
+            "building_id -- derive buildings_btype over the same building frame "
+            "the legacy draw used, or compare only the typed path.".format(n=n_total)
+        )
     hh_btype = df["building_type_3class"].map(_BTYPE_MAP)
     match = (hh_btype == df["btype"]).mean() if len(df) else float("nan")
     finite_mask = df["household_size"].notna() & df["size"].notna() & (df["size"] > 0)
@@ -254,6 +272,16 @@ def compare_typed_vs_legacy(
     buildings_btype: pd.DataFrame,
 ) -> dict:
     """Compare type-match share between typed and legacy placed frames.
+
+    .. warning::
+        The legacy home path emits ``home_location_id`` as a **positional
+        0-based index** into the capped building subset
+        (``home_cell._legacy_capped_buildings`` renumbers ``building_id`` to
+        ``arange(n)``), NOT a real ``building_id``. ``buildings_btype`` must
+        therefore be derived over the SAME building frame the legacy draw used;
+        otherwise the legacy join matches nothing (raises) or coincidental wrong
+        buildings. Passing a real-``building_id`` ``buildings_btype`` for a
+        legacy ``placed`` frame does not yield a meaningful comparison.
 
     Parameters
     ----------
