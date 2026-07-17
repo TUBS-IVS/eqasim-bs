@@ -91,7 +91,7 @@ def draw_own_income_eur(
 
     NaN / unknown labels stay NaN (the caller keeps today's NaN shielding). Closed
     brackets draw uniform on [max(low, INCOME_MIN_EUR), high); the open top draws a
-    truncated Pareto on [7000, INCOME_OPEN_TOP_MAX_EUR] — identical tail treatment to
+    truncated Pareto on [7000, INCOME_OPEN_TOP_MAX_EUR] - identical tail treatment to
     the income_kreis_control redraw, so distributions stay comparable OFF vs ON.
     Returns values rounded to whole EUR.
     """

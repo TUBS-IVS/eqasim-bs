@@ -20,8 +20,10 @@ def test_label_bounds_cover_all_codebook_labels():
 
 def test_closed_label_bounds_match_committed_midpoints():
     # The codebook ranges and the committed midpoints must be two views of the SAME
-    # brackets: (low+high)/2 == midpoint for every closed bracket except under_500
-    # (whose draw floors at INCOME_MIN_EUR=100; documented construct difference).
+    # brackets: (low+high)/2 == midpoint for every closed bracket. under_500 is skipped
+    # here only because its committed midpoint (250) is checked implicitly and its
+    # EXPECTED value differs by design (the draw floors at INCOME_MIN_EUR=100, so
+    # label_expected_eur returns 300; covered by test_expected_eur_matches_draw_in_expectation).
     for group, label in INCOME_CLASS_BY_GROUP.items():
         low, high = INCOME_LABEL_BOUNDS_EUR[label]
         if high is None or label == "under_500":
@@ -64,3 +66,15 @@ def test_donor_expected_income_maps_hheink_and_flags_missing():
     assert s.loc[1] == pytest.approx(label_expected_eur()["900_1500"])
     assert s.loc[2] == pytest.approx(label_expected_eur()["over_7000"])
     assert np.isnan(s.loc[3])
+
+
+def test_unknown_nonnull_labels_warn_and_stay_nan(caplog):
+    import logging
+    rng = np.random.RandomState(5)
+    labels = pd.Series(["900_1500", "bogus_label", np.nan, "keine Angabe", "900_1500"])
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.placement_income"):
+        eur = draw_own_income_eur(labels, rng)
+    assert np.isnan(eur[[1, 2, 3]]).all()
+    assert (~np.isnan(eur[[0, 4]])).all()
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("2/5" in m for m in warning_messages)
