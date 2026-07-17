@@ -9,7 +9,10 @@ not the synpp config the run was executed with, so it cannot detect whether
 was produced (#193). The caller must state the correct role explicitly --
 ``fit`` if the cache was built with the inner anchor ON (the OD was
 calibrated to this same VerBindungen reference, so check B measures fit, not
-independent validation), ``independent`` (the default) otherwise.
+independent validation), ``independent`` otherwise. The argument is REQUIRED
+(no default): a silently-defaulted ``independent`` against an anchor-ON cache
+would overstate validity (final whole-branch review, #193), so a forgetful
+caller gets an argparse error instead of a mislabelled output.
 
 Usage::
 
@@ -53,11 +56,12 @@ def main(argv=None) -> int:
     parser.add_argument("--working-directory", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument(
-        "--reference-role", choices=("independent", "fit"), default="independent",
+        "--reference-role", choices=("independent", "fit"), required=True,
         help="Whether the cached OD was calibrated to the VerBindungen "
              "reference (the inner anchor was ON, #193): 'fit' or "
-             "'independent' (default). This runner cannot read the run's "
-             "config, so the caller must state the correct value.")
+             "'independent'. REQUIRED -- this runner cannot read the run's "
+             "config, and a silently-defaulted 'independent' against an "
+             "anchor-ON cache would overstate validity.")
     args = parser.parse_args(argv)
 
     wd = args.working_directory
