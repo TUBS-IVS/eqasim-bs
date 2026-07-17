@@ -40,6 +40,7 @@ def test_apply_own_income_draws_within_label_and_sets_high_income():
     assert np.isnan(out[out.household_id == "c"]["household_income_eur"]).all()
     assert not out[out.household_id == "c"]["high_income"].iloc[0]
     assert diag["nan_label_rate"] == pytest.approx(1 / 3)
+    assert diag["n_households"] == 3
     # label column untouched
     pd.testing.assert_series_equal(out["household_income"], persons["household_income"])
 
@@ -51,3 +52,18 @@ def test_apply_own_income_deterministic_per_seed():
     o1, _ = apply_own_income(persons, random_seed=7)
     o2, _ = apply_own_income(persons, random_seed=7)
     pd.testing.assert_frame_equal(o1, o2)
+
+
+def test_resolve_income_path_logs_each_override(caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.placement_income"):
+        resolve_income_path(True, True, False)
+    messages = [r.message for r in caplog.records]
+    assert any("income_kreis_control=ON" in m for m in messages)
+    assert not any("income_spatial_tilt=ON" in m for m in messages)
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.placement_income"):
+        resolve_income_path(True, False, True)
+    messages = [r.message for r in caplog.records]
+    assert any("income_spatial_tilt=ON" in m for m in messages)
+    assert not any("income_kreis_control=ON" in m for m in messages)
