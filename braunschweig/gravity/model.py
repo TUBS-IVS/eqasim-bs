@@ -1015,6 +1015,23 @@ def configure(context):
             SVB_FALLBACK_WARN_SHARE,
         )
 
+    # #193: inner VerBindungen calibration anchor. Default False -> byte-
+    # identical work OD (the anchor CHANGES scientific output when ON; the
+    # default flips only via the pre-registered decision rule + ADR --
+    # see docs/superpowers/specs/2026-07-16-verbindungen-calibration-anchor-design.md).
+    context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)
+    if context.config("braunschweig.gravity.verbindungen_anchor_enabled", False):
+        # Reference stages only required when the anchor is ON, so the OFF
+        # path needs no new stages or data files.
+        context.stage("braunschweig.data.verbindungen.zones")
+        context.stage("braunschweig.data.verbindungen.work_od")
+        # PROVISIONAL default (not empirical): per-row minimum observed
+        # reference commuters below which a row is not anchored (guards the
+        # censoring edge, values 10-12 are coarse small-count noise). The
+        # measured default from the real coverage distribution replaces this
+        # value via the holdout script (#193 Task 8) BEFORE any default-ON.
+        context.config("braunschweig.verbindungen.anchor_min_observed_commuters", 30)
+
     # TAZ-specific stages: only declared when the flag is ON so the OFF path
     # (all existing configs) needs no new keys or stages.
     if context.config("taz_work_location_choice", False):
@@ -1409,6 +1426,19 @@ def execute(context):
         population_key=population_key,
         population_value=population_value,
     )
+    # #193: inner VerBindungen anchor (flag-gated, default OFF). Runs on the
+    # CALIBRATED OD so the outer Kreis anchor is already satisfied; the inner
+    # step preserves every Kreis-pair block total exactly (asserted inside).
+    if context.config("braunschweig.gravity.verbindungen_anchor_enabled"):
+        from braunschweig.gravity.verbindungen_anchor import run_inner_anchor  # noqa: PLC0415
+        df_cells_vb, df_cell_commune_vb = context.stage(
+            "braunschweig.data.verbindungen.zones")
+        df_ref_od_vb = context.stage("braunschweig.data.verbindungen.work_od")
+        df_work_calibrated, _anchor_stats = run_inner_anchor(
+            df_work_calibrated, df_cells_vb, df_cell_commune_vb, df_ref_od_vb,
+            min_observed_commuters=context.config(
+                "braunschweig.verbindungen.anchor_min_observed_commuters"),
+        )
     df_work_extended = _append_outbound_flows(
         df_work_calibrated, df_population_for_od, df_pendler, df_external, scope,
         zone_to_kreis=zone_to_kreis,

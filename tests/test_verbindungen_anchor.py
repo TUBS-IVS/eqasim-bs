@@ -497,3 +497,27 @@ def test_intra_kreis_diagnostic_zero_qzm_mass_guard(capsys):
     # (f) both drops are below the heuristic threshold -> no WARNING; the
     #     zero-QZM guard is a documented note, not an escalation.
     assert "WARNING" not in out_log
+
+
+def test_gravity_configure_declares_anchor_flag_off():
+    # Static contract: the flag is declared with default False and the
+    # reference stages are declared only under the conditional (source scan,
+    # same style as the repo's config-contract tests).
+    src = (REPO_ROOT / "braunschweig" / "gravity" / "model.py").read_text(
+        encoding="utf-8")
+    assert 'context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)' in src
+    anchor_block = src.split(
+        'braunschweig.gravity.verbindungen_anchor_enabled", False):')[1]
+    head = anchor_block.split("def ")[0]
+    assert 'context.stage("braunschweig.data.verbindungen.zones")' in head
+    assert 'context.stage("braunschweig.data.verbindungen.work_od")' in head
+    assert "anchor_min_observed_commuters" in head
+
+
+def test_execute_calls_anchor_between_calibrate_and_outbound():
+    src = (REPO_ROOT / "braunschweig" / "gravity" / "model.py").read_text(
+        encoding="utf-8")
+    i_cal = src.index("df_work_calibrated = _calibrate(")
+    i_anchor = src.index("run_inner_anchor")
+    i_out = src.index("df_work_extended = _append_outbound_flows(")
+    assert i_cal < i_anchor < i_out
