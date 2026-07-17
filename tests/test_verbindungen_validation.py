@@ -255,3 +255,29 @@ def test_compare_ab_renders_delta_table(tmp_path):
     assert "weighted_tvd" in table
     assert "-0.05" in table   # tvd improved by 0.05
     assert "population" in table and "svb_wohn" in table
+
+
+def test_reference_role_stamped_fit_and_independent():
+    from braunschweig.analysis.verbindungen_validation import (
+        build_validation_outputs, render_provenance_header,
+    )
+    df_home, df_work, df_persons = _synthetic_population()
+    cells = _cells()
+    ref = _od([("A", "A", 60), ("A", "B", 40)])
+    margins = pd.DataFrame({
+        "cell_id": ["A", "B"],
+        "workers_at_home": pd.array([100, 50], dtype="Int64"),
+        "workers_at_workplace": pd.array([80, 70], dtype="Int64"),
+    })
+    pendler = pd.DataFrame({
+        "orig_ars": ["03101"], "dest_ars": ["03151"], "flow": [100.0]})
+    out_fit = build_validation_outputs(
+        df_home, df_work, df_persons, cells, ref, margins, pendler,
+        reference_role="fit")
+    s = out_fit["summary"].set_index("metric")["value"]
+    assert s["reference_role"] == "fit"
+    assert "FIT" in render_provenance_header("fit")
+    out_ind = build_validation_outputs(
+        df_home, df_work, df_persons, cells, ref, margins, pendler)
+    assert out_ind["summary"].set_index("metric")["value"]["reference_role"] == "independent"
+    assert "FIT" not in render_provenance_header("independent")
