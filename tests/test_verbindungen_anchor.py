@@ -591,6 +591,47 @@ def test_heldout_conditional_tvd_hand_computed():
     assert math.isclose(got, 0.225, abs_tol=1e-12)
 
 
+def test_heldout_conditional_tvd_excludes_degenerate_single_dest_origin(capsys):
+    """#193 Task 7 review Important 1 (CLAUDE.md fallback transparency): an
+    origin whose held-out set has a SINGLE destination carries no
+    conditional structure -- its renormalised share is trivially 1.0 for
+    both model and reference, so its row TVD is always exactly 0 no matter
+    how the model performs there. Such an origin must be excluded from the
+    pooled score, not silently averaged in with a free 0.
+
+    Fixture: origin A reuses test_heldout_conditional_tvd_hand_computed's
+    numbers exactly (held-out Y, Z -> hand-derived TVD 0.225, held-out ref
+    mass 30+20=50). Origin B adds a SINGLE held-out destination W (ref
+    commuters 40; the model value at W is irrelevant since the row must be
+    skipped before the model is ever read).
+
+    Without the fix, B's degenerate row would still clear the zero-mass
+    guard (model 5 / ref 40 are both > 0), renormalise trivially to 1.0 vs
+    1.0 (TVD 0), and pull the pooled average toward it:
+        (50*0.225 + 40*0) / (50 + 40) = 11.25 / 90 = 0.125
+    With the fix, B is excluded entirely and the pooled TVD equals exactly
+    A's own TVD: 11.25 / 50 = 0.225.
+    """
+    from braunschweig.calibration.anchor_holdout import heldout_conditional_tvd
+    ref = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "A", "B"],
+        "destination_zone_id": ["X", "Y", "Z", "W"],
+        "commuters": [50, 30, 20, 40],
+    })
+    model = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "A", "B"],
+        "destination_zone_id": ["X", "Y", "Z", "W"],
+        "commuters": [20.0, 30.0, 50.0, 5.0],
+    })
+    held = pd.Series([False, True, True, True])  # A: Y,Z held; B: W held (single)
+    got = heldout_conditional_tvd(model, ref, held)
+    assert math.isclose(got, 0.225, abs_tol=1e-12)
+
+    log = capsys.readouterr().out
+    assert "1 informative" in log
+    assert "1 skipped (single held-out dest)" in log
+
+
 def test_p38_band_shares_edges():
     from braunschweig.calibration.anchor_holdout import p38_band_shares
     shares = p38_band_shares(np.array([3.0, 7.0, 250.0]),

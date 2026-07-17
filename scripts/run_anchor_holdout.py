@@ -75,6 +75,8 @@ def main() -> int:
                         help="coverage threshold; default = the config's "
                              "anchor_min_observed_commuters or 30")
     args = parser.parse_args()
+    if args.folds < 2:
+        raise SystemExit("--folds must be >= 2 (k-fold CV)")
     os.makedirs(args.out, exist_ok=True)
 
     with open(args.config, encoding="utf-8") as f:
@@ -214,27 +216,39 @@ def main() -> int:
 
     p13_base, p13_anch = p13_emds(baseline), p13_emds(anchored)
 
-    # P38.2 per-Kreis direction table (thin n -- directional evidence only).
-    p38_path = os.path.join(cfg["data_path"], "braunschweig", "mid",
-                            "mid2023_P38_2_commute_distance_by_kreis.csv")
+    # P38.2 per-Kreis MODEL DRIFT table: baseline-vs-anchored MODEL band
+    # shares only. This does NOT load the MiD P38.2 reference CSV, so it is
+    # NOT (yet) a directional comparison against observed data.
+    # TODO(#193 Task 8): load the MiD P38.2-by-Kreis reference
+    # (mid2023_P38_2_commute_distance_by_kreis.csv: drop
+    # d_unplausibel_keine_angabe, renormalise per Kreis) for a TRUE
+    # directional comparison vs observed; deferred to the server run where
+    # the CSV is available and testable. NOTE:
+    # braunschweig.analysis.population_validation.trip_coherence
+    # .p38_2_band_target() already implements exactly this drop+renormalise
+    # step (ARS5-keyed, including the "03ZGB" aggregate) -- reuse it rather
+    # than re-deriving the parsing.
     p38_rows = []
-    if os.path.exists(p38_path):
-        for label, df in (("baseline", baseline), ("anchored", anchored)):
-            d = df.copy()
-            d["km"] = apply_detour(pd.Series(
-                [dist.get((o, dd), np.nan)
-                 for o, dd in zip(d["origin_id"], d["destination_id"])]).to_numpy())
-            d["kreis"] = d["origin_id"].astype(str).str[:5]
-            for kr, grp in d.dropna(subset=["km"]).groupby("kreis"):
-                shares = p38_band_shares(grp["km"].to_numpy(),
-                                         grp["flow"].to_numpy())
-                p38_rows.append({"variant": label, "kreis": kr,
-                                 **{f"band_{i}": s for i, s in enumerate(shares)}})
-        pd.DataFrame(p38_rows).to_csv(
-            os.path.join(args.out, "p38_per_kreis_direction.csv"), index=False)
+    for label, df in (("baseline", baseline), ("anchored", anchored)):
+        d = df.copy()
+        d["km"] = apply_detour(pd.Series(
+            [dist.get((o, dd), np.nan)
+             for o, dd in zip(d["origin_id"], d["destination_id"])]).to_numpy())
+        d["kreis"] = d["origin_id"].astype(str).str[:5]
+        for kr, grp in d.dropna(subset=["km"]).groupby("kreis"):
+            shares = p38_band_shares(grp["km"].to_numpy(),
+                                     grp["flow"].to_numpy())
+            p38_rows.append({"variant": label, "kreis": kr,
+                             **{f"band_{i}": s for i, s in enumerate(shares)}})
+    pd.DataFrame(p38_rows).to_csv(
+        os.path.join(args.out, "p38_per_kreis_model_drift.csv"), index=False)
 
     # --- (4) k-fold CV -------------------------------------------------------
     folds = assign_folds(rows, k=args.folds, seed=args.seed)
+    print(
+        f"[run_anchor_holdout] {int((folds == -1).sum())} observed relations "
+        "always-train (single destination, unsplittable)"
+    )
     cv_base_vals, cv_anch_vals, p13_fold_emds = [], [], []
     for fold in range(args.folds):
         held = folds == fold
@@ -246,11 +260,41 @@ def main() -> int:
             to_zone_od(baseline), df_ref_zones, held))
         cv_anch_vals.append(heldout_conditional_tvd(
             to_zone_od(anch_fold), df_ref_zones, held))
-        p13_fold_emds.append(np.mean(list(p13_emds(anch_fold).values())))
-    p13_noise = float(np.std(p13_fold_emds, ddof=1))
+        fold_p13 = list(p13_emds(anch_fold).values())
+        p13_fold_emds.append(float(np.mean(fold_p13)) if fold_p13 else float("nan"))
+
+    # A stratification group smaller than k leaves some folds with zero
+    # held-out rows: heldout_conditional_tvd returns float("nan") for an
+    # empty held set, and an empty p13_emds() dict does the same for
+    # p13_fold_emds above. Left unguarded, a NaN cv_* silently makes
+    # verdict()'s `improves` False, and a NaN p13_noise NaN-poisons every `>`
+    # regression comparison in verdict() so `regressions={}` VACUOUSLY -- the
+    # entire distance-regression half of the pre-registered rule would
+    # silently "pass" without ever truly being evaluated. CLAUDE.md fallback
+    # transparency: a broken measurement must never masquerade as a valid
+    # one, so non-finite per-fold values are dropped with an explicit logged
+    # count, and too few finite folds raises rather than feeding a NaN
+    # forward into verdict().
+    def _finite_folds(label, values):
+        arr = np.asarray(values, dtype=float)
+        finite = arr[np.isfinite(arr)]
+        print(f"[run_anchor_holdout] {label}: {len(finite)}/{len(arr)} folds finite")
+        if len(finite) < 2:
+            raise RuntimeError(
+                f"[run_anchor_holdout] {label}: only {len(finite)}/{len(arr)} folds "
+                "produced a finite value -- refusing to feed a NaN-poisoned mean/std "
+                "into verdict(). Likely cause: a stratification group smaller than "
+                "--folds leaves some folds with zero held-out rows. Reduce --folds "
+                "or inspect the coverage measurement printed above.")
+        return finite
+
+    cv_base_finite = _finite_folds("cv_baseline", cv_base_vals)
+    cv_anch_finite = _finite_folds("cv_anchored", cv_anch_vals)
+    p13_fold_finite = _finite_folds("p13_fold_emd", p13_fold_emds)
+    p13_noise = float(np.std(p13_fold_finite, ddof=1))
 
     # --- (5) verdict ----------------------------------------------------------
-    v = verdict(float(np.mean(cv_base_vals)), float(np.mean(cv_anch_vals)),
+    v = verdict(float(np.nanmean(cv_base_finite)), float(np.nanmean(cv_anch_finite)),
                 p13_base, p13_anch, p13_noise)
     lines = [
         "# Anchor holdout verdict (#193, pre-registered rule)", "",

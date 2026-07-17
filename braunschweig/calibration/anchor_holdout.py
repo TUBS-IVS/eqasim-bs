@@ -11,16 +11,21 @@ renormalises both -- precisely the renormalisation-transfer the anchor claims.
 Pre-registered decision rule (structure fixed BEFORE the runs; no invented
 numeric thresholds): the default flips to ON only if (i) the pooled held-out
 conditional TVD improves vs baseline AND (ii) no P13-by-RS7 EMD worsens beyond
-the measured fold noise. P38.2 per-Kreis is reported as DIRECTIONAL evidence
-only (thin n per Kreis -- robust-references rule)."""
+the measured fold noise. P38.2 per-Kreis, via ``p38_band_shares`` below, is
+BASELINE-vs-ANCHORED MODEL drift only: this module never loads the MiD P38.2
+reference, so it is NOT (yet) a directional comparison against observed data
+-- see the TODO in scripts/run_anchor_holdout.py (deferred to Task 8)."""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
 # P38.2 band edges in routed km (MiD 2023 Tabelle A P38.2 columns d_unter_5km
-# .. d_300km_plus; the d_unplausibel_keine_angabe column is dropped and the
-# reference shares renormalised).
+# .. d_300km_plus) so that p38_band_shares() below bins MODEL flows onto the
+# same bands as the MiD P38.2 reference. This module does NOT load that
+# reference CSV or drop/renormalise its d_unplausibel_keine_angabe column --
+# p38_band_shares() only shares MODEL flow; see the TODO in
+# scripts/run_anchor_holdout.py for the deferred reference comparison.
 P38_BAND_EDGES_KM = [0.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0, 200.0, 300.0,
                      float("inf")]
 
@@ -45,15 +50,28 @@ def assign_folds(df_ref_rows: pd.DataFrame, k: int, seed: int) -> pd.Series:
 def heldout_conditional_tvd(df_model_od_zones: pd.DataFrame,
                             df_ref_od_zones: pd.DataFrame,
                             held_mask: pd.Series) -> float:
-    """Row-renormalised conditional TVD on the held-out relations only."""
+    """Row-renormalised conditional TVD on the held-out relations only.
+
+    An origin whose held-out destination set has FEWER THAN 2 destinations
+    carries no conditional structure: with a single held-out destination the
+    renormalised share is trivially 1.0 for both model and reference, so the
+    row's TVD is always exactly 0 regardless of how well the model actually
+    performs there. Such origins are excluded from the pooled num/den (never
+    silently averaged in -- CLAUDE.md fallback transparency) so a genuinely
+    poor model cannot be handed a free 0 that dilutes the pooled score.
+    """
     ref = df_ref_od_zones.copy()
     ref["_held"] = held_mask.to_numpy()
     model = df_model_od_zones.set_index(
         ["origin_zone_id", "destination_zone_id"])["commuters"]
 
     num, den = 0.0, 0.0
+    n_informative, n_skipped_single_dest = 0, 0
     for origin, rows in ref[ref["_held"]].groupby("origin_zone_id"):
         r = rows.set_index("destination_zone_id")["commuters"].astype(float)
+        if len(r) < 2:
+            n_skipped_single_dest += 1
+            continue
         m = pd.Series(
             [float(model.get((origin, d), 0.0)) for d in r.index],
             index=r.index)
@@ -63,6 +81,12 @@ def heldout_conditional_tvd(df_model_od_zones: pd.DataFrame,
         w = float(r.sum())
         num += w * tvd
         den += w
+        n_informative += 1
+    print(
+        f"[braunschweig.calibration.anchor_holdout] held-out conditional TVD: "
+        f"{n_informative} informative origins, {n_skipped_single_dest} skipped "
+        f"(single held-out dest)"
+    )
     return num / den if den else float("nan")
 
 
