@@ -44,6 +44,17 @@ HIGH_COVERAGE_SKIP_WARN_FRACTION = 0.5
 # gravity model is routinely missing QZM-observed relations -- a data-quality
 # signal worth investigating, not something to compare model output against.
 HIGH_PARTIAL_ZERO_WARN_FRACTION = 0.5
+# TRANSPARENCY HEURISTIC (CLAUDE.md fallback transparency), NOT a scientific
+# reference/target value: warn when more than this fraction of the relevant
+# MASS (workplace-margin mass in ao_margin_diagnostic; model flow mass or QZM
+# commuter mass in intra_kreis_diagnostic) is dropped because a cell_id,
+# commune_id, or zone_id failed to join through to a comparison zone or a
+# Kreis. Mass, not row/cell count, drives the escalation here because both
+# diagnostics report MASS shares: a handful of dropped ids can carry most of
+# a diagnostic's mass (or almost none of it), and a count-only threshold
+# would miss that. A high drop rate is a data-quality signal (e.g. a stale id
+# vocabulary or crosswalk gap), not something to compare model output against.
+HIGH_UNMAPPED_WARN_FRACTION = 0.5
 
 
 def collapse_od_to_zones(df_od_cells: pd.DataFrame,
@@ -403,12 +414,49 @@ def ao_margin_diagnostic(df_od_zones_before: pd.DataFrame,
                          df_margins: pd.DataFrame,
                          df_cell_zone: pd.DataFrame) -> dict:
     """Workplace-inflow shares per zone vs the observed Statisch_AO margins,
-    before vs after anchoring (side-effect check on the attraction axis)."""
+    before vs after anchoring (side-effect check on the attraction axis).
+
+    Margin cells whose cell_id fails to map to a comparison zone are dropped
+    before the comparison; the dropped cell count and workplace-mass share
+    are logged (CLAUDE.md fallback transparency), escalating to WARNING on a
+    high drop rate (see HIGH_UNMAPPED_WARN_FRACTION).
+    """
     from braunschweig.analysis.verbindungen_validation import margin_check
 
     zone = df_cell_zone.set_index("cell_id")["zone_id"]
     m = df_margins.copy()
     m["zone_id"] = m["cell_id"].map(zone)
+
+    # Join-coverage instrumentation: the dropna below silently discards
+    # margin cells whose cell_id failed to map to a comparison zone. Count
+    # cells AND the workplace mass they carry before they vanish, so a
+    # crosswalk/vocabulary gap is visible instead of just shrinking the AO
+    # comparison universe unnoticed.
+    n_cells_total = int(len(m))
+    unmapped_cells = m["zone_id"].isna()
+    n_cells_mapped = int((~unmapped_cells).sum())
+    # workers_at_workplace is a nullable Int64 (BA Dominanz-suppressed cells
+    # carry real NAs unrelated to the join); coerce+fill to 0 for THIS
+    # coverage statistic only -- a visibility signal, not the margin itself.
+    workplace_mass = pd.to_numeric(
+        m["workers_at_workplace"], errors="coerce").fillna(0.0)
+    total_workplace_mass = float(workplace_mass.sum())
+    dropped_workplace_mass = float(workplace_mass[unmapped_cells].sum())
+    dropped_mass_share = (dropped_workplace_mass / total_workplace_mass
+                          if total_workplace_mass else 0.0)
+    mapped_cell_share = (n_cells_mapped / n_cells_total
+                        if n_cells_total else 1.0)
+    warn_prefix = ("WARNING: "
+                  if dropped_mass_share > HIGH_UNMAPPED_WARN_FRACTION else "")
+    print(
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix}AO-margin "
+        f"diagnostic join coverage: mapped {n_cells_mapped}/{n_cells_total} "
+        f"cells ({100.0 * mapped_cell_share:.1f}%), dropped "
+        f"{n_cells_total - n_cells_mapped} cells / "
+        f"{100.0 * dropped_mass_share:.1f}% of workplace mass by unmapped "
+        "cell_id"
+    )
+
     ao = (m.dropna(subset=["zone_id"])
           .groupby("zone_id")["workers_at_workplace"].sum(min_count=1))
 
@@ -438,13 +486,51 @@ def intra_kreis_diagnostic(df_od_gemeinde: pd.DataFrame,
     commuting. Per Kreis this compares the model's realised intra share (which
     equals the synthesised target after calibration) with the QZM share --
     a health check on the weakest outer-anchor component. Diagnostic only
-    (vintage/universe forbid replacing the outer target)."""
+    (vintage/universe forbid replacing the outer target).
+
+    Both the model-side (commune_id -> zone_id -> Kreis) and reference-side
+    (zone_id -> Kreis) joins can drop rows whose id fails to map; the dropped
+    row count and mass share are logged for each side (CLAUDE.md fallback
+    transparency), escalating to WARNING on a high drop rate (see
+    HIGH_UNMAPPED_WARN_FRACTION). A Kreis with zero or missing QZM-observed
+    mass would otherwise divide into a silent NaN; ``qzm_intra_share`` (and,
+    for symmetry, ``model_intra_share``) are guarded to 0.0 for such a Kreis,
+    matching the ``total == 0`` guard style of censored_bound_diagnostic
+    above -- the affected Kreis is named in the summary log.
+    """
     zmap = df_zone_map.set_index("commune_id")["zone_id"]
     kreis = df_zones.set_index("zone_id")["kreis_id"]
 
     od = df_od_gemeinde.copy()
     od["ok"] = od["origin_id"].astype(str).map(zmap).map(kreis)
     od["dk"] = od["destination_id"].astype(str).map(zmap).map(kreis)
+
+    # Join-coverage instrumentation (CLAUDE.md fallback transparency): the
+    # dropna below silently discards rows whose origin or destination
+    # commune_id fails to map through to a Kreis. Count rows AND the model
+    # flow mass they carry before they vanish.
+    n_rows_total_model = int(len(od))
+    unmapped_model = od["ok"].isna() | od["dk"].isna()
+    n_rows_mapped_model = int((~unmapped_model).sum())
+    total_flow_mass = float(od["flow"].sum())
+    dropped_flow_mass = float(od.loc[unmapped_model, "flow"].sum())
+    dropped_flow_share = (dropped_flow_mass / total_flow_mass
+                          if total_flow_mass else 0.0)
+    mapped_row_share_model = (n_rows_mapped_model / n_rows_total_model
+                             if n_rows_total_model else 1.0)
+    warn_prefix_model = ("WARNING: "
+                        if dropped_flow_share > HIGH_UNMAPPED_WARN_FRACTION
+                        else "")
+    print(
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix_model}"
+        "intra-Kreis diagnostic model-side join coverage: mapped "
+        f"{n_rows_mapped_model}/{n_rows_total_model} rows "
+        f"({100.0 * mapped_row_share_model:.1f}%), dropped "
+        f"{n_rows_total_model - n_rows_mapped_model} rows / "
+        f"{100.0 * dropped_flow_share:.1f}% of model flow mass by unmapped "
+        "origin/destination id"
+    )
+
     od = od.dropna(subset=["ok", "dk"])
     row_total = od.groupby("ok")["flow"].sum()
     intra = od[od["ok"] == od["dk"]].groupby("ok")["flow"].sum()
@@ -452,6 +538,34 @@ def intra_kreis_diagnostic(df_od_gemeinde: pd.DataFrame,
     ref = df_ref_od_zones.copy()
     ref["ok"] = ref["origin_zone_id"].map(kreis)
     ref["dk"] = ref["destination_zone_id"].map(kreis)
+
+    # Same instrumentation on the reference side: `ref.groupby("ok")` below
+    # has no explicit dropna, but pandas groupby drops NaN keys by default,
+    # so rows with an unmapped origin (or destination) zone_id -> Kreis
+    # vanish from ref_total / ref_intra just as silently as the model-side
+    # dropna above.
+    n_rows_total_ref = int(len(ref))
+    unmapped_ref = ref["ok"].isna() | ref["dk"].isna()
+    n_rows_mapped_ref = int((~unmapped_ref).sum())
+    total_commuters_mass = float(ref["commuters"].sum())
+    dropped_commuters_mass = float(ref.loc[unmapped_ref, "commuters"].sum())
+    dropped_commuters_share = (dropped_commuters_mass / total_commuters_mass
+                              if total_commuters_mass else 0.0)
+    mapped_row_share_ref = (n_rows_mapped_ref / n_rows_total_ref
+                           if n_rows_total_ref else 1.0)
+    warn_prefix_ref = ("WARNING: "
+                      if dropped_commuters_share > HIGH_UNMAPPED_WARN_FRACTION
+                      else "")
+    print(
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix_ref}"
+        "intra-Kreis diagnostic reference-side join coverage: mapped "
+        f"{n_rows_mapped_ref}/{n_rows_total_ref} rows "
+        f"({100.0 * mapped_row_share_ref:.1f}%), dropped "
+        f"{n_rows_total_ref - n_rows_mapped_ref} rows / "
+        f"{100.0 * dropped_commuters_share:.1f}% of QZM commuter mass by "
+        "unmapped origin/destination zone"
+    )
+
     ref_total = ref.groupby("ok")["commuters"].sum()
     ref_intra = ref[ref["ok"] == ref["dk"]].groupby("ok")["commuters"].sum()
 
@@ -460,15 +574,40 @@ def intra_kreis_diagnostic(df_od_gemeinde: pd.DataFrame,
         "model_intra_flow": intra.reindex(row_total.index).fillna(0.0).to_numpy(),
         "model_row_total": row_total.to_numpy(),
     })
-    out["model_intra_share"] = out["model_intra_flow"] / out["model_row_total"]
-    out["qzm_intra_share"] = (
-        ref_intra.reindex(out["kreis_id"]).fillna(0.0)
-        / ref_total.reindex(out["kreis_id"])
-    ).to_numpy()
+
+    # Divide-by-zero guard (matches the `total == 0` guard style in
+    # censored_bound_diagnostic above): a Kreis can have zero model flow
+    # (model_row_total == 0.0, degenerate) or zero/missing QZM-observed mass
+    # (ref_total == 0.0 or absent entirely -- plausible for a small/rural
+    # Kreis, e.g. all its relations are below the QZM censoring bound).
+    # Unguarded, either divides into a silent NaN; guarded, the share is set
+    # to 0.0 and the Kreis is named in the summary log below.
+    model_row_total_safe = out["model_row_total"].replace(0.0, np.nan)
+    out["model_intra_share"] = (
+        out["model_intra_flow"] / model_row_total_safe).fillna(0.0).to_numpy()
+    zero_model_row_total_kreise = out.loc[
+        out["model_row_total"] == 0.0, "kreis_id"].tolist()
+
+    ref_total_for_out = ref_total.reindex(out["kreis_id"])
+    ref_intra_for_out = ref_intra.reindex(out["kreis_id"]).fillna(0.0)
+    qzm_intra_share = (ref_intra_for_out
+                      / ref_total_for_out.replace(0.0, np.nan))
+    zero_or_missing_qzm_mask = qzm_intra_share.isna().to_numpy()
+    out["qzm_intra_share"] = qzm_intra_share.fillna(0.0).to_numpy()
+    zero_or_missing_qzm_kreise = out.loc[
+        zero_or_missing_qzm_mask, "kreis_id"].tolist()
+
     out["share_delta"] = out["model_intra_share"] - out["qzm_intra_share"]
+    note = ""
+    if zero_or_missing_qzm_kreise:
+        note += ("; zero/missing QZM-observed mass (qzm_intra_share set to "
+                f"0.0): {zero_or_missing_qzm_kreise[:5]}")
+    if zero_model_row_total_kreise:
+        note += ("; zero model row total (model_intra_share set to 0.0): "
+                f"{zero_model_row_total_kreise[:5]}")
     print(
         "[braunschweig.gravity.verbindungen_anchor] intra-Kreis diagnostic: "
         f"max |share delta| {out['share_delta'].abs().max():.4f} over "
-        f"{len(out)} Kreise"
+        f"{len(out)} Kreise" + note
     )
     return out.reset_index(drop=True)

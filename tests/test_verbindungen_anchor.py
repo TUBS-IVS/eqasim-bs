@@ -376,6 +376,61 @@ def test_ao_margin_diagnostic_uses_margin_check():
     assert math.isclose(got["after"]["srmse"], 0.0, abs_tol=1e-12)
 
 
+def test_ao_margin_diagnostic_logs_unmapped_join_coverage(capsys):
+    """CLAUDE.md fallback transparency (Task 4 review Important 1): margin
+    cells whose cell_id fails to map to a comparison zone are dropped before
+    the AO comparison; the drop must be COUNTED and LOGGED (never silent),
+    escalating to WARNING when it dominates the workplace mass.
+
+    High-drop fixture (hand-computed): two margin cells, only cellMAP maps to
+    zone A; cellGHOST is absent from the cell->zone crosswalk. Workplace mass
+    20 (mapped) + 80 (dropped) = 100 -> dropped mass share 80/100 = 0.8 >
+    HIGH_UNMAPPED_WARN_FRACTION (0.5) -> the coverage log must carry WARNING
+    and report "mapped 1/2 cells (50.0%), dropped 1 cells / 80.0%".
+    """
+    from braunschweig.gravity.verbindungen_anchor import ao_margin_diagnostic
+
+    before = pd.DataFrame({
+        "origin_zone_id": ["A"], "destination_zone_id": ["A"],
+        "commuters": [50.0]})
+    after = pd.DataFrame({
+        "origin_zone_id": ["A"], "destination_zone_id": ["A"],
+        "commuters": [50.0]})
+    margins_high_drop = pd.DataFrame({
+        "cell_id": ["cellMAP", "cellGHOST"],
+        "workers_at_home": pd.array([100, 100], dtype="Int64"),
+        "workers_at_workplace": pd.array([20, 80], dtype="Int64"),
+    })
+    cell_zone = pd.DataFrame({"cell_id": ["cellMAP"], "zone_id": ["A"]})
+
+    ao_margin_diagnostic(before, after, margins_high_drop, cell_zone)
+    out_log = capsys.readouterr().out
+    assert "mapped 1/2 cells" in out_log
+    assert "80.0% of workplace mass" in out_log
+    assert "WARNING" in out_log
+
+    # Fully-mapped fixture: both cells resolve to a zone -> dropped 0 cells /
+    # 0.0% of mass -> the escalation must NOT fire (mirrors the low-skip half
+    # of test_build_anchor_targets_warns_on_high_coverage_skip).
+    margins_full = pd.DataFrame({
+        "cell_id": ["cellMAP", "cellMAP2"],
+        "workers_at_home": pd.array([100, 100], dtype="Int64"),
+        "workers_at_workplace": pd.array([20, 30], dtype="Int64"),
+    })
+    cell_zone_full = pd.DataFrame({"cell_id": ["cellMAP", "cellMAP2"],
+                                   "zone_id": ["A", "B"]})
+    before_full = pd.DataFrame({
+        "origin_zone_id": ["A", "A"], "destination_zone_id": ["A", "B"],
+        "commuters": [50.0, 50.0]})
+    after_full = pd.DataFrame({
+        "origin_zone_id": ["A", "A"], "destination_zone_id": ["A", "B"],
+        "commuters": [60.0, 40.0]})
+    ao_margin_diagnostic(before_full, after_full, margins_full, cell_zone_full)
+    out_log_full = capsys.readouterr().out
+    assert "mapped 2/2 cells" in out_log_full
+    assert "WARNING" not in out_log_full
+
+
 def test_intra_kreis_diagnostic_shares():
     from braunschweig.gravity.verbindungen_anchor import intra_kreis_diagnostic
     od = _model_od_gemeinde()
@@ -387,3 +442,58 @@ def test_intra_kreis_diagnostic_shares():
     # QZM 03101 intra: observed pairs within 03101 = A->A 60, A->B 40,
     # B->A 12 = 112; from-03101 observed total = 112 + 30 = 142.
     assert math.isclose(d.loc["03101", "qzm_intra_share"], 112.0 / 142.0)
+
+
+def test_intra_kreis_diagnostic_zero_qzm_mass_guard(capsys):
+    """Task 4 review Important 2 + Part A.2: a Kreis that appears on the MODEL
+    side but has zero/missing QZM-observed mass must yield a clean, DOCUMENTED
+    result (guarded 0.0, named in the log), not a silent NaN; and an unmapped
+    model-side id must be counted + logged (CLAUDE.md fallback transparency).
+
+    Fixture (hand-computed) reuses the standard zones/zone_map. The reference
+    _ref_od_zones() has ALL its origins in Kreis 03101 (A/B origins), so the
+    reference observes NO mass originating in Kreis 03151 -> ref_total[03151]
+    is missing. The model OD below routes flow FROM Kreis 03151 (origin c1),
+    so 03151 appears in the model-side output frame while its QZM share would
+    divide 0/NaN -> the guard must set qzm_intra_share = 0.0 and name 03151.
+
+    Model OD (Gemeinde level):
+        c1 -> c1   flow 20   (03151 -> 03151, intra)
+        c1 -> a1   flow  5   (03151 -> 03101, cross)
+        ghost -> a1 flow 3   (origin_id absent from zone_map -> UNMAPPED)
+    Model-side coverage: 2/3 rows mapped, 1 dropped carrying 3 of 28 flow =
+    10.7% (< 50% -> no WARNING, but must be counted/logged).
+    After dropping the unmapped row: Kreis 03151 row_total = 20 + 5 = 25,
+    intra = 20 -> model_intra_share = 20/25 = 0.8.
+    Reference side: all zones map -> 4/4 rows, 0 dropped (no WARNING); Kreis
+    03151 has no reference origin -> qzm_intra_share guarded from NaN to 0.0.
+    """
+    from braunschweig.gravity.verbindungen_anchor import intra_kreis_diagnostic
+
+    od_from_03151 = pd.DataFrame({
+        "origin_id":      ["c1", "c1", "ghost"],
+        "destination_id": ["c1", "a1", "a1"],
+        "flow":           [20.0, 5.0, 3.0],
+    })
+    df = intra_kreis_diagnostic(
+        od_from_03151, _ref_od_zones(), _zones(), _zone_map())
+    d = df.set_index("kreis_id")
+
+    # (a) model_intra_share for 03151 is the hand-derived 0.8 (20/25).
+    assert math.isclose(d.loc["03151", "model_intra_share"], 20.0 / 25.0)
+    # (b) zero/missing QZM mass is guarded to a clean 0.0, NOT a silent NaN.
+    assert d.loc["03151", "qzm_intra_share"] == 0.0
+    assert not math.isnan(d.loc["03151", "qzm_intra_share"])
+    # (c) no unhandled NaN is returned anywhere in the share columns.
+    assert not df["qzm_intra_share"].isna().any()
+    assert not df["model_intra_share"].isna().any()
+
+    out_log = capsys.readouterr().out
+    # (d) the guarded Kreis is NAMED in the summary log (not silent).
+    assert "zero/missing QZM-observed mass" in out_log
+    assert "03151" in out_log
+    # (e) the unmapped model-side row is counted + logged (2/3 mapped).
+    assert "mapped 2/3 rows" in out_log
+    # (f) both drops are below the heuristic threshold -> no WARNING; the
+    #     zero-QZM guard is a documented note, not an escalation.
+    assert "WARNING" not in out_log
