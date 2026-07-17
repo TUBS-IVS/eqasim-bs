@@ -25,7 +25,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 from braunschweig.calibration.anchor_holdout import (            # noqa: E402
-    P38_BAND_EDGES_KM, assign_folds, heldout_conditional_tvd,
+    assign_folds, heldout_conditional_tvd,
     p38_band_shares, verdict,
 )
 from braunschweig.calibration.metrics import (                    # noqa: E402
