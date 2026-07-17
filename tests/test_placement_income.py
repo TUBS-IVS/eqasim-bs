@@ -227,3 +227,22 @@ def test_slots_kreis_stats_shape():
     assert list(stats.columns) == ["ars5", "mean_size", "hh_count"]
     assert stats.set_index("ars5").loc["03101", "hh_count"] == 2
     assert stats.set_index("ars5").loc["03101", "mean_size"] == pytest.approx(2.0)
+
+
+def test_lambda_sweep_converges_on_a_rich_toy():
+    # 2 donors (1000 vs 5000 EUR) x 30 clones each per Kreis; targets inside the
+    # achievable support. The integer optimum is exact here (21 rich in 03101 ->
+    # mean 2400; 39 rich in 03102 -> mean 3600), so the continuous sweep must reach
+    # its own tol criterion and the integerized means must land near the targets.
+    slots = pd.DataFrame({
+        "H_ID": [1] * 30 + [2] * 30 + [1] * 30 + [2] * 30,
+        "ars5": ["03101"] * 60 + ["03102"] * 60,
+    })
+    signatures = pd.Series({1: ("a",), 2: ("a",)})
+    income = pd.Series({1: 1000.0, 2: 5000.0})
+    assignment, diag = reallocate_slots(
+        slots, signatures=signatures, expected_income_eur=income,
+        target_factor={"03101": 0.8, "03102": 1.2})
+    assert diag["converged"] is True
+    assert abs(diag["kreis_realized_after"]["03101"] - diag["kreis_target_mean"]["03101"]) <= 100.0
+    assert abs(diag["kreis_realized_after"]["03102"] - diag["kreis_target_mean"]["03102"]) <= 100.0

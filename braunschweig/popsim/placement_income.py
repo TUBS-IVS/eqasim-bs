@@ -310,7 +310,8 @@ def reallocate_slots(
     equal-signature donor occupies which slot. Entropic transport: weights exp(lambda_k *
     standardized income), Sinkhorn to the (clone count, slot count) margins, damped
     Newton on lambda per Kreis (d mean / d lambda = within-Kreis income variance),
-    deterministic greedy integerization (largest transport mass first, ties by donor id).
+    deterministic two-phase greedy integerization (floor of the transport mass first,
+    then margin exhaustion; largest mass first, ties by donor id then kreis column).
     Non-convergence and unreachable (clamped) targets are LOGGED, never silent.
     """
     df = slots[[donor_col, kreis_col]].copy()
@@ -398,7 +399,7 @@ def reallocate_slots(
     if n_free_groups == 0:
         logger.warning(
             "[placement_income] PRIMARY path has no freedom: 0 free signature groups "
-            "(no-freedom slot share 100.0%%) -> allocation unchanged. The signature set "
+            "(no-freedom slot share 100.0%) -> allocation unchanged. The signature set "
             "may be too fine for reallocation; consider the B' escalation (spec section 7).")
         return df[donor_col].copy(), _noop_diag(False, no_freedom_slot_share, 0)
 
@@ -443,15 +444,17 @@ def reallocate_slots(
             if np.isnan(realized.get(k, float("nan"))):
                 continue
             var = max(float(free_var[i]), (0.05 * y_sd) ** 2)
+            # Damped Newton in lambda: d(mean_eur)/d(lambda) = var_eur / sd for the
+            # standardized-income tilt, so delta-lambda = damping * (target - realized) * sd / var_eur.
             step = 0.8 * (target_mean[k] - realized[k]) / var * y_sd
-            lam[i] = float(np.clip(lam[i] + step / max(y_sd, 1.0), -50.0, 50.0))
+            lam[i] = float(np.clip(lam[i] + step, -50.0, 50.0))
     if not converged:
         logger.warning(
             "[placement_income] lambda sweep did NOT converge in %d sweeps "
             "(worst relative residual above tol=%.4f); keeping the best allocation and "
             "reporting residuals honestly.", max_sweeps, tol)
 
-    # --- Deterministic integerization: greedy largest transport mass first ------------
+    # --- Deterministic integerization: two-phase greedy, largest transport mass first -
     t_final, _, _, _ = _sinkhorn_realized(
         lam, row_of, col_of, c_row, n_col, kreis_of_col, y_of_row, len(kreise))
     assignment = df[donor_col].copy()
@@ -461,10 +464,19 @@ def reallocate_slots(
     row_rem = c_row.copy().astype(np.int64)
     col_rem = n_col.copy().astype(np.int64)
     take = np.zeros(len(t_final), dtype=np.int64)
+    # Phase 1: honour the transport plan's integer part (floor of the cell mass) so a
+    # converged INTERIOR plan is not collapsed onto its largest cell.
+    for idx in order:
+        q = int(min(row_rem[row_of[idx]], col_rem[col_of[idx]], int(np.floor(t_final[idx]))))
+        if q > 0:
+            take[idx] = q
+            row_rem[row_of[idx]] -= q
+            col_rem[col_of[idx]] -= q
+    # Phase 2: exhaust the remaining (fractional) margins greedily in the same order.
     for idx in order:
         q = int(min(row_rem[row_of[idx]], col_rem[col_of[idx]]))
         if q > 0:
-            take[idx] = q
+            take[idx] += q
             row_rem[row_of[idx]] -= q
             col_rem[col_of[idx]] -= q
     if row_rem.sum() != 0 or col_rem.sum() != 0:
