@@ -556,3 +556,58 @@ def test_execute_calls_anchor_between_calibrate_and_outbound():
     # run_inner_anchor above (or otherwise outside) the flag check still fails
     # this test even though the calibrate/outbound ordering alone would pass.
     assert i_cal < i_guard < i_anchor < i_out
+
+
+def test_assign_folds_stratified_and_deterministic():
+    from braunschweig.calibration.anchor_holdout import assign_folds
+    ref = pd.DataFrame({
+        "origin_zone_id": ["A"] * 5 + ["B"],
+        "destination_zone_id": list("VWXYZ") + ["V"],
+        "commuters": [30, 30, 30, 30, 30, 25],
+    })
+    f1 = assign_folds(ref.assign(dest_kreis="03101"), k=5, seed=20260716)
+    f2 = assign_folds(ref.assign(dest_kreis="03101"), k=5, seed=20260716)
+    pd.testing.assert_series_equal(f1, f2)          # deterministic
+    assert set(f1.iloc[:5]) == {0, 1, 2, 3, 4}      # row A: 5 dests spread
+    assert f1.iloc[5] == -1                          # row B: single dest -> train-always
+
+
+def test_heldout_conditional_tvd_hand_computed():
+    from braunschweig.calibration.anchor_holdout import heldout_conditional_tvd
+    ref = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "A"],
+        "destination_zone_id": ["X", "Y", "Z"],
+        "commuters": [50, 30, 20],
+    })
+    model = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "A"],
+        "destination_zone_id": ["X", "Y", "Z"],
+        "commuters": [20.0, 30.0, 50.0],
+    })
+    held = pd.Series([False, True, True])   # held-out: Y and Z
+    # Held-out ref conditionals: Y 30/50=.6, Z .4 ; model: Y 30/80=.375, Z .625
+    # TVD = 0.5*(|.375-.6| + |.625-.4|) = 0.225
+    got = heldout_conditional_tvd(model, ref, held)
+    assert math.isclose(got, 0.225, abs_tol=1e-12)
+
+
+def test_p38_band_shares_edges():
+    from braunschweig.calibration.anchor_holdout import p38_band_shares
+    shares = p38_band_shares(np.array([3.0, 7.0, 250.0]),
+                             np.array([1.0, 1.0, 2.0]))
+    assert math.isclose(shares[0], 0.25)   # <5 km
+    assert math.isclose(shares[1], 0.25)   # 5-10
+    assert math.isclose(shares[7], 0.50)   # 200-300
+    assert math.isclose(shares.sum(), 1.0)
+
+
+def test_verdict_pre_registered_rule():
+    from braunschweig.calibration.anchor_holdout import verdict
+    good = verdict(cv_baseline=0.20, cv_anchored=0.15,
+                   p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.05},
+                   p13_noise=0.005)
+    assert good["default_flip_supported"] is True
+    bad = verdict(cv_baseline=0.20, cv_anchored=0.15,
+                  p13_emd_baseline={"72": 0.05}, p13_emd_anchored={"72": 0.10},
+                  p13_noise=0.005)
+    assert bad["default_flip_supported"] is False
