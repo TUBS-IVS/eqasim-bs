@@ -487,32 +487,40 @@ def _assert_seed_tables_identical(
             )
 
 
-def _default_active_kreis_control_names() -> list[str]:
-    """Replicate ``braunschweig.popsim.stage.active_kreis_entries``'s outcome for a
-    config that overrides NONE of the per-attribute KREIS-control toggles -- exactly the
-    OFF/ON gate configs, which set only
-    ``braunschweig.population.popsim.placement_income`` and leave every
-    ``*_kreis_control`` key at its declared default.
+# Per-attribute KREIS-control toggles the GATE CONFIGS override away from their declared
+# defaults. Must stay in sync with config_gate_placement_income_{off,on}.yml: the gate
+# runs disable employment_status because its min_age=14 person total requires single-year
+# {M,F}_AGE_<year> cell columns that the gate cells setup does not load (stage fail-fast).
+# Signatures must cover exactly the controls the runs ENFORCED, so the harness applies
+# the same override when deriving the active entry names.
+GATE_KREIS_CONTROL_OVERRIDES: dict[str, bool] = {"employment_status": False}
 
-    Returns the REGISTRY entry names (in REGISTRY order) whose toggle default is "on",
+
+def _default_active_kreis_control_names() -> list[str]:
+    """Replicate ``braunschweig.popsim.stage.active_kreis_entries``'s outcome for the
+    OFF/ON gate configs: every ``*_kreis_control`` key at its declared default EXCEPT
+    the explicit gate overrides in :data:`GATE_KREIS_CONTROL_OVERRIDES` (currently
+    ``employment_status`` OFF -- see the constant's comment).
+
+    Returns the REGISTRY entry names (in REGISTRY order) whose effective toggle is on,
     read from ``stage._KREIS_CONTROL_DEFAULT`` / ``stage._KREIS_CONTROL_TOGGLE_KEY``
-    rather than hard-coded, so a future registry change is picked up automatically. This
-    mirrors ``tests/test_kreis_control_stage_wiring.py``'s ``_FakeContext({})`` case
-    (empty override dict).
+    rather than hard-coded, so a future registry change is picked up automatically.
     """
     from braunschweig.popsim import stage as _stage
 
-    class _DefaultOnlyContext:
-        """Minimal synpp ExecuteContext stand-in carrying no config overrides."""
+    class _GateConfigContext:
+        """Minimal synpp ExecuteContext stand-in mirroring the gate configs' toggles."""
 
         @staticmethod
         def config(key: str):
             for name, toggle_key in _stage._KREIS_CONTROL_TOGGLE_KEY.items():
                 if key == toggle_key:
+                    if name in GATE_KREIS_CONTROL_OVERRIDES:
+                        return GATE_KREIS_CONTROL_OVERRIDES[name]
                     return _stage._KREIS_CONTROL_DEFAULT[name]
-            raise KeyError(f"_DefaultOnlyContext: no declared default for config key {key!r}.")
+            raise KeyError(f"_GateConfigContext: no declared default for config key {key!r}.")
 
-    active = _stage.active_kreis_entries(_DefaultOnlyContext(), _SEED_NAME)
+    active = _stage.active_kreis_entries(_GateConfigContext(), _SEED_NAME)
     return [entry.name for entry in active]
 
 
