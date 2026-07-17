@@ -83,3 +83,59 @@ def donor_replication(households: pd.DataFrame) -> pd.DataFrame:
             "p95_clones": float(np.percentile(clones.to_numpy(), 95)),
         })
     return pd.DataFrame(rows)
+
+
+def income_attainment_by_kreis(households: pd.DataFrame, target_mean_eur) -> pd.DataFrame:
+    """Per-Kreis realized mean income vs an EUR target (committed INKAR-derived), with
+    the signed relative residual in percent. NaN incomes are excluded and their count
+    is reported via n_households (valid rows only)."""
+    required = {"ars5", "household_income_eur"}
+    missing = required - set(households.columns)
+    if missing:
+        raise ValueError(f"income_attainment_by_kreis requires columns {sorted(missing)}.")
+    valid = households.dropna(subset=["household_income_eur"])
+    rows = []
+    for ars5, grp in valid.groupby("ars5"):
+        key = str(ars5)
+        target = float(target_mean_eur.get(key, float("nan")))
+        realized = float(grp["household_income_eur"].mean())
+        rows.append({
+            "ars5": key, "n_households": int(len(grp)),
+            "realized_mean_eur": realized, "target_mean_eur": target,
+            "residual_pct": 100.0 * (realized - target) / target if target and not np.isnan(target) else float("nan"),
+        })
+    return pd.DataFrame(rows)
+
+
+def income_coherence_within_cells(
+    households: pd.DataFrame,
+    *,
+    income_col: str = "household_income_eur",
+    covariate_col: str = "number_of_cars",
+    cell_cols=("ars5", "economic_status"),
+    min_cell_n: int = 30,
+) -> dict:
+    """Household-count-weighted mean of per-(Kreis, status) Spearman correlations
+    between income and a donor covariate. The redraw destroys this within-cell
+    association; own-income placement preserves it - the L2 coherence metric."""
+    cols = [income_col, covariate_col, *cell_cols]
+    missing = [c for c in cols if c not in households.columns]
+    if missing:
+        raise ValueError(f"income_coherence_within_cells requires columns {missing}.")
+    valid = households.dropna(subset=[income_col, covariate_col])
+    n_skipped = 0
+    corrs, weights = [], []
+    for _, grp in valid.groupby(list(cell_cols)):
+        if len(grp) < min_cell_n or grp[covariate_col].nunique() < 2:
+            n_skipped += 1
+            continue
+        rho = grp[income_col].corr(grp[covariate_col], method="spearman")
+        if not np.isnan(rho):
+            corrs.append(rho)
+            weights.append(len(grp))
+    if not corrs:
+        return {"pooled_spearman": float("nan"), "n_cells": 0, "n_households_used": 0,
+                "n_cells_skipped": n_skipped}
+    pooled = float(np.average(corrs, weights=weights))
+    return {"pooled_spearman": pooled, "n_cells": len(corrs),
+            "n_households_used": int(sum(weights)), "n_cells_skipped": n_skipped}
