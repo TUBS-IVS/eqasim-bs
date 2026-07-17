@@ -329,3 +329,61 @@ def test_run_inner_anchor_end_to_end(tmp_path):
         out.sort_values("destination_id").reset_index(drop=True),
         od.sort_values("destination_id").reset_index(drop=True))
     assert stats["n_rows_anchored"] == 1
+
+
+def test_censored_bound_diagnostic_hand_computed():
+    from braunschweig.gravity.verbindungen_anchor import censored_bound_diagnostic
+    model = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "B"],
+        "destination_zone_id": ["A", "B", "C"],
+        "commuters": [60.0, 40.0, 50.0],
+    })
+    # Local reference for THIS test (observed total 100 = model observed mass
+    # 60+40, so the global universe ratio is exactly 1.0): observes A->A and
+    # A->B; the model's B->C is censored.
+    ref = pd.DataFrame({
+        "origin_zone_id": ["A", "A"],
+        "destination_zone_id": ["A", "B"],
+        "commuters": [60, 40],
+    })
+    df, summary = censored_bound_diagnostic(model, ref)
+    # global ratio = ref observed / model-on-observed = 100/100 = 1.0
+    # -> ref_equivalent(B->C) = 50 -> ratio_to_bound = 50/10 = 5.0.
+    row = df.set_index(["origin_zone_id", "destination_zone_id"]).loc[("B", "C")]
+    assert math.isclose(row["ratio_to_bound"], 5.0)
+    assert math.isclose(summary["censored_mass_share"], 50.0 / 150.0)
+    assert summary["share_ratio_gt_1"] > 0
+
+
+def test_ao_margin_diagnostic_uses_margin_check():
+    from braunschweig.gravity.verbindungen_anchor import ao_margin_diagnostic
+    before = pd.DataFrame({
+        "origin_zone_id": ["A", "A"], "destination_zone_id": ["A", "B"],
+        "commuters": [50.0, 50.0]})
+    after = pd.DataFrame({
+        "origin_zone_id": ["A", "A"], "destination_zone_id": ["A", "B"],
+        "commuters": [60.0, 40.0]})
+    margins = pd.DataFrame({
+        "cell_id": ["cellA", "cellB"],
+        "workers_at_home": pd.array([100, 50], dtype="Int64"),
+        "workers_at_workplace": pd.array([60, 40], dtype="Int64"),
+    })
+    cell_zone = pd.DataFrame({"cell_id": ["cellA", "cellB"],
+                              "zone_id": ["A", "B"]})
+    got = ao_margin_diagnostic(before, after, margins, cell_zone)
+    # after matches the AO shares exactly -> srmse 0, before does not.
+    assert got["after"]["srmse"] < got["before"]["srmse"]
+    assert math.isclose(got["after"]["srmse"], 0.0, abs_tol=1e-12)
+
+
+def test_intra_kreis_diagnostic_shares():
+    from braunschweig.gravity.verbindungen_anchor import intra_kreis_diagnostic
+    od = _model_od_gemeinde()
+    df = intra_kreis_diagnostic(od, _ref_od_zones(), _zones(), _zone_map())
+    d = df.set_index("kreis_id")
+    # Model Kreis 03101 row: intra (a*/b1 -> a*/b1) = 30+10+45+15+12 = 112;
+    # total from 03101 origins = 112 + 20 + 5 = 137.
+    assert math.isclose(d.loc["03101", "model_intra_share"], 112.0 / 137.0)
+    # QZM 03101 intra: observed pairs within 03101 = A->A 60, A->B 40,
+    # B->A 12 = 112; from-03101 observed total = 112 + 30 = 142.
+    assert math.isclose(d.loc["03101", "qzm_intra_share"], 112.0 / 142.0)

@@ -343,3 +343,132 @@ def run_inner_anchor(df_od: pd.DataFrame,
     df_out, apply_stats = apply_inner_anchor(
         df_od, df_zone_map, df_zones, df_targets)
     return df_out, {**target_stats, **apply_stats}
+
+
+CENSORING_BOUND_COMMUTERS = 10.0  # QZM removes relations < 10 (2019 counts)
+
+
+def censored_bound_diagnostic(df_od_zones_model: pd.DataFrame,
+                              df_ref_od_zones: pd.DataFrame):
+    """Censored means "< 10 commuters (2019)" -- an upper bound the anchor
+    itself never uses. Report how strongly model mass on censored zone pairs
+    violates the 10-commuter-equivalent bound after scaling model mass to the
+    reference universe via the GLOBAL observed ratio (sum of observed
+    reference commuters / model mass on the observed pairs). A single global
+    ratio keeps the diagnostic assumption-light; per-block ratios were
+    considered and rejected (blocks with little observed mass would produce
+    unstable ratios). Diagnostic only; a candidate soft cap if violations
+    are large."""
+    obs_keys = set(zip(df_ref_od_zones["origin_zone_id"],
+                       df_ref_od_zones["destination_zone_id"]))
+    model = df_od_zones_model.copy()
+    model["_obs"] = [
+        (o, d) in obs_keys
+        for o, d in zip(model["origin_zone_id"], model["destination_zone_id"])
+    ]
+    obs_model = float(model.loc[model["_obs"], "commuters"].sum())
+    obs_ref = float(df_ref_od_zones["commuters"].sum())
+    global_ratio = obs_ref / obs_model if obs_model > 0 else np.nan
+
+    cens = model[~model["_obs"]].copy()
+    cens["ref_equivalent"] = cens["commuters"] * global_ratio
+    cens["ratio_to_bound"] = cens["ref_equivalent"] / CENSORING_BOUND_COMMUTERS
+    cens = cens.rename(columns={"commuters": "model_flow"})[
+        ["origin_zone_id", "destination_zone_id", "model_flow",
+         "ref_equivalent", "ratio_to_bound"]]
+
+    total = float(model["commuters"].sum())
+    mass = float(cens["model_flow"].sum())
+    summary = dict(
+        censored_mass_share=mass / total if total else 0.0,
+        share_ratio_gt_1=float(cens.loc[cens["ratio_to_bound"] > 1.0,
+                                        "model_flow"].sum() / total) if total else 0.0,
+        share_ratio_gt_5=float(cens.loc[cens["ratio_to_bound"] > 5.0,
+                                        "model_flow"].sum() / total) if total else 0.0,
+        ratio_p50=float(cens["ratio_to_bound"].quantile(0.5)) if len(cens) else 0.0,
+        ratio_p90=float(cens["ratio_to_bound"].quantile(0.9)) if len(cens) else 0.0,
+    )
+    print(
+        "[braunschweig.gravity.verbindungen_anchor] censored-bound diagnostic: "
+        f"censored mass {100.0 * summary['censored_mass_share']:.1f}%, "
+        f"mass with ratio>1 {100.0 * summary['share_ratio_gt_1']:.1f}%, "
+        f">5 {100.0 * summary['share_ratio_gt_5']:.1f}% "
+        f"(p50 {summary['ratio_p50']:.2f}, p90 {summary['ratio_p90']:.2f})"
+    )
+    return cens.reset_index(drop=True), summary
+
+
+def ao_margin_diagnostic(df_od_zones_before: pd.DataFrame,
+                         df_od_zones_after: pd.DataFrame,
+                         df_margins: pd.DataFrame,
+                         df_cell_zone: pd.DataFrame) -> dict:
+    """Workplace-inflow shares per zone vs the observed Statisch_AO margins,
+    before vs after anchoring (side-effect check on the attraction axis)."""
+    from braunschweig.analysis.verbindungen_validation import margin_check
+
+    zone = df_cell_zone.set_index("cell_id")["zone_id"]
+    m = df_margins.copy()
+    m["zone_id"] = m["cell_id"].map(zone)
+    ao = (m.dropna(subset=["zone_id"])
+          .groupby("zone_id")["workers_at_workplace"].sum(min_count=1))
+
+    out = {}
+    for label, od in (("before", df_od_zones_before),
+                      ("after", df_od_zones_after)):
+        inflow = od.groupby("destination_zone_id")["commuters"].sum()
+        idx = ao.index
+        out[label] = margin_check(inflow.reindex(idx).fillna(0.0),
+                                  ao.astype("Float64"))
+    print(
+        "[braunschweig.gravity.verbindungen_anchor] AO-margin diagnostic: "
+        f"srmse before {out['before']['srmse']:.4f} -> after "
+        f"{out['after']['srmse']:.4f} (n={out['after']['n_cells']})"
+    )
+    return out
+
+
+def intra_kreis_diagnostic(df_od_gemeinde: pd.DataFrame,
+                           df_ref_od_zones: pd.DataFrame,
+                           df_zones,
+                           df_zone_map: pd.DataFrame) -> pd.DataFrame:
+    """Synthesised intra-Kreis outer targets vs QZM-OBSERVED intra shares.
+
+    The outer anchor's intra-Kreis targets come from ``_synthesise_intra_kreis``
+    (the Pendleratlas has no intra rows); the QZM actually observes intra-Kreis
+    commuting. Per Kreis this compares the model's realised intra share (which
+    equals the synthesised target after calibration) with the QZM share --
+    a health check on the weakest outer-anchor component. Diagnostic only
+    (vintage/universe forbid replacing the outer target)."""
+    zmap = df_zone_map.set_index("commune_id")["zone_id"]
+    kreis = df_zones.set_index("zone_id")["kreis_id"]
+
+    od = df_od_gemeinde.copy()
+    od["ok"] = od["origin_id"].astype(str).map(zmap).map(kreis)
+    od["dk"] = od["destination_id"].astype(str).map(zmap).map(kreis)
+    od = od.dropna(subset=["ok", "dk"])
+    row_total = od.groupby("ok")["flow"].sum()
+    intra = od[od["ok"] == od["dk"]].groupby("ok")["flow"].sum()
+
+    ref = df_ref_od_zones.copy()
+    ref["ok"] = ref["origin_zone_id"].map(kreis)
+    ref["dk"] = ref["destination_zone_id"].map(kreis)
+    ref_total = ref.groupby("ok")["commuters"].sum()
+    ref_intra = ref[ref["ok"] == ref["dk"]].groupby("ok")["commuters"].sum()
+
+    out = pd.DataFrame({
+        "kreis_id": row_total.index,
+        "model_intra_flow": intra.reindex(row_total.index).fillna(0.0).to_numpy(),
+        "model_row_total": row_total.to_numpy(),
+    })
+    out["model_intra_share"] = out["model_intra_flow"] / out["model_row_total"]
+    out["qzm_intra_share"] = (
+        ref_intra.reindex(out["kreis_id"]).fillna(0.0)
+        / ref_total.reindex(out["kreis_id"])
+    ).to_numpy()
+    out["share_delta"] = out["model_intra_share"] - out["qzm_intra_share"]
+    print(
+        "[braunschweig.gravity.verbindungen_anchor] intra-Kreis diagnostic: "
+        f"max |share delta| {out['share_delta'].abs().max():.4f} over "
+        f"{len(out)} Kreise"
+    )
+    return out.reset_index(drop=True)
