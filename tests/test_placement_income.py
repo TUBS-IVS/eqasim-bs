@@ -137,3 +137,93 @@ def test_signatures_fail_fast_on_broken_expression():
                              census_source=("x",), seed_expressions={"mid": "(households.NO_SUCH == 1)"})]
     with pytest.raises(ValueError):
         donor_control_signatures(broken, hh, pp)
+
+
+from braunschweig.popsim.placement_income import reallocate_slots, slots_kreis_stats
+
+
+def _two_kreis_slots():
+    # Signature group A: donors 1 (poor, 1000 EUR) and 2 (rich, 5000 EUR), 2 clones each,
+    # split across Kreise. Group B: donor 3 alone (no freedom).
+    slots = pd.DataFrame({
+        "H_ID":  [1, 2, 1, 2, 3, 3],
+        "ars5":  ["03101", "03101", "03102", "03102", "03101", "03102"],
+    })
+    signatures = pd.Series({1: ("a",), 2: ("a",), 3: ("b",)})
+    income = pd.Series({1: 1000.0, 2: 5000.0, 3: 3000.0})
+    return slots, signatures, income
+
+
+def test_reallocation_moves_means_toward_targets_and_preserves_invariants():
+    slots, signatures, income = _two_kreis_slots()
+    # 03101 should become poorer (rf 0.8), 03102 richer (rf 1.2).
+    assignment, diag = reallocate_slots(
+        slots, signatures=signatures, expected_income_eur=income,
+        target_factor={"03101": 0.8, "03102": 1.2},
+    )
+    out = slots.assign(H_ID=assignment.to_numpy())
+    # Invariant 1: per-donor clone counts unchanged.
+    pd.testing.assert_series_equal(
+        out["H_ID"].value_counts().sort_index(),
+        slots["H_ID"].value_counts().sort_index(),
+    )
+    # Invariant 2: per-(Kreis, signature) slot counts unchanged (controls preserved).
+    def comp(df):
+        return df.assign(sig=df["H_ID"].map(signatures)).groupby(["ars5", "sig"]).size()
+    pd.testing.assert_series_equal(comp(out).sort_index(), comp(slots).sort_index())
+    # Direction: 03101 mean decreased, 03102 increased vs before.
+    before = slots.assign(y=slots["H_ID"].map(income)).groupby("ars5")["y"].mean()
+    after = out.assign(y=out["H_ID"].map(income)).groupby("ars5")["y"].mean()
+    assert after["03101"] < before["03101"]
+    assert after["03102"] > before["03102"]
+    assert diag["n_moved"] > 0 and diag["kreis_realized_after"]["03101"] < diag["kreis_realized_after"]["03102"]
+
+
+def test_single_kreis_is_a_noop():
+    slots = pd.DataFrame({"H_ID": [1, 2], "ars5": ["03101", "03101"]})
+    signatures = pd.Series({1: ("a",), 2: ("a",)})
+    income = pd.Series({1: 1000.0, 2: 5000.0})
+    assignment, diag = reallocate_slots(
+        slots, signatures=signatures, expected_income_eur=income, target_factor={"03101": 1.0})
+    np.testing.assert_array_equal(assignment.to_numpy(), slots["H_ID"].to_numpy())
+    assert diag["n_moved"] == 0
+
+
+def test_all_singleton_groups_is_a_noop_with_full_no_freedom_share():
+    slots = pd.DataFrame({"H_ID": [1, 2], "ars5": ["03101", "03102"]})
+    signatures = pd.Series({1: ("a",), 2: ("b",)})
+    income = pd.Series({1: 1000.0, 2: 5000.0})
+    assignment, diag = reallocate_slots(
+        slots, signatures=signatures, expected_income_eur=income,
+        target_factor={"03101": 0.5, "03102": 1.5})
+    np.testing.assert_array_equal(assignment.to_numpy(), slots["H_ID"].to_numpy())
+    assert diag["no_freedom_slot_share"] == pytest.approx(1.0)
+
+
+def test_nan_income_donors_stay_allocatable_but_excluded_from_means():
+    slots = pd.DataFrame({"H_ID": [1, 2, 9, 9], "ars5": ["03101", "03102", "03101", "03102"]})
+    signatures = pd.Series({1: ("a",), 2: ("a",), 9: ("a",)})
+    income = pd.Series({1: 1000.0, 2: 5000.0, 9: np.nan})
+    assignment, diag = reallocate_slots(
+        slots, signatures=signatures, expected_income_eur=income,
+        target_factor={"03101": 0.8, "03102": 1.2})
+    assert (assignment.to_numpy() == 9).sum() == 2  # clone count preserved
+    assert diag["nan_income_slot_share"] == pytest.approx(0.5)
+
+
+def test_reallocation_is_deterministic():
+    slots, signatures, income = _two_kreis_slots()
+    a1, _ = reallocate_slots(slots, signatures=signatures, expected_income_eur=income,
+                             target_factor={"03101": 0.8, "03102": 1.2})
+    a2, _ = reallocate_slots(slots, signatures=signatures, expected_income_eur=income,
+                             target_factor={"03101": 0.8, "03102": 1.2})
+    pd.testing.assert_series_equal(a1, a2)
+
+
+def test_slots_kreis_stats_shape():
+    slots = pd.DataFrame({"H_ID": [1, 1, 2], "ars5": ["03101", "03101", "03102"]})
+    donors = pd.DataFrame({"H_ID": [1, 2], "H_GR": [2, 4]})
+    stats = slots_kreis_stats(slots, donors)
+    assert list(stats.columns) == ["ars5", "mean_size", "hh_count"]
+    assert stats.set_index("ars5").loc["03101", "hh_count"] == 2
+    assert stats.set_index("ars5").loc["03101", "mean_size"] == pytest.approx(2.0)
