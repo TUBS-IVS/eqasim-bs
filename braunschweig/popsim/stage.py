@@ -1503,13 +1503,15 @@ def execute(context) -> pd.DataFrame:
     # every PopulationSim control aggregate and every donor's clone count are preserved
     # while the per-Kreis income mean is pushed toward the construct-corrected INKAR
     # relativity. MiD-only (needs the hheink_gr1 donor income). OFF -> combined unchanged.
-    placement_income_on = bool(context.config(KEY_PLACEMENT_INCOME)) and source_name == "mid"
-    if bool(context.config(KEY_PLACEMENT_INCOME)) and source_name != "mid":
+    _placement_flag = bool(context.config(KEY_PLACEMENT_INCOME))
+    placement_income_on = _placement_flag and source_name == "mid"
+    if _placement_flag and source_name != "mid":
         logger.info("[popsim.stage] placement_income requested but source=%s carries no "
                     "hheink_gr1 donor income; feature inactive for this source.", source_name)
     if placement_income_on:
         from braunschweig.popsim import placement_income as _pi
         from braunschweig.popsim import control_spec as _cs_pi
+        _pi.check_controls_source_compatible(placement_income_on, controls_source)
         _pi_catalog = _cs_pi.full_catalog(
             include_tiers=control_tiers,
             include_employment_grid=employment_grid_on,
@@ -1542,9 +1544,12 @@ def execute(context) -> pd.DataFrame:
             "clamped": [_pi_diag["kreis_clamped"][k] for k in _sorted_kreise],
         })
         _diag_rows.to_csv(Path(work_dir) / "placement_income_diag.csv", index=False)
-        _worst = max(
+        _residuals = [
             abs(_pi_diag["kreis_realized_after"].get(k, float("nan")) - v) / max(_pi_diag["region_mean"], 1.0)
-            for k, v in _pi_diag["kreis_target_mean"].items())
+            for k, v in _pi_diag["kreis_target_mean"].items()
+        ]
+        _finite = [r for r in _residuals if not np.isnan(r)]
+        _worst = max(_finite) if _finite else float("nan")
         context.set_info("placement_income_moved_share", _pi_diag["moved_share"])
         context.set_info("placement_income_no_freedom_share", _pi_diag["no_freedom_slot_share"])
         context.set_info("placement_income_worst_residual_pct", 100.0 * _worst)

@@ -92,3 +92,12 @@ def test_placement_income_key_registered_and_default_on():
     except Exception:
         pass  # unrelated stage deps may raise on the dummy ctx; the key must be registered first
     assert ctx.defaults.get(stage_mod.KEY_PLACEMENT_INCOME) is True
+
+
+def test_check_controls_source_compatible():
+    from braunschweig.popsim.placement_income import check_controls_source_compatible
+    check_controls_source_compatible(False, "csv")        # OFF: any source fine
+    check_controls_source_compatible(True, "catalog")     # ON + catalog: fine
+    check_controls_source_compatible(True, " Catalog ")   # normalization
+    with pytest.raises(ValueError):
+        check_controls_source_compatible(True, "csv")

@@ -7,6 +7,8 @@ server (see the server-run recipe in the task report). No model change.
 """
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
 import pandas as pd
 
@@ -85,7 +87,7 @@ def donor_replication(households: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def income_attainment_by_kreis(households: pd.DataFrame, target_mean_eur) -> pd.DataFrame:
+def income_attainment_by_kreis(households: pd.DataFrame, target_mean_eur: Mapping[str, float]) -> pd.DataFrame:
     """Per-Kreis realized mean income vs an EUR target (committed INKAR-derived), with
     the signed relative residual in percent.
 

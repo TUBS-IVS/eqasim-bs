@@ -11,7 +11,7 @@ Spec: docs/superpowers/specs/2026-07-17-placement-income-l2-design.md.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -533,6 +533,25 @@ def reallocate_slots(
         "nan_income_slot_share": nan_income_slot_share,
     }
     return assignment, diag
+
+
+def check_controls_source_compatible(placement_on: bool, controls_source: str) -> None:
+    """Fail fast when placement_income is active with a non-catalog control source.
+
+    The reallocation's exactness guarantee holds only when its signatures are derived
+    from the SAME control set PopulationSim enforces. Signatures always come from the
+    control catalog, so a hand-edited CSV control source could enforce different
+    controls - swapping "equal-signature" donors would then silently violate an
+    enforced aggregate (CLAUDE.md forbids silent invariant violations).
+    """
+    if placement_on and str(controls_source).strip().lower() != "catalog":
+        raise ValueError(
+            "[placement_income] placement_income=ON requires "
+            "braunschweig.population.popsim.controls_source='catalog' (got "
+            f"{controls_source!r}): signatures are derived from the control catalog, "
+            "and a different enforced control set would break the exactness "
+            "guarantee. Set controls_source to 'catalog' or disable placement_income."
+        )
 
 
 def resolve_income_path(placement_on: bool, income_kc_on: bool, tilt_on: bool) -> dict:
