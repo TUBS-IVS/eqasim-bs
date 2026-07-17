@@ -55,6 +55,19 @@ HIGH_PARTIAL_ZERO_WARN_FRACTION = 0.5
 # would miss that. A high drop rate is a data-quality signal (e.g. a stale id
 # vocabulary or crosswalk gap), not something to compare model output against.
 HIGH_UNMAPPED_WARN_FRACTION = 0.5
+# TRANSPARENCY HEURISTIC (CLAUDE.md fallback transparency), NOT a scientific
+# reference/target value: warn when the model-side commune_id -> zone_id join
+# in apply_inner_anchor (out["_oz"], out["_dz"]) leaves LESS than this
+# fraction of total flow mass "in scope" (both origin and destination mapped
+# to a comparison zone). Legitimate EXTERNAL (EXT) destinations are
+# out-of-scope ON PURPOSE (they sit outside the comparison-zone universe by
+# design), so a moderate out-of-scope share is expected and must NOT warn;
+# only a near-total collapse of in-scope mass -- the signature of a
+# commune_id vocabulary mismatch (leading-zero / 8-vs-12-digit, this branch's
+# audit theme) -- is the unambiguous key-mismatch signal CLAUDE.md calls out.
+# The threshold is set low (0.1) precisely so it does not fire on legitimate
+# external commuting shares.
+LOW_INSCOPE_MASS_WARN_FRACTION = 0.1
 
 
 def collapse_od_to_zones(df_od_cells: pd.DataFrame,
@@ -144,7 +157,11 @@ def apply_inner_anchor(df_od: pd.DataFrame,
     Gemeinde-level flows inside a zone pair scale proportionally (pass-down).
     Rows where the model carries (near-)zero observed mass are skipped and
     counted (never force mass from nothing). Censored zone pairs and
-    unmapped (external) flows are untouched.
+    unmapped (external) flows are untouched. The model-side commune_id ->
+    zone_id join coverage (in-scope row/mass share, unmapped id samples) is
+    logged immediately after ``in_scope`` is computed (CLAUDE.md fallback
+    transparency), escalating to WARNING on a near-total in-scope collapse
+    (see ``LOW_INSCOPE_MASS_WARN_FRACTION``).
 
     When SOME observed destination zones of an anchorable row carry zero model
     mass (the gravity model routed nothing there although the reference sees
@@ -168,12 +185,47 @@ def apply_inner_anchor(df_od: pd.DataFrame,
     out["_dz"] = out["destination_id"].astype(str).map(zmap)
     out["_dk"] = out["_dz"].map(kreis)
 
+    total_flow = float(out["flow"].sum())
+
     # Current model mass per zone pair, per (origin zone, dest Kreis) row.
     in_scope = out["_oz"].notna() & out["_dz"].notna()
+
+    # Join-coverage instrumentation (CLAUDE.md fallback transparency): the
+    # commune_id -> zone_id join above is the one production ON-path join,
+    # and `in_scope` silently excludes any row that fails to map -- with NO
+    # count/log, unlike the T4 diagnostics below (ao_margin_diagnostic,
+    # intra_kreis_diagnostic) which already instrument their joins. A
+    # commune_id vocabulary mismatch (leading-zero / 8-vs-12-digit, this
+    # branch's audit theme) would silently drop ALL internal flows, showing
+    # up downstream only as a bland "anchored mass share 0.0%" with no signal
+    # to debug it. Legitimate EXTERNAL (EXT) destinations are out-of-scope ON
+    # PURPOSE, so out-of-scope rows alone are not a problem -- only a
+    # near-total collapse of in-scope MASS escalates (see
+    # LOW_INSCOPE_MASS_WARN_FRACTION above).
+    in_scope_mass = float(out.loc[in_scope, "flow"].sum())
+    in_scope_mass_share = in_scope_mass / total_flow if total_flow else 0.0
+    unmapped_origin_ids = sorted(
+        out.loc[out["_oz"].isna(), "origin_id"].astype(str).unique().tolist())
+    unmapped_destination_ids = sorted(
+        out.loc[out["_dz"].isna(), "destination_id"].astype(str)
+        .unique().tolist())
+    warn_prefix_scope = ("WARNING: "
+                         if in_scope_mass_share < LOW_INSCOPE_MASS_WARN_FRACTION
+                         else "")
+    print(
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix_scope}"
+        "model-side join coverage: in-scope "
+        f"{int(in_scope.sum())}/{len(out)} rows, "
+        f"{100.0 * in_scope_mass_share:.1f}% of flow mass; unmapped "
+        f"{len(unmapped_origin_ids)} distinct origin_id(s) "
+        f"(sample {unmapped_origin_ids[:5]}), "
+        f"{len(unmapped_destination_ids)} distinct destination_id(s) "
+        f"(sample {unmapped_destination_ids[:5]})"
+    )
+
     pair_mass = (out[in_scope]
                  .groupby(["_oz", "_dk", "_dz"])["flow"].sum())
 
-    total_flow = float(out["flow"].sum())
     block_before = out[in_scope].groupby(
         [out.loc[in_scope, "_oz"].map(kreis), "_dk"])["flow"].sum()
 

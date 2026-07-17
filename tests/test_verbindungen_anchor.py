@@ -632,6 +632,165 @@ def test_heldout_conditional_tvd_excludes_degenerate_single_dest_origin(capsys):
     assert "1 skipped (single held-out dest)" in log
 
 
+def test_heldout_cv_is_inert_by_construction():
+    """KNOWN LIMITATION characterization test (final whole-branch review
+    finding, #193; see the module docstring above and verdict()'s docstring
+    for the full write-up). This anchor is a pure per-row IN-SAMPLE
+    reweighting: for a CV fold, the held-out destinations of a row are, by
+    the CV harness's own construction (run_anchor_holdout.py builds
+    ``t_fold`` from ``train_ref = df_ref_zones[~held]``), EXCLUDED from that
+    fold's training targets -- so ``apply_inner_anchor`` never assigns them a
+    scaling factor and their model flow passes through UNCHANGED.
+    ``heldout_conditional_tvd`` only ever reads model flow on the held-out
+    destinations, so it reads the SAME (untouched) numbers for baseline and
+    anchored: ``cv_anchored == cv_baseline`` BY CONSTRUCTION. This is NOT
+    evidence that the anchor fails to help -- criterion (i) of the
+    pre-registered rule simply cannot observe the anchor's effect at all.
+
+    Fixture (hand-computed): one origin zone A, one dest Kreis K1, FOUR
+    observed destination zones {A, B, C, D} (commune_id == lowercase
+    zone_id, 1:1, so commune-level model flow reads straight across to zone
+    level via a simple map). Reference commuters A->A=40, A->B=30, A->C=20,
+    A->D=10 (row mass 100). Held-out split: C and D (>= 2 held-out dests, so
+    the pooled TVD is informative -- not skipped as a degenerate single-dest
+    origin, see the test above). Baseline model (Gemeinde level) is an even
+    split: a->a = a->b = a->c = a->d = 25.
+
+    Mirroring run_anchor_holdout.py's CV loop EXACTLY, the training targets
+    are built from ONLY the train relations (A->A, A->B; C, D excluded
+    before build_anchor_targets ever sees them): row mass 40+30=70, shares
+    40/70 and 30/70. apply_inner_anchor therefore only ever assigns factors
+    to (A,A) and (A,B) -- confirmed below by asserting those TWO trained
+    pairs actually moved (25 -> 50*40/70=28.571.., 25 -> 50*30/70=21.428..;
+    the anchor did something real, this is not a "did nothing at all" test)
+    while (A,C) and (A,D) stay EXACTLY at their baseline value of 25 each
+    (multiplied by the implicit factor 1.0 for a key absent from `factors`;
+    no floating-point drift possible).
+
+    heldout_conditional_tvd on held={C, D} therefore reads IDENTICAL model
+    values (25.0, 25.0) for both baseline and "anchored" -- hand-derived TVD
+    0.5*(|25/50 - 20/30| + |25/50 - 10/30|) = 0.5*(|.5-.6667|+|.5-.3333|)
+    = 1/6 for BOTH, so the assertion below is an exact equality, not a
+    coincidental closeness.
+    """
+    from braunschweig.calibration.anchor_holdout import heldout_conditional_tvd
+    from braunschweig.gravity.verbindungen_anchor import (
+        apply_inner_anchor, build_anchor_targets,
+    )
+
+    zones = gpd.GeoDataFrame({
+        "zone_id": ["A", "B", "C", "D"],
+        "kreis_id": ["K1", "K1", "K1", "K1"],
+        "centroid_x": [0.0, 1000.0, 2000.0, 3000.0],
+        "centroid_y": [0.0, 0.0, 0.0, 0.0],
+    }, geometry=[box(0, 0, 1, 1), box(1000, 0, 1001, 1),
+                 box(2000, 0, 2001, 1), box(3000, 0, 3001, 1)],
+        crs="EPSG:25832")
+    zone_map = pd.DataFrame({
+        "commune_id": ["a", "b", "c", "d"],
+        "zone_id": ["A", "B", "C", "D"],
+    })
+    ref_od = pd.DataFrame({
+        "origin_zone_id": ["A", "A", "A", "A"],
+        "destination_zone_id": ["A", "B", "C", "D"],
+        "commuters": [40, 30, 20, 10],
+    })
+    held = pd.Series([False, False, True, True])  # C, D held-out (>= 2 dests)
+    model_od = pd.DataFrame({
+        "origin_id":      ["a", "a", "a", "a"],
+        "destination_id": ["a", "b", "c", "d"],
+        "flow":           [25.0, 25.0, 25.0, 25.0],
+    })
+
+    # Mirrors run_anchor_holdout.py's CV loop: targets are built from the
+    # TRAIN relations only (held-out relations excluded before
+    # build_anchor_targets ever sees them).
+    train_ref = ref_od[~held.to_numpy()]
+    targets, _ = build_anchor_targets(
+        train_ref, zones, min_observed_commuters=5)
+    anchored_od, stats = apply_inner_anchor(model_od, zone_map, zones, targets)
+
+    def _to_zone_od(df):
+        z = df.copy()
+        zmap = zone_map.set_index("commune_id")["zone_id"]
+        z["origin_zone_id"] = z["origin_id"].map(zmap)
+        z["destination_zone_id"] = z["destination_id"].map(zmap)
+        return (z.groupby(["origin_zone_id", "destination_zone_id"])["flow"]
+                .sum().rename("commuters").reset_index())
+
+    baseline_zone_od = _to_zone_od(model_od)
+    anchored_zone_od = _to_zone_od(anchored_od)
+
+    # (a) the TRAINED pairs actually moved: the anchor did something real.
+    a = anchored_od.set_index(["origin_id", "destination_id"])["flow"]
+    assert math.isclose(a[("a", "a")], 50.0 * 40.0 / 70.0)
+    assert math.isclose(a[("a", "b")], 50.0 * 30.0 / 70.0)
+    assert not math.isclose(a[("a", "a")], 25.0)
+    assert not math.isclose(a[("a", "b")], 25.0)
+    assert stats["n_rows_anchored"] == 1
+
+    # (b) the HELD-OUT pairs are untouched: C, D never appear in `targets`
+    # for this fold, so no factor was ever assigned to them.
+    assert math.isclose(a[("a", "c")], 25.0)
+    assert math.isclose(a[("a", "d")], 25.0)
+
+    # (c) the KNOWN LIMITATION itself: heldout_conditional_tvd reads the SAME
+    # (untouched) model values on C/D for baseline and anchored -> EQUAL by
+    # construction, not merely close, and both finite (2 held-out dests ->
+    # informative, not skipped as degenerate).
+    cv_baseline = heldout_conditional_tvd(baseline_zone_od, ref_od, held)
+    cv_anchored = heldout_conditional_tvd(anchored_zone_od, ref_od, held)
+    assert math.isfinite(cv_baseline) and math.isfinite(cv_anchored)
+    assert cv_baseline == cv_anchored
+    assert math.isclose(cv_baseline, 1.0 / 6.0, abs_tol=1e-9)
+
+
+def test_apply_inner_anchor_logs_join_coverage(capsys):
+    """Fix B (final whole-branch review, #193): the model-side commune_id ->
+    zone_id join in apply_inner_anchor is the one production ON-path join;
+    its coverage (in-scope row/mass share + unmapped id samples) must be
+    logged so a commune_id key mismatch is debuggable, not a silent
+    "anchored mass share 0.0%". A near-total in-scope collapse escalates to
+    WARNING (LOW_INSCOPE_MASS_WARN_FRACTION=0.1) -- the signature of a key
+    mismatch -- while a moderate out-of-scope share (legitimate external
+    flows) must NOT warn.
+    """
+    from braunschweig.gravity.verbindungen_anchor import (
+        apply_inner_anchor, build_anchor_targets,
+    )
+    targets, _ = build_anchor_targets(
+        _ref_od_zones(), _zones(), min_observed_commuters=20)
+
+    # Healthy: one unmapped origin ("ghost", absent from the zone map)
+    # carrying tiny mass alongside the fully-mapped model OD (total 137) ->
+    # in-scope 137/140 = 97.9% -> the unmapped id is reported, NO warning.
+    od_ok = pd.concat([
+        _model_od_gemeinde(),
+        pd.DataFrame({"origin_id": ["ghost"], "destination_id": ["a1"],
+                      "flow": [3.0]}),
+    ], ignore_index=True)
+    apply_inner_anchor(od_ok, _zone_map(), _zones(), targets)
+    cov_ok = [ln for ln in capsys.readouterr().out.splitlines()
+              if "model-side join coverage" in ln]
+    assert len(cov_ok) == 1
+    assert "ghost" in cov_ok[0]
+    assert "WARNING" not in cov_ok[0]
+
+    # Near-total collapse: almost all mass on the unmapped "ghost" origin
+    # (only b1->a1 = 1.0 maps) -> in-scope 1/101 = 1.0% <
+    # LOW_INSCOPE_MASS_WARN_FRACTION (0.1) -> WARNING on the coverage line.
+    od_bad = pd.DataFrame({
+        "origin_id":      ["ghost", "b1"],
+        "destination_id": ["a1", "a1"],
+        "flow":           [100.0, 1.0],
+    })
+    apply_inner_anchor(od_bad, _zone_map(), _zones(), targets)
+    cov_bad = [ln for ln in capsys.readouterr().out.splitlines()
+               if "model-side join coverage" in ln]
+    assert len(cov_bad) == 1
+    assert "WARNING" in cov_bad[0]
+
+
 def test_p38_band_shares_edges():
     from braunschweig.calibration.anchor_holdout import p38_band_shares
     shares = p38_band_shares(np.array([3.0, 7.0, 250.0]),

@@ -14,7 +14,41 @@ conditional TVD improves vs baseline AND (ii) no P13-by-RS7 EMD worsens beyond
 the measured fold noise. P38.2 per-Kreis, via ``p38_band_shares`` below, is
 BASELINE-vs-ANCHORED MODEL drift only: this module never loads the MiD P38.2
 reference, so it is NOT (yet) a directional comparison against observed data
--- see the TODO in scripts/run_anchor_holdout.py (deferred to Task 8)."""
+-- see the TODO in scripts/run_anchor_holdout.py (deferred to Task 8).
+
+KNOWN LIMITATION (inert held-out CV -- final whole-branch review finding,
+#193): the anchor (``apply_inner_anchor`` in
+braunschweig/gravity/verbindungen_anchor.py) is a pure per-row IN-SAMPLE
+reweighting -- for a training fold it only rescales flow AMONG the
+destinations that are in THAT fold's training targets. A held-out relation
+is, by the CV harness's own construction (scripts/run_anchor_holdout.py:
+``t_fold, _ = build_anchor_targets(train_ref, ...)`` where
+``train_ref = df_ref_zones[~held]``), excluded from the training targets for
+its row, so the anchor never assigns it a scaling factor and its model flow
+is passed through UNCHANGED for that fold. ``heldout_conditional_tvd`` only
+ever reads model flow on the held-out destinations (see its docstring), so it
+reads IDENTICAL numbers for baseline and anchored -- i.e.
+``cv_anchored == cv_baseline`` HOLDS BY CONSTRUCTION, for ANY hold-out split,
+fold count, or dataset (see ``test_heldout_cv_is_inert_by_construction`` in
+tests/test_verbindungen_anchor.py for a hand-derived, bit-exact
+demonstration). Consequences:
+
+- ``verdict()``'s ``cv_improves`` is EXPECTED to come back False (or equal up
+  to floating point). A False here is NOT evidence that the anchor fails to
+  help -- criterion (i) is structurally unable to observe the anchor's
+  effect on held-out relations at all, so it cannot distinguish "helps" from
+  "does nothing" from "hurts" for THIS anchor.
+- Criterion (i) is therefore NON-DISCRIMINATING for this anchor. The flip
+  decision must rest on the INDEPENDENT distance axes instead: criterion
+  (ii) (P13-by-RS7 EMD, already wired below) and P38.2 per-Kreis once the
+  MiD reference is wired in Task 8.
+- Whether to drop criterion (i) from the rule, or recast it as a
+  non-worsening guard (e.g. a ``cv_anchored <= cv_baseline + p13_noise``
+  -style tolerance, which an inert CV trivially satisfies without being
+  circular), is an OPEN methodology decision for #193 that the user must
+  resolve -- ideally via an ADR -- BEFORE the Task-8 verdict is acted on.
+  This module does NOT pre-empt that decision: ``verdict()``'s computation
+  and return schema are UNCHANGED; only this documentation is added."""
 from __future__ import annotations
 
 import numpy as np
@@ -104,7 +138,21 @@ def p38_band_shares(distances_km: np.ndarray,
 def verdict(cv_baseline: float, cv_anchored: float,
             p13_emd_baseline: dict, p13_emd_anchored: dict,
             p13_noise: float) -> dict:
-    """The pre-registered rule. Pure report -- the human + ADR act on it."""
+    """The pre-registered rule. Pure report -- the human + ADR act on it.
+
+    KNOWN LIMITATION (inert held-out CV; see the module docstring above for
+    the full mechanism and the #193 cross-reference): for THIS anchor,
+    ``cv_anchored`` equals ``cv_baseline`` BY CONSTRUCTION regardless of the
+    data, so ``cv_improves`` (and therefore ``default_flip_supported``,
+    which ANDs it with ``not regressions``) is EXPECTED to read False here.
+    Do NOT read a False ``cv_improves`` as evidence against the anchor --
+    criterion (i) cannot see the anchor's effect at all in this design.
+    Treat ``p13_regressions`` / ``no_distance_regression`` (criterion (ii))
+    and the P38.2 per-Kreis comparison (once wired, Task 8) as the operative
+    evidence until the decision rule itself is revisited (open methodology
+    decision, #193). This limitation does not change what is computed or
+    returned below -- it changes only how the result must be READ.
+    """
     improves = bool(cv_anchored < cv_baseline)
     regressions = {
         rs7: (p13_emd_anchored[rs7], p13_emd_baseline[rs7])

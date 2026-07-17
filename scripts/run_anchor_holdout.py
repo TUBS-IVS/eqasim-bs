@@ -306,6 +306,16 @@ def main() -> int:
         f"- held-out conditional TVD (k={args.folds}): "
         f"{v['cv_baseline']:.4f} -> {v['cv_anchored']:.4f} "
         f"(improves: {v['cv_improves']})",
+        "- KNOWN LIMITATION (#193): this anchor's held-out CV is inert by "
+        "construction -- held-out destinations are excluded from each "
+        "fold's training targets, so their model flow (and this TVD) is "
+        "IDENTICAL for baseline and anchored regardless of the data; "
+        "`improves: False` above is EXPECTED and is NOT evidence against "
+        "the anchor. The flip decision rests on the P13-by-RS7 / P38.2 "
+        "distance axes below; refining the decision rule itself is an "
+        "OPEN methodology decision pending resolution (see verdict()'s "
+        "docstring in braunschweig/calibration/anchor_holdout.py) before "
+        "this verdict is acted on.",
         f"- P13-by-RS7 EMD baseline {p13_base} -> anchored {p13_anch} "
         f"(fold noise {p13_noise:.4f}; regressions: {v['p13_regressions']})",
         f"- AO-margin srmse before {ao['before']['srmse']:.4f} -> after "
