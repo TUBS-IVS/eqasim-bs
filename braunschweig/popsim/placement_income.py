@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.attributes import INCOME_CLASS_BY_GROUP
+from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 # Deliberate same-package reuse of the redraw's bracket machinery (DRY): the own-income
 # draw must use the SAME floor / open-top treatment so OFF vs ON differ only by design.
 from braunschweig.popsim.income_kreis_control import (
@@ -532,3 +533,57 @@ def reallocate_slots(
         "nan_income_slot_share": nan_income_slot_share,
     }
     return assignment, diag
+
+
+def resolve_income_path(placement_on: bool, income_kc_on: bool, tilt_on: bool) -> dict:
+    """Resolve the mutually exclusive income mechanisms into one explicit decision.
+
+    placement ON overrides the redraw AND the spatial tilt (both would rewrite the
+    donor's own income); each override is logged loudly - configuration precedence must
+    never be silent. OFF reproduces today's path bit-for-bit.
+    """
+    if not placement_on:
+        return {"placement": False, "redraw": bool(income_kc_on), "tilt": bool(tilt_on),
+                "skip_inkar_scale": bool(income_kc_on)}
+    if income_kc_on:
+        logger.info("[placement_income] placement_income=ON overrides income_kreis_control=ON: "
+                    "the per-Kreis income redraw is SKIPPED (donor keeps its own income).")
+    if tilt_on:
+        logger.info("[placement_income] placement_income=ON overrides income_spatial_tilt=ON: "
+                    "the within-Kreis rent tilt is SKIPPED (it would rescale the own income).")
+    return {"placement": True, "redraw": False, "tilt": False, "skip_inkar_scale": True}
+
+
+def apply_own_income(
+    persons: pd.DataFrame,
+    *,
+    random_seed: int,
+    hh_col: str = "household_id",
+    label_col: str = "household_income",
+    income_col: str = "household_income_eur",
+    open_top_pareto: bool = True,
+    pareto_alpha: float = INCOME_OPEN_TOP_PARETO_ALPHA,
+) -> tuple[pd.DataFrame, dict]:
+    """Set household_income_eur to a seeded draw within each household's OWN label.
+
+    One draw per household (income is a household quantity), broadcast to its persons;
+    high_income re-derived with the unified >= HIGH_INCOME_THRESHOLD_EUR rule; the label
+    itself is the donor's own bracket and stays untouched. NaN labels stay NaN (the
+    established shielding downstream), their rate is logged.
+    """
+    missing = [c for c in (hh_col, label_col, income_col) if c not in persons.columns]
+    if missing:
+        raise ValueError(f"[placement_income] apply_own_income needs columns {missing}.")
+    hh = persons.sort_values(hh_col).groupby(hh_col, sort=True).first().reset_index()
+    rng = np.random.RandomState(int(random_seed) + PLACEMENT_INCOME_RNG_OFFSET)
+    eur = draw_own_income_eur(hh[label_col], rng, open_top_pareto=open_top_pareto,
+                              pareto_alpha=pareto_alpha)
+    nan_label_rate = float(pd.isna(hh[label_col]).mean())
+    eur_by_hh = dict(zip(hh[hh_col].to_numpy(), eur))
+    out = persons.copy()
+    out[income_col] = out[hh_col].map(eur_by_hh).astype(float)
+    out["high_income"] = (out[income_col].fillna(0.0) >= HIGH_INCOME_THRESHOLD_EUR).astype(bool)
+    logger.info("[placement_income] own-income draw: %d households, NaN-label rate %.2f%% "
+                "(these keep NaN income, shielded downstream).",
+                len(hh), 100.0 * nan_label_rate)
+    return out, {"nan_label_rate": nan_label_rate, "n_households": int(len(hh))}
