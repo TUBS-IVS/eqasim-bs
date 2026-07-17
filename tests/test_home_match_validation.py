@@ -351,3 +351,28 @@ def test_compare_typed_vs_legacy():
     )
     assert result["delta"] > 0, f"delta should be positive, got {result['delta']}"
     assert abs(result["delta"] - (result["type_match_typed"] - result["type_match_legacy"])) < 1e-12
+
+
+def test_home_match_metrics_raises_on_zero_overlap_id_space():
+    """Zero overlap between home_location_id and building_id must raise.
+
+    The legacy home draw emits home_location_id as a positional 0-based index
+    (home_cell._legacy_capped_buildings renumbers building_id to arange), NOT a
+    real building_id. Joining such a frame against a real-building_id btype table
+    matches nothing; the previous code silently returned a nan type_match_share.
+    That silent-garbage metric is now a loud failure (audit FRAGILE item).
+    """
+    bld = pd.DataFrame({
+        "building_id": [10, 11, 20, 21],
+        "btype": ["efh_zfh", "efh_zfh", "mfh", "mfh"],
+        "size": [150.0, 130.0, 50.0, 60.0],
+    })
+    placed_legacy = pd.DataFrame({
+        "household_id": [1, 2, 3, 4],
+        "building_type_3class": ["ein_zweifamilienhaus", "ein_zweifamilienhaus",
+                                 "mehrfamilienhaus", "mehrfamilienhaus"],
+        "household_size": [5, 4, 1, 2],
+        "home_location_id": [0, 1, 2, 3],   # positional legacy ids: no overlap
+    })
+    with pytest.raises(RuntimeError, match="ZERO matches"):
+        v.home_match_metrics(placed_legacy, bld)

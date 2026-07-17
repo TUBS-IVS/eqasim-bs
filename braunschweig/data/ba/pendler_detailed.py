@@ -38,6 +38,8 @@ import os
 
 import pandas as pd
 
+from braunschweig.data.kreis_key_guard import keep_valid_kreis5
+
 
 def configure(context):
     context.config("data_path")
@@ -87,8 +89,26 @@ def execute(context) -> pd.DataFrame:
 
     df["home_kreis"] = df["home_kreis"].astype(str).str.zfill(5)
     df["work_kreis"] = df["work_kreis"].astype(str).str.zfill(5)
+    # Guard both keys: aggregate rows (Bundesland/RB) or float-formatted codes
+    # survive zfill as non-joining garbage keys. Enforce the 5-digit contract on
+    # BOTH endpoints and log any drop (CLAUDE.md no-silent-fallback).
+    df = keep_valid_kreis5(
+        df, ["home_kreis", "work_kreis"],
+        source="braunschweig.data.ba.pendler_detailed",
+    )
     df["sector"] = df["sector"].astype(str).str.strip().str.upper()
-    df["flow"] = pd.to_numeric(df["flow"], errors="coerce").fillna(0).astype(int)
+    flow_numeric = pd.to_numeric(df["flow"], errors="coerce")
+    # Fallback transparency: BA privacy-masked cells ("x"/"*"/".") coerce to
+    # NaN and are treated as flow 0 -- systematic in sector-fine matrices, so
+    # the rate must be visible rather than silently zeroed.
+    n_masked = int(flow_numeric.isna().sum())
+    if n_masked:
+        print(
+            f"[braunschweig.data.ba.pendler_detailed] {n_masked}/{len(df)} "
+            f"({100.0 * n_masked / len(df):.1f}%) flow cells are privacy-masked "
+            f"or non-numeric -> treated as 0."
+        )
+    df["flow"] = flow_numeric.fillna(0).astype(int)
 
     scope = context.config("braunschweig.political_prefix")
     if scope:

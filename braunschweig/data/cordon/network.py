@@ -109,6 +109,7 @@ def read_matsim_links(network_path: str, crs: str = "EPSG:25832") -> gpd.GeoData
     opener = gzip.open if network_path.endswith(".gz") else open
     nodes: dict[str, tuple[float, float]] = {}
     rows = []
+    n_skipped_links = 0
     with opener(network_path, "rb") as handle:
         for _event, elem in ET.iterparse(handle, events=("end",)):
             if elem.tag == "node":
@@ -133,7 +134,21 @@ def read_matsim_links(network_path: str, crs: str = "EPSG:25832") -> gpd.GeoData
                         "road_class": road_class,
                         "geometry": LineString([nodes[src], nodes[dst]]),
                     })
+                else:
+                    # Link references a from/to node that was not read into the
+                    # node map. MATSim writes nodes before links, so this only
+                    # happens on a truncated or inconsistent export -- count it
+                    # rather than dropping silently (CLAUDE.md no-silent-fallback).
+                    n_skipped_links += 1
                 elem.clear()
+    if n_skipped_links:
+        n_seen = len(rows) + n_skipped_links
+        logger.warning(
+            "[cordon.network] read_matsim_links: skipped %d/%d link(s) (%.2f%%) "
+            "referencing an unknown from/to node. A non-trivial rate signals a "
+            "truncated or inconsistent network export.",
+            n_skipped_links, n_seen, 100.0 * n_skipped_links / n_seen,
+        )
     if not rows:
         raise ValueError(f"No links parsed from {network_path}")
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=crs)
@@ -201,6 +216,10 @@ def read_external_gemeinden(vg250_path: str, crs: str = "EPSG:25832",
         gem = gem[gem["GF"] == 4]   # land area
     if "EWZ" not in gem.columns:
         raise ValueError("vg250_gem has no EWZ (population) column")
-    ext = gem[~gem["ARS"].str[:5].isin(set(zgb_prefixes))].to_crs(crs).copy()
+    # str-cast the prefixes: an int-typed config value ("- 3101" unquoted in
+    # YAML) would make isin match NOTHING and silently return ZGB Gemeinden
+    # as "external" (same cast the sibling consumers apply).
+    zgb = {str(p) for p in zgb_prefixes}
+    ext = gem[~gem["ARS"].str[:5].isin(zgb)].to_crs(crs).copy()
     ext["ars5"] = ext["ARS"].str[:5]
     return ext.rename(columns={"EWZ": "ewz"})[["ars5", "ewz", "geometry"]]

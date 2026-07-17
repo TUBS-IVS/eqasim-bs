@@ -573,6 +573,23 @@ def compute_work_od(
 
     distances = df_distances["distance_km"].values.reshape((len(municipalities), len(municipalities)))
 
+    # Fail fast on distance-matrix coverage gaps: a zone pair absent from
+    # df_distances reindexes to NaN, which propagates through the friction
+    # matrix and only surfaces as a bare `assert converged` after up to 1e6
+    # gravity iterations -- an obscured near-hang instead of a key error.
+    n_nan_distances = int(np.isnan(distances).sum())
+    if n_nan_distances:
+        nan_origins = sorted(
+            {municipalities[i] for i in np.where(np.isnan(distances).any(axis=1))[0]}
+        )[:5]
+        raise RuntimeError(
+            f"[braunschweig.gravity.model] distance matrix has {n_nan_distances} "
+            f"NaN entries after reindexing to the union zone set "
+            f"({len(municipalities)} zones) -- the distance frame does not cover "
+            f"every zone pair (zone-id mismatch between the population/employees "
+            f"and distance producers?). Example origins: {nan_origins}"
+        )
+
     population = df_population["population"]
     employees = df_employees["employees"]
 

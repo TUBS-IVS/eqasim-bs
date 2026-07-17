@@ -40,6 +40,53 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### Resolved (2026-07-17) — issue-backlog cleanup (cross-checked against merged code) + key-matching-audit PM record
+
+Cross-checked every open issue against the actual code/commit state and closed those already covered
+(the recurring "solution shipped, issue never closed" drift):
+
+- **#130** (OECD consumption_units) — already on `main` (`6cdad97`): `income.add_consumption_units`
+  (reuses upstream `data.hts.hts.calculate_consumption_units`) + `add_income_per_consumption_unit`,
+  wired in `assembly.build_persons` + `stage.execute` on the FINAL income. `high_income` deliberately
+  kept at the flat household threshold (no traceable per-CU reference); the primary income variable
+  `economic_status` is already OECD-equivalised by MiD construction. **Closed.**
+- **#76** (raw-data re-sync) — the raw drop was fully restored from felix on 2026-07-16 (24G,
+  diff-verified). **Closed.**
+- **#137** (extend Stage-B trip-donor matching keys) — **superseded**: production runs `popsim_mid`,
+  where each synthetic person IS a specific MiD donor `(H_ID, P_ID)` whose real Wege become the trip
+  chain (`braunschweig/popsim/trips.py`) — no attribute matching at all. On the legacy statistical-
+  matching path the richer keys (`employed`, `household_size_class`, `socioprofessional_class`) already
+  exist ("step 1", `tests/test_matching_keys.py`); car/pt/economic_status are deliberately excluded
+  (placeholders at matching time = matching on invented data). **Closed.**
+- **#124** — corrected: phase 1 (sub-Kreis OD reference) merged (PR #189/#190/#192); only phase 2
+  (accessibility matrices) remains open.
+
+Confirmed genuinely open (not re-attempt candidates for a quick win):
+
+- **#108** (placement-based income geography) is architecturally right — economic_status × Kreis control,
+  retire the post-hoc `income_kreis_control` overwrite — but measured **low expected impact** (income
+  inert: rho(INKAR, income)=1.0 yet status CV=0.033; cars = tenure/size, not income). Phase 0/1 built on
+  `worktree-income-placement-refdata-gate`; cheap next step is the server Phase-0 gate, then decide
+  build-vs-drop-overwrite. Kept open.
+
+Also in this PR:
+
+- **Recorded the 2026-07-16 key-matching / fallback audit** (PR #191 + #194 MERGED; project-wide AGS/ARS +
+  join/fallback sweep; join-coverage logging on every silent left-merge+fillna(0); all 14 standing test
+  failures root-caused; full suite **2986 passed / 0 failed** under the `eqasim` env) + the raw-data-loss-
+  and-restore incident, which `main`'s PM docs had not yet captured.
+- **Honest-skip guard** for the INKAR income smoke test: the failure was an env issue (legacy BIFF `.xls`
+  needs `xlrd`, absent under system Python 3.13), NOT missing data. `_income_xls_readable()` now guards on
+  file existence AND `xlrd` importability, path anchored to `DATA_ROOT`. Conforms to
+  `feedback-never-disable-tests-to-pass` (mark a non-runnable env honestly, never weaken the assertion).
+- **SHIPPED (PR #196, commit bf8a2f1): latent FRAGILE hardening batch** from the audit — items
+  verified NOT live bugs today but one input-drift away from silent failure: `inkar/full_panel.py` +
+  `ba/pendler_detailed.py` lack a `\d{5}`-fullmatch key guard (`census/pendler.py` has one);
+  `inspire/landuse.py` flag-ON-but-missing-file returns an empty frame with `validate()==0` instead of
+  raising (stage currently unconsumed); `home_cell` legacy path renumbers building ids so
+  `home_match_validation.compare_typed_vs_legacy` joins the WRONG buildings (analysis-only, legacy flag
+  only); `network.py` link-skip counter. Shipped as PR #196 (`fix/audit-fragile-hardening`, `bf8a2f1`): shared `data/kreis_key_guard.keep_valid_kreis5` wired into inkar/pendler; landuse raises when flag ON + file missing; network counts+logs dangling-node link skips; home_match raises on zero-overlap join (legacy positional ids are test-protected -> guarded the analysis, not the model). TDD (RED verified for home_match); affected suite 65 passed / 9 skipped under the eqasim env; byte-identical on clean inputs.
+
 ### Resolved (2026-07-16) — #124 VerBindungen sub-Kreis OD reference (PR #189/#190) + #132 svb_wohn A/B (ADR-0066)
 
 - **#124 phase 1 DONE, MERGED (PR #189 + server-config wiring PR #190).** Download + loaders
@@ -304,17 +351,15 @@ Open follow-ups, in order:
   BA stays Kreis-anchor. **Flag-gated default OFF; TAZ data local-only (proprietary VISUM,
   not publishable).** Open-data pseudo-zone alternative = issue **#80** (TODO, deferred).
   - **STATUS 2026-07-01: Phase 1+2 MERGED to `main`** (PR #85 merge `f5f52d1` + PR #89 FutureWarning
-    fix); flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT then measured unnecessary.**
-    Branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, all SDD tasks + final opus review
-    clean) adds a `--taz` mode to `calibrate_gravity_distribution.py` (work-pass-scoped per-RS7 friction
-    on the TAZ work-OD). But the aggregate commute distribution **already fits MiD P13** (measured EMD
-    ~0.054 on the current 100% `popsim_mid` pop, flag-OFF, ZGB-resident; WOB per-Kreis ~0.21 = n=39
-    noise, ADR-0049); a 1% flag-ON A/B even IMPROVES the aggregate (0.057->0.033). So the branch is
-    **PARKED (pushed to the fork as backup, not merged), gated-off infra** — reuse only if a future measurement shows a real
-    gap (ADR-0050). **Remaining Phase-3 = validate the flag-ON TAZ at 100%** (`taz_work_location_choice:
-    true`, `matsim_last_iteration: 0`; multi-hour — origin/main's popsim/secondary sources differ from
-    the commit that built the 24G flag-OFF cache, so it rebuilds) + a **spatial validation map** (OSM
-    basemap) of the TAZ commute / work-location distribution.
+    fix); flag-ON 1% e2e green. Phase 3 friction re-fit BUILT then measured unnecessary; branch
+    `feature/taz-gravity-calibration` @ `3c2ebb5` PARKED as gated-off backup (ADR-0050).
+  - **DECIDED / CLOSED 2026-07-16 (ADR-0067): TAZ stays permanently OFF — feature not pursued further.**
+    Rationale: the building-level activity potentials (PR #16, ON in production) already resolve the
+    within-commune work location TAZ targeted; the flag-OFF model already fits MiD P13 (EMD ~0.054); the
+    RVB VISUM data is proprietary / non-publishable. The outstanding same-commit 25%/100% A/B was
+    deliberately NOT run — the decision is made. TAZ code stays on `main` (OFF byte-identical, zero
+    runtime cost), reactivatable only if a future measurement shows a real intra-city gap. Issues
+    **#79 (completed), #80, #83, #95 (not planned) CLOSED**; parked friction branch kept as backup only.
 - **Distance-fit diagnostics module** (this session, NOT yet landed): `braunschweig/calibration/distance_fit/`
   (Phases 0-5.1 built + 26 local tests green + real-data-validated on the 25% cache via slim
   parquet) on worktree branch `worktree-fix+gravity-calib-popsim-mid`, plus the

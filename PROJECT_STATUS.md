@@ -5,7 +5,16 @@
 > [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md); for binding rules + feature detail see `CLAUDE.md`;
 > for architecture/onboarding see [docs/codebase/](docs/codebase/).
 >
-> **Last updated:** 2026-07-15 (older bullets below may lag `main`).
+> **Last updated:** 2026-07-17 (older bullets below may lag `main`).
+> **2026-07-17 — session housekeeping + key-matching-audit PM record:** cross-checked the open issues
+> against the actual merged-code state and cleaned the backlog. Closed **#130** (OECD consumption_units
+> already on `main`, `6cdad97`), **#76** (raw-data drop restored 2026-07-16), **#137** (trip-donor
+> matching keys already covered — production `popsim_mid` uses direct MiD-donor coherence, and the legacy
+> statistical matcher already carries the richer keys); corrected **#124** (phase 1 merged, only phase 2
+> open). Confirmed **#108** genuinely open but measured low expected impact (income inert). Recorded the
+> 2026-07-16 key-matching / fallback audit (**PR #191 + #194 MERGED**, full suite 2986/0) and the
+> raw-data-loss-and-restore incident, which `main`'s PM docs had not yet captured. Added an honest-skip
+> guard for the INKAR income smoke test (xlrd/env root cause, not data loss).
 > **2026-07-15 — two features MERGED:** **#129** per-Bundesland in-commuter commute-mode reference (PR #180,
 > ADR-0063; default-ON, OFF byte-identical; real 25% impact -0.13 pp PT — premise did not hold) and **#156**
 > MATSim `simulation_output/` archive to a stable `<output_path>/matsim_output/` (PR #181, ADR-0064; hardlink +
@@ -81,8 +90,8 @@
 > **minor-employment plausibility guard** (PR #102, merged; default WARN) now watches the under-15
 > employed rate. **Next:** 100% re-run with the fix on main, then flip the guard to `raise=True`
 > (measure-before-harden; Phase-0 for #99).
-> **TAZ sub-zonal work location choice** (eqasim IRIS-analog): **Phase 1+2 MERGED to main** (PR #85 merge `f5f52d1` + PR #89 FutureWarning fix), flag `taz_work_location_choice` default OFF byte-identical, flag-ON 1% e2e green. **Phase 3 (#83): friction re-fit BUILT but measured unnecessary** — branch `feature/taz-gravity-calibration` @ `3c2ebb5` (6 commits, pushed as backup, PARKED as gated-off infra, not merged); the aggregate commute distribution already fits MiD P13 (measured EMD ~0.054 on the 100% `popsim_mid` pop; see ADR-0050). Remaining Phase-3 = **validate flag-ON TAZ at 100%** (full synthesis + scenario, 0 MATSim iterations) + a spatial validation map.
-> Open issues: **#79** (TAZ feature, Phase 1+2 merged), **#80** (open-data pseudo-zone alt), **#83** (Phase-3 validation, re-scoped), **#81** (config cleanup), **#78** (secondary scorer calib), **#76** (data re-sync), **#86/#91** (analysis-suite), **#22/#23/#26/#25** (production run / mode-choice / 25% gate / test). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed). See ADR-0049, ADR-0050.
+> **TAZ sub-zonal work location choice** (eqasim IRIS-analog): **Phase 1+2 MERGED to main** (PR #85 merge `f5f52d1` + PR #89 FutureWarning fix), flag `taz_work_location_choice` default OFF byte-identical. **DECIDED 2026-07-16: TAZ stays permanently OFF** (ADR-0067) — the building-level activity potentials (PR #16, ON in production) already resolve the within-commune work location, the flag-OFF model already fits MiD P13 (EMD ~0.054), and the VISUM data is proprietary/non-publishable. Code kept on `main` (OFF, zero cost), reactivatable. Issues **#79/#80/#83/#95 CLOSED**; parked friction branch `feature/taz-gravity-calibration` @ `3c2ebb5` remains as backup only.
+> Open issues: **#81** (config cleanup), **#78** (secondary scorer calib), **#76** (data re-sync), **#86/#91** (analysis-suite), **#22/#23/#26/#25** (production run / mode-choice / 25% gate / test). Unlanded local work: distance-fit module + gravity-calib popsim_mid fix on `worktree-fix+gravity-calib-popsim-mid` (committed, not pushed). See ADR-0049, ADR-0050, ADR-0067.
 > Tracking: [GitHub Project board #3](https://github.com/orgs/TUBS-IVS/projects/3) (mirror of backlog + ADRs).
 > Keep this current with `/close` at the end of each work session.
 
@@ -209,6 +218,9 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 
 ## 3. Branches, PRs & worktrees (current)
 
+- **This PR (2026-07-17):** honest-skip guard for the INKAR income smoke test (xlrd/env root cause) + PM record of the 2026-07-16 key-matching audit and the raw-data restore. Docs + one test guard; no model-behaviour change.
+- **Merged 2026-07-16: key-matching / fallback audit — [PR #191](https://github.com/TUBS-IVS/eqasim-bs/pull/191) + [PR #194](https://github.com/TUBS-IVS/eqasim-bs/pull/194).** Project-wide AGS/ARS + join/fallback sweep: ars5 dtype-at-READ in the MiD loaders, buildings AGS→ARS-12 fallback-vocabulary fix, HSN leading-zero dtype, ipf/gravity fail-fast guards, join-coverage logging on every silent left-merge+fillna(0); all 14 standing test failures root-caused (fixture bugs / test drift / data-gap skips / stale pre-#92 age golden regenerated on the complete data drop). Full suite **2986 passed / 0 failed** (run under the `eqasim` conda env; local system-Python shadows `matsim` and lacks `xlrd`).
+- **Incident 2026-07-16 (resolved, closes #76):** the gitignored raw-data drop under `eqasim-data/data` was lost locally (worktree-cleanup junction hazard) and **fully restored from felix** (24G, `LC_ALL=C` file-list diff empty). Local pipeline runs work again.
 - **Merged 2026-07-16: [PR #184](https://github.com/TUBS-IVS/eqasim-bs/pull/184)** `worktree-fix-128-sector-aware-callsite` (closes #128): sector-aware tilt PARKED (ADR-0065) + ON-path KeyError fix + `employees.py` LK-aggregate false-loss fix (**full-ZGB-8 run blocker** — every 8-Kreis run would have aborted at the 25% threshold). Follow-up **[PR #185](https://github.com/TUBS-IVS/eqasim-bs/pull/185)** (merged 2026-07-16, closes #183): analysis_suite execute-path `context.config()` contract fix.
 - **Merged 2026-07-16: [PR #187](https://github.com/TUBS-IVS/eqasim-bs/pull/187)** `fix/popsim-validation-kreis-key-zfill`: `zfill(12)` leading-zero fix in the popsim-validation employed-rate extractors (`employed_25_64_rate` / `employed_by_age_group` — un-padded numeric ARS yields Kreis keys like `3101` that never match `03101`; every Lower-Saxony Kreis affected). Rescued 2026-07-12 audit (#159) work that had never reached PR #165/#166. Companion **[PR #186](https://github.com/TUBS-IVS/eqasim-bs/pull/186)** landed the rescued #128 A/B PM records.
 - **Local worktree cleanup 2026-07-16:** 35 merged worktrees + 43 fully-merged local branches removed (merge-base-verified; unique uncommitted content rescued first → PR #186/#187). Remaining local worktrees carry only genuinely unmerged/parked work: calibration-corner, popsim-validation-stage, taz-gravity-calibration, verbindungen-reference, bbs-share-by-age (fix+audit-followups), gravity-calib-popsim-mid, kreis5-integration (fix-facilities-candidates), pm-resync, runcontrol-gui, s1a/s1c kreis-control, fleet (`eqasim-bs-fleet`). This supersedes the stale "Active worktrees" bullet below.
@@ -230,7 +242,7 @@ Full ranked detail in [PROJECT_BACKLOG.md](PROJECT_BACKLOG.md). Headlines:
 2. **100% production run** on newest code (Tier-A/B caching makes it affordable).
 3. **Mode-choice ASC calibration** (DMC is OFF → no behaviourally valid modal split).
 4. **German MiD Wege trip donor** (replace French ENTD-2008) — highest-value lever, blocked on MiD microdata.
-5. Pre-existing local test failure `test_employed_valid_codes_map_to_existing_semantics` (fails on `main` too) — investigate.
+5. ~~Pre-existing local test failures~~ — RESOLVED 2026-07-16 (PR #191/#194): all standing failures root-caused, full suite 2986/0 green under the `eqasim` conda env. Issue-backlog cleaned 2026-07-17: #130/#76/#137 closed (already-done / superseded), #124 corrected to phase-2-only. FRAGILE hardening batch shipped as PR #196 (see backlog).
 
 **Deliberately dropped (do not re-attempt):** commute friction pinning, f(d) detour curve as default, scorer `pot_weight` tuning, raking employment to P9, within-Kreis extra income signal, PopulationSim *importance* calibration (design only) — see backlog §1 Tier 5.
 

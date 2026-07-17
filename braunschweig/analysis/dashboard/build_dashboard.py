@@ -128,8 +128,11 @@ def _earth_movers_distance(p_pct: list[float], q_pct: list[float]) -> float:
 
 
 def load_mid_reference() -> dict[str, Any]:
-    p12 = _safe_read_csv(MID_DIR / "mid2023_P12_1.csv")
-    p13 = _safe_read_csv(MID_DIR / "mid2023_P13.csv")
+    # dtype=str at READ time: int64 inference would strip the ars5 leading
+    # zero of a per-Kreis-only file irreversibly; do not rely on the "03ZGB"
+    # row forcing object dtype (see data/mid/reference_tables._read_csv).
+    p12 = _safe_read_csv(MID_DIR / "mid2023_P12_1.csv", dtype={"ars5": str})
+    p13 = _safe_read_csv(MID_DIR / "mid2023_P13.csv", dtype={"ars5": str})
 
     ref: dict[str, Any] = {"available": False}
     if p12 is None or p13 is None:

@@ -121,7 +121,7 @@ def test_employed_25_64_band_rate_is_reported():
     import pandas as pd
     from braunschweig.analysis.popsim_validation import controls as vc
     persons = pd.DataFrame({
-        "RegionalSchlussel_ARS": ["03102000000"] * 4,
+        "RegionalSchlussel_ARS": ["031020000000"] * 4,
         "HP_ALTER": [30, 40, 50, 70],
         "P_TAET": [1, 11, 1, 1],   # ages 30,50 employed (in band); 40 not; 70 employed but out of band
     })
@@ -133,7 +133,7 @@ def test_employed_25_64_band_rate_is_reported():
 def test_employed_25_64_uses_erwerb_definition():
     import pandas as pd
     from braunschweig.analysis.popsim_validation import controls as vc
-    persons = pd.DataFrame({"RegionalSchlussel_ARS": ["03102000000"]*3,
+    persons = pd.DataFrame({"RegionalSchlussel_ARS": ["031020000000"]*3,
                             "HP_ALTER": [30, 30, 40], "P_TAET": [8, 5, 1]})
     assert round(vc.employed_25_64_rate(persons)["03102"], 3) == round(2/3, 3)
 
@@ -141,7 +141,7 @@ def test_employed_25_64_uses_erwerb_definition():
 def test_employed_by_age_group():
     import pandas as pd
     from braunschweig.analysis.popsim_validation import controls as vc
-    persons = pd.DataFrame({"RegionalSchlussel_ARS": ["03102000000"]*4,
+    persons = pd.DataFrame({"RegionalSchlussel_ARS": ["031020000000"]*4,
                             "HP_ALTER": [20, 25, 40, 70], "P_TAET": [1, 8, 1, 1]})
     r = vc.employed_by_age_group(persons)
     # 5-group reality: 16_29 (ages 20,25), 40_49 (age 40), 60plus (age 70)
