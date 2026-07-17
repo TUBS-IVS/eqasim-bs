@@ -63,11 +63,14 @@ Cross-checked every open issue against the actual code/commit state and closed t
 
 Confirmed genuinely open (not re-attempt candidates for a quick win):
 
-- **#108** (placement-based income geography) is architecturally right — economic_status × Kreis control,
-  retire the post-hoc `income_kreis_control` overwrite — but measured **low expected impact** (income
-  inert: rho(INKAR, income)=1.0 yet status CV=0.033; cars = tenure/size, not income). Phase 0/1 built on
-  `worktree-income-placement-refdata-gate`; cheap next step is the server Phase-0 gate, then decide
-  build-vs-drop-overwrite. Kept open.
+- **#108** (placement-based income geography): **L1 MERGED** (#109/PR #112, economic_status × Kreis).
+  **L2 BUILT** (2026-07-18, branch `worktree-placement-income-l2` @ `6a02b6c`, PR pending, ADR-0068):
+  `placement_income` — donor keeps its own MiD income, per-Kreis INKAR relativity approached by
+  signature-preserving reallocation, redraw+tilt overridden. 2-Kreis gate: invariants Δ0, coherence
+  income↔cars 0.174→0.364 (+0.19), attainment an honest trade (approaches INKAR, redraw hits it exactly;
+  52% no-freedom). **Next: G1/G2** (LSN Z9170111 per-Gemeinde tax income) to measure the sub-Kreis payoff
+  and gate **L3/#110** (sub-Kreis wealth surface) — build L3 only if G2 shows the composition does NOT
+  already explain the Gemeinde income geography. B'/λ-re-estimation deferred.
 
 Also in this PR:
 
