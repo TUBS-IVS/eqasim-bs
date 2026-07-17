@@ -11,6 +11,7 @@ Spec: docs/superpowers/specs/2026-07-17-placement-income-l2-design.md.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -315,6 +316,7 @@ def reallocate_slots(
     then margin exhaustion; largest mass first, ties by donor id then kreis column).
     Non-convergence and unreachable (clamped) targets are LOGGED, never silent.
     """
+    t0 = time.monotonic()
     df = slots[[donor_col, kreis_col]].copy()
     df[kreis_col] = df[kreis_col].astype(str)
     df["_sig"] = df[donor_col].map(signatures)
@@ -487,23 +489,37 @@ def reallocate_slots(
 
     # Materialize: per (group, kreis) column, write the assigned donor multiset onto the
     # group's slot rows in that Kreis (rows in stable original order; donors sorted).
-    df["_pos"] = np.arange(n_slots)
+    # Precompute two lookups ONCE so the write is O(free columns) instead of rescanning
+    # the full frame per (group, Kreis) - a wall-clock hazard at 100% scale (issue #108
+    # L2). Behaviour is a strict no-op vs the previous per-(group,Kreis) rescan:
+    #  - group_kreis_rows maps (signature, Kreis) -> ascending POSITIONAL row indices;
+    #    ascending order equals the original _pos order, so the previous
+    #    sort_values("_pos") row ordering is reproduced exactly.
+    #  - order_by_col / col_starts is a stable argsort of the triplets by column, so the
+    #    triplet indices of column j are order_by_col[col_starts[j]:col_starts[j + 1]]
+    #    (ascending, identical to the previous np.flatnonzero(col_of == j)); the take > 0
+    #    filter is applied on that slice, and donor_list is sorted as before.
     cols_group_arr = np.asarray(cols_group, dtype=np.int64)
-    for g, sig in enumerate(free_group_ids):
-        for j in np.flatnonzero(cols_group_arr == g):
-            k = kreise[kreis_of_col[j]]
-            donor_list: list = []
-            for idx in np.flatnonzero((col_of == j) & (take > 0)):
+    group_kreis_rows = df.groupby(["_sig", kreis_col], sort=False).indices
+    order_by_col = np.argsort(col_of, kind="stable")
+    col_starts = np.searchsorted(col_of[order_by_col], np.arange(len(n_col) + 1))
+    for j in range(len(n_col)):
+        g = int(cols_group_arr[j])
+        sig = free_group_ids[g]
+        k = kreise[kreis_of_col[j]]
+        donor_list: list = []
+        for idx in order_by_col[col_starts[j]:col_starts[j + 1]]:
+            if take[idx] > 0:
                 donor_list.extend([rows_donor[row_of[idx]]] * int(take[idx]))
-            donor_list.sort(key=str)
-            rows = df[(df["_sig"] == sig) & (df[kreis_col] == k)].sort_values("_pos").index
-            if len(rows) != len(donor_list):
-                raise AssertionError(
-                    f"[placement_income] group/kreis slot mismatch for signature group {g}, "
-                    f"Kreis {k}: {len(rows)} rows vs {len(donor_list)} assigned donors.")
-            before = assignment.loc[rows].to_numpy()
-            assignment.loc[rows] = donor_list
-            n_moved += int((assignment.loc[rows].to_numpy() != before).sum())
+        donor_list.sort(key=str)
+        pos = group_kreis_rows[(sig, k)]
+        if len(pos) != len(donor_list):
+            raise AssertionError(
+                f"[placement_income] group/kreis slot mismatch for signature group {g}, "
+                f"Kreis {k}: {len(pos)} rows vs {len(donor_list)} assigned donors.")
+        before = assignment.to_numpy()[pos]
+        assignment.iloc[pos] = donor_list
+        n_moved += int((assignment.iloc[pos].to_numpy() != before).sum())
 
     out = df.assign(**{donor_col: assignment})
     realized_after = out.assign(_y=out[donor_col].map(expected_income_eur)).groupby(kreis_col)["_y"].mean().to_dict()
@@ -511,11 +527,12 @@ def reallocate_slots(
     logger.info(
         "[placement_income] reallocation: primary (free) slots %d/%d (%.1f%%), "
         "no-freedom %d (%.1f%%); moved %d slots (%.1f%%); converged=%s after %d sweeps; "
-        "clamped targets: %s",
+        "clamped targets: %s; elapsed=%.1fs",
         int(free_slot_mask.sum()), n_slots, 100.0 * float(free_slot_mask.mean()),
         int((~free_slot_mask).sum()), 100.0 * no_freedom_slot_share,
         n_moved, 100.0 * moved_share, converged, sweeps_used,
         sorted([k for k, v in clamped.items() if v]) or "none",
+        time.monotonic() - t0,
     )
     if no_freedom_slot_share > 0.9:
         logger.warning(
