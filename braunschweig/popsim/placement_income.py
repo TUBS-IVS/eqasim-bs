@@ -152,3 +152,77 @@ def donor_expected_income_eur(
     out = pd.Series(values.to_numpy(dtype=float), index=donor_households[donor_col].to_numpy())
     out.index.name = donor_col
     return out
+
+
+def donor_control_signatures(
+    controls: Sequence,
+    seed_households: pd.DataFrame,
+    seed_persons: pd.DataFrame,
+    *,
+    seed: str = "mid",
+    donor_col: str = "H_ID",
+) -> pd.Series:
+    """Per-donor exact control signature: one integer per active control.
+
+    Household controls contribute the 0/1 indicator of the donor household; person
+    controls contribute the COUNT of matching members. Two donors with equal
+    signatures contribute identically to every control at every geography, so
+    swapping their slots provably preserves all control aggregates.
+
+    Expressions are the trusted repo-authored CatalogControl strings (the same ones
+    PopulationSim evaluates); they are evaluated with plain eval over the seed frames
+    (pd.eval cannot handle `.isin`). An inexpressible (None) or failing expression
+    raises - a silently skipped control would break the exactness guarantee.
+    """
+    hh = seed_households.reset_index(drop=True)
+    pp = seed_persons.reset_index(drop=True)
+    donors = pd.Index(hh[donor_col].to_numpy(), name=donor_col)
+    namespace = {"households": hh, "persons": pp, "np": np}
+    columns: list[np.ndarray] = []
+    for control in controls:
+        expr = control.expression_for(seed)
+        if expr is None:
+            raise ValueError(
+                f"[placement_income] control {control.name!r} is not expressible by seed "
+                f"{seed!r}; signatures must cover EVERY active control (no silent drop)."
+            )
+        try:
+            mask = eval(expr, {"__builtins__": {}}, namespace)  # noqa: S307 (trusted repo-authored expressions)
+        except Exception as error:
+            raise ValueError(
+                f"[placement_income] control {control.name!r} expression {expr!r} failed "
+                f"to evaluate on the seed frames: {error}"
+            ) from error
+        mask = pd.Series(np.asarray(mask, dtype=bool))
+        if control.seed_table == "households":
+            if len(mask) != len(hh):
+                raise ValueError(
+                    f"[placement_income] household control {control.name!r} produced "
+                    f"{len(mask)} values for {len(hh)} households."
+                )
+            columns.append(mask.to_numpy(dtype=np.int64))
+        elif control.seed_table == "persons":
+            if len(mask) != len(pp):
+                raise ValueError(
+                    f"[placement_income] person control {control.name!r} produced "
+                    f"{len(mask)} values for {len(pp)} persons."
+                )
+            counts = (
+                pd.Series(mask.to_numpy(dtype=np.int64))
+                .groupby(pp[donor_col].to_numpy()).sum()
+                .reindex(donors, fill_value=0)
+            )
+            columns.append(counts.to_numpy(dtype=np.int64))
+        else:
+            raise ValueError(
+                f"[placement_income] control {control.name!r} has unknown seed_table "
+                f"{control.seed_table!r} (expected 'households' or 'persons')."
+            )
+    matrix = np.column_stack(columns) if columns else np.zeros((len(donors), 0), dtype=np.int64)
+    signature = pd.Series([tuple(row) for row in matrix], index=donors)
+    n_groups = signature.nunique()
+    logger.info(
+        "[placement_income] signatures: %d donors, %d controls, %d distinct signature groups.",
+        len(donors), len(columns), n_groups,
+    )
+    return signature

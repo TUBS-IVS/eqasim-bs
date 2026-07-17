@@ -78,3 +78,62 @@ def test_unknown_nonnull_labels_warn_and_stay_nan(caplog):
     assert (~np.isnan(eur[[0, 4]])).all()
     warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
     assert any("2/5" in m for m in warning_messages)
+
+
+from braunschweig.popsim.control_spec import CatalogControl, GEO_100M, GEO_KREIS
+from braunschweig.popsim.placement_income import donor_control_signatures
+
+
+def _mini_seed():
+    hh = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4],
+        "H_GEW": [1.0, 1.0, 1.0, 1.0],
+        "H_GR": [2, 2, 2, 1],
+        "H_MIETE": [1, 1, 2, 1],
+    })
+    pp = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2, 3, 3, 4],
+        "HP_ALTER": [30, 35, 31, 36, 40, 41, 70],
+        "HP_SEX": [1, 2, 1, 2, 1, 2, 2],
+    })
+    return hh, pp
+
+
+def _mini_controls():
+    return [
+        CatalogControl(name="hh2", geography=GEO_100M, seed_table="households", importance=1000,
+                       census_source=("hh2",), seed_expressions={"mid": "(households.H_GR == 2)"}),
+        CatalogControl(name="renter", geography=GEO_100M, seed_table="households", importance=1000,
+                       census_source=("renter",), seed_expressions={"mid": "(households.H_MIETE == 1)"}),
+        CatalogControl(name="m3039", geography=GEO_100M, seed_table="persons", importance=1000,
+                       census_source=("m3039",),
+                       seed_expressions={"mid": "(persons.HP_ALTER > 29)&(persons.HP_ALTER < 40)&(persons.HP_SEX==1)"}),
+    ]
+
+
+def test_signatures_group_identical_donors_and_split_different_ones():
+    hh, pp = _mini_seed()
+    sig = donor_control_signatures(_mini_controls(), hh, pp)
+    # Donors 1+2: size-2, renter, one male 30-39 member each -> identical signature.
+    assert sig.loc[1] == sig.loc[2]
+    # Donor 3 is an owner (H_MIETE==2); donor 4 is size-1 -> both differ.
+    assert sig.loc[3] != sig.loc[1]
+    assert sig.loc[4] != sig.loc[1]
+    # Person control counted as member COUNT: donor 1 has exactly one matching member.
+    assert sig.loc[1][2] == 1 and sig.loc[4][2] == 0
+
+
+def test_signatures_fail_fast_on_inexpressible_control():
+    hh, pp = _mini_seed()
+    bad = [CatalogControl(name="x", geography=GEO_KREIS, seed_table="households", importance=1000,
+                          census_source=("x",), seed_expressions={"mid": None})]
+    with pytest.raises(ValueError):
+        donor_control_signatures(bad, hh, pp)
+
+
+def test_signatures_fail_fast_on_broken_expression():
+    hh, pp = _mini_seed()
+    broken = [CatalogControl(name="x", geography=GEO_100M, seed_table="households", importance=1000,
+                             census_source=("x",), seed_expressions={"mid": "(households.NO_SUCH == 1)"})]
+    with pytest.raises(ValueError):
+        donor_control_signatures(broken, hh, pp)
