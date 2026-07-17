@@ -37,6 +37,13 @@ ZERO_MASS_EPS = 1e-12
 # mismatch), not something to compare model output against; it also fires
 # near a ~100% skip rate, the case CLAUDE.md calls out explicitly.
 HIGH_COVERAGE_SKIP_WARN_FRACTION = 0.5
+# TRANSPARENCY HEURISTIC (CLAUDE.md fallback transparency), NOT a scientific
+# reference/target value: warn when more than this fraction of ANCHORED rows
+# needed the partial-zero renormalisation fallback (some observed destination
+# zone carried zero model mass, see apply_inner_anchor). A high rate means the
+# gravity model is routinely missing QZM-observed relations -- a data-quality
+# signal worth investigating, not something to compare model output against.
+HIGH_PARTIAL_ZERO_WARN_FRACTION = 0.5
 
 
 def collapse_od_to_zones(df_od_cells: pd.DataFrame,
@@ -135,7 +142,9 @@ def apply_inner_anchor(df_od: pd.DataFrame,
     fillable shares to sum to one, so the FULL row-observed mass stays on the
     row and the Kreis-pair block total is preserved exactly (no invented mass
     on the zero pair). With no zero pair the fillable shares already sum to
-    1.0 and this reduces to ``share * m / cur``.
+    1.0 and this reduces to ``share * m / cur``. Rows that hit this
+    renormalisation path are a FALLBACK (CLAUDE.md fallback transparency):
+    they are counted in ``n_rows_partial_zero_renorm`` and named in the log.
 
     Conservation is asserted (relative 1e-9): per-row observed mass and every
     Kreis-pair block total. Violations raise RuntimeError.
@@ -159,9 +168,19 @@ def apply_inner_anchor(df_od: pd.DataFrame,
 
     n_rows_anchored = 0
     n_rows_skipped_zero_mass = 0
+    n_rows_partial_zero_renorm = 0
     anchored_mass = 0.0
     lambda_max = 1.0
     factors = {}   # (oz, dz) -> lambda
+    # (oz, dk) -> (m, dest_zone_ids): pre-scaling row-observed mass and its
+    # target destination zones, kept for the post-scaling per-row assertion.
+    row_observed_mass = {}
+    # Rows that hit the partial-zero renormalisation fallback, and rows that
+    # hit the pathological all-observed-dests-zero-model skip; kept only for
+    # the log line below (CLAUDE.md fallback transparency: never let a
+    # fallback or a skip vanish silently, even one folded into another stat).
+    partial_zero_rows = []
+    fillable_zero_skip_rows = []
 
     for (oz, dk), row_targets in df_targets.groupby(
             ["origin_zone_id", "dest_kreis"]):
@@ -178,6 +197,10 @@ def apply_inner_anchor(df_od: pd.DataFrame,
         # row (so the Kreis-pair block total is conserved) instead of leaking
         # the zero pair's share out of the block. With no zero pair this sum is
         # 1.0 and the scaling below reduces to ``share * m / cur``.
+        zero_model_dzs = [
+            dz for dz in row_targets["destination_zone_id"]
+            if float(pair_mass.get((oz, dk, dz), 0.0)) <= ZERO_MASS_EPS
+        ]
         fillable_share_sum = float(sum(
             share
             for dz, share in zip(row_targets["destination_zone_id"],
@@ -186,10 +209,27 @@ def apply_inner_anchor(df_od: pd.DataFrame,
         if fillable_share_sum <= 0.0:
             # No observed destination zone carries usable model mass: the row
             # cannot be anchored without inventing flow -> skip and count it.
+            # This is the pathological case where the row-level mass m barely
+            # clears ZERO_MASS_EPS but every individual observed pair is still
+            # at or below it (only reachable with near-degenerate float
+            # inputs). Folded into n_rows_skipped_zero_mass for schema
+            # stability, but tracked separately so it stays visible in the log
+            # below (CLAUDE.md fallback transparency: a skip folded into
+            # another stat must still never vanish silently).
             n_rows_skipped_zero_mass += 1
+            fillable_zero_skip_rows.append((oz, dk))
             continue
         n_rows_anchored += 1
         anchored_mass += m
+        row_observed_mass[(oz, dk)] = (
+            m, tuple(row_targets["destination_zone_id"]))
+        if zero_model_dzs:
+            # At least one observed destination zone of this ANCHORED row was
+            # zero-model and had its share renormalised onto the fillable
+            # pairs above: this is the FALLBACK path (CLAUDE.md fallback
+            # transparency) -- count and log it, never let it fire silently.
+            n_rows_partial_zero_renorm += 1
+            partial_zero_rows.append((oz, dk, zero_model_dzs))
         for dz, share in zip(row_targets["destination_zone_id"],
                              row_targets["target_share"]):
             cur = float(pair_mass.get((oz, dk, dz), 0.0))
@@ -209,11 +249,36 @@ def apply_inner_anchor(df_od: pd.DataFrame,
 
     # --- conservation assertions (raise, never warn) ------------------------
     if not np.isclose(float(out["flow"].sum()), total_flow,
-                      rtol=CONSERVATION_RTOL):
+                      rtol=CONSERVATION_RTOL, atol=0.0):
         raise RuntimeError(
             "[braunschweig.gravity.verbindungen_anchor] total mass not "
             f"conserved: {total_flow} -> {float(out['flow'].sum())}"
         )
+
+    # Per-row observed mass: recompute the post-scaling flow summed over each
+    # ANCHORED row's own observed destination zones and compare against the
+    # pre-scaling mass `m` recorded for that row (explicit relative diff, not
+    # np.isclose with a hidden atol, matching the block-check style below).
+    # This is a safety net against accounting bugs local to a single row --
+    # e.g. a duplicate df_targets row silently overwriting a factor -- that
+    # could otherwise cancel out in the coarser block total and go unnoticed.
+    if row_observed_mass:
+        pair_mass_after = (out[in_scope]
+                           .groupby(["_oz", "_dk", "_dz"])["flow"].sum())
+        row_bad = {}
+        for (oz, dk), (m, dest_zone_ids) in row_observed_mass.items():
+            post = float(sum(pair_mass_after.get((oz, dk, dz), 0.0)
+                             for dz in dest_zone_ids))
+            rel_diff = abs(post - m) / m
+            if rel_diff > CONSERVATION_RTOL:
+                row_bad[(oz, dk)] = (m, post, rel_diff)
+        if row_bad:
+            top = dict(sorted(row_bad.items(), key=lambda kv: -kv[1][2])[:5])
+            raise RuntimeError(
+                "[braunschweig.gravity.verbindungen_anchor] per-row observed "
+                f"mass not conserved for row(s) (m, post, rel_diff): {top}"
+            )
+
     block_after = out[in_scope].groupby(
         [out.loc[in_scope, "_oz"].map(kreis), "_dk"])["flow"].sum()
     diff = (block_after - block_before).abs()
@@ -228,15 +293,36 @@ def apply_inner_anchor(df_od: pd.DataFrame,
     stats = dict(
         n_rows_anchored=int(n_rows_anchored),
         n_rows_skipped_zero_mass=int(n_rows_skipped_zero_mass),
+        n_rows_partial_zero_renorm=int(n_rows_partial_zero_renorm),
         anchored_mass_share=float(anchored_mass / total_flow) if total_flow else 0.0,
         lambda_max=float(lambda_max),
     )
+    # See HIGH_PARTIAL_ZERO_WARN_FRACTION above: escalate the log when the
+    # partial-zero-renorm fallback dominates the anchored rows (heuristic,
+    # not a scientific reference -- CLAUDE.md fallback transparency).
+    partial_zero_fraction = (n_rows_partial_zero_renorm / n_rows_anchored
+                             if n_rows_anchored else 0.0)
+    warn_prefix = ("WARNING: "
+                  if partial_zero_fraction > HIGH_PARTIAL_ZERO_WARN_FRACTION
+                  else "")
+    detail = ""
+    if partial_zero_rows:
+        # Name the affected (origin_zone, dest_kreis) rows and their
+        # zero-model destination zones so the fallback is debuggable, not
+        # just counted; truncate like the id lists elsewhere in this module.
+        rows_repr = [f"({r_oz}, {r_dk}) zero-model dests {r_dzs}"
+                    for r_oz, r_dk, r_dzs in partial_zero_rows[:5]]
+        detail += f"; partial-zero renorm fallback rows: {rows_repr}"
+    if fillable_zero_skip_rows:
+        detail += ("; pathological fillable-zero skips (row mass > eps but "
+                  f"every observed pair <= eps): {fillable_zero_skip_rows[:5]}")
     print(
-        "[braunschweig.gravity.verbindungen_anchor] anchored rows "
+        f"[braunschweig.gravity.verbindungen_anchor] {warn_prefix}anchored rows "
         f"{stats['n_rows_anchored']}, skipped zero-mass "
-        f"{stats['n_rows_skipped_zero_mass']}, anchored mass share "
+        f"{stats['n_rows_skipped_zero_mass']}, partial-zero renorm "
+        f"{stats['n_rows_partial_zero_renorm']}, anchored mass share "
         f"{100.0 * stats['anchored_mass_share']:.1f}%, lambda_max "
-        f"{stats['lambda_max']:.2f}"
+        f"{stats['lambda_max']:.2f}" + detail
     )
     return out.drop(columns=["_oz", "_dz", "_dk"]), stats
 

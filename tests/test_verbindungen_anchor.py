@@ -176,6 +176,10 @@ def test_apply_inner_anchor_hand_computed():
                         (100.0 + 20.0) / (100.0 + 20.0 + 12.0 + 5.0))
     assert stats["n_rows_anchored"] == 2   # (A,03101) anchored; (A,03151)
     # counts as anchored too (factor 1.0)
+    # Both anchored rows have full model coverage on every observed dest zone
+    # (A: A&B model mass 40 & 60, both > 0; C: single dest, model mass 20 > 0)
+    # -> the partial-zero-renorm fallback must not fire on this fixture.
+    assert stats["n_rows_partial_zero_renorm"] == 0
 
 
 def test_apply_inner_anchor_idempotent_and_off_identity():
@@ -206,9 +210,12 @@ def test_apply_inner_anchor_zero_mass_guard():
     assert stats["n_rows_skipped_zero_mass"] == 1
     # nothing invented: no new rows appear
     assert len(out) == len(od)
+    # The one anchored row (A, 03101, dests A&B) has full model coverage on
+    # both observed dests -> not a partial-zero-renorm case either.
+    assert stats["n_rows_partial_zero_renorm"] == 0
 
 
-def test_apply_inner_anchor_partial_zero_conserves():
+def test_apply_inner_anchor_partial_zero_conserves(capsys):
     """Partial-zero within an anchorable row must still conserve the block.
 
     An anchorable row (origin zone P, dest Kreis 09999) observes three
@@ -219,6 +226,13 @@ def test_apply_inner_anchor_partial_zero_conserves():
     mass stays inside the Kreis-pair block. Without the renormalisation the
     row would lose Z's 20 percent of mass and apply_inner_anchor's
     block-conservation assertion would raise.
+
+    This is also the ONLY anchored row in the fixture, so it doubles as the
+    hand-derived case for the partial-zero-renorm FALLBACK counter/log (#193
+    Task 3 review finding, CLAUDE.md fallback transparency): 1 of the 1
+    anchored row hits the fallback = 100% > HIGH_PARTIAL_ZERO_WARN_FRACTION
+    (0.5) -> the log line must escalate to "WARNING" and name the row and its
+    zero-model dest Z.
     """
     from braunschweig.gravity.verbindungen_anchor import apply_inner_anchor
     df_zones = gpd.GeoDataFrame({
@@ -262,6 +276,21 @@ def test_apply_inner_anchor_partial_zero_conserves():
     assert len(out) == len(df_od)
     assert stats["n_rows_anchored"] == 1
     assert stats["n_rows_skipped_zero_mass"] == 0
+    # (d) the ONLY anchored row hit the partial-zero renormalisation fallback
+    #     (Z was zero-model) -> the fallback counter must report it, never
+    #     silently (CLAUDE.md fallback transparency, #193 Task 3 review).
+    assert stats["n_rows_partial_zero_renorm"] == 1
+
+    # (e) the fallback must be LOGGED, not just counted: the affected row and
+    #     its zero-model destination zone are named, and since 1/1 anchored
+    #     rows hit it (100% > HIGH_PARTIAL_ZERO_WARN_FRACTION = 0.5) the log
+    #     escalates to WARNING (same escalation pattern as the coverage-skip
+    #     heuristic in build_anchor_targets).
+    log = capsys.readouterr().out
+    assert "partial-zero renorm fallback rows" in log
+    assert "(P, 09999)" in log
+    assert "Z" in log
+    assert "WARNING" in log
 
 
 def test_run_inner_anchor_end_to_end(tmp_path):
