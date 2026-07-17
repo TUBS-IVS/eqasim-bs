@@ -1019,8 +1019,17 @@ def configure(context):
     # identical work OD (the anchor CHANGES scientific output when ON; the
     # default flips only via the pre-registered decision rule + ADR --
     # see docs/superpowers/specs/2026-07-16-verbindungen-calibration-anchor-design.md).
-    context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)
-    if context.config("braunschweig.gravity.verbindungen_anchor_enabled", False):
+    # Default ON since 2026-07-17 (ADR-0068, HUMAN OVERRIDE of the
+    # pre-registered gate v2 whose verdict was default_flip_supported=False):
+    # evidence judged net-positive -- 5/6 P13-by-RS7 classes and the P38.2
+    # ZGB aggregate improve; the AO axis is neutral within fold noise; the
+    # single class-72 shift (+0.0036 EMD) is a small systematic shortening
+    # toward the LOCALLY OBSERVED 2019 QZM destination structure, measured
+    # against the NATIONAL MiD class reference (diagnosed in
+    # scripts/diagnose_anchor_p13.py output, 2026-07-17). Set False per
+    # config to disable; requires the verbindungen raw data when ON.
+    context.config("braunschweig.gravity.verbindungen_anchor_enabled", True)
+    if context.config("braunschweig.gravity.verbindungen_anchor_enabled", True):
         # Reference stages only required when the anchor is ON, so the OFF
         # path needs no new stages or data files.
         context.stage("braunschweig.data.verbindungen.zones")

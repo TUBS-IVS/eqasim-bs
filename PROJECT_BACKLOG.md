@@ -53,12 +53,14 @@
   weighted TVD 0.1136 → 0.1137 (negligible) — the Kreis-level Pendleratlas IPF anchor dominates.
   Flag stays available. Same pattern as #128/#129.
 - **OPEN follow-ups (issue-first; propose before creating):**
-  1. **Stage-3 calibration-anchor decision (proposed issue).** Both gate criteria are technically met
-     (check-B gap real + not censoring-explained at 1.6%; vintage drift small), but there is **no
-     committed threshold** for "substantial enough to calibrate" and TVD ~0.14 is already a reasonable
-     gravity fit — so promoting VerBindungen from validation reference to a sub-Kreis calibration
-     anchor is a **team judgment**, not auto-taken. If ever built, sub-Kreis OD becomes labelled *fit*,
-     not validated. Deep-dive per-Kreis-pair table exists (`ab_out/realised_100pct/`).
+  1. ~~**Stage-3 calibration-anchor decision (proposed issue).**~~ **DONE 2026-07-17 as #193
+     (ADR-0068):** the inner anchor was built (block-preserving row-conditional, default ON via
+     documented human override of the pre-registered gate v2), check B is now stamped
+     `reference_role=fit` automatically, independent validation moved to the MiD distance axes.
+     Residual follow-ups from the #193 final review (non-blocking, carry): rule-v2 minors
+     (03ZGB in the P38 improved-count; docstring nit), per-Kreis P38 column naming, a first
+     default-ON full-pipeline run to observe the end-to-end effect (next scheduled server run
+     covers this — no extra run needed).
   2. **#124 phase 2** (Erreichbarkeiten/Reisezeitverhältnis matrices as pair-specific impedance
      crosscheck) — deliberately deferred, honest expectation "probably small".
   3. Minor code follow-ups from the #189 final review (accepted, non-blocking): download-robustness

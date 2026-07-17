@@ -53,8 +53,10 @@ See ADR-0065 in docs/DECISIONS.md. Entry point:
 
 ## Inner VerBindungen calibration anchor (#193)
 
-Flag `braunschweig.gravity.verbindungen_anchor_enabled` (default `False` --
-the OFF path is byte-identical; the anchor CHANGES the work OD when ON).
+Flag `braunschweig.gravity.verbindungen_anchor_enabled` (default `True` since
+ADR-0068, 2026-07-17; set `False` per config to disable -- the OFF path is
+byte-identical to the pre-anchor model; the anchor CHANGES the work OD when
+ON, and ON requires the verbindungen raw data files).
 Transfers the VerBindungen 2019 within-Kreis-pair ROW-CONDITIONAL destination
 shares (QZM, comparison-zone level: stadtteil cells collapsed to their parent
 commune, vg250 cells kept, 41 zones on ZGB-8) into the CALIBRATED Gemeinde
@@ -95,8 +97,14 @@ gates -> seed-stable): `default_flip_supported = False`. Fit axis (LABELLED
 FIT) improves 0.114 -> 0.081; P13 EMD improves in 5/6 RS7 classes and P38.2
 in 6/9 regions (03ZGB 0.229 -> 0.225), BUT (i') fails (AO srmse 0.1300 ->
 0.1316, a slight worsening beyond fold noise ~0.003) and (ii) flags class 72
-(0.1724 -> 0.1760 > noise). The default therefore STAYS OFF
-(measured-and-parked). Artefacts: `~/wt/verbindungen-anchor/holdout_out_seed*/`
+(0.1724 -> 0.1760 > noise). Per the gate alone the default would have stayed
+OFF; ADR-0068 (2026-07-17) records the HUMAN OVERRIDE to default ON: the AO
+axis is neutral-within-noise (not a worsening), and the class-72 shift was
+diagnosed (`scripts/diagnose_anchor_p13.py`) as a small systematic shortening
+toward the LOCALLY OBSERVED 2019 QZM destination structure, measured against
+the NATIONAL MiD RS7-class reference whose mid-band gap (model 0.109 vs
+target 0.191 at 30-50km) pre-exists the anchor and is 10x larger than the
+anchor's shift. Artefacts: `~/wt/verbindungen-anchor/holdout_out_seed*/`
 on the run server (verdict.md, coverage, censored-bound, intra-Kreis, P38
 tables). Spec/plan: docs/superpowers/{specs,plans}/2026-07-16-verbindungen-
 calibration-anchor-*.md (local); issue #193. Entry points:

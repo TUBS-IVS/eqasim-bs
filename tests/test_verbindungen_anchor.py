@@ -517,10 +517,13 @@ def test_gravity_configure_declares_anchor_flag_off():
     # assertions below fail.
     src = (REPO_ROOT / "braunschweig" / "gravity" / "model.py").read_text(
         encoding="utf-8")
-    assert 'context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)' in src
+    # Default True since ADR-0068 (2026-07-17, human override of gate v2);
+    # the conditional still guards a per-config False so the OFF path stays
+    # free of the two reference stages.
+    assert 'context.config("braunschweig.gravity.verbindungen_anchor_enabled", True)' in src
 
     lines = src.splitlines()
-    guard_text = 'if context.config("braunschweig.gravity.verbindungen_anchor_enabled", False):'
+    guard_text = 'if context.config("braunschweig.gravity.verbindungen_anchor_enabled", True):'
     i_guard = next(i for i, line in enumerate(lines) if guard_text in line)
     guard_indent = len(lines[i_guard]) - len(lines[i_guard].lstrip())
 

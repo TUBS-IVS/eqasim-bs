@@ -410,7 +410,8 @@ def configure(context):
     # (separate) stage can stamp whether check B is an independent
     # validation or a fit metric. Same key, same default -- each synpp stage
     # declares the config keys it reads.
-    context.config("braunschweig.gravity.verbindungen_anchor_enabled", False)
+    # Same key, same default as the gravity stage (ADR-0068: default ON).
+    context.config("braunschweig.gravity.verbindungen_anchor_enabled", True)
 
 
 def execute(context):
