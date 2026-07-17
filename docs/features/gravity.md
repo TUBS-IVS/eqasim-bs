@@ -50,3 +50,56 @@ and, if ever needed, WZ-sectoral friction (issue #128 phase 2, deferred).
 See ADR-0065 in docs/DECISIONS.md. Entry point:
 `build_destination_attraction` in `braunschweig/gravity/model.py`; tests in
 `tests/test_work_sector_aware.py`.
+
+## Inner VerBindungen calibration anchor (#193)
+
+Flag `braunschweig.gravity.verbindungen_anchor_enabled` (default `False` --
+the OFF path is byte-identical; the anchor CHANGES the work OD when ON).
+Transfers the VerBindungen 2019 within-Kreis-pair ROW-CONDITIONAL destination
+shares (QZM, comparison-zone level: stadtteil cells collapsed to their parent
+commune, vg250 cells kept, 41 zones on ZGB-8) into the CALIBRATED Gemeinde
+work OD, between `_calibrate` and `_append_outbound_flows`. Vintage
+hierarchy: the 2025 Pendleratlas wins across Kreise; the 2019 QZM only
+refines structure WITHIN a Kreis pair -- every Kreis-pair block total is
+conserved (asserted to 1e-9 relative, violations raise; per-row observed
+mass likewise). Censoring rule A: only observed relations (>= 10 commuters
+in 2019) are re-weighted; censored relations and the observed-vs-censored
+split stay gravity-driven; every skip/fallback is counted and logged
+(coverage skips, zero-mass rows, partial-zero renormalisation, model-side
+join coverage). Coverage guard
+`braunschweig.verbindungen.anchor_min_observed_commuters` = 30, measured on
+the 2019 QZM ZGB coverage distribution (holdout run 2026-07-17): 3x the
+censoring bound; keeps 205/239 rows (85.8%) and 98.2% of the anchorable
+observed mass (row-mass p10=18.8, p25=73, p50=277, n=239).
+
+With the anchor ON, the VerBindungen validation (check B) is a FIT metric --
+the validation stage and the cache runner stamp `reference_role=fit`
+(`--reference-role` is REQUIRED on the cache runner; a silent `independent`
+against an anchor-ON cache would overstate validity). Independent validation
+moves to the MiD distance axes.
+
+Pre-registered decision rule v2 (amended 2026-07-17 BEFORE any measurement
+run; v1's held-out-CV criterion was proven structurally inert for this
+in-sample anchor -- the anchor never touches held-out flows, see
+`test_heldout_cv_is_inert_by_construction`): the default flips to ON only if
+(i') the zone-level AO-margin share srmse improves beyond its measured fold
+noise (the anchor never fits destination margins -- corroboration on a
+non-fitted axis) AND (ii) no P13-by-RS7 EMD regresses beyond its class's
+measured fold noise. P38.2 per-Kreis vs the MiD reference (via the tested
+`p38_2_band_target` loader) is directional evidence only; the held-out CV is
+retained purely as a harness-leak detector (equality is the designed
+expectation).
+
+MEASURED VERDICT (2026-07-17, 100pct cache, seeds 20260716 + 42, identical
+gates -> seed-stable): `default_flip_supported = False`. Fit axis (LABELLED
+FIT) improves 0.114 -> 0.081; P13 EMD improves in 5/6 RS7 classes and P38.2
+in 6/9 regions (03ZGB 0.229 -> 0.225), BUT (i') fails (AO srmse 0.1300 ->
+0.1316, a slight worsening beyond fold noise ~0.003) and (ii) flags class 72
+(0.1724 -> 0.1760 > noise). The default therefore STAYS OFF
+(measured-and-parked). Artefacts: `~/wt/verbindungen-anchor/holdout_out_seed*/`
+on the run server (verdict.md, coverage, censored-bound, intra-Kreis, P38
+tables). Spec/plan: docs/superpowers/{specs,plans}/2026-07-16-verbindungen-
+calibration-anchor-*.md (local); issue #193. Entry points:
+`braunschweig/gravity/verbindungen_anchor.py` (anchor + diagnostics),
+`braunschweig/calibration/anchor_holdout.py` + `scripts/run_anchor_holdout.py`
+(CV/verdict); tests in `tests/test_verbindungen_anchor.py`.

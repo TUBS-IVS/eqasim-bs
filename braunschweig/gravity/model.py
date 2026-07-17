@@ -1025,11 +1025,15 @@ def configure(context):
         # path needs no new stages or data files.
         context.stage("braunschweig.data.verbindungen.zones")
         context.stage("braunschweig.data.verbindungen.work_od")
-        # PROVISIONAL default (not empirical): per-row minimum observed
-        # reference commuters below which a row is not anchored (guards the
-        # censoring edge, values 10-12 are coarse small-count noise). The
-        # measured default from the real coverage distribution replaces this
-        # value via the holdout script (#193 Task 8) BEFORE any default-ON.
+        # Default measured on the 2019 QZM ZGB coverage distribution
+        # (holdout run 2026-07-17, scripts/run_anchor_holdout.py on the
+        # 100pct cache; coverage_row_observed_commuters.csv). Criterion:
+        # 3x the QZM censoring bound of 10 commuters (rows near the bound
+        # carry coarse small-count noise), with the measured consequences
+        # at 30: 205/239 (origin zone, dest Kreis) rows anchorable (85.8%)
+        # covering 98.2% of the anchorable observed mass; the row-mass
+        # distribution is p10=18.8, p25=73, p50=277 (n=239), so only the
+        # bottom decile falls below this guard.
         context.config("braunschweig.verbindungen.anchor_min_observed_commuters", 30)
 
     # TAZ-specific stages: only declared when the flag is ON so the OFF path
