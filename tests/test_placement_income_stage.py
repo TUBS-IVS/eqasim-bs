@@ -67,3 +67,28 @@ def test_resolve_income_path_logs_each_override(caplog):
     messages = [r.message for r in caplog.records]
     assert any("income_spatial_tilt=ON" in m for m in messages)
     assert not any("income_kreis_control=ON" in m for m in messages)
+
+
+from braunschweig.popsim import stage as stage_mod
+
+
+def test_placement_income_key_registered_and_default_on():
+    assert stage_mod.KEY_PLACEMENT_INCOME == "braunschweig.population.popsim.placement_income"
+    # configure() must register the key with default True: emulate synpp's config recorder.
+    class _Ctx:
+        def __init__(self):
+            self.defaults = {}
+
+        def config(self, key, default=None):
+            self.defaults[key] = default
+            return default
+
+        def stage(self, *a, **k):
+            pass
+
+    ctx = _Ctx()
+    try:
+        stage_mod.configure(ctx)
+    except Exception:
+        pass  # unrelated stage deps may raise on the dummy ctx; the key must be registered first
+    assert ctx.defaults.get(stage_mod.KEY_PLACEMENT_INCOME) is True

@@ -188,6 +188,11 @@ KEY_INCOME_KC_METHOD = "braunschweig.population.popsim.income_draw_method"
 KEY_INCOME_KC_HHSIZE = "braunschweig.population.popsim.income_kreis_control_hhsize_correct"
 KEY_INCOME_KC_PARETO = "braunschweig.population.popsim.income_open_top_pareto"
 KEY_INCOME_KC_PARETO_ALPHA = "braunschweig.population.popsim.income_open_top_pareto_alpha"
+# placement_income (L2, issue #108): donor keeps its OWN MiD income; the per-Kreis
+# INKAR relativity is approached by signature-preserving donor reallocation after the
+# popsim merge. Default ON (project rule). ON overrides income_kreis_control AND
+# income_spatial_tilt (logged); OFF is byte-identical to the legacy path.
+KEY_PLACEMENT_INCOME = "braunschweig.population.popsim.placement_income"
 # economic_status x Kreis control (Level 1, issue #109). Default "on" (project rule:
 # new features default on). "off" -> no status control + seed schema unchanged (byte-
 # identical). MiD-only (oek_status has no ENTD pendant); ignored for source="entd".
@@ -669,6 +674,10 @@ def configure(context):
     context.config(KEY_INCOME_KC_HHSIZE, True)
     context.config(KEY_INCOME_KC_PARETO, True)
     context.config(KEY_INCOME_KC_PARETO_ALPHA, 3.0)
+    # placement_income (L2, issue #108). Default ON (project rule). ON overrides both
+    # income_kreis_control and income_spatial_tilt (logged); OFF is byte-identical.
+    # MiD-only (needs the hheink_gr1 donor income); inactive for source="entd".
+    context.config(KEY_PLACEMENT_INCOME, True)
     # Weekend-plan match (default ON; OFF = byte-identical to pre-feature donor build).
     context.config(KEY_WEEKEND_PLAN_MATCH, True)
     if context.config(KEY_INCOME_KC, True):
@@ -1444,6 +1453,13 @@ def execute(context) -> pd.DataFrame:
         feas["n_simul_retry_failed"], feas["n_logs"],
     )
 
+    # Load the per-Kreis INKAR income scale (registered in configure).
+    # Used by assembly.build_persons to scale household_income_eur and set
+    # high_income with the unified numeric rule (>= 5000 EUR) for both sources.
+    # Hoisted above the cell-attribute join so the placement_income reallocation
+    # below can also consume it (build_persons still receives it further down).
+    inkar_income = context.stage("inkar_income")
+
     # Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
     # from the cells frame back onto the merged PopulationSim output: the ARS
     # feeds assembly.derive_zone_ids (commune/departement/iris ids, bug D1) and
@@ -1455,6 +1471,9 @@ def execute(context) -> pd.DataFrame:
     # For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
     # For source="entd": EntdSource.load_donor receives the frames injected from
     # the data.hts.selected stage (no filesystem read).
+    # Loaded here, directly above the placement_income reallocation, because that
+    # block needs the donor income + household size; it has no dependency on the
+    # cell-attribute join above (donor loading and the join are independent).
     if source_name == "entd":
         # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
         # (registered in configure as alias "hts_donor") and inject them.
@@ -1478,10 +1497,57 @@ def execute(context) -> pd.DataFrame:
         # directly from mid_dir.
         donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
 
-    # Load the per-Kreis INKAR income scale (registered in configure).
-    # Used by assembly.build_persons to scale household_income_eur and set
-    # high_income with the unified numeric rule (>= 5000 EUR) for both sources.
-    inkar_income = context.stage("inkar_income")
+    # --- placement_income (L2, issue #108): signature-preserving donor reallocation --
+    # Runs BEFORE expansion so every downstream attribute/trip join follows the donor.
+    # Permutes WHICH donor sits in which Kreis inside exact control-signature groups, so
+    # every PopulationSim control aggregate and every donor's clone count are preserved
+    # while the per-Kreis income mean is pushed toward the construct-corrected INKAR
+    # relativity. MiD-only (needs the hheink_gr1 donor income). OFF -> combined unchanged.
+    placement_income_on = bool(context.config(KEY_PLACEMENT_INCOME)) and source_name == "mid"
+    if bool(context.config(KEY_PLACEMENT_INCOME)) and source_name != "mid":
+        logger.info("[popsim.stage] placement_income requested but source=%s carries no "
+                    "hheink_gr1 donor income; feature inactive for this source.", source_name)
+    if placement_income_on:
+        from braunschweig.popsim import placement_income as _pi
+        from braunschweig.popsim import control_spec as _cs_pi
+        _pi_catalog = _cs_pi.full_catalog(
+            include_tiers=control_tiers,
+            include_employment_grid=employment_grid_on,
+            kreis_control_names=active_entry_names,
+        )
+        _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
+        _signatures = _pi.donor_control_signatures(
+            _pi_controls, seed_households, seed_persons, seed=source_name)
+        _expected = _pi.donor_expected_income_eur(donor_households)
+        _ars5 = derive_geo_kreis_from_ars(combined[mid._ARS_COLUMN])
+        _slots = pd.DataFrame({"H_ID": combined["H_ID"].to_numpy(), "ars5": _ars5.to_numpy()},
+                              index=combined.index)
+        _stats = _pi.slots_kreis_stats(_slots, donor_households)
+        _rf = _kic.build_kreis_income_targets(
+            inkar_income, _stats, sorted(_slots["ars5"].unique()), hhsize_correct=True)
+        _assignment, _pi_diag = _pi.reallocate_slots(
+            _slots, signatures=_signatures, expected_income_eur=_expected, target_factor=_rf)
+        combined = combined.assign(H_ID=_assignment.to_numpy())
+        # Traceable per-run diagnostic (research-reporting rule): one row per Kreis.
+        # "converged" (in _pi_diag) refers ONLY to the continuous lambda solve; the
+        # achieved per-Kreis fit is realized_after vs target_mean (never call this
+        # "calibrated to INKAR" -- convergence is not validation).
+        _sorted_kreise = sorted(_pi_diag["kreis_target_mean"])
+        _diag_rows = pd.DataFrame({
+            "ars5": _sorted_kreise,
+            "target_mean_eur": [_pi_diag["kreis_target_mean"][k] for k in _sorted_kreise],
+            "realized_before_eur": [_pi_diag["kreis_realized_before"].get(k) for k in _sorted_kreise],
+            "realized_after_eur": [_pi_diag["kreis_realized_after"].get(k) for k in _sorted_kreise],
+            "lambda": [_pi_diag["kreis_lambda"][k] for k in _sorted_kreise],
+            "clamped": [_pi_diag["kreis_clamped"][k] for k in _sorted_kreise],
+        })
+        _diag_rows.to_csv(Path(work_dir) / "placement_income_diag.csv", index=False)
+        _worst = max(
+            abs(_pi_diag["kreis_realized_after"].get(k, float("nan")) - v) / max(_pi_diag["region_mean"], 1.0)
+            for k, v in _pi_diag["kreis_target_mean"].items())
+        context.set_info("placement_income_moved_share", _pi_diag["moved_share"])
+        context.set_info("placement_income_no_freedom_share", _pi_diag["no_freedom_slot_share"])
+        context.set_info("placement_income_worst_residual_pct", 100.0 * _worst)
 
     # Expand the merged donor households into the full eqasim persons frame.
     # pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
@@ -1494,13 +1560,22 @@ def execute(context) -> pd.DataFrame:
     # build_persons would be redundant -- tell build_persons to skip it (no-op on the
     # final output; see assembly.build_persons skip_inkar_income_scale).
     income_kreis_control_on = bool(context.config(KEY_INCOME_KC))
+    _income_tilt_flag = bool(context.config(KEY_INCOME_TILT))
+    # placement_income (issue #108) resolves the mutually exclusive income mechanisms
+    # into one explicit decision: ON keeps each donor's OWN income and SKIPS both the
+    # per-Kreis redraw and the spatial tilt (each override logged inside
+    # resolve_income_path); OFF reproduces the legacy booleans (redraw / tilt /
+    # skip_inkar_scale) bit-for-bit, so the OFF path is byte-identical to before.
+    from braunschweig.popsim import placement_income as _pi_path
+    income_path = _pi_path.resolve_income_path(
+        placement_income_on, income_kreis_control_on, _income_tilt_flag)
     persons, pseudonym_map = assembly.build_persons(
         combined, donor_households, donor_persons,
         rng=rng,
         attribute_mapper=source.map_person_attributes,
         pseudonymise=pseudonymise,
         inkar_scale=inkar_income,
-        skip_inkar_income_scale=income_kreis_control_on,
+        skip_inkar_income_scale=income_path["skip_inkar_scale"],
     )
     context.set_info("popsim_n_persons", len(persons))
 
@@ -1535,11 +1610,22 @@ def execute(context) -> pd.DataFrame:
             random_seed,
         )
 
+    # --- placement_income (L2, issue #108): keep each donor's OWN income ------------
+    # When placement is active, household_income_eur becomes a seeded continuous draw
+    # WITHIN each household's own MiD hheink_gr1 bracket (one draw per household); the
+    # per-Kreis relativity was already imposed by the donor reallocation above, so the
+    # redraw and the spatial tilt below are both skipped (see resolve_income_path).
+    # _pi_diag is defined iff placement is active (same condition as income_path
+    # ["placement"], which resolve_income_path returns True only when placement_income_on).
+    if income_path["placement"]:
+        persons, _own_diag = _pi_path.apply_own_income(persons, random_seed=random_seed)
+        persons.attrs["placement_income_diag"] = {**_pi_diag, **_own_diag}
+
     # --- Kreis-Income-Control (real MiD draw + max-entropy per-Kreis calibration) ---
     # Replaces the build_persons midpoint x INKAR_scale income with a real continuous
     # draw reshaped per Kreis to the construct-corrected INKAR target. Runs BEFORE the
     # within-Kreis spatial tilt (which is Kreis-mean-preserving and layers on top).
-    if income_kreis_control_on:
+    if income_path["redraw"]:
         _kc_data_path = context.config("data_path")
         _kc_scope = [str(p) for p in context.config(KEY_KREISE)]
         _income_tables = {
@@ -1583,9 +1669,11 @@ def execute(context) -> pd.DataFrame:
     # --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
     # Applies a within-Kreis income redistribution guided by per-cell net cold rent
     # (renters) and Eigentümerquote (owners), preserving each Kreis's income mean
-    # exactly.  Controlled by KEY_INCOME_TILT (default ON per project rule).
-    # When OFF, the income frame is byte-identical.
-    income_tilt_enabled = bool(context.config(KEY_INCOME_TILT))
+    # exactly.  Controlled by KEY_INCOME_TILT (default ON per project rule), unless
+    # placement_income is active -- resolve_income_path then forces income_path["tilt"]
+    # False (the tilt would rescale the donor's own income). When OFF, the income frame
+    # is byte-identical.
+    income_tilt_enabled = income_path["tilt"]
     income_tilt_beta = float(context.config(KEY_INCOME_TILT_BETA))
     income_tilt_clip = float(context.config(KEY_INCOME_TILT_CLIP))
 

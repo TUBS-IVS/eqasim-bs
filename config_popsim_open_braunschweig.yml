@@ -240,6 +240,14 @@ config:
   braunschweig.population.popsim.income_tilt_beta: 0.3
   braunschweig.population.popsim.income_tilt_clip: 0.30
 
+  # --- placement_income (L2, issue #108) --------------------------------------
+  # Signature-preserving donor reallocation that keeps each household's OWN MiD income
+  # while approaching the per-Kreis INKAR relativity. Default ON (project rule) but
+  # MiD-only (it needs the hheink_gr1 donor income); for this popsim_open (ENTD source)
+  # config it is INACTIVE regardless of the flag -- the stage logs an INFO and leaves the
+  # income path unchanged. Recorded here for parity with the mid config.
+  braunschweig.population.popsim.placement_income: true
+
   # Legacy-IPF-only flags intentionally absent (popsim replaces the enriched
   # stage: synthesis.population.enriched -> braunschweig.popsim.enriched_adapter
   # and data.census.filtered -> braunschweig.popsim.stage, so these would be
