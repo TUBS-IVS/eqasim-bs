@@ -92,6 +92,12 @@ def select_all_employed_extra(df_persons, purpose, employment_col):
     return df_persons[df_persons[employment_col] & ~df_persons[trip_col]]
 
 
+# #203: fixed seed offset for the isolated all-employed extra-assignment RNG
+# stream. Adding it to random_seed gives a stream independent of the trip-haver
+# passes, so those (which feed the MATSim plans) stay byte-identical.
+ALL_EMPLOYED_SEED_OFFSET = 203203
+
+
 def configure(context):
     context.stage("data.od.weighted")
 
@@ -105,6 +111,15 @@ def configure(context):
     context.config("output_path")
     context.config("random_seed")
     context.config("education_location_source", "bpe")
+
+    # #203 (Approach A, analog eqasim-france #536): also assign work/education
+    # primary locations to ALL employed / studying persons, not only those with a
+    # trip on the reference day, so the commuter-OD validation universe matches the
+    # QZM "all workers" reference and the workplace/education-place export is
+    # complete. Default OFF -> byte-identical (no second pass, no extra output
+    # keys). When ON, the extra assignment runs in an ISOLATED RNG stream so the
+    # trip-haver candidates (which feed the MATSim plans) stay byte-identical.
+    context.config("primary_locations_for_all_employed", False)
 
     # When the TAZ work-location-choice feature is ON, this stage also needs
     # the home POINT (geometry) to PIP each household to its TAZ, and the TAZ
@@ -237,9 +252,22 @@ def process(context, purpose, random, df_persons, df_od, df_locations, step_name
 def execute(context):
     # Read the flag (no default here; the default is declared in configure()).
     taz_on = context.config("taz_work_location_choice")
+    all_employed_on = context.config("primary_locations_for_all_employed")
 
-    # Prepare population data
-    df_persons = context.stage("synthesis.population.enriched")[["person_id", "household_id", "age_range"]].copy()
+    # Prepare population data. The employment flags (employed/studies) are only
+    # needed for the #203 all-employed extra pass, so they are read only when that
+    # feature is on (OFF path unchanged). Fail loudly if they are missing.
+    enriched_columns = ["person_id", "household_id", "age_range"]
+    if all_employed_on:
+        enriched_columns = enriched_columns + ["employed", "studies"]
+    df_enriched = context.stage("synthesis.population.enriched")
+    if all_employed_on:
+        missing = [c for c in ("employed", "studies") if c not in df_enriched.columns]
+        if missing:
+            raise RuntimeError(
+                "primary_locations_for_all_employed is on but "
+                "synthesis.population.enriched is missing columns %s" % missing)
+    df_persons = df_enriched[enriched_columns].copy()
     df_trips = context.stage("synthesis.population.trips")
 
     df_persons["has_work_trip"] = df_persons["person_id"].isin(df_trips[
@@ -346,6 +374,61 @@ def execute(context):
             )
         df_education = pd.concat(df_education)
 
+    # --- #203 all-employed EXTRA pass (isolated RNG; does NOT feed MATSim plans) ---
+    # Assign work/education primary locations for employed/studying persons WITHOUT
+    # a trip on the reference day. Runs in a separate RandomState so the trip-haver
+    # passes above (which produce work_candidates/education_candidates -> plans) are
+    # byte-identical. The results land in dedicated output keys consumed only by the
+    # export + commuter-OD validation, never by the plan-building path.
+    all_employed_work = None
+    all_employed_education = None
+    if all_employed_on:
+        random_extra = np.random.RandomState(
+            context.config("random_seed") + ALL_EMPLOYED_SEED_OFFSET)
+        empty_cols = ["origin_id", "destination_id", "location_id"]
+
+        def _extra_pass(purpose, employment_col, df_od, df_loc, step,
+                        origin_zone_col, zone_key, persons_subset=None):
+            base = df_persons if persons_subset is None else persons_subset
+            extra = select_all_employed_extra(base, purpose, employment_col).copy()
+            n_extra = len(extra)
+            n_trip = int(base["has_%s_trip" % purpose].sum())
+            import logging
+            logging.getLogger(__name__).info(
+                "[candidates] #203 all-employed %s extra pass: %d extra "
+                "(employed/studying without a %s trip) added to %d trip-havers",
+                step, n_extra, purpose, n_trip)
+            if n_extra == 0:
+                return pd.DataFrame(columns=empty_cols)
+            # Force the trip flag so process() (which filters on has_<purpose>_trip)
+            # includes exactly these extra persons.
+            extra["has_%s_trip" % purpose] = True
+            return process(context, purpose, random_extra, extra, df_od, df_loc, step,
+                           origin_zone_col=origin_zone_col, zone_key=zone_key)
+
+        # WORK extras mirror the work pass's zone keying (taz vs commune).
+        work_zone = ("home_taz_id", "taz_id") if taz_on else ("commune_id", "commune_id")
+        all_employed_work = _extra_pass(
+            "work", "employed", df_work_od, df_work_locations,
+            "work_all_employed", work_zone[0], work_zone[1])
+
+        # EDUCATION extras mirror the education path (bpe vs per-age-range).
+        if context.config("education_location_source") == 'bpe':
+            all_employed_education = _extra_pass(
+                "education", "studies", df_education_od, df_locations,
+                "education_all_employed", "commune_id", "commune_id")
+        else:
+            parts = []
+            for prefix, education_type in EDUCATION_MAPPING.items():
+                parts.append(_extra_pass(
+                    "education", "studies",
+                    df_education_od[df_education_od["age_range"] == prefix],
+                    df_locations[df_locations["education_type"].isin(education_type)],
+                    "education_all_employed_%s" % prefix, "commune_id", "commune_id",
+                    persons_subset=df_persons[df_persons["age_range"] == prefix]))
+            all_employed_education = (pd.concat(parts) if parts
+                                      else pd.DataFrame(columns=empty_cols))
+
     # Build the persons return frame.  When TAZ is ON, home_taz_id is included
     # so that locations.py can group by it on the WORK side.  The column is
     # absent on the OFF path so downstream logic is unchanged.
@@ -354,8 +437,14 @@ def execute(context):
     if taz_on:
         persons_cols.append("home_taz_id")
 
-    return dict(
+    result = dict(
         work_candidates=df_work,
         education_candidates=df_education,
         persons=df_persons[df_persons["has_work_trip"] | df_persons["has_education_trip"]][persons_cols],
     )
+    # #203: expose the all-employed extra candidates under dedicated keys ONLY when
+    # the feature is on, so the OFF path returns a byte-identical dict.
+    if all_employed_on:
+        result["all_employed_work_candidates"] = all_employed_work
+        result["all_employed_education_candidates"] = all_employed_education
+    return result
