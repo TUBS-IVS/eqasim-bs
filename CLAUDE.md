@@ -54,6 +54,7 @@ Each feature's full description — data sources, flags, references, assumptions
 - **Calibration corner + commute distribution** -> [docs/features/calibration-corner.md](docs/features/calibration-corner.md)
 - **Distance-dependent detour/circuity (Tier 3)** -> [docs/features/detour-circuity.md](docs/features/detour-circuity.md)
 - **Education gravity model (NDS school data)** -> [docs/features/education-gravity.md](docs/features/education-gravity.md)
+- **Cross-cordon student in-commuters (#140)** -> [docs/features/student-incommuters.md](docs/features/student-incommuters.md)
 - **Building-level activity potentials** -> [docs/features/building-potentials.md](docs/features/building-potentials.md)
 - **Purpose-resolved secondary activity distances (Tier 1 + Tier 2)** -> [docs/features/secondary-distances.md](docs/features/secondary-distances.md)
 - **Long-haul freight injection (german-wide-freight v3)** -> [docs/features/freight.md](docs/features/freight.md)

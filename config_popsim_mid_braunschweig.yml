@@ -222,6 +222,14 @@ config:
   cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
   cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
 
+  # Student in-commuters (#140): default-ON tri-state, dependency-gated on
+  # education_gravity_enabled (already true above). Explicit here for visibility
+  # per the "feature parity" rule -- unset also resolves to true given the parent
+  # is on, so this line does not change behaviour (see
+  # braunschweig/synthesis/student_incommuters.py::_active and
+  # docs/features/student-incommuters.md).
+  cordon_student_incommuters_enabled: true
+
   # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module) -
   # REQUIRED for the cordon scenario cutter (org.eqasim.braunschweig.* +
   # RunScenarioCutter).

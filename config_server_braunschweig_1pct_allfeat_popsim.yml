@@ -274,6 +274,13 @@ config:
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
   cordon_enabled: true
+  # Student in-commuters (#140): default-ON tri-state, dependency-gated on
+  # education_gravity_enabled (already true above). Explicit here for visibility
+  # per the "feature parity" rule -- unset also resolves to true given the parent
+  # is on, so this line does not change behaviour (see
+  # braunschweig/synthesis/student_incommuters.py::_active and
+  # docs/features/student-incommuters.md).
+  cordon_student_incommuters_enabled: true
   cordon_network_source_buffer_m: 45000
   cordon_network_buffer_fraction: 0.10
   osm_path: osm/cordon
