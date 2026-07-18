@@ -21,6 +21,12 @@ class Ctx:
 def test_disabled_when_cordon_off():
     frames = si.execute(Ctx({"cordon_enabled": False}))
     assert frames["persons"].empty
+    # 2026-07-18 Task 5 review fix: the OFF/skip path must also register empty
+    # vehicles/vehicle_types (byte-identical no-op for both
+    # braunschweig.matsim.scenario.vehicles and .population).
+    assert frames["vehicles"].empty
+    assert list(frames["vehicles"].columns) == ["owner_id", "vehicle_id", "mode"]
+    assert frames["vehicle_types"].empty
 
 
 def test_skip_when_parent_off_and_flag_default():
@@ -86,6 +92,7 @@ def _full_ctx():
            "education_university_max_radius_km": 150.0,
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_network_source_buffer_m": 45000.0,
+           "braunschweig.political_prefix": ["03101"],
            "data_path": "eqasim-data/data"}
     return FullCtx(cfg, stages)
 
@@ -99,3 +106,269 @@ def test_injection_produces_education_incommuters():
     assert len(frames["persons"]) == 498
     assert (frames["activities"]["purpose"] == "education").any()
     assert frames["persons"]["person_id"].min() >= 3   # no collision with residents
+    # 2026-07-18 Task 5 review fix: every agent owns a car_passenger vehicle,
+    # and every car-mode agent additionally owns a car vehicle.
+    assert (frames["vehicles"]["mode"] == "car_passenger").sum() == 498
+    n_car_mode = (frames["persons"]["car_availability"] == "all").sum()
+    assert (frames["vehicles"]["mode"] == "car").sum() == n_car_mode
+    assert frames["vehicle_types"].empty  # legacy (non-German-fleet) vehicle builder
+
+
+# ---------------------------------------------------------------------------
+# Full-injection test with the two real-geodata calls mocked out (VG250 Gemeinden
+# + DESTATIS 18-29 population), so it runs in ANY environment (unlike the
+# skip-gated test above). Verifies the #140 Task 5 review vehicle fix end to
+# end: _inject() must return a "vehicles" frame with one car_passenger vehicle
+# per agent and one car vehicle per car-mode agent (Finding 2), reusing the SvB
+# stage's legacy vehicle builders.
+# ---------------------------------------------------------------------------
+
+def _mocked_full_ctx():
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    ctx = _full_ctx()
+    # Origin Kreis "03402" lies outside the ZGB political prefix ["03101"], so it
+    # is a valid external candidate. Only ars5/gem_ags/ewz/geometry are read by
+    # student_incommuters._inject / incommuter_origin_homes.
+    fake_gem = gpd.GeoDataFrame(
+        {"ars5": ["03402"], "gem_ags": ["03402001"], "ewz": [5000.0]},
+        geometry=[Point(50_000.0, 50_000.0)], crs="EPSG:25832")
+    ctx._stages["_fake_gemeinden"] = fake_gem
+    return ctx
+
+
+def test_injection_with_mocked_geodata_returns_vehicles(monkeypatch):
+    ctx = _mocked_full_ctx()
+    fake_gem = ctx._stages["_fake_gemeinden"]
+
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden",
+        lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+
+    frames = si.execute(ctx)
+
+    n = len(frames["persons"])
+    assert n == 498  # same count-anchor arithmetic as the real-data test above
+    assert frames["persons"]["person_id"].min() >= 3
+
+    # Finding 2 (#140 Task 5 review): a car_passenger vehicle for every agent...
+    vehicles = frames["vehicles"]
+    assert (vehicles["mode"] == "car_passenger").sum() == n
+    assert set(frames["persons"]["person_id"]) == set(
+        vehicles.loc[vehicles["mode"] == "car_passenger", "owner_id"])
+    # ... and a car vehicle for every car-mode agent, matching car_availability.
+    n_car_mode = (frames["persons"]["car_availability"] == "all").sum()
+    assert (vehicles["mode"] == "car").sum() == n_car_mode
+    assert n_car_mode > 0  # sanity: the mocked mode reference actually yields car agents
+    # No German-fleet HBEFA types are introduced by the legacy vehicle builder.
+    assert frames["vehicle_types"].empty
+
+
+def test_injection_with_mocked_geodata_facilities_and_vehicles_wiring(monkeypatch):
+    """Exercise the ACTUAL facilities.py / vehicles.py wiring (Findings 1+2) end
+    to end against a real (mocked-geodata) student_incommuters output, using the
+    same FullCtx stub style as tests/test_student_incommuter_merge.py."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    import braunschweig.matsim.scenario.facilities as fac_mod
+    import braunschweig.matsim.scenario.vehicles as veh_mod
+
+    ctx = _mocked_full_ctx()
+    fake_gem = ctx._stages["_fake_gemeinden"]
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden",
+        lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+    student_frames = si.execute(ctx)
+
+    class FacilitiesCtx:
+        def __init__(self, cfg, stages):
+            self._cfg = cfg
+            self._stages = stages
+
+        def config(self, key, default=None):
+            return self._cfg.get(key, default)
+
+        def stage(self, name):
+            return self._stages[name]
+
+        def path(self):
+            return "."
+
+        def progress(self, total, label):
+            import contextlib
+            return contextlib.nullcontext(_Progress())
+
+    class _Progress:
+        def update(self):
+            pass
+
+    df_homes = gpd.GeoDataFrame({"household_id": []}, geometry=[], crs="EPSG:25832")
+    df_primary = gpd.GeoDataFrame({"location_id": [], "is_work": []},
+                                  geometry=[], crs="EPSG:25832")
+    df_secondary = gpd.GeoDataFrame({"location_id": [], "offers_leisure": [],
+                                     "offers_shop": [], "offers_other": []},
+                                    geometry=[], crs="EPSG:25832")
+    df_realised = pd.DataFrame({"location_id": []})
+
+    fac_ctx = FacilitiesCtx(
+        cfg={"cordon_enabled": True, "secondary_building_potentials": False},
+        stages={
+            "synthesis.population.spatial.home.locations": df_homes,
+            "synthesis.population.spatial.primary.locations": (
+                gpd.GeoDataFrame({"location_id": [], "is_work": []}, geometry=[],
+                                 crs="EPSG:25832"),
+                gpd.GeoDataFrame({"location_id": [], "is_work": []}, geometry=[],
+                                 crs="EPSG:25832")),
+            "synthesis.locations.secondary": df_secondary,
+            "synthesis.population.spatial.secondary.locations": (df_realised,),
+            "braunschweig.synthesis.incommuters": {
+                # Full (non-empty-schema) locations frame even with zero rows, so
+                # the existing SvB block's "activity_index" filter does not choke
+                # on a columns-less stub -- mirrors the SvB stage's actual
+                # non-empty-agent schema (only the never-exercised zero-SvB-agent
+                # _empty_frames path lacks "activity_index", a separate pre-
+                # existing gap out of this fix's scope).
+                "locations": gpd.GeoDataFrame(
+                    {"person_id": [], "activity_index": [], "location_id": []},
+                    geometry=[], crs="EPSG:25832"),
+                "persons": pd.DataFrame({"person_id": [], "household_id": []}),
+            },
+            "braunschweig.synthesis.student_incommuters": student_frames,
+        },
+    )
+
+    written = {}
+    monkeypatch.setattr(
+        fac_mod.base, "write_facilities",
+        lambda output_path, homes, primary, secondary, context: written.update(
+            homes=homes, primary=primary) or "facilities.xml.gz")
+    fac_mod.execute(fac_ctx)
+
+    n = len(student_frames["persons"])
+    edu_ids = {f"ic_edu_{int(pid)}" for pid in student_frames["persons"]["person_id"]}
+    home_ids = {f"home_{int(hid)}" for hid in student_frames["persons"]["household_id"]}
+    written_primary_ids = set(written["primary"]["location_id"].astype(str))
+    written_home_ids = {
+        f"home_{int(hid)}" for hid in written["homes"]["household_id"]}
+    # Finding 1: every student education facility (ic_edu_<person_id>) and home
+    # facility (home_<household_id>) is registered.
+    assert edu_ids <= written_primary_ids
+    assert home_ids <= written_home_ids
+    edu_rows = written["primary"][written["primary"]["location_id"].astype(str).isin(edu_ids)]
+    assert not edu_rows["is_work"].any()  # education, not work
+
+    # Finding 2: vehicles.py merges the student stage's vehicles/vehicle_types.
+    veh_ctx = FacilitiesCtx(
+        cfg={"cordon_enabled": True},
+        stages={
+            "synthesis.vehicles.vehicles": (
+                pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                      "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                      "hbefa_emission"]),
+                pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"])),
+            "braunschweig.synthesis.incommuters": {
+                "vehicles": pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
+                "vehicle_types": pd.DataFrame(columns=["type_id"]),
+            },
+            "braunschweig.synthesis.student_incommuters": student_frames,
+        },
+    )
+    veh_written = {}
+    monkeypatch.setattr(
+        veh_mod.base, "write_vehicles",
+        lambda output_path, types, vehicles, context: veh_written.update(
+            vehicles=vehicles) or "vehicles.xml.gz")
+    veh_mod.execute(veh_ctx)
+
+    assert (veh_written["vehicles"]["mode"] == "car_passenger").sum() == n
+
+
+def test_facilities_and_vehicles_off_path_registers_nothing_for_students(monkeypatch):
+    """OFF/skip path (student_incommuters._empty_frames): facilities.py and
+    vehicles.py must register/merge NOTHING for students -- a true no-op,
+    keeping the resident + SvB-only output byte-identical."""
+    import geopandas as gpd
+
+    import braunschweig.matsim.scenario.facilities as fac_mod
+    import braunschweig.matsim.scenario.vehicles as veh_mod
+
+    empty_student_frames = si._empty_frames()
+
+    class StubCtx:
+        def __init__(self, cfg, stages):
+            self._cfg = cfg
+            self._stages = stages
+
+        def config(self, key, default=None):
+            return self._cfg.get(key, default)
+
+        def stage(self, name):
+            return self._stages[name]
+
+        def path(self):
+            return "."
+
+    df_homes = gpd.GeoDataFrame({"household_id": []}, geometry=[], crs="EPSG:25832")
+    df_primary_tuple = (
+        gpd.GeoDataFrame({"location_id": [], "is_work": []}, geometry=[],
+                         crs="EPSG:25832"),
+        gpd.GeoDataFrame({"location_id": [], "is_work": []}, geometry=[],
+                         crs="EPSG:25832"))
+    df_secondary = gpd.GeoDataFrame({"location_id": [], "offers_leisure": [],
+                                     "offers_shop": [], "offers_other": []},
+                                    geometry=[], crs="EPSG:25832")
+    df_realised = pd.DataFrame({"location_id": []})
+
+    fac_ctx = StubCtx(
+        cfg={"cordon_enabled": True, "secondary_building_potentials": False},
+        stages={
+            "synthesis.population.spatial.home.locations": df_homes,
+            "synthesis.population.spatial.primary.locations": df_primary_tuple,
+            "synthesis.locations.secondary": df_secondary,
+            "synthesis.population.spatial.secondary.locations": (df_realised,),
+            "braunschweig.synthesis.incommuters": {
+                "locations": gpd.GeoDataFrame(
+                    {"person_id": [], "activity_index": [], "location_id": []},
+                    geometry=[], crs="EPSG:25832"),
+                "persons": pd.DataFrame({"person_id": [], "household_id": []}),
+            },
+            "braunschweig.synthesis.student_incommuters": empty_student_frames,
+        },
+    )
+    written = {}
+    monkeypatch.setattr(
+        fac_mod.base, "write_facilities",
+        lambda output_path, homes, primary, secondary, context: written.update(
+            homes=homes, primary=primary) or "facilities.xml.gz")
+    fac_mod.execute(fac_ctx)
+    assert len(written["homes"]) == 0
+    assert len(written["primary"]) == 0
+
+    veh_ctx = StubCtx(
+        cfg={"cordon_enabled": True},
+        stages={
+            "synthesis.vehicles.vehicles": (
+                pd.DataFrame(columns=["type_id"]),
+                pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"])),
+            "braunschweig.synthesis.incommuters": {
+                "vehicles": pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
+                "vehicle_types": pd.DataFrame(columns=["type_id"]),
+            },
+            "braunschweig.synthesis.student_incommuters": empty_student_frames,
+        },
+    )
+    veh_written = {}
+    monkeypatch.setattr(
+        veh_mod.base, "write_vehicles",
+        lambda output_path, types, vehicles, context: veh_written.update(
+            vehicles=vehicles) or "vehicles.xml.gz")
+    veh_mod.execute(veh_ctx)
+    assert len(veh_written["vehicles"]) == 0

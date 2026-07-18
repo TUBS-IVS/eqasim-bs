@@ -24,6 +24,12 @@ cordon in-commuter stage), but Home->Education->Home instead of Home->Work->Home
              ``_build_persons``/``_build_households`` (no origin-Kreis income
              tilt, no per-agent German fleet draw); see
              :func:`_build_student_persons` / :func:`_build_student_households`.
+  - vehicles: reuses the SvB stage's legacy (non-German-fleet) vehicle builders
+             ``_build_legacy_vehicles`` / ``_build_incommuter_passenger_vehicles``
+             -- one ``car`` vehicle per car-mode agent plus a ``car_passenger``
+             vehicle for every agent (2026-07-18 Task 5 review fix: without this
+             every student in-commuter was unroutable, see
+             ``braunschweig.matsim.scenario.vehicles``).
 """
 from __future__ import annotations
 
@@ -83,6 +89,14 @@ def _empty_frames(crs=CRS_METRIC):
         "trips": pd.DataFrame(),
         "activities": pd.DataFrame(),
         "locations": gpd.GeoDataFrame(geometry=[], crs=crs),
+        # Empty vehicles/vehicle_types (2026-07-18 Task 5 review fix), matching
+        # the column schema braunschweig.synthesis.incommuters._empty_frames uses,
+        # so the OFF/skip path stays a no-op for both consumers
+        # (braunschweig.matsim.scenario.vehicles and .population).
+        "vehicles": pd.DataFrame(columns=["owner_id", "vehicle_id", "mode"]),
+        "vehicle_types": pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                               "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                               "hbefa_emission"]),
     }
 
 
@@ -291,7 +305,9 @@ def _inject(context):
     from braunschweig.data.education import student_origins as so
     from braunschweig.data.external_workplaces import _load_gemeinden
     from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
-    from braunschweig.synthesis.incommuters import assemble_incommuter_core_frames
+    from braunschweig.synthesis.incommuters import (
+        _build_incommuter_passenger_vehicles, _build_legacy_vehicles,
+        assemble_incommuter_core_frames)
 
     sampling_rate = float(context.config("sampling_rate"))
     slope = float(context.config("education_university_slope"))
@@ -424,6 +440,24 @@ def _inject(context):
     persons = _build_student_persons(ids, donors, modes)
     households = _build_student_households(ids)
 
+    # 10b. Vehicles (2026-07-18 Task 5 review fix). Every in-commuter -- resident,
+    # SvB, or student -- must own a "car_passenger" vehicle: it is a network-routed
+    # mode (eqasim core NETWORK_MODES = [car, car_passenger, truck]) that the
+    # in-loop discrete mode choice can assign to ANY agent regardless of car
+    # ownership, so a missing vehicle aborts the MATSim router. Car-mode agents
+    # additionally need a "car" vehicle. Students have no income/fleet model (see
+    # _build_student_persons), so they reuse the SvB stage's LEGACY (non-German-
+    # fleet) vehicle builders -- the same path the SvB stage takes when no
+    # ``data_path`` is supplied; no distinct HBEFA vehicle type is introduced, so
+    # ``vehicle_types`` stays empty (the resident/SvB ``default_car`` /
+    # ``default_car_passenger`` types already cover these vehicles).
+    vehicle_types = pd.DataFrame(columns=["type_id", "length", "width", "mode",
+                                          "hbefa_cat", "hbefa_tech", "hbefa_size",
+                                          "hbefa_emission"])
+    vehicles = _build_legacy_vehicles(person_ids, modes)
+    vehicles = pd.concat(
+        [vehicles, _build_incommuter_passenger_vehicles(person_ids)], ignore_index=True)
+
     # 11. Per-commune injection counts (CLAUDE.md traceability).
     _log.info(
         "[student_incommuters] injected %d students across %d university "
@@ -434,4 +468,5 @@ def _inject(context):
         "persons": persons, "households": households,
         "trips": core["trips"], "activities": core["activities"],
         "locations": core["locations"],
+        "vehicles": vehicles, "vehicle_types": vehicle_types,
     }

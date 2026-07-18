@@ -3,12 +3,16 @@
 Overrides matsim.scenario.population: loads the resident synthesis frames, and -- when
 cordon_enabled -- concatenates the injected in-commuter frames before the SAME prepare +
 write. Two independent in-commuter sources are merged: the SvB cross-cordon commuters
-(braunschweig.synthesis.incommuters; persons, activities, locations, trips, vehicles) and
-the student in-commuters (braunschweig.synthesis.student_incommuters, #140 Task 5;
-persons, activities, locations, trips -- this stage emits no vehicles frame, see the
-concern noted at the vehicles line below). Terminal injection downstream of the whole
-synthesis chain, so there is no alias cycle and the resident chain stays resident-only.
-OFF -> both in-commuter frames empty -> byte-identical output.
+(braunschweig.synthesis.incommuters) and the student in-commuters
+(braunschweig.synthesis.student_incommuters, #140 Task 5), both contributing persons,
+activities, locations, trips, and vehicles (Task 5 review fix, 2026-07-18: the student
+stage now also builds a vehicles frame -- see student_incommuters._inject -- so both
+sources are merged into ``raw["vehicles"]`` identically; this frame drives the
+per-person ``PersonVehicles`` attribute written by ``add_person`` below, so a missing
+merge here would leave in-commuters unroutable even if vehicles.xml is otherwise
+correct). Terminal injection downstream of the whole synthesis chain, so there is no
+alias cycle and the resident chain stays resident-only. OFF -> both in-commuter frames
+empty -> byte-identical output.
 """
 from __future__ import annotations
 
@@ -61,17 +65,15 @@ def execute(context):
                                     ["person_id", "trip_index"])
         raw["trips"] = concat_frame(raw["trips"], student_inc["trips"],
                                     ["person_id", "trip_index"])
-        # NOTE (#140 Task 5 concern): student_incommuters emits no "vehicles"
-        # frame at all (unlike the SvB stage, which builds a car vehicle for
-        # car-mode agents and a car_passenger vehicle for every agent), so only
-        # the SvB in-commuter vehicles are concatenated here. A car-mode
-        # student in-commuter therefore currently has NO registered vehicle,
-        # which would make its initial car leg unroutable by MATSim -- flagged
-        # for a follow-up, not fixed here (out of this task's scope: Task 4's
-        # stage contract and this task's brief both list only five frames --
-        # persons, households, trips, activities, locations -- for the student
-        # stage, with no vehicles key).
+        # Both in-commuter sources contribute vehicles (Task 5 review fix): this
+        # frame drives the per-person "vehicles" (PersonVehicles) attribute written
+        # by add_person below, which MATSim's router uses to resolve a vehicle id
+        # per mode -- missing an entry here aborts routing for that agent/mode,
+        # exactly like a missing vehicles.xml row (see braunschweig.matsim.scenario
+        # .vehicles for the corresponding vehicles.xml merge).
         raw["vehicles"] = concat_frame(raw["vehicles"], inc["vehicles"], "owner_id")
+        raw["vehicles"] = concat_frame(raw["vehicles"], student_inc["vehicles"],
+                                       "owner_id")
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
