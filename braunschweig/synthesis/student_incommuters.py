@@ -110,6 +110,7 @@ def configure(context):
     context.config("sampling_rate")
     context.config("random_seed")
     context.config("cordon_network_source_buffer_m")
+    context.config("cordon_gate_speed_kmh", 30.0)
     context.config("data_path")
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("synthesis.population.spatial.primary.locations")
@@ -314,6 +315,7 @@ def _inject(context):
     max_radius_km = float(context.config("education_university_max_radius_km"))
     age_lower, age_upper = context.config("student_incommuter_age_band", [18, 29])
     rng = np.random.default_rng(int(context.config("random_seed")) + _RNG_OFFSET)
+    gate_speed_kmh = float(context.config("cordon_gate_speed_kmh", 30.0))
     data_path = context.config("data_path")
 
     facilities = context.stage(
@@ -420,10 +422,22 @@ def _inject(context):
     #    commute mode from the Mikrozensus distance-band reference.
     donors_pool = plans.select_student_donors(hts_persons, hts_trips, "person_id")
     donors = plans.sample_donors(donors_pool, n, rng)
-    depart_home, arrive_mid, depart_mid, arrive_home = _donor_education_times(
+    _donor_depart_home, arrive_mid, depart_mid, arrive_home = _donor_education_times(
         donors, hts_trips, "person_id")
 
     dist_km = plans.straight_line_distance_km(home_x, home_y, dest_x, dest_y)
+
+    # Distance-consistent home-departure seed (mirrors the SvB path's _agent_times):
+    # the RAW donor depart_home comes from an HTS trip whose length is unrelated to
+    # this agent's synthetic home->campus distance, so for a far agent (home = nearest
+    # gate, campus inside ZGB) it can imply an absurd travel speed in the seed plan.
+    # Re-seed depart_home = arrive_mid - (routed home->campus distance / gate speed) so
+    # the initial schedule is speed-consistent; arrive_mid (donor arrival at education)
+    # stays the anchor and the return leg keeps the donor timing, exactly as the SvB
+    # stage does. MATSim re-times the simulated leg over the iterations regardless; this
+    # only fixes the seed plan (see docs/features/student-incommuters.md timing note).
+    travel_s = (dist_km * ROUTED_DETOUR_FACTOR / gate_speed_kmh) * 3600.0
+    depart_home = np.maximum(0.0, arrive_mid - travel_s)
     reference = restrict_to_modes(
         load_commute_mode_by_distance(data_path), allowed=("car", "pt"))
     band_fn = lambda d: route_distance_band(  # noqa: E731

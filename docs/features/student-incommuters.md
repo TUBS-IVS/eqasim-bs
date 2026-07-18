@@ -139,23 +139,24 @@ block without a hard stage dependency on it; `assert_unique_ids` in the scenario
 writers is a loud safety net that verifies the two in-commuter blocks never
 actually overlap.
 
-### KNOWN LIMITATION: raw donor timing, no gate-teleport reseeding
+### Timing: distance-consistent home-departure seed
 
-The Home->Education->Home departure/arrival times
-(`_donor_education_times`) are taken **as-is** from the sampled HTS donor's
-own trip legs (`braunschweig.data.cordon.plans.extract_activity_times`,
-memoised per unique donor id) -- there is no re-seeding of the timing to the
-agent's actual (possibly far-away, gate-teleported) home coordinates. This is
-the same simplification the SvB in-commuter stage makes, carried forward
-deliberately here (v1 scope; flagged during Task 4 review as an
-IMPORTANT/plan-mandated follow-up, not yet turned into a tracked GitHub issue).
-**Before any scientific use of the injected trip durations or derived
-speeds**, validate the implied door-to-door speed
-(straight-line distance / donor-reported duration) is plausible for the
-distances involved -- a donor whose real trip was short but whose synthetic
-origin is far away will show an implausibly high implied speed. This affects
-travel-time-derived outputs only, not the count anchor, the origin-Kreis
-draw, or the mode split.
+The donor's education-leg times (`_donor_education_times`, memoised per unique
+donor id) supply the arrival at education (`arrive_mid`), the education departure
+and the home arrival. The home **departure** is NOT taken raw from the donor;
+it is re-seeded from the agent's synthetic home->campus straight-line distance at
+the configured gate speed (`cordon_gate_speed_kmh`, default 30 km/h) with the
+routed-detour factor, exactly mirroring the SvB stage's `_agent_times`:
+
+    depart_home = max(0, arrive_mid - dist_km * ROUTED_DETOUR_FACTOR / gate_speed_kmh * 3600)
+
+This keeps the seed schedule speed-consistent for every agent regardless of the
+donor's own (unrelated) trip length -- important because a far agent's home is a
+nearest cordon gate, so a raw donor time would otherwise imply an absurd
+door-to-door speed. MATSim re-times the simulated leg over the iterations; this
+only fixes the initial plan. Verified by
+`tests/test_student_incommuters_stage.py::test_injection_seeds_distance_consistent_departure`
+(implied outbound speed is the constant `gate_speed_kmh / detour` for all agents).
 
 ## OD / distance analysis outputs
 

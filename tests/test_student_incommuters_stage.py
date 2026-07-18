@@ -195,6 +195,46 @@ def test_injection_attaches_orig_ars5_and_dest_commune(monkeypatch):
     assert set(persons["dest_commune"]) == {"03101"}
 
 
+def test_injection_seeds_distance_consistent_departure(monkeypatch):
+    """#140 timing fix: the outbound home-departure seed must be derived from the
+    synthetic home->campus distance at the gate speed (like the SvB _agent_times),
+    NOT taken raw from the HTS donor trip. Proof: the implied outbound speed is the
+    same constant (gate_speed / detour) for every agent, independent of the donor's
+    own trip duration."""
+    from braunschweig.constants import ROUTED_DETOUR_FACTOR
+    from braunschweig.data.cordon.plans import straight_line_distance_km
+
+    ctx = _mocked_full_ctx()
+    fake_gem = ctx._stages["_fake_gemeinden"]
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden",
+        lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+
+    frames = si.execute(ctx)
+    trips, loc = frames["trips"], frames["locations"]
+    gate_speed_kmh = 30.0  # ctx default (cordon_gate_speed_kmh)
+
+    # Per person: outbound leg (trip_index 0) duration vs the home->campus distance.
+    home = loc[loc["activity_index"] == 0].set_index("person_id").geometry
+    campus = loc[loc["activity_index"] == 1].set_index("person_id").geometry
+    outbound = trips[trips["trip_index"] == 0].set_index("person_id")
+    checked = 0
+    for pid, leg in outbound.iterrows():
+        dist_km = straight_line_distance_km(
+            home[pid].x, home[pid].y, campus[pid].x, campus[pid].y)
+        expected_s = dist_km * ROUTED_DETOUR_FACTOR / gate_speed_kmh * 3600.0
+        actual_s = float(leg["arrival_time"] - leg["departure_time"])
+        # depart_home is floored at 0, so only assert the equality where the seed
+        # did not clip (arrive_mid - travel_s >= 0); clipping is a documented edge.
+        if leg["departure_time"] > 0.0:
+            assert abs(actual_s - expected_s) < 1.0, (pid, actual_s, expected_s)
+            checked += 1
+    assert checked > 0  # at least some agents exercised the distance-consistent seed
+
+
 def test_injection_with_mocked_geodata_facilities_and_vehicles_wiring(monkeypatch):
     """Exercise the ACTUAL facilities.py / vehicles.py wiring (Findings 1+2) end
     to end against a real (mocked-geodata) student_incommuters output, using the

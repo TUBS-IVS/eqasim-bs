@@ -117,19 +117,25 @@ def execute(context):
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
         loc = inc["locations"]
-        persons = inc["persons"][["person_id", "household_id"]]
+        # Guard on non-empty: the SvB stage returns a columns-less empty locations
+        # frame (incommuters._empty_frames) when no in-commuter is injected (e.g. a
+        # tiny region with zero inbound flow) even while cordon_enabled is True.
+        # Without this guard, indexing "activity_index" would KeyError. Mirrors the
+        # student block below (#140 review fix).
+        if len(loc) > 0:
+            persons = inc["persons"][["person_id", "household_id"]]
 
-        # Home facilities: home_<household_id> at the home (activity 0) coordinate.
-        home_rows = loc[loc["activity_index"] == 0].merge(persons, on="person_id")
-        inc_homes = gpd.GeoDataFrame(home_rows[["household_id", "geometry"]],
-                                     geometry="geometry", crs=df_homes.crs)
-        df_homes = pd.concat([df_homes, inc_homes[base.HOME_FIELDS]], ignore_index=True)
+            # Home facilities: home_<household_id> at the home (activity 0) coordinate.
+            home_rows = loc[loc["activity_index"] == 0].merge(persons, on="person_id")
+            inc_homes = gpd.GeoDataFrame(home_rows[["household_id", "geometry"]],
+                                         geometry="geometry", crs=df_homes.crs)
+            df_homes = pd.concat([df_homes, inc_homes[base.HOME_FIELDS]], ignore_index=True)
 
-        # Work facilities: the unique ic_work_<person_id> at the work (activity 1) coord.
-        work_rows = loc[loc["activity_index"] == 1][["location_id", "geometry"]].copy()
-        work_rows["is_work"] = True
-        inc_work = gpd.GeoDataFrame(work_rows, geometry="geometry", crs=df_primary.crs)
-        df_primary = pd.concat([df_primary, inc_work[base.PRIMARY_FIELDS]], ignore_index=True)
+            # Work facilities: the unique ic_work_<person_id> at the work (activity 1) coord.
+            work_rows = loc[loc["activity_index"] == 1][["location_id", "geometry"]].copy()
+            work_rows["is_work"] = True
+            inc_work = gpd.GeoDataFrame(work_rows, geometry="geometry", crs=df_primary.crs)
+            df_primary = pd.concat([df_primary, inc_work[base.PRIMARY_FIELDS]], ignore_index=True)
 
         # Student in-commuters (#140 Task 5 review fix): the same home + middle-
         # activity facility registration as the SvB block above, but the middle
