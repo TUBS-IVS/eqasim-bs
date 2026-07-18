@@ -271,6 +271,27 @@ def build_pt_entry_stops(stops, routes, kreise, zgb_kreise):
         rows, columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
 
 
+def assemble_incommuter_core_frames(person_ids, home_x, home_y, mid_x, mid_y,
+                                    mid_location_ids, depart_home_s, arrive_mid_s,
+                                    depart_mid_s, arrive_home_s, modes,
+                                    crs, middle_purpose="work"):
+    """Build the shared Home->MIDDLE->Home core frames (trips, activities,
+    locations) for an in-commuter subpopulation. ``middle_purpose`` is "work" for
+    SvB commuters and "education" for students. ``mid_location_ids`` are the unique
+    per-agent middle-activity facility ids. Returns dict[trips, activities,
+    locations]; ``trips['mode']`` is the per-agent mode repeated over the 2 legs."""
+    trips = build_incommuter_trips(person_ids, depart_home_s, arrive_mid_s,
+                                   depart_mid_s, arrive_home_s,
+                                   middle_purpose=middle_purpose)
+    trips["mode"] = np.repeat(np.asarray(modes), 2)
+    activities = build_incommuter_activities(person_ids, depart_home_s, arrive_mid_s,
+                                             depart_mid_s, arrive_home_s,
+                                             middle_purpose=middle_purpose)
+    locations = build_incommuter_locations(person_ids, home_x, home_y, mid_x, mid_y,
+                                           mid_location_ids, crs)
+    return {"trips": trips, "activities": activities, "locations": locations}
+
+
 def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             zgb_work, mode_reference, hts_persons,
                             hts_trips, person_col, n_residents, n_resident_households,
@@ -624,21 +645,20 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         donors, hts_trips, person_col, dist_km, home_to_gate_km,
         gate_speed_kmh, detour_factor)
 
-    trips = build_incommuter_trips(person_ids, depart_home, arrive_work, depart_work, arrive_home)
-    trips["mode"] = np.repeat(np.asarray(modes), 2)
     # Home stays a normal "home" activity here. The eqasim scenario cutter converts
     # it to an "outside" activity (its location is at the gate / beyond the cordon),
     # which is the native point where outside activities are created -- creating them
     # pre-cut would leave RunPreparation's LinkAssignment without a facility.
-    activities = build_incommuter_activities(person_ids, depart_home, arrive_work,
-                                             depart_work, arrive_home)
     # Each in-commuter workplace gets a unique facility id so it never collides with a
     # resident work facility; the facilities-writer override registers it. Home keeps
     # the placeholder id (-1); the population writer references home_<household_id>,
     # which the facilities override also registers.
-    work_facility_ids = [f"ic_work_{int(pid)}" for pid in person_ids]
-    locations = build_incommuter_locations(person_ids, home_x, home_y, work_x, work_y,
-                                           work_facility_ids, zgb_work.crs)
+    core = assemble_incommuter_core_frames(
+        person_ids, home_x, home_y, work_x, work_y,
+        [f"ic_work_{int(pid)}" for pid in person_ids],
+        depart_home, arrive_work, depart_work, arrive_home, modes,
+        zgb_work.crs, middle_purpose="work")
+    trips, activities, locations = core["trips"], core["activities"], core["locations"]
 
     # Per-agent monthly household income (EUR) from the origin-Kreis INKAR level,
     # replacing the legacy hardcoded constant. Falls back to the regional mean (logged)
