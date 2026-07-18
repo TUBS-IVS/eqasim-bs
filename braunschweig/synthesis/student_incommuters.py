@@ -440,6 +440,19 @@ def _inject(context):
     persons = _build_student_persons(ids, donors, modes)
     households = _build_student_households(ids)
 
+    # 10a. Origin Kreis + destination university commune, attached for the
+    # downstream OD analysis (braunschweig.analysis.simwrapper.student_commuters,
+    # #140 Task 6). ``origins`` (step 4) and ``ids``/``persons`` (step 7-10) are
+    # both built from the SAME length-n draw without any intervening sort, so a
+    # positional (not id-keyed) assignment is safe here. These are EXTRA columns
+    # on top of the schema matsim.scenario.population's concat_frame expects --
+    # concat_frame reindexes the in-commuter frame onto the resident columns
+    # before concatenating, so the extra columns are dropped there and never
+    # reach the MATSim population writer (verified against
+    # braunschweig.synthesis.incommuter_merge._base.concat_frame).
+    persons["orig_ars5"] = origins["orig_ars5"].to_numpy()
+    persons["dest_commune"] = origins["dest_commune"].to_numpy()
+
     # 10b. Vehicles (2026-07-18 Task 5 review fix). Every in-commuter -- resident,
     # SvB, or student -- must own a "car_passenger" vehicle: it is a network-routed
     # mode (eqasim core NETWORK_MODES = [car, car_passenger, truck]) that the

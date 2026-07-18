@@ -1380,12 +1380,111 @@ def emit_commuters(
     return w.dashboard("Commuters", f"Commuters / Pendler ({source})", rows)
 
 
+def emit_student_commuters(
+    persons: "pd.DataFrame | None",
+    locations: "gpd.GeoDataFrame | None",
+    folder: Path,
+) -> "dict[str, Any] | None":
+    """Student in-commuter (#140) OD-flow + distance tab.
+
+    Unlike :func:`emit_commuters` (which reads a POST-HOC disk artifact, since
+    the SvB in-commuters never carry a fine external-Kreis breakdown on disk),
+    the student in-commuter frames are passed in directly by the caller from
+    the LIVE ``braunschweig.synthesis.student_incommuters`` stage output (see
+    ``braunschweig.analysis.simwrapper_export``): that stage is the only place
+    the per-agent ``orig_ars5`` / ``dest_commune`` columns exist, because
+    in-commuters bypass ``synthesis.output`` (which only exports the resident
+    population) and the MATSim-realised OD (``metrics_od_matrix``) collapses
+    every external origin into one coarse ``"external"`` zone.
+
+    Args:
+        persons: The student stage's ``persons`` frame (must carry
+            ``orig_ars5`` / ``dest_commune``, attached by
+            ``student_incommuters._inject``), or ``None``/empty when the
+            feature is off, skipped, or the caller did not pass it.
+        locations: The student stage's ``locations`` GeoDataFrame (3 rows per
+            agent: activity_index 0/2 = home, 1 = education), used to derive
+            the per-agent straight-line origin->campus distance.
+        folder: SimWrapper dashboard output folder.
+
+    Returns:
+        Dashboard dict, or ``None`` (logged) when there are no student
+        in-commuters to report -- writes nothing in that case.
+    """
+    from braunschweig.analysis.simwrapper import student_commuters as sc
+    from braunschweig.data.cordon.plans import straight_line_distance_km
+
+    if persons is None or len(persons) == 0:
+        LOGGER.info(
+            "[student_commuters] no student in-commuters (feature off, "
+            "zero-count run, or frames not supplied) -- tab skipped"
+        )
+        return None
+    if locations is None or len(locations) == 0:
+        LOGGER.warning(
+            "[student_commuters] %d student in-commuter persons but an empty "
+            "locations frame -- tab skipped (should never happen for an "
+            "active student in-commuter stage)", len(persons),
+        )
+        return None
+
+    persons = persons[["person_id", "orig_ars5", "dest_commune"]].copy()
+    home = (locations[locations["activity_index"] == 0]
+            .set_index("person_id").loc[persons["person_id"]])
+    education = (locations[locations["activity_index"] == 1]
+                .set_index("person_id").loc[persons["person_id"]])
+    straight_line_km = pd.Series(
+        straight_line_distance_km(
+            home.geometry.x.to_numpy(), home.geometry.y.to_numpy(),
+            education.geometry.x.to_numpy(), education.geometry.y.to_numpy(),
+        ),
+        index=persons.index, name="straight_line_km",
+    )
+
+    folder = Path(folder)
+    sc.write_outputs(persons[["orig_ars5", "dest_commune"]], straight_line_km, str(folder))
+    LOGGER.info(
+        "[student_commuters] wrote student_commuter_od.csv / "
+        "_top_relations.csv / _distance.csv for %d student in-commuters "
+        "(mean straight-line distance %.1f km)",
+        len(persons), float(straight_line_km.mean()),
+    )
+
+    return w.dashboard(
+        "Student commuters",
+        "Student in-commuters (#140): origin-Kreis -> campus OD + distance",
+        {
+            "table": [w.card_table(
+                "Student OD flows (origin Kreis -> destination university commune)",
+                "student_commuter_od.csv", width=2,
+            )],
+            "top": [w.card_table(
+                "Top student in-commuter relations",
+                "student_commuter_top_relations.csv", width=1,
+            )],
+            "distance": [w.card_bar(
+                "Student in-commuter distance distribution",
+                "student_commute_distance.csv",
+                x="band", columns=["count"],
+                x_axis_name="straight-line distance band (km)",
+                y_axis_name="students", width=1,
+            )],
+        },
+        description=(
+            "Cross-cordon student in-commuter OD flows and origin->campus "
+            "straight-line distances (braunschweig.synthesis.student_incommuters). "
+            "Model output, not compared to a committed reference."
+        ),
+    )
+
+
 def export_spatial(
     target_dir: str | Path,
     run_output_dir: str | None = None,
     sim_cache: str | None = None,
     record: "dict[str, Any] | None" = None,
     start_index: int = 9,
+    student_frames: "dict[str, Any] | None" = None,
 ) -> list[Path]:
     """Write spatial dashboard tabs (fleet, spatial-demand, socio, behaviour).
 
@@ -1399,6 +1498,13 @@ def export_spatial(
     2. spatial-demand -- trip origin/destination hexagons.
     3. socio -- home points coloured by income / economic status.
     4. behaviour -- purpose->mode sankey + per-Kreis car-share scatter.
+    5. commuters -- SvB in/out/internal commuters per Kreis + top relations.
+    6. student-commuters -- student in-commuter OD flows + distance (#140);
+       only produced when ``student_frames`` is supplied and non-empty (the
+       caller must pull it from the LIVE
+       ``braunschweig.synthesis.student_incommuters`` stage -- see
+       :func:`emit_student_commuters` for why this differs from the other,
+       disk-based tabs).
 
     Args:
         target_dir: SimWrapper dashboard output folder (created if absent).
@@ -1408,14 +1514,19 @@ def export_spatial(
             behaviour scatter; skipped when ``None``).
         start_index: Starting dashboard index (default 9 so it follows the 8
             core tabs produced by ``export_run``).
+        student_frames: The ``braunschweig.synthesis.student_incommuters``
+            stage output dict (keys ``persons``, ``locations``, ...), or
+            ``None`` when the caller has no live pipeline context (e.g. the
+            standalone CLI) or the feature is off -- the student-commuters tab
+            is then skipped (logged, not silently ignored).
 
     Returns:
         List of written YAML :class:`pathlib.Path` objects.
     """
-    if run_output_dir is None and sim_cache is None:
+    if run_output_dir is None and sim_cache is None and not student_frames:
         LOGGER.warning(
-            "[spatial_export] neither run_output_dir nor sim_cache provided -- "
-            "all spatial tabs skipped"
+            "[spatial_export] neither run_output_dir, sim_cache, nor "
+            "student_frames provided -- all spatial tabs skipped"
         )
         return []
 
@@ -1449,6 +1560,12 @@ def export_spatial(
         # Tab: commuters (Pendler in/out/internal + top relations); works in
         # both modes (MATSim work OD, else synthesis commutes.gpkg).
         ("commuters", lambda f: emit_commuters(source_dir, record, f)),
+        # Tab: student-commuters (#140 OD flows + distance); requires the
+        # LIVE student_incommuters stage frames (see emit_student_commuters),
+        # so it is a no-op (None) unless the caller supplied student_frames.
+        ("student-commuters", lambda f: emit_student_commuters(
+            (student_frames or {}).get("persons"),
+            (student_frames or {}).get("locations"), f)),
     ]
 
     written: list[Path] = []

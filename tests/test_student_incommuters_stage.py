@@ -168,6 +168,33 @@ def test_injection_with_mocked_geodata_returns_vehicles(monkeypatch):
     assert frames["vehicle_types"].empty
 
 
+def test_injection_attaches_orig_ars5_and_dest_commune(monkeypatch):
+    """#140 Task 6 review fix: persons must carry orig_ars5/dest_commune so the
+    downstream OD analysis (braunschweig.analysis.simwrapper.student_commuters)
+    can actually run -- see student_incommuters._inject step 10a."""
+    ctx = _mocked_full_ctx()
+    fake_gem = ctx._stages["_fake_gemeinden"]
+    monkeypatch.setattr(
+        "braunschweig.data.external_workplaces._load_gemeinden",
+        lambda context: fake_gem)
+    monkeypatch.setattr(
+        "braunschweig.data.education.student_origins.student_age_pop_by_kreis",
+        lambda data_path, kreise, age_lower, age_upper: pd.Series({"03402": 100.0}))
+
+    frames = si.execute(ctx)
+    persons = frames["persons"]
+
+    assert "orig_ars5" in persons.columns
+    assert "dest_commune" in persons.columns
+    assert not persons["orig_ars5"].isna().any()
+    assert not persons["dest_commune"].isna().any()
+    # Only one candidate origin Kreis ("03402", the mocked Gemeinde) and one
+    # destination commune ("03101", the single local university facility in
+    # the muni fixture) are configured, so every agent must resolve to that pair.
+    assert set(persons["orig_ars5"]) == {"03402"}
+    assert set(persons["dest_commune"]) == {"03101"}
+
+
 def test_injection_with_mocked_geodata_facilities_and_vehicles_wiring(monkeypatch):
     """Exercise the ACTUAL facilities.py / vehicles.py wiring (Findings 1+2) end
     to end against a real (mocked-geodata) student_incommuters output, using the
