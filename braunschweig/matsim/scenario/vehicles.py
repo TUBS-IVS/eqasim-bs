@@ -8,6 +8,15 @@ merged into the resident type table (de-duplicated by ``type_id``) before the wr
 with the legacy fleet the in-commuter cars reuse the existing ``default_car`` type, so
 the merged type table is unchanged. OFF (cordon disabled) -> in-commuter frame empty
 -> byte-identical.
+
+NOTE (#140 Task 5): ``braunschweig.synthesis.student_incommuters`` is intentionally NOT
+wired in here -- that stage's output has no ``vehicles``/``vehicle_types`` key at all
+(only persons, households, trips, activities, locations), so there is nothing to merge
+for students at this stage. This is a known gap: a car-mode student in-commuter (the
+stage does assign a "car" leg for some agents, see student_incommuters._inject) gets no
+"car" (or "car_passenger") vehicle registered anywhere, which would make that agent's
+initial car leg unroutable by MATSim. Flagged for a follow-up; not fixed here, since it
+requires extending Task 4's stage contract, not this merge task.
 """
 from __future__ import annotations
 
