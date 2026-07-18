@@ -235,6 +235,15 @@ config:
   braunschweig.population.popsim.income_tilt_beta: 0.3
   braunschweig.population.popsim.income_tilt_clip: 0.30
 
+  # --- placement_income (L2, issue #108) --------------------------------------
+  # Each synthetic household keeps its OWN MiD income (a seeded draw within its own
+  # hheink_gr1 bracket); the per-Kreis INKAR relativity is approached by signature-
+  # preserving donor reallocation after the popsim merge (every control aggregate and
+  # every donor's clone count are preserved). Default ON (project rule). When ON it
+  # OVERRIDES both income_kreis_control (the per-Kreis redraw) and income_spatial_tilt
+  # above (each override is logged). Set to false to fall back to the redraw + tilt path.
+  braunschweig.population.popsim.placement_income: true
+
   # --- Kreis-Income-Control (real MiD income draw + max-entropy per-Kreis calibration) -
   # Replaces the class-midpoint x INKAR_scale income with a real continuous MiD draw,
   # reshaped per Kreis to the construct-corrected INKAR target. Default ON; set to false

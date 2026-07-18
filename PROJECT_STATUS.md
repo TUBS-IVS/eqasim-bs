@@ -140,6 +140,7 @@ default-OFF/byte-identical · 🟡 merged-as-infra but deliberately NOT activate
 | Economic status (Bayes hhtype×region) | `status_from_hhtype` (code **true**) | `data/mid/status_by_hhtype.py` | 🟢 | MiD status×hhtype×region |
 | Household income € + distribution | `income_eur_from_distribution` | `data/mid/income_by_size.py` | 🟢 | MiD H4/brackets, INKAR |
 | Kreis income control (popsim) | `popsim.income_kreis_control` | `popsim/income_kreis_control.py` | ✅ (popsim) | MiD, INKAR |
+| Placement income L2 (#108): own donor income + signature-preserving reallocation | `popsim.placement_income` (default ON; overrides redraw+tilt) | `popsim/placement_income.py`, `popsim/stage.py` | 🟡 built+gated, PR pending (branch `worktree-placement-income-l2` @ `6a02b6c`); 2-Kreis gate PASS (invariants Δ0; coherence income↔cars 0.174→0.364; attainment trade: approaches INKAR, not exact) | MiD hheink, INKAR; ADR-0069 |
 | PT subscription (P24.1, 3-margin IPF) | `pt_subscription_conditioned` | `synthesis/population/enriched.py` | 🟢 | MiD P24.1 |
 | Driving licence (P17.1, 3-margin IPF) | always-on enrichment | `synthesis/population/enriched.py` | ✅ | MiD P17.1 |
 | Consistent car_availability | `consistent_car_availability` | `synthesis/population/enriched.py` | 🟢 | MiD P19/P17.1/H7 |
