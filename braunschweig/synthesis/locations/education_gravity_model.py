@@ -203,7 +203,7 @@ def assign_by_decay(pupil_xy, school_xy, weight, slope, max_radius_km, rng,
 
     totals = attract.sum(axis=1, keepdims=True)
     cdf = np.cumsum(attract / totals, axis=1)
-    u = rng.random_sample(size=attract.shape[0])
+    u = rng.random(size=attract.shape[0])
     return (u[:, None] > cdf).sum(axis=1).clip(max=attract.shape[1] - 1)
 
 
