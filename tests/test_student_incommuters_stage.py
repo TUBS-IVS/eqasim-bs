@@ -44,6 +44,37 @@ def test_raise_when_flag_explicit_on_but_parent_off():
         si.execute(ctx)
 
 
+class _RecordingCtx(Ctx):
+    """Context stub that records configure()'s stage() dependency declarations."""
+    def __init__(self):
+        super().__init__({})
+        self.staged = []
+
+    def config(self, key, default=si._SENTINEL):
+        # configure() only needs SOME value per key; return the default when given,
+        # else a harmless placeholder so no KeyError aborts the recording.
+        if default is not si._SENTINEL:
+            return default
+        return {"cordon_enabled": True}.get(key, 0)
+
+    def stage(self, descriptor, **kwargs):
+        self.staged.append((descriptor, kwargs))
+
+
+def test_configure_declares_hts_via_data_hts_selected():
+    """Regression guard for the #140 server-E2E bug: configure() must register the
+    HTS donor as data.hts.selected aliased to "hts" (the eqasim convention, same as
+    the SvB in-commuter stage). A bare context.stage("hts") is NOT a resolvable
+    global alias and makes synpp raise a PipelineError at graph-build time. The
+    mocked injection tests stub the "hts" stage directly, so only this
+    configure-level check catches the regression."""
+    ctx = _RecordingCtx()
+    si.configure(ctx)
+    assert ("data.hts.selected", {"alias": "hts"}) in ctx.staged, ctx.staged
+    # the broken form must NOT be used
+    assert ("hts", {}) not in ctx.staged
+
+
 class FullCtx(Ctx):
     """Stage stub: config dict + a fixed stage-name -> return-value map."""
     def __init__(self, cfg, stages):

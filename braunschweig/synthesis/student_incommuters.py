@@ -115,7 +115,14 @@ def configure(context):
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("synthesis.population.spatial.primary.locations")
     context.stage("data.spatial.municipalities")
-    context.stage("hts")
+    # Register the HTS donor the eqasim way: data.hts.selected resolves (via the
+    # "hts" config, e.g. entd) to the reweighted HTS stage and re-exposes it under
+    # the local alias "hts". _inject then reads context.stage("hts"). Mirrors the
+    # SvB in-commuter stage (braunschweig.synthesis.incommuters). A bare
+    # context.stage("hts") does NOT resolve -- "hts" is not a global alias -- and
+    # raises a synpp PipelineError at graph-build time (caught by the #140 server
+    # E2E; the mocked unit tests stub the "hts" stage and so never exercised this).
+    context.stage("data.hts.selected", alias="hts")
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("synthesis.population.enriched")
 
