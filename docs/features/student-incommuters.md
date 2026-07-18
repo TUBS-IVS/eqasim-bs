@@ -141,6 +141,14 @@ actually overlap.
 
 ### Timing: distance-consistent home-departure seed
 
+The HTS donor is the **German MiD 2023 survey** (nationwide pool), supplied via
+the stage `braunschweig.data.hts.mid_donor` which reuses popsim's MiD loaders.
+This is a deliberate scientific change from the previous ENTD-based timing and
+makes the in-commuter path non-byte-identical vs earlier runs (though no unit
+tests broke, as they stub the HTS stage; observable only in real runs).
+Distance, mode, count, and origin remain derived from other German sources
+(Mikrozensus, LSN, DESTATIS) and are unaffected.
+
 The donor's education-leg times (`_donor_education_times`, memoised per unique
 donor id) supply the arrival at education (`arrive_mid`), the education departure
 and the home arrival. The home **departure** is NOT taken raw from the donor;
