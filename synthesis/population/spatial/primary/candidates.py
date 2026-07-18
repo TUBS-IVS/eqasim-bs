@@ -442,9 +442,17 @@ def execute(context):
         education_candidates=df_education,
         persons=df_persons[df_persons["has_work_trip"] | df_persons["has_education_trip"]][persons_cols],
     )
-    # #203: expose the all-employed extra candidates under dedicated keys ONLY when
-    # the feature is on, so the OFF path returns a byte-identical dict.
+    # #203: expose the all-employed extra candidates AND the persons frame with the
+    # employment flags + zone keys, ONLY when the feature is on, so the OFF path
+    # returns a byte-identical dict. The downstream export stage recomputes the
+    # work/education extra person sets (select_all_employed_extra) and assigns them
+    # to these candidates by random ordering (all_employed_primary.assign_extras_random).
     if all_employed_on:
         result["all_employed_work_candidates"] = all_employed_work
         result["all_employed_education_candidates"] = all_employed_education
+        extra_persons_cols = ["person_id", "household_id", "commune_id",
+                              "employed", "studies", "has_work_trip", "has_education_trip"]
+        if taz_on:
+            extra_persons_cols.append("home_taz_id")
+        result["all_employed_persons"] = df_persons[extra_persons_cols].copy()
     return result
