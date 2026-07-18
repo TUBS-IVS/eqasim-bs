@@ -136,6 +136,116 @@ def write_feed(feed, path):
                     print("  Writing %s.txt ..." % slot)
                     feed[slot].to_csv(f, index = None, lineterminator='\n')
 
+def filter_routes(feed,
+                  excluded_route_short_name_patterns = None,
+                  excluded_agency_ids = None,
+                  excluded_agency_name_patterns = None):
+    """Remove configured routes (and their trips, stop_times, frequencies) from a feed.
+
+    This drops demand-responsive / placeholder services that must NOT be imported as
+    scheduled public transport, because they enumerate bookable connections rather
+    than fixed departures every agent could board. The motivating case is "Flexo",
+    the demand-responsive service of the Regionalverband Grossraum Braunschweig
+    (ZGB), which appears in the GTFS feed as a single route rolled out as thousands
+    of placeholder trips (see issue #200).
+
+    Matching is additive: a route is removed if it matches ANY of the rules.
+      - excluded_route_short_name_patterns: regular expressions matched
+        (case-insensitive, substring via pandas.str.contains) against
+        routes.route_short_name. Anchor with ^...$ for exact names (e.g. "^Flexo$").
+      - excluded_agency_ids: agency_id values (compared as strings).
+      - excluded_agency_name_patterns: regular expressions matched
+        (case-insensitive) against agency.agency_name; expanded to their agency_ids.
+
+    Following the no-silent-fallback rule, the number of routes matched by each rule
+    and the total removed routes/trips/stop_times are logged explicitly. A configured
+    pattern that matches nothing is logged as a WARNING so a mistyped pattern is
+    visible instead of silently doing nothing.
+
+    The input feed is not mutated; a filtered copy is returned. Returns the feed
+    unchanged when no exclusion rules are configured.
+    """
+    excluded_route_short_name_patterns = excluded_route_short_name_patterns or []
+    excluded_agency_ids = [str(a) for a in (excluded_agency_ids or [])]
+    excluded_agency_name_patterns = excluded_agency_name_patterns or []
+
+    if (not excluded_route_short_name_patterns and not excluded_agency_ids
+            and not excluded_agency_name_patterns):
+        return feed
+
+    feed = copy_feed(feed)
+    df_routes = feed["routes"]
+
+    # Resolve agency-name patterns to concrete agency_ids via the agency table.
+    if excluded_agency_name_patterns and "agency" in feed:
+        agency_names = feed["agency"]["agency_name"].astype(str)
+        name_mask = pd.Series(False, index = feed["agency"].index)
+        for pattern in excluded_agency_name_patterns:
+            hits = agency_names.str.contains(pattern, case = False, regex = True, na = False)
+            print("[gtfs-filter] agency_name /%s/ matched %d agencies" % (pattern, int(hits.sum())))
+            name_mask |= hits
+        excluded_agency_ids = list(
+            set(excluded_agency_ids)
+            | set(feed["agency"].loc[name_mask, "agency_id"].astype(str))
+        )
+
+    route_short = (df_routes["route_short_name"].astype(str)
+                   if "route_short_name" in df_routes
+                   else pd.Series("", index = df_routes.index))
+    route_agency = (df_routes["agency_id"].astype(str)
+                    if "agency_id" in df_routes
+                    else pd.Series("", index = df_routes.index))
+
+    remove_mask = pd.Series(False, index = df_routes.index)
+
+    for pattern in excluded_route_short_name_patterns:
+        hits = route_short.str.contains(pattern, case = False, regex = True, na = False)
+        print("[gtfs-filter] route_short_name /%s/ matched %d routes" % (pattern, int(hits.sum())))
+        remove_mask |= hits
+
+    if excluded_agency_ids:
+        hits = route_agency.isin(excluded_agency_ids)
+        print("[gtfs-filter] agency_id in %s matched %d routes" % (excluded_agency_ids, int(hits.sum())))
+        remove_mask |= hits
+
+    removed_route_ids = set(df_routes.loc[remove_mask, "route_id"].astype(str))
+
+    if len(removed_route_ids) == 0:
+        print("[gtfs-filter] WARNING no routes matched the configured exclusion rules; feed unchanged")
+        return feed
+
+    # Cascade the removal: routes -> trips -> stop_times / frequencies.
+    df_trips = feed["trips"]
+    removed_trip_mask = df_trips["route_id"].astype(str).isin(removed_route_ids)
+    removed_trip_ids = set(df_trips.loc[removed_trip_mask, "trip_id"].astype(str))
+
+    n_routes_before = len(df_routes)
+    n_trips_before = len(df_trips)
+
+    feed["routes"] = df_routes[~df_routes["route_id"].astype(str).isin(removed_route_ids)].copy()
+    feed["trips"] = df_trips[~removed_trip_mask].copy()
+
+    n_stop_times_removed = 0
+    if "stop_times" in feed:
+        df_times = feed["stop_times"]
+        keep = ~df_times["trip_id"].astype(str).isin(removed_trip_ids)
+        n_stop_times_removed = int((~keep).sum())
+        feed["stop_times"] = df_times[keep].copy()
+
+    if "frequencies" in feed:
+        df_freq = feed["frequencies"]
+        feed["frequencies"] = df_freq[
+            ~df_freq["trip_id"].astype(str).isin(removed_trip_ids)
+        ].copy()
+
+    print("[gtfs-filter] removed %d/%d routes, %d/%d trips, %d stop_times "
+          "(demand-responsive / excluded services)" % (
+              len(removed_route_ids), n_routes_before,
+              len(removed_trip_ids), n_trips_before,
+              n_stop_times_removed))
+
+    return feed
+
 def cut_feed(feed, df_area, crs = None):
     feed = copy_feed(feed)
 

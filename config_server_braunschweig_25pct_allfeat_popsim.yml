@@ -304,6 +304,11 @@ config:
   osm_path: osm/cordon
   osm_network_path: osm/germany-latest.zgb_ring.osm.pbf
   eqasim_source_path: ../eqasim-java-bs
+  # eqasim-java 2.2.0 targets Java 25; the felix system default is JDK 21. Point the
+  # Maven build (java_home) and the MATSim run (java_binary) at the JDK 25 installed
+  # under ~/tools. See docs/UPGRADE_SYNPP_AND_JAVA.md.
+  java_home: /home/felix/tools/jdk-25.0.3+9
+  java_binary: /home/felix/tools/jdk-25.0.3+9/bin/java
 
   # External toolchain (Linux paths).
   osmosis_binary: /usr/bin/osmosis

@@ -294,3 +294,69 @@ def test_configs_run_verbindungen_validation(config_name):
     with open(REPO_ROOT / config_name, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     assert "braunschweig.analysis.verbindungen_validation" in cfg["run"], config_name
+
+
+# --- comparison zones (anchor geography, #193) -------------------------------
+
+def test_build_comparison_zones_collapses_stadtteil_to_parent(tmp_path):
+    from braunschweig.data.verbindungen.zones import (
+        build_comparison_zones, build_zones_frames,
+    )
+    from tests.fixtures.verbindungen_fixtures import make_municipalities_gdf
+    gdf_raw = _load_fixture_cells(tmp_path)
+    df_cells, df_cell_commune, _ = build_zones_frames(
+        gdf_raw, make_municipalities_gdf(), scope=ZGB_SCOPE,
+        max_fallback_share=0.60,
+    )
+    df_zone_map, df_cell_zone, df_zones = build_comparison_zones(
+        df_cells, df_cell_commune)
+    # Fixture: stadtteil-1 + stadtteil-2 share parent 031010001000 -> ONE zone
+    # named by the parent commune; vg250-3 stays a zone under its own cell id.
+    assert set(df_zones["zone_id"]) == {"031010001000", "vg250-3"}
+    zm = df_zone_map.set_index("commune_id")["zone_id"]
+    assert zm["031010001000"] == "031010001000"
+    assert zm["031510000001"] == "vg250-3"
+    assert zm["031510029999"] == "vg250-3"
+    # each commune mapped exactly once; each cell mapped exactly once
+    assert df_zone_map["commune_id"].is_unique
+    assert df_cell_zone["cell_id"].is_unique
+    cz = df_cell_zone.set_index("cell_id")["zone_id"]
+    assert cz["stadtteil-1"] == "031010001000" and cz["stadtteil-2"] == "031010001000"
+    # dissolved geometry: the parent zone covers BOTH stadtteil boxes
+    z = df_zones.set_index("zone_id")
+    st_area = df_cells.set_index("cell_id").loc[["stadtteil-1", "stadtteil-2"]].geometry.area.sum()
+    assert abs(z.loc["031010001000"].geometry.area - st_area) / st_area < 1e-9
+    assert z.loc["031010001000", "kreis_id"] == "03101"
+    assert df_zones.crs.to_epsg() == 25832
+
+
+def test_build_comparison_zones_raises_on_multi_kreis_zone():
+    import geopandas as gpd
+    from shapely.geometry import box
+    from braunschweig.data.verbindungen.zones import build_comparison_zones
+    # Corrupted input: one vg250 zone whose cells claim two different Kreise.
+    df_cells = gpd.GeoDataFrame({
+        "cell_id": ["vg250-1"], "kreis_id": ["03101"],
+        "is_stadtteil": [False],
+        "centroid_x": [0.5], "centroid_y": [0.5],
+    }, geometry=[box(0, 0, 1, 1)], crs="EPSG:25832")
+    df_cc = pd.DataFrame({
+        "cell_id": ["vg250-1", "vg250-1"],
+        "commune_id": ["031010001000", "031510001000"],  # spans two Kreise
+        "via_fallback": [False, False],
+    })
+    # kreis comes from df_cells (single) so this passes; the guard fires on the
+    # OTHER direction: a stadtteil parent commune appearing under two Kreise.
+    df_cells2 = gpd.GeoDataFrame({
+        "cell_id": ["stadtteil-1", "stadtteil-2"],
+        "kreis_id": ["03101", "03151"],   # inconsistent parents
+        "is_stadtteil": [True, True],
+        "centroid_x": [0.5, 1.5], "centroid_y": [0.5, 0.5],
+    }, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs="EPSG:25832")
+    df_cc2 = pd.DataFrame({
+        "cell_id": ["stadtteil-1", "stadtteil-2"],
+        "commune_id": ["031010001000", "031010001000"],
+        "via_fallback": [False, False],
+    })
+    with pytest.raises(RuntimeError, match="kreis"):
+        build_comparison_zones(df_cells2, df_cc2)

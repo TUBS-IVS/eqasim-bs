@@ -32,7 +32,7 @@ dependencies:
   - pyogrio=0.10.0
 
   - pip:
-    - synpp==1.5.1
+    - synpp==1.6.2
     - bhepop2==2.0.0
     # Secondary-location chain solver used by
     # braunschweig.synthesis.locations.secondary_chainsolvers (default solver

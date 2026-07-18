@@ -32,6 +32,32 @@ def _filter_pool_by_zone(pool: pd.DataFrame, zone_value, zone_key: str = "commun
     return pool[pool[zone_key] == zone_value]
 
 
+def _normalize_weights(values):
+    """Return a float64 probability vector for ``np.random.multinomial``.
+
+    ``np.random.multinomial`` casts its ``pvals`` argument to float64 internally
+    and rejects a vector whose leading sum (``sum(pvals[:-1])``) exceeds 1.0.  A
+    float32 weight vector (for instance one derived from the float32 ``area_m2`` /
+    potential columns) can overshoot after that cast.  Casting to float64 and
+    dividing by the sum up front removes the risk.
+
+    For an already-normalised float64 vector -- the case produced by both live
+    weight paths in this project (the gravity model and the legacy census OD) --
+    this is byte-identical to passing the raw values (verified: 0/5000 multinomial
+    draws change), so it is a defensive hardening, not a behaviour change.  An
+    all-zero vector is returned unchanged to avoid a divide-by-zero; such an input
+    cannot reach the multinomial through a valid OD (per-origin weights sum to 1.0)
+    but is guarded here rather than left to fail obscurely.
+
+    Ported from eqasim-org/eqasim-france#447.
+    """
+    weights = np.asarray(values).astype(np.float64)
+    total = weights.sum()
+    if total > 0.0:
+        weights = weights / total
+    return weights
+
+
 def configure(context):
     context.stage("data.od.weighted")
 
@@ -69,8 +95,8 @@ def sample_destination_municipalities(context, arguments):
     random = np.random.RandomState(random_seed)
     df_od = df_od[df_od["origin_id"] == origin_id].copy()
 
-    # Sample destinations
-    df_od["count"] = random.multinomial(count, df_od["weight"].values)
+    # Sample destinations (float64-normalise the weights; see _normalize_weights)
+    df_od["count"] = random.multinomial(count, _normalize_weights(df_od["weight"].values))
     df_od = df_od[df_od["count"] > 0]
 
     context.progress.update()
@@ -99,8 +125,10 @@ def sample_locations(context, arguments):
     weight = np.ones((len(df_locations),)) / len(df_locations)
 
     if "weight" in df_locations:
-        weight = df_locations["weight"].values / df_locations["weight"].sum()
-    
+        # float64-normalise (see _normalize_weights); the weight column can be
+        # float32 when it derives from a float32 area/potential column.
+        weight = _normalize_weights(df_locations["weight"].values)
+
     location_counts = random.multinomial(count, weight)
     location_ids = df_locations["location_id"].values
     location_ids = np.repeat(location_ids, location_counts)

@@ -1032,6 +1032,40 @@ def configure(context):
             SVB_FALLBACK_WARN_SHARE,
         )
 
+    # #193: inner VerBindungen calibration anchor. Default False -> byte-
+    # identical work OD (the anchor CHANGES scientific output when ON; the
+    # default flips only via the pre-registered decision rule + ADR --
+    # see docs/superpowers/specs/2026-07-16-verbindungen-calibration-anchor-design.md).
+    # Default ON since 2026-07-17 (ADR-0068, HUMAN OVERRIDE of the
+    # pre-registered gate v2 whose verdict was default_flip_supported=False):
+    # evidence judged net-positive -- 5/6 P13-by-RS7 classes and the P38.2
+    # ZGB aggregate improve; the AO axis is neutral within fold noise; the
+    # single class-72 shift (+0.0036 EMD) is a small systematic shortening
+    # toward the LOCALLY OBSERVED 2019 QZM destination structure (diagnosed
+    # in scripts/diagnose_anchor_p13.py, 2026-07-17). Checked against BOTH
+    # reference flavours: the NATIONAL MiD RS7-72 class AND the REGIONAL
+    # per-Kreis P38.2 tables -- the three cities also worsen slightly vs
+    # their own regional refs (+0.002..+0.005, thin-n directional range)
+    # while all five Landkreise improve (up to -0.026) and the ZGB aggregate
+    # improves; the trade is documented in ADR-0068. Set False per config to
+    # disable; requires the verbindungen raw data when ON.
+    context.config("braunschweig.gravity.verbindungen_anchor_enabled", True)
+    if context.config("braunschweig.gravity.verbindungen_anchor_enabled", True):
+        # Reference stages only required when the anchor is ON, so the OFF
+        # path needs no new stages or data files.
+        context.stage("braunschweig.data.verbindungen.zones")
+        context.stage("braunschweig.data.verbindungen.work_od")
+        # Default measured on the 2019 QZM ZGB coverage distribution
+        # (holdout run 2026-07-17, scripts/run_anchor_holdout.py on the
+        # 100pct cache; coverage_row_observed_commuters.csv). Criterion:
+        # 3x the QZM censoring bound of 10 commuters (rows near the bound
+        # carry coarse small-count noise), with the measured consequences
+        # at 30: 205/239 (origin zone, dest Kreis) rows anchorable (85.8%)
+        # covering 98.2% of the anchorable observed mass; the row-mass
+        # distribution is p10=18.8, p25=73, p50=277 (n=239), so only the
+        # bottom decile falls below this guard.
+        context.config("braunschweig.verbindungen.anchor_min_observed_commuters", 30)
+
     # TAZ-specific stages: only declared when the flag is ON so the OFF path
     # (all existing configs) needs no new keys or stages.
     if context.config("taz_work_location_choice", False):
@@ -1426,6 +1460,19 @@ def execute(context):
         population_key=population_key,
         population_value=population_value,
     )
+    # #193: inner VerBindungen anchor (flag-gated, default OFF). Runs on the
+    # CALIBRATED OD so the outer Kreis anchor is already satisfied; the inner
+    # step preserves every Kreis-pair block total exactly (asserted inside).
+    if context.config("braunschweig.gravity.verbindungen_anchor_enabled"):
+        from braunschweig.gravity.verbindungen_anchor import run_inner_anchor  # noqa: PLC0415
+        df_cells_vb, df_cell_commune_vb = context.stage(
+            "braunschweig.data.verbindungen.zones")
+        df_ref_od_vb = context.stage("braunschweig.data.verbindungen.work_od")
+        df_work_calibrated, _anchor_stats = run_inner_anchor(
+            df_work_calibrated, df_cells_vb, df_cell_commune_vb, df_ref_od_vb,
+            min_observed_commuters=context.config(
+                "braunschweig.verbindungen.anchor_min_observed_commuters"),
+        )
     df_work_extended = _append_outbound_flows(
         df_work_calibrated, df_population_for_od, df_pendler, df_external, scope,
         zone_to_kreis=zone_to_kreis,
