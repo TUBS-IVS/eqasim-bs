@@ -64,7 +64,7 @@ Cross-checked every open issue against the actual code/commit state and closed t
 Confirmed genuinely open (not re-attempt candidates for a quick win):
 
 - **#108** (placement-based income geography): **L1 MERGED** (#109/PR #112, economic_status × Kreis).
-  **L2 BUILT** (2026-07-18, branch `worktree-placement-income-l2` @ `6a02b6c`, PR pending, ADR-0068):
+  **L2 BUILT** (2026-07-18, branch `worktree-placement-income-l2` @ `6a02b6c`, PR pending, ADR-0069):
   `placement_income` — donor keeps its own MiD income, per-Kreis INKAR relativity approached by
   signature-preserving reallocation, redraw+tilt overridden. 2-Kreis gate: invariants Δ0, coherence
   income↔cars 0.174→0.364 (+0.19), attainment an honest trade (approaches INKAR, redraw hits it exactly;

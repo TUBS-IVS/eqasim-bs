@@ -1342,7 +1342,7 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   (`ab128_off.log`, `ab128_on.log`, `work_od_off.p`, cache `braunschweig.gravity.model__{47c862d…,b158f62d…}`);
   contract-test finding in `analysis_suite.py` spun off as #183.
 
-## ADR-0068 — placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden (2026-07-18)
+## ADR-0069 — placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden (2026-07-18)
 
 - **Status:** accepted 2026-07-18. New feature flag `braunschweig.population.popsim.placement_income`
   default ON (project convention); OFF byte-identical to the prior path. Branch
@@ -1389,7 +1389,7 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   the solve ran once for both legs.
 - **Evidence:** spec `docs/superpowers/specs/2026-07-17-placement-income-l2-design.md`; plan
   `docs/superpowers/plans/2026-07-17-placement-income-l2.md`; `braunschweig/popsim/placement_income.py`;
-  `braunschweig/analysis/population_validation/placement_income_gate.py`; gate report above; ADR-0068
+  `braunschweig/analysis/population_validation/placement_income_gate.py`; gate report above; ADR-0069
   extends the #108 design after ADR (L1) status control; memory `project-income-placement-control`,
   `project-income-spatial-tilt`.
 
