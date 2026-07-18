@@ -1,11 +1,12 @@
 # STACK
 
-> **Staleness note (2026-06-26):** this doc reflects the 2026-06-08 state and was
-> not refreshed in the 2026-06-26 focus pass. Stack essentials unchanged: Python
-> 3.10.10 (conda env `eqasim`), `synpp 1.5.1`, pandas 1.5.3 / numpy 1.23.5 / scipy
-> 1.10.1, geopandas 1.0.1 / shapely 2.0.6 / fiona 1.10.1 / pyrosm 0.6.2, `carla`
-> chainsolvers pinned to git `cb50c41`, PopulationSim; Java MATSim `2025.0-PR3568`
-> via the `eqasim-java-bs` fork. Current feature state: see ARCHITECTURE.md banner.
+> **Refreshed 2026-07-18.** Stack essentials: Python 3.10.10 (conda env `eqasim`),
+> `synpp 1.6.2`, pandas 1.5.3 / numpy 1.23.5 / scipy 1.10.1, geopandas 1.0.1 /
+> shapely 2.0.6 / fiona 1.10.1 / pyrosm 0.6.2, `carla` chainsolvers pinned to git
+> `d8d8ae7`, PopulationSim. Java MATSim/eqasim side upgraded to **eqasim-java 2.2.0**
+> (branch `main`) via the `eqasim-java-bs` fork; **building it now requires JDK 25**
+> (upstream bumped `maven.compiler` 21 -> 25). Current feature state: see
+> ARCHITECTURE.md banner.
 
 Technology stack for `eqasim-bs`, the synthetic-population pipeline for the
 Großraum Braunschweig (ZGB-8) region. Verified from `environment.yml`, the
@@ -27,10 +28,10 @@ external, cached toolchain (see "Java / MATSim side" below).
 
 ## Pipeline framework
 
-- **synpp 1.5.1** (`environment.yml` pip section) — content-hashed DAG runner.
+- **synpp 1.6.2** (`environment.yml` pip section) — content-hashed DAG runner.
   Pipeline stages are dotted Python module paths with `configure(context)` /
   `execute(context)` functions (verified in
-  `braunschweig/synthesis/locations/education_gravity.py`, lines 184/216).
+  `braunschweig/synthesis/locations/education_gravity.py`, lines 239/310).
 
 ## Key Python libraries (pinned in `environment.yml`)
 
@@ -49,7 +50,7 @@ I/O and utilities:
   `sqlite=3.49.1`, `mock=5.1.0`
 
 Pip-only:
-- `synpp==1.5.1`, `bhepop2==2.0.0` (income synthesis)
+- `synpp==1.6.2`, `bhepop2==2.0.0` (income synthesis)
 
 PopulationSim (popsim branch only): **not** part of this env. The popsim
 workflows run `populationsim` as a **subprocess in its own `uv`-managed
@@ -79,11 +80,20 @@ unpinned import in a `scripts/` geocoder).
   Java** toolchain. synpp downloads and caches the Java sources under
   `eqasim-data/cache_*/matsim.runtime.eqasim*` and `…pt2matsim*` (these are
   nested git checkouts, gitignored — AGENTS.md, `.gitignore`).
-- CI installs **Java 17 (Corretto)** and Maven (`tests.yml`). The task brief
-  mentions Java 21; the verified CI value is **17**. `[ASK USER]` if a Java 21
-  upgrade is planned.
-- The Java MATSim package remains `org.eqasim.bavaria.*` and is treated as
-  read-only here (AGENTS.md Decision D-1c / Hard rule 5).
+- **eqasim-java 2.2.0** (branch `main`, commit `ab938aaac`) via the
+  `eqasim-java-bs` fork (`matsim/runtime/eqasim.py:8-10` DEFAULT_EQASIM_VERSION /
+  BRANCH / COMMIT). Upstream v2.2.0 bumped `maven.compiler` source/target 21 -> 25,
+  so **building the jar now requires JDK 25** (Temurin 25 installed on felix and
+  locally; the felix + local run configs point `java_home` / `java_binary` at it).
+  The Maven runtime honours a new `java_home` config key
+  (`matsim/runtime/maven.py`) that exports JAVA_HOME for the build subprocess.
+- CI (`.github/workflows/tests.yml`) still installs **Java 17 (Corretto)** for the
+  Python test suite — that is unchanged and sufficient for pytest, but NOT for
+  building eqasim-java 2.2.0 (which needs JDK 25); the Java jar build is exercised
+  on felix / locally, not in the Python CI.
+- The Java MATSim package is `org.eqasim.braunschweig.*` in the fork (renamed from
+  `bavaria`), though several config files and `matsim/simulation/prepare.py` still
+  reference `org.eqasim.bavaria.*` entry-point class paths (see CONCERNS.md).
 - External binaries configured per-machine in the config:
   `osmosis_binary`, `osmconvert_binary` (Windows paths in
   `config_local_braunschweig.yml`).
