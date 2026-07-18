@@ -61,17 +61,19 @@ class _RecordingCtx(Ctx):
         self.staged.append((descriptor, kwargs))
 
 
-def test_configure_declares_hts_via_data_hts_selected():
-    """Regression guard for the #140 server-E2E bug: configure() must register the
-    HTS donor as data.hts.selected aliased to "hts" (the eqasim convention, same as
-    the SvB in-commuter stage). A bare context.stage("hts") is NOT a resolvable
+def test_configure_declares_hts_via_mid_donor():
+    """Task 2: configure() must register the German MiD donor aliased to "hts"
+    (not the legacy ENTD). Both SvB and student in-commuter stages use the German
+    behaviour for trip timing. A bare context.stage("hts") is NOT a resolvable
     global alias and makes synpp raise a PipelineError at graph-build time. The
     mocked injection tests stub the "hts" stage directly, so only this
     configure-level check catches the regression."""
     ctx = _RecordingCtx()
     si.configure(ctx)
-    assert ("data.hts.selected", {"alias": "hts"}) in ctx.staged, ctx.staged
-    # the broken form must NOT be used
+    assert ("braunschweig.data.hts.mid_donor", {"alias": "hts"}) in ctx.staged, ctx.staged
+    # the old ENTD form must NOT be used
+    assert ("data.hts.selected", {"alias": "hts"}) not in ctx.staged
+    # the broken bare-alias form must NOT be used
     assert ("hts", {}) not in ctx.staged
 
 

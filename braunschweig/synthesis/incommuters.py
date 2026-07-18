@@ -1148,7 +1148,9 @@ def configure(context):
     # provide, so the population-agnostic aliased dependency is correct.
     context.stage("synthesis.population.enriched")  # RAW, for n_residents
     context.stage("braunschweig.data.inkar.household_income")  # origin-Kreis income level
-    context.stage("data.hts.selected", alias="hts")
+    # German MiD donor (not ENTD): in-commuter trip TIMING comes from German
+    # behaviour. See braunschweig.data.hts.mid_donor + the design spec.
+    context.stage("braunschweig.data.hts.mid_donor", alias="hts")
     if context.config("cordon_incommuter_real_origin"):
         # ZGB polygon for in-ring test + VG250 config for external Gemeinden loading.
         context.stage("data.spatial.municipalities")
