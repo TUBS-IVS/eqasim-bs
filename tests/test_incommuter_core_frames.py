@@ -1,4 +1,3 @@
-import numpy as np
 from braunschweig.synthesis.incommuters import assemble_incommuter_core_frames
 
 

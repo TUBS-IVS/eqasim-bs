@@ -1,16 +1,5 @@
-import numpy as np
 import pandas as pd
 from braunschweig.data.cordon import plans
-
-
-def _work_trips():
-    return pd.DataFrame({
-        "person_id": [1, 1],
-        "departure_time": [28800.0, 61200.0],
-        "arrival_time": [30600.0, 63000.0],
-        "preceding_purpose": ["home", "work"],
-        "following_purpose": ["work", "home"],
-    })
 
 
 def test_build_trips_work_default_byte_identical():
