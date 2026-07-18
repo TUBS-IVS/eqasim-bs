@@ -60,6 +60,12 @@ config:
   # Maven for the non-interactive Java build (mvn is not on PATH for
   # background/headless runs; matsim.runtime.maven resolves via shutil.which).
   maven_binary: C:/Users/bienzeisler/tools/apache-maven-3.9.9/bin/mvn.cmd
+  # eqasim-java 2.2.0 targets Java 25; the machine default is JDK 21. Point the
+  # Maven build (java_home) and the MATSim run (java_binary) at the local JDK 25
+  # so the build compiles and the 2.2.0 jar runs (else UnsupportedClassVersionError).
+  # Mirrors the felix wiring in config_server_*_allfeat_popsim.yml.
+  java_home: C:/Users/bienzeisler/tools/jdk25/jdk-25.0.3+9
+  java_binary: C:/Users/bienzeisler/tools/jdk25/jdk-25.0.3+9/bin/java.exe
   output_path: eqasim-data/output_bs
   output_prefix: braunschweig_1pct_
 
