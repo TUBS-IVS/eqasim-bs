@@ -115,10 +115,12 @@ the tri-state flag already resolves to ON by default):
 `config_popsim_open_braunschweig.yml`,
 `config_server_braunschweig_1pct_allfeat_popsim.yml`,
 `config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`config_server_braunschweig_100pct_allfeat_popsim.yml`. Each was given an
-explicit `cordon_student_incommuters_enabled: true` line next to `cordon_enabled`
-for visibility (project "feature parity" convention) -- this does **not**
-change effective behaviour, since unset already resolved to `true` there. The
+`config_server_braunschweig_100pct_allfeat_popsim.yml`. In each, the flag is
+documented as a **comment** next to `cordon_enabled` (not an explicit
+`cordon_student_incommuters_enabled: true`): leaving it unset already resolves to
+ON there, and a comment avoids the footgun where an explicit `true` would turn a
+later `education_gravity_enabled: false` edit into a hard `RuntimeError` instead
+of a graceful skip. The
 non-allfeat server configs (`config_server_braunschweig_{1,25,100}pct.yml`) and
 all smoke/mini/dry-run configs leave `education_gravity_enabled` at its default
 `False` (or explicit `false`), so the feature stays OFF there, as intended --
