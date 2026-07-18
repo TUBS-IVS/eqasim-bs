@@ -89,6 +89,43 @@ def test_build_mid_donor_frames_rejects_person_id_collision():
             hh, colliding_persons, wege, rng=np.random.RandomState(0))
 
 
+class _RecordingCtx:
+    """Minimal synpp-context stub that records every (key, default) pair
+    ``config`` is called with, and only returns a value for keys it knows
+    about -- mirroring synpp's real behaviour of raising/KeyErroring on a
+    config() call for an unknown key with no default supplied.
+    """
+
+    def __init__(self, known=None):
+        self._known = dict(known or {})
+        self.calls = []
+
+    def config(self, key, default=None):
+        self.calls.append((key, default))
+        if key in self._known:
+            return self._known[key]
+        if default is None:
+            raise KeyError(f"no default supplied for unset config key {key!r}")
+        return default
+
+
+def test_configure_defaults_mid_raw_path_when_unset():
+    # A cordon-enabled config that never sets mid_raw_path (e.g. an
+    # ENTD-resident config with population.method != mid) must not hard-fail
+    # at synpp graph-build (FIX 1, #140 follow-up). random_seed is supplied
+    # (unrelated to this fix) so only the KEY_MID resolution is under test.
+    ctx = _RecordingCtx(known={"random_seed": 0})
+    mid_donor.configure(ctx)
+    assert (mid_donor.KEY_MID, mid_donor.DEFAULT_MID_RAW_PATH) in ctx.calls
+
+
+def test_configure_respects_explicit_mid_raw_path():
+    explicit = "eqasim-data/data/braunschweig/popsim/mid2023_raw_custom"
+    ctx = _RecordingCtx(known={mid_donor.KEY_MID: explicit, "random_seed": 0})
+    mid_donor.configure(ctx)
+    assert ctx.config(mid_donor.KEY_MID, mid_donor.DEFAULT_MID_RAW_PATH) == explicit
+
+
 _MID_DIR = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
 
 

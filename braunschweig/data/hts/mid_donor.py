@@ -19,6 +19,15 @@ from braunschweig.popsim.stage import KEY_MID
 
 _log = logging.getLogger(__name__)
 
+# Canonical committed MiD 2023 raw survey directory, identical to the default
+# every popsim config uses for KEY_MID. Cordon in-commuter donor draws from
+# this stage whenever cordon_enabled is set (braunschweig/population/pipeline
+# in-commuter stages), independent of population.method / hts choice, so a
+# config that enables cordon but never sets mid_raw_path explicitly (e.g. an
+# ENTD-resident config) must still resolve to a usable path instead of
+# hard-failing at synpp graph-build.
+DEFAULT_MID_RAW_PATH = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
+
 
 def build_mid_donor_frames(households, persons, wege, rng):
     """Pure transform: raw MiD (households, persons, wege) -> in-commuter donor
@@ -69,7 +78,11 @@ def build_mid_donor_frames(households, persons, wege, rng):
 
 
 def configure(context):
-    context.config(KEY_MID)
+    # Any cordon-enabled config without an explicit mid_raw_path falls back to
+    # the canonical committed MiD path, so enabling cordon never hard-fails at
+    # graph-build; a config that needs a different MiD dir sets the key
+    # explicitly (as the popsim configs do).
+    context.config(KEY_MID, DEFAULT_MID_RAW_PATH)
     context.config("random_seed")
 
 
@@ -78,13 +91,17 @@ def execute(context):
     in-commuter HTS donor frames.
 
     Consumes ``mid_raw_path`` (KEY_MID) verbatim, matching the sibling popsim
-    stages (braunschweig.popsim.stage, braunschweig.popsim.completed_donor).
-    The configured path is repo-root-relative (e.g.
+    stages (braunschweig.popsim.stage, braunschweig.popsim.completed_donor);
+    falls back to ``DEFAULT_MID_RAW_PATH`` when the config does not set the
+    key explicitly (see ``configure``/``DEFAULT_MID_RAW_PATH``). The
+    configured path is repo-root-relative (e.g.
     "eqasim-data/data/braunschweig/popsim/mid2023_raw").
     """
     from braunschweig.popsim.sources.mid import MidSource
 
-    mid_dir = context.config(KEY_MID)
+    # See configure(): falls back to DEFAULT_MID_RAW_PATH when a cordon-enabled
+    # config does not set mid_raw_path explicitly.
+    mid_dir = context.config(KEY_MID, DEFAULT_MID_RAW_PATH)
     households, persons, wege = MidSource().load_donor(mid_dir)
     rng = np.random.RandomState(int(context.config("random_seed")))
     return build_mid_donor_frames(households, persons, wege, rng)
