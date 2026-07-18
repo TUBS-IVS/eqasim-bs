@@ -12,9 +12,10 @@ docs/superpowers/specs/2026-07-18-incommuter-mid-donor-design.md.
 from __future__ import annotations
 
 import logging
-import os
 
 import numpy as np
+
+from braunschweig.popsim.stage import KEY_MID
 
 _log = logging.getLogger(__name__)
 
@@ -68,8 +69,7 @@ def build_mid_donor_frames(households, persons, wege, rng):
 
 
 def configure(context):
-    context.config("data_path")
-    context.config("braunschweig.population.popsim.mid_raw_path")
+    context.config(KEY_MID)
     context.config("random_seed")
 
 
@@ -77,17 +77,14 @@ def execute(context):
     """synpp stage entry point: load the raw MiD donor tables and build the
     in-commuter HTS donor frames.
 
-    ``mid_raw_path`` is resolved relative to ``data_path`` when it is not
-    already absolute; this is a deliberate convenience for this stage and
-    differs from ``braunschweig.popsim.stage`` (KEY_MID), which uses the
-    configured path verbatim. Both conventions read the same restricted,
-    local-only MiD 2023 raw CSV directory.
+    Consumes ``mid_raw_path`` (KEY_MID) verbatim, matching the sibling popsim
+    stages (braunschweig.popsim.stage, braunschweig.popsim.completed_donor).
+    The configured path is repo-root-relative (e.g.
+    "eqasim-data/data/braunschweig/popsim/mid2023_raw").
     """
     from braunschweig.popsim.sources.mid import MidSource
 
-    mid_dir = context.config("braunschweig.population.popsim.mid_raw_path")
-    if not os.path.isabs(mid_dir):
-        mid_dir = os.path.join(context.config("data_path"), mid_dir)
+    mid_dir = context.config(KEY_MID)
     households, persons, wege = MidSource().load_donor(mid_dir)
     rng = np.random.RandomState(int(context.config("random_seed")))
     return build_mid_donor_frames(households, persons, wege, rng)

@@ -97,9 +97,7 @@ _MID_DIR = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
 def test_execute_on_real_mid_yields_commute_donors():
     class Ctx:
         def config(self, k, d=None):
-            return {"data_path": "eqasim-data/data",
-                    "braunschweig.population.popsim.mid_raw_path":
-                        "braunschweig/popsim/mid2023_raw",
+            return {"braunschweig.population.popsim.mid_raw_path": _MID_DIR,
                     "random_seed": 1234}.get(k, d)
     hh, persons, trips = mid_donor.execute(Ctx())
     assert persons["person_id"].is_unique
