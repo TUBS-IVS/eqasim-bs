@@ -58,6 +58,40 @@ def _normalize_weights(values):
     return weights
 
 
+def select_all_employed_extra(df_persons, purpose, employment_col):
+    """Persons needing a *purpose* primary location in the all-employed pass (#203).
+
+    Approach A (analog to eqasim-france #536) additionally assigns a work/education
+    primary location to ALL employed / studying persons, not only those with a
+    *purpose* trip on the reference day. This returns the "extra" persons for the
+    second, RNG-isolated pass: those that carry the employment flag
+    (``employed`` for work, ``studies`` for education) but have NO *purpose* trip,
+    so the byte-identical first pass (``has_<purpose>_trip``) does not cover them.
+
+    The extra locations are inert for the MATSim simulation (a person with no
+    *purpose* activity in their chain never places the location); they exist so the
+    commuter-OD validation universe matches the QZM "all workers" reference and the
+    workplace/education-place export is complete.
+
+    Parameters
+    ----------
+    df_persons:
+        Persons frame carrying ``employment_col``, ``has_<purpose>_trip``.
+    purpose:
+        ``"work"`` or ``"education"``.
+    employment_col:
+        ``"employed"`` (work) or ``"studies"`` (education).
+
+    Returns
+    -------
+    pandas.DataFrame
+        The subframe of *df_persons* that is employed/studying but has no
+        *purpose* trip. Empty when every such person already has the trip.
+    """
+    trip_col = "has_%s_trip" % purpose
+    return df_persons[df_persons[employment_col] & ~df_persons[trip_col]]
+
+
 def configure(context):
     context.stage("data.od.weighted")
 
