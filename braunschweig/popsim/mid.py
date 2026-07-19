@@ -1056,7 +1056,7 @@ def project_completed_seed(
             raise ValueError(
                 "project_completed_seed: a participation kreis control "
                 f"{_active_participation_purposes} is active but mid_dir is not set; cannot "
-                "load the MiD Wege table to derive has_<purpose>_trip (no silent fallback)."
+                f"load the MiD Wege table to derive participation flags for {_active_participation_purposes} (no silent fallback)."
             )
         wege = load_mid_wege(mid_dir)
         for purpose in _active_participation_purposes:
