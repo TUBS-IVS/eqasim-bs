@@ -11,7 +11,7 @@ def test_participation_shares_weighted():
     persons = pd.DataFrame({
         "HHNR": [1, 1, 2],
         "PNR": [1, 2, 1],
-        "ST_CODE": ["03101"] * 3,
+        "kreis": ["03101"] * 3,  # real ARS Kreis, derived from household AGS
         "GEWICHT_P_ZENSUS": [1.0, 1.0, 2.0],
     })
     wege = pd.DataFrame({
