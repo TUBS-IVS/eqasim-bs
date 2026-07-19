@@ -119,7 +119,7 @@ def main(argv=None) -> int:
     log_path = setup_logging(level="INFO")
     logging.getLogger("braunschweig").info("Run log: %s", log_path)
     prime_from_config(argv[0])
-    synpp.run_from_yaml(argv[0])
+    synpp.run_from_yaml(argv[0], None, [], {})
     # Export the shareable stage caches into the shared store ONLY after a successful
     # run (run_from_yaml raises on failure, so a failed/partial run never seeds the
     # store). Gated by cache_share_enabled + cache_share_export inside the helper.

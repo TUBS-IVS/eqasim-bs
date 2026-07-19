@@ -393,6 +393,12 @@ def execute(context):
     # concatenated with the passenger frame.
     df_vehicles = _attach_writer_columns(df_spec)
 
+    # Restore eqasim-core per-person car coverage: non-owner members of car-owning
+    # households (car_availability "some"/"all") get a routing default_car so any
+    # in-loop car-driver choice is routable (see _add_default_cars_for_non_owners).
+    df_vehicle_types, df_vehicles = _add_default_cars_for_non_owners(
+        df_vehicle_types, df_vehicles, df_persons)
+
     return df_vehicle_types, df_vehicles
 
 
@@ -421,6 +427,41 @@ def _legacy_default_fleet(df_persons: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
     df_vehicles["technology"] = "Gazole"
     df_vehicles["age"] = 0
     df_vehicles["euro"] = 6
+    return df_vehicle_types, df_vehicles
+
+
+def _add_default_cars_for_non_owners(df_vehicle_types, df_vehicles, df_persons):
+    """Ensure EVERY person owns a ``car`` vehicle by giving non-owners a default_car.
+
+    eqasim core (``RunInsertVehicles`` / ``synthesis.vehicles.cars.default``) gives every
+    person a car vehicle; ``car_availability`` gates the in-loop mode CHOICE, not the
+    vehicle's existence. The household fleet assigns a real car only to each household
+    car's owner, so non-owner members (``car_availability`` "some"/"all") would own no car
+    vehicle -- and MATSim aborts routing ("Could not retrieve vehicle id from person ...
+    for mode: car") when the in-loop discrete mode choice assigns them car-driver. This
+    restores eqasim-core coverage: each person without a fleet car gets a routing
+    ``default_car`` (id "<person_id>:car"). The real HBEFA-typed fleet is untouched, so the
+    fleet-composition KPIs (which read the HBEFA types) are unaffected; these default cars
+    are exactly what the eqasim base ``synthesis.vehicles.cars.default`` stage emits per
+    person. The fallback rate is logged (CLAUDE.md no-silent-fallback).
+    """
+    owner_ids = set(df_vehicles["owner_id"])
+    non_owners = df_persons[~df_persons["person_id"].isin(owner_ids)]
+    n_owners = len(owner_ids)
+    n_default = len(non_owners)
+    logger.info(
+        "[vehicles.household] car-vehicle coverage: %d owner(s) with a real fleet car, "
+        "%d non-owner(s) get a routing default_car (%.1f%% fleet / %.1f%% default).",
+        n_owners, n_default,
+        100.0 * n_owners / max(n_owners + n_default, 1),
+        100.0 * n_default / max(n_owners + n_default, 1),
+    )
+    if n_default == 0:
+        return df_vehicle_types, df_vehicles
+    default_types, default_vehicles = _legacy_default_fleet(non_owners)
+    df_vehicles = pd.concat([df_vehicles, default_vehicles], ignore_index=True)
+    df_vehicle_types = pd.concat([df_vehicle_types, default_types], ignore_index=True)
+    df_vehicle_types = df_vehicle_types.drop_duplicates(subset="type_id").reset_index(drop=True)
     return df_vehicle_types, df_vehicles
 
 
