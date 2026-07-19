@@ -715,22 +715,25 @@ def map_trip_class(
     return out
 
 
-def map_work_participation(
-    persons: pd.DataFrame, *, source_col: str = "work_participation_src", rng=None,
+def map_participation(
+    persons: pd.DataFrame, name: str, *, source_col: str, rng=None,
     rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
-    """Add an int-coded ``work_participation`` (0/1) from a per-person work-trip flag
-    via the uniform missing policy (mirrors ``map_trip_class`` precisely).
+    """Add an int-coded ``<name>`` (0/1) "participation" control from a per-person
+    purpose-trip flag via the uniform missing policy (mirrors ``map_trip_class``
+    precisely). Generic core behind ``map_work_participation`` / ``map_leisure_
+    participation`` / ``map_education_participation`` (feature #224 task 5) --
+    parametrized by ``name`` (the output column / ``missing.AttributeSpec`` name) rather
+    than duplicated per purpose.
 
-    ``source_col`` (default ``work_participation_src``) is expected to already carry the
-    per-person work-trip flag {0, 1}, or one of the MiD 803/804 diary non-response codes
-    (trip module not covered -- see ``mid.compute_has_work_trip``, which derives this
-    column from the person's Wege). As with ``trip_class``, 803/804 are item non-response,
-    NOT "no work trip" -- diary non-response correlates with mobility, so these codes must
-    never be dropped or forced to 0; they are declared in ``impute_codes`` and imputed
-    from the valid {0, 1} pool within the same age band (``alter_gr1``) when present, else
-    the global valid pool. ``default=0`` (no work trip) is used only if the valid pool is
-    empty.
+    ``source_col`` is expected to already carry the per-person purpose-trip flag {0, 1},
+    or one of the MiD 803/804 diary non-response codes (trip module not covered -- see
+    ``mid.compute_has_purpose_trip``, which derives this column from the person's Wege).
+    As with ``trip_class``, 803/804 are item non-response, NOT "no trip" -- diary
+    non-response correlates with mobility, so these codes must never be dropped or
+    forced to 0; they are declared in ``impute_codes`` and imputed from the valid {0, 1}
+    pool within the same age band (``alter_gr1``) when present, else the global valid
+    pool. ``default=0`` (no trip) is used only if the valid pool is empty.
 
     Raises ``KeyError`` if ``source_col`` is absent (no silent fallback to a guessed
     column name).
@@ -740,11 +743,11 @@ def map_work_participation(
     """
     if source_col not in persons.columns:
         raise KeyError(
-            f"map_work_participation: source column {source_col!r} absent from the person "
-            f"frame (has {list(persons.columns)}); cannot seed the work_participation control.")
+            f"map_participation: source column {source_col!r} absent from the person "
+            f"frame (has {list(persons.columns)}); cannot seed the {name} control.")
     rng = rng if rng is not None else np.random.RandomState(0)
     spec = missing.AttributeSpec(
-        name="work_participation",
+        name=name,
         source_col=source_col,
         value_map={0: 0, 1: 1},
         structural={},
@@ -753,9 +756,54 @@ def map_work_participation(
         default=0,
     )
     out = persons.copy()
-    out["work_participation"], _ = missing.resolve(out, spec, rng=rng)
-    out["work_participation"] = out["work_participation"].astype(int)
+    out[name], _ = missing.resolve(out, spec, rng=rng)
+    out[name] = out[name].astype(int)
     return out
+
+
+def map_work_participation(
+    persons: pd.DataFrame, *, source_col: str = "work_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``work_participation`` (0/1) from a per-person work-trip flag.
+
+    Thin wrapper over :func:`map_participation` (name="work_participation"); kept as a
+    named entry point so existing callers/tests stay unchanged. See that function's
+    docstring for the full 803/804 non-response imputation policy.
+    """
+    return map_participation(
+        persons, "work_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
+def map_leisure_participation(
+    persons: pd.DataFrame, *, source_col: str = "leisure_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``leisure_participation`` (0/1) from a per-person leisure-trip
+    flag (W_ZWECK=7; see ``mid.PARTICIPATION_W_ZWECK``).
+
+    Thin wrapper over :func:`map_participation` (name="leisure_participation"); mirrors
+    ``map_work_participation`` exactly (feature #224 task 5).
+    """
+    return map_participation(
+        persons, "leisure_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
+def map_education_participation(
+    persons: pd.DataFrame, *, source_col: str = "education_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``education_participation`` (0/1) from a per-person
+    education-trip flag (W_ZWECK in {3, 11, 12}; see ``mid.PARTICIPATION_W_ZWECK``).
+
+    Thin wrapper over :func:`map_participation` (name="education_participation");
+    mirrors ``map_work_participation`` exactly (feature #224 task 5).
+    """
+    return map_participation(
+        persons, "education_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
 
 
 def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:

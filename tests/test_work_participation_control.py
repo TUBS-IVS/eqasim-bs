@@ -121,9 +121,13 @@ def test_active_kreis_entries_includes_work_participation_by_default():
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     names = {c.name for c in active}
     assert "work_participation" in names
+    # feature #224 task 5 adds two more default-on person-level entries
+    # (leisure_participation / education_participation); the full active set now
+    # includes them too (see tests/test_leisure_education_participation.py).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
         "trip_class", "employment_status", "work_participation",
+        "leisure_participation", "education_participation",
     }
 
 
