@@ -175,7 +175,10 @@ def test_registry_has_five_entries_with_expected_tiers():
     assert {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
     } <= set(by_name)
-    assert by_name["trip_class"].tier == "soft"
+    # NOTE: this historical assertion is SUPERSEDED by feature #224 task 6, which
+    # promotes trip_class to tier="hard" (see tests/test_trip_class_hard.py); updated
+    # here rather than weakened so the historical entry-shape coverage stays accurate.
+    assert by_name["trip_class"].tier == "hard"
     assert by_name["trip_class"].level == "person"
     assert by_name["trip_class"].seed_column == "trip_class"
 
