@@ -125,7 +125,11 @@ def main(argv=None) -> int:
     # even a killed run is traceable (meta_output.py only writes on success).
     log_and_write_run_provenance(argv[0])
     prime_from_config(argv[0])
-    synpp.run_from_yaml(argv[0])
+    # synpp 1.6.2 (pinned) requires run_from_yaml(path, working_directory, run, overrides)
+    # -- four positional arguments, not one (issue #220). Passing None/[]/{} makes
+    # Synpp.build_from_yml read working_directory and run from the YAML, reproducing the
+    # old single-argument behaviour without overriding any config.
+    synpp.run_from_yaml(argv[0], None, [], {})
     # Export the shareable stage caches into the shared store ONLY after a successful
     # run (run_from_yaml raises on failure, so a failed/partial run never seeds the
     # store). Gated by cache_share_enabled + cache_share_export inside the helper.
