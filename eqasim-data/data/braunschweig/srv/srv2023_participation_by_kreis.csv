@@ -1,0 +1,27 @@
+# SrV 2023 trip-participation per-Kreis aggregate, built by
+# scripts/build_srv_participation_aggregate.py from raw SrV microdata
+# (eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Personen.csv and
+# SrV2023_Wege.csv).
+#
+# Participation = share of weighted persons (GEWICHT_P_ZENSUS) with at least one
+# trip of the given purpose (E_ZWECK_9) on the reporting day. Universe: persons
+# with MITTL_WERKTAG == 1 (average weekday, Di-Do).
+#
+# Purpose mapping (E_ZWECK_9):
+#   work = {1, 2} (Arbeit, berufliche Tätigkeit)
+#   education = {3, 4} (Ausbildung, Schule)
+#   leisure = {7} (Freizeit/Privat)
+#
+# Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
+# work/leisure/education (float shares, 0.0..1.0). Region-total row coded "03ZGB"
+# with level="total".
+code,level,n_unweighted,work,education,leisure
+00098,kreis,3377,0.333499,0.153842,0.376316
+00099,kreis,2647,0.313123,0.194683,0.37584
+00100,kreis,1794,0.330209,0.193044,0.342177
+00101,kreis,1313,0.321523,0.167551,0.374309
+00102,kreis,987,0.319113,0.160938,0.346743
+00103,kreis,907,0.33233,0.151266,0.354309
+00173,kreis,4519,0.34443,0.17582,0.41776
+00197,kreis,2679,0.343461,0.166852,0.396172
+03ZGB,total,18223,0.331558,0.1761,0.383163
