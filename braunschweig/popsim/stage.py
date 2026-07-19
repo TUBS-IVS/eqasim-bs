@@ -228,6 +228,13 @@ KEY_TRIPS_KREIS_CONTROL = "braunschweig.population.popsim.trip_class_kreis_contr
 # age >= 14 (kreis_attribute_control.REGISTRY entry min_age=14) -- see
 # person_total_by_kreis_min_age below.
 KEY_EMPLOYMENT_STATUS_KREIS_CONTROL = "braunschweig.population.popsim.employment_status_kreis_control"
+# work_participation x Kreis control (feature #224 task 4, third PERSON-level entry):
+# steers the per-Kreis distribution of the 0/1 has-a-work-trip flag (derived from each
+# person's MiD Wege via mid.compute_has_work_trip) to the committed SrV-2023
+# participation blended target. Default "on" (project rule: new features default on).
+# "off" drops its control + seed column (byte-identical for that attribute). MiD-only
+# (its seed derivation reads the MiD Wege table); ignored for source="entd".
+KEY_WORK_PARTICIPATION_CONTROL = "braunschweig.population.popsim.work_participation_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -278,6 +285,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
     "trip_class": KEY_TRIPS_KREIS_CONTROL,
     "employment_status": KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    "work_participation": KEY_WORK_PARTICIPATION_CONTROL,
 }
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
@@ -292,6 +300,7 @@ _KREIS_CONTROL_DEFAULT = {
     "has_ebike": "on",
     "trip_class": "on",
     "employment_status": "on",
+    "work_participation": "on",
 }
 
 
@@ -301,15 +310,15 @@ def active_kreis_entries(context, source_name):
     An entry is active when its per-attribute toggle resolves to "on" AND the donor
     source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
     ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
-    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all six entries
-    (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class,
-    employment_status) default "on". The has_ebike source column (H_ANZPED) was
-    server-verified 2026-07-08 (issue #116). trip_class (2026-07-08 follow-on) and
-    employment_status (feature #172 task 4) are PERSON-level entries; each is wired on
-    both seed paths (its per-Kreis target partitions the PERSON total, not the household
-    total -- see the KREIS block in execute()). employment_status additionally restricts
-    that PERSON total to age >= 14 (its REGISTRY entry's min_age), see
-    person_total_by_kreis_min_age.
+    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all seven
+    entries (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class,
+    employment_status, work_participation) default "on". The has_ebike source column
+    (H_ANZPED) was server-verified 2026-07-08 (issue #116). trip_class (2026-07-08
+    follow-on), employment_status (feature #172 task 4), and work_participation (feature
+    #224 task 4) are PERSON-level entries; each is wired on both seed paths (its
+    per-Kreis target partitions the PERSON total, not the household total -- see the
+    KREIS block in execute()). employment_status additionally restricts that PERSON
+    total to age >= 14 (its REGISTRY entry's min_age), see person_total_by_kreis_min_age.
 
     Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
     argument (a positional default raises ``TypeError``; the same pitfall was fixed for
@@ -644,6 +653,11 @@ def configure(context):
     # data_path (declared below via the any()-gate). 14+ universe restriction (min_age)
     # is carried on the REGISTRY entry itself, not a separate config key.
     context.config(KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"])
+    # work_participation (third PERSON-level KREIS control, feature #224 task 4). Default
+    # "on"; its committed SrV-2023 participation blended target lives under data_path
+    # (declared below via the any()-gate). Seed derivation reads the MiD Wege table
+    # (mid.load_mid_wege) at the two seed call sites, gated on this control being active.
+    context.config(KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -654,6 +668,7 @@ def configure(context):
         (KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"]),
         (KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"]),
         (KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"]),
+        (KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"
@@ -1242,6 +1257,7 @@ def execute(context) -> pd.DataFrame:
             kreis_control_entries=active_entries,
             kreis_seed_rng=kreis_seed_rng,
             ebike_seed_column=ebike_seed_column_cfg,
+            mid_dir=mid_dir,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).

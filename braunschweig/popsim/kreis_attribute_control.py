@@ -213,6 +213,31 @@ REGISTRY: tuple = (
         tier="soft",
         min_age=14,
     ),
+    # work_participation x Kreis control (feature #224, task 4): the third PERSON-level
+    # entry. seed_column work_participation is the 0/1 has-a-work-trip flag
+    # (attributes.map_work_participation from mid.compute_has_work_trip / mid's Wege
+    # table), assigned to ALL persons (no age restriction; the SrV target reports
+    # shares over the full weighted-person universe). The committed target
+    # (target2026_work_participation_by_kreis.csv) is built PURELY from the SrV 2023
+    # Braunschweig+RGB participation aggregate (scripts/build_participation_target.py;
+    # NO MiD blending), mirroring the trip_class target's construction:
+    #   (1) DECISION (level anchoring): the synthetic distribution is anchored to the
+    #       SrV level (regional survey = regional behaviour authority).
+    #   (2) ASSUMPTION (Wolfsburg): 03103 (not covered by SrV) uses the SrV region
+    #       total, the SAME convention as target2026_has_ebike / target2026_trip_class.
+    # tier="hard": unlike trip_class/employment_status (soft, yield gracefully to the
+    # Zensus backbone in small cells), work_participation is registered HARD so its
+    # importance is classified into the "kreis_hard" group (control_spec.
+    # IMPORTANCE_PROFILES) alongside economic_status/number_of_cars.
+    KreisAttributeControl(
+        name="work_participation",
+        seed_column="work_participation",
+        level="person",
+        categories=(("yes", "== 1"), ("no", "== 0")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_work_participation_by_kreis.csv",
+        target_columns=("work_yes", "work_no"),
+        tier="hard",
+    ),
 )
 
 

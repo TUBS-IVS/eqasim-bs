@@ -689,6 +689,17 @@ def load_mid_seed(
         for _es_col in ("P_BKAT", "alter_gr1"):
             if _es_col not in person_cols:
                 person_cols.append(_es_col)
+    # work_participation (third PERSON-level KREIS control, feature #224 task 4): load
+    # the raw diary trip count (anzwege1, the default trips_col mid.compute_has_work_trip
+    # uses to carry through the 803/804 diary-nonresponse codes) and the age-band
+    # conditioning column (alter_gr1) so the has-work-trip flag can be derived from the
+    # MiD Wege table + the 803/804 codes imputed within alter_gr1, mirroring the
+    # trip_class block above. Dedup-safe (anzwege1/alter_gr1 may already be present via
+    # trip_class/employment_status/tier3).
+    if "work_participation" in active_kreis_entry_names:
+        for _wp_col in ("anzwege1", "alter_gr1"):
+            if _wp_col not in person_cols:
+                person_cols.append(_wp_col)
     persons = pd.read_csv(
         persons_path,
         usecols=list(dict.fromkeys(person_cols)),
@@ -723,7 +734,7 @@ def load_mid_seed(
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
     _rng_style_entries = _count_style_entries | (
-        active_kreis_entry_names & {"trip_class", "employment_status"}
+        active_kreis_entry_names & {"trip_class", "employment_status", "work_participation"}
     )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
@@ -778,6 +789,20 @@ def load_mid_seed(
     if "employment_status" in active_kreis_entry_names:
         persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
 
+    # work_participation (third PERSON-level KREIS control, feature #224 task 4): derive
+    # the 0/1 has-a-work-trip flag from the MiD Wege table AFTER the complete-household
+    # filter + member completion, seeded from the person's REALISED weekday plan source
+    # exactly like trip_class (mid.derive_work_participation_seed) -- see that function's
+    # docstring for the full weekday-vs-realised-plan rationale. The rng guard above
+    # ensures kreis_seed_rng is set. Requires the full MiD Wege table, which
+    # load_mid_seed does not otherwise read; loaded here (gated on the control being
+    # active) so the OFF path never touches MiD2023_Wege.csv (byte-identical no-op).
+    if "work_participation" in active_kreis_entry_names:
+        wege = load_mid_wege(mid_dir)
+        persons = derive_work_participation_seed(
+            persons, wege, rng=kreis_seed_rng,
+            household_id=columns.person_household_id, person_id=columns.person_id)
+
     # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
     # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
     # (11-class) then collapses to the 5 Zensus Familientyp labels.  The result
@@ -826,6 +851,7 @@ def project_completed_seed(
     kreis_seed_rng=None,
     ebike_seed_column: Optional[str] = None,
     include_status_seed_col: bool = False,
+    mid_dir: Union[str, Path, None] = None,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -870,6 +896,12 @@ def project_completed_seed(
             ``kreis_control_entries=(economic_status entry,)``; kept so existing
             callers/tests stay byte-identical (raw ``oek_status`` pass-through,
             no resolve/derivation).
+        mid_dir: Directory containing the MiD 2023 delivery (``MiD2023_Wege.csv``).
+            REQUIRED when the ``work_participation`` entry (feature #224 task 4) is
+            active: unlike the other KREIS control seed columns, work_participation
+            is derived from the full MiD Wege table (mid.load_mid_wege), which the
+            completed-donor frames do not carry. ``None`` (default) is a no-op when
+            work_participation is inactive (no silent fallback if it is active).
     """
     # Deprecated alias: include_status_seed_col=True is equivalent to activating the
     # economic_status registry entry (byte-identical to the pre-existing behaviour).
@@ -900,7 +932,7 @@ def project_completed_seed(
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
     _rng_style_entries = _count_style_entries | (
-        active_kreis_entry_names & {"trip_class", "employment_status"}
+        active_kreis_entry_names & {"trip_class", "employment_status", "work_participation"}
     )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
@@ -936,6 +968,22 @@ def project_completed_seed(
         # so this reflects the full completed population, agreeing deterministically with
         # assembly.build_persons for the 99.87% of persons with a valid (non-9) P_BKAT.
         persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
+    if "work_participation" in active_kreis_entry_names:
+        # Derive work_participation from the completed donor's MiD Wege table (loaded
+        # from mid_dir; the completed-donor frames do not carry the Wege rows
+        # themselves). Seeded from the person's REALISED weekday plan source exactly
+        # like trip_class (mid.derive_work_participation_seed) -- see that function's
+        # docstring for the full weekday-vs-realised-plan rationale.
+        if mid_dir is None:
+            raise ValueError(
+                "project_completed_seed: work_participation kreis control is active but "
+                "mid_dir is not set; cannot load the MiD Wege table to derive "
+                "has_work_trip (no silent fallback)."
+            )
+        wege = load_mid_wege(mid_dir)
+        persons = derive_work_participation_seed(
+            persons, wege, rng=kreis_seed_rng,
+            household_id=columns.person_household_id, person_id=columns.person_id)
 
     hh_type5_series = seedmod.derive_hh_type5(
         persons,

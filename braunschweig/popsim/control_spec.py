@@ -523,11 +523,16 @@ IMPORTANCE_PROFILES: dict[str, dict[str, int]] = {
         "hhtype": 200,            # HH type
         # KREIS attribute controls (registry tier -> group kreis_hard / kreis_soft, see
         # importance_group_for_field): HARD entries (economic_status #109, number_of_cars
-        # #99) at the level of the other Kreis-scale socio controls ("employed" = 2000);
-        # SOFT entries (bikes / ebike / trip_class) carry NO profile entry and keep the
-        # uniform 1000, so they yield gracefully in small cells instead of fighting the
-        # Zensus backbone. Added 2026-07-08 with the registry wiring; NOT part of the
-        # 2026-06-30 offline search (the KREIS attribute controls did not exist then).
+        # #99, work_participation #224) at the level of the other Kreis-scale socio
+        # controls ("employed" = 2000); SOFT entries (bikes / ebike / trip_class /
+        # employment_status) carry NO profile entry and keep the uniform 1000, so they
+        # yield gracefully in small cells instead of fighting the Zensus backbone. Added
+        # 2026-07-08 with the registry wiring; NOT part of the 2026-06-30 offline search
+        # (the KREIS attribute controls did not exist then). work_participation (feature
+        # #224 task 4) is classified HARD automatically -- its REGISTRY entry sets
+        # tier="hard", so importance_group_for_field maps its rendered control columns
+        # (work_participation_yes_KREIS / work_participation_no_KREIS) to this SAME
+        # "kreis_hard" group; no separate per-name profile entry is needed.
         "kreis_hard": 2_000,
     },
 }
