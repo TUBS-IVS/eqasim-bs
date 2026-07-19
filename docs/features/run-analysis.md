@@ -56,15 +56,18 @@ The run analytics can additionally be exported as a self-contained
 dashboard is viewable inside the MATSim/SimWrapper ecosystem. There are two
 complementary, flag-gated layers:
 
-**Layer 1 - MATSim simwrapper contrib (Java).** The `braunschweig` module
-(`../eqasim-java-bs`) depends on `org.matsim.contrib:simwrapper` (pinned to the
-active MATSim version `2025.0-PR3568`, verified present on `repo.matsim.org`).
-`RunSimulation` registers `SimWrapperModule` behind a `--simwrapper`
-CommandLine flag, so MATSim writes its standard dashboards (network volumes,
-mode share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. The
-pipeline (`matsim/simulation/run.py`) passes `--simwrapper true` only when the
-config key `simwrapper_dashboards` is set (**default `False`** -> a standard run
-is byte-identical).
+**Layer 1 - MATSim simwrapper contrib (Java).** NOTE (verified 2026-07-18): this
+Java Layer-1 integration is **not present in the `eqasim-java-bs` `main`** built
+by the pipeline. After the eqasim-java 2.2.0 upgrade the fork's `main` (MATSim
+`2026.0-2026w12`) carries **no `org.matsim.contrib:simwrapper` dependency and no
+`SimWrapperModule`** in `RunSimulation`; the Java dashboard work lives on the
+unmerged `feature/simwrapper-dashboards` branch. The Python side
+(`matsim/simulation/run.py`) still passes `--simwrapper true` when the config key
+`simwrapper_dashboards` is set (**default `False`**), but that flag is inert until
+the Java layer is merged. When active (on that branch) `RunSimulation` registers
+`SimWrapperModule` so MATSim writes standard dashboards (network volumes, mode
+share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. With the flag
+off (the default), standard runs are byte-identical.
 
 **Layer 2 - Python emitter (`braunschweig.analysis.simwrapper`).** Converts the
 existing `record` dict from

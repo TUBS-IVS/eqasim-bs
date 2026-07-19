@@ -11,7 +11,7 @@
 
 | Area | Feature | Evidence |
 |---|---|---|
-| Location choice | **Building activity potentials** (PR #16, #17). Work + secondary location choice now **REPLACE** the ALKIS candidate set with OSM/ALKIS `building_activity_potentials.parquet` buildings, weighted by per-activity potential (`potential_work`, `potential_retail_daily/non_daily`, `potential_leisure`). Education + kita/university capacity distributed by building potential. chainsolvers pinned to combined-scorer commit `cb50c41`. | git `Merge PR #16`, `#17`; `braunschweig/data/building_potentials.py`, `braunschweig/locations/work.py`, `braunschweig/synthesis/locations/secondary_chainsolvers.py`; `CLAUDE.md` "Building-level activity potentials" |
+| Location choice | **Building activity potentials** (PR #16, #17). Work + secondary location choice now **REPLACE** the ALKIS candidate set with OSM/ALKIS `building_activity_potentials.parquet` buildings, weighted by per-activity potential (`potential_work`, `potential_retail_daily/non_daily`, `potential_leisure`). Education + kita/university capacity distributed by building potential. chainsolvers pinned to commit `d8d8ae7`. | git `Merge PR #16`, `#17`; `braunschweig/data/building_potentials.py`, `braunschweig/locations/work.py`, `braunschweig/synthesis/locations/secondary_chainsolvers.py`; `CLAUDE.md` "Building-level activity potentials" |
 | Fleet | **Fleet consistency v2** (PR #12) + **income-age coupling** (PR #13): brand HSN/TSN feasibility, per-Kreis BEV/PHEV recalibration, income-coupled vehicle age. | git PR #12/#13; memory `model-realism-data-integration.md` |
 | Home | **ALKIS-typed home matching** (PR #14): height-type buildings, H_GEW/P_GEW weighted weekend matching. | git PR #14 |
 | Controls | **Employment grid control** refined to **5 age groups**; **tier-3 Kreis controls** (via cleancensus kreis_controls import). | git 2026-06-18/22 |
@@ -78,7 +78,7 @@ a Python module exposing:
 - (optionally) `validate(...)` — cache-invalidation hook.
 
 Verified signature in `braunschweig/synthesis/locations/education_gravity.py`
-(`def configure(context)` line 184, `def execute(context)` line 216). synpp
+(`def configure(context)` line 239, `def execute(context)` line 310). synpp
 caches every stage under the `working_directory` (`eqasim-data/cache_bs*`), so a
 rerun only re-executes stages whose hashed inputs changed.
 

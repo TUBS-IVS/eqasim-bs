@@ -32,7 +32,8 @@ within-commune spatial distribution.
 **Potential_work split preserves commune totals.** When TAZ are used, the
 aggregate SvB employment for each commune (from the census employment stage) is
 distributed across its constituent TAZ in proportion to each TAZ's
-`potential_work` (building-area-weighted or uniform fallback). This is a
+`potential_work` (activity-potential-weighted -- LLM/volume/Bosserhof, see
+`docs/features/building-potentials.md` -- or uniform `1/n_taz` fallback). This is a
 commune-total-preserving redistribution: summing over TAZ reproduces the
 commune total, so the Kreis-level BA commuter-flow calibration is not disturbed.
 

@@ -20,8 +20,8 @@ The living project-management layer. Consult these for orientation and **keep th
   deliberately-dropped work. The canonical open-work source (do not start a competing list).
 - **`SESSION_LOG.md`** (gitignored, local-only) — chronological work log; append one entry per
   session (newest on top).
-- **`docs/codebase/`** (gitignored, local-only) — architecture/onboarding: `STACK`, `STRUCTURE`,
-  `ARCHITECTURE`, `CONVENTIONS`, `INTEGRATIONS`, `TESTING`, `CONCERNS`.
+- **`docs/codebase/`** (committed; only `.codebase-scan.txt` is gitignored) — architecture/onboarding:
+  `STACK`, `STRUCTURE`, `ARCHITECTURE`, `CONVENTIONS`, `INTEGRATIONS`, `TESTING`, `CONCERNS`.
 - **`docs/superpowers/{specs,plans}/`** (gitignored) — per-feature design specs + execution plans.
 - **Claude memory** (`~/.claude/.../memory/`) — curated long-term facts; travels with `~/.claude`,
   not the repo.
