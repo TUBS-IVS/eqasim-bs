@@ -715,6 +715,49 @@ def map_trip_class(
     return out
 
 
+def map_work_participation(
+    persons: pd.DataFrame, *, source_col: str = "work_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``work_participation`` (0/1) from a per-person work-trip flag
+    via the uniform missing policy (mirrors ``map_trip_class`` precisely).
+
+    ``source_col`` (default ``work_participation_src``) is expected to already carry the
+    per-person work-trip flag {0, 1}, or one of the MiD 803/804 diary non-response codes
+    (trip module not covered -- see ``mid.compute_has_work_trip``, which derives this
+    column from the person's Wege). As with ``trip_class``, 803/804 are item non-response,
+    NOT "no work trip" -- diary non-response correlates with mobility, so these codes must
+    never be dropped or forced to 0; they are declared in ``impute_codes`` and imputed
+    from the valid {0, 1} pool within the same age band (``alter_gr1``) when present, else
+    the global valid pool. ``default=0`` (no work trip) is used only if the valid pool is
+    empty.
+
+    Raises ``KeyError`` if ``source_col`` is absent (no silent fallback to a guessed
+    column name).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if source_col not in persons.columns:
+        raise KeyError(
+            f"map_work_participation: source column {source_col!r} absent from the person "
+            f"frame (has {list(persons.columns)}); cannot seed the work_participation control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="work_participation",
+        source_col=source_col,
+        value_map={0: 0, 1: 1},
+        structural={},
+        impute_codes=(803, 804),          # trip module not covered (no diary): impute
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default=0,
+    )
+    out = persons.copy()
+    out["work_participation"], _ = missing.resolve(out, spec, rng=rng)
+    out["work_participation"] = out["work_participation"].astype(int)
+    return out
+
+
 def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
     """Derive bicycle availability {none, some, all} from bikes vs. household size.
 

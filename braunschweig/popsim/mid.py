@@ -36,6 +36,7 @@ from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import merge as mergemod
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
+from braunschweig.popsim import trips
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
 
@@ -412,6 +413,119 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
         len(persons))
     out = attributes.map_trip_class(persons, trips_col="_plan_source_anzwege1", rng=rng)
     return out.drop(columns=["_plan_source_anzwege1"])
+
+
+def compute_has_work_trip(
+    persons: pd.DataFrame, wege: pd.DataFrame, *,
+    household_id: str = "H_ID", person_id: str = "P_ID",
+    trips_col: str = "anzwege1", zweck_col: str = "W_ZWECK",
+) -> pd.Series:
+    """Derive the per-person ``has_work_trip`` flag (0/1, or a carried 803/804 diary
+    non-response code) from each person's MiD Wege, for the ``work_participation`` seed.
+
+    A person has a work trip (``has_work_trip = 1``) if at least one of their Wege has
+    ``zweck_col`` in {1 Arbeit, 2 dienstlich} -- the two ``W_ZWECK`` codes
+    ``trips.PURPOSE_BY_W_ZWECK`` maps to the "work" activity purpose; otherwise 0.
+
+    Exception: if the person's own diary trip count (``trips_col``, default
+    ``anzwege1``) is one of the 803/804 item non-response codes (trip module not
+    covered -- no diary / rueckwirkende Wegeerhebung only; see
+    ``attributes.map_trip_class``), the work-trip flag is UNKNOWN, not "no work trip".
+    The code is carried through unchanged so ``attributes.map_work_participation``'s
+    ``missing.AttributeSpec(impute_codes=(803, 804))`` imputes it from the valid {0, 1}
+    pool within the person's age band, exactly as ``trip_class`` handles the same codes.
+    A diary non-response person must never be forced to 0.
+
+    Returns a ``pd.Series`` indexed like ``persons`` (index preserved, not reset).
+
+    Raises ``KeyError`` if ``trips_col`` is absent from ``persons``, or if
+    ``household_id`` / ``person_id`` / ``zweck_col`` are absent from ``wege`` (no silent
+    fallback to a guessed column name).
+    """
+    if trips_col not in persons.columns:
+        raise KeyError(
+            f"compute_has_work_trip: source column {trips_col!r} absent from the person "
+            f"frame (has {list(persons.columns)}); cannot derive has_work_trip.")
+    missing_wege_cols = [c for c in (household_id, person_id, zweck_col) if c not in wege.columns]
+    if missing_wege_cols:
+        raise KeyError(
+            f"compute_has_work_trip: column(s) {missing_wege_cols} absent from the Wege "
+            f"frame (has {list(wege.columns)}); cannot derive has_work_trip.")
+
+    # W_ZWECK codes 1 (Arbeit) + 2 (dienstlich) are the two codes trips.PURPOSE_BY_W_ZWECK
+    # maps to the "work" activity purpose; derived from that single source of truth
+    # rather than duplicating the code list here.
+    work_codes = {code for code, purpose in trips.PURPOSE_BY_W_ZWECK.items() if purpose == "work"}
+    work_wege = wege[wege[zweck_col].isin(work_codes)]
+    work_person_keys = pd.MultiIndex.from_arrays(
+        [work_wege[household_id], work_wege[person_id]]).unique()
+    person_keys = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
+    has_work_weg = person_keys.isin(work_person_keys)
+    result = pd.Series(has_work_weg.astype(int), index=persons.index)
+
+    nonresponse_mask = persons[trips_col].isin((803, 804))
+    result = result.where(~nonresponse_mask, persons[trips_col])
+    return result
+
+
+def derive_work_participation_seed(persons, wege, *, rng, household_id="H_ID", person_id="P_ID"):
+    """Derive the ``work_participation`` control seed from each person's REALISED
+    weekday plan (mirrors ``derive_trip_class_seed``; see that docstring for the full
+    weekday-vs-realised-plan rationale, which applies identically here).
+
+    A synthetic person executes the MiD plan identified by ``(source_H_ID,
+    source_P_ID)``, so ``work_participation`` must be seeded from that SOURCE donor's
+    ``has_work_trip`` (derived from the source's own Wege via
+    ``compute_has_work_trip``), not the person's own Wege -- the same weekday-reporter
+    mismatch ``derive_trip_class_seed`` fixes for ``anzwege1`` applies here: a weekend
+    reporter's own Wege are a Saturday/Sunday diary, not the weekday plan the synthetic
+    person actually realises.
+
+    When the plan-source columns are absent (no member completion / weekend match ran),
+    the seed is already weekday-filtered, so ``has_work_trip`` is derived from the
+    person's own Wege directly; the path taken is logged (no silent fallback). The
+    803/804 diary non-response codes are imputed within the PERSON's own ``alter_gr1``
+    age band, exactly as ``derive_trip_class_seed`` does.
+    """
+    has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
+    if not has_source:
+        logger.info(
+            "[popsim.mid] work_participation seed: derived from each person's own Wege "
+            "(no plan-source columns present -> seed is weekday-filtered).")
+        persons = persons.copy()
+        persons["has_work_trip"] = compute_has_work_trip(
+            persons, wege, household_id=household_id, person_id=person_id)
+        out = attributes.map_work_participation(persons, source_col="has_work_trip", rng=rng)
+        return out.drop(columns=["has_work_trip"])
+
+    # Real (non-imputed) donor persons are the only valid plan sources; a filler's source
+    # points at its mirror donor, which is one of these real persons.
+    real = persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
+    real_has_work_trip = compute_has_work_trip(
+        real, wege, household_id=household_id, person_id=person_id)
+    source_has_work_trip = pd.Series(
+        real_has_work_trip.to_numpy(),
+        index=pd.MultiIndex.from_arrays([real[household_id], real[person_id]]))
+    src_idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+    mapped = pd.Series(source_has_work_trip.reindex(src_idx).to_numpy(), index=persons.index)
+    n_unresolved = int(mapped.isna().sum())
+    if n_unresolved:
+        # Defense-in-depth (no silent fallback): a plan source MUST resolve to a real
+        # donor person; a NaN means upstream donor/source corruption (mirrors the
+        # weekend_plan_match A2-sweep guard). Fail loudly rather than seed a NaN flag.
+        raise ValueError(
+            f"derive_work_participation_seed: {n_unresolved} person(s) have a plan source "
+            f"(source_H_ID, source_P_ID) absent from the donor frame; cannot derive "
+            "work_participation from the realised plan (upstream donor/source corruption).")
+    persons = persons.copy()
+    persons["_plan_source_has_work_trip"] = mapped.to_numpy()
+    logger.info(
+        "[popsim.mid] work_participation seed: derived from the realised weekday plan "
+        "source (source has_work_trip) for %d persons -- aligns the control with the "
+        "trips the synthetic person actually executes.",
+        len(persons))
+    out = attributes.map_work_participation(persons, source_col="_plan_source_has_work_trip", rng=rng)
+    return out.drop(columns=["_plan_source_has_work_trip"])
 
 
 def load_mid_seed(
