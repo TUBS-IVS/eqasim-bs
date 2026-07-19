@@ -228,6 +228,10 @@ config:
   cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
   cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
 
+  # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
+  # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
+  # See docs/features/student-incommuters.md.
+
   # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module) -
   # REQUIRED for the cordon scenario cutter (org.eqasim.braunschweig.* +
   # RunScenarioCutter).

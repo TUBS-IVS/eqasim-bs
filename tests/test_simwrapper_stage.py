@@ -21,9 +21,11 @@ import braunschweig.analysis.simwrapper.export as _export_mod
 class FakeContext:
     """Minimal synpp context stub for configure/execute unit tests."""
 
-    def __init__(self, config: dict, paths: dict | None = None):
+    def __init__(self, config: dict, paths: dict | None = None,
+                stage_results: dict | None = None):
         self._config = config
         self._paths = paths or {}
+        self._stage_results = stage_results or {}
         # Records every stage name passed to context.stage().
         self.stages: list[str] = []
 
@@ -32,7 +34,7 @@ class FakeContext:
 
     def stage(self, name):
         self.stages.append(name)
-        return None
+        return self._stage_results.get(name)
 
     def path(self, name):
         return self._paths[name]
@@ -75,6 +77,26 @@ def test_configure_with_matsim_registers_both_stages():
 
 
 # ---------------------------------------------------------------------------
+# Test 2b — configure with cordon: student_incommuters stage registered (#140)
+# ---------------------------------------------------------------------------
+
+def test_configure_cordon_off_does_not_register_student_incommuters():
+    """Default (cordon_enabled absent/False): no new stage dependency, so the
+    byte-identical baseline dependency graph is preserved."""
+    ctx = FakeContext({"output_path": "/tmp/out", "sampling_rate": 0.25})
+    stage.configure(ctx)
+    assert "braunschweig.synthesis.student_incommuters" not in ctx.stages
+
+
+def test_configure_cordon_on_registers_student_incommuters():
+    ctx = FakeContext({"cordon_enabled": True,
+                       "output_path": "/tmp/out",
+                       "sampling_rate": 0.25})
+    stage.configure(ctx)
+    assert "braunschweig.synthesis.student_incommuters" in ctx.stages
+
+
+# ---------------------------------------------------------------------------
 # Test 3 — execute disabled: returns None, does NOT call export_all
 # ---------------------------------------------------------------------------
 
@@ -102,10 +124,11 @@ def test_execute_synthesis_only_calls_export_all_with_no_sim_cache(monkeypatch, 
     captured: dict = {}
 
     def _fake_export_all(output_dir, sim_cache=None, label=None, sample_rate=None,
-                         out_subdir="simwrapper"):
+                         out_subdir="simwrapper", student_frames=None):
         captured["output_dir"] = output_dir
         captured["sim_cache"] = sim_cache
         captured["sample_rate"] = sample_rate
+        captured["student_frames"] = student_frames
         return [Path("x"), Path("y")]
 
     monkeypatch.setattr(_export_mod, "export_all", _fake_export_all)
@@ -119,7 +142,40 @@ def test_execute_synthesis_only_calls_export_all_with_no_sim_cache(monkeypatch, 
 
     assert captured["sim_cache"] is None, "sim_cache must be None in synthesis-only mode"
     assert captured["sample_rate"] == pytest.approx(0.25)
+    assert captured["student_frames"] is None, (
+        "cordon off (default) must not thread any student_frames through")
     assert result == ["x", "y"], "execute() must return a list of stringified paths"
+
+
+# ---------------------------------------------------------------------------
+# Test 4b — execute with cordon: student_incommuters stage output is pulled
+# and threaded through to export_all as student_frames (#140)
+# ---------------------------------------------------------------------------
+
+def test_execute_cordon_on_threads_student_frames_through(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    def _fake_export_all(output_dir, sim_cache=None, label=None, sample_rate=None,
+                         out_subdir="simwrapper", student_frames=None):
+        captured["student_frames"] = student_frames
+        return [Path("x")]
+
+    monkeypatch.setattr(_export_mod, "export_all", _fake_export_all)
+
+    sentinel_frames = {"persons": "PERSONS_FRAME", "locations": "LOCATIONS_FRAME"}
+    out = str(tmp_path)
+    ctx = FakeContext(
+        {"simwrapper_export_enabled": True,
+         "simwrapper_include_matsim": False,
+         "cordon_enabled": True,
+         "output_path": out,
+         "sampling_rate": 0.25},
+        stage_results={"braunschweig.synthesis.student_incommuters": sentinel_frames},
+    )
+    stage.execute(ctx)
+
+    assert captured["student_frames"] is sentinel_frames
+    assert "braunschweig.synthesis.student_incommuters" in ctx.stages
 
 
 # ---------------------------------------------------------------------------
@@ -133,9 +189,10 @@ def test_execute_with_matsim_passes_parent_of_run_cache_as_sim_cache(monkeypatch
     captured: dict = {}
 
     def _fake_export_all(output_dir, sim_cache=None, label=None, sample_rate=None,
-                         out_subdir="simwrapper"):
+                         out_subdir="simwrapper", student_frames=None):
         captured["sim_cache"] = sim_cache
         captured["sample_rate"] = sample_rate
+        captured["student_frames"] = student_frames
         return [Path("z")]
 
     monkeypatch.setattr(_export_mod, "export_all", _fake_export_all)

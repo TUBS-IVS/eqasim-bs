@@ -518,6 +518,7 @@ def export_all(
     label: str | None = None,
     sample_rate: float | None = None,
     out_subdir: str = "simwrapper",
+    student_frames: "dict[str, Any] | None" = None,
 ) -> list[Path]:
     """Build the FULL SimWrapper dashboard for one run into ``<output_dir>/<out_subdir>``.
 
@@ -537,6 +538,12 @@ def export_all(
         label: friendly run label (defaults to the output dir name).
         sample_rate: sampling rate (0.01 / 0.25 / 1.0); used for OD scaling.
         out_subdir: subfolder of ``output_dir`` to write into (default ``simwrapper``).
+        student_frames: The ``braunschweig.synthesis.student_incommuters`` stage
+            output dict, passed through by the synpp stage
+            (``braunschweig.analysis.simwrapper_export``) when
+            ``cordon_enabled``. ``None`` (default) for the standalone CLI or
+            when the feature is off -- the student-commuters tab then skips
+            (see ``spatial_export.emit_student_commuters``).
 
     Returns:
         List of written dashboard YAML :class:`pathlib.Path` objects.
@@ -554,6 +561,7 @@ def export_all(
         run_output_dir=str(out_dir),
         sim_cache=(str(sim_cache_path) if sim_cache_path is not None else None),
         record=record,
+        student_frames=student_frames,
     )
     LOGGER.info("[simwrapper] wrote %d tab(s); open this folder in simwrapper.app: %s",
                 len(written), target)

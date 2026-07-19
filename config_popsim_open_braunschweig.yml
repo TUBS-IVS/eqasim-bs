@@ -25,8 +25,10 @@
 ##
 ## LOCAL-ONLY PATHS: The popsim cells paths (zensus2022_grid_*.parquet) are
 ## large and local-only (not committed). Adjust them to your local layout.
-## The MiD raw path config keys are declared but ignored by the ENTD source;
-## placeholder values are acceptable if popsim_mid is never run from this config.
+## The MiD raw path config keys are ignored by the ENTD source itself, but this
+## config has cordon_enabled: true below, so the cordon in-commuter donor
+## (braunschweig.data.hts.mid_donor) DOES read mid_raw_path -- it must point at
+## a real MiD raw dir here, not a placeholder, even though popsim_mid is not run.
 
 working_directory: eqasim-data/cache_bs_popsim_open
 
@@ -83,9 +85,12 @@ config:
 
   # MiD raw path: declared because braunschweig.popsim.stage reads this config key,
   # but NOT accessed by EntdSource (which uses the injected ENTD frames instead).
-  # Set to a placeholder; the actual path is only needed if popsim_mid is used.
-  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed by popsim_open
-  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed by popsim_open
+  # The cordon in-commuter donor (braunschweig.data.hts.mid_donor) DOES consume this
+  # key -- whenever cordon_enabled is set, regardless of population.method -- to draw
+  # commute-timing donors from the real MiD survey. cordon_enabled is true below, so
+  # this must point at a real MiD raw dir, not a placeholder.
+  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # consumed by the cordon in-commuter donor (mid_donor)
+  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # consumed by the cordon in-commuter donor (mid_donor)
 
   # PopulationSim control spec and run configs from the popsimprep repo.
   # Same as popsim_mid: the PopulationSim structural setup is unchanged.
@@ -223,6 +228,10 @@ config:
   cordon_enabled: true
   cordon_network_source_buffer_m: 30000     # 30 km network ring beyond the ZGB outline
   cordon_network_buffer_fraction: 0.10      # cordon = ZGB + 10% of half-diagonal (~7.6 km)
+
+  # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
+  # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
+  # See docs/features/student-incommuters.md.
 
   # Build our OWN editable Java project (../eqasim-java-bs, braunschweig module) -
   # REQUIRED for the cordon scenario cutter (org.eqasim.braunschweig.* +

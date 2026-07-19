@@ -40,6 +40,35 @@
    household composition is donor-bound — rare/large household types are thin in the MiD seed;
    see §2.1 + the popsim nachsteuern findings).
 
+### New (2026-07-18) — #140 sub-item 2, cross-cordon student in-commuters: BUILT, server E2E pending
+
+Second cross-cordon in-commuter population (structurally parallel to the existing SvB
+`incommuters` stage) covering university students who study inside the ZGB but live outside
+it: `braunschweig/synthesis/student_incommuters.py` + `data/education/{student_incommuter_counts,
+student_origins}.py` + `analysis/simwrapper/student_commuters.py`. Count anchor is data-derived
+(real LSN SS2025 enrollment minus resident placement, not invented); the origin-Kreis draw
+(reverse distance-decay, population-weighted by 18-29 DESTATIS population) is a documented
+ASSUMPTION (no committed student OD reference exists to validate it — see
+`docs/features/student-incommuters.md` A1-A4). Feature-flagged: `cordon_student_incommuters_enabled`
+is a tri-state that resolves ON by default whenever both `cordon_enabled` and its hard
+dependency `education_gravity_enabled` are true, and raises `RuntimeError` only if explicitly
+forced on while the dependency is off (no silent activation, no silent no-op). Wired into all
+4 scenario writers (`braunschweig/matsim/scenario/{population,households,vehicles,facilities}.py`)
+via the existing `context.stage(...)` pattern — no separate pipeline-stage-list registration
+needed. Six all-features run configs already satisfy the dependency (`cordon_enabled: true` +
+`education_gravity_enabled: true`), so the flag was made explicit there (`config_popsim_mid_braunschweig.yml`,
+`config_popsim_mid_braunschweig_population_allfeatures.yml`, `config_popsim_open_braunschweig.yml`,
+`config_server_braunschweig_{1,25,100}pct_allfeat_popsim.yml`) purely for visibility — this did
+not change effective behaviour (unset already resolved to ON there). Local unit/integration
+suite green (see Task 7 test run in the branch's session record). **Open follow-up (KNOWN
+LIMITATION, not yet a tracked issue):** the Home->Education->Home leg timing reuses raw HTS
+donor times without re-seeding to the agent's actual (possibly gate-teleported) home
+coordinates — validate implied speed before using injected trip durations scientifically; this
+is the same simplification the SvB stage already makes. **Remaining before merge/production
+use:** a 1% cordon dry-run on a data-complete environment (felix) with `education_gravity_enabled=True`,
+confirming the per-commune count log line, injected `education` activities, a sane in-ring/gate
+fallback rate, and a written `student_commuter_od.csv`.
+
 ### Resolved (2026-07-17) — issue-backlog cleanup (cross-checked against merged code) + key-matching-audit PM record
 
 Cross-checked every open issue against the actual code/commit state and closed those already covered

@@ -25,8 +25,11 @@
 ##
 ## LOCAL-ONLY PATHS: The popsim cells paths (zensus2022_grid_*.parquet) are
 ## large and local-only (not committed). Adjust them to your local layout.
-## The MiD raw path config keys are declared but ignored by the ENTD source;
-## placeholder values are acceptable if popsim_mid is never run from this config.
+## The MiD raw path config keys are ignored by the ENTD source; placeholder
+## values are acceptable here because cordon_enabled is not set (defaults
+## false). If cordon_enabled is turned on, the cordon in-commuter donor
+## (braunschweig.data.hts.mid_donor) DOES read mid_raw_path regardless of
+## population.method, so it must then point at a real MiD raw dir.
 
 working_directory: eqasim-data/cache_mini_popsim_open
 
@@ -82,9 +85,12 @@ config:
 
   # MiD raw path: declared because braunschweig.popsim.stage reads this config key,
   # but NOT accessed by EntdSource (which uses the injected ENTD frames instead).
-  # Set to a placeholder; the actual path is only needed if popsim_mid is used.
-  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed by popsim_open
-  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed by popsim_open
+  # cordon_enabled is not set in this smoke config (defaults false), so the cordon
+  # in-commuter donor (braunschweig.data.hts.mid_donor) is not staged either; if
+  # cordon_enabled is turned on, mid_donor DOES consume this key regardless of
+  # population.method -- set to a real MiD raw dir before enabling cordon.
+  braunschweig.population.popsim.mid_raw_path: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed unless cordon_enabled is turned on
+  braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw  # not accessed unless cordon_enabled is turned on
 
   # PopulationSim control spec and run configs from the popsimprep repo.
   # Same as popsim_mid: the PopulationSim structural setup is unchanged.

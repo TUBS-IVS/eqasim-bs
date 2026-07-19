@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 # random_seed mirror meta_output.py; braunschweig.population.method is the
 # actual producer switch (an ``hts: entd`` entry alone is misleading for a
 # popsim_mid run -- exactly the documented wrong-meta.json failure).
+# NOTE: the in-commuters (SvB and student, braunschweig.synthesis.incommuters
+# and .student_incommuters) now use the German MiD 2023 survey via
+# braunschweig.data.hts.mid_donor, regardless of the config ``hts`` value,
+# which now affects only the resident/eqasim path.
 PROVENANCE_CONFIG_KEYS = (
     "sampling_rate",
     "hts",

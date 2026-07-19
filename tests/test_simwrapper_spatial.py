@@ -731,3 +731,75 @@ class TestEmitCommuters:
     def test_emit_commuters_no_source_returns_none(self, tmp_path):
         from braunschweig.analysis.simwrapper import spatial_export as se
         assert se.emit_commuters(None, None, tmp_path) is None
+
+
+class TestEmitStudentCommuters:
+    """Integration test for the student-commuters tab (#140), which -- unlike
+    emit_commuters -- is fed directly from the LIVE student_incommuters stage
+    output rather than a disk artifact (see emit_student_commuters docstring)."""
+
+    def _frames(self):
+        from braunschweig.data.cordon.plans import build_incommuter_locations
+        persons = pd.DataFrame({
+            "person_id": [1, 2, 3],
+            "orig_ars5": ["09999", "09999", "16077"],
+            "dest_commune": ["03101", "03101", "03158"],
+        })
+        # Home at (0, 0), education campus 3 km east for agents 1/2, 10 km for agent 3.
+        locations = build_incommuter_locations(
+            person_ids=[1, 2, 3],
+            home_x=[0.0, 0.0, 0.0], home_y=[0.0, 0.0, 0.0],
+            work_x=[3000.0, 3000.0, 10000.0], work_y=[0.0, 0.0, 0.0],
+            work_location_id=["edu_1", "edu_2", "edu_3"],
+            crs="EPSG:25832",
+        )
+        return persons, locations
+
+    def test_emit_student_commuters_writes_od_and_returns_board(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        persons, locations = self._frames()
+        board = se.emit_student_commuters(persons, locations, tmp_path)
+        assert board is not None
+        assert board["header"]["tab"] == "Student commuters"
+        od = pd.read_csv(tmp_path / "student_commuter_od.csv",
+                         dtype={"from_ars5": str, "to_commune": str})
+        assert od.set_index(["from_ars5", "to_commune"])["value"].loc[("09999", "03101")] == 2
+        assert (tmp_path / "student_commuter_top_relations.csv").exists()
+        dist = pd.read_csv(tmp_path / "student_commute_distance.csv")
+        assert "mean_km" in dist.columns
+        types = {c["type"] for row in board["layout"].values() for c in row}
+        assert "csv" in types and "bar" in types
+
+    def test_emit_student_commuters_none_persons_returns_none_and_writes_nothing(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        assert se.emit_student_commuters(None, None, tmp_path) is None
+        assert not (tmp_path / "student_commuter_od.csv").exists()
+
+    def test_emit_student_commuters_empty_persons_returns_none(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        empty = pd.DataFrame({"person_id": [], "orig_ars5": [], "dest_commune": []})
+        assert se.emit_student_commuters(empty, None, tmp_path) is None
+        assert not (tmp_path / "student_commuter_od.csv").exists()
+
+    def test_export_spatial_wires_student_commuters_tab_when_frames_supplied(self, tmp_path):
+        """export_spatial's registry must include the student-commuters tab when
+        student_frames is supplied (and non-empty), independent of run_output_dir
+        / sim_cache (which the student stage frames do not need)."""
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        persons, locations = self._frames()
+        written = se.export_spatial(
+            tmp_path, run_output_dir=None, sim_cache=None, record=None,
+            student_frames={"persons": persons, "locations": locations},
+        )
+        names = {p.name for p in written}
+        assert any("student-commuters" in n for n in names)
+        assert (tmp_path / "student_commuter_od.csv").exists()
+
+    def test_export_spatial_skips_student_commuters_tab_when_frames_absent(self, tmp_path):
+        from braunschweig.analysis.simwrapper import spatial_export as se
+        # Supply run_output_dir=None/sim_cache=None with no student_frames: the
+        # top-level guard returns [] early (nothing to export at all), which is
+        # the pre-existing behaviour and confirms no student tab appears.
+        written = se.export_spatial(tmp_path, run_output_dir=None, sim_cache=None)
+        assert written == []
+        assert not (tmp_path / "student_commuter_od.csv").exists()
