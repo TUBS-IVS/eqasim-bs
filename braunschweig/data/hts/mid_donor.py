@@ -99,9 +99,11 @@ def execute(context):
     """
     from braunschweig.popsim.sources.mid import MidSource
 
-    # See configure(): falls back to DEFAULT_MID_RAW_PATH when a cordon-enabled
-    # config does not set mid_raw_path explicitly.
-    mid_dir = context.config(KEY_MID, DEFAULT_MID_RAW_PATH)
+    # configure() declares KEY_MID with DEFAULT_MID_RAW_PATH as its default, so the
+    # single-argument execute-time read returns that default when a cordon-enabled
+    # config does not set mid_raw_path explicitly. (ExecuteContext.config() takes the
+    # key alone; passing a default here would crash the stage at runtime.)
+    mid_dir = context.config(KEY_MID)
     households, persons, wege = MidSource().load_donor(mid_dir)
     rng = np.random.RandomState(int(context.config("random_seed")))
     return build_mid_donor_frames(households, persons, wege, rng)

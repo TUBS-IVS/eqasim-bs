@@ -112,6 +112,17 @@ def configure(context):
     context.config("cordon_network_source_buffer_m")
     context.config("cordon_gate_speed_kmh", 30.0)
     context.config("data_path")
+    # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
+    # (as braunschweig.synthesis.incommuters.configure() also does) so that
+    # _inject()'s external_workplaces._load_gemeinden(context) can resolve the
+    # VG250-EW archive path. synpp's ExecuteContext.config() raises for a key that
+    # was not declared here, so an undeclared read would crash a real cordon run.
+    context.config(
+        "germany.population_path",
+        "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip")
+    context.config(
+        "germany.population_source",
+        "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg")
     context.stage("braunschweig.data.schools.university_facilities")
     context.stage("synthesis.population.spatial.primary.locations")
     context.stage("data.spatial.municipalities")
@@ -127,8 +138,8 @@ def _active(context):
     contradictory explicit-on-but-parent-off case."""
     if not context.config("cordon_enabled"):
         return False
-    flag = context.config("cordon_student_incommuters_enabled", None)
-    parent = bool(context.config("education_gravity_enabled", False))
+    flag = context.config("cordon_student_incommuters_enabled")
+    parent = bool(context.config("education_gravity_enabled"))
     if flag is True and not parent:
         raise RuntimeError(
             "cordon_student_incommuters_enabled=True requires "
@@ -315,9 +326,9 @@ def _inject(context):
     sampling_rate = float(context.config("sampling_rate"))
     slope = float(context.config("education_university_slope"))
     max_radius_km = float(context.config("education_university_max_radius_km"))
-    age_lower, age_upper = context.config("student_incommuter_age_band", [18, 29])
+    age_lower, age_upper = context.config("student_incommuter_age_band")
     rng = np.random.default_rng(int(context.config("random_seed")) + _RNG_OFFSET)
-    gate_speed_kmh = float(context.config("cordon_gate_speed_kmh", 30.0))
+    gate_speed_kmh = float(context.config("cordon_gate_speed_kmh"))
     data_path = context.config("data_path")
 
     facilities = context.stage(

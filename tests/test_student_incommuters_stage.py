@@ -77,6 +77,33 @@ def test_configure_declares_hts_via_mid_donor():
     assert ("hts", {}) not in ctx.staged
 
 
+def test_configure_declares_germany_population_keys():
+    """Bug 2 (#222): configure() must declare germany.population_path and
+    germany.population_source. _inject() calls external_workplaces._load_gemeinden,
+    whose _vsi_path() reads both keys under synpp's ExecuteContext -- which raises
+    ``PipelineError`` for a key that was not declared in configure(). Unlike the
+    skip-gated real-data injection test below, this guard needs no data, so a
+    data-less CI still catches a re-regression of the missing declaration."""
+    requested: list[str] = []
+
+    class _ConfigRecordingCtx(Ctx):
+        def __init__(self):
+            super().__init__({})
+
+        def config(self, key, default=si._SENTINEL):
+            requested.append(key)
+            if default is not si._SENTINEL:
+                return default
+            return {"cordon_enabled": True}.get(key, 0)
+
+        def stage(self, descriptor, **kwargs):
+            pass
+
+    si.configure(_ConfigRecordingCtx())
+    assert "germany.population_path" in requested, requested
+    assert "germany.population_source" in requested, requested
+
+
 class FullCtx(Ctx):
     """Stage stub: config dict + a fixed stage-name -> return-value map."""
     def __init__(self, cfg, stages):
@@ -124,9 +151,15 @@ def _full_ctx():
            "education_university_slope": -0.1415,
            "education_university_max_radius_km": 150.0,
            "sampling_rate": 0.5, "random_seed": 1,
+           "cordon_gate_speed_kmh": 30.0,
            "cordon_network_source_buffer_m": 45000.0,
            "braunschweig.political_prefix": ["03101"],
-           "data_path": "eqasim-data/data"}
+           "data_path": "eqasim-data/data",
+           # external_workplaces._vsi_path (via _inject -> _load_gemeinden) reads
+           # these under the execute context; mirror the configure() declarations.
+           "germany.population_path": "germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip",
+           "germany.population_source":
+               "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg"}
     return FullCtx(cfg, stages)
 
 
