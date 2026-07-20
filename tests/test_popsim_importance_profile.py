@@ -123,9 +123,10 @@ def test_build_controls_df_passes_profile_through():
 
 def test_kreis_attribute_controls_map_to_tier_groups_with_hard_raised():
     """KREIS attribute controls: registry tier -> importance group. Under the optimized
-    profile the HARD entries (economic_status, number_of_cars) are raised to 2000 (par
-    with the Kreis-scale "employed" group); SOFT entries (bikes/ebike/trip_class) have no
-    profile entry and keep the uniform 1000 (yield gracefully in small cells)."""
+    profile the HARD entries (economic_status, number_of_cars, trip_class -- promoted by
+    feature #224 task 6, see tests/test_trip_class_hard.py) are raised to 2000 (par with
+    the Kreis-scale "employed" group); SOFT entries (bikes/ebike) have no profile entry
+    and keep the uniform 1000 (yield gracefully in small cells)."""
     import pandas as pd
     from braunschweig.popsim.control_spec import (
         IMPORTANCE_PROFILES, apply_importance_profile, importance_group_for_field,
@@ -135,7 +136,7 @@ def test_kreis_attribute_controls_map_to_tier_groups_with_hard_raised():
     assert importance_group_for_field("number_of_cars_3plus_KREIS") == "kreis_hard"
     assert importance_group_for_field("number_of_bicycles_4plus_KREIS") == "kreis_soft"
     assert importance_group_for_field("has_ebike_yes_KREIS") == "kreis_soft"
-    assert importance_group_for_field("trip_class_0_KREIS") == "kreis_soft"
+    assert importance_group_for_field("trip_class_0_KREIS") == "kreis_hard"
     assert IMPORTANCE_PROFILES["optimized_2026_06_30"]["kreis_hard"] == 2000
     assert "kreis_soft" not in IMPORTANCE_PROFILES["optimized_2026_06_30"]
 
@@ -147,4 +148,4 @@ def test_kreis_attribute_controls_map_to_tier_groups_with_hard_raised():
         "importance": [1000, 1000, 1000, 1000],
     })
     out = apply_importance_profile(frame, "optimized_2026_06_30")
-    assert out["importance"].tolist() == [2000, 2000, 1000, 1000]
+    assert out["importance"].tolist() == [2000, 2000, 2000, 1000]

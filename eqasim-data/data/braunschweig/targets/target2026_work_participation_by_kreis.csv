@@ -1,0 +1,30 @@
+# SrV 2023 work-participation per-Kreis control target, built by
+# scripts/build_participation_target.py from the COMMITTED SrV aggregate
+# (eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv; NO raw
+# microdata). Shares are the SrV work participation levels (share of
+# weighted persons with >= 1 trip of this purpose on the reporting day).
+#
+# DECISION (level anchoring): shares are the SrV participation levels directly
+# (regional survey = regional behaviour authority) -- this control DELIBERATELY
+# anchors the synthetic work-participation distribution to the SrV level.
+# ASSUMPTION (honest caveat): SrV and MiD measure participation differently
+# (survey design, universe, and purpose taxonomy all differ); this anchoring
+# is a deliberate choice, not a claim that SrV and MiD levels agree.
+#
+# ASSUMPTION (Wolfsburg, SrV region-total convention): 03103 is not covered by
+# SrV. Its work_yes share is the SrV region total (03ZGB) directly -- the
+# SAME convention as target2026_has_ebike_by_kreis.csv. Unlike the trip_class
+# target, NO MiD-P36 immobility pattern transfer is applied here: that transfer
+# is specific to immobility, not to purpose-participation.
+#
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
+ars5,source,n_effective,work_yes,work_no
+03101,srv,4519,0.3444,0.6556
+03102,srv,1794,0.3302,0.6698
+03151,srv,3574,0.3239,0.6761
+03153,srv,2258,0.3285,0.6715
+03154,srv,1761,0.3214,0.6786
+03157,srv,2446,0.3164,0.6836
+03158,srv,1871,0.3337,0.6663
+03103,srv_region_total,18223,0.3316,0.6684
+Gesamt,srv,18223,0.3316,0.6684

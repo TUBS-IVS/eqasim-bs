@@ -175,21 +175,62 @@ def test_registry_has_five_entries_with_expected_tiers():
     assert {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
     } <= set(by_name)
-    assert by_name["trip_class"].tier == "soft"
+    # NOTE: this historical assertion is SUPERSEDED by feature #224 task 6, which
+    # promotes trip_class to tier="hard" (see tests/test_trip_class_hard.py); updated
+    # here rather than weakened so the historical entry-shape coverage stays accurate.
+    assert by_name["trip_class"].tier == "hard"
     assert by_name["trip_class"].level == "person"
     assert by_name["trip_class"].seed_column == "trip_class"
 
 
 def test_registry_has_six_entries_with_expected_tiers():
+    # Superseded by test_registry_has_seven_entries_with_expected_tiers (feature #224
+    # task 4 adds the person-level work_participation entry); kept (renamed in spirit,
+    # not name) so the historical six remain covered too.
     by_name = {c.name: c for c in REGISTRY}
-    assert set(by_name) == {
+    assert {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
         "employment_status",
-    }
+    } <= set(by_name)
     assert by_name["employment_status"].tier == "soft"
     assert by_name["employment_status"].level == "person"
     assert by_name["employment_status"].seed_column == "employment_status"
     assert by_name["employment_status"].min_age == 14
+
+
+def test_registry_has_seven_entries_with_expected_tiers():
+    # Superseded by test_registry_has_nine_entries_with_expected_tiers (feature #224
+    # task 5 adds the leisure_participation / education_participation person-level
+    # entries); kept (renamed in spirit, not name) so the historical seven remain
+    # covered too.
+    by_name = {c.name: c for c in REGISTRY}
+    assert {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+        "employment_status", "work_participation",
+    } <= set(by_name)
+    assert by_name["work_participation"].tier == "hard"
+    assert by_name["work_participation"].level == "person"
+    assert by_name["work_participation"].seed_column == "work_participation"
+    assert by_name["work_participation"].min_age is None
+
+
+def test_registry_has_nine_entries_with_expected_tiers():
+    by_name = {c.name: c for c in REGISTRY}
+    assert set(by_name) == {
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
+        "employment_status", "work_participation", "leisure_participation", "education_participation",
+    }
+    for name in ("leisure_participation", "education_participation"):
+        assert by_name[name].tier == "hard"
+        assert by_name[name].level == "person"
+        assert by_name[name].seed_column == name
+        assert by_name[name].min_age is None
+    assert by_name["leisure_participation"].target_columns == ("leisure_yes", "leisure_no")
+    assert by_name["education_participation"].target_columns == ("education_yes", "education_no")
+    assert by_name["leisure_participation"].target_csv_relpath == (
+        "braunschweig/targets/target2026_leisure_participation_by_kreis.csv")
+    assert by_name["education_participation"].target_csv_relpath == (
+        "braunschweig/targets/target2026_education_participation_by_kreis.csv")
 
 
 def test_cars_control_columns_and_predicates():

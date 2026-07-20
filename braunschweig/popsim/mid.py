@@ -36,6 +36,7 @@ from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import merge as mergemod
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed as seedmod
+from braunschweig.popsim import trips
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
 
@@ -414,6 +415,176 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
     return out.drop(columns=["_plan_source_anzwege1"])
 
 
+# Purpose -> W_ZWECK code set for each per-Kreis "participation" control (feature #224).
+# Derived from the single source of truth trips.PURPOSE_BY_W_ZWECK rather than
+# duplicating the code lists here: {"work": {1, 2}, "leisure": {7}, "education": {3, 11, 12}}.
+# work_participation (task 4) is the first control built on this map; leisure_participation
+# / education_participation (task 5) reuse the SAME derivation machinery, parametrized by
+# purpose, rather than duplicating compute_has_work_trip / derive_work_participation_seed
+# three times over.
+PARTICIPATION_W_ZWECK: dict[str, set[int]] = {
+    purpose: {code for code, p in trips.PURPOSE_BY_W_ZWECK.items() if p == purpose}
+    for purpose in ("work", "leisure", "education")
+}
+
+
+def compute_has_purpose_trip(
+    persons: pd.DataFrame, wege: pd.DataFrame, purpose: str, *,
+    household_id: str = "H_ID", person_id: str = "P_ID",
+    trips_col: str = "anzwege1", zweck_col: str = "W_ZWECK",
+) -> pd.Series:
+    """Derive the per-person ``has_<purpose>_trip`` flag (0/1, or a carried 803/804 diary
+    non-response code) from each person's MiD Wege, for a ``<purpose>_participation`` seed
+    (generic core behind ``compute_has_work_trip`` / the leisure / education controls,
+    feature #224 task 5).
+
+    A person has a ``purpose`` trip (flag = 1) if at least one of their Wege has
+    ``zweck_col`` in ``PARTICIPATION_W_ZWECK[purpose]`` -- the ``W_ZWECK`` codes
+    ``trips.PURPOSE_BY_W_ZWECK`` maps to that activity purpose; otherwise 0.
+
+    Exception: if the person's own diary trip count (``trips_col``, default
+    ``anzwege1``) is one of the 803/804 item non-response codes (trip module not
+    covered -- no diary / rueckwirkende Wegeerhebung only; see
+    ``attributes.map_trip_class``), the flag is UNKNOWN, not "no trip". The code is
+    carried through unchanged so ``attributes.map_participation``'s
+    ``missing.AttributeSpec(impute_codes=(803, 804))`` imputes it from the valid {0, 1}
+    pool within the person's age band, exactly as ``trip_class`` handles the same codes.
+    A diary non-response person must never be forced to 0.
+
+    Returns a ``pd.Series`` indexed like ``persons`` (index preserved, not reset).
+
+    Raises ``ValueError`` if ``purpose`` is not one of ``PARTICIPATION_W_ZWECK``.
+    Raises ``KeyError`` if ``trips_col`` is absent from ``persons``, or if
+    ``household_id`` / ``person_id`` / ``zweck_col`` are absent from ``wege`` (no silent
+    fallback to a guessed column name).
+    """
+    if purpose not in PARTICIPATION_W_ZWECK:
+        raise ValueError(
+            f"compute_has_purpose_trip: purpose must be one of {sorted(PARTICIPATION_W_ZWECK)}, "
+            f"got {purpose!r}.")
+    if trips_col not in persons.columns:
+        raise KeyError(
+            f"compute_has_purpose_trip: source column {trips_col!r} absent from the person "
+            f"frame (has {list(persons.columns)}); cannot derive has_{purpose}_trip.")
+    missing_wege_cols = [c for c in (household_id, person_id, zweck_col) if c not in wege.columns]
+    if missing_wege_cols:
+        raise KeyError(
+            f"compute_has_purpose_trip: column(s) {missing_wege_cols} absent from the Wege "
+            f"frame (has {list(wege.columns)}); cannot derive has_{purpose}_trip.")
+
+    purpose_codes = PARTICIPATION_W_ZWECK[purpose]
+    purpose_wege = wege[wege[zweck_col].isin(purpose_codes)]
+    purpose_person_keys = pd.MultiIndex.from_arrays(
+        [purpose_wege[household_id], purpose_wege[person_id]]).unique()
+    person_keys = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
+    has_purpose_weg = person_keys.isin(purpose_person_keys)
+    result = pd.Series(has_purpose_weg.astype(int), index=persons.index)
+
+    nonresponse_mask = persons[trips_col].isin((803, 804))
+    result = result.where(~nonresponse_mask, persons[trips_col])
+    return result
+
+
+def compute_has_work_trip(
+    persons: pd.DataFrame, wege: pd.DataFrame, *,
+    household_id: str = "H_ID", person_id: str = "P_ID",
+    trips_col: str = "anzwege1", zweck_col: str = "W_ZWECK",
+) -> pd.Series:
+    """Derive the per-person ``has_work_trip`` flag (0/1, or a carried 803/804 diary
+    non-response code) from each person's MiD Wege, for the ``work_participation`` seed.
+
+    Thin wrapper over :func:`compute_has_purpose_trip` (purpose="work"); kept as a
+    named entry point so existing callers/tests stay unchanged. See that function's
+    docstring for the full 803/804 non-response handling.
+
+    Returns a ``pd.Series`` indexed like ``persons`` (index preserved, not reset).
+
+    Raises ``KeyError`` if ``trips_col`` is absent from ``persons``, or if
+    ``household_id`` / ``person_id`` / ``zweck_col`` are absent from ``wege`` (no silent
+    fallback to a guessed column name).
+    """
+    return compute_has_purpose_trip(
+        persons, wege, "work",
+        household_id=household_id, person_id=person_id,
+        trips_col=trips_col, zweck_col=zweck_col)
+
+
+def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID", person_id="P_ID"):
+    """Derive the ``<purpose>_participation`` control seed from each person's REALISED
+    weekday plan (generic core behind ``derive_work_participation_seed`` / the leisure /
+    education controls, feature #224 task 5; mirrors ``derive_trip_class_seed`` -- see
+    that docstring for the full weekday-vs-realised-plan rationale, which applies
+    identically here).
+
+    A synthetic person executes the MiD plan identified by ``(source_H_ID,
+    source_P_ID)``, so ``<purpose>_participation`` must be seeded from that SOURCE
+    donor's ``has_<purpose>_trip`` (derived from the source's own Wege via
+    ``compute_has_purpose_trip``), not the person's own Wege -- the same weekday-reporter
+    mismatch ``derive_trip_class_seed`` fixes for ``anzwege1`` applies here: a weekend
+    reporter's own Wege are a Saturday/Sunday diary, not the weekday plan the synthetic
+    person actually realises.
+
+    When the plan-source columns are absent (no member completion / weekend match ran),
+    the seed is already weekday-filtered, so ``has_<purpose>_trip`` is derived from the
+    person's own Wege directly; the path taken is logged (no silent fallback). The
+    803/804 diary non-response codes are imputed within the PERSON's own ``alter_gr1``
+    age band, exactly as ``derive_trip_class_seed`` does.
+    """
+    name = f"{purpose}_participation"
+    has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
+    if not has_source:
+        logger.info(
+            "[popsim.mid] %s seed: derived from each person's own Wege "
+            "(no plan-source columns present -> seed is weekday-filtered).", name)
+        persons = persons.copy()
+        persons[f"has_{purpose}_trip"] = compute_has_purpose_trip(
+            persons, wege, purpose, household_id=household_id, person_id=person_id)
+        out = attributes.map_participation(persons, name, source_col=f"has_{purpose}_trip", rng=rng)
+        return out.drop(columns=[f"has_{purpose}_trip"])
+
+    # Real (non-imputed) donor persons are the only valid plan sources; a filler's source
+    # points at its mirror donor, which is one of these real persons.
+    real = persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
+    real_has_purpose_trip = compute_has_purpose_trip(
+        real, wege, purpose, household_id=household_id, person_id=person_id)
+    source_has_purpose_trip = pd.Series(
+        real_has_purpose_trip.to_numpy(),
+        index=pd.MultiIndex.from_arrays([real[household_id], real[person_id]]))
+    src_idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+    mapped = pd.Series(source_has_purpose_trip.reindex(src_idx).to_numpy(), index=persons.index)
+    n_unresolved = int(mapped.isna().sum())
+    if n_unresolved:
+        # Defense-in-depth (no silent fallback): a plan source MUST resolve to a real
+        # donor person; a NaN means upstream donor/source corruption (mirrors the
+        # weekend_plan_match A2-sweep guard). Fail loudly rather than seed a NaN flag.
+        raise ValueError(
+            f"derive_participation_seed: {n_unresolved} person(s) have a plan source "
+            f"(source_H_ID, source_P_ID) absent from the donor frame; cannot derive "
+            f"{name} from the realised plan (upstream donor/source corruption).")
+    persons = persons.copy()
+    persons[f"_plan_source_has_{purpose}_trip"] = mapped.to_numpy()
+    logger.info(
+        "[popsim.mid] %s seed: derived from the realised weekday plan "
+        "source (source has_%s_trip) for %d persons -- aligns the control with the "
+        "trips the synthetic person actually executes.",
+        name, purpose, len(persons))
+    out = attributes.map_participation(
+        persons, name, source_col=f"_plan_source_has_{purpose}_trip", rng=rng)
+    return out.drop(columns=[f"_plan_source_has_{purpose}_trip"])
+
+
+def derive_work_participation_seed(persons, wege, *, rng, household_id="H_ID", person_id="P_ID"):
+    """Derive the ``work_participation`` control seed from each person's REALISED
+    weekday plan.
+
+    Thin wrapper over :func:`derive_participation_seed` (purpose="work"); kept as a
+    named entry point so existing callers/tests stay unchanged. See that function's
+    docstring for the full weekday-vs-realised-plan rationale.
+    """
+    return derive_participation_seed(
+        persons, wege, "work", rng=rng, household_id=household_id, person_id=person_id)
+
+
 def load_mid_seed(
     mid_dir: Union[str, Path],
     *,
@@ -575,6 +746,19 @@ def load_mid_seed(
         for _es_col in ("P_BKAT", "alter_gr1"):
             if _es_col not in person_cols:
                 person_cols.append(_es_col)
+    # participation controls (work_participation task 4; leisure_participation /
+    # education_participation task 5, feature #224): load the raw diary trip count
+    # (anzwege1, the default trips_col mid.compute_has_purpose_trip uses to carry
+    # through the 803/804 diary-nonresponse codes) and the age-band conditioning column
+    # (alter_gr1) so the has-<purpose>-trip flag can be derived from the MiD Wege table +
+    # the 803/804 codes imputed within alter_gr1, mirroring the trip_class block above.
+    # Dedup-safe (anzwege1/alter_gr1 may already be present via trip_class/
+    # employment_status/tier3); shared across all three participation entries since
+    # they all read the same two raw columns.
+    if active_kreis_entry_names & {"work_participation", "leisure_participation", "education_participation"}:
+        for _pp_col in ("anzwege1", "alter_gr1"):
+            if _pp_col not in person_cols:
+                person_cols.append(_pp_col)
     persons = pd.read_csv(
         persons_path,
         usecols=list(dict.fromkeys(person_cols)),
@@ -609,7 +793,10 @@ def load_mid_seed(
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
     _rng_style_entries = _count_style_entries | (
-        active_kreis_entry_names & {"trip_class", "employment_status"}
+        active_kreis_entry_names & {
+            "trip_class", "employment_status",
+            "work_participation", "leisure_participation", "education_participation",
+        }
     )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
@@ -664,6 +851,26 @@ def load_mid_seed(
     if "employment_status" in active_kreis_entry_names:
         persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
 
+    # participation controls (work_participation task 4; leisure_participation /
+    # education_participation task 5, feature #224): derive the 0/1 has-a-<purpose>-trip
+    # flag from the MiD Wege table AFTER the complete-household filter + member
+    # completion, seeded from the person's REALISED weekday plan source exactly like
+    # trip_class (mid.derive_participation_seed) -- see that function's docstring for the
+    # full weekday-vs-realised-plan rationale. The rng guard above ensures
+    # kreis_seed_rng is set. Requires the full MiD Wege table, which load_mid_seed does
+    # not otherwise read; loaded ONCE here (gated on ANY participation control being
+    # active) so the OFF path never touches MiD2023_Wege.csv (byte-identical no-op).
+    _active_participation_purposes = [
+        purpose for purpose in ("work", "leisure", "education")
+        if f"{purpose}_participation" in active_kreis_entry_names
+    ]
+    if _active_participation_purposes:
+        wege = load_mid_wege(mid_dir)
+        for purpose in _active_participation_purposes:
+            persons = derive_participation_seed(
+                persons, wege, purpose, rng=kreis_seed_rng,
+                household_id=columns.person_household_id, person_id=columns.person_id)
+
     # Derive hh_type5 (Tier-1 household_type/Familientyp 5-class) from the
     # filtered persons frame.  derive_hh_type5 runs map_households_to_hhtype
     # (11-class) then collapses to the 5 Zensus Familientyp labels.  The result
@@ -712,6 +919,7 @@ def project_completed_seed(
     kreis_seed_rng=None,
     ebike_seed_column: Optional[str] = None,
     include_status_seed_col: bool = False,
+    mid_dir: Union[str, Path, None] = None,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -756,6 +964,13 @@ def project_completed_seed(
             ``kreis_control_entries=(economic_status entry,)``; kept so existing
             callers/tests stay byte-identical (raw ``oek_status`` pass-through,
             no resolve/derivation).
+        mid_dir: Directory containing the MiD 2023 delivery (``MiD2023_Wege.csv``).
+            REQUIRED when any participation entry (``work_participation`` feature #224
+            task 4; ``leisure_participation`` / ``education_participation`` task 5) is
+            active: unlike the other KREIS control seed columns, these are derived from
+            the full MiD Wege table (mid.load_mid_wege), which the completed-donor
+            frames do not carry. ``None`` (default) is a no-op when no participation
+            control is active (no silent fallback if one is).
     """
     # Deprecated alias: include_status_seed_col=True is equivalent to activating the
     # economic_status registry entry (byte-identical to the pre-existing behaviour).
@@ -786,7 +1001,10 @@ def project_completed_seed(
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
     _rng_style_entries = _count_style_entries | (
-        active_kreis_entry_names & {"trip_class", "employment_status"}
+        active_kreis_entry_names & {
+            "trip_class", "employment_status",
+            "work_participation", "leisure_participation", "education_participation",
+        }
     )
     if _rng_style_entries and kreis_seed_rng is None:
         raise ValueError(
@@ -822,6 +1040,29 @@ def project_completed_seed(
         # so this reflects the full completed population, agreeing deterministically with
         # assembly.build_persons for the 99.87% of persons with a valid (non-9) P_BKAT.
         persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
+    _active_participation_purposes = [
+        purpose for purpose in ("work", "leisure", "education")
+        if f"{purpose}_participation" in active_kreis_entry_names
+    ]
+    if _active_participation_purposes:
+        # Derive each active <purpose>_participation from the completed donor's MiD Wege
+        # table (loaded from mid_dir; the completed-donor frames do not carry the Wege
+        # rows themselves). Seeded from the person's REALISED weekday plan source exactly
+        # like trip_class (mid.derive_participation_seed) -- see that function's
+        # docstring for the full weekday-vs-realised-plan rationale. Wege is loaded ONCE
+        # and reused for every active purpose (work_participation task 4; leisure_
+        # participation / education_participation task 5, feature #224).
+        if mid_dir is None:
+            raise ValueError(
+                "project_completed_seed: a participation kreis control "
+                f"{_active_participation_purposes} is active but mid_dir is not set; cannot "
+                f"load the MiD Wege table to derive participation flags for {_active_participation_purposes} (no silent fallback)."
+            )
+        wege = load_mid_wege(mid_dir)
+        for purpose in _active_participation_purposes:
+            persons = derive_participation_seed(
+                persons, wege, purpose, rng=kreis_seed_rng,
+                household_id=columns.person_household_id, person_id=columns.person_id)
 
     hh_type5_series = seedmod.derive_hh_type5(
         persons,

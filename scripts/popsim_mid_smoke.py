@@ -13,6 +13,7 @@ Usage (from the eqasim-bs repo root, with the eqasim env python)::
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -30,9 +31,14 @@ POP = REPO / "eqasim-data" / "data" / "braunschweig" / "popsim"
 CELLS_100M = POP / "cells" / "zensus2022_grid_100m_de_prepared.parquet"
 MID = POP / "mid2023_raw"
 
-POPSIMPREP = Path(r"C:\Users\bienzeisler\Documents\GitHub\popsimprep")
+# Portable: popsimprep is a sibling of the eqasim-bs repo (reproduces the previous
+# Windows-only hardcoded path on Windows AND resolves on the felix server); override
+# with the POPSIMPREP env var if it lives elsewhere. uv comes from PATH, falling back
+# to the standard ~/.local/bin install (mirrors braunschweig.popsim.batch which uses
+# bare "uv" from PATH).
+POPSIMPREP = Path(os.environ.get("POPSIMPREP") or (REPO.parent / "popsimprep"))
 CONFIGS = POPSIMPREP / "popsim" / "configs"
-UV = Path(r"C:\Users\bienzeisler\.local\bin\uv.exe")
+UV = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
 
 
 def main() -> int:
