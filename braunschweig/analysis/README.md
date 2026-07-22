@@ -28,10 +28,10 @@ braunschweig/analysis/
 conda activate eqasim
 
 # 1. Generate / refresh the 10 % synthesis (already cached if present)
-python -m synpp config_local_braunschweig_10pct.yml
+python -m synpp configs/fixtures/config_local_braunschweig_10pct.yml
 
 # 2. Generate / refresh the 25 % synthesis
-python -m synpp config_local_braunschweig_25pct.yml
+python -m synpp configs/fixtures/config_local_braunschweig_25pct.yml
 
 # 3. Run the validation harness against each rate
 python -m scripts.validate_bs_10pct                       # 10 % (legacy entry)

@@ -1,4 +1,4 @@
-"""Tests for config_popsim_open_braunschweig.yml (Phase 3).
+"""Tests for configs/fixtures/config_popsim_open_braunschweig.yml (Phase 3).
 
 Verifies that the popsim_open config file:
 - Parses without YAML errors.
@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = REPO_ROOT / "config_popsim_open_braunschweig.yml"
+CONFIG_PATH = REPO_ROOT / "configs" / "fixtures" / "config_popsim_open_braunschweig.yml"
 
 
 def _load_config() -> dict:
@@ -30,9 +30,9 @@ def _load_config() -> dict:
 # ---------------------------------------------------------------------------
 
 def test_config_file_exists():
-    """config_popsim_open_braunschweig.yml must exist in the repo root."""
+    """configs/fixtures/config_popsim_open_braunschweig.yml must exist."""
     assert CONFIG_PATH.is_file(), (
-        f"config_popsim_open_braunschweig.yml not found at {CONFIG_PATH}"
+        f"configs/fixtures/config_popsim_open_braunschweig.yml not found at {CONFIG_PATH}"
     )
 
 

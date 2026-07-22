@@ -44,10 +44,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # The run configs that drive the synthesis pipeline. Each must route the
 # population producer to the in-house IPF chain (= the simple_ipf_open baseline).
 RUN_CONFIGS = [
-    "config_local_braunschweig.yml",
-    "config_local_braunschweig_10pct.yml",
-    "config_local_braunschweig_25pct.yml",
-    "config_dryrun_braunschweig.yml",
+    "configs/fixtures/config_local_braunschweig.yml",
+    "configs/fixtures/config_local_braunschweig_10pct.yml",
+    "configs/fixtures/config_local_braunschweig_25pct.yml",
+    "configs/fixtures/config_dryrun_braunschweig.yml",
 ]
 
 # The alias contract that DEFINES simple_ipf_open: the upstream eqasim stage
@@ -84,8 +84,8 @@ def test_run_configs_present():
     """At least the canonical 1% and dryrun configs must exist; the refactor
     must not silently drop the configs that drive simple_ipf_open."""
     found = _existing_run_configs()
-    assert "config_local_braunschweig.yml" in found
-    assert "config_dryrun_braunschweig.yml" in found
+    assert "configs/fixtures/config_local_braunschweig.yml" in found
+    assert "configs/fixtures/config_dryrun_braunschweig.yml" in found
 
 
 @pytest.mark.parametrize("config_name", _existing_run_configs())

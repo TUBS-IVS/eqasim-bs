@@ -151,22 +151,36 @@ python scripts/verify_braunschweig_inputs.py --matsim
 
 | Sample | Config | Output | Wall time (laptop) |
 |--------|--------|--------|--------------------|
-| 1 %  | [`config_local_braunschweig.yml`](config_local_braunschweig.yml) | `eqasim-data/output_bs/` | ~10 min |
-| 10 % | [`config_local_braunschweig_10pct.yml`](config_local_braunschweig_10pct.yml) | `eqasim-data/output_bs_10pct/` | ~4 h |
-| 25 % | [`config_local_braunschweig_25pct.yml`](config_local_braunschweig_25pct.yml) | `eqasim-data/output_bs_25pct/` | ~10 h |
+| 1 %  | [`configs/fixtures/config_local_braunschweig.yml`](configs/fixtures/config_local_braunschweig.yml) | `eqasim-data/output_bs/` | ~10 min |
+| 10 % | [`configs/fixtures/config_local_braunschweig_10pct.yml`](configs/fixtures/config_local_braunschweig_10pct.yml) | `eqasim-data/output_bs_10pct/` | ~4 h |
+| 25 % | [`configs/fixtures/config_local_braunschweig_25pct.yml`](configs/fixtures/config_local_braunschweig_25pct.yml) | `eqasim-data/output_bs_25pct/` | ~10 h |
 
 ```powershell
-python -m synpp config_local_braunschweig.yml
+python -m synpp configs/fixtures/config_local_braunschweig.yml
 ```
 
 > Tip: run via `python scripts/run_synpp.py <config>.yml` for coloured live progress
 > (PopulationSim batches + cell→building handoff) and a clean UTF-8 run log under
 > `logs/`. `python -m synpp <config>` still works, just without colour.
 
-A 0.1 % CI dry run (`config_dryrun_braunschweig.yml`) is available for
-smoke-testing without producing artefacts. Seed is fixed at `1234` and
+A 0.1 % CI dry run (`configs/fixtures/config_dryrun_braunschweig.yml`) is available
+for smoke-testing without producing artefacts. Seed is fixed at `1234` and
 gravity slope at `-0.065` across all configs — see
 [`AGENTS.md`](AGENTS.md) for the rules around changing those.
+
+Production / all-features server runs use the **composed config set** instead of a
+single standalone file: a fixed base (`configs/base_bs.yml`) deep-merged with a
+per-scale overlay (`configs/overlays/test_1pct.yml`, `test_25pct.yml`,
+`test_100pct.yml`, ...), so every feature flag lives exactly once regardless of
+scale:
+
+```powershell
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
+```
+
+The resolved, merged config is written to `<working_directory>/.merged_config.yml`
+for reproducibility. See `docs/codebase/STRUCTURE.md` for the full config-family
+overview.
 
 ## Population synthesis workflows
 
@@ -202,9 +216,10 @@ Key properties of the PopulationSim workflows:
   local work directory. `popsim_open` is provably MiD-free (the MiD path is
   only read when `popsim_mid` is selected).
 
-Run configs: [`config_popsim_mid_braunschweig.yml`](config_popsim_mid_braunschweig.yml),
-[`config_popsim_open_braunschweig.yml`](config_popsim_open_braunschweig.yml);
-1 % smoke twins `config_smoke_{simple_ipf,popsim_mid,popsim_open}[_mini].yml`
+Run configs: [`configs/fixtures/config_popsim_mid_braunschweig.yml`](configs/fixtures/config_popsim_mid_braunschweig.yml),
+[`configs/fixtures/config_popsim_open_braunschweig.yml`](configs/fixtures/config_popsim_open_braunschweig.yml);
+1 % smoke twins `configs/fixtures/config_smoke_simple_ipf.yml` and
+`configs/fixtures/config_smoke_{popsim_mid,popsim_open}_mini.yml`
 plus the read-only three-case comparator
 [`validate_three_cases.py`](validate_three_cases.py).
 

@@ -60,7 +60,7 @@ incidental gets forgotten. Decisions graduate into an ADR in `docs/DECISIONS.md`
 ## Running a smoke
 
 ```powershell
-python scripts/run_synpp.py config_local_braunschweig.yml   # 1% local, conda env eqasim
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml   # 1% local, conda env eqasim
 ```
 
 See [docs/ONBOARDING.md](docs/ONBOARDING.md) for the full environment + run guide.

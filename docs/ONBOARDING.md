@@ -60,11 +60,13 @@ config_*.yml → scripts/run_synpp.py → synthesis.output → matsim.output →
 ## 4. How to run
 
 ```powershell
-# local (Windows, conda env eqasim)
-python scripts/run_synpp.py config_local_braunschweig.yml
+# local (Windows, conda env eqasim), 1 % standalone fixture
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml
 
-# server (Linux)
-bash scripts/run_pipeline.sh config_server_braunschweig_100pct.yml
+# server (Linux), composed all-features 100 % run (config-composition cleanup,
+# #230): fixed base + per-scale overlay, deep-merged and persisted as
+# <working_directory>/.merged_config.yml -- see configs/base_bs.yml header.
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_100pct.yml
 ```
 
 `run_pipeline.sh` first runs `scripts/verify_braunschweig_inputs.py --matsim` as a

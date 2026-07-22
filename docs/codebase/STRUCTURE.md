@@ -12,21 +12,32 @@ tree (`docs/codebase/.codebase-scan.txt`) and direct listings.
 ## Entry point
 
 ```powershell
-python -m synpp config_local_braunschweig.yml      # 1 % smoke run
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml      # 1 % smoke run
+
+# Composed production / all-features runs (config-composition cleanup, #230):
+# a fixed base + a per-scale overlay, deep-merged and persisted as
+# <working_directory>/.merged_config.yml (see configs/base_bs.yml header).
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 ```
 
 synpp reads a YAML config that declares the requested terminal stages under
-`run:` and a stage-alias map under `aliases:`. The five run configs differ only
-in `sampling_rate` and output paths:
+`run:` and a stage-alias map under `aliases:`. Two config families exist side by
+side:
 
-| Config | Rate | Purpose |
-|--------|------|---------|
-| `config_local_braunschweig.yml` | 0.01 | Smoke / dev |
-| `config_local_braunschweig_10pct.yml` | 0.10 | Validation harness |
-| `config_local_braunschweig_25pct.yml` | 0.25 | Pre-release / calibration |
-| `config_local_braunschweig_25pct_parking.yml` | 0.25 | 25 % with parking |
-| `config_dryrun_braunschweig.yml` | small | CI / plan-only sanity |
-| `config_gravity_only_braunschweig.yml` | n/a | Calibrating `gravity_slope` |
+- `configs/base_bs.yml` + `configs/overlays/{test,test_1pct,test_25pct,test_100pct,test_matsim}.yml`
+  — the composed, all-features popsim_mid set. Everything fixed across scales
+  lives once in the base; only `sampling_rate`, `working_directory`, output
+  paths and worker counts differ per overlay. This is the current
+  production/server path.
+- `configs/fixtures/*.yml` — standalone (pre-composition), single-file configs
+  kept as pytest fixtures and lightweight local entry points:
+
+  | Config | Rate | Purpose |
+  |--------|------|---------|
+  | `configs/fixtures/config_local_braunschweig.yml` | 0.01 | Smoke / dev |
+  | `configs/fixtures/config_local_braunschweig_10pct.yml` | 0.10 | Validation harness |
+  | `configs/fixtures/config_local_braunschweig_25pct.yml` | 0.25 | Pre-release / calibration |
+  | `configs/fixtures/config_dryrun_braunschweig.yml` | small | CI / plan-only sanity |
 
 `CLAUDE.md` is the authoritative module guide for the calibrated subsystems
 (MiD reference tables, gravity model, education gravity); read it alongside this
@@ -106,7 +117,8 @@ upstream terminal stages aliased/extended by the fork.
 
 ## Key files
 
-- `config_local_braunschweig.yml` — the canonical run+alias map (the others mirror it).
+- `configs/fixtures/config_local_braunschweig.yml` — the canonical run+alias map (the
+  other fixtures mirror it); `configs/base_bs.yml` is the composed-run equivalent.
 - `CLAUDE.md` — authoritative description of the MiD/gravity/education subsystems.
 - `braunschweig/REGION.md` — the eight ZGB Kreis ARS-5 codes; "always store as strings".
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` — input inventory with paths + licences.
@@ -114,7 +126,7 @@ upstream terminal stages aliased/extended by the fork.
 ## Evidence
 
 - `docs/codebase/.codebase-scan.txt` (DIRECTORY TREE)
-- `config_local_braunschweig.yml` (`run:`, `aliases:`)
+- `configs/fixtures/config_local_braunschweig.yml` (`run:`, `aliases:`)
 - `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`
 - `ls bavaria` -> absent; `git ls-files eqasim-data` -> 38 tracked files
 - `braunschweig/REGION.md`, `CLAUDE.md`, `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`
@@ -130,7 +142,7 @@ a sibling `popsimprep` checkout (`../popsimprep`).
 ### The current population stage in eqasim-bs (= the `simple_ipf_open` baseline)
 
 The existing IPF workflow is the chain (alias targets, from
-`config_local_braunschweig.yml`):
+`configs/fixtures/config_local_braunschweig.yml`):
 
 ```
 braunschweig.ipf.prepare      -> assembles census control margins (population,
@@ -204,7 +216,7 @@ table). This nesting is what `batch_run_popsim.py` uses to batch PopulationSim r
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb`,
 `popsimprep/batch_run_popsim.py`, `popsimprep/popsim/configs/settings.yaml`,
 `popsimprep/inputs/*.parquet` (schema via pyarrow), `braunschweig/ipf/*.py`,
-`config_local_braunschweig.yml` (alias map).
+`configs/fixtures/config_local_braunschweig.yml` (alias map).
 
 ---
 

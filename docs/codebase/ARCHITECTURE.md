@@ -64,7 +64,7 @@ Work/education attraction is a **two-level system**:
 
 ---
 
-How the `eqasim-bs` pipeline is wired. Verified from `config_local_braunschweig.yml`
+How the `eqasim-bs` pipeline is wired. Verified from `configs/fixtures/config_local_braunschweig.yml`
 (the synpp run + alias map), `CLAUDE.md`, and the stage source files.
 
 ## synpp content-hashed DAG
@@ -84,7 +84,7 @@ rerun only re-executes stages whose hashed inputs changed.
 
 ## Terminal stages
 
-`config_local_braunschweig.yml` requests two terminal outputs:
+`configs/fixtures/config_local_braunschweig.yml` requests two terminal outputs:
 
 ```yaml
 run:
@@ -100,7 +100,7 @@ names to the Braunschweig fork (`braunschweig.*`) or the region-neutral package
 documented constraint that forces several stages (e.g.
 `synthesis.population.enriched`) to alias *directly* to the fork rather than
 chaining through an intermediate (see the inline comment in the config and
-CLAUDE.md). Representative remaps (from `config_local_braunschweig.yml`):
+CLAUDE.md). Representative remaps (from `configs/fixtures/config_local_braunschweig.yml`):
 
 | Upstream stage | Aliased to |
 |----------------|-----------|
@@ -170,7 +170,7 @@ model** distributes work/education trips calibrated to BA Pendleratlas flows;
 
 ## Evidence
 
-- `config_local_braunschweig.yml` (`run:`, `aliases:`, calibration config keys)
+- `configs/fixtures/config_local_braunschweig.yml` (`run:`, `aliases:`, calibration config keys)
 - `CLAUDE.md` ("Gravity model", "Education gravity model", "University students")
 - `braunschweig/synthesis/locations/education_gravity.py` (configure/execute, level bands, assign_by_* imports)
 - `README.md` "Pipeline architecture" (mermaid flow)
@@ -319,4 +319,4 @@ partitioning** (no H_ID renumbering) — `(ZENSUS100m, H_ID)` stays unique.
 
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb` (Steps 1-6),
 `popsimprep/batch_run_popsim.py`, `popsimprep/popsim/configs/settings.yaml`,
-`braunschweig/ipf/attributed.py`, `config_local_braunschweig.yml` (alias map).
+`braunschweig/ipf/attributed.py`, `configs/fixtures/config_local_braunschweig.yml` (alias map).

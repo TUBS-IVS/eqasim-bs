@@ -107,24 +107,29 @@ the existing SvB `incommuters` wiring exactly:
 `facilities.py`. Because `context.stage()` self-registers the dependency with
 `synpp`, no separate pipeline-stage-list entry is required.
 
-Six run configs currently have both `cordon_enabled: true` and
-`education_gravity_enabled: true` set (i.e. the dependency is already met, so
-the tri-state flag already resolves to ON by default):
-`config_popsim_mid_braunschweig.yml`,
+Both `cordon_enabled: true` and `education_gravity_enabled: true` are set (i.e.
+the dependency is already met, so the tri-state flag already resolves to ON by
+default) in the composed all-features base `configs/base_bs.yml` (applying to
+every scale overlay) and in the two standalone popsim fixtures
+`configs/fixtures/config_popsim_mid_braunschweig.yml` and
+`configs/fixtures/config_popsim_open_braunschweig.yml`. (Prior to the
+config-composition cleanup, #230, this was set individually in six run
+configs -- `config_popsim_mid_braunschweig.yml`,
 `config_popsim_mid_braunschweig_population_allfeatures.yml`,
-`config_popsim_open_braunschweig.yml`,
-`config_server_braunschweig_1pct_allfeat_popsim.yml`,
-`config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`config_server_braunschweig_100pct_allfeat_popsim.yml`. In each, the flag is
-documented as a **comment** next to `cordon_enabled` (not an explicit
+`config_popsim_open_braunschweig.yml`, and the three
+`config_server_braunschweig_{1pct,25pct,100pct}_allfeat_popsim.yml` --
+of which the `population_allfeatures` and the three server variants are now
+superseded/removed in favour of the single composed base.) In each, the flag
+is documented as a **comment** next to `cordon_enabled` (not an explicit
 `cordon_student_incommuters_enabled: true`): leaving it unset already resolves to
 ON there, and a comment avoids the footgun where an explicit `true` would turn a
 later `education_gravity_enabled: false` edit into a hard `RuntimeError` instead
-of a graceful skip. The
-non-allfeat server configs (`config_server_braunschweig_{1,25,100}pct.yml`) and
-all smoke/mini/dry-run configs leave `education_gravity_enabled` at its default
-`False` (or explicit `false`), so the feature stays OFF there, as intended --
-neither flag was flipped to wire this feature in.
+of a graceful skip. The non-allfeat fixtures
+(`configs/fixtures/config_local_braunschweig*.yml`,
+`configs/fixtures/config_dryrun_braunschweig.yml`) and all smoke/mini configs
+leave `education_gravity_enabled` at its default `False` (or explicit `false`),
+so the feature stays OFF there, as intended -- neither flag was flipped to wire
+this feature in.
 
 ## Injected frames and mode/timing
 

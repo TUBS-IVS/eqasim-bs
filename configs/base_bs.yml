@@ -1,19 +1,16 @@
-## FULL-PIPELINE 25% ALL-FEATURES popsim_mid run -- SERVER (Linux) variant.
-## End-to-end wiring proof of the COMBINED branch (integration/all-features) at
-## sampling_rate 0.25: popsim_mid (MiD donor, weight-sampled) + new fleet module +
-## cross-cordon einpendler + long-haul freight + education gravity + income
-## tilt/Kreis control. This is the FIRST 25% run: 10 MATSim iterations only, to verify
-## the full pipeline runs end-to-end (matsim_last_iteration: 9). It is ALSO the cache
-## SEEDING run -- on success it auto-exports the sampling-independent shareable stages
-## (freight extraction, popsim.stage, completed_donor, ...) into cache_share_store, so
-## the later 100% / 200-iteration production run primes them and skips the heavy work.
-## For the production run, bump matsim_last_iteration back to 199 (write_plans 50).
-## Server is FULLY loaded (64 cores / 128 GB):
-##   - synpp processes 32, popsim num_workers 0 (auto -> cpu_count-2 ~ 62),
-##     chainsolvers.processes 0 (auto), MATSim threads 56/16, java_memory 100G.
+## BASE config for all Braunschweig (ZGB-8) all-features popsim_mid runs.
+## NOT runnable alone: per-scale keys (working_directory, run, sampling_rate,
+## output paths, worker counts, matsim_last_iteration, ...) live in
+## configs/overlays/*.yml and are deep-merged over this base by
+##   python scripts/run_synpp.py configs/base_bs.yml configs/overlays/<scale>.yml
+## (scripts/run_synpp.py writes the resolved doc to
+## <working_directory>/.merged_config.yml and runs that file; every overridden
+## key is logged as [config-merge]). Everything FIXED across scales lives here
+## exactly once, so feature wiring cannot drift between scales again
+## (see docs/superpowers/specs/2026-07-20-config-composition-cleanup-design.md).
 ##
 ## PREREQUISITES on the server (see the runbook in docs/runs/):
-##   1. git pull integration/all-features in ~/eqasim-bs
+##   1. git pull in ~/eqasim-bs
 ##   2. eqasim-data/data synced (incl. braunschweig/popsim/{cells,mid2023_raw} +
 ##      braunschweig/freight/german-wide-freight-v3 + osm/cordon ring + gtfs_cordon)
 ##      via scripts/sync_data_to_server.ps1
@@ -21,23 +18,9 @@
 ##   4. uv installed at /home/felix/.local/bin/uv
 ##   5. sibling Java project at ~/eqasim-java-bs (eqasim_source_path)
 
-working_directory: eqasim-data/cache_bs_25pct_allfeat_popsim
-
-run:
-  - synthesis.output
-  - matsim.output
-  - braunschweig.analysis.cordon_validation
-  - braunschweig.analysis.simwrapper_export
-  - braunschweig.analysis.analysis_suite
-  # VerBindungen sub-Kreis work-OD validation (#124): compares the synthetic
-  # home->work assignment against the 2019 VerBindungen QZM reference.
-  # Requires eqasim-data/data/verbindungen/ (scripts/download_verbindungen.py).
-  - braunschweig.analysis.verbindungen_validation
-
 config:
   processes: 32
   hts: entd
-  sampling_rate: 0.25
   random_seed: 1234
 
   freight_enabled: true
@@ -80,19 +63,15 @@ config:
   education_building_distribution: true
 
   data_path: eqasim-data/data
-  output_path: eqasim-data/output_bs_25pct_allfeat_popsim
   # Archive simulation_output/ into <output_path>/matsim_output/ after the run
   # (hardlink; survives a synpp cache-dir wipe). Default ON (issue #156).
   archive_matsim_output: true
-  # Feeds education_validation in the analysis_suite stage (synpp cache dir).
-  analysis_working_directory: eqasim-data/cache_bs_25pct_allfeat_popsim
-  output_prefix: braunschweig_25pct_allfeat_popsim_
   simwrapper_include_matsim: true
 
   # === ALL POPULATION-SYNTHESIS FEATURES ON ===
   braunschweig.population.popsim.controls_source: catalog
   # Full LOSSLESS-reduced catalog tier0+tier1+tier2+tier3 (incl. the 7 Kreis-level
-  # employment/education controls). tier3 needs the KREIS geography -> settings_tier3.yaml
+  # employment/education controls). tier3 needs the KREIS geography -> settings_tier3_mef100_intseed_numba.yaml
   # (a superset of the normal settings: WELT/STAAT/KREIS/ZENSUS1km/ZENSUS100m) and the
   # imported cleancensus kreis_controls data (kreis_controls_dir below).
   braunschweig.population.popsim.control_tiers: tier0,tier1,tier2,tier3
@@ -159,12 +138,6 @@ config:
     # Tier B2: the completed-donor build (member completion + weekend match) depends
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
-  cache_share_recompute: []
-  # Auto-export the shareable stages into the store after a SUCCESSFUL run, so this
-  # seeding run populates the store for the 100% / production run (default true;
-  # set false to prime-without-export on a throwaway config). Never overwrites an
-  # existing store entry (skip_existing); a different hash is stored alongside.
-  cache_share_export: true
 
   java_memory: 100G
 
@@ -173,9 +146,6 @@ config:
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
   # --- MATSim runtime (64-core box) ---
-  # FIRST 25% run: 10 iterations (0..9) only, to verify the full pipeline runs
-  # end-to-end. Bump to 199 (and write_plans 50) for the 200-iteration production run.
-  matsim_last_iteration: 9
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5
   matsim_threads: 56
@@ -191,27 +161,15 @@ config:
   braunschweig.population.popsim.mid_dir: eqasim-data/data/braunschweig/popsim/mid2023_raw
   # popsimprep + uv live OUTSIDE the repo on the server (absolute Linux paths).
   braunschweig.population.popsim.controls_path: /home/felix/popsimprep/popsim/configs/_prep3_controls.csv
-  # settings_tier3.yaml adds the KREIS geography (superset of settings.yaml), required
-  # for the tier3 Kreis controls; it also serves tier0-2 unchanged.
-  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3.yaml
+  # settings_tier3_mef100_intseed_numba.yaml adds the KREIS geography (superset of
+  # settings.yaml; required for the tier3 Kreis controls) AND pins the validated
+  # ADR-0056 balancing regime: SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS=false +
+  # USE_NUMBA=true + max_expansion_factor=100. The float-seed regime (~20x slower,
+  # non-converging sub-balancing; #155) must never be wired into a run config again.
+  braunschweig.population.popsim.settings_path: /home/felix/popsimprep/popsim/configs/settings_tier3_mef100_intseed_numba.yaml
   braunschweig.population.popsim.logging_path: /home/felix/popsimprep/popsim/configs/logging.yaml
   braunschweig.population.popsim.popsimprep_dir: /home/felix/popsimprep
   braunschweig.population.popsim.uv_path: /home/felix/.local/bin/uv
-  # Tier B1: a SINGLE fixed work_dir shared across all run configs (NOT the per-cache
-  # scratch path), so popsim.stage's hash is identical across sampling rates and
-  # cache_share can share the donor build + the per-1km batches. The stale-batch guard
-  # (purge_stale_batches_on_config_change) keeps a shared work_dir safe on config change.
-  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
-  braunschweig.population.popsim.max_cells: 1500
-  # Parallel PopulationSim batches. NOT auto/0 (=62): each batch is now pinned to a
-  # single BLAS/OpenMP thread (_SINGLE_THREAD_BLAS_ENV in braunschweig.popsim.batch),
-  # which fixed the real failure -- at 62-way parallelism each batch's OpenBLAS spawned
-  # 64 threads, oversubscribing the box (~4000 threads / 64 cores) and crashing numpy
-  # with segfaults in libc (12 batches lost in one run). With 1 thread per batch the
-  # batch-level parallelism is governed purely by this number; 16 single-threaded
-  # batches use the cores well and keep peak RAM (~5 GB/batch) safe on 128 GB. A fixed
-  # integer (not the 0 sentinel) also stabilises the popsim.stage hash for cache reuse.
-  braunschweig.population.popsim.num_workers: 16
   # No per-batch timeout: heavy control sets converge slowly; batches must run to
   # completion no matter how long (0 -> timeout disabled, see batch.make_populationsim_run_one).
   braunschweig.population.popsim.batch_timeout_s: 0

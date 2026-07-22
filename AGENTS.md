@@ -59,10 +59,11 @@ Skim memory for prior context: `/memories/session/refactor-progress.md`,
   ```
   Phase 2 of the refactor will move the inherited blocks into
   `eqasim_common/`; the fences make the diff reviewable.
-- Stage names in `config_local_braunschweig*.yml` are dotted Python module
-  paths.  Aliases remap upstream Bavaria stages to local overrides; review
-  [`config_local_braunschweig.yml`](config_local_braunschweig.yml) before
-  touching any synpp module.
+- Stage names in `configs/fixtures/config_local_braunschweig*.yml` are dotted
+  Python module paths.  Aliases remap upstream Bavaria stages to local
+  overrides; review
+  [`configs/fixtures/config_local_braunschweig.yml`](configs/fixtures/config_local_braunschweig.yml)
+  before touching any synpp module.
 - Do **not** edit files under [`bavaria/`](bavaria/) without an explicit
   Decision record in `plan/`.  See CON-001 in
   [`docs/codebase/CONCERNS.md`](docs/codebase/CONCERNS.md).
@@ -77,25 +78,30 @@ Skim memory for prior context: `/memories/session/refactor-progress.md`,
 pytest tests/ -v -k "not test_pipeline and not test_simulation and not test_determinism"
 
 # 1 % smoke run – ~10 minutes on a laptop
-python -m synpp config_local_braunschweig.yml
+python -m synpp configs/fixtures/config_local_braunschweig.yml
 
 # 10 % validation harness – ~4 hours
-python -m synpp config_local_braunschweig_10pct.yml
+python -m synpp configs/fixtures/config_local_braunschweig_10pct.yml
 python -m scripts.validate_bs_10pct
 
 # Quick single-stage rerun (force re-execution by changing the cache dir)
-python -m synpp config_local_braunschweig.yml --runner sequential
+python -m synpp configs/fixtures/config_local_braunschweig.yml --runner sequential
+
+# Composed production / all-features runs (config-composition cleanup, #230):
+# fixed base + per-scale overlay, deep-merged and persisted as
+# <working_directory>/.merged_config.yml
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 ```
 
 ## Sampling rates and configs
 
 | Config | Rate | Output | Use |
 |--------|------|--------|-----|
-| `config_local_braunschweig.yml` | 1 % | `eqasim-data/output_bs/` | Smoke / dev iteration |
-| `config_local_braunschweig_10pct.yml` | 10 % | `eqasim-data/output_bs_10pct/` | Validation harness |
-| `config_local_braunschweig_25pct.yml` | 25 % | `eqasim-data/output_bs_25pct/` | Pre-release |
-| `config_dryrun_braunschweig.yml` | 1 % | dry run (no write) | Plan-only sanity |
-| `config_gravity_only_braunschweig.yml` | n/a | gravity stages only | Calibrating `gravity_slope` |
+| `configs/fixtures/config_local_braunschweig.yml` | 1 % | `eqasim-data/output_bs/` | Smoke / dev iteration |
+| `configs/fixtures/config_local_braunschweig_10pct.yml` | 10 % | `eqasim-data/output_bs_10pct/` | Validation harness |
+| `configs/fixtures/config_local_braunschweig_25pct.yml` | 25 % | `eqasim-data/output_bs_25pct/` | Pre-release |
+| `configs/fixtures/config_dryrun_braunschweig.yml` | 1 % | dry run (no write) | Plan-only sanity |
+| `configs/base_bs.yml` + `configs/overlays/<scale>.yml` | 1/25/100 % | composed all-features run | Production / server (see `docs/codebase/STRUCTURE.md`) |
 
 Seed is `1234` and `gravity_slope` is `-0.065` in all configs except the
 gravity-tuning one — never change either without updating

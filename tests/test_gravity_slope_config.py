@@ -2,7 +2,7 @@
 
 Guards against the synpp ``flatten()`` empty-dict pitfall that broke
 ``braunschweig.gravity.model`` whenever a config omitted
-``gravity_slope_by_regiostar7`` (e.g. ``config_dryrun_braunschweig.yml``).
+``gravity_slope_by_regiostar7`` (e.g. ``configs/fixtures/config_dryrun_braunschweig.yml``).
 
 Root cause: synpp's ``flatten()`` recurses into dict-valued config options
 and emits one leaf per nested key. An *empty* dict therefore produces no

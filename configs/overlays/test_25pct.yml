@@ -1,0 +1,27 @@
+## 25% all-features overlay (full region, full pipeline, 0 MATSim iterations --
+## bump matsim_last_iteration per run for real simulations).
+working_directory: eqasim-data/cache_bs_25pct_allfeat_popsim
+
+run:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.verbindungen_validation
+
+config:
+  sampling_rate: 0.25
+  output_path: eqasim-data/output_bs_25pct_allfeat_popsim
+  analysis_working_directory: eqasim-data/cache_bs_25pct_allfeat_popsim
+  output_prefix: braunschweig_25pct_allfeat_popsim_
+  matsim_last_iteration: 0
+  # Tier B1: the SAME fixed work_dir as test_1pct so popsim.stage's hash is
+  # identical across sampling rates and cache_share shares the batches.
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
+  braunschweig.population.popsim.max_cells: 1500
+  # 16 single-threaded batches (each pinned to 1 BLAS thread by
+  # braunschweig.popsim.batch) use the 64-core box well at ~5 GB/batch peak.
+  braunschweig.population.popsim.num_workers: 16
+  cache_share_export: true
+  cache_share_recompute: []

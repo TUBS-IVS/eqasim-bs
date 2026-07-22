@@ -166,11 +166,12 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
 
 All five feature flags (`secondary_shop_daily_split`, `secondary_leisure_subtype_split`,
 `secondary_other_subtype_split`, `leisure_visit_building_potential`, alongside the Tier 1
-`secondary_distance_by_purpose`) are set to `true` in the three server all-features
-popsim_mid run configs (`config_server_braunschweig_1pct_allfeat_popsim.yml`,
-`config_server_braunschweig_25pct_allfeat_popsim.yml`, and
-`config_server_braunschweig_100pct_allfeat_popsim.yml`). All other configs leave them
-`false`.
+`secondary_distance_by_purpose`) are set to `true` once in the composed all-features
+base `configs/base_bs.yml` (config-composition cleanup, #230), applying to every scale
+overlay (`configs/overlays/{test_1pct,test_25pct,test_100pct}.yml`). Prior to #230 this
+was set individually in the three now-removed server all-features popsim_mid run
+configs (`config_server_braunschweig_{1pct,25pct,100pct}_allfeat_popsim.yml`). All other
+configs leave them `false`.
 
 **Validation.** `scripts/validate_secondary_distances.py` compares realised
 secondary trip band shares (detour-adjusted via `metrics.apply_detour`) to MiD W12

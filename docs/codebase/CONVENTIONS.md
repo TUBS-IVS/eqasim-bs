@@ -18,7 +18,7 @@ Coding and data conventions in force for `eqasim-bs`. Verified from `CLAUDE.md`,
 - Source should be ASCII where possible; avoid non-ASCII in identifiers and string
   constants (CLAUDE.md "MATSim and eqasim style").
 - Chat responses to the user are in German (CLAUDE.md "Language policy"). Note the
-  config files contain German prose in comments (e.g. `config_local_braunschweig.yml`
+  config files contain German prose in comments (e.g. `configs/fixtures/config_local_braunschweig.yml`
   lines 100–124); this is the inherited fork state, not the stated target.
 
 ## Naming
@@ -91,7 +91,7 @@ processing"; bounding box in DOWNLOAD_CHECKLIST_BS.md).
 - `AGENTS.md` ("Repository conventions enforced now")
 - `braunschweig/synthesis/locations/education_gravity.py` (configure/execute, constant naming)
 - `tests/test_education_gravity_stage.py` (deterministic synthetic data)
-- `config_local_braunschweig.yml` (pinned calibrated values + "do not hand-edit" notes)
+- `configs/fixtures/config_local_braunschweig.yml` (pinned calibrated values + "do not hand-edit" notes)
 
 ---
 

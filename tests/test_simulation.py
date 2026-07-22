@@ -1,6 +1,6 @@
 """End-to-end MATSim build for the Braunschweig scenario.
 
-Drives ``matsim.output`` against ``config_dryrun_braunschweig.yml``. Opt-in
+Drives ``matsim.output`` against ``configs/fixtures/config_dryrun_braunschweig.yml``. Opt-in
 via ``EQASIM_BS_RUN_PIPELINE=1`` plus the presence of the Braunschweig
 input data **and** a working Java/Maven toolchain. Skipped by default so
 the unit-test gate stays fast and Java-free.
@@ -21,7 +21,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DRYRUN_CONFIG = REPO_ROOT / "config_dryrun_braunschweig.yml"
+DRYRUN_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_dryrun_braunschweig.yml"
 DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
 BS_DATA_PATH = DATA_PATH / "braunschweig"
 

@@ -1,23 +1,29 @@
-"""Guard the Tier A + B1 caching config conventions on the two all-features
-server configs:
+"""Guard the Tier A + B1 caching config conventions on the composed all-features
+configs (base + scale overlays):
 
-- both configs MUST pin the SAME fixed PopulationSim ``work_dir`` (Tier B1), so
-  ``braunschweig.popsim.stage`` hashes identically across sampling rates and the
-  cache_share store can share the donor build + the per-1km batches;
-- both configs MUST list the full set of confirmed-shareable stages in
-  ``cache_share_stages`` (Tier A + B1), so they are primed from / exported to the
-  shared store instead of being recomputed every run.
+- test_1pct and test_25pct MUST pin the SAME fixed PopulationSim ``work_dir``
+  (Tier B1), so ``braunschweig.popsim.stage`` hashes identically across
+  sampling rates and the cache_share store can share the donor build + the
+  per-1km batches;
+- ALL scale overlays MUST list the full set of confirmed-shareable stages in
+  ``cache_share_stages`` (Tier A + freight chain + Tier B), so they are primed
+  from / exported to the shared store instead of being recomputed every run.
 
 See docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md.
 """
-import yaml
+from pathlib import Path
 
-CONFIGS = [
-    "config_server_braunschweig_1pct_allfeat_popsim.yml",
-    "config_server_braunschweig_25pct_allfeat_popsim.yml",
-]
+import pytest
 
-# Tier B1: one fixed work_dir shared by all run configs (NOT a per-cache scratch path).
+from braunschweig.config_compose import compose
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BASE = str(REPO_ROOT / "configs" / "base_bs.yml")
+OVERLAYS = REPO_ROOT / "configs" / "overlays"
+
+SCALE_OVERLAYS = ["test_1pct.yml", "test_25pct.yml", "test_100pct.yml"]
+
+# Tier B1: one fixed work_dir shared by the 1pct/25pct run configs (NOT a per-cache scratch path).
 SHARED_WORK_DIR = "eqasim-data/popsim_work_allfeat"
 WORK_DIR_KEY = "braunschweig.population.popsim.work_dir"
 
@@ -64,23 +70,21 @@ EXPECTED_SHAREABLE_STAGES = {
 }
 
 
-def _load_cfg(path):
-    with open(path, encoding="utf-8") as f:
-        return (yaml.safe_load(f) or {}).get("config", {}) or {}
+def _cfg(overlay_name):
+    return compose(BASE, str(OVERLAYS / overlay_name))["config"]
 
 
-def test_both_configs_pin_the_shared_work_dir():
-    for path in CONFIGS:
-        cfg = _load_cfg(path)
+def test_1pct_and_25pct_pin_the_shared_work_dir():
+    for overlay in ("test_1pct.yml", "test_25pct.yml"):
+        cfg = _cfg(overlay)
         assert cfg[WORK_DIR_KEY] == SHARED_WORK_DIR, (
-            f"{path}: {WORK_DIR_KEY} must be the shared fixed path "
+            f"{overlay}: {WORK_DIR_KEY} must be the shared fixed path "
             f"{SHARED_WORK_DIR!r} (Tier B1), got {cfg[WORK_DIR_KEY]!r}"
         )
 
 
-def test_both_configs_list_all_shareable_stages():
-    for path in CONFIGS:
-        cfg = _load_cfg(path)
-        listed = set(cfg.get("cache_share_stages", []))
-        missing = EXPECTED_SHAREABLE_STAGES - listed
-        assert not missing, f"{path}: cache_share_stages missing {sorted(missing)}"
+@pytest.mark.parametrize("overlay", SCALE_OVERLAYS)
+def test_scale_configs_list_all_shareable_stages(overlay):
+    stages = set(_cfg(overlay).get("cache_share_stages", []))
+    missing = EXPECTED_SHAREABLE_STAGES - stages
+    assert not missing, f"{overlay}: cache_share_stages missing {sorted(missing)}"

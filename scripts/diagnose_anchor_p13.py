@@ -31,8 +31,9 @@ Run on the server:
 
     python scripts/diagnose_anchor_p13.py \
         --cache ~/eqasim-bs/eqasim-data/cache_bs_100pct_allfeat_popsim \
-        --config config_server_braunschweig_100pct_allfeat_popsim.yml \
+        --config ~/eqasim-bs/eqasim-data/cache_bs_100pct_allfeat_popsim/.merged_config.yml \
         --out ~/wt/verbindungen-anchor/diag_p13_72 --rs7 72
+    # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 """
 from __future__ import annotations
 

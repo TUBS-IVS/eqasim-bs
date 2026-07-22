@@ -5,8 +5,9 @@ the server (local raw data partially missing since 2026-07-16):
 
     python scripts/run_anchor_holdout.py \
         --cache ~/eqasim-bs/eqasim-data/cache_bs_100pct_allfeat_popsim \
-        --config config_server_braunschweig_100pct_allfeat_popsim.yml \
+        --config ~/eqasim-bs/eqasim-data/cache_bs_100pct_allfeat_popsim/.merged_config.yml \
         --out ~/wt/verbindungen-anchor/holdout_out
+    # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 """
 from __future__ import annotations
 

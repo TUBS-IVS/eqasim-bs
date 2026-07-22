@@ -278,22 +278,26 @@ def test_margins_outer_merge_covers_all_cells(tmp_path):
 # --- config wiring -----------------------------------------------------------
 
 _VERBINDUNGEN_WIRED_CONFIGS = [
-    # dev config (wired in #124 phase 1) + the three allfeat server configs
-    # (wired after the server data drop; the stage fail-earlies on missing
-    # reference files by design, so wiring must follow the data).
-    "config_popsim_mid_braunschweig.yml",
-    "config_server_braunschweig_1pct_allfeat_popsim.yml",
-    "config_server_braunschweig_25pct_allfeat_popsim.yml",
-    "config_server_braunschweig_100pct_allfeat_popsim.yml",
+    # dev fixture (wired in #124 phase 1) + the three composed scale configs
+    # (the stage fail-earlies on missing reference files by design, so wiring
+    # must follow the data).
+    ("configs/fixtures/config_popsim_mid_braunschweig.yml", None),
+    ("configs/base_bs.yml", "configs/overlays/test_1pct.yml"),
+    ("configs/base_bs.yml", "configs/overlays/test_25pct.yml"),
+    ("configs/base_bs.yml", "configs/overlays/test_100pct.yml"),
 ]
 
 
-@pytest.mark.parametrize("config_name", _VERBINDUNGEN_WIRED_CONFIGS)
-def test_configs_run_verbindungen_validation(config_name):
+@pytest.mark.parametrize("base_name,overlay_name", _VERBINDUNGEN_WIRED_CONFIGS)
+def test_configs_run_verbindungen_validation(base_name, overlay_name):
     import yaml
-    with open(REPO_ROOT / config_name, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    assert "braunschweig.analysis.verbindungen_validation" in cfg["run"], config_name
+    if overlay_name is None:
+        with open(REPO_ROOT / base_name, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    else:
+        from braunschweig.config_compose import compose
+        cfg = compose(str(REPO_ROOT / base_name), str(REPO_ROOT / overlay_name))
+    assert "braunschweig.analysis.verbindungen_validation" in cfg["run"], (base_name, overlay_name)
 
 
 # --- comparison zones (anchor geography, #193) -------------------------------

@@ -40,14 +40,20 @@ logger = logging.getLogger("braunschweig.noise_bands")
 # ever existed on the unmerged smoke-run branch `run/smoke-1pct-allfeatures`
 # (see docs/runs/2026-06-22_1pct_allfeat_full_smoke_findings.md) and is absent
 # from this branch's history, so it cannot be pinned as the default here.
-# config_server_braunschweig_1pct_allfeat_popsim.yml is the nearest real,
+# config_server_braunschweig_1pct_allfeat_popsim.yml was the nearest real,
 # committed equivalent (1% sampling rate, all population-synthesis features
-# on, the same synthesis.output -> matsim.output -> analysis `run:` shape) and
-# is used instead; pass --config to point at a different base config.
-DEFAULT_CONFIG = "config_server_braunschweig_1pct_allfeat_popsim.yml"
+# on, the same synthesis.output -> matsim.output -> analysis `run:` shape).
+# #230 (config-composition cleanup) removed that root config in favour of
+# configs/base_bs.yml + configs/overlays/ (see configs/overlays/test_1pct.yml);
+# the composed run persists its exact resolved config at
+# <working_directory>/.merged_config.yml, so the equivalent base config now
+# only exists as the merged artifact of a completed cache_bs_1pct_allfeat_popsim
+# run. Pass --config to point at a different base config.
+DEFAULT_CONFIG = "eqasim-data/cache_bs_1pct_allfeat_popsim/.merged_config.yml"
 
 # Synthesis-only stage list for the Monte-Carlo sweep, pinned by inspecting the
-# `run:` section of DEFAULT_CONFIG (config_server_braunschweig_1pct_allfeat_popsim.yml):
+# `run:` section of DEFAULT_CONFIG (the cache_bs_1pct_allfeat_popsim run's
+# eqasim-data/cache_bs_1pct_allfeat_popsim/.merged_config.yml):
 #
 #   run:
 #     - synthesis.output                        # KEPT: pure synthesis; produces the

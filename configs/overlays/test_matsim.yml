@@ -1,0 +1,22 @@
+## TEST+MATSIM overlay: like test.yml but through matsim.output with 0 iterations
+## (builds the full scenario incl. fleet + network + one mobsim -- wiring proof for
+## the MATSim side, including the #229 pt2matsim build chain).
+working_directory: eqasim-data/cache_bs_test_matsim
+
+run:
+  - matsim.output
+
+config:
+  processes: 8
+  sampling_rate: 0.01
+  braunschweig.political_prefix:
+    - "03101"
+  output_path: eqasim-data/output_bs_test_matsim
+  analysis_working_directory: eqasim-data/cache_bs_test_matsim
+  output_prefix: braunschweig_test_matsim_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_test
+  braunschweig.population.popsim.max_cells: 3000
+  braunschweig.population.popsim.num_workers: 3
+  cache_share_export: false
+  cache_share_recompute: []

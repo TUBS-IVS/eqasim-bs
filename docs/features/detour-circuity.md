@@ -88,10 +88,13 @@ connected component.
 python scripts/calibrate_detour_circuity.py `
     --working-directory eqasim-data/cache_bs_25pct_allfeat `
     --osm-pbf eqasim-data/data/osm/cordon/germany-latest.zgb_ring.osm.pbf `
-    --config config_server_braunschweig_25pct_allfeat_popsim.yml `
+    --config eqasim-data/cache_bs_25pct_allfeat_popsim/.merged_config.yml `
     --walk-route-limit-km 20 --car-route-limit-km 250 `
     --output-dir eqasim-data/data/braunschweig/calibration/detour
 ```
+
+(the composed run writes its exact resolved config to `.merged_config.yml`
+inside its `working_directory`; see `configs/base_bs.yml`.)
 
 Outputs (the committed 25% measurement lives in `calibration/detour/`):
 `detour_circuity_params.csv`, `circuity_convergence_<net>.csv/.png`,
