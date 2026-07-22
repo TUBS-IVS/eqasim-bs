@@ -1,0 +1,27 @@
+## 100% all-features overlay (full region, full pipeline, 0 MATSim iterations).
+## Memory-bound scale: max_cells 750 + num_workers 3 bound the measured 25-30 GB
+## per-worker peak (2026-07-10 OOM post-mortem) to ~90 GB on the 128 GB box.
+working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
+
+run:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.verbindungen_validation
+
+config:
+  sampling_rate: 1.0
+  output_path: eqasim-data/output_bs_100pct_allfeat_popsim
+  analysis_working_directory: eqasim-data/cache_bs_100pct_allfeat_popsim
+  output_prefix: braunschweig_100pct_allfeat_popsim_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat_opt
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  # OPTIMIZED per-control importance weights (control_spec.IMPORTANCE_PROFILES):
+  # lowered the count-weighted Gesamtabweichung 3.365% -> 2.868% on batch_020.
+  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
+  cache_share_export: true
+  cache_share_recompute: []
