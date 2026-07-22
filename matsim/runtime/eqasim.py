@@ -30,6 +30,12 @@ def configure(context):
     # effect on the next run (see validate(), which keys the cache on the source mtime).
     context.config("eqasim_source_path", "")
 
+    # Same synpp per-stage config contract as pt2matsim (issue #229): delegate to the
+    # helpers' own configure() so the declares cannot drift from what git.run /
+    # maven.run actually read.
+    git.configure(context)
+    maven.configure(context)
+
 def run(context, command, arguments):
     # The eqasim stage returns the relative path of the built/provided jar (bavaria
     # legacy clone OR our braunschweig project); use it so this works for both.
