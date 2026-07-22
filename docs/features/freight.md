@@ -31,18 +31,22 @@ The injection is a **three-stage hybrid** (flag-gated; see below):
    (the union of the in-scope municipalities, plus the cordon buffer when
    `cordon_enabled`) on the German-wide network. The tool routes every freight
    trip, classifies it, trims each plan at the study-area boundary and shifts
-   the departure time by the access travel time. The matsim **2025.0-PR3568**
-   build writes **no category attribute** on the output persons (the
-   `geographical_Trip_Type` attribute only exists in later matsim-libs
-   versions -- verified on the real output: all 49 758 extracted trips came
-   back `unknown`), so the stage runs the **unmodified tool once per category**
-   (`--tripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each) and returns
-   `{category: plans_file}` -- the exact published classification, no geometric
-   heuristic (trimmed endpoints lie on network nodes *inside* the polygon, so a
-   point-in-polygon test cannot recover the category). Further verified CLI
-   quirks of this build: the option is `--LegMode` (capital L), there is no
-   `--subpopulation` option (it hard-codes `freight`), and plans/network/output
-   paths must be absolute (the tool NPEs on a bare `--output` filename). This
+   the departure time by the access travel time. The stage runs the
+   **unmodified tool once per category**
+   (`--geographicalTripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each)
+   and returns `{category: plans_file}` -- the exact published classification,
+   no geometric heuristic (trimmed endpoints lie on network nodes *inside* the
+   polygon, so a point-in-polygon test cannot recover the category). The
+   matsim **2026** contrib build (in lockstep with the parent pom's
+   `matsim.version` since the dependency consolidation) also tags each output
+   person with the `geographical_Trip_Type` attribute; the per-category runs
+   remain the canonical partition. Verified CLI contract of this build (via
+   `--help` against the built jar): the options are `--legMode` (was
+   `--LegMode` in 2025.0-PR3568) and `--geographicalTripType` (was
+   `--tripType`); `--subpopulation freight` must be passed explicitly (the
+   tool now defaults to `longDistanceFreight`, the old build hard-coded
+   `freight`); plans/network/output paths must be absolute (the tool NPEs on
+   a bare `--output` filename). This
    stage is **sampling-rate independent** (cached by synpp), so the expensive
    routing runs once and is reused across sampling rates. The local-only inputs
    are validated up front by `braunschweig.data.freight.german_wide`, which

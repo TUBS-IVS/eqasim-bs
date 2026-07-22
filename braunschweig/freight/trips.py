@@ -65,10 +65,10 @@ def parse_freight_trips(plans_path, default_trip_type=None, allow_empty=False):
 
     Each freight person is EXACTLY two activities (start/end) and one leg. The
     start activity carries the departure ``end_time``. The trip category comes
-    from a person attribute when present (newer tool versions); for the
-    per-category extraction outputs (matsim 2025.0-PR3568 writes no category
-    attribute) the caller passes ``default_trip_type`` -- the category the file
-    was extracted with. Without either, rows are labelled ``unknown`` and a
+    from a person attribute when present (the matsim 2026 build writes
+    ``geographical_Trip_Type``; the older 2025.0-PR3568 build wrote no category
+    attribute); in either case the caller passes ``default_trip_type`` -- the
+    category the file was extracted with. Without either, rows are labelled ``unknown`` and a
     warning is emitted (fallback-transparency rule). Raises on an empty file
     unless ``allow_empty`` (a single extraction category may legitimately be
     empty; the caller decides).
