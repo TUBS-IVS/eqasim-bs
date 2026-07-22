@@ -75,6 +75,13 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   `mid_mode_margin_by_bundesland.csv`). DEFERRED on purpose; needs the Java-side ASC loop.
 - **[1.3]** Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed
   `popsim_work_dir` in server configs); verify the completed_donor byte-identity gate test.
+- **[1.4]** #148 KREIS household-control apportionment — PR #176 MERGED (ADR-0062: apportion by
+  household share, not population share; ~5.9% mis-apportionment fixed). Genuinely open follow-up
+  (verified 2026-07-22, not a separate issue by choice): a small resolved-Kreis + household-share
+  A/B rerun on felix to validate the realised within-Kreis effect — still not run.
+- **[1.5]** Fleet-quality realism upgrade — branch `feature/fleet-quality-and-data` (ADR-0051)
+  pushed, unmerged. Needs the server phase (KBA/MiD extraction scripts, canonical pytest, 1% smoke,
+  regenerate 2 stale OFF goldens) then `git pr` merge.
 
 ### TIER 2 — Real model improvements, partial or designed (assess value before building)
 
@@ -86,12 +93,17 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   2026-06-27, `work_building_potentials=True` default).
 - **[2.4]** Education distance-distribution calibration (Phase 2 of the gravity plan).
   PLANNED-ONLY; build only if education trip-length validation shows a gap — measure first.
+- **[2.5]** **#78** — secondary scorer scale-alignment calibration (measure-first follow-up; PR #77
+  / #27 shipped the infra only). Run `calibrate_secondary_scorer.py` on `cache_bs_25pct_allfeat`;
+  pin `attr_transform`/weights only on a measured win vs the OFF baseline; do not raise `pot_weight`.
 
 ### TIER 3 — Deferred-deliberately / future waves (parked with intent, not forgotten)
 
-- **[3.1]** Kreis-level income control as a PopulationSim control (retire the post-hoc
-  overwrite). Tracked as **#108**; spec `docs/superpowers/specs/2026-07-04-income-weighted-
-  household-placement-design.md`.
+- **[3.1]** Kreis-level income control as a PopulationSim control. **#108 L1 MERGED** (PR #112,
+  economic_status × Kreis). **L2 BUILT**, PR pending (branch `worktree-placement-income-l2` @
+  `6a02b6c`, ADR-0069: own-donor income + signature-preserving reallocation; 2-Kreis gate passed).
+  Next: G1/G2 sub-Kreis measurement to gate L3/#110. Spec `docs/superpowers/specs/2026-07-04-
+  income-weighted-household-placement-design.md`.
 - **[3.2]** BASt Dauerzählstellen HGV-count calibration for the injected freight. Future
   external-validation wave.
 - **[3.3]** Real VRB/DELFI GTFS + VRB PT tariff (B2) + MATSim termination/iteration tuning.
@@ -108,6 +120,8 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   Perf only, no OOM risk, deferred.
 - **[4.3]** Config cleanup (**#81**): prune the ~28 root `config_*.yml` to the canonical set
   actually used (target ~8), document each kept config's purpose.
+- **[4.4]** Factor a reusable 1km-cell control-fit smoke test (planned in the PR #173 /
+  `in_ausbildung` control spec, not yet built) — no issue yet.
 
 ### TIER 5 — Drop / do NOT re-attempt (recorded so we don't loop back)
 
