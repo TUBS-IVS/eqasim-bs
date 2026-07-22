@@ -30,7 +30,7 @@ The ``--skip-run`` flag re-analyses from the existing synpp stage cache
 
 For a full re-run with fresh pipeline executions::
 
-    python scripts/gate_income_tilt.py --config-base config_smoke_popsim_mid_mini.yml
+    python scripts/gate_income_tilt.py --config-base configs/fixtures/config_smoke_popsim_mid_mini.yml
 
 The script generates two temporary override config files alongside ``--config-base``
 (``_gate_tilt_off.yml`` and ``_gate_tilt_on.yml``), runs each via ``scripts/run_synpp.py``,
@@ -478,7 +478,7 @@ def run_gate(
     ----------
     base_config:
         Path to the 1-Kreis mini popsim_mid config YAML (e.g.
-        ``config_smoke_popsim_mid_mini.yml``). Tilt flag is overridden.
+        ``configs/fixtures/config_smoke_popsim_mid_mini.yml``). Tilt flag is overridden.
     python_exe:
         Python interpreter (eqasim env).
     cells_100m_path:
@@ -844,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--config-base",
-        default=str(_REPO_ROOT / "config_smoke_popsim_mid_mini.yml"),
+        default=str(_REPO_ROOT / "configs" / "fixtures" / "config_smoke_popsim_mid_mini.yml"),
         help="Base 1-Kreis mini config YAML (tilt flag overridden per run).",
     )
     parser.add_argument(

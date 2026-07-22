@@ -3,8 +3,8 @@
 The project rule is that flag-gated model features default ON in run configs so
 they are not forgotten. The reference feature set is
 config_local_braunschweig_25pct_allfeat.yml (validated all-features 25% run).
-These tests pin the parity flags in config_popsim_mid_braunschweig.yml and
-config_popsim_open_braunschweig.yml:
+These tests pin the parity flags in configs/fixtures/config_popsim_mid_braunschweig.yml and
+configs/fixtures/config_popsim_open_braunschweig.yml:
 
 - education gravity (real NDS schools / Kita / Hochschule),
 - household vehicle fleet (vehicles_method=household + fleet flags),
@@ -26,8 +26,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-MID_CONFIG = REPO_ROOT / "config_popsim_mid_braunschweig.yml"
-OPEN_CONFIG = REPO_ROOT / "config_popsim_open_braunschweig.yml"
+MID_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_popsim_mid_braunschweig.yml"
+OPEN_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_popsim_open_braunschweig.yml"
 
 # The cordon einpendler injection is terminal: it wraps the four MATSim scenario
 # writers. Without these aliases cordon_enabled=true silently does nothing.

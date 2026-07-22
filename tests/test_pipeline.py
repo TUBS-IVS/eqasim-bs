@@ -1,6 +1,6 @@
 """Pipeline-level integration tests for the Braunschweig synthesis pipeline.
 
-These tests drive the real synpp DAG via ``config_dryrun_braunschweig.yml``
+These tests drive the real synpp DAG via ``configs/fixtures/config_dryrun_braunschweig.yml``
 (0.1% sampling, full ``synthesis.output`` target). They are **opt-in**:
 running them requires the full set of input data described in
 ``eqasim-data/DOWNLOAD_CHECKLIST_BS.md`` and is gated on the environment
@@ -24,7 +24,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DRYRUN_CONFIG = REPO_ROOT / "config_dryrun_braunschweig.yml"
+DRYRUN_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_dryrun_braunschweig.yml"
 DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
 BS_DATA_PATH = DATA_PATH / "braunschweig"
 
