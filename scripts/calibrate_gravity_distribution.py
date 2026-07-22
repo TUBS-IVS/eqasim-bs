@@ -12,8 +12,9 @@ and the Furness factors only reshape the within-pair distribution.
 Run (after a 1 % or 25 % synthesis exists in the working directory):
   python scripts/calibrate_gravity_distribution.py \\
     --working-directory eqasim-data/cache_bs_1pct_allfeat_full \\
-    --config config_server_braunschweig_1pct_allfeat_popsim.yml \\
+    --config eqasim-data/cache_bs_1pct_allfeat_popsim/.merged_config.yml \\
     --output-dir eqasim-data/data/braunschweig/calibration/commute
+  # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 
 The actual run-on-cache step is a DEFERRED SERVER STEP: the calibration caches
 (cache_bs_*) are local-only (not committed) and the pipeline depends on synpp;

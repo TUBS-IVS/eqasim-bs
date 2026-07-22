@@ -22,7 +22,13 @@
 
 .PARAMETER Config
     Pipeline config to run on the server.
-    Default: config_server_braunschweig_25pct.yml
+    Default: configs/fixtures/config_local_braunschweig_25pct.yml -- a syntax
+    placeholder only (useful as-is for -CheckOnly). Its former Linux server
+    counterpart (config_server_braunschweig_25pct.yml) was removed as
+    superseded ballast (#230); this fixture differs from it in the osmosis/
+    osmconvert binary paths (Windows here, must be Linux paths on the server)
+    and lacks the cordon_validation run stage. ALWAYS pass an explicit
+    -Config for a real (non -CheckOnly) server run.
 
 .PARAMETER ServerUser
     SSH user on the run server. Default: felix
@@ -40,12 +46,11 @@
     Skip the data sync (use when you only changed code).
 
 .EXAMPLE
-    ./scripts/run_pipeline_on_server.ps1
-    ./scripts/run_pipeline_on_server.ps1 -Config config_dryrun_braunschweig.yml
+    ./scripts/run_pipeline_on_server.ps1 -Config configs/fixtures/config_dryrun_braunschweig.yml
     ./scripts/run_pipeline_on_server.ps1 -CheckOnly
 #>
 param(
-    [string]$Config     = "config_server_braunschweig_25pct.yml",
+    [string]$Config     = "configs/fixtures/config_local_braunschweig_25pct.yml",
     [string]$ServerUser = "felix",
     [string]$ServerHost = "134.169.42.227",
     [string]$RemoteRepo = "~/eqasim-bs",

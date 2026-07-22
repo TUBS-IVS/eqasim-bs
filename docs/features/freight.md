@@ -96,11 +96,13 @@ extraction stage additionally reads `freight_crs` (default EPSG:25832),
 `braunschweig/freight/german-wide-freight-v3/`). The **OFF path**
 (`freight_enabled: false`) is byte-identical to the pre-feature pipeline: no
 freight stages are requested, no injection runs, and the analysis filter is a
-no-op. The committed run configs reflect this -- the two real-data run configs
-(`config_local_braunschweig.yml`, `config_server_braunschweig_100pct.yml`) set
-`freight_enabled: true`; every other `config_*.yml` (dryrun, smoke, popsim,
-intermediate sampling rates) sets `freight_enabled: false` so they never require
-the local-only freight inputs.
+no-op. The committed run configs reflect this -- the composed all-features base
+`configs/base_bs.yml` (config-composition cleanup, #230; applies to every scale
+overlay) and the standalone fixture `configs/fixtures/config_local_braunschweig.yml`
+set `freight_enabled: true` (previously also set on the now-removed
+`config_server_braunschweig_100pct.yml`); every other `configs/fixtures/config_*.yml`
+(dryrun, smoke, popsim, intermediate sampling rates) sets `freight_enabled: false`
+so they never require the local-only freight inputs.
 
 A possible follow-up (NOT done) is to **calibrate the injected freight against
 BASt automatic HGV counts** at the ZGB counting stations (Dauerzaehlstellen), so

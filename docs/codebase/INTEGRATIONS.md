@@ -102,7 +102,7 @@ restrictive: any output depending on MiD 2023 inherits non-commercial use
 ## Evidence
 
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` (sections A–E, bounding box, licence notes)
-- `config_local_braunschweig.yml` (input paths, `vrb_stations_path`, `osmosis_binary`)
+- `configs/fixtures/config_local_braunschweig.yml` (input paths, `vrb_stations_path`, `osmosis_binary`)
 - `environment.yml` (no DB/HTTP-service client libs)
 - `.github/workflows/tests.yml` (Java 17 + Maven + osmosis)
 - `eqasim-data/data/braunschweig/schools/README.md` (Nominatim geocoding)

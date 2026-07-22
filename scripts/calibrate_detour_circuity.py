@@ -24,8 +24,9 @@ Run (server-side only; no cache here):
   python scripts/calibrate_detour_circuity.py \\
     --working-directory eqasim-data/cache_bs_25pct_allfeat \\
     --osm-pbf eqasim-data/osm/niedersachsen.osm.pbf \\
-    --config config_server_braunschweig_25pct_allfeat_popsim.yml \\
+    --config eqasim-data/cache_bs_25pct_allfeat_popsim/.merged_config.yml \\
     --output-dir eqasim-data/data/braunschweig/calibration/detour_circuity
+  # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 """
 from __future__ import annotations
 

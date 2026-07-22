@@ -96,12 +96,13 @@ unpinned import in a `scripts/` geocoder).
   reference `org.eqasim.bavaria.*` entry-point class paths (see CONCERNS.md).
 - External binaries configured per-machine in the config:
   `osmosis_binary`, `osmconvert_binary` (Windows paths in
-  `config_local_braunschweig.yml`).
+  `configs/fixtures/config_local_braunschweig.yml`; Linux paths in
+  `configs/base_bs.yml`).
 
 ## Evidence
 
 - `environment.yml`
-- `config_local_braunschweig.yml` (entry `run:`, `processes`, binaries)
+- `configs/fixtures/config_local_braunschweig.yml` (entry `run:`, `processes`, binaries)
 - `.github/workflows/tests.yml` (Java 17, conda env `ile-de-france`, `pytest tests/`)
 - `README.md` §2 (env), §4 (run command)
 - `AGENTS.md` "Environment", "Day-to-day commands"

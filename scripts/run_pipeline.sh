@@ -6,7 +6,7 @@
 # This is the server-side runner invoked (inside a tmux session) by the Windows
 # orchestrator run_pipeline_on_server.ps1. It can also be called directly:
 #
-#   bash ~/eqasim-bs/scripts/run_pipeline.sh config_server_braunschweig_25pct.yml
+#   bash ~/eqasim-bs/scripts/run_pipeline.sh configs/fixtures/config_local_braunschweig_25pct.yml
 #
 # It writes a timestamped log next to the repo so a run can be followed with
 #   tail -f ~/eqasim-bs/logs/run_*.log
@@ -15,6 +15,12 @@
 #   - conda is installed at $CONDA_ROOT (default ~/miniforge3)
 #   - the conda environment is named "eqasim"
 #   - the working directory is the repository root
+#
+# NOTE: this script forwards exactly ONE config path to `python scripts/run_synpp.py`
+# (below), so it does not yet support the composed base+overlay form (config-
+# composition cleanup, #230; see configs/base_bs.yml). For a composed all-features
+# run, invoke run_synpp.py directly with two arguments instead of this script:
+#   python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 
 set -euo pipefail
 
@@ -22,7 +28,10 @@ REPO_DIR="${EQASIM_REPO_DIR:-$HOME/eqasim-bs}"
 CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
 CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
 
-CONFIG="${1:-config_server_braunschweig_25pct.yml}"
+# Default is a syntax placeholder only (its former Linux server counterpart,
+# config_server_braunschweig_25pct.yml, was removed as superseded ballast, #230);
+# ALWAYS pass an explicit config for a real run.
+CONFIG="${1:-configs/fixtures/config_local_braunschweig_25pct.yml}"
 
 cd "$REPO_DIR"
 

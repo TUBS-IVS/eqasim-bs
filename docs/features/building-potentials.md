@@ -71,15 +71,19 @@ feature stages that redistribute locations.
 | `secondary_scorer_dist_dev_weight` | Weight on the distance-deviation term in the combined scorer (default `1.0`) |
 | `education_building_distribution` | `braunschweig.synthesis.locations.education_gravity` — weighted building draw within the assigned school/facility |
 
-**Run config split.** The five committed real-data run configs
-(`config_local_braunschweig.yml`, `config_server_braunschweig_100pct.yml`,
+**Run config split.** The composed all-features base (`configs/base_bs.yml`,
+combined with any `configs/overlays/*.yml` scale) and the standalone fixture
+`configs/fixtures/config_local_braunschweig.yml` set all four flags to `true`
+and include `building_potentials_path`. (Prior to the config-composition cleanup, #230, this was set individually per
+committed real-data run config -- `config_server_braunschweig_100pct.yml`,
 `config_server_braunschweig_1pct_allfeat_popsim.yml`,
 `config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`config_freight_validate.yml`) set all four flags to `true` and include
-`building_potentials_path`. The local-only (gitignored)
-`config_local_braunschweig_1pct_allfeat_full.yml` also enables the feature
-but is not committed. All other configs set the three boolean flags to `false`
-and omit the path, so the feature is off and no local-only parquet is required.
+`config_freight_validate.yml` -- all now superseded/removed in favour of the
+single composed base.) The local-only
+(gitignored) `config_local_braunschweig_1pct_allfeat_full.yml` also enables
+the feature but is not committed. All other configs set the three boolean
+flags to `false` and omit the path, so the feature is off and no local-only
+parquet is required.
 
 **Aggregate controls are unaffected.** Work-zone totals (GENESIS SvB), OD
 gravity flows, and NDS school enrollment totals remain the authoritative

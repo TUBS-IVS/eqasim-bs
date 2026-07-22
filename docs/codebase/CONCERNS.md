@@ -147,7 +147,7 @@ re-derived here; this file records what the current branch actually shows.
   2023 is BMDV non-commercial**, and the extracted CSVs are derivative works that
   inherit those terms (DOWNLOAD_CHECKLIST_BS.md). Anything committed must respect
   re-distribution rules; urbistat shares are explicitly non-redistributable.
-- **Legacy dead-config keys.** `config_local_braunschweig.yml` still carries
+- **Legacy dead-config keys.** `configs/fixtures/config_local_braunschweig.yml` still carries
   `braunschweig.population_path: …/12111-0001_population_ni.xlsx` and
   `braunschweig.work_flow_path: …/pendler_ni.xlsx` (and `bavaria.buildings_path`-style
   keys described in the checklist) that were read only by now-absent `bavaria/`
@@ -211,7 +211,7 @@ long wall times (README: 25 % run ~10 h).
 - `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`; `ls bavaria` absent
 - `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data` (38 files)
 - `environment.yml` (`name: ile-de-france`); `.github/workflows/tests.yml` (Java 17, branch `develop`)
-- `config_local_braunschweig.yml` (legacy keys, binary paths)
+- `configs/fixtures/config_local_braunschweig.yml` (legacy keys, binary paths)
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` ("Legacy dead-config keys", MiD non-commercial)
 - `docs/codebase/.codebase-scan.txt` (CODE METRICS, production TODOs, high-churn files)
 - `README.md` / `AGENTS.md` (documented branch, bavaria/, bug tracking)
