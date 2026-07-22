@@ -1,5 +1,86 @@
 # Architecture Decision Record (ADR) log — eqasim-bs
 
+## Index (one line per ADR — read the body section only when needed)
+
+| ADR | Date | Title |
+|---|---|---|
+| ADR-0000 | 2025-10-06 | eqasim-bavaria baseline (fork point) |
+| ADR-0001 | 2026-04-27 | Clean regional fork structure (`braunschweig/` + `eqasim_common/`) |
+| ADR-0002 | 2026-06-15 | Three population-synthesis workflows (`population.method`) |
+| ADR-0003 | 2026-06 | Per-commune household-size margin in the IPF |
+| ADR-0004 | 2026-06 | Joint age×household-size margin (#3) |
+| ADR-0005 | 2026-06-04 | Age-aware household composition (#3b) with children-driven capacity |
+| ADR-0006 | 2026-06 | Sex-aware couple pairing (~1.1% same-sex) |
+| ADR-0007 | 2026-06 | Cell-accurate (100m) home placement |
+| ADR-0008 | 2026-06-17 | ALKIS-typed, capacity-aware home matching |
+| ADR-0009 | 2026-06-17 | LoD2 height/volume building typing |
+| ADR-0010 | 2026-06-15 | Income spatial tilt (Nettokaltmiete) — and the zero-rent gate fix |
+| ADR-0011 | 2026-06 | Economic status via Bayes on household-type × region |
+| ADR-0012 | 2026-06 | PT subscription as a categorical 3-margin IPF (MiD P24.1) |
+| ADR-0013 | 2026-06 | Driving licence as a categorical 3-margin IPF (MiD P17.1) |
+| ADR-0014 | 2026-06 | Employment margin raked to GENESIS SvB (not survey P9) |
+| ADR-0015 | 2026-06-16 | Tier-3 Kreis-level PopulationSim controls |
+| ADR-0016 | 2026-06-18 | Per-cell employment grid control (age×sex-resolved 100m) |
+| ADR-0017 | 2026-06 | Income €, income-aware car count, consistent car availability, tenure |
+| ADR-0018 | 2026-06-07 | Reactivated person attributes (couple/studies/single-parent-child) |
+| ADR-0019 | 2026-06-07 | Household vehicle fleet (vs eqasim default car) |
+| ADR-0020 | 2026-06-18 | Fleet internal consistency v2 + income-coupled vehicle age |
+| ADR-0021 | 2026-06 | HSN/TSN scraper for engine attributes |
+| ADR-0022 | 2026-06-08 | Carless routing re-mode (routing/fleet consistency) |
+| ADR-0023 | 2026-06-01 | Per-RegioStaR-7 gravity distance slope |
+| ADR-0024 | 2026-06-03 | Education gravity (real schools / Kita / university) |
+| ADR-0025 | 2026-06-25 | Building-level activity potentials (work/secondary/education) — REPLACE |
+| ADR-0026 | 2026-06-25 | Purpose-resolved secondary distances (Tier 1 + Tier 2 daily/non-daily) |
+| ADR-0027 | 2026-06-26 | External secondary candidates (long-distance trips) |
+| ADR-0028 | 2026-06-02 | Cordon external-demand model — targeted crossing agents with full supply |
+| ADR-0029 | 2026-06-02..06-05 | Einpendler injection with road + PT/Bahnhof gates and mode balancer |
+| ADR-0030 | 2026-06-11 | Long-haul freight injection (german-wide-freight v3, hybrid Java→Python→Java) |
+| ADR-0031 | 2026-06-07 | MiD + population validation reporting |
+| ADR-0032 | 2026-06-23 | Integerizer-quality analysis (per-cell error map) |
+| ADR-0033 | 2026-06-08 | SimWrapper dashboard export (Python emitter + Java contrib) |
+| ADR-0034 | 2026-06-27 | Secondary leisure W12 fix (leisure_correction_factor) |
+| ADR-0035 | 2026-06-25 | Calibration corner (offline tooling, never imported by the runtime) |
+| ADR-0036 | 2026-06-22 | Shared persistent stage-cache (prime-on-launch) |
+| ADR-0037 | 2026-06-22 | Tier-A/B shareable-stage set + fixed popsim work_dir |
+| ADR-0038 | 2026-06 | Own editable `eqasim-java-bs` fork |
+| ADR-0039 | 2026-06 | Urban parking (Braunschweig inner ring) |
+| ADR-0040 | 2026-06-28 | Professionalized PM / tracking layer |
+| ADR-0041 | 2026-06-25 | REJECTED — Pin commute gravity friction factors |
+| ADR-0042 | 2026-06-25 | REJECTED — Distance-dependent detour curve f(d) as default |
+| ADR-0043 | 2026-06-27 | REJECTED — Tune secondary scorer `pot_weight` |
+| ADR-0044 | 2026-06 | REJECTED — Rake employment to MiD P9 |
+| ADR-0045 | 2026-06-15 | REJECTED — Within-Kreis extra income signal beyond the rent tilt |
+| ADR-0046 | 2026-06-24 | REJECTED — PopulationSim importance/expansion calibration framework |
+| ADR-0047 | 2026-06-25 | REJECTED — ATTACH strategy for building potentials (superseded by ADR-0025) |
+| ADR-0048 | 2026-06-28 | Function-aware secondary `other` potential + scorer scale-alignment |
+| ADR-0049 | 2026-06-30 | Wolfsburg commute "misfit" is an unreliable reference, not a model bug; sub-zonal (TAZ) is the real lever |
+| ADR-0050 | 2026-07-01 | TAZ per-RS7 gravity friction: built, then measured unnecessary; commute distribution already fits; validate flag-ON at scale instead |
+| ADR-0052 | n/a | Explicit value_map codes win over the generic MiD nonresponse set (issue #96 fix) |
+| ADR-0053 | n/a | Validate the household_size control on a PERSON basis, not a household count (issue #97 fix) |
+| ADR-0054 | n/a | Placement-based income geography: economic_status × Kreis control (MiD H4), retiring the post-hoc income overwrite (design; Phase 0/1 built, gated) |
+| ADR-0055 | 2026-07-08 | SrV 2023 aggregates use ZENSUS expansion weights; standard weights are stratum-internal |
+| ADR-0056 | 2026-07-10 | Full-pool PopulationSim runs use integer sub-balance seeds + numba (measured 40x; float-seed default is a full-pool trap) |
+| ADR-0057 | 2026-07-12 | Secondary distance distributions rescue MiD coded-time Wege from `wegmin_imp1` instead of dropping them |
+| ADR-0058 | 2026-07-13 | employment_status Phase-0 measured: uncalibrated P_BKAT donor already fits MiD P9 well; do NOT build the Phase-1 soft control |
+| ADR-0059 | 2026-07-13 | Large-HH (6+) validation gap is donor-bound, not weight-fixable; SrV rejected as a donor supplement |
+| ADR-0060 | 2026-07-13/14 | Correct the in_ausbildung over-representation with an SrV+MiD per-Kreis employment_status control (14+) |
+| ADR-0061 | 2026-07-14 | popsim KREIS-control universe hygiene: align per-Kreis targets to the resolved dominant Kreis (#147); complete fallback-transparency (#149/#150) |
+| ADR-0062 | 2026-07-14 | popsim: apportion household-level KREIS controls by household share, not population share (#148) |
+| ADR-0063 | 2026-07-15 | Per-Bundesland commute-mode reference for cross-cordon in-commuters (#129) |
+| ADR-0064 | 2026-07-15 | Archive MATSim `simulation_output/` into a stable run-named location (#156) |
+| ADR-0065 | 2026-07-15 | Sector-aware work-attraction tilt: measured, PARKED (default OFF); two enabling-path bugs fixed (#128) |
+| ADR-0066 | 2026-07-16 | VerBindungen sub-Kreis work-OD reference integrated (#124 P1); svb_wohn production mass measured, default OFF (#132) |
+| ADR-0067 | 2026-07-16 | TAZ sub-zonal work-location choice stays permanently OFF (superseded in practice by building potentials); TAZ issues closed |
+| ADR-0068 | 2026-07-17 | Inner VerBindungen calibration anchor: built, measured, default ON by HUMAN OVERRIDE of the pre-registered gate (#193) |
+| ADR-0069 | 2026-07-18 | placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden |
+
+> **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
+> ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
+> text (unlike every other entry, which states one); marked `n/a` rather than inferred from
+> surrounding entries, per the project's "no invented reference values" rule. ADR numbering in the
+> body is not always chronological (see the numbering-collision notes at/near ADR-0052, ADR-0056,
+> ADR-0067, and ADR-0068); this index is sorted by ADR number for lookup, not by date.
+
 > The retrospective *why* of this project: when each major feature or decision happened,
 > what problem forced it, what was chosen, and the evidence (commit / PR / spec / feature doc)
 > that grounds it. This complements [PROJECT_STATUS.md](../PROJECT_STATUS.md) (the live

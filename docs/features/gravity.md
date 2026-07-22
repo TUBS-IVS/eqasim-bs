@@ -36,6 +36,26 @@ Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 `tests/test_gravity_slope_config.py` (the `None` default / flatten contract).
 
+## VerBindungen sub-Kreis OD validation (#124, MERGED)
+
+`data/verbindungen/*` + `analysis/verbindungen_validation.py` (default-ON run-list
+stage, PR #189/#190) compare the calibrated Gemeinde work OD against the
+VerBindungen 2019 QZM (open data) sub-Kreis destination shares as an
+INDEPENDENT check (not a control; `reference_role` flips to `fit` once the
+inner anchor below is enabled). 100pct baseline (felix `~/wt/verbindungen-ab`):
+check-B weighted TVD 0.137, home-margin correlation r=0.9968, intra-Kreis
+0.4694 vs 0.4687, 2019<->2025 vintage correlation r=0.9984 (ADR-0066).
+
+## svb_wohn work production mass (#132, PARKED default OFF — ADR-0066)
+
+`braunschweig.gravity.work_production_mass` (default `population`) can instead
+scale each Gemeinde's work-trip production mass by its resident
+SvB-am-Wohnort (`svb_wohn`) count rather than raw population. A/B measured
+2026-07-16 against the VerBindungen sub-Kreis OD check above: weighted TVD
+0.1136 -> 0.1137 (negligible) -- the Kreis-level IPF anchor already dominates
+the production-side fit. PARKED; entry points `gravity/production_mass.py`,
+`gravity/model.py`.
+
 ## Sector-aware attraction tilt (PARKED, default OFF — ADR-0065)
 
 `braunschweig.gravity.sector_aware_enabled` (default `False`) tilts the
