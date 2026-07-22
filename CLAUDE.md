@@ -38,7 +38,7 @@ Never push without explicit per-push confirmation (see the git policy below).
 | Data-source pointer | memory (type: reference) or docs/features | — |
 | Feature deep-dive | docs/features/*.md | link from STATUS matrix |
 
-Layer budgets (enforced at /close): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · PROJECT_STATUS.md ≤ 120 lines · PROJECT_BACKLOG.md ≤ 250 lines · SESSION_LOG.md ≤ 10 entries.
+Layer budgets (compaction thresholds, checked only at /close — exceeding one never blocks work; /close simply condenses/archives the file back under its threshold): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · PROJECT_STATUS.md ≤ 150 lines · PROJECT_BACKLOG.md ≤ 250 lines · SESSION_LOG.md ≤ 10 entries.
 
 ## Feature detail
 
