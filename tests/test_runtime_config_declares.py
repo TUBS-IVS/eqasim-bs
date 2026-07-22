@@ -22,14 +22,14 @@ class _RecordingContext:
         self.declared.add(name)
 
 
-def test_pt2matsim_declares_all_helper_binary_options():
+def test_pt2matsim_declares_all_helper_config_options():
     ctx = _RecordingContext()
     pt2matsim.configure(ctx)
     required = {"git_binary",                                   # git.run
                 "maven_binary", "maven_skip_tests", "java_home",  # maven.run
                 "java_binary", "java_memory"}                   # java.run
     assert required <= ctx.declared, (
-        f"pt2matsim.configure misses declares: {sorted(required - ctx.declared)}")
+        f"pt2matsim.configure missing declarations: {sorted(required - ctx.declared)}")
 
 
 def test_eqasim_declares_git_and_maven_helper_options():
@@ -37,4 +37,4 @@ def test_eqasim_declares_git_and_maven_helper_options():
     eqasim.configure(ctx)
     required = {"git_binary", "maven_binary", "maven_skip_tests", "java_home"}
     assert required <= ctx.declared, (
-        f"eqasim.configure misses declares: {sorted(required - ctx.declared)}")
+        f"eqasim.configure missing declarations: {sorted(required - ctx.declared)}")

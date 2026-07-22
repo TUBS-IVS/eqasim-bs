@@ -204,3 +204,53 @@ measured uncertainty (not by preference), an S2-A validation refresh, and a 1-Kr
 end-to-end smoke test of the `popsim_mid` stage with all five controls (including
 `trip_class`) active (still pending a server run; the unit/integration test suite is green
 locally).
+
+## Placement income L2 (#108, MERGED — ADR-0069)
+
+`braunschweig.population.popsim.placement_income` (default ON, PR #212 merged
+2026-07-18) replaces the post-hoc income redraw (`income_kreis_control`) with
+an own-donor mechanism: each synthesized household keeps a seeded
+within-own-bracket draw of its OWN MiD donor's income, and the per-Kreis INKAR
+relativity is instead APPROACHED by permuting which real donors sit in which
+Kreis, strictly inside exact control-signature groups. When ON it overrides
+BOTH `income_kreis_control` and `income_spatial_tilt` (logged); OFF is
+byte-identical to the pre-L2 path. A 2-Kreis OFF/ON gate (Salzgitter 03102 +
+Wolfsburg 03103, 1%, real data) found invariants unchanged (max|delta|=0),
+income<->car-ownership coherence improved within (Kreis, status)
+(0.174 -> 0.364), and an honest attainment trade: the redraw hit the INKAR
+mean more exactly (+0.8%/+0.5%) while placement only approaches it
+(+4.7%/-3.1%, 52% of households have no signature-preserving freedom to move).
+Entry points: `braunschweig/popsim/placement_income.py`, `popsim/stage.py`;
+gate harness `scripts/gate_placement_income.py`. See ADR-0069 in
+`docs/DECISIONS.md` and spec `docs/superpowers/specs/2026-07-04-income-
+weighted-household-placement-design.md`.
+
+## SrV-anchored trip-participation controls (#224, MERGED — PR #225)
+
+Four hard, person-level per-Kreis `KreisAttributeControl` entries pull the
+MiD-donor population toward the SrV 2023 regional travel-PARTICIPATION levels
+(the MiD<->SrV gap is participation, not trip length -- distances already
+match MiD, mode is re-simulated in MATSim): the existing `trip_class` control
+promoted from soft to hard (pins the Mobilitaetsquote via `trips_0`), plus
+three new controls -- `work_participation`, `leisure_participation`,
+`education_participation` -- each derived via `attributes.map_participation`
++ `mid.derive_participation_seed` (803/804 diary non-response imputed within
+`alter_gr1`, same pattern as `trip_class`). Wolfsburg (not covered by SrV)
+uses the SrV region total. Flag-gated, default ON, OFF path byte-identical
+(verified).
+
+Felix control-smoke (Kreis 03101, ~252k persons, all four controls hard):
+PopulationSim converges (97.2% integerizer optimal, 2.8% infeasible -- not
+over-constrained); N_eff cost 0.86% -> 0.62%. Realised vs SrV target, ON vs
+OFF (percentage-point gap closed): leisure 22.8 -> 37.7 vs target 41.8
+(78% closed), education 9.3 -> 15.8 vs 17.6 (78%), mobility 78.0 -> 84.4 vs
+90.0 (53%), work 29.0 -> 30.6 vs 34.4 (30%). An importance sweep (2000 ->
+20000, 10x) showed the residual gap is FLAT under reweighting -- it is
+donor/feasibility-bound (work-trip-havers are demographically skewed: more
+full-time/male, less home-office, so raising their weight would break the
+hard demographic margins), not a weighting problem; full attainment needs a
+donor-side fix (SrV-based trip chains), tracked as a follow-up. ~5-8pp of the
+mobility gap is a documented SrV-vs-MiD survey-method offset (see `trip_class`
+above). Entry points: `braunschweig/popsim/kreis_attribute_control.py`,
+`data/mid/attributes.py` (`map_participation`), analysis
+`analysis/population_validation/participation_fit.py`.
