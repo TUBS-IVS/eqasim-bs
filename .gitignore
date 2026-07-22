@@ -130,6 +130,7 @@ quality/
 .github/skills/
 /memories/
 SESSION_LOG.md
+docs/archive/SESSION_LOG_*.md
 .claude/
 
 # One-time school geocoder caches (not pipeline inputs, machine-local only).
