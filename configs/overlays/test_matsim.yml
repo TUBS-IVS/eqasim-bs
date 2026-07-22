@@ -16,7 +16,11 @@ config:
   output_prefix: braunschweig_test_matsim_
   matsim_last_iteration: 0
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_test
-  braunschweig.population.popsim.max_cells: 3000
+  # 750 (was 3000): a single Kreis (03101 = Braunschweig city) is dense (~137k HH),
+  # so at 3000 cells/batch the per-batch pipeline.h5 grew to ~23 GB and overflowed
+  # HDF5's VLArray on write (OverflowError). 750 is the value the 100% run uses on
+  # every Kreis incl. 03101 (~9 GB h5, and smaller still under the int-seed regime).
+  braunschweig.population.popsim.max_cells: 750
   braunschweig.population.popsim.num_workers: 3
   cache_share_export: false
   cache_share_recompute: []
