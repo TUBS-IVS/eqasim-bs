@@ -117,3 +117,26 @@ def test_aliases_present_in_composed_config(overlay):
     doc = _cfg(overlay)
     assert doc["aliases"]["data.census.filtered"] == "braunschweig.popsim.stage"
     assert doc["aliases"]["matsim.simulation.prepare"] == "braunschweig.matsim.simulation.prepare"
+
+
+def test_base_config_is_free_of_per_scale_keys():
+    """The base MUST NOT carry any per-scale key -- those live only in overlays.
+    A per-scale key re-introduced into the base would let a scale silently inherit
+    it (drift) instead of the overlay owning it; this locks the feature's anti-drift
+    guarantee at the source, not just at the resolved (base+overlay) config."""
+    import yaml
+    with open(BASE, encoding="utf-8") as f:
+        base = yaml.safe_load(f)
+    assert "working_directory" not in base, "base must not set working_directory (overlay-only)"
+    assert "run" not in base, "base must not set run (overlay-only)"
+    cfg = base.get("config", {})
+    per_scale_keys = [
+        "sampling_rate", "output_path", "analysis_working_directory", "output_prefix",
+        "matsim_last_iteration", "cache_share_export", "cache_share_recompute",
+        "braunschweig.population.popsim.work_dir",
+        "braunschweig.population.popsim.max_cells",
+        "braunschweig.population.popsim.num_workers",
+        "braunschweig.population.popsim.importance_profile",
+    ]
+    leaked = [k for k in per_scale_keys if k in cfg]
+    assert not leaked, f"per-scale keys leaked into base_bs.yml (belong in overlays): {leaked}"
