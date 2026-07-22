@@ -12,10 +12,13 @@ def configure(context):
     context.config("matsim_last_iteration", 1)
     context.config("matsim_write_events_interval", 0)
     context.config("matsim_write_plans_interval", 0)
-    # Optional MATSim SimWrapper dashboards (network volumes, mode share, trips).
-    # Default off so the run is byte-identical; turning it on passes
-    # --simwrapper true to org.eqasim.braunschweig.RunSimulation.
-    context.config("simwrapper_dashboards", False)
+    # MATSim SimWrapper dashboards (network volumes, mode share, trips), written
+    # by the Java SimWrapperModule into the simulation output directory. Default
+    # ON per the project feature-flag policy (analysis-only module: simulation
+    # results are unaffected, the run gains dashboard files). Set false for a
+    # byte-identical output directory; passes --simwrapper to
+    # org.eqasim.braunschweig.RunSimulation either way.
+    context.config("simwrapper_dashboards", True)
     context.config("processes")
     # MATSim thread counts, decoupled from the (memory-bound) synthesis worker
     # count. global.numberOfThreads (routing / replanning / scoring between
