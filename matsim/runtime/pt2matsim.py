@@ -15,14 +15,11 @@ def configure(context):
 
     # synpp scopes config per stage: execute() may only read options THIS stage's
     # configure() declared (issue #229; "Config option git_binary is not requested").
-    # Declare the options read via the git.run / maven.run / java.run helpers below,
-    # with the helpers' own defaults.
-    context.config("git_binary", "git")
-    context.config("maven_binary", "mvn")
-    context.config("maven_skip_tests", False)
-    context.config("java_home", "")
-    context.config("java_binary", "java")
-    context.config("java_memory", "50G")
+    # Delegate to the helpers' own configure() so the declares cannot drift from the
+    # options git.run / maven.run / java.run actually read.
+    git.configure(context)
+    maven.configure(context)
+    java.configure(context)
 
 def run(context, command, arguments, vm_arguments=[]):
     version = context.config("pt2matsim_version")
