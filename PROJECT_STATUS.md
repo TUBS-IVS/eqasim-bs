@@ -92,7 +92,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 No open PRs (`gh pr list --repo TUBS-IVS/eqasim-bs --state open`, verified 2026-07-22 — empty). 19 local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
 
 - `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
-- `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog #1, server phase + PR pending.
+- `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
 - `worktree-feature+popsim-validation-stage` — PopSim control-fit validation stage, server pytest + smoke pending.
 - `worktree-fix+gravity-calib-popsim-mid` — gravity calibration popsim_mid fix, committed, not pushed.
 - `feature/taz-gravity-calibration` (worktree `feature+taz-gravity-calibration`) — TAZ friction, parked backup only (ADR-0067, TAZ stays OFF).

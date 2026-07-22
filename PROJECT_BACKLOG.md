@@ -100,9 +100,9 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 ### TIER 3 — Deferred-deliberately / future waves (parked with intent, not forgotten)
 
 - **[3.1]** Kreis-level income control as a PopulationSim control. **#108 L1 MERGED** (PR #112,
-  economic_status × Kreis). **L2 BUILT**, PR pending (branch `worktree-placement-income-l2` @
-  `6a02b6c`, ADR-0069: own-donor income + signature-preserving reallocation; 2-Kreis gate passed).
-  Next: G1/G2 sub-Kreis measurement to gate L3/#110. Spec `docs/superpowers/specs/2026-07-04-
+  economic_status × Kreis); **L2 MERGED** (PR #212, ADR-0069: own-donor income +
+  signature-preserving reallocation; 2-Kreis gate passed).
+  Open: G1/G2 sub-Kreis measurement to gate L3/#110. Spec `docs/superpowers/specs/2026-07-04-
   income-weighted-household-placement-design.md`.
 - **[3.2]** BASt Dauerzählstellen HGV-count calibration for the injected freight. Future
   external-validation wave.

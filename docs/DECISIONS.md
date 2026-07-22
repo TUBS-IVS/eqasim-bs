@@ -74,7 +74,7 @@
 | ADR-0068 | 2026-07-17 | Inner VerBindungen calibration anchor: built, measured, default ON by HUMAN OVERRIDE of the pre-registered gate (#193) |
 | ADR-0069 | 2026-07-18 | placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden |
 
-> **Index notes (traceable, not invented):** ADR-0051 is reserved (not assigned; see the note before
+> **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
 > ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
 > text (unlike every other entry, which states one); marked `n/a` rather than inferred from
 > surrounding entries, per the project's "no invented reference values" rule. ADR numbering in the
