@@ -2,7 +2,7 @@
 
 ## Project context
 
-This project uses MATSim and eqasim for scientific transport simulation research. Treat the codebase as research software: correctness, reproducibility, traceability, clarity, and maintainability outrank quick but fragile solutions. Follow the style and structure of MATSim and eqasim as closely as possible; implementations must be professional, modular, documented, and suitable for scientific use.
+MATSim + eqasim scientific transport-simulation research. Treat the codebase as research software: correctness, reproducibility, traceability, clarity, and maintainability outrank quick but fragile solutions. Follow MATSim/eqasim style and structure closely; implementations must be professional, modular, documented, and suitable for scientific use.
 
 ## Project navigation & status (read this first)
 
@@ -38,11 +38,11 @@ Never push without explicit per-push confirmation (see the git policy below).
 | Data-source pointer | memory (type: reference) or docs/features | — |
 | Feature deep-dive | docs/features/*.md | link from STATUS matrix |
 
-Layer budgets (enforced at /close): CLAUDE.md ≤ 12 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · PROJECT_STATUS.md ≤ 120 lines · PROJECT_BACKLOG.md ≤ 250 lines · SESSION_LOG.md ≤ 10 entries.
+Layer budgets (enforced at /close): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · PROJECT_STATUS.md ≤ 120 lines · PROJECT_BACKLOG.md ≤ 250 lines · SESSION_LOG.md ≤ 10 entries.
 
 ## Feature detail
 
-Deep per-feature documentation (data sources, flags, references, assumptions) lives in `docs/features/*.md` and is indexed, with current status, from the `PROJECT_STATUS.md` feature matrix. Per "Fact ownership" below, feature existence/status/location is owned by the STATUS matrix and each deep-dive by its `docs/features/` page; go to the STATUS matrix for the per-feature links (gravity, education/university gravity, household synthesis, regional control targets, MiD reference tables, building potentials, secondary distances, detour/circuity, student in-commuters, freight, cache-share, calibration corner, run analysis + SimWrapper dashboards).
+Deep per-feature documentation (data sources, flags, references, assumptions) lives in `docs/features/*.md` and is indexed, with current status, from the `PROJECT_STATUS.md` feature matrix. Per "Fact ownership" above, feature existence/status/location is owned by the STATUS matrix and each deep-dive by its `docs/features/` page; go to the STATUS matrix for the per-feature links (gravity, education/university gravity, household synthesis, regional control targets, MiD reference tables, building potentials, secondary distances, detour/circuity, student in-commuters, freight, cache-share, calibration corner, run analysis + SimWrapper dashboards).
 
 ## Language policy
 
@@ -67,65 +67,51 @@ German may only be used in external text outputs when explicitly requested. Code
 
 ## General coding principles
 
-Write code that is correct, reproducible, efficient, traceable, easy to review, easy to maintain, scientifically defensible, and consistent with the existing project structure.
-
-Do not write clever code when clear code is possible. Do not introduce unnecessary abstraction. Do not duplicate logic. Do not silently change behavior. Do not remove existing functionality unless explicitly requested. Do not invent data assumptions; if an assumption is required, document it clearly.
+Write code that is correct, reproducible, efficient, traceable, easy to review, easy to maintain, scientifically defensible, and consistent with the existing project structure. Do not: write clever code when clear code is possible; introduce unnecessary abstraction; duplicate logic; silently change behavior; remove existing functionality unless explicitly requested; invent data assumptions (if an assumption is required, document it clearly).
 
 ## MATSim and eqasim style
 
-Follow MATSim and eqasim conventions where applicable. Use Java naming conventions: classes and interfaces `UpperCamelCase`; methods and variables `lowerCamelCase`; constants `UPPER_CASE_WITH_UNDERSCORES`; package names lowercase; avoid abbreviations unless they are established domain terms.
-
-Use braces consistently, also for single-line `if`, `else`, `for`, and `while` blocks. Prefer readable lines; lines up to 132 characters are acceptable when this improves readability. Keep code ASCII only where possible, especially in identifiers and string constants.
+Follow MATSim and eqasim conventions where applicable. Java naming: classes/interfaces `UpperCamelCase`, methods/variables `lowerCamelCase`, constants `UPPER_CASE_WITH_UNDERSCORES`, packages lowercase; avoid abbreviations unless they are established domain terms. Use braces consistently, also for single-line `if`/`else`/`for`/`while` blocks. Prefer readable lines; up to 132 characters is acceptable when it improves readability. Keep code ASCII only where possible, especially in identifiers and string constants.
 
 ## Java version and dependencies
 
-Use the Java version required by the active MATSim version. Do not add new dependencies unless they are clearly justified. Before adding one, check whether the task can be solved with standard Java, MATSim utilities, existing project utilities, or existing eqasim components. Document every new dependency and why it is needed.
+Use the Java version required by the active MATSim version. Do not add new dependencies unless clearly justified; before adding one, check whether the task can be solved with standard Java, MATSim utilities, existing project utilities, or existing eqasim components. Document every new dependency and why it is needed.
 
 ## Architecture
 
-Prefer small, focused classes; each class should have one clear responsibility. Keep these concerns separate: input parsing, scenario preparation, configuration, simulation execution, analysis, output writing, validation, and visualization preparation.
-
-Avoid mixing analysis logic with simulation setup. Avoid mixing file system logic with domain logic. Avoid global mutable state. Use dependency injection where it is already used by MATSim or eqasim. Keep MATSim modules, config groups, bindings, and analysis components cleanly separated.
+Prefer small, focused classes, each with one clear responsibility. Keep these concerns separate: input parsing, scenario preparation, configuration, simulation execution, analysis, output writing, validation, visualization preparation. Do not mix analysis logic with simulation setup, or file-system logic with domain logic. Avoid global mutable state. Use dependency injection where MATSim or eqasim already does. Keep MATSim modules, config groups, bindings, and analysis components cleanly separated.
 
 ## Configuration
 
-All relevant parameters must be configurable. Do not hard code paths, thresholds, random seeds, scenario names, modes, CRS definitions, or calibration parameters unless there is a strong reason. Prefer explicit configuration objects over scattered constants.
-
-Every configuration option should have a clear name, a documented meaning, a default value where reasonable, a unit if applicable, and a valid range if applicable. Use descriptive, unit-bearing names (e.g. `maximumTransferDistanceMeters`, `randomSeed`); avoid unclear names (e.g. `tmp`, `value1`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#configuration-names).
+All relevant parameters must be configurable. Do not hard code paths, thresholds, random seeds, scenario names, modes, CRS definitions, or calibration parameters unless there is a strong reason; prefer explicit configuration objects over scattered constants. Every option should have a clear name, documented meaning, default value where reasonable, unit if applicable, and valid range if applicable. Use descriptive, unit-bearing names (e.g. `maximumTransferDistanceMeters`, `randomSeed`); avoid unclear names (e.g. `tmp`, `value1`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#configuration-names).
 
 ## Paths and file handling
 
-Use explicit and reproducible paths; do not rely on hidden working-directory assumptions. Validate that required input files exist before processing and fail early with clear error messages when inputs are missing or invalid (see "Error handling", "Validation and quality control"). Create output directories explicitly. Never overwrite important outputs silently; if overwriting is allowed, make it explicit in the configuration or log output.
+Use explicit, reproducible paths; do not rely on hidden working-directory assumptions. Validate that required input files exist before processing and fail early with clear error messages when inputs are missing or invalid (see "Error handling", "Validation and quality control"). Create output directories explicitly. Never overwrite important outputs silently; if overwriting is allowed, make it explicit in the config or log output.
 
 ## Scientific reproducibility
 
-Every simulation or analysis run should be reproducible. Whenever possible, log: scenario name; run identifier; git commit hash if available; MATSim version; eqasim version if applicable; Java version; random seed; config file path; input file paths; output directory; main parameter values; start and end time; runtime; and the number of agents, links, facilities, vehicles, carriers, or shipments where relevant.
-
-Do not use random processes without an explicit random seed. If deterministic behavior cannot be guaranteed, document why.
+Every run should be reproducible. Whenever possible log: scenario name, run identifier, git commit hash if available, MATSim version, eqasim version if applicable, Java version, random seed, config file path, input file paths, output directory, main parameter values, start and end time, runtime, and the number of agents/links/facilities/vehicles/carriers/shipments where relevant. Do not use random processes without an explicit random seed; if deterministic behavior cannot be guaranteed, document why.
 
 ## Data provenance
 
-All generated data must be traceable. When producing derived files, document which input files were used, which filters were applied, which assumptions were made, which coordinate reference system was used, which aggregation level was used, which time period was represented, and which software step generated the file.
-
-Do not create output files with ambiguous names. Prefer descriptive names (e.g. `population_hanover_2025_sample_0.10.xml.gz`); avoid ambiguous names (e.g. `output.csv`, `final.csv`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#data-provenance-filenames).
+All generated data must be traceable. For derived files, document the input files used, filters applied, assumptions made, coordinate reference system, aggregation level, time period represented, and software step that generated the file. Do not create output files with ambiguous names: prefer descriptive names (e.g. `population_hanover_2025_sample_0.10.xml.gz`), avoid ambiguous ones (e.g. `output.csv`, `final.csv`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#data-provenance-filenames).
 
 ## Documentation
 
-Write concise but useful documentation. Document public classes and public methods with JavaDoc when their purpose is not obvious; JavaDoc should explain what the class/method does, its assumptions, expected input data, produced output, units used, and whether it has side effects. Do not write comments that only repeat the code (see "Comments and JavaDoc style").
+Write concise but useful documentation. Document public classes and methods with JavaDoc when their purpose is not obvious; JavaDoc should explain what it does, its assumptions, expected input data, produced output, units used, and whether it has side effects. Do not write comments that only repeat the code (see "Comments and JavaDoc style").
 
 ## Logging
 
-Use structured and meaningful logging that helps with debugging and scientific traceability. Log important processing steps, not every minor operation. Use appropriate log levels: `info` for major processing steps, `warn` for recoverable problems or assumptions, `error` for failures, `debug` for detailed diagnostics. Do not use `System.out.println` in production code.
+Use structured, meaningful logging that helps debugging and scientific traceability. Log important processing steps, not every minor operation. Levels: `info` for major steps, `warn` for recoverable problems or assumptions, `error` for failures, `debug` for detailed diagnostics. Do not use `System.out.println` in production code.
 
 ## Error handling
 
-Fail early when input data is invalid. Use clear exception messages that explain what failed, which input caused the problem, why the value is invalid, and how to fix it if obvious. Do not swallow exceptions silently. Do not catch broad exceptions unless there is a clear reason. Do not continue after invalid input if this can compromise scientific results.
+Fail early when input data is invalid. Use clear exception messages that explain what failed, which input caused it, why the value is invalid, and how to fix it if obvious. Do not swallow exceptions silently. Do not catch broad exceptions unless there is a clear reason. Do not continue after invalid input if this can compromise scientific results.
 
 ## Validation and quality control
 
-Every relevant processing step should include plausibility checks. Add validation for: missing files; empty datasets; invalid coordinates; invalid CRS definitions; negative travel times, distances, or demand values; invalid mode names, activity types, or vehicle capacities; invalid carrier or shipment identifiers; inconsistent totals after aggregation; and unexpected changes in population size or demand totals.
-
-For scientific workflows, report validation results in a dedicated summary file where appropriate.
+Every relevant processing step should include plausibility checks. Add validation for: missing files, empty datasets, invalid coordinates, invalid CRS definitions, negative travel times/distances/demand values, invalid mode names/activity types/vehicle capacities, invalid carrier or shipment identifiers, inconsistent totals after aggregation, and unexpected changes in population size or demand totals. For scientific workflows, report validation results in a dedicated summary file where appropriate.
 
 ## Fallback transparency (no silent fallbacks) — MANDATORY
 
@@ -193,25 +179,23 @@ overstate results").
 
 ## Tests
 
-Add tests for non trivial logic. Prefer small unit tests for data transformations, filtering rules, assignment logic, cost calculations, aggregation logic, routing helper logic, and validation checks. Use integration tests when testing MATSim scenario setup or full pipeline behavior. Tests must be deterministic. Use small synthetic test data where possible; do not rely on large external datasets in unit tests.
+Add tests for non trivial logic. Prefer small unit tests for data transformations, filtering rules, assignment logic, cost calculations, aggregation logic, routing helper logic, and validation checks. Use integration tests for MATSim scenario setup or full pipeline behavior. Tests must be deterministic. Use small synthetic test data where possible; do not rely on large external datasets in unit tests.
 
 ## Performance
 
-Efficiency matters, but correctness comes first. Avoid unnecessary nested loops over large MATSim populations, links, events, carriers, or shipments. Use maps, sets, indexes, and spatial indexes where appropriate. Avoid repeated file reads and repeated route calculations when caching is safe; document caching behavior clearly. Be careful with memory usage when processing large event files, populations, networks, or freight scenarios, and prefer streaming approaches for large files when possible.
+Efficiency matters, but correctness comes first. Avoid unnecessary nested loops over large MATSim populations, links, events, carriers, or shipments. Use maps, sets, indexes, and spatial indexes where appropriate. Avoid repeated file reads and repeated route calculations when caching is safe; document caching behavior clearly. Watch memory usage with large event files, populations, networks, or freight scenarios, and prefer streaming for large files when possible.
 
 ## MATSim specific rules
 
-Use MATSim APIs instead of manually parsing MATSim XML files unless there is a clear reason. Keep MATSim config handling explicit and reproducible. Do not silently modify MATSim config values. When modifying a MATSim scenario, clearly separate config creation, scenario loading, scenario modification, controller setup, module installation, simulation execution, and post processing.
-
-Use established MATSim concepts correctly: Scenario, Config, Controler, Population, Network, ActivityFacility, Vehicle, Carrier, Plan, Leg, Activity, Events. Do not create custom replacements for standard MATSim functionality unless required.
+Use MATSim APIs instead of manually parsing MATSim XML files unless there is a clear reason. Keep MATSim config handling explicit and reproducible; do not silently modify MATSim config values. When modifying a scenario, clearly separate config creation, scenario loading, scenario modification, controller setup, module installation, simulation execution, and post processing. Use established MATSim concepts correctly (Scenario, Config, Controler, Population, Network, ActivityFacility, Vehicle, Carrier, Plan, Leg, Activity, Events); do not create custom replacements for standard MATSim functionality unless required.
 
 ## eqasim specific rules
 
-Follow the pipeline logic and structure used by eqasim where applicable. Keep scenario generation, population synthesis, simulation setup, and analysis steps modular. Prefer reproducible pipeline stages over one-off scripts. If adapting logic from eqasim examples, keep the structure understandable and document the adaptation. Do not copy code blindly; adapt it to the project context and explain relevant assumptions.
+Follow the eqasim pipeline logic and structure where applicable. Keep scenario generation, population synthesis, simulation setup, and analysis steps modular. Prefer reproducible pipeline stages over one-off scripts. When adapting logic from eqasim examples, keep the structure understandable and document the adaptation. Do not copy code blindly; adapt it to the project context and explain relevant assumptions.
 
 ## Geospatial processing
 
-Always document the coordinate reference system. Use metric projected coordinate systems for distance-based calculations; do not calculate metric distances in WGS84 longitude and latitude coordinates. Validate geometry validity before spatial operations where relevant. Document buffer distances and spatial thresholds in meters, using explicit names (e.g. `maximumStopAccessDistanceMeters`). Full example list: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#geospatial-threshold-names).
+Always document the coordinate reference system. Use metric projected coordinate systems for distance-based calculations; never compute metric distances in WGS84 longitude/latitude coordinates. Validate geometry validity before spatial operations where relevant. Document buffer distances and spatial thresholds in meters, using explicit names (e.g. `maximumStopAccessDistanceMeters`). Full example list: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#geospatial-threshold-names).
 
 ## Units
 
@@ -219,37 +203,23 @@ Always make units explicit in variable names, method names, documentation, and o
 
 ## Output tables
 
-Output tables must be readable, documented, and stable. Column names should be explicit and consistent. Use snake_case for CSV column names (e.g. `person_id`, `departure_time_seconds`, `distance_meters`); full example list: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#output-table-column-names-snake_case). Do not mix naming styles in one file. Do not rename columns without updating downstream code and documentation.
+Output tables must be readable, documented, and stable, with explicit, consistent column names. Use snake_case for CSV column names (e.g. `person_id`, `departure_time_seconds`, `distance_meters`); full example list: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#output-table-column-names-snake_case). Do not mix naming styles in one file. Do not rename columns without updating downstream code and documentation.
 
 ## Research reporting
 
-When generating analysis outputs, include enough information to reproduce the result. Every figure or table should be traceable to its input data, scenario, processing script, parameters, and date or run identifier.
-
-Do not overstate results. Use cautious scientific language. Report limitations where relevant. Distinguish clearly between observed data, modeled data, assumptions, and derived indicators.
+When generating analysis outputs, include enough information to reproduce the result: every figure or table should be traceable to its input data, scenario, processing script, parameters, and date or run identifier. Do not overstate results; use cautious scientific language and report limitations where relevant. Distinguish clearly between observed data, modeled data, assumptions, and derived indicators.
 
 ## Code changes
 
-Before changing code, understand the existing structure. Make minimal necessary changes. Preserve existing behavior unless a behavior change is explicitly requested. When making a change, consider: does this break reproducibility? change scientific results? affect previous outputs? require a test? require documentation? require a configuration option?
+Before changing code, understand the existing structure. Make minimal necessary changes. Preserve existing behavior unless a behavior change is explicitly requested. For each change, consider: does it break reproducibility? change scientific results? affect previous outputs? require a test? require documentation? require a configuration option?
 
 ## Refactoring
 
-Refactoring is allowed when it improves clarity, maintainability, or performance. Do not refactor large unrelated parts of the codebase while solving a specific issue. Keep refactoring behavior preserving unless explicitly requested. If behavior changes, document the change clearly.
+Refactoring is allowed when it improves clarity, maintainability, or performance. Do not refactor large unrelated parts of the codebase while solving a specific issue. Keep refactoring behavior-preserving unless explicitly requested; if behavior changes, document it clearly.
 
 ## Comments and JavaDoc style
 
-Comments must be written in English. Use comments to explain why something is done, not only what is done. Prefer precise technical language.
-
-Avoid vague comments:
-
-```java
-// Handle data.
-```
-
-Prefer specific comments:
-
-```java
-// Remove shipments without valid zone assignment because they cannot be assigned to a carrier service area.
-```
+Comments must be written in English. Use comments to explain why something is done, not only what is done; prefer precise technical language. Avoid vague comments (`// Handle data.`); prefer specific ones (`// Remove shipments without valid zone assignment because they cannot be assigned to a carrier service area.`).
 
 ## Naming examples
 
@@ -271,15 +241,15 @@ PRs, and the Project board live on the fork only. The canonical feature workflow
 ties this together (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr`
 -> record) is documented in `CONTRIBUTING.md`.
 
-Keep commits focused. Commit messages must be in English and explain the change and its purpose. Use clear messages (e.g. `Add validation for missing freight carrier capacities`); avoid unclear messages (e.g. `fix`, `update`, `changes`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#commit-message-examples).
+Keep commits focused. Commit messages must be in English and explain the change and its purpose: use clear messages (e.g. `Add validation for missing freight carrier capacities`), avoid unclear ones (e.g. `fix`, `update`, `changes`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#commit-message-examples).
 
 ## Review checklist
 
-Before considering a task complete, check: the code compiles; all names, comments, and JavaDoc are in English; units are explicit; assumptions are documented; paths are configurable; random seeds are controlled; outputs are traceable; input files are validated; relevant tests are added or updated; logs are useful; the code is consistent with MATSim and eqasim style; the solution is efficient enough for large simulation datasets; the result is scientifically defensible; and the documentation is sufficient for another researcher to understand the workflow.
+Before considering a task complete, check: code compiles; all names, comments, and JavaDoc in English; units explicit; assumptions documented; paths configurable; random seeds controlled; outputs traceable; input files validated; relevant tests added or updated; logs useful; code consistent with MATSim/eqasim style; solution efficient enough for large simulation datasets; result scientifically defensible; documentation sufficient for another researcher to understand the workflow.
 
 ## Preferred response behavior for Claude
 
-When modifying code, first inspect the surrounding code and project structure. Do not guess APIs if the relevant code can be inspected. Do not invent missing classes, methods, or dependencies. If information is missing, state the uncertainty clearly. When suggesting changes, explain the reason briefly. When producing code, provide complete and consistent code, not isolated fragments, unless a fragment is explicitly requested. When a task affects scientific results, explicitly state whether the change may alter outputs. When implementing performance improvements, explain the expected performance benefit and any trade off.
+When modifying code, first inspect the surrounding code and project structure. Do not guess APIs if the relevant code can be inspected. Do not invent missing classes, methods, or dependencies. If information is missing, state the uncertainty clearly. When suggesting changes, explain the reason briefly. Produce complete, consistent code, not isolated fragments, unless a fragment is explicitly requested. When a task affects scientific results, explicitly state whether the change may alter outputs. For performance improvements, explain the expected benefit and any trade off.
 
 ## Non negotiable rules
 
