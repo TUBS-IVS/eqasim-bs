@@ -86,10 +86,11 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Infra]** Parallel chainsolvers | 🟢 | `chainsolvers.parallel` / `.processes` | — | `synthesis/locations/secondary_chainsolvers` |
 | **[Infra]** Mode choice | ⚪ OFF in all configs (no modal-split target) | `mode_choice: false` | — | eqasim core |
 | **[Infra]** MATSim output archive (run-named durable copy) | ✅ PR #181 MERGED (ADR-0064) | `archive_matsim_output` (true) | — | `matsim/output.py` |
+| **[Infra]** Run-config composition (base + per-scale overlay) | 🟢 PR #234 OPEN (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
 
 ## 3. Branches & PRs
 
-No open PRs (`gh pr list --repo TUBS-IVS/eqasim-bs --state open`, verified 2026-07-22 — empty). 19 local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+**1 open PR:** [#234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) — config composition + cleanup (closes #81/#230; #229 already closed via #231). Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
 
 - `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
 - `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
@@ -100,7 +101,7 @@ No open PRs (`gh pr list --repo TUBS-IVS/eqasim-bs --state open`, verified 2026-
 - `feature/runcontrol-gui` (worktree `runcontrol-gui`) — run-control GUI prototype.
 - `run/kreis5-integration` (worktree `fix-facilities-candidates`) — kreis5 facilities-candidates fix.
 - `worktree-s1a-generic-kreis-control` / `worktree-s1c-cars-control` — generic Kreis-control + cars-control spikes (same tip, not yet diverged).
-- `worktree-feature+config-composition-cleanup` (locked worktree) — config composition cleanup.
+- `worktree-feature+config-composition-cleanup` — **[PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) OPEN**: composed run configs (base_bs.yml + overlays via `run_synpp` 2-arg), int-seed+numba wired everywhere, #229 fix, config sprawl pruned (root config-free). felix synth smoke proven; matsim smoke deferred.
 - `docs/pm-resync`, `docs/pm-sync-2026-07-18` — earlier PM-doc sync attempts, superseded by this branch.
 - `feature/primary-locations-all-employed` — #203 all-employed primary locations, core built (TDD 18/18), unpushed.
 - `feature/calibration-corner`, `fix/popsim-no-silent-fallback`, `wip/felix-allfeat-20260718`, `wip/local-placement-l2-20260719`, `backup/status-presentation-pre-rebase` — no active worktree; stale/backup, candidates for cleanup.

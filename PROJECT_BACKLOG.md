@@ -118,8 +118,7 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   wire into 25/100% configs, one full 1% MATSim+fleet run to validate all 13 tabs.
 - **[4.2]** PopulationSim `num_workers` tuning on the 64-core server; education sparse `cdist`.
   Perf only, no OOM risk, deferred.
-- **[4.3]** Config cleanup (**#81**): prune the ~28 root `config_*.yml` to the canonical set
-  actually used (target ~8), document each kept config's purpose.
+- **[4.3]** ~~Config cleanup (**#81**)~~ **RESOLVED-IN-REVIEW — [PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234)** (closes #81/#230): 37 root `config_*.yml` -> composed `configs/base_bs.yml` + per-scale overlays; 9 fixtures -> `configs/fixtures/`, 15 ballast `git rm`'d, root config-free. Closes on merge. ADR-0070.
 - **[4.4]** Factor a reusable 1km-cell control-fit smoke test (planned in the PR #173 /
   `in_ausbildung` control spec, not yet built) — no issue yet.
 
