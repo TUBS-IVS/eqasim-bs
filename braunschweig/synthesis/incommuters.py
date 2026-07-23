@@ -34,6 +34,7 @@ from braunschweig.data.cordon.mode_reference import (
 from braunschweig.data.cordon.plans import (
     assign_fixed_mode, assign_fixed_mode_per_agent, build_incommuter_activities,
     build_incommuter_locations, build_incommuter_trips, extract_commute_times,
+    impute_incommuter_times,
     sample_donors, select_commuter_donors, straight_line_distance_km)
 # Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
@@ -280,6 +281,11 @@ def assemble_incommuter_core_frames(person_ids, home_x, home_y, mid_x, mid_y,
     SvB commuters and "education" for students. ``mid_location_ids`` are the unique
     per-agent middle-activity facility ids. Returns dict[trips, activities,
     locations]; ``trips['mode']`` is the per-agent mode repeated over the 2 legs."""
+    # Complete any item-nonresponse in the donor timings BEFORE building trips + activities
+    # so both frames share the same finite times -- a non-final activity without an end time
+    # makes MATSim's PlanRouter abort ("undefined activity end time"). See impute_incommuter_times.
+    depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s = impute_incommuter_times(
+        depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s, middle_purpose=middle_purpose)
     trips = build_incommuter_trips(person_ids, depart_home_s, arrive_mid_s,
                                    depart_mid_s, arrive_home_s,
                                    middle_purpose=middle_purpose)
