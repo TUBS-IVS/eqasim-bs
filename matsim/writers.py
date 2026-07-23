@@ -217,8 +217,15 @@ class PopulationWriter(XmlWriter):
         self._write_indent()
         self._write('<leg ')
         self._write('mode="%s" ' % mode)
-        self._write('dep_time="%s" ' % self.time(departure_time))
-        self._write('trav_time="%s" ' % self.time(travel_time))
+        # Omit dep_time/trav_time when unset (mirrors add_activity above): an unrouted
+        # leg has no departure/travel time yet -- MATSim's router fills them. Writing
+        # the literal "None" made MATSim's RunPreparation raise NumberFormatException
+        # ("For input string: None"), e.g. on cross-cordon in-commuter legs whose trips
+        # carry no departure_time.
+        if departure_time is not None:
+            self._write('dep_time="%s" ' % self.time(departure_time))
+        if travel_time is not None:
+            self._write('trav_time="%s" ' % self.time(travel_time))
         self._write('>\n')
         self.start_attributes()
         self.add_attribute('routingMode', 'java.lang.String', mode)
