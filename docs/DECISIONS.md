@@ -74,6 +74,7 @@
 | ADR-0068 | 2026-07-17 | Inner VerBindungen calibration anchor: built, measured, default ON by HUMAN OVERRIDE of the pre-registered gate (#193) |
 | ADR-0069 | 2026-07-18 | placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden |
 | ADR-0070 | 2026-07-22 | Composed run configs (fixed base + per-scale overlay); int-seed+numba is the ONLY permitted PopulationSim regime (fixes the float-seed-config 20x slowdown); #229 fixed; config sprawl pruned |
+| ADR-0071 | 2026-07-22 | MATSim contribs in lockstep via `${matsim.version}` (no hard pins); a `matsim.version` bump is a deliberate upgrade round; SimWrapper Layer-1 merged, `simwrapper_dashboards` default ON |
 
 > **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
 > ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
@@ -1635,6 +1636,31 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   locally or restore the drop). Existing synpp caches re-execute gravity + downstream on next run.
   Artefacts: server `~/wt/verbindungen-anchor/{holdout_out_seed20260716,holdout_out_seed42,diag_p13_72}/`.
   Follow-up: numbering note -- ADR-0067 (TAZ) lives on main (merged 2026-07-17); this ADR appends as 0068.
+
+## ADR-0071 — MATSim contribs in lockstep via `${matsim.version}`; property bumps are deliberate upgrade rounds; SimWrapper Layer-1 merged with `simwrapper_dashboards` default ON (2026-07-22, java-bs#12 + PR #233/#236)
+
+- **Context:** issue #215 found `--simwrapper` inert on eqasim-java-bs main (the Java Layer-1 lived
+  only on an unmerged pre-2.2.0 branch). Porting it exposed a second, worse problem: the braunschweig
+  pom hard-pinned `org.matsim.contrib:application` to `2025.0-PR3568` while the parent
+  `matsim.version` was `2026.0-2026w12` — the stale pin kept the build green and thereby HID that
+  MATSim 2026 moved `ExtractRelevantFreightTrips` to
+  `org.matsim.application.prepare.longDistanceFreightGER.tripExtraction` and renamed its CLI
+  (`--legMode`, `--geographicalTripType`, new `--subpopulation` defaulting to `longDistanceFreight`
+  instead of hard-coded `freight`).
+- **Decision:** (1) all `org.matsim.contrib` dependencies reference `${matsim.version}` — never a
+  literal copy of its value (artifact existence verified on repo.matsim.org before commit);
+  (2) any bump of `matsim.version` (incl. dependabot, e.g. java-bs#8 → 2027.0) is a deliberate
+  upgrade round with package/CLI verification, never an auto-merge; (3) the pipeline passes
+  `--subpopulation freight` explicitly (downstream merge/replanning/freight_filter/analysis key on
+  `freight`); (4) per the feature-flag policy, `simwrapper_dashboards` defaults ON (#236) —
+  SimWrapperModule is analysis-only, `false` restores a byte-identical output directory.
+- **Consequences:** the jar change invalidates the freight-extraction synpp cache → one-time
+  re-extraction (~4×45 min); freshly extracted plans are NOT guaranteed byte-identical to the
+  2025-build outputs (upstream tool changed: person tagging, internal refactor) — treat pre/post
+  freight comparisons accordingly. Every MATSim run now writes SimWrapper dashboards into its
+  output directory; first real SimWrapperModule execution is still pending (build-verified only,
+  backlog [0.5]). Verification recorded in PR java-bs#12 (full reactor exit 0, braunschweig tests
+  4/4, `--help` CLI contract) and PR #233 (freight suites 19/19).
 
 > **Live status note.** This log is the retrospective *why*. For the current state of every feature
 > (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)

@@ -1,16 +1,16 @@
 # PROJECT STATUS — eqasim-bs (dashboard)
 
-Updated: 2026-07-22 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
+Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
 
 ## 1. Live state
 
 - Pipeline runs end-to-end: synpp population synthesis -> MATSim scenario export -> Java `RunSimulation` (mode choice OFF) -> analysis/SimWrapper.
-- `main` = `cd05890` (PR #225 merged 2026-07-20): the SrV-anchored trip-participation controls (#224), VerBindungen inner anchor (#193), placement-income L2 (#108), and student in-commuters (#140) are ALL merged already — several branch-status notes elsewhere in the repo predate these merges and are stale relative to `main`.
+- `main` = `39d1fa4` (2026-07-23: PR #238 upstream fix sweep #199 — GTFS bundle, trips.parquet, #414 matching determinism [matched donors can shift on the next run], volatile `processes`; sweep table docs/UPSTREAM_FIX_SWEEP.md. Before that the 2026-07-22 merge wave #231–#237). Sibling `eqasim-java-bs` main carries the SimWrapper Layer-1 + dependency consolidation (java-bs#12, closed #215): all MATSim contribs via `${matsim.version}`=2026.0-2026w12.
 - Current validated scale: 25% (`*_25pct_allfeat`) full run plus per-Kreis control-smokes; **no 100% production run exists yet on the newest code** (Tier-A/B caching now makes one affordable — see backlog #1).
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
 - Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
-- Current focus: PM-layer consolidation (this branch, `chore/pm-layer-consolidation`).
+- Current focus: validate the 2026-07-22 merge wave in a real run — composed MATSim smoke (backlog [0.5]): rebuilt jar, first SimWrapperModule execution, freight re-extraction (~4×45 min one-time).
 
 ## 2. Feature matrix
 
@@ -69,7 +69,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Cordon]** Gates (road + PT/Bahnhof) | 🟢 | (part of cordon) | OSM, GTFS | `data/cordon/{gates,gate_entry,pt_reachability}.py` |
 | **[Cordon]** Mode balancer | 🟢 | (part of cordon) | Mikrozensus modes | `data/cordon/mode_balancer.py` |
 | **[Cordon]** Student in-commuters (#140) | ✅ **MERGED** PR #219 + config-contract fix PR #223; server E2E dry-run + real-data validation still PENDING | `cordon_student_incommuters_enabled` (tri-state, default-ON) | LSN SS2025 enrollment, DESTATIS 12411-0018 | docs/features/student-incommuters.md |
-| **[Freight]** Long-haul freight injection (v3) | 🟢 (100%/freight configs) | `freight_enabled` (code true) | Lu et al. 2022 — NOT BASt-calibrated | docs/features/freight.md |
+| **[Freight]** Long-haul freight injection (v3) | 🟢 (100%/freight configs); MATSim-2026 contrib CLI since PR #233, re-extraction pending | `freight_enabled` (code true) | Lu et al. 2022 — NOT BASt-calibrated | docs/features/freight.md |
 | **[Freight]** Freight analysis exclusion | ✅ | auto | — | docs/features/freight.md |
 | **[Freight]** Assumptions (truck PCE / max velocity) | ⚠️ ASSUMPTIONS | `freight_truck_pce 3.5`, `_max_velocity_kmh 80` | StVO / uncalibrated | docs/features/freight.md |
 | **[Analysis]** MiD validation report | ✅ | `analysis/run_mid_validation.py` | MiD P9/P12_1/P13/P17_1 | docs/features/run-analysis.md |
@@ -77,7 +77,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Analysis]** Population validation (controls/quality/geo) | ✅ | `analysis/population_validation/` | Zensus | docs/features/run-analysis.md |
 | **[Analysis]** Integerizer quality (per-cell error map) | ✅ | `analysis/integerizer_quality/` | — | docs/features/run-analysis.md |
 | **[Analysis]** SimWrapper export (8 chart + 4 map + commuter tabs) | ✅ | `analysis/simwrapper/` | — | docs/features/run-analysis.md |
-| **[Analysis]** SimWrapper Layer-1 (MATSim Java contrib) | ⚪ `simwrapper_dashboards: false` | Java `RunSimulation --simwrapper` | — | docs/features/run-analysis.md |
+| **[Analysis]** SimWrapper Layer-1 (MATSim Java contrib) | ✅ **MERGED** java-bs#12 + default ON (#236); first real run pending | `simwrapper_dashboards` (true) | — | docs/features/run-analysis.md |
 | **[Analysis]** Education enrollment validation | ✅ | `analysis/run_education_validation.py` | LSN capacity | docs/features/run-analysis.md |
 | **[Infra]** Shared stage-cache (prime-on-launch) | ✅ | `cache_share_enabled` (true) | — | docs/features/cache-share.md |
 | **[Infra]** Tier-A/B caching (32 stages + popsim) | ✅ (config wiring partial, backlog #1.3) | fixed `popsim.work_dir` | — | docs/features/cache-share.md |
@@ -86,33 +86,28 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Infra]** Parallel chainsolvers | 🟢 | `chainsolvers.parallel` / `.processes` | — | `synthesis/locations/secondary_chainsolvers` |
 | **[Infra]** Mode choice | ⚪ OFF in all configs (no modal-split target) | `mode_choice: false` | — | eqasim core |
 | **[Infra]** MATSim output archive (run-named durable copy) | ✅ PR #181 MERGED (ADR-0064) | `archive_matsim_output` (true) | — | `matsim/output.py` |
-| **[Infra]** Run-config composition (base + per-scale overlay) | 🟢 PR #234 OPEN (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
+| **[Infra]** Run-config composition (base + per-scale overlay) | ✅ PR #234 MERGED (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
 
 ## 3. Branches & PRs
 
-**1 open PR:** [#234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) — config composition + cleanup (closes #81/#230; #229 already closed via #231). Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+No open PRs on the fork (verified 2026-07-23 after PR #238, upstream fix sweep #199). Big cleanup 2026-07-22: 16 worktrees removed, 29 merged/backed-up local branches deleted (rescue copies + patches in the session scratchpad; unique unpushed work backup-pushed first).
 
-- `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
-- `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
-- `worktree-feature+popsim-validation-stage` — PopSim control-fit validation stage, server pytest + smoke pending.
-- `worktree-fix+gravity-calib-popsim-mid` — gravity calibration popsim_mid fix, committed, not pushed.
-- `feature/taz-gravity-calibration` (worktree `feature+taz-gravity-calibration`) — TAZ friction, parked backup only (ADR-0067, TAZ stays OFF).
-- `feature/bbs-share-by-age` (worktree `fix+audit-followups`) — BBS share-by-age control follow-up.
-- `feature/runcontrol-gui` (worktree `runcontrol-gui`) — run-control GUI prototype.
-- `run/kreis5-integration` (worktree `fix-facilities-candidates`) — kreis5 facilities-candidates fix.
-- `worktree-s1a-generic-kreis-control` / `worktree-s1c-cars-control` — generic Kreis-control + cars-control spikes (same tip, not yet diverged).
-- `worktree-feature+config-composition-cleanup` — **[PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) OPEN**: composed run configs (base_bs.yml + overlays via `run_synpp` 2-arg), int-seed+numba wired everywhere, #229 fix, config sprawl pruned (root config-free). felix synth smoke proven; matsim smoke deferred.
-- `docs/pm-resync`, `docs/pm-sync-2026-07-18` — earlier PM-doc sync attempts, superseded by this branch.
-- `feature/primary-locations-all-employed` — #203 all-employed primary locations, core built (TDD 18/18), unpushed.
-- `feature/calibration-corner`, `fix/popsim-no-silent-fallback`, `wip/felix-allfeat-20260718`, `wip/local-placement-l2-20260719`, `backup/status-presentation-pre-rebase` — no active worktree; stale/backup, candidates for cleanup.
-- `chore/pm-layer-consolidation` (this branch) — PM-layer consolidation in progress.
+Local worktrees kept (each = parked, non-merged work):
 
-Stale worktree dirs pending removal (branch already merged into `main`): `placement-income-l2` (PR #212), `verbindungen-anchor` (PR #197), `student-incommuters-140` (PR #219).
+- `calibration-corner` (`worktree-calibration-corner`, on origin) — calibration remainder, backlog [0.1]; a second unique Furness/shrinkage commit sits on origin `feature/calibration-corner` (ff26d45, NOT contained in the live branch).
+- `eqasim-bs-fleet` (`feature/fleet-quality-and-data`, on origin) — fleet realism upgrade, server phase + PR pending.
+- `feature+popsim-validation-stage` (local-only, 8 commits) — control-fit validation stage, server pytest pending.
+- `runcontrol-gui` (`feature/runcontrol-gui`, backup-pushed 2026-07-22, 49 commits) — run-control GUI prototype.
+- `feature+config-composition-cleanup` (locked; owning parallel session) — content merged via #234, worktree can be dissolved by its session.
+
+Parked on origin only (no local checkout): `feature/taz-gravity-calibration`, `worktree-fix+gravity-calib-popsim-mid`, `run/kreis5-integration`, `feature/primary-locations-all-employed` (#203 design A, TDD 18/18), `feature/calibration-corner`, `wip/*` snapshots.
+
+Sibling `eqasim-java-bs`: dependabot PRs #6/#9/#10 open (small lib bumps, CI-gated); **#8 (matsim.version → 2027.0) must NOT be auto-merged** — a `matsim.version` bump is a deliberate upgrade round (packages move; see the 2026-07-22 freight break).
 
 ## 4. Top of the backlog
 
-1. Calibration-corner remainder — run the server test suite, then push as one PR.
-2. Push `integration/all-features` once the remainder above lands.
+1. Composed MATSim smoke (backlog [0.5]) — validates the 2026-07-22 merge wave: rebuilt jar, first SimWrapperModule run, freight re-extraction; decide java-bs dependabot #8 (park).
+2. Calibration-corner remainder — run the server test suite, then push as one PR.
 3. 100% production run on the newest code (Tier-A/B caching makes it affordable).
 4. Mode-choice ASC calibration (turn DMC on, anchor modal split to the committed MiD mode-margin reference).
 5. Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed `popsim_work_dir` in server configs).

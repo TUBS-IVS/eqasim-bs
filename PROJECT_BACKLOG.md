@@ -66,6 +66,12 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   redundant, see archive §5). Retire `feature/calibration-corner` + its worktree once 0.1 lands.
 - **[0.4]** Push `integration/all-features` once 0.1 lands; update `SESSION_LOG.md` (stale
   since ~06-18) — needs user push approval.
+- **[0.5]** Composed MATSim smoke (`run_synpp.py configs/base_bs.yml configs/overlays/test_matsim.yml`)
+  — deferred from #234, UNBLOCKED by the 2026-07-22 eqasim-java-bs merge (java-bs#12). First
+  real execution of: rebuilt 2.2.0 jar, `SimWrapperModule` (now default ON via #236, fallback
+  `simwrapper_dashboards: false`), and the MATSim-2026 freight CLI (#233 → one-time
+  re-extraction ~4×45 min). Also decide java-bs dependabot #8 (matsim 2027 bump): park/close,
+  never auto-merge a `matsim.version` bump (see ADR below / memory).
 
 ### TIER 1 — High value, mostly ready (the "produce defensible results" front)
 
@@ -114,11 +120,12 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 
 ### TIER 4 — Polish / nice-to-have
 
-- **[4.1]** SimWrapper polish: verify choropleth colours, anglicise residual German labels,
-  wire into 25/100% configs, one full 1% MATSim+fleet run to validate all 13 tabs.
+- **[4.1]** SimWrapper polish (rest after 2026-07-22: Layer-1 merged java-bs#12, defaults ON
+  via #236, config wiring done via #234): verify choropleth colours, anglicise residual
+  bilingual commuter labels (`spatial_export.py` ~L1356), one full 1% MATSim+fleet run to
+  validate all 13 tabs.
 - **[4.2]** PopulationSim `num_workers` tuning on the 64-core server; education sparse `cdist`.
   Perf only, no OOM risk, deferred.
-- **[4.3]** ~~Config cleanup (**#81**)~~ **RESOLVED-IN-REVIEW — [PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234)** (closes #81/#230): 37 root `config_*.yml` -> composed `configs/base_bs.yml` + per-scale overlays; 9 fixtures -> `configs/fixtures/`, 15 ballast `git rm`'d, root config-free. Closes on merge. ADR-0070.
 - **[4.4]** Factor a reusable 1km-cell control-fit smoke test (planned in the PR #173 /
   `in_ausbildung` control spec, not yet built) — no issue yet.
 
