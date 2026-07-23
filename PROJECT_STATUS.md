@@ -1,16 +1,16 @@
 # PROJECT STATUS — eqasim-bs (dashboard)
 
-Updated: 2026-07-22 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
+Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
 
 ## 1. Live state
 
 - Pipeline runs end-to-end: synpp population synthesis -> MATSim scenario export -> Java `RunSimulation` (mode choice OFF) -> analysis/SimWrapper.
-- `main` = `cd05890` (PR #225 merged 2026-07-20): the SrV-anchored trip-participation controls (#224), VerBindungen inner anchor (#193), placement-income L2 (#108), and student in-commuters (#140) are ALL merged already — several branch-status notes elsewhere in the repo predate these merges and are stale relative to `main`.
+- `main` = `39d1fa4` (PR #238 merged 2026-07-23; config-composition #234 + eqasim-java-2.2.0 matsim.output fixes #237 + upstream fix-sweep #238 all merged on the #225 baseline): the SrV-anchored trip-participation controls (#224), VerBindungen inner anchor (#193), placement-income L2 (#108), and student in-commuters (#140) are ALL merged already — several branch-status notes elsewhere in the repo predate these merges and are stale relative to `main`. **eqasim-java 2.2.0 is now e2e-green through `matsim.output`** (1-Kreis + freight, real QSim iteration 0; ADR-0071).
 - Current validated scale: 25% (`*_25pct_allfeat`) full run plus per-Kreis control-smokes; **no 100% production run exists yet on the newest code** (Tier-A/B caching now makes one affordable — see backlog #1).
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
 - Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
-- Current focus: PM-layer consolidation (this branch, `chore/pm-layer-consolidation`).
+- Current focus: eqasim-java 2.2.0 integration verified end-to-end (`matsim.output` green, 1-Kreis + freight); PR #239 (MERGEABLE) carries the remaining fixes. Next: 100% production run on the 2.2.0 stack.
 
 ## 2. Feature matrix
 
@@ -81,16 +81,16 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Analysis]** Education enrollment validation | ✅ | `analysis/run_education_validation.py` | LSN capacity | docs/features/run-analysis.md |
 | **[Infra]** Shared stage-cache (prime-on-launch) | ✅ | `cache_share_enabled` (true) | — | docs/features/cache-share.md |
 | **[Infra]** Tier-A/B caching (32 stages + popsim) | ✅ (config wiring partial, backlog #1.3) | fixed `popsim.work_dir` | — | docs/features/cache-share.md |
-| **[Infra]** Own eqasim-java-bs fork | ✅ | `eqasim_source_path` | — | `../eqasim-java-bs` |
+| **[Infra]** Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23) | ✅ | `eqasim_source_path` | — | `../eqasim-java-bs` |
 | **[Infra]** Urban parking (BS inner ring) | 🟢 | `enable_urban_parking` | — | `matsim/simulation/prepare.py` |
 | **[Infra]** Parallel chainsolvers | 🟢 | `chainsolvers.parallel` / `.processes` | — | `synthesis/locations/secondary_chainsolvers` |
 | **[Infra]** Mode choice | ⚪ OFF in all configs (no modal-split target) | `mode_choice: false` | — | eqasim core |
 | **[Infra]** MATSim output archive (run-named durable copy) | ✅ PR #181 MERGED (ADR-0064) | `archive_matsim_output` (true) | — | `matsim/output.py` |
-| **[Infra]** Run-config composition (base + per-scale overlay) | 🟢 PR #234 OPEN (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
+| **[Infra]** Run-config composition (base + per-scale overlay) | ✅ **MERGED** PR #234 (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
 
 ## 3. Branches & PRs
 
-**1 open PR:** [#234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) — config composition + cleanup (closes #81/#230; #229 already closed via #231). Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+**1 open PR:** [#239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) — eqasim-java 2.2.0 `matsim.output` green (in-commuter time imputation, gzip pin, #229 config-key read; **MERGEABLE**, 3 commits rebased clean onto `main`). PR #234 (config composition + cleanup, closes #81/#230), #237 (2.2.0 matsim.output fixes + PM docs), and #238 (upstream fix-sweep) all MERGED 2026-07-22/23. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
 
 - `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
 - `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
@@ -101,7 +101,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 - `feature/runcontrol-gui` (worktree `runcontrol-gui`) — run-control GUI prototype.
 - `run/kreis5-integration` (worktree `fix-facilities-candidates`) — kreis5 facilities-candidates fix.
 - `worktree-s1a-generic-kreis-control` / `worktree-s1c-cars-control` — generic Kreis-control + cars-control spikes (same tip, not yet diverged).
-- `worktree-feature+config-composition-cleanup` — **[PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234) OPEN**: composed run configs (base_bs.yml + overlays via `run_synpp` 2-arg), int-seed+numba wired everywhere, #229 fix, config sprawl pruned (root config-free). felix synth smoke proven; matsim smoke deferred.
+- `worktree-feature+config-composition-cleanup` — **[PR #239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) OPEN, MERGEABLE**: eqasim-java 2.2.0 `matsim.output` green (in-commuter donor-time imputation, `compressionType=gzip` pin, #229 config-key read). PR #234 (composed configs base_bs.yml + overlays, int-seed+numba, #229, config sprawl pruned) MERGED. `matsim.output` now proven e2e at 1-Kreis + freight (real QSim).
 - `docs/pm-resync`, `docs/pm-sync-2026-07-18` — earlier PM-doc sync attempts, superseded by this branch.
 - `feature/primary-locations-all-employed` — #203 all-employed primary locations, core built (TDD 18/18), unpushed.
 - `feature/calibration-corner`, `fix/popsim-no-silent-fallback`, `wip/felix-allfeat-20260718`, `wip/local-placement-l2-20260719`, `backup/status-presentation-pre-rebase` — no active worktree; stale/backup, candidates for cleanup.
