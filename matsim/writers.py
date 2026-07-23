@@ -217,15 +217,20 @@ class PopulationWriter(XmlWriter):
         self._write_indent()
         self._write('<leg ')
         self._write('mode="%s" ' % mode)
-        # Omit dep_time/trav_time when unset (mirrors add_activity above): an unrouted
-        # leg has no departure/travel time yet -- MATSim's router fills them. Writing
-        # the literal "None" made MATSim's RunPreparation raise NumberFormatException
-        # ("For input string: None"), e.g. on cross-cordon in-commuter legs whose trips
-        # carry no departure_time.
-        if departure_time is not None:
-            self._write('dep_time="%s" ' % self.time(departure_time))
-        if travel_time is not None:
-            self._write('trav_time="%s" ' % self.time(travel_time))
+        # Omit dep_time/trav_time when the time is missing (Python None OR NaN), the way
+        # add_activity omits a missing start_time/end_time. self.time() maps a NaN to
+        # None, so guarding on its RESULT drops both cases; the `is not None` pre-guard
+        # keeps self.time()'s np.isnan() from rejecting a Python None. An unrouted leg has
+        # no departure/travel time yet -- MATSim's router fills them. Serializing the
+        # literal "None" made MATSim's RunPreparation raise NumberFormatException ("For
+        # input string: None"), e.g. on cross-cordon in-commuter legs whose trips carry
+        # no departure_time (which reaches the writer as NaN, not Python None).
+        departure_time_string = self.time(departure_time) if departure_time is not None else None
+        if departure_time_string is not None:
+            self._write('dep_time="%s" ' % departure_time_string)
+        travel_time_string = self.time(travel_time) if travel_time is not None else None
+        if travel_time_string is not None:
+            self._write('trav_time="%s" ' % travel_time_string)
         self._write('>\n')
         self.start_attributes()
         self.add_attribute('routingMode', 'java.lang.String', mode)
