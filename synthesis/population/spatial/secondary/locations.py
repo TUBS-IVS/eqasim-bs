@@ -17,7 +17,8 @@ def configure(context):
     context.stage("synthesis.locations.secondary")
 
     context.config("random_seed")
-    context.config("processes")
+    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
+    context.config("processes", volatile = True)
 
     context.config("secloc_maximum_iterations", np.inf)
 

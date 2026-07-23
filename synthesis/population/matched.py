@@ -96,7 +96,8 @@ def resolve_matching_columns(configured, reactivate_person_attributes):
 
 
 def configure(context):
-    context.config("processes")
+    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
+    context.config("processes", volatile = True)
     context.config("random_seed")
     context.config("matching_minimum_observations", 20)
     context.config("matching_attributes", DEFAULT_MATCHING_ATTRIBUTES)
@@ -189,9 +190,12 @@ def statistical_matching(progress, df_source, source_identifier, weight, df_targ
     df_source = df_source[[source_identifier, weight] + columns + extra].copy()
     df_target = df_target[[target_identifier] + columns + extra].copy()
 
-    # Sort data frames
-    df_source = df_source.sort_values(by = columns)
-    df_target = df_target.sort_values(by = columns)
+    # Sort data frames. The identifier (and weight) tie-breakers make the sort
+    # total, so the assignment cannot depend on the input row order (upstream
+    # eqasim-france #414). NOTE: this changes the tie-break order versus the
+    # previous partial sort, so matched donors (and downstream results) can differ.
+    df_source = df_source.sort_values(by = columns + [source_identifier, weight])
+    df_target = df_target.sort_values(by = columns + [target_identifier])
 
     # Continuous similarity values aligned to the now-sorted frames.
     source_similarity = (df_source[similarity_column].values.astype(float)

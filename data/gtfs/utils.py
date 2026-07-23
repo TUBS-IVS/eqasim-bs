@@ -15,6 +15,21 @@ OPTIONAL_SLOTS = [
     "feed_info", "translations", "attributions"
 ]
 
+# Identifier columns read as strings so numeric-looking ids and empty cells do
+# not flip column dtypes between feeds (upstream eqasim-france #427; same
+# dtype=str-at-read pattern as our key-matching audit, issues #191/#194).
+DTYPES = {
+    "stops": {
+        "stop_id": str, "parent_station": str
+    },
+    "agency": {
+        "agency_id": str
+    },
+    "routes": {
+        "agency_id": str
+    }
+}
+
 def read_feed(path):
     feed = {}
 
@@ -48,7 +63,7 @@ def read_feed(path):
                 print("  Loading %s.txt ..." % slot)
 
                 with zip.open("%s%s.txt" % (prefix, slot)) as f:
-                    feed[slot] = pd.read_csv(f, skipinitialspace = True)
+                    feed[slot] = pd.read_csv(f, skipinitialspace = True, dtype = DTYPES.get(slot, None))
             else:
                 print("  Not loading %s.txt" % slot)
 
@@ -72,6 +87,14 @@ def read_feed(path):
             print("WARNING Missing parent_station in stops, setting to NaN")
             df_stops["parent_station"] = np.nan
 
+        # Standalone stops (no parent station, location_type 0) are promoted to
+        # stations so cut_feed's station-based spatial cut does not silently drop
+        # them (upstream eqasim-france #521). Guarded on the column existing:
+        # feeds without location_type are legal (see cut_feed, upstream #309);
+        # upstream applies this unguarded and would raise a KeyError there.
+        if "location_type" in df_stops:
+            df_stops.loc[df_stops["parent_station"].isna() & (df_stops["location_type"] == 0), "location_type"] = 1
+
     if "transfers" in feed:
         df_transfers = feed["transfers"]
 
@@ -88,6 +111,9 @@ def read_feed(path):
 
     if "agency" in feed:
         df_agency = feed["agency"]
+        # agency_id is optional for single-agency feeds (upstream eqasim-france #512)
+        if "agency_id" not in df_agency.columns:
+            df_agency["agency_id"] = "generic"
         df_agency.loc[df_agency["agency_id"].isna(), "agency_id"] = "generic"
 
     if "routes" in feed:
@@ -251,7 +277,8 @@ def cut_feed(feed, df_area, crs = None):
 
     df_stops = feed["stops"]
 
-    if np.count_nonzero(df_stops["location_type"] == 1) == 0:
+    # Feeds without a location_type column are valid GTFS (upstream eqasim-france #309)
+    if "location_type" not in df_stops.columns or np.count_nonzero(df_stops["location_type"] == 1) == 0:
         print("Warning! Location types seem to be malformatted. Keeping all stops.")
         df_stations = df_stops.copy()
     else:
@@ -394,31 +421,31 @@ def merge_two_feeds(first, second, suffix = "_merged"):
             df_first = first[collision["slot"]]
             df_second = second[collision["slot"]]
 
-            df_first[collision["identifier"]] = df_first[collision["identifier"]].astype(str)
-            df_second[collision["identifier"]] = df_second[collision["identifier"]].astype(str)
+            # The identifier column can be absent (e.g. attributions without the
+            # optional attribution_id; upstream eqasim-france #428). No astype(str)
+            # coercion: it turned genuine NaN into the string "nan" and broke
+            # isna()-based logic downstream (upstream eqasim-france #447).
+            if collision["identifier"] in df_first and collision["identifier"] in df_second:
+                df_concat = pd.concat([df_first, df_second], sort = True).drop_duplicates()
+                duplicate_ids = list(df_concat[df_concat[collision["identifier"]].duplicated()][collision["identifier"]].unique())
 
-            df_concat = pd.concat([df_first, df_second], sort = True).drop_duplicates()
-            duplicate_ids = list(df_concat[df_concat[collision["identifier"]].duplicated()][
-                collision["identifier"]].astype(str).unique())
+                if len(duplicate_ids) > 0:
+                    print("   Found %d duplicate identifiers in %s" % (
+                        len(duplicate_ids), collision["slot"]))
 
-            if len(duplicate_ids) > 0:
-                print("   Found %d duplicate identifiers in %s" % (
-                    len(duplicate_ids), collision["slot"]))
+                    replacement_ids = [str(id) + suffix for id in duplicate_ids]
 
-                replacement_ids = [str(id) + suffix for id in duplicate_ids]
+                    df_second[collision["identifier"]] = df_second[collision["identifier"]].replace(
+                        duplicate_ids, replacement_ids
+                    )
 
-                df_second[collision["identifier"]] = df_second[collision["identifier"]].replace(
-                    duplicate_ids, replacement_ids
-                )
-
-                for ref_slot, ref_identifier in collision["references"]:
-                    if ref_slot in first and ref_slot in second:
-                        first[ref_slot][ref_identifier] = first[ref_slot][ref_identifier].astype(str)
-                        second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].astype(str)
-
-                        second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].replace(
-                            duplicate_ids, replacement_ids
-                        )
+                    # Rewriting references only requires the second feed to carry the
+                    # referencing slot (upstream eqasim-france #521).
+                    for ref_slot, ref_identifier in collision["references"]:
+                        if ref_slot in second:
+                            second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].replace(
+                                duplicate_ids, replacement_ids
+                            )
 
     for slot in REQUIRED_SLOTS + OPTIONAL_SLOTS:
         if slot in first and slot in second:

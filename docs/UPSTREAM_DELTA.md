@@ -23,6 +23,20 @@ git fetch upstream
 git merge-base origin/main upstream/main
 ```
 
+## Upstream fix sweeps (eqasim-france)
+
+Active upstream development lives in `eqasim-org/eqasim-france` (remote `france`);
+its true merge-base with `origin/main` is `62fa577` (2024-09-25). Bug fixes in shared
+pipeline code are swept periodically and classified in
+[UPSTREAM_FIX_SWEEP.md](UPSTREAM_FIX_SWEEP.md).
+
+| Sweep date | Range covered | Result |
+|---|---|---|
+| 2026-07-17 | bounded first pass (survey PRs only) | 1 ported, 3 deferred, 3 N/A (PR #206) |
+| 2026-07-23 | `62fa577..6115005` exhaustive (78 shared-code commits) | 10 ported (incl. recovered #447-GTFS), 5 already fixed, 4 deferred, rest N/A (#199) |
+
+The next sweep starts from `6115005` (2026-07-21).
+
 ## What eqasim-bavaria provides (the baseline)
 
 The upstream is the eqasim pipeline configured for **Bavaria/Munich**: the eqasim
