@@ -163,7 +163,7 @@ def execute(context):
     # Mirror the MATSim simulation output into a stable, run-named location so
     # it survives a synpp hash-cache wipe (issue #156). Only when a run actually
     # happened (run_matsim) and the archive flag is on.
-    if context.config("run_matsim", True) and context.config("archive_matsim_output"):
+    if context.config("run_matsim") and context.config("archive_matsim_output"):
         archive_simulation_output(
             context.path("matsim.simulation.run"),
             context.config("output_path"),
