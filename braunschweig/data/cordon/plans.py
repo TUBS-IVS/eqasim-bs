@@ -13,9 +13,12 @@ See ``docs/superpowers/specs/2026-06-05-cross-cordon-external-demand-design.md``
 from __future__ import annotations
 
 import geopandas as gpd
+import logging
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
+
+LOGGER = logging.getLogger(__name__)
 
 
 def assign_fixed_mode(distance_km, reference, band_of, rng):
@@ -80,6 +83,57 @@ def sample_donors(donors, n, rng):
     Returns a fresh-indexed DataFrame preserving all donor columns."""
     idx = rng.integers(0, len(donors), size=n)
     return donors.iloc[idx].reset_index(drop=True)
+
+
+def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
+                            middle_purpose="work"):
+    """Complete item-nonresponse in donor Home->MIDDLE->Home timings.
+
+    An HTS donor whose return trip is untimed (or whose first/last-trip fallback in
+    :func:`extract_activity_times` lands on a NaN-timed trip) leaves ``depart_mid_s``
+    (the middle-activity END) -- and rarely the other three -- NaN. The population writer
+    then omits the activity ``end_time`` and MATSim's PlanRouter aborts with "undefined
+    activity end time" (a non-final activity MUST carry an end time).
+
+    Following :mod:`braunschweig.popsim.missing`, the missing values are imputed from
+    comparable respondents -- the fully-timed donors of the SAME subpopulation -- using a
+    FIXED-seed RNG so the fill is deterministic and never consumes from the caller's RNG
+    (runs with no missing times stay byte-identical, and downstream income/fleet draws are
+    unaffected). Called once in :func:`assemble_incommuter_core_frames` so the trips and
+    activities frames share the same completed times. Returns the four completed float
+    arrays (seconds since midnight); the middle-end fill rate is logged.
+    """
+    dh = np.asarray(depart_home_s, dtype=float).copy()
+    am = np.asarray(arrive_mid_s, dtype=float).copy()
+    dm = np.asarray(depart_mid_s, dtype=float).copy()
+    ah = np.asarray(arrive_home_s, dtype=float).copy()
+    n = len(am)
+    rng = np.random.RandomState(20260723)  # local + deterministic; does NOT touch caller RNG
+
+    def _sample(pool, k, default):
+        pool = pool[np.isfinite(pool) & (pool > 0)]
+        return rng.choice(pool, int(k)) if pool.size else np.full(int(k), float(default))
+
+    default_dur = (8.0 if middle_purpose == "work" else 6.0) * 3600.0
+    m = ~np.isfinite(am)                                    # middle start (rare)
+    if m.any():
+        finite_am = am[np.isfinite(am)]
+        am[m] = rng.choice(finite_am, int(m.sum())) if finite_am.size else 8.0 * 3600.0
+    m_end = ~(np.isfinite(dm - am) & ((dm - am) > 0))       # middle end (common, router-critical)
+    if m_end.any():
+        dm[m_end] = am[m_end] + _sample(dm - am, m_end.sum(), default_dur)
+    m = ~(np.isfinite(dh) & (dh <= am))                    # first-activity (home) end
+    if m.any():
+        dh[m] = np.maximum(0.0, am[m] - _sample(am - dh, m.sum(), 3600.0))
+    m = ~np.isfinite(ah)                                   # last-activity (home) start
+    if m.any():
+        ah[m] = dm[m] + _sample(ah - dm, m.sum(), 3600.0)
+    if m_end.any():
+        LOGGER.warning("[incommuters] imputed missing %s-activity end time for %d/%d agents "
+                       "(%.1f%%): HTS donor had an untimed return trip; sampled the activity-"
+                       "duration distribution of fully-timed same-subpopulation donors.",
+                       middle_purpose, int(m_end.sum()), n, int(m_end.sum()) / max(n, 1) * 100.0)
+    return dh, am, dm, ah
 
 
 def build_incommuter_trips(person_ids, depart_home_s, arrive_work_s,
