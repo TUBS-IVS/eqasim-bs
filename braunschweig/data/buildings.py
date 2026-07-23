@@ -239,6 +239,11 @@ def join_lod2_heights(buildings, heights):
 def configure(context):
     context.stage("braunschweig.data.alkis")
     context.stage("eqasim_common.data.spatial.iris")
+    # synpp scopes config per stage: execute() may only read options THIS stage's
+    # configure() declared. execute() reads data_path (LoD2 heights path), so declare
+    # it here (issue #229 class: "Config option data_path is not requested"; latent
+    # while this stage was cache-hit, surfaced on a fresh matsim.output run).
+    context.config("data_path")
 
 
 def execute(context) -> gpd.GeoDataFrame:

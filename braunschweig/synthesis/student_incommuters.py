@@ -102,6 +102,7 @@ def _empty_frames(crs=CRS_METRIC):
 
 def configure(context):
     context.config("cordon_enabled")
+    context.config("braunschweig.political_prefix")
     context.config("cordon_student_incommuters_enabled", None)
     context.config("education_gravity_enabled", False)
     context.config("student_incommuter_age_band", [18, 29])
@@ -334,7 +335,11 @@ def _inject(context):
     facilities = context.stage(
         "braunschweig.data.schools.university_facilities").to_crs(CRS_METRIC)
     municipalities = context.stage("data.spatial.municipalities").to_crs(CRS_METRIC)
-    resident_placement = context.stage("synthesis.population.spatial.primary.locations")
+    # primary.locations (alias -> replacement_education_gravity) returns a tuple
+    # (df_work, df_education); student in-commuters need the EDUCATION placements
+    # (residents placed at university facilities), so take [1]. Latent #140 bug:
+    # the real-data inject path was skip-gated, so .copy() on the tuple never ran.
+    resident_placement = context.stage("synthesis.population.spatial.primary.locations")[1]
     residents = context.stage("synthesis.population.enriched")
     _hh, hts_persons, hts_trips = context.stage("hts")
     gate_frames = context.stage("braunschweig.synthesis.cordon_gates")

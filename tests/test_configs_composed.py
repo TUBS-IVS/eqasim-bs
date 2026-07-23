@@ -39,6 +39,24 @@ def _cfg(overlay_name):
     return compose(str(BASE), str(OVERLAYS / overlay_name))
 
 
+# Global ceiling that keeps the per-batch PopulationSim pipeline.h5 under HDF5's VLArray
+# write limit. A single dense Kreis (03101) at 3000 cells/batch produced a ~23 GB h5 that
+# raised "OverflowError: value too large to convert to int". 750 is the value the 100% run
+# proved safe on every Kreis (~9 GB h5, smaller still under the int-seed regime). This guard
+# fails CI if any overlay re-introduces a too-large max_cells, so the overflow cannot recur.
+MAX_CELLS_H5_SAFE_CEILING = 750
+
+
+@pytest.mark.parametrize("overlay", ALL_OVERLAYS)
+def test_max_cells_within_h5_overflow_ceiling(overlay):
+    mc = _cfg(overlay)["config"].get("braunschweig.population.popsim.max_cells")
+    assert mc is not None, f"{overlay} must set max_cells (per-scale key)"
+    assert mc <= MAX_CELLS_H5_SAFE_CEILING, (
+        f"{overlay} max_cells={mc} exceeds the {MAX_CELLS_H5_SAFE_CEILING} pipeline.h5 "
+        f"VLArray-overflow ceiling (a dense Kreis at 3000 overflowed at ~23 GB). Lower it, "
+        f"or re-validate the per-batch h5 size on the densest Kreis before raising this.")
+
+
 @pytest.mark.parametrize("overlay", ALL_OVERLAYS)
 def test_settings_path_is_the_intseed_numba_regime(overlay):
     cfg = _cfg(overlay)["config"]

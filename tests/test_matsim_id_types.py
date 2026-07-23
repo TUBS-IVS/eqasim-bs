@@ -218,6 +218,57 @@ def test_households_writer_integer_census_id_emits_long():
     assert 'name="censusId" class="java.lang.Long"' in xml
 
 
+# ---------------------------------------------------------------------------
+# Regression: add_leg must not serialize a missing time as the literal "None"
+# ---------------------------------------------------------------------------
+# A cross-cordon in-commuter leg reached the writer with a missing departure_time,
+# and add_leg emitted dep_time="None" -> MATSim RunPreparation rejects it with
+# NumberFormatException ("For input string: None"). A missing time (Python None OR
+# NaN -- NaN is what actually reaches the writer for an unrouted leg) must be
+# omitted, mirroring add_activity's handling of a missing start_time/end_time.
+
+def _write_one_leg_xml(departure_time, travel_time):
+    """Drive the population writer through a single leg; return the decoded XML."""
+    buf = io.BytesIO()
+    w = writers.PopulationWriter(buf)
+    w.start_population()
+    w.start_person(1)
+    w.start_plan(selected=True)
+    w.add_leg("car", departure_time, travel_time)
+    w.end_plan()
+    w.end_person()
+    w.end_population()
+    return buf.getvalue().decode("utf-8")
+
+
+def test_add_leg_omits_python_none_times():
+    """Python None -> attributes omitted, never the crashing literal 'None'."""
+    xml = _write_one_leg_xml(None, None)
+    assert '<leg mode="car"' in xml
+    assert 'dep_time="None"' not in xml
+    assert 'trav_time="None"' not in xml
+    assert "dep_time=" not in xml
+    assert "trav_time=" not in xml
+
+
+def test_add_leg_omits_nan_times():
+    """NaN (the value that actually reaches the writer for an unrouted in-commuter
+    leg) -> attributes omitted, never dep_time="None"."""
+    xml = _write_one_leg_xml(float("nan"), float("nan"))
+    assert '<leg mode="car"' in xml
+    assert 'dep_time="None"' not in xml
+    assert 'trav_time="None"' not in xml
+    assert "dep_time=" not in xml
+    assert "trav_time=" not in xml
+
+
+def test_add_leg_writes_present_times():
+    """Real times are still written -- the guard only suppresses missing ones."""
+    xml = _write_one_leg_xml(3600.0, 600.0)  # 1 h departure, 10 min travel
+    assert 'dep_time="01:00:00"' in xml
+    assert 'trav_time="00:10:00"' in xml
+
+
 def test_households_writer_alphanumeric_census_id_emits_string():
     """popsim_mid path: alphanumeric census_household_id -> java.lang.String."""
     xml = _write_household_xml(census_household_id="ZENSUS100m_12345_0")

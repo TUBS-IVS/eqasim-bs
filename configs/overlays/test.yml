@@ -18,7 +18,10 @@ config:
   # OWN popsim scratch dir: the stale-batch guard purges a shared work_dir on
   # config change -- a 1-Kreis test must never purge the production batch store.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_test
-  braunschweig.population.popsim.max_cells: 3000
+  # 750 (was 3000): 03101 (Braunschweig city) is dense (~137k HH); at 3000 cells/batch
+  # the per-batch pipeline.h5 reached ~23 GB and overflowed HDF5's VLArray on write.
+  # 750 matches the 100% run (~9 GB h5 on 03101, smaller under the int-seed regime).
+  braunschweig.population.popsim.max_cells: 750
   braunschweig.population.popsim.num_workers: 3
   # Throwaway run: prime from the shared store but never seed it.
   cache_share_export: false

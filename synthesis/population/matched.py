@@ -14,10 +14,24 @@ This stage attaches obervations from the household travel survey to the syntheti
 population sample. This is done by statistical matching.
 """
 
-INCOME_CLASS = {
-    "egt": data.hts.egt.cleaned.calculate_income_class,
-    "entd": data.hts.entd.cleaned.calculate_income_class,
-}
+def _income_class_function(hts):
+    """Return the HTS income-class function, resolving the cleaning submodule lazily.
+
+    The previous module-level ``INCOME_CLASS`` dict eagerly bound
+    ``data.hts.{egt,entd}.cleaned.calculate_income_class`` at import time. On some
+    synpp stage-resolution orders (notably ``matsim.output``) ``matched`` is imported
+    while ``data.hts.entd.cleaned`` has not yet finished binding on the
+    ``data.hts.entd`` package, so the attribute access raised ``AttributeError`` at
+    import. Resolving on call defers it to run time (only ``match()`` below uses it,
+    long after every stage module is imported), which breaks the import cycle for all
+    modules that import ``synthesis.population.matched`` (braunschweig.popsim.*).
+    """
+    import data.hts.egt.cleaned
+    import data.hts.entd.cleaned
+    return {
+        "egt": data.hts.egt.cleaned.calculate_income_class,
+        "entd": data.hts.entd.cleaned.calculate_income_class,
+    }[hts]
 
 DEFAULT_MATCHING_ATTRIBUTES = [
     "sex", "any_cars", "age_class", "socioprofessional_class",
@@ -448,7 +462,7 @@ def execute(context):
         df_income = context.stage("synthesis.population.income.selected")[["household_id", "household_income"]]
 
         df_target = pd.merge(df_target, df_income)
-        df_target["income_class"] = INCOME_CLASS[hts](df_target)
+        df_target["income_class"] = _income_class_function(hts)(df_target)
 
     if "any_cars" in columns:
         df_target["any_cars"] = df_target["number_of_cars"] > 0

@@ -19,7 +19,11 @@ config:
   # Tier B1: the SAME fixed work_dir as test_25pct so popsim.stage's hash is
   # identical across sampling rates and cache_share shares the batches.
   braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_allfeat
-  braunschweig.population.popsim.max_cells: 1500
+  # 750 globally (was 1500): the per-batch pipeline.h5 grows with cells x signatures;
+  # a dense Kreis at 3000 cells overflowed HDF5's VLArray (~23 GB h5). 750 is the value
+  # the 100% run proved safe on every Kreis (~9 GB h5, smaller under int-seed). Kept
+  # identical to test_25pct so the shared popsim.stage hash / cache_share still match.
+  braunschweig.population.popsim.max_cells: 750
   # 16 single-threaded batches (each pinned to 1 BLAS thread by
   # braunschweig.popsim.batch) use the 64-core box well at ~5 GB/batch peak.
   braunschweig.population.popsim.num_workers: 16
