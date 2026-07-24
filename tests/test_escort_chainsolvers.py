@@ -150,3 +150,133 @@ def test_build_locations_df_escort_off_is_unchanged():
 def test_build_locations_df_escort_requires_potentials():
     with pytest.raises(ValueError, match="escort_purpose requires"):
         sc._build_locations_df(_mini_candidates(), with_potentials=False, escort_purpose=True)
+
+
+# ---------------------------------------------------------------------------
+# Task 7: leg-loop draw, extraction, stats, other-subtype interplay.
+# ---------------------------------------------------------------------------
+
+def _escort_problem():
+    return {
+        "person_id": 1,
+        "trip_index": 0,
+        "purposes": ["escort"],
+        "modes": ["car", "car"],
+        "travel_times": [600.0, 600.0],
+        "size": 1,
+        "origin": np.array([[0.0, 0.0]]),
+        "destination": np.array([[100.0, 100.0]]),
+        "activity_index": 1,
+    }
+
+
+def _mode_distributions():
+    return {
+        "car": {
+            "bounds": np.array([np.inf]),
+            "distributions": [
+                {"cdf": np.array([1.0]), "values": np.array([500.0]),
+                 "weights": np.array([1.0])}
+            ],
+        }
+    }
+
+
+def _escort_distributions():
+    return {
+        "escort": _mode_distributions(),
+        "other": _mode_distributions(),
+    }
+
+
+def test_plans_df_escort_leg_gets_drawn_activity_and_escort_layer():
+    decider_calls = []
+    def decider():
+        decider_calls.append(1)
+        return "escort_edu_kindergarten"
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], _escort_distributions(), 1.0,
+        np.random.RandomState(0), escort_location_decider=decider,
+    )
+    assert list(plans["to_act_type"])[:1] == ["escort_edu_kindergarten"]
+    assert stats["escort_edu_kindergarten"] == 1
+    assert stats["escort_distance_layer_fallback"] == 0
+    assert len(decider_calls) == 1
+
+
+def test_plans_df_escort_distance_fallback_counted():
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], {"other": _mode_distributions()}, 1.0,
+        np.random.RandomState(0),
+        escort_location_decider=lambda: "escort_leisure",
+    )
+    assert stats["escort_distance_layer_fallback"] == 1
+
+
+def test_plans_df_no_decider_leaves_escort_untouched():
+    # decider None (flag OFF upstream): escort leg keeps plain purpose; no stats keys.
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], _escort_distributions(), 1.0, np.random.RandomState(0),
+    )
+    assert list(plans["to_act_type"])[:1] == ["escort"]
+    assert "escort_distance_layer_fallback" not in stats
+
+
+def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeypatch):
+    # Estimation must run on W_ZWECK {5,10} only with groups {errand, rest}.
+    import braunschweig.popsim.mid as mid_module
+    mini = pd.DataFrame({
+        "W_ZWECK": [5, 5, 10, 6, 6],
+        "W_ZWD": [601, 603, 999, 7704, 7704],
+        "hvm_imp": [4, 4, 4, 4, 4],
+        "W_SZS": [8]*5, "W_SZM": [0]*5, "W_AZS": [8]*5, "W_AZM": [10]*5,
+        "W_GEW": [1.0]*5,
+    })
+    monkeypatch.setattr(mid_module, "load_mid_wege", lambda _dir: mini.copy())
+    ctx = _Ctx({
+        "secondary_other_subtype_split": True,
+        "escort_purpose": True,
+        "secondary_distance_min_obs": 1,
+        "braunschweig.population.popsim.mid_dir": "unused",
+    })
+    decide = sc._build_other_subtype_decider(ctx, random_seed=3)
+    outcomes = {decide("car", 600.0) for _ in range(200)}
+    assert "other_escort" not in outcomes
+    assert outcomes <= {"other_errand_short", "other_errand_long", "other_rest"}
+
+
+# ---------------------------------------------------------------------------
+# configure(): the three escort keys are declared with the documented
+# defaults (the "Produces" contract for Task 7). Not part of the plan's
+# Step-1 test list, added during self-review because none of the tests above
+# exercise configure() itself and a typo in a key name here would otherwise
+# go undetected -- see tests/test_secondary_chainsolvers_subtypes.py's
+# _FakeContext for the sibling pattern this mirrors (a separate minimal stub
+# is used here because this file owns only the escort-specific tests).
+# ---------------------------------------------------------------------------
+
+class _ConfigureCtx:
+    """Minimal two-argument config() stub for exercising configure() itself.
+
+    Mirrors synpp's ``ConfigurationContext.config(name, default)``: a key's
+    value is resolved once (the first-seen default) and stays fixed for
+    subsequent re-reads without a default -- configure() re-reads several
+    flags this way right after declaring them."""
+    def __init__(self):
+        self.registered = {}
+
+    def config(self, key, default=None):
+        if key not in self.registered:
+            self.registered[key] = default
+        return self.registered[key]
+
+    def stage(self, *args, **kwargs):
+        return None
+
+
+def test_configure_declares_escort_keys_with_documented_defaults():
+    ctx = _ConfigureCtx()
+    sc.configure(ctx)
+    assert ctx.registered["escort_purpose"] is False
+    assert ctx.registered["escort_locations_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
+    assert ctx.registered["escort_locations_weights"] == sc.DEFAULT_ESCORT_LOCATIONS_WEIGHTS

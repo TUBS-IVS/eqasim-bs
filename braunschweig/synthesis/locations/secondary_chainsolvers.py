@@ -175,6 +175,13 @@ def configure(context):
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
 
+    # Escort as dedicated activity purpose (issue #201). The decider draws one
+    # location TYPE per escort leg from the SrV-derived weights; defaults are
+    # the committed derivation output (srv2023_escort_destination_types.csv).
+    context.config("escort_purpose", False)
+    context.config("escort_locations_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
+    context.config("escort_locations_weights", DEFAULT_ESCORT_LOCATIONS_WEIGHTS)
+
     # MiD Wege directory: only consumed (and only declared) when at least one
     # subtype split is ON, so non-real configs that leave all three flags off
     # never require the local-only MiD delivery.
@@ -1184,7 +1191,8 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     random: np.random.RandomState,
                     shop_subtype_decider=None,
                     leisure_subtype_decider=None,
-                    other_subtype_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    other_subtype_decider=None,
+                    escort_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
     Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
@@ -1215,6 +1223,12 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     purpose stay at the plain ``"other"`` default (unchanged from the OFF path)
     -- only the realised-outcome count in ``subtype_stats`` changes. Both
     deciders default to None (OFF), leaving the leg loop byte-identical.
+
+    ``escort_location_decider`` (issue #201) mirrors the subtype deciders for
+    plan-level escort legs: it takes NO covariates and returns one of
+    ESCORT_LOCATION_ACTIVITIES; the drawn name becomes the placement activity
+    while the distance purpose is the single aggregate ``escort`` layer
+    (fallback ``other``, counted).
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -1251,6 +1265,9 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         subtype_stats.update({name: 0 for name in OTHER_SUBTYPE_ACTIVITIES})
         subtype_stats["other_rest"] = 0
         subtype_stats["other_distance_layer_fallback"] = 0
+    if escort_location_decider is not None:
+        subtype_stats.update({name: 0 for name in ESCORT_LOCATION_ACTIVITIES})
+        subtype_stats["escort_distance_layer_fallback"] = 0
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -1345,6 +1362,22 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     else:
                         distance_purpose = "other"
                         subtype_stats["other_distance_layer_fallback"] += 1
+
+            # Issue #201: draw the location TYPE for a plan-level escort leg.
+            # The drawn name is the chainsolver activity (education / leisure /
+            # residential / ... candidates); ALL escort legs sample the single
+            # aggregate "escort" distance layer (the type draw changes only the
+            # candidate set), with a counted fallback to "other" when the layer
+            # is absent (e.g. legacy mode-level distributions).
+            if escort_location_decider is not None and to_act_type == "escort":
+                drawn = escort_location_decider()
+                placement_act = drawn
+                subtype_stats[drawn] += 1
+                if _purpose_in_distributions(distributions, "escort"):
+                    distance_purpose = "escort"
+                else:
+                    distance_purpose = "other"
+                    subtype_stats["escort_distance_layer_fallback"] += 1
 
             distance_m = _sample_leg_distance(
                 distributions, leg["mode"], leg["travel_time"],
@@ -1731,12 +1764,15 @@ def _extract_locations(result_df: pd.DataFrame,
     # label never reaches the output schema (which carries no purpose:
     # [person_id, activity_index, location_id, geometry]); this is the implicit
     # map-back ("other_rest" needs no entry here: it is never a chainsolver
-    # activity name, see _build_other_subtype_decider).
+    # activity name, see _build_other_subtype_decider). Issue #201:
+    # ESCORT_LOCATION_ACTIVITIES (the drawn location-TYPE names) map back to
+    # the eqasim "escort" purpose the same implicit way.
     secondary_acts = (
         set(SECONDARY_PURPOSES)
         | set(SHOP_SUBTYPE_ACTIVITIES)
         | set(LEISURE_SUBTYPE_ACTIVITIES)
         | set(OTHER_SUBTYPE_ACTIVITIES)
+        | set(ESCORT_LOCATION_ACTIVITIES)
     )
     is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
@@ -2506,9 +2542,21 @@ def _build_other_subtype_decider(context, random_seed: int):
     (``OTHER_SUBTYPE_SEED_OFFSET``, NOT ``random``) selects the outcome via
     ``_inverse_cdf_choice``, so every "other" leg -- errand, escort, or rest --
     consumes the same single draw per leg as the shop/leisure deciders.
+
+    When ``escort_purpose`` is ON (issue #201) escort is realised as its own
+    plan-level purpose upstream (see ``_build_escort_location_decider``), so no
+    leg with ``following_purpose == "other"`` can carry a raw W_ZWECK in
+    ``OTHER_ESCORT_ZWECK`` any more. Stage 1 then collapses to a 2-way
+    {errand, rest} split estimated only on the remaining "other" W_ZWECK codes,
+    and the outcome vocabulary drops ``"other_escort"`` accordingly. With
+    ``escort_purpose`` OFF this is value-identical to the previous 3-way split
+    (same ``group_names`` tuple, same probability composition, same single
+    draw).
     """
     if not context.config("secondary_other_subtype_split"):
         return None
+
+    escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
@@ -2531,16 +2579,26 @@ def _build_other_subtype_decider(context, random_seed: int):
     tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
     mid_wege = mid_wege.assign(travel_time=tt)
 
-    # Stage 1: coarse errand/escort/rest split, labelled directly by the raw
+    # Stage 1: coarse errand/(escort/)rest split, labelled directly by the raw
     # W_ZWECK code (never thinned by a missing W_ZWD).
     other_zweck = frozenset(
         code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == "other"
     )
-    rest_zweck = other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK
+    if escort_purpose_on:
+        # Issue #201: with escort as a dedicated plan-level purpose no escort
+        # leg reaches following_purpose == "other" any more, so the coarse
+        # split estimates only {errand, rest} on the remaining "other" codes.
+        other_zweck = other_zweck - OTHER_ESCORT_ZWECK
+        coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
+                         "rest": other_zweck - OTHER_ERRAND_ZWECK}
+    else:
+        coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
+                         "escort": OTHER_ESCORT_ZWECK,
+                         "rest": other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK}
     coarse_spec = SubtypeSpec(
         purpose_label="other_coarse",
         zweck_values=other_zweck,
-        groups={"errand": OTHER_ERRAND_ZWECK, "escort": OTHER_ESCORT_ZWECK, "rest": rest_zweck},
+        groups=coarse_groups,
         sentinels=frozenset(),
         group_col="W_ZWECK",
     )
@@ -2551,15 +2609,24 @@ def _build_other_subtype_decider(context, random_seed: int):
     errand_cell_probs, errand_marginal = estimate_group_probabilities(
         mid_wege, OTHER_ERRAND_SPEC, min_obs=min_obs)
 
+    # Issue #201: "escort" is only a coarse_marginal key when escort_purpose is
+    # OFF (Stage 1 above only builds that group in the 3-way OFF-path spec) --
+    # include it in the summary line only when present, rather than a KeyError
+    # or a fabricated 0.000 entry for a group that was never estimated.
+    escort_share = coarse_marginal.get("escort")
+    escort_summary = f"escort={escort_share:.3f}, " if escort_share is not None else ""
     print(
         "[braunschweig.secondary_chainsolvers] other subtype: coarse marginal shares "
-        f"escort={coarse_marginal['escort']:.3f}, errand={coarse_marginal['errand']:.3f}, "
+        f"{escort_summary}errand={coarse_marginal['errand']:.3f}, "
         f"rest={coarse_marginal['rest']:.3f}; errand marginal shares "
         f"other_errand_short={errand_marginal['other_errand_short']:.3f}, "
         f"other_errand_long={errand_marginal['other_errand_long']:.3f}"
     )
 
-    group_names = tuple(sorted(("other_errand_short", "other_errand_long", "other_escort", "other_rest")))
+    outcome_names = ["other_errand_short", "other_errand_long", "other_rest"]
+    if not escort_purpose_on:
+        outcome_names.append("other_escort")
+    group_names = tuple(sorted(outcome_names))
     rng = np.random.RandomState(int(random_seed) + OTHER_SUBTYPE_SEED_OFFSET)
 
     def decide(mode: str, travel_time_s: float) -> str:
@@ -2568,11 +2635,12 @@ def _build_other_subtype_decider(context, random_seed: int):
         errand = errand_cell_probs.get((mode, band), errand_marginal)
         p_errand = coarse.get("errand", 0.0)
         probs = {
-            "other_escort": coarse.get("escort", 0.0),
             "other_rest": coarse.get("rest", 0.0),
             "other_errand_short": p_errand * errand.get("other_errand_short", 0.0),
             "other_errand_long": p_errand * errand.get("other_errand_long", 0.0),
         }
+        if not escort_purpose_on:
+            probs["other_escort"] = coarse.get("escort", 0.0)
         return _inverse_cdf_choice(probs, group_names, rng.random_sample())
 
     return decide
@@ -2691,6 +2759,8 @@ def execute(context):
     leisure_subtype_decider = _build_leisure_subtype_decider(context, random_seed)
     other_subtype_split = bool(context.config("secondary_other_subtype_split"))
     other_subtype_decider = _build_other_subtype_decider(context, random_seed)
+    escort_purpose_on = bool(context.config("escort_purpose"))
+    escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
 
     fallback_strategy = (
@@ -2746,7 +2816,15 @@ def execute(context):
         shop_subtype_decider=shop_subtype_decider,
         leisure_subtype_decider=leisure_subtype_decider,
         other_subtype_decider=other_subtype_decider,
+        escort_location_decider=escort_location_decider,
     )
+    if escort_location_decider is None and len(plans_df) and \
+            (plans_df["to_act_type"] == "escort").any():
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] plans contain 'escort' legs but "
+            "escort_purpose is OFF in this stage -- the donor mapping and the "
+            "chainsolver must be driven by the SAME escort_purpose config key."
+        )
     print(
         f"[braunschweig.secondary_chainsolvers] bounded problems: "
         f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
@@ -2798,6 +2876,22 @@ def execute(context):
             f"distance-layer fallback to aggregate 'other' "
             f"{n_dist_fb:,}/{n_other_legs:,} "
             f"({100.0 * n_dist_fb / n_other_legs if n_other_legs else 0.0:.1f}%)"
+        )
+    if escort_location_decider is not None:
+        n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}
+        n_escort_legs = sum(n_by_type.values())
+        n_dist_fb = subtype_stats["escort_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({100.0 * count / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
+            for name, count in n_by_type.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] escort location draw "
+            "(bounded escort legs only; unbounded go to fallback untyped): "
+            f"{n_escort_legs:,} bounded escort legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'other' "
+            f"{n_dist_fb:,}/{n_escort_legs:,} "
+            f"({100.0 * n_dist_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
         )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
@@ -2931,6 +3025,13 @@ def execute(context):
             "candidate frame). Enable secondary_building_potentials or disable "
             "leisure_visit_building_potential."
         )
+    if escort_purpose_on and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
+            "secondary_building_potentials to be ON (the escort placement needs "
+            "the education/residential/aggregate candidate potentials). Enable "
+            "secondary_building_potentials or disable escort_purpose."
+        )
     # The residential visit candidates themselves are appended by the
     # secondary_candidates stage (df_secondary above already carries them when
     # the flag is ON); _build_locations_df below still needs the flag for the
@@ -2970,6 +3071,7 @@ def execute(context):
         leisure_subtype_split=leisure_subtype_split,
         other_subtype_split=other_subtype_split,
         leisure_visit_building_potential=leisure_visit_building_potential,
+        escort_purpose=escort_purpose_on,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
