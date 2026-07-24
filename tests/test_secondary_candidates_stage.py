@@ -189,7 +189,8 @@ def test_facility_frame_folds_visit_into_leisure():
     fac = secondary_facility_frame(candidates)
 
     assert list(fac.columns) == [
-        "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other"
+        "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other",
+        "offers_escort",
     ]
     visit_fac = fac[fac["location_id"] == "sec_res_77"].iloc[0]
     # A visit facility must offer "leisure": the population writes the BASE
