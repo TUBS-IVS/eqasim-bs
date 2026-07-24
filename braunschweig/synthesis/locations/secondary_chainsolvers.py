@@ -405,6 +405,34 @@ LEISURE_SUBTYPE_ACTIVITIES = (
 # eqasim output: _extract_locations maps them back to "other".
 OTHER_SUBTYPE_ACTIVITIES = ("other_errand_short", "other_errand_long", "other_escort")
 
+# Internal escort location-type activities (chainsolver-only; issue #201). One
+# per drawable location category; the draw happens per escort leg in
+# _build_plans_df via _build_escort_location_decider. They never leak into the
+# eqasim output: _extract_locations maps them back to the "escort" purpose.
+ESCORT_LOCATION_ACTIVITIES = (
+    "escort_edu_kindergarten", "escort_edu_school", "escort_edu_university",
+    "escort_leisure", "escort_other", "escort_residential", "escort_shop",
+)
+
+# Config category vocabulary -> internal activity name. Config uses the short
+# category names (edu_kindergarten, ..., shop); the SrV-derived default weights
+# below are the output of scripts/derive_escort_location_weights.py
+# (srv2023_escort_destination_types.csv) -- regenerate there, never edit here.
+ESCORT_CATEGORY_TO_ACTIVITY = {
+    "edu_kindergarten": "escort_edu_kindergarten",
+    "edu_school": "escort_edu_school",
+    "edu_university": "escort_edu_university",
+    "leisure": "escort_leisure",
+    "other": "escort_other",
+    "residential": "escort_residential",
+    "shop": "escort_shop",
+}
+DEFAULT_ESCORT_LOCATIONS_ACTIVITIES = [
+    "edu_kindergarten", "edu_school", "edu_university",
+    "other", "leisure", "residential", "shop",
+]
+DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+
 # Maps each secondary chainsolver activity to its attached candidate-potential
 # column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
 # genuinely distinct split retail potentials; the aggregate "shop" maps to the
@@ -421,6 +449,19 @@ _ACTIVITY_POTENTIAL_COLUMN = {
 }
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_leisure" for name in LEISURE_SUBTYPE_ACTIVITIES})
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_other" for name in OTHER_SUBTYPE_ACTIVITIES})
+# Escort location-type activities (issue #201). "escort_residential" reuses the
+# literal "pot_visit" column name here (NOT the VISIT_POTENTIAL_COLUMN constant,
+# which is defined further below in this module) so this default/OFF-path
+# mapping does not depend on a forward reference.
+_ACTIVITY_POTENTIAL_COLUMN.update({
+    "escort_edu_kindergarten": "pot_escort_edu",
+    "escort_edu_school": "pot_escort_edu",
+    "escort_edu_university": "pot_escort_edu",
+    "escort_leisure": "pot_leisure",
+    "escort_other": "pot_other",
+    "escort_residential": "pot_visit",
+    "escort_shop": "pot_shop",
+})
 
 # Offer / potential columns used for the "leisure_visit" activity ONLY when
 # ``leisure_visit_building_potential`` is ON (Task 5, issue #127). Residential
@@ -936,8 +977,10 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
 # ---------------------------------------------------------------------------
 
 # Eqasim purposes that count as "secondary" (variable). ``home``/``work``/
-# ``education`` are fixed (anchors).
-SECONDARY_PURPOSES = {"shop", "leisure", "other"}
+# ``education`` are fixed (anchors). "escort" (issue #201) is only realised
+# when escort_purpose is ON; membership here is inert while no escort legs
+# exist, keeping the OFF path byte-identical.
+SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
 FIXED_PURPOSES = {"home", "work", "education"}
 
 
@@ -2036,6 +2079,11 @@ SHOP_SUBTYPE_SEED_OFFSET = 90211
 LEISURE_SUBTYPE_SEED_OFFSET = 90212  # SHOP_SUBTYPE_SEED_OFFSET + 1
 OTHER_SUBTYPE_SEED_OFFSET = 90213    # SHOP_SUBTYPE_SEED_OFFSET + 2
 
+# Issue #201: the escort location-type decider gets its own dedicated stream
+# too, one more than the last subtype offset, so it cannot perturb the shop /
+# leisure / other subtype draws, the distance RNG, or the OFF path.
+ESCORT_LOCATION_SEED_OFFSET = 90214  # SHOP_SUBTYPE_SEED_OFFSET + 3
+
 
 def _build_shop_subtype_decider(context, random_seed: int):
     """Build the per-leg shop daily/non-daily decider, or return None when OFF.
@@ -2318,6 +2366,66 @@ def _build_other_subtype_decider(context, random_seed: int):
             "other_errand_short": p_errand * errand.get("other_errand_short", 0.0),
             "other_errand_long": p_errand * errand.get("other_errand_long", 0.0),
         }
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+
+    return decide
+
+
+def _build_escort_location_decider(context, random_seed: int):
+    """Build the per-leg escort location-TYPE decider, or None when OFF.
+
+    Issue #201: every plan-level "escort" leg draws ONE location category
+    (education by school type / other / leisure / residential / shop) from the
+    configured weight vector -- no covariate conditioning; the weights are the
+    SrV-2023-BS+RGB observed destination-type shares
+    (scripts/derive_escort_location_weights.py). Returns a callable
+    ``() -> str`` yielding one of ESCORT_LOCATION_ACTIVITIES, consuming exactly
+    one uniform draw per call from a dedicated seeded RNG
+    (ESCORT_LOCATION_SEED_OFFSET), so the distance RNG and the three subtype
+    decider streams stay untouched (OFF path byte-identical).
+    """
+    if not context.config("escort_purpose"):
+        return None
+
+    activities = list(context.config(
+        "escort_locations_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES))
+    weights = [float(w) for w in context.config(
+        "escort_locations_weights", DEFAULT_ESCORT_LOCATIONS_WEIGHTS)]
+
+    if len(activities) != len(weights):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_activities and "
+            f"escort_locations_weights must have the same length, got "
+            f"{len(activities)} and {len(weights)}."
+        )
+    unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
+    if unknown:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] unknown escort location "
+            f"category(ies) {unknown}; allowed: {sorted(ESCORT_CATEGORY_TO_ACTIVITY)}."
+        )
+    if any(w < 0.0 for w in weights) or sum(weights) <= 0.0:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_weights must be "
+            "non-negative with a positive sum."
+        )
+
+    total = float(sum(weights))
+    probs = {
+        ESCORT_CATEGORY_TO_ACTIVITY[category]: weight / total
+        for category, weight in zip(activities, weights)
+    }
+    group_names = tuple(ESCORT_CATEGORY_TO_ACTIVITY[c] for c in activities)
+    print(
+        "[braunschweig.secondary_chainsolvers] escort location draw: "
+        + ", ".join(f"{c}={w / total:.3f}" for c, w in zip(activities, weights))
+        + " (SrV 2023 BS+RGB derived defaults; see "
+          "srv2023_escort_destination_types.csv)"
+    )
+
+    rng = np.random.RandomState(int(random_seed) + ESCORT_LOCATION_SEED_OFFSET)
+
+    def decide() -> str:
         return _inverse_cdf_choice(probs, group_names, rng.random_sample())
 
     return decide
