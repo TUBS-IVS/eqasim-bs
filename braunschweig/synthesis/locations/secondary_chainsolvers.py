@@ -585,6 +585,98 @@ def append_residential_visit_candidates(candidates: gpd.GeoDataFrame,
     return out
 
 
+# Offer / potential columns for the escort education candidates (issue #201).
+ESCORT_EDU_OFFER_BY_TYPE = {
+    "kindergarten": "offers_escort_edu_kindergarten",
+    "school": "offers_escort_edu_school",
+    "university": "offers_escort_edu_university",
+}
+ESCORT_EDU_POTENTIAL_COLUMN = "pot_escort_edu"
+ESCORT_RESIDENTIAL_OFFER_COLUMN = "offers_escort_residential"
+
+
+def append_escort_candidates(candidates: gpd.GeoDataFrame,
+                             df_education: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append education escort candidates + escort offer columns (issue #201).
+
+    Adds, on EVERY row: the three education offer columns
+    (ESCORT_EDU_OFFER_BY_TYPE, default False), ESCORT_EDU_POTENTIAL_COLUMN
+    (default 0.0) and ESCORT_RESIDENTIAL_OFFER_COLUMN (True where the row is a
+    residential visit candidate, i.e. its VISIT_OFFER_COLUMN is True; False
+    elsewhere / when the visit machinery is off). Then appends one
+    ``sec_edu_<n>`` candidate row per NON-fake education facility from
+    ``synthesis.locations.education`` (fake rows are municipality-centroid
+    placeholders, not real facilities), carrying ONLY its per-type escort offer
+    and ``pot_escort_edu = weight`` (the OSM area*floors capacity proxy the
+    education gravity assignment uses -- ASSUMPTION documented in the spec).
+    """
+    required = ["fake", "education_type", "weight", "location_id", "commune_id", "geometry"]
+    missing = [c for c in required if c not in df_education.columns]
+    if missing:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort education candidate source "
+            "(synthesis.locations.education) is missing column(s) %s; available: %s."
+            % (missing, list(df_education.columns))
+        )
+
+    base = candidates.copy()
+    for column in ESCORT_EDU_OFFER_BY_TYPE.values():
+        base[column] = False
+    base[ESCORT_EDU_POTENTIAL_COLUMN] = 0.0
+    if VISIT_OFFER_COLUMN in base.columns:
+        base[ESCORT_RESIDENTIAL_OFFER_COLUMN] = base[VISIT_OFFER_COLUMN].astype(bool)
+    else:
+        base[ESCORT_RESIDENTIAL_OFFER_COLUMN] = False
+
+    edu = df_education[~df_education["fake"].astype(bool)].copy()
+    n_excluded_fake = int(df_education["fake"].astype(bool).sum())
+    n_unknown = int((edu["education_type"].astype(str) == "unknown").sum())
+    edu = edu[edu["education_type"].astype(str).isin(ESCORT_EDU_OFFER_BY_TYPE)]
+    if edu.crs is not None and candidates.crs is not None and edu.crs != candidates.crs:
+        edu = edu.to_crs(candidates.crs)
+
+    iris_col = "iris_id" if "iris_id" in edu.columns else "commune_id"
+    data = {
+        "location_id": ("sec_" + edu["location_id"].astype(str)).values,
+        "commune_id": edu["commune_id"].astype(str).values,
+        "iris_id": edu[iris_col].astype(str).values,
+        "offers_shop": False,
+        "offers_leisure": False,
+        "offers_other": False,
+        "offers_escort": True,
+        "pot_shop": 0.0,
+        "pot_shop_daily": 0.0,
+        "pot_shop_non_daily": 0.0,
+        "pot_leisure": 0.0,
+        "pot_other": 0.0,
+        ESCORT_EDU_POTENTIAL_COLUMN: edu["weight"].astype(float).values,
+        ESCORT_RESIDENTIAL_OFFER_COLUMN: False,
+        "geometry": edu.geometry.values,
+    }
+    # Visit columns exist on base whenever the residential machinery ran; keep
+    # the frames column-aligned.
+    if VISIT_OFFER_COLUMN in base.columns:
+        data[VISIT_OFFER_COLUMN] = False
+        data[VISIT_POTENTIAL_COLUMN] = 0.0
+    education_types = edu["education_type"].astype(str).values
+    for education_type, column in ESCORT_EDU_OFFER_BY_TYPE.items():
+        data[column] = (education_types == education_type)
+
+    edu_rows = gpd.GeoDataFrame(data, crs=candidates.crs)
+    out = gpd.GeoDataFrame(
+        pd.concat([base, edu_rows], ignore_index=True), crs=candidates.crs)
+    print(
+        "[braunschweig.secondary_chainsolvers] escort candidates: appended "
+        f"{len(edu_rows)} education rows "
+        f"(kindergarten={int((education_types == 'kindergarten').sum())}, "
+        f"school={int((education_types == 'school').sum())}, "
+        f"university={int((education_types == 'university').sum())}); "
+        f"excluded {n_excluded_fake} fake centroid rows and {n_unknown} "
+        "unknown-type rows"
+    )
+    return out
+
+
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
                  attr_transform: str = "linear"):
     """Construct the chainsolvers combined Scorer, or None when disabled (the
@@ -659,7 +751,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     -------
     GeoDataFrame with columns:
         location_id, commune_id, iris_id, geometry(Point),
-        offers_shop, offers_leisure, offers_other,
+        offers_shop, offers_leisure, offers_other, offers_escort,
         pot_shop, pot_shop_daily, pot_shop_non_daily, pot_leisure, pot_other
     concat of gpkg shop/leisure rows and legacy other rows, reset index.
 
@@ -669,6 +761,12 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     Tier-2 daily/non-daily split (secondary_shop_daily_split) can route a leg's
     placement to the matching retail subtype. The legacy 'other' rows carry 0.0
     for all three shop potentials.
+
+    ``offers_escort`` (issue #201): True on every candidate row, regardless of
+    the ``escort_purpose`` flag -- it is cheap to mark every candidate eligible
+    here; whether facilities WRITE the escort option is gated by the
+    ``escort_purpose`` flag in the facilities writer (Task 8), not by this
+    column.
     """
     from braunschweig.data.building_potential_attach import attach_potential
 
@@ -694,6 +792,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_shop": (retail > 0).values,
         "offers_leisure": (leisure > 0).values,
         "offers_other": False,
+        "offers_escort": True,
         "pot_shop": retail.values,
         "pot_shop_daily": retail_daily.values,
         "pot_shop_non_daily": retail_non_daily.values,
@@ -742,6 +841,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_shop": False,
         "offers_leisure": False,
         "offers_other": True,
+        "offers_escort": True,
         "pot_shop": 0.0,
         "pot_shop_daily": 0.0,
         "pot_shop_non_daily": 0.0,
@@ -769,6 +869,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
             "offers_shop": True,
             "offers_leisure": True,
             "offers_other": True,
+            "offers_escort": True,
             "pot_shop": ewz,
             "pot_shop_daily": ewz,
             "pot_shop_non_daily": ewz,
@@ -793,7 +894,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                         shop_daily_split: bool = False,
                         leisure_subtype_split: bool = False,
                         other_subtype_split: bool = False,
-                        leisure_visit_building_potential: bool = False):
+                        leisure_visit_building_potential: bool = False,
+                        escort_purpose: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -844,6 +946,20 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     ``_build_other_subtype_decider``) still find a candidate. All three subtypes
     share the SAME ``pot_other`` value. ``other_subtype_split`` requires
     ``with_potentials``. OFF (default) is byte-identical.
+
+    When ``escort_purpose`` is True (issue #201) the seven internal
+    ``ESCORT_LOCATION_ACTIVITIES`` are emitted IN ADDITION TO the aggregate/
+    subtype activities above, so the same building can be a candidate for both
+    its normal purpose and the matching escort drop-off/pick-up. Three
+    (``escort_edu_kindergarten/school/university``) target the dedicated
+    education candidates from :func:`append_escort_candidates`
+    (``pot_escort_edu``); ``escort_leisure`` / ``escort_other`` / ``escort_shop``
+    reuse the plain aggregate offer/potential of their base purpose;
+    ``escort_residential`` reuses the residential visit candidates
+    (``ESCORT_RESIDENTIAL_OFFER_COLUMN`` / ``pot_visit``) and is dropped for a
+    non-positive potential, mirroring the shop-subtype zero-skip.
+    ``escort_purpose`` requires ``with_potentials`` (the escort placement needs
+    the education/visit/aggregate potential columns).
     """
     if shop_daily_split and not with_potentials:
         raise ValueError(
@@ -881,6 +997,12 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "df_secondary before _build_locations_df, or disable "
             "leisure_visit_building_potential)." % VISIT_POTENTIAL_COLUMN
         )
+    if escort_purpose and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
+            "with_potentials (the escort placement needs the education/visit/"
+            "aggregate potential columns)."
+        )
     activities = []
     potentials = []
     # Activity emission order. With a split ON, the aggregate offer is either
@@ -903,7 +1025,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
         if other_subtype_split else (("other", "offers_other"),)
     )
-    offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs
+    escort_offer_specs = (
+        (
+            ("escort_edu_kindergarten", "offers_escort_edu_kindergarten"),
+            ("escort_edu_school", "offers_escort_edu_school"),
+            ("escort_edu_university", "offers_escort_edu_university"),
+            ("escort_leisure", "offers_leisure"),
+            ("escort_other", "offers_other"),
+            ("escort_residential", ESCORT_RESIDENTIAL_OFFER_COLUMN),
+            ("escort_shop", "offers_shop"),
+        )
+        if escort_purpose else ()
+    )
+    offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs + escort_offer_specs
     # Per-activity potential column, overriding "leisure_visit" -> pot_visit
     # ONLY when leisure_visit_building_potential is ON (the OFF-path/default
     # mapping in _ACTIVITY_POTENTIAL_COLUMN stays leisure_visit -> pot_leisure,
@@ -912,6 +1046,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     if leisure_visit_building_potential:
         potential_column_by_activity["leisure_visit"] = VISIT_POTENTIAL_COLUMN
     cols = ["offers_shop", "offers_leisure", "offers_other"]
+    if escort_purpose:
+        cols = cols + list(ESCORT_EDU_OFFER_BY_TYPE.values()) + [ESCORT_RESIDENTIAL_OFFER_COLUMN]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
         # offer_specs, so a non-split path does not demand subtype potential
@@ -922,7 +1058,17 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         # selecting a duplicated column name from df_secondary would otherwise
         # yield a multi-column slice instead of a per-row scalar below.
         potential_cols = [potential_column_by_activity[act] for act, _ in offer_specs]
-        cols = cols + list(dict.fromkeys(potential_cols))
+        # "escort_residential" always maps to pot_visit (VISIT_POTENTIAL_COLUMN,
+        # see the fixed _ACTIVITY_POTENTIAL_COLUMN entry above), but pot_visit is
+        # only appended once append_residential_visit_candidates has actually run
+        # -- escort_purpose alone does not guarantee it (append_escort_candidates
+        # sets ESCORT_RESIDENTIAL_OFFER_COLUMN False on every row when the visit
+        # machinery is off, so "escort_residential" is never offered and pot_visit
+        # is never read in that case). Filtered to columns that actually exist so
+        # escort_purpose stays usable without the residential visit machinery; a
+        # column genuinely missing while its offer is True would still raise
+        # inside the per-row loop below (fail loud, not silently wrong).
+        cols = cols + [c for c in dict.fromkeys(potential_cols) if c in df_secondary.columns]
     if leisure_visit_building_potential:
         cols = cols + [VISIT_OFFER_COLUMN]
     cols = list(dict.fromkeys(cols))
@@ -945,6 +1091,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                 if shop_daily_split and act in SHOP_SUBTYPE_ACTIVITIES and pot <= 0.0:
                     continue
                 if leisure_visit_building_potential and act == "leisure_visit" and pot <= 0.0:
+                    continue
+                if escort_purpose and act == "escort_residential" and pot <= 0.0:
                     continue
                 acts.append(act)
                 pots.append(pot)
@@ -1259,6 +1407,22 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
 
     Returns the constructed ``CandidateIndex`` instance (its KDTrees are
     deterministic given the fixed candidate order).
+
+    ``df_secondary`` here is always the LEGACY candidate frame (see the
+    "Always the LEGACY frame" comment in ``execute()``), which predates issue
+    #201 and therefore never carries an ``offers_escort`` column (escort
+    candidates -- education facilities, residential buildings -- are appended
+    only onto the REPLACE frame built by ``build_secondary_candidates`` /
+    ``append_escort_candidates`` for the primary carla solve). Since "escort"
+    is an unconditional member of ``SECONDARY_PURPOSES``, a purpose whose offer
+    column is missing here is OMITTED from ``destinations`` entirely (as if it
+    were not a member of ``SECONDARY_PURPOSES``) rather than raising
+    ``KeyError`` -- ``CandidateIndex`` builds a KDTree per key eagerly and
+    rejects a zero-candidate array, so an empty-but-present entry is not an
+    option either. Omitting the purpose is itself a fallback (no RDA fallback
+    candidates for it), so it is logged (CLAUDE.md "Fallback transparency"),
+    never silent; any problem that actually needs this purpose in the fallback
+    fails and is counted in the existing ``n_failed`` / convergence reporting.
     """
     from synthesis.population.spatial.secondary.components import CandidateIndex
 
@@ -1271,11 +1435,24 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
         df_secondary.geometry.y.values,
     ))
     destinations = {}
+    missing_offer_purposes = []
     for purpose in SECONDARY_PURPOSES:
-        mask = df_secondary[f"offers_{purpose}"].values
+        offer_column = f"offers_{purpose}"
+        if offer_column not in df_secondary.columns:
+            missing_offer_purposes.append(purpose)
+            continue
+        mask = df_secondary[offer_column].values
         destinations[purpose] = dict(
             identifiers=identifiers[mask],
             locations=coords[mask],
+        )
+    if missing_offer_purposes:
+        print(
+            "[braunschweig.secondary_chainsolvers] RDA candidate index: "
+            f"purpose(s) {sorted(missing_offer_purposes)} have no offer column "
+            "on the fallback candidate frame -- omitted from the index (0 "
+            "fallback candidates; expected for 'escort' until a dedicated RDA "
+            "fallback pool exists, see issue #201)."
         )
 
     return CandidateIndex(destinations)
@@ -1399,13 +1576,33 @@ def _fallback_place(problems: List[Dict[str, Any]],
     Quality is poor but coverage is preserved so downstream stages do not
     crash on missing rows. The minority of unbounded problems makes this
     acceptable as a stop-gap.
+
+    ``df_secondary`` here is always the LEGACY candidate frame, which predates
+    issue #201 and never carries an ``offers_escort`` column (mirrors
+    :func:`_build_rda_candidate_index`; see its docstring). A missing
+    ``offers_<purpose>`` column is treated as an empty candidate pool for that
+    purpose rather than raising ``KeyError`` -- logged, not silent.
     """
     if not unbounded_idx:
         return [], []
 
     pool: Dict[str, pd.DataFrame] = {}
+    missing_offer_purposes = []
     for purpose in SECONDARY_PURPOSES:
-        pool[purpose] = df_secondary[df_secondary[f"offers_{purpose}"]].reset_index(drop=True)
+        offer_column = f"offers_{purpose}"
+        if offer_column in df_secondary.columns:
+            pool[purpose] = df_secondary[df_secondary[offer_column]].reset_index(drop=True)
+        else:
+            missing_offer_purposes.append(purpose)
+            pool[purpose] = df_secondary.iloc[0:0]
+    if missing_offer_purposes:
+        print(
+            "[braunschweig.secondary_chainsolvers] random fallback: purpose(s) "
+            f"{sorted(missing_offer_purposes)} have no offer column on the "
+            "fallback candidate frame -- 0 fallback candidates for them "
+            "(expected for 'escort' until a dedicated fallback pool exists; "
+            "see issue #201)."
+        )
 
     out_rows: List[tuple] = []
     convergence_rows: List[tuple] = []
