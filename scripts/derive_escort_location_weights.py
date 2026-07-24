@@ -6,6 +6,9 @@ computes the GEWICHT_W-weighted share per candidate category and writes the
 pinned reference CSV consumed as the default for the ``escort_locations_*``
 config keys.
 
+Usage:
+    python scripts/derive_escort_location_weights.py [--wege <path>] [--out <path>]
+
 Input : eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
         (latin-1 encoded, GEWICHT_W uses a decimal comma)
 Output: eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv
@@ -30,6 +33,7 @@ home 12 / rest 14 / shop 1) is closely consistent; it is NOT used as input.
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -38,8 +42,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-WEGE_PATH = Path("eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv")
-OUTPUT_PATH = Path("eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv")
+REPO = Path(__file__).resolve().parents[1]
+DEFAULT_WEGE_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_raw" / "SrV2023_Wege.csv"
+DEFAULT_OUTPUT_PATH = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_escort_destination_types.csv"
 
 ESCORT_V_ZWECK = 12
 
@@ -113,6 +118,12 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         )
 
     w_total = float(sub["GEWICHT_W"].astype(float).sum())
+    if not len(sub) or w_total <= 0.0:
+        raise ValueError(
+            "[derive_escort_location_weights] no escort legs with a valid "
+            "V_ZWECK_BHOL remain (or their GEWICHT_W sums to zero); cannot "
+            "derive destination-type shares from zero valid observations."
+        )
     rows = []
     for category in CATEGORY_ORDER:
         mask = sub["category"] == category
@@ -132,15 +143,30 @@ def derive_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return table, stats
 
 
-def main() -> int:
+def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    if not WEGE_PATH.exists():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wege",
+        type=Path,
+        default=DEFAULT_WEGE_PATH,
+        help=f"Path to SrV2023_Wege.csv input (default: {DEFAULT_WEGE_PATH})",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUTPUT_PATH,
+        help=f"Path to output CSV (default: {DEFAULT_OUTPUT_PATH})",
+    )
+    args = parser.parse_args(argv)
+
+    if not args.wege.exists():
         raise FileNotFoundError(
-            f"[derive_escort_location_weights] input not found: {WEGE_PATH} "
+            f"[derive_escort_location_weights] input not found: {args.wege} "
             "(local-only SrV raw data; see eqasim-data README)."
         )
     df = pd.read_csv(
-        WEGE_PATH, sep=None, engine="python", encoding="latin-1",
+        args.wege, sep=None, engine="python", encoding="latin-1",
         usecols=["V_ZWECK", "V_ZWECK_BHOL", "E_ZWECK_OBHOL", "GEWICHT_W"],
     )
     df["GEWICHT_W"] = (
@@ -169,11 +195,11 @@ def main() -> int:
         "residential 15; other 1/2/10/11/70 (work folded into other: ASSUMPTION, "
         "no work facilities in the secondary candidate universe).\n"
     )
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8", newline="") as handle:
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with open(args.out, "w", encoding="utf-8", newline="") as handle:
         handle.write(header)
         table.to_csv(handle, index=False)
-    logger.info("[derive_escort_location_weights] wrote %s", OUTPUT_PATH)
+    logger.info("[derive_escort_location_weights] wrote %s", args.out)
     return 0
 
 

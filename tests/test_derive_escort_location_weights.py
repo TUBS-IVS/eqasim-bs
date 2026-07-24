@@ -50,3 +50,10 @@ def test_derive_weights_raises_on_unmapped_code():
     df.loc[0, "V_ZWECK_BHOL"] = 12  # 12 is not a documented BHOL code
     with pytest.raises(ValueError, match="unmapped V_ZWECK_BHOL"):
         derive_weights(df)
+
+
+def test_derive_weights_raises_when_no_valid_bhol():
+    df = _mini_srv_wege()
+    df["V_ZWECK_BHOL"] = -8
+    with pytest.raises(ValueError, match="zero valid observations"):
+        derive_weights(df)
