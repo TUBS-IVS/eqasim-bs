@@ -51,9 +51,11 @@ def configure(context):
 
         # Escort candidate universe (issue #201): the education facilities are
         # only needed as candidates once escort_purpose is ON, and only make
-        # sense as REPLACE candidates (with_potentials), so this is declared
-        # inside the sec_enabled block.
-        context.config("escort_purpose", False)
+        # sense as REPLACE candidates (with_potentials), so this STAGE
+        # dependency is declared inside the sec_enabled block. The config
+        # option itself gets its own unconditional declaration below (next to
+        # leisure_visit_building_potential) so configure() always knows it,
+        # even when this block is skipped.
         if context.config("escort_purpose", False):
             context.stage("synthesis.locations.education")
 
@@ -61,7 +63,17 @@ def configure(context):
     # owned by the chainsolvers stage; read-only here).
     context.config("secondary_leisure_subtype_split", False)
     context.config("leisure_visit_building_potential", False)
-    if context.config("leisure_visit_building_potential") or context.config("escort_purpose", False):
+    # Unconditional declaration (issue #201 fix): escort_purpose must not be
+    # declared ONLY inside `if sec_enabled:` above or as the right operand of
+    # the `or` below -- Python's `or` short-circuits and never evaluates the
+    # right operand once leisure_visit_building_potential is True, and
+    # combined with secondary_building_potentials=False (which skips the
+    # sec_enabled block too) escort_purpose was then never added to
+    # configure()'s required config. execute() then crashed on its one-arg
+    # config() read with synpp's PipelineError instead of reaching the
+    # intended ValueError guard below.
+    context.config("escort_purpose", False)
+    if context.config("leisure_visit_building_potential") or context.config("escort_purpose"):
         context.stage("braunschweig.data.buildings")
 
 

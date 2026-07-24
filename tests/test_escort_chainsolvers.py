@@ -152,6 +152,74 @@ def test_build_locations_df_escort_requires_potentials():
         sc._build_locations_df(_mini_candidates(), with_potentials=False, escort_purpose=True)
 
 
+# Positive-path fixture value for the escort_residential test below: chosen to
+# be distinct from every other pot_* value already used by _mini_candidates()
+# (10.0, 5.0, 5.0, 0.0, 3.0) so a copy-paste of the wrong column could not pass
+# by coincidence. Defined once and reused (never duplicated) in both the
+# fixture and the assertion, so the expected value stays traceable.
+_RESIDENTIAL_VISIT_POTENTIAL = 2.5
+
+
+def _mini_candidates_with_visit():
+    """``_mini_candidates()`` plus the ``offers_visit`` / ``pot_visit`` columns
+    that ``append_residential_visit_candidates`` (Task 5, issue #127) adds in
+    the real pipeline, including one residential visit candidate row.
+
+    Needed for the ``escort_residential`` positive-path test below: none of
+    the other fixtures in this file carry ``offers_visit`` / ``pot_visit``, so
+    ``ESCORT_RESIDENTIAL_OFFER_COLUMN`` (derived from ``VISIT_OFFER_COLUMN``
+    by ``append_escort_candidates``) was always False and
+    ``escort_residential`` could never be emitted by ``_build_locations_df``
+    (Finding 2, Task 6 review).
+    """
+    base = _mini_candidates()
+    base[sc.VISIT_OFFER_COLUMN] = False
+    base[sc.VISIT_POTENTIAL_COLUMN] = 0.0
+    visit_row = gpd.GeoDataFrame({
+        "location_id": ["sec_res_77"],
+        "commune_id": ["1"],
+        "iris_id": ["1"],
+        "offers_shop": [False],
+        "offers_leisure": [False],
+        "offers_other": [False],
+        "offers_escort": [True],
+        "pot_shop": [0.0],
+        "pot_shop_daily": [0.0],
+        "pot_shop_non_daily": [0.0],
+        "pot_leisure": [0.0],
+        "pot_other": [0.0],
+        sc.VISIT_OFFER_COLUMN: [True],
+        sc.VISIT_POTENTIAL_COLUMN: [_RESIDENTIAL_VISIT_POTENTIAL],
+        "geometry": [Point(5, 5)],
+    }, crs="EPSG:25832")
+    return gpd.GeoDataFrame(
+        pd.concat([base, visit_row], ignore_index=True), crs="EPSG:25832")
+
+
+def test_build_locations_df_emits_escort_residential_with_expected_potential():
+    """Finding 2 (Task 6 review): a positive path for escort_residential.
+
+    escort_residential is (a) filtered by the potential-column-existence
+    check in _build_locations_df, (b) subject to a dedicated zero-potential
+    skip, and (c) dependent on state set in a DIFFERENT function
+    (append_escort_candidates derives ESCORT_RESIDENTIAL_OFFER_COLUMN from
+    VISIT_OFFER_COLUMN, which append_residential_visit_candidates sets
+    upstream in the real pipeline). None of the other tests in this file
+    exercise that combination, so this covers it end to end.
+    """
+    cands = sc.append_escort_candidates(_mini_candidates_with_visit(), _mini_education())
+    visit_row = cands[cands["location_id"] == "sec_res_77"].iloc[0]
+    assert bool(visit_row[sc.ESCORT_RESIDENTIAL_OFFER_COLUMN]) is True
+
+    locations = sc._build_locations_df(cands, with_potentials=True, escort_purpose=True)
+    loc_row = locations[locations["id"] == "sec_res_77"].iloc[0]
+    activities = loc_row["activities"].split("; ")
+    potentials = [float(p) for p in loc_row["potentials"].split("; ")]
+
+    assert "escort_residential" in activities
+    assert potentials[activities.index("escort_residential")] == _RESIDENTIAL_VISIT_POTENTIAL
+
+
 # ---------------------------------------------------------------------------
 # Task 7: leg-loop draw, extraction, stats, other-subtype interplay.
 # ---------------------------------------------------------------------------
