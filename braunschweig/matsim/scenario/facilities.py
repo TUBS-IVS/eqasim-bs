@@ -5,13 +5,21 @@ Overrides matsim.scenario.facilities twice over the base behaviour:
 1. **Assembled secondary candidates.** When ``secondary_building_potentials``
    is ON, the secondary chainsolvers place activities on the ASSEMBLED
    candidate set (gpkg ``sec_b_*`` buildings, legacy ``sec_*`` 'other' rows,
-   external Gemeinde-centroid ids, residential ``sec_res_*`` visit rows) --
-   not on the legacy ``synthesis.locations.secondary`` frame the base writer
-   uses. Facilities therefore consume the SAME
+   external Gemeinde-centroid ids, residential ``sec_res_*`` visit/escort
+   rows, education ``sec_edu_*`` escort rows) -- not on the legacy
+   ``synthesis.locations.secondary`` frame the base writer uses. Facilities
+   therefore consume the SAME
    ``braunschweig.synthesis.locations.secondary_candidates`` stage, so every
    location id the population can reference exists as a facility (2026-07-11
    kreis5 fix: realised ``sec_b_*`` ids were missing from facilities.xml and
-   crashed RunPreparation's LinkAssignment).
+   crashed RunPreparation's LinkAssignment). ``secondary_facility_frame``'s
+   ``leisure_visit_enabled`` keyword (issue #201) gates the ``offers_visit``
+   -> ``offers_leisure`` fold on the leisure feature actually being active,
+   so an escort-only residential row (``leisure_visit_building_potential``
+   OFF) advertises "escort" alone, not "leisure"; ``offers_escort`` itself
+   always passes through unchanged (the base writer -- Task 8 -- decides
+   whether to actually emit the "escort" activity option, gated on
+   ``escort_purpose``).
 
 2. **In-commuter facilities (terminal).** Registers a home facility
    (``home_<household_id>``) and a work facility (``ic_work_<person_id>``)
@@ -52,20 +60,56 @@ def configure(context):
     if context.config("secondary_building_potentials", True):
         context.stage("braunschweig.synthesis.locations.secondary_candidates")
 
+    # Read-only mirrors (issue #201): this stage does not OWN either flag --
+    # braunschweig.synthesis.locations.secondary_candidates / _chainsolvers do
+    # -- but a synpp stage must declare every config key its own execute()
+    # reads, so leisure_visit_building_potential (read below, to decide the
+    # offers_visit -> offers_leisure fold) is mirrored here too. escort_purpose
+    # is kept alongside it for the same reason.
+    context.config("leisure_visit_building_potential", False)
+    context.config("escort_purpose", False)
+
     # Realised secondary locations, for the dangling-id validation below.
     context.stage("synthesis.population.spatial.secondary.locations")
 
 
-def secondary_facility_frame(df_candidates):
+def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
     """Map the assembled candidate frame onto the facilities SECONDARY_FIELDS.
 
     ``offers_visit`` rows (residential leisure_visit candidates) are folded
-    into ``offers_leisure``: the population writes the BASE purpose
-    ("leisure") for subtype legs, so the facility must offer "leisure" for a
-    visit location to be consistent.
+    into ``offers_leisure`` only when ``leisure_visit_enabled`` is True: the
+    population writes the BASE purpose ("leisure") for subtype legs, so the
+    facility must offer "leisure" for a visit location to be consistent --
+    but only while the leisure feature actually places legs on these rows.
+    Escort-only residential rows (``escort_purpose`` ON,
+    ``leisure_visit_building_potential`` OFF) must advertise "escort" alone,
+    not "leisure", so the fold is gated on the flag rather than unconditional.
+
+    ``offers_escort`` (issue #201) needs no special handling here: it is
+    already True/False on every candidate row (set by
+    ``braunschweig.synthesis.locations.secondary_candidates``) and simply
+    passes through the ``SECONDARY_FIELDS`` selection below, in both cases.
+
+    Parameters
+    ----------
+    df_candidates:
+        The assembled secondary candidate GeoDataFrame (the return value of
+        ``braunschweig.synthesis.locations.secondary_candidates``).
+    leisure_visit_enabled:
+        Whether ``leisure_visit_building_potential`` is ON. Keyword-only so
+        callers cannot pass it positionally by mistake.
+
+    Raises
+    ------
+    ValueError
+        If ``df_candidates`` is missing a required ``SECONDARY_FIELDS`` column.
     """
     df = df_candidates.copy()
-    if "offers_visit" in df.columns:
+    if "offers_visit" in df.columns and leisure_visit_enabled:
+        # The population writes the BASE purpose ("leisure") for subtype legs,
+        # so a visit location must offer "leisure" -- but only when the leisure
+        # feature actually places on these rows; escort-only residential rows
+        # (escort_purpose ON, leisure_visit OFF) advertise just "escort".
         df["offers_leisure"] = df["offers_leisure"] | df["offers_visit"]
     missing = [c for c in base.SECONDARY_FIELDS if c not in df.columns]
     if missing:
@@ -108,7 +152,9 @@ def execute(context):
 
     if context.config("secondary_building_potentials"):
         df_secondary = secondary_facility_frame(
-            context.stage("braunschweig.synthesis.locations.secondary_candidates"))
+            context.stage("braunschweig.synthesis.locations.secondary_candidates"),
+            leisure_visit_enabled=bool(context.config("leisure_visit_building_potential")),
+        )
 
     # Fail-early check: all realised secondary ids must be writable facilities.
     df_realised = context.stage("synthesis.population.spatial.secondary.locations")[0]

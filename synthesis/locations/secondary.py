@@ -17,6 +17,7 @@ def execute(context):
     df_locations["offers_leisure"] = df_locations["activity_type"] == "leisure"
     df_locations["offers_shop"] = df_locations["activity_type"] == "shop"
     df_locations["offers_other"] = ~(df_locations["offers_leisure"] | df_locations["offers_shop"])
+    df_locations["offers_escort"] = True  # issue #201: every location may host an escort activity
 
     # Define new IDs
     df_locations["location_id"] = np.arange(len(df_locations))
