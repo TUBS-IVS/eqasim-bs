@@ -1189,6 +1189,7 @@ class EntdSource:
         donor_trips: pd.DataFrame,
         *,
         random_seed: int,
+        escort_purpose: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -1221,6 +1222,10 @@ class EntdSource:
             CONTRACT columns, and ``euclidean_distance``.
         random_seed:
             Integer seed for the per-person departure-time jitter.
+        escort_purpose:
+            map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
+            NOT supported for ENTD; passing True raises ``NotImplementedError``
+            (the ENTD donor has no W_ZWECK escort coding).
 
         Returns
         -------
@@ -1229,7 +1234,19 @@ class EntdSource:
             synthesis.population.trips CONTRACT + ``trip_index`` +
             ``euclidean_distance`` + remaining ENTD trip extras.
             Global ``trip_id`` is reassigned as a sequential integer.
+
+        Raises
+        ------
+        NotImplementedError
+            If ``escort_purpose`` is True (the ENTD donor has no W_ZWECK
+            escort coding; disable escort_purpose for popsim_open runs).
         """
+        if escort_purpose:
+            raise NotImplementedError(
+                "[popsim.sources.entd] escort_purpose=True is not supported for the "
+                "ENTD donor (no W_ZWECK escort coding); disable escort_purpose for "
+                "popsim_open runs."
+            )
         _require_columns(persons, ["person_id", "source_person_id"], table_name="persons")
         _require_columns(donor_trips, ["person_id"], table_name="donor_trips")
 

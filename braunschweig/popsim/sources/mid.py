@@ -167,6 +167,7 @@ class MidSource:
         donor_trips: pd.DataFrame,
         *,
         random_seed: int,
+        escort_purpose: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -181,6 +182,8 @@ class MidSource:
             MiD Wege table from :meth:`load_donor`.
         random_seed:
             Integer seed for the per-person departure-time jitter RNG.
+        escort_purpose:
+            map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
 
         Returns
         -------
@@ -188,4 +191,6 @@ class MidSource:
             11-column synthesis.population.trips contract + ``euclidean_distance``
             + MiD extras.
         """
-        return trips_stage.run(persons, donor_trips, random_seed=random_seed)
+        return trips_stage.run(
+            persons, donor_trips, random_seed=random_seed, escort_purpose=escort_purpose
+        )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import trips_stage
 
@@ -70,3 +71,30 @@ def test_run_resamples_coded_time_persons_no_nan_in_output():
     assert out["departure_time"].notna().all()
     assert out["arrival_time"].notna().all()
     assert (out["departure_time"] <= trips_stage.MAX_PLAN_TIME_SECONDS).all()
+
+
+# ---------------------------------------------------------------------------
+# Task 3: thread escort_purpose through trips_stage.run and the donor sources.
+# ---------------------------------------------------------------------------
+
+def test_run_escort_purpose_flag_produces_escort_trips():
+    persons = pd.DataFrame({"person_id": [1], "H_ID": [10], "P_ID": [1]})
+    wege = pd.DataFrame({
+        "H_ID": [10, 10], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [6, 8], "hvm_imp": [4, 4],
+        "W_SZS": [8, 12], "W_SZM": [0, 0], "W_AZS": [8, 12], "W_AZM": [30, 30],
+        "wegkm_imp": [5.0, 5.0], "wegmin_imp1": [30.0, 30.0], "W_GEW": [1.0, 1.0],
+    })
+    table_on = trips_stage.run(persons, wege, random_seed=1, escort_purpose=True)
+    assert "escort" in set(table_on["following_purpose"])
+    table_off = trips_stage.run(persons, wege, random_seed=1, escort_purpose=False)
+    assert "escort" not in set(table_off["following_purpose"])
+
+
+def test_entd_source_rejects_escort_purpose():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="escort_purpose"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            escort_purpose=True,
+        )
