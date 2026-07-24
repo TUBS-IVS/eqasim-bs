@@ -41,6 +41,16 @@ PURPOSE_BY_W_ZWECK = {
 }
 DEFAULT_PURPOSE = "other"
 
+# Escort (Begleitung) W_ZWECK codes (issue #201). Code 6 = Bringen/Holen; code 13
+# is classified as escort by BOTH of MiD's own derived purpose variables
+# (zweck: 13 -> 6; hwzweck1: 13 -> 7 = Begleitung; verified 2026-07-24 on the raw
+# Wege table -- see docs/superpowers/specs/2026-07-24-escort-purpose-design.md).
+# The semantic codeplan label of 13 is still to be confirmed (codeplan xlsx not in
+# repo); the CATEGORY membership is established by the MiD-internal derivations.
+# Deliberately separate from purpose_subtype.OTHER_ESCORT_ZWECK ({6}), which the
+# escort-OFF path (secondary_other_subtype_split) continues to use unchanged.
+ESCORT_W_ZWECK = frozenset({6, 13})
+
 # MiD hvm_imp (imputed Hauptverkehrsmittel; handbook Kap. 4.2 mandates the
 # imputed variant) -> eqasim canonical mode. hvm_imp is fully imputed (codes
 # 1..5 only); any other code is a data/contract error and raises.
@@ -55,10 +65,34 @@ MODE_BY_HVM = {
 }
 
 
-def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK") -> pd.DataFrame:
-    """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``."""
+def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
+                escort_purpose: bool = False) -> pd.DataFrame:
+    """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
+
+    When ``escort_purpose`` is True (issue #201), W_ZWECK codes in
+    ``ESCORT_W_ZWECK`` map to the dedicated ``"escort"`` purpose instead of
+    ``"other"``; the override is applied on top of ``PURPOSE_BY_W_ZWECK`` so the
+    OFF path stays byte-identical. The escort share is logged (W_GEW-weighted
+    when the weight column is present) -- no silent re-mapping.
+    """
     out = wege.copy()
     out["purpose"] = out[zweck_col].map(PURPOSE_BY_W_ZWECK).fillna(DEFAULT_PURPOSE)
+    if escort_purpose:
+        escort_mask = out[zweck_col].isin(ESCORT_W_ZWECK)
+        out.loc[escort_mask, "purpose"] = "escort"
+        if "W_GEW" in out.columns:
+            weights = out["W_GEW"].astype(float)
+            share = float(weights[escort_mask].sum() / weights.sum()) if weights.sum() else 0.0
+            basis = "W_GEW-weighted"
+        else:
+            share = float(escort_mask.mean()) if len(out) else 0.0
+            basis = "unweighted"
+        logger.info(
+            "[popsim.trips] escort_purpose ON: %d/%d legs (%.2f%% %s) mapped to "
+            "'escort' (W_ZWECK in %s)",
+            int(escort_mask.sum()), len(out), 100.0 * share, basis,
+            sorted(ESCORT_W_ZWECK),
+        )
     return out
 
 
@@ -124,6 +158,7 @@ def build_trip_table(
     household_col: str = "H_ID",
     person_col: str = "P_ID",
     trip_col: str = "W_ID",
+    escort_purpose: bool = False,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -179,6 +214,11 @@ def build_trip_table(
     trip_col:
         Name of the within-person trip-sequence column in ``mid_wege`` (used to
         build the unique ``trip_key`` and to sort trips within each person).
+    escort_purpose:
+        If True (issue #201), W_ZWECK codes in ``ESCORT_W_ZWECK`` map to the
+        dedicated ``"escort"`` purpose instead of ``"other"`` (forwarded to
+        ``map_purpose`` via ``expand_persons_to_trips``). Default False keeps
+        the OFF path byte-identical.
 
     Returns
     -------
@@ -214,6 +254,7 @@ def build_trip_table(
         household_col=household_col,
         person_col=person_col,
         trip_col=trip_col,
+        escort_purpose=escort_purpose,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -284,6 +325,7 @@ def expand_persons_to_trips(
     household_col: str = "H_ID",
     person_col: str = "P_ID",
     trip_col: str = "W_ID",
+    escort_purpose: bool = False,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -299,7 +341,7 @@ def expand_persons_to_trips(
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.
     """
-    wege = map_mode(map_purpose(mid_wege))
+    wege = map_mode(map_purpose(mid_wege, escort_purpose=escort_purpose))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")
     )
@@ -342,6 +384,7 @@ def build_validated_trip_table(
     resample: bool = False,
     resample_cell_col: str | None = None,
     random_seed: int | None = None,
+    escort_purpose: bool = False,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -401,6 +444,11 @@ def build_validated_trip_table(
     random_seed:
         Seed for the stage A/B RNG streams (``np.random.RandomState``; see
         ``TIME_IMPUTATION_SEED_OFFSET`` / ``MATCHED_REPLACEMENT_SEED_OFFSET``).
+    escort_purpose:
+        If True (issue #201), W_ZWECK codes in ``ESCORT_W_ZWECK`` map to the
+        dedicated ``"escort"`` purpose instead of ``"other"`` (forwarded to
+        ``build_trip_table`` / ``map_purpose``). Default False keeps the OFF
+        path byte-identical.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -429,7 +477,7 @@ def build_validated_trip_table(
             f"resample without cell matching (home-only fallback) or fix the column name."
         )
 
-    table = build_trip_table(persons, mid_wege, **kwargs)
+    table = build_trip_table(persons, mid_wege, escort_purpose=escort_purpose, **kwargs)
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None
     if repair:

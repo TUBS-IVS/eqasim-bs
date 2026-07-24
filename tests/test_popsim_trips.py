@@ -283,3 +283,29 @@ def test_build_validated_trip_table_resamples_coded_time_persons():
     )
     assert set(table["person_id"].unique()) == {"pA", "pB"}
     assert table["departure_time"].notna().all()
+
+
+# ---------------------------------------------------------------------------
+# Issue #201: ESCORT_W_ZWECK + flag-gated escort purpose override.
+# ---------------------------------------------------------------------------
+
+def test_map_purpose_escort_flag_off_is_byte_identical():
+    wege = pd.DataFrame({"W_ZWECK": [1, 4, 6, 13, 7, 99]})
+    off_default = trips.map_purpose(wege)
+    off_explicit = trips.map_purpose(wege, escort_purpose=False)
+    assert list(off_default["purpose"]) == list(off_explicit["purpose"])
+    # 6 and 13 stay "other" on the OFF path (13 via the fillna default).
+    assert list(off_default["purpose"]) == ["work", "shop", "other", "other", "leisure", "other"]
+
+
+def test_map_purpose_escort_flag_on_maps_6_and_13():
+    wege = pd.DataFrame({"W_ZWECK": [1, 4, 6, 13, 7, 99]})
+    on = trips.map_purpose(wege, escort_purpose=True)
+    assert list(on["purpose"]) == ["work", "shop", "escort", "escort", "leisure", "other"]
+
+
+def test_escort_w_zweck_constant():
+    assert trips.ESCORT_W_ZWECK == frozenset({6, 13})
+    # The internal #127 subtype constant must stay untouched (OFF-path identity).
+    from braunschweig.popsim.purpose_subtype import OTHER_ESCORT_ZWECK
+    assert OTHER_ESCORT_ZWECK == frozenset({6})
