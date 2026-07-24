@@ -268,8 +268,7 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         eigene <code>home</code>-Kategorie. Mapping eqasim → W1:
         <code>work ← Arbeit + Dienst</code>, <code>education ← Ausbildung</code>,
         <code>shop ← Einkauf</code>,
-        <code>other ← Erledigung + Begleitung</code> (eqasim kennt keine
-        eigene <code>escort</code>-Kategorie),
+        <code>other ← Erledigung</code>, <code>escort ← Begleitung</code>,
         <code>leisure ← Freizeit</code>.</p>
         {_df_to_html(purpose_no_home, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}

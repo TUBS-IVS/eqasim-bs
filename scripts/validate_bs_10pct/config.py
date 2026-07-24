@@ -64,15 +64,16 @@ MID_BASELINE = {
     #   leisure  ← Freizeit          (29 %)
     #   escort   ← Begleitung        ( 8 %)
     # Summe ohne "keine Angabe" (1 %), normiert auf 100 %.
-    # Hinweis: Der eqasim-Pipeline-Output kennt keine eigene "escort"-
-    # Kategorie (Begleitwege werden auf "other" abgebildet). Damit der
-    # Vergleich apples-to-apples bleibt, fassen wir Erledigung +
-    # Begleitung MiD-seitig ebenfalls zu "other" zusammen.
+    # Hinweis: Mit escort_purpose (issue #201) kennt der Pipeline-Output eine
+    # eigene "escort"-Kategorie; Begleitung wird daher NICHT mehr in "other"
+    # gefaltet. Laeuft der Report auf einer flag-OFF-Population, hat "escort"
+    # dort schlicht keinen synth-Anteil (mid_share bleibt sichtbar).
     "purpose_mix_w1": {
         "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)
         "education":  6 / 99,               # 0.061  (Ausbildung)
         "shop":      16 / 99,               # 0.162  (Einkauf)
-        "other":     (11 + 8) / 99,         # 0.192  (Erledigung + Begleitung)
+        "other":     11 / 99,               # 0.111  (Erledigung)
+        "escort":     8 / 99,               # 0.081  (Begleitung)
         "leisure":   29 / 99,               # 0.293  (Freizeit)
     },
     # MiD 2023 P36.1 (p195): Mobilität am Stichtag (Mobilitätsquote).

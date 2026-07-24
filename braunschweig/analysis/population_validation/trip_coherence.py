@@ -22,8 +22,11 @@ Crosswalk eqasim purpose -> MiD W1 Zweck (documented approximation):
 ``home`` (return trips) and ``other`` are kept as explicit, separate categories
 (``heimweg`` / ``sonstiges``) and are never silently folded into a W1 purpose.
 The eqasim taxonomy has no direct equivalent of MiD ``dienst`` / ``erledigung``
-/ ``begleitung`` (they fall under ``other`` upstream), so only the four
-unambiguous purposes are scored against W1; the rest are reported descriptively.
+(they fall under ``other`` upstream), so only the four unambiguous purposes are
+scored against W1 by default; the rest are reported descriptively. With the
+optional ``escort_purpose`` flag ON (issue #201) the synthetic taxonomy
+additionally carries ``escort -> begleitung``, a fifth purpose scored whenever
+it is present in the synthetic distribution (see ``scored_mid_purposes``).
 """
 from __future__ import annotations
 
@@ -42,19 +45,36 @@ LOGGER = logging.getLogger("braunschweig.analysis.population_validation.trip_coh
 # carries a ``routed_distance`` column it is preferred directly.
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 
-# eqasim activity purpose -> MiD W1 Zweck. The four scored purposes plus two
-# explicit non-W1 categories (return-home trips, residual other).
+# eqasim activity purpose -> MiD W1 Zweck. The four always-scored purposes,
+# the conditionally-scored escort purpose, plus two explicit non-W1 categories
+# (return-home trips, residual other).
 EQASIM_TO_MID_PURPOSE = {
     "work": "arbeit",
     "education": "ausbildung",
     "shop": "einkauf",
     "leisure": "freizeit",
+    "escort": "begleitung",  # issue #201; W1 carries a dedicated begleitung column
     "home": "heimweg",
     "other": "sonstiges",
 }
 
 # The MiD W1 purposes that have an unambiguous eqasim equivalent (scored subset).
 SCORED_MID_PURPOSES = ("arbeit", "ausbildung", "einkauf", "freizeit")
+
+# Scored set when the synthetic taxonomy carries the dedicated escort purpose
+# (escort_purpose ON, issue #201): Begleitung becomes unambiguous and scoreable.
+SCORED_MID_PURPOSES_WITH_ESCORT = SCORED_MID_PURPOSES + ("begleitung",)
+
+
+def scored_mid_purposes(distribution) -> tuple:
+    """Presence-based scored-purpose selection: include ``begleitung`` exactly
+    when the synthetic purpose distribution contains it (i.e. the population
+    was built with escort_purpose ON); a flag-OFF population keeps the
+    four-purpose comparison unchanged."""
+    if "begleitung" in distribution:
+        return SCORED_MID_PURPOSES_WITH_ESCORT
+    return SCORED_MID_PURPOSES
+
 
 # Non-activity purpose excluded from the activity-purpose distribution (a trip
 # back home is a return trip, not an activity Zweck in the W1 sense).
@@ -133,15 +153,17 @@ def trips_per_person_by_segment(persons, trips, segment_col,
     return grouped[["segment", "segment_value", "n_persons", "n_trips", "trips_per_person"]]
 
 
-def renormalize_scored(distribution):
-    """Restrict a {mid_purpose -> share} distribution to the four scored W1
-    purposes and re-normalise so they sum to 1. This makes the synthetic and W1
-    distributions apples-to-apples on the unambiguous purposes, removing the
-    home/dienst/erledigung/begleitung crosswalk ambiguity from the comparison."""
-    scored = {p: float(distribution.get(p, 0.0)) for p in SCORED_MID_PURPOSES}
+def renormalize_scored(distribution, scored_purposes=SCORED_MID_PURPOSES):
+    """Restrict a {mid_purpose -> share} distribution to ``scored_purposes``
+    (default: the four unambiguous W1 purposes) and re-normalise so they sum to
+    1. This makes the synthetic and W1 distributions apples-to-apples on the
+    scored purposes, removing the home/dienst/erledigung crosswalk ambiguity
+    (and, unless ``begleitung`` is passed in ``scored_purposes``, escort) from
+    the comparison."""
+    scored = {p: float(distribution.get(p, 0.0)) for p in scored_purposes}
     total = sum(scored.values())
     if total <= 0:
-        return {p: float("nan") for p in SCORED_MID_PURPOSES}
+        return {p: float("nan") for p in scored_purposes}
     return {p: v / total for p, v in scored.items()}
 
 
@@ -156,13 +178,15 @@ def _zgb_overall_row(data_path, table):
     return overall.iloc[0]
 
 
-def w1_scored_target(data_path):
+def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES):
     """MiD W1 (Wege je Zweck) ZGB-overall target, restricted and re-normalised to
-    the four scored purposes. Returns {arbeit, ausbildung, einkauf, freizeit ->
-    share}. The W1 columns are integer-percent shares per Kreis."""
+    ``scored_purposes`` (default: {arbeit, ausbildung, einkauf, freizeit}). Pass
+    ``scored_purposes=SCORED_MID_PURPOSES_WITH_ESCORT`` to additionally include
+    ``begleitung`` (issue #201). The W1 columns are integer-percent shares per
+    Kreis."""
     row = _zgb_overall_row(data_path, "mid2023_W1")
-    raw = {p: float(row[p]) for p in SCORED_MID_PURPOSES}
-    return renormalize_scored(raw)
+    raw = {p: float(row[p]) for p in scored_purposes}
+    return renormalize_scored(raw, scored_purposes=scored_purposes)
 
 
 def _p36_mobile_share(row) -> float:
@@ -195,11 +219,13 @@ def p36_mobility_target(data_path):
 #
 # W12 (MiD 2023 Grossraum Braunschweig, infas 7555, Tabelle A W12) gives the
 # arithmetic MEAN routed trip length (km, ``mittel_km``) per MiD Hauptwegezweck.
-# Only the FOUR unambiguous eqasim<->MiD purposes are scored, the same subset as
-# the W1 purpose-distribution check above (SCORED_MID_PURPOSES): the MiD purposes
-# ``dienstlich`` (business), ``Erledigung`` (errands) and ``Begleitung``
-# (escort/accompanying) crosswalk ambiguously onto eqasim ``work``/``other`` and
-# are therefore excluded so the comparison stays apples-to-apples. There is no
+# By default only the FOUR unambiguous eqasim<->MiD purposes are scored, the
+# same subset as the W1 purpose-distribution check above (SCORED_MID_PURPOSES):
+# the MiD purposes ``dienstlich`` (business) and ``Erledigung`` (errands)
+# crosswalk ambiguously onto eqasim ``work``/``other`` and are therefore
+# excluded so the comparison stays apples-to-apples. ``Begleitung`` (escort)
+# has an unambiguous eqasim equivalent when escort_purpose is ON (issue #201)
+# and is scored via W12_PURPOSE_BY_MID_WITH_ESCORT below. There is no
 # per-Kreis / ZGB-aggregate row in W12 -- one row per MiD purpose.
 W12_PURPOSE_BY_MID = {
     "Arbeit": "work",
@@ -208,31 +234,40 @@ W12_PURPOSE_BY_MID = {
     "Freizeit": "leisure",
 }
 
-# The four eqasim purposes scored against W12 (the values of W12_PURPOSE_BY_MID).
+# With escort_purpose ON (issue #201) the Begleitung row (mittel 10.1 km in the
+# committed W12 CSV) becomes scoreable against the synthetic escort purpose.
+W12_PURPOSE_BY_MID_WITH_ESCORT = dict(W12_PURPOSE_BY_MID, Begleitung="escort")
+
+# The four eqasim purposes scored against W12 by default (the values of
+# W12_PURPOSE_BY_MID).
 W12_SCORED_PURPOSES = tuple(W12_PURPOSE_BY_MID.values())
 
 
-def w12_mean_length_target(data_path):
+def w12_mean_length_target(data_path, include_escort=False):
     """MiD W12 mean ROUTED trip length (km) per scored eqasim purpose.
 
     Reads ``mid2023_W12_triplength_by_purpose.csv`` (a ``# Source:`` comment line
-    precedes the header) and maps the four unambiguous MiD Hauptwegezwecke onto
-    their eqasim purpose. Returns {eqasim_purpose -> mittel_km}, e.g.
+    precedes the header) and maps the scored MiD Hauptwegezwecke onto their
+    eqasim purpose. Returns {eqasim_purpose -> mittel_km}, e.g.
     {work: 15.2, education: 5.7, shop: 5.2, leisure: 15.0}. The km are MiD routed
     trip lengths, compared against the synthetic detour-inflated straight-line
-    distance (see ``synthetic_mean_length_by_purpose``)."""
+    distance (see ``synthetic_mean_length_by_purpose``). ``include_escort=True``
+    (issue #201) additionally maps ``Begleitung -> escort``, using
+    W12_PURPOSE_BY_MID_WITH_ESCORT instead of the four-purpose default."""
+    purpose_map = W12_PURPOSE_BY_MID_WITH_ESCORT if include_escort else W12_PURPOSE_BY_MID
     path = f"{data_path}/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv"
     df = pd.read_csv(path, comment="#")
     by_mid = dict(zip(df["hauptwegezweck"].astype(str), df["mittel_km"].astype(float)))
-    missing = set(W12_PURPOSE_BY_MID) - set(by_mid)
+    missing = set(purpose_map) - set(by_mid)
     if missing:
         raise ValueError(f"W12 table is missing scored purposes: {sorted(missing)}")
-    return {eqasim: float(by_mid[mid]) for mid, eqasim in W12_PURPOSE_BY_MID.items()}
+    return {eqasim: float(by_mid[mid]) for mid, eqasim in purpose_map.items()}
 
 
 def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
-                                     purpose_col="following_purpose"):
-    """Mean ROUTED trip length (km) per scored eqasim purpose of the synthetic
+                                     purpose_col="following_purpose",
+                                     purposes=W12_SCORED_PURPOSES):
+    """Mean ROUTED trip length (km) per purpose in ``purposes`` of the synthetic
     trips, comparable to the MiD W12 ``mittel_km``.
 
     The synthetic trips carry ``euclidean_distance`` (straight-line, metres). It
@@ -242,8 +277,10 @@ def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
     that is used directly (no detour multiply). NaN distances are skipped so they
     never propagate into a purpose mean.
 
-    Returns {eqasim_purpose -> mean routed km} over the four scored purposes; a
-    purpose with no trips (or only NaN distances) yields NaN."""
+    Returns {eqasim_purpose -> mean routed km} over ``purposes`` (default: the
+    four scored purposes; pass the keys of ``w12_mean_length_target(...,
+    include_escort=True)`` to additionally cover escort, issue #201); a purpose
+    with no trips (or only NaN distances) yields NaN."""
     if "routed_distance" in trips.columns:
         routed_km = trips["routed_distance"].astype(float) / 1000.0
     else:
@@ -253,26 +290,34 @@ def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
         "routed_km": routed_km.values,
     })
     result = {}
-    for purpose in W12_SCORED_PURPOSES:
+    for purpose in purposes:
         sub = work.loc[work["purpose"] == purpose, "routed_km"].dropna()
         result[purpose] = float(sub.mean()) if len(sub) else float("nan")
     return result
 
 
 def w12_length_coherence(trips, data_path, *, detour_factor=DETOUR_FACTOR,
-                         purpose_col="following_purpose"):
+                         purpose_col="following_purpose", include_escort=False):
     """W12 mean-trip-length coherence: per scored eqasim purpose, the synthetic
     realised mean routed km vs the MiD W12 target, with signed deltas.
+
+    ``include_escort=True`` (issue #201) additionally scores MiD Begleitung
+    (10.1 km mittel) against the synthetic escort purpose, using
+    ``w12_mean_length_target(..., include_escort=True)``; the synthetic side is
+    computed over exactly the same (target-dict) purposes, so escort is
+    compared only when it is actually requested. The default False preserves
+    the original four-purpose comparison.
 
     Returns a list of dicts (one per scored purpose) with keys
     ``purpose, target_km, realised_km, delta_km, rel_delta`` (delta = realised -
     target, rel_delta = delta / target). Logs a one-line info summary in the same
     style as the W1/P36 trip-coherence logging."""
-    target = w12_mean_length_target(data_path)
+    target = w12_mean_length_target(data_path, include_escort=include_escort)
     realised = synthetic_mean_length_by_purpose(
-        trips, detour_factor=detour_factor, purpose_col=purpose_col)
+        trips, detour_factor=detour_factor, purpose_col=purpose_col,
+        purposes=tuple(target))
     rows = []
-    for purpose in W12_SCORED_PURPOSES:
+    for purpose in target:
         t = float(target[purpose])
         r = float(realised.get(purpose, float("nan")))
         delta = r - t
@@ -601,18 +646,29 @@ def build_trip_coherence_report(persons, trips, data_path,
       - ``mobility_by_segment``: long DataFrame [segment, segment_value,
         n_persons, n_mobile, mobility_rate] for every requested segment column
         present in ``persons``
-      - ``purpose``: {realized, target, abs_delta_pp, srmse} over the four scored
-        W1 purposes (re-normalised on both sides)
+      - ``purpose``: {realized, target, abs_delta_pp, srmse} over the scored W1
+        purposes (re-normalised on both sides): the four unambiguous purposes,
+        plus ``begleitung`` when the synthetic distribution carries it (i.e. the
+        population was built with escort_purpose ON, issue #201) -- see
+        ``scored_mid_purposes``
       - ``length``: list of per-scored-purpose dicts {purpose, target_km,
         realised_km, delta_km, rel_delta} comparing the synthetic mean routed
-        trip length (detour-inflated straight-line) against MiD W12 ``mittel_km``
+        trip length (detour-inflated straight-line) against MiD W12 ``mittel_km``;
+        includes escort under the same presence-based rule as ``purpose``
       - ``n_persons``, ``n_trips``
     """
     overall = mobility_rate(persons, trips, person_id_col)
     target_mob = p36_mobility_target(data_path)
 
-    realized = renormalize_scored(purpose_distribution(trips, purpose_col))
-    target_pur = w1_scored_target(data_path)
+    # Presence-based scored-purpose selection (issue #201): a population built
+    # with escort_purpose ON carries "begleitung" in the synthetic distribution
+    # and is scored against the five-purpose W1/W12 targets; a flag-OFF
+    # population has no "begleitung" and keeps the original four-purpose
+    # comparison (byte-identical default behaviour).
+    synth_distribution = purpose_distribution(trips, purpose_col)
+    scored = scored_mid_purposes(synth_distribution)
+    realized = renormalize_scored(synth_distribution, scored_purposes=scored)
+    target_pur = w1_scored_target(data_path, scored_purposes=scored)
     abs_delta_pp = {
         p: abs(realized.get(p, float("nan")) - target_pur[p]) * 100.0
         for p in target_pur
@@ -657,7 +713,9 @@ def build_trip_coherence_report(persons, trips, data_path,
     # Absent on some narrow run-output schemas -> reported as None, not invented.
     length = None
     if "routed_distance" in trips.columns or "euclidean_distance" in trips.columns:
-        length = w12_length_coherence(trips, data_path, purpose_col=purpose_col)
+        length = w12_length_coherence(
+            trips, data_path, purpose_col=purpose_col,
+            include_escort=("begleitung" in synth_distribution))
     else:
         LOGGER.info(
             "Trip coherence W12 length check skipped: trips carry neither "
