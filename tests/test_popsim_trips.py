@@ -309,3 +309,31 @@ def test_escort_w_zweck_constant():
     # The internal #127 subtype constant must stay untouched (OFF-path identity).
     from braunschweig.popsim.purpose_subtype import OTHER_ESCORT_ZWECK
     assert OTHER_ESCORT_ZWECK == frozenset({6})
+
+
+def test_map_purpose_escort_share_logged_w_gew_weighted(caplog):
+    """The W_GEW-weighted branch of map_purpose must be exercised, not only the
+    unweighted fallback (fallback-transparency rule: test the primary method,
+    not just the fallback). W_GEW is the codebase's standard MiD trip weight and
+    is present on real production data, so this is the branch that actually
+    executes in practice; the two escort tests above only exercise the
+    unweighted fallback because their fixture has no W_GEW column.
+
+    Escort rows (W_ZWECK in {6, 13}) sit at index 2 and 3, as in the fixtures
+    above; W_GEW gives them weight 2 each (sum 4) against a total weight of 8,
+    so the W_GEW-weighted escort share is 4/8 = 50.00%.
+    """
+    import logging
+
+    wege = pd.DataFrame({
+        "W_ZWECK": [1, 4, 6, 13, 7, 99],
+        "W_GEW": [1, 1, 2, 2, 1, 1],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        on = trips.map_purpose(wege, escort_purpose=True)
+
+    # The mapping itself must be unaffected by the presence of W_GEW.
+    assert list(on["purpose"]) == ["work", "shop", "escort", "escort", "leisure", "other"]
+
+    info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("W_GEW-weighted" in m and "50.00%" in m for m in info_messages), info_messages
