@@ -9,13 +9,21 @@ from braunschweig.synthesis.locations import secondary_chainsolvers as sc
 
 
 class _Ctx:
-    """Minimal synpp-context stub (mirrors the stubs in
-    tests/test_secondary_chainsolvers_subtypes.py -- reuse that file's stub if it
-    is importable instead of redefining)."""
+    """Minimal synpp ExecuteContext stub. ``config(self, key)`` takes the key
+    alone, mirroring ``synpp.pipeline.ExecuteContext.config`` (declared
+    options only, no default parameter): a two-argument call from code under
+    test fails here exactly as it would crash in production -- see
+    tests/test_execute_context_config_contract.py. Tests must therefore
+    supply every config key the decider under test actually reads."""
     def __init__(self, cfg):
         self._cfg = cfg
-    def config(self, key, default=None):
-        return self._cfg.get(key, default)
+    def config(self, key):
+        if key not in self._cfg:
+            raise KeyError(
+                f"_Ctx: no value for config key {key!r} -- declared-config "
+                "semantics require the test to supply it explicitly."
+            )
+        return self._cfg[key]
 
 
 def test_constants_vocabulary():

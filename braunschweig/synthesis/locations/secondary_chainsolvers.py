@@ -1415,14 +1415,16 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
     only onto the REPLACE frame built by ``build_secondary_candidates`` /
     ``append_escort_candidates`` for the primary carla solve). Since "escort"
     is an unconditional member of ``SECONDARY_PURPOSES``, a purpose whose offer
-    column is missing here is OMITTED from ``destinations`` entirely (as if it
-    were not a member of ``SECONDARY_PURPOSES``) rather than raising
-    ``KeyError`` -- ``CandidateIndex`` builds a KDTree per key eagerly and
-    rejects a zero-candidate array, so an empty-but-present entry is not an
-    option either. Omitting the purpose is itself a fallback (no RDA fallback
-    candidates for it), so it is logged (CLAUDE.md "Fallback transparency"),
-    never silent; any problem that actually needs this purpose in the fallback
-    fails and is counted in the existing ``n_failed`` / convergence reporting.
+    column is missing here gets an ANY-TYPE pool -- the FULL candidate set,
+    via an all-True mask -- instead of being omitted from ``destinations``:
+    per the #201 design spec scope amendment (docs/superpowers/specs/
+    2026-07-24-escort-purpose-design.md, section 3), fallback-placed escort
+    legs are meant to match any candidate type, not go unplaced. Building an
+    extra KDTree over the full candidate set is harmless on the OFF path (no
+    escort legs exist there, so it is never queried/sampled -- OFF-path
+    output stays byte-identical; the only OFF-path cost is that one extra
+    KDTree construction). The any-type substitution is itself a fallback, so
+    it is logged (CLAUDE.md "Fallback transparency"), never silent.
     """
     from synthesis.population.spatial.secondary.components import CandidateIndex
 
@@ -1434,25 +1436,29 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
         df_secondary.geometry.x.values,
         df_secondary.geometry.y.values,
     ))
+    n_candidates = len(df_secondary)
     destinations = {}
-    missing_offer_purposes = []
+    any_type_purposes = []
     for purpose in SECONDARY_PURPOSES:
         offer_column = f"offers_{purpose}"
-        if offer_column not in df_secondary.columns:
-            missing_offer_purposes.append(purpose)
-            continue
-        mask = df_secondary[offer_column].values
+        if offer_column in df_secondary.columns:
+            mask = df_secondary[offer_column].values
+        else:
+            # #201 spec amendment: no dedicated fallback pool for this
+            # purpose (currently only "escort") -> any-type pool, an
+            # all-True mask over the full candidate set.
+            any_type_purposes.append(purpose)
+            mask = np.ones(n_candidates, dtype=bool)
         destinations[purpose] = dict(
             identifiers=identifiers[mask],
             locations=coords[mask],
         )
-    if missing_offer_purposes:
+    if any_type_purposes:
         print(
-            "[braunschweig.secondary_chainsolvers] RDA candidate index: "
-            f"purpose(s) {sorted(missing_offer_purposes)} have no offer column "
-            "on the fallback candidate frame -- omitted from the index (0 "
-            "fallback candidates; expected for 'escort' until a dedicated RDA "
-            "fallback pool exists, see issue #201)."
+            "[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"purpose(s) {sorted(any_type_purposes)} have no offers_* column "
+            f"on the fallback candidate frame -> any-type pool (all "
+            f"{n_candidates:,} candidates; #201 spec amendment)."
         )
 
     return CandidateIndex(destinations)
@@ -1580,28 +1586,32 @@ def _fallback_place(problems: List[Dict[str, Any]],
     ``df_secondary`` here is always the LEGACY candidate frame, which predates
     issue #201 and never carries an ``offers_escort`` column (mirrors
     :func:`_build_rda_candidate_index`; see its docstring). A missing
-    ``offers_<purpose>`` column is treated as an empty candidate pool for that
-    purpose rather than raising ``KeyError`` -- logged, not silent.
+    ``offers_<purpose>`` column gets an ANY-TYPE pool -- the full candidate
+    set -- rather than an empty one, per the #201 design spec scope amendment
+    (fallback-placed escort legs must match any candidate type instead of
+    going unplaced); logged, not silent.
     """
     if not unbounded_idx:
         return [], []
 
     pool: Dict[str, pd.DataFrame] = {}
-    missing_offer_purposes = []
+    any_type_purposes = []
     for purpose in SECONDARY_PURPOSES:
         offer_column = f"offers_{purpose}"
         if offer_column in df_secondary.columns:
             pool[purpose] = df_secondary[df_secondary[offer_column]].reset_index(drop=True)
         else:
-            missing_offer_purposes.append(purpose)
-            pool[purpose] = df_secondary.iloc[0:0]
-    if missing_offer_purposes:
+            # #201 spec amendment: any-type pool (the full candidate set)
+            # instead of an empty one for a purpose with no offer column
+            # (currently only "escort").
+            any_type_purposes.append(purpose)
+            pool[purpose] = df_secondary.reset_index(drop=True)
+    if any_type_purposes:
         print(
-            "[braunschweig.secondary_chainsolvers] random fallback: purpose(s) "
-            f"{sorted(missing_offer_purposes)} have no offer column on the "
-            "fallback candidate frame -- 0 fallback candidates for them "
-            "(expected for 'escort' until a dedicated fallback pool exists; "
-            "see issue #201)."
+            "[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"purpose(s) {sorted(any_type_purposes)} have no offers_* column "
+            f"on the fallback candidate frame -> any-type pool (all "
+            f"{len(df_secondary):,} candidates; #201 spec amendment)."
         )
 
     out_rows: List[tuple] = []
@@ -2584,10 +2594,12 @@ def _build_escort_location_decider(context, random_seed: int):
     if not context.config("escort_purpose"):
         return None
 
-    activities = list(context.config(
-        "escort_locations_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES))
-    weights = [float(w) for w in context.config(
-        "escort_locations_weights", DEFAULT_ESCORT_LOCATIONS_WEIGHTS)]
+    # Execute-context config() takes the key alone (declared defaults live in
+    # configure(), wired by the next task); see
+    # tests/test_execute_context_config_contract.py for the two-argument
+    # crash this avoids.
+    activities = list(context.config("escort_locations_activities"))
+    weights = [float(w) for w in context.config("escort_locations_weights")]
 
     if len(activities) != len(weights):
         raise ValueError(
