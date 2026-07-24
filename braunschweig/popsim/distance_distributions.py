@@ -224,7 +224,8 @@ def _build_mode_distributions(df: pd.DataFrame) -> dict:
 def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         shop_daily_split: bool = False,
         leisure_subtype_split: bool = False,
-        other_subtype_split: bool = False) -> dict:
+        other_subtype_split: bool = False,
+        escort_purpose: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -268,6 +269,10 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         kept as a fallback (it also serves an ``other_rest`` group). If W_ZWD is
         absent, only the errand short/long split is skipped (with a warning);
         ``other_escort`` is still built since it does not depend on W_ZWD.
+    escort_purpose:
+        When True (issue #201), maps W_ZWECK {6, 13} legs to the dedicated
+        "escort" purpose so the purpose layer gains an "escort" key; requires
+        by_purpose for a dedicated layer, harmless otherwise.
 
     Returns
     -------
@@ -309,7 +314,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     df = mid_wege.copy()
 
     # --- Step 1: map mode and purpose from MiD codes. ----------------------
-    df = map_mode(map_purpose(df))
+    df = map_mode(map_purpose(df, escort_purpose=escort_purpose))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
 
@@ -528,6 +533,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
             other_df = df[df["following_purpose"] == "other"]
 
+            if escort_purpose and len(other_df[other_df["W_ZWECK"].isin(OTHER_ESCORT_ZWECK)]) == 0:
+                logger.info(
+                    "[popsim.distance_distributions] escort_purpose ON: no W_ZWECK-6 "
+                    "legs remain under following_purpose == 'other'; the internal "
+                    "'other_escort' subtype layer is expectedly empty and skipped."
+                )
+
             escort_df = other_df[other_df["W_ZWECK"].isin(OTHER_ESCORT_ZWECK)]
             logger.info(
                 "[popsim.distance_distributions] other subtype other_escort: %d legs",
@@ -567,6 +579,7 @@ def configure(context):
     context.config("secondary_shop_daily_split", False)
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
+    context.config("escort_purpose", False)
 
 
 def execute(context):
@@ -584,6 +597,7 @@ def execute(context):
     shop_daily_split = context.config("secondary_shop_daily_split")
     leisure_subtype_split = context.config("secondary_leisure_subtype_split")
     other_subtype_split = context.config("secondary_other_subtype_split")
+    escort_purpose = context.config("escort_purpose")
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -598,4 +612,5 @@ def execute(context):
         shop_daily_split=shop_daily_split,
         leisure_subtype_split=leisure_subtype_split,
         other_subtype_split=other_subtype_split,
+        escort_purpose=escort_purpose,
     )
