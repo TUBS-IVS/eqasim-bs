@@ -1,6 +1,6 @@
 feature: household_size_margin
 title: Household-size margin
-status: on
+status: "on"
 flag: braunschweig.ipf.use_household_size_margin
 status_matrix_row: "**[Synthesis]** Household-size margin"
 adr: ADR-0003

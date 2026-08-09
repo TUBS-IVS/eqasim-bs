@@ -1,6 +1,6 @@
 feature: lod2_height_volume_typing
 title: LoD2 height/volume typing
-status: on
+status: "on"
 status_matrix_row: "**[Synthesis]** LoD2 height/volume typing"
 adr: ADR-0009
 detail_doc: docs/features/building-potentials.md

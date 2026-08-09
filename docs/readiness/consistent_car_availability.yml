@@ -1,6 +1,6 @@
 feature: consistent_car_availability
 title: Consistent car_availability
-status: on
+status: "on"
 flag: consistent_car_availability
 status_matrix_row: "**[Attrs]** Consistent car_availability"
 adr: ADR-0017

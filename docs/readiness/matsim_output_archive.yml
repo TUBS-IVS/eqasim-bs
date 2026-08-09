@@ -1,6 +1,6 @@
 feature: matsim_output_archive
 title: MATSim output archive (run-named durable copy)
-status: on
+status: "on"
 flag: archive_matsim_output
 status_matrix_row: "**[Infra]** MATSim output archive (run-named durable copy)"
 adr: ADR-0064

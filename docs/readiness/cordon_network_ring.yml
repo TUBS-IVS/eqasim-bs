@@ -1,6 +1,6 @@
 feature: cordon_network_ring
 title: Cordon network ring + cut
-status: on
+status: "on"
 flag: cordon_enabled
 status_matrix_row: "**[Cordon]** Cordon network ring + cut"
 adr: ADR-0028

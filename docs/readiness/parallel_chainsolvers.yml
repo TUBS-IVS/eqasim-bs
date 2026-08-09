@@ -1,6 +1,6 @@
 feature: parallel_chainsolvers
 title: Parallel chainsolvers
-status: on
+status: "on"
 flag: braunschweig.chainsolvers.parallel
 status_matrix_row: "**[Infra]** Parallel chainsolvers"
 code_paths:

@@ -1,6 +1,6 @@
 feature: ipf_synthesis_legacy
 title: IPF synthesis (legacy default)
-status: on
+status: "on"
 flag: braunschweig.population.method
 status_matrix_row: "**[Synthesis]** IPF synthesis (legacy default)"
 adr: ADR-0002

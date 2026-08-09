@@ -1,6 +1,6 @@
 feature: shared_stage_cache
 title: Shared stage-cache (prime-on-launch)
-status: on
+status: "on"
 flag: cache_share_enabled
 status_matrix_row: "**[Infra]** Shared stage-cache (prime-on-launch)"
 adr: ADR-0036

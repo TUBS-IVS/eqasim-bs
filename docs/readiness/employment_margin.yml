@@ -1,6 +1,6 @@
 feature: employment_margin
 title: Employment margin (IPF)
-status: on
+status: "on"
 flag: braunschweig.ipf.use_employment_margin
 status_matrix_row: "**[Attrs]** Employment margin (IPF)"
 adr: ADR-0014

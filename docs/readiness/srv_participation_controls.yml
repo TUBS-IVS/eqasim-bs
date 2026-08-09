@@ -1,6 +1,6 @@
 feature: srv_participation_controls
 title: SrV participation controls (#224)
-status: on
+status: "on"
 flag: braunschweig.population.popsim.work_participation_kreis_control
 status_matrix_row: "**[Attrs]** NEW — SrV participation controls (#224)"
 issue: "#224"

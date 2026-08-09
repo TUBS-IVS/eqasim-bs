@@ -1,6 +1,6 @@
 feature: fleet_consistency_v2
 title: Fleet consistency v2 + income-age
-status: on
+status: "on"
 flag: fleet_consistency_v2
 status_matrix_row: "**[Fleet]** Fleet consistency v2 + income-age"
 adr: ADR-0020

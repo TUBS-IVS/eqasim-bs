@@ -1,6 +1,6 @@
 feature: verbindungen_od_validation
 title: "VerBindungen sub-Kreis OD validation (#124)"
-status: on
+status: "on"
 issue: "#124"
 status_matrix_row: "**[Location]** VerBindungen sub-Kreis OD validation (#124)"
 adr: ADR-0066

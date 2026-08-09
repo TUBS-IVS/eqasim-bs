@@ -1,6 +1,6 @@
 feature: cordon_gates
 title: Gates (road + PT/Bahnhof)
-status: on
+status: "on"
 flag: cordon_enabled
 status_matrix_row: "**[Cordon]** Gates (road + PT/Bahnhof)"
 adr: ADR-0029

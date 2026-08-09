@@ -1,6 +1,6 @@
 feature: alkis_home_matching
 title: ALKIS-typed home matching
-status: on
+status: "on"
 status_matrix_row: "**[Synthesis]** ALKIS-typed home matching"
 adr: ADR-0008
 detail_doc: docs/features/building-potentials.md

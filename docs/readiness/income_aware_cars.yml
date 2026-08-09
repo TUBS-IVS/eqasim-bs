@@ -1,6 +1,6 @@
 feature: income_aware_cars
 title: "Income-aware #cars"
-status: on
+status: "on"
 flag: cars_income_aware
 status_matrix_row: "**[Attrs]** Income-aware #cars"
 adr: ADR-0017

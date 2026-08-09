@@ -1,6 +1,6 @@
 feature: placement_income_l2
 title: Placement income L2 (#108)
-status: on
+status: "on"
 flag: braunschweig.population.popsim.placement_income
 status_matrix_row: "**[Attrs]** Placement income L2 (#108)"
 issue: "#108"

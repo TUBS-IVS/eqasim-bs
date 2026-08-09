@@ -1,6 +1,6 @@
 feature: mid_validation_report
 title: MiD validation report
-status: on
+status: "on"
 status_matrix_row: "**[Analysis]** MiD validation report"
 adr: ADR-0031
 detail_doc: docs/features/run-analysis.md

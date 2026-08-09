@@ -1,6 +1,6 @@
 feature: cell_accurate_homes
 title: Cell-accurate homes (100m)
-status: on
+status: "on"
 status_matrix_row: "**[Synthesis]** Cell-accurate homes (100m)"
 adr: ADR-0007
 detail_doc: docs/features/building-potentials.md

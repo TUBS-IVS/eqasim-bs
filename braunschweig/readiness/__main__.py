@@ -35,6 +35,15 @@ def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+    # Declarations legitimately quote the STATUS matrix's Unicode legend symbols
+    # (e.g. the green-circle "on" marker) in their notes. Windows consoles default
+    # to a legacy code page (cp1252) that cannot encode them, which would otherwise
+    # crash this CLI on the very findings it exists to report. Re-encode instead of
+    # failing; this never touches file I/O, only what this process prints.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
     declarations = load_registry(args.repo_root)
     context = CheckContext(args.repo_root)
     findings = run_all_checks(declarations, context)

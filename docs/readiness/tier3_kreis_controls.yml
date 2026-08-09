@@ -1,6 +1,6 @@
 feature: tier3_kreis_controls
 title: Tier-3 Kreis controls
-status: on
+status: "on"
 flag: braunschweig.population.popsim.control_tiers
 status_matrix_row: "**[Attrs]** Tier-3 Kreis controls"
 adr: ADR-0015

@@ -1,6 +1,6 @@
 feature: full_analysis
 title: Full analysis (dashboard+MiD)
-status: on
+status: "on"
 status_matrix_row: "**[Analysis]** Full analysis (dashboard+MiD)"
 adr: ADR-0031
 detail_doc: docs/features/run-analysis.md

@@ -1,6 +1,6 @@
 feature: urban_parking
 title: Urban parking (BS inner ring)
-status: on
+status: "on"
 flag: enable_urban_parking
 status_matrix_row: "**[Infra]** Urban parking (BS inner ring)"
 adr: ADR-0039

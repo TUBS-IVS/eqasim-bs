@@ -1,6 +1,6 @@
 feature: carless_routing_remode
 title: Carless routing re-mode
-status: on
+status: "on"
 flag: remode_carless_car_legs
 status_matrix_row: "**[Fleet]** Carless routing re-mode"
 adr: ADR-0022

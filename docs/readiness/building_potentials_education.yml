@@ -1,6 +1,6 @@
 feature: building_potentials_education
 title: Building potentials — education
-status: on
+status: "on"
 flag: education_building_distribution
 status_matrix_row: "**[Location]** Building potentials — education"
 adr: ADR-0025

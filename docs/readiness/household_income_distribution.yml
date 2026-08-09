@@ -1,6 +1,6 @@
 feature: household_income_distribution
 title: Household income € + distribution
-status: on
+status: "on"
 flag: income_eur_from_distribution
 status_matrix_row: "**[Attrs]** Household income € + distribution"
 adr: ADR-0017

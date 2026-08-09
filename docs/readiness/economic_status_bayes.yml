@@ -1,6 +1,6 @@
 feature: economic_status_bayes
 title: "Economic status (Bayes hhtype×region)"
-status: on
+status: "on"
 flag: status_from_hhtype
 status_matrix_row: "**[Attrs]** Economic status (Bayes hhtype×region)"
 adr: ADR-0011

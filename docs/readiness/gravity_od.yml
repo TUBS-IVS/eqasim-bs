@@ -1,6 +1,6 @@
 feature: gravity_od
 title: Gravity OD (work/edu)
-status: on
+status: "on"
 status_matrix_row: "**[Location]** Gravity OD (work/edu)"
 detail_doc: docs/features/gravity.md
 code_paths:

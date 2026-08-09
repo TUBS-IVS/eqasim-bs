@@ -1,6 +1,6 @@
 feature: eqasim_java_fork
 title: Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23)
-status: on
+status: "on"
 flag: eqasim_source_path
 status_matrix_row: "**[Infra]** Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23)"
 adr: ADR-0038

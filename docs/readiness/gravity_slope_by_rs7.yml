@@ -1,6 +1,6 @@
 feature: gravity_slope_by_rs7
 title: Per-RS7 gravity slope
-status: on
+status: "on"
 flag: gravity_slope_by_regiostar7
 status_matrix_row: "**[Location]** Per-RS7 gravity slope"
 adr: ADR-0023

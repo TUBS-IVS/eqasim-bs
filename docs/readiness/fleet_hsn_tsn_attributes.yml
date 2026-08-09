@@ -1,6 +1,6 @@
 feature: fleet_hsn_tsn_attributes
 title: HSN/TSN engine attrs (kW/ccm/fuel)
-status: on
+status: "on"
 flag: fleet_hsn_tsn_attributes
 status_matrix_row: "**[Fleet]** HSN/TSN engine attrs (kW/ccm/fuel)"
 adr: ADR-0021

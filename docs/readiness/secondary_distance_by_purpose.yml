@@ -1,6 +1,6 @@
 feature: secondary_distance_by_purpose
 title: "Calibration: purpose-resolved secondary"
-status: on
+status: "on"
 flag: secondary_distance_by_purpose
 status_matrix_row: "**[Location]** Calibration: purpose-resolved secondary"
 adr: ADR-0026

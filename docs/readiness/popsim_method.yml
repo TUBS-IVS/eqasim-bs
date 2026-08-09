@@ -1,6 +1,6 @@
 feature: popsim_method
 title: popsim_open / popsim_mid
-status: on
+status: "on"
 flag: braunschweig.population.method
 status_matrix_row: "**[Synthesis]** popsim_open / popsim_mid"
 adr: ADR-0002

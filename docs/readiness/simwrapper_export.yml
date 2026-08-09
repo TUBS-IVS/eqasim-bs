@@ -1,6 +1,6 @@
 feature: simwrapper_export
 title: SimWrapper export (8 chart + 4 map + commuter tabs)
-status: on
+status: "on"
 flag: simwrapper_export_enabled
 status_matrix_row: "**[Analysis]** SimWrapper export (8 chart + 4 map + commuter tabs)"
 adr: ADR-0033

@@ -1,6 +1,6 @@
 feature: kreis_income_control
 title: Kreis income control (popsim)
-status: on
+status: "on"
 flag: braunschweig.population.popsim.income_kreis_control
 status_matrix_row: "**[Attrs]** Kreis income control (popsim)"
 detail_doc: docs/features/regional-control-targets.md

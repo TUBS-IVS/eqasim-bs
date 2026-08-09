@@ -1,6 +1,6 @@
 feature: run_config_composition
 title: Run-config composition (base + per-scale overlay)
-status: on
+status: "on"
 status_matrix_row: "**[Infra]** Run-config composition (base + per-scale overlay)"
 adr: ADR-0070
 detail_doc: docs/DECISIONS.md

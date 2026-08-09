@@ -1,6 +1,6 @@
 feature: freight_analysis_exclusion
 title: Freight analysis exclusion
-status: on
+status: "on"
 status_matrix_row: "**[Freight]** Freight analysis exclusion"
 adr: ADR-0030
 detail_doc: docs/features/freight.md

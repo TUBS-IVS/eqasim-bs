@@ -1,6 +1,6 @@
 feature: tier_ab_caching
 title: Tier-A/B caching (32 stages + popsim)
-status: on
+status: "on"
 flag: braunschweig.population.popsim.work_dir
 status_matrix_row: "**[Infra]** Tier-A/B caching (32 stages + popsim)"
 adr: ADR-0037

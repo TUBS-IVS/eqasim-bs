@@ -1,6 +1,6 @@
 feature: reactivated_person_attributes
 title: Reactivated attrs (couple/studies/SPC)
-status: on
+status: "on"
 flag: reactivate_person_attributes
 status_matrix_row: "**[Attrs]** Reactivated attrs (couple/studies/SPC)"
 adr: ADR-0018

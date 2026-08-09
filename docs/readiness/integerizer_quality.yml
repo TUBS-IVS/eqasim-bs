@@ -1,6 +1,6 @@
 feature: integerizer_quality
 title: Integerizer quality (per-cell error map)
-status: on
+status: "on"
 status_matrix_row: "**[Analysis]** Integerizer quality (per-cell error map)"
 adr: ADR-0032
 detail_doc: docs/features/run-analysis.md

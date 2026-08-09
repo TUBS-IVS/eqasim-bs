@@ -1,6 +1,6 @@
 feature: fleet_segment_brand_mix
 title: German fleet segment+brand mix
-status: on
+status: "on"
 flag: fleet_model_enabled
 status_matrix_row: "**[Fleet]** German fleet segment+brand mix"
 adr: ADR-0019

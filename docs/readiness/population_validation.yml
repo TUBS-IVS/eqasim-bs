@@ -1,6 +1,6 @@
 feature: population_validation
 title: Population validation (controls/quality/geo)
-status: on
+status: "on"
 status_matrix_row: "**[Analysis]** Population validation (controls/quality/geo)"
 adr: ADR-0031
 detail_doc: docs/features/run-analysis.md

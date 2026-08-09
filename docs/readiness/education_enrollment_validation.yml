@@ -1,6 +1,6 @@
 feature: education_enrollment_validation
 title: Education enrollment validation
-status: on
+status: "on"
 status_matrix_row: "**[Analysis]** Education enrollment validation"
 adr: ADR-0031
 detail_doc: docs/features/run-analysis.md

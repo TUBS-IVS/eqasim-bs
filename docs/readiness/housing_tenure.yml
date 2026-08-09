@@ -1,6 +1,6 @@
 feature: housing_tenure
 title: Housing tenure (completeness)
-status: on
+status: "on"
 flag: synthesise_housing_tenure
 status_matrix_row: "**[Attrs]** Housing tenure (completeness)"
 adr: ADR-0017

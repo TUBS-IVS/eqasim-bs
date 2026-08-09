@@ -1,6 +1,6 @@
 feature: einpendler_injection
 title: Einpendler injection
-status: on
+status: "on"
 flag: cordon_enabled
 status_matrix_row: "**[Cordon]** Einpendler injection"
 adr: ADR-0029

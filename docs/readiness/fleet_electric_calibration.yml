@@ -1,6 +1,6 @@
 feature: fleet_electric_calibration
 title: BEV/electric calibration
-status: on
+status: "on"
 flag: fleet_electric_calibration
 status_matrix_row: "**[Fleet]** BEV/electric calibration"
 adr: ADR-0019

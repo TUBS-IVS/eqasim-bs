@@ -1,6 +1,6 @@
 feature: building_potentials_work
 title: Building potentials — work
-status: on
+status: "on"
 flag: work_building_potentials
 status_matrix_row: "**[Location]** Building potentials — work"
 adr: ADR-0025

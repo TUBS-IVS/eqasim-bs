@@ -1,6 +1,6 @@
 feature: education_gravity
 title: Education gravity (schools/Kita/uni)
-status: on
+status: "on"
 flag: education_gravity_enabled
 status_matrix_row: "**[Location]** Education gravity (schools/Kita/uni)"
 adr: ADR-0024

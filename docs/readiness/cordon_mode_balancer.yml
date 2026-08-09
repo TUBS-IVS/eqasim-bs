@@ -1,6 +1,6 @@
 feature: cordon_mode_balancer
 title: Mode balancer
-status: on
+status: "on"
 flag: cordon_enabled
 status_matrix_row: "**[Cordon]** Mode balancer"
 adr: ADR-0029

@@ -1,6 +1,6 @@
 feature: verbindungen_anchor
 title: "Inner VerBindungen calibration anchor (#193)"
-status: on
+status: "on"
 flag: braunschweig.gravity.verbindungen_anchor_enabled
 issue: "#193"
 status_matrix_row: "**[Location]** Inner VerBindungen calibration anchor (#193)"

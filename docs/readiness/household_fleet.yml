@@ -1,6 +1,6 @@
 feature: household_fleet
 title: Household fleet (vs default car)
-status: on
+status: "on"
 flag: vehicles_method
 status_matrix_row: "**[Fleet]** Household fleet (vs default car)"
 adr: ADR-0019
