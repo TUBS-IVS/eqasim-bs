@@ -1,16 +1,16 @@
 # PROJECT STATUS — eqasim-bs (dashboard)
 
-Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
+Updated: 2026-08-09 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
 
 ## 1. Live state
 
 - Pipeline runs end-to-end: synpp population synthesis -> MATSim scenario export -> Java `RunSimulation` (mode choice OFF) -> analysis/SimWrapper.
-- `main` = `39d1fa4` (PR #238 merged 2026-07-23; config-composition #234 + eqasim-java-2.2.0 matsim.output fixes #237 + upstream fix-sweep #238 all merged on the #225 baseline): the SrV-anchored trip-participation controls (#224), VerBindungen inner anchor (#193), placement-income L2 (#108), and student in-commuters (#140) are ALL merged already — several branch-status notes elsewhere in the repo predate these merges and are stale relative to `main`. **eqasim-java 2.2.0 is now e2e-green through `matsim.output`** (1-Kreis + freight, real QSim iteration 0; ADR-0071).
+- `main` = `8ee06c0` (PR #239 merged 2026-07-23; config-composition #234 + eqasim-java-2.2.0 matsim.output fixes #237 + upstream fix-sweep #238 + #239 all merged on the #225 baseline): the SrV-anchored trip-participation controls (#224), VerBindungen inner anchor (#193), placement-income L2 (#108), and student in-commuters (#140) are ALL merged already — several branch-status notes elsewhere in the repo predate these merges and are stale relative to `main`. **eqasim-java 2.2.0 is now e2e-green through `matsim.output`** (1-Kreis + freight, real QSim iteration 0; ADR-0071).
 - Current validated scale: 25% (`*_25pct_allfeat`) full run plus per-Kreis control-smokes; **no 100% production run exists yet on the newest code** (Tier-A/B caching now makes one affordable — see backlog #1).
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
-- Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
-- Current focus: eqasim-java 2.2.0 integration verified end-to-end (`matsim.output` green, 1-Kreis + freight); PR #239 (MERGEABLE) carries the remaining fixes. Next: 100% production run on the 2.2.0 stack.
+- **Test evidence is stale and unautomated (verified 2026-08-09).** Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed — since then **59 commits / 12 merged PRs** landed on `main` with no recorded re-run. `.github/workflows/tests.yml` triggers on `develop`, a branch that does not exist in this fork, so the suite has **never** run in CI (`gh run list` shows only Copilot Code Review). Treat every "✅" below as *last measured*, not *currently verified*.
+- Current focus: no open PR; `main` is the 2.2.0 stack with `matsim.output` e2e-green (1-Kreis + freight). Next: 100% production run on that stack. The newest *unmerged* work is `feature/escort-purpose-201` (18 TDD commits, 2026-07-24, never PR'd).
 
 ## 2. Feature matrix
 
@@ -90,29 +90,35 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 
 ## 3. Branches & PRs
 
-**1 open PR:** [#239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) — eqasim-java 2.2.0 `matsim.output` green (in-commuter time imputation, gzip pin, #229 config-key read; **MERGEABLE**, 3 commits rebased clean onto `main`). PR #234 (config composition + cleanup, closes #81/#230), #237 (2.2.0 matsim.output fixes + PM docs), and #238 (upstream fix-sweep) all MERGED 2026-07-22/23. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+**No open PR.** PRs #234/#237/#238/#239 all MERGED 2026-07-22/23. The local clone is clean: `main` only, no local feature branches, no worktrees (verified 2026-08-09 — the previous version of this section listed 11 local branches and 3 stale worktrees that no longer exist).
 
-- `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
-- `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
-- `worktree-feature+popsim-validation-stage` — PopSim control-fit validation stage, server pytest + smoke pending.
-- `worktree-fix+gravity-calib-popsim-mid` — gravity calibration popsim_mid fix, committed, not pushed.
-- `feature/taz-gravity-calibration` (worktree `feature+taz-gravity-calibration`) — TAZ friction, parked backup only (ADR-0067, TAZ stays OFF).
-- `feature/bbs-share-by-age` (worktree `fix+audit-followups`) — BBS share-by-age control follow-up.
-- `feature/runcontrol-gui` (worktree `runcontrol-gui`) — run-control GUI prototype.
-- `run/kreis5-integration` (worktree `fix-facilities-candidates`) — kreis5 facilities-candidates fix.
-- `worktree-s1a-generic-kreis-control` / `worktree-s1c-cars-control` — generic Kreis-control + cars-control spikes (same tip, not yet diverged).
-- `worktree-feature+config-composition-cleanup` — **[PR #239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) OPEN, MERGEABLE**: eqasim-java 2.2.0 `matsim.output` green (in-commuter donor-time imputation, `compressionType=gzip` pin, #229 config-key read). PR #234 (composed configs base_bs.yml + overlays, int-seed+numba, #229, config sprawl pruned) MERGED. `matsim.output` now proven e2e at 1-Kreis + freight (real QSim).
-- `docs/pm-resync`, `docs/pm-sync-2026-07-18` — earlier PM-doc sync attempts, superseded by this branch.
-- `feature/primary-locations-all-employed` — #203 all-employed primary locations, core built (TDD 18/18), unpushed.
-- `feature/calibration-corner`, `fix/popsim-no-silent-fallback`, `wip/felix-allfeat-20260718`, `wip/local-placement-l2-20260719`, `backup/status-presentation-pre-rebase` — no active worktree; stale/backup, candidates for cleanup.
-- `chore/pm-layer-consolidation` (this branch) — PM-layer consolidation in progress.
+Remote (`origin`) carries 33 non-`main` branches. **17 are fully merged into `main`** and carry no unique commits — safe to delete, pending push approval: `docs/pm-layer-and-test-fix`, `feature/{alkis-typed-home-matching, building-activity-potentials, education-gravity-bs, employment-age-control, fleet-income-age, hts-matching-optimization, logging-theme-mirror, popsim-optimized-importance, population-method-workflows, simwrapper-dashboards, tier3-controls, tier3-kreis-sourcing, tier3-live-wiring}`, `fix/income-eur-floor`, `integration/all-features`, `refactor/braunschweig-clean-fork`.
 
-Stale worktree dirs pending removal (branch already merged into `main`): `placement-income-l2` (PR #212), `verbindungen-anchor` (PR #197), `student-incommuters-140` (PR #219).
+**16 unmerged remote branches** (`+N` = commits ahead of `main`):
+
+| Branch | +N | Last commit | Standing |
+|---|---|---|---|
+| `feature/escort-purpose-201` | 18 | 2026-07-24 | **Live front** — #201 escort purpose, full TDD chain (SrV V_ZWECK_BHOL weights → distance layer → chainsolver → facilities → household escort links). Never PR'd. |
+| `feature/fleet-quality-and-data` | 43 | 2026-07-03 | Backlog [1.5] — server phase (KBA/MiD extraction, pytest, 1% smoke, 2 stale OFF goldens) then PR. |
+| `worktree-calibration-corner` | 68 | 2026-06-27 | Backlog [0.1] — server test run + PR. Open fork: whole body vs. cherry-pick (backlog §3.1). |
+| `feature/runcontrol-gui` | 49 | 2026-07-10 | #119 prototype, no gate defined. |
+| `worktree-fix+gravity-calib-popsim-mid` | 13 | 2026-06-29 | Gravity calibration popsim_mid fix; blocks backlog "calibrate gravity" step 2. |
+| `feature/primary-locations-all-employed` | 3 | 2026-07-18 | #203, core built (TDD 18/18). |
+| `run/kreis5-integration` | 3 | 2026-07-12 | kreis5 facilities-candidates fix. |
+| `feature/bbs-share-by-age` | 1 | 2026-07-14 | BBS share-by-age control follow-up. |
+| `feature/taz-gravity-calibration` | 6 | 2026-07-01 | Backup only — ADR-0067 keeps TAZ permanently OFF. Delete candidate. |
+| `feature/calibration-corner` | 1 | 2026-06-25 | Superseded by `worktree-calibration-corner`. Delete candidate. |
+| `feature/tier3-kreis-controls` | 5 | 2026-06-18 | Feature-superseded (tier-3 controls merged). Delete candidate. |
+| `feature/employment-grid-control` | 4 | 2026-06-17 | Feature-superseded. Delete candidate. |
+| `feature/fleet-vehicle-consistency` | 1 | 2026-06-18 | Feature-superseded (PR #12/#13). Delete candidate. |
+| `wip/felix-allfeat-20260718` | 1 | 2026-07-19 | WIP snapshot. Delete candidate. |
+| `wip/local-placement-l2-20260719` | 1 | 2026-07-19 | WIP snapshot, L2 merged via PR #212. Delete candidate. |
+| `docs/status-presentation` | 2 | 2026-07-13 | Presentation draft. Delete candidate. |
 
 ## 4. Top of the backlog
 
-1. Calibration-corner remainder — run the server test suite, then push as one PR.
-2. Push `integration/all-features` once the remainder above lands.
+1. Re-establish test evidence: point `tests.yml` at `main` (it targets the non-existent `develop`), re-run the full suite on felix against `8ee06c0`.
+2. Land or park the unmerged front, newest first: `feature/escort-purpose-201` (#201), then calibration-corner remainder [0.1], then fleet-quality [1.5].
 3. 100% production run on the newest code (Tier-A/B caching makes it affordable).
 4. Mode-choice ASC calibration (turn DMC on, anchor modal split to the committed MiD mode-margin reference).
 5. Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed `popsim_work_dir` in server configs).

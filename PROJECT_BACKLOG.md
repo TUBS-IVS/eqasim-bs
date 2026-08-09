@@ -64,8 +64,14 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 - **[0.2]** DONE (2026-06-27) — stale partial edit in `distance_distributions.py` reverted.
 - **[0.3]** DONE (2026-06-27) — 3 superseded prototype branches deleted local+origin (verified
   redundant, see archive §5). Retire `feature/calibration-corner` + its worktree once 0.1 lands.
-- **[0.4]** Push `integration/all-features` once 0.1 lands; update `SESSION_LOG.md` (stale
-  since ~06-18) — needs user push approval.
+- **[0.4]** DONE — `integration/all-features` is merged into `main` (verified 2026-08-09).
+- **[0.5]** **Test evidence is stale and unautomated** (found 2026-08-09). `.github/workflows/tests.yml`
+  triggers on `develop`, which does not exist in this fork, so the suite has never run in CI; the last
+  recorded green (2026-07-19, felix, 3170 passed) predates 59 commits / 12 merged PRs on `main`.
+  Fix the trigger (`develop` -> `main`), then re-run the full suite on felix against `8ee06c0`.
+- **[0.6]** Remote branch hygiene: 17 fully-merged `origin/*` branches are deletable, 7 more are
+  feature-superseded backups (full classification in `PROJECT_STATUS.md` §3). Needs push approval.
+  Genuinely open work in that list: `feature/escort-purpose-201` (#201, 18 TDD commits, never PR'd).
 
 ### TIER 1 — High value, mostly ready (the "produce defensible results" front)
 
@@ -104,6 +110,14 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   1-person/renter/low-income segment, NOT importance). Not yet built. Data confirmed present
   (`mid2023_cars_by_raumtyp`, `cars_by_status_hhtype`, H7/H12). Design: estimate 1 km cell shape from
   MiD, then IPF/rake to the KREIS anchor. Measure-first per the calibration discipline.
+- **[2.7]** **SrV 2023 BS+RGB validation wave (#241-#250)** — 10 issues opened 2026-07-24, not yet
+  ranked here. Mostly *validation references* rather than new model levers: #241 W_ZWECK 13-16/99
+  silent-fillna purpose mapping (a real fallback-transparency bug — pull forward), #242 W_ZWD subtypes,
+  #244 home-office frequency, #245 start/destination AGS as OD reference, #246 mode-detail pack
+  (car occupancy, joint travel, e-bike), #247 home-to-PT-stop walk times, #248 regional fleet
+  realism (EV counts, drive types, mileage), #249 parking calibration, #250 B2C delivery demand.
+  Also open and unranked: #226 (SrV as regional HTS chain donor), #227, #228, #201 escort purpose
+  (branch exists, see [0.6]), #203, #123, #117, #138, #141.
 
 ### TIER 3 — Deferred-deliberately / future waves (parked with intent, not forgotten)
 
@@ -187,8 +201,10 @@ showed no gain. Full reasoning per row is preserved verbatim in the archive appe
    overfitting noise we deliberately don't rake to.)
 3. **Highest next lever:** German MiD Wege donor seed diversity (2.1, big, blocked on data)
    vs. 100% run + mode-choice calibration (1.1/1.2, ready)?
-4. **The "stale" branches are all feature-superseded** (archive §5) — safe to delete. Only
-   your go-ahead is needed (local delete is free; deleting the `origin/` copies is a push).
+4. **Remote branch deletion** — 17 merged + 7 feature-superseded `origin/*` branches, classified
+   in `PROJECT_STATUS.md` §3. Deleting them is a push, so it needs your explicit go-ahead.
+5. **`feature/escort-purpose-201`** (18 TDD commits, newer than `main`) — finish and PR, or park
+   with a status? It is currently the only unmerged work that is *newer* than `main`.
 
 ---
 
