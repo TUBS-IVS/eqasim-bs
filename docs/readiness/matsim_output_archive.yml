@@ -1,0 +1,42 @@
+feature: matsim_output_archive
+title: MATSim output archive (run-named durable copy)
+status: on
+flag: archive_matsim_output
+status_matrix_row: "**[Infra]** MATSim output archive (run-named durable copy)"
+adr: ADR-0064
+detail_doc: docs/features/run-analysis.md
+code_paths:
+  - matsim/output.py
+
+evidence:
+  tests:
+    - tests/test_matsim_output_archive.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      Archiving is a post-run copy step; when run_matsim and archive_matsim_output are both
+      true it always executes, and there is no meaningful OFF-path output to compare against.
+  fallback_rate:
+    instrumented: true
+    log_marker: "archived %d files from"
+    note: >
+      Logs a hardlink-vs-copy split per archived run, with a hard WARNING when the hardlink
+      count is exactly 0 (source and target on different volumes -- archive used extra disk).
+  reference:
+    kind: none
+    note: Infrastructure feature (output archiving); no external reference applies.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI applies; readiness is the PR #181 merge itself.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0064 documents the design and the PR #181 merge; no separate owner verdict has been
+    recorded for this register.
+  source: ADR-0064

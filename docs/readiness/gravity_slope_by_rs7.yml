@@ -1,0 +1,48 @@
+feature: gravity_slope_by_rs7
+title: Per-RS7 gravity slope
+status: on
+flag: gravity_slope_by_regiostar7
+status_matrix_row: "**[Location]** Per-RS7 gravity slope"
+adr: ADR-0023
+detail_doc: docs/features/gravity.md
+code_paths:
+  - braunschweig/gravity/model.py
+
+evidence:
+  tests:
+    - tests/test_gravity_ring_calibration.py
+    - tests/test_gravity_slope_config.py
+    - tests/test_gravity_model_core.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      This is a dict-keyed override on top of the baseline scalar slope, not a boolean flag;
+      no dedicated ON/OFF byte-identity test exists (unmapped RS7 falls back to the scalar,
+      which is the tested behaviour, see fallback_rate below).
+  fallback_rate:
+    instrumented: true
+    log_marker: "per-RegioStaR slope:"
+    note: >
+      Logs a primary(per-RS7 override)-vs-fallback(scalar default) rate over origins, with a
+      warning escalation above a configured threshold.
+  reference:
+    kind: none
+    note: >
+      The BA Pendler Poisson GLM was fitted offline from the same uncommitted BA Pendleratlas
+      as gravity_od.yml; the fitted per-RS7 slope values are pinned directly into config YAML
+      (per ADR-0023), not shipped as a separate data file.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0023 documents the design; no owner verdict on realised per-RS7 fit quality has been
+    recorded.
+  source: ADR-0023

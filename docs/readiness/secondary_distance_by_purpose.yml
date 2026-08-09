@@ -1,0 +1,45 @@
+feature: secondary_distance_by_purpose
+title: "Calibration: purpose-resolved secondary"
+status: on
+flag: secondary_distance_by_purpose
+status_matrix_row: "**[Location]** Calibration: purpose-resolved secondary"
+adr: ADR-0026
+detail_doc: docs/features/secondary-distances.md
+code_paths:
+  - braunschweig/popsim/distance_distributions.py
+  - braunschweig/synthesis/locations/secondary_chainsolvers.py
+
+evidence:
+  tests:
+    - tests/test_secondary_distance_dispatch.py
+    - tests/test_secondary_chainsolvers.py
+    - tests/test_secondary_chainsolvers_subtypes.py
+    - tests/test_secondary_subtype_validation.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: No dedicated OFF-path byte-identity test name was confirmed among the listed test files.
+  fallback_rate:
+    instrumented: false
+    note: >
+      ADR-0026 states "sparse-cell fallback rate is logged (no silent fallback)", but the exact
+      log_marker string was not pinned to a specific line in braunschweig/popsim/distance_distributions.py
+      in this pass -- flagged for the owner to confirm and wire into this declaration rather than
+      guessed here.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0026 documents the design (Tier 1 + Tier 2 daily/non-daily, both flags ON); no owner
+    verdict on realised per-purpose fit has been recorded.
+  source: ADR-0026

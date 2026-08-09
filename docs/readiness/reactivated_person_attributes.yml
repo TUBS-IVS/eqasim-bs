@@ -1,0 +1,49 @@
+feature: reactivated_person_attributes
+title: Reactivated attrs (couple/studies/SPC)
+status: on
+flag: reactivate_person_attributes
+status_matrix_row: "**[Attrs]** Reactivated attrs (couple/studies/SPC)"
+adr: ADR-0018
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+  - braunschweig/ipf/attributed.py
+  - synthesis/population/matched.py
+
+evidence:
+  tests:
+    - tests/test_couple_attribute.py
+    - tests/test_studies_attribute.py
+    - tests/test_spc_attribute.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_couple_attribute.py
+    note: All three test files explicitly exercise the reactivate_person_attributes ON/OFF contract.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[braunschweig.ipf.attributed] couple: no hh_type column"
+    note: >
+      The couple sub-derivation logs when household formation is disabled (no hh_type column,
+      couple stays False). derive_studies/derive_socioprofessional_class have NO equivalent
+      fallback-rate logging -- ages outside the student-share table silently return 0.0 with no
+      counted/logged fallback, a gap worth closing per CLAUDE.md fallback-transparency.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mikrozensus/student_share_by_age.csv
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0018 documents the design. This flag lives in braunschweig/ipf/attributed.py and is
+    dead under the active popsim_mid production method; it is only live via the simple_ipf_open
+    fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this
+    feature, and the studies/SPC sub-derivations lack fallback instrumentation (see
+    fallback_rate.note).
+  source: ADR-0018

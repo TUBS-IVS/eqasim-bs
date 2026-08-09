@@ -1,0 +1,52 @@
+feature: lod2_height_volume_typing
+title: LoD2 height/volume typing
+status: on
+status_matrix_row: "**[Synthesis]** LoD2 height/volume typing"
+adr: ADR-0009
+detail_doc: docs/features/building-potentials.md
+code_paths:
+  - braunschweig/data/lod2_heights.py
+  - braunschweig/data/buildings.py
+  - braunschweig/synthesis/locations/building_typing.py
+
+evidence:
+  tests:
+    - tests/test_lod2_heights.py
+    - tests/test_preprocess_lod2_heights.py
+    - tests/test_building_typing.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      MFH_MIN_FLOORS=4 is a module-level Python constant (braunschweig/synthesis/locations/building_typing.py),
+      not a config flag with an OFF path.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[braunschweig.data.buildings] LoD2 height coverage:"
+    note: >
+      Logs LoD2 height-join coverage as a fraction of footprints matched; braunschweig/data/lod2_heights.py
+      separately logs tile-download success/failure counts.
+  reference:
+    kind: none
+    note: >
+      The LoD2 heights parquet (braunschweig/preprocessed/lod2_heights.parquet) is NOT
+      committed -- generated locally from downloaded LoD2 tiles at runtime. The "Salzgitter
+      real-population sweep" that tuned MFH_MIN_FLOORS=4 is referenced only in prose (ADR-0009,
+      PROJECT_BACKLOG.md), not as a committed data artifact.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0009 and PROJECT_BACKLOG.md record this as "verified 2026-06-27"; the underlying
+      sweep result is not attributable to a run recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0009 documents the design and states it was "verified 2026-06-27" (also cross-confirmed
+    in PROJECT_BACKLOG.md's [2.2] DONE entry); restating this as a formal register assessment
+    is a short job given the verification already happened.
+  source: ADR-0009

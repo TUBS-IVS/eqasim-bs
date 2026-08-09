@@ -1,0 +1,48 @@
+feature: verbindungen_anchor
+title: "Inner VerBindungen calibration anchor (#193)"
+status: on
+flag: braunschweig.gravity.verbindungen_anchor_enabled
+issue: "#193"
+status_matrix_row: "**[Location]** Inner VerBindungen calibration anchor (#193)"
+adr: ADR-0068
+detail_doc: docs/features/gravity.md
+code_paths:
+  - braunschweig/gravity/verbindungen_anchor.py
+  - braunschweig/gravity/model.py
+
+evidence:
+  tests:
+    - tests/test_verbindungen_anchor.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_verbindungen_anchor.py
+    note: test_apply_inner_anchor_idempotent_and_off_identity confirms the OFF/idempotent path is unchanged.
+  fallback_rate:
+    instrumented: false
+    note: >
+      Shares the same fallback-transparency instrumentation family as
+      verbindungen_od_validation.py (imports margin_check from it), but no single marker was
+      pinned to an exact verified line in this pass.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P13_commute_distance_by_rs7.csv
+    note: >
+      Also draws on the committed mid2023_P38_2_commute_distance_by_kreis.csv. The VerBindungen
+      QZM "fit reference once ON" is NOT committed (same local raw-data gap as ADR-0068 notes).
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0068 explicitly records this as a HUMAN OVERRIDE of the pre-registered gate -- default
+    ON despite the gate not formally passing. This is exactly the kind of judgement call this
+    register exists to surface; the owner's reasoning is in ADR-0068 but has not been restated
+    as a register assessment.
+  source: ADR-0068

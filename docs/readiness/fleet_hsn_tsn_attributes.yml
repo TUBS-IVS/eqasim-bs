@@ -1,0 +1,52 @@
+feature: fleet_hsn_tsn_attributes
+title: HSN/TSN engine attrs (kW/ccm/fuel)
+status: on
+flag: fleet_hsn_tsn_attributes
+status_matrix_row: "**[Fleet]** HSN/TSN engine attrs (kW/ccm/fuel)"
+adr: ADR-0021
+code_paths:
+  - braunschweig/data/kba/hsn_tsn.py
+  - braunschweig/synthesis/vehicles/hbefa.py
+
+evidence:
+  tests:
+    - tests/test_hsn_tsn_match.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      No dedicated byte-identity test for the OFF path found; tests/test_fleet_sampling_de.py
+      (test_household_off_path_no_hsn_tsn_match_tier, test_provenance_columns_absent_on_off_path)
+      confirm the OFF path drops the HSN/TSN provenance columns, not full byte-identity.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[hsn_tsn] match tier rates over"
+    note: >
+      _log_tier_rates_from_column() logs exact/model/brand/segment/global match-tier rates
+      over every vehicle, escalating to a warning when exact+model match falls below 50%. A
+      separate warning fires for unmapped fleet brands that fell back to the global median.
+  reference:
+    kind: none
+    note: >
+      The HSN/TSN variant lookup (expected at
+      eqasim-data/data/braunschweig/kba/hsn_tsn_lookup.csv per HSN_TSN_RELATIVE_PATH,
+      "31423 variant rows" per its own docstring) is NOT committed -- only a derived/
+      subdirectory with unrelated aggregates exists under eqasim-data/data/braunschweig/kba/.
+      It is produced locally by scripts/scrape_hsn_tsn.py, which IS committed.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI scalar currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0021 documents the scraper design (62-brand coverage); no owner verdict on realised
+    match-tier quality has been recorded, and the underlying lookup table is not committed.
+    NOTE: the matrix's own code-path hint (synthesis/vehicles/hbefa.py) only covers HBEFA
+    size-class fallback, not the HSN/TSN attach logic itself, which lives in
+    braunschweig/data/kba/hsn_tsn.py (both are listed above).
+  source: ADR-0021

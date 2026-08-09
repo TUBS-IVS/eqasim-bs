@@ -1,0 +1,51 @@
+feature: income_spatial_tilt
+title: Income spatial tilt (Nettokaltmiete)
+status: on
+flag: braunschweig.population.popsim.income_spatial_tilt
+status_matrix_row: "**[Synthesis]** Income spatial tilt (Nettokaltmiete)"
+adr: ADR-0010
+detail_doc: docs/features/regional-control-targets.md
+code_paths:
+  - braunschweig/popsim/income_spatial_tilt.py
+  - braunschweig/popsim/stage.py
+
+evidence:
+  tests:
+    - tests/test_popsim_income_spatial_tilt.py
+    - tests/test_placement_income_stage.py
+    - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_popsim_income_spatial_tilt.py
+    note: test_tilt_off_path_returns_income_unchanged asserts the OFF path is byte-identical (assert_frame_equal).
+  fallback_rate:
+    instrumented: true
+    log_marker: "[income_spatial_tilt] applied: clipped=%.1f%%, kreis_mean_preserved=%s,"
+    note: >
+      Also logs zero-total-household-weight cells and a missing/zero renter-rent rate
+      separately; braunschweig/popsim/placement_income.py logs an explicit override marker when
+      placement_income=ON supersedes this feature.
+  reference:
+    kind: none
+    note: >
+      The Zensus 100m grid rent column (durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter)
+      and the INKAR household-income scale file (braunschweig.inkar_household_income_path,
+      braunschweig/E_Haushaltseinkommen.xls) are both NOT committed to this repository.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0010 reports a Delta-Pearson of +0.032 from a zero-rent gate fix; not copied here
+      until attributable to a run recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0010 documents the design and the zero-rent gate fix; no owner verdict on realised
+    tilt fit has been recorded. Note this feature is overridden whenever placement_income is ON
+    (see placement_income_l2.yml), which is the current default.
+  source: ADR-0010

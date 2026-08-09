@@ -1,0 +1,46 @@
+feature: joint_age_size_margin
+title: "Joint age×size margin (#3)"
+status: off_by_default
+flag: braunschweig.ipf.use_joint_age_size_margin
+status_matrix_row: "**[Synthesis]** Joint age×size margin (#3)"
+adr: ADR-0004
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+  - braunschweig/ipf/joint_age_size.py
+  - braunschweig/ipf/prepare.py
+
+evidence:
+  tests:
+    - tests/test_joint_age_size.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: No dedicated byte-identity test name found; OFF-path coverage is via feasibility tests.
+  fallback_rate:
+    instrumented: false
+    note: >
+      A skip-count warning exists for Kreise with a zero row/column total
+      (braunschweig/ipf/joint_age_size.py), but it is a skip count, not a primary/fallback rate
+      percentage.
+  reference:
+    kind: none
+    note: braunschweig/1000A-3082_de_flat.zip (Zensus 2022) is NOT committed and absent from disk.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    DISCREPANCY FOUND: braunschweig.ipf.use_joint_age_size_margin is NOT set to true anywhere
+    in any committed config (configs/base_bs.yml, every overlay, every fixture) -- code default
+    is False (braunschweig/ipf/prepare.py). It is explicitly listed as an intentionally-absent
+    dead key on the active popsim_mid path. This directly contradicts PROJECT_STATUS.md's 🟢
+    legend ("flag-gated, ON in real-data run configs"): the flag appears to be OFF everywhere.
+    This should be resolved by the owner -- either the matrix symbol is wrong, or a config that
+    sets this flag is missing. ADR-0004 documents the design but not this discrepancy.
+  source: ADR-0004

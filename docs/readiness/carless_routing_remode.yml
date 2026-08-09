@@ -1,0 +1,45 @@
+feature: carless_routing_remode
+title: Carless routing re-mode
+status: on
+flag: remode_carless_car_legs
+status_matrix_row: "**[Fleet]** Carless routing re-mode"
+adr: ADR-0022
+code_paths:
+  - matsim/scenario/population.py
+
+evidence:
+  tests:
+    - tests/test_population_income_attribute.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      remode_carless_car_legs is true in configs/base_bs.yml; no OFF-path byte-identity test is
+      declared. tests/test_population_income_attribute.py:118 checks the flag-off case has no
+      re-mode effect, which is a functional check, not a full byte-identity test.
+  fallback_rate:
+    instrumented: false
+    note: >
+      No fallback-rate log found for the re-mode branch (matsim/scenario/population.py:255-257)
+      -- it silently re-modes without counting how many legs were affected. Gap flagged per
+      CLAUDE.md fallback-transparency.
+  reference:
+    kind: none
+    note: The feature enforces routing/fleet consistency; no external reference applies.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI applies to this consistency fix.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0022 documents the design decision; NOTE: both PROJECT_STATUS.md and ADR-0022's own
+    Decision text cite matsim/simulation/prepare.py as the implementation file, but the flag
+    actually resolves in matsim/scenario/population.py (verified: prepare.py contains no
+    remode/carless logic). This file-path discrepancy in ADR-0022 itself should be corrected.
+    No owner verdict on realised re-mode coverage has been recorded.
+  source: ADR-0022

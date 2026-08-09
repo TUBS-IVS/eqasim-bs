@@ -1,0 +1,48 @@
+feature: alkis_home_matching
+title: ALKIS-typed home matching
+status: on
+status_matrix_row: "**[Synthesis]** ALKIS-typed home matching"
+adr: ADR-0008
+detail_doc: docs/features/building-potentials.md
+code_paths:
+  - braunschweig/synthesis/locations/home_cell.py
+  - braunschweig/synthesis/locations/building_typing.py
+
+evidence:
+  tests:
+    - tests/test_home_cell_typed.py
+    - tests/test_building_typing.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      No boolean config flag; behaviour is entirely driven by presence/absence of census counts
+      and ALKIS/height data. test_no_census_signal_all_nan_height_stays_all_efh documents a
+      byte-identical all-EFH fallback for the no-signal case specifically.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[home_typed] %d HH: in-cell"
+    note: >
+      Logs in-cell rate, type-match rate, zero-building count (with nearest-neighbour-cell
+      rescue), over-capacity count, and btype-default rate, escalating to a warning above a
+      named threshold constant.
+  reference:
+    kind: none
+    note: >
+      The ALKIS-typed footprint parquet (braunschweig.alkis_path, default
+      braunschweig/preprocessed/alkis_buildings.parquet) is NOT committed -- it is generated
+      locally by scripts/preprocess_alkis_landuse.py, which IS committed.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0008 documents the design (ZGB-8 scope only, national generalisation explicitly out of
+    scope); no owner verdict on realised type-match quality has been recorded.
+  source: ADR-0008

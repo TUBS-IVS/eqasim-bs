@@ -1,0 +1,45 @@
+feature: cell_accurate_homes
+title: Cell-accurate homes (100m)
+status: on
+status_matrix_row: "**[Synthesis]** Cell-accurate homes (100m)"
+adr: ADR-0007
+detail_doc: docs/features/building-potentials.md
+code_paths:
+  - braunschweig/synthesis/locations/home_cell.py
+
+evidence:
+  tests:
+    - tests/test_home_cell.py
+    - tests/test_home_cell_legacy_cap.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      No dedicated config flag -- this is code-path selection driven by
+      braunschweig.population.method (popsim vs. non-popsim), not a boolean toggle.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[home_cell] %d households: %d placed in their 100m cell"
+    note: >
+      Logs placed-in-own-cell vs. commune-fallback (no building in cell) vs. unplaced (no
+      building at all) rates, escalating to a warning when either fallback occurs.
+  reference:
+    kind: none
+    note: >
+      The Zensus 100m grid parquet
+      (eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet) is
+      NOT committed -- no cells/ subdirectory exists under eqasim-data/data/braunschweig/popsim/.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0007 documents the design; no owner verdict on realised cell-placement coverage has
+    been recorded.
+  source: ADR-0007

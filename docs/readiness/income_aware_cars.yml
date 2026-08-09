@@ -1,0 +1,44 @@
+feature: income_aware_cars
+title: "Income-aware #cars"
+status: on
+flag: cars_income_aware
+status_matrix_row: "**[Attrs]** Income-aware #cars"
+adr: ADR-0017
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+  - braunschweig/synthesis/population/enriched.py
+
+evidence:
+  tests:
+    - tests/test_cars_income_aware.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_cars_income_aware.py
+    note: test_off_equivalence_byte_identical confirms the OFF path is unchanged.
+  fallback_rate:
+    instrumented: true
+    log_marker: "income-aware number_of_cars: MiD-coupled"
+    note: >
+      Logs a primary(MiD-coupled PMF)-vs-fallback(legacy H7 PMF) rate, with fallback_reasons
+      distinguishing "unclassifiable" from "missing_cell".
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H7_cars_by_kreis.csv
+    note: Also draws on committed mid2023_cars_by_status_hhtype.csv and mid2023_cars_by_raumtyp.csv.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0017 is a combined ADR covering four flags at once (see household_income_distribution.yml).
+    This flag lives in synthesis/population/enriched.py and is dead under the active popsim_mid
+    production method; it is only live via the simple_ipf_open fixture.
+    docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
+  source: ADR-0017

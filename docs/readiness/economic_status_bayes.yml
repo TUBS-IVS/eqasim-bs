@@ -1,0 +1,46 @@
+feature: economic_status_bayes
+title: "Economic status (Bayes hhtype×region)"
+status: on
+flag: status_from_hhtype
+status_matrix_row: "**[Attrs]** Economic status (Bayes hhtype×region)"
+adr: ADR-0011
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+  - braunschweig/synthesis/population/enriched.py
+  - braunschweig/data/mid/status_by_hhtype.py
+
+evidence:
+  tests:
+    - tests/test_status_from_hhtype.py
+    - tests/test_economic_status.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_economic_status.py
+    note: test_off_branch_uses_legacy_income_derived_status_unchanged confirms status_from_hhtype=False reproduces the exact legacy 1:1 mapping.
+  fallback_rate:
+    instrumented: true
+    log_marker: "economic_status from MiD hhtype x region:"
+    note: Logs a primary(Bayes)-vs-fallback(unclassifiable household -> legacy income-class status) rate.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_status_by_hhtype_bundesland.csv
+    note: Also draws on the committed mid2023_status_by_hhtype_raumtyp.csv.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0011 documents the design. NOTE: this flag lives entirely in
+    braunschweig/synthesis/population/enriched.py, which is the legacy simple_ipf_open
+    enrichment stage. configs/base_bs.yml sets braunschweig.population.method to popsim_mid,
+    under which this whole stage (and this flag) is never invoked at all -- it is only live via
+    configs/fixtures/config_local_braunschweig_25pct.yml. No owner verdict on realised
+    Bayes-fit quality has been recorded.
+  source: ADR-0011

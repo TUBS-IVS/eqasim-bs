@@ -1,0 +1,46 @@
+feature: urban_parking
+title: Urban parking (BS inner ring)
+status: on
+flag: enable_urban_parking
+status_matrix_row: "**[Infra]** Urban parking (BS inner ring)"
+adr: ADR-0039
+code_paths:
+  - matsim/scenario/population.py
+
+evidence:
+  tests:
+    - tests/test_configs_composed.py
+    - tests/test_matsim_id_types.py
+    - tests/test_population_income_attribute.py
+    - tests/test_popsim_config_parity.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: No dedicated OFF-path byte-identity test found for this flag.
+  fallback_rate:
+    instrumented: false
+    note: No fallback/primary logging pattern found near enable_urban_parking.
+  reference:
+    kind: none
+    note: >
+      Infrastructure/scenario feature scoped to the Braunschweig inner ring; no external
+      reference applies. docs/codebase/CONCERNS.md flags a MEDIUM-severity "parking scenario
+      parity" concern -- enable_urban_parking defaults to false/absent in at least one fixture,
+      inconsistent with the base config's true.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI applies to this scenario-preparation feature.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0039 documents the design decision, but its own Decision text cites
+    matsim/simulation/prepare.py as the implementation file -- verified incorrect, the flag
+    actually resolves in matsim/scenario/population.py. This file-path discrepancy in ADR-0039
+    should be corrected. No owner verdict on the fixture parity gap noted above has been
+    recorded.
+  source: ADR-0039

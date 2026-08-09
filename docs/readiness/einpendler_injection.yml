@@ -1,0 +1,49 @@
+feature: einpendler_injection
+title: Einpendler injection
+status: on
+flag: cordon_enabled
+status_matrix_row: "**[Cordon]** Einpendler injection"
+adr: ADR-0029
+code_paths:
+  - braunschweig/synthesis/incommuters.py
+  - braunschweig/data/census/pendler.py
+
+evidence:
+  tests:
+    - tests/test_incommuters.py
+    - tests/test_incommuter_assembly.py
+    - tests/test_incommuter_core_frames.py
+    - tests/test_incommuter_merge.py
+    - tests/test_incommuter_origins.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      No test name suggests an OFF-path (cordon_enabled=False) byte-identity claim for the
+      injection stage itself.
+  fallback_rate:
+    instrumented: false
+    note: >
+      No fallback/primary rate log was found for the injection VOLUME logic itself (as distinct
+      from the mode balancer, which is a separate declared feature with its own instrumentation).
+  reference:
+    kind: none
+    note: >
+      The BA Pendler statistics (braunschweig.pendler_ein_path / _aus_path, resolving to
+      statistik_pendler_2026042493412.csv / ...430.csv under eqasim-data/data) are NOT
+      committed and not present anywhere in the working tree.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI applies; injection volume is validated indirectly via cordon analysis stages.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0029 documents the design (road + PT/Bahnhof gates, Mikrozensus-grounded mode
+    balancer); no owner verdict has been recorded, and the BA Pendler source volumes are not
+    committed. No docs/features/*.md exists for the cordon subsystem.
+  source: ADR-0029

@@ -1,0 +1,52 @@
+feature: verbindungen_od_validation
+title: "VerBindungen sub-Kreis OD validation (#124)"
+status: on
+issue: "#124"
+status_matrix_row: "**[Location]** VerBindungen sub-Kreis OD validation (#124)"
+adr: ADR-0066
+detail_doc: docs/features/gravity.md
+code_paths:
+  - braunschweig/analysis/verbindungen_validation.py
+  - braunschweig/data/verbindungen/work_od.py
+
+evidence:
+  tests:
+    - tests/test_verbindungen_validation.py
+    - tests/test_verbindungen_data.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      Per ADR-0066, this is a read-only analysis/validation stage with no scientific-output
+      change from the merge; there is no gated production behaviour to test OFF-path
+      byte-identity against.
+  fallback_rate:
+    instrumented: false
+    note: >
+      verbindungen_validation.py contains extensive CLAUDE.md fallback-transparency comments
+      and multiple candidate print statements (e.g. a "partial-zero renorm fallback rows"
+      detail string), but no single marker was pinned to an exact verified line in this pass --
+      flagged for the owner to confirm and wire into this declaration.
+  reference:
+    kind: none
+    note: >
+      The VerBindungen 2019 QZM open-data files (QZM-Berufspendler-VerBindungen-Verkehrszellen.csv,
+      SvBaGeB_Statisch_*_Verkehrszellen.csv) are NOT committed and the
+      eqasim-data/data/verbindungen/ directory does not exist in this checkout -- confirmed by
+      ADR-0068 as a known "local raw-data gap."
+  kpi:
+    name: verbindungen_check_b_tvd
+    produced_by: braunschweig.analysis.verbindungen_validation
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0066 reports a weighted TVD of 0.137 for check-B (PR #189/#190); not copied here
+      until attributable to a run recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0066 documents the design and the check-B measurement; no owner verdict beyond the ADR
+    itself has been recorded, and the underlying VerBindungen raw data is not committed.
+  source: ADR-0066

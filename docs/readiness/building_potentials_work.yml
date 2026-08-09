@@ -1,0 +1,49 @@
+feature: building_potentials_work
+title: Building potentials — work
+status: on
+flag: work_building_potentials
+status_matrix_row: "**[Location]** Building potentials — work"
+adr: ADR-0025
+detail_doc: docs/features/building-potentials.md
+code_paths:
+  - braunschweig/data/building_potentials.py
+  - braunschweig/locations/work.py
+
+evidence:
+  tests:
+    - tests/test_work_building_potentials.py
+    - tests/test_building_potential_attach.py
+  off_path_byte_identical:
+    claimed: "false"
+    note: >
+      work_building_potentials defaults to true both in code and in configs/base_bs.yml; no
+      OFF-path byte-identity test is declared (the OFF path is the pre-existing
+      area*floors legacy path, exercised implicitly, not under a dedicated byte-identity test).
+  fallback_rate:
+    instrumented: false
+    note: >
+      building_potentials.py's assign_commune() computes primary_count/fallback_count for the
+      point-in-polygon join with nearest-zone fallback, returned as a tuple; whether the caller
+      actually logs this rate was not confirmed in this pass.
+  reference:
+    kind: none
+    note: >
+      The GENESIS SvB aggregate (braunschweig/13111-01-03-5.xlsx) and the building-activity-
+      potentials parquet itself (braunschweig/buildings/building_activity_potentials.parquet)
+      are both NOT committed to this repository.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0025 documents the design (work/secondary/education building-level potentials,
+    replacing an earlier approach); no owner verdict on realised work-potential fit has been
+    recorded.
+  source: ADR-0025

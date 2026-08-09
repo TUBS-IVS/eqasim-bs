@@ -1,0 +1,40 @@
+feature: fleet_realism_upgrade
+title: Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check)
+status: off_by_default
+status_matrix_row: "**[Fleet]** Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check)"
+code_paths:
+  - braunschweig/synthesis/vehicles/cars/household.py
+
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      The feature does not exist on main at all (fleet_ev_income_tilt / fleet_euro6_substage
+      appear nowhere in this branch's source); it lives only on the unmerged
+      origin/feature/fleet-quality-and-data branch (43 commits ahead of the merge-base).
+  fallback_rate:
+    instrumented: false
+    note: Not evaluated -- the code does not exist on main.
+  reference:
+    kind: none
+    note: >
+      Sources named in the matrix (KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB) are referenced only
+      in unmerged branch commit messages; no committed derived table exists on main.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: Not applicable -- unmerged.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    Not merged. ADR-0051 is only reserved in docs/DECISIONS.md's index (a placeholder noting it
+    belongs to this branch) -- no ADR body exists on main. A draft ADR-0051 exists on the
+    unmerged branch itself (tip commit "docs(fleet): ADR-0051 final-review addendum + OFF-path
+    baseline sign-off") but is not part of the canonical DECISIONS.md log until merged.
+  source: null

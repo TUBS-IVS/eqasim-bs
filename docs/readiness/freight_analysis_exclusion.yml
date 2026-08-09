@@ -1,0 +1,42 @@
+feature: freight_analysis_exclusion
+title: Freight analysis exclusion
+status: on
+status_matrix_row: "**[Freight]** Freight analysis exclusion"
+adr: ADR-0030
+detail_doc: docs/features/freight.md
+code_paths:
+  - braunschweig/analysis/freight_filter.py
+
+evidence:
+  tests:
+    - tests/test_freight_filter.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      With freight off the filter is a documented no-op (docs/features/freight.md); there is
+      no dedicated freight_enabled=False end-to-end byte-identity test, only a row-filter-level
+      no-op test (test_noop_without_freight_agents).
+  fallback_rate:
+    instrumented: true
+    log_marker: "excluded %d freight agents"
+    note: >
+      Logs the excluded-agent count and percentage per analysis table; a separate warning fires
+      when the expected person-id column is missing (agents NOT filtered, per no-silent-fallback).
+  reference:
+    kind: none
+    note: This is a filter, not a data-consuming feature; no external reference applies.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI applies to an analysis-exclusion filter.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0030 covers this as one clause within its broader freight-injection decision (no
+    dedicated ADR); no owner verdict has been recorded.
+  source: ADR-0030

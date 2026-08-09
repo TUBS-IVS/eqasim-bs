@@ -1,0 +1,52 @@
+feature: svb_wohn_work_production_mass
+title: "svb_wohn work production mass (#132)"
+status: parked
+flag: braunschweig.gravity.work_production_mass
+issue: "#132"
+status_matrix_row: "**[Location]** svb_wohn work production mass (#132)"
+adr: ADR-0066
+detail_doc: docs/features/gravity.md
+code_paths:
+  - braunschweig/gravity/production_mass.py
+  - braunschweig/gravity/model.py
+
+evidence:
+  tests:
+    - tests/test_gravity_production_mass.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_gravity_production_mass.py
+    note: >
+      test_gravity_off_path_is_byte_identical_and_education_invariant confirms the default
+      ("population") mode is byte-identical and leaves education unaffected.
+  fallback_rate:
+    instrumented: true
+    log_marker: "mass = svb_wohn: primary"
+    note: >
+      Logs a primary(own svb_wohn)-vs-fallback(Kreis-mean rate x population) origin rate when
+      work_production_mass="svb_wohn" is selected, with a configurable warning threshold.
+  reference:
+    kind: none
+    note: >
+      The svb_wohn input itself (BA Gemeindedaten XLSX, braunschweig/gemband-dlk-0-202506-xlsx.xlsx)
+      and the VerBindungen QZM measurement reference used for the #132 A/B comparison are both
+      NOT committed to this repository.
+  kpi:
+    name: verbindungen_check_b_tvd_svb_wohn
+    produced_by: braunschweig.gravity.production_mass
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0066 reports weighted TVD 0.1136 (population) -> 0.1137 (svb_wohn), i.e. no
+      improvement, hence PARKED default OFF; not copied here until attributable to a run
+      recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0066 documents the A/B measurement and the decision to keep this default OFF
+    (no improvement over the population proxy); restating it as an owner assessment is a
+    short job given the ADR already carries the verdict.
+  source: ADR-0066

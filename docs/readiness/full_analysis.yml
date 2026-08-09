@@ -1,0 +1,43 @@
+feature: full_analysis
+title: Full analysis (dashboard+MiD)
+status: on
+status_matrix_row: "**[Analysis]** Full analysis (dashboard+MiD)"
+adr: ADR-0031
+detail_doc: docs/features/run-analysis.md
+code_paths:
+  - braunschweig/analysis/run_full_analysis.py
+
+evidence:
+  tests:
+    - tests/test_run_full_analysis.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      Always-invoked dispatcher script; `--skip-dashboard`/`--skip-mid` toggle sub-steps, but
+      there is no single OFF path to test byte-identity against.
+  fallback_rate:
+    instrumented: false
+    note: >
+      run_full_analysis.py dispatches to MiD validation and population validation, each
+      declared separately (see mid_validation_report.yml, population_validation.yml); it has no
+      fallback logic of its own.
+  reference:
+    kind: none
+    note: >
+      No reference is declared for the dispatcher itself; each sub-step it invokes carries its
+      own reference.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: The dispatcher produces no KPI of its own.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0031 documents the decision to combine MiD validation and population validation behind
+    one entry point; no separate owner verdict is recorded beyond the sub-steps it dispatches to.
+  source: ADR-0031

@@ -1,0 +1,43 @@
+feature: integerizer_quality
+title: Integerizer quality (per-cell error map)
+status: on
+status_matrix_row: "**[Analysis]** Integerizer quality (per-cell error map)"
+adr: ADR-0032
+detail_doc: docs/features/run-analysis.md
+code_paths:
+  - braunschweig/analysis/integerizer_quality/
+
+evidence:
+  tests:
+    - tests/test_integerizer_quality.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: Always-invoked analysis package (CLI report); there is no OFF path to test.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[integerizer_quality] control expressions resolved"
+    note: >
+      cell_error.py logs a resolved-vs-skipped count per control expression, and per-batch skip
+      warnings when synthetic_households or control_totals are missing.
+  reference:
+    kind: none
+    note: >
+      This report compares PopulationSim's own output cells against its own control targets (an
+      internal fit measure); there is no external committed reference to validate against.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0032 reports illustrative figures from a specific run (e.g. "ZENSUS100m mean |%dev|
+      6.04%, max 27.87%"); not copied here until attributable to a run recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0032 documents the design and an illustrative measurement; no owner verdict tying a
+    current run's per-cell error map to an accept/reject judgement has been recorded.
+  source: ADR-0032

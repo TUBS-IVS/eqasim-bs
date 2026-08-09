@@ -1,0 +1,50 @@
+feature: cordon_network_ring
+title: Cordon network ring + cut
+status: on
+flag: cordon_enabled
+status_matrix_row: "**[Cordon]** Cordon network ring + cut"
+adr: ADR-0028
+code_paths:
+  - braunschweig/data/spatial/cordon.py
+  - braunschweig/data/cordon/network_clip.py
+  - braunschweig/data/cordon/extent.py
+  - braunschweig/matsim/simulation/prepare.py
+
+evidence:
+  tests:
+    - tests/test_cordon_polygon.py
+    - tests/test_cordon_network_clip.py
+    - tests/test_cordon_extent.py
+    - tests/test_cordon_clip_signature.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_cordon_network_clip.py
+    note: >
+      test_off_returns_dissolved_union confirms that with cordon_enabled=False the network
+      build is byte-identical to the legacy (pre-cordon) clip.
+  fallback_rate:
+    instrumented: false
+    note: >
+      network_clip.py, extent.py and data/spatial/cordon.py are pure geometry functions with no
+      logging at all; no fallback/primary rate applies.
+  reference:
+    kind: none
+    note: >
+      The VG250 municipality polygon (eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg...)
+      is not committed to this repository and is absent from disk (gitignored, local-only).
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI applies to network geometry preparation.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0028 documents the design (Approach B: targeted cordon-crossing agents with full
+    supply extension); no owner verdict on realised network-cut correctness has been recorded.
+    No docs/features/*.md exists for the cordon subsystem as a whole -- worth adding one.
+  source: ADR-0028

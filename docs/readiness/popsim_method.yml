@@ -1,0 +1,52 @@
+feature: popsim_method
+title: popsim_open / popsim_mid
+status: on
+flag: braunschweig.population.method
+status_matrix_row: "**[Synthesis]** popsim_open / popsim_mid"
+adr: ADR-0002
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+  - braunschweig/popsim/stage.py
+  - braunschweig/population/selector.py
+
+evidence:
+  tests:
+    - tests/test_population_selector.py
+    - tests/test_popsim_open_config.py
+    - tests/test_popsim_open_entd.py
+    - tests/test_three_case_comparability.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      selector.py raises PopulationMethodNotImplemented for an unsupported method rather than
+      falling back to another one, by explicit design (docstring: "never falls back") -- there
+      is no OFF path to test byte-identity against.
+  fallback_rate:
+    instrumented: false
+    note: >
+      The method switch itself is a hard-fail guard, not a rate-logged fallback. The popsim
+      producer stage (braunschweig/popsim/stage.py) has its own extensive fallback logging for
+      sub-features, declared separately in this register (e.g. income_spatial_tilt.yml).
+  reference:
+    kind: none
+    note: >
+      The MiD 2023 raw donor (braunschweig.population.popsim.mid_raw_path) and the Zensus
+      100m/1km grid parquets this method reads are NOT committed (local-only, explicitly
+      documented as "never committed" in braunschweig/population/config.py).
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0002 documents all three methods; configs/base_bs.yml:155 confirms popsim_mid is the
+    active production method. No owner verdict on realised popsim_mid fit quality has been
+    recorded in this register (see also placement_income_l2.yml and srv_participation_controls.yml,
+    which layer on top of this method).
+  source: ADR-0002

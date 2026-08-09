@@ -1,0 +1,43 @@
+feature: household_fleet
+title: Household fleet (vs default car)
+status: on
+flag: vehicles_method
+status_matrix_row: "**[Fleet]** Household fleet (vs default car)"
+adr: ADR-0019
+code_paths:
+  - braunschweig/synthesis/vehicles/cars/household.py
+
+evidence:
+  tests:
+    - tests/test_vehicles_per_household.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_vehicles_per_household.py
+    note: >
+      test_default_method_is_legacy_byte_identical confirms vehicles_method:"default"
+      reproduces the legacy one-car-per-person frame byte-identically via
+      legacy_one_car_per_person().
+  fallback_rate:
+    instrumented: true
+    log_marker: "[vehicles.household] %d household(s) with cars but no licensed"
+    note: >
+      Logs a no-licensed-adult fallback (cars assigned to the oldest adult) and a separate
+      fleet-vs-routing-default-car coverage rate.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H7_cars_by_kreis.csv
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI scalar currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0019 documents the design decision; no owner verdict on realised fleet-fit quality has
+    been recorded for this register.
+  source: ADR-0019

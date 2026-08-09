@@ -1,0 +1,44 @@
+feature: fleet_segment_brand_mix
+title: German fleet segment+brand mix
+status: on
+flag: fleet_model_enabled
+status_matrix_row: "**[Fleet]** German fleet segment+brand mix"
+adr: ADR-0019
+code_paths:
+  - braunschweig/synthesis/vehicles/fleet_sampling_de.py
+
+evidence:
+  tests:
+    - tests/test_fleet_sampling_de.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      No dedicated OFF-path byte-identity test for this flag specifically; the broader v2/
+      consistency OFF path is covered by tests/test_fleet_consistency_e2e.py::test_off_path_byte_identical.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[fleet_de] %s: primary %d/%d"
+    note: >
+      _log_simple_fallback() logs a primary/fallback rate for both the HBEFA size-map lookup
+      and the brand/model draw, escalating to a warning above a 5% fallback share.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/kba/derived/kba_segment_model.csv
+    note: >
+      Also draws on the committed kba_segment_powertrain.csv and kba_brand_powertrain.csv under
+      the same directory.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI scalar currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0019 folds this in as part of the household-fleet decision (not a dedicated ADR); no
+    owner verdict on realised segment/brand fit has been recorded.
+  source: ADR-0019

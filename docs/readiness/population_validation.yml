@@ -1,0 +1,49 @@
+feature: population_validation
+title: Population validation (controls/quality/geo)
+status: on
+status_matrix_row: "**[Analysis]** Population validation (controls/quality/geo)"
+adr: ADR-0031
+detail_doc: docs/features/run-analysis.md
+code_paths:
+  - braunschweig/analysis/population_validation/
+
+evidence:
+  tests:
+    - tests/test_run_population_validation.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: Always-invoked analysis package; there is no OFF path to test.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[braunschweig.population] DESTATIS cells: primary"
+    note: >
+      The DESTATIS age-sex target loader feeding this package's age_group_target() logs a
+      primary-vs-skipped cell rate (braunschweig/data/census/population.py). Two further
+      fallback-transparency mentions exist as prose comments, not distinct log markers:
+      controls.py:383 and placement_income_gate.py:22.
+  reference:
+    kind: none
+    note: >
+      The Zensus 1000A-2081 (household-size) and DESTATIS 12411-0018 (age-sex) tables this
+      package validates against are NOT committed to this repository -- they are loaded from
+      local-only archives (braunschweig/data/census/households_type.py,
+      braunschweig/data/census/population.py). A committed
+      eqasim-data/data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv exists but is a
+      different (employment) table, not confirmed to be what this package's controls consume.
+      No realised fit against these targets may be reported as validated until a matching
+      committed reference exists.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI scalar from this package is currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0031 documents the decision to build this package; no owner verdict exists, and the
+    underlying Zensus/DESTATIS reference tables are not committed (see reference.note).
+  source: ADR-0031

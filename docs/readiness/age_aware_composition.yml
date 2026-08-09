@@ -1,0 +1,49 @@
+feature: age_aware_composition
+title: "Age-aware composition (#3b)"
+status: off_by_default
+flag: braunschweig.ipf.age_aware_chunking
+status_matrix_row: "**[Synthesis]** Age-aware composition (#3b)"
+adr: ADR-0005
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+  - braunschweig/ipf/household_composition.py
+  - braunschweig/ipf/attributed.py
+
+evidence:
+  tests:
+    - tests/test_household_formation.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: >
+      test_execute_uses_legacy_path_when_age_aware_off is the closest OFF-path-equivalence
+      test but is not literally named a byte-identity test.
+  fallback_rate:
+    instrumented: false
+    note: >
+      Extensive comments about fallback pairing logic exist in household_composition.py, but no
+      logger/print call with a rate/percentage was found.
+  reference:
+    kind: assumption
+    note: >
+      Destatis 2024 mother-age target (31.8) is a hardcoded numeric constant
+      (braunschweig/ipf/attributed.py, parent_child_gap_years default), not a committed data
+      file or table. ADR-0005 cites it as a "committed reference" but no file path exists
+      anywhere under eqasim-data/.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    DISCREPANCY FOUND: braunschweig.ipf.age_aware_chunking is NOT set to true anywhere in any
+    committed config -- explicitly listed as an intentionally-absent dead key on the active
+    popsim_mid path. This contradicts PROJECT_STATUS.md's 🟢 legend ("ON in real-data run
+    configs"), the same pattern as joint_age_size_margin.yml and sex_aware_couples.yml. ADR-0005
+    documents the design but not this discrepancy.
+  source: ADR-0005

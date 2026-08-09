@@ -1,0 +1,52 @@
+feature: detour_circuity_curve
+title: "Calibration: Tier-3 detour/circuity curve"
+status: off_by_default
+status_matrix_row: "**[Location]** Calibration: Tier-3 detour/circuity curve"
+adr: ADR-0042
+detail_doc: docs/features/detour-circuity.md
+code_paths:
+  - braunschweig/calibration/circuity.py
+  - braunschweig/calibration/metrics.py
+
+evidence:
+  tests:
+    - tests/test_circuity.py
+    - tests/test_metrics_circuity.py
+    - tests/test_detour_fit.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_metrics_circuity.py
+    note: test_apply_detour_constant_mode_matches_legacy confirms the default mode="constant" (1.3) matches legacy behaviour.
+  fallback_rate:
+    instrumented: false
+    note: >
+      Not applicable -- this is an offline-fit calibration tool with no runtime primary/
+      fallback branch.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv
+    note: >
+      A full provenance bundle is also committed under
+      eqasim-data/data/braunschweig/calibration/detour/ (PROVENANCE.md, fit plots, summary.md).
+      NOTE: a code comment in circuity.py cites "Huang & Levinson 2015" for the PT-uplift
+      multiplier specifically, while the matrix row cites "Giacomin & Levinson 2015" for the
+      general circuity curve -- this citation should be reconciled against
+      docs/features/detour-circuity.md before treating either as authoritative.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0042 reports a measured commute EMD delta of ~0.003 (curve vs constant), below the
+      0.01 materiality threshold; not copied here until attributable to a run recorded in RUNS.md.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0042 is a REJECTED decision: keep the constant 1.3 factor as default, the fitted curve
+    stays opt-in only. No further owner verdict is needed while this stays off by design, but
+    the citation discrepancy noted above should be resolved.
+  source: ADR-0042

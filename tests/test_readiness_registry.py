@@ -184,10 +184,18 @@ def test_declared_code_paths_exist(real_registry):
 
 
 def test_matrix_coverage_is_reported(real_registry):
-    """Coverage is advisory during the pilot; this pins that it is measurable at all."""
+    """Coverage is advisory during the pilot; this pins that it is measurable at all.
+
+    ``matrix_coverage`` counts only ACTIVE rows (marked (ok) or (green) in the matrix).
+    Declarations for parked / off-by-default / assumption-status features legitimately
+    point at rows that are not active, so `covered` must be compared against the subset
+    of declarations whose own row IS active -- not against every declaration.
+    """
     declarations, context, _ = real_registry
     covered, active = checks.matrix_coverage(declarations, context)
     assert active > 0, "no active rows found in the PROJECT_STATUS.md feature matrix"
-    assert covered == len(declarations), (
-        f"{len(declarations)} declarations but only {covered} matched a matrix row -- "
-        "a status_matrix_row string is stale")
+    active_declarations = [d for d in declarations if d.status in ("on",)]
+    assert 0 < covered <= len(declarations)
+    assert covered >= sum(1 for d in active_declarations if d.status_matrix_row), (
+        f"{len(active_declarations)} 'on' declarations but only {covered} matched an active "
+        "matrix row -- a status_matrix_row string is stale")

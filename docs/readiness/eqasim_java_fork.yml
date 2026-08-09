@@ -1,0 +1,39 @@
+feature: eqasim_java_fork
+title: Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23)
+status: on
+flag: eqasim_source_path
+status_matrix_row: "**[Infra]** Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23)"
+adr: ADR-0038
+code_paths:
+  - matsim/runtime/eqasim.py
+  - braunschweig/provenance.py
+
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: There is no OFF path; the fork is the only supported eqasim-java source.
+  fallback_rate:
+    instrumented: false
+    note: >
+      No fallback/primary logging pattern exists; matsim/runtime/eqasim.py raises RuntimeError
+      on a missing or misbuilt path rather than falling back.
+  reference:
+    kind: none
+    note: Infrastructure feature (build/runtime wiring); no external reference applies.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No scalar KPI applies; readiness is the 8/8 green matsim.output e2e run cited in ADR-0071.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    Two ADRs apply: ADR-0038 (the fork-existence decision, MATSim 2025.0-PR3568 pin) and
+    ADR-0071 (the 2.2.0 / matsim.output e2e-green 2026-07-23 upgrade, matching the row's own
+    date). No owner verdict beyond the ADRs' own measured 8/8 green run has been recorded here.
+  source: ADR-0071

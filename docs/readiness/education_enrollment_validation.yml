@@ -1,0 +1,50 @@
+feature: education_enrollment_validation
+title: Education enrollment validation
+status: on
+status_matrix_row: "**[Analysis]** Education enrollment validation"
+adr: ADR-0031
+detail_doc: docs/features/run-analysis.md
+code_paths:
+  - braunschweig/analysis/run_education_validation.py
+
+evidence:
+  tests:
+    - tests/test_education_validation.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: Always-invoked analysis script with no config flag; there is no OFF path to test.
+  fallback_rate:
+    instrumented: true
+    log_marker: "enrollment_vs_capacity: %d assigned location id(s)"
+    note: >
+      Logs the count of assigned pupils whose location has no matching facility row (excluded
+      from the per-school table); a dominant share is documented as signalling a school-id key
+      mismatch.
+  reference:
+    kind: none
+    note: >
+      The matrix names "LSN capacity" as the source, but the school facility/capacity data this
+      script consumes (via the education_gravity synpp stage and
+      braunschweig.data.schools.facilities) is real NDS/Niedersachsen data documented in
+      ADR-0024 as "local-only, not committed". No matching committed capacity file was found
+      under eqasim-data/data/braunschweig/ (the committed lsn2022_income_tax_by_kreis.csv and
+      nds_bbs_share_by_age.csv are unrelated tables). No realised enrollment-vs-capacity fit may
+      be reported as validated from the repo alone.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: >
+      The script writes school_enrollment_vs_capacity.csv and level_summary.csv per run; no
+      scalar KPI is currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0031 (not ADR-0024, which documents the education gravity model itself) records the
+    decision to build this validation; no owner verdict on realised enrollment/capacity fit has
+    been recorded, and the underlying capacity reference is not committed.
+  source: ADR-0031

@@ -1,0 +1,42 @@
+feature: fleet_electric_calibration
+title: BEV/electric calibration
+status: on
+flag: fleet_electric_calibration
+status_matrix_row: "**[Fleet]** BEV/electric calibration"
+adr: ADR-0019
+code_paths:
+  - braunschweig/synthesis/vehicles/fleet_sampling_de.py
+
+evidence:
+  tests:
+    - tests/test_fleet_sampling_de.py
+  off_path_byte_identical:
+    claimed: "not_applicable"
+    note: No dedicated OFF-path byte-identity test found for this flag specifically.
+  fallback_rate:
+    instrumented: true
+    log_marker: "powertrain Kreis lookup: primary %d/%d"
+    note: >
+      PowertrainModel.log_fallback_rate() logs Kreis- and Gemeinde-level primary-vs-fallback
+      rates, escalating to a warning above a 5% Kreis-fallback share. A per-population label
+      distinguishes residents from in-commuters, since in-commuters legitimately hit ~100%
+      Kreis fallback (their origin Kreis lies outside the ZGB KBA tables).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/kba/derived/kba_kreis_powertrain.csv
+    note: Also draws on the committed kba_gemeinde_private_bev.csv (FZ 27.17) under the same directory.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No KPI scalar currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0019 folds this in as part of the household-fleet decision (not a dedicated ADR); no
+    owner verdict on realised BEV/electric-share fit has been recorded.
+  source: ADR-0019
