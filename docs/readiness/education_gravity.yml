@@ -1,0 +1,47 @@
+feature: education_gravity
+title: Education gravity (schools/Kita/uni)
+status: on
+flag: education_gravity_enabled
+status_matrix_row: "**[Location]** Education gravity (schools/Kita/uni)"
+adr: ADR-0024
+detail_doc: docs/features/education-gravity.md
+code_paths:
+  - braunschweig/synthesis/locations/education_gravity.py
+  - braunschweig/synthesis/locations/education_gravity_model.py
+
+evidence:
+  tests:
+    - tests/test_education_gravity_stage.py
+    - tests/test_education_gravity_model.py
+    - tests/test_education_gravity_edge.py
+    - tests/test_education_validation.py
+  off_path_byte_identical:
+    claimed: "false"
+    note: >
+      The flag is ON in the allfeat configs; no OFF-path byte-identity test is declared.
+  fallback_rate:
+    instrumented: false
+    note: >
+      Education location choice falls back when no reachable facility of the required level
+      exists; no primary-vs-fallback rate log was found. Per CLAUDE.md this rate must be
+      logged, since a high fallback share would mean the gravity model is effectively unused.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv
+  kpi:
+    name: school_distance_fit
+    produced_by: braunschweig.analysis.run_education_validation
+    last_value: null
+    measured_on: null
+    note: >
+      run_education_validation writes school_enrollment_vs_capacity.csv and level_summary.csv;
+      no distance-fit value is currently attributed to a recorded run.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0024 documents the design (real schools/Kita/university) but predates the building
+    potentials and the T43 reference; no current judgement on the realised fit exists.
+  source: ADR-0024

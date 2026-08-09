@@ -1,0 +1,56 @@
+feature: placement_income_l2
+title: Placement income L2 (#108)
+status: on
+flag: braunschweig.population.popsim.placement_income
+status_matrix_row: "**[Attrs]** Placement income L2 (#108)"
+issue: "#108"
+adr: ADR-0069
+detail_doc: docs/features/regional-control-targets.md
+code_paths:
+  - braunschweig/popsim/placement_income.py
+  - braunschweig/analysis/population_validation/placement_income_gate.py
+
+evidence:
+  tests:
+    - tests/test_placement_income.py
+    - tests/test_placement_income_gate.py
+    - tests/test_placement_income_gate_l2.py
+    - tests/test_gate_placement_income.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_placement_income.py
+    note: >
+      ADR-0069 records the flag as default ON with the OFF path byte-identical; the named
+      test file is the declared evidence, the specific test function still has to be pinned.
+  fallback_rate:
+    instrumented: true
+    log_marker: "[placement_income] reallocation: primary"
+    max_expected: 0.9
+    note: >
+      Logs the primary (free) slot share and warns above a 90 % no-freedom share, i.e. the
+      case where the reallocation degenerates and the PRIMARY method is effectively not used.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H4_status_by_kreis.csv
+    note: >
+      The MiD H4 status-by-Kreis table is committed. The INKAR per-Kreis income relativity
+      that ADR-0069 also names is NOT committed to this repository -- that half of the
+      reference chain is currently untraceable from the repo alone.
+  kpi:
+    name: income_coherence
+    produced_by: braunschweig.analysis.population_validation.placement_income_gate
+    last_value: null
+    measured_on: null
+    note: >
+      ADR-0069 reports a 2-Kreis gate (invariants unchanged, coherence 0.174 -> 0.364). The
+      value is deliberately not copied here until it can be attributed to a run recorded in
+      RUNS.md, so that C6 stays meaningful.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    The reasoning exists in ADR-0069 (own-donor income, signature-preserving reallocation,
+    2-Kreis gate passed) but has not been restated as an owner verdict for this register.
+  source: ADR-0069

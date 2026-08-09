@@ -1,0 +1,49 @@
+feature: freight_longhaul_v3
+title: Long-haul freight injection (v3)
+status: assumption
+flag: freight_enabled
+status_matrix_row: "**[Freight]** Long-haul freight injection (v3)"
+adr: ADR-0030
+detail_doc: docs/features/freight.md
+code_paths:
+  - braunschweig/freight/trips.py
+  - braunschweig/freight/extraction.py
+
+evidence:
+  tests:
+    - tests/test_freight_trips.py
+    - tests/test_freight_extraction.py
+    - tests/test_freight_injection_wiring.py
+    - tests/test_freight_data.py
+  off_path_byte_identical:
+    claimed: "false"
+    note: >
+      freight_enabled is true in the base config; no byte-identity test for the OFF path is
+      declared. The OFF path removes the injected carriers entirely, so byte-identity is
+      meaningful and currently unproven.
+  fallback_rate:
+    instrumented: false
+    note: No primary-vs-fallback rate log was found in the freight injection path.
+  reference:
+    kind: assumption
+    note: >
+      ASSUMPTION. The injected long-haul demand follows Lu et al. (2022) and is explicitly NOT
+      calibrated against BASt Dauerzählstellen HGV counts (backlog [3.2]). The truck PCE (3.5)
+      and maximum velocity (80 km/h) are further uncalibrated assumptions carried in the
+      STATUS matrix. No committed reference file exists for any of them, so no realised
+      freight quantity may be reported as validated.
+  kpi:
+    name: null
+    produced_by: null
+    last_value: null
+    measured_on: null
+    note: No realised freight KPI can be validated without an external count reference.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    ADR-0030 records the design decision, not a judgement about whether uncalibrated freight
+    is acceptable in results that will be published. That call belongs to the owner.
+  source: ADR-0030

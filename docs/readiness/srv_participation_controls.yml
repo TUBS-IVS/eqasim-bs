@@ -1,0 +1,48 @@
+feature: srv_participation_controls
+title: SrV participation controls (#224)
+status: on
+flag: braunschweig.population.popsim.work_participation_kreis_control
+status_matrix_row: "**[Attrs]** NEW — SrV participation controls (#224)"
+issue: "#224"
+detail_doc: docs/features/regional-control-targets.md
+code_paths:
+  - braunschweig/popsim/stage.py
+  - braunschweig/analysis/population_validation/participation_fit.py
+
+evidence:
+  tests:
+    - tests/test_participation_target.py
+    - tests/test_participation_fit.py
+    - tests/test_map_work_participation.py
+    - tests/test_leisure_education_participation.py
+  off_path_byte_identical:
+    claimed: "true"
+    test: tests/test_participation_target.py
+    note: >
+      PROJECT_STATUS records "default ON, OFF byte-identical" for PR #225; the specific
+      byte-identity test function still has to be pinned in this declaration.
+  fallback_rate:
+    instrumented: false
+    note: >
+      No primary-vs-fallback rate log was found for the participation controls. Per CLAUDE.md
+      this instrumentation is mandatory for any path with a fallback and should be added.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
+  kpi:
+    name: participation_gap_closed_share
+    produced_by: braunschweig.analysis.population_validation.participation_fit
+    last_value: null
+    measured_on: null
+    note: >
+      PROJECT_STATUS reports a Kreis 03101 smoke (78/78/53/30 % of the MiD->SrV gap closed,
+      residual donor-bound). Not copied here until attributable to a RUNS.md row.
+
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    No ADR exists for #224, so there is no written record of why the residual gap was
+    accepted as donor-bound. This is the largest documentation gap among the pilot features.
+  source: null
