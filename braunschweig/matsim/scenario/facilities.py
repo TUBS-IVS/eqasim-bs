@@ -120,16 +120,22 @@ def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
     return df[base.SECONDARY_FIELDS]
 
 
-def validate_secondary_coverage(df_realised, df_secondary):
+def validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=None):
     """Fail fast if a realised secondary location id has no facility row.
 
     Every secondary activity's ``location_id`` must exist in the written
     secondary facilities, otherwise MATSim's RunPreparation crashes much later
     with an opaque ``IllegalStateException`` (the 2026-07-11 kreis5 failure
     mode). Raises RuntimeError naming the miss count and a sample.
+
+    extra_valid_ids: facility ids written OUTSIDE the secondary frame that
+    realised secondary rows may legitimately reference -- the household-linked
+    escort anchors reference PRIMARY education facilities (#201 Phase 2).
     """
     realised_ids = set(df_realised["location_id"].dropna().astype(str))
     written_ids = set(df_secondary["location_id"].astype(str))
+    if extra_valid_ids:
+        written_ids = written_ids | {str(i) for i in extra_valid_ids}
     missing = realised_ids - written_ids
     if missing:
         sample = sorted(missing)[:5]
@@ -157,8 +163,13 @@ def execute(context):
         )
 
     # Fail-early check: all realised secondary ids must be writable facilities.
+    # Household-linked escort anchors (#201 Phase 2) reference PRIMARY education
+    # facility ids, which live in df_primary rather than df_secondary.
     df_realised = context.stage("synthesis.population.spatial.secondary.locations")[0]
-    validate_secondary_coverage(df_realised, df_secondary)
+    validate_secondary_coverage(
+        df_realised, df_secondary,
+        extra_valid_ids=set(df_primary["location_id"].astype(str)),
+    )
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")

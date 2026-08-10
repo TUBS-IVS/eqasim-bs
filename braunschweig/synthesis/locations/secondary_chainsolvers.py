@@ -181,6 +181,11 @@ def configure(context):
     context.config("escort_purpose", False)
     context.config("escort_locations_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
     context.config("escort_locations_weights", DEFAULT_ESCORT_LOCATIONS_WEIGHTS)
+    # Household escort link (issue #201 Phase 2): anchor a linked escorter's
+    # escort activities at the youngest linkable child's education location
+    # instead of drawing a location type. Requires escort_purpose ON.
+    context.config("escort_household_link", False)
+    context.config("escort_household_link_max_child_age_years", 17)
 
     # MiD Wege directory: only consumed (and only declared) when at least one
     # subtype split is ON, so non-real configs that leave all three flags off
@@ -211,7 +216,7 @@ def configure(context):
 # Helpers (mirrors of the legacy stage)
 # ---------------------------------------------------------------------------
 
-def _prepare_primary(context):
+def _prepare_primary(context, df_escort_links=None):
     df_home = context.stage("synthesis.population.spatial.home.locations")
     df_work, df_education = context.stage(
         "synthesis.population.spatial.primary.locations"
@@ -237,6 +242,24 @@ def _prepare_primary(context):
         df_locations, df_education[["person_id", "education"]],
         how="left", on="person_id",
     )
+
+    if df_escort_links is not None and len(df_escort_links):
+        # Attach the linked child's education geometry as the "escort_linked"
+        # fixed-purpose anchor column (issue #201 Phase 2). Left-join keeps
+        # unlinked persons (NaN anchor); only rows the problem splitter marks
+        # as escort_linked ever read the column, so the NaNs are never touched.
+        df_locations = pd.merge(
+            df_locations,
+            df_escort_links.rename(columns={"geometry": "escort_linked"})[
+                ["person_id", "escort_linked"]
+            ],
+            how="left", on="person_id",
+        )
+        return (
+            df_locations[["person_id", "home", "work", "education", "escort_linked"]]
+            .sort_values(by="person_id"),
+            crs,
+        )
 
     return (
         df_locations[["person_id", "home", "work", "education"]]
@@ -439,6 +462,37 @@ DEFAULT_ESCORT_LOCATIONS_ACTIVITIES = [
     "other", "leisure", "residential", "shop",
 ]
 DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+
+
+def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
+                                df_links: pd.DataFrame) -> pd.DataFrame:
+    """Return a COPY of the trips frame where LINKED persons' plan-level
+    ``escort`` purposes become the fixed ``escort_linked`` purpose (issue #201
+    Phase 2). Only the chainsolver-local problem construction sees this frame;
+    the persisted activities/plans keep the plain ``escort`` purpose."""
+    out = df_trips.copy()
+    linked = out["person_id"].isin(set(df_links["person_id"]))
+    for column in ("preceding_purpose", "following_purpose"):
+        mask = linked & (out[column] == "escort")
+        out.loc[mask, column] = "escort_linked"
+    return out
+
+
+def anchored_escort_location_rows(df_trips: pd.DataFrame,
+                                  df_links: pd.DataFrame) -> pd.DataFrame:
+    """One (person_id, activity_index, location_id, geometry) row per LINKED
+    escort activity: the destination activity of every escort trip of a linked
+    person, anchored at the linked education location. activity_index follows
+    the pipeline convention destination_activity_index = trip_index + 1."""
+    escort_trips = df_trips[df_trips["following_purpose"] == "escort"]
+    merged = escort_trips.merge(df_links, on="person_id", how="inner")
+    rows = pd.DataFrame({
+        "person_id": merged["person_id"].values,
+        "activity_index": (merged["trip_index"] + 1).values,
+        "location_id": merged["location_id"].values,
+        "geometry": merged["geometry"].values,
+    })
+    return rows[["person_id", "activity_index", "location_id", "geometry"]]
 
 # Maps each secondary chainsolver activity to its attached candidate-potential
 # column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
@@ -2725,7 +2779,49 @@ def execute(context):
     df_trips["travel_time"] = (
         df_trips["arrival_time"] - df_trips["departure_time"]
     )
-    df_primary, crs = _prepare_primary(context)
+
+    # Household escort link (issue #201 Phase 2): before enumerating assignment
+    # problems, rewrite linked escorters' plan-level "escort" purposes to the
+    # fixed "escort_linked" purpose so they anchor at the child's education
+    # location instead of drawing a location type. Unlinked escorters keep the
+    # plain "escort" purpose and go through the SrV-weighted draw.
+    escort_household_link = bool(context.config("escort_household_link"))
+    df_escort_links = None
+    linked_location_rows = None
+    if escort_household_link:
+        if not bool(context.config("escort_purpose")):
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] escort_household_link requires "
+                "escort_purpose to be ON (there is no plan-level escort purpose to link)."
+            )
+        from braunschweig.synthesis.locations.escort_links import build_escort_links
+        df_persons_link = context.stage("synthesis.population.sampled")
+        if "HP_ALTER" not in df_persons_link.columns:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] escort_household_link needs the "
+                "HP_ALTER age column on synthesis.population.sampled (popsim_mid "
+                "persons carry it); disable escort_household_link for producers "
+                "without it."
+            )
+        df_persons_link = df_persons_link[["person_id", "household_id", "HP_ALTER"]]
+        _df_work_link, df_education_link = context.stage(
+            "synthesis.population.spatial.primary.locations")
+        df_escort_links, link_stats = build_escort_links(
+            df_persons_link, df_education_link, df_trips,
+            max_child_age_years=int(
+                context.config("escort_household_link_max_child_age_years")),
+        )
+        linked_location_rows = anchored_escort_location_rows(df_trips, df_escort_links)
+        df_trips = rewrite_linked_escort_trips(df_trips, df_escort_links)
+        print(
+            "[braunschweig.secondary_chainsolvers] escort household link: "
+            f"{link_stats['n_linked']:,}/{link_stats['n_escorters']:,} escorters "
+            f"linked ({100.0 * link_stats['link_rate'] if link_stats['n_escorters'] else 0.0:.1f}%); "
+            f"{len(linked_location_rows):,} escort activities anchored at the "
+            "linked child's education location; unlinked escorters use the "
+            "SrV-weighted draw."
+        )
+    df_primary, crs = _prepare_primary(context, df_escort_links=df_escort_links)
 
     distance_distributions = context.stage(
         "synthesis.population.spatial.secondary.distance_distributions"
@@ -3169,6 +3265,14 @@ def execute(context):
             [df_convergence, pd.DataFrame.from_records(fallback_conv, columns=["valid", "size"])],
             ignore_index=True,
         )
+
+    # Household-linked escort activities are fixed boundaries (escort_linked),
+    # so the problem splitter never places them; append their pre-anchored rows
+    # (issue #201 Phase 2). They reference PRIMARY education facility ids, which
+    # the facilities coverage check accepts via extra_valid_ids.
+    if linked_location_rows is not None and len(linked_location_rows):
+        df_linked = gpd.GeoDataFrame(linked_location_rows, geometry="geometry", crs=crs)
+        df_locations = pd.concat([df_locations, df_linked], ignore_index=True)
 
     if len(df_convergence):
         print(

@@ -123,3 +123,52 @@ def test_problems_without_escort_linked_column_unchanged():
     problems = list(problems_mod.find_assignment_problems(df, df_locations))
     assert len(problems) == 1
     assert problems[0]["purposes"] == ["shop"]
+
+
+# --- Task 13: chainsolver + facilities integration of the household link ------
+def test_prepare_rewrite_marks_only_linked_persons():
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 2],
+        "preceding_purpose": ["home", "escort", "home"],
+        "following_purpose": ["escort", "home", "escort"],
+    })
+    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
+                          "geometry": [_P(5, 5)]})
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        rewrite_linked_escort_trips,
+    )
+    out = rewrite_linked_escort_trips(trips, links)
+    assert list(out.loc[out["person_id"] == 1, "following_purpose"]) == ["escort_linked", "home"]
+    assert list(out.loc[out["person_id"] == 1, "preceding_purpose"]) == ["home", "escort_linked"]
+    # unlinked person 2 keeps the plain escort purpose (draw path)
+    assert list(out.loc[out["person_id"] == 2, "following_purpose"]) == ["escort"]
+    # the input frame is NOT mutated
+    assert "escort_linked" not in set(trips["following_purpose"])
+
+
+def test_anchored_location_rows_for_linked_escorts():
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 1],
+        "trip_index": [0, 1, 2],
+        "preceding_purpose": ["home", "escort", "shop"],
+        "following_purpose": ["escort", "shop", "home"],
+    })
+    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
+                          "geometry": [_P(5, 5)]})
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        anchored_escort_location_rows,
+    )
+    rows = anchored_escort_location_rows(trips, links)
+    assert list(rows.columns) == ["person_id", "activity_index", "location_id", "geometry"]
+    assert len(rows) == 1
+    assert rows.iloc[0]["activity_index"] == 1  # trip_index 0 -> destination activity 1
+    assert rows.iloc[0]["location_id"] == "edu_7"
+
+
+def test_validate_secondary_coverage_accepts_extra_valid_ids():
+    from braunschweig.matsim.scenario.facilities import validate_secondary_coverage
+    realised = pd.DataFrame({"location_id": ["sec_1", "edu_7"]})
+    secondary = pd.DataFrame({"location_id": ["sec_1"]})
+    with pytest.raises(RuntimeError):
+        validate_secondary_coverage(realised, secondary)
+    validate_secondary_coverage(realised, secondary, extra_valid_ids={"edu_7"})
