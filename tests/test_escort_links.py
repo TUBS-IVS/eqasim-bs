@@ -78,3 +78,48 @@ def test_missing_required_person_column_raises():
     persons = _persons().drop(columns=["HP_ALTER"])
     with pytest.raises(ValueError, match="HP_ALTER"):
         build_escort_links(persons, _education(), _trips())
+
+
+# --- Task 12: escort_linked fixed-purpose boundary in the problem splitter ---
+from shapely.geometry import Point as _P
+import synthesis.population.spatial.secondary.problems as problems_mod
+
+
+def _trips_frame(rows):
+    return pd.DataFrame(rows, columns=[
+        "person_id", "trip_index", "preceding_purpose", "following_purpose",
+        "mode", "travel_time",
+    ])
+
+
+def test_escort_linked_is_a_fixed_purpose_boundary():
+    df = _trips_frame([
+        (1, 0, "home", "escort_linked", "car", 600.0),
+        (1, 1, "escort_linked", "shop", "car", 600.0),
+        (1, 2, "shop", "home", "car", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [1],
+        "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
+        "escort_linked": [_P(5, 5)],
+    })
+    problems = list(problems_mod.find_assignment_problems(df, df_locations))
+    # Chain splits at the escort anchor: [home->escort_linked] has no variable
+    # activity (skipped), [escort_linked->shop->home] anchors origin at (5,5).
+    assert len(problems) == 1
+    p = problems[0]
+    assert p["purposes"] == ["shop"]
+    assert p["origin"][0][0] == 5.0 and p["origin"][0][1] == 5.0
+
+
+def test_problems_without_escort_linked_column_unchanged():
+    df = _trips_frame([
+        (1, 0, "home", "shop", "car", 600.0),
+        (1, 1, "shop", "home", "car", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [1], "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
+    })
+    problems = list(problems_mod.find_assignment_problems(df, df_locations))
+    assert len(problems) == 1
+    assert problems[0]["purposes"] == ["shop"]

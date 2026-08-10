@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 
 FIELDS = ["person_id", "trip_index", "preceding_purpose", "following_purpose", "mode", "travel_time"]
-FIXED_PURPOSES = ["home", "work", "education"]
+# "escort_linked" (eqasim-bs #201 Phase 2): household-linked escort activities are
+# pre-anchored at the linked child's education location; the purpose only ever occurs when the
+# Braunschweig chainsolver stage injects it, so upstream-path behaviour is unchanged.
+FIXED_PURPOSES = ["home", "work", "education", "escort_linked"]
 
 def find_bare_assignment_problems(df):
     problem = None
@@ -34,7 +37,7 @@ def find_bare_assignment_problems(df):
     if not problem is None:
         yield problem
 
-LOCATION_FIELDS = ["person_id", "home", "work", "education"]
+LOCATION_FIELDS = ["person_id", "home", "work", "education", "escort_linked"]
 
 def find_assignment_problems(df, df_locations):
     """
@@ -43,7 +46,16 @@ def find_assignment_problems(df, df_locations):
           - Size of the problem
           - Reduces purposes to the variable ones
     """
-    location_iterator = df_locations[LOCATION_FIELDS].itertuples(index = False)
+    # Presence-based field list: the legacy/French path passes a location frame
+    # without the "escort_linked" column (eqasim-bs #201 Phase 2) and must keep
+    # today's behaviour exactly. A boundary purpose can only be "escort_linked"
+    # when the caller injected that trip, which implies the column is present, so
+    # the index lookups below are safe by construction.
+    location_fields = [
+        field for field in LOCATION_FIELDS
+        if field == "person_id" or field in df_locations.columns
+    ]
+    location_iterator = df_locations[location_fields].itertuples(index = False)
     current_location = None
 
     for problem in find_bare_assignment_problems(df):
@@ -78,11 +90,11 @@ def find_assignment_problems(df, df_locations):
         problem["destination"] = None
 
         if origin_purpose in FIXED_PURPOSES:
-            problem["origin"] = current_location[LOCATION_FIELDS.index(origin_purpose)] # Shapely POINT
+            problem["origin"] = current_location[location_fields.index(origin_purpose)] # Shapely POINT
             problem["origin"] = np.array([[problem["origin"].x, problem["origin"].y]])
 
         if destination_purpose in FIXED_PURPOSES:
-            problem["destination"] = current_location[LOCATION_FIELDS.index(destination_purpose)] # Shapely POINT
+            problem["destination"] = current_location[location_fields.index(destination_purpose)] # Shapely POINT
             problem["destination"] = np.array([[problem["destination"].x, problem["destination"].y]])
 
         if problem["origin"] is None:
