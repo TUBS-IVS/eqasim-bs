@@ -296,6 +296,28 @@ def purpose_mix_raw() -> pd.DataFrame:
     return purpose_mix()
 
 
+def purpose_mix_w1_baseline(present_purposes) -> dict:
+    """MiD 2023 W1 purpose-mix baseline, selected by the presence of the
+    ``escort`` purpose in the synthetic distribution (issue #201).
+
+    The static ``purpose_mix_w1`` splits Begleitung (``escort``, 8/99) out of
+    Erledigung (``other``, 11/99). That split is only apples-to-apples with a
+    population built with ``escort_purpose`` ON, which carries a dedicated
+    ``escort`` purpose. On a flag-OFF population Begleitung is folded into
+    ``other`` (eqasim has no ``escort``), so the escort share must be folded
+    back into ``other`` here too — otherwise the flag-OFF ``other`` value
+    already contains Begleitung but is scored against 11/99, inflating its
+    deviation by ~8 pp and reporting a spurious ``escort`` gap. Mirrors the
+    presence-based selection in ``trip_coherence.scored_mid_purposes``.
+
+    Returns a fresh dict; the shared static baseline is never mutated.
+    """
+    baseline = dict(MID_BASELINE["purpose_mix_w1"])
+    if "escort" not in present_purposes:
+        baseline["other"] = baseline["other"] + baseline.pop("escort")
+    return baseline
+
+
 def purpose_mix_no_home() -> pd.DataFrame:
     """Purpose mix excluding ``home`` legs, normalised to 100 %.
 
@@ -310,8 +332,13 @@ def purpose_mix_no_home() -> pd.DataFrame:
       work       ← Arbeit + Dienst
       education  ← Ausbildung
       shop       ← Einkauf
-      other      ← Erledigung + Begleitung   (eqasim has no "escort")
+      other      ← Erledigung   (+ Begleitung when escort_purpose is OFF)
+      escort     ← Begleitung    (only when escort_purpose is ON, issue #201)
       leisure    ← Freizeit
+
+    The baseline is chosen presence-based (see ``purpose_mix_w1_baseline``):
+    on a flag-OFF population Begleitung is folded back into ``other`` so the
+    comparison stays apples-to-apples.
     """
     trips = io.trips_full().copy()
     trips = trips[trips["following_purpose"] != "home"]
@@ -319,7 +346,8 @@ def purpose_mix_no_home() -> pd.DataFrame:
         return pd.DataFrame(columns=["purpose", "synth_share", "mid_share", "deviation_pp"])
     out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
     out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
-    out["mid_share"] = out["purpose"].map(MID_BASELINE["purpose_mix_w1"])
+    baseline = purpose_mix_w1_baseline(set(out["purpose"]))
+    out["mid_share"] = out["purpose"].map(baseline)
     out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
     return out.sort_values("synth_share", ascending=False).reset_index(drop=True)
 

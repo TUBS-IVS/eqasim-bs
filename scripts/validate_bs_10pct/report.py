@@ -269,7 +269,10 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         <code>work ← Arbeit + Dienst</code>, <code>education ← Ausbildung</code>,
         <code>shop ← Einkauf</code>,
         <code>other ← Erledigung</code>, <code>escort ← Begleitung</code>,
-        <code>leisure ← Freizeit</code>.</p>
+        <code>leisure ← Freizeit</code>. Ohne <code>escort_purpose</code>
+        (issue #201) enthält die Population keine eigene
+        <code>escort</code>-Kategorie; Begleitung wird dann in
+        <code>other</code> zurückgefaltet (8/99 → other 19/99).</p>
         {_df_to_html(purpose_no_home, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
         <h3>5.4 Mobilitätsquote (vs. MiD P36.1)</h3>

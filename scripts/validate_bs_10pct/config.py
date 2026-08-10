@@ -66,8 +66,10 @@ MID_BASELINE = {
     # Summe ohne "keine Angabe" (1 %), normiert auf 100 %.
     # Hinweis: Mit escort_purpose (issue #201) kennt der Pipeline-Output eine
     # eigene "escort"-Kategorie; Begleitung wird daher NICHT mehr in "other"
-    # gefaltet. Laeuft der Report auf einer flag-OFF-Population, hat "escort"
-    # dort schlicht keinen synth-Anteil (mid_share bleibt sichtbar).
+    # gefaltet. Laeuft der Report auf einer flag-OFF-Population (keine synth
+    # "escort"-Wege), faltet purpose_mix_w1_baseline() die 8/99 Begleitung
+    # wieder in "other" zurueck (-> 19/99), damit der Vergleich apples-to-apples
+    # bleibt; es gibt dann keine eigene "escort"-Zeile im Report.
     "purpose_mix_w1": {
         "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)
         "education":  6 / 99,               # 0.061  (Ausbildung)
