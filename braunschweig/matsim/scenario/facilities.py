@@ -68,6 +68,9 @@ def configure(context):
     # is kept alongside it for the same reason.
     context.config("leisure_visit_building_potential", False)
     context.config("escort_purpose", False)
+    # Only consumed to widen the coverage check with the education facility ids
+    # that household-linked escort anchors reference (#201 Phase 2).
+    context.config("escort_household_link", False)
 
     # Realised secondary locations, for the dangling-id validation below.
     context.stage("synthesis.population.spatial.secondary.locations")
@@ -163,13 +166,16 @@ def execute(context):
         )
 
     # Fail-early check: all realised secondary ids must be writable facilities.
-    # Household-linked escort anchors (#201 Phase 2) reference PRIMARY education
-    # facility ids, which live in df_primary rather than df_secondary.
+    # Household-linked escort anchors (#201 Phase 2) reference PRIMARY EDUCATION
+    # facility ids, which live in df_primary rather than df_secondary. Widen the
+    # accepted set with those ids ONLY when the household link is ON, and only
+    # with education ids -- keeping the guard as tight as possible otherwise.
     df_realised = context.stage("synthesis.population.spatial.secondary.locations")[0]
-    validate_secondary_coverage(
-        df_realised, df_secondary,
-        extra_valid_ids=set(df_primary["location_id"].astype(str)),
-    )
+    extra_valid_ids = None
+    if context.config("escort_household_link"):
+        education_ids = df_primary.loc[~df_primary["is_work"].astype(bool), "location_id"]
+        extra_valid_ids = set(education_ids.astype(str))
+    validate_secondary_coverage(df_realised, df_secondary, extra_valid_ids=extra_valid_ids)
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
