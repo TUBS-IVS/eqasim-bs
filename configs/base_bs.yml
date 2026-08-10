@@ -60,6 +60,18 @@ config:
   # instead of the generic leisure potential; requires the leisure split above.
   leisure_visit_building_potential: true
   secondary_distance_min_obs: 30
+  # Escort as dedicated activity purpose (issue #201, analog eqasim-france #495).
+  # Location-type draw weights derived from SrV 2023 BS+RGB V_ZWECK_BHOL
+  # (scripts/derive_escort_location_weights.py ->
+  # eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv;
+  # GEWICHT_W-weighted, 98.8% coverage). Defaults False in code -> byte-identical OFF.
+  escort_purpose: true
+  escort_locations_activities: [edu_kindergarten, edu_school, edu_university, other, leisure, residential, shop]
+  escort_locations_weights: [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+  # Phase 2: anchor escort activities at the education location of the youngest
+  # child (<= max age) in the same household; unlinked escorters use the draw.
+  escort_household_link: true
+  escort_household_link_max_child_age_years: 17
   education_building_distribution: true
 
   data_path: eqasim-data/data
