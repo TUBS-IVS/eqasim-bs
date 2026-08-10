@@ -57,3 +57,24 @@ def test_links_never_link_escorter_to_self():
     trips = pd.DataFrame({"person_id": [2], "following_purpose": ["escort"]})
     links, stats = build_escort_links(persons, education, trips)
     assert len(links) == 0
+
+
+def test_no_escort_trips_returns_empty_table():
+    """Flag-OFF (or no escort activities): empty link table, link_rate NaN,
+    no household join is attempted."""
+    trips = pd.DataFrame({
+        "person_id": [1, 5], "following_purpose": ["home", "shop"],
+    })
+    links, stats = build_escort_links(_persons(), _education(), trips)
+    assert list(links.columns) == ["person_id", "location_id", "geometry"]
+    assert len(links) == 0
+    assert stats["n_escorters"] == 0 and stats["n_linked"] == 0
+    assert pd.isna(stats["link_rate"])
+
+
+def test_missing_required_person_column_raises():
+    """A persons frame without the household-link inputs must fail loudly
+    rather than silently produce an empty table."""
+    persons = _persons().drop(columns=["HP_ALTER"])
+    with pytest.raises(ValueError, match="HP_ALTER"):
+        build_escort_links(persons, _education(), _trips())
