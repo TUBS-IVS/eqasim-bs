@@ -26,7 +26,11 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
    candidates from `synthesis.locations.education`, potential = OSM capacity
    proxy), residential (leisure_visit building machinery), shop/leisure/other
    (existing candidates). All escort legs sample the single `escort` distance
-   layer; fallbacks are rate-logged.
+   layer; fallbacks are rate-logged. With `escort_distance_by_type` (A3) each
+   drawn type samples its own distance layer: the MiD escort layer scaled by the
+   SrV between-type factor (`srv2023_escort_distance_factors.csv`; thin
+   categories neutralized to 1.0); fallbacks are two-level and rate-logged
+   (type -> escort -> other).
 3. Phase 2 (`escort_household_link`): escorters with a child (<=
    `escort_household_link_max_child_age_years`) that has a realised education
    location get ALL their escort activities anchored at that school
@@ -46,6 +50,9 @@ mix against MiD 2023 W1 presence-based: on a flag-ON population Begleitung
 share is folded back into `other` (19/99) so the comparison stays
 apples-to-apples (`metrics.purpose_mix_w1_baseline`, mirroring
 `trip_coherence.scored_mid_purposes`).
+
+Escort length-band fit vs MiD W12 is the A3 acceptance metric (baseline
+2026-08-11: <2 km = 25.6%, band L1 = 27.8 pp).
 
 ## Follow-ups
 #241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).

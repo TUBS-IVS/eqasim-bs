@@ -2948,6 +2948,19 @@ def execute(context):
         car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5,
     ))
 
+    # Escort distance-by-type (A3): synthesize per-type layers on the PRIVATE
+    # resampled copy (never the shared cached stage object).
+    escort_distance_factor_map = _build_escort_distance_factor_map(context)
+    if escort_distance_factor_map is not None:
+        distance_distributions = _synthesize_escort_type_layers(
+            distance_distributions, escort_distance_factor_map)
+        print(
+            "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
+            + ", ".join(f"{a} x{f:.3f}" for a, f in escort_distance_factor_map.items())
+            + " (SrV between-type structure on the MiD escort level; "
+              "srv2023_escort_distance_factors.csv)"
+        )
+
     random_seed = context.config("random_seed")
     random = np.random.RandomState(random_seed)
     leisure_corr = float(context.config("leisure_correction_factor"))
@@ -3020,6 +3033,7 @@ def execute(context):
         leisure_subtype_decider=leisure_subtype_decider,
         other_subtype_decider=other_subtype_decider,
         escort_location_decider=escort_location_decider,
+        escort_distance_by_type=escort_distance_factor_map is not None,
     )
     if escort_location_decider is None and len(plans_df) and \
             (plans_df["to_act_type"] == "escort").any():

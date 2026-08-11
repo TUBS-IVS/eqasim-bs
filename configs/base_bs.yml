@@ -72,6 +72,9 @@ config:
   # child (<= max age) in the same household; unlinked escorters use the draw.
   escort_household_link: true
   escort_household_link_max_child_age_years: 17
+  # A3: per-destination-type escort distance layers -- SrV between-type structure
+  # factors on the MiD escort level (srv2023_escort_distance_factors.csv).
+  escort_distance_by_type: true
   education_building_distribution: true
 
   data_path: eqasim-data/data

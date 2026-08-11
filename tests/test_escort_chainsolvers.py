@@ -482,3 +482,11 @@ def test_flag_off_path_has_no_type_counter_and_uses_escort_layer():
     )
     assert "escort_type_distance_layer_fallback" not in stats
     assert stats["escort_distance_layer_fallback"] == 0
+
+
+def test_base_bs_config_enables_distance_by_type():
+    import pathlib, yaml
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
+    with open(base, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle)
+    assert doc["config"]["escort_distance_by_type"] is True
