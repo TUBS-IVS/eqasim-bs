@@ -168,6 +168,7 @@ class MidSource:
         *,
         random_seed: int,
         escort_purpose: bool = False,
+        escort_passive_education: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -184,6 +185,9 @@ class MidSource:
             Integer seed for the per-person departure-time jitter RNG.
         escort_purpose:
             map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
+        escort_passive_education:
+            map the passive escort leg (W_ZWECK 13) to 'education' instead of
+            'escort' (issue #256). Requires ``escort_purpose=True``.
 
         Returns
         -------
@@ -192,5 +196,7 @@ class MidSource:
             + MiD extras.
         """
         return trips_stage.run(
-            persons, donor_trips, random_seed=random_seed, escort_purpose=escort_purpose
+            persons, donor_trips, random_seed=random_seed,
+            escort_purpose=escort_purpose,
+            escort_passive_education=escort_passive_education,
         )

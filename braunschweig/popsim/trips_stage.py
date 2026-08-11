@@ -166,6 +166,7 @@ def run(
     *,
     random_seed: int,
     escort_purpose: bool = False,
+    escort_passive_education: bool = False,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -181,6 +182,9 @@ def run(
         Integer seed for the per-person departure-time jitter RNG.
     escort_purpose:
         map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
+    escort_passive_education:
+        map the passive escort leg (MiD W_ZWECK 13) to 'education' instead of
+        'escort' (issue #256). Requires escort_purpose=True.
 
     Returns
     -------
@@ -199,6 +203,7 @@ def run(
         resample_cell_col=resample_cell_col,
         random_seed=random_seed,
         escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
     )
 
     logger.info(
@@ -268,6 +273,7 @@ def configure(context):
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
     context.config("escort_purpose", False)
+    context.config("escort_passive_education", False)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -309,8 +315,10 @@ def execute(context):
         _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
 
     escort_purpose = bool(context.config("escort_purpose"))
+    escort_passive_education = bool(context.config("escort_passive_education"))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
         escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
     )

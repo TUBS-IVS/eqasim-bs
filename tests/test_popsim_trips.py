@@ -7,6 +7,7 @@ Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import trips
 
@@ -337,3 +338,44 @@ def test_map_purpose_escort_share_logged_w_gew_weighted(caplog):
 
     info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
     assert any("W_GEW-weighted" in m and "50.00%" in m for m in info_messages), info_messages
+
+
+# ---------------------------------------------------------------------------
+# Issue #256: escort_passive_education -- W_ZWECK 13 (passive escort leg)
+# becomes the escorted child's own education trip.
+# ---------------------------------------------------------------------------
+
+# Issue #256: W_ZWECK 13 is the PASSIVE side -> education at the child's own school.
+def test_map_purpose_passive_education_relabels_13_only():
+    wege = pd.DataFrame({
+        "W_ZWECK": [1, 4, 6, 13, 7, 99],
+        "W_GEW": [1.0] * 6,
+    })
+    out = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True)
+    assert list(out["purpose"]) == [
+        "work", "shop", "escort", "education", "leisure", "other"]
+
+
+def test_map_purpose_passive_education_requires_escort_purpose():
+    wege = pd.DataFrame({"W_ZWECK": [6, 13], "W_GEW": [1.0, 1.0]})
+    with pytest.raises(ValueError, match="requires escort_purpose"):
+        trips.map_purpose(wege, escort_purpose=False, escort_passive_education=True)
+
+
+def test_map_purpose_passive_flag_off_keeps_201_behaviour():
+    wege = pd.DataFrame({"W_ZWECK": [6, 13], "W_GEW": [1.0, 1.0]})
+    on_201 = trips.map_purpose(wege, escort_purpose=True)
+    explicit_off = trips.map_purpose(wege, escort_purpose=True,
+                                     escort_passive_education=False)
+    assert list(on_201["purpose"]) == list(explicit_off["purpose"]) == ["escort", "escort"]
+
+
+def test_map_purpose_passive_education_rates_logged(caplog):
+    import logging
+    wege = pd.DataFrame({"W_ZWECK": [6, 6, 6, 13], "W_GEW": [1.0, 1.0, 1.0, 3.0]})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True)
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    # active 3 legs weight 3.0 (50.0%), passive 1 leg weight 3.0 (50.0%)
+    assert "escort_passive_education ON" in joined
+    assert "passive" in joined and "education" in joined

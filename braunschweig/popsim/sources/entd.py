@@ -1190,6 +1190,7 @@ class EntdSource:
         *,
         random_seed: int,
         escort_purpose: bool = False,
+        escort_passive_education: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -1226,6 +1227,11 @@ class EntdSource:
             map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
             NOT supported for ENTD; passing True raises ``NotImplementedError``
             (the ENTD donor has no W_ZWECK escort coding).
+        escort_passive_education:
+            map the passive escort leg (MiD W_ZWECK 13) to 'education' instead
+            of 'escort' (issue #256). NOT supported for ENTD, for the same
+            reason as ``escort_purpose``; passing True raises
+            ``NotImplementedError``.
 
         Returns
         -------
@@ -1238,14 +1244,21 @@ class EntdSource:
         Raises
         ------
         NotImplementedError
-            If ``escort_purpose`` is True (the ENTD donor has no W_ZWECK
-            escort coding; disable escort_purpose for popsim_open runs).
+            If ``escort_purpose`` or ``escort_passive_education`` is True (the
+            ENTD donor has no W_ZWECK escort coding; disable both for
+            popsim_open runs).
         """
         if escort_purpose:
             raise NotImplementedError(
                 "[popsim.sources.entd] escort_purpose=True is not supported for the "
                 "ENTD donor (no W_ZWECK escort coding); disable escort_purpose for "
                 "popsim_open runs."
+            )
+        if escort_passive_education:
+            raise NotImplementedError(
+                "[popsim.sources.entd] escort_passive_education=True is not supported "
+                "for the ENTD donor (no W_ZWECK escort coding); disable "
+                "escort_passive_education for popsim_open runs."
             )
         _require_columns(persons, ["person_id", "source_person_id"], table_name="persons")
         _require_columns(donor_trips, ["person_id"], table_name="donor_trips")
