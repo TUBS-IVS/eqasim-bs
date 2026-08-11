@@ -1346,6 +1346,20 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     ESCORT_LOCATION_ACTIVITIES; the drawn name becomes the placement activity
     while the distance purpose is the single aggregate ``escort`` layer
     (fallback ``other``, counted).
+
+    ``escort_distance_by_type`` (A3, issue #201 follow-up) refines that last
+    step: when True AND a per-type layer exists for the drawn activity name
+    (synthesized upstream by ``_synthesize_escort_type_layers``), the distance
+    purpose becomes the drawn type itself instead of the aggregate ``escort``
+    layer -- a Kita drop-off then samples the Kita-scaled layer, not the pooled
+    one. Missing layers fall back COUNTED and two-level: drawn type -> aggregate
+    ``escort`` (``subtype_stats["escort_type_distance_layer_fallback"]``) ->
+    ``other`` (``subtype_stats["escort_distance_layer_fallback"]``); the two
+    counters are mutually exclusive per leg. Default False is the OFF-path
+    contract: byte-identical to the pre-A3 behaviour -- every escort leg samples
+    the single aggregate ``escort`` layer (one-level fallback to ``other`` only)
+    and ``subtype_stats`` carries no ``escort_type_distance_layer_fallback`` key
+    at all, so callers can gate their own logging on the key's presence.
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -2866,6 +2880,22 @@ def _build_escort_distance_factor_map(context):
             "[braunschweig.secondary_chainsolvers] escort_distance_factors must be "
             f"positive, got {factors}."
         )
+
+    # Vocabulary consistency (final-review finding): escort_locations_activities
+    # (what the location decider actually draws) and escort_distance_factor_activities
+    # (what has a factor entry) are configured independently -- a draw category
+    # missing a factor entry falls back silently unless flagged HERE, before any
+    # leg is placed. Reading escort_locations_activities is safe: this same stage
+    # declares it in configure(), so it is always present once execute() runs.
+    drawn_categories = set(context.config("escort_locations_activities"))
+    missing_factors = sorted(drawn_categories - set(activities))
+    if missing_factors:
+        print(
+            "[braunschweig.secondary_chainsolvers] WARNING: escort_distance_by_type: "
+            f"no distance factor for drawn categor{'y' if len(missing_factors) == 1 else 'ies'} "
+            f"{missing_factors} -- their legs will fall back counted to the aggregate "
+            "escort layer."
+        )
     return {ESCORT_CATEGORY_TO_ACTIVITY[c]: f for c, f in zip(activities, factors)}
 
 
@@ -3120,6 +3150,17 @@ def execute(context):
                 f"fallback to aggregate 'escort' {n_type_fb:,} "
                 f"({100.0 * n_type_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
             )
+            # 0.2 (20%) is a HEURISTIC escalation threshold (final-review finding,
+            # not a scientifically derived bound): above it the per-type layers are
+            # effectively not doing their job (CLAUDE.md fallback-transparency rule
+            # 2 -- a high fallback rate is a failure signal, not a tolerated cost).
+            if n_escort_legs and n_type_fb > 0.2 * n_escort_legs:
+                print(
+                    "[braunschweig.secondary_chainsolvers] WARNING: per-type "
+                    "distance-layer fallback above 20% -- the per-type layers are "
+                    "effectively not working (check escort_distance_factor_activities "
+                    "vs the draw vocabulary)."
+                )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"

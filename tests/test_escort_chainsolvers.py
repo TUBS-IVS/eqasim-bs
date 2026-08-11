@@ -348,6 +348,9 @@ def test_configure_declares_escort_keys_with_documented_defaults():
     assert ctx.registered["escort_purpose"] is False
     assert ctx.registered["escort_locations_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
     assert ctx.registered["escort_locations_weights"] == sc.DEFAULT_ESCORT_LOCATIONS_WEIGHTS
+    assert ctx.registered["escort_distance_by_type"] is False
+    assert ctx.registered["escort_distance_factor_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
+    assert ctx.registered["escort_distance_factors"] == sc.DEFAULT_ESCORT_DISTANCE_FACTORS
 
 
 # --- escort distance-by-type (A3): factor map builder -------------------------
@@ -382,11 +385,30 @@ def test_factor_map_happy_path_keys_are_activity_names():
     ctx = _Ctx({
         "escort_distance_by_type": True,
         "escort_purpose": True,
+        "escort_locations_activities": ["edu_kindergarten", "residential"],
         "escort_distance_factor_activities": ["edu_kindergarten", "residential"],
         "escort_distance_factors": [0.5, 1.5],
     })
     factor_map = sc._build_escort_distance_factor_map(ctx)
     assert factor_map == {"escort_edu_kindergarten": 0.5, "escort_residential": 1.5}
+
+
+def test_factor_map_warns_when_draw_category_has_no_factor(capsys):
+    # Final-review finding: escort_locations_activities (the draw vocabulary)
+    # and escort_distance_factor_activities (the factor vocabulary) are
+    # configured independently -- "shop" is drawable but has no factor entry
+    # here, so its legs would silently fall back without this loud signal.
+    ctx = _Ctx({
+        "escort_distance_by_type": True,
+        "escort_purpose": True,
+        "escort_locations_activities": ["edu_kindergarten", "residential", "shop"],
+        "escort_distance_factor_activities": ["edu_kindergarten", "residential"],
+        "escort_distance_factors": [0.5, 1.5],
+    })
+    sc._build_escort_distance_factor_map(ctx)
+    out = capsys.readouterr()[0]
+    assert "WARNING: escort_distance_by_type" in out
+    assert "shop" in out
 
 
 def test_factor_map_validation():

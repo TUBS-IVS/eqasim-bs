@@ -106,6 +106,20 @@ def derive_distance_factors(df: pd.DataFrame,
     early on < 50% GIS coverage or an implausible unit scale (overall median
     outside 0.1..100 km). Rows come out in CATEGORY_ORDER so the pinned CSV column
     can be copied straight into DEFAULT_ESCORT_DISTANCE_FACTORS.
+
+    The table also carries ``gis_coverage_weighted`` (inserted right after
+    ``n_legs_unweighted``): per category, weight(legs of that category with a
+    valid GIS length) / weight(legs of that category with a valid BHOL
+    destination, regardless of GIS length) -- how much of THAT category's valid
+    destinations the GIS-length subsample actually covers. Summed over every
+    category the numerators/denominators recover the same overall ratio as the
+    scalar ``gis_coverage_weighted`` returned in ``stats`` (every valid-BHOL leg
+    maps to exactly one category; ``BHOL_CATEGORY`` is exhaustive by
+    construction, see ``test_category_map_covers_all_bhol_codes``). A category
+    absent from the data entirely (denominator 0, same rows as
+    ``absent_categories``) reports NaN; a category present but with no
+    GIS-valid leg at all reports 0.0 -- a distinct, informative signal from
+    "absent" rather than a silent drop.
     """
     escort = df[df["V_ZWECK"] == ESCORT_V_ZWECK].copy()
     if len(escort) == 0:
@@ -138,10 +152,32 @@ def derive_distance_factors(df: pd.DataFrame,
             f"{unmapped}; extend BHOL_CATEGORY explicitly (no silent bucket)."
         )
     sub["category"] = sub["V_ZWECK_BHOL"].astype(int).map(BHOL_CATEGORY)
+
+    # Denominator universe for gis_coverage_weighted below: every valid-BHOL leg
+    # regardless of GIS length validity -- a superset of "sub" (which additionally
+    # requires gis_ok). Checked for unmapped codes independently of the check
+    # above: a leg can be valid-BHOL without being GIS-valid, so this row set is
+    # not guaranteed to carry the same codes as sub's, and a silently unmapped
+    # code here would silently drop weight from the per-category denominator
+    # instead of raising (CLAUDE.md: no silent bucket).
+    dest_only = escort[valid_dest].copy()
+    unmapped_dest = sorted(set(dest_only["V_ZWECK_BHOL"].astype(int)) - set(BHOL_CATEGORY))
+    if unmapped_dest:
+        raise ValueError(
+            f"[derive_distance_factors] unmapped V_ZWECK_BHOL code(s) "
+            f"{unmapped_dest}; extend BHOL_CATEGORY explicitly (no silent bucket)."
+        )
+    dest_only["category"] = dest_only["V_ZWECK_BHOL"].astype(int).map(BHOL_CATEGORY)
+    dest_only["GEWICHT_W"] = dest_only["GEWICHT_W"].astype(float)
+    denom_weight_by_category = dest_only.groupby("category")["GEWICHT_W"].sum()
+
     rows, neutralized, absent = [], [], []
     for category in CATEGORY_ORDER:
         cat = sub[sub["category"] == category]
         n = int(len(cat))
+        denom_weight = float(denom_weight_by_category.get(category, 0.0))
+        numer_weight = float(cat["GEWICHT_W"].astype(float).sum())
+        gis_coverage = (numer_weight / denom_weight) if denom_weight > 0.0 else float("nan")
         if n == 0:
             median_km, factor = float("nan"), float("nan")
             applied = 1.0
@@ -153,16 +189,18 @@ def derive_distance_factors(df: pd.DataFrame,
             if n < min_obs:
                 neutralized.append(category)
         rows.append({
-            "category": category, "n_legs_unweighted": n,
+            "category": category,
+            "n_legs_unweighted": n,
+            "gis_coverage_weighted": round(gis_coverage, 4) if denom_weight > 0.0 else gis_coverage,
             "weighted_median_km": round(median_km, 4) if n else median_km,
             "factor": round(factor, 4) if n else factor,
             "factor_applied": round(applied, 4),
         })
     table = pd.DataFrame(rows,
-        columns=["category", "n_legs_unweighted", "weighted_median_km",
-                 "factor", "factor_applied"])
+        columns=["category", "n_legs_unweighted", "gis_coverage_weighted",
+                 "weighted_median_km", "factor", "factor_applied"])
     stats = {
-        "coverage_weighted": coverage,
+        "gis_coverage_weighted": coverage,
         "overall_weighted_median_km": overall_median,
         "n_valid": int(len(sub)),
         "min_obs": int(min_obs),
@@ -186,8 +224,11 @@ def compute_length_coherence(df_srv: pd.DataFrame, mid_wege_path,
     scale similarly for the ACTIVE escort side? Compares SrV V_ZWECK == 12
     (GIS_LAENGE_GUELTIG > 0 as the valid-only km length, GEWICHT_W) against MiD
     W_ZWECK == 6 (wegkm_imp, W_GEW) on the nine W12 bands + overall weighted
-    medians. Thresholds are ASSUMPTIONS (documented, configurable); PASS enables
-    the SrV factors, FAIL pivots to the A1 layer aliases.
+    medians. Zero-length legs are excluded on both sides (symmetric validity:
+    ``> 0``, not ``>= 0``) so a leg reported as zero distance on one survey but
+    missing on the other cannot skew the band comparison. Thresholds are
+    ASSUMPTIONS (documented, configurable); PASS enables the SrV factors, FAIL
+    pivots to the A1 layer aliases.
     """
     srv = df_srv[df_srv["V_ZWECK"] == ESCORT_V_ZWECK].copy()
     srv["length_km"] = pd.to_numeric(srv["GIS_LAENGE_GUELTIG"], errors="coerce")
@@ -197,7 +238,7 @@ def compute_length_coherence(df_srv: pd.DataFrame, mid_wege_path,
     for column in ("W_ZWECK", "W_GEW", "wegkm_imp"):
         mid[column] = pd.to_numeric(mid[column], errors="coerce")
     mid = mid[(mid["W_ZWECK"] == 6) & mid["wegkm_imp"].notna()
-              & (mid["wegkm_imp"] >= 0) & (mid["wegkm_imp"] < 1000.0)]
+              & (mid["wegkm_imp"] > 0) & (mid["wegkm_imp"] < 1000.0)]
 
     def band_shares(values, weights):
         bins = pd.cut(np.asarray(values, dtype=float), COHERENCE_BAND_EDGES, right=False)
@@ -386,7 +427,7 @@ def main(argv=None) -> int:
         "# validity = value > 0), GEWICHT_W-weighted.\n"
         f"# factor = category weighted median / overall weighted median "
         f"({factor_stats['overall_weighted_median_km']:.3f} km); "
-        f"coverage_weighted={factor_stats['coverage_weighted']:.4f}; "
+        f"gis_coverage_weighted={factor_stats['gis_coverage_weighted']:.4f}; "
         f"n_valid={factor_stats['n_valid']}.\n"
         f"# min_obs={factor_stats['min_obs']}: thin categories get factor_applied=1.0 "
         f"(neutralized: {', '.join(factor_stats['neutralized_categories']) or 'none'}; "
@@ -404,8 +445,13 @@ def main(argv=None) -> int:
     print(f"[derive_escort_location_weights] distance factors -> "
           f"{args.distance_factors_output} (gate: {gate_line})")
     if not gate["passed"]:
-        print("[derive_escort_location_weights] WARNING: coherence gate FAILED -- "
-              "do not ship the SrV factors; pivot to A1 (spec section 3).")
+        fail_message = (
+            "[derive_escort_location_weights] WARNING: coherence gate FAILED -- "
+            "do not ship the SrV factors; pivot to A1 (spec section 3)."
+        )
+        print(fail_message)
+        logger.warning(fail_message)
+        return 2
     return 0
 
 
