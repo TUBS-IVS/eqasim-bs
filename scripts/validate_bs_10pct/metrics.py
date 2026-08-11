@@ -318,6 +318,42 @@ def purpose_mix_w1_baseline(present_purposes) -> dict:
     return baseline
 
 
+def purpose_mix_w1_active_baseline() -> dict:
+    """Active-adjusted MiD 2023 W1 baseline for ``escort_passive_education``
+    (issue #256).
+
+    The static ``purpose_mix_w1`` Begleitung share (8/99) mixes the MiD
+    active leg (W_ZWECK 6, Bringen/Holen) and passive leg (W_ZWECK 13, the
+    escorted person's own leg). Under ``escort_passive_education`` the
+    model's ``escort`` purpose captures only the ACTIVE leg; the passive
+    leg is counted as ``education`` in the synthetic population. Comparing
+    such a population against the unmodified (mixed) Begleitung share
+    would inflate the apparent ``escort`` gap and understate ``education``,
+    so this baseline redistributes the Begleitung mass the same way:
+
+        escort_active     = purpose_mix_w1["escort"] * active_share
+        education_adjusted = purpose_mix_w1["education"]
+                              + purpose_mix_w1["escort"] * (1 - active_share)
+
+    ``active_share`` is the W_GEW-weighted share of active (W_ZWECK 6) legs
+    among MiD escort legs, read from the pinned
+    ``mid2023_escort_w_zweck_split.csv`` via
+    ``references.escort_active_share`` (never hardcoded).
+
+    config.py stays static (no CSV loading at import time), so this dict is
+    built lazily on every call from the static ``purpose_mix_w1`` baseline;
+    the underlying share is cached in ``references.escort_active_share``.
+    Mass-preserving: ``sum(result.values()) == sum(purpose_mix_w1.values())``.
+    Returns a fresh dict; the shared static baseline is never mutated.
+    """
+    raw = MID_BASELINE["purpose_mix_w1"]
+    active_share = references.escort_active_share()
+    adjusted = dict(raw)
+    adjusted["escort"] = raw["escort"] * active_share
+    adjusted["education"] = raw["education"] + raw["escort"] * (1.0 - active_share)
+    return adjusted
+
+
 def purpose_mix_no_home() -> pd.DataFrame:
     """Purpose mix excluding ``home`` legs, normalised to 100 %.
 
@@ -347,6 +383,38 @@ def purpose_mix_no_home() -> pd.DataFrame:
     out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
     out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
     baseline = purpose_mix_w1_baseline(set(out["purpose"]))
+    out["mid_share"] = out["purpose"].map(baseline)
+    out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
+    return out.sort_values("synth_share", ascending=False).reset_index(drop=True)
+
+
+def purpose_mix_no_home_active() -> pd.DataFrame:
+    """Purpose mix excluding ``home`` legs, scored against the
+    active-adjusted MiD 2023 W1 baseline (issue #256,
+    ``escort_passive_education``).
+
+    Mirrors :func:`purpose_mix_no_home` exactly (same filtering, same
+    columns), but maps the synthetic distribution against
+    :func:`purpose_mix_w1_active_baseline` instead of the raw
+    (presence-folded) W1 baseline. This is the correct reference when the
+    synthesis was built with ``escort_passive_education`` ON, where the
+    model's ``escort`` purpose is active-only and passive escort legs
+    surface as ``education`` trips.
+
+    This validation report is post-hoc (it only reads output CSVs/XML and
+    cannot detect which flag state produced the population), so both this
+    table (report section 5.3b) and the raw-baseline table (section 5.3,
+    :func:`purpose_mix_no_home`) are rendered side by side, clearly
+    labelled; the reader picks the reference matching their run
+    configuration.
+    """
+    trips = io.trips_full().copy()
+    trips = trips[trips["following_purpose"] != "home"]
+    if len(trips) == 0:
+        return pd.DataFrame(columns=["purpose", "synth_share", "mid_share", "deviation_pp"])
+    out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
+    out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
+    baseline = purpose_mix_w1_active_baseline()
     out["mid_share"] = out["purpose"].map(baseline)
     out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
     return out.sort_values("synth_share", ascending=False).reset_index(drop=True)

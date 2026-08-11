@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from scripts.validate_bs_10pct import metrics
 from scripts.validate_bs_10pct.config import MID_BASELINE
 
@@ -58,3 +60,40 @@ def test_baseline_does_not_mutate_static_config():
 
     assert MID_BASELINE["purpose_mix_w1"]["escort"] == before_escort
     assert MID_BASELINE["purpose_mix_w1"]["other"] == before_other
+
+
+# ---------------------------------------------------------------------------
+# Active-adjusted W1 baseline (issue #256, escort_passive_education).
+#
+# ``config.py`` stays static (no CSV loading at import time -- see
+# CLAUDE.md "Paths and file handling" / reproducibility rules): the derived
+# dict is therefore NOT a literal ``MID_BASELINE["purpose_mix_w1_active"]``
+# key, but is constructed lazily by
+# ``metrics.purpose_mix_w1_active_baseline()`` from the static
+# ``purpose_mix_w1`` baseline plus ``references.escort_active_share()``
+# (which reads the pinned ``mid2023_escort_w_zweck_split.csv``). The pinning
+# assertions below are otherwise identical to the brief.
+# ---------------------------------------------------------------------------
+def test_active_baseline_derivation_and_pinning():
+    """The active-adjusted baseline must scale ``escort`` by the pinned
+    active share and fold the passive remainder into ``education``, while
+    leaving all other purposes untouched and preserving total mass."""
+    import csv
+    import pathlib
+
+    csv_path = pathlib.Path(__file__).resolve().parents[1] / "eqasim-data" / "data" \
+        / "braunschweig" / "mid" / "mid2023_escort_w_zweck_split.csv"
+    with open(csv_path, encoding="utf-8") as handle:
+        rows = {r["w_zweck"]: r for r in csv.DictReader(
+            line for line in handle if not line.startswith("#"))}
+    active = float(rows["code_6"]["share_weighted"])
+
+    raw = MID_BASELINE["purpose_mix_w1"]
+    adj = metrics.purpose_mix_w1_active_baseline()
+
+    assert adj["escort"] == pytest.approx(raw["escort"] * active, abs=1e-6)
+    assert adj["education"] == pytest.approx(
+        raw["education"] + raw["escort"] * (1.0 - active), abs=1e-6)
+    for key in ("work", "shop", "other", "leisure"):
+        assert adj[key] == pytest.approx(raw[key])
+    assert sum(adj.values()) == pytest.approx(sum(raw.values()))

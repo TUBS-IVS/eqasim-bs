@@ -70,6 +70,18 @@ MID_BASELINE = {
     # "escort"-Wege), faltet purpose_mix_w1_baseline() die 8/99 Begleitung
     # wieder in "other" zurueck (-> 19/99), damit der Vergleich apples-to-apples
     # bleibt; es gibt dann keine eigene "escort"-Zeile im Report.
+    #
+    # Note (issue #256, escort_passive_education): a population can also be
+    # built with an ACTIVE-only escort purpose (the escorted person's own
+    # passive leg is counted as "education" instead). The mixed Begleitung
+    # share below is not apples-to-apples with such a population, so a
+    # second, active-adjusted baseline is derived ON DEMAND -- never stored
+    # as a static key here, config.py stays static and import-time-CSV-free
+    # -- by metrics.purpose_mix_w1_active_baseline() from this dict plus the
+    # pinned active share loaded by references.escort_active_share()
+    # (eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv).
+    # See metrics.purpose_mix_no_home_active() and validation-report
+    # section 5.3b, which renders both references side by side.
     "purpose_mix_w1": {
         "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)
         "education":  6 / 99,               # 0.061  (Ausbildung)
