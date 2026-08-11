@@ -187,6 +187,12 @@ def configure(context):
     context.config("escort_household_link", False)
     context.config("escort_household_link_max_child_age_years", 17)
 
+    # Escort distance-by-type (A3): scale the MiD escort distance layer per
+    # drawn destination type with SrV-derived structure factors.
+    context.config("escort_distance_by_type", False)
+    context.config("escort_distance_factor_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
+    context.config("escort_distance_factors", DEFAULT_ESCORT_DISTANCE_FACTORS)
+
     # MiD Wege directory: only consumed (and only declared) when at least one
     # subtype split is ON, so non-real configs that leave all three flags off
     # never require the local-only MiD delivery.
@@ -462,6 +468,12 @@ DEFAULT_ESCORT_LOCATIONS_ACTIVITIES = [
     "other", "leisure", "residential", "shop",
 ]
 DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+# SrV-derived escort distance factors per destination type (A3; issue #201
+# follow-up). Values are the factor_applied column of
+# srv2023_escort_distance_factors.csv (weighted-median ratio to the overall
+# escort median; thin categories neutralized to 1.0) -- regenerate via
+# scripts/derive_escort_location_weights.py, never edit here.
+DEFAULT_ESCORT_DISTANCE_FACTORS = [0.618, 0.8339, 1.0, 1.7361, 1.3607, 1.8035, 1.0]
 
 
 def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
@@ -2777,6 +2789,44 @@ def _build_escort_location_decider(context, random_seed: int):
         return _inverse_cdf_choice(probs, group_names, rng.random_sample())
 
     return decide
+
+
+def _build_escort_distance_factor_map(context):
+    """{activity_name: factor} for escort distance-by-type (A3), or None when OFF.
+
+    Factors are SrV between-type structure ratios applied to the MiD escort
+    level (spec 2026-08-11). Keys are the chainsolver activity names the
+    escort location decider draws (ESCORT_CATEGORY_TO_ACTIVITY values), so the
+    leg loop can use the drawn name as the distance-layer key directly.
+    """
+    if not context.config("escort_distance_by_type"):
+        return None
+    if not context.config("escort_purpose"):
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_by_type requires "
+            "escort_purpose to be ON (there is no escort distance layer to scale)."
+        )
+    activities = list(context.config("escort_distance_factor_activities"))
+    factors = [float(f) for f in context.config("escort_distance_factors")]
+    if len(activities) != len(factors):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factor_activities "
+            f"and escort_distance_factors must have the same length, got "
+            f"{len(activities)} and {len(factors)}."
+        )
+    unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
+    if unknown:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] unknown escort location "
+            f"categor{'y' if len(unknown) == 1 else 'ies'} in "
+            f"escort_distance_factor_activities: {unknown}."
+        )
+    if any(f <= 0.0 for f in factors):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factors must be "
+            f"positive, got {factors}."
+        )
+    return {ESCORT_CATEGORY_TO_ACTIVITY[c]: f for c, f in zip(activities, factors)}
 
 
 # ---------------------------------------------------------------------------

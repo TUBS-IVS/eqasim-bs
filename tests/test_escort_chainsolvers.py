@@ -348,3 +348,58 @@ def test_configure_declares_escort_keys_with_documented_defaults():
     assert ctx.registered["escort_purpose"] is False
     assert ctx.registered["escort_locations_activities"] == sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES
     assert ctx.registered["escort_locations_weights"] == sc.DEFAULT_ESCORT_LOCATIONS_WEIGHTS
+
+
+# --- escort distance-by-type (A3): factor map builder -------------------------
+def test_distance_factor_defaults_match_pinned_csv():
+    import csv, pathlib
+    csv_path = pathlib.Path(__file__).resolve().parents[1] / "eqasim-data" / "data" \
+        / "braunschweig" / "srv" / "srv2023_escort_distance_factors.csv"
+    with open(csv_path, encoding="utf-8") as handle:
+        rows = [r for r in csv.DictReader(
+            line for line in handle if not line.startswith("#"))]
+    pinned = {r["category"]: float(r["factor_applied"]) for r in rows}
+    assert list(pinned) and set(pinned) == set(sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
+    for category, factor in zip(sc.DEFAULT_ESCORT_LOCATIONS_ACTIVITIES,
+                                sc.DEFAULT_ESCORT_DISTANCE_FACTORS):
+        assert factor == pytest.approx(pinned[category], abs=1e-9)
+
+
+def test_factor_map_off_returns_none():
+    ctx = _Ctx({"escort_distance_by_type": False})
+    assert sc._build_escort_distance_factor_map(ctx) is None
+
+
+def test_factor_map_requires_escort_purpose():
+    with pytest.raises(RuntimeError, match="requires escort_purpose"):
+        sc._build_escort_distance_factor_map(_Ctx({
+            "escort_distance_by_type": True,
+            "escort_purpose": False,
+        }))
+
+
+def test_factor_map_happy_path_keys_are_activity_names():
+    ctx = _Ctx({
+        "escort_distance_by_type": True,
+        "escort_purpose": True,
+        "escort_distance_factor_activities": ["edu_kindergarten", "residential"],
+        "escort_distance_factors": [0.5, 1.5],
+    })
+    factor_map = sc._build_escort_distance_factor_map(ctx)
+    assert factor_map == {"escort_edu_kindergarten": 0.5, "escort_residential": 1.5}
+
+
+def test_factor_map_validation():
+    base = {"escort_distance_by_type": True, "escort_purpose": True}
+    with pytest.raises(ValueError, match="same length"):
+        sc._build_escort_distance_factor_map(_Ctx({**base,
+            "escort_distance_factor_activities": ["edu_kindergarten"],
+            "escort_distance_factors": [1.0, 2.0]}))
+    with pytest.raises(ValueError, match="unknown escort location categor"):
+        sc._build_escort_distance_factor_map(_Ctx({**base,
+            "escort_distance_factor_activities": ["kita"],
+            "escort_distance_factors": [1.0]}))
+    with pytest.raises(ValueError, match="positive"):
+        sc._build_escort_distance_factor_map(_Ctx({**base,
+            "escort_distance_factor_activities": ["edu_kindergarten"],
+            "escort_distance_factors": [0.0]}))
