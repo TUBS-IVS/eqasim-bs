@@ -2812,6 +2812,11 @@ def _build_escort_location_decider(context, random_seed: int):
             f"escort_locations_weights must have the same length, got "
             f"{len(activities)} and {len(weights)}."
         )
+    if len(set(activities)) != len(activities):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_activities "
+            f"contains duplicate escort location categories: {activities}."
+        )
     unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
     if unknown:
         raise ValueError(
@@ -2868,6 +2873,11 @@ def _build_escort_distance_factor_map(context):
             f"and escort_distance_factors must have the same length, got "
             f"{len(activities)} and {len(factors)}."
         )
+    if len(set(activities)) != len(activities):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factor_activities "
+            f"contains duplicate escort location categories: {activities}."
+        )
     unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
     if unknown:
         raise ValueError(
@@ -2897,6 +2907,16 @@ def _build_escort_distance_factor_map(context):
             "escort layer."
         )
     return {ESCORT_CATEGORY_TO_ACTIVITY[c]: f for c, f in zip(activities, factors)}
+
+
+def _rate_pct(count, total) -> float:
+    """Percentage of ``count`` over ``total``, or 0.0 when ``total`` is falsy
+    (guards the ZeroDivisionError on an empty leg group, e.g. no bounded
+    escort legs at all). Shared by every fallback-rate / per-group-share
+    percentage the execute() summary print block below reports, so the
+    guarded formula is defined once instead of being repeated inline at
+    each call site."""
+    return 100.0 * count / total if total else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -3090,14 +3110,14 @@ def execute(context):
             f"({100.0 * (1.0 - realised_daily):.1f}%); "
             f"distance-layer fallback to aggregate 'shop' "
             f"{n_dist_fb:,}/{n_shop_legs:,} "
-            f"({100.0 * n_dist_fb / n_shop_legs if n_shop_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_shop_legs):.1f}%)"
         )
     if leisure_subtype_decider is not None:
         n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
         n_leisure_legs = sum(n_by_group.values())
         n_dist_fb = subtype_stats["leisure_distance_layer_fallback"]
         shares = ", ".join(
-            f"{name} {count:,} ({100.0 * count / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+            f"{name} {count:,} ({_rate_pct(count, n_leisure_legs):.1f}%)"
             for name, count in n_by_group.items()
         )
         print(
@@ -3106,14 +3126,14 @@ def execute(context):
             f"{n_leisure_legs:,} bounded leisure legs -> {shares}; "
             f"distance-layer fallback to aggregate 'leisure' "
             f"{n_dist_fb:,}/{n_leisure_legs:,} "
-            f"({100.0 * n_dist_fb / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_leisure_legs):.1f}%)"
         )
     if other_subtype_decider is not None:
         n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
         n_other_legs = sum(n_by_outcome.values())
         n_dist_fb = subtype_stats["other_distance_layer_fallback"]
         shares = ", ".join(
-            f"{name} {count:,} ({100.0 * count / n_other_legs if n_other_legs else 0.0:.1f}%)"
+            f"{name} {count:,} ({_rate_pct(count, n_other_legs):.1f}%)"
             for name, count in n_by_outcome.items()
         )
         print(
@@ -3122,14 +3142,14 @@ def execute(context):
             f"{n_other_legs:,} bounded other legs -> {shares}; "
             f"distance-layer fallback to aggregate 'other' "
             f"{n_dist_fb:,}/{n_other_legs:,} "
-            f"({100.0 * n_dist_fb / n_other_legs if n_other_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
         )
     if escort_location_decider is not None:
         n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}
         n_escort_legs = sum(n_by_type.values())
         n_dist_fb = subtype_stats["escort_distance_layer_fallback"]
         shares = ", ".join(
-            f"{name} {count:,} ({100.0 * count / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
+            f"{name} {count:,} ({_rate_pct(count, n_escort_legs):.1f}%)"
             for name, count in n_by_type.items()
         )
         print(
@@ -3138,7 +3158,7 @@ def execute(context):
             f"{n_escort_legs:,} bounded escort legs -> {shares}; "
             f"distance-layer fallback to aggregate 'other' "
             f"{n_dist_fb:,}/{n_escort_legs:,} "
-            f"({100.0 * n_dist_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_escort_legs):.1f}%)"
         )
         if "escort_type_distance_layer_fallback" in subtype_stats:
             n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
@@ -3146,9 +3166,9 @@ def execute(context):
                 "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
                 f"per-type layer used {n_escort_legs - n_type_fb - n_dist_fb:,}"
                 f"/{n_escort_legs:,} escort legs "
-                f"({100.0 * (n_escort_legs - n_type_fb - n_dist_fb) / n_escort_legs if n_escort_legs else 0.0:.1f}%), "
+                f"({_rate_pct(n_escort_legs - n_type_fb - n_dist_fb, n_escort_legs):.1f}%), "
                 f"fallback to aggregate 'escort' {n_type_fb:,} "
-                f"({100.0 * n_type_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
+                f"({_rate_pct(n_type_fb, n_escort_legs):.1f}%)"
             )
             # 0.2 (20%) is a HEURISTIC escalation threshold (final-review finding,
             # not a scientifically derived bound): above it the per-type layers are

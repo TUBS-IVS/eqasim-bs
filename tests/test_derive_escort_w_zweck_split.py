@@ -46,6 +46,20 @@ def test_split_raises_without_escort_legs():
         derive_split(df)
 
 
+def test_split_raises_when_total_weight_is_zero_after_coercion():
+    # D11 (deferred review): all W_GEW values are non-numeric garbage -> every
+    # one coerces to NaN -> fillna(0.0) -> total_weight == 0. Must raise
+    # BEFORE any share is computed, not silently divide by zero into NaN
+    # shares (CLAUDE.md "no silent fallbacks").
+    df = pd.DataFrame({
+        "W_ZWECK":   [6, 6, 13],
+        "W_GEW":     ["abc", "xyz", "??"],
+        "wegkm_imp": [1.0, 2.0, 3.0],
+    })
+    with pytest.raises(ValueError, match="total escort weight is zero"):
+        derive_split(df)
+
+
 def test_split_median_argument_order():
     """Detect if weighted_median arguments are swapped (values, weights order).
 

@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.derive_escort_location_weights import weighted_median
+from scripts.derive_escort_location_weights import _sniff_separator, weighted_median
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_WEGE_PATH = (REPO / "eqasim-data" / "data" / "braunschweig" / "popsim"
@@ -41,12 +41,23 @@ BAND_COLUMNS = ["d_unter_0_5km", "d_0_5_1km", "d_1_2km", "d_2_5km", "d_5_10km",
                 "d_10_20km", "d_20_50km", "d_50_100km", "d_100km_plus"]
 
 
-def _band_shares_pct(length_km: pd.Series, weights: pd.Series) -> list[float]:
-    bins = pd.cut(np.asarray(length_km, dtype=float), BAND_EDGES, right=False)
+def _band_shares_pct(length_km: pd.Series, weights: pd.Series) -> pd.Series:
+    """Weighted length-band shares (%), returned as a ``pd.Series`` indexed by
+    ``BAND_COLUMNS``.
+
+    ``pd.cut`` is given ``labels=BAND_COLUMNS`` directly so each band's name
+    travels with its categorical bucket through the groupby, instead of the
+    caller having to line up a positional result list with ``BAND_COLUMNS``
+    by relying on the post-cut Interval categories happening to sort in the
+    same ascending order as ``BAND_COLUMNS`` (D12, deferred review). The
+    final ``.reindex(BAND_COLUMNS)`` fixes the output order explicitly.
+    """
+    bins = pd.cut(np.asarray(length_km, dtype=float), BAND_EDGES, right=False,
+                  labels=BAND_COLUMNS)
     share = (pd.DataFrame({"b": bins, "w": np.asarray(weights, dtype=float)})
              .groupby("b", observed=False)["w"].sum())
-    share = share / share.sum()
-    return [float(100.0 * s) for s in share.to_numpy()]
+    share = (share / share.sum()).reindex(BAND_COLUMNS)
+    return 100.0 * share.astype(float)
 
 
 def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -56,6 +67,9 @@ def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     statistics (mean/median/bands) use only legs with a usable wegkm_imp
     (numeric, >= 0, < 1000 -- mirroring the #257 coherence-gate filter), with
     the weighted coverage reported in stats.
+
+    Precondition: W_ZWECK must already be numeric (main() coerces; direct
+    callers must do the same).
     """
     escort = df[df["W_ZWECK"].isin(ESCORT_CODES)].copy()
     if len(escort) == 0:
@@ -66,6 +80,11 @@ def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     escort["W_GEW"] = w_gew_coerced.fillna(0.0)
     escort["wegkm_imp"] = pd.to_numeric(escort["wegkm_imp"], errors="coerce")
     total_weight = float(escort["W_GEW"].sum())
+    if total_weight == 0:
+        raise ValueError(
+            "[derive_escort_w_zweck_split] total escort weight is zero after "
+            "coercion; check W_GEW parsing (garbage or all-zero weights)."
+        )
     length_ok = escort["wegkm_imp"].notna() & (escort["wegkm_imp"] >= 0) \
         & (escort["wegkm_imp"] < 1000.0)
     coverage = float(escort.loc[length_ok, "W_GEW"].sum() / total_weight) if total_weight else 0.0
@@ -88,8 +107,8 @@ def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                 if len(sub_ok) else float("nan"),
         }
         bands = _band_shares_pct(sub_ok["wegkm_imp"], sub_ok["W_GEW"]) \
-            if len(sub_ok) else [float("nan")] * len(BAND_COLUMNS)
-        row.update({c: round(v, 2) for c, v in zip(BAND_COLUMNS, bands)})
+            if len(sub_ok) else pd.Series(float("nan"), index=BAND_COLUMNS)
+        row.update({c: round(float(v), 2) for c, v in bands.items()})
         rows.append(row)
 
     table = pd.DataFrame(rows, columns=["w_zweck", "n_legs_unweighted",
@@ -99,12 +118,6 @@ def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
              "n_escort_legs": int(len(escort)),
              "weight_coercion_failures": weight_coercion_failures}
     return table, stats
-
-
-def _sniff_separator(path) -> str:
-    with open(path, "r", encoding="latin-1") as handle:
-        first = handle.readline()
-    return ";" if first.count(";") > first.count(",") else ","
 
 
 def main(argv=None) -> int:

@@ -77,6 +77,18 @@ def test_decider_config_validation():
         }), random_seed=1)
 
 
+def test_decider_config_validation_rejects_duplicate_activities():
+    # D5 (deferred review): a repeated category would silently split its
+    # probability mass across two entries instead of raising -- catch it
+    # explicitly right after the same-length check.
+    with pytest.raises(ValueError, match="duplicate escort location categor"):
+        sc._build_escort_location_decider(_Ctx({
+            "escort_purpose": True,
+            "escort_locations_activities": ["edu_kindergarten", "edu_kindergarten"],
+            "escort_locations_weights": [0.5, 0.5],
+        }), random_seed=1)
+
+
 # ---------------------------------------------------------------------------
 # Task 6: escort candidate universe (education rows, residential reuse,
 # offer emission).
@@ -425,6 +437,15 @@ def test_factor_map_validation():
         sc._build_escort_distance_factor_map(_Ctx({**base,
             "escort_distance_factor_activities": ["edu_kindergarten"],
             "escort_distance_factors": [0.0]}))
+
+
+def test_factor_map_validation_rejects_duplicate_activities():
+    # D5 (deferred review): mirrors the decider's duplicate-activity guard.
+    base = {"escort_distance_by_type": True, "escort_purpose": True}
+    with pytest.raises(ValueError, match="duplicate escort location categor"):
+        sc._build_escort_distance_factor_map(_Ctx({**base,
+            "escort_distance_factor_activities": ["edu_kindergarten", "edu_kindergarten"],
+            "escort_distance_factors": [1.0, 1.0]}))
 
 
 # --- escort distance-by-type (A3): layer synthesis ----------------------------

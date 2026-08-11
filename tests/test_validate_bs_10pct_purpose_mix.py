@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 
+import pandas as pd
 import pytest
 
 from scripts.validate_bs_10pct import metrics
@@ -123,3 +124,41 @@ def test_active_baseline_degrades_to_folded_baseline_when_escort_absent():
 
     assert adj == expected
     assert "escort" not in adj
+
+
+# ---------------------------------------------------------------------------
+# I/O-path coverage (deferred review D14): purpose_mix_no_home[_active]
+# themselves -- as opposed to the pure baseline-selection helpers exercised
+# above -- are not called by any other test in this module. This closes that
+# gap cheaply via monkeypatch, without new fixture infrastructure.
+# ---------------------------------------------------------------------------
+def test_purpose_mix_no_home_variants_exclude_home_and_use_presence_baseline(monkeypatch):
+    """Monkeypatch ``metrics.io.trips_full`` with a small synthetic frame
+    (escort, home, and three other purposes) and check both
+    ``purpose_mix_no_home`` and ``purpose_mix_no_home_active`` end to end:
+    ``home`` legs are excluded, ``mid_share`` matches the presence-based
+    baseline (checked against the baseline helper itself, not a hardcoded
+    number, so this stays correct if MID_BASELINE ever changes), and
+    ``synth_share`` sums to 1."""
+    synthetic_trips = pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "following_purpose": [
+            "home", "home", "escort", "escort", "escort",
+            "work", "work", "shop", "leisure", "leisure",
+        ],
+    })
+    monkeypatch.setattr(metrics.io, "trips_full", lambda: synthetic_trips)
+
+    for table_fn, baseline_fn in (
+        (metrics.purpose_mix_no_home, metrics.purpose_mix_w1_baseline),
+        (metrics.purpose_mix_no_home_active, metrics.purpose_mix_w1_active_baseline),
+    ):
+        table = table_fn()
+
+        assert "home" not in set(table["purpose"])
+
+        expected_baseline = baseline_fn(set(table["purpose"]))
+        for _, row in table.iterrows():
+            assert row["mid_share"] == pytest.approx(expected_baseline[row["purpose"]])
+
+        assert table["synth_share"].sum() == pytest.approx(1.0)
