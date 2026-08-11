@@ -420,6 +420,39 @@ def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bo
     return purpose in distributions
 
 
+def _synthesize_escort_type_layers(distributions, factor_by_activity):
+    """Add per-destination-type escort distance layers (A3, issue #201 follow-up).
+
+    For every entry of ``factor_by_activity`` (activity name -> SrV structure
+    factor) a deep copy of the aggregate ``escort`` layer is added under the
+    activity name with every distance ``values`` array multiplied by the factor
+    (exact multiplicative semantics: P(D_type <= x) = P(D <= x/factor)). Neutral
+    factors (1.0) get an identical copy ON PURPOSE: the per-type fallback counter
+    in the leg loop must stay a true failure signal, so a factor-neutral category
+    must not read as a missing layer. The caller passes the PRIVATE deep copy
+    returned by ``_resample_distributions``; this function mutates and returns it.
+    Legacy mode-keyed structures (or a missing ``escort`` layer) are returned
+    unchanged with a WARNING -- the leg loop's counted fallback then surfaces the
+    rate (no silent fallback).
+    """
+    if not _purpose_in_distributions(distributions, "escort"):
+        print(
+            "[braunschweig.secondary_chainsolvers] WARNING: escort_distance_by_type "
+            "is ON but the distributions carry no 'escort' purpose layer (legacy "
+            "mode-keyed structure?); per-type layers NOT synthesized -- the leg "
+            "loop will count every escort leg as distance-layer fallback."
+        )
+        return distributions
+    base = distributions["escort"]
+    for activity, factor in factor_by_activity.items():
+        layer = copy.deepcopy(base)
+        for mode_distribution in layer.values():
+            for distribution in mode_distribution["distributions"]:
+                distribution["values"] = distribution["values"] * float(factor)
+        distributions[activity] = layer
+    return distributions
+
+
 # Internal shop subtype activities (chainsolver-only). They never leak into the
 # eqasim output: _extract_locations maps them back to the "shop" purpose.
 SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")

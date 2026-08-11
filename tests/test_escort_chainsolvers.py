@@ -403,3 +403,28 @@ def test_factor_map_validation():
         sc._build_escort_distance_factor_map(_Ctx({**base,
             "escort_distance_factor_activities": ["edu_kindergarten"],
             "escort_distance_factors": [0.0]}))
+
+
+# --- escort distance-by-type (A3): layer synthesis ----------------------------
+def test_synthesize_scales_values_and_keeps_base_unmutated():
+    dists = _escort_distributions()
+    base_values_before = dists["escort"]["car"]["distributions"][0]["values"].copy()
+    out = sc._synthesize_escort_type_layers(
+        dists, {"escort_edu_kindergarten": 0.5, "escort_residential": 1.0})
+    assert out is dists  # in-place on the private copy, returned for chaining
+    kita = out["escort_edu_kindergarten"]["car"]["distributions"][0]["values"]
+    assert kita == pytest.approx(base_values_before * 0.5)
+    resid = out["escort_residential"]["car"]["distributions"][0]["values"]
+    assert resid == pytest.approx(base_values_before * 1.0)  # neutral layer EXISTS
+    assert out["escort"]["car"]["distributions"][0]["values"] == pytest.approx(base_values_before)
+
+
+def test_synthesize_no_op_on_legacy_or_missing_escort(capsys):
+    legacy = _mode_distributions()  # top-level mode keys, no purpose layer
+    out = sc._synthesize_escort_type_layers(legacy, {"escort_edu_kindergarten": 0.5})
+    assert out is legacy and "escort_edu_kindergarten" not in out
+    assert "WARNING" in capsys.readouterr()[0]
+
+    no_escort = {"other": _mode_distributions()}
+    out2 = sc._synthesize_escort_type_layers(no_escort, {"escort_edu_kindergarten": 0.5})
+    assert "escort_edu_kindergarten" not in out2
