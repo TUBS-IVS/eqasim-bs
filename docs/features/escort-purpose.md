@@ -14,6 +14,14 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
   eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv.
   ASSUMPTION: work-type destinations fold into "other" (no work facilities in
   the secondary candidate universe).
+- Distance-by-type factors (A3): SrV 2023 BS+RGB `V_ZWECK == 12`, length =
+  `GIS_LAENGE_GUELTIG` (valid-only GIS route km; -7 sentinel = invalid;
+  validity = value > 0), GEWICHT_W-weighted, GIS coverage 82.45 % of valid
+  escort legs (n_valid=2602); min_obs=30 neutralizes edu_university/shop --
+  scripts/derive_escort_location_weights.py writes the pinned reference
+  eqasim-data/data/braunschweig/srv/srv2023_escort_distance_factors.csv.
+  Coherence gate vs MiD W_ZWECK==6 wegkm_imp: PASS (band L1 9.29 pp, median
+  ratio 0.929).
 - Validation references: mid2023_W1.csv `begleitung` (8.0 % ZGB) and
   mid2023_W12_triplength_by_purpose.csv `Begleitung` (10.1 km mittel).
 
@@ -25,12 +33,20 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
    `escort_locations_weights`: education by school type (Kita/Schule/Hochschule,
    candidates from `synthesis.locations.education`, potential = OSM capacity
    proxy), residential (leisure_visit building machinery), shop/leisure/other
-   (existing candidates). All escort legs sample the single `escort` distance
-   layer; fallbacks are rate-logged. With `escort_distance_by_type` (A3) each
-   drawn type samples its own distance layer: the MiD escort layer scaled by the
-   SrV between-type factor (`srv2023_escort_distance_factors.csv`; thin
-   categories neutralized to 1.0); fallbacks are two-level and rate-logged
-   (type -> escort -> other).
+   (existing candidates). Without `escort_distance_by_type`, all escort legs
+   sample the single `escort` distance layer (fallbacks rate-logged); with it ON
+   (code default OFF, `true` in configs/base_bs.yml) each drawn type samples its
+   own distance layer: the MiD escort layer scaled by the SrV between-type
+   factor (`srv2023_escort_distance_factors.csv`; thin categories neutralized to
+   1.0); fallbacks are two-level and rate-logged (type -> escort -> other).
+
+   ASSUMPTION (A3): the between-type length ratios are treated as invariant
+   across mode x travel-time strata (SrV provides only marginal medians).
+   Because the type draw is independent of the leg's mode/travel time, the
+   expected escort distance level shifts by sum(w_c x factor_c) = 1.0305
+   (+3.1%) under the pinned draw weights and factors -- a known, accepted
+   by-construction drift (well inside the +-20% mean criterion); the 5%
+   validation run reports the realised shift.
 3. Phase 2 (`escort_household_link`): escorters with a child (<=
    `escort_household_link_max_child_age_years`) that has a realised education
    location get ALL their escort activities anchored at that school
@@ -52,7 +68,7 @@ apples-to-apples (`metrics.purpose_mix_w1_baseline`, mirroring
 `trip_coherence.scored_mid_purposes`).
 
 Escort length-band fit vs MiD W12 is the A3 acceptance metric (baseline
-2026-08-11: <2 km = 25.6%, band L1 = 27.8 pp).
+2026-08-11, run output_bs_5pct_escort: <2 km = 25.6%, band L1 = 27.8 pp).
 
 ## Follow-ups
 #241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).
