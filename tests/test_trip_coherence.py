@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -365,3 +366,112 @@ def test_p38_2_commute_coherence_produces_long_frame_with_deltas():
     # never invented).
     wob = out[(out["ars5"] == "03103")]
     assert wob["realised_share"].isna().all()
+
+
+# ---------------------------------------------------------------------------
+# escort_passive_education (issue #256): active-share-adjusted W1/W12 escort
+# references. The model's escort purpose is ACTIVE-only under this flag, while
+# the published MiD W1/W12 Begleitung figures fold in both the active
+# (W_ZWECK 6) and passive (W_ZWECK 13) legs; these checks score the adjusted
+# (active-only) reference instead so the comparison stays apples-to-apples.
+# Both only fire when 'begleitung' is scored/present, which requires
+# escort_purpose ON upstream (enforced in braunschweig.popsim.trips.map_purpose).
+# ---------------------------------------------------------------------------
+
+def test_apply_escort_active_adjustment_scales_and_folds():
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        apply_escort_active_adjustment,
+    )
+    shares = {"arbeit": 0.29, "ausbildung": 0.06, "einkauf": 0.16,
+              "freizeit": 0.29, "begleitung": 0.08, "sonstiges": 0.11}
+    out = apply_escort_active_adjustment(shares, active_share=0.75)
+    assert out["begleitung"] == pytest.approx(0.06)          # 0.08 * 0.75
+    assert out["ausbildung"] == pytest.approx(0.08)          # 0.06 + 0.08 * 0.25
+    assert out["arbeit"] == pytest.approx(0.29)              # untouched
+    assert sum(out.values()) == pytest.approx(sum(shares.values()))
+    assert shares["begleitung"] == pytest.approx(0.08)       # input not mutated
+
+
+def test_active_share_loads_from_pinned_csv():
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_share,
+    )
+    share = load_escort_active_share("eqasim-data/data")
+    assert 0.6 < share < 0.85    # measured ~0.724; pinned CSV is the source
+
+
+def test_escort_active_length_reference_loads_code_6_row():
+    # Additional scope (T2 re-review): the ACTIVE-only length profile (mean/
+    # median/bands) that replaces the both-sides MiD W12 Begleitung row when
+    # scoring escort DISTANCE with escort_passive_education ON.
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_length_reference,
+    )
+    ref = load_escort_active_length_reference(DATA_PATH)
+    assert ref["mean_km"] == pytest.approx(8.4413)
+    assert ref["median_km"] == pytest.approx(2.94)
+    band_cols = {"d_unter_0_5km", "d_0_5_1km", "d_1_2km", "d_2_5km", "d_5_10km",
+                "d_10_20km", "d_20_50km", "d_50_100km", "d_100km_plus"}
+    assert set(ref) == {"mean_km", "median_km"} | band_cols
+    # Bands are row-% shares of the code_6 (active) escort legs; they sum to 100.
+    assert sum(ref[c] for c in band_cols) == pytest.approx(100.0, abs=0.05)
+
+
+def test_w1_scored_target_escort_passive_education_adjusts_and_preserves_mass():
+    off = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT)
+    on = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT,
+                          escort_passive_education=True)
+    assert set(on) == set(off)
+    assert sum(on.values()) == pytest.approx(1.0)
+    # begleitung shrinks to its active share, ausbildung absorbs the passive
+    # remainder (mass-preserving fold, see apply_escort_active_adjustment).
+    assert on["begleitung"] < off["begleitung"]
+    assert on["ausbildung"] > off["ausbildung"]
+    for p in ("arbeit", "einkauf", "freizeit"):
+        assert on[p] == pytest.approx(off[p])
+
+
+def test_w1_scored_target_escort_passive_education_default_is_off():
+    # The default (unspecified) keyword must be byte-identical to explicit
+    # False -- the flag-OFF path is untouched by this feature.
+    explicit_off = w1_scored_target(
+        DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT,
+        escort_passive_education=False)
+    implicit_off = w1_scored_target(
+        DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT)
+    assert explicit_off == implicit_off
+
+
+def test_w12_mean_length_target_escort_active_reference_when_passive_education_on():
+    off = tc.w12_mean_length_target(DATA_PATH, include_escort=True)
+    on = tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                   escort_passive_education=True)
+    assert set(on) == set(off)
+    # escort switches from the both-sides MiD W12 Begleitung mean (10.1 km) to
+    # the active-only pinned-split code_6 mean; the other purposes are untouched.
+    assert on["escort"] == pytest.approx(8.4413)
+    assert on["escort"] != off["escort"]
+    for p in ("work", "education", "shop", "leisure"):
+        assert on[p] == pytest.approx(off[p])
+
+
+def test_build_trip_coherence_report_threads_escort_passive_education():
+    # End-to-end stage-wiring check: the flag must reach BOTH the W1 purpose
+    # target and the W12 escort length target through build_trip_coherence_report.
+    persons = pd.DataFrame({"person_id": [1, 2], "employed": [True, False]})
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "following_purpose": ["escort", "shop"],
+        "euclidean_distance": [5000.0, 5000.0],
+    })
+    off = build_trip_coherence_report(persons, trips, DATA_PATH, segment_cols=("employed",))
+    on = build_trip_coherence_report(
+        persons, trips, DATA_PATH, segment_cols=("employed",),
+        escort_passive_education=True)
+
+    assert off["purpose"]["target"]["begleitung"] != on["purpose"]["target"]["begleitung"]
+
+    off_escort = {r["purpose"]: r for r in off["length"]}["escort"]
+    on_escort = {r["purpose"]: r for r in on["length"]}["escort"]
+    assert off_escort["target_km"] != on_escort["target_km"]
+    assert on_escort["target_km"] == pytest.approx(8.4413)

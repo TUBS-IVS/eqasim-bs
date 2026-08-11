@@ -178,15 +178,85 @@ def _zgb_overall_row(data_path, table):
     return overall.iloc[0]
 
 
-def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES):
+def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
+                     escort_passive_education=False):
     """MiD W1 (Wege je Zweck) ZGB-overall target, restricted and re-normalised to
     ``scored_purposes`` (default: {arbeit, ausbildung, einkauf, freizeit}). Pass
     ``scored_purposes=SCORED_MID_PURPOSES_WITH_ESCORT`` to additionally include
     ``begleitung`` (issue #201). The W1 columns are integer-percent shares per
-    Kreis."""
+    Kreis.
+
+    ``escort_passive_education=True`` (issue #256) additionally adjusts the raw
+    row BEFORE the restrict/renormalise step above: the model's escort purpose
+    is ACTIVE-only under this flag, while the published W1 ``begleitung``
+    column folds in both the active (W_ZWECK 6) and passive (W_ZWECK 13) MiD
+    legs, so ``begleitung`` is scaled down to its active share and the passive
+    remainder is folded into ``ausbildung`` (see
+    ``apply_escort_active_adjustment``). The active share is loaded from the
+    pinned ``mid2023_escort_w_zweck_split.csv`` (never hardcoded). Default
+    False keeps the original W1 target byte-identical."""
     row = _zgb_overall_row(data_path, "mid2023_W1")
     raw = {p: float(row[p]) for p in scored_purposes}
+    if escort_passive_education:
+        # apply_escort_active_adjustment needs 'begleitung' and 'ausbildung'
+        # from the full W1 row even when 'begleitung' is not itself in
+        # scored_purposes, so the ausbildung fold-in stays correct either way;
+        # both columns are always present in the W1 table.
+        shares = dict(raw)
+        for purpose in ("begleitung", "ausbildung"):
+            shares.setdefault(purpose, float(row[purpose]))
+        active_share = load_escort_active_share(data_path)
+        shares = apply_escort_active_adjustment(shares, active_share)
+        raw = {p: shares[p] for p in scored_purposes}
+        LOGGER.info(
+            "Trip coherence W1 target adjusted for escort_passive_education "
+            "(issue #256): begleitung scaled to active share %.4f (pinned MiD "
+            "escort W_ZWECK split); passive remainder folded into ausbildung",
+            active_share)
     return renormalize_scored(raw, scored_purposes=scored_purposes)
+
+
+def apply_escort_active_adjustment(shares: dict, active_share: float) -> dict:
+    """W1 shares adjusted for escort_passive_education (issue #256): the model's
+    escort purpose is ACTIVE-only, while published W1 Begleitung contains both
+    sides (MiD folds W_ZWECK 13 into Begleitung). Scale begleitung to the active
+    share and fold the passive remainder into ausbildung (the passive legs ARE
+    education trips in the model). Mass-preserving; returns a fresh dict."""
+    if not 0.0 < active_share <= 1.0:
+        raise ValueError(f"active_share must be in (0, 1], got {active_share}.")
+    out = dict(shares)
+    begleitung = out.get("begleitung", 0.0)
+    out["begleitung"] = begleitung * active_share
+    out["ausbildung"] = out.get("ausbildung", 0.0) + begleitung * (1.0 - active_share)
+    return out
+
+
+def load_escort_active_share(data_path: str) -> float:
+    """W_GEW-weighted share of ACTIVE (W_ZWECK 6) legs among MiD escort legs,
+    from the pinned mid2023_escort_w_zweck_split.csv (issue #256)."""
+    path = f"{data_path}/braunschweig/mid/mid2023_escort_w_zweck_split.csv"
+    table = pd.read_csv(path, comment="#").set_index("w_zweck")
+    return float(table.loc["code_6", "share_weighted"])
+
+
+def load_escort_active_length_reference(data_path: str) -> dict:
+    """ACTIVE-only (W_ZWECK 6) escort length profile, from the pinned
+    mid2023_escort_w_zweck_split.csv code_6 row (issue #256): the reference
+    used to score the model's escort trip DISTANCE once escort_passive_education
+    is ON, replacing the both-sides MiD W12 Begleitung row (mittel_km 10.1 km),
+    which folds in the passive W_ZWECK 13 leg and is therefore not comparable to
+    an active-only synthetic escort purpose (see w12_mean_length_target).
+
+    Returns {mean_km, median_km, plus the nine length-band row-% shares
+    (d_unter_0_5km .. d_100km_plus, same band convention as
+    mid2023_W12_triplength_by_purpose.csv)}."""
+    path = f"{data_path}/braunschweig/mid/mid2023_escort_w_zweck_split.csv"
+    table = pd.read_csv(path, comment="#").set_index("w_zweck")
+    row = table.loc["code_6"]
+    columns = ["mean_km", "median_km", "d_unter_0_5km", "d_0_5_1km", "d_1_2km",
+               "d_2_5km", "d_5_10km", "d_10_20km", "d_20_50km", "d_50_100km",
+               "d_100km_plus"]
+    return {column: float(row[column]) for column in columns}
 
 
 def _p36_mobile_share(row) -> float:
@@ -243,7 +313,8 @@ W12_PURPOSE_BY_MID_WITH_ESCORT = dict(W12_PURPOSE_BY_MID, Begleitung="escort")
 W12_SCORED_PURPOSES = tuple(W12_PURPOSE_BY_MID.values())
 
 
-def w12_mean_length_target(data_path, include_escort=False):
+def w12_mean_length_target(data_path, include_escort=False,
+                           escort_passive_education=False):
     """MiD W12 mean ROUTED trip length (km) per scored eqasim purpose.
 
     Reads ``mid2023_W12_triplength_by_purpose.csv`` (a ``# Source:`` comment line
@@ -253,7 +324,14 @@ def w12_mean_length_target(data_path, include_escort=False):
     trip lengths, compared against the synthetic detour-inflated straight-line
     distance (see ``synthetic_mean_length_by_purpose``). ``include_escort=True``
     (issue #201) additionally maps ``Begleitung -> escort``, using
-    W12_PURPOSE_BY_MID_WITH_ESCORT instead of the four-purpose default."""
+    W12_PURPOSE_BY_MID_WITH_ESCORT instead of the four-purpose default.
+
+    ``escort_passive_education=True`` (issue #256; only meaningful together with
+    ``include_escort=True``) additionally overrides the ``escort`` entry with
+    the ACTIVE-only reference from the pinned MiD escort split CSV (see
+    ``load_escort_active_length_reference``) instead of the both-sides MiD W12
+    Begleitung row, since the model's escort purpose is active-only under this
+    flag. Default False keeps the original target byte-identical."""
     purpose_map = W12_PURPOSE_BY_MID_WITH_ESCORT if include_escort else W12_PURPOSE_BY_MID
     path = f"{data_path}/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv"
     df = pd.read_csv(path, comment="#")
@@ -261,7 +339,16 @@ def w12_mean_length_target(data_path, include_escort=False):
     missing = set(purpose_map) - set(by_mid)
     if missing:
         raise ValueError(f"W12 table is missing scored purposes: {sorted(missing)}")
-    return {eqasim: float(by_mid[mid]) for mid, eqasim in purpose_map.items()}
+    target = {eqasim: float(by_mid[mid]) for mid, eqasim in purpose_map.items()}
+    if escort_passive_education and "escort" in target:
+        active_ref = load_escort_active_length_reference(data_path)
+        LOGGER.info(
+            "Trip coherence W12 escort length target adjusted for "
+            "escort_passive_education (issue #256): using the active-only "
+            "pinned split mean %.2f km instead of the both-sides MiD W12 "
+            "Begleitung mean %.2f km", active_ref["mean_km"], target["escort"])
+        target["escort"] = active_ref["mean_km"]
+    return target
 
 
 def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
@@ -297,7 +384,8 @@ def synthetic_mean_length_by_purpose(trips, *, detour_factor=DETOUR_FACTOR,
 
 
 def w12_length_coherence(trips, data_path, *, detour_factor=DETOUR_FACTOR,
-                         purpose_col="following_purpose", include_escort=False):
+                         purpose_col="following_purpose", include_escort=False,
+                         escort_passive_education=False):
     """W12 mean-trip-length coherence: per scored eqasim purpose, the synthetic
     realised mean routed km vs the MiD W12 target, with signed deltas.
 
@@ -308,11 +396,18 @@ def w12_length_coherence(trips, data_path, *, detour_factor=DETOUR_FACTOR,
     compared only when it is actually requested. The default False preserves
     the original four-purpose comparison.
 
+    ``escort_passive_education=True`` (issue #256) additionally swaps the
+    escort target for the active-only pinned-split reference (see
+    ``w12_mean_length_target``); only meaningful together with
+    ``include_escort=True``. Default False keeps the original behaviour
+    byte-identical.
+
     Returns a list of dicts (one per scored purpose) with keys
     ``purpose, target_km, realised_km, delta_km, rel_delta`` (delta = realised -
     target, rel_delta = delta / target). Logs a one-line info summary in the same
     style as the W1/P36 trip-coherence logging."""
-    target = w12_mean_length_target(data_path, include_escort=include_escort)
+    target = w12_mean_length_target(data_path, include_escort=include_escort,
+                                    escort_passive_education=escort_passive_education)
     realised = synthetic_mean_length_by_purpose(
         trips, detour_factor=detour_factor, purpose_col=purpose_col,
         purposes=tuple(target))
@@ -637,9 +732,18 @@ def _srmse(realized: dict, target: dict) -> float:
 def build_trip_coherence_report(persons, trips, data_path,
                                 segment_cols=DEFAULT_SEGMENT_COLS,
                                 person_id_col="person_id",
-                                purpose_col="following_purpose"):
+                                purpose_col="following_purpose",
+                                escort_passive_education=False):
     """Assemble the trip-coherence report comparing the donor-derived activity
     chains against MiD W1 (purpose) and P36_1 (mobility) targets.
+
+    ``escort_passive_education=True`` (issue #256) adjusts both the W1 purpose
+    target and the W12 escort length target to the active-only pinned-split
+    reference instead of the both-sides MiD Begleitung figures, since the
+    model's escort purpose is active-only under this flag (see
+    ``w1_scored_target`` / ``w12_mean_length_target``). Only has an effect when
+    the synthetic distribution actually carries ``begleitung`` (escort_purpose
+    ON upstream); default False keeps the report byte-identical.
 
     Returns a dict with:
       - ``mobility``: {overall_rate, target_rate, abs_delta}
@@ -668,7 +772,8 @@ def build_trip_coherence_report(persons, trips, data_path,
     synth_distribution = purpose_distribution(trips, purpose_col)
     scored = scored_mid_purposes(synth_distribution)
     realized = renormalize_scored(synth_distribution, scored_purposes=scored)
-    target_pur = w1_scored_target(data_path, scored_purposes=scored)
+    target_pur = w1_scored_target(data_path, scored_purposes=scored,
+                                  escort_passive_education=escort_passive_education)
     abs_delta_pp = {
         p: abs(realized.get(p, float("nan")) - target_pur[p]) * 100.0
         for p in target_pur
@@ -715,7 +820,8 @@ def build_trip_coherence_report(persons, trips, data_path,
     if "routed_distance" in trips.columns or "euclidean_distance" in trips.columns:
         length = w12_length_coherence(
             trips, data_path, purpose_col=purpose_col,
-            include_escort=("begleitung" in synth_distribution))
+            include_escort=("begleitung" in synth_distribution),
+            escort_passive_education=escort_passive_education)
     else:
         LOGGER.info(
             "Trip coherence W12 length check skipped: trips carry neither "

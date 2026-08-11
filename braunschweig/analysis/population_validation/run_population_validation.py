@@ -89,6 +89,14 @@ def _parse_args(argv):
                     type=float, default=C.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE)
     ap.add_argument("--minor-employment-raise", dest="minor_employment_raise",
                     action="store_true", default=False)
+    # Issue #256: pass through when the synthetic population was built with
+    # escort_passive_education ON (the model's escort purpose is then
+    # ACTIVE-only), so the trip-coherence W1/W12 escort references are adjusted
+    # to the active-only pinned split instead of the both-sides MiD Begleitung
+    # figures (see trip_coherence.apply_escort_active_adjustment /
+    # w12_mean_length_target). Default False keeps the report byte-identical.
+    ap.add_argument("--escort-passive-education", dest="escort_passive_education",
+                    action="store_true", default=False)
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
@@ -201,7 +209,9 @@ def run(ns) -> dict:
                 persons_for_tc = persons_for_tc.merge(
                     frames.households[["household_id", "household_size"]],
                     on="household_id", how="left")
-            tc = TC.build_trip_coherence_report(persons_for_tc, frames.trips, DATA_PATH)
+            tc = TC.build_trip_coherence_report(
+                persons_for_tc, frames.trips, DATA_PATH,
+                escort_passive_education=ns.escort_passive_education)
             tc["mobility_by_segment"].to_csv(
                 out / "trip_coherence_mobility_by_segment.csv", index=False)
             pur = tc["purpose"]
