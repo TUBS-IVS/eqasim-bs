@@ -75,6 +75,10 @@ config:
   # A3: per-destination-type escort distance layers -- SrV between-type structure
   # factors on the MiD escort level (srv2023_escort_distance_factors.csv).
   escort_distance_by_type: true
+  # Passive escort side (issue #256): MiD W_ZWECK 13 legs (the escorted child's
+  # own leg; 100% minors) become the child's own education trip at their own
+  # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
+  escort_passive_education: true
   education_building_distribution: true
 
   data_path: eqasim-data/data

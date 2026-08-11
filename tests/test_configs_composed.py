@@ -33,6 +33,7 @@ FEATURE_FLAGS_ON = [
     "braunschweig.population.popsim.income_spatial_tilt",
     "braunschweig.population.popsim.income_kreis_control",
     "escort_purpose", "escort_household_link", "escort_distance_by_type",
+    "escort_passive_education",
 ]
 
 

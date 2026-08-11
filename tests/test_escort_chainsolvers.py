@@ -512,3 +512,11 @@ def test_base_bs_config_enables_distance_by_type():
     with open(base, encoding="utf-8") as handle:
         doc = yaml.safe_load(handle)
     assert doc["config"]["escort_distance_by_type"] is True
+
+
+def test_base_bs_config_enables_passive_education():
+    import pathlib, yaml
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "base_bs.yml"
+    with open(base, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle)
+    assert doc["config"]["escort_passive_education"] is True

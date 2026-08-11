@@ -7,7 +7,8 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
 ## Data sources
 - Donor extraction: MiD 2023 Wege, `ESCORT_W_ZWECK = {6, 13}`
   (braunschweig/popsim/trips.py; code 13 verified escort via MiD's own `zweck`
-  and `hwzweck1` derivations, 2026-07-24).
+  and `hwzweck1` derivations, 2026-07-24). Code 6 = active escort (Bringen/Holen);
+  code 13 = passive escort, the escorted child's own leg (100% minors, issue #256).
 - Location-type weights: SrV 2023 BS+RGB `V_ZWECK_BHOL` ("wohin gebracht/
   geholt"), GEWICHT_W-weighted, 98.8 % coverage --
   scripts/derive_escort_location_weights.py writes the pinned reference
@@ -58,17 +59,31 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
 4. Facilities advertise `escort`; eqasim-java-bs registers the inert `escort`
    ActivityParams (documented OFF-path exception: config.xml gains one unused
    entry).
+5. Passive education (`escort_passive_education`, issue #256): MiD code 13
+   legs (the escorted child's own leg, 100% minors) are relabeled from `escort`
+   to the child's own education activity (using their realised education
+   facility), anchoring the child's trip to their assigned Kita/school location.
+   Active Bringen/Holen (code 6) remain `escort` with the drawn location. The
+   mechanism applies `trip_coherence`'s logic: code-13 legs inherit the
+   chainsolver's education-type anchor selection. Requires `escort_purpose` ON
+   (the stage raises otherwise). The relabel rate and distance distribution
+   shift (child's own trip vs escorter's view) are logged.
 
 ## Validation
 The 10 % validation report (`scripts/validate_bs_10pct`) scores the trip-purpose
 mix against MiD 2023 W1 presence-based: on a flag-ON population Begleitung
-(8/99) is scored as its own `escort` row; on a flag-OFF population the escort
-share is folded back into `other` (19/99) so the comparison stays
-apples-to-apples (`metrics.purpose_mix_w1_baseline`, mirroring
-`trip_coherence.scored_mid_purposes`).
+(8/99) is scored with active escort (code 6) in the `escort` row and passive
+code-13 legs in their education subtype (e.g., `edu_kindergarten`); on a
+flag-OFF population the escort share is folded back into `other` (19/99) so the
+comparison stays apples-to-apples (`metrics.purpose_mix_w1_baseline`, mirroring
+`trip_coherence.scored_mid_purposes`). The validation report is dual-labelled:
+overall metrics, then code-6-only (active) vs code-13 (passive) submetrics.
 
 Escort length-band fit vs MiD W12 is the A3 acceptance metric (baseline
 2026-08-11, run output_bs_5pct_escort: <2 km = 25.6%, band L1 = 27.8 pp).
+When `escort_passive_education` is ON, W12 active-only (code 6, parent's view)
+is used as the active-escort reference; code 13 (child's own trip) distances
+are validated against education-specific references.
 
 ## Follow-ups
 #241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).
