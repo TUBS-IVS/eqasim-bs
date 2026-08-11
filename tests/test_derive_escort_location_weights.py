@@ -124,6 +124,13 @@ def test_derive_distance_factors_raises_on_implausible_units():
         derive_distance_factors(df, min_obs=5)
 
 
+def test_derive_distance_factors_raises_on_unmapped_code():
+    df = _length_frame()
+    df.loc[0, "V_ZWECK_BHOL"] = 77  # 77 is not a documented BHOL code
+    with pytest.raises(ValueError, match="unmapped V_ZWECK_BHOL"):
+        derive_distance_factors(df, min_obs=5)
+
+
 def test_compute_length_coherence_pass_and_fail(tmp_path):
     from scripts.derive_escort_location_weights import compute_length_coherence
     # identical band shapes -> L1 = 0, ratio = 1 -> PASS

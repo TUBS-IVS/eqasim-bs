@@ -131,6 +131,12 @@ def derive_distance_factors(df: pd.DataFrame,
             "for km-scaled GIS_LAENGE_GUELTIG; check the unit of the input column."
         )
 
+    unmapped = sorted(set(sub["V_ZWECK_BHOL"].astype(int)) - set(BHOL_CATEGORY))
+    if unmapped:
+        raise ValueError(
+            f"[derive_distance_factors] unmapped V_ZWECK_BHOL code(s) "
+            f"{unmapped}; extend BHOL_CATEGORY explicitly (no silent bucket)."
+        )
     sub["category"] = sub["V_ZWECK_BHOL"].astype(int).map(BHOL_CATEGORY)
     rows, neutralized, absent = [], [], []
     for category in CATEGORY_ORDER:
