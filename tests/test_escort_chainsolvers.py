@@ -428,3 +428,57 @@ def test_synthesize_no_op_on_legacy_or_missing_escort(capsys):
     no_escort = {"other": _mode_distributions()}
     out2 = sc._synthesize_escort_type_layers(no_escort, {"escort_edu_kindergarten": 0.5})
     assert "escort_edu_kindergarten" not in out2
+
+
+# --- escort distance-by-type (A3): leg-loop layer selection --------------------
+def _typed_escort_distributions():
+    dists = _escort_distributions()
+    return sc._synthesize_escort_type_layers(dists, {"escort_edu_kindergarten": 0.5})
+
+
+def test_leg_uses_drawn_type_layer_when_enabled():
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], _typed_escort_distributions(), 1.0,
+        np.random.RandomState(0),
+        escort_location_decider=lambda: "escort_edu_kindergarten",
+        escort_distance_by_type=True,
+    )
+    assert stats["escort_type_distance_layer_fallback"] == 0
+    assert stats["escort_distance_layer_fallback"] == 0
+    assert list(plans["to_act_type"])[:1] == ["escort_edu_kindergarten"]
+    # PRIMARY-PATH PROOF (CLAUDE.md fallback rule 3): the sampled distance must
+    # come from the 0.5-scaled layer -- 250.0, not the base layer's 500.0.
+    assert plans["distance_meters"].iloc[0] == pytest.approx(250.0)
+
+
+def test_leg_falls_back_to_escort_layer_counted():
+    # type layer for the drawn name is MISSING -> counted fallback to "escort"
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], _escort_distributions(), 1.0,
+        np.random.RandomState(0),
+        escort_location_decider=lambda: "escort_leisure",
+        escort_distance_by_type=True,
+    )
+    assert stats["escort_type_distance_layer_fallback"] == 1
+    assert stats["escort_distance_layer_fallback"] == 0
+
+
+def test_leg_falls_back_to_other_counted_when_no_escort_layer():
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], {"other": _mode_distributions()}, 1.0,
+        np.random.RandomState(0),
+        escort_location_decider=lambda: "escort_leisure",
+        escort_distance_by_type=True,
+    )
+    assert stats["escort_type_distance_layer_fallback"] == 0
+    assert stats["escort_distance_layer_fallback"] == 1
+
+
+def test_flag_off_path_has_no_type_counter_and_uses_escort_layer():
+    plans, meta, unbounded, stats = sc._build_plans_df(
+        [_escort_problem()], _escort_distributions(), 1.0,
+        np.random.RandomState(0),
+        escort_location_decider=lambda: "escort_edu_kindergarten",
+    )
+    assert "escort_type_distance_layer_fallback" not in stats
+    assert stats["escort_distance_layer_fallback"] == 0

@@ -1308,7 +1308,8 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     shop_subtype_decider=None,
                     leisure_subtype_decider=None,
                     other_subtype_decider=None,
-                    escort_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    escort_location_decider=None,
+                    escort_distance_by_type: bool = False) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
     Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
@@ -1384,6 +1385,8 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     if escort_location_decider is not None:
         subtype_stats.update({name: 0 for name in ESCORT_LOCATION_ACTIVITIES})
         subtype_stats["escort_distance_layer_fallback"] = 0
+        if escort_distance_by_type:
+            subtype_stats["escort_type_distance_layer_fallback"] = 0
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -1480,17 +1483,21 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                         subtype_stats["other_distance_layer_fallback"] += 1
 
             # Issue #201: draw the location TYPE for a plan-level escort leg.
-            # The drawn name is the chainsolver activity (education / leisure /
-            # residential / ... candidates); ALL escort legs sample the single
-            # aggregate "escort" distance layer (the type draw changes only the
-            # candidate set), with a counted fallback to "other" when the layer
-            # is absent (e.g. legacy mode-level distributions).
+            # With escort_distance_by_type (A3) each drawn type samples its own
+            # SrV-structured distance layer (keyed by the drawn activity name);
+            # missing layers fall back COUNTED: type -> aggregate "escort" ->
+            # "other". Without the flag all escort legs keep sampling the single
+            # aggregate "escort" layer (byte-identical legacy behaviour).
             if escort_location_decider is not None and to_act_type == "escort":
                 drawn = escort_location_decider()
                 placement_act = drawn
                 subtype_stats[drawn] += 1
-                if _purpose_in_distributions(distributions, "escort"):
+                if escort_distance_by_type and _purpose_in_distributions(distributions, drawn):
+                    distance_purpose = drawn
+                elif _purpose_in_distributions(distributions, "escort"):
                     distance_purpose = "escort"
+                    if escort_distance_by_type:
+                        subtype_stats["escort_type_distance_layer_fallback"] += 1
                 else:
                     distance_purpose = "other"
                     subtype_stats["escort_distance_layer_fallback"] += 1
@@ -3089,6 +3096,16 @@ def execute(context):
             f"{n_dist_fb:,}/{n_escort_legs:,} "
             f"({100.0 * n_dist_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
         )
+        if "escort_type_distance_layer_fallback" in subtype_stats:
+            n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
+            print(
+                "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
+                f"per-type layer used {n_escort_legs - n_type_fb - n_dist_fb:,}"
+                f"/{n_escort_legs:,} escort legs "
+                f"({100.0 * (n_escort_legs - n_type_fb - n_dist_fb) / n_escort_legs if n_escort_legs else 0.0:.1f}%), "
+                f"fallback to aggregate 'escort' {n_type_fb:,} "
+                f"({100.0 * n_type_fb / n_escort_legs if n_escort_legs else 0.0:.1f}%)"
+            )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
