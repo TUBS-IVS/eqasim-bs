@@ -165,6 +165,61 @@ def test_anchored_location_rows_for_linked_escorts():
     assert rows.iloc[0]["location_id"] == "edu_7"
 
 
+def test_anchored_rows_cover_origin_only_escort_activity():
+    """Regression (5% server run 2026-08-10): an escort activity that appears
+    ONLY as a trip ORIGIN must still be anchored.
+
+    The donor trip chains contain rare inconsistencies (0.027% of links, mostly
+    non-escort) where ``trip[i].following_purpose != trip[i+1].preceding_purpose``.
+    When the origin side is escort, that escort activity has no trip whose
+    ``following_purpose`` is escort, so a destination-only filter misses it. On the
+    linked path the problem splitter does not place it either (``escort_linked``
+    is a FIXED purpose), so it ends up without geometry and
+    ``synthesis/population/spatial/locations.py`` asserts.
+
+    Chain below mirrors person 769474: trip 5 arrives ``home`` but trip 6 departs
+    from ``escort`` -> activity 6 is escort as an ORIGIN only.
+    """
+    trips = pd.DataFrame({
+        "person_id":         [1, 1, 1, 1, 1, 1, 1],
+        "trip_index":        [0, 1, 2, 3, 4, 5, 6],
+        "preceding_purpose": ["home", "escort", "home", "shop", "escort", "escort", "escort"],
+        "following_purpose": ["escort", "home", "shop", "escort", "escort", "home", "home"],
+    })
+    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
+                          "geometry": [_P(5, 5)]})
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        anchored_escort_location_rows,
+    )
+    rows = anchored_escort_location_rows(trips, links)
+
+    # Escort activities: 1, 4, 5 (trip destinations) and 6 (origin of trip 6).
+    assert sorted(rows["activity_index"]) == [1, 4, 5, 6]
+    assert set(rows["location_id"]) == {"edu_7"}
+
+
+def test_anchored_rows_have_no_duplicate_activities():
+    """An escort activity in a CONSISTENT chain is both the destination of the
+    previous trip and the origin of the next one; it must be emitted exactly
+    once, otherwise the location merge produces more rows than activities."""
+    trips = pd.DataFrame({
+        "person_id":         [1, 1, 1],
+        "trip_index":        [0, 1, 2],
+        "preceding_purpose": ["home", "escort", "escort"],
+        "following_purpose": ["escort", "escort", "home"],
+    })
+    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
+                          "geometry": [_P(5, 5)]})
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        anchored_escort_location_rows,
+    )
+    rows = anchored_escort_location_rows(trips, links)
+
+    # Activities 1 and 2 are escort; each exactly once.
+    assert sorted(rows["activity_index"]) == [1, 2]
+    assert not rows.duplicated(subset=["person_id", "activity_index"]).any()
+
+
 def test_validate_secondary_coverage_accepts_extra_valid_ids():
     from braunschweig.matsim.scenario.facilities import validate_secondary_coverage
     realised = pd.DataFrame({"location_id": ["sec_1", "edu_7"]})

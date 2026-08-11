@@ -481,18 +481,35 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
 def anchored_escort_location_rows(df_trips: pd.DataFrame,
                                   df_links: pd.DataFrame) -> pd.DataFrame:
     """One (person_id, activity_index, location_id, geometry) row per LINKED
-    escort activity: the destination activity of every escort trip of a linked
-    person, anchored at the linked education location. activity_index follows
-    the pipeline convention destination_activity_index = trip_index + 1."""
-    escort_trips = df_trips[df_trips["following_purpose"] == "escort"]
-    merged = escort_trips.merge(df_links, on="person_id", how="inner")
-    rows = pd.DataFrame({
-        "person_id": merged["person_id"].values,
-        "activity_index": (merged["trip_index"] + 1).values,
-        "location_id": merged["location_id"].values,
-        "geometry": merged["geometry"].values,
-    })
-    return rows[["person_id", "activity_index", "location_id", "geometry"]]
+    escort activity, anchored at the linked education location.
+
+    An escort activity is identified from BOTH sides of the trip chain, using the
+    pipeline's activity-index convention:
+      - destination of a trip with ``following_purpose == "escort"`` -> trip_index + 1
+      - origin of a trip with ``preceding_purpose == "escort"``      -> trip_index
+
+    Covering only destinations is not sufficient: the donor chains contain rare
+    inconsistencies (measured 0.027% of links, mostly non-escort) where
+    ``trip[i].following_purpose != trip[i+1].preceding_purpose``. An escort
+    activity on the origin side of such a break has no trip arriving at it, so a
+    destination-only filter misses it. On the linked path the problem splitter
+    does not place it either (``escort_linked`` is a FIXED purpose), leaving the
+    activity without a location -- the 5% run of 2026-08-10 hit exactly this and
+    tripped the geometry assertion in ``synthesis/population/spatial/locations.py``.
+
+    In a consistent chain an escort activity is both a destination and an origin,
+    so the two sides overlap; rows are de-duplicated per (person_id, activity_index).
+    """
+    linked_trips = df_trips.merge(df_links, on="person_id", how="inner")
+    destinations = linked_trips[linked_trips["following_purpose"] == "escort"].copy()
+    destinations["activity_index"] = destinations["trip_index"] + 1
+    origins = linked_trips[linked_trips["preceding_purpose"] == "escort"].copy()
+    origins["activity_index"] = origins["trip_index"]
+
+    columns = ["person_id", "activity_index", "location_id", "geometry"]
+    rows = pd.concat([destinations[columns], origins[columns]], ignore_index=True)
+    rows = rows.drop_duplicates(subset=["person_id", "activity_index"])
+    return rows.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
 
 # Maps each secondary chainsolver activity to its attached candidate-potential
 # column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
