@@ -73,11 +73,23 @@ def test_baseline_does_not_mutate_static_config():
 # ``purpose_mix_w1`` baseline plus ``references.escort_active_share()``
 # (which reads the pinned ``mid2023_escort_w_zweck_split.csv``). The pinning
 # assertions below are otherwise identical to the brief.
+#
+# ``purpose_mix_w1_active_baseline`` takes the same ``present_purposes``
+# presence guard as its sibling ``purpose_mix_w1_baseline`` (review finding,
+# 2026-08-11): without it, a synthetic population that carries no ``escort``
+# purpose at all would still be scored against an active-adjusted baseline
+# that assumes an active-only escort category exists, silently comparing
+# ``other``/``education`` against numbers that do not apply.
 # ---------------------------------------------------------------------------
+PRESENT_WITH_ESCORT = {"work", "education", "shop", "other", "escort", "leisure"}
+PRESENT_WITHOUT_ESCORT = {"work", "education", "shop", "other", "leisure"}
+
+
 def test_active_baseline_derivation_and_pinning():
     """The active-adjusted baseline must scale ``escort`` by the pinned
     active share and fold the passive remainder into ``education``, while
-    leaving all other purposes untouched and preserving total mass."""
+    leaving all other purposes untouched and preserving total mass --
+    when ``escort`` is present in the synthetic distribution."""
     import csv
     import pathlib
 
@@ -89,7 +101,7 @@ def test_active_baseline_derivation_and_pinning():
     active = float(rows["code_6"]["share_weighted"])
 
     raw = MID_BASELINE["purpose_mix_w1"]
-    adj = metrics.purpose_mix_w1_active_baseline()
+    adj = metrics.purpose_mix_w1_active_baseline(PRESENT_WITH_ESCORT)
 
     assert adj["escort"] == pytest.approx(raw["escort"] * active, abs=1e-6)
     assert adj["education"] == pytest.approx(
@@ -97,3 +109,17 @@ def test_active_baseline_derivation_and_pinning():
     for key in ("work", "shop", "other", "leisure"):
         assert adj[key] == pytest.approx(raw[key])
     assert sum(adj.values()) == pytest.approx(sum(raw.values()))
+
+
+def test_active_baseline_degrades_to_folded_baseline_when_escort_absent():
+    """Escort-absent population: the active-adjusted baseline must NOT apply
+    the active/passive split (there is no active-only escort category to
+    adjust for), and instead degrade exactly to the presence-folded
+    ``purpose_mix_w1_baseline`` result -- so section 5.3b renders the same
+    numbers as section 5.3 instead of a spurious active-adjusted reference."""
+    expected = metrics.purpose_mix_w1_baseline(PRESENT_WITHOUT_ESCORT)
+
+    adj = metrics.purpose_mix_w1_active_baseline(PRESENT_WITHOUT_ESCORT)
+
+    assert adj == expected
+    assert "escort" not in adj

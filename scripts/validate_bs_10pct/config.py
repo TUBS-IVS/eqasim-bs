@@ -77,10 +77,13 @@ MID_BASELINE = {
     # share below is not apples-to-apples with such a population, so a
     # second, active-adjusted baseline is derived ON DEMAND -- never stored
     # as a static key here, config.py stays static and import-time-CSV-free
-    # -- by metrics.purpose_mix_w1_active_baseline() from this dict plus the
-    # pinned active share loaded by references.escort_active_share()
-    # (eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv).
-    # See metrics.purpose_mix_no_home_active() and validation-report
+    # -- by metrics.purpose_mix_w1_active_baseline(present_purposes) from
+    # this dict plus the pinned active share loaded by
+    # references.escort_active_share() (eqasim-data/data/braunschweig/mid/
+    # mid2023_escort_w_zweck_split.csv). Like purpose_mix_w1_baseline(), it
+    # is presence-guarded: on an escort-absent population it degrades to
+    # the same folded 19/99 baseline instead of a spurious active-adjusted
+    # one. See metrics.purpose_mix_no_home_active() and validation-report
     # section 5.3b, which renders both references side by side.
     "purpose_mix_w1": {
         "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)

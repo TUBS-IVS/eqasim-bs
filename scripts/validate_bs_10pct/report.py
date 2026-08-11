@@ -298,9 +298,9 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         beide Seiten, ist also mit einer solchen Population nicht
         apples-to-apples vergleichbar. Diese Tabelle skaliert Begleitung
         daher auf ihren aktiven Anteil und faltet den passiven Rest in
-        <code>education</code>: <code>escort_active = begleitung ×
+        <code>education</code>: <code>escort_active = begleitung x
         active_share</code>, <code>education_adjusted = ausbildung +
-        begleitung × (1 − active_share)</code>; alle übrigen Zweckkategorien
+        begleitung x (1 - active_share)</code>; alle übrigen Zweckkategorien
         bleiben unverändert und die Gesamtmasse ist erhalten
         (massenerhaltend). <code>active_share</code> ist der
         W_GEW-gewichtete Anteil aktiver (W_ZWECK 6) Wege an allen
@@ -472,8 +472,12 @@ def _build_json_payload(od_stats: dict | None = None,
         "purpose_mix": purpose.to_dict(orient="records"),
         "purpose_mix_no_home": metrics.purpose_mix_no_home().to_dict(orient="records"),
         # Active-adjusted W1 reference (issue #256, escort_passive_education);
-        # see report section 5.3b for the dual-labelled explanation.
+        # see report section 5.3b for the dual-labelled explanation. The
+        # label travels with the numbers so a downstream consumer of the
+        # JSON (without the HTML prose) still knows this baseline degrades
+        # to the raw purpose_mix_no_home values on an escort-absent run.
         "purpose_mix_no_home_active": metrics.purpose_mix_no_home_active().to_dict(orient="records"),
+        "purpose_mix_no_home_active_label": ACTIVE_BASELINE_LABEL,
         "mobility_quote": metrics.mobility_quote(),
         "purpose_mix_remapped": purpose_remap.to_dict(orient="records"),
         "od_fit": od_stats,

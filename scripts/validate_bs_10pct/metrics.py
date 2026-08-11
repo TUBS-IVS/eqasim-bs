@@ -318,9 +318,9 @@ def purpose_mix_w1_baseline(present_purposes) -> dict:
     return baseline
 
 
-def purpose_mix_w1_active_baseline() -> dict:
+def purpose_mix_w1_active_baseline(present_purposes) -> dict:
     """Active-adjusted MiD 2023 W1 baseline for ``escort_passive_education``
-    (issue #256).
+    (issue #256), presence-guarded exactly like ``purpose_mix_w1_baseline``.
 
     The static ``purpose_mix_w1`` Begleitung share (8/99) mixes the MiD
     active leg (W_ZWECK 6, Bringen/Holen) and passive leg (W_ZWECK 13, the
@@ -340,12 +340,23 @@ def purpose_mix_w1_active_baseline() -> dict:
     ``mid2023_escort_w_zweck_split.csv`` via
     ``references.escort_active_share`` (never hardcoded).
 
+    If ``"escort"`` is NOT in ``present_purposes`` there is no active-only
+    escort category in the synthesis to justify the split -- applying it
+    anyway would silently score ``other`` against the unfolded 11/99 and
+    ``education`` against an inflated share with no signal that the
+    adjustment does not apply. In that case this function returns exactly
+    ``purpose_mix_w1_baseline(present_purposes)`` (the presence-folded 19/99
+    baseline) instead, so the active-adjusted table degrades to the same
+    numbers as the raw table rather than a spurious active-adjusted one.
+
     config.py stays static (no CSV loading at import time), so this dict is
     built lazily on every call from the static ``purpose_mix_w1`` baseline;
     the underlying share is cached in ``references.escort_active_share``.
     Mass-preserving: ``sum(result.values()) == sum(purpose_mix_w1.values())``.
     Returns a fresh dict; the shared static baseline is never mutated.
     """
+    if "escort" not in present_purposes:
+        return purpose_mix_w1_baseline(present_purposes)
     raw = MID_BASELINE["purpose_mix_w1"]
     active_share = references.escort_active_share()
     adjusted = dict(raw)
@@ -394,12 +405,17 @@ def purpose_mix_no_home_active() -> pd.DataFrame:
     ``escort_passive_education``).
 
     Mirrors :func:`purpose_mix_no_home` exactly (same filtering, same
-    columns), but maps the synthetic distribution against
-    :func:`purpose_mix_w1_active_baseline` instead of the raw
-    (presence-folded) W1 baseline. This is the correct reference when the
+    columns, same presence-based baseline selection via
+    ``set(out["purpose"])``), but maps the synthetic distribution against
+    :func:`purpose_mix_w1_active_baseline` instead of
+    :func:`purpose_mix_w1_baseline`. This is the correct reference when the
     synthesis was built with ``escort_passive_education`` ON, where the
     model's ``escort`` purpose is active-only and passive escort legs
-    surface as ``education`` trips.
+    surface as ``education`` trips. On an escort-absent population
+    :func:`purpose_mix_w1_active_baseline` itself degrades to the
+    presence-folded baseline, so this table then matches section 5.3
+    exactly instead of scoring against a spurious active-adjusted
+    reference.
 
     This validation report is post-hoc (it only reads output CSVs/XML and
     cannot detect which flag state produced the population), so both this
@@ -414,7 +430,7 @@ def purpose_mix_no_home_active() -> pd.DataFrame:
         return pd.DataFrame(columns=["purpose", "synth_share", "mid_share", "deviation_pp"])
     out = trips["following_purpose"].value_counts(normalize=True).rename("synth_share").reset_index()
     out = out.rename(columns={"index": "purpose", "following_purpose": "purpose"})
-    baseline = purpose_mix_w1_active_baseline()
+    baseline = purpose_mix_w1_active_baseline(set(out["purpose"]))
     out["mid_share"] = out["purpose"].map(baseline)
     out["deviation_pp"] = (out["synth_share"] - out["mid_share"]) * 100
     return out.sort_values("synth_share", ascending=False).reset_index(drop=True)
