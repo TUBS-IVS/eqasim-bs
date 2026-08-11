@@ -1,5 +1,84 @@
 # ARCHITECTURE
 
+## Abstract pipeline view (feature-oriented, current as of 2026-08-09)
+
+> This section is the current, verified high-level view. It deliberately
+> abstracts away synpp stage/module names (those are in the alias table
+> further down, itself dated 2026-06-26 and not re-verified here) and groups
+> the pipeline by **feature category**, matching `PROJECT_STATUS.md`'s matrix
+> categories (`[Synthesis]`, `[Attrs]`, `[Fleet]`, `[Location]`, `[Cordon]`,
+> `[Freight]`, `[Analysis]`, `[Infra]`). Everything below the next banner is
+> older, stage-level detail kept for reference; where the two disagree, trust
+> `PROJECT_STATUS.md`'s feature matrix and the code over either diagram.
+
+```mermaid
+flowchart LR
+    classDef input fill:#eaf7ea,stroke:#4a8a4a,color:#1a3d1a;
+    classDef stage fill:#eaeefb,stroke:#4a5a9a,color:#141c3d;
+    classDef sim fill:#fdf3e0,stroke:#a8792a,color:#3d2c0a;
+
+    I1["Census / Zensus 2022"]:::input
+    I2["MiD 2023 survey"]:::input
+    I3["BA Pendleratlas"]:::input
+    I4["OSM / ALKIS / LoD2 / GTFS"]:::input
+    I5["LSN schools / university"]:::input
+    I6["KBA vehicle registry"]:::input
+
+    SYN["Population Synthesis\n(population.method:\nsimple_ipf_open | popsim_open | popsim_mid)"]:::stage
+    ATTR["Attribute Enrichment\n(income, licence, PT subscription,\ntenure, economic status)"]:::stage
+    FLEET["Fleet Assignment\n(vehicle ownership, brand/BEV mix,\nHSN/TSN engine attrs)"]:::stage
+    LOC["Location Choice\n(gravity model + building-activity\npotentials + secondary chains +\nMiD commute-distance override)"]:::stage
+    CORDON["Cordon & Regional Interfaces\n(Einpendler + student in-commuters,\nnetwork gates, mode balancer)"]:::stage
+    FREIGHT["Freight Injection\n(long-haul v3, uncalibrated assumption)"]:::stage
+    BUILD["MATSim Scenario Build\n(network, schedule, vehicles, plans;\nurban parking, carless re-mode)"]:::sim
+    SIM["MATSim Simulation\n(mode choice OFF — no calibrated\nmodal split)"]:::sim
+    ANALYSIS["Analysis & Validation\n(MiD / population fit, SimWrapper\ndashboards, cordon validation)"]:::stage
+
+    I1 --> SYN
+    I2 --> SYN
+    I2 --> ATTR
+    SYN --> ATTR
+    ATTR --> FLEET
+    I6 --> FLEET
+    I4 --> LOC
+    I5 --> LOC
+    I3 --> LOC
+    FLEET --> LOC
+    LOC --> CORDON
+    CORDON --> BUILD
+    FREIGHT --> BUILD
+    LOC --> BUILD
+    BUILD --> SIM
+    SIM --> ANALYSIS
+    SYN -.->|"population validation runs\nbefore simulation, not after"| ANALYSIS
+```
+
+Reading notes:
+
+- **Population Synthesis is a three-way fork behind one config switch**
+  (`population.method`), not three separate pipelines — `popsim_open` and
+  `popsim_mid` share all PopulationSim machinery and differ only in the seed
+  donor (open vs. MiD 2023). `simple_ipf_open` is the legacy in-house IPF path.
+  Production runs currently use `popsim_mid` (`configs/base_bs.yml`).
+  Several `[Attrs]` enrichment flags (economic status, PT subscription,
+  income-aware cars, etc.) live in the legacy IPF enrichment stage and are
+  dead code under the active `popsim_mid` method — see `docs/readiness/*.yml`
+  per-feature declarations for which flags are genuinely live under which
+  method.
+- **Cordon and freight injection happen late, at the terminal MATSim
+  writers** (`braunschweig/matsim/scenario/*.py` concat wrappers), not as an
+  earlier population-synthesis step — they add agents/demand on top of the
+  already-synthesised population rather than feeding back into it.
+- **Analysis splits across two points in time**: population/controls
+  validation runs on the synthesised population before any simulation;
+  MiD-behaviour and SimWrapper validation run after the MATSim simulation
+  produces events. The dashed edge above marks this.
+- Mode choice is OFF in every run config — there is no calibrated modal
+  split; treat the `SIM` box as producing route/schedule assignment under
+  fixed mode choice, not a validated behavioural forecast.
+
+---
+
 > **CURRENT STATE — 2026-06-26 (read this first).** The sections below dated
 > 2026-06-08/10 are HISTORICAL (they describe the `feature/education-gravity-bs`
 > / popsim-refactor era). This banner block reflects the actual current state.

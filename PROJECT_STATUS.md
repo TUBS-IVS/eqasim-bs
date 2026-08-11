@@ -10,7 +10,7 @@ Updated: 2026-08-09 · Details: docs/features/ · History: docs/archive/ · Deci
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
 - **Test evidence is stale and unautomated (verified 2026-08-09).** Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed — since then **59 commits / 12 merged PRs** landed on `main` with no recorded re-run. `.github/workflows/tests.yml` triggers on `develop`, a branch that does not exist in this fork, so the suite has **never** run in CI (`gh run list` shows only Copilot Code Review). Treat every "✅" below as *last measured*, not *currently verified*.
-- Current focus: no open PR; `main` is the 2.2.0 stack with `matsim.output` e2e-green (1-Kreis + freight). Next: 100% production run on that stack. The newest *unmerged* work is `feature/escort-purpose-201` (18 TDD commits, 2026-07-24, never PR'd).
+- Current focus: `main` is the 2.2.0 stack with `matsim.output` e2e-green (1-Kreis + freight). Next: 100% production run on that stack. The newest *unmerged* work is `feature/escort-purpose-201` (18 TDD commits, 2026-07-24, never PR'd), followed by the local `feature/readiness-register` (4 commits, 2026-08-09, pushed to `origin`, never PR'd) — see the Infra row below.
 
 ## 2. Feature matrix
 
@@ -87,10 +87,11 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Infra]** Mode choice | ⚪ OFF in all configs (no modal-split target) | `mode_choice: false` | — | eqasim core |
 | **[Infra]** MATSim output archive (run-named durable copy) | ✅ PR #181 MERGED (ADR-0064) | `archive_matsim_output` (true) | — | `matsim/output.py` |
 | **[Infra]** Run-config composition (base + per-scale overlay) | ✅ **MERGED** PR #234 (ADR-0070) | `configs/base_bs.yml` + `configs/overlays/*` via `run_synpp.py <base> <overlay>` | felix synth smoke (int-seed applied at runtime) | ADR-0070 |
+| **[Infra]** Feature-readiness register (evidence pointers per feature, mechanically checked) | 🟡 built on unmerged `feature/readiness-register` (4 commits, pushed to `origin`, never PR'd) | `python -m braunschweig.readiness render` | self-check only (structural validation of declarations) | `docs/readiness/README.md`, `braunschweig/readiness/` |
 
 ## 3. Branches & PRs
 
-**No open PR.** PRs #234/#237/#238/#239 all MERGED 2026-07-22/23. The local clone is clean: `main` only, no local feature branches, no worktrees (verified 2026-08-09 — the previous version of this section listed 11 local branches and 3 stale worktrees that no longer exist).
+**No open PR.** PRs #234/#237/#238/#239 all MERGED 2026-07-22/23. The active local branch is `feature/readiness-register` (4 commits ahead of `main`@`8ee06c0`, pushed to `origin`, never PR'd — builds `braunschweig/readiness/` + `docs/readiness/*.yml`, the feature-evidence register introduced in this session; see the Infra row above). No other local feature branches or worktrees (verified 2026-08-09 — the previous version of this section listed 11 local branches and 3 stale worktrees that no longer exist).
 
 Remote (`origin`) carries 33 non-`main` branches. **17 are fully merged into `main`** and carry no unique commits — safe to delete, pending push approval: `docs/pm-layer-and-test-fix`, `feature/{alkis-typed-home-matching, building-activity-potentials, education-gravity-bs, employment-age-control, fleet-income-age, hts-matching-optimization, logging-theme-mirror, popsim-optimized-importance, population-method-workflows, simwrapper-dashboards, tier3-controls, tier3-kreis-sourcing, tier3-live-wiring}`, `fix/income-eur-floor`, `integration/all-features`, `refactor/braunschweig-clean-fork`.
 

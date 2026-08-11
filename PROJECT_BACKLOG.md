@@ -72,6 +72,9 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 - **[0.6]** Remote branch hygiene: 17 fully-merged `origin/*` branches are deletable, 7 more are
   feature-superseded backups (full classification in `PROJECT_STATUS.md` §3). Needs push approval.
   Genuinely open work in that list: `feature/escort-purpose-201` (#201, 18 TDD commits, never PR'd).
+- **[0.7]** Land `feature/readiness-register` (4 commits, pushed to `origin`, never PR'd) — the
+  feature-evidence register (`braunschweig/readiness/`, `docs/readiness/*.yml`) built this session.
+  Cheap, self-contained, no model-behaviour impact; needs a `git pr` + review.
 
 ### TIER 1 — High value, mostly ready (the "produce defensible results" front)
 
