@@ -122,8 +122,11 @@ def test_trips_stage_threads_escort_passive_education():
     )
     mask_13 = table["W_ZWECK"] == 13
     assert mask_13.any(), "the W_ZWECK-13 donor leg must survive into the output table"
-    assert "education" in set(table.loc[mask_13, "purpose"])
-    assert not (table.loc[mask_13, "purpose"] == "escort").any()
+    # following_purpose is the canonical contract column (trips_stage.CONTRACT),
+    # not the leftover "purpose" extra column; mirrors
+    # test_run_escort_purpose_flag_produces_escort_trips above.
+    assert "education" in set(table.loc[mask_13, "following_purpose"])
+    assert not (table.loc[mask_13, "following_purpose"] == "escort").any()
 
 
 def test_entd_source_rejects_escort_passive_education():

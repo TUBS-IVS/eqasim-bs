@@ -225,7 +225,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         shop_daily_split: bool = False,
         leisure_subtype_split: bool = False,
         other_subtype_split: bool = False,
-        escort_purpose: bool = False) -> dict:
+        escort_purpose: bool = False,
+        escort_passive_education: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -273,6 +274,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         When True (issue #201), maps W_ZWECK {6, 13} legs to the dedicated
         "escort" purpose so the purpose layer gains an "escort" key; requires
         by_purpose for a dedicated layer, harmless otherwise.
+    escort_passive_education:
+        When True (issue #256), the passive escort leg (W_ZWECK 13) maps to
+        "education" instead of "escort" (forwarded to ``map_purpose``), so the
+        "escort" layer holds only the active W_ZWECK-6 legs. Requires
+        ``escort_purpose=True`` (enforced by ``map_purpose``); requires
+        by_purpose for a dedicated layer, harmless otherwise. Default False
+        keeps the OFF path byte-identical.
 
     Returns
     -------
@@ -314,7 +322,10 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     df = mid_wege.copy()
 
     # --- Step 1: map mode and purpose from MiD codes. ----------------------
-    df = map_mode(map_purpose(df, escort_purpose=escort_purpose))
+    df = map_mode(map_purpose(
+        df, escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+    ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
 
@@ -580,6 +591,7 @@ def configure(context):
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
     context.config("escort_purpose", False)
+    context.config("escort_passive_education", False)
 
 
 def execute(context):
@@ -598,6 +610,7 @@ def execute(context):
     leisure_subtype_split = context.config("secondary_leisure_subtype_split")
     other_subtype_split = context.config("secondary_other_subtype_split")
     escort_purpose = context.config("escort_purpose")
+    escort_passive_education = context.config("escort_passive_education")
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -613,4 +626,5 @@ def execute(context):
         leisure_subtype_split=leisure_subtype_split,
         other_subtype_split=other_subtype_split,
         escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
     )

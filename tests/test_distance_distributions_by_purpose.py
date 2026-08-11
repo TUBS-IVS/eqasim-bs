@@ -228,3 +228,88 @@ def test_escort_on_with_other_subtype_split_skips_other_escort_key():
     # W_ZWECK 6 legs are 'escort' now, so the internal other_escort layer is empty/absent.
     assert "other_escort" not in out
     assert "escort" in out
+
+
+# --- escort_passive_education layer (issue #256) ----------------------------
+#
+# Consumes braunschweig.popsim.trips.map_purpose(..., escort_passive_education=...)
+# (Task 2): when escort_passive_education is also on, the passive escort leg
+# (W_ZWECK 13) maps to "education" instead of "escort", so this stage's own
+# map_purpose call (threaded with the same flag) must produce a dedicated
+# "education" layer for it and stop counting it under "escort".
+
+def _mini_wege_with_escort_second_leg():
+    """Like ``_mini_wege_with_escort`` but each escort leg is the SECOND trip of
+    a two-trip chain (first trip: W_ZWECK=7 leisure), not an isolated
+    single-trip diary.
+
+    This is required, not just stylistic: an ISOLATED single-trip diary starts
+    at "home" (diary-starts-at-home convention), so once W_ZWECK=13 is
+    relabelled to "education" it becomes a structurally PRIMARY home<->education
+    trip -- run()'s Step 5 correctly excludes primary-only (home/work/education
+    <-> home/work/education) chains from the SECONDARY distance distributions
+    this stage builds (verified empirically: with ``_mini_wege_with_escort``'s
+    isolated escort rows, the relabelled leg disappears from the output
+    entirely, landing under neither "escort" nor "education", instead of
+    demonstrating the split under test). Giving each escort leg a non-primary
+    (leisure) preceding trip keeps it a genuine secondary trip regardless of
+    which purpose it is mapped to, so the "education" vs "escort" split is
+    actually observable in the output.
+    """
+    base = _synthetic_wege()
+    n_escort = 3
+    rng = np.random.default_rng(1)
+    household_ids = np.arange(n_escort) + 10_000
+    leisure_legs = pd.DataFrame({
+        "H_ID": household_ids, "P_ID": 0, "W_ID": 0,
+        "W_ZWECK": 7,  # leisure; makes the escort leg's preceding_purpose non-primary
+        "hvm_imp": rng.choice([1, 2, 3, 4], size=n_escort),
+        "wegkm_imp": rng.uniform(0.5, 30.0, size=n_escort),
+        "W_SZS": rng.integers(6, 12, n_escort), "W_SZM": rng.integers(0, 60, n_escort),
+        "W_AZS": rng.integers(6, 12, n_escort), "W_AZM": rng.integers(0, 60, n_escort),
+        "W_GEW": rng.uniform(0.5, 2.0, size=n_escort),
+        "W_ZWD": rng.choice([501, 502, 7704], size=n_escort),
+    })
+    escort_legs = pd.DataFrame({
+        "H_ID": household_ids, "P_ID": 0, "W_ID": 1,
+        "W_ZWECK": [6, 6, 13],
+        "hvm_imp": rng.choice([1, 2, 3, 4], size=n_escort),
+        "wegkm_imp": rng.uniform(0.5, 30.0, size=n_escort),
+        "W_SZS": rng.integers(12, 20, n_escort), "W_SZM": rng.integers(0, 60, n_escort),
+        "W_AZS": rng.integers(12, 20, n_escort), "W_AZM": rng.integers(0, 60, n_escort),
+        "W_GEW": rng.uniform(0.5, 2.0, size=n_escort),
+        "W_ZWD": rng.choice([501, 502, 7704], size=n_escort),
+    })
+    return pd.concat([base, leisure_legs, escort_legs], ignore_index=True)
+
+
+def _count_legs(out: dict, key: str) -> int:
+    """Total leg count under a purpose key, summed across modes and time bins."""
+    if key not in out:
+        return 0
+    return sum(
+        len(entry["values"])
+        for mode_dict in out[key].values()
+        for entry in mode_dict["distributions"]
+    )
+
+
+def test_escort_passive_education_relabels_w_zweck_13_to_education():
+    """With escort_passive_education=True, the passive escort leg (W_ZWECK 13)
+    must land under the 'education' purpose layer and must NOT be counted under
+    'escort'; the two active W_ZWECK=6 legs stay under 'escort'.
+
+    The OFF-path (escort_passive_education=False/default: both W_ZWECK 6 and 13
+    land under 'escort', no 'education' key) is the pre-existing #201 behaviour
+    already pinned by test_escort_layer_present_when_flag_on and
+    test_escort_flag_off_output_unchanged above (same escort_purpose flag, same
+    underlying map_purpose call); not duplicated here as a second test.
+    """
+    from braunschweig.popsim.distance_distributions import run
+
+    df = _mini_wege_with_escort_second_leg()
+    out = run(df, by_purpose=True, escort_purpose=True, escort_passive_education=True)
+
+    assert "education" in out
+    assert _count_legs(out, "education") == 1  # the single relabelled W_ZWECK=13 leg
+    assert _count_legs(out, "escort") == 2      # only the two active W_ZWECK=6 legs

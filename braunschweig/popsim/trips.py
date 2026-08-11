@@ -131,6 +131,9 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
     if escort_purpose:
         escort_mask = out[zweck_col].isin(ESCORT_W_ZWECK)
         out.loc[escort_mask, "purpose"] = "escort"
+        # 13 is the ONLY code in ESCORT_W_ZWECK currently classified passive; if a
+        # future code is ever added to ESCORT_W_ZWECK it must be explicitly
+        # classified active-or-passive here too, not silently assumed active.
         passive_mask = out[zweck_col] == 13
         if escort_passive_education:
             # Issue #256: W_ZWECK 13 is the escorted person's OWN (passive) leg --
