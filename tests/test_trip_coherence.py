@@ -374,7 +374,15 @@ def test_p38_2_commute_coherence_produces_long_frame_with_deltas():
 # the published MiD W1/W12 Begleitung figures fold in both the active
 # (W_ZWECK 6) and passive (W_ZWECK 13) legs; these checks score the adjusted
 # (active-only) reference instead so the comparison stays apples-to-apples.
-# Both only fire when 'begleitung' is scored/present, which requires
+# w1_scored_target / w12_mean_length_target each guard the fold on
+# 'begleitung' / 'escort' actually being requested (scored_purposes / target):
+# a caller that does not score the escort purpose gets a byte-identical
+# no-op, verified below by
+# test_w1_scored_target_escort_passive_education_is_noop_without_begleitung_scored
+# (fixed post-review 2026-08-11: the guard was previously missing on the W1
+# side, which silently inflated ausbildung even when begleitung was not
+# scored). In the production wiring (build_trip_coherence_report) this is
+# additionally presence-based on the synthetic distribution, which requires
 # escort_purpose ON upstream (enforced in braunschweig.popsim.trips.map_purpose).
 # ---------------------------------------------------------------------------
 
@@ -440,6 +448,43 @@ def test_w1_scored_target_escort_passive_education_default_is_off():
     implicit_off = w1_scored_target(
         DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT)
     assert explicit_off == implicit_off
+
+
+def test_w1_scored_target_escort_passive_education_is_noop_without_begleitung_scored():
+    # Presence-guard regression (review fix): with the DEFAULT four-purpose
+    # scored_purposes (no 'begleitung'), there is no escort mass to
+    # redistribute, so the flag must be a byte-identical no-op -- mirrors
+    # w12_mean_length_target's 'escort' in target guard. Before the fix, the
+    # fold ran unconditionally and silently inflated 'ausbildung' from the
+    # full W1 row while dropping the 'begleitung' remainder at the
+    # restriction, corrupting the four-purpose target.
+    on = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES,
+                          escort_passive_education=True)
+    off = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES)
+    assert on == off
+
+
+def test_load_escort_active_share_missing_csv_raises_with_context():
+    # Beyond the review's literal ask (CLAUDE.md mandates testing missing-file
+    # validation): the explicit existence guard must raise a contextual
+    # FileNotFoundError, not pandas' generic error, and must name the
+    # derivation script so the failure is actionable.
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_share,
+    )
+    with pytest.raises(FileNotFoundError, match="derive_escort_w_zweck_split"):
+        load_escort_active_share(str(REPO / "eqasim-data" / "data" / "_does_not_exist"))
+
+
+def test_load_escort_active_length_reference_missing_csv_raises_with_context():
+    # Same guard, exercised through the sibling loader (both delegate to the
+    # shared _load_escort_split_table helper).
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_length_reference,
+    )
+    with pytest.raises(FileNotFoundError, match="derive_escort_w_zweck_split"):
+        load_escort_active_length_reference(
+            str(REPO / "eqasim-data" / "data" / "_does_not_exist"))
 
 
 def test_w12_mean_length_target_escort_active_reference_when_passive_education_on():
