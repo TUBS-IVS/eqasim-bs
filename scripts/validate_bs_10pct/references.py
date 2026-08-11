@@ -46,7 +46,7 @@ def _read_ba(path: Path, orientation: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# MiD 2023 escort (Begleitung) active/passive split — issue #256.
+# MiD 2023 escort (Begleitung) active/passive split - issue #256.
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=1)
 def escort_active_share() -> float:
