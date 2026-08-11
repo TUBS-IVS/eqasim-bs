@@ -17,7 +17,7 @@ BASE = REPO_ROOT / "configs" / "base_bs.yml"
 OVERLAYS = REPO_ROOT / "configs" / "overlays"
 
 ALL_OVERLAYS = ["test.yml", "test_matsim.yml", "test_1pct.yml", "test_25pct.yml",
-                "test_100pct.yml"]
+                "test_100pct.yml", "escort_reuse_5pct.yml"]
 SCALE_OVERLAYS = ["test_1pct.yml", "test_25pct.yml", "test_100pct.yml"]
 
 # Every feature flag the base must switch ON for every scale (drift guard).

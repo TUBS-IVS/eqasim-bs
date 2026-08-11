@@ -17,6 +17,7 @@ what the planned MiD-donor replacement (step 3) addresses.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -464,6 +465,18 @@ def test_w1_scored_target_escort_passive_education_is_noop_without_begleitung_sc
     assert on == off
 
 
+def test_w1_scored_target_escort_passive_education_raises_without_ausbildung_scored():
+    # M-1 (combined final review #256/#257): whenever the fold DOES fire
+    # ('begleitung' in scored_purposes), 'ausbildung' must also be scored --
+    # the passive remainder folds into it (apply_escort_active_adjustment) and
+    # would otherwise be silently dropped at the scored-purposes restriction,
+    # corrupting the total. Fail early instead (production callers always
+    # score 'ausbildung' alongside 'begleitung', so this never fires there).
+    with pytest.raises(ValueError, match="ausbildung"):
+        w1_scored_target(DATA_PATH, scored_purposes=("begleitung",),
+                         escort_passive_education=True)
+
+
 def test_load_escort_active_share_missing_csv_raises_with_context():
     # Beyond the review's literal ask (CLAUDE.md mandates testing missing-file
     # validation): the explicit existence guard must raise a contextual
@@ -498,6 +511,25 @@ def test_w12_mean_length_target_escort_active_reference_when_passive_education_o
     assert on["escort"] != off["escort"]
     for p in ("work", "education", "shop", "leisure"):
         assert on[p] == pytest.approx(off[p])
+
+
+def test_w12_mean_length_target_logs_education_definitional_note(caplog):
+    # I-1 (combined final review #256/#257): the education MEAN target stays
+    # the published (unadjusted) MiD Ausbildung mean -- only escort is
+    # adjusted, above. This must be logged loudly whenever the flag is ON (so
+    # the definitional bias in the realised education mean is never mistaken
+    # for a silent gap or a model-fit problem), and stay silent when OFF.
+    with caplog.at_level(logging.INFO, logger=tc.LOGGER.name):
+        tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                  escort_passive_education=True)
+    assert "NOT passive-adjusted" in caplog.text
+    assert "education" in caplog.text.lower()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=tc.LOGGER.name):
+        tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                  escort_passive_education=False)
+    assert "passive-adjusted" not in caplog.text
 
 
 def test_build_trip_coherence_report_threads_escort_passive_education():

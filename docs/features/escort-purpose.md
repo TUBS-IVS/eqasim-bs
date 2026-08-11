@@ -86,7 +86,11 @@ being scored, and the W12 escort MEAN-length reference swaps to the pinned
 pinned CSV carries the bands; no consumer is wired yet). The 10% report shows
 BOTH W1 baselines side by side: section 5.3 (raw, both-sides Begleitung) and
 5.3b (active-adjusted), where 5.3b degrades to 5.3's folded baseline when the
-population carries no `escort` purpose.
+population carries no `escort` purpose. The W12 education MEAN target stays
+the published 5.7 km (active-only by MiD's derivation); with the passive fold
+the realized education mean is definitionally higher (expected ~7.1 km,
+derived ASSUMPTION mixing W1 weights with W12 means) -- report it as
+definitional, do not calibrate against it.
 
 ## Follow-ups
 #241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).

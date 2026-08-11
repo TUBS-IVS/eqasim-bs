@@ -199,7 +199,10 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
     mirroring ``w12_mean_length_target``'s ``"escort" in target`` guard -- so a
     caller that does not request the escort purpose gets a byte-identical
     no-op instead of a silently inflated ``ausbildung`` with the corresponding
-    ``begleitung`` remainder dropped at the restriction below. Default False
+    ``begleitung`` remainder dropped at the restriction below. Whenever the
+    fold DOES fire, ``"ausbildung"`` must also be in ``scored_purposes`` (the
+    passive remainder folds into it) -- raises ``ValueError`` otherwise, since
+    silently dropping that remainder would corrupt the total. Default False
     keeps the original W1 target byte-identical."""
     row = _zgb_overall_row(data_path, "mid2023_W1")
     raw = {p: float(row[p]) for p in scored_purposes}
@@ -209,10 +212,17 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
     # the 'begleitung' remainder is dropped (never added back anywhere) once
     # `raw` is restricted to scored_purposes, silently corrupting the target.
     if escort_passive_education and "begleitung" in scored_purposes:
-        # 'ausbildung' is always a present W1 column; read it defensively in
-        # case scored_purposes ever omits it (setdefault is then a no-op).
+        # 'ausbildung' must be in scored_purposes: the passive remainder folds
+        # into it below (apply_escort_active_adjustment). Fail early instead of
+        # silently dropping that redistributed mass once `raw` is restricted to
+        # scored_purposes just below -- production callers always score
+        # 'ausbildung' alongside 'begleitung' (SCORED_MID_PURPOSES_WITH_ESCORT).
+        if "ausbildung" not in scored_purposes:
+            raise ValueError(
+                "escort_passive_education requires 'ausbildung' in scored_purposes "
+                "(the passive remainder folds into it); got scored_purposes="
+                f"{scored_purposes!r}.")
         shares = dict(raw)
-        shares.setdefault("ausbildung", float(row["ausbildung"]))
         active_share = load_escort_active_share(data_path)
         shares = apply_escort_active_adjustment(shares, active_share)
         raw = {p: shares[p] for p in scored_purposes}
@@ -358,7 +368,14 @@ def w12_mean_length_target(data_path, include_escort=False,
     the ACTIVE-only reference from the pinned MiD escort split CSV (see
     ``load_escort_active_length_reference``) instead of the both-sides MiD W12
     Begleitung row, since the model's escort purpose is active-only under this
-    flag. Default False keeps the original target byte-identical."""
+    flag. Default False keeps the original target byte-identical.
+
+    At the same guard, also logs an informational note (never a target change)
+    that the ``education`` entry is intentionally left unadjusted even though
+    the model's synthetic ``education`` purpose absorbs the relabeled passive
+    escort legs upstream (issue #256/#257; see docs/features/escort-purpose.md
+    Validation) -- the realised education mean is therefore expected to run
+    definitionally higher than this target."""
     purpose_map = W12_PURPOSE_BY_MID_WITH_ESCORT if include_escort else W12_PURPOSE_BY_MID
     path = f"{data_path}/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv"
     df = pd.read_csv(path, comment="#")
@@ -381,6 +398,46 @@ def w12_mean_length_target(data_path, include_escort=False,
             "pinned split mean %.2f km instead of the both-sides MiD W12 "
             "Begleitung mean %.2f km", active_ref["mean_km"], target["escort"])
         target["escort"] = active_ref["mean_km"]
+
+        # I-1 (combined review #256/#257): unlike escort above, 'education' is
+        # deliberately left at the published (active-only-by-MiD's-own-
+        # derivation) Ausbildung mean -- it is NOT passive-adjusted here or
+        # anywhere else. But the model's synthetic 'education' purpose DOES
+        # absorb the relabeled passive escort legs upstream
+        # (escort_passive_education in map_purpose; see
+        # docs/features/escort-purpose.md), which run longer on average (MiD
+        # W_ZWECK 13 pinned mean) than genuine Ausbildung trips. The realised
+        # education mean is therefore expected to be definitionally HIGHER
+        # than this (unchanged) target, for a reason that has nothing to do
+        # with model fit -- report it as definitional, never calibrate
+        # against it. The expectation figure logged below is an ASSUMPTION
+        # that mixes W1 trip-COUNT weights with W12 per-trip MEANS (a
+        # weighted-average approximation, not an exact derivation); it is
+        # stated purely for expectation-setting and is never used as a score.
+        w1_row = _zgb_overall_row(data_path, "mid2023_W1")
+        w1_education_share = float(w1_row["ausbildung"])
+        w1_escort_share = float(w1_row["begleitung"])
+        passive_share = 1.0 - load_escort_active_share(data_path)
+        code_13_mean_km = float(
+            _load_escort_split_table(data_path).loc["code_13", "mean_km"])
+        education_km = target["education"]
+        expected_education_km = (
+            (w1_education_share * education_km
+             + w1_escort_share * passive_share * code_13_mean_km)
+            / (w1_education_share + w1_escort_share * passive_share))
+        LOGGER.info(
+            "Trip coherence W12 education-length target intentionally NOT "
+            "passive-adjusted (issue #256/#257): kept at the published MiD "
+            "Ausbildung mean %.2f km. The model's 'education' purpose absorbs "
+            "the relabeled passive escort legs, so the realised education "
+            "mean is expected DEFINITIONALLY higher, roughly (W1_edu %.1f x "
+            "%.2f + W1_escort %.1f x passive_share %.4f x %.2f) / (W1_edu "
+            "%.1f + W1_escort %.1f x passive_share %.4f) ~= %.2f km "
+            "(ASSUMPTION mixing W1 trip weights with W12 means; "
+            "expectation-setting only, not a scored target)",
+            education_km, w1_education_share, education_km, w1_escort_share,
+            passive_share, code_13_mean_km, w1_education_share,
+            w1_escort_share, passive_share, expected_education_km)
     return target
 
 
