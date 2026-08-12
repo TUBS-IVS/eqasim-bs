@@ -65,6 +65,13 @@ def execute(context):
         "--config:controler.writePlansInterval", str(write_plans_interval),
         "--config:global.numberOfThreads", str(global_threads),
         "--config:qsim.numberOfThreads", str(qsim_threads),
+        # eqasim-java 2.2.0 / MATSim 2026 defaults controler.compressionType to "zst", so
+        # the controler writes output_*.xml.zst. The pipeline's existence checks (the assert
+        # below, matsim.output's archive assert) and the downstream analysis all consume the
+        # historical ".gz" names, so pin gzip to keep output_*.xml.gz. (Standalone eqasim
+        # tools that write to explicit .gz paths -- e.g. RunPopulationRouting -- are already
+        # fine; only the controler's auto-named output followed the new default.)
+        "--config:controler.compressionType", "gzip",
     ]
     if simwrapper:
         run_args += ["--simwrapper", "true"]

@@ -66,17 +66,13 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   redundant, see archive §5). Retire `feature/calibration-corner` + its worktree once 0.1 lands.
 - **[0.4]** Push `integration/all-features` once 0.1 lands; update `SESSION_LOG.md` (stale
   since ~06-18) — needs user push approval.
-- **[0.5]** Composed MATSim smoke (`run_synpp.py configs/base_bs.yml configs/overlays/test_matsim.yml`)
-  — deferred from #234, UNBLOCKED by the 2026-07-22 eqasim-java-bs merge (java-bs#12). First
-  real execution of: rebuilt 2.2.0 jar, `SimWrapperModule` (now default ON via #236, fallback
-  `simwrapper_dashboards: false`), and the MATSim-2026 freight CLI (#233 → one-time
-  re-extraction ~4×45 min). Also decide java-bs dependabot #8 (matsim 2027 bump): park/close,
-  never auto-merge a `matsim.version` bump (see ADR below / memory).
 
 ### TIER 1 — High value, mostly ready (the "produce defensible results" front)
 
 - **[1.1]** 100% server production run on newest code (popsim_mid + fleet + cordon + freight +
   building potentials). Tier-A/B caching built to make this affordable; mostly compute.
+  `matsim.output` is now e2e-green on the eqasim-java 2.2.0 stack at 1-Kreis + freight (2026-07-23,
+  PR #239, ADR-0071), so the full-scale run is unblocked on the new stack.
 - **[1.2]** Mode-choice ASC calibration (turn DMC on, anchor modal split to the committed
   `mid_mode_margin_by_bundesland.csv`). DEFERRED on purpose; needs the Java-side ASC loop.
 - **[1.3]** Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed
@@ -102,6 +98,12 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 - **[2.5]** **#78** — secondary scorer scale-alignment calibration (measure-first follow-up; PR #77
   / #27 shipped the infra only). Run `calibrate_secondary_scorer.py` on `cache_bs_25pct_allfeat`;
   pin `attr_transform`/weights only on a measured win vs the OFF baseline; do not raise `pot_weight`.
+- **[2.6]** **#240** — car/bike ownership control-fit: MiD-informed 1 km disaggregation of the KREIS
+  SrV control. Analyzed + recommended (control-fit dashboard 2026-07-23: car/bike ~3.6-4.7pp on
+  category shares, urban-concentrated, BS-Stadt −3.0pp; root cause = coarse KREIS geography + coupled
+  1-person/renter/low-income segment, NOT importance). Not yet built. Data confirmed present
+  (`mid2023_cars_by_raumtyp`, `cars_by_status_hhtype`, H7/H12). Design: estimate 1 km cell shape from
+  MiD, then IPF/rake to the KREIS anchor. Measure-first per the calibration discipline.
 
 ### TIER 3 — Deferred-deliberately / future waves (parked with intent, not forgotten)
 
@@ -120,12 +122,11 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 
 ### TIER 4 — Polish / nice-to-have
 
-- **[4.1]** SimWrapper polish (rest after 2026-07-22: Layer-1 merged java-bs#12, defaults ON
-  via #236, config wiring done via #234): verify choropleth colours, anglicise residual
-  bilingual commuter labels (`spatial_export.py` ~L1356), one full 1% MATSim+fleet run to
-  validate all 13 tabs.
+- **[4.1]** SimWrapper polish: verify choropleth colours, anglicise residual German labels,
+  wire into 25/100% configs, one full 1% MATSim+fleet run to validate all 13 tabs.
 - **[4.2]** PopulationSim `num_workers` tuning on the 64-core server; education sparse `cdist`.
   Perf only, no OOM risk, deferred.
+- **[4.3]** ~~Config cleanup (**#81**)~~ **RESOLVED-IN-REVIEW — [PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234)** (closes #81/#230): 37 root `config_*.yml` -> composed `configs/base_bs.yml` + per-scale overlays; 9 fixtures -> `configs/fixtures/`, 15 ballast `git rm`'d, root config-free. **MERGED 2026-07-22** (closed #81/#230). ADR-0070.
 - **[4.4]** Factor a reusable 1km-cell control-fit smoke test (planned in the PR #173 /
   `in_ausbildung` control spec, not yet built) — no issue yet.
 
