@@ -10,7 +10,7 @@ Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Deci
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
 - Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
-- Current focus: eqasim-java 2.2.0 integration verified end-to-end (`matsim.output` green, 1-Kreis + freight); PR #239 (MERGEABLE) carries the remaining fixes. Next: 100% production run on the 2.2.0 stack.
+- Current focus: (a) **escort family #201+#256+#257 + multi-child anchoring COMPLETE** — **[PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) OPEN, MERGEABLE** (closes all three; conflicts vs main resolved 2026-08-12); anchor-fix re-run @5f10f25: consecutive zero-legs 674->96 (-86%), all residual same-facility siblings. (b) eqasim-java 2.2.0 e2e-green; PR #239 MERGED (8ee06c0). Next: merge #260 -> java companion PR -> 100% production run on the 2.2.0 stack.
 
 ## 2. Feature matrix
 
@@ -20,6 +20,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 
 | Feature | Status | Flag / config key | Validated against | Detail doc |
 |---|---|---|---|---|
+| **[Location]** NEW — Escort family: dedicated purpose + SrV draw (#201), passive-as-education (#256), distance-by-type (#257), multi-child anchoring (ADR-0073) | 🟢 complete on branch, twice run-validated (@5f10f25: consecutive zero-legs 674->96, purpose mix invariant); **PR #260 OPEN** | `escort_purpose`, `escort_household_link`, `escort_passive_education`, `escort_distance_by_type` (all ON in base_bs) | pinned `srv2023_escort_destination_types.csv` + `srv2023_escort_distance_factors.csv` + `mid2023_escort_w_zweck_split.csv`; W1 active-adjusted refs | `docs/features/escort-purpose.md` (branch); ADR-0072/0073 (branch) |
 | **[Synthesis]** IPF synthesis (legacy default) | ✅ | `population.method: simple_ipf_open` | Zensus 2022, GENESIS | docs/features/household-synthesis.md |
 | **[Synthesis]** popsim_open / popsim_mid | ✅ alt paths (popsim_mid ON in allfeat_popsim) | `population.method` | Zensus + MiD 2023 | docs/features/household-synthesis.md |
 | **[Synthesis]** Household-size margin | 🟢 | `ipf.use_household_size_margin` | Zensus 1000A-2081 | docs/features/household-synthesis.md |
@@ -90,7 +91,8 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 
 ## 3. Branches & PRs
 
-**1 open PR:** [#239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) — eqasim-java 2.2.0 `matsim.output` green (in-commuter time imputation, gzip pin, #229 config-key read; **MERGEABLE**, 3 commits rebased clean onto `main`). PR #234 (config composition + cleanup, closes #81/#230), #237 (2.2.0 matsim.output fixes + PM docs), and #238 (upstream fix-sweep) all MERGED 2026-07-22/23. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+**1 open PR:** [#260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) — escort family #201+#256+#257 + multi-child anchoring (58 commits incl. main-merge; **MERGEABLE**, conflicts resolved 2026-08-12: STATUS/BACKLOG took main, DECISIONS = main + ADR-0072/0073 appended). PR #234, #237, #238, and #239 (eqasim-java 2.2.0 matsim.output green) all MERGED 2026-07-22/23. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+- `feature/escort-purpose-201` (worktree `feature-escort-purpose-201`) — **escort family, [PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) OPEN @ d08367d**; twice run-validated (`~/wt-escort`); dissolve worktree after merge; java companion `feature/escort-activity-type` (eqasim-java-bs, c9a1f79) needs its own PR post-merge.
 
 - `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
 - `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
@@ -101,7 +103,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 - `feature/runcontrol-gui` (worktree `runcontrol-gui`) — run-control GUI prototype.
 - `run/kreis5-integration` (worktree `fix-facilities-candidates`) — kreis5 facilities-candidates fix.
 - `worktree-s1a-generic-kreis-control` / `worktree-s1c-cars-control` — generic Kreis-control + cars-control spikes (same tip, not yet diverged).
-- `worktree-feature+config-composition-cleanup` — **[PR #239](https://github.com/TUBS-IVS/eqasim-bs/pull/239) OPEN, MERGEABLE**: eqasim-java 2.2.0 `matsim.output` green (in-commuter donor-time imputation, `compressionType=gzip` pin, #229 config-key read). PR #234 (composed configs base_bs.yml + overlays, int-seed+numba, #229, config sprawl pruned) MERGED. `matsim.output` now proven e2e at 1-Kreis + freight (real QSim).
+- `worktree-feature+config-composition-cleanup` — PR #239 **MERGED** (8ee06c0, 2026-08-12); worktree can be dissolved by its owning session.
 - `docs/pm-resync`, `docs/pm-sync-2026-07-18` — earlier PM-doc sync attempts, superseded by this branch.
 - `feature/primary-locations-all-employed` — #203 all-employed primary locations, core built (TDD 18/18), unpushed.
 - `feature/calibration-corner`, `fix/popsim-no-silent-fallback`, `wip/felix-allfeat-20260718`, `wip/local-placement-l2-20260719`, `backup/status-presentation-pre-rebase` — no active worktree; stale/backup, candidates for cleanup.
@@ -111,10 +113,11 @@ Stale worktree dirs pending removal (branch already merged into `main`): `placem
 
 ## 4. Top of the backlog
 
-1. Calibration-corner remainder — run the server test suite, then push as one PR.
-2. Push `integration/all-features` once the remainder above lands.
-3. 100% production run on the newest code (Tier-A/B caching makes it affordable).
-4. Mode-choice ASC calibration (turn DMC on, anchor modal split to the committed MiD mode-margin reference).
-5. Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed `popsim_work_dir` in server configs).
+1. Merge [PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) (escort family) → dissolve worktree → java companion PR; then backlog [0.6] follow-ups (issues, ADR-0074 carry-over, CLI flag).
+2. Calibration-corner remainder — run the server test suite, then push as one PR.
+3. Push `integration/all-features` once the remainder above lands.
+4. 100% production run on the newest code (Tier-A/B caching makes it affordable).
+5. Mode-choice ASC calibration (turn DMC on, anchor modal split to the committed MiD mode-margin reference).
+6. Finish Tier-A/B cache config wiring (`cache_share_stages` list + fixed `popsim_work_dir` in server configs).
 
 Full ranking: PROJECT_BACKLOG.md §1

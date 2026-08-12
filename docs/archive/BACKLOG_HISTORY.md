@@ -644,3 +644,5 @@ These were tried or designed and **deliberately killed** — the model already d
 | **Sector-aware work-attraction tilt** (#128, ADR-0065) | Measured 2026-07-15 (offline + pipeline A/B): distance distribution unchanged, per-Gemeinde inflow fit vs OBSERVED SvB **9x worse** — the attraction IS the observed marginal, the tilt can only distort it. Within-Gemeinde structure already covered by building potentials; commute-SHAPE idea survives only as deferred WZ-sectoral friction (phase 2). Code stays as gated-off, now-runnable infra. |
 | **HTS-matching step 1 for aggregate purpose fit** | Improves *coherence* (non-employed-with-work 14%→0.5%) but aggregate SRMSE is donor-pool-bound → see 2.1, not step 1. |
 
+
+- 2026-08-12 (carried over PM divergence; source commit `backup/pm-0d117f7`): #199 upstream eqasim-france fix sweep CLOSED via PR #238 (merged 2026-07-23); the parallel session's PM layer never recorded it. Escort-family prework history: design 2026-08-10, combined A+B run + toggle diagnostic 2026-08-11/12 (see RUNS.md rows), multi-child anchor fix + PR #260 2026-08-12.
