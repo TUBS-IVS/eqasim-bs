@@ -354,3 +354,67 @@ def test_empty_links_produce_empty_anchor_table():
         "n_escort_activities": 0, "n_anchored": 0,
         "n_overflow_to_draw": 0, "n_runs": 0,
     }
+
+
+# --- Per-activity anchor table in the problem splitter (issue #201 follow-up) --
+
+
+def test_anchor_table_resolves_origin_boundary_per_activity():
+    """Two consecutive escort_linked activities at DIFFERENT schools: the
+    onward chain's origin must be activity 2's anchor (9, 9), which the old
+    one-column-per-person lookup cannot represent."""
+    df = _trips_frame([
+        (1, 0, "home", "escort_linked", "car", 600.0),
+        (1, 1, "escort_linked", "escort_linked", "car", 600.0),
+        (1, 2, "escort_linked", "shop", "car", 600.0),
+        (1, 3, "shop", "home", "car", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [1],
+        "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
+    })
+    anchors = {(1, 1): _P(5, 5), (1, 2): _P(9, 9)}
+    problems = list(problems_mod.find_assignment_problems(
+        df, df_locations, activity_anchors=anchors))
+    assert len(problems) == 1
+    p = problems[0]
+    assert p["purposes"] == ["shop"]
+    assert p["origin"][0][0] == 9.0 and p["origin"][0][1] == 9.0
+
+
+def test_anchor_table_resolves_destination_boundary():
+    """Destination activity index = trip_index + number of trips in the
+    problem: chain [home -> shop -> escort_linked] ends at activity 2."""
+    df = _trips_frame([
+        (1, 0, "home", "shop", "car", 600.0),
+        (1, 1, "shop", "escort_linked", "car", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [1],
+        "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
+    })
+    anchors = {(1, 2): _P(7, 7)}
+    problems = list(problems_mod.find_assignment_problems(
+        df, df_locations, activity_anchors=anchors))
+    assert len(problems) == 1
+    p = problems[0]
+    assert p["purposes"] == ["shop"]
+    assert p["destination"][0][0] == 7.0 and p["destination"][0][1] == 7.0
+
+
+def test_missing_anchor_entry_fails_fast():
+    """An escort_linked boundary WITHOUT an anchor entry is a bug in the
+    caller's assignment (the rewrite and the table must come from the same
+    source); it must raise, not fall back to a column."""
+    df = _trips_frame([
+        (1, 0, "home", "escort_linked", "car", 600.0),
+        (1, 1, "escort_linked", "shop", "car", 600.0),
+        (1, 2, "shop", "home", "car", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [1],
+        "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
+    })
+    with pytest.raises(KeyError, match="activity_anchors"):
+        list(problems_mod.find_assignment_problems(
+            df, df_locations, activity_anchors={}))
