@@ -150,6 +150,36 @@ def test_stage_visit_requires_subtype_split():
         secondary_candidates.execute(context)
 
 
+def test_configure_declares_escort_purpose_even_when_short_circuited():
+    """Regression test (issue #201): ``escort_purpose`` must end up declared in
+    ``configure()``'s required config even when ``secondary_building_potentials``
+    is OFF (skips the ``sec_enabled`` block, where the flag used to also be
+    declared) AND ``leisure_visit_building_potential`` is ON (short-circuits the
+    ``or`` condition's right operand, where the flag used to otherwise get
+    declared). Before the fix, neither site ran in this combination, so
+    ``escort_purpose`` was never added to ``StubContext._config`` -- and in the
+    real synpp pipeline, ``execute()``'s one-arg ``context.config("escort_purpose")``
+    read would then raise ``PipelineError: Config option escort_purpose is not
+    requested`` instead of reaching the intended ``ValueError`` guard.
+    """
+    context = StubContext(
+        config={
+            "secondary_building_potentials": False,
+            "leisure_visit_building_potential": True,
+        },
+        stages={
+            "synthesis.locations.secondary": _legacy_frame(),
+            # Only stage reachable in this combination: sec_enabled is False
+            # (skips the whole `if sec_enabled:` block), so the OR-condition's
+            # left operand alone triggers this dependency.
+            "braunschweig.data.buildings": _residential_frame(),
+        },
+    )
+    secondary_candidates.configure(context)
+    assert "escort_purpose" in context._config
+    assert context._config["escort_purpose"] is False
+
+
 # --------------------------------------------------------------------------- #
 # facilities: candidate frame mapping + coverage validation
 # --------------------------------------------------------------------------- #
@@ -159,7 +189,8 @@ def test_facility_frame_folds_visit_into_leisure():
     fac = secondary_facility_frame(candidates)
 
     assert list(fac.columns) == [
-        "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other"
+        "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other",
+        "offers_escort",
     ]
     visit_fac = fac[fac["location_id"] == "sec_res_77"].iloc[0]
     # A visit facility must offer "leisure": the population writes the BASE

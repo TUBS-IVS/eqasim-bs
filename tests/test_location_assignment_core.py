@@ -305,7 +305,7 @@ def test_secondary_output_schema_is_exact_and_ordered():
     out = secondary_stage.execute(_secondary_context())
     assert list(out.columns) == [
         "location_id", "commune_id", "iris_id", "geometry",
-        "offers_leisure", "offers_shop", "offers_other",
+        "offers_leisure", "offers_shop", "offers_other", "offers_escort",
     ]
 
 
@@ -325,7 +325,7 @@ def test_secondary_empty_candidate_pool():
     assert len(out) == 0
     assert list(out.columns) == [
         "location_id", "commune_id", "iris_id", "geometry",
-        "offers_leisure", "offers_shop", "offers_other",
+        "offers_leisure", "offers_shop", "offers_other", "offers_escort",
     ]
 
 

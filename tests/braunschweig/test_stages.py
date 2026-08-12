@@ -113,7 +113,7 @@ class TestSecondaryLocations:
 
         assert set(out.columns) == {
             "location_id", "commune_id", "iris_id", "geometry",
-            "offers_leisure", "offers_shop", "offers_other",
+            "offers_leisure", "offers_shop", "offers_other", "offers_escort",
         }
         assert len(out) == 4  # offers_other defaults True for every row
         assert out["location_id"].str.startswith("sec_").all()

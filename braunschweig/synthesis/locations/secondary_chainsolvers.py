@@ -175,6 +175,24 @@ def configure(context):
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
 
+    # Escort as dedicated activity purpose (issue #201). The decider draws one
+    # location TYPE per escort leg from the SrV-derived weights; defaults are
+    # the committed derivation output (srv2023_escort_destination_types.csv).
+    context.config("escort_purpose", False)
+    context.config("escort_locations_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
+    context.config("escort_locations_weights", DEFAULT_ESCORT_LOCATIONS_WEIGHTS)
+    # Household escort link (issue #201 Phase 2): anchor a linked escorter's
+    # escort activities at the youngest linkable child's education location
+    # instead of drawing a location type. Requires escort_purpose ON.
+    context.config("escort_household_link", False)
+    context.config("escort_household_link_max_child_age_years", 17)
+
+    # Escort distance-by-type (A3): scale the MiD escort distance layer per
+    # drawn destination type with SrV-derived structure factors.
+    context.config("escort_distance_by_type", False)
+    context.config("escort_distance_factor_activities", DEFAULT_ESCORT_LOCATIONS_ACTIVITIES)
+    context.config("escort_distance_factors", DEFAULT_ESCORT_DISTANCE_FACTORS)
+
     # MiD Wege directory: only consumed (and only declared) when at least one
     # subtype split is ON, so non-real configs that leave all three flags off
     # never require the local-only MiD delivery.
@@ -384,6 +402,39 @@ def _purpose_in_distributions(distributions: Dict[str, Any], purpose: str) -> bo
     return purpose in distributions
 
 
+def _synthesize_escort_type_layers(distributions, factor_by_activity):
+    """Add per-destination-type escort distance layers (A3, issue #201 follow-up).
+
+    For every entry of ``factor_by_activity`` (activity name -> SrV structure
+    factor) a deep copy of the aggregate ``escort`` layer is added under the
+    activity name with every distance ``values`` array multiplied by the factor
+    (exact multiplicative semantics: P(D_type <= x) = P(D <= x/factor)). Neutral
+    factors (1.0) get an identical copy ON PURPOSE: the per-type fallback counter
+    in the leg loop must stay a true failure signal, so a factor-neutral category
+    must not read as a missing layer. The caller passes the PRIVATE deep copy
+    returned by ``_resample_distributions``; this function mutates and returns it.
+    Legacy mode-keyed structures (or a missing ``escort`` layer) are returned
+    unchanged with a WARNING -- the leg loop's counted fallback then surfaces the
+    rate (no silent fallback).
+    """
+    if not _purpose_in_distributions(distributions, "escort"):
+        print(
+            "[braunschweig.secondary_chainsolvers] WARNING: escort_distance_by_type "
+            "is ON but the distributions carry no 'escort' purpose layer (legacy "
+            "mode-keyed structure?); per-type layers NOT synthesized -- the leg "
+            "loop will count every escort leg as distance-layer fallback."
+        )
+        return distributions
+    base = distributions["escort"]
+    for activity, factor in factor_by_activity.items():
+        layer = copy.deepcopy(base)
+        for mode_distribution in layer.values():
+            for distribution in mode_distribution["distributions"]:
+                distribution["values"] = distribution["values"] * float(factor)
+        distributions[activity] = layer
+    return distributions
+
+
 # Internal shop subtype activities (chainsolver-only). They never leak into the
 # eqasim output: _extract_locations maps them back to the "shop" purpose.
 SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
@@ -405,6 +456,85 @@ LEISURE_SUBTYPE_ACTIVITIES = (
 # eqasim output: _extract_locations maps them back to "other".
 OTHER_SUBTYPE_ACTIVITIES = ("other_errand_short", "other_errand_long", "other_escort")
 
+# Internal escort location-type activities (chainsolver-only; issue #201). One
+# per drawable location category; the draw happens per escort leg in
+# _build_plans_df via _build_escort_location_decider. They never leak into the
+# eqasim output: _extract_locations maps them back to the "escort" purpose.
+ESCORT_LOCATION_ACTIVITIES = (
+    "escort_edu_kindergarten", "escort_edu_school", "escort_edu_university",
+    "escort_leisure", "escort_other", "escort_residential", "escort_shop",
+)
+
+# Config category vocabulary -> internal activity name. Config uses the short
+# category names (edu_kindergarten, ..., shop); the SrV-derived default weights
+# below are the output of scripts/derive_escort_location_weights.py
+# (srv2023_escort_destination_types.csv) -- regenerate there, never edit here.
+ESCORT_CATEGORY_TO_ACTIVITY = {
+    "edu_kindergarten": "escort_edu_kindergarten",
+    "edu_school": "escort_edu_school",
+    "edu_university": "escort_edu_university",
+    "leisure": "escort_leisure",
+    "other": "escort_other",
+    "residential": "escort_residential",
+    "shop": "escort_shop",
+}
+DEFAULT_ESCORT_LOCATIONS_ACTIVITIES = [
+    "edu_kindergarten", "edu_school", "edu_university",
+    "other", "leisure", "residential", "shop",
+]
+DEFAULT_ESCORT_LOCATIONS_WEIGHTS = [0.433, 0.199, 0.004, 0.141, 0.113, 0.105, 0.005]
+# SrV-derived escort distance factors per destination type (A3; issue #201
+# follow-up). Values are the factor_applied column of
+# srv2023_escort_distance_factors.csv (weighted-median ratio to the overall
+# escort median; thin categories neutralized to 1.0) -- regenerate via
+# scripts/derive_escort_location_weights.py, never edit here.
+DEFAULT_ESCORT_DISTANCE_FACTORS = [0.618, 0.8339, 1.0, 1.7361, 1.3607, 1.8035, 1.0]
+
+
+def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
+                                df_anchors: pd.DataFrame) -> pd.DataFrame:
+    """Return a COPY of the trips frame where ANCHORED escort activities'
+    plan-level ``escort`` purposes become the fixed ``escort_linked`` purpose
+    (issue #201 Phase 2; per-activity since the multi-child fix).
+
+    A trip's ``preceding_purpose`` reflects activity ``trip_index`` and its
+    ``following_purpose`` activity ``trip_index + 1``; both sides of an
+    anchored activity are rewritten so the problem splitter sees a consistent
+    fixed boundary. Escort activities WITHOUT an anchor row (overflow beyond
+    the household's linkable children) keep the plain ``escort`` purpose and
+    stay on the SrV-weighted draw path. Only the chainsolver-local problem
+    construction sees this frame; the persisted activities/plans keep the
+    plain ``escort`` purpose. The MultiIndex/``isin`` masks are built only over
+    the rows whose ``preceding_purpose`` / ``following_purpose`` is already
+    ``escort`` (typically 5-8% of all trips), not the full trips frame, since
+    building and probing a MultiIndex over every row is the dominant cost at
+    scale for a candidate set this small."""
+    out = df_trips.copy()
+    anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
+
+    candidate_preceding = (out["preceding_purpose"] == "escort").to_numpy()
+    candidate_following = (out["following_purpose"] == "escort").to_numpy()
+
+    mask_preceding = np.zeros(len(out), dtype=bool)
+    if candidate_preceding.any():
+        preceding_activity = pd.MultiIndex.from_arrays([
+            out.loc[candidate_preceding, "person_id"],
+            out.loc[candidate_preceding, "trip_index"],
+        ])
+        mask_preceding[candidate_preceding] = preceding_activity.isin(anchored)
+
+    mask_following = np.zeros(len(out), dtype=bool)
+    if candidate_following.any():
+        following_activity = pd.MultiIndex.from_arrays([
+            out.loc[candidate_following, "person_id"],
+            out.loc[candidate_following, "trip_index"] + 1,
+        ])
+        mask_following[candidate_following] = following_activity.isin(anchored)
+
+    out.loc[mask_preceding, "preceding_purpose"] = "escort_linked"
+    out.loc[mask_following, "following_purpose"] = "escort_linked"
+    return out
+
 # Maps each secondary chainsolver activity to its attached candidate-potential
 # column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
 # genuinely distinct split retail potentials; the aggregate "shop" maps to the
@@ -421,6 +551,19 @@ _ACTIVITY_POTENTIAL_COLUMN = {
 }
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_leisure" for name in LEISURE_SUBTYPE_ACTIVITIES})
 _ACTIVITY_POTENTIAL_COLUMN.update({name: "pot_other" for name in OTHER_SUBTYPE_ACTIVITIES})
+# Escort location-type activities (issue #201). "escort_residential" reuses the
+# literal "pot_visit" column name here (NOT the VISIT_POTENTIAL_COLUMN constant,
+# which is defined further below in this module) so this default/OFF-path
+# mapping does not depend on a forward reference.
+_ACTIVITY_POTENTIAL_COLUMN.update({
+    "escort_edu_kindergarten": "pot_escort_edu",
+    "escort_edu_school": "pot_escort_edu",
+    "escort_edu_university": "pot_escort_edu",
+    "escort_leisure": "pot_leisure",
+    "escort_other": "pot_other",
+    "escort_residential": "pot_visit",
+    "escort_shop": "pot_shop",
+})
 
 # Offer / potential columns used for the "leisure_visit" activity ONLY when
 # ``leisure_visit_building_potential`` is ON (Task 5, issue #127). Residential
@@ -544,6 +687,98 @@ def append_residential_visit_candidates(candidates: gpd.GeoDataFrame,
     return out
 
 
+# Offer / potential columns for the escort education candidates (issue #201).
+ESCORT_EDU_OFFER_BY_TYPE = {
+    "kindergarten": "offers_escort_edu_kindergarten",
+    "school": "offers_escort_edu_school",
+    "university": "offers_escort_edu_university",
+}
+ESCORT_EDU_POTENTIAL_COLUMN = "pot_escort_edu"
+ESCORT_RESIDENTIAL_OFFER_COLUMN = "offers_escort_residential"
+
+
+def append_escort_candidates(candidates: gpd.GeoDataFrame,
+                             df_education: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append education escort candidates + escort offer columns (issue #201).
+
+    Adds, on EVERY row: the three education offer columns
+    (ESCORT_EDU_OFFER_BY_TYPE, default False), ESCORT_EDU_POTENTIAL_COLUMN
+    (default 0.0) and ESCORT_RESIDENTIAL_OFFER_COLUMN (True where the row is a
+    residential visit candidate, i.e. its VISIT_OFFER_COLUMN is True; False
+    elsewhere / when the visit machinery is off). Then appends one
+    ``sec_edu_<n>`` candidate row per NON-fake education facility from
+    ``synthesis.locations.education`` (fake rows are municipality-centroid
+    placeholders, not real facilities), carrying ONLY its per-type escort offer
+    and ``pot_escort_edu = weight`` (the OSM area*floors capacity proxy the
+    education gravity assignment uses -- ASSUMPTION documented in the spec).
+    """
+    required = ["fake", "education_type", "weight", "location_id", "commune_id", "geometry"]
+    missing = [c for c in required if c not in df_education.columns]
+    if missing:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort education candidate source "
+            "(synthesis.locations.education) is missing column(s) %s; available: %s."
+            % (missing, list(df_education.columns))
+        )
+
+    base = candidates.copy()
+    for column in ESCORT_EDU_OFFER_BY_TYPE.values():
+        base[column] = False
+    base[ESCORT_EDU_POTENTIAL_COLUMN] = 0.0
+    if VISIT_OFFER_COLUMN in base.columns:
+        base[ESCORT_RESIDENTIAL_OFFER_COLUMN] = base[VISIT_OFFER_COLUMN].astype(bool)
+    else:
+        base[ESCORT_RESIDENTIAL_OFFER_COLUMN] = False
+
+    edu = df_education[~df_education["fake"].astype(bool)].copy()
+    n_excluded_fake = int(df_education["fake"].astype(bool).sum())
+    n_unknown = int((edu["education_type"].astype(str) == "unknown").sum())
+    edu = edu[edu["education_type"].astype(str).isin(ESCORT_EDU_OFFER_BY_TYPE)]
+    if edu.crs is not None and candidates.crs is not None and edu.crs != candidates.crs:
+        edu = edu.to_crs(candidates.crs)
+
+    iris_col = "iris_id" if "iris_id" in edu.columns else "commune_id"
+    data = {
+        "location_id": ("sec_" + edu["location_id"].astype(str)).values,
+        "commune_id": edu["commune_id"].astype(str).values,
+        "iris_id": edu[iris_col].astype(str).values,
+        "offers_shop": False,
+        "offers_leisure": False,
+        "offers_other": False,
+        "offers_escort": True,
+        "pot_shop": 0.0,
+        "pot_shop_daily": 0.0,
+        "pot_shop_non_daily": 0.0,
+        "pot_leisure": 0.0,
+        "pot_other": 0.0,
+        ESCORT_EDU_POTENTIAL_COLUMN: edu["weight"].astype(float).values,
+        ESCORT_RESIDENTIAL_OFFER_COLUMN: False,
+        "geometry": edu.geometry.values,
+    }
+    # Visit columns exist on base whenever the residential machinery ran; keep
+    # the frames column-aligned.
+    if VISIT_OFFER_COLUMN in base.columns:
+        data[VISIT_OFFER_COLUMN] = False
+        data[VISIT_POTENTIAL_COLUMN] = 0.0
+    education_types = edu["education_type"].astype(str).values
+    for education_type, column in ESCORT_EDU_OFFER_BY_TYPE.items():
+        data[column] = (education_types == education_type)
+
+    edu_rows = gpd.GeoDataFrame(data, crs=candidates.crs)
+    out = gpd.GeoDataFrame(
+        pd.concat([base, edu_rows], ignore_index=True), crs=candidates.crs)
+    print(
+        "[braunschweig.secondary_chainsolvers] escort candidates: appended "
+        f"{len(edu_rows)} education rows "
+        f"(kindergarten={int((education_types == 'kindergarten').sum())}, "
+        f"school={int((education_types == 'school').sum())}, "
+        f"university={int((education_types == 'university').sum())}); "
+        f"excluded {n_excluded_fake} fake centroid rows and {n_unknown} "
+        "unknown-type rows"
+    )
+    return out
+
+
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
                  attr_transform: str = "linear"):
     """Construct the chainsolvers combined Scorer, or None when disabled (the
@@ -618,7 +853,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     -------
     GeoDataFrame with columns:
         location_id, commune_id, iris_id, geometry(Point),
-        offers_shop, offers_leisure, offers_other,
+        offers_shop, offers_leisure, offers_other, offers_escort,
         pot_shop, pot_shop_daily, pot_shop_non_daily, pot_leisure, pot_other
     concat of gpkg shop/leisure rows and legacy other rows, reset index.
 
@@ -628,6 +863,12 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
     Tier-2 daily/non-daily split (secondary_shop_daily_split) can route a leg's
     placement to the matching retail subtype. The legacy 'other' rows carry 0.0
     for all three shop potentials.
+
+    ``offers_escort`` (issue #201): True on every candidate row, regardless of
+    the ``escort_purpose`` flag -- it is cheap to mark every candidate eligible
+    here; whether facilities WRITE the escort option is gated by the
+    ``escort_purpose`` flag in the facilities writer (Task 8), not by this
+    column.
     """
     from braunschweig.data.building_potential_attach import attach_potential
 
@@ -653,6 +894,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_shop": (retail > 0).values,
         "offers_leisure": (leisure > 0).values,
         "offers_other": False,
+        "offers_escort": True,
         "pot_shop": retail.values,
         "pot_shop_daily": retail_daily.values,
         "pot_shop_non_daily": retail_non_daily.values,
@@ -701,6 +943,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
         "offers_shop": False,
         "offers_leisure": False,
         "offers_other": True,
+        "offers_escort": True,
         "pot_shop": 0.0,
         "pot_shop_daily": 0.0,
         "pot_shop_non_daily": 0.0,
@@ -728,6 +971,7 @@ def build_secondary_candidates(df_secondary_legacy: gpd.GeoDataFrame,
             "offers_shop": True,
             "offers_leisure": True,
             "offers_other": True,
+            "offers_escort": True,
             "pot_shop": ewz,
             "pot_shop_daily": ewz,
             "pot_shop_non_daily": ewz,
@@ -752,7 +996,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                         shop_daily_split: bool = False,
                         leisure_subtype_split: bool = False,
                         other_subtype_split: bool = False,
-                        leisure_visit_building_potential: bool = False):
+                        leisure_visit_building_potential: bool = False,
+                        escort_purpose: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -803,6 +1048,20 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     ``_build_other_subtype_decider``) still find a candidate. All three subtypes
     share the SAME ``pot_other`` value. ``other_subtype_split`` requires
     ``with_potentials``. OFF (default) is byte-identical.
+
+    When ``escort_purpose`` is True (issue #201) the seven internal
+    ``ESCORT_LOCATION_ACTIVITIES`` are emitted IN ADDITION TO the aggregate/
+    subtype activities above, so the same building can be a candidate for both
+    its normal purpose and the matching escort drop-off/pick-up. Three
+    (``escort_edu_kindergarten/school/university``) target the dedicated
+    education candidates from :func:`append_escort_candidates`
+    (``pot_escort_edu``); ``escort_leisure`` / ``escort_other`` / ``escort_shop``
+    reuse the plain aggregate offer/potential of their base purpose;
+    ``escort_residential`` reuses the residential visit candidates
+    (``ESCORT_RESIDENTIAL_OFFER_COLUMN`` / ``pot_visit``) and is dropped for a
+    non-positive potential, mirroring the shop-subtype zero-skip.
+    ``escort_purpose`` requires ``with_potentials`` (the escort placement needs
+    the education/visit/aggregate potential columns).
     """
     if shop_daily_split and not with_potentials:
         raise ValueError(
@@ -840,6 +1099,12 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "df_secondary before _build_locations_df, or disable "
             "leisure_visit_building_potential)." % VISIT_POTENTIAL_COLUMN
         )
+    if escort_purpose and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
+            "with_potentials (the escort placement needs the education/visit/"
+            "aggregate potential columns)."
+        )
     activities = []
     potentials = []
     # Activity emission order. With a split ON, the aggregate offer is either
@@ -862,7 +1127,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
         if other_subtype_split else (("other", "offers_other"),)
     )
-    offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs
+    escort_offer_specs = (
+        (
+            ("escort_edu_kindergarten", "offers_escort_edu_kindergarten"),
+            ("escort_edu_school", "offers_escort_edu_school"),
+            ("escort_edu_university", "offers_escort_edu_university"),
+            ("escort_leisure", "offers_leisure"),
+            ("escort_other", "offers_other"),
+            ("escort_residential", ESCORT_RESIDENTIAL_OFFER_COLUMN),
+            ("escort_shop", "offers_shop"),
+        )
+        if escort_purpose else ()
+    )
+    offer_specs = shop_offer_specs + leisure_offer_specs + other_offer_specs + escort_offer_specs
     # Per-activity potential column, overriding "leisure_visit" -> pot_visit
     # ONLY when leisure_visit_building_potential is ON (the OFF-path/default
     # mapping in _ACTIVITY_POTENTIAL_COLUMN stays leisure_visit -> pot_leisure,
@@ -871,6 +1148,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     if leisure_visit_building_potential:
         potential_column_by_activity["leisure_visit"] = VISIT_POTENTIAL_COLUMN
     cols = ["offers_shop", "offers_leisure", "offers_other"]
+    if escort_purpose:
+        cols = cols + list(ESCORT_EDU_OFFER_BY_TYPE.values()) + [ESCORT_RESIDENTIAL_OFFER_COLUMN]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
         # offer_specs, so a non-split path does not demand subtype potential
@@ -881,7 +1160,17 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         # selecting a duplicated column name from df_secondary would otherwise
         # yield a multi-column slice instead of a per-row scalar below.
         potential_cols = [potential_column_by_activity[act] for act, _ in offer_specs]
-        cols = cols + list(dict.fromkeys(potential_cols))
+        # "escort_residential" always maps to pot_visit (VISIT_POTENTIAL_COLUMN,
+        # see the fixed _ACTIVITY_POTENTIAL_COLUMN entry above), but pot_visit is
+        # only appended once append_residential_visit_candidates has actually run
+        # -- escort_purpose alone does not guarantee it (append_escort_candidates
+        # sets ESCORT_RESIDENTIAL_OFFER_COLUMN False on every row when the visit
+        # machinery is off, so "escort_residential" is never offered and pot_visit
+        # is never read in that case). Filtered to columns that actually exist so
+        # escort_purpose stays usable without the residential visit machinery; a
+        # column genuinely missing while its offer is True would still raise
+        # inside the per-row loop below (fail loud, not silently wrong).
+        cols = cols + [c for c in dict.fromkeys(potential_cols) if c in df_secondary.columns]
     if leisure_visit_building_potential:
         cols = cols + [VISIT_OFFER_COLUMN]
     cols = list(dict.fromkeys(cols))
@@ -904,6 +1193,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                 if shop_daily_split and act in SHOP_SUBTYPE_ACTIVITIES and pot <= 0.0:
                     continue
                 if leisure_visit_building_potential and act == "leisure_visit" and pot <= 0.0:
+                    continue
+                if escort_purpose and act == "escort_residential" and pot <= 0.0:
                     continue
                 acts.append(act)
                 pots.append(pot)
@@ -936,8 +1227,10 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
 # ---------------------------------------------------------------------------
 
 # Eqasim purposes that count as "secondary" (variable). ``home``/``work``/
-# ``education`` are fixed (anchors).
-SECONDARY_PURPOSES = {"shop", "leisure", "other"}
+# ``education`` are fixed (anchors). "escort" (issue #201) is only realised
+# when escort_purpose is ON; membership here is inert while no escort legs
+# exist, keeping the OFF path byte-identical.
+SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
 FIXED_PURPOSES = {"home", "work", "education"}
 
 
@@ -993,7 +1286,9 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     random: np.random.RandomState,
                     shop_subtype_decider=None,
                     leisure_subtype_decider=None,
-                    other_subtype_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    other_subtype_decider=None,
+                    escort_location_decider=None,
+                    escort_distance_by_type: bool = False) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
     Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
@@ -1024,6 +1319,26 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     purpose stay at the plain ``"other"`` default (unchanged from the OFF path)
     -- only the realised-outcome count in ``subtype_stats`` changes. Both
     deciders default to None (OFF), leaving the leg loop byte-identical.
+
+    ``escort_location_decider`` (issue #201) mirrors the subtype deciders for
+    plan-level escort legs: it takes NO covariates and returns one of
+    ESCORT_LOCATION_ACTIVITIES; the drawn name becomes the placement activity
+    while the distance purpose is the single aggregate ``escort`` layer
+    (fallback ``other``, counted).
+
+    ``escort_distance_by_type`` (A3, issue #201 follow-up) refines that last
+    step: when True AND a per-type layer exists for the drawn activity name
+    (synthesized upstream by ``_synthesize_escort_type_layers``), the distance
+    purpose becomes the drawn type itself instead of the aggregate ``escort``
+    layer -- a Kita drop-off then samples the Kita-scaled layer, not the pooled
+    one. Missing layers fall back COUNTED and two-level: drawn type -> aggregate
+    ``escort`` (``subtype_stats["escort_type_distance_layer_fallback"]``) ->
+    ``other`` (``subtype_stats["escort_distance_layer_fallback"]``); the two
+    counters are mutually exclusive per leg. Default False is the OFF-path
+    contract: byte-identical to the pre-A3 behaviour -- every escort leg samples
+    the single aggregate ``escort`` layer (one-level fallback to ``other`` only)
+    and ``subtype_stats`` carries no ``escort_type_distance_layer_fallback`` key
+    at all, so callers can gate their own logging on the key's presence.
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -1060,6 +1375,11 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         subtype_stats.update({name: 0 for name in OTHER_SUBTYPE_ACTIVITIES})
         subtype_stats["other_rest"] = 0
         subtype_stats["other_distance_layer_fallback"] = 0
+    if escort_location_decider is not None:
+        subtype_stats.update({name: 0 for name in ESCORT_LOCATION_ACTIVITIES})
+        subtype_stats["escort_distance_layer_fallback"] = 0
+        if escort_distance_by_type:
+            subtype_stats["escort_type_distance_layer_fallback"] = 0
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -1155,6 +1475,26 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                         distance_purpose = "other"
                         subtype_stats["other_distance_layer_fallback"] += 1
 
+            # Issue #201: draw the location TYPE for a plan-level escort leg.
+            # With escort_distance_by_type (A3) each drawn type samples its own
+            # SrV-structured distance layer (keyed by the drawn activity name);
+            # missing layers fall back COUNTED: type -> aggregate "escort" ->
+            # "other". Without the flag all escort legs keep sampling the single
+            # aggregate "escort" layer (byte-identical legacy behaviour).
+            if escort_location_decider is not None and to_act_type == "escort":
+                drawn = escort_location_decider()
+                placement_act = drawn
+                subtype_stats[drawn] += 1
+                if escort_distance_by_type and _purpose_in_distributions(distributions, drawn):
+                    distance_purpose = drawn
+                elif _purpose_in_distributions(distributions, "escort"):
+                    distance_purpose = "escort"
+                    if escort_distance_by_type:
+                        subtype_stats["escort_type_distance_layer_fallback"] += 1
+                else:
+                    distance_purpose = "other"
+                    subtype_stats["escort_distance_layer_fallback"] += 1
+
             distance_m = _sample_leg_distance(
                 distributions, leg["mode"], leg["travel_time"],
                 distance_purpose,
@@ -1216,6 +1556,24 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
 
     Returns the constructed ``CandidateIndex`` instance (its KDTrees are
     deterministic given the fixed candidate order).
+
+    ``df_secondary`` here is always the LEGACY candidate frame (see the
+    "Always the LEGACY frame" comment in ``execute()``), which predates issue
+    #201 and therefore never carries an ``offers_escort`` column (escort
+    candidates -- education facilities, residential buildings -- are appended
+    only onto the REPLACE frame built by ``build_secondary_candidates`` /
+    ``append_escort_candidates`` for the primary carla solve). Since "escort"
+    is an unconditional member of ``SECONDARY_PURPOSES``, a purpose whose offer
+    column is missing here gets an ANY-TYPE pool -- the FULL candidate set,
+    via an all-True mask -- instead of being omitted from ``destinations``:
+    per the #201 design spec scope amendment (docs/superpowers/specs/
+    2026-07-24-escort-purpose-design.md, section 3), fallback-placed escort
+    legs are meant to match any candidate type, not go unplaced. Building an
+    extra KDTree over the full candidate set is harmless on the OFF path (no
+    escort legs exist there, so it is never queried/sampled -- OFF-path
+    output stays byte-identical; the only OFF-path cost is that one extra
+    KDTree construction). The any-type substitution is itself a fallback, so
+    it is logged (CLAUDE.md "Fallback transparency"), never silent.
     """
     from synthesis.population.spatial.secondary.components import CandidateIndex
 
@@ -1227,12 +1585,29 @@ def _build_rda_candidate_index(df_secondary: pd.DataFrame):
         df_secondary.geometry.x.values,
         df_secondary.geometry.y.values,
     ))
+    n_candidates = len(df_secondary)
     destinations = {}
+    any_type_purposes = []
     for purpose in SECONDARY_PURPOSES:
-        mask = df_secondary[f"offers_{purpose}"].values
+        offer_column = f"offers_{purpose}"
+        if offer_column in df_secondary.columns:
+            mask = df_secondary[offer_column].values
+        else:
+            # #201 spec amendment: no dedicated fallback pool for this
+            # purpose (currently only "escort") -> any-type pool, an
+            # all-True mask over the full candidate set.
+            any_type_purposes.append(purpose)
+            mask = np.ones(n_candidates, dtype=bool)
         destinations[purpose] = dict(
             identifiers=identifiers[mask],
             locations=coords[mask],
+        )
+    if any_type_purposes:
+        print(
+            "[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"purpose(s) {sorted(any_type_purposes)} have no offers_* column "
+            f"on the fallback candidate frame -> any-type pool (all "
+            f"{n_candidates:,} candidates; #201 spec amendment)."
         )
 
     return CandidateIndex(destinations)
@@ -1356,13 +1731,37 @@ def _fallback_place(problems: List[Dict[str, Any]],
     Quality is poor but coverage is preserved so downstream stages do not
     crash on missing rows. The minority of unbounded problems makes this
     acceptable as a stop-gap.
+
+    ``df_secondary`` here is always the LEGACY candidate frame, which predates
+    issue #201 and never carries an ``offers_escort`` column (mirrors
+    :func:`_build_rda_candidate_index`; see its docstring). A missing
+    ``offers_<purpose>`` column gets an ANY-TYPE pool -- the full candidate
+    set -- rather than an empty one, per the #201 design spec scope amendment
+    (fallback-placed escort legs must match any candidate type instead of
+    going unplaced); logged, not silent.
     """
     if not unbounded_idx:
         return [], []
 
     pool: Dict[str, pd.DataFrame] = {}
+    any_type_purposes = []
     for purpose in SECONDARY_PURPOSES:
-        pool[purpose] = df_secondary[df_secondary[f"offers_{purpose}"]].reset_index(drop=True)
+        offer_column = f"offers_{purpose}"
+        if offer_column in df_secondary.columns:
+            pool[purpose] = df_secondary[df_secondary[offer_column]].reset_index(drop=True)
+        else:
+            # #201 spec amendment: any-type pool (the full candidate set)
+            # instead of an empty one for a purpose with no offer column
+            # (currently only "escort").
+            any_type_purposes.append(purpose)
+            pool[purpose] = df_secondary.reset_index(drop=True)
+    if any_type_purposes:
+        print(
+            "[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"purpose(s) {sorted(any_type_purposes)} have no offers_* column "
+            f"on the fallback candidate frame -> any-type pool (all "
+            f"{len(df_secondary):,} candidates; #201 spec amendment)."
+        )
 
     out_rows: List[tuple] = []
     convergence_rows: List[tuple] = []
@@ -1481,12 +1880,15 @@ def _extract_locations(result_df: pd.DataFrame,
     # label never reaches the output schema (which carries no purpose:
     # [person_id, activity_index, location_id, geometry]); this is the implicit
     # map-back ("other_rest" needs no entry here: it is never a chainsolver
-    # activity name, see _build_other_subtype_decider).
+    # activity name, see _build_other_subtype_decider). Issue #201:
+    # ESCORT_LOCATION_ACTIVITIES (the drawn location-TYPE names) map back to
+    # the eqasim "escort" purpose the same implicit way.
     secondary_acts = (
         set(SECONDARY_PURPOSES)
         | set(SHOP_SUBTYPE_ACTIVITIES)
         | set(LEISURE_SUBTYPE_ACTIVITIES)
         | set(OTHER_SUBTYPE_ACTIVITIES)
+        | set(ESCORT_LOCATION_ACTIVITIES)
     )
     is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
@@ -2036,6 +2438,11 @@ SHOP_SUBTYPE_SEED_OFFSET = 90211
 LEISURE_SUBTYPE_SEED_OFFSET = 90212  # SHOP_SUBTYPE_SEED_OFFSET + 1
 OTHER_SUBTYPE_SEED_OFFSET = 90213    # SHOP_SUBTYPE_SEED_OFFSET + 2
 
+# Issue #201: the escort location-type decider gets its own dedicated stream
+# too, one more than the last subtype offset, so it cannot perturb the shop /
+# leisure / other subtype draws, the distance RNG, or the OFF path.
+ESCORT_LOCATION_SEED_OFFSET = 90214  # SHOP_SUBTYPE_SEED_OFFSET + 3
+
 
 def _build_shop_subtype_decider(context, random_seed: int):
     """Build the per-leg shop daily/non-daily decider, or return None when OFF.
@@ -2251,9 +2658,21 @@ def _build_other_subtype_decider(context, random_seed: int):
     (``OTHER_SUBTYPE_SEED_OFFSET``, NOT ``random``) selects the outcome via
     ``_inverse_cdf_choice``, so every "other" leg -- errand, escort, or rest --
     consumes the same single draw per leg as the shop/leisure deciders.
+
+    When ``escort_purpose`` is ON (issue #201) escort is realised as its own
+    plan-level purpose upstream (see ``_build_escort_location_decider``), so no
+    leg with ``following_purpose == "other"`` can carry a raw W_ZWECK in
+    ``OTHER_ESCORT_ZWECK`` any more. Stage 1 then collapses to a 2-way
+    {errand, rest} split estimated only on the remaining "other" W_ZWECK codes,
+    and the outcome vocabulary drops ``"other_escort"`` accordingly. With
+    ``escort_purpose`` OFF this is value-identical to the previous 3-way split
+    (same ``group_names`` tuple, same probability composition, same single
+    draw).
     """
     if not context.config("secondary_other_subtype_split"):
         return None
+
+    escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
@@ -2276,16 +2695,26 @@ def _build_other_subtype_decider(context, random_seed: int):
     tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
     mid_wege = mid_wege.assign(travel_time=tt)
 
-    # Stage 1: coarse errand/escort/rest split, labelled directly by the raw
+    # Stage 1: coarse errand/(escort/)rest split, labelled directly by the raw
     # W_ZWECK code (never thinned by a missing W_ZWD).
     other_zweck = frozenset(
         code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == "other"
     )
-    rest_zweck = other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK
+    if escort_purpose_on:
+        # Issue #201: with escort as a dedicated plan-level purpose no escort
+        # leg reaches following_purpose == "other" any more, so the coarse
+        # split estimates only {errand, rest} on the remaining "other" codes.
+        other_zweck = other_zweck - OTHER_ESCORT_ZWECK
+        coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
+                         "rest": other_zweck - OTHER_ERRAND_ZWECK}
+    else:
+        coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
+                         "escort": OTHER_ESCORT_ZWECK,
+                         "rest": other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK}
     coarse_spec = SubtypeSpec(
         purpose_label="other_coarse",
         zweck_values=other_zweck,
-        groups={"errand": OTHER_ERRAND_ZWECK, "escort": OTHER_ESCORT_ZWECK, "rest": rest_zweck},
+        groups=coarse_groups,
         sentinels=frozenset(),
         group_col="W_ZWECK",
     )
@@ -2296,15 +2725,24 @@ def _build_other_subtype_decider(context, random_seed: int):
     errand_cell_probs, errand_marginal = estimate_group_probabilities(
         mid_wege, OTHER_ERRAND_SPEC, min_obs=min_obs)
 
+    # Issue #201: "escort" is only a coarse_marginal key when escort_purpose is
+    # OFF (Stage 1 above only builds that group in the 3-way OFF-path spec) --
+    # include it in the summary line only when present, rather than a KeyError
+    # or a fabricated 0.000 entry for a group that was never estimated.
+    escort_share = coarse_marginal.get("escort")
+    escort_summary = f"escort={escort_share:.3f}, " if escort_share is not None else ""
     print(
         "[braunschweig.secondary_chainsolvers] other subtype: coarse marginal shares "
-        f"escort={coarse_marginal['escort']:.3f}, errand={coarse_marginal['errand']:.3f}, "
+        f"{escort_summary}errand={coarse_marginal['errand']:.3f}, "
         f"rest={coarse_marginal['rest']:.3f}; errand marginal shares "
         f"other_errand_short={errand_marginal['other_errand_short']:.3f}, "
         f"other_errand_long={errand_marginal['other_errand_long']:.3f}"
     )
 
-    group_names = tuple(sorted(("other_errand_short", "other_errand_long", "other_escort", "other_rest")))
+    outcome_names = ["other_errand_short", "other_errand_long", "other_rest"]
+    if not escort_purpose_on:
+        outcome_names.append("other_escort")
+    group_names = tuple(sorted(outcome_names))
     rng = np.random.RandomState(int(random_seed) + OTHER_SUBTYPE_SEED_OFFSET)
 
     def decide(mode: str, travel_time_s: float) -> str:
@@ -2313,14 +2751,151 @@ def _build_other_subtype_decider(context, random_seed: int):
         errand = errand_cell_probs.get((mode, band), errand_marginal)
         p_errand = coarse.get("errand", 0.0)
         probs = {
-            "other_escort": coarse.get("escort", 0.0),
             "other_rest": coarse.get("rest", 0.0),
             "other_errand_short": p_errand * errand.get("other_errand_short", 0.0),
             "other_errand_long": p_errand * errand.get("other_errand_long", 0.0),
         }
+        if not escort_purpose_on:
+            probs["other_escort"] = coarse.get("escort", 0.0)
         return _inverse_cdf_choice(probs, group_names, rng.random_sample())
 
     return decide
+
+
+def _build_escort_location_decider(context, random_seed: int):
+    """Build the per-leg escort location-TYPE decider, or None when OFF.
+
+    Issue #201: every plan-level "escort" leg draws ONE location category
+    (education by school type / other / leisure / residential / shop) from the
+    configured weight vector -- no covariate conditioning; the weights are the
+    SrV-2023-BS+RGB observed destination-type shares
+    (scripts/derive_escort_location_weights.py). Returns a callable
+    ``() -> str`` yielding one of ESCORT_LOCATION_ACTIVITIES, consuming exactly
+    one uniform draw per call from a dedicated seeded RNG
+    (ESCORT_LOCATION_SEED_OFFSET), so the distance RNG and the three subtype
+    decider streams stay untouched (OFF path byte-identical).
+    """
+    if not context.config("escort_purpose"):
+        return None
+
+    # Execute-context config() takes the key alone (declared defaults live in
+    # configure(), wired by the next task); see
+    # tests/test_execute_context_config_contract.py for the two-argument
+    # crash this avoids.
+    activities = list(context.config("escort_locations_activities"))
+    weights = [float(w) for w in context.config("escort_locations_weights")]
+
+    if len(activities) != len(weights):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_activities and "
+            f"escort_locations_weights must have the same length, got "
+            f"{len(activities)} and {len(weights)}."
+        )
+    if len(set(activities)) != len(activities):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_activities "
+            f"contains duplicate escort location categories: {activities}."
+        )
+    unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
+    if unknown:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] unknown escort location "
+            f"category(ies) {unknown}; allowed: {sorted(ESCORT_CATEGORY_TO_ACTIVITY)}."
+        )
+    if any(w < 0.0 for w in weights) or sum(weights) <= 0.0:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_locations_weights must be "
+            "non-negative with a positive sum."
+        )
+
+    total = float(sum(weights))
+    probs = {
+        ESCORT_CATEGORY_TO_ACTIVITY[category]: weight / total
+        for category, weight in zip(activities, weights)
+    }
+    group_names = tuple(ESCORT_CATEGORY_TO_ACTIVITY[c] for c in activities)
+    print(
+        "[braunschweig.secondary_chainsolvers] escort location draw: "
+        + ", ".join(f"{c}={w / total:.3f}" for c, w in zip(activities, weights))
+        + " (SrV 2023 BS+RGB derived defaults; see "
+          "srv2023_escort_destination_types.csv)"
+    )
+
+    rng = np.random.RandomState(int(random_seed) + ESCORT_LOCATION_SEED_OFFSET)
+
+    def decide() -> str:
+        return _inverse_cdf_choice(probs, group_names, rng.random_sample())
+
+    return decide
+
+
+def _build_escort_distance_factor_map(context):
+    """{activity_name: factor} for escort distance-by-type (A3), or None when OFF.
+
+    Factors are SrV between-type structure ratios applied to the MiD escort
+    level (spec 2026-08-11). Keys are the chainsolver activity names the
+    escort location decider draws (ESCORT_CATEGORY_TO_ACTIVITY values), so the
+    leg loop can use the drawn name as the distance-layer key directly.
+    """
+    if not context.config("escort_distance_by_type"):
+        return None
+    if not context.config("escort_purpose"):
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_by_type requires "
+            "escort_purpose to be ON (there is no escort distance layer to scale)."
+        )
+    activities = list(context.config("escort_distance_factor_activities"))
+    factors = [float(f) for f in context.config("escort_distance_factors")]
+    if len(activities) != len(factors):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factor_activities "
+            f"and escort_distance_factors must have the same length, got "
+            f"{len(activities)} and {len(factors)}."
+        )
+    if len(set(activities)) != len(activities):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factor_activities "
+            f"contains duplicate escort location categories: {activities}."
+        )
+    unknown = sorted(set(activities) - set(ESCORT_CATEGORY_TO_ACTIVITY))
+    if unknown:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] unknown escort location "
+            f"categor{'y' if len(unknown) == 1 else 'ies'} in "
+            f"escort_distance_factor_activities: {unknown}."
+        )
+    if any(f <= 0.0 for f in factors):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_distance_factors must be "
+            f"positive, got {factors}."
+        )
+
+    # Vocabulary consistency (final-review finding): escort_locations_activities
+    # (what the location decider actually draws) and escort_distance_factor_activities
+    # (what has a factor entry) are configured independently -- a draw category
+    # missing a factor entry falls back silently unless flagged HERE, before any
+    # leg is placed. Reading escort_locations_activities is safe: this same stage
+    # declares it in configure(), so it is always present once execute() runs.
+    drawn_categories = set(context.config("escort_locations_activities"))
+    missing_factors = sorted(drawn_categories - set(activities))
+    if missing_factors:
+        print(
+            "[braunschweig.secondary_chainsolvers] WARNING: escort_distance_by_type: "
+            f"no distance factor for drawn categor{'y' if len(missing_factors) == 1 else 'ies'} "
+            f"{missing_factors} -- their legs will fall back counted to the aggregate "
+            "escort layer."
+        )
+    return {ESCORT_CATEGORY_TO_ACTIVITY[c]: f for c, f in zip(activities, factors)}
+
+
+def _rate_pct(count, total) -> float:
+    """Percentage of ``count`` over ``total``, or 0.0 when ``total`` is falsy
+    (guards the ZeroDivisionError on an empty leg group, e.g. no bounded
+    escort legs at all). Shared by every fallback-rate / per-group-share
+    percentage the execute() summary print block below reports, so the
+    guarded formula is defined once instead of being repeated inline at
+    each call site."""
+    return 100.0 * count / total if total else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -2340,6 +2915,62 @@ def execute(context):
     df_trips["travel_time"] = (
         df_trips["arrival_time"] - df_trips["departure_time"]
     )
+
+    # Household escort link (issue #201 Phase 2): before enumerating assignment
+    # problems, rewrite linked escorters' plan-level "escort" purposes to the
+    # fixed "escort_linked" purpose so they anchor at the child's education
+    # location instead of drawing a location type. Unlinked escorters keep the
+    # plain "escort" purpose and go through the SrV-weighted draw.
+    escort_household_link = bool(context.config("escort_household_link"))
+    df_escort_links = None
+    linked_location_rows = None
+    escort_activity_anchors = None
+    if escort_household_link:
+        if not bool(context.config("escort_purpose")):
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] escort_household_link requires "
+                "escort_purpose to be ON (there is no plan-level escort purpose to link)."
+            )
+        from braunschweig.synthesis.locations.escort_links import (
+            assign_escort_anchors, build_escort_links,
+        )
+        df_persons_link = context.stage("synthesis.population.sampled")
+        if "HP_ALTER" not in df_persons_link.columns:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] escort_household_link needs the "
+                "HP_ALTER age column on synthesis.population.sampled (popsim_mid "
+                "persons carry it); disable escort_household_link for producers "
+                "without it."
+            )
+        df_persons_link = df_persons_link[["person_id", "household_id", "HP_ALTER"]]
+        _df_work_link, df_education_link = context.stage(
+            "synthesis.population.spatial.primary.locations")
+        df_escort_links, link_stats = build_escort_links(
+            df_persons_link, df_education_link, df_trips,
+            max_child_age_years=int(
+                context.config("escort_household_link_max_child_age_years")),
+        )
+        # Per-activity anchors under the consecutive-run rule (multi-child
+        # fix): the trip rewrite, the anchors dict for the problem splitter,
+        # and the appended location rows ALL derive from this ONE assignment,
+        # so every escort_linked boundary resolves by construction.
+        linked_location_rows, anchor_stats = assign_escort_anchors(
+            df_trips, df_escort_links)
+        df_trips = rewrite_linked_escort_trips(df_trips, linked_location_rows)
+        escort_activity_anchors = {
+            (row.person_id, row.activity_index): row.geometry
+            for row in linked_location_rows.itertuples(index=False)
+        }
+        print(
+            "[braunschweig.secondary_chainsolvers] escort household link: "
+            f"{link_stats['n_linked']:,}/{link_stats['n_escorters']:,} escorters "
+            f"linked ({100.0 * link_stats['link_rate'] if link_stats['n_escorters'] else 0.0:.1f}%) "
+            f"to {link_stats['n_child_links']:,} escorter-child links; "
+            f"{anchor_stats['n_anchored']:,}/{anchor_stats['n_escort_activities']:,} "
+            f"escort activities anchored across {anchor_stats['n_runs']:,} runs, "
+            f"{anchor_stats['n_overflow_to_draw']:,} beyond the linkable children "
+            "-> SrV-weighted draw."
+        )
     df_primary, crs = _prepare_primary(context)
 
     distance_distributions = context.stage(
@@ -2360,6 +2991,19 @@ def execute(context):
         car=0.0, car_passenger=0.1, pt=0.5, bicycle=0.0, walk=-0.5,
     ))
 
+    # Escort distance-by-type (A3): synthesize per-type layers on the PRIVATE
+    # resampled copy (never the shared cached stage object).
+    escort_distance_factor_map = _build_escort_distance_factor_map(context)
+    if escort_distance_factor_map is not None:
+        distance_distributions = _synthesize_escort_type_layers(
+            distance_distributions, escort_distance_factor_map)
+        print(
+            "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
+            + ", ".join(f"{a} x{f:.3f}" for a, f in escort_distance_factor_map.items())
+            + " (SrV between-type structure on the MiD escort level; "
+              "srv2023_escort_distance_factors.csv)"
+        )
+
     random_seed = context.config("random_seed")
     random = np.random.RandomState(random_seed)
     leisure_corr = float(context.config("leisure_correction_factor"))
@@ -2374,6 +3018,8 @@ def execute(context):
     leisure_subtype_decider = _build_leisure_subtype_decider(context, random_seed)
     other_subtype_split = bool(context.config("secondary_other_subtype_split"))
     other_subtype_decider = _build_other_subtype_decider(context, random_seed)
+    escort_purpose_on = bool(context.config("escort_purpose"))
+    escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
 
     fallback_strategy = (
@@ -2418,7 +3064,9 @@ def execute(context):
         "assignment problems..."
     )
     t0 = time.time()
-    problems = list(find_assignment_problems(df_trips, df_primary))
+    problems = list(find_assignment_problems(
+        df_trips, df_primary, activity_anchors=escort_activity_anchors,
+    ))
     print(
         f"[braunschweig.secondary_chainsolvers] {len(problems):,} problems "
         f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
@@ -2429,7 +3077,16 @@ def execute(context):
         shop_subtype_decider=shop_subtype_decider,
         leisure_subtype_decider=leisure_subtype_decider,
         other_subtype_decider=other_subtype_decider,
+        escort_location_decider=escort_location_decider,
+        escort_distance_by_type=escort_distance_factor_map is not None,
     )
+    if escort_location_decider is None and len(plans_df) and \
+            (plans_df["to_act_type"] == "escort").any():
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] plans contain 'escort' legs but "
+            "escort_purpose is OFF in this stage -- the donor mapping and the "
+            "chainsolver must be driven by the SAME escort_purpose config key."
+        )
     print(
         f"[braunschweig.secondary_chainsolvers] bounded problems: "
         f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
@@ -2448,14 +3105,14 @@ def execute(context):
             f"({100.0 * (1.0 - realised_daily):.1f}%); "
             f"distance-layer fallback to aggregate 'shop' "
             f"{n_dist_fb:,}/{n_shop_legs:,} "
-            f"({100.0 * n_dist_fb / n_shop_legs if n_shop_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_shop_legs):.1f}%)"
         )
     if leisure_subtype_decider is not None:
         n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
         n_leisure_legs = sum(n_by_group.values())
         n_dist_fb = subtype_stats["leisure_distance_layer_fallback"]
         shares = ", ".join(
-            f"{name} {count:,} ({100.0 * count / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+            f"{name} {count:,} ({_rate_pct(count, n_leisure_legs):.1f}%)"
             for name, count in n_by_group.items()
         )
         print(
@@ -2464,14 +3121,14 @@ def execute(context):
             f"{n_leisure_legs:,} bounded leisure legs -> {shares}; "
             f"distance-layer fallback to aggregate 'leisure' "
             f"{n_dist_fb:,}/{n_leisure_legs:,} "
-            f"({100.0 * n_dist_fb / n_leisure_legs if n_leisure_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_leisure_legs):.1f}%)"
         )
     if other_subtype_decider is not None:
         n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
         n_other_legs = sum(n_by_outcome.values())
         n_dist_fb = subtype_stats["other_distance_layer_fallback"]
         shares = ", ".join(
-            f"{name} {count:,} ({100.0 * count / n_other_legs if n_other_legs else 0.0:.1f}%)"
+            f"{name} {count:,} ({_rate_pct(count, n_other_legs):.1f}%)"
             for name, count in n_by_outcome.items()
         )
         print(
@@ -2480,8 +3137,45 @@ def execute(context):
             f"{n_other_legs:,} bounded other legs -> {shares}; "
             f"distance-layer fallback to aggregate 'other' "
             f"{n_dist_fb:,}/{n_other_legs:,} "
-            f"({100.0 * n_dist_fb / n_other_legs if n_other_legs else 0.0:.1f}%)"
+            f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
         )
+    if escort_location_decider is not None:
+        n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}
+        n_escort_legs = sum(n_by_type.values())
+        n_dist_fb = subtype_stats["escort_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_escort_legs):.1f}%)"
+            for name, count in n_by_type.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] escort location draw "
+            "(bounded escort legs only; unbounded go to fallback untyped): "
+            f"{n_escort_legs:,} bounded escort legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'other' "
+            f"{n_dist_fb:,}/{n_escort_legs:,} "
+            f"({_rate_pct(n_dist_fb, n_escort_legs):.1f}%)"
+        )
+        if "escort_type_distance_layer_fallback" in subtype_stats:
+            n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
+            print(
+                "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
+                f"per-type layer used {n_escort_legs - n_type_fb - n_dist_fb:,}"
+                f"/{n_escort_legs:,} escort legs "
+                f"({_rate_pct(n_escort_legs - n_type_fb - n_dist_fb, n_escort_legs):.1f}%), "
+                f"fallback to aggregate 'escort' {n_type_fb:,} "
+                f"({_rate_pct(n_type_fb, n_escort_legs):.1f}%)"
+            )
+            # 0.2 (20%) is a HEURISTIC escalation threshold (final-review finding,
+            # not a scientifically derived bound): above it the per-type layers are
+            # effectively not doing their job (CLAUDE.md fallback-transparency rule
+            # 2 -- a high fallback rate is a failure signal, not a tolerated cost).
+            if n_escort_legs and n_type_fb > 0.2 * n_escort_legs:
+                print(
+                    "[braunschweig.secondary_chainsolvers] WARNING: per-type "
+                    "distance-layer fallback above 20% -- the per-type layers are "
+                    "effectively not working (check escort_distance_factor_activities "
+                    "vs the draw vocabulary)."
+                )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
@@ -2614,6 +3308,13 @@ def execute(context):
             "candidate frame). Enable secondary_building_potentials or disable "
             "leisure_visit_building_potential."
         )
+    if escort_purpose_on and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
+            "secondary_building_potentials to be ON (the escort placement needs "
+            "the education/residential/aggregate candidate potentials). Enable "
+            "secondary_building_potentials or disable escort_purpose."
+        )
     # The residential visit candidates themselves are appended by the
     # secondary_candidates stage (df_secondary above already carries them when
     # the flag is ON); _build_locations_df below still needs the flag for the
@@ -2653,6 +3354,7 @@ def execute(context):
         leisure_subtype_split=leisure_subtype_split,
         other_subtype_split=other_subtype_split,
         leisure_visit_building_potential=leisure_visit_building_potential,
+        escort_purpose=escort_purpose_on,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
@@ -2750,6 +3452,14 @@ def execute(context):
             [df_convergence, pd.DataFrame.from_records(fallback_conv, columns=["valid", "size"])],
             ignore_index=True,
         )
+
+    # Anchored escort activities are fixed boundaries (escort_linked), so the
+    # problem splitter never places them; append their pre-anchored rows
+    # (issue #201 Phase 2). They reference PRIMARY education facility ids, which
+    # the facilities coverage check accepts via extra_valid_ids.
+    if linked_location_rows is not None and len(linked_location_rows):
+        df_linked = gpd.GeoDataFrame(linked_location_rows, geometry="geometry", crs=crs)
+        df_locations = pd.concat([df_locations, df_linked], ignore_index=True)
 
     if len(df_convergence):
         print(

@@ -67,6 +67,17 @@ footer { background:#1a2940; color:#a8b3c4; padding: 22px 32px; font-size:0.85em
 }
 """
 
+# Label for report section 5.3b (issue #256, escort_passive_education). Kept
+# as a single string constant -- not split across an f-string block with
+# embedded newlines -- so it stays byte-identical to the specification and
+# remains a reliable anchor for grep / downstream tooling. Adjacent string
+# literals concatenate with no inserted characters, so wrapping the Python
+# source across lines here does not alter the value.
+ACTIVE_BASELINE_LABEL = (
+    "W1 active-adjusted (escort_passive_education; derived: begleitung x "
+    "active_share, ausbildung + passive; see mid2023_escort_w_zweck_split.csv)"
+)
+
 
 def _git_sha() -> str:
     try:
@@ -128,6 +139,7 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
     mode_share = metrics.mode_share_overall()
     purpose = metrics.purpose_mix()
     purpose_no_home = metrics.purpose_mix_no_home()
+    purpose_no_home_active = metrics.purpose_mix_no_home_active()
     mob_quote = metrics.mobility_quote()
     duration = metrics.trip_duration_distribution()
     distance = metrics.trip_distance_distribution()
@@ -268,10 +280,39 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         eigene <code>home</code>-Kategorie. Mapping eqasim → W1:
         <code>work ← Arbeit + Dienst</code>, <code>education ← Ausbildung</code>,
         <code>shop ← Einkauf</code>,
-        <code>other ← Erledigung + Begleitung</code> (eqasim kennt keine
-        eigene <code>escort</code>-Kategorie),
-        <code>leisure ← Freizeit</code>.</p>
+        <code>other ← Erledigung</code>, <code>escort ← Begleitung</code>,
+        <code>leisure ← Freizeit</code>. Ohne <code>escort_purpose</code>
+        (issue #201) enthält die Population keine eigene
+        <code>escort</code>-Kategorie; Begleitung wird dann in
+        <code>other</code> zurückgefaltet (8/99 → other 19/99).</p>
         {_df_to_html(purpose_no_home, dev_cols={"deviation_pp": "purpose_mix_l1"},
+                     fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
+        <h3>5.3b Activity-purpose mix — ohne Heimwege (W1 active-adjusted)</h3>
+        <p class="note"><strong>{html.escape(ACTIVE_BASELINE_LABEL)}</strong></p>
+        <p>Zweite Referenz für Populationen mit aktivem
+        <code>escort_passive_education</code> (issue #256): der
+        <code>escort</code>-Zweck des Modells bildet in diesem Fall nur die
+        AKTIVE Begleitung ab (Bringen/Holen, MiD W_ZWECK 6); das passive
+        Wegeende der begleiteten Person (W_ZWECK 13) zählt im Modell als
+        <code>education</code>. Die MiD-W1-Begleitung-Zeile (8/99) mischt
+        beide Seiten, ist also mit einer solchen Population nicht
+        apples-to-apples vergleichbar. Diese Tabelle skaliert Begleitung
+        daher auf ihren aktiven Anteil und faltet den passiven Rest in
+        <code>education</code>: <code>escort_active = begleitung x
+        active_share</code>, <code>education_adjusted = ausbildung +
+        begleitung x (1 - active_share)</code>; alle übrigen Zweckkategorien
+        bleiben unverändert und die Gesamtmasse ist erhalten
+        (massenerhaltend). <code>active_share</code> ist der
+        W_GEW-gewichtete Anteil aktiver (W_ZWECK 6) Wege an allen
+        MiD-Begleitwegen, aus der gepinnten
+        <code>mid2023_escort_w_zweck_split.csv</code> (nie hartkodiert).</p>
+        <p>Dieser Report ist post-hoc (er liest nur Ausgabedateien) und kann
+        den Flag-Zustand der zugrunde liegenden Population nicht erkennen;
+        deshalb werden Abschnitt 5.3 (W1 roh) und 5.3b (W1
+        active-adjusted) parallel gezeigt — je nachdem, ob die Population
+        mit <code>escort_passive_education</code> erzeugt wurde, ist die
+        eine oder die andere Referenz die korrekte.</p>
+        {_df_to_html(purpose_no_home_active, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
         <h3>5.4 Mobilitätsquote (vs. MiD P36.1)</h3>
         <p>Anteil Personen mit mindestens einem Weg am Stichtag (Basis = alle
@@ -430,6 +471,13 @@ def _build_json_payload(od_stats: dict | None = None,
         "purpose_mix_raw": purpose_raw.to_dict(orient="records"),
         "purpose_mix": purpose.to_dict(orient="records"),
         "purpose_mix_no_home": metrics.purpose_mix_no_home().to_dict(orient="records"),
+        # Active-adjusted W1 reference (issue #256, escort_passive_education);
+        # see report section 5.3b for the dual-labelled explanation. The
+        # label travels with the numbers so a downstream consumer of the
+        # JSON (without the HTML prose) still knows this baseline degrades
+        # to the raw purpose_mix_no_home values on an escort-absent run.
+        "purpose_mix_no_home_active": metrics.purpose_mix_no_home_active().to_dict(orient="records"),
+        "purpose_mix_no_home_active_label": ACTIVE_BASELINE_LABEL,
         "mobility_quote": metrics.mobility_quote(),
         "purpose_mix_remapped": purpose_remap.to_dict(orient="records"),
         "od_fit": od_stats,

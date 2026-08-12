@@ -9,6 +9,9 @@ def configure(context):
     context.stage("synthesis.locations.secondary")
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("synthesis.population.spatial.primary.locations")
+    # Read-only declaration (issue #201): write_facilities gates the "escort"
+    # activity option on this flag. Default False -> byte-identical OFF path.
+    context.config("escort_purpose", False)
 
 HOME_FIELDS = [
     "household_id", "geometry"
@@ -19,7 +22,7 @@ PRIMARY_FIELDS = [
 ]
 
 SECONDARY_FIELDS = [
-    "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other"
+    "location_id", "geometry", "offers_leisure", "offers_shop", "offers_other", "offers_escort"
 ]
 
 def load_facility_frames(context):
@@ -41,6 +44,7 @@ def load_facility_frames(context):
 
 def write_facilities(output_path, df_homes, df_primary, df_secondary, context):
     """Write the facilities XML from prepared (homes, primary, secondary) frames."""
+    escort_enabled = bool(context.config("escort_purpose"))
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
             writer = writers.FacilitiesWriter(writer)
@@ -75,7 +79,8 @@ def write_facilities(output_path, df_homes, df_primary, df_secondary, context):
                         item[SECONDARY_FIELDS.index("location_id")],
                         geometry.x, geometry.y
                     )
-                    for purpose in ("shop", "leisure", "other"):
+                    purposes = ("shop", "leisure", "other") + (("escort",) if escort_enabled else ())
+                    for purpose in purposes:
                         if item[SECONDARY_FIELDS.index("offers_%s" % purpose)]:
                             writer.add_activity(purpose)
                     writer.end_facility()

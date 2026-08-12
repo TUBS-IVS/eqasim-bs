@@ -17,10 +17,12 @@ what the planned MiD-donor replacement (step 3) addresses.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -365,3 +367,188 @@ def test_p38_2_commute_coherence_produces_long_frame_with_deltas():
     # never invented).
     wob = out[(out["ars5"] == "03103")]
     assert wob["realised_share"].isna().all()
+
+
+# ---------------------------------------------------------------------------
+# escort_passive_education (issue #256): active-share-adjusted W1/W12 escort
+# references. The model's escort purpose is ACTIVE-only under this flag, while
+# the published MiD W1/W12 Begleitung figures fold in both the active
+# (W_ZWECK 6) and passive (W_ZWECK 13) legs; these checks score the adjusted
+# (active-only) reference instead so the comparison stays apples-to-apples.
+# w1_scored_target / w12_mean_length_target each guard the fold on
+# 'begleitung' / 'escort' actually being requested (scored_purposes / target):
+# a caller that does not score the escort purpose gets a byte-identical
+# no-op, verified below by
+# test_w1_scored_target_escort_passive_education_is_noop_without_begleitung_scored
+# (fixed post-review 2026-08-11: the guard was previously missing on the W1
+# side, which silently inflated ausbildung even when begleitung was not
+# scored). In the production wiring (build_trip_coherence_report) this is
+# additionally presence-based on the synthetic distribution, which requires
+# escort_purpose ON upstream (enforced in braunschweig.popsim.trips.map_purpose).
+# ---------------------------------------------------------------------------
+
+def test_apply_escort_active_adjustment_scales_and_folds():
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        apply_escort_active_adjustment,
+    )
+    shares = {"arbeit": 0.29, "ausbildung": 0.06, "einkauf": 0.16,
+              "freizeit": 0.29, "begleitung": 0.08, "sonstiges": 0.11}
+    out = apply_escort_active_adjustment(shares, active_share=0.75)
+    assert out["begleitung"] == pytest.approx(0.06)          # 0.08 * 0.75
+    assert out["ausbildung"] == pytest.approx(0.08)          # 0.06 + 0.08 * 0.25
+    assert out["arbeit"] == pytest.approx(0.29)              # untouched
+    assert sum(out.values()) == pytest.approx(sum(shares.values()))
+    assert shares["begleitung"] == pytest.approx(0.08)       # input not mutated
+
+
+def test_active_share_loads_from_pinned_csv():
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_share,
+    )
+    share = load_escort_active_share("eqasim-data/data")
+    assert 0.6 < share < 0.85    # measured ~0.724; pinned CSV is the source
+
+
+def test_escort_active_length_reference_loads_code_6_row():
+    # Additional scope (T2 re-review): the ACTIVE-only length profile (mean/
+    # median/bands) that replaces the both-sides MiD W12 Begleitung row when
+    # scoring escort DISTANCE with escort_passive_education ON.
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_length_reference,
+    )
+    ref = load_escort_active_length_reference(DATA_PATH)
+    assert ref["mean_km"] == pytest.approx(8.4413)
+    assert ref["median_km"] == pytest.approx(2.94)
+    band_cols = {"d_unter_0_5km", "d_0_5_1km", "d_1_2km", "d_2_5km", "d_5_10km",
+                "d_10_20km", "d_20_50km", "d_50_100km", "d_100km_plus"}
+    assert set(ref) == {"mean_km", "median_km"} | band_cols
+    # Bands are row-% shares of the code_6 (active) escort legs; they sum to 100.
+    assert sum(ref[c] for c in band_cols) == pytest.approx(100.0, abs=0.05)
+
+
+def test_w1_scored_target_escort_passive_education_adjusts_and_preserves_mass():
+    off = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT)
+    on = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT,
+                          escort_passive_education=True)
+    assert set(on) == set(off)
+    assert sum(on.values()) == pytest.approx(1.0)
+    # begleitung shrinks to its active share, ausbildung absorbs the passive
+    # remainder (mass-preserving fold, see apply_escort_active_adjustment).
+    assert on["begleitung"] < off["begleitung"]
+    assert on["ausbildung"] > off["ausbildung"]
+    for p in ("arbeit", "einkauf", "freizeit"):
+        assert on[p] == pytest.approx(off[p])
+
+
+def test_w1_scored_target_escort_passive_education_default_is_off():
+    # The default (unspecified) keyword must be byte-identical to explicit
+    # False -- the flag-OFF path is untouched by this feature.
+    explicit_off = w1_scored_target(
+        DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT,
+        escort_passive_education=False)
+    implicit_off = w1_scored_target(
+        DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT)
+    assert explicit_off == implicit_off
+
+
+def test_w1_scored_target_escort_passive_education_is_noop_without_begleitung_scored():
+    # Presence-guard regression (review fix): with the DEFAULT four-purpose
+    # scored_purposes (no 'begleitung'), there is no escort mass to
+    # redistribute, so the flag must be a byte-identical no-op -- mirrors
+    # w12_mean_length_target's 'escort' in target guard. Before the fix, the
+    # fold ran unconditionally and silently inflated 'ausbildung' from the
+    # full W1 row while dropping the 'begleitung' remainder at the
+    # restriction, corrupting the four-purpose target.
+    on = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES,
+                          escort_passive_education=True)
+    off = w1_scored_target(DATA_PATH, scored_purposes=tc.SCORED_MID_PURPOSES)
+    assert on == off
+
+
+def test_w1_scored_target_escort_passive_education_raises_without_ausbildung_scored():
+    # M-1 (combined final review #256/#257): whenever the fold DOES fire
+    # ('begleitung' in scored_purposes), 'ausbildung' must also be scored --
+    # the passive remainder folds into it (apply_escort_active_adjustment) and
+    # would otherwise be silently dropped at the scored-purposes restriction,
+    # corrupting the total. Fail early instead (production callers always
+    # score 'ausbildung' alongside 'begleitung', so this never fires there).
+    with pytest.raises(ValueError, match="ausbildung"):
+        w1_scored_target(DATA_PATH, scored_purposes=("begleitung",),
+                         escort_passive_education=True)
+
+
+def test_load_escort_active_share_missing_csv_raises_with_context():
+    # Beyond the review's literal ask (CLAUDE.md mandates testing missing-file
+    # validation): the explicit existence guard must raise a contextual
+    # FileNotFoundError, not pandas' generic error, and must name the
+    # derivation script so the failure is actionable.
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_share,
+    )
+    with pytest.raises(FileNotFoundError, match="derive_escort_w_zweck_split"):
+        load_escort_active_share(str(REPO / "eqasim-data" / "data" / "_does_not_exist"))
+
+
+def test_load_escort_active_length_reference_missing_csv_raises_with_context():
+    # Same guard, exercised through the sibling loader (both delegate to the
+    # shared _load_escort_split_table helper).
+    from braunschweig.analysis.population_validation.trip_coherence import (
+        load_escort_active_length_reference,
+    )
+    with pytest.raises(FileNotFoundError, match="derive_escort_w_zweck_split"):
+        load_escort_active_length_reference(
+            str(REPO / "eqasim-data" / "data" / "_does_not_exist"))
+
+
+def test_w12_mean_length_target_escort_active_reference_when_passive_education_on():
+    off = tc.w12_mean_length_target(DATA_PATH, include_escort=True)
+    on = tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                   escort_passive_education=True)
+    assert set(on) == set(off)
+    # escort switches from the both-sides MiD W12 Begleitung mean (10.1 km) to
+    # the active-only pinned-split code_6 mean; the other purposes are untouched.
+    assert on["escort"] == pytest.approx(8.4413)
+    assert on["escort"] != off["escort"]
+    for p in ("work", "education", "shop", "leisure"):
+        assert on[p] == pytest.approx(off[p])
+
+
+def test_w12_mean_length_target_logs_education_definitional_note(caplog):
+    # I-1 (combined final review #256/#257): the education MEAN target stays
+    # the published (unadjusted) MiD Ausbildung mean -- only escort is
+    # adjusted, above. This must be logged loudly whenever the flag is ON (so
+    # the definitional bias in the realised education mean is never mistaken
+    # for a silent gap or a model-fit problem), and stay silent when OFF.
+    with caplog.at_level(logging.INFO, logger=tc.LOGGER.name):
+        tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                  escort_passive_education=True)
+    assert "NOT passive-adjusted" in caplog.text
+    assert "education" in caplog.text.lower()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=tc.LOGGER.name):
+        tc.w12_mean_length_target(DATA_PATH, include_escort=True,
+                                  escort_passive_education=False)
+    assert "passive-adjusted" not in caplog.text
+
+
+def test_build_trip_coherence_report_threads_escort_passive_education():
+    # End-to-end stage-wiring check: the flag must reach BOTH the W1 purpose
+    # target and the W12 escort length target through build_trip_coherence_report.
+    persons = pd.DataFrame({"person_id": [1, 2], "employed": [True, False]})
+    trips = pd.DataFrame({
+        "person_id": [1, 2],
+        "following_purpose": ["escort", "shop"],
+        "euclidean_distance": [5000.0, 5000.0],
+    })
+    off = build_trip_coherence_report(persons, trips, DATA_PATH, segment_cols=("employed",))
+    on = build_trip_coherence_report(
+        persons, trips, DATA_PATH, segment_cols=("employed",),
+        escort_passive_education=True)
+
+    assert off["purpose"]["target"]["begleitung"] != on["purpose"]["target"]["begleitung"]
+
+    off_escort = {r["purpose"]: r for r in off["length"]}["escort"]
+    on_escort = {r["purpose"]: r for r in on["length"]}["escort"]
+    assert off_escort["target_km"] != on_escort["target_km"]
+    assert on_escort["target_km"] == pytest.approx(8.4413)

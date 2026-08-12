@@ -17,7 +17,7 @@ BASE = REPO_ROOT / "configs" / "base_bs.yml"
 OVERLAYS = REPO_ROOT / "configs" / "overlays"
 
 ALL_OVERLAYS = ["test.yml", "test_matsim.yml", "test_1pct.yml", "test_25pct.yml",
-                "test_100pct.yml"]
+                "test_100pct.yml", "escort_reuse_5pct.yml"]
 SCALE_OVERLAYS = ["test_1pct.yml", "test_25pct.yml", "test_100pct.yml"]
 
 # Every feature flag the base must switch ON for every scale (drift guard).
@@ -32,6 +32,8 @@ FEATURE_FLAGS_ON = [
     "braunschweig.home_density_weighting",
     "braunschweig.population.popsim.income_spatial_tilt",
     "braunschweig.population.popsim.income_kreis_control",
+    "escort_purpose", "escort_household_link", "escort_distance_by_type",
+    "escort_passive_education",
 ]
 
 

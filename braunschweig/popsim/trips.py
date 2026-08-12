@@ -41,6 +41,25 @@ PURPOSE_BY_W_ZWECK = {
 }
 DEFAULT_PURPOSE = "other"
 
+# Escort (Begleitung) W_ZWECK codes (issue #201). Code 6 = Bringen/Holen; code 13
+# is classified as escort by BOTH of MiD's own derived purpose variables
+# (zweck: 13 -> 6; hwzweck1: 13 -> 7 = Begleitung; verified 2026-07-24 on the raw
+# Wege table -- see docs/superpowers/specs/2026-07-24-escort-purpose-design.md).
+# The semantic codeplan label of 13 is still to be confirmed (codeplan xlsx not in
+# repo); the CATEGORY membership is established by the MiD-internal derivations.
+# Deliberately separate from purpose_subtype.OTHER_ESCORT_ZWECK ({6}), which the
+# escort-OFF path (secondary_other_subtype_split) continues to use unchanged.
+#
+# Issue #256 further splits this set: code 6 is the ACTIVE escort leg (the
+# escorting adult's own trip) and code 13 is the PASSIVE leg (the escorted
+# person's own trip -- 100% minors on the raw MiD file; pinned active/passive
+# split shares in eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv,
+# derived by scripts/derive_escort_w_zweck_split.py). When escort_passive_education
+# is ON (map_purpose below), code 13 is relabelled to "education" instead of
+# "escort" because it is the child's own trip to their assigned Kita/school, not
+# an escort trip in its own right; code 6 keeps mapping to "escort".
+ESCORT_W_ZWECK = frozenset({6, 13})
+
 # MiD hvm_imp (imputed Hauptverkehrsmittel; handbook Kap. 4.2 mandates the
 # imputed variant) -> eqasim canonical mode. hvm_imp is fully imputed (codes
 # 1..5 only); any other code is a data/contract error and raises.
@@ -55,10 +74,98 @@ MODE_BY_HVM = {
 }
 
 
-def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK") -> pd.DataFrame:
-    """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``."""
+def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
+                escort_purpose: bool = False,
+                escort_passive_education: bool = False) -> pd.DataFrame:
+    """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
+
+    When ``escort_purpose`` is True (issue #201), W_ZWECK codes in
+    ``ESCORT_W_ZWECK`` map to the dedicated ``"escort"`` purpose instead of
+    ``"other"``; the override is applied on top of ``PURPOSE_BY_W_ZWECK`` so the
+    OFF path stays byte-identical. The escort share is logged (W_GEW-weighted
+    when the weight column is present) -- no silent re-mapping.
+
+    When ``escort_passive_education`` is ALSO True (issue #256), the PASSIVE
+    side of the escort pair (W_ZWECK 13 -- the escorted person's own leg) is
+    relabelled to ``"education"`` instead of ``"escort"``: it is the child's own
+    trip to their assigned Kita/school (anchored there downstream by the
+    plan-based ``has_education_trip`` primary-location machinery, which covers
+    both chain sides), not an escort trip in its own right. The ACTIVE side
+    (W_ZWECK 6 -- the escorting adult's leg) keeps mapping to ``"escort"``.
+    Requires ``escort_purpose`` to also be True (raises ``ValueError``
+    otherwise, checked before the escort-specific remapping); default False
+    keeps the #201 behaviour -- including the exact log line -- byte-identical.
+
+    Parameters
+    ----------
+    wege:
+        MiD Wege with at least ``zweck_col``. ``W_GEW`` (trip weight), if
+        present, is used to log a weighted escort/passive share.
+    zweck_col:
+        Name of the MiD W_ZWECK column.
+    escort_purpose:
+        If True (issue #201), map ``ESCORT_W_ZWECK`` codes to ``"escort"``.
+    escort_passive_education:
+        If True (issue #256), further relabel the passive leg (W_ZWECK 13) to
+        ``"education"``. Requires ``escort_purpose=True``.
+
+    Returns
+    -------
+    pd.DataFrame
+        ``wege`` with an added ``purpose`` column.
+
+    Raises
+    ------
+    ValueError
+        If ``escort_passive_education`` is True while ``escort_purpose`` is
+        False (there is no passive side to split off without the dedicated
+        escort purpose being active).
+    """
     out = wege.copy()
     out["purpose"] = out[zweck_col].map(PURPOSE_BY_W_ZWECK).fillna(DEFAULT_PURPOSE)
+    if escort_passive_education and not escort_purpose:
+        raise ValueError(
+            "[popsim.trips] escort_passive_education requires escort_purpose to be ON "
+            "(without a dedicated escort purpose there is no passive side to split off)."
+        )
+    if escort_purpose:
+        escort_mask = out[zweck_col].isin(ESCORT_W_ZWECK)
+        out.loc[escort_mask, "purpose"] = "escort"
+        # 13 is the ONLY code in ESCORT_W_ZWECK currently classified passive; if a
+        # future code is ever added to ESCORT_W_ZWECK it must be explicitly
+        # classified active-or-passive here too, not silently assumed active.
+        passive_mask = out[zweck_col] == 13
+        if escort_passive_education:
+            # Issue #256: W_ZWECK 13 is the escorted person's OWN (passive) leg --
+            # 100% minors on the raw file. It becomes the child's own education
+            # trip, anchored at their own assigned Kita/school by the plan-based
+            # primary machinery (has_education_trip covers both chain sides).
+            out.loc[passive_mask, "purpose"] = "education"
+        if "W_GEW" in out.columns:
+            weights = out["W_GEW"].astype(float)
+            total = float(weights.sum())
+            share_active = float(weights[escort_mask & ~passive_mask].sum() / total) if total else 0.0
+            share_passive = float(weights[passive_mask].sum() / total) if total else 0.0
+            basis = "W_GEW-weighted"
+        else:
+            share_active = float((escort_mask & ~passive_mask).mean()) if len(out) else 0.0
+            share_passive = float(passive_mask.mean()) if len(out) else 0.0
+            basis = "unweighted"
+        if escort_passive_education:
+            logger.info(
+                "[popsim.trips] escort_passive_education ON: active W_ZWECK 6 -> "
+                "'escort' %d legs (%.2f%% %s); passive W_ZWECK 13 -> 'education' "
+                "%d legs (%.2f%%) at the child's own school.",
+                int((escort_mask & ~passive_mask).sum()), 100.0 * share_active, basis,
+                int(passive_mask.sum()), 100.0 * share_passive,
+            )
+        else:
+            logger.info(
+                "[popsim.trips] escort_purpose ON: %d/%d legs (%.2f%% %s) mapped to "
+                "'escort' (W_ZWECK in %s)",
+                int(escort_mask.sum()), len(out), 100.0 * (share_active + share_passive),
+                basis, sorted(ESCORT_W_ZWECK),
+            )
     return out
 
 
@@ -124,6 +231,8 @@ def build_trip_table(
     household_col: str = "H_ID",
     person_col: str = "P_ID",
     trip_col: str = "W_ID",
+    escort_purpose: bool = False,
+    escort_passive_education: bool = False,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -179,6 +288,16 @@ def build_trip_table(
     trip_col:
         Name of the within-person trip-sequence column in ``mid_wege`` (used to
         build the unique ``trip_key`` and to sort trips within each person).
+    escort_purpose:
+        If True (issue #201), W_ZWECK codes in ``ESCORT_W_ZWECK`` map to the
+        dedicated ``"escort"`` purpose instead of ``"other"`` (forwarded to
+        ``map_purpose`` via ``expand_persons_to_trips``). Default False keeps
+        the OFF path byte-identical.
+    escort_passive_education:
+        If True (issue #256), the passive escort leg (W_ZWECK 13) maps to
+        ``"education"`` instead of ``"escort"`` (forwarded to ``map_purpose``
+        via ``expand_persons_to_trips``). Requires ``escort_purpose=True``.
+        Default False keeps the OFF path byte-identical.
 
     Returns
     -------
@@ -214,6 +333,8 @@ def build_trip_table(
         household_col=household_col,
         person_col=person_col,
         trip_col=trip_col,
+        escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -284,6 +405,8 @@ def expand_persons_to_trips(
     household_col: str = "H_ID",
     person_col: str = "P_ID",
     trip_col: str = "W_ID",
+    escort_purpose: bool = False,
+    escort_passive_education: bool = False,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -299,7 +422,10 @@ def expand_persons_to_trips(
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.
     """
-    wege = map_mode(map_purpose(mid_wege))
+    wege = map_mode(map_purpose(
+        mid_wege, escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+    ))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")
     )
@@ -342,6 +468,8 @@ def build_validated_trip_table(
     resample: bool = False,
     resample_cell_col: str | None = None,
     random_seed: int | None = None,
+    escort_purpose: bool = False,
+    escort_passive_education: bool = False,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -401,6 +529,16 @@ def build_validated_trip_table(
     random_seed:
         Seed for the stage A/B RNG streams (``np.random.RandomState``; see
         ``TIME_IMPUTATION_SEED_OFFSET`` / ``MATCHED_REPLACEMENT_SEED_OFFSET``).
+    escort_purpose:
+        If True (issue #201), W_ZWECK codes in ``ESCORT_W_ZWECK`` map to the
+        dedicated ``"escort"`` purpose instead of ``"other"`` (forwarded to
+        ``build_trip_table`` / ``map_purpose``). Default False keeps the OFF
+        path byte-identical.
+    escort_passive_education:
+        If True (issue #256), the passive escort leg (W_ZWECK 13) maps to
+        ``"education"`` instead of ``"escort"`` (forwarded to
+        ``build_trip_table`` / ``map_purpose``). Requires ``escort_purpose=True``.
+        Default False keeps the OFF path byte-identical.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -429,7 +567,10 @@ def build_validated_trip_table(
             f"resample without cell matching (home-only fallback) or fix the column name."
         )
 
-    table = build_trip_table(persons, mid_wege, **kwargs)
+    table = build_trip_table(
+        persons, mid_wege, escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education, **kwargs,
+    )
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None
     if repair:

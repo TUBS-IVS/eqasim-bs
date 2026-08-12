@@ -347,7 +347,8 @@ def test_injection_with_mocked_geodata_facilities_and_vehicles_wiring(monkeypatc
     df_primary = gpd.GeoDataFrame({"location_id": [], "is_work": []},
                                   geometry=[], crs="EPSG:25832")
     df_secondary = gpd.GeoDataFrame({"location_id": [], "offers_leisure": [],
-                                     "offers_shop": [], "offers_other": []},
+                                     "offers_shop": [], "offers_other": [],
+                                     "offers_escort": []},
                                     geometry=[], crs="EPSG:25832")
     df_realised = pd.DataFrame({"location_id": []})
 
@@ -456,7 +457,8 @@ def test_facilities_and_vehicles_off_path_registers_nothing_for_students(monkeyp
         gpd.GeoDataFrame({"location_id": [], "is_work": []}, geometry=[],
                          crs="EPSG:25832"))
     df_secondary = gpd.GeoDataFrame({"location_id": [], "offers_leisure": [],
-                                     "offers_shop": [], "offers_other": []},
+                                     "offers_shop": [], "offers_other": [],
+                                     "offers_escort": []},
                                     geometry=[], crs="EPSG:25832")
     df_realised = pd.DataFrame({"location_id": []})
 

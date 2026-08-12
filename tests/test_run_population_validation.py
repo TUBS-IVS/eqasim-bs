@@ -17,6 +17,16 @@ def test_parser_requires_exactly_one_source():
         R._parse_args(["--run-output-dir", "a", "--sim-cache", "b"])  # both
 
 
+def test_parser_escort_passive_education_flag_defaults_off():
+    # Issue #256: the flag threading the trip-coherence W1/W12 escort
+    # references onto the active-only pinned split must default to False
+    # (byte-identical behaviour) and be settable via --escort-passive-education.
+    off = R._parse_args(["--run-output-dir", "a"])
+    assert off.escort_passive_education is False
+    on = R._parse_args(["--run-output-dir", "a", "--escort-passive-education"])
+    assert on.escort_passive_education is True
+
+
 def test_deviation_wide_frame_pivots_delta_pp():
     long = pd.DataFrame({
         "control": ["cars_per_hh"], "category": ["0"], "geography": ["kreis"],

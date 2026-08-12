@@ -6,8 +6,9 @@ when building potentials are ON:
 - ``sec_b_<building_id>``   gpkg shop/leisure buildings (REPLACE, PR #77),
 - ``sec_<n>``               legacy 'other' catalog rows,
 - ``<commune_id>``          external Gemeinde centroids (``secondary_external_candidates``),
-- ``sec_res_<building_id>`` residential leisure_visit candidates
-  (``leisure_visit_building_potential``, issue #127).
+- ``sec_res_<building_id>`` residential leisure_visit / escort_residential candidates
+  (``leisure_visit_building_potential`` and/or ``escort_purpose``, issues #127/#201),
+- ``sec_edu_<n>``           education escort candidates (``escort_purpose``, issue #201).
 
 Both consumers depend on THIS stage so they can never diverge again:
 ``braunschweig.synthesis.locations.secondary_chainsolvers`` (placement) and
@@ -48,11 +49,31 @@ def configure(context):
         if context.config("secondary_other_smart_potential"):
             context.stage("braunschweig.data.bosserhof_purpose")
 
+        # Escort candidate universe (issue #201): the education facilities are
+        # only needed as candidates once escort_purpose is ON, and only make
+        # sense as REPLACE candidates (with_potentials), so this STAGE
+        # dependency is declared inside the sec_enabled block. The config
+        # option itself gets its own unconditional declaration below (next to
+        # leisure_visit_building_potential) so configure() always knows it,
+        # even when this block is skipped.
+        if context.config("escort_purpose", False):
+            context.stage("synthesis.locations.education")
+
     # Needed for the fail-fast cross-flag guard below (the flag itself is
     # owned by the chainsolvers stage; read-only here).
     context.config("secondary_leisure_subtype_split", False)
     context.config("leisure_visit_building_potential", False)
-    if context.config("leisure_visit_building_potential"):
+    # Unconditional declaration (issue #201 fix): escort_purpose must not be
+    # declared ONLY inside `if sec_enabled:` above or as the right operand of
+    # the `or` below -- Python's `or` short-circuits and never evaluates the
+    # right operand once leisure_visit_building_potential is True, and
+    # combined with secondary_building_potentials=False (which skips the
+    # sec_enabled block too) escort_purpose was then never added to
+    # configure()'s required config. execute() then crashed on its one-arg
+    # config() read with synpp's PipelineError instead of reaching the
+    # intended ValueError guard below.
+    context.config("escort_purpose", False)
+    if context.config("leisure_visit_building_potential") or context.config("escort_purpose"):
         context.stage("braunschweig.data.buildings")
 
 
@@ -69,6 +90,7 @@ def execute(context):
 
     sec_enabled = context.config("secondary_building_potentials")
     leisure_visit = bool(context.config("leisure_visit_building_potential"))
+    escort_on = bool(context.config("escort_purpose"))
 
     # Same fail-fast guards as the chainsolvers (they must hold wherever the
     # candidate set is assembled; no silent fallback to a degenerate set).
@@ -120,17 +142,28 @@ def execute(context):
             df_external=df_external,
         )
 
-    if leisure_visit:
+    if leisure_visit or escort_on:
+        # The residential rows are needed for "escort_residential" even when
+        # the leisure feature itself is off (issue #201): both features share
+        # the SAME candidate set (sec_res_<building_id>), so escort_on alone
+        # already triggers the append.
         try:
             df_residential_buildings = context.stage("braunschweig.data.buildings")
         except Exception as exc:
             raise ValueError(
                 "[braunschweig.secondary_candidates] leisure_visit_building_potential "
-                "is ON but the residential candidate source "
+                "or escort_purpose is ON but the residential candidate source "
                 "(braunschweig.data.buildings) could not be resolved (%s); no silent "
                 "fallback to pot_leisure is performed." % exc
             ) from exc
         df_secondary = append_residential_visit_candidates(
             df_secondary, df_residential_buildings)
+
+    if escort_on:
+        from braunschweig.synthesis.locations.secondary_chainsolvers import (
+            append_escort_candidates,
+        )
+        df_secondary = append_escort_candidates(
+            df_secondary, context.stage("synthesis.locations.education"))
 
     return df_secondary

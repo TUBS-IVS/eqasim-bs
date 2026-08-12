@@ -75,6 +75,8 @@
 | ADR-0069 | 2026-07-18 | placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden |
 | ADR-0070 | 2026-07-22 | Composed run configs (fixed base + per-scale overlay); int-seed+numba is the ONLY permitted PopulationSim regime (fixes the float-seed-config 20x slowdown); #229 fixed; config sprawl pruned |
 | ADR-0071 | 2026-07-23 | eqasim-java 2.2.0 `matsim.output` made e2e-green (in-commuter donor-time imputation, `controler.compressionType=gzip` pin, #229 config-key read); freight CLI for the MATSim 2026 contrib |
+| ADR-0072 | 2026-08-11 | Escort distance-by-type uses SrV between-type structure on the MiD level (A3, #257) |
+| ADR-0073 | 2026-08-12 | Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) |
 
 > **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
 > ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
@@ -1669,6 +1671,105 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
   (urban-concentrated ~3.6-4.7pp on category shares) is tracked as issue #240 (MiD-informed 1 km
   disaggregation of the KREIS control). No scientific outputs change for existing runs: imputation is
   byte-identical when no times are missing; the gzip pin and the config read are behaviour-preserving.
+
+> **Live status note.** This log is the retrospective *why*. For the current state of every feature
+> (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)
+> and `git log`; where this log and those disagree, `CLAUDE.md` and git win.
+
+## ADR-0072 — Escort distance-by-type uses SrV between-type structure on the MiD level (A3, #257) (2026-08-11)
+
+- **Status:** accepted 2026-08-11. Branch `feature/escort-purpose-201` (worktree
+  `.claude/worktrees/feature-escort-purpose-201`, stacks on #201), PR pending.
+  Flag `escort_distance_by_type` defaults False (code); `true` in `configs/base_bs.yml`
+  (features-default-ON convention); OFF path byte-identical (no layer synthesis,
+  no draw-stream change).
+- **Context:** the 5% validation run (`output_bs_5pct_escort`, baseline 2026-08-11)
+  showed the escort trip-length distribution wrong in SHAPE while right in MEAN
+  once `escort_purpose`/`escort_household_link` were wired: <2 km share 25.6 %
+  vs 39-40.8 % reference (MiD W12 / donor legs), band L1 vs W12 27.8 pp. Root
+  cause (systematic-debugging): every escort leg sampled ONE pooled aggregate
+  `escort` distance layer regardless of the drawn destination type, so a Kita
+  drop-off (typically 1-2 km) and a residential escort drew from the same
+  distribution.
+- **Decision: A3** -- keep the distance LEVEL from MiD, take only the between-type
+  STRUCTURE from SrV. Per-type layers are synthesized at runtime
+  (`_synthesize_escort_type_layers` in `secondary_chainsolvers.py`) as deep copies
+  of the MiD-built `escort` layer, each destination type's `values` array scaled
+  by a SrV-derived factor, `factor_c = weighted_median(GIS length | category c) / weighted_median(GIS length | all escort legs)`,
+  computed in `scripts/derive_escort_location_weights.py`.
+  Rejected alternatives: **A2** (full SrV per-type length distributions) -- mixes
+  survey levels (different sample, weights, length variable than the MiD-built
+  layer every other purpose uses); **A1** (alias each type to an existing MiD
+  purpose layer, e.g. `escort_edu_*` -> `education`) -- kept only as the
+  gate-fail pivot, not needed here. The A3-vs-A1 choice was gated on a
+  pre-registered coherence check (spec section 3, see Evidence).
+- **Evidence:** coherence gate PASS (`compute_length_coherence`, comparing SrV
+  `V_ZWECK==12` `GIS_LAENGE_GUELTIG` against MiD `W_ZWECK==6` `wegkm_imp` on nine
+  W12 length bands plus overall medians; ASSUMPTION thresholds L1<=25.0 pp, ratio
+  in [0.67,1.5]): band_l1_pp=9.29 (threshold 25.0), median_ratio=0.929 (in
+  [0.67,1.5]; SrV median 2.73 km vs MiD median 2.94 km). Source: header of the
+  pinned `srv2023_escort_distance_factors.csv` (under
+  `eqasim-data/data/braunschweig/srv/`), generated 2026-08-11 by
+  `scripts/derive_escort_location_weights.py` from `SrV2023_Wege.csv` (GEWICHT_W-weighted,
+  GIS coverage 82.45 % of valid-BHOL escort legs, n_valid=2602) and `MiD2023_Wege.csv`.
+- **Consequences:** per-type distance layers are synthesized inside the chainsolver
+  stage at runtime (no upstream cache invalidation -- the shared `distance_distributions`
+  stage is untouched). Thin categories `edu_university` (n=11) and `shop` (n=13)
+  are neutralized to `factor_applied=1.0` (documented, `min_obs=30`), not silently
+  dropped. Under the pinned draw weights (`DEFAULT_ESCORT_LOCATIONS_WEIGHTS`) and
+  factors (`DEFAULT_ESCORT_DISTANCE_FACTORS`), the expected escort distance level
+  shifts by `sum(w_c x factor_c) = 1.0305` (+3.1 %) versus the pre-A3 pooled layer
+  -- a known, accepted by-construction drift, well inside the +-20 % mean criterion
+  of spec section 7 (documented as an ASSUMPTION in `docs/features/escort-purpose.md`).
+  Missing per-type layers fall back COUNTED and two-level (drawn type -> aggregate
+  `escort` -> `other`); a >20 % per-type fallback rate now raises a loud runtime
+  WARNING (final-review hardening, #257). The 5% validation re-run
+  (`configs/overlays/escort_reuse_5pct.yml`, popsim batches reused) reports the
+  realised shift and the new band-fit metrics against the 2026-08-11 baseline
+  (goals, not hard gates, per spec section 7). Related, explicitly out of scope:
+  #256 (MiD W_ZWECK 13 passive-side semantics) does not affect these factors --
+  they encode between-type structure, not level, and remain valid if #256 later
+  changes the base `escort` layer's composition.
+- **Evidence artefacts:** spec `docs/superpowers/specs/2026-08-11-escort-distance-by-type-design.md`;
+  plan `docs/superpowers/plans/2026-08-11-escort-distance-by-type.md`;
+  `docs/features/escort-purpose.md`.
+
+## ADR-0073 — Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) (2026-08-12, PR pending)
+
+- **Status:** accepted.
+- **Context:** the Phase-2 household link anchored ALL of an escorter's escort
+  activities at ONE child's school (youngest). Multi-drop chains
+  (home->school->school->work) collapsed onto one point: 674 zero-distance
+  escort legs (~9% of escort legs) in the 5% run of 2026-08-11 (RUNS.md row
+  `escort-AB-5pct-2026-08-11`) -- an artifact, not behaviour. Non-consecutive
+  escort activities (bring ... fetch) at the same location are correct and
+  unaffected.
+- **Decision:** anchor per activity. `build_escort_links` returns ALL linkable
+  household children (youngest first); maximal blocks of consecutive escort
+  activities anchor at DISTINCT children in rank order; separate blocks restart
+  at the youngest (bring/fetch pairs stay at the same schools -- assumption:
+  chains visit children youngest-first, the surveys do not observe within-chain
+  child order); activities beyond the linkable children fall back to the
+  SrV-weighted draw (rate-logged), NEVER cycled back to child 0 (cycling would
+  recreate the artifact for one-child households). `find_assignment_problems`
+  gains an optional per-activity anchor table ((person_id, activity_index) ->
+  geometry) consulted at escort_linked boundaries; the legacy path (no table)
+  is unchanged. No new flag: this corrects a documented assumption INSIDE the
+  unmerged `escort_household_link` feature.
+- **Consequences:** remaining zero-distance escort->escort legs ~= same-school
+  siblings (genuine); anchored/overflow rates are logged by the stage; the
+  follow-up 5% re-run measures the drop in consecutive zero-legs and re-checks
+  the W1/W12 invariants before the PR.
+- **Evidence:** commits `223ff6d` (consecutive-run anchor assignment),
+  `d8b66b9` (per-activity anchor table wiring), `200dcd4` (anchor at distinct
+  children, overflow to draw) on branch `feature/escort-purpose-201`;
+  `docs/features/escort-purpose.md`. The run record
+  `escort-AB-5pct-2026-08-11` (674 zero-distance legs; also cited in the
+  module docstring of `braunschweig/synthesis/locations/escort_links.py`)
+  exists as a pending-commit RUNS.md row in the main checkout as of
+  2026-08-12 and becomes traceable in-repo once that PM-layer commit lands or
+  this branch merges; it is not present in this branch's own committed
+  RUNS.md as of this commit.
 
 > **Live status note.** This log is the retrospective *why*. For the current state of every feature
 > (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)

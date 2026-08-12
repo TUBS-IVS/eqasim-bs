@@ -7,6 +7,7 @@ Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from braunschweig.popsim import trips
 
@@ -283,3 +284,98 @@ def test_build_validated_trip_table_resamples_coded_time_persons():
     )
     assert set(table["person_id"].unique()) == {"pA", "pB"}
     assert table["departure_time"].notna().all()
+
+
+# ---------------------------------------------------------------------------
+# Issue #201: ESCORT_W_ZWECK + flag-gated escort purpose override.
+# ---------------------------------------------------------------------------
+
+def test_map_purpose_escort_flag_off_is_byte_identical():
+    wege = pd.DataFrame({"W_ZWECK": [1, 4, 6, 13, 7, 99]})
+    off_default = trips.map_purpose(wege)
+    off_explicit = trips.map_purpose(wege, escort_purpose=False)
+    assert list(off_default["purpose"]) == list(off_explicit["purpose"])
+    # 6 and 13 stay "other" on the OFF path (13 via the fillna default).
+    assert list(off_default["purpose"]) == ["work", "shop", "other", "other", "leisure", "other"]
+
+
+def test_map_purpose_escort_flag_on_maps_6_and_13():
+    wege = pd.DataFrame({"W_ZWECK": [1, 4, 6, 13, 7, 99]})
+    on = trips.map_purpose(wege, escort_purpose=True)
+    assert list(on["purpose"]) == ["work", "shop", "escort", "escort", "leisure", "other"]
+
+
+def test_escort_w_zweck_constant():
+    assert trips.ESCORT_W_ZWECK == frozenset({6, 13})
+    # The internal #127 subtype constant must stay untouched (OFF-path identity).
+    from braunschweig.popsim.purpose_subtype import OTHER_ESCORT_ZWECK
+    assert OTHER_ESCORT_ZWECK == frozenset({6})
+
+
+def test_map_purpose_escort_share_logged_w_gew_weighted(caplog):
+    """The W_GEW-weighted branch of map_purpose must be exercised, not only the
+    unweighted fallback (fallback-transparency rule: test the primary method,
+    not just the fallback). W_GEW is the codebase's standard MiD trip weight and
+    is present on real production data, so this is the branch that actually
+    executes in practice; the two escort tests above only exercise the
+    unweighted fallback because their fixture has no W_GEW column.
+
+    Escort rows (W_ZWECK in {6, 13}) sit at index 2 and 3, as in the fixtures
+    above; W_GEW gives them weight 2 each (sum 4) against a total weight of 8,
+    so the W_GEW-weighted escort share is 4/8 = 50.00%.
+    """
+    import logging
+
+    wege = pd.DataFrame({
+        "W_ZWECK": [1, 4, 6, 13, 7, 99],
+        "W_GEW": [1, 1, 2, 2, 1, 1],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        on = trips.map_purpose(wege, escort_purpose=True)
+
+    # The mapping itself must be unaffected by the presence of W_GEW.
+    assert list(on["purpose"]) == ["work", "shop", "escort", "escort", "leisure", "other"]
+
+    info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("W_GEW-weighted" in m and "50.00%" in m for m in info_messages), info_messages
+
+
+# ---------------------------------------------------------------------------
+# Issue #256: escort_passive_education -- W_ZWECK 13 (passive escort leg)
+# becomes the escorted child's own education trip.
+# ---------------------------------------------------------------------------
+
+# Issue #256: W_ZWECK 13 is the PASSIVE side -> education at the child's own school.
+def test_map_purpose_passive_education_relabels_13_only():
+    wege = pd.DataFrame({
+        "W_ZWECK": [1, 4, 6, 13, 7, 99],
+        "W_GEW": [1.0] * 6,
+    })
+    out = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True)
+    assert list(out["purpose"]) == [
+        "work", "shop", "escort", "education", "leisure", "other"]
+
+
+def test_map_purpose_passive_education_requires_escort_purpose():
+    wege = pd.DataFrame({"W_ZWECK": [6, 13], "W_GEW": [1.0, 1.0]})
+    with pytest.raises(ValueError, match="requires escort_purpose"):
+        trips.map_purpose(wege, escort_purpose=False, escort_passive_education=True)
+
+
+def test_map_purpose_passive_flag_off_keeps_201_behaviour():
+    wege = pd.DataFrame({"W_ZWECK": [6, 13], "W_GEW": [1.0, 1.0]})
+    on_201 = trips.map_purpose(wege, escort_purpose=True)
+    explicit_off = trips.map_purpose(wege, escort_purpose=True,
+                                     escort_passive_education=False)
+    assert list(on_201["purpose"]) == list(explicit_off["purpose"]) == ["escort", "escort"]
+
+
+def test_map_purpose_passive_education_rates_logged(caplog):
+    import logging
+    wege = pd.DataFrame({"W_ZWECK": [6, 6, 6, 13], "W_GEW": [1.0, 1.0, 1.0, 3.0]})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True)
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    # active 3 legs weight 3.0 (50.0%), passive 1 leg weight 3.0 (50.0%)
+    assert "escort_passive_education ON" in joined
+    assert "passive" in joined and "education" in joined
