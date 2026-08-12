@@ -202,16 +202,25 @@ def execute(context):
             grid_seed_polygons,
         )
         from braunschweig.synthesis.locations.secondary_chainsolvers import (
-            SRV_BUILDING_CATEGORY_BASE_POTENTIAL,
             append_landuse_candidates,
             append_location_category_columns,
             check_category_supply,
         )
 
+        # min_volume_m3 / cap_percentile mirror secondary_other_min_volume_m3 /
+        # secondary_other_cap_percentile (the same cap-and-floor formula
+        # secondary_other_potential.derive_other_potential uses) -- both are
+        # declared unconditionally whenever secondary_building_potentials is ON
+        # (configure(), directly inside the `if sec_enabled:` block, not nested
+        # under secondary_other_smart_potential), which is guaranteed here
+        # because the guard above already requires secondary_building_potentials
+        # ON whenever secondary_srv_location_types is ON.
         df_secondary = append_location_category_columns(
             df_secondary,
             context.stage("braunschweig.data.building_potentials"),
             context.stage("braunschweig.data.bosserhof_location_category"),
+            min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
+            cap_percentile=float(context.config("secondary_other_cap_percentile")),
         )
 
         df_landuse = context.stage("braunschweig.data.landuse")
@@ -224,25 +233,16 @@ def execute(context):
             context.stage("data.spatial.municipalities"),
         )
 
-        # Non-empty check (CLAUDE.md fallback transparency): every category
-        # THIS stage can actually populate must carry at least one positive-
-        # potential candidate, or the wiring (mapping / grid seeding /
-        # potential join) is broken. Scoped to the leisure_* categories
-        # (masking pot_leisure on sec_b_* buildings) + leisure_outdoor
-        # (landuse-only, no building counterpart) -- NOT the two errand_*
-        # categories: build_secondary_candidates hard-codes pot_other=0.0 on
-        # every sec_b_* row (secondary_chainsolvers.py, gpkg construction), so
-        # there is currently no wired candidate source that could ever give
-        # errand_authority_medical / errand_service a positive potential;
-        # including them here would make secondary_srv_location_types
-        # permanently unusable rather than catching a real wiring defect.
-        # This is a known upstream gap (tracked for a follow-up issue), not a
-        # silent fallback introduced by this stage.
-        leisure_building_categories = tuple(
-            category for category, base_column in SRV_BUILDING_CATEGORY_BASE_POTENTIAL.items()
-            if base_column == "pot_leisure"
-        )
-        assert set(leisure_building_categories) <= set(BUILDING_CATEGORIES)
-        check_category_supply(df_secondary, leisure_building_categories + ("leisure_outdoor",))
+        # Non-empty check (CLAUDE.md fallback transparency): every SrV
+        # location category must carry at least one positive-potential
+        # candidate, or the wiring (mapping / grid seeding / potential join)
+        # is broken. All six categories are checked -- the three leisure_*
+        # categories (masking pot_leisure on sec_b_* buildings), the two
+        # errand_* categories (derived from df_potentials by
+        # append_location_category_columns via the cap-and-floor formula
+        # above, including newly appended sec_b_* rows for errand-class
+        # buildings absent from the input candidates), and leisure_outdoor
+        # (landuse-only, no building counterpart).
+        check_category_supply(df_secondary, BUILDING_CATEGORIES + ("leisure_outdoor",))
 
     return df_secondary

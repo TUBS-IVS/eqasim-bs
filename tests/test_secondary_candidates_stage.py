@@ -117,20 +117,34 @@ def _stage_context(sec_enabled=True, external=True, visit=False):
 
 
 def _srv_building_potentials_frame():
-    """Three buildings, each carrying a positive pot_leisure and mapped, via
-    the real committed Bosserhof->location-category classes, to one of the
-    three leisure_* SrV categories (issue #262)."""
-    boxes = [box(0, 100, 5, 105), box(10, 100, 15, 105), box(20, 100, 25, 105)]
+    """Five buildings, mapped via the real committed Bosserhof->location-
+    category classes to all five SrV building categories (issue #262):
+
+    - 101/102/103 carry a positive pot_leisure and mask into the three
+      leisure_* categories (unchanged leisure masking).
+    - 104/105 carry NO retail/leisure potential (so build_secondary_candidates'
+      keep-filter excludes them from the input candidates entirely) but carry
+      a positive potential_generic and volume_m3 above the floor, so
+      append_location_category_columns derives a positive errand_* potential
+      for them directly from df_potentials and appends them as NEW sec_b_*
+      candidate rows (the #262 plan amendment, commit 75c6021).
+    """
+    boxes = [
+        box(0, 100, 5, 105), box(10, 100, 15, 105), box(20, 100, 25, 105),
+        box(30, 100, 35, 105), box(40, 100, 45, 105),
+    ]
     return gpd.GeoDataFrame(
         {
-            "building_id": ["101", "102", "103"],
-            "potential_retail_daily": [0.0, 0.0, 0.0],
-            "potential_retail_non_daily": [0.0, 0.0, 0.0],
-            "potential_leisure": [5.0, 6.0, 7.0],
-            "potential_generic": [0.0, 0.0, 0.0],
-            "commune_id": ["03101000", "03101000", "03101000"],
+            "building_id": ["101", "102", "103", "104", "105"],
+            "potential_retail_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
+            "potential_retail_non_daily": [0.0, 0.0, 0.0, 0.0, 0.0],
+            "potential_leisure": [5.0, 6.0, 7.0, 0.0, 0.0],
+            "potential_generic": [0.0, 0.0, 0.0, 80.0, 60.0],
+            "volume_m3": [1000.0, 1000.0, 1000.0, 100.0, 100.0],
+            "commune_id": ["03101000"] * 5,
             "bosserhof_class_clean": [
                 "large cinemas", "restaurants gastronomy", "fitness wellness",
+                "hospitals", "business oriented services",
             ],
         },
         geometry=boxes, crs=CRS,
@@ -139,8 +153,14 @@ def _srv_building_potentials_frame():
 
 def _srv_location_category_mapping():
     return pd.DataFrame({
-        "bosserhof_class": ["large cinemas", "restaurants gastronomy", "fitness wellness"],
-        "location_category": ["leisure_culture", "leisure_gastronomy", "leisure_sports"],
+        "bosserhof_class": [
+            "large cinemas", "restaurants gastronomy", "fitness wellness",
+            "hospitals", "business oriented services",
+        ],
+        "location_category": [
+            "leisure_culture", "leisure_gastronomy", "leisure_sports",
+            "errand_authority_medical", "errand_service",
+        ],
     })
 
 
@@ -166,6 +186,8 @@ def _srv_stage_context():
     context._config["secondary_srv_location_types"] = True
     context._config["secondary_other_subtype_split"] = True
     context._config["secondary_landuse_grid_spacing_meters"] = 10.0
+    context._config["secondary_other_min_volume_m3"] = 50.0
+    context._config["secondary_other_cap_percentile"] = 0.99
     context._stages["braunschweig.data.building_potentials"] = _srv_building_potentials_frame()
     context._stages["braunschweig.data.landuse"] = _srv_landuse_frame()
     context._stages["braunschweig.data.bosserhof_location_category"] = _srv_location_category_mapping()
@@ -269,6 +291,11 @@ def test_srv_location_types_assembles_category_and_landuse_candidates():
     ids = set(out["location_id"].astype(str))
 
     assert any(location_id.startswith("sec_lu_") for location_id in ids)
+    # Errand-class buildings (104/105) carry no retail/leisure potential, so
+    # build_secondary_candidates' keep-filter excludes them from the input
+    # candidates; append_location_category_columns must append them as NEW
+    # sec_b_* rows once their derived errand potential is positive.
+    assert "sec_b_104" in ids and "sec_b_105" in ids
 
     for category in [
         "leisure_culture", "leisure_gastronomy", "leisure_sports",
@@ -279,12 +306,16 @@ def test_srv_location_types_assembles_category_and_landuse_candidates():
     assert "offers_leisure_outdoor" in out.columns
     assert "pot_leisure_outdoor" in out.columns
 
-    # Positive supply for every category this stage can actually populate
-    # today (the 3 leisure_* building categories + landuse-only leisure_outdoor).
+    # Positive supply for all six categories: execute() calls
+    # check_category_supply with BUILDING_CATEGORIES + ("leisure_outdoor",),
+    # so simply reaching this point without a RuntimeError is itself the
+    # structural assertion; these checks additionally pin the concrete rows.
     assert (out["pot_leisure_culture"] > 0.0).any()
     assert (out["pot_leisure_gastronomy"] > 0.0).any()
     assert (out["pot_leisure_sports"] > 0.0).any()
     assert (out["pot_leisure_outdoor"] > 0.0).any()
+    assert (out["pot_errand_authority_medical"] > 0.0).any()
+    assert (out["pot_errand_service"] > 0.0).any()
 
 
 def test_configure_declares_srv_keys_even_when_flag_is_off():
