@@ -779,6 +779,367 @@ def append_escort_candidates(candidates: gpd.GeoDataFrame,
     return out
 
 
+# ---------------------------------------------------------------------------
+# SrV-grounded location-category candidates (issue #262): per-category
+# building offer/potential columns + ATKIS landuse grid-point candidates.
+# ---------------------------------------------------------------------------
+
+# Offer/potential columns for the SrV location categories (issue #262). Each
+# of the five categories is a MASK of an aggregate potential the candidate
+# already carries (pot_leisure for the three leisure_* categories, pot_other
+# for the two errand_* categories) -- there is no new per-category potential
+# formula here, only a class-driven narrowing of an existing aggregate (see
+# ``build_secondary_candidates`` / ``attach_potential`` for how pot_leisure /
+# pot_other are themselves derived).
+SRV_BUILDING_CATEGORY_BASE_POTENTIAL = {
+    "leisure_culture": "pot_leisure",
+    "leisure_gastronomy": "pot_leisure",
+    "leisure_sports": "pot_leisure",
+    "errand_authority_medical": "pot_other",
+    "errand_service": "pot_other",
+}
+
+
+def append_location_category_columns(candidates: gpd.GeoDataFrame,
+                                      df_potentials: gpd.GeoDataFrame,
+                                      mapping: pd.DataFrame) -> gpd.GeoDataFrame:
+    """Add per-category offer/potential columns to the candidates frame (issue #262).
+
+    For each of the five ``SRV_BUILDING_CATEGORY_BASE_POTENTIAL`` categories,
+    adds ``offers_<category>`` (bool) and ``pot_<category>`` (float) to
+    EVERY row of ``candidates``. Only ``sec_b_<building_id>`` building rows
+    (produced by ``build_secondary_candidates`` from
+    ``braunschweig.data.building_potentials``) can receive a non-zero
+    category value: for such a row whose Bosserhof class maps to
+    ``<category>`` in ``mapping``, ``pot_<category>`` is set to the row's
+    OWN base potential column value (``pot_leisure`` or ``pot_other``, per
+    ``SRV_BUILDING_CATEGORY_BASE_POTENTIAL`` -- a mask, not a new formula)
+    and ``offers_<category> = pot_<category> > 0``. Every other row --
+    non-building candidates (external centroids, ``sec_res_*``,
+    ``sec_edu_*``, legacy ``sec_*`` catalog rows) and building rows whose
+    class is unmapped in ``mapping`` -- gets ``False`` / ``0.0`` for all five
+    columns. An unmapped class is a VALID outcome (not every Bosserhof class
+    maps to one of the five categories), not an error.
+
+    Parameters
+    ----------
+    candidates:
+        The existing secondary-candidate GeoDataFrame; must already carry
+        ``pot_leisure`` and ``pot_other`` (added by
+        ``build_secondary_candidates``).
+    df_potentials:
+        ``braunschweig.data.building_potentials`` frame: ``building_id``,
+        ``bosserhof_class_clean`` (Bosserhof function-class per building).
+    mapping:
+        ``braunschweig.data.bosserhof_location_category`` frame:
+        ``bosserhof_class``, ``location_category`` (one of
+        ``bosserhof_location_category.BUILDING_CATEGORIES``).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        ``candidates`` with the ten new columns (five offers_/pot_ pairs).
+
+    Raises
+    ------
+    ValueError
+        If ``candidates`` is missing ``pot_leisure``/``pot_other``, or
+        ``df_potentials``/``mapping`` is missing a required column
+        (fail-fast; no silent fallback to an all-zero category set).
+    """
+    required_candidate_cols = sorted(set(SRV_BUILDING_CATEGORY_BASE_POTENTIAL.values()))
+    missing_candidate = [c for c in required_candidate_cols if c not in candidates.columns]
+    if missing_candidate:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "requires candidates to already carry column(s) %s (produced by "
+            "build_secondary_candidates); available: %s."
+            % (missing_candidate, list(candidates.columns))
+        )
+    missing_potentials = [c for c in ["building_id", "bosserhof_class_clean"]
+                          if c not in df_potentials.columns]
+    if missing_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "building_potentials source is missing column(s) %s; available: %s."
+            % (missing_potentials, list(df_potentials.columns))
+        )
+    missing_mapping = [c for c in ["bosserhof_class", "location_category"]
+                       if c not in mapping.columns]
+    if missing_mapping:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "category mapping is missing column(s) %s; available: %s."
+            % (missing_mapping, list(mapping.columns))
+        )
+
+    out = candidates.copy()
+    categories = list(SRV_BUILDING_CATEGORY_BASE_POTENTIAL)
+    for category in categories:
+        out["offers_" + category] = False
+        out["pot_" + category] = 0.0
+
+    building_mask = out["location_id"].astype(str).str.startswith("sec_b_")
+    n_building_rows = int(building_mask.sum())
+
+    class_by_building = dict(zip(
+        df_potentials["building_id"].astype(str),
+        df_potentials["bosserhof_class_clean"].astype(str),
+    ))
+    category_by_class = dict(zip(
+        mapping["bosserhof_class"].astype(str), mapping["location_category"].astype(str),
+    ))
+
+    building_ids = out.loc[building_mask, "location_id"].astype(str).str.slice(len("sec_b_"))
+    classes = building_ids.map(class_by_building)
+    row_categories = classes.map(category_by_class)
+
+    n_class_matched = int(classes.notna().sum())
+    n_category_mapped = int(row_categories.notna().sum())
+    per_category_counts = {
+        category: int((row_categories == category).sum()) for category in categories
+    }
+
+    for category in categories:
+        base_col = SRV_BUILDING_CATEGORY_BASE_POTENTIAL[category]
+        matched_index = row_categories.index[row_categories == category]
+        if len(matched_index):
+            out.loc[matched_index, "pot_" + category] = out.loc[matched_index, base_col].astype(float)
+            out.loc[matched_index, "offers_" + category] = out.loc[matched_index, "pot_" + category] > 0.0
+
+    print(
+        "[braunschweig.secondary_chainsolvers] location category columns: %d sec_b_* "
+        "building candidates; class matched %d/%d (%.1f%%), mapped to one of the 5 "
+        "SrV categories %d/%d (%.1f%%); per-category counts: %s"
+        % (n_building_rows, n_class_matched, n_building_rows,
+           100.0 * n_class_matched / n_building_rows if n_building_rows else 0.0,
+           n_category_mapped, n_class_matched,
+           100.0 * n_category_mapped / n_class_matched if n_class_matched else 0.0,
+           per_category_counts)
+    )
+    n_unmatched_building = n_building_rows - n_class_matched
+    if n_unmatched_building:
+        print(
+            "WARNING: [braunschweig.secondary_chainsolvers] %d/%d sec_b_* candidates "
+            "have no matching building_id in the building_potentials source "
+            "(df_potentials); they carry False/0.0 for all five SrV location "
+            "categories -- verify braunschweig.data.building_potentials and the "
+            "building candidate set share the same building_id space."
+            % (n_unmatched_building, n_building_rows)
+        )
+    return out
+
+
+def check_category_supply(candidates: gpd.GeoDataFrame, categories) -> None:
+    """Raise if any category in ``categories`` has zero positive-potential rows.
+
+    A region-wide zero supply for a location category means the candidate
+    universe carries no ``pot_<category> > 0`` row anywhere, so the carla
+    solver could never select that category regardless of demand -- this is
+    a wiring failure (a broken mapping, a grid-seeding gap, a potential-join
+    miss), not merely thin data, and must be surfaced loudly (CLAUDE.md
+    "Fallback transparency").
+
+    Parameters
+    ----------
+    candidates:
+        The assembled candidate GeoDataFrame; expected to carry
+        ``pot_<category>`` for every entry in ``categories``.
+    categories:
+        Iterable of category names to check.
+
+    Raises
+    ------
+    RuntimeError
+        Naming every category with zero positive-potential rows (a missing
+        ``pot_<category>`` column counts as zero supply).
+    """
+    empty = []
+    for category in categories:
+        column = "pot_" + category
+        if column not in candidates.columns or not (candidates[column].astype(float) > 0.0).any():
+            empty.append(category)
+    if empty:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] zero candidate supply for location "
+            "categor%s %s -- every pot_<category> column has no positive-potential "
+            "rows; this indicates broken wiring (mapping / grid seeding / potential "
+            "join), not thin data."
+            % ("y" if len(empty) == 1 else "ies", empty)
+        )
+
+
+def append_landuse_candidates(candidates: gpd.GeoDataFrame,
+                              df_landuse_points: gpd.GeoDataFrame,
+                              layer_to_category: Dict[str, str],
+                              df_municipalities: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append one landuse grid-point candidate row per seeded point (issue #262).
+
+    ``df_landuse_points`` is the output of
+    ``braunschweig.synthesis.locations.landuse_candidates.grid_seed_polygons``
+    (columns ``layer``, ``represented_area_m2``, ``geometry`` (Point)): each
+    point becomes a ``sec_lu_<n>`` candidate row (``n`` = its positional
+    index in ``df_landuse_points``, stable because grid seeding is
+    deterministic) carrying ``offers_<category>=True`` /
+    ``pot_<category>=represented_area_m2`` for its layer's category
+    (``layer_to_category[layer]``) and ``False`` / ``0.0`` for every other
+    offer/potential column already on ``candidates``, mirroring the
+    column-fill pattern of :func:`append_residential_visit_candidates`. Any
+    category column named by ``layer_to_category`` that does not yet exist
+    on ``candidates`` (e.g. ``leisure_outdoor``, which has no building
+    counterpart) is added here, defaulting to ``False`` / ``0.0`` on the
+    pre-existing rows.
+
+    ``commune_id`` / ``iris_id`` are attached by a point-in-polygon spatial
+    join against ``df_municipalities`` (predicate ``"within"``). Points that
+    fall outside every municipality polygon are outside the study area and
+    are DROPPED (counted and logged -- no silent fallback to an unset zone
+    id). ``iris_id`` is set equal to ``commune_id`` because
+    ``data.spatial.municipalities`` does not carry a separate IRIS code
+    (mirroring the ``iris_col`` fallback already used by
+    ``append_residential_visit_candidates`` / ``append_escort_candidates``
+    when the finer-grained id is unavailable).
+
+    Parameters
+    ----------
+    candidates:
+        The existing secondary-candidate GeoDataFrame. Should already carry
+        the five SrV building-category columns (i.e. called AFTER
+        :func:`append_location_category_columns`) so those columns are
+        correctly zero-filled for the new landuse rows rather than added
+        fresh here.
+    df_landuse_points:
+        ``grid_seed_polygons`` output: ``layer``, ``represented_area_m2``,
+        ``geometry`` (Point).
+    layer_to_category:
+        ATKIS layer name -> SrV location category, e.g.
+        ``landuse_candidates.LANDUSE_LAYER_TO_CATEGORY``.
+    df_municipalities:
+        ``data.spatial.municipalities`` frame: ``commune_id``, ``geometry``
+        (polygon), same CRS as ``candidates`` or reprojectable to it.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        ``candidates`` concatenated with one landuse-candidate row per point
+        that falls inside a municipality.
+
+    Raises
+    ------
+    ValueError
+        If ``df_landuse_points`` is missing a required column, if
+        ``df_municipalities`` is missing ``commune_id``, or if
+        ``df_landuse_points`` carries a ``layer`` value with no entry in
+        ``layer_to_category`` (fail-fast; no silent drop of an unrecognised
+        layer).
+    """
+    required_points = ["layer", "represented_area_m2", "geometry"]
+    missing_points = [c for c in required_points if c not in df_landuse_points.columns]
+    if missing_points:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates landuse "
+            "point source is missing column(s) %s; available: %s."
+            % (missing_points, list(df_landuse_points.columns))
+        )
+    if "commune_id" not in df_municipalities.columns:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates "
+            "municipalities source is missing the 'commune_id' column; available: %s."
+            % list(df_municipalities.columns)
+        )
+    unknown_layers = sorted(set(df_landuse_points["layer"].astype(str)) - set(layer_to_category))
+    if unknown_layers:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates: "
+            "df_landuse_points has layer(s) %s with no entry in layer_to_category "
+            "(known: %s)." % (unknown_layers, sorted(layer_to_category))
+        )
+
+    n_before = len(candidates)
+    base = candidates.copy()
+
+    categories = sorted(set(layer_to_category.values()))
+    for category in categories:
+        if ("offers_" + category) not in base.columns:
+            base["offers_" + category] = False
+        if ("pot_" + category) not in base.columns:
+            base["pot_" + category] = 0.0
+
+    pts = df_landuse_points.copy()
+    if pts.crs is not None and candidates.crs is not None and pts.crs != candidates.crs:
+        pts = pts.to_crs(candidates.crs)
+    municipalities = df_municipalities
+    if (municipalities.crs is not None and candidates.crs is not None
+            and municipalities.crs != candidates.crs):
+        municipalities = municipalities.to_crs(candidates.crs)
+
+    n_total = len(pts)
+    pts_indexed = gpd.GeoDataFrame(
+        {"_row": np.arange(n_total)}, geometry=pts.geometry.values, crs=candidates.crs)
+    joined = gpd.sjoin(
+        pts_indexed, municipalities[["commune_id", "geometry"]],
+        how="left", predicate="within",
+    ).drop(columns=["index_right"])
+    # A point exactly on a shared municipality border can match more than one
+    # polygon; keep the first match (deterministic row order) so every input
+    # point contributes at most one output row.
+    joined = joined.drop_duplicates(subset="_row", keep="first").set_index("_row")
+    commune_by_row = joined["commune_id"].reindex(range(n_total))
+
+    kept_mask = commune_by_row.notna().to_numpy()
+    n_kept = int(kept_mask.sum())
+    n_dropped = n_total - n_kept
+
+    kept_n = np.arange(n_total)[kept_mask]
+    layer_kept = df_landuse_points["layer"].to_numpy()[kept_mask]
+    area_kept = df_landuse_points["represented_area_m2"].astype(float).to_numpy()[kept_mask]
+    geom_kept = pts.geometry.to_numpy()[kept_mask]
+    commune_kept = commune_by_row.to_numpy()[kept_mask].astype(str)
+    category_kept = np.array([layer_to_category[layer] for layer in layer_kept])
+
+    offer_columns_all = [c for c in base.columns if c.startswith("offers_")]
+    potential_columns_all = [c for c in base.columns if c.startswith("pot_")]
+
+    data = {
+        "location_id": ["sec_lu_%d" % n for n in kept_n],
+        "commune_id": commune_kept,
+        "iris_id": commune_kept,
+        "geometry": geom_kept,
+    }
+    for column in offer_columns_all:
+        data[column] = np.zeros(n_kept, dtype=bool)
+    for column in potential_columns_all:
+        data[column] = np.zeros(n_kept, dtype=float)
+    for category in categories:
+        mask = category_kept == category
+        data["offers_" + category][mask] = True
+        data["pot_" + category][mask] = area_kept[mask]
+
+    landuse_rows = gpd.GeoDataFrame(data, crs=candidates.crs)
+    out = gpd.GeoDataFrame(
+        pd.concat([base, landuse_rows], ignore_index=True), crs=candidates.crs)
+
+    n_after = len(out)
+    growth_factor = (n_after / n_before) if n_before else float("inf")
+    print(
+        "[braunschweig.secondary_chainsolvers] landuse candidates: %d/%d grid points "
+        "inside a municipality kept, %d dropped (outside the study area boundary); "
+        "locations frame %d -> %d rows after appending %d landuse candidates "
+        "(growth x%.2f)"
+        % (n_kept, n_total, n_dropped, n_before, n_after, n_kept, growth_factor)
+    )
+    if growth_factor > VISIT_CANDIDATE_WARN_FACTOR:
+        print(
+            "WARNING: [braunschweig.secondary_chainsolvers] landuse candidate growth "
+            "factor x%.2f exceeds VISIT_CANDIDATE_WARN_FACTOR=%.1f -- this materially "
+            "increases the carla candidate universe and solve cost; verify "
+            "secondary_landuse_grid_spacing_meters is not set too fine for the "
+            "region's landuse extent."
+            % (growth_factor, VISIT_CANDIDATE_WARN_FACTOR)
+        )
+    return out
+
+
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
                  attr_transform: str = "linear"):
     """Construct the chainsolvers combined Scorer, or None when disabled (the
