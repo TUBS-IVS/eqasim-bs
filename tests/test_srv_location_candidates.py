@@ -735,6 +735,23 @@ def test_external_rows_do_not_contaminate_the_landuse_scale_factor():
     assert escaped_landuse == pytest.approx(pots)
 
 
+def test_visit_pool_supply_check_raises_without_a_positive_pot_visit_row():
+    """``leisure_visit``'s pool does not follow the ``pot_<category>`` naming
+    scheme, so ``check_category_supply`` cannot cover it -- and the external
+    escapes deliberately skip it. Its own guard closes that gap."""
+    candidates = _mixed_family_candidates()
+    assert (candidates[sc.VISIT_POTENTIAL_COLUMN] > 0.0).any()
+    sc.check_visit_pool_supply(candidates)  # happy path: the sec_res_ row supplies it
+
+    candidates[sc.VISIT_POTENTIAL_COLUMN] = 0.0
+    with pytest.raises(RuntimeError, match="leisure_visit"):
+        sc.check_visit_pool_supply(candidates)
+
+    with pytest.raises(RuntimeError, match=sc.VISIT_POTENTIAL_COLUMN):
+        sc.check_visit_pool_supply(
+            candidates.drop(columns=[sc.VISIT_POTENTIAL_COLUMN]))
+
+
 def test_supply_check_must_run_before_the_escapes_to_stay_falsifiable():
     """Re-review finding: the external escapes give every centroid a positive
     potential in EVERY category, so ``check_category_supply`` is only falsifiable

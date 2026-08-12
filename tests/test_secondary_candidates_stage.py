@@ -380,6 +380,30 @@ def test_srv_supply_guard_still_fires_with_external_candidates_enabled():
         secondary_candidates.execute(context)
 
 
+def test_srv_visit_pool_supply_guard_fires_on_a_zero_weight_residential_frame():
+    """The SEVENTH category, leisure_visit, lives on the residential visit pool
+    (offers_visit / pot_visit), which check_category_supply cannot cover (its
+    columns do not follow the "pot_<category>" scheme) and which the external
+    escapes deliberately skip. A zero-supply visit pool must therefore fail fast
+    HERE, in the candidate assembly, rather than later inside the measure-only
+    excursion boundary-clip diagnostic."""
+    context = _srv_stage_context()
+    zero_weight = _residential_frame()
+    zero_weight["weight"] = 0.0  # pot_visit = weight -> no positive row
+    context._stages["braunschweig.data.buildings"] = zero_weight
+
+    with pytest.raises(RuntimeError, match="leisure_visit"):
+        secondary_candidates.execute(context)
+
+
+def test_srv_visit_pool_supply_guard_passes_with_residential_candidates_present():
+    """Happy path: the default residential frame carries a positive weight, so the
+    sec_res_* visit rows exist and the guard stays silent."""
+    out = secondary_candidates.execute(_srv_stage_context())
+    assert any(str(location_id).startswith("sec_res_") for location_id in out["location_id"])
+    assert (out["pot_visit"] > 0.0).any()
+
+
 def test_configure_declares_srv_keys_even_when_flag_is_off():
     """synpp execute-config contract: configure() must declare
     secondary_srv_location_types and secondary_landuse_grid_spacing_meters

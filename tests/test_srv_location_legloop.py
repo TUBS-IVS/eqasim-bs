@@ -924,7 +924,14 @@ def test_excursion_clip_reports_nothing_to_measure_without_excursion_legs():
 
 def test_excursion_clip_fails_fast_when_a_drawn_category_has_no_candidates():
     """Mirrors the legacy pot_leisure fail-fast: a drawn placement category with
-    zero positive-potential candidates is broken wiring, not thin data."""
+    zero positive-potential candidates is broken wiring, not thin data.
+
+    All SEVEN placement categories are now guarded up front in the
+    ``secondary_candidates`` stage (``check_category_supply`` for the six
+    ``pot_<category>`` pools, ``check_visit_pool_supply`` for ``leisure_visit``'s
+    residential pool), so this raise is an INVARIANT breach -- a candidate frame
+    that never came through that stage, as manufactured here -- and not a data
+    condition a real run can reach."""
     problems, distributions = _excursion_clip_problems_and_distributions()
     candidates = _excursion_clip_candidates()
     candidates["pot_leisure_outdoor"] = 0.0

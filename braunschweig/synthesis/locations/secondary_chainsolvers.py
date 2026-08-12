@@ -1157,6 +1157,51 @@ def check_category_supply(candidates: gpd.GeoDataFrame, categories) -> None:
         )
 
 
+def check_visit_pool_supply(candidates: gpd.GeoDataFrame) -> None:
+    """Raise if the residential visit pool has zero positive-potential rows.
+
+    Sibling of :func:`check_category_supply` for the ONE SrV location category
+    whose candidate pool does not follow the ``pot_<category>`` naming scheme:
+    ``leisure_visit`` is placed on the residential visit candidates
+    (``VISIT_OFFER_COLUMN`` / ``VISIT_POTENTIAL_COLUMN``, appended by
+    :func:`append_residential_visit_candidates`), so a ``categories`` entry
+    cannot cover it. Kept as a dedicated function rather than widening
+    ``check_category_supply``'s ``"pot_" + category`` semantics, so the message
+    can name the actual producer of that pool.
+
+    ``leisure_visit_building_potential`` is a hard prerequisite of
+    ``secondary_srv_location_types`` (see
+    :func:`_validate_srv_location_type_prerequisites`), so with the flag ON a
+    zero-supply visit pool always means broken wiring -- the residential append
+    never ran, ran on an empty/zero-weight building frame, or lost its column --
+    never merely thin data. Without this guard the omission would only surface
+    much later, from inside the measure-only excursion boundary-clip diagnostic
+    (``_srv_excursion_boundary_clip_lines``), which is the wrong place to
+    discover a broken candidate set.
+
+    MUST be called on the escape-free frame, next to
+    :func:`check_category_supply`: ``leisure_visit`` is deliberately excluded
+    from :func:`append_external_category_escapes`, so its supply can only ever
+    come from in-area residential rows.
+
+    Raises
+    ------
+    RuntimeError
+        If ``VISIT_POTENTIAL_COLUMN`` is missing or has no positive row.
+    """
+    column = VISIT_POTENTIAL_COLUMN
+    if column not in candidates.columns or not (candidates[column].astype(float) > 0.0).any():
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] zero candidate supply for location "
+            "category 'leisure_visit' -- the residential visit pool ('%s') has no "
+            "positive-potential rows; this indicates broken wiring "
+            "(append_residential_visit_candidates did not run, or ran on an empty / "
+            "zero-weight braunschweig.data.buildings frame), not thin data. Note that "
+            "'leisure_visit' is excluded from the external Gemeinde-centroid escapes, "
+            "so this pool is its only source of candidates." % column
+        )
+
+
 def append_landuse_candidates(candidates: gpd.GeoDataFrame,
                               df_landuse_points: gpd.GeoDataFrame,
                               layer_to_category: Dict[str, str],

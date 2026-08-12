@@ -206,6 +206,7 @@ def execute(context):
             append_landuse_candidates,
             append_location_category_columns,
             check_category_supply,
+            check_visit_pool_supply,
         )
 
         # min_volume_m3 / cap_percentile mirror secondary_other_min_volume_m3 /
@@ -253,6 +254,19 @@ def execute(context):
         # building mapping or landuse seeding would pass on external supply
         # alone. The guard must measure genuine IN-AREA supply.
         check_category_supply(df_secondary, BUILDING_CATEGORIES + ("leisure_outdoor",))
+
+        # The SEVENTH category, leisure_visit, is placed on the residential visit
+        # pool (offers_visit / pot_visit), whose column names do not follow the
+        # "pot_<category>" scheme check_category_supply keys on -- hence its own
+        # guard, run at the same point and on the same escape-free frame.
+        # leisure_visit is deliberately excluded from the external escapes, and
+        # leisure_visit_building_potential is a hard prerequisite of
+        # secondary_srv_location_types, so zero visit supply here is always broken
+        # wiring (a residential append that did not run, or ran on an empty /
+        # zero-weight buildings frame), never thin data. Without this the omission
+        # would only surface later inside the measure-only excursion
+        # boundary-clip diagnostic -- the wrong place to discover it.
+        check_visit_pool_supply(df_secondary)
 
         # Long-distance reach parity (post-Task-8 review finding): the external
         # Gemeinde centroids are category-agnostic distance escapes -- without

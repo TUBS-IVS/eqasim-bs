@@ -160,7 +160,12 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
         a wiring failure (broken mapping, grid-seeding gap, potential-join
         miss), not thin data. It runs on the escape-free frame, BEFORE the
         external escapes below, so it stays falsifiable (see the External
-        Gemeinde centroids bullet above).
+        Gemeinde centroids bullet above). It covers the six `pot_<category>`
+        pools; the seventh category, `leisure_visit`, whose pool is the
+        residential `offers_visit` / `pot_visit` stock (a different column-name
+        scheme, and excluded from the external escapes), is guarded at the same
+        point by the sibling `check_visit_pool_supply`, so all seven placement
+        categories are proven non-empty before any leg is placed.
      2. **External Gemeinde-centroid category escapes** (the bullet above)
         are category-agnostic long-distance candidates, not a per-leg
         category-specific fallback: every placement category (except
