@@ -27,6 +27,21 @@ identical whether it arrives as one polygon or many. Anchoring the grid to
 per-call data bounds instead would break this invariance, because the anchor
 (and therefore every node coordinate) would shift depending on what else is in
 the frame.
+
+Qualification (boundary coincidence): the invariance guarantee above holds
+EXCEPT when a shared fragment edge lies EXACTLY on a grid line (i.e. exactly at
+an integer multiple of ``spacing_m``). ``shapely.contains`` excludes boundary
+points by definition (a node exactly on a polygon's edge is not "contained" by
+either side of the split), so a node sitting precisely on such a shared edge is
+excluded from BOTH fragments and the split candidate count can fall short of
+the whole-polygon count for that specific coincidence (e.g. splitting
+``box(100, 100, 560, 560)`` at ``x=300`` with ``spacing_m=150`` drops the 3
+nodes at ``x=300`` -> 6 points instead of 9). This predicate is intentional and
+must not be changed (a strict "contains" boundary rule is required upstream);
+the coincidence is accepted here because real ATKIS/cadastral parcel
+boundaries are arbitrary reals with effectively zero probability of landing
+exactly on a 150 m (or any other configured) grid line -- only synthetic,
+exactly-gridded test/edge-case input can trigger it.
 """
 from __future__ import annotations
 
