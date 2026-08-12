@@ -78,7 +78,7 @@ def write_mapping(path: str, purpose_path: str = None) -> None:
 
     # Write with comment header lines.
     with open(path, "w") as f:
-        f.write("# Source: design spec seed proposal 2026-08-12\n")
+        f.write("# Source: issue TUBS-IVS/eqasim-bs#262 + design spec docs/superpowers/specs/2026-08-12-srv-location-types-design.md (local)\n")
         f.write("# ASSUMPTION: hotels excluded from leisure_gastronomy (lodging, not dining)\n")
         f.write("# Do not edit manually; regenerate with scripts/seed_bosserhof_class_to_location_category.py\n")
 

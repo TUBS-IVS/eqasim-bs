@@ -1,4 +1,4 @@
-# Source: design spec seed proposal 2026-08-12
+# Source: issue TUBS-IVS/eqasim-bs#262 + design spec docs/superpowers/specs/2026-08-12-srv-location-types-design.md (local)
 # ASSUMPTION: hotels excluded from leisure_gastronomy (lodging, not dining)
 # Do not edit manually; regenerate with scripts/seed_bosserhof_class_to_location_category.py
 bosserhof_class,location_category
