@@ -1,19 +1,21 @@
-"""Household escort links: anchor escort activities at a child's school (issue #201).
+"""Household escort links: anchor escort activities at children's schools (issue #201).
 
 An escorter (a synthetic person with at least one plan-level ``escort``
-activity) is LINKED to the education location of the youngest OTHER member of
-the same household that (a) has a realised education assignment and (b) is at
-most ``max_child_age_years`` old. Linked escorters' escort activities are
-anchored at that location by the secondary chainsolver stage (they stop being
-free location-choice activities); unlinked escorters keep the SrV-weighted
-location-type draw. The link rate is logged -- an escorter escorting a non-
-household person (about half of MiD escort legs) is EXPECTED to stay unlinked.
+activity) is LINKED to the education locations of the OTHER members of the
+same household that (a) have a realised education assignment and (b) are at
+most ``max_child_age_years`` old, ordered youngest first (Kita/Grundschule
+trips dominate the observed SrV escort destinations). Linked escorters'
+escort activities are anchored PER ACTIVITY by the secondary chainsolver
+stage via :func:`assign_escort_anchors` (consecutive-run rule -- consecutive
+escort activities anchor at DISTINCT children; overflow falls back to the
+draw); unlinked escorters keep the SrV-weighted location-type draw entirely.
+The link rate is logged -- an escorter escorting a non-household person
+(about half of MiD escort legs) is EXPECTED to stay unlinked.
 
-ASSUMPTION (documented in the spec): one link location per escorter (all of a
-person's escort activities anchor at the same school -- bring + fetch
-consistency); the youngest child is chosen (Kita/Grundschule trips dominate the
-observed SrV escort destinations); ties break on the lowest person_id for
-determinism.
+This replaces the earlier one-link-per-escorter assumption, whose collapse of
+multi-drop chains onto one point produced ~9% zero-distance escort legs
+(674 legs, 5% run 2026-08-11 -- see RUNS.md row escort-AB-5pct-2026-08-11 and
+ADR-0073).
 """
 from __future__ import annotations
 
@@ -33,11 +35,15 @@ def build_escort_links(df_persons: pd.DataFrame,
                        df_trips: pd.DataFrame,
                        *, max_child_age_years: int = DEFAULT_MAX_CHILD_AGE_YEARS
                        ) -> tuple[pd.DataFrame, dict]:
-    """One (escorter person_id -> child's education location) row per linkable escorter.
+    """All linkable (escorter person_id -> household child's education location) rows.
 
-    Returns ``(links, stats)`` with ``links`` columns
-    ``[person_id, location_id, geometry]`` and ``stats`` keys
-    ``n_escorters`` / ``n_linked`` / ``link_rate``.
+    Returns ``(links, stats)``: ``links`` columns
+    ``[person_id, child_rank, location_id, geometry]`` -- one row per
+    (escorter, linkable household child), age-sorted within each escorter
+    (``child_rank`` 0 = youngest; ties break on the child's person_id for
+    determinism); ``stats`` keys ``n_escorters`` / ``n_linked`` (distinct
+    escorters with at least one row) / ``link_rate`` / ``n_child_links``
+    (total rows).
     """
     missing = [c for c in _REQUIRED_PERSON_COLUMNS if c not in df_persons.columns]
     if missing:
@@ -53,8 +59,9 @@ def build_escort_links(df_persons: pd.DataFrame,
     if n_escorters == 0:
         logger.info("[escort_links] no escort trips found; link table is empty.")
         return (
-            pd.DataFrame(columns=["person_id", "location_id", "geometry"]),
-            {"n_escorters": 0, "n_linked": 0, "link_rate": float("nan")},
+            pd.DataFrame(columns=["person_id", "child_rank", "location_id", "geometry"]),
+            {"n_escorters": 0, "n_linked": 0, "link_rate": float("nan"),
+             "n_child_links": 0},
         )
 
     persons = df_persons[list(_REQUIRED_PERSON_COLUMNS)].copy()
@@ -71,25 +78,31 @@ def build_escort_links(df_persons: pd.DataFrame,
         children, on="household_id", how="inner", suffixes=("", "_child"),
     )
     merged = merged[merged["person_id"] != merged["person_id_child"]]
-    # First row per escorter = youngest linkable child (sort order above is
-    # preserved by the merge within each escorter's household block).
+    # All linkable children per escorter, youngest first (child_rank 0);
+    # deterministic tie-break on the child's person_id. The defensive dedupe
+    # guards against duplicate education-assignment rows.
     merged = merged.sort_values(["person_id", "HP_ALTER_child", "person_id_child"])
-    links = merged.drop_duplicates(subset=["person_id"])[
-        ["person_id", "location_id", "geometry"]
+    merged = merged.drop_duplicates(subset=["person_id", "person_id_child"])
+    merged["child_rank"] = merged.groupby("person_id").cumcount()
+    links = merged[
+        ["person_id", "child_rank", "location_id", "geometry"]
     ].reset_index(drop=True)
 
-    n_linked = int(len(links))
+    n_linked = int(links["person_id"].nunique())
+    n_child_links = int(len(links))
     link_rate = n_linked / n_escorters
     logger.info(
-        "[escort_links] household link: %d/%d escorters linked (%.1f%%) to a "
-        "child's education location (max_child_age_years=%d); unlinked escorters "
-        "use the SrV-weighted location-type draw.",
-        n_linked, n_escorters, 100.0 * link_rate, int(max_child_age_years),
+        "[escort_links] household link: %d/%d escorters linked (%.1f%%) to %d "
+        "household children's education locations (max_child_age_years=%d); "
+        "unlinked escorters use the SrV-weighted location-type draw.",
+        n_linked, n_escorters, 100.0 * link_rate, n_child_links,
+        int(max_child_age_years),
     )
     return links, {
         "n_escorters": n_escorters,
         "n_linked": n_linked,
         "link_rate": link_rate,
+        "n_child_links": n_child_links,
     }
 
 

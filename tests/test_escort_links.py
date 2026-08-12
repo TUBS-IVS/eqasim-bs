@@ -29,15 +29,18 @@ def _trips():
     })
 
 
-def test_links_pick_youngest_child_in_household():
+def test_links_list_all_children_youngest_first():
     links, stats = build_escort_links(_persons(), _education(), _trips())
-    assert len(links) == 1
-    row = links.iloc[0]
-    assert row["person_id"] == 1
-    assert row["location_id"] == "edu_7"  # child 2 (age 6) beats child 3 (age 9)
+    # person 1 (household 10) links BOTH children, youngest first.
+    assert len(links) == 2
+    assert list(links.columns) == ["person_id", "child_rank", "location_id", "geometry"]
+    assert list(links["person_id"]) == [1, 1]
+    assert list(links["child_rank"]) == [0, 1]
+    assert list(links["location_id"]) == ["edu_7", "edu_8"]  # age 6 before age 9
     # person 4 escorts but household 20 has no education-assigned child -> unlinked
     assert stats["n_escorters"] == 2
     assert stats["n_linked"] == 1
+    assert stats["n_child_links"] == 2
     assert stats["link_rate"] == pytest.approx(0.5)
 
 
@@ -66,9 +69,9 @@ def test_no_escort_trips_returns_empty_table():
         "person_id": [1, 5], "following_purpose": ["home", "shop"],
     })
     links, stats = build_escort_links(_persons(), _education(), trips)
-    assert list(links.columns) == ["person_id", "location_id", "geometry"]
+    assert list(links.columns) == ["person_id", "child_rank", "location_id", "geometry"]
     assert len(links) == 0
-    assert stats["n_escorters"] == 0 and stats["n_linked"] == 0
+    assert stats["n_escorters"] == 0 and stats["n_linked"] == 0 and stats["n_child_links"] == 0
     assert pd.isna(stats["link_rate"])
 
 
@@ -126,98 +129,65 @@ def test_problems_without_escort_linked_column_unchanged():
 
 
 # --- Task 13: chainsolver + facilities integration of the household link ------
-def test_prepare_rewrite_marks_only_linked_persons():
+def test_rewrite_marks_only_anchored_activities():
+    """Anchored activities become escort_linked on BOTH trip sides; overflow
+    escort activities (beyond the household's children) and unlinked persons
+    keep the plain escort purpose (SrV draw path)."""
     trips = pd.DataFrame({
-        "person_id": [1, 1, 2],
-        "preceding_purpose": ["home", "escort", "home"],
-        "following_purpose": ["escort", "home", "escort"],
+        "person_id":         [1, 1, 1, 2],
+        "trip_index":        [0, 1, 2, 0],
+        "preceding_purpose": ["home", "escort", "escort", "home"],
+        "following_purpose": ["escort", "escort", "home", "escort"],
     })
-    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
-                          "geometry": [_P(5, 5)]})
+    links = _links_frame([(1, 0, "edu_7", _P(5, 5))])  # ONE child
+    anchors, _ = assign_escort_anchors(trips, links)   # activity 1 anchored, 2 overflow
     from braunschweig.synthesis.locations.secondary_chainsolvers import (
         rewrite_linked_escort_trips,
     )
-    out = rewrite_linked_escort_trips(trips, links)
-    assert list(out.loc[out["person_id"] == 1, "following_purpose"]) == ["escort_linked", "home"]
-    assert list(out.loc[out["person_id"] == 1, "preceding_purpose"]) == ["home", "escort_linked"]
+    out = rewrite_linked_escort_trips(trips, anchors)
+    person_1 = out[out["person_id"] == 1]
+    assert list(person_1["following_purpose"]) == ["escort_linked", "escort", "home"]
+    assert list(person_1["preceding_purpose"]) == ["home", "escort_linked", "escort"]
     # unlinked person 2 keeps the plain escort purpose (draw path)
     assert list(out.loc[out["person_id"] == 2, "following_purpose"]) == ["escort"]
     # the input frame is NOT mutated
     assert "escort_linked" not in set(trips["following_purpose"])
 
 
-def test_anchored_location_rows_for_linked_escorts():
+def test_multi_child_pieces_stay_consistent_end_to_end():
+    """The rewrite, the anchor table, and the location rows all derive from
+    ONE assign_escort_anchors result: every escort_linked boundary the rewrite
+    creates must resolve in the anchor table, and the onward chain must anchor
+    at the SECOND child's school."""
     trips = pd.DataFrame({
-        "person_id": [1, 1, 1],
-        "trip_index": [0, 1, 2],
-        "preceding_purpose": ["home", "escort", "shop"],
-        "following_purpose": ["escort", "shop", "home"],
+        "person_id":         [1, 1, 1, 1],
+        "trip_index":        [0, 1, 2, 3],
+        "preceding_purpose": ["home", "escort", "escort", "shop"],
+        "following_purpose": ["escort", "escort", "shop", "home"],
+        "mode":              ["car"] * 4,
+        "travel_time":       [600.0] * 4,
     })
-    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
-                          "geometry": [_P(5, 5)]})
+    links = _links_frame([(1, 0, "edu_7", _P(5, 5)), (1, 1, "edu_8", _P(6, 6))])
+    anchors_df, _ = assign_escort_anchors(trips, links)
     from braunschweig.synthesis.locations.secondary_chainsolvers import (
-        anchored_escort_location_rows,
+        rewrite_linked_escort_trips,
     )
-    rows = anchored_escort_location_rows(trips, links)
-    assert list(rows.columns) == ["person_id", "activity_index", "location_id", "geometry"]
-    assert len(rows) == 1
-    assert rows.iloc[0]["activity_index"] == 1  # trip_index 0 -> destination activity 1
-    assert rows.iloc[0]["location_id"] == "edu_7"
-
-
-def test_anchored_rows_cover_origin_only_escort_activity():
-    """Regression (5% server run 2026-08-10): an escort activity that appears
-    ONLY as a trip ORIGIN must still be anchored.
-
-    The donor trip chains contain rare inconsistencies (0.027% of links, mostly
-    non-escort) where ``trip[i].following_purpose != trip[i+1].preceding_purpose``.
-    When the origin side is escort, that escort activity has no trip whose
-    ``following_purpose`` is escort, so a destination-only filter misses it. On the
-    linked path the problem splitter does not place it either (``escort_linked``
-    is a FIXED purpose), so it ends up without geometry and
-    ``synthesis/population/spatial/locations.py`` asserts.
-
-    Chain below mirrors person 769474: trip 5 arrives ``home`` but trip 6 departs
-    from ``escort`` -> activity 6 is escort as an ORIGIN only.
-    """
-    trips = pd.DataFrame({
-        "person_id":         [1, 1, 1, 1, 1, 1, 1],
-        "trip_index":        [0, 1, 2, 3, 4, 5, 6],
-        "preceding_purpose": ["home", "escort", "home", "shop", "escort", "escort", "escort"],
-        "following_purpose": ["escort", "home", "shop", "escort", "escort", "home", "home"],
+    rewritten = rewrite_linked_escort_trips(trips, anchors_df)
+    anchors = {
+        (row.person_id, row.activity_index): row.geometry
+        for row in anchors_df.itertuples(index=False)
+    }
+    df_locations = pd.DataFrame({
+        "person_id": [1],
+        "home": [_P(0, 0)], "work": [_P(1, 1)], "education": [_P(2, 2)],
     })
-    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
-                          "geometry": [_P(5, 5)]})
-    from braunschweig.synthesis.locations.secondary_chainsolvers import (
-        anchored_escort_location_rows,
-    )
-    rows = anchored_escort_location_rows(trips, links)
-
-    # Escort activities: 1, 4, 5 (trip destinations) and 6 (origin of trip 6).
-    assert sorted(rows["activity_index"]) == [1, 4, 5, 6]
-    assert set(rows["location_id"]) == {"edu_7"}
-
-
-def test_anchored_rows_have_no_duplicate_activities():
-    """An escort activity in a CONSISTENT chain is both the destination of the
-    previous trip and the origin of the next one; it must be emitted exactly
-    once, otherwise the location merge produces more rows than activities."""
-    trips = pd.DataFrame({
-        "person_id":         [1, 1, 1],
-        "trip_index":        [0, 1, 2],
-        "preceding_purpose": ["home", "escort", "escort"],
-        "following_purpose": ["escort", "escort", "home"],
-    })
-    links = pd.DataFrame({"person_id": [1], "location_id": ["edu_7"],
-                          "geometry": [_P(5, 5)]})
-    from braunschweig.synthesis.locations.secondary_chainsolvers import (
-        anchored_escort_location_rows,
-    )
-    rows = anchored_escort_location_rows(trips, links)
-
-    # Activities 1 and 2 are escort; each exactly once.
-    assert sorted(rows["activity_index"]) == [1, 2]
-    assert not rows.duplicated(subset=["person_id", "activity_index"]).any()
+    problems = list(problems_mod.find_assignment_problems(
+        rewritten, df_locations, activity_anchors=anchors))
+    # Only [escort_linked@2 -> shop -> home] has a variable activity; its
+    # origin is the SECOND child's school.
+    assert len(problems) == 1
+    assert problems[0]["purposes"] == ["shop"]
+    assert problems[0]["origin"][0][0] == 6.0 and problems[0]["origin"][0][1] == 6.0
 
 
 def test_validate_secondary_coverage_accepts_extra_valid_ids():
