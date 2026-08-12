@@ -1,6 +1,6 @@
 # PROJECT STATUS — eqasim-bs (dashboard)
 
-Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
+Updated: 2026-08-12 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
 
 ## 1. Live state
 
@@ -51,6 +51,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Fleet]** Fleet consistency v2 + income-age | ✅ (PR #12/#13) | folded into household fleet | KBA/MiD | `synthesis/vehicles/` |
 | **[Fleet]** Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check) | 🟡 pushed `feature/fleet-quality-and-data`, server-verify + merge pending | `fleet_ev_income_tilt` / `fleet_euro6_substage` | KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB | `synthesis/vehicles/fleet_sampling_de.py` |
 | **[Fleet]** Carless routing re-mode | 🟢 | `remode_carless_car_legs` | routing consistency | `matsim/simulation/prepare.py` |
+| **[Location]** NEW — SrV-grounded secondary location types (leisure/other) (#262) | 🟢 built, ON in `base_bs.yml`; A/B run PENDING | `secondary_srv_location_types` (+4 prereq flags, all in `base_bs.yml`) | pinned `srv2023_location_type_by_distance.csv` + `srv2023_secondary_type_shares.csv` (draw-coherence only — NOT a realised-output validation) | docs/features/secondary-location-types.md |
 | **[Location]** Gravity OD (work/edu) | ✅ | `gravity_slope -0.065` | BA Pendleratlas | docs/features/gravity.md |
 | **[Location]** Per-RS7 gravity slope | 🟢 | `gravity_slope_by_regiostar7` | BA Pendler Poisson GLM | docs/features/gravity.md |
 | **[Location]** Education gravity (schools/Kita/uni) | 🟢 (allfeat) | `education_gravity_enabled` | MiD T43, Destatis MZ 2024 | docs/features/education-gravity.md |
