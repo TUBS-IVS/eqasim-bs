@@ -992,6 +992,26 @@ def test_build_plans_df_columnar_matches_reference():
     assert subtype_stats == {}
 
 
+def test_build_plans_df_srv_location_decider_off_matches_reference():
+    """Issue #262 (Task 8) OFF-path golden: with ``srv_location_decider=None``
+    (the flag OFF), the plans frame -- placement activities, sampled distances,
+    dtypes and row order -- must stay byte-identical to the pre-feature
+    reference build, and no SrV counter may be allocated."""
+    problems = _bounded_problems()
+    distributions = _flat_distribution()
+
+    ref_df, ref_meta, ref_unbounded = _build_plans_df_reference(
+        problems, distributions, 2.0, np.random.RandomState(5))
+    off_df, off_meta, off_unbounded, subtype_stats = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(5),
+        srv_location_decider=None)
+
+    assert ref_meta == off_meta
+    assert ref_unbounded == off_unbounded
+    pd.testing.assert_frame_equal(off_df, ref_df)
+    assert subtype_stats == {}
+
+
 def test_build_plans_df_empty_keeps_legacy_shape():
     # All problems unbounded -> legacy from_records([]) frame (no columns).
     problems = [p for p in _bounded_problems() if p["origin"] is None]

@@ -217,6 +217,25 @@ def configure(context):
     # secondary_candidates stage, which owns the braunschweig.data.buildings dep.
     context.config("leisure_visit_building_potential", False)
 
+    # SrV-grounded location types (issue #262). When ON, every leisure / other
+    # leg draws an OBSERVED SrV-2023-BS+RGB destination category conditioned on
+    # (mode, euclidean distance band) AFTER its desired distance was sampled
+    # (design A2), and that category -- not the MiD distance subtype -- decides
+    # where the leg is placed. The eqasim output purpose stays "leisure" /
+    # "other"; the category is internal to the chainsolver. Requires the
+    # building-potential candidate set, both subtype splits and the residential
+    # visit machinery (checked, fail-fast, in execute() via
+    # _validate_srv_location_type_prerequisites). OFF (default) is
+    # byte-identical.
+    #
+    # Both keys are declared UNCONDITIONALLY -- never inside an `if` block and
+    # never as the right operand of a short-circuiting `or` (the issue #201 trap
+    # documented at secondary_candidates.py: an undeclared key makes execute()'s
+    # one-argument config() read raise synpp's PipelineError instead of reaching
+    # the intended fail-fast guard).
+    context.config("secondary_srv_location_types", False)
+    context.config("srv_location_type_probs_path", DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH)
+
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors of the legacy stage)
@@ -1564,7 +1583,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                         leisure_subtype_split: bool = False,
                         other_subtype_split: bool = False,
                         leisure_visit_building_potential: bool = False,
-                        escort_purpose: bool = False):
+                        escort_purpose: bool = False,
+                        srv_location_types: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -1629,6 +1649,39 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     non-positive potential, mirroring the shop-subtype zero-skip.
     ``escort_purpose`` requires ``with_potentials`` (the escort placement needs
     the education/visit/aggregate potential columns).
+
+    When ``srv_location_types`` is True (issue #262, Task 8) the leisure/other
+    placement vocabulary becomes the SrV-2023 location CATEGORIES instead of the
+    MiD distance subtypes, because with the SrV decider active the MiD subtype is
+    only a distance label and never a placement activity (see
+    ``_build_plans_df``). Concretely, and REGARDLESS of
+    ``leisure_subtype_split`` / ``other_subtype_split`` (which then only drive
+    the distance layers):
+
+    * a leisure-offering row emits the aggregate ``"leisure"`` activity (the
+      placement target of the ``leisure_misc`` category) PLUS one activity per
+      ``SRV_LEISURE_CATEGORIES`` member it actually offers
+      (``leisure_culture`` / ``leisure_gastronomy`` / ``leisure_sports`` at
+      ``pot_<category>`` from the building categories; ``leisure_outdoor`` and
+      the landuse share of culture/sports from the ``sec_lu_*`` grid points;
+      ``leisure_visit`` at ``offers_visit`` / ``pot_visit`` on the residential
+      candidates), each dropped for a non-positive potential exactly like the
+      shop subtypes;
+    * an ``other``-offering row emits the aggregate ``"other"`` activity (for
+      ``other_misc``) plus ``errand_authority_medical`` / ``errand_service``
+      where their potential is positive;
+    * the four MiD leisure subtypes and the three MiD other subtypes are NOT
+      emitted (``leisure_visit`` survives only because it is ALSO an SrV
+      category);
+    * shop and escort emission is unchanged.
+
+    ``srv_location_types`` requires ``with_potentials`` and fails fast when any
+    ``offers_``/``pot_`` column of a placement category is missing from
+    ``df_secondary`` -- a missing column means the candidate set was not built by
+    the ``secondary_candidates`` stage's SrV branch, and silently skipping that
+    category's offers would leave carla with no candidates for it (no silent
+    fallback). OFF (default) is byte-identical, even on a candidate frame that
+    already carries the category columns.
     """
     if shop_daily_split and not with_potentials:
         raise ValueError(
@@ -1672,6 +1725,34 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "with_potentials (the escort placement needs the education/visit/"
             "aggregate potential columns)."
         )
+    if srv_location_types and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] srv_location_types requires "
+            "with_potentials (the SrV location-category placement needs the "
+            "per-category pot_<category> columns)."
+        )
+    if srv_location_types:
+        # Fail-fast on an incomplete candidate frame (same rationale as the
+        # leisure_visit_building_potential check above): a missing category
+        # column would otherwise silently remove that category's candidates.
+        srv_required_columns = [
+            column
+            for category in SRV_PLACEMENT_CATEGORIES
+            for column in (srv_category_offer_column(category),
+                           srv_category_potential_column(category))
+        ]
+        srv_missing_columns = [
+            column for column in dict.fromkeys(srv_required_columns)
+            if column not in df_secondary.columns
+        ]
+        if srv_missing_columns:
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] srv_location_types is ON but the "
+                "locations frame has no %s column(s) (the SrV location-category candidates "
+                "were not assembled -- run the braunschweig.synthesis.locations."
+                "secondary_candidates stage with secondary_srv_location_types ON, or "
+                "disable srv_location_types)." % srv_missing_columns
+            )
     activities = []
     potentials = []
     # Activity emission order. With a split ON, the aggregate offer is either
@@ -1682,7 +1763,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         (("shop_daily", "offers_shop"), ("shop_non_daily", "offers_shop"))
         if shop_daily_split else (("shop", "offers_shop"),)
     )
-    if leisure_subtype_split:
+    # Issue #262: with the SrV categories owning placement, the MiD subtypes are
+    # no longer placement activities at all -- the leisure/other vocabulary is
+    # the aggregate purpose (for the ``*_misc`` categories) plus one activity per
+    # drawable category. Checked FIRST so it overrides the MiD-subtype branches
+    # below, which the same run also has ON (they still drive the distances).
+    srv_category_offer_specs = tuple(
+        (name, srv_category_offer_column(name)) for name in SRV_PLACEMENT_CATEGORIES
+    ) if srv_location_types else ()
+    if srv_location_types:
+        leisure_offer_specs = (("leisure", "offers_leisure"),) + tuple(
+            spec for spec in srv_category_offer_specs if spec[0] in SRV_LEISURE_CATEGORIES
+        )
+    elif leisure_subtype_split:
         leisure_offer_specs = tuple(
             (name, VISIT_OFFER_COLUMN if (leisure_visit_building_potential and name == "leisure_visit")
              else "offers_leisure")
@@ -1690,10 +1783,16 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         )
     else:
         leisure_offer_specs = (("leisure", "offers_leisure"),)
-    other_offer_specs = (
-        tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
-        if other_subtype_split else (("other", "offers_other"),)
-    )
+    if srv_location_types:
+        other_offer_specs = (("other", "offers_other"),) + tuple(
+            spec for spec in srv_category_offer_specs if spec[0] in SRV_OTHER_CATEGORIES
+        )
+    elif other_subtype_split:
+        other_offer_specs = tuple(
+            (name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES
+        ) + (("other", "offers_other"),)
+    else:
+        other_offer_specs = (("other", "offers_other"),)
     escort_offer_specs = (
         (
             ("escort_edu_kindergarten", "offers_escort_edu_kindergarten"),
@@ -1714,9 +1813,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     potential_column_by_activity = dict(_ACTIVITY_POTENTIAL_COLUMN)
     if leisure_visit_building_potential:
         potential_column_by_activity["leisure_visit"] = VISIT_POTENTIAL_COLUMN
+    # Issue #262: every drawable SrV category is placed on its OWN potential
+    # (pot_<category>, or pot_visit for "leisure_visit"), never on the shared
+    # aggregate the MiD subtypes use.
+    if srv_location_types:
+        potential_column_by_activity.update({
+            category: srv_category_potential_column(category)
+            for category in SRV_PLACEMENT_CATEGORIES
+        })
     cols = ["offers_shop", "offers_leisure", "offers_other"]
     if escort_purpose:
         cols = cols + list(ESCORT_EDU_OFFER_BY_TYPE.values()) + [ESCORT_RESIDENTIAL_OFFER_COLUMN]
+    if srv_location_types:
+        cols = cols + [offer for _, offer in srv_category_offer_specs]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
         # offer_specs, so a non-split path does not demand subtype potential
@@ -1762,6 +1871,11 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                 if leisure_visit_building_potential and act == "leisure_visit" and pot <= 0.0:
                     continue
                 if escort_purpose and act == "escort_residential" and pot <= 0.0:
+                    continue
+                # Issue #262: a row that advertises an SrV category without a
+                # positive potential for it is not a candidate for that category
+                # (e.g. a leisure building whose culture potential is zero).
+                if srv_location_types and act in SRV_PLACEMENT_CATEGORIES and pot <= 0.0:
                     continue
                 acts.append(act)
                 pots.append(pot)
@@ -1855,7 +1969,8 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     leisure_subtype_decider=None,
                     other_subtype_decider=None,
                     escort_location_decider=None,
-                    escort_distance_by_type: bool = False) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    escort_distance_by_type: bool = False,
+                    srv_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
     Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
@@ -1906,6 +2021,28 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     the single aggregate ``escort`` layer (one-level fallback to ``other`` only)
     and ``subtype_stats`` carries no ``escort_type_distance_layer_fallback`` key
     at all, so callers can gate their own logging on the key's presence.
+
+    ``srv_location_decider`` (issue #262, design A2) DECOUPLES placement from the
+    MiD distance label for the two SrV-covered purposes
+    (``SRV_LOCATION_PURPOSES``: leisure, other). It is the callable built by
+    ``_build_srv_location_decider`` -- ``(purpose, mode, distance_m) ->
+    (category, used_marginal)`` -- and is called AFTER ``_sample_leg_distance``,
+    so the category is drawn conditioned on the leg's ALREADY SAMPLED desired
+    distance and the SrV type<->distance correlation carries over. The drawn
+    category (resolved through ``SRV_AGGREGATE_PLACEMENT``, which maps the two
+    ``*_misc`` categories back onto the plain aggregate purpose) becomes the
+    placement activity, REPLACING the MiD subtype assignment: with this decider
+    active the leisure/other subtype deciders still choose the DISTANCE layer
+    (and still count their outcomes) but no longer set the placement activity.
+    Draws come from that decider's own dedicated seeded RNG (NOT ``random``), so
+    the distance-sampling stream -- and hence the OFF path -- stays
+    byte-identical. Its counters live in a dedicated ``subtype_stats`` key
+    namespace (``SRV_LOCATION_STAT_PREFIX`` + category, plus
+    ``SRV_LOCATION_MARGINAL_FALLBACK_STAT`` for draws resolved from a purpose's
+    marginal distribution because the pinned table has no matching (mode, band)
+    cell): ``leisure_visit`` is both a MiD subtype and an SrV category, so shared
+    keys would double-count in both log lines. Default None (OFF) leaves the leg
+    loop byte-identical.
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -1947,6 +2084,15 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         subtype_stats["escort_distance_layer_fallback"] = 0
         if escort_distance_by_type:
             subtype_stats["escort_type_distance_layer_fallback"] = 0
+    if srv_location_decider is not None:
+        # Prefixed keys (see SRV_LOCATION_STAT_PREFIX): "leisure_visit" is both a
+        # MiD subtype and an SrV category, so unprefixed counters would be shared
+        # between the two deciders and inflate both log lines.
+        subtype_stats.update({
+            SRV_LOCATION_STAT_PREFIX + name: 0
+            for name in SRV_LEISURE_CATEGORIES + SRV_OTHER_CATEGORIES
+        })
+        subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT] = 0
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -2015,9 +2161,14 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             # the group is BOTH the chainsolver activity AND (with a logged
             # fallback to the aggregate "leisure" layer when the subtype
             # distance layer is absent) the distance purpose.
+            #
+            # Issue #262: when the SrV location decider is active it OWNS the
+            # placement activity (drawn further below, from the sampled desired
+            # distance), so the MiD group here stays a pure DISTANCE label.
             if leisure_subtype_decider is not None and to_act_type == "leisure":
                 group = leisure_subtype_decider(leg["mode"], leg["travel_time"])
-                placement_act = group
+                if srv_location_decider is None:
+                    placement_act = group
                 subtype_stats[group] += 1
                 if _purpose_in_distributions(distributions, group):
                     distance_purpose = group
@@ -2031,11 +2182,16 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             # key -- placement_act and distance_purpose deliberately stay at
             # their to_act_type == "other" default for that outcome, so rest
             # legs are placed and distance-sampled exactly as on the OFF path.
+            #
+            # Issue #262: as in the leisure block above, an active SrV location
+            # decider owns the placement activity and the MiD outcome here stays
+            # a pure DISTANCE label.
             if other_subtype_decider is not None and to_act_type == "other":
                 outcome = other_subtype_decider(leg["mode"], leg["travel_time"])
                 subtype_stats[outcome] += 1
                 if outcome != "other_rest":
-                    placement_act = outcome
+                    if srv_location_decider is None:
+                        placement_act = outcome
                     if _purpose_in_distributions(distributions, outcome):
                         distance_purpose = outcome
                     else:
@@ -2067,6 +2223,21 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 distance_purpose,
                 leisure_correction_factor, random,
             )
+
+            # Issue #262 (design A2): draw the SrV-2023 location CATEGORY AFTER
+            # the desired distance, so the type<->distance correlation observed in
+            # SrV carries over to the placement. The drawn category replaces the
+            # MiD subtype as the placement activity ("leisure_misc"/"other_misc"
+            # resolve back to the plain aggregate purpose); the distance keeps the
+            # MiD layer it was already sampled from. Shop and escort legs never
+            # reach this decider -- they have their own.
+            if srv_location_decider is not None and to_act_type in SRV_LOCATION_PURPOSES:
+                category, used_marginal = srv_location_decider(
+                    to_act_type, leg["mode"], distance_m)
+                placement_act = SRV_AGGREGATE_PLACEMENT.get(category, category)
+                subtype_stats[SRV_LOCATION_STAT_PREFIX + category] += 1
+                if used_marginal:
+                    subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT] += 1
 
             # from_x/from_y: known iff first leg AND origin is fixed
             if li == 0:
@@ -2449,13 +2620,23 @@ def _extract_locations(result_df: pd.DataFrame,
     # map-back ("other_rest" needs no entry here: it is never a chainsolver
     # activity name, see _build_other_subtype_decider). Issue #201:
     # ESCORT_LOCATION_ACTIVITIES (the drawn location-TYPE names) map back to
-    # the eqasim "escort" purpose the same implicit way.
+    # the eqasim "escort" purpose the same implicit way. Issue #262: the drawn
+    # SrV location categories (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES)
+    # map back to "leisure" / "other" by exactly the same mechanism -- they are
+    # chainsolver-internal placement activities that never reach the output
+    # schema. The two aggregate-placement categories ("leisure_misc",
+    # "other_misc") never appear as a to_act_type (SRV_AGGREGATE_PLACEMENT
+    # resolves them to the plain purpose in the leg loop), so their membership
+    # here is inert -- listing the full vocabulary keeps this set in lockstep
+    # with the category constants instead of encoding that indirection twice.
     secondary_acts = (
         set(SECONDARY_PURPOSES)
         | set(SHOP_SUBTYPE_ACTIVITIES)
         | set(LEISURE_SUBTYPE_ACTIVITIES)
         | set(OTHER_SUBTYPE_ACTIVITIES)
         | set(ESCORT_LOCATION_ACTIVITIES)
+        | set(SRV_LEISURE_CATEGORIES)
+        | set(SRV_OTHER_CATEGORIES)
     )
     is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
@@ -3422,6 +3603,147 @@ SRV_OTHER_CATEGORIES = ("errand_authority_medical", "errand_service", "other_mis
 # to a candidate-search activity).
 SRV_AGGREGATE_PLACEMENT = {"leisure_misc": "leisure", "other_misc": "other"}
 
+# The two eqasim purposes the SrV location-type table covers (Task 8). Shop legs
+# and escort legs have their own dedicated deciders and must never reach the SrV
+# decider (which raises on any other purpose, see _build_srv_location_decider).
+SRV_LOCATION_PURPOSES = ("leisure", "other")
+
+# The drawn categories that become their OWN chainsolver placement activity
+# (everything except the two aggregate-placement categories above). Each one
+# needs an ``offers_<category>`` / ``pot_<category>`` candidate column pair --
+# except "leisure_visit", which reuses the residential visit machinery's
+# ``offers_visit`` / ``pot_visit`` columns (Task 5, issue #127).
+SRV_PLACEMENT_CATEGORIES = tuple(
+    name for name in SRV_LEISURE_CATEGORIES + SRV_OTHER_CATEGORIES
+    if name not in SRV_AGGREGATE_PLACEMENT
+)
+
+# ``subtype_stats`` key namespace for the SrV draws. A prefix is REQUIRED, not
+# cosmetic: "leisure_visit" is simultaneously a MiD distance subtype (see
+# LEISURE_SUBTYPE_ACTIVITIES) and an SrV location category, so unprefixed
+# counters would be incremented by both deciders and BOTH log lines (the MiD
+# subtype labelling line and the SrV draw line) would report inflated counts.
+SRV_LOCATION_STAT_PREFIX = "srv_location_"
+SRV_LOCATION_MARGINAL_FALLBACK_STAT = "srv_location_marginal_fallback"
+
+# Pinned probability table produced by scripts/derive_srv_location_types.py
+# (Task 1). Committed reference data -- regenerate there, never edit by hand.
+DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH = (
+    "eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv"
+)
+
+# HEURISTIC escalation threshold (share of drawn legs resolved from a purpose's
+# MARGINAL distribution instead of its (mode, band) cell). Mirrors the escort
+# distance-by-type precedent: above this share the conditional table is
+# effectively not doing its job, which is a failure signal rather than a
+# tolerated cost (CLAUDE.md fallback-transparency rule 2). Not a scientifically
+# derived bound.
+SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE = 0.2
+
+
+def srv_category_offer_column(category: str) -> str:
+    """Candidate offer column advertising ``category`` as a placement activity.
+
+    "leisure_visit" is served by the residential visit candidates
+    (``VISIT_OFFER_COLUMN``, appended by
+    :func:`append_residential_visit_candidates`); every other placement category
+    carries its own ``offers_<category>`` column from
+    :func:`append_location_category_columns` (buildings) or
+    :func:`append_landuse_candidates` (ATKIS grid points).
+    """
+    return VISIT_OFFER_COLUMN if category == "leisure_visit" else "offers_" + category
+
+
+def srv_category_potential_column(category: str) -> str:
+    """Candidate potential column for ``category`` (see
+    :func:`srv_category_offer_column` for the leisure_visit exception)."""
+    return VISIT_POTENTIAL_COLUMN if category == "leisure_visit" else "pot_" + category
+
+
+def _validate_srv_location_type_prerequisites(*, srv_location_types: bool,
+                                              secondary_building_potentials: bool,
+                                              leisure_subtype_split: bool,
+                                              other_subtype_split: bool,
+                                              leisure_visit_building_potential: bool) -> None:
+    """Fail fast when ``secondary_srv_location_types`` is ON without the flags it
+    is built on top of (issue #262, Task 8).
+
+    Mirrors the identical guard in
+    ``braunschweig.synthesis.locations.secondary_candidates.execute`` (the
+    candidate set and the chainsolver must agree on the feature's preconditions):
+
+    * ``secondary_building_potentials`` -- the per-category candidate columns
+      only exist on the building-potential candidate set,
+    * ``secondary_leisure_subtype_split`` / ``secondary_other_subtype_split`` --
+      the MiD subtypes still supply the DISTANCE layers the category is drawn
+      from (A2 draws the type conditioned on the sampled desired distance),
+    * ``leisure_visit_building_potential`` -- the drawn ``leisure_visit``
+      category is placed on the residential ``pot_visit`` candidates.
+
+    Raises ``RuntimeError`` naming every missing flag; a no-op when the feature
+    is OFF (no silent fallback to a partial category set).
+    """
+    if not srv_location_types:
+        return
+    missing = [
+        name for name, enabled in (
+            ("secondary_building_potentials", secondary_building_potentials),
+            ("secondary_leisure_subtype_split", leisure_subtype_split),
+            ("secondary_other_subtype_split", other_subtype_split),
+            ("leisure_visit_building_potential", leisure_visit_building_potential),
+        )
+        if not enabled
+    ]
+    if missing:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_srv_location_types requires "
+            f"{', '.join(missing)} to be ON (the SrV location-category placement is built "
+            "on top of the building-potential candidate set, the MiD leisure/other "
+            "subtype distance layers, and the residential visit machinery the drawn "
+            "'leisure_visit' category is placed on). Enable the flag(s) above or disable "
+            "secondary_srv_location_types."
+        )
+
+
+def _srv_location_draw_summary_lines(subtype_stats: Dict[str, int]) -> List[str]:
+    """One draw-rate line per SrV-covered purpose plus the marginal-fallback line.
+
+    Pure (no I/O, no randomness) so the exact wording is testable. Reports, per
+    purpose, how many bounded legs drew each location category, and -- across
+    both purposes -- how many draws were resolved from the purpose's MARGINAL
+    distribution because the pinned table has no ``(mode, distance band)`` cell
+    for that leg (CLAUDE.md fallback transparency: the rate must always be
+    observable, not only when it is non-zero). A marginal share at or above
+    ``SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE`` is prefixed ``WARNING``.
+    """
+    lines = []
+    n_all = 0
+    for purpose, categories in (
+        ("leisure", SRV_LEISURE_CATEGORIES), ("other", SRV_OTHER_CATEGORIES),
+    ):
+        counts = {
+            name: subtype_stats[SRV_LOCATION_STAT_PREFIX + name] for name in categories
+        }
+        n_legs = sum(counts.values())
+        n_all += n_legs
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_legs):.1f}%)"
+            for name, count in counts.items()
+        )
+        lines.append(
+            f"[braunschweig.secondary_chainsolvers] srv location draw ({purpose}): "
+            f"{n_legs:,} bounded {purpose} legs -> {shares}"
+        )
+    n_marginal = subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT]
+    share = (n_marginal / n_all) if n_all else 0.0
+    prefix = "WARNING: " if share >= SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE else ""
+    lines.append(
+        f"[braunschweig.secondary_chainsolvers] {prefix}srv location draw: marginal "
+        f"fallback (no (mode, band) cell in the pinned table) "
+        f"{n_marginal:,}/{n_all:,} ({share * 100.0:.1f}%)"
+    )
+    return lines
+
 _SRV_LOCATION_TYPE_REQUIRED_COLUMNS = (
     "purpose", "mode", "band_lower_km", "band_upper_km", "is_marginal",
     "category", "probability", "n_legs_unweighted",
@@ -3823,6 +4145,21 @@ def execute(context):
     escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
 
+    # SrV location types (issue #262, A2). The prerequisite guard runs HERE --
+    # earlier than its sibling flag guards further below -- so a misconfigured
+    # run fails before the pinned probability CSV is loaded and before any leg is
+    # placed; the guard itself is pure and mirrors the identical one in the
+    # secondary_candidates stage.
+    srv_location_types_on = bool(context.config("secondary_srv_location_types"))
+    _validate_srv_location_type_prerequisites(
+        srv_location_types=srv_location_types_on,
+        secondary_building_potentials=bool(context.config("secondary_building_potentials")),
+        leisure_subtype_split=leisure_subtype_split,
+        other_subtype_split=other_subtype_split,
+        leisure_visit_building_potential=leisure_visit_building_potential,
+    )
+    srv_location_decider = _build_srv_location_decider(context, random_seed)
+
     fallback_strategy = (
         context.config("braunschweig.chainsolvers.fallback") or "rda"
     )
@@ -3880,6 +4217,7 @@ def execute(context):
         other_subtype_decider=other_subtype_decider,
         escort_location_decider=escort_location_decider,
         escort_distance_by_type=escort_distance_factor_map is not None,
+        srv_location_decider=srv_location_decider,
     )
     if escort_location_decider is None and len(plans_df) and \
             (plans_df["to_act_type"] == "escort").any():
@@ -3977,6 +4315,12 @@ def execute(context):
                     "effectively not working (check escort_distance_factor_activities "
                     "vs the draw vocabulary)."
                 )
+    if srv_location_decider is not None:
+        # Drawn-category rates per purpose + the marginal-fallback rate
+        # (CLAUDE.md fallback transparency). Counts cover BOUNDED leisure/other
+        # legs only; unbounded chains go to the fallback placer untyped.
+        for line in _srv_location_draw_summary_lines(subtype_stats):
+            print(line)
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
@@ -4126,7 +4470,19 @@ def execute(context):
     # already-finalised candidate set (df_secondary) -- this block places
     # nothing and draws no random number; see the module-level comment above
     # _excursion_boundary_clip_summary.
-    if leisure_subtype_decider is not None:
+    if leisure_subtype_decider is not None and srv_location_decider is not None:
+        # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
+        # label only -- no plan row carries it as a placement activity, so this
+        # measurement has nothing to look at. Stated explicitly instead of
+        # printing the "0 bounded legs" line, which could be misread as evidence
+        # that no excursion leg clips at the candidate-universe boundary.
+        print(
+            "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip: not "
+            "measured -- secondary_srv_location_types is ON, so the MiD "
+            "'leisure_excursion' label drives the distance layer only and never becomes a "
+            "placement activity (the drawn SrV location category does)."
+        )
+    elif leisure_subtype_decider is not None:
         desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
         if desired_m.size > 0:
             excursion_candidates = df_secondary.loc[df_secondary["pot_leisure"] > 0.0]
@@ -4156,6 +4512,7 @@ def execute(context):
         other_subtype_split=other_subtype_split,
         leisure_visit_building_potential=leisure_visit_building_potential,
         escort_purpose=escort_purpose_on,
+        srv_location_types=srv_location_types_on,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
