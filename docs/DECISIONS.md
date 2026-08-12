@@ -76,6 +76,7 @@
 | ADR-0070 | 2026-07-22 | Composed run configs (fixed base + per-scale overlay); int-seed+numba is the ONLY permitted PopulationSim regime (fixes the float-seed-config 20x slowdown); #229 fixed; config sprawl pruned |
 | ADR-0071 | 2026-07-22 | MATSim contribs in lockstep via `${matsim.version}` (no hard pins); a `matsim.version` bump is a deliberate upgrade round; SimWrapper Layer-1 merged, `simwrapper_dashboards` default ON |
 | ADR-0072 | 2026-08-11 | Escort distance-by-type uses SrV between-type structure on the MiD level (A3, #257) |
+| ADR-0073 | 2026-08-12 | Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) |
 
 > **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
 > ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
@@ -1720,6 +1721,42 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
 - **Evidence artefacts:** spec `docs/superpowers/specs/2026-08-11-escort-distance-by-type-design.md`;
   plan `docs/superpowers/plans/2026-08-11-escort-distance-by-type.md`;
   `docs/features/escort-purpose.md`.
+
+## ADR-0073 — Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) (2026-08-12, PR pending)
+
+- **Status:** accepted.
+- **Context:** the Phase-2 household link anchored ALL of an escorter's escort
+  activities at ONE child's school (youngest). Multi-drop chains
+  (home->school->school->work) collapsed onto one point: 674 zero-distance
+  escort legs (~9% of escort legs) in the 5% run of 2026-08-11 (RUNS.md row
+  `escort-AB-5pct-2026-08-11`) -- an artifact, not behaviour. Non-consecutive
+  escort activities (bring ... fetch) at the same location are correct and
+  unaffected.
+- **Decision:** anchor per activity. `build_escort_links` returns ALL linkable
+  household children (youngest first); maximal blocks of consecutive escort
+  activities anchor at DISTINCT children in rank order; separate blocks restart
+  at the youngest (bring/fetch pairs stay at the same schools -- assumption:
+  chains visit children youngest-first, the surveys do not observe within-chain
+  child order); activities beyond the linkable children fall back to the
+  SrV-weighted draw (rate-logged), NEVER cycled back to child 0 (cycling would
+  recreate the artifact for one-child households). `find_assignment_problems`
+  gains an optional per-activity anchor table ((person_id, activity_index) ->
+  geometry) consulted at escort_linked boundaries; the legacy path (no table)
+  is unchanged. No new flag: this corrects a documented assumption INSIDE the
+  unmerged `escort_household_link` feature.
+- **Consequences:** remaining zero-distance escort->escort legs ~= same-school
+  siblings (genuine); anchored/overflow rates are logged by the stage; the
+  follow-up 5% re-run measures the drop in consecutive zero-legs and re-checks
+  the W1/W12 invariants before the PR.
+- **Evidence:** commits `223ff6d` (consecutive-run anchor assignment),
+  `d8b66b9` (per-activity anchor table wiring), `200dcd4` (anchor at distinct
+  children, overflow to draw) on branch `feature/escort-purpose-201`;
+  `docs/features/escort-purpose.md`. The 2026-08-11 5% run that surfaced the
+  674-zero-distance-leg count (referenced above and in the module docstring of
+  `braunschweig/synthesis/locations/escort_links.py`) has no corresponding
+  RUNS.md ledger row yet -- a pre-existing gap shared with ADR-0072's own
+  `output_bs_5pct_escort` baseline reference; backfilling RUNS.md is tracked
+  with the planned follow-up re-run, not done here (docs-only scope).
 
 > **Live status note.** This log is the retrospective *why*. For the current state of every feature
 > (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)

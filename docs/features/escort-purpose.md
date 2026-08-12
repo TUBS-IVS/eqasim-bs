@@ -53,13 +53,22 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
    (+3.1%) under the pinned draw weights and factors -- a known, accepted
    by-construction drift (well inside the +-20% mean criterion); the 5%
    validation run reports the realised shift.
-3. Phase 2 (`escort_household_link`): escorters with a child (<=
-   `escort_household_link_max_child_age_years`) that has a realised education
-   location get ALL their escort activities anchored at that school
-   (`escort_linked` fixed purpose inside the chainsolver stage only); the link
-   rate is logged; unlinked escorters keep the draw. Requires `escort_purpose`
-   ON (the stage raises otherwise). The anchored activities reference PRIMARY
-   education facility ids, which the facilities coverage check accepts via
+3. Phase 2 (`escort_household_link`): escorters with household children (<=
+   `escort_household_link_max_child_age_years`) that have a realised education
+   location get their escort activities anchored at those schools
+   (`escort_linked` fixed purpose inside the chainsolver stage only).
+   Anchoring is PER ACTIVITY (multi-child consecutive-run rule, ADR-0073):
+   maximal blocks of consecutive escort activities (multi-drop chains) anchor
+   at DISTINCT children, youngest first; activities beyond the household's
+   linkable children fall back to the SrV-weighted draw (rate-logged, never
+   cycled -- cycling would recreate the zero-distance artifact); separate
+   blocks (bring ... fetch) restart at the youngest child, keeping bring/fetch
+   pairs at the same schools. Siblings at the same school still produce
+   genuine zero-distance escort->escort legs (real behaviour, not an
+   artifact). Link and anchor/overflow rates are logged; unlinked escorters
+   keep the draw. Requires `escort_purpose` ON (the stage raises otherwise).
+   The anchored activities reference PRIMARY education facility ids, which the
+   facilities coverage check accepts via
    `validate_secondary_coverage(extra_valid_ids=...)`.
 4. Facilities advertise `escort`; eqasim-java-bs registers the inert `escort`
    ActivityParams (documented OFF-path exception: config.xml gains one unused
