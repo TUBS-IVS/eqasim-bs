@@ -414,3 +414,84 @@ def test_landuse_growth_factor_warn(capsys):
     captured = capsys.readouterr()
     assert "WARNING" in captured.out
     assert "growth" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# append_landuse_candidates -- scale coherence in mixed candidate pools
+# (plan amendment, issue #262). Building pot_<category> is a disaggregated
+# zonal person-mass; landuse pot_<category> is represented_area_m2. A mixed
+# category's landuse potentials must be mean-normalized to the building
+# scale so the linear combined scorer does not let whichever source happens
+# to carry larger raw numbers dominate the within-category ranking.
+# ---------------------------------------------------------------------------
+
+def test_mixed_pool_landuse_potentials_are_mean_normalized_to_building_scale():
+    """leisure_culture is a MIXED category here: one culture building
+    (pot_leisure_culture=8.0) plus two culture landuse points (areas 22500,
+    45000). The landuse potentials must be rescaled so their mean equals the
+    building mean (8.0), while their relative area ratio (1:2) is preserved."""
+    candidates = _mini_candidates()
+    candidates["offers_leisure_culture"] = [True, False, False]
+    candidates["pot_leisure_culture"] = [8.0, 0.0, 0.0]
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_kulturundunterhaltung", "ln_kulturundunterhaltung"],
+        "represented_area_m2": [22500.0, 45000.0],
+        "geometry": [Point(10, 10), Point(20, 20)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+
+    lu = out[out.location_id.str.startswith("sec_lu_")].sort_values("location_id")
+    pots = lu["pot_leisure_culture"].to_numpy()
+    assert len(pots) == 2
+    assert pots[1] / pots[0] == pytest.approx(2.0)  # relative area ratio preserved
+    assert pots.mean() == pytest.approx(8.0)  # mean matches the building scale
+
+    row = out[out.location_id == "sec_b_b1"].iloc[0]
+    assert row["pot_leisure_culture"] == 8.0  # the pre-existing building row is untouched
+
+
+def test_pure_pool_landuse_potentials_stay_raw():
+    """leisure_outdoor has no building counterpart (append_location_category_columns
+    never creates pot_leisure_outdoor) -- its landuse points must keep their
+    raw represented_area_m2 potential, unnormalized."""
+    candidates = _mini_candidates()
+    assert "pot_leisure_outdoor" not in candidates.columns
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_freiluftundnaherholung"],
+        "represented_area_m2": [12345.0],
+        "geometry": [Point(10, 10)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    row = out[out.location_id == "sec_lu_0"].iloc[0]
+    assert row["pot_leisure_outdoor"] == 12345.0
+
+
+def test_mixed_category_with_zero_building_supply_stays_raw_and_warns(capsys):
+    """pot_leisure_sports exists (mixed category by design) but every
+    building row is zero in this region -- keep raw areas (nothing to
+    normalize against) and warn loudly, no silent normalization by an
+    undefined factor."""
+    candidates = _mini_candidates()
+    candidates["offers_leisure_sports"] = [False, False, False]
+    candidates["pot_leisure_sports"] = [0.0, 0.0, 0.0]
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_sportanlage"],
+        "represented_area_m2": [22500.0],
+        "geometry": [Point(10, 10)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    row = out[out.location_id == "sec_lu_0"].iloc[0]
+    assert row["pot_leisure_sports"] == 22500.0  # raw, unnormalized
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "leisure_sports" in captured.out

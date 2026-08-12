@@ -1129,6 +1129,33 @@ def append_landuse_candidates(candidates: gpd.GeoDataFrame,
     ``append_residential_visit_candidates`` / ``append_escort_candidates``
     when the finer-grained id is unavailable).
 
+    Scale coherence in MIXED pools (plan amendment, issue #262): a category
+    such as ``leisure_culture`` or ``leisure_sports`` can carry candidates
+    from TWO incompatible-unit sources -- buildings (``pot_<category>``
+    already on ``candidates``, a disaggregated zonal person-mass potential,
+    see :func:`append_location_category_columns`) and landuse grid points
+    (``represented_area_m2``, a constant per grid cell). The combined carla
+    scorer's default ``attr_transform="linear"`` feeds these raw magnitudes
+    directly into the score, so whichever source happens to carry the larger
+    numbers would dominate the within-category ranking regardless of actual
+    relative attractiveness. ASSUMPTION: an AVERAGE landuse point should rank
+    like an AVERAGE building of the same category. To realise that, every
+    mixed category's landuse potentials are rescaled by a single factor
+    (``mean(positive building pot_<category>) / mean(raw landuse pot_<category>)``)
+    so the two source means coincide, while the relative AREA RATIOS among a
+    category's own landuse points are preserved exactly (a pure linear
+    rescale, not a reshaping). A category with NO building counterpart at
+    all (``leisure_outdoor``: ``append_location_category_columns`` never
+    creates a ``pot_leisure_outdoor`` column, because there is no building
+    source for it) is a PURE landuse pool -- every candidate in it carries
+    the same kind of potential, so the constant scale cancels out in a
+    same-scale ranking and is intentionally left unnormalised. A category
+    whose ``pot_<category>`` column exists (mixed by design) but has zero
+    positive building rows in the current region keeps its raw areas (there
+    is nothing to normalise against) and logs a ``WARNING`` rather than
+    silently normalising by an undefined factor; :func:`check_category_supply`
+    still governs whether that is a hard failure.
+
     Parameters
     ----------
     candidates:
@@ -1243,6 +1270,56 @@ def append_landuse_candidates(candidates: gpd.GeoDataFrame,
         mask = category_kept == category
         data["offers_" + category][mask] = True
         data["pot_" + category][mask] = area_kept[mask]
+
+    # Scale-normalize mixed categories (plan amendment, issue #262): see the
+    # docstring section "Scale coherence in MIXED pools" above for the
+    # rationale. Checked against the INCOMING `candidates` frame (i.e.
+    # building supply only, before this function's own default-column fill
+    # above), because that is the sole source of the "does this category
+    # already carry buildings" signal.
+    for category in categories:
+        column = "pot_" + category
+        category_mask = category_kept == category
+        n_points = int(category_mask.sum())
+        if n_points == 0:
+            continue
+        if column not in candidates.columns:
+            # Pure landuse pool (e.g. leisure_outdoor): no building
+            # counterpart exists, so there is nothing to normalize against
+            # and no normalization is needed -- every candidate in this pool
+            # is on the same (area) scale already.
+            continue
+        building_values = pd.to_numeric(candidates[column], errors="coerce").astype(float)
+        positive_building = building_values[building_values > 0.0]
+        raw_values = data[column][category_mask]
+        if len(positive_building) == 0:
+            print(
+                "WARNING: [braunschweig.secondary_chainsolvers] landuse category "
+                "'%s' shares column '%s' with building candidates but has zero "
+                "positive-potential building rows in this region -- keeping raw "
+                "represented_area_m2 landuse potentials (no scale factor applied); "
+                "check_category_supply still governs hard failure if the category's "
+                "total supply is zero." % (category, column)
+            )
+            continue
+        building_mean = float(positive_building.mean())
+        landuse_raw_mean = float(np.mean(raw_values))
+        if landuse_raw_mean == 0.0:
+            print(
+                "WARNING: [braunschweig.secondary_chainsolvers] landuse category "
+                "'%s' has zero raw represented_area_m2 potential across its %d "
+                "point(s); cannot mean-normalize against the building scale -- "
+                "keeping raw (zero) landuse potentials." % (category, n_points)
+            )
+            continue
+        factor = building_mean / landuse_raw_mean
+        data[column][category_mask] = raw_values * factor
+        print(
+            "[braunschweig.secondary_chainsolvers] landuse potential scale-"
+            "normalization: category=%s factor=%.4f building_mean=%.3f "
+            "landuse_raw_mean=%.3f n_points=%d"
+            % (category, factor, building_mean, landuse_raw_mean, n_points)
+        )
 
     landuse_rows = gpd.GeoDataFrame(data, crs=candidates.crs)
     out = gpd.GeoDataFrame(
