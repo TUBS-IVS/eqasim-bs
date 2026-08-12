@@ -16,7 +16,7 @@ from __future__ import annotations
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 
 from braunschweig.matsim.scenario.facilities import (
     secondary_facility_frame,
@@ -32,7 +32,10 @@ class StubContext:
         self._config = dict(config)
         self._stages = dict(stages)
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
+        # Mirrors synpp ConfigurationContext.config(option, default, volatile)
+        # (see #259): "volatile" only marks an option as cache-neutral, it has
+        # no effect on the returned value, so this double accepts and ignores it.
         if key in self._config:
             return self._config[key]
         self._config[key] = default
@@ -113,6 +116,63 @@ def _stage_context(sec_enabled=True, external=True, visit=False):
     return StubContext(config, stages)
 
 
+def _srv_building_potentials_frame():
+    """Three buildings, each carrying a positive pot_leisure and mapped, via
+    the real committed Bosserhof->location-category classes, to one of the
+    three leisure_* SrV categories (issue #262)."""
+    boxes = [box(0, 100, 5, 105), box(10, 100, 15, 105), box(20, 100, 25, 105)]
+    return gpd.GeoDataFrame(
+        {
+            "building_id": ["101", "102", "103"],
+            "potential_retail_daily": [0.0, 0.0, 0.0],
+            "potential_retail_non_daily": [0.0, 0.0, 0.0],
+            "potential_leisure": [5.0, 6.0, 7.0],
+            "potential_generic": [0.0, 0.0, 0.0],
+            "commune_id": ["03101000", "03101000", "03101000"],
+            "bosserhof_class_clean": [
+                "large cinemas", "restaurants gastronomy", "fitness wellness",
+            ],
+        },
+        geometry=boxes, crs=CRS,
+    )
+
+
+def _srv_location_category_mapping():
+    return pd.DataFrame({
+        "bosserhof_class": ["large cinemas", "restaurants gastronomy", "fitness wellness"],
+        "location_category": ["leisure_culture", "leisure_gastronomy", "leisure_sports"],
+    })
+
+
+def _srv_landuse_frame():
+    """One ATKIS outdoor-leisure polygon, large enough that grid_seed_polygons
+    (10 m spacing in the SrV test config) catches interior grid nodes."""
+    return gpd.GeoDataFrame(
+        {"layer": ["ln_freiluftundnaherholung"]},
+        geometry=[box(0, 0, 30, 30)], crs=CRS,
+    )
+
+
+def _srv_municipalities_frame():
+    return gpd.GeoDataFrame(
+        {"commune_id": ["03101000"]},
+        geometry=[box(-1000, -1000, 1000, 1000)], crs=CRS,
+    )
+
+
+def _srv_stage_context():
+    """All prerequisites for secondary_srv_location_types=True."""
+    context = _stage_context(sec_enabled=True, external=False, visit=True)
+    context._config["secondary_srv_location_types"] = True
+    context._config["secondary_other_subtype_split"] = True
+    context._config["secondary_landuse_grid_spacing_meters"] = 10.0
+    context._stages["braunschweig.data.building_potentials"] = _srv_building_potentials_frame()
+    context._stages["braunschweig.data.landuse"] = _srv_landuse_frame()
+    context._stages["braunschweig.data.bosserhof_location_category"] = _srv_location_category_mapping()
+    context._stages["data.spatial.municipalities"] = _srv_municipalities_frame()
+    return context
+
+
 # --------------------------------------------------------------------------- #
 # secondary_candidates stage assembly
 # --------------------------------------------------------------------------- #
@@ -178,6 +238,69 @@ def test_configure_declares_escort_purpose_even_when_short_circuited():
     secondary_candidates.configure(context)
     assert "escort_purpose" in context._config
     assert context._config["escort_purpose"] is False
+
+
+# --------------------------------------------------------------------------- #
+# secondary_srv_location_types (issue #262): SrV-grounded location-category
+# candidate assembly (append_location_category_columns + landuse grid seeding).
+# --------------------------------------------------------------------------- #
+def test_srv_location_types_off_no_category_columns():
+    """Byte-identical OFF path: with every OTHER feature ON (building
+    potentials, visit, escort) but secondary_srv_location_types left at its
+    default False, the frame must carry none of the new SrV category columns."""
+    context = _stage_context(sec_enabled=True, external=True, visit=True)
+    out = secondary_candidates.execute(context)
+    assert "pot_leisure_culture" not in out.columns
+    assert "offers_leisure_culture" not in out.columns
+    assert "pot_leisure_outdoor" not in out.columns
+
+
+def test_srv_location_types_requires_leisure_visit_building_potential():
+    context = _stage_context(sec_enabled=True, external=False, visit=False)
+    context._config["secondary_srv_location_types"] = True
+    context._config["secondary_other_subtype_split"] = True
+    with pytest.raises(ValueError, match="secondary_srv_location_types"):
+        secondary_candidates.execute(context)
+
+
+def test_srv_location_types_assembles_category_and_landuse_candidates():
+    context = _srv_stage_context()
+    out = secondary_candidates.execute(context)
+    ids = set(out["location_id"].astype(str))
+
+    assert any(location_id.startswith("sec_lu_") for location_id in ids)
+
+    for category in [
+        "leisure_culture", "leisure_gastronomy", "leisure_sports",
+        "errand_authority_medical", "errand_service",
+    ]:
+        assert "offers_" + category in out.columns
+        assert "pot_" + category in out.columns
+    assert "offers_leisure_outdoor" in out.columns
+    assert "pot_leisure_outdoor" in out.columns
+
+    # Positive supply for every category this stage can actually populate
+    # today (the 3 leisure_* building categories + landuse-only leisure_outdoor).
+    assert (out["pot_leisure_culture"] > 0.0).any()
+    assert (out["pot_leisure_gastronomy"] > 0.0).any()
+    assert (out["pot_leisure_sports"] > 0.0).any()
+    assert (out["pot_leisure_outdoor"] > 0.0).any()
+
+
+def test_configure_declares_srv_keys_even_when_flag_is_off():
+    """synpp execute-config contract: configure() must declare
+    secondary_srv_location_types and secondary_landuse_grid_spacing_meters
+    UNCONDITIONALLY, so execute()'s one-arg config() reads never crash with
+    synpp's PipelineError when the flag defaults to False."""
+    context = StubContext(
+        config={"secondary_building_potentials": False},
+        stages={"synthesis.locations.secondary": _legacy_frame()},
+    )
+    secondary_candidates.configure(context)
+    assert "secondary_srv_location_types" in context._config
+    assert context._config["secondary_srv_location_types"] is False
+    assert "secondary_landuse_grid_spacing_meters" in context._config
+    assert context._config["secondary_landuse_grid_spacing_meters"] == 150.0
 
 
 # --------------------------------------------------------------------------- #

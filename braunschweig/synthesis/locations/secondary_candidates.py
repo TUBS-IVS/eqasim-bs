@@ -62,6 +62,7 @@ def configure(context):
     # Needed for the fail-fast cross-flag guard below (the flag itself is
     # owned by the chainsolvers stage; read-only here).
     context.config("secondary_leisure_subtype_split", False)
+    context.config("secondary_other_subtype_split", False)
     context.config("leisure_visit_building_potential", False)
     # Unconditional declaration (issue #201 fix): escort_purpose must not be
     # declared ONLY inside `if sec_enabled:` above or as the right operand of
@@ -75,6 +76,19 @@ def configure(context):
     context.config("escort_purpose", False)
     if context.config("leisure_visit_building_potential") or context.config("escort_purpose"):
         context.stage("braunschweig.data.buildings")
+
+    # SrV-grounded location-category candidates (issue #262): declare
+    # UNCONDITIONALLY, exactly like escort_purpose above -- never move this
+    # inside `if sec_enabled:` or make it the right operand of a short-
+    # circuited `or`, or the same #201 trap recurs (execute()'s one-arg
+    # config() read would crash with synpp's PipelineError instead of
+    # reaching the intended ValueError guard below).
+    srv_location_types = context.config("secondary_srv_location_types", False)
+    context.config("secondary_landuse_grid_spacing_meters", 150.0)
+    if srv_location_types:
+        context.stage("braunschweig.data.landuse")
+        context.stage("braunschweig.data.bosserhof_location_category")
+        context.stage("data.spatial.municipalities")
 
 
 def execute(context):
@@ -91,10 +105,13 @@ def execute(context):
     sec_enabled = context.config("secondary_building_potentials")
     leisure_visit = bool(context.config("leisure_visit_building_potential"))
     escort_on = bool(context.config("escort_purpose"))
+    srv_location_types = bool(context.config("secondary_srv_location_types"))
+    leisure_subtype_split = bool(context.config("secondary_leisure_subtype_split"))
+    other_subtype_split = bool(context.config("secondary_other_subtype_split"))
 
     # Same fail-fast guards as the chainsolvers (they must hold wherever the
     # candidate set is assembled; no silent fallback to a degenerate set).
-    if leisure_visit and not context.config("secondary_leisure_subtype_split"):
+    if leisure_visit and not leisure_subtype_split:
         raise ValueError(
             "[braunschweig.secondary_candidates] leisure_visit_building_potential "
             "requires secondary_leisure_subtype_split to be ON (there is no "
@@ -105,6 +122,18 @@ def execute(context):
             "[braunschweig.secondary_candidates] leisure_visit_building_potential "
             "requires secondary_building_potentials to be ON (the residential visit "
             "placement needs the pot_visit candidate column)."
+        )
+    if srv_location_types and not (
+        sec_enabled and leisure_subtype_split and other_subtype_split and leisure_visit
+    ):
+        raise ValueError(
+            "[braunschweig.secondary_candidates] secondary_srv_location_types requires "
+            "secondary_building_potentials, secondary_leisure_subtype_split, "
+            "secondary_other_subtype_split, AND leisure_visit_building_potential to all "
+            "be ON (the SrV location-category candidates are built on top of the "
+            "building-potential candidate set, the leisure/other subtype split, and "
+            "the residential visit machinery that type-15 escort-leisure legs route "
+            "onto); no silent fallback to a partial category set is performed."
         )
 
     if not sec_enabled:
@@ -165,5 +194,55 @@ def execute(context):
         )
         df_secondary = append_escort_candidates(
             df_secondary, context.stage("synthesis.locations.education"))
+
+    if srv_location_types:
+        from braunschweig.data.bosserhof_location_category import BUILDING_CATEGORIES
+        from braunschweig.synthesis.locations.landuse_candidates import (
+            LANDUSE_LAYER_TO_CATEGORY,
+            grid_seed_polygons,
+        )
+        from braunschweig.synthesis.locations.secondary_chainsolvers import (
+            SRV_BUILDING_CATEGORY_BASE_POTENTIAL,
+            append_landuse_candidates,
+            append_location_category_columns,
+            check_category_supply,
+        )
+
+        df_secondary = append_location_category_columns(
+            df_secondary,
+            context.stage("braunschweig.data.building_potentials"),
+            context.stage("braunschweig.data.bosserhof_location_category"),
+        )
+
+        df_landuse = context.stage("braunschweig.data.landuse")
+        df_landuse_seedable = df_landuse[df_landuse["layer"].isin(LANDUSE_LAYER_TO_CATEGORY)]
+        spacing_m = float(context.config("secondary_landuse_grid_spacing_meters"))
+        df_landuse_points = grid_seed_polygons(df_landuse_seedable, spacing_m)
+
+        df_secondary = append_landuse_candidates(
+            df_secondary, df_landuse_points, LANDUSE_LAYER_TO_CATEGORY,
+            context.stage("data.spatial.municipalities"),
+        )
+
+        # Non-empty check (CLAUDE.md fallback transparency): every category
+        # THIS stage can actually populate must carry at least one positive-
+        # potential candidate, or the wiring (mapping / grid seeding /
+        # potential join) is broken. Scoped to the leisure_* categories
+        # (masking pot_leisure on sec_b_* buildings) + leisure_outdoor
+        # (landuse-only, no building counterpart) -- NOT the two errand_*
+        # categories: build_secondary_candidates hard-codes pot_other=0.0 on
+        # every sec_b_* row (secondary_chainsolvers.py, gpkg construction), so
+        # there is currently no wired candidate source that could ever give
+        # errand_authority_medical / errand_service a positive potential;
+        # including them here would make secondary_srv_location_types
+        # permanently unusable rather than catching a real wiring defect.
+        # This is a known upstream gap (tracked for a follow-up issue), not a
+        # silent fallback introduced by this stage.
+        leisure_building_categories = tuple(
+            category for category, base_column in SRV_BUILDING_CATEGORY_BASE_POTENTIAL.items()
+            if base_column == "pot_leisure"
+        )
+        assert set(leisure_building_categories) <= set(BUILDING_CATEGORIES)
+        check_category_supply(df_secondary, leisure_building_categories + ("leisure_outdoor",))
 
     return df_secondary
