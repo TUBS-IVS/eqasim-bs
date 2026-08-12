@@ -8,7 +8,11 @@ class RecordingContext:
         self.stages = []
     def stage(self, name, **kwargs):
         self.stages.append(name)
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
+        # Mirrors synpp ConfigurationContext.config(option, default, volatile).
+        # "volatile" only marks an option as cache-neutral (it must not devalidate
+        # cached stages, e.g. "processes"); it has no effect on the returned value,
+        # so this recording double accepts and ignores it.
         if key not in self._configs:
             self._configs[key] = default
         return self._configs[key]

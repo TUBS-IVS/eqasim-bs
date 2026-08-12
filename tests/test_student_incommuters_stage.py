@@ -124,9 +124,14 @@ def _full_ctx():
     facilities = gpd.GeoDataFrame(
         {"location_id": ["uni_loc_0"], "capacity": [1000.0]},
         geometry=[Point(500, 500)], crs="EPSG:25832")
-    resident = pd.DataFrame({
+    # synthesis.population.spatial.primary.locations returns a TUPLE
+    # (df_work, df_education) -- see synthesis/population/spatial/locations.py.
+    # student_incommuters._inject() consumes the EDUCATION frame ([1]); the work
+    # frame is never read there, so it is an empty same-schema placeholder.
+    resident_education = pd.DataFrame({
         "person_id": [1, 2], "commune_id": ["", ""],
         "location_id": ["uni_loc_0", "uni_loc_0"], "geometry": [None, None]})
+    resident_work = resident_education.iloc[0:0].copy()
     hts_persons = pd.DataFrame({
         "person_id": [10], "studies": [True], "employed": [False]})
     hts_trips = pd.DataFrame({
@@ -139,7 +144,8 @@ def _full_ctx():
         {"gate_id": ["gate_0000"]}, geometry=[Point(0, 0)], crs="EPSG:25832")
     stages = {
         "braunschweig.data.schools.university_facilities": facilities,
-        "synthesis.population.spatial.primary.locations": resident,
+        "synthesis.population.spatial.primary.locations": (
+            resident_work, resident_education),
         "data.spatial.municipalities": muni,
         "hts": (None, hts_persons, hts_trips),
         "braunschweig.synthesis.cordon_gates": {"gates": gates, "assignment": None},
