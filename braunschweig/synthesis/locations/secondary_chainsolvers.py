@@ -880,7 +880,13 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     updated in place; otherwise a NEW row is appended, carrying ONLY that
     errand category's offer/potential (every other offer/potential column --
     ``offers_shop``, ``offers_leisure``, ``offers_other``, ``offers_escort``,
-    the other four SrV categories, etc. -- is ``False`` / ``0.0``).
+    the other four SrV categories, etc. -- is ``False`` / ``0.0``). A
+    class-member building that is NOT already a candidate and whose computed
+    potential is zero (``volume_m3 < min_volume_m3``, or a class with no
+    members forcing the all-building quantile cap onto a zero row) gets NO
+    new row at all -- appending an inert all-False/0.0 row would only pollute
+    the candidate set (and, downstream, ``facilities.xml``) without ever being
+    selectable.
 
     Every row that is neither a matching leisure building nor a matching
     errand building -- non-building candidates (external centroids,
@@ -1067,7 +1073,14 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
             out.loc[target_index, "pot_" + category] = pot[update_mask]
             out.loc[target_index, "offers_" + category] = offers[update_mask]
 
-        append_mask = member_mask & ~present_mask
+        # Only append a NEW row for a building with a genuinely positive
+        # computed potential (per the docstring's "positive computed
+        # potential is guaranteed a row" contract). Without the `& offers`
+        # condition, every class-member building below min_volume_m3 (or with
+        # a NaN potential_generic) would still gain an inert all-False/0.0
+        # sec_b_* row -- dead weight in facilities.xml that never offers
+        # anything and contradicts that contract.
+        append_mask = member_mask & ~present_mask & offers
         n_appended = int(append_mask.sum())
         n_appended_total += n_appended
         if n_appended:

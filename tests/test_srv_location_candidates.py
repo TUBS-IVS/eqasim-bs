@@ -21,8 +21,19 @@ import pandas as pd
 import pytest
 from shapely.geometry import Point, box
 
+from braunschweig.data.bosserhof_location_category import BUILDING_CATEGORIES
 from braunschweig.synthesis.locations import landuse_candidates
 from braunschweig.synthesis.locations import secondary_chainsolvers as sc
+
+
+def test_srv_building_category_base_potential_matches_building_categories():
+    """Drift guard: the five keys of SRV_BUILDING_CATEGORY_BASE_POTENTIAL (the
+    leisure/errand grouping used throughout secondary_chainsolvers) must stay
+    exactly in sync with bosserhof_location_category.BUILDING_CATEGORIES (the
+    committed mapping CSV's allowed vocabulary) -- a category added to one
+    without the other would silently fall out of either the candidate-building
+    machinery or the mapping-CSV validation."""
+    assert set(sc.SRV_BUILDING_CATEGORY_BASE_POTENTIAL.keys()) == set(BUILDING_CATEGORIES)
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +199,13 @@ def test_building_not_in_potentials_gets_no_category_and_warns(capsys):
 def test_errand_categories_use_derived_potential_formula():
     out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
 
-    # b2/b4/b5 are hospital-class buildings absent from the input candidates;
-    # each must be appended as a brand-new sec_b_* row.
-    assert {"sec_b_b2", "sec_b_b4", "sec_b_b5"} <= set(out["location_id"])
+    # b2/b4 are hospital-class buildings absent from the input candidates with
+    # a positive computed potential; each must be appended as a brand-new
+    # sec_b_* row. b5 (volume_m3=10 < min_volume_m3=50) computes to zero
+    # potential and must NOT be appended at all -- see
+    # test_zero_offer_errand_building_is_not_appended below.
+    assert {"sec_b_b2", "sec_b_b4"} <= set(out["location_id"])
+    assert "sec_b_b5" not in set(out["location_id"])
 
     # cap = nanquantile([100.0, 400.0, 500.0], 0.99) == 498.0
     row_b2 = out[out.location_id == "sec_b_b2"].iloc[0]  # generic=500 > cap -> capped
@@ -201,13 +216,9 @@ def test_errand_categories_use_derived_potential_formula():
     assert row_b4["offers_errand_authority_medical"]
     assert row_b4["pot_errand_authority_medical"] == pytest.approx(100.0)
 
-    row_b5 = out[out.location_id == "sec_b_b5"].iloc[0]  # volume_m3=10 < min_volume_m3=50 -> floored
-    assert not row_b5["offers_errand_authority_medical"]
-    assert row_b5["pot_errand_authority_medical"] == 0.0
-
     # A new errand-only row must not offer anything else -- not the other
     # errand category, not either base purpose, not any leisure category.
-    for row in (row_b2, row_b4, row_b5):
+    for row in (row_b2, row_b4):
         assert not row["offers_shop"] and row["pot_shop"] == 0.0
         assert not row["offers_leisure"] and row["pot_leisure"] == 0.0
         assert not row["offers_other"] and row["pot_other"] == 0.0
@@ -216,6 +227,28 @@ def test_errand_categories_use_derived_potential_formula():
         assert not row["offers_leisure_culture"] and not row["offers_leisure_gastronomy"]
         assert not row["offers_leisure_sports"]
         assert row["commune_id"] == "1" and row["iris_id"] == "1"
+
+
+def test_zero_offer_errand_building_is_not_appended():
+    """A tiny-volume errand-class building absent from the input candidates
+    must not gain an inert all-False/0.0 sec_b_* row: appending one would
+    pollute the candidate set (and, downstream, facilities.xml) with a row
+    that carla can never select (review finding, issue #262)."""
+    potentials = gpd.GeoDataFrame({
+        "building_id": ["h_tiny"],
+        "bosserhof_class_clean": ["hospitals"],
+        "potential_generic": [400.0],
+        "volume_m3": [10.0],  # below the default min_volume_m3=50.
+        "commune_id": ["1"],
+        "geometry": [Point(70, 70)],
+    }, crs="EPSG:25832")
+    mapping = pd.DataFrame({
+        "bosserhof_class": ["hospitals"],
+        "location_category": ["errand_authority_medical"],
+    })
+    out = sc.append_location_category_columns(_mini_candidates(), potentials, mapping)
+    assert "sec_b_h_tiny" not in set(out["location_id"])
+    assert len(out) == len(_mini_candidates())  # no row appended at all
 
 
 def test_errand_category_updates_existing_row_in_place():
@@ -241,8 +274,10 @@ def test_errand_category_updates_existing_row_in_place():
     assert row_b2["offers_errand_authority_medical"]
     assert row_b2["pot_errand_authority_medical"] == pytest.approx(498.0)
     assert row_b2["offers_shop"] and row_b2["pot_shop"] == 12.0  # pre-existing columns untouched
-    # b4 and b5 are still absent from candidates -> still appended fresh.
-    assert len(out) == n_before + 2
+    # b4 is still absent from candidates with a positive potential -> appended
+    # fresh; b5's potential computes to zero (volume floor) -> not appended.
+    assert len(out) == n_before + 1
+    assert "sec_b_b5" not in set(out["location_id"])
 
 
 def test_errand_category_new_row_uses_polygon_centroid_geometry():
@@ -282,12 +317,13 @@ def test_errand_category_cap_percentile_and_min_volume_are_configurable():
 
     row_h1 = out[out.location_id == "sec_b_h1"].iloc[0]
     row_h2 = out[out.location_id == "sec_b_h2"].iloc[0]
-    row_h3 = out[out.location_id == "sec_b_h3"].iloc[0]
     # median of [100, 300, 500] = 300 (the cap at cap_percentile=0.5).
     assert row_h1["pot_errand_authority_medical"] == pytest.approx(100.0)
     assert row_h2["pot_errand_authority_medical"] == pytest.approx(300.0)
-    # h3's volume_m3=40 < min_volume_m3=45 -> floored regardless of its generic/cap.
-    assert row_h3["pot_errand_authority_medical"] == 0.0
+    # h3's volume_m3=40 < min_volume_m3=45 -> floored to zero potential, so it
+    # is not appended as a new row at all (see
+    # test_zero_offer_errand_building_is_not_appended).
+    assert "sec_b_h3" not in set(out["location_id"])
 
 
 def test_errand_category_zero_members_warns_and_yields_no_supply(capsys):

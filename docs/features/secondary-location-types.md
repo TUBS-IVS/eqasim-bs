@@ -149,10 +149,41 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
      running the escapes first would make every category unconditionally
      non-empty and neuter the guard's ability to catch a genuinely
      zero-supply category.
-   - **Fallback chain** (mandatory transparency): a type-specific candidate
-     set unavailable or empty in reach falls back to the generic
-     `pot_leisure` / `pot_other` pool; both levels are counted and
-     rate-logged.
+   - **No per-leg type-specific-to-generic candidate fallback.** An earlier
+     design draft proposed a two-level per-leg fallback (type-specific
+     candidates unavailable/empty in reach -> generic `pot_leisure` /
+     `pot_other` pool, counted and rate-logged). That mechanism was NOT built;
+     it was superseded during implementation by three separate, more
+     falsifiable mechanisms:
+     1. **`check_category_supply`** (hard `RuntimeError`) raises if any
+        placement category has zero positive-potential rows REGION-WIDE —
+        a wiring failure (broken mapping, grid-seeding gap, potential-join
+        miss), not thin data. It runs on the escape-free frame, BEFORE the
+        external escapes below, so it stays falsifiable (see the External
+        Gemeinde centroids bullet above).
+     2. **External Gemeinde-centroid category escapes** (the bullet above)
+        are category-agnostic long-distance candidates, not a per-leg
+        category-specific fallback: every placement category (except
+        `leisure_visit`) always has this same escape pool available in
+        addition to its in-area candidates, regardless of whether the
+        category is locally thin.
+     3. **The counted per-purpose marginal fallback of the A2 draw** (point 2
+        above, `srv_location_marginal_fallback_leisure` / `_other`) is a
+        different fallback: it degrades a thin `(mode, band)` CELL to the
+        purpose's marginal CATEGORY distribution during the type DRAW, before
+        any candidate lookup happens — not a candidate-universe fallback.
+     A category that is locally thin but not region-wide zero (passes
+     `check_category_supply`, has few in-area candidates) is not caught by
+     any explicit fallback counter; it is instead absorbed implicitly by the
+     combined scorer's distance-deviation term, which can still select a
+     distant in-area or external-escape candidate over a nonexistent
+     type-specific one nearby. Whether this leaves locally thin categories
+     under-served in practice is a measurement question, not yet answered —
+     it is in scope for the pending A/B run (see Validation).
+     Separately, and pre-existing (not part of this feature): the legacy
+     `carla`-to-RDA problem-level fallback on the underlying candidate-search
+     frame is unchanged by this feature and continues to apply uniformly
+     across all secondary purposes.
 5. **Facilities fold.** `braunschweig.matsim.scenario.facilities` folds every
    `offers_<category>` column back into the plain `offers_leisure` /
    `offers_other` advertisement (OR-accumulation across the 4 leisure and 2
@@ -221,11 +252,17 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   is written on every ON run; read it as a decider-sanity check, never as
   "validated against SrV" (see the honesty note carried verbatim in its
   header).
-- **`leisure_visit`-vs-type-15 aggregate consistency**: compare the realized
-  MiD `leisure_visit` distance-label share against the drawn `leisure_visit`
-  SrV-category share (info-level log; both exist simultaneously per
+- **`leisure_visit`-vs-type-15 aggregate consistency**: no dedicated
+  comparison line exists. The two shares are each printed in their own,
+  separate info-level log line — the MiD `leisure_visit` distance-label
+  share in the "leisure subtype labelling" line
+  (`leisure_subtype_decider`'s per-subtype breakdown) and the drawn
+  `leisure_visit` SrV-category share in the "srv location draw (leisure)"
+  line (`_srv_location_draw_summary_lines`) — both exist simultaneously per
   Mechanics point 1 and are expected to diverge somewhat, since they answer
-  different questions).
+  different questions. Reading the two numbers side by side is a manual step
+  today; a computed side-by-side comparison is out of scope for this feature
+  and, if wanted, belongs with the pending A/B run (see below).
 - **A/B on realised (placed) output** — no dedicated committed OFF overlay
   exists for this feature, matching the escort family's precedent (the
   escort A/B runs toggled the flag on a scratch copy of
