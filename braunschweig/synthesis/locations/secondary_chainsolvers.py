@@ -3396,6 +3396,240 @@ def _build_escort_location_decider(context, random_seed: int):
     return decide
 
 
+# ---------------------------------------------------------------------------
+# Issue #262 (Task 7): pinned SrV-2023 location-type probabilities for
+# leisure / other legs, and the per-leg decider that draws from them.
+# ---------------------------------------------------------------------------
+
+# One further dedicated RNG-stream offset than the escort location decider, so
+# this decider's draws cannot perturb the shop/leisure/other subtype streams,
+# the escort location stream, or the distance-sampling RNG (``random``) --
+# turning ``secondary_srv_location_types`` ON/OFF (or any sibling flag) never
+# perturbs another stream, and the OFF path stays byte-identical.
+SRV_LOCATION_SEED_OFFSET = 90215  # SHOP_SUBTYPE_SEED_OFFSET + 4
+
+# Location-category vocabulary for the two SrV-covered purposes (Task 1,
+# scripts/derive_srv_location_types.py); must match the pinned CSV's
+# "category" column exactly -- checked at load time by
+# ``load_srv_location_type_probs``.
+SRV_LEISURE_CATEGORIES = ("leisure_culture", "leisure_gastronomy", "leisure_misc",
+                          "leisure_outdoor", "leisure_sports", "leisure_visit")
+SRV_OTHER_CATEGORIES = ("errand_authority_medical", "errand_service", "other_misc")
+
+# Categories whose eqasim placement_act stays the AGGREGATE purpose (i.e. they
+# do not correspond to a more specific facility type than plain
+# "leisure"/"other" -- consulted by the stage that resolves a drawn category
+# to a candidate-search activity).
+SRV_AGGREGATE_PLACEMENT = {"leisure_misc": "leisure", "other_misc": "other"}
+
+_SRV_LOCATION_TYPE_REQUIRED_COLUMNS = (
+    "purpose", "mode", "band_lower_km", "band_upper_km", "is_marginal",
+    "category", "probability", "n_legs_unweighted",
+)
+_SRV_LOCATION_TYPE_CATEGORIES_BY_PURPOSE = {
+    "leisure": frozenset(SRV_LEISURE_CATEGORIES),
+    "other": frozenset(SRV_OTHER_CATEGORIES),
+}
+_SRV_LOCATION_TYPE_PROB_TOLERANCE = 1e-6
+
+
+def load_srv_location_type_probs(path: str) -> Dict[str, Dict[str, Any]]:
+    """Load and validate the pinned SrV-2023-BS+RGB location-type probability
+    table (Task 1, ``scripts/derive_srv_location_types.py`` ->
+    ``eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv``).
+
+    Returns ``{purpose: {"band_edges_km": tuple, "cells": {(mode, band_idx):
+    {category: probability}}, "marginal": {category: probability}}}`` for the
+    two SrV-covered purposes, ``"leisure"`` and ``"other"``. Distance bands are
+    EUCLIDEAN-equivalent kilometres: the pinned CSV converts the survey's
+    routed GIS distance via ``euclid_km = routed_km / DETOUR_FACTOR`` with
+    DETOUR_FACTOR=1.3 -- the same routed->euclidean assumption already used for
+    the MiD distance layers (see the CSV's header comment). ``band_idx`` is the
+    0-based index of a row's ``(band_lower_km, band_upper_km)`` pair within the
+    shared, purpose-independent ``band_edges_km`` tuple.
+
+    The pinned CSV omits cells thinner than its derive-script ``min_obs``
+    threshold (see its header comment), so a given purpose's non-marginal rows
+    may not cover every ``(mode, band)`` combination, and may not even mention
+    every band. The band schedule itself, however, is common to both purposes
+    (one derive-script run over one shared banding) -- so the edge tuple is
+    reconstructed from the UNION of non-marginal ``(band_lower_km,
+    band_upper_km)`` pairs across BOTH purposes, validated for monotonicity and
+    contiguity over that union, and then reused for both purposes: even a
+    purpose with zero non-marginal rows of its own gets the other purpose's
+    edges, and a ``ValueError`` is raised only if NEITHER purpose has any
+    non-marginal rows at all.
+
+    Raises ``ValueError`` on: a missing required column; an unknown category
+    for a purpose (i.e. not in ``SRV_LEISURE_CATEGORIES`` /
+    ``SRV_OTHER_CATEGORIES``); cell or marginal probabilities that do not sum
+    to 1 within ``1e-6``; a missing marginal row set for a purpose; or
+    non-monotonic/non-contiguous band edges reconstructed from the rows.
+    """
+    frame = pd.read_csv(path, comment="#")
+
+    missing_columns = sorted(set(_SRV_LOCATION_TYPE_REQUIRED_COLUMNS) - set(frame.columns))
+    if missing_columns:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: missing required "
+            f"column(s) {missing_columns}; expected "
+            f"{sorted(_SRV_LOCATION_TYPE_REQUIRED_COLUMNS)}."
+        )
+
+    non_marginal = frame[frame["is_marginal"] == 0]
+    if non_marginal.empty:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: no non-marginal "
+            "rows found for either purpose; cannot reconstruct band edges."
+        )
+    edge_pairs = sorted(set(
+        (float(lower), float(upper))
+        for lower, upper in zip(non_marginal["band_lower_km"], non_marginal["band_upper_km"])
+    ))
+    band_lowers = [lower for lower, _ in edge_pairs]
+    band_uppers = [upper for _, upper in edge_pairs]
+    if any(next_lower != upper for next_lower, upper in zip(band_lowers[1:], band_uppers[:-1])):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: non-contiguous band "
+            f"edges reconstructed from the non-marginal rows: lowers={band_lowers}, "
+            f"uppers={band_uppers}."
+        )
+    band_edges = tuple([band_lowers[0]] + band_uppers)
+    if any(a >= b for a, b in zip(band_edges, band_edges[1:])):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: non-monotonic band "
+            f"edges reconstructed from the non-marginal rows: {band_edges}."
+        )
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for purpose, allowed_categories in _SRV_LOCATION_TYPE_CATEGORIES_BY_PURPOSE.items():
+        purpose_rows = frame[frame["purpose"] == purpose]
+
+        unknown_categories = sorted(set(purpose_rows["category"]) - allowed_categories)
+        if unknown_categories:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: unknown "
+                f"category(ies) {unknown_categories} for purpose {purpose!r}; "
+                f"allowed: {sorted(allowed_categories)}."
+            )
+
+        marginal_rows = purpose_rows[purpose_rows["is_marginal"] == 1]
+        if marginal_rows.empty:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: missing marginal "
+                f"row(s) for purpose {purpose!r}."
+            )
+        marginal = {
+            str(category): float(probability)
+            for category, probability in zip(marginal_rows["category"], marginal_rows["probability"])
+        }
+        marginal_sum = sum(marginal.values())
+        if abs(marginal_sum - 1.0) > _SRV_LOCATION_TYPE_PROB_TOLERANCE:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: marginal "
+                f"probabilities for purpose {purpose!r} sum to {marginal_sum}, "
+                f"expected 1.0 (tolerance {_SRV_LOCATION_TYPE_PROB_TOLERANCE})."
+            )
+
+        cells: Dict[Tuple[str, int], Dict[str, float]] = {}
+        cell_rows = purpose_rows[purpose_rows["is_marginal"] == 0]
+        for (mode, lower, upper), group in cell_rows.groupby(
+            ["mode", "band_lower_km", "band_upper_km"], sort=False
+        ):
+            band_idx = band_edges.index(float(lower))
+            cell_probs = {
+                str(category): float(probability)
+                for category, probability in zip(group["category"], group["probability"])
+            }
+            cell_sum = sum(cell_probs.values())
+            if abs(cell_sum - 1.0) > _SRV_LOCATION_TYPE_PROB_TOLERANCE:
+                raise ValueError(
+                    f"[braunschweig.secondary_chainsolvers] {path}: cell "
+                    f"probabilities for purpose {purpose!r}, mode {mode!r}, band "
+                    f"[{lower}, {upper}) sum to {cell_sum}, expected 1.0 "
+                    f"(tolerance {_SRV_LOCATION_TYPE_PROB_TOLERANCE})."
+                )
+            cells[(str(mode), band_idx)] = cell_probs
+
+        result[purpose] = {
+            "band_edges_km": band_edges,
+            "cells": cells,
+            "marginal": marginal,
+        }
+
+    return result
+
+
+def _build_srv_location_decider(context, random_seed: int):
+    """Build the per-leg SrV-2023 location-category decider, or ``None`` when
+    OFF.
+
+    Issue #262 (Task 7): for ``"leisure"``/``"other"`` legs, draws a
+    SrV-2023-BS+RGB observed destination category conditioned on ``(mode,
+    euclidean distance band)`` from the pinned probability table (Task 1;
+    see ``load_srv_location_type_probs``). Returns a callable ``(purpose: str,
+    mode: str, distance_m: float) -> (category: str, used_marginal: bool)``
+    when ``secondary_srv_location_types`` is ON, else ``None`` (the
+    byte-identical OFF path).
+
+    ``distance_m`` must be the same EUCLIDEAN-equivalent distance used
+    elsewhere in this stage's distance-band lookups, in METRES -- it is
+    converted to euclidean km internally (``distance_m / 1000.0``) to match
+    the pinned table's ``band_edges_km``; see ``load_srv_location_type_probs``
+    for the routed->euclidean (DETOUR_FACTOR=1.3) assumption behind those
+    bands. A distance that lands exactly on a band edge is assigned to the
+    UPPER band (``np.searchsorted(band_edges[1:], ..., side="right")``),
+    matching the pinned CSV's half-open ``[lower, upper)`` bands.
+
+    ``purpose`` must be ``"leisure"`` or ``"other"`` -- any other value raises
+    ``ValueError`` immediately, since escort and shop legs have their own
+    dedicated deciders (``_build_escort_location_decider`` /
+    ``_build_shop_subtype_decider``) and must never reach this one.
+
+    A ``(mode, band)`` cell absent from the pinned table (thinner than the
+    derive script's ``min_obs`` threshold) falls back to the purpose's
+    marginal distribution; the call reports this via the returned
+    ``used_marginal`` flag so callers can log the fallback rate explicitly
+    rather than let it happen silently (CLAUDE.md "Fallback transparency").
+
+    Every call draws exactly ONE uniform sample from a dedicated seeded RNG,
+    ``np.random.RandomState(random_seed + SRV_LOCATION_SEED_OFFSET)``, resolved
+    via ``_inverse_cdf_choice`` over the SORTED category names of the resolved
+    probability vector. This stream is separate from the distance-sampling RNG
+    (``random``), the shop/leisure/other subtype streams, and the escort
+    location stream, so enabling/disabling ``secondary_srv_location_types`` (or
+    any sibling flag) never perturbs another decider's draws -- the OFF path
+    stays byte-identical.
+    """
+    if not context.config("secondary_srv_location_types"):
+        return None
+
+    path = context.config("srv_location_type_probs_path")
+    tables = load_srv_location_type_probs(path)
+
+    rng = np.random.RandomState(int(random_seed) + SRV_LOCATION_SEED_OFFSET)
+
+    def decide(purpose: str, mode: str, distance_m: float) -> Tuple[str, bool]:
+        table = tables.get(purpose)
+        if table is None:
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] _build_srv_location_decider: "
+                f"unknown purpose {purpose!r}; expected one of {sorted(tables)} "
+                "(escort/shop legs must not reach the SrV location decider)."
+            )
+        band_edges = table["band_edges_km"]
+        distance_km = distance_m / 1000.0
+        band_idx = int(np.searchsorted(band_edges[1:], distance_km, side="right"))
+        cell_probs = table["cells"].get((mode, band_idx))
+        used_marginal = cell_probs is None
+        probs = table["marginal"] if used_marginal else cell_probs
+        group_names = tuple(sorted(probs))
+        category = _inverse_cdf_choice(probs, group_names, rng.random_sample())
+        return category, used_marginal
+
+    return decide
+
+
 def _build_escort_distance_factor_map(context):
     """{activity_name: factor} for escort distance-by-type (A3), or None when OFF.
 
