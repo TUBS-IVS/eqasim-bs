@@ -981,7 +981,7 @@ def test_build_plans_df_columnar_matches_reference():
         problems, distributions, 2.0, np.random.RandomState(5))
     # OFF path (shop_subtype_decider=None): the 4th return is the subtype stats
     # (all zero) and the frame must stay value-identical to the legacy build.
-    new_df, new_meta, new_unbounded, subtype_stats = sc._build_plans_df(
+    new_df, new_meta, new_unbounded, subtype_stats, _desired_by_category = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5))
 
     assert ref_meta == new_meta
@@ -1002,7 +1002,7 @@ def test_build_plans_df_srv_location_decider_off_matches_reference():
 
     ref_df, ref_meta, ref_unbounded = _build_plans_df_reference(
         problems, distributions, 2.0, np.random.RandomState(5))
-    off_df, off_meta, off_unbounded, subtype_stats = sc._build_plans_df(
+    off_df, off_meta, off_unbounded, subtype_stats, _desired_by_category = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5),
         srv_location_decider=None)
 
@@ -1015,7 +1015,7 @@ def test_build_plans_df_srv_location_decider_off_matches_reference():
 def test_build_plans_df_empty_keeps_legacy_shape():
     # All problems unbounded -> legacy from_records([]) frame (no columns).
     problems = [p for p in _bounded_problems() if p["origin"] is None]
-    new_df, meta, unbounded, _subtype_stats = sc._build_plans_df(
+    new_df, meta, unbounded, _subtype_stats, _desired_by_category = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(0))
     assert len(new_df) == 0 and len(new_df.columns) == 0
     assert meta == [] and unbounded == list(range(len(problems)))
@@ -1027,7 +1027,7 @@ def test_build_plans_df_empty_keeps_legacy_shape():
 
 def test_person_row_ranges_match_groupby_subframes():
     problems = _bounded_problems()
-    plans_df, _, _, _ = sc._build_plans_df(
+    plans_df, _, _, _, _ = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(5))
     plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
@@ -1175,7 +1175,7 @@ def test_build_plans_df_subtype_decider_tags_shop_legs_and_uses_subtype_distance
                "shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(1),
         shop_subtype_decider=lambda mode, tt: "shop_daily",
     )
@@ -1192,7 +1192,7 @@ def test_build_plans_df_subtype_distance_layer_fallback_counted():
     layered = {"shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(1),
         shop_subtype_decider=lambda mode, tt: "shop_non_daily",
     )
@@ -1234,7 +1234,7 @@ def test_carla_accepts_shop_subtype_activities_smoke():
                "shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(3),
         shop_subtype_decider=lambda mode, tt: "shop_daily",
     )

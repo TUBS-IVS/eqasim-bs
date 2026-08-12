@@ -274,7 +274,7 @@ def test_plans_df_escort_leg_gets_drawn_activity_and_escort_layer():
     def decider():
         decider_calls.append(1)
         return "escort_edu_kindergarten"
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], _escort_distributions(), 1.0,
         np.random.RandomState(0), escort_location_decider=decider,
     )
@@ -285,7 +285,7 @@ def test_plans_df_escort_leg_gets_drawn_activity_and_escort_layer():
 
 
 def test_plans_df_escort_distance_fallback_counted():
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], {"other": _mode_distributions()}, 1.0,
         np.random.RandomState(0),
         escort_location_decider=lambda: "escort_leisure",
@@ -295,7 +295,7 @@ def test_plans_df_escort_distance_fallback_counted():
 
 def test_plans_df_no_decider_leaves_escort_untouched():
     # decider None (flag OFF upstream): escort leg keeps plain purpose; no stats keys.
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], _escort_distributions(), 1.0, np.random.RandomState(0),
     )
     assert list(plans["to_act_type"])[:1] == ["escort"]
@@ -480,7 +480,7 @@ def _typed_escort_distributions():
 
 
 def test_leg_uses_drawn_type_layer_when_enabled():
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], _typed_escort_distributions(), 1.0,
         np.random.RandomState(0),
         escort_location_decider=lambda: "escort_edu_kindergarten",
@@ -496,7 +496,7 @@ def test_leg_uses_drawn_type_layer_when_enabled():
 
 def test_leg_falls_back_to_escort_layer_counted():
     # type layer for the drawn name is MISSING -> counted fallback to "escort"
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], _escort_distributions(), 1.0,
         np.random.RandomState(0),
         escort_location_decider=lambda: "escort_leisure",
@@ -507,7 +507,7 @@ def test_leg_falls_back_to_escort_layer_counted():
 
 
 def test_leg_falls_back_to_other_counted_when_no_escort_layer():
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], {"other": _mode_distributions()}, 1.0,
         np.random.RandomState(0),
         escort_location_decider=lambda: "escort_leisure",
@@ -518,7 +518,7 @@ def test_leg_falls_back_to_other_counted_when_no_escort_layer():
 
 
 def test_flag_off_path_has_no_type_counter_and_uses_escort_layer():
-    plans, meta, unbounded, stats = sc._build_plans_df(
+    plans, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_escort_problem()], _escort_distributions(), 1.0,
         np.random.RandomState(0),
         escort_location_decider=lambda: "escort_edu_kindergarten",

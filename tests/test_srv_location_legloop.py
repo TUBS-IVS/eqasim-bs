@@ -160,7 +160,7 @@ def test_srv_category_replaces_mid_subtype_as_placement_activity():
         "shop": _flat_distribution(),
     }
     calls = []
-    df, _meta, _unbounded, stats = sc._build_plans_df(
+    df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
         other_subtype_decider=lambda mode, tt: "other_errand_short",
@@ -193,7 +193,7 @@ def test_srv_misc_categories_place_on_the_aggregate_purpose():
         "other": _single_value_distribution(2000.0),
         "shop": _flat_distribution(),
     }
-    df, _meta, _unbounded, stats = sc._build_plans_df(
+    df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
         srv_location_decider=_by_purpose_srv_decider(
             {"leisure": "leisure_misc", "other": "other_misc"}),
@@ -206,7 +206,7 @@ def test_srv_misc_categories_place_on_the_aggregate_purpose():
 def test_srv_leisure_visit_category_is_a_placement_activity():
     layered = {"leisure": _single_value_distribution(1000.0),
                "other": _flat_distribution(), "shop": _flat_distribution()}
-    df, _meta, _unbounded, stats = sc._build_plans_df(
+    df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_problem(200, "leisure")], layered, 2.0, np.random.RandomState(1),
         srv_location_decider=_constant_srv_decider("leisure_visit"),
     )
@@ -222,7 +222,7 @@ def test_srv_and_mid_leisure_visit_counters_do_not_collide():
     counters must stay separate, or both log lines report inflated counts."""
     layered = {"leisure": _single_value_distribution(1000.0),
                "other": _flat_distribution(), "shop": _flat_distribution()}
-    _df, _meta, _unbounded, stats = sc._build_plans_df(
+    _df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_problem(200, "leisure"), _problem(201, "leisure")],
         layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_visit",
@@ -246,7 +246,7 @@ def test_srv_decider_does_not_touch_shop_or_escort_legs():
         "other": _flat_distribution(),
     }
     problems = [_problem(400, "shop"), _problem(500, "escort")]
-    df, _meta, _unbounded, stats = sc._build_plans_df(
+    df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(3),
         shop_subtype_decider=lambda mode, tt: "shop_daily",
         escort_location_decider=lambda: "escort_edu_school",
@@ -269,7 +269,7 @@ def test_srv_marginal_fallback_counted_in_subtype_stats():
     layered = {"leisure": _single_value_distribution(1000.0),
                "other": _single_value_distribution(2000.0),
                "shop": _flat_distribution()}
-    _df, _meta, _unbounded, stats = sc._build_plans_df(
+    _df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
         srv_location_decider=_by_purpose_srv_decider(
             {"leisure": "leisure_culture", "other": "errand_service"},
@@ -295,7 +295,7 @@ def test_srv_marginal_fallback_counters_are_attributed_to_their_own_purpose():
         return (("errand_service", True) if purpose == "other"
                 else ("leisure_culture", False))
 
-    _df, _meta, _unbounded, stats = sc._build_plans_df(
+    _df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         [_problem(200, "leisure"), _problem(201, "leisure"), _problem(300, "other")],
         layered, 2.0, np.random.RandomState(1), srv_location_decider=decide,
     )
@@ -306,7 +306,7 @@ def test_srv_marginal_fallback_counters_are_attributed_to_their_own_purpose():
 def test_srv_counters_absent_when_decider_off():
     layered = {"leisure": _flat_distribution(), "other": _flat_distribution(),
                "shop": _flat_distribution()}
-    _df, _meta, _unbounded, stats = sc._build_plans_df(
+    _df, _meta, _unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
     )
     assert stats == {}
@@ -325,12 +325,12 @@ def test_off_path_byte_identical_srv_decider_none():
         "other": _single_value_distribution(4321.0),
         "shop": _flat_distribution(),
     }
-    explicit_df, explicit_meta, explicit_unbounded, explicit_stats = sc._build_plans_df(
+    explicit_df, explicit_meta, explicit_unbounded, explicit_stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(7),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
         srv_location_decider=None,
     )
-    default_df, default_meta, default_unbounded, default_stats = sc._build_plans_df(
+    default_df, default_meta, default_unbounded, default_stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(7),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
     )
@@ -528,7 +528,7 @@ def test_carla_accepts_srv_category_activities_smoke():
         candidates, with_potentials=True, srv_location_types=True)
     layered = {"leisure": _flat_distribution(), "other": _flat_distribution(),
                "shop": _flat_distribution()}
-    plans_df, _meta, _unbounded, _stats = sc._build_plans_df(
+    plans_df, _meta, _unbounded, _stats, _desired_by_category = sc._build_plans_df(
         [_problem(200, "leisure")], layered, 2.0, np.random.RandomState(3),
         srv_location_decider=_constant_srv_decider("leisure_outdoor"),
     )
@@ -553,7 +553,7 @@ def test_real_decider_categories_are_deterministic_for_one_seed(tmp_path):
 
     def run():
         decider = sc._build_srv_location_decider(_Ctx(cfg), random_seed=99)
-        df, _m, _u, stats = sc._build_plans_df(
+        df, _m, _u, stats, _desired_by_category = sc._build_plans_df(
             problems, layered, 2.0, np.random.RandomState(4),
             srv_location_decider=decider)
         return list(_variable_legs(df)["to_act_type"]), stats

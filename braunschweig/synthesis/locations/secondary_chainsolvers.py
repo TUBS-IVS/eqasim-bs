@@ -34,6 +34,7 @@ from __future__ import annotations
 import copy
 import multiprocessing as mp
 import time
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 import geopandas as gpd
@@ -235,6 +236,17 @@ def configure(context):
     # the intended fail-fast guard).
     context.config("secondary_srv_location_types", False)
     context.config("srv_location_type_probs_path", DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH)
+
+    # Per-run draw-summary artifact (issue #262, Task 9): a draw-coherence
+    # check comparing the drawn category shares / desired-distance medians
+    # against the pinned SrV reference (srv2023_secondary_type_shares.csv).
+    # Declared UNCONDITIONALLY (see the comment above on the two keys just
+    # above) so a misconfigured OFF-flag run never hits synpp's
+    # declared-keys-only PipelineError; the writer itself only runs when
+    # secondary_srv_location_types is ON (execute() checks the flag before
+    # loading either path).
+    context.config("srv_location_type_shares_path", DEFAULT_SRV_LOCATION_TYPE_SHARES_PATH)
+    context.config("srv_location_share_warn_pp", DEFAULT_SRV_LOCATION_SHARE_WARN_PP)
 
 
 # ---------------------------------------------------------------------------
@@ -2119,12 +2131,14 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     other_subtype_decider=None,
                     escort_location_decider=None,
                     escort_distance_by_type: bool = False,
-                    srv_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    srv_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int],
+                                                        Dict[str, int], Dict[str, List[float]]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
-    Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
-    Unbounded problems (tail / head / floating chains) are excluded — carla
-    needs both endpoints anchored. They are placed by ``_fallback_place``.
+    Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats,
+    desired_by_category)``. Unbounded problems (tail / head / floating
+    chains) are excluded — carla needs both endpoints anchored. They are
+    placed by ``_fallback_place``.
 
     ``shop_subtype_decider`` (Tier 2: secondary_shop_daily_split). When None
     (default / OFF) the leg loop is byte-identical to the pre-feature path: a
@@ -2193,6 +2207,17 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     and an SrV category, so shared keys would double-count in both log lines, and
     a pooled fallback counter would let a badly covered purpose hide behind a
     well covered one. Default None (OFF) leaves the leg loop byte-identical.
+
+    ``desired_by_category`` (issue #262, Task 9) collects, for every leg the
+    ``srv_location_decider`` actually drew a category for, that leg's already
+    -sampled desired distance in KILOMETRES, keyed by the BARE (unprefixed)
+    category name -- ``{category: [desired_km, ...]}``. This is a draw-
+    coherence input only: it lets ``srv_location_draw_summary`` compare the
+    DRAWN desired-distance median against the SrV euclidean-equivalent median
+    for the same category. It reuses ``distance_m`` already sampled by
+    ``_sample_leg_distance`` for the leg (no extra RNG draw) and appends in the
+    same deterministic leg-loop order as ``subtype_stats``. Stays an empty
+    dict on the OFF path (``srv_location_decider is None``).
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -2249,6 +2274,13 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             srv_location_marginal_fallback_stat(purpose): 0
             for purpose in SRV_LOCATION_PURPOSES
         })
+
+    # Draw-coherence input for srv_location_draw_summary (issue #262, Task 9):
+    # the desired distance (km) of every leg the SrV decider drew a category
+    # for, keyed by the BARE category name (unprefixed -- unlike subtype_stats,
+    # there is no "leisure_visit" collision here since this dict is never
+    # shared with the MiD subtype counters). Stays empty on the OFF path.
+    desired_by_category: Dict[str, List[float]] = defaultdict(list)
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -2394,6 +2426,10 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 subtype_stats[SRV_LOCATION_STAT_PREFIX + category] += 1
                 if used_marginal:
                     subtype_stats[srv_location_marginal_fallback_stat(to_act_type)] += 1
+                # Draw-coherence input (issue #262, Task 9): the leg's already
+                # -sampled desired distance, in km, keyed by the BARE category
+                # name. No extra RNG draw -- distance_m was sampled above.
+                desired_by_category[category].append(distance_m / 1000.0)
 
             # from_x/from_y: known iff first leg AND origin is fixed
             if li == 0:
@@ -2421,7 +2457,8 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     if not col_uid:
         # Preserve the legacy empty-frame shape (from_records([]) has NO
         # columns) so the no-bounded-legs early return behaves identically.
-        return pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats
+        return (pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats,
+                dict(desired_by_category))
 
     plans_df = pd.DataFrame({
         "unique_person_id": col_uid,
@@ -2435,7 +2472,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         "_leg_index": col_leg_index,
         "_problem_idx": col_prob_idx,
     })
-    return plans_df, problem_meta, unbounded_idx, subtype_stats
+    return plans_df, problem_meta, unbounded_idx, subtype_stats, dict(desired_by_category)
 
 
 def _build_rda_candidate_index(df_secondary: pd.DataFrame):
@@ -3928,6 +3965,143 @@ def _srv_location_draw_summary_lines(subtype_stats: Dict[str, int]) -> List[str]
     )
     return lines
 
+
+# Pinned draw-vs-reference table produced by scripts/derive_srv_location_types.py
+# (Task 1). Committed reference data -- regenerate there, never edit by hand.
+# Also carries purpose="shop" rows (a validation-only contribution for a
+# different feature, issue #242); srv_location_draw_summary EXCLUDES them --
+# shop location choice is not decided by this decider.
+DEFAULT_SRV_LOCATION_TYPE_SHARES_PATH = (
+    "eqasim-data/data/braunschweig/srv/srv2023_secondary_type_shares.csv"
+)
+
+# HEURISTIC escalation threshold (percentage points, NOT a scientifically
+# derived bound): the maximum tolerated |drawn_share - reference_share| for a
+# category before the per-run draw-summary writer emits a WARN. Configurable
+# via ``srv_location_share_warn_pp`` (declared in ``configure``).
+DEFAULT_SRV_LOCATION_SHARE_WARN_PP = 5.0
+
+# Column order of the srv_location_draw_summary.csv artifact and the
+# DataFrame returned by srv_location_draw_summary(); kept as a module
+# constant so the writer and the tests agree on the schema.
+SRV_LOCATION_DRAW_SUMMARY_COLUMNS = (
+    "purpose", "category", "drawn_share", "reference_share",
+    "drawn_median_desired_km", "reference_median_euclid_km", "n_drawn",
+)
+
+# Honesty note (CLAUDE.md "No invented reference values" + issue #262 plan):
+# this summary is a DRAW-COHERENCE check, not a validation of realised model
+# output against SrV. Reused verbatim as the CSV header comment and quoted in
+# the function docstring below so both surfaces state the same caveat.
+SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE = (
+    "This table compares DRAWN desired-distance medians (the leg's sampled "
+    "target distance, before candidate search) against the SrV "
+    "euclidean-equivalent medians of srv2023_secondary_type_shares.csv. It is "
+    "a draw-coherence check on the category<->distance decider, NOT a "
+    "validation of REALISED (placed) distances: carla's candidate search can "
+    "still deviate from the desired distance (top_n selection inertness, "
+    "backlog Tier-0 item (a)), which is assessed separately in the A/B "
+    "validation run. Never read this file as \"validated against SrV\"."
+)
+
+
+def srv_location_draw_summary(subtype_stats: Dict[str, int],
+                               desired_by_category: Dict[str, List[float]],
+                               shares_df: pd.DataFrame) -> pd.DataFrame:
+    """Per-category drawn-vs-reference coherence table (issue #262, Task 9).
+
+    IMPORTANT -- read before using this table: it compares DRAWN
+    desired-distance medians against the SrV euclidean-equivalent medians. It
+    is a draw-coherence check on the ``srv_location_decider``, NOT a
+    validation of REALISED (placed) distances -- carla's candidate search can
+    still deviate from the desired distance (top_n selection inertness,
+    backlog Tier-0 item (a)); that is assessed in the A/B validation run, not
+    here. See :data:`SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE`.
+
+    Parameters
+    ----------
+    subtype_stats:
+        The ``subtype_stats`` dict returned by ``_build_plans_df`` (namespaced
+        ``SRV_LOCATION_STAT_PREFIX + category`` draw counters). Missing keys
+        are treated as zero draws (a category the decider never drew in this
+        run, e.g. under a small/synthetic input).
+    desired_by_category:
+        The ``desired_by_category`` dict returned by ``_build_plans_df``:
+        ``{category: [desired_km, ...]}``, keyed by the BARE category name.
+        A category absent from this dict gets a NaN
+        ``drawn_median_desired_km`` (no legs to take a median over).
+    shares_df:
+        The pinned ``srv2023_secondary_type_shares.csv`` frame (columns
+        ``purpose``, ``category``, ``weight_share``, ``weighted_median_euclid_km``,
+        among others -- see :func:`load_srv_location_type_shares`). Its
+        ``purpose="shop"`` rows are VALIDATION-ONLY rows for a different
+        feature (issue #242) and are excluded here: this decider only draws
+        for ``SRV_LOCATION_PURPOSES`` (leisure, other).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per ``(purpose, category)`` for every category in
+        ``SRV_LEISURE_CATEGORIES`` / ``SRV_OTHER_CATEGORIES`` (the full pinned
+        vocabulary for the two SrV-covered purposes), columns
+        :data:`SRV_LOCATION_DRAW_SUMMARY_COLUMNS`. ``drawn_share`` is
+        ``n_drawn`` over that PURPOSE's total drawn legs (sums to 1.0 per
+        purpose when at least one leg was drawn); a category the decider
+        never drew still gets its own row with ``n_drawn=0`` and
+        ``drawn_share=0.0`` (never silently omitted). ``reference_share`` /
+        ``reference_median_euclid_km`` are looked up from ``shares_df``; a
+        category absent from the pinned reference (should not occur for the
+        fixed vocabulary above, but not assumed) gets NaN there instead of a
+        fabricated value.
+    """
+    shares_lookup = shares_df[shares_df["purpose"].isin(SRV_LOCATION_PURPOSES)].set_index(
+        ["purpose", "category"]
+    )
+
+    rows = []
+    for purpose, categories in (
+        ("leisure", SRV_LEISURE_CATEGORIES), ("other", SRV_OTHER_CATEGORIES),
+    ):
+        counts = {
+            category: int(subtype_stats.get(SRV_LOCATION_STAT_PREFIX + category, 0))
+            for category in categories
+        }
+        n_legs = sum(counts.values())
+        for category in categories:
+            n_drawn = counts[category]
+            drawn_share = (n_drawn / n_legs) if n_legs else float("nan")
+            desired_km = desired_by_category.get(category, [])
+            drawn_median_desired_km = float(np.median(desired_km)) if desired_km else float("nan")
+            if (purpose, category) in shares_lookup.index:
+                reference_row = shares_lookup.loc[(purpose, category)]
+                reference_share = float(reference_row["weight_share"])
+                reference_median_euclid_km = float(reference_row["weighted_median_euclid_km"])
+            else:
+                reference_share = float("nan")
+                reference_median_euclid_km = float("nan")
+            rows.append({
+                "purpose": purpose,
+                "category": category,
+                "drawn_share": drawn_share,
+                "reference_share": reference_share,
+                "drawn_median_desired_km": drawn_median_desired_km,
+                "reference_median_euclid_km": reference_median_euclid_km,
+                "n_drawn": n_drawn,
+            })
+    return pd.DataFrame(rows, columns=list(SRV_LOCATION_DRAW_SUMMARY_COLUMNS))
+
+
+def load_srv_location_type_shares(path: str) -> pd.DataFrame:
+    """Load the pinned ``srv2023_secondary_type_shares.csv`` reference table.
+
+    Thin wrapper around ``pd.read_csv(path, comment="#")`` (the file's header
+    is a block of ``#``-prefixed provenance comments, see the file itself);
+    kept as a named function so the load convention is documented once and
+    both the stage writer and the tests share it.
+    """
+    return pd.read_csv(path, comment="#")
+
+
 _SRV_LOCATION_TYPE_REQUIRED_COLUMNS = (
     "purpose", "mode", "band_lower_km", "band_upper_km", "is_marginal",
     "category", "probability", "n_legs_unweighted",
@@ -4205,6 +4379,66 @@ def _rate_pct(count, total) -> float:
     return 100.0 * count / total if total else 0.0
 
 
+# Filename of the per-run draw-summary artifact written by
+# _write_srv_location_draw_summary (issue #262, Task 9). Kept as a module
+# constant so the writer and any downstream reader agree on the name.
+SRV_LOCATION_DRAW_SUMMARY_FILENAME = "srv_location_draw_summary.csv"
+
+
+def _write_srv_location_draw_summary(context, subtype_stats: Dict[str, int],
+                                      desired_by_category: Dict[str, List[float]]) -> None:
+    """Write the per-run draw-summary artifact and WARN on large deviations
+    (issue #262, Task 9).
+
+    Loads the pinned ``srv_location_type_shares_path`` reference table, builds
+    :func:`srv_location_draw_summary`, and writes it as
+    ``SRV_LOCATION_DRAW_SUMMARY_FILENAME`` under the stage's synpp output
+    directory (``context.path()``), prefixed with
+    :data:`SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE` as a ``#``-commented CSV
+    header (mirrors the pinned-CSV convention used by
+    ``scripts/derive_srv_location_types.py``: read back with
+    ``pd.read_csv(path, comment="#")``). Emits one WARN line per category
+    whose ``|drawn_share - reference_share|`` exceeds
+    ``srv_location_share_warn_pp`` percentage points (a category with no
+    pinned reference, i.e. NaN ``reference_share``, is skipped -- there is
+    nothing to compare against, and that is not itself a draw failure).
+
+    This is a stage-side effect (file I/O + logging), never called on the OFF
+    path -- the caller in ``execute()`` gates it on
+    ``srv_location_decider is not None``.
+    """
+    shares_path = context.config("srv_location_type_shares_path")
+    shares_df = load_srv_location_type_shares(shares_path)
+    summary_df = srv_location_draw_summary(subtype_stats, desired_by_category, shares_df)
+
+    warn_pp = float(context.config("srv_location_share_warn_pp"))
+    for row in summary_df.itertuples(index=False):
+        if pd.isna(row.reference_share):
+            continue
+        deviation_pp = abs(row.drawn_share - row.reference_share) * 100.0
+        if deviation_pp > warn_pp:
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: {row.purpose}/{row.category} drawn_share "
+                f"{row.drawn_share * 100.0:.1f}% deviates from the pinned reference "
+                f"share {row.reference_share * 100.0:.1f}% by {deviation_pp:.1f} "
+                f"percentage points (> srv_location_share_warn_pp={warn_pp:.1f})."
+            )
+
+    output_path = "%s/%s" % (context.path(), SRV_LOCATION_DRAW_SUMMARY_FILENAME)
+    with open(output_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            "# " + SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.replace("\n", "\n# ") + "\n"
+        )
+        handle.write(f"# Reference: {shares_path}\n")
+        handle.write(f"# srv_location_share_warn_pp={warn_pp}\n")
+        summary_df.to_csv(handle, index=False)
+    print(
+        "[braunschweig.secondary_chainsolvers] wrote srv location draw summary "
+        f"({len(summary_df)} category rows) to {output_path}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # synpp execute
 # ---------------------------------------------------------------------------
@@ -4394,7 +4628,7 @@ def execute(context):
         f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
     )
 
-    plans_df, problem_meta, unbounded_idx, subtype_stats = _build_plans_df(
+    plans_df, problem_meta, unbounded_idx, subtype_stats, desired_by_category = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
         shop_subtype_decider=shop_subtype_decider,
         leisure_subtype_decider=leisure_subtype_decider,
@@ -4505,6 +4739,10 @@ def execute(context):
         # legs only; unbounded chains go to the fallback placer untyped.
         for line in _srv_location_draw_summary_lines(subtype_stats):
             print(line)
+        # Task 9: per-run draw-summary CSV artifact + share/median coherence
+        # WARNs against the pinned SrV reference. A draw-coherence check only
+        # -- see SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.
+        _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
