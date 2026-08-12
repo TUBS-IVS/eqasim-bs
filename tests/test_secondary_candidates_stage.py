@@ -268,20 +268,33 @@ def test_configure_declares_escort_purpose_even_when_short_circuited():
 # --------------------------------------------------------------------------- #
 def test_srv_location_types_off_no_category_columns():
     """Byte-identical OFF path: with every OTHER feature ON (building
-    potentials, visit, escort) but secondary_srv_location_types left at its
-    default False, the frame must carry none of the new SrV category columns."""
+    potentials, visit) but secondary_srv_location_types left at its default
+    False, the frame must carry NONE of the new SrV category columns -- the
+    full set of five building-category offers_/pot_ pairs plus the
+    landuse-only leisure_outdoor pair."""
     context = _stage_context(sec_enabled=True, external=True, visit=True)
     out = secondary_candidates.execute(context)
-    assert "pot_leisure_culture" not in out.columns
-    assert "offers_leisure_culture" not in out.columns
-    assert "pot_leisure_outdoor" not in out.columns
+    for category in [
+        "leisure_culture", "leisure_gastronomy", "leisure_sports",
+        "errand_authority_medical", "errand_service", "leisure_outdoor",
+    ]:
+        assert "offers_" + category not in out.columns
+        assert "pot_" + category not in out.columns
 
 
 def test_srv_location_types_requires_leisure_visit_building_potential():
-    context = _stage_context(sec_enabled=True, external=False, visit=False)
+    """Isolate ONLY leisure_visit_building_potential=False: sec_enabled,
+    secondary_leisure_subtype_split, and secondary_other_subtype_split are all
+    explicitly ON, so this fails only because of the term under test -- a
+    regression that dropped just the leisure_visit term from the four-way
+    guard would be caught here (visit=False would set BOTH subtype-split
+    flags False too, proving nothing about leisure_visit specifically)."""
+    context = _stage_context(sec_enabled=True, external=False, visit=True)
+    context._config["leisure_visit_building_potential"] = False
     context._config["secondary_srv_location_types"] = True
     context._config["secondary_other_subtype_split"] = True
-    with pytest.raises(ValueError, match="secondary_srv_location_types"):
+    assert context._config["secondary_leisure_subtype_split"] is True
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
         secondary_candidates.execute(context)
 
 

@@ -224,7 +224,7 @@ def execute(context):
         )
 
         df_landuse = context.stage("braunschweig.data.landuse")
-        df_landuse_seedable = df_landuse[df_landuse["layer"].isin(LANDUSE_LAYER_TO_CATEGORY)]
+        df_landuse_seedable = df_landuse[df_landuse["layer"].isin(LANDUSE_LAYER_TO_CATEGORY.keys())]
         spacing_m = float(context.config("secondary_landuse_grid_spacing_meters"))
         df_landuse_points = grid_seed_polygons(df_landuse_seedable, spacing_m)
 
