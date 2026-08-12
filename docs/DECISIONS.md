@@ -1751,12 +1751,13 @@ real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_
 - **Evidence:** commits `223ff6d` (consecutive-run anchor assignment),
   `d8b66b9` (per-activity anchor table wiring), `200dcd4` (anchor at distinct
   children, overflow to draw) on branch `feature/escort-purpose-201`;
-  `docs/features/escort-purpose.md`. The 2026-08-11 5% run that surfaced the
-  674-zero-distance-leg count (referenced above and in the module docstring of
-  `braunschweig/synthesis/locations/escort_links.py`) has no corresponding
-  RUNS.md ledger row yet -- a pre-existing gap shared with ADR-0072's own
-  `output_bs_5pct_escort` baseline reference; backfilling RUNS.md is tracked
-  with the planned follow-up re-run, not done here (docs-only scope).
+  `docs/features/escort-purpose.md`. The run record
+  `escort-AB-5pct-2026-08-11` (674 zero-distance legs; also cited in the
+  module docstring of `braunschweig/synthesis/locations/escort_links.py`)
+  exists as a pending-commit RUNS.md row in the main checkout as of
+  2026-08-12 and becomes traceable in-repo once that PM-layer commit lands or
+  this branch merges; it is not present in this branch's own committed
+  RUNS.md as of this commit.
 
 > **Live status note.** This log is the retrospective *why*. For the current state of every feature
 > (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)
