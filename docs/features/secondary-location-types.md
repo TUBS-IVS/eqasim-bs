@@ -18,7 +18,7 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   writes the pinned reference
   `eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv`.
   Real-data coverage (13,514 in-scope legs): 4 legs (0.03%) excluded for an
-  invalid `E_HVM_5` mode code, 3,547 (26.3%) excluded from the per-cell band
+  invalid `E_HVM_5` mode code, 3,547 (26.2%) excluded from the per-cell band
   split and the weighted-median columns for an invalid/sentinel
   `GIS_LAENGE_GUELTIG` (NOT excluded from the category-share marginals, which
   are distance-independent); 17/67 candidate cells (25.4%) omitted as thin,
@@ -43,8 +43,12 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
 - **ATKIS landuse polygons** (`braunschweig.data.landuse`) supply the
   building-less categories: `ln_kulturundunterhaltung` (mixed into
   `leisure_culture`), `ln_sportanlage` (mixed into `leisure_sports`),
-  `ln_freiluftundnaherholung` (pure `leisure_outdoor` pool, ~15,572 polygons /
-  51.5 km2, measured 2026-08-12).
+  `ln_freiluftundnaherholung` (pure `leisure_outdoor` pool). Measured
+  directly from the committed source parquet,
+  `eqasim-data/data/braunschweig/preprocessed/landuse.parquet`
+  (`gpd.read_parquet(path)`, filtered to `layer == "ln_freiluftundnaherholung"`,
+  reporting `len(df)` and `df["area_m2"].sum() / 1e6`, CRS EPSG:25832):
+  **15,572 polygons / 51.53 km2** (re-measured 2026-08-12).
 
 ## Mechanics
 
@@ -176,7 +180,11 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
    `leisure_excursion` as a placement activity any more (SrV owns placement),
    so the diagnostic's counters are structurally `0/0`. Rather than print a
    `0/0` line that misreads as "no clipping observed," the stage prints an
-   explicit `"not measured -- SrV placement is ON"` log line instead.
+   explicit line instead (`secondary_chainsolvers.py`, verbatim):
+   `"[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip:
+   not measured -- secondary_srv_location_types is ON, so the MiD
+   'leisure_excursion' label drives the distance layer only and never
+   becomes a placement activity (the drawn SrV location category does)."`
    Re-establishing the measurement under SrV placement needs the distance
    label carried alongside the placement activity — out of this feature's
    scope; see Follow-ups.
@@ -259,5 +267,5 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
   out-of-area candidate — inherited unchanged from the pre-existing
   residential-only visit pool (issue #127); worth a backlog note if long
   visit distances clip in the pending A/B run.
-- #241 (MiD `W_ZWECK` 13-16/99 explicit mapping gap) stays a separate,
+- #241 (MiD `W_ZWECK` 14-16/99 explicit mapping gap) stays a separate,
   independently validated PR, as decided in the design record.
