@@ -124,3 +124,86 @@ def test_write_facilities_gates_escort_activity_on_escort_purpose_flag(tmp_path)
     # empty/near-empty file that would make the escort assertions vacuous.
     assert '<activity type="shop" />' in xml_on
     assert '<activity type="shop" />' in xml_off
+
+
+def _srv_candidates():
+    """SrV-grounded location-category candidates with individual category
+    columns. Tests the fold logic for secondary_srv_location_types. Must
+    include all SECONDARY_FIELDS for reselection."""
+    return gpd.GeoDataFrame({
+        "location_id": ["sec_lu_outdoor_1", "sec_lu_errand_2", "sec_lu_mixed_3"],
+        "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        "offers_leisure": [False, False, True],
+        "offers_shop": [False, False, False],
+        "offers_other": [False, False, False],
+        "offers_escort": [False, False, False],
+        "offers_leisure_culture": [False, False, True],
+        "offers_leisure_gastronomy": [False, False, False],
+        "offers_leisure_sports": [False, False, False],
+        "offers_leisure_outdoor": [True, False, False],
+        "offers_errand_authority_medical": [False, True, False],
+        "offers_errand_service": [False, False, False],
+    }, crs="EPSG:25832")
+
+
+def test_secondary_facility_frame_srv_location_types_fold_is_conditional():
+    """Test that SrV location-category columns fold into leisure/other only
+    when secondary_srv_location_types is ON (issue #262).
+
+    When ON, offers_leisure_outdoor folds into offers_leisure, and
+    offers_errand_authority_medical folds into offers_other. When OFF,
+    the category columns are silently ignored (they don't exist in real
+    secondary_candidates when the flag is OFF)."""
+    candidates = _srv_candidates()
+
+    # Flag ON: the fold should happen
+    on = bs_facilities.secondary_facility_frame(
+        candidates,
+        leisure_visit_enabled=True,
+        secondary_srv_location_types=True
+    )
+    # sec_lu_outdoor_1: offers_leisure_outdoor=True was folded into offers_leisure
+    assert bool(on.loc[on["location_id"] == "sec_lu_outdoor_1", "offers_leisure"].iloc[0])
+    # sec_lu_errand_2: offers_errand_authority_medical=True was folded into offers_other
+    assert bool(on.loc[on["location_id"] == "sec_lu_errand_2", "offers_other"].iloc[0])
+    # sec_lu_mixed_3: offers_leisure_culture=True was already offers_leisure=True
+    assert bool(on.loc[on["location_id"] == "sec_lu_mixed_3", "offers_leisure"].iloc[0])
+
+    # Flag OFF: the fold should NOT happen, and category columns should be ignored
+    # (in practice they won't exist in the frame when the flag is OFF).
+    off = bs_facilities.secondary_facility_frame(
+        candidates,
+        leisure_visit_enabled=True,
+        secondary_srv_location_types=False
+    )
+    # Without the fold, sec_lu_outdoor_1 keeps its original offers_leisure=False
+    assert not bool(off.loc[off["location_id"] == "sec_lu_outdoor_1", "offers_leisure"].iloc[0])
+    # Without the fold, sec_lu_errand_2 keeps its original offers_other=False
+    assert not bool(off.loc[off["location_id"] == "sec_lu_errand_2", "offers_other"].iloc[0])
+
+
+def test_secondary_facility_frame_srv_location_types_missing_column_raises():
+    """Test that when secondary_srv_location_types is ON but a required
+    category column is missing, a ValueError is raised (not silently skipped)."""
+    candidates = _srv_candidates().drop(columns=["offers_leisure_outdoor"])
+
+    with pytest.raises(ValueError) as exc_info:
+        bs_facilities.secondary_facility_frame(
+            candidates,
+            leisure_visit_enabled=True,
+            secondary_srv_location_types=True
+        )
+    assert "offers_leisure_outdoor" in str(exc_info.value)
+
+
+def test_secondary_facility_frame_srv_location_types_missing_errand_column_raises():
+    """Test that missing errand category columns also raise hard errors."""
+    candidates = _srv_candidates().drop(columns=["offers_errand_authority_medical"])
+
+    with pytest.raises(ValueError) as exc_info:
+        bs_facilities.secondary_facility_frame(
+            candidates,
+            leisure_visit_enabled=True,
+            secondary_srv_location_types=True
+        )
+    assert "offers_errand_authority_medical" in str(exc_info.value)
