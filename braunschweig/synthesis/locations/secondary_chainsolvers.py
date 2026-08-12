@@ -4411,9 +4411,39 @@ def _write_srv_location_draw_summary(context, subtype_stats: Dict[str, int],
     shares_df = load_srv_location_type_shares(shares_path)
     summary_df = srv_location_draw_summary(subtype_stats, desired_by_category, shares_df)
 
+    # Zero-leg purpose (review finding, Minor): a purpose with reference rows
+    # but NO drawn legs at all is near-100% non-coverage and must be loud, not
+    # silent -- the per-category loop below would otherwise say nothing about
+    # it (drawn_share is 0.0 for every one of its categories, which reads like
+    # "no deviation" unless the total is checked separately).
+    for purpose in SRV_LOCATION_PURPOSES:
+        n_purpose_drawn = int(summary_df.loc[summary_df["purpose"] == purpose, "n_drawn"].sum())
+        if n_purpose_drawn == 0:
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: 0 drawn legs for purpose {purpose!r} while "
+                "secondary_srv_location_types is ON -- verify this run actually "
+                f"produced bounded {purpose!r} legs (an entirely unbounded/"
+                "fallback-only run would explain this, but a bounded run with "
+                "zero draws for a whole purpose is a wiring bug, not noise)."
+            )
+
     warn_pp = float(context.config("srv_location_share_warn_pp"))
     for row in summary_df.itertuples(index=False):
         if pd.isna(row.reference_share):
+            # Fallback-transparency rule (CLAUDE.md): a category from the fixed
+            # code vocabulary (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES)
+            # with NO row in the pinned reference is a vocabulary-drift signal
+            # -- e.g. the CSV was regenerated with a renamed or dropped
+            # category -- and must be surfaced loudly, never silently skipped.
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: {row.purpose}/{row.category} has NO matching row in "
+                f"the pinned reference ({shares_path}) -- possible drift between "
+                "the code vocabulary (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES) "
+                "and the pinned CSV; reference_share/reference_median_euclid_km "
+                "are NaN and this category cannot be compared."
+            )
             continue
         deviation_pp = abs(row.drawn_share - row.reference_share) * 100.0
         if deviation_pp > warn_pp:

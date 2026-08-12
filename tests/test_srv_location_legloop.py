@@ -553,15 +553,22 @@ def test_real_decider_categories_are_deterministic_for_one_seed(tmp_path):
 
     def run():
         decider = sc._build_srv_location_decider(_Ctx(cfg), random_seed=99)
-        df, _m, _u, stats, _desired_by_category = sc._build_plans_df(
+        df, _m, _u, stats, desired_by_category = sc._build_plans_df(
             problems, layered, 2.0, np.random.RandomState(4),
             srv_location_decider=decider)
-        return list(_variable_legs(df)["to_act_type"]), stats
+        return list(_variable_legs(df)["to_act_type"]), stats, desired_by_category
 
-    acts_a, stats_a = run()
-    acts_b, stats_b = run()
+    acts_a, stats_a, desired_a = run()
+    acts_b, stats_b, desired_b = run()
     assert acts_a == acts_b
     assert stats_a == stats_b
+    # Task 9 review finding: the collected desired-distance-by-category dict
+    # is a SEPARATE accumulator from subtype_stats/acts (issue #262, Task 9) --
+    # it must be just as deterministic for the same seed, not merely
+    # "probably fine because the counters are".
+    assert desired_a.keys() == desired_b.keys()
+    for category in desired_a:
+        assert desired_a[category] == pytest.approx(desired_b[category])
     # Every placement activity is an SrV category or the aggregate purpose.
     assert set(acts_a) <= set(sc.SRV_LEISURE_CATEGORIES) | {"leisure"}
     # The fixture's car cells cover both distance bands, so no marginal fallback.

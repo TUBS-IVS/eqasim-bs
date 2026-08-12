@@ -46,6 +46,26 @@ def _flat_distribution():
     }
 
 
+def _problem(person_id: int, purpose: str):
+    """One bounded problem with a single leg of ``purpose`` (mirrors
+    tests/test_srv_location_legloop.py's identical helper)."""
+    return {
+        "person_id": person_id, "activity_index": 2, "size": 1,
+        "purposes": [purpose], "modes": ["car", "car"],
+        "travel_times": np.array([600.0, 600.0]),
+        "origin": np.array([[0.0, 0.0]]),
+        "destination": np.array([[1000.0, 1000.0]]),
+    }
+
+
+def _by_purpose_srv_decider(category_by_purpose, used_marginal: bool = False):
+    """Stub SrV decider returning a fixed per-purpose category (mirrors
+    tests/test_srv_location_legloop.py's identical helper)."""
+    def decide(purpose, mode, distance_m):
+        return category_by_purpose[purpose], used_marginal
+    return decide
+
+
 def _shares_df():
     """Synthetic reference table mirroring
     ``srv2023_secondary_type_shares.csv``'s column universe (including a
@@ -292,10 +312,13 @@ def test_writer_writes_csv_with_honesty_header(tmp_path, capsys):
     assert row["drawn_median_desired_km"] == pytest.approx(2.5)
 
 
-def test_writer_skips_warn_for_category_absent_from_reference(tmp_path, capsys):
-    """A category the pinned vocabulary carries but the reference table has no
-    row for (NaN reference_share) must not raise or spuriously warn -- there is
-    nothing to compare against."""
+def test_writer_warns_loudly_for_category_absent_from_reference(tmp_path, capsys):
+    """(Review finding 1, Important -- silent vocabulary drift.) A category the
+    fixed code vocabulary (SRV_LEISURE_CATEGORIES) carries but the pinned
+    reference table has NO row for (NaN reference_share) is exactly the "wrong
+    key / vocabulary drift" case the fallback-transparency rule requires
+    surfacing LOUDLY (e.g. the CSV was regenerated with a renamed/dropped
+    category) -- it must never be a silent ``continue``."""
     shares_path = tmp_path / "shares_missing_category.csv"
     partial = _shares_df()
     partial = partial[partial["category"] != "leisure_visit"]
@@ -311,7 +334,103 @@ def test_writer_skips_warn_for_category_absent_from_reference(tmp_path, capsys):
     sc._write_srv_location_draw_summary(ctx, stats, {})
 
     captured = capsys.readouterr()
-    assert "leisure/leisure_visit" not in captured.out
+    assert "WARNING" in captured.out
+    assert "leisure/leisure_visit" in captured.out
+    assert "no matching row" in captured.out.lower()
+    assert "drift" in captured.out.lower()
+
+
+def test_writer_warns_once_per_purpose_with_zero_drawn_legs(tmp_path, capsys):
+    """(Review Minor, folded in as mandatory -- fallback-transparency rule.) A
+    purpose with reference rows but ZERO drawn legs in total is near-100%
+    non-coverage and must be loud, not silent: the per-category loop alone
+    would say nothing (every category's drawn_share is NaN/0.0, which reads
+    like "no deviation" unless the purpose total is checked)."""
+    shares_path = _write_shares_csv(tmp_path)
+    stats = _subtype_stats(
+        leisure_counts={"leisure_culture": 30, "leisure_outdoor": 70},
+        other_counts={},  # zero drawn "other" legs entirely
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    ctx = _Ctx({
+        "srv_location_type_shares_path": shares_path,
+        "srv_location_share_warn_pp": 5.0,
+    }, out_dir)
+
+    sc._write_srv_location_draw_summary(ctx, stats, {})
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "0 drawn legs for purpose 'other'" in captured.out
+    # The unaffected "leisure" purpose must NOT get the same warning.
+    assert "0 drawn legs for purpose 'leisure'" not in captured.out
+
+
+# ---------------------------------------------------------------------------
+# (d) Integration: the REAL _build_plans_df output feeds
+# srv_location_draw_summary without an adapter (review finding 2, Important
+# -- "halves never joined"). Reuses the leg-loop fixture machinery from
+# tests/test_srv_location_legloop.py (small ON-path problems + a stub
+# per-purpose decider), verified against the module's OWN subtype_stats /
+# desired_by_category, not a hand-rolled expectation.
+# ---------------------------------------------------------------------------
+
+
+def test_build_plans_df_output_feeds_srv_location_draw_summary_consistently():
+    layered = {"leisure": _flat_distribution(), "other": _flat_distribution(),
+               "shop": _flat_distribution()}
+    problems = [
+        _problem(1, "leisure"), _problem(2, "leisure"), _problem(3, "leisure"),
+        _problem(4, "other"), _problem(5, "other"),
+    ]
+    decider = _by_purpose_srv_decider(
+        {"leisure": "leisure_outdoor", "other": "errand_service"})
+
+    plans_df, _meta, _unbounded, stats, desired_by_category = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(7), srv_location_decider=decider,
+    )
+    summary = sc.srv_location_draw_summary(stats, desired_by_category, _shares_df())
+
+    variable_legs = plans_df[plans_df["to_act_type"] != "home"]
+    assert len(variable_legs) == 5  # one secondary leg per problem
+
+    # (a) n_drawn matches the REAL subtype_stats counters for every category
+    # the decider actually drew (neither hand-rolled from the problem count).
+    leisure_row = summary[(summary["purpose"] == "leisure")
+                          & (summary["category"] == "leisure_outdoor")].iloc[0]
+    other_row = summary[(summary["purpose"] == "other")
+                        & (summary["category"] == "errand_service")].iloc[0]
+    assert leisure_row["n_drawn"] == stats[sc.SRV_LOCATION_STAT_PREFIX + "leisure_outdoor"] == 3
+    assert other_row["n_drawn"] == stats[sc.SRV_LOCATION_STAT_PREFIX + "errand_service"] == 2
+
+    # (b) drawn_median_desired_km equals the median of plans_df's
+    # distance_meters/1000 RESTRICTED TO THAT CATEGORY'S LEGS. The category is
+    # recoverable directly from plans_df here: neither "leisure_outdoor" nor
+    # "errand_service" is an SRV_AGGREGATE_PLACEMENT alias, so the placement
+    # activity IS the drawn category name.
+    expected_leisure_km = (
+        variable_legs.loc[variable_legs["to_act_type"] == "leisure_outdoor", "distance_meters"] / 1000.0
+    ).median()
+    expected_other_km = (
+        variable_legs.loc[variable_legs["to_act_type"] == "errand_service", "distance_meters"] / 1000.0
+    ).median()
+    assert leisure_row["drawn_median_desired_km"] == pytest.approx(expected_leisure_km)
+    assert other_row["drawn_median_desired_km"] == pytest.approx(expected_other_km)
+
+    # Cross-check against the collected dict directly too (belt-and-braces:
+    # the two halves -- subtype_stats and desired_by_category -- must agree
+    # with each other AND with plans_df, not just pairwise).
+    assert leisure_row["drawn_median_desired_km"] == pytest.approx(
+        float(np.median(desired_by_category["leisure_outdoor"])))
+    assert other_row["drawn_median_desired_km"] == pytest.approx(
+        float(np.median(desired_by_category["errand_service"])))
+
+    # The collected dict's total leg count equals the leisure+other variable
+    # leg count in plans_df: every one of the 5 problems is leisure/other, so
+    # every variable leg must have been drawn a category.
+    n_total_desired = sum(len(v) for v in desired_by_category.values())
+    assert n_total_desired == len(variable_legs) == 5
 
 
 # ---------------------------------------------------------------------------
