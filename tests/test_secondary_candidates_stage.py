@@ -331,6 +331,33 @@ def test_srv_location_types_assembles_category_and_landuse_candidates():
     assert (out["pot_errand_service"] > 0.0).any()
 
 
+def test_srv_location_types_opens_every_category_on_external_centroids():
+    """Long-distance reach parity (post-Task-8 review finding): the external
+    Gemeinde centroids are category-AGNOSTIC distance escapes. With the flag ON
+    they must offer every SrV location category at their aggregate ewz potential,
+    or a leisure_culture / errand_* leg has no out-of-area candidate and its long
+    desired distance clips to the region edge -- a regression versus the OFF
+    path, where the same leg was a plain leisure/other leg."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        EXTERNAL_CATEGORY_ESCAPE_CATEGORIES,
+    )
+    context = _srv_stage_context()
+    context._config["secondary_external_candidates"] = True
+    out = secondary_candidates.execute(context)
+
+    external = out[out["location_id"].astype(str) == "03459999"]
+    assert len(external) == 1  # the _external_frame() centroid, ewz = 1000.0
+    row = external.iloc[0]
+    for category in EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        assert bool(row["offers_" + category]), category
+        assert row["pot_" + category] == 1000.0, category
+    # In-area families are untouched by the escape step.
+    building = out[out["location_id"].astype(str) == "sec_b_104"].iloc[0]
+    assert not bool(building["offers_leisure_outdoor"])
+    # leisure_visit keeps its residential-only pool.
+    assert not bool(row["offers_visit"])
+
+
 def test_configure_declares_srv_keys_even_when_flag_is_off():
     """synpp execute-config contract: configure() must declare
     secondary_srv_location_types and secondary_landuse_grid_spacing_meters

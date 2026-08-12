@@ -202,6 +202,7 @@ def execute(context):
             grid_seed_polygons,
         )
         from braunschweig.synthesis.locations.secondary_chainsolvers import (
+            append_external_category_escapes,
             append_landuse_candidates,
             append_location_category_columns,
             check_category_supply,
@@ -232,6 +233,15 @@ def execute(context):
             df_secondary, df_landuse_points, LANDUSE_LAYER_TO_CATEGORY,
             context.stage("data.spatial.municipalities"),
         )
+
+        # Long-distance reach parity (post-Task-8 review finding): the external
+        # Gemeinde centroids are category-agnostic distance escapes -- without
+        # this step every category leg would be confined to in-area candidates
+        # and long desired distances would clip to the region edge, a regression
+        # versus the OFF path. Applied LAST, after both category-column appends,
+        # so every pot_<category> column exists and so the landuse mixed-pool
+        # mean-normalisation above still measures BUILDING potentials only.
+        df_secondary = append_external_category_escapes(df_secondary)
 
         # Non-empty check (CLAUDE.md fallback transparency): every SrV
         # location category must carry at least one positive-potential

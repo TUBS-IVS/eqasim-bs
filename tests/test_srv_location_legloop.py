@@ -183,7 +183,8 @@ def test_srv_category_replaces_mid_subtype_as_placement_activity():
     assert stats["other_errand_short"] == 1
     assert stats[sc.SRV_LOCATION_STAT_PREFIX + "leisure_outdoor"] == 1
     assert stats[sc.SRV_LOCATION_STAT_PREFIX + "errand_service"] == 1
-    assert stats[sc.SRV_LOCATION_MARGINAL_FALLBACK_STAT] == 0
+    assert stats[sc.srv_location_marginal_fallback_stat("leisure")] == 0
+    assert stats[sc.srv_location_marginal_fallback_stat("other")] == 0
 
 
 def test_srv_misc_categories_place_on_the_aggregate_purpose():
@@ -274,9 +275,32 @@ def test_srv_marginal_fallback_counted_in_subtype_stats():
             {"leisure": "leisure_culture", "other": "errand_service"},
             used_marginal=True),
     )
-    assert stats[sc.SRV_LOCATION_MARGINAL_FALLBACK_STAT] == 2
+    # Counted PER PURPOSE, never pooled (review finding: a pooled counter lets a
+    # badly covered purpose hide behind a well covered one).
+    assert stats[sc.srv_location_marginal_fallback_stat("leisure")] == 1
+    assert stats[sc.srv_location_marginal_fallback_stat("other")] == 1
     assert stats[sc.SRV_LOCATION_STAT_PREFIX + "leisure_culture"] == 1
     assert stats[sc.SRV_LOCATION_STAT_PREFIX + "errand_service"] == 1
+
+
+def test_srv_marginal_fallback_counters_are_attributed_to_their_own_purpose():
+    """A purpose whose (mode, band) cells are missing must not push its fallback
+    count onto the other purpose's books."""
+    layered = {"leisure": _single_value_distribution(1000.0),
+               "other": _single_value_distribution(2000.0),
+               "shop": _flat_distribution()}
+
+    def decide(purpose, mode, distance_m):
+        # "other" always falls back to its marginal; "leisure" never does.
+        return (("errand_service", True) if purpose == "other"
+                else ("leisure_culture", False))
+
+    _df, _meta, _unbounded, stats = sc._build_plans_df(
+        [_problem(200, "leisure"), _problem(201, "leisure"), _problem(300, "other")],
+        layered, 2.0, np.random.RandomState(1), srv_location_decider=decide,
+    )
+    assert stats[sc.srv_location_marginal_fallback_stat("leisure")] == 0
+    assert stats[sc.srv_location_marginal_fallback_stat("other")] == 1
 
 
 def test_srv_counters_absent_when_decider_off():
@@ -324,40 +348,47 @@ def test_off_path_byte_identical_srv_decider_none():
 # ---------------------------------------------------------------------------
 
 
+_EXTERNAL_EWZ = 7000.0
+
+
 def _srv_candidates():
-    """Five candidate rows covering every emission branch:
+    """Six candidate rows covering every emission branch:
 
     ``sec_b_0``  leisure building mapped to leisure_culture (positive potential)
     ``sec_b_1``  errand building mapped to errand_service (positive potential)
     ``sec_lu_0`` ATKIS landuse grid point, leisure_outdoor only
     ``sec_res_0`` residential visit candidate (offers_visit / pot_visit)
     ``sec_2``    legacy shop-only catalog row
+    ``03151000`` external Gemeinde centroid after
+                 ``append_external_category_escapes``: all base purposes AND all
+                 category escapes at the same ewz potential
     """
-    n = 5
+    n = 6
     frame = {
-        "location_id": ["sec_b_0", "sec_b_1", "sec_lu_0", "sec_res_0", "sec_2"],
-        "offers_shop": [False, False, False, False, True],
-        "offers_leisure": [True, False, False, False, False],
-        "offers_other": [False, True, False, False, False],
-        "pot_shop": [0.0, 0.0, 0.0, 0.0, 5.0],
+        "location_id": ["sec_b_0", "sec_b_1", "sec_lu_0", "sec_res_0", "sec_2", "03151000"],
+        "commune_id": ["1", "1", "1", "1", "1", "03151000"],
+        "offers_shop": [False, False, False, False, True, True],
+        "offers_leisure": [True, False, False, False, False, True],
+        "offers_other": [False, True, False, False, False, True],
+        "pot_shop": [0.0, 0.0, 0.0, 0.0, 5.0, _EXTERNAL_EWZ],
         "pot_shop_daily": [0.0] * n,
         "pot_shop_non_daily": [0.0] * n,
-        "pot_leisure": [4.0, 0.0, 0.0, 0.0, 0.0],
-        "pot_other": [0.0, 6.0, 0.0, 0.0, 0.0],
-        "offers_leisure_culture": [True, False, False, False, False],
-        "pot_leisure_culture": [4.0, 0.0, 0.0, 0.0, 0.0],
-        "offers_leisure_gastronomy": [False] * n,
-        "pot_leisure_gastronomy": [0.0] * n,
-        "offers_leisure_sports": [False] * n,
-        "pot_leisure_sports": [0.0] * n,
-        "offers_leisure_outdoor": [False, False, True, False, False],
-        "pot_leisure_outdoor": [0.0, 0.0, 100.0, 0.0, 0.0],
-        "offers_errand_authority_medical": [False] * n,
-        "pot_errand_authority_medical": [0.0] * n,
-        "offers_errand_service": [False, True, False, False, False],
-        "pot_errand_service": [0.0, 6.0, 0.0, 0.0, 0.0],
-        sc.VISIT_OFFER_COLUMN: [False, False, False, True, False],
-        sc.VISIT_POTENTIAL_COLUMN: [0.0, 0.0, 0.0, 9.0, 0.0],
+        "pot_leisure": [4.0, 0.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "pot_other": [0.0, 6.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_leisure_culture": [True, False, False, False, False, True],
+        "pot_leisure_culture": [4.0, 0.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_leisure_gastronomy": [False, False, False, False, False, True],
+        "pot_leisure_gastronomy": [0.0, 0.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_leisure_sports": [False, False, False, False, False, True],
+        "pot_leisure_sports": [0.0, 0.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_leisure_outdoor": [False, False, True, False, False, True],
+        "pot_leisure_outdoor": [0.0, 0.0, 100.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_errand_authority_medical": [False, False, False, False, False, True],
+        "pot_errand_authority_medical": [0.0, 0.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        "offers_errand_service": [False, True, False, False, False, True],
+        "pot_errand_service": [0.0, 6.0, 0.0, 0.0, 0.0, _EXTERNAL_EWZ],
+        sc.VISIT_OFFER_COLUMN: [False, False, False, True, False, False],
+        sc.VISIT_POTENTIAL_COLUMN: [0.0, 0.0, 0.0, 9.0, 0.0, 0.0],
     }
     return gpd.GeoDataFrame(
         frame,
@@ -387,6 +418,28 @@ def test_build_locations_df_srv_emits_aggregate_plus_category_activities():
     # sec_2: shop emission unchanged.
     assert acts[4] == ["shop"]
     assert pots[4] == ["5.0"]
+    # External Gemeinde centroid: a candidate for EVERY category leg (the
+    # long-distance escape), at its aggregate ewz potential.
+    assert acts[5] == [
+        "shop", "leisure", "leisure_culture", "leisure_gastronomy",
+        "leisure_outdoor", "leisure_sports", "other",
+        "errand_authority_medical", "errand_service",
+    ]
+    assert set(pots[5]) == {str(_EXTERNAL_EWZ)}
+
+
+def test_build_locations_df_srv_external_centroid_serves_every_category_leg():
+    """Long-distance reach parity (review finding): every SrV category leg must
+    find the external centroid among its candidates, exactly as the plain
+    leisure/other legs did on the OFF path."""
+    out = sc._build_locations_df(
+        _srv_candidates(), with_potentials=True, srv_location_types=True)
+    external_acts = set(out.loc[5, "activities"].split("; "))
+    for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        assert category in external_acts, category
+    # leisure_visit stays residential-only (it is not an external escape).
+    assert "leisure_visit" not in external_acts
+    assert out.loc[3, "activities"] == "leisure_visit"
 
 
 def test_build_locations_df_srv_drops_mid_subtype_placement_activities():
@@ -420,7 +473,8 @@ def test_build_locations_df_srv_keeps_escort_emission():
     candidates = _srv_candidates()
     for column in sc.ESCORT_EDU_OFFER_BY_TYPE.values():
         candidates[column] = False
-    candidates[sc.ESCORT_RESIDENTIAL_OFFER_COLUMN] = [False, False, False, True, False]
+    candidates[sc.ESCORT_RESIDENTIAL_OFFER_COLUMN] = [
+        False, False, False, True, False, False]
     candidates["pot_escort_edu"] = 0.0
     out = sc._build_locations_df(
         candidates, with_potentials=True, srv_location_types=True,
@@ -511,7 +565,7 @@ def test_real_decider_categories_are_deterministic_for_one_seed(tmp_path):
     # Every placement activity is an SrV category or the aggregate purpose.
     assert set(acts_a) <= set(sc.SRV_LEISURE_CATEGORIES) | {"leisure"}
     # The fixture's car cells cover both distance bands, so no marginal fallback.
-    assert stats_a[sc.SRV_LOCATION_MARGINAL_FALLBACK_STAT] == 0
+    assert stats_a[sc.srv_location_marginal_fallback_stat("leisure")] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -631,21 +685,58 @@ def test_configure_declares_srv_keys_even_with_every_other_flag_on():
 # ---------------------------------------------------------------------------
 
 
-def test_srv_draw_summary_lines_report_shares_and_marginal_rate(capsys):
+def _draw_stats(*, leisure_counts=None, other_counts=None,
+                marginal_leisure=0, marginal_other=0):
     stats = {sc.SRV_LOCATION_STAT_PREFIX + name: 0
              for name in sc.SRV_LEISURE_CATEGORIES + sc.SRV_OTHER_CATEGORIES}
-    stats[sc.SRV_LOCATION_STAT_PREFIX + "leisure_outdoor"] = 3
-    stats[sc.SRV_LOCATION_STAT_PREFIX + "leisure_visit"] = 1
-    stats[sc.SRV_LOCATION_STAT_PREFIX + "errand_service"] = 4
-    stats[sc.SRV_LOCATION_MARGINAL_FALLBACK_STAT] = 2
+    for name, count in (leisure_counts or {}).items():
+        stats[sc.SRV_LOCATION_STAT_PREFIX + name] = count
+    for name, count in (other_counts or {}).items():
+        stats[sc.SRV_LOCATION_STAT_PREFIX + name] = count
+    stats[sc.srv_location_marginal_fallback_stat("leisure")] = marginal_leisure
+    stats[sc.srv_location_marginal_fallback_stat("other")] = marginal_other
+    return stats
 
-    for line in sc._srv_location_draw_summary_lines(stats):
-        print(line)
-    out = capsys.readouterr().out
 
-    assert "srv location draw (leisure)" in out
-    assert "leisure_outdoor 3 (75.0%)" in out
-    assert "srv location draw (other)" in out
-    assert "errand_service 4 (100.0%)" in out
-    # Marginal-fallback rate over all drawn legs (4 leisure + 4 other).
-    assert "2/8 (25.0%)" in out
+def test_srv_draw_summary_lines_report_shares_and_per_purpose_marginal_rate():
+    stats = _draw_stats(
+        leisure_counts={"leisure_outdoor": 3, "leisure_visit": 1},
+        other_counts={"errand_service": 4},
+        marginal_leisure=1, marginal_other=1,
+    )
+    leisure_line, other_line, total_line = sc._srv_location_draw_summary_lines(stats)
+
+    assert "srv location draw (leisure)" in leisure_line
+    assert "leisure_outdoor 3 (75.0%)" in leisure_line
+    assert "1/4 (25.0%)" in leisure_line            # leisure's OWN rate
+    assert "srv location draw (other)" in other_line
+    assert "errand_service 4 (100.0%)" in other_line
+    assert "1/4 (25.0%)" in other_line              # other's OWN rate
+    assert "marginal fallback total 2/8 (25.0%)" in total_line
+
+
+def test_srv_draw_summary_warns_per_purpose_and_cannot_be_masked_by_the_other():
+    """Review finding: with a POOLED rate a 50% "other" failure hid behind a
+    large, well-covered leisure side. The warning must fire on the purpose that
+    actually failed -- and only on it."""
+    stats = _draw_stats(
+        leisure_counts={"leisure_outdoor": 100},
+        other_counts={"errand_service": 4},
+        marginal_leisure=0, marginal_other=2,
+    )
+    leisure_line, other_line, total_line = sc._srv_location_draw_summary_lines(stats)
+
+    assert "WARNING" not in leisure_line               # 0/100 -> no warning
+    assert other_line.count("WARNING") == 1            # 2/4 = 50% -> warning
+    # Pooled rate is only 2/104 (1.9%) -- exactly the masking the split prevents.
+    assert "marginal fallback total 2/104 (1.9%)" in total_line
+    assert "WARNING" not in total_line
+
+
+def test_srv_draw_summary_handles_a_purpose_without_any_legs():
+    stats = _draw_stats(leisure_counts={"leisure_outdoor": 5})
+    leisure_line, other_line, _total = sc._srv_location_draw_summary_lines(stats)
+    assert "0 bounded other legs" in other_line
+    assert "0/0 (0.0%)" in other_line                  # no ZeroDivisionError
+    assert "WARNING" not in other_line
+    assert "WARNING" not in leisure_line

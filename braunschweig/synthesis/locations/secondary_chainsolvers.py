@@ -877,6 +877,15 @@ def append_location_category_columns(candidates: gpd.GeoDataFrame,
     for all five columns. An unmapped class is a VALID outcome (not every
     Bosserhof class maps to one of the five categories), not an error.
 
+    The external Gemeinde centroids are the one family that must not STAY at
+    ``False`` / ``0.0``: they are category-agnostic long-distance escapes, and
+    :func:`append_external_category_escapes` re-opens every category on them
+    once all category columns exist (i.e. after the landuse append). That step
+    is deliberately NOT done here -- adding ``pot_leisure_outdoor`` at this point
+    would both create a column this function has no building source for and let
+    ewz population counts contaminate the landuse mixed-pool scale factor in
+    :func:`append_landuse_candidates`.
+
     Parameters
     ----------
     candidates:
@@ -1362,6 +1371,133 @@ def append_landuse_candidates(candidates: gpd.GeoDataFrame,
             "region's landuse extent."
             % (growth_factor, VISIT_CANDIDATE_WARN_FACTOR)
         )
+    return out
+
+
+def external_centroid_mask(candidates: gpd.GeoDataFrame) -> pd.Series:
+    """Boolean mask selecting the external Gemeinde-centroid candidate rows.
+
+    External centroids are the long-distance escape hatch appended by
+    :func:`build_secondary_candidates` when ``secondary_external_candidates`` is
+    ON: they let carla match a desired distance that reaches beyond the study
+    area instead of truncating it to the area edge. They are identified exactly
+    as that function constructs them -- ``location_id`` IS the bare
+    ``commune_id`` (every in-area family is prefixed: ``sec_b_``, ``sec_lu_``,
+    ``sec_res_``, ``sec_edu_``, legacy ``sec_``) AND all three base purposes are
+    offered (which no other family does: legacy rows are ``other``-only,
+    building rows never offer ``other``, visit/education rows offer neither).
+    Both conditions are required so a hypothetical unprefixed in-area id cannot
+    be mistaken for an external centroid.
+    """
+    return (
+        (candidates["location_id"].astype(str) == candidates["commune_id"].astype(str))
+        & candidates["offers_shop"].astype(bool)
+        & candidates["offers_leisure"].astype(bool)
+        & candidates["offers_other"].astype(bool)
+    )
+
+
+def append_external_category_escapes(candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Make external Gemeinde centroids candidates for EVERY SrV location
+    category (issue #262, post-Task-8 review finding).
+
+    External centroids are category-AGNOSTIC distance escapes: before this
+    feature they offered all three base purposes with the same population (ewz)
+    potential precisely so a long desired distance could be realised outside the
+    study area. :func:`append_location_category_columns` (buildings) and
+    :func:`append_landuse_candidates` (ATKIS grid points) both leave them at
+    ``False`` / ``0.0`` for every category, so under
+    ``secondary_srv_location_types`` a ``leisure_culture`` / ``leisure_gastronomy``
+    / ``leisure_sports`` / ``leisure_outdoor`` / ``errand_*`` leg would have NO
+    external candidate at all and its desired distance would clip to the region
+    edge -- a reach REGRESSION versus the OFF path, where the same leg was a
+    plain ``leisure`` / ``other`` leg with external candidates available. This
+    function restores that role: for every external-centroid row (see
+    :func:`external_centroid_mask`) each category gets ``offers_<category> =
+    True`` and ``pot_<category>`` = the row's existing ``pot_leisure`` (leisure
+    categories) or ``pot_other`` (errand categories), i.e. the same ewz value the
+    aggregate offers already carry.
+
+    ``leisure_visit`` is deliberately NOT touched: its candidate pool is the
+    residential building stock (``offers_visit`` / ``pot_visit``, Task 5, issue
+    #127) and external centroids never offered ``offers_visit`` on the OFF path
+    either -- extending them here would be a behaviour CHANGE, not a regression
+    fix.
+
+    Call order: AFTER both :func:`append_location_category_columns` and
+    :func:`append_landuse_candidates`, so every ``pot_<category>`` column exists
+    (``leisure_outdoor`` is created only by the landuse append) and so the
+    landuse mixed-pool mean-normalisation still compares landuse points against
+    BUILDING potentials only -- ewz population counts must never enter that scale
+    factor. Missing category columns therefore raise (fail-fast on a wrong call
+    order rather than silently skipping a category).
+
+    Parameters
+    ----------
+    candidates:
+        Assembled candidate GeoDataFrame carrying ``location_id``,
+        ``commune_id``, the three base offers, ``pot_leisure`` / ``pot_other``
+        and every ``offers_``/``pot_`` pair of
+        ``EXTERNAL_CATEGORY_ESCAPE_CATEGORIES``.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        A copy of ``candidates`` with the external rows' category columns set.
+        Row count and row order are unchanged (no rows are added or dropped).
+
+    Raises
+    ------
+    ValueError
+        If a required base or category column is missing.
+    """
+    required_base = ["location_id", "commune_id", "offers_shop", "offers_leisure",
+                     "offers_other", "pot_leisure", "pot_other"]
+    missing_base = [column for column in required_base if column not in candidates.columns]
+    if missing_base:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_external_category_escapes "
+            "requires column(s) %s on the candidate frame; available: %s."
+            % (missing_base, list(candidates.columns))
+        )
+    missing_category = [
+        column
+        for category in EXTERNAL_CATEGORY_ESCAPE_CATEGORIES
+        for column in ("offers_" + category, "pot_" + category)
+        if column not in candidates.columns
+    ]
+    if missing_category:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_external_category_escapes is "
+            "missing category column(s) %s -- call it AFTER "
+            "append_location_category_columns AND append_landuse_candidates (which "
+            "create them), never before." % missing_category
+        )
+
+    out = candidates.copy()
+    mask = external_centroid_mask(out)
+    external_index = out.index[mask]
+    if len(external_index) == 0:
+        print(
+            "[braunschweig.secondary_chainsolvers] external category escapes: no external "
+            "Gemeinde-centroid rows in the candidate set (secondary_external_candidates "
+            "OFF) -- no category escape rows added; long leisure/other desired distances "
+            "can only be realised inside the study area."
+        )
+        return out
+
+    for category in EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        base_column = "pot_leisure" if category in SRV_LEISURE_CATEGORIES else "pot_other"
+        out.loc[external_index, "pot_" + category] = \
+            out.loc[external_index, base_column].astype(float)
+        out.loc[external_index, "offers_" + category] = True
+    print(
+        "[braunschweig.secondary_chainsolvers] external category escapes: %d external "
+        "Gemeinde centroids now offer all %d SrV location categories at their aggregate "
+        "(ewz) potential -- category-agnostic long-distance escapes, mirroring their "
+        "pre-flag any-purpose role ('leisure_visit' stays residential-only)."
+        % (len(external_index), len(EXTERNAL_CATEGORY_ESCAPE_CATEGORIES))
+    )
     return out
 
 
@@ -2037,12 +2173,13 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     Draws come from that decider's own dedicated seeded RNG (NOT ``random``), so
     the distance-sampling stream -- and hence the OFF path -- stays
     byte-identical. Its counters live in a dedicated ``subtype_stats`` key
-    namespace (``SRV_LOCATION_STAT_PREFIX`` + category, plus
-    ``SRV_LOCATION_MARGINAL_FALLBACK_STAT`` for draws resolved from a purpose's
-    marginal distribution because the pinned table has no matching (mode, band)
-    cell): ``leisure_visit`` is both a MiD subtype and an SrV category, so shared
-    keys would double-count in both log lines. Default None (OFF) leaves the leg
-    loop byte-identical.
+    namespace (``SRV_LOCATION_STAT_PREFIX`` + category, plus one
+    ``srv_location_marginal_fallback_<purpose>`` counter PER PURPOSE for draws
+    resolved from that purpose's marginal distribution because the pinned table
+    has no matching (mode, band) cell): ``leisure_visit`` is both a MiD subtype
+    and an SrV category, so shared keys would double-count in both log lines, and
+    a pooled fallback counter would let a badly covered purpose hide behind a
+    well covered one. Default None (OFF) leaves the leg loop byte-identical.
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -2092,7 +2229,13 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             SRV_LOCATION_STAT_PREFIX + name: 0
             for name in SRV_LEISURE_CATEGORIES + SRV_OTHER_CATEGORIES
         })
-        subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT] = 0
+        # One marginal-fallback counter PER PURPOSE (never pooled): the purposes
+        # differ several-fold in leg volume, so a single pooled counter would let
+        # a badly covered purpose hide behind a well covered one.
+        subtype_stats.update({
+            srv_location_marginal_fallback_stat(purpose): 0
+            for purpose in SRV_LOCATION_PURPOSES
+        })
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -2237,7 +2380,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 placement_act = SRV_AGGREGATE_PLACEMENT.get(category, category)
                 subtype_stats[SRV_LOCATION_STAT_PREFIX + category] += 1
                 if used_marginal:
-                    subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT] += 1
+                    subtype_stats[srv_location_marginal_fallback_stat(to_act_type)] += 1
 
             # from_x/from_y: known iff first leg AND origin is fixed
             if li == 0:
@@ -3618,13 +3761,28 @@ SRV_PLACEMENT_CATEGORIES = tuple(
     if name not in SRV_AGGREGATE_PLACEMENT
 )
 
+# Categories the external Gemeinde centroids act as long-distance escapes for
+# (see append_external_category_escapes): every placement category that has its
+# own ``pot_<category>`` column. "leisure_visit" is excluded because its pool is
+# the residential building stock (offers_visit / pot_visit) and external
+# centroids never offered that on the OFF path either.
+EXTERNAL_CATEGORY_ESCAPE_CATEGORIES = tuple(
+    name for name in SRV_PLACEMENT_CATEGORIES if name != "leisure_visit"
+)
+
 # ``subtype_stats`` key namespace for the SrV draws. A prefix is REQUIRED, not
 # cosmetic: "leisure_visit" is simultaneously a MiD distance subtype (see
 # LEISURE_SUBTYPE_ACTIVITIES) and an SrV location category, so unprefixed
 # counters would be incremented by both deciders and BOTH log lines (the MiD
 # subtype labelling line and the SrV draw line) would report inflated counts.
 SRV_LOCATION_STAT_PREFIX = "srv_location_"
-SRV_LOCATION_MARGINAL_FALLBACK_STAT = "srv_location_marginal_fallback"
+
+# Marginal-fallback counters are kept PER PURPOSE, not pooled (review finding):
+# leisure legs outnumber "other" legs several times over, so a pooled rate lets a
+# badly covered purpose hide behind a well covered one (e.g. 45% fallback on
+# "other" reads as ~5% pooled). Both the reported rate and the escalation
+# threshold below therefore apply per purpose.
+SRV_LOCATION_MARGINAL_FALLBACK_STAT_PREFIX = "srv_location_marginal_fallback_"
 
 # Pinned probability table produced by scripts/derive_srv_location_types.py
 # (Task 1). Committed reference data -- regenerate there, never edit by hand.
@@ -3632,13 +3790,18 @@ DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH = (
     "eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv"
 )
 
-# HEURISTIC escalation threshold (share of drawn legs resolved from a purpose's
-# MARGINAL distribution instead of its (mode, band) cell). Mirrors the escort
-# distance-by-type precedent: above this share the conditional table is
-# effectively not doing its job, which is a failure signal rather than a
-# tolerated cost (CLAUDE.md fallback-transparency rule 2). Not a scientifically
-# derived bound.
+# HEURISTIC escalation threshold, applied PER PURPOSE (share of that purpose's
+# drawn legs resolved from its MARGINAL distribution instead of its (mode, band)
+# cell). Mirrors the escort distance-by-type precedent: above this share the
+# conditional table is effectively not doing its job, which is a failure signal
+# rather than a tolerated cost (CLAUDE.md fallback-transparency rule 2). Not a
+# scientifically derived bound.
 SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE = 0.2
+
+
+def srv_location_marginal_fallback_stat(purpose: str) -> str:
+    """``subtype_stats`` key counting ``purpose``'s marginal-fallback draws."""
+    return SRV_LOCATION_MARGINAL_FALLBACK_STAT_PREFIX + purpose
 
 
 def srv_category_offer_column(category: str) -> str:
@@ -3706,18 +3869,22 @@ def _validate_srv_location_type_prerequisites(*, srv_location_types: bool,
 
 
 def _srv_location_draw_summary_lines(subtype_stats: Dict[str, int]) -> List[str]:
-    """One draw-rate line per SrV-covered purpose plus the marginal-fallback line.
+    """One draw-rate line per SrV-covered purpose plus a pooled-total line.
 
-    Pure (no I/O, no randomness) so the exact wording is testable. Reports, per
-    purpose, how many bounded legs drew each location category, and -- across
-    both purposes -- how many draws were resolved from the purpose's MARGINAL
-    distribution because the pinned table has no ``(mode, distance band)`` cell
-    for that leg (CLAUDE.md fallback transparency: the rate must always be
-    observable, not only when it is non-zero). A marginal share at or above
-    ``SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE`` is prefixed ``WARNING``.
+    Pure (no I/O, no randomness) so the exact wording is testable. Each purpose's
+    line reports how many bounded legs drew each location category AND that
+    purpose's OWN marginal-fallback rate -- draws resolved from the purpose's
+    marginal distribution because the pinned table has no ``(mode, distance
+    band)`` cell for the leg (CLAUDE.md fallback transparency: the rate must
+    always be observable, not only when it is non-zero). The
+    ``SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE`` escalation is evaluated PER
+    PURPOSE, because a pooled rate lets a badly covered purpose hide behind a
+    well covered one (the purposes differ in leg volume by several times). The
+    trailing pooled line is informational only and never warns.
     """
     lines = []
     n_all = 0
+    n_marginal_all = 0
     for purpose, categories in (
         ("leisure", SRV_LEISURE_CATEGORIES), ("other", SRV_OTHER_CATEGORIES),
     ):
@@ -3730,17 +3897,21 @@ def _srv_location_draw_summary_lines(subtype_stats: Dict[str, int]) -> List[str]
             f"{name} {count:,} ({_rate_pct(count, n_legs):.1f}%)"
             for name, count in counts.items()
         )
+        n_marginal = subtype_stats[srv_location_marginal_fallback_stat(purpose)]
+        n_marginal_all += n_marginal
+        share = (n_marginal / n_legs) if n_legs else 0.0
+        prefix = "WARNING: " if share >= SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE else ""
         lines.append(
-            f"[braunschweig.secondary_chainsolvers] srv location draw ({purpose}): "
-            f"{n_legs:,} bounded {purpose} legs -> {shares}"
+            f"[braunschweig.secondary_chainsolvers] {prefix}srv location draw ({purpose}): "
+            f"{n_legs:,} bounded {purpose} legs -> {shares}; marginal fallback (no "
+            f"(mode, band) cell in the pinned table) {n_marginal:,}/{n_legs:,} "
+            f"({share * 100.0:.1f}%)"
         )
-    n_marginal = subtype_stats[SRV_LOCATION_MARGINAL_FALLBACK_STAT]
-    share = (n_marginal / n_all) if n_all else 0.0
-    prefix = "WARNING: " if share >= SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE else ""
     lines.append(
-        f"[braunschweig.secondary_chainsolvers] {prefix}srv location draw: marginal "
-        f"fallback (no (mode, band) cell in the pinned table) "
-        f"{n_marginal:,}/{n_all:,} ({share * 100.0:.1f}%)"
+        "[braunschweig.secondary_chainsolvers] srv location draw: marginal fallback "
+        f"total {n_marginal_all:,}/{n_all:,} "
+        f"({_rate_pct(n_marginal_all, n_all):.1f}%) -- see the per-purpose lines above "
+        "for the rates the warning threshold is applied to"
     )
     return lines
 

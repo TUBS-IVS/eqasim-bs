@@ -495,3 +495,133 @@ def test_mixed_category_with_zero_building_supply_stays_raw_and_warns(capsys):
     captured = capsys.readouterr()
     assert "WARNING" in captured.out
     assert "leisure_sports" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# append_external_category_escapes -- long-distance reach parity (post-Task-8
+# review finding). External Gemeinde centroids are category-AGNOSTIC distance
+# escapes: without this step a leisure_culture / errand_* leg would have no
+# out-of-area candidate at all and its long desired distance would clip to the
+# region edge, a regression versus the OFF path where the same leg was a plain
+# "leisure" / "other" leg with external candidates available.
+# ---------------------------------------------------------------------------
+
+_EWZ = 12345.0
+
+
+def _mixed_family_candidates():
+    """One row per candidate family, all carrying the full category column set:
+    external Gemeinde centroid (location_id == commune_id, all three base
+    offers), building, landuse point, residential visit, education, legacy
+    catalog row."""
+    families = {
+        "location_id": ["03151000", "sec_b_b1", "sec_lu_0", "sec_res_7", "sec_edu_3", "sec_0"],
+        "commune_id": ["03151000", "1", "1", "1", "1", "1"],
+        "offers_shop": [True, False, False, False, False, False],
+        "offers_leisure": [True, True, False, False, False, False],
+        "offers_other": [True, False, False, False, False, True],
+        "pot_leisure": [_EWZ, 5.0, 0.0, 0.0, 0.0, 0.0],
+        "pot_other": [_EWZ, 0.0, 0.0, 0.0, 0.0, 3.0],
+    }
+    n = len(families["location_id"])
+    for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        families["offers_" + category] = [False] * n
+        families["pot_" + category] = [0.0] * n
+    # Genuine in-area supply per category family (the building offers culture,
+    # the landuse point offers outdoor) so the escapes are visibly ADDITIVE
+    # rather than the only supply.
+    families["offers_leisure_culture"][1] = True
+    families["pot_leisure_culture"][1] = 5.0
+    families["offers_leisure_outdoor"][2] = True
+    families["pot_leisure_outdoor"][2] = 22500.0
+    families[sc.VISIT_OFFER_COLUMN] = [False, False, False, True, False, False]
+    families[sc.VISIT_POTENTIAL_COLUMN] = [0.0, 0.0, 0.0, 9.0, 0.0, 0.0]
+    families["geometry"] = [Point(i, i) for i in range(n)]
+    return gpd.GeoDataFrame(families, crs="EPSG:25832")
+
+
+def test_external_centroid_mask_selects_only_the_centroid_row():
+    mask = sc.external_centroid_mask(_mixed_family_candidates())
+    assert list(mask) == [True, False, False, False, False, False]
+
+
+def test_external_row_offers_every_category_at_its_aggregate_potential(capsys):
+    out = sc.append_external_category_escapes(_mixed_family_candidates())
+    row = out[out.location_id == "03151000"].iloc[0]
+    for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        assert row["offers_" + category], category
+        # ewz for both families: pot_leisure for leisure_*, pot_other for errand_*.
+        assert row["pot_" + category] == _EWZ, category
+    # Row count / order unchanged (no rows added or dropped).
+    assert list(out["location_id"]) == list(_mixed_family_candidates()["location_id"])
+    assert "external category escapes: 1 external" in capsys.readouterr().out
+
+
+def test_external_escapes_leave_leisure_visit_residential_only():
+    """leisure_visit's pool is the residential stock; external centroids never
+    offered offers_visit on the OFF path either, so extending them here would be
+    a behaviour CHANGE, not a regression fix."""
+    assert "leisure_visit" not in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES
+    out = sc.append_external_category_escapes(_mixed_family_candidates())
+    row = out[out.location_id == "03151000"].iloc[0]
+    assert not row[sc.VISIT_OFFER_COLUMN]
+    assert row[sc.VISIT_POTENTIAL_COLUMN] == 0.0
+
+
+def test_external_escapes_leave_every_other_candidate_family_untouched():
+    before = _mixed_family_candidates()
+    out = sc.append_external_category_escapes(before)
+    for location_id in ("sec_b_b1", "sec_lu_0", "sec_res_7", "sec_edu_3", "sec_0"):
+        row = out[out.location_id == location_id].iloc[0]
+        expected = before[before.location_id == location_id].iloc[0]
+        for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+            assert bool(row["offers_" + category]) == bool(expected["offers_" + category]), \
+                (location_id, category)
+            assert row["pot_" + category] == expected["pot_" + category], (location_id, category)
+
+
+def test_external_escapes_without_any_external_row_is_a_no_op(capsys):
+    candidates = _mixed_family_candidates()
+    candidates = candidates[candidates.location_id != "03151000"].reset_index(drop=True)
+    out = sc.append_external_category_escapes(candidates)
+    pd.testing.assert_frame_equal(pd.DataFrame(out.drop(columns="geometry")),
+                                  pd.DataFrame(candidates.drop(columns="geometry")))
+    assert "no external Gemeinde-centroid rows" in capsys.readouterr().out
+
+
+def test_external_escapes_require_the_category_columns_to_exist_already():
+    """Fail-fast on a wrong call order: the landuse append owns
+    pot_leisure_outdoor, so calling this before it must raise rather than
+    silently skip that category."""
+    candidates = _mixed_family_candidates().drop(
+        columns=["offers_leisure_outdoor", "pot_leisure_outdoor"])
+    with pytest.raises(ValueError, match="pot_leisure_outdoor"):
+        sc.append_external_category_escapes(candidates)
+
+
+def test_external_escapes_require_the_base_columns():
+    candidates = _mixed_family_candidates().drop(columns=["pot_other"])
+    with pytest.raises(ValueError, match="pot_other"):
+        sc.append_external_category_escapes(candidates)
+
+
+def test_external_rows_do_not_contaminate_the_landuse_scale_factor():
+    """Call-order contract: the escapes run AFTER append_landuse_candidates, so
+    the mixed-pool mean-normalization still measures BUILDING potentials only --
+    an ewz population count in that mean would blow up the landuse scale."""
+    candidates = _mini_candidates()
+    candidates["offers_leisure_culture"] = [True, False, False]
+    candidates["pot_leisure_culture"] = [8.0, 0.0, 0.0]
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_kulturundunterhaltung"],
+        "represented_area_m2": [22500.0],
+        "geometry": [Point(10, 10)],
+    }, crs="EPSG:25832")
+
+    with_landuse = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+        _mini_municipalities())
+    # The landuse point is normalized to the single building's 8.0 scale, and
+    # applying the escapes afterwards cannot change that.
+    assert with_landuse[with_landuse.location_id == "sec_lu_0"].iloc[0]["pot_leisure_culture"] \
+        == pytest.approx(8.0)
