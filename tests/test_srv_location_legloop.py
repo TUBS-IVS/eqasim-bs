@@ -67,11 +67,24 @@ def _single_value_distribution(value: float):
     }
 
 
-def _problem(person_id: int, purpose: str):
-    """One bounded problem with a single leg of ``purpose``."""
+def _mode_value_distribution(value_by_mode):
+    """Degenerate one-value CDFs with a DIFFERENT value per mode, so two legs of
+    the same purpose can sample deliberately different desired distances."""
+    return {
+        mode: {
+            "bounds": np.array([], dtype=float),
+            "distributions": [{"values": np.array([value_by_mode.get(mode, 1000.0)]),
+                               "cdf": np.array([1.0])}],
+        }
+        for mode in _MODES
+    }
+
+
+def _problem(person_id: int, purpose: str, mode: str = "car"):
+    """One bounded problem with a single leg of ``purpose`` travelled by ``mode``."""
     return {
         "person_id": person_id, "activity_index": 2, "size": 1,
-        "purposes": [purpose], "modes": ["car", "car"],
+        "purposes": [purpose], "modes": [mode, mode],
         "travel_times": np.array([600.0, 600.0]),
         "origin": np.array([[0.0, 0.0]]),
         "destination": np.array([[1000.0, 1000.0]]),
@@ -747,3 +760,197 @@ def test_srv_draw_summary_handles_a_purpose_without_any_legs():
     assert "0/0 (0.0%)" in other_line                  # no ZeroDivisionError
     assert "WARNING" not in other_line
     assert "WARNING" not in leisure_line
+
+
+# ---------------------------------------------------------------------------
+# Excursion boundary-clip diagnostic under SrV placement: the MiD distance
+# label is carried through on the ON path (`_distance_label`) so the Task-6
+# measurement stays alive, now resolved PER DRAWN PLACEMENT CATEGORY (each
+# category has its own candidate pool, hence its own reach ceiling).
+# ---------------------------------------------------------------------------
+
+
+def test_distance_label_carries_the_mid_subtype_on_the_on_path():
+    layered = {
+        "leisure_excursion": _single_value_distribution(99000.0),
+        "leisure": _single_value_distribution(1000.0),
+        "other_errand_short": _single_value_distribution(555.0),
+        "other": _single_value_distribution(4321.0),
+        "shop": _flat_distribution(),
+    }
+    df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        other_subtype_decider=lambda mode, tt: "other_errand_short",
+        srv_location_decider=_by_purpose_srv_decider(
+            {"leisure": "leisure_outdoor", "other": "errand_service"}),
+    )
+    legs = _variable_legs(df)
+    # Placement is the SrV category; the MiD subtype survives as the DISTANCE
+    # label, which is what the boundary-clip diagnostic selects on.
+    assert list(legs["to_act_type"]) == ["leisure_outdoor", "errand_service"]
+    assert list(legs[sc.DISTANCE_LABEL_COLUMN]) == ["leisure_excursion", "other_errand_short"]
+    # Fixed-anchor legs carry no label at all.
+    assert df.loc[df["to_act_type"] == "home", sc.DISTANCE_LABEL_COLUMN].isna().all()
+
+
+def test_distance_label_falls_back_to_the_aggregate_purpose_without_a_subtype_decider():
+    layered = {"leisure": _single_value_distribution(1000.0),
+               "other": _single_value_distribution(2000.0),
+               "shop": _flat_distribution()}
+    df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(1),
+        other_subtype_decider=lambda mode, tt: "other_rest",
+        srv_location_decider=_by_purpose_srv_decider(
+            {"leisure": "leisure_culture", "other": "other_misc"}),
+    )
+    # No leisure subtype decider -> the aggregate purpose IS the distance label;
+    # "other_rest" likewise keeps the aggregate "other" layer.
+    assert list(_variable_legs(df)[sc.DISTANCE_LABEL_COLUMN]) == ["leisure", "other"]
+
+
+def test_distance_label_absent_on_the_off_path_and_dropped_before_the_solver():
+    layered = {"leisure_excursion": _single_value_distribution(99000.0),
+               "leisure": _single_value_distribution(1000.0),
+               "other": _single_value_distribution(4321.0),
+               "shop": _flat_distribution()}
+    off_df, _m, _u, _s, _d = sc._build_plans_df(
+        _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(7),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    assert sc.DISTANCE_LABEL_COLUMN not in off_df.columns
+    # The OFF-path solver frame still drops exactly the two legacy helpers.
+    assert list(sc._plans_frame_for_solver(off_df).columns) == [
+        "unique_person_id", "unique_leg_id", "to_act_type", "distance_meters",
+        "from_x", "from_y", "to_x", "to_y",
+    ]
+
+    on_df, _m, _u, _s, _d = sc._build_plans_df(
+        _leisure_and_other_problems(), layered, 2.0, np.random.RandomState(7),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        srv_location_decider=_constant_srv_decider("leisure_outdoor"),
+    )
+    assert sc.DISTANCE_LABEL_COLUMN in on_df.columns
+    # chainsolvers must never see the helper column.
+    assert list(sc._plans_frame_for_solver(on_df).columns) == list(
+        sc._plans_frame_for_solver(off_df).columns)
+
+
+def _excursion_clip_candidates(external_xy=(3000.0, 3000.0)):
+    """``_srv_candidates()`` with the external centroid moved out to
+    ``external_xy``, so the candidate-reach ceiling from the (0, 0) anchor is
+    ~4.2 km for every category (external centroids carry all category
+    potentials): a 99 km desired distance clips, an 800 m one does not."""
+    candidates = _srv_candidates()
+    candidates.loc[5, "geometry"] = geo.Point(*external_xy)
+    return candidates
+
+
+def _excursion_clip_problems_and_distributions():
+    """Two leisure excursion legs with deliberately different desired distances:
+    the car leg samples 99 km (beyond the candidate universe), the walk leg 800 m
+    (well inside it)."""
+    problems = [_problem(200, "leisure", mode="car"),
+                _problem(201, "leisure", mode="walk")]
+    layer = _mode_value_distribution({"car": 99000.0, "walk": 800.0})
+    distributions = {"leisure_excursion": layer, "leisure": layer,
+                     "other": layer, "shop": layer}
+    return problems, distributions
+
+
+def _long_leg_draws_outdoor(purpose, mode, distance_m):
+    """Deterministic stand-in for the SrV decider: the long leg lands on the
+    landuse-backed ``leisure_outdoor`` pool, the short one on the aggregate
+    ``leisure_misc`` -> "leisure" pool."""
+    return ("leisure_outdoor", False) if distance_m > 10000.0 else ("leisure_misc", False)
+
+
+def test_excursion_clip_is_measured_per_drawn_placement_category():
+    problems, distributions = _excursion_clip_problems_and_distributions()
+    plans_df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        srv_location_decider=_long_leg_draws_outdoor,
+    )
+    lines = sc._srv_excursion_boundary_clip_lines(
+        plans_df, problems, _excursion_clip_candidates())
+
+    by_category = {line.split("placement=")[1].split("]")[0]: line
+                   for line in lines if "placement=" in line}
+    assert set(by_category) == {"leisure", "leisure_outdoor"}
+    # The 99 km leg placed on leisure_outdoor cannot reach its desired distance.
+    assert "1/1 (100.0%)" in by_category["leisure_outdoor"]
+    assert "WARNING" in by_category["leisure_outdoor"]
+    # The 800 m leg placed on the aggregate leisure pool reaches it comfortably.
+    assert "0/1 (0.0%)" in by_category["leisure"]
+    assert "WARNING" not in by_category["leisure"]
+    # Plus one aggregate total line over all excursion legs.
+    total_line = [line for line in lines if "placement=" not in line]
+    assert len(total_line) == 1
+    assert "1/2 (50.0%)" in total_line[0]
+
+
+def test_excursion_clip_measures_the_category_pool_not_the_aggregate_one():
+    """The category's OWN candidate pool sets its ceiling: with the external
+    escape stripped, leisure_outdoor is left with a single nearby landuse point,
+    so even a moderate desired distance clips -- while the aggregate leisure pool
+    (which the same run still has) is measured separately."""
+    problems, distributions = _excursion_clip_problems_and_distributions()
+    candidates = _excursion_clip_candidates(external_xy=(30.0, 30.0))
+    plans_df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        srv_location_decider=_long_leg_draws_outdoor,
+    )
+    lines = sc._srv_excursion_boundary_clip_lines(plans_df, problems, candidates)
+    by_category = {line.split("placement=")[1].split("]")[0]: line
+                   for line in lines if "placement=" in line}
+    assert "1/1 (100.0%)" in by_category["leisure_outdoor"]
+    assert "1/1 (100.0%)" in by_category["leisure"]  # 800 m > ~42 m ceiling now
+
+
+def test_excursion_clip_reports_nothing_to_measure_without_excursion_legs():
+    problems, distributions = _excursion_clip_problems_and_distributions()
+    plans_df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_local",
+        srv_location_decider=_long_leg_draws_outdoor,
+    )
+    lines = sc._srv_excursion_boundary_clip_lines(
+        plans_df, problems, _excursion_clip_candidates())
+    assert len(lines) == 1
+    assert "0 bounded 'leisure_excursion' legs this run (nothing to measure)." in lines[0]
+
+
+def test_excursion_clip_fails_fast_when_a_drawn_category_has_no_candidates():
+    """Mirrors the legacy pot_leisure fail-fast: a drawn placement category with
+    zero positive-potential candidates is broken wiring, not thin data."""
+    problems, distributions = _excursion_clip_problems_and_distributions()
+    candidates = _excursion_clip_candidates()
+    candidates["pot_leisure_outdoor"] = 0.0
+    candidates["offers_leisure_outdoor"] = False
+    plans_df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        srv_location_decider=_long_leg_draws_outdoor,
+    )
+    with pytest.raises(RuntimeError, match="leisure_outdoor"):
+        sc._srv_excursion_boundary_clip_lines(plans_df, problems, candidates)
+
+
+def test_legacy_excursion_selection_still_keys_on_to_act_type():
+    """The shared selection helper must keep its legacy (srv OFF) behaviour: no
+    ``_distance_label`` column exists there, and the excursion legs are found via
+    the placement activity."""
+    layered = {"leisure_excursion": _single_value_distribution(99000.0),
+               "leisure": _single_value_distribution(1000.0),
+               "other": _single_value_distribution(4321.0),
+               "shop": _flat_distribution()}
+    problems = [_problem(200, "leisure")]
+    plans_df, _meta, _unbounded, _stats, _desired = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.tolist() == [99000.0]
+    assert anchors_xy.tolist() == [[0.0, 0.0]]

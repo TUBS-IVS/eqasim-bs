@@ -2088,6 +2088,31 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
 SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
 FIXED_PURPOSES = {"home", "work", "education"}
 
+# Helper column carrying a leisure/other leg's MiD distance LABEL (the subtype
+# group that drove its distance layer) alongside the SrV placement category
+# (issue #262). Present ONLY when the SrV location decider is active: with SrV
+# placement ON the placement activity is the drawn category, so this is the only
+# remaining handle on the MiD subtype -- the Task-6 excursion boundary-clip
+# diagnostic selects its legs through it. Like ``_leg_index`` / ``_problem_idx``
+# it is stage-internal and dropped before ``cs.solve()``.
+DISTANCE_LABEL_COLUMN = "_distance_label"
+
+# Stage-internal plans_df columns chainsolvers must never see. Order matters for
+# the OFF path: dropping the same two legacy columns keeps that frame identical.
+PLANS_HELPER_COLUMNS = ("_leg_index", "_problem_idx", DISTANCE_LABEL_COLUMN)
+
+
+def _plans_frame_for_solver(plans_df: pd.DataFrame) -> pd.DataFrame:
+    """Drop the stage-internal helper columns before handing plans to ``cs.solve``.
+
+    ``DISTANCE_LABEL_COLUMN`` only exists on the SrV ON path, so the drop list is
+    filtered to the columns actually present -- on the OFF path this removes
+    exactly the two legacy helpers, byte-identically to the previous inline
+    ``drop(columns=["_leg_index", "_problem_idx"])``.
+    """
+    return plans_df.drop(
+        columns=[column for column in PLANS_HELPER_COLUMNS if column in plans_df.columns])
+
 
 def _problem_legs(problem) -> List[Dict[str, Any]]:
     """Yield one leg dict per trip in the problem.
@@ -2221,6 +2246,18 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     a pooled fallback counter would let a badly covered purpose hide behind a
     well covered one. Default None (OFF) leaves the leg loop byte-identical.
 
+    With that decider active the frame gains ONE extra column,
+    ``DISTANCE_LABEL_COLUMN`` (``"_distance_label"``): the MiD subtype group that
+    drove the leg's distance layer, i.e. what the placement activity would have
+    been without the SrV draw (the drawn leisure/other subtype; the aggregate
+    purpose for a leg without an active subtype decider or with an
+    ``"other_rest"`` outcome; ``None`` for shop / escort / fixed-anchor legs). It
+    is what keeps the Task-6 excursion boundary-clip diagnostic measurable under
+    SrV placement (see ``_srv_excursion_boundary_clip_lines``), is stage-internal
+    like ``_leg_index`` / ``_problem_idx`` (dropped by
+    ``_plans_frame_for_solver`` before ``cs.solve``), and is NOT emitted at all on
+    the OFF path, so that frame keeps exactly its legacy columns.
+
     ``desired_by_category`` (issue #262, Task 9) collects, for every leg the
     ``srv_location_decider`` actually drew a category for, that leg's already
     -sampled desired distance in KILOMETRES, keyed by the BARE (unprefixed)
@@ -2248,6 +2285,9 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     col_to_y: List[float] = []
     col_leg_index: List[int] = []
     col_prob_idx: List[int] = []
+    # Issue #262: MiD distance label per leg, filled (and emitted) ONLY when the
+    # SrV location decider is active -- see DISTANCE_LABEL_COLUMN.
+    col_distance_label: List[Any] = []
 
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
@@ -2340,6 +2380,19 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 to_act_type if to_act_type in SECONDARY_PURPOSES else "other"
             )
 
+            # Issue #262: the MiD distance LABEL of a leisure/other leg, i.e. the
+            # subtype group that would have been the placement activity before
+            # this feature. Emitted as DISTANCE_LABEL_COLUMN on the ON path only
+            # (see the docstring), where it is the only surviving handle on the
+            # MiD subtype -- the Task-6 excursion boundary-clip diagnostic
+            # selects its legs through it. Defaults to the aggregate purpose,
+            # which is also the layer a leg without an active subtype decider
+            # (or an "other_rest" outcome) actually samples; None for shop /
+            # escort / fixed-anchor legs, which have no MiD subtype label.
+            distance_label = (
+                to_act_type if to_act_type in SRV_LOCATION_PURPOSES else None
+            )
+
             # Tier 2: resolve a shop leg to its daily / non-daily subtype. The
             # subtype is the chainsolver activity (-> retail_daily / non_daily
             # placement) AND the distance purpose (-> shop_daily / non_daily
@@ -2370,6 +2423,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 group = leisure_subtype_decider(leg["mode"], leg["travel_time"])
                 if srv_location_decider is None:
                     placement_act = group
+                distance_label = group
                 subtype_stats[group] += 1
                 if _purpose_in_distributions(distributions, group):
                     distance_purpose = group
@@ -2393,6 +2447,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 if outcome != "other_rest":
                     if srv_location_decider is None:
                         placement_act = outcome
+                    distance_label = outcome
                     if _purpose_in_distributions(distributions, outcome):
                         distance_purpose = outcome
                     else:
@@ -2466,6 +2521,11 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             col_to_y.append(to_y)
             col_leg_index.append(li)
             col_prob_idx.append(prob_idx)
+            if srv_location_decider is not None:
+                # ON path only: appended (and the column emitted) solely when the
+                # SrV decider is active, so the OFF-path frame keeps exactly its
+                # legacy columns and stays byte-identical.
+                col_distance_label.append(distance_label)
 
     if not col_uid:
         # Preserve the legacy empty-frame shape (from_records([]) has NO
@@ -2473,7 +2533,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         return (pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats,
                 dict(desired_by_category))
 
-    plans_df = pd.DataFrame({
+    plans_data = {
         "unique_person_id": col_uid,
         "unique_leg_id": col_leg_id,
         "to_act_type": col_act,
@@ -2484,7 +2544,12 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         "to_y": col_to_y,
         "_leg_index": col_leg_index,
         "_problem_idx": col_prob_idx,
-    })
+    }
+    if srv_location_decider is not None:
+        # Appended LAST so the OFF path's column order is untouched (the golden
+        # frame-equality tests pin it).
+        plans_data[DISTANCE_LABEL_COLUMN] = col_distance_label
+    plans_df = pd.DataFrame(plans_data)
     return plans_df, problem_meta, unbounded_idx, subtype_stats, dict(desired_by_category)
 
 
@@ -3259,9 +3324,10 @@ DEFAULT_EXCURSION_CLIP_WARNING_SHARE = 0.50
 
 
 def _excursion_desired_distances_and_anchors_m(plans_df: pd.DataFrame,
-                                                problems: List[Dict[str, Any]]
+                                                problems: List[Dict[str, Any]],
+                                                row_mask=None
                                                 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Desired distances (metres) and anchors for ``"leisure_excursion"`` legs.
+    """Desired distances (metres) and anchors for the selected excursion legs.
 
     ``plans_df`` must still carry ``_problem_idx`` (i.e. be the frame returned
     by ``_build_plans_df``, before the caller drops the helper columns for
@@ -3273,17 +3339,39 @@ def _excursion_desired_distances_and_anchors_m(plans_df: pd.DataFrame,
     reference point for the candidate-reach ceiling: it is always available,
     unlike an intermediate, still-unresolved secondary location.
 
+    ``row_mask`` selects the rows to measure. ``None`` (default) keeps the legacy
+    selection -- ``to_act_type == "leisure_excursion"``, i.e. the placement
+    activity, which IS the MiD subtype whenever ``secondary_srv_location_types``
+    is OFF. With that flag ON the placement activity is the drawn SrV category
+    instead, so the caller passes a boolean mask built from
+    ``DISTANCE_LABEL_COLUMN`` (optionally intersected with a placement category);
+    the coordinate/anchor logic below is shared by both paths rather than
+    duplicated (issue #262).
+
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
         ``(desired_m, anchors_xy)``, parallel arrays of length
-        n_excursion_legs; ``anchors_xy`` has shape ``(n, 2)``. Both are empty
-        when no ``"leisure_excursion"`` leg is present (the flag is OFF, or
-        no bounded leg happened to draw that group).
+        n_selected_legs; ``anchors_xy`` has shape ``(n, 2)``. Both are empty
+        when the selection matches no row (e.g. the flag is OFF and no bounded
+        leg happened to draw that group).
+
+    Raises
+    ------
+    ValueError
+        If ``row_mask`` length does not match ``plans_df``.
     """
     if plans_df.empty or "to_act_type" not in plans_df.columns:
         return np.array([], dtype=float), np.empty((0, 2), dtype=float)
-    mask = (plans_df["to_act_type"] == "leisure_excursion").to_numpy()
+    if row_mask is None:
+        mask = (plans_df["to_act_type"] == "leisure_excursion").to_numpy()
+    else:
+        mask = np.asarray(row_mask, dtype=bool)
+        if mask.shape != (len(plans_df),):
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] row_mask must have one entry "
+                f"per plans_df row: got {mask.shape}, expected ({len(plans_df)},)."
+            )
     if not mask.any():
         return np.array([], dtype=float), np.empty((0, 2), dtype=float)
     desired_m = plans_df.loc[mask, "distance_meters"].to_numpy(dtype=float)
@@ -3337,7 +3425,8 @@ def _candidate_reach_ceiling_m(anchors_xy: np.ndarray, candidate_xy: np.ndarray)
 
 
 def _excursion_boundary_clip_summary(n_clipped: int, n_total: int,
-                                     warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE) -> str:
+                                     warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE,
+                                     placement_category: str = None) -> str:
     """Build the one-line ``"leisure_excursion"`` boundary-clip transparency summary.
 
     Pure (no I/O, no randomness, no side effects) -- mirrors
@@ -3355,21 +3444,123 @@ def _excursion_boundary_clip_summary(n_clipped: int, n_total: int,
         n_total: total ``"leisure_excursion"`` legs measured this run.
         warning_share: clip share (in [0, 1]) at or above which the line is
             prefixed with ``"WARNING: "``.
+        placement_category: with ``secondary_srv_location_types`` ON the same
+            measurement is resolved per DRAWN placement category (each category
+            has its own candidate pool, hence its own reach ceiling); naming it
+            here tags the line ``[placement=<category>]``. ``None`` (default)
+            produces the legacy, placement-agnostic wording unchanged.
     """
+    scope = f" [placement={placement_category}]" if placement_category else ""
     if n_total == 0:
         return (
             "[braunschweig.secondary_chainsolvers] leisure_excursion "
-            "boundary-clip: 0 bounded 'leisure_excursion' legs this run "
+            f"boundary-clip{scope}: 0 bounded 'leisure_excursion' legs this run "
             "(nothing to measure)."
         )
     share = n_clipped / n_total
     prefix = "WARNING: " if share >= warning_share else ""
     return (
         f"[braunschweig.secondary_chainsolvers] {prefix}leisure_excursion "
-        f"boundary-clip: {n_clipped:,}/{n_total:,} ({share * 100.0:.1f}%) "
+        f"boundary-clip{scope}: {n_clipped:,}/{n_total:,} ({share * 100.0:.1f}%) "
         "bounded excursion legs sample a desired distance beyond the "
         "farthest available candidate and clip to the region edge."
     )
+
+
+def _srv_placement_potential_column(placement_activity: str) -> str:
+    """Candidate potential column backing a drawn SrV placement activity.
+
+    The drawn category is the chainsolver activity, so its candidate pool is
+    exactly the rows the emission in :func:`_build_locations_df` offers it to:
+    a category activity maps to its own ``pot_<category>`` (``pot_visit`` for
+    ``leisure_visit``, see :func:`srv_category_potential_column`), while the two
+    aggregate-placement categories resolve to the plain purpose and therefore to
+    ``pot_leisure`` / ``pot_other`` via ``_ACTIVITY_POTENTIAL_COLUMN``. One
+    mapping, used by both the emission and this diagnostic.
+    """
+    if placement_activity in SRV_PLACEMENT_CATEGORIES:
+        return srv_category_potential_column(placement_activity)
+    return _ACTIVITY_POTENTIAL_COLUMN[placement_activity]
+
+
+def _srv_excursion_boundary_clip_lines(plans_df: pd.DataFrame,
+                                       problems: List[Dict[str, Any]],
+                                       df_secondary,
+                                       warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE
+                                       ) -> List[str]:
+    """Excursion boundary-clip lines under SrV placement, PER DRAWN CATEGORY.
+
+    Restores the Task-6 diagnostic (issue #127) for the
+    ``secondary_srv_location_types`` ON path, where it had gone structurally
+    inert: the diagnostic used to select its legs by placement activity
+    ``== "leisure_excursion"``, but with SrV placement the activity is the drawn
+    category and the MiD subtype survives only as ``DISTANCE_LABEL_COLUMN``.
+    Legs are therefore selected by that label, and then grouped by the drawn
+    placement category -- each category is placed on its OWN candidate pool
+    (landuse points for ``leisure_outdoor``, residential rows for
+    ``leisure_visit``, the aggregate buildings for ``leisure_misc``, plus the
+    external Gemeinde centroids, which carry every category potential since the
+    escape step), so each has its own reach ceiling and must be measured
+    separately. Measurement only: reads the already-sampled desired distances
+    and the already-assembled candidate set, places nothing, draws no random
+    number.
+
+    Returns one line per drawn category (alphabetically, for a deterministic
+    log) plus one aggregate total line, or a single "nothing to measure" line
+    when no bounded excursion leg exists.
+
+    Raises
+    ------
+    RuntimeError
+        If a drawn placement category has zero positive-potential candidates --
+        broken wiring rather than thin data, mirroring the legacy
+        ``pot_leisure`` fail-fast.
+    """
+    if plans_df.empty or DISTANCE_LABEL_COLUMN not in plans_df.columns:
+        return [_excursion_boundary_clip_summary(0, 0)]
+    excursion_mask = (plans_df[DISTANCE_LABEL_COLUMN] == "leisure_excursion").to_numpy()
+    if not excursion_mask.any():
+        return [_excursion_boundary_clip_summary(0, 0)]
+
+    lines = []
+    n_clipped_all = 0
+    n_total_all = 0
+    placement_acts = plans_df.loc[excursion_mask, "to_act_type"]
+    for category in sorted(set(placement_acts)):
+        category_mask = excursion_mask & (plans_df["to_act_type"] == category).to_numpy()
+        desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(
+            plans_df, problems, row_mask=category_mask)
+        if desired_m.size == 0:
+            continue
+        potential_column = _srv_placement_potential_column(category)
+        if potential_column not in df_secondary.columns:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip: "
+                f"placement category {category!r} needs candidate column "
+                f"'{potential_column}', which the candidate set does not carry -- the "
+                "SrV candidate wiring is broken."
+            )
+        category_candidates = df_secondary.loc[df_secondary[potential_column] > 0.0]
+        if len(category_candidates) == 0:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip "
+                f"found zero candidates with {potential_column} > 0, but bounded "
+                f"'leisure_excursion' legs were placed on {category!r} -- the candidate "
+                "wiring is broken (this is not an expected empty-candidate run)."
+            )
+        candidate_xy = np.column_stack((
+            category_candidates.geometry.x.to_numpy(),
+            category_candidates.geometry.y.to_numpy(),
+        ))
+        ceiling_m = _candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+        _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
+        n_clipped_all += n_clipped
+        n_total_all += n_total
+        lines.append(_excursion_boundary_clip_summary(
+            n_clipped, n_total, warning_share=warning_share, placement_category=category))
+    lines.append(_excursion_boundary_clip_summary(
+        n_clipped_all, n_total_all, warning_share=warning_share))
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -4937,16 +5128,12 @@ def execute(context):
     # _excursion_boundary_clip_summary.
     if leisure_subtype_decider is not None and srv_location_decider is not None:
         # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
-        # label only -- no plan row carries it as a placement activity, so this
-        # measurement has nothing to look at. Stated explicitly instead of
-        # printing the "0 bounded legs" line, which could be misread as evidence
-        # that no excursion leg clips at the candidate-universe boundary.
-        print(
-            "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip: not "
-            "measured -- secondary_srv_location_types is ON, so the MiD "
-            "'leisure_excursion' label drives the distance layer only and never becomes a "
-            "placement activity (the drawn SrV location category does)."
-        )
+        # label only -- no plan row carries it as a placement activity. The
+        # measurement is therefore driven by DISTANCE_LABEL_COLUMN and resolved
+        # per DRAWN placement category, each against its own candidate pool (and
+        # hence its own reach ceiling).
+        for line in _srv_excursion_boundary_clip_lines(plans_df, problems, df_secondary):
+            print(line)
     elif leisure_subtype_decider is not None:
         desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
         if desired_m.size > 0:
@@ -4986,8 +5173,9 @@ def execute(context):
     # the downstream fallback, so the serial path stays byte-identical.
     base_seed = int(random.randint(0, 2**31 - 1))
 
-    # Drop helper columns chainsolvers does not expect.
-    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    # Drop helper columns chainsolvers does not expect (issue #262 adds the
+    # ON-path-only DISTANCE_LABEL_COLUMN to that set).
+    plans_for_cs = _plans_frame_for_solver(plans_df)
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
     n_total = len(unique_persons)
 

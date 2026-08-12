@@ -205,20 +205,33 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
    search can still deviate from the desired distance (`top_n` selection
    inertness, backlog Tier-0 item (a)), which is a separate question assessed
    only in the A/B run below.
-7. **Excursion boundary-clip diagnostic — inert, not removed.** A pre-existing
-   Task-6-era diagnostic measured how often `leisure_excursion` legs clip at
-   the study-area boundary. With this flag ON, no plan row carries
-   `leisure_excursion` as a placement activity any more (SrV owns placement),
-   so the diagnostic's counters are structurally `0/0`. Rather than print a
-   `0/0` line that misreads as "no clipping observed," the stage prints an
-   explicit line instead (`secondary_chainsolvers.py`, verbatim):
-   `"[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip:
-   not measured -- secondary_srv_location_types is ON, so the MiD
-   'leisure_excursion' label drives the distance layer only and never
-   becomes a placement activity (the drawn SrV location category does)."`
-   Re-establishing the measurement under SrV placement needs the distance
-   label carried alongside the placement activity — out of this feature's
-   scope; see Follow-ups.
+7. **Excursion boundary-clip diagnostic — restored per drawn category.** The
+   pre-existing Task-6-era diagnostic measures how often `leisure_excursion`
+   legs sample a desired distance beyond the farthest candidate available to
+   their anchor (and therefore necessarily clip to the edge of the candidate
+   universe). It selected its legs by placement activity
+   `== "leisure_excursion"`, which this feature made structurally empty — SrV
+   owns placement. The MiD subtype is therefore carried through on the ON path
+   as a stage-internal plans column, `_distance_label`
+   (`DISTANCE_LABEL_COLUMN`; dropped again by `_plans_frame_for_solver` before
+   `cs.solve`, and not emitted at all on the OFF path so that frame stays
+   byte-identical), and the measurement selects on it instead.
+   Because each drawn category is placed on its OWN candidate pool (landuse
+   points for `leisure_outdoor`, residential rows for `leisure_visit`, the
+   aggregate buildings for `leisure_misc`, plus the external Gemeinde
+   centroids, which carry every category potential after the escape step of
+   point 3), each pool has its own reach ceiling and is measured separately:
+   `_srv_excursion_boundary_clip_lines` prints one
+   `leisure_excursion boundary-clip [placement=<category>]: n/N (x%)` line per
+   drawn category (alphabetical, deterministic) plus one aggregate total line,
+   keeping the existing `DEFAULT_EXCURSION_CLIP_WARNING_SHARE = 0.50`
+   `WARNING` semantics per category. A run with no bounded excursion leg keeps
+   the single honest "0 bounded 'leisure_excursion' legs this run (nothing to
+   measure)." line, and a drawn category with zero positive-potential
+   candidates raises (broken wiring, not thin data — mirroring the legacy
+   `pot_leisure` fail-fast). Measurement only: it reads already-sampled
+   distances and the already-assembled candidate set, places nothing and draws
+   no random number.
 
 ## Assumptions
 
@@ -286,10 +299,10 @@ undifferentiated secondary purposes, `leisure` and `other`, behind
 
 ## Follow-ups
 
-- **Excursion boundary-clip diagnostic** (Mechanics point 7): currently
-  inert under the flag with an explicit log line; re-establishing the
-  measurement needs the distance label threaded alongside the placement
-  activity. Issue proposal pending user confirmation (not yet filed).
+- ~~**Excursion boundary-clip diagnostic**: inert under the flag.~~ **Done in
+  this branch** — restored per drawn placement category via the `_distance_label`
+  carry-through (Mechanics point 7); no follow-up issue needed. The pending A/B
+  run is the first opportunity to read the per-category clip shares on real data.
 - **Option B** (possible later upgrade, non-blocking): request per-category
   `potential_*` columns directly from the TUBS-IVS
   Activities-and-Potentials-Calculation-Pipeline instead of deriving them
