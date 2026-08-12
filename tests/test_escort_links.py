@@ -388,3 +388,71 @@ def test_missing_anchor_entry_fails_fast():
     with pytest.raises(KeyError, match="activity_anchors"):
         list(problems_mod.find_assignment_problems(
             df, df_locations, activity_anchors={}))
+
+
+# --- Perf fix: masks scoped to escort-purpose rows only (fix-wave 2026-08-12) --
+
+
+def test_rewrite_handles_non_monotonic_row_index():
+    """Regression for the escort-purpose-row-scoped rewrite: the candidate
+    masks are built over a SUBSET of rows selected via ``out.loc[<boolean
+    numpy array>, ...]`` (positional) and then scattered back in True-position
+    order. ``df_trips`` arrives sorted but keeps its ORIGINAL (possibly
+    non-monotonic) pandas row index from upstream, so mixing an index-aligned
+    Series mask with a positional numpy array would silently misplace the
+    rewrite. Same 4-row fixture as test_rewrite_marks_only_anchored_activities,
+    with a shuffled, non-default index."""
+    trips = pd.DataFrame({
+        "person_id":         [1, 1, 1, 2],
+        "trip_index":        [0, 1, 2, 0],
+        "preceding_purpose": ["home", "escort", "escort", "home"],
+        "following_purpose": ["escort", "escort", "home", "escort"],
+    })
+    trips.index = [17, 3, 99, 42]
+    links = _links_frame([(1, 0, "edu_7", _P(5, 5))])  # ONE child
+    anchors, _ = assign_escort_anchors(trips, links)   # activity 1 anchored, 2 overflow
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        rewrite_linked_escort_trips,
+    )
+    out = rewrite_linked_escort_trips(trips, anchors)
+    person_1 = out[out["person_id"] == 1]
+    assert list(person_1["following_purpose"]) == ["escort_linked", "escort", "home"]
+    assert list(person_1["preceding_purpose"]) == ["home", "escort_linked", "escort"]
+    # unlinked person 2 keeps the plain escort purpose (draw path)
+    assert list(out.loc[out["person_id"] == 2, "following_purpose"]) == ["escort"]
+    # the input frame is NOT mutated
+    assert "escort_linked" not in set(trips["following_purpose"])
+
+
+def test_seam_build_links_then_assign_anchors_uses_real_child_rank():
+    """Producer-consumer seam: feed REAL build_escort_links output straight
+    into assign_escort_anchors (no synthetic _links_frame), pinning that the
+    ``child_rank`` column the real producer computes drives distinct schools
+    for a consecutive multi-drop chain. Household 10: escorter person 1
+    (age 40), children person 2 (age 6 -> edu_7) and person 3 (age 9 ->
+    edu_8); build_escort_links also needs the ``following_purpose == "escort"``
+    rows to identify person 1 as an escorter in the first place."""
+    trips = _chain(1, ["home", "escort", "escort", "work"])
+    links, _link_stats = build_escort_links(_persons(), _education(), trips)
+    anchors, stats = assign_escort_anchors(trips, links)
+    by_activity = anchors.set_index("activity_index")["location_id"]
+    assert by_activity[1] == "edu_7" and by_activity[2] == "edu_8"  # youngest first
+    assert stats["n_overflow_to_draw"] == 0
+
+
+def test_rewrite_with_empty_anchors_leaves_trips_unchanged():
+    """Flag-ON-with-zero-links path: assign_escort_anchors on an empty links
+    table returns an empty anchors frame, and rewrite_linked_escort_trips must
+    leave both purpose columns completely untouched. Pins the empty-
+    MultiIndex construction/``isin`` behaviour against pandas upgrades."""
+    trips = _chain(1, ["home", "escort", "home"])
+    links = _links_frame([])
+    anchors, _stats = assign_escort_anchors(trips, links)
+    assert len(anchors) == 0
+    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        rewrite_linked_escort_trips,
+    )
+    out = rewrite_linked_escort_trips(trips, anchors)
+    assert list(out["preceding_purpose"]) == list(trips["preceding_purpose"])
+    assert list(out["following_purpose"]) == list(trips["following_purpose"])
+    assert "escort_linked" not in set(out["preceding_purpose"]) | set(out["following_purpose"])

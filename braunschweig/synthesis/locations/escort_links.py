@@ -93,7 +93,7 @@ def build_escort_links(df_persons: pd.DataFrame,
     link_rate = n_linked / n_escorters
     logger.info(
         "[escort_links] household link: %d/%d escorters linked (%.1f%%) to %d "
-        "household children's education locations (max_child_age_years=%d); "
+        "escorter-child links (education locations) (max_child_age_years=%d); "
         "unlinked escorters use the SrV-weighted location-type draw.",
         n_linked, n_escorters, 100.0 * link_rate, n_child_links,
         int(max_child_age_years),

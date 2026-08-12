@@ -504,15 +504,33 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
     the household's linkable children) keep the plain ``escort`` purpose and
     stay on the SrV-weighted draw path. Only the chainsolver-local problem
     construction sees this frame; the persisted activities/plans keep the
-    plain ``escort`` purpose."""
+    plain ``escort`` purpose. The MultiIndex/``isin`` masks are built only over
+    the rows whose ``preceding_purpose`` / ``following_purpose`` is already
+    ``escort`` (typically 5-8% of all trips), not the full trips frame, since
+    building and probing a MultiIndex over every row is the dominant cost at
+    scale for a candidate set this small."""
     out = df_trips.copy()
     anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
-    preceding_activity = pd.MultiIndex.from_arrays(
-        [out["person_id"], out["trip_index"]])
-    following_activity = pd.MultiIndex.from_arrays(
-        [out["person_id"], out["trip_index"] + 1])
-    mask_preceding = preceding_activity.isin(anchored) & (out["preceding_purpose"] == "escort").to_numpy()
-    mask_following = following_activity.isin(anchored) & (out["following_purpose"] == "escort").to_numpy()
+
+    candidate_preceding = (out["preceding_purpose"] == "escort").to_numpy()
+    candidate_following = (out["following_purpose"] == "escort").to_numpy()
+
+    mask_preceding = np.zeros(len(out), dtype=bool)
+    if candidate_preceding.any():
+        preceding_activity = pd.MultiIndex.from_arrays([
+            out.loc[candidate_preceding, "person_id"],
+            out.loc[candidate_preceding, "trip_index"],
+        ])
+        mask_preceding[candidate_preceding] = preceding_activity.isin(anchored)
+
+    mask_following = np.zeros(len(out), dtype=bool)
+    if candidate_following.any():
+        following_activity = pd.MultiIndex.from_arrays([
+            out.loc[candidate_following, "person_id"],
+            out.loc[candidate_following, "trip_index"] + 1,
+        ])
+        mask_following[candidate_following] = following_activity.isin(anchored)
+
     out.loc[mask_preceding, "preceding_purpose"] = "escort_linked"
     out.loc[mask_following, "following_purpose"] = "escort_linked"
     return out
@@ -2947,7 +2965,7 @@ def execute(context):
             "[braunschweig.secondary_chainsolvers] escort household link: "
             f"{link_stats['n_linked']:,}/{link_stats['n_escorters']:,} escorters "
             f"linked ({100.0 * link_stats['link_rate'] if link_stats['n_escorters'] else 0.0:.1f}%) "
-            f"to {link_stats['n_child_links']:,} household children; "
+            f"to {link_stats['n_child_links']:,} escorter-child links; "
             f"{anchor_stats['n_anchored']:,}/{anchor_stats['n_escort_activities']:,} "
             f"escort activities anchored across {anchor_stats['n_runs']:,} runs, "
             f"{anchor_stats['n_overflow_to_draw']:,} beyond the linkable children "
