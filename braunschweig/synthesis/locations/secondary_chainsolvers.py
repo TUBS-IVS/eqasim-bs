@@ -1097,6 +1097,12 @@ def check_category_supply(candidates: gpd.GeoDataFrame, categories) -> None:
     miss), not merely thin data, and must be surfaced loudly (CLAUDE.md
     "Fallback transparency").
 
+    MUST be called on the ESCAPE-FREE frame, i.e. BEFORE
+    :func:`append_external_category_escapes`: those escapes give every external
+    Gemeinde centroid a positive potential in every category, which would make
+    this guard unfalsifiable whenever ``secondary_external_candidates`` is ON
+    (its default). The check exists to prove genuine IN-AREA supply.
+
     Parameters
     ----------
     candidates:
@@ -1424,13 +1430,20 @@ def append_external_category_escapes(candidates: gpd.GeoDataFrame) -> gpd.GeoDat
     either -- extending them here would be a behaviour CHANGE, not a regression
     fix.
 
-    Call order: AFTER both :func:`append_location_category_columns` and
-    :func:`append_landuse_candidates`, so every ``pot_<category>`` column exists
-    (``leisure_outdoor`` is created only by the landuse append) and so the
-    landuse mixed-pool mean-normalisation still compares landuse points against
-    BUILDING potentials only -- ewz population counts must never enter that scale
-    factor. Missing category columns therefore raise (fail-fast on a wrong call
-    order rather than silently skipping a category).
+    Call order -- this is the LAST step of the candidate assembly:
+
+    * AFTER both :func:`append_location_category_columns` and
+      :func:`append_landuse_candidates`, so every ``pot_<category>`` column
+      exists (``leisure_outdoor`` is created only by the landuse append) and so
+      the landuse mixed-pool mean-normalisation still compares landuse points
+      against BUILDING potentials only -- ewz population counts must never enter
+      that scale factor. Missing category columns therefore raise (fail-fast on a
+      wrong call order rather than silently skipping a category).
+    * AFTER :func:`check_category_supply`, which must measure genuine IN-AREA
+      supply: these escapes give every external centroid a positive potential in
+      every category, so running them first would make that guard unfalsifiable
+      whenever ``secondary_external_candidates`` is ON (its default) and a broken
+      building mapping or landuse seeding would pass on external supply alone.
 
     Parameters
     ----------

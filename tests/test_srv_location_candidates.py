@@ -605,23 +605,113 @@ def test_external_escapes_require_the_base_columns():
         sc.append_external_category_escapes(candidates)
 
 
-def test_external_rows_do_not_contaminate_the_landuse_scale_factor():
-    """Call-order contract: the escapes run AFTER append_landuse_candidates, so
-    the mixed-pool mean-normalization still measures BUILDING potentials only --
-    an ewz population count in that mean would blow up the landuse scale."""
-    candidates = _mini_candidates()
-    candidates["offers_leisure_culture"] = [True, False, False]
-    candidates["pot_leisure_culture"] = [8.0, 0.0, 0.0]
-    points = gpd.GeoDataFrame({
-        "layer": ["ln_kulturundunterhaltung"],
-        "represented_area_m2": [22500.0],
-        "geometry": [Point(10, 10)],
+_HUGE_EWZ = 99999.0
+
+
+def _mini_candidates_with_external(ewz=_HUGE_EWZ):
+    """``_mini_candidates()`` plus one external Gemeinde centroid row (the
+    ``build_secondary_candidates`` shape: ``location_id == commune_id``, all
+    three base purposes offered, every aggregate potential = ewz). The ewz is
+    deliberately huge relative to the building potentials so any leak into the
+    landuse mean-normalization scale factor is unmistakable."""
+    base = _mini_candidates()
+    external = gpd.GeoDataFrame({
+        "location_id": ["03459999"],
+        "commune_id": ["03459999"],
+        "iris_id": ["03459999"],
+        "offers_shop": [True],
+        "offers_leisure": [True],
+        "offers_other": [True],
+        "offers_escort": [True],
+        "pot_shop": [ewz],
+        "pot_shop_daily": [ewz],
+        "pot_shop_non_daily": [ewz],
+        "pot_leisure": [ewz],
+        "pot_other": [ewz],
+        "geometry": [Point(500, 500)],
+    }, crs="EPSG:25832")
+    return gpd.GeoDataFrame(
+        pd.concat([base, external], ignore_index=True), crs=base.crs)
+
+
+def _culture_landuse_points():
+    return gpd.GeoDataFrame({
+        "layer": ["ln_kulturundunterhaltung", "ln_kulturundunterhaltung"],
+        "represented_area_m2": [22500.0, 45000.0],
+        "geometry": [Point(10, 10), Point(20, 20)],
     }, crs="EPSG:25832")
 
+
+def _assemble_srv_candidates(candidates):
+    """Run the stage's assembly sequence in order: category columns -> landuse
+    append -> external escapes. Returns the frame after EACH step so a test can
+    assert what a step did and did not do."""
+    with_categories = sc.append_location_category_columns(
+        candidates, _mini_potentials(), _mini_mapping())
     with_landuse = sc.append_landuse_candidates(
-        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
-        _mini_municipalities())
-    # The landuse point is normalized to the single building's 8.0 scale, and
-    # applying the escapes afterwards cannot change that.
-    assert with_landuse[with_landuse.location_id == "sec_lu_0"].iloc[0]["pot_leisure_culture"] \
-        == pytest.approx(8.0)
+        with_categories, _culture_landuse_points(),
+        landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    with_escapes = sc.append_external_category_escapes(with_landuse)
+    return with_categories, with_landuse, with_escapes
+
+
+def test_external_rows_do_not_contaminate_the_landuse_scale_factor():
+    """Call-order contract, end to end: with an external centroid present, the
+    mixed-pool mean-normalization must still measure BUILDING potentials only.
+    ``_mini_potentials()``'s cinema (b1) masks pot_leisure=5.0 into
+    pot_leisure_culture, so the two culture landuse points must be rescaled to
+    mean 5.0 -- if the external row's ewz (99,999) leaked into that mean the
+    landuse potentials would be ~4 orders of magnitude larger."""
+    with_categories, with_landuse, with_escapes = _assemble_srv_candidates(
+        _mini_candidates_with_external())
+
+    # Step 1 leaves the external row category-free (it is not a sec_b_* row).
+    external_after_categories = with_categories[
+        with_categories.location_id == "03459999"].iloc[0]
+    assert not external_after_categories["offers_leisure_culture"]
+    assert external_after_categories["pot_leisure_culture"] == 0.0
+
+    # Step 2: the landuse scale factor is the BUILDING mean (5.0), and the
+    # relative area ratio (1:2) survives.
+    landuse = with_landuse[with_landuse.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")
+    pots = landuse["pot_leisure_culture"].to_numpy()
+    assert len(pots) == 2
+    assert pots.mean() == pytest.approx(5.0)
+    assert pots[1] / pots[0] == pytest.approx(2.0)
+
+    # ... and it is IDENTICAL to the no-external control run: the presence of an
+    # external centroid does not move the scale factor at all.
+    _c, control_landuse, _e = _assemble_srv_candidates(_mini_candidates())
+    control_pots = control_landuse[
+        control_landuse.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")["pot_leisure_culture"].to_numpy()
+    assert pots == pytest.approx(control_pots)
+
+    # Step 3 sets the external row's category potentials -- and only then.
+    external_after_escapes = with_escapes[
+        with_escapes.location_id == "03459999"].iloc[0]
+    assert external_after_escapes["offers_leisure_culture"]
+    assert external_after_escapes["pot_leisure_culture"] == _HUGE_EWZ
+    # The landuse rows are untouched by the escape step.
+    escaped_landuse = with_escapes[with_escapes.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")["pot_leisure_culture"].to_numpy()
+    assert escaped_landuse == pytest.approx(pots)
+
+
+def test_supply_check_must_run_before_the_escapes_to_stay_falsifiable():
+    """Re-review finding: the external escapes give every centroid a positive
+    potential in EVERY category, so ``check_category_supply`` is only falsifiable
+    on the escape-FREE frame. This test pins both halves of that statement."""
+    _c, with_landuse, with_escapes = _assemble_srv_candidates(
+        _mini_candidates_with_external())
+
+    # No building and no landuse point supplies leisure_gastronomy here.
+    assert not (with_landuse["pot_leisure_gastronomy"] > 0.0).any()
+    with pytest.raises(RuntimeError, match="leisure_gastronomy"):
+        sc.check_category_supply(with_landuse, ("leisure_gastronomy",))
+
+    # After the escapes the external centroid ALONE satisfies the same check --
+    # exactly the masking the stage's call order prevents.
+    assert (with_escapes["pot_leisure_gastronomy"] > 0.0).any()
+    sc.check_category_supply(with_escapes, ("leisure_gastronomy",))

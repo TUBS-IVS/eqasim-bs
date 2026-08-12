@@ -358,6 +358,28 @@ def test_srv_location_types_opens_every_category_on_external_centroids():
     assert not bool(row["offers_visit"])
 
 
+def test_srv_supply_guard_still_fires_with_external_candidates_enabled():
+    """Re-review finding: ``append_external_category_escapes`` must run AFTER
+    ``check_category_supply``, or the guard is structurally neutered -- external
+    centroids carry a positive potential in every category and
+    ``secondary_external_candidates`` defaults to True, so a genuinely broken
+    building mapping would pass on external supply alone.
+
+    Building 102 is the only leisure_gastronomy building; with no leisure
+    potential it fails build_secondary_candidates' keep-filter (retail>0 |
+    leisure>0) and never becomes a candidate, leaving ZERO in-area gastronomy
+    supply. The external centroid is present and would cover that category once
+    the escapes run -- so this raise only happens if the check runs first."""
+    context = _srv_stage_context()
+    context._config["secondary_external_candidates"] = True
+    potentials = _srv_building_potentials_frame()
+    potentials.loc[potentials["building_id"] == "102", "potential_leisure"] = 0.0
+    context._stages["braunschweig.data.building_potentials"] = potentials
+
+    with pytest.raises(RuntimeError, match="leisure_gastronomy"):
+        secondary_candidates.execute(context)
+
+
 def test_configure_declares_srv_keys_even_when_flag_is_off():
     """synpp execute-config contract: configure() must declare
     secondary_srv_location_types and secondary_landuse_grid_spacing_meters

@@ -234,15 +234,6 @@ def execute(context):
             context.stage("data.spatial.municipalities"),
         )
 
-        # Long-distance reach parity (post-Task-8 review finding): the external
-        # Gemeinde centroids are category-agnostic distance escapes -- without
-        # this step every category leg would be confined to in-area candidates
-        # and long desired distances would clip to the region edge, a regression
-        # versus the OFF path. Applied LAST, after both category-column appends,
-        # so every pot_<category> column exists and so the landuse mixed-pool
-        # mean-normalisation above still measures BUILDING potentials only.
-        df_secondary = append_external_category_escapes(df_secondary)
-
         # Non-empty check (CLAUDE.md fallback transparency): every SrV
         # location category must carry at least one positive-potential
         # candidate, or the wiring (mapping / grid seeding / potential join)
@@ -253,6 +244,24 @@ def execute(context):
         # above, including newly appended sec_b_* rows for errand-class
         # buildings absent from the input candidates), and leisure_outdoor
         # (landuse-only, no building counterpart).
+        #
+        # ORDER MATTERS (re-review finding): this runs on the escape-FREE frame,
+        # i.e. BEFORE append_external_category_escapes below. The escapes give
+        # every external Gemeinde centroid a positive potential in all six
+        # categories, so checking afterwards would make the guard unfalsifiable
+        # whenever secondary_external_candidates is ON (its default) -- a broken
+        # building mapping or landuse seeding would pass on external supply
+        # alone. The guard must measure genuine IN-AREA supply.
         check_category_supply(df_secondary, BUILDING_CATEGORIES + ("leisure_outdoor",))
+
+        # Long-distance reach parity (post-Task-8 review finding): the external
+        # Gemeinde centroids are category-agnostic distance escapes -- without
+        # this step every category leg would be confined to in-area candidates
+        # and long desired distances would clip to the region edge, a regression
+        # versus the OFF path. Applied LAST: after both category-column appends
+        # (so every pot_<category> column exists and the landuse mixed-pool
+        # mean-normalisation above still measures BUILDING potentials only) and
+        # after the supply check above (so it cannot mask missing in-area supply).
+        df_secondary = append_external_category_escapes(df_secondary)
 
     return df_secondary
