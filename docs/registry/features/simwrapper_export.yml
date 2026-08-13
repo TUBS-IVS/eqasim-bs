@@ -37,7 +37,7 @@ evidence:
     instrumented: true
     log_marker: 'geolocation: primary (geometry matched)'
     note: |
-      spatial_export.py logs a primary(geometry-matched)-vs-no-match fleet geolocation rate; export.py separately logs a skipped/no-data-per-tab warning (a count, not a rate) when a chart tab has no data.
+      fleet.py (a sibling of spatial_export.py since the issue #267 sibling-module split; re-exported unchanged through the spatial_export facade) logs a primary(geometry-matched)-vs-no-match fleet geolocation rate; export.py separately logs a skipped/no-data-per-tab warning (a count, not a rate) when a chart tab has no data.
   reference:
     kind: none
     note: |
