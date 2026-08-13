@@ -7,10 +7,10 @@ the hexagon density map (:func:`_trips_xy`) and purpose-to-mode trip counts
 for the behaviour sankey (:func:`_purpose_to_mode`) -- plus the tab emitter
 that writes the hexagon map itself (:func:`emit_spatial_demand`).
 
-``_purpose_to_mode`` is consumed by ``emit_behaviour``, which still lives in
-the :mod:`braunschweig.analysis.simwrapper.spatial_export` facade (a later
-task of this split); the facade imports it back from here (facade -> sibling
-is the allowed direction, never the reverse).
+``_purpose_to_mode`` is consumed by ``emit_behaviour``, which lives in the
+:mod:`braunschweig.analysis.simwrapper.behaviour` sibling (Task 4 of this
+split); that sibling imports it directly from here (sibling -> sibling is
+allowed; a sibling must never import the ``spatial_export`` facade back).
 """
 
 from __future__ import annotations
