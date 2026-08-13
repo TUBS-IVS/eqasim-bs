@@ -85,7 +85,7 @@ braunschweig/
   gravity/         model.py — work/education distance-decay gravity (per-RS7 slope)
   synthesis/
     population/    enriched.py (PT-ticket/licence IPF), regiostar.py
-    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers.py
+    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers/ (stage package: __init__ = synpp stage + re-exports; submodules distance_sampling, candidates, srv_candidates, plans, fallback, results, parallel_solving, deciders, srv_location_types, reporting, escort, activity_types, candidate_columns)
     spatial/       commute_distance.py (MiD P13 override), home_zones.py
     income.py
   locations/       home.py, work.py, secondary.py,

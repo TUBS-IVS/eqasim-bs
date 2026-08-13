@@ -27,6 +27,29 @@ the candidate facility set to minimise the (default) distance-error
 score. The leisure-correction factor and CDF-resampling tweaks of the
 legacy stage are preserved 1:1 so the comparison stays apples-to-apples
 on the input distribution side.
+
+Package layout (issue #266 split; formerly one 5300-line module): this
+``__init__`` is the synpp stage (``configure``/``execute``/``validate``)
+and re-exports every submodule name, so external imports of the stage
+module path keep working unchanged. The submodules:
+
+    activity_types     internal chainsolver activity-name vocabularies
+    candidate_columns  candidate offer/potential column vocabularies
+    candidates         candidate-set assembly, locations_df, scorer
+    srv_candidates     SrV per-category columns, landuse + external escapes
+    distance_sampling  desired-distance sampling from the MiD CDFs
+    deciders           per-leg subtype / escort location deciders
+    srv_location_types SrV-2023 category vocabulary, loader, decider
+    escort             escort household-link rewrite + distance factors
+    plans              plans-DF construction (the per-leg loop)
+    fallback           rda / random fallback placement
+    parallel_solving   person-sharded parallel solve
+    results            solver output back to the eqasim schema
+    reporting          fallback/clip/draw-rate transparency reporting
+
+``validate()`` hashes all submodule sources into the synpp validation
+token because ``get_stage_hash`` only covers this file -- a helper-only
+change devalidates the cached stage output exactly like an edit here.
 """
 
 from __future__ import annotations
