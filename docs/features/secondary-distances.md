@@ -10,7 +10,10 @@ purpose stays `shop` / `leisure` / `other`; the resolution is internal to the
 distance sampler and the location placement.
 
 **Root cause.** `_sample_leg_distance` in
-`braunschweig/synthesis/locations/secondary_chainsolvers.py` previously drew the
+`braunschweig/synthesis/locations/secondary_chainsolvers/` (a single-file stage
+module at the time; a stage package with the same synpp module path since the
+#266 split — the function now lives in its `distance_sampling` submodule)
+previously drew the
 desired distance from `distance_distributions[mode][travel_time_band]` — purpose
 was ignored (except a leisure scaling factor). So a shop-by-car and a
 leisure-by-car leg drew the **same** distribution, diluting shop distances by the
@@ -119,7 +122,7 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   `following_purpose == "other"` and would otherwise be indistinguishable), warn and
   skip if the required column is absent, keep the aggregate `leisure` / `other` key
   either way. Both flags require `secondary_distance_by_purpose=True`.
-- **Imputation + leg rewrite (`secondary_chainsolvers.py`).** `_build_leisure_subtype_decider`
+- **Imputation + leg rewrite (`secondary_chainsolvers/deciders.py` + `plans.py`).** `_build_leisure_subtype_decider`
   / `_build_other_subtype_decider` estimate once at decider-build time (logging the
   labelled-share and fallback rate there, not per leg, to avoid log spam at population
   scale) and impute a group onto every synthetic leg via dedicated seeded RNG streams:

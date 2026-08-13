@@ -25,6 +25,25 @@ unchanged (byte-identical OFF path).
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
+
+
+def validate(context):
+    """synpp validation token: md5 over the chainsolver helper submodules.
+
+    This stage delegates the assembly logic to the secondary_chainsolvers
+    package submodules, but synpp's get_stage_hash only hashes THIS file's
+    source -- without this hook a change confined to those helpers would
+    silently reuse the stale cached candidate set on a partial rerun.
+    """
+    from braunschweig.synthesis.locations import secondary_chainsolvers
+
+    digest = hashlib.md5()
+    for module in secondary_chainsolvers._HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
+
 
 def configure(context):
     context.stage("synthesis.locations.secondary")

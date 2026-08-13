@@ -459,8 +459,12 @@ def test_execute_only_calls_writer_inside_the_srv_location_decider_guard():
     """Source-inspection regression check (no full stage run needed -- mirrors
     tests/test_work_sector_aware.py's style): the writer call must live inside
     the SAME ``if srv_location_decider is not None:`` block that gates the
-    existing draw-summary log lines, so the OFF path never touches it."""
-    source = inspect.getsource(sc.execute)
+    existing draw-summary log lines, so the OFF path never touches it.
+
+    The draw-rate logging (guard + log lines + writer call, unchanged) moved
+    from execute() into _log_subtype_draw_rates during the stage-package
+    split (#266); the guarded-writer invariant is checked there."""
+    source = inspect.getsource(sc._log_subtype_draw_rates)
     marker = "if srv_location_decider is not None:"
     assert source.count("_write_srv_location_draw_summary(") == 1
 
