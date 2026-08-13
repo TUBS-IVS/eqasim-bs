@@ -232,7 +232,19 @@ braunschweig/population/   Method selector + contract
   schema.py                unified persons/households output contract
 braunschweig/popsim/       PopulationSim workflow (27 modules)
   stage.py                 synpp producer stage (replaces data.census.filtered)
-  mid.py                   orchestration (cells -> controls -> seed -> batches -> merge)
+  mid/                     orchestration package (split #267; pure facade
+                           __init__.py -- helper library, NOT a synpp stage,
+                           so no configure/execute/validate() -- + re-exports
+                           of every submodule below); cells -> controls ->
+                           seed -> batches -> merge
+    batches.py             batch folder assembly + PopulationSim runner
+    control_cells.py       control-cell loading, ZGB filtering, control totals
+    csv_format.py          MiD CSV field-separator detection
+    donor.py               MiD donor attribute + Wege (trip) table loading
+    kreis_controls.py      Tier-3 KREIS control tables + per-batch apportionment
+    participation.py       participation-control seed derivation
+    seed_loading.py        consistent MiD seed load + completed-donor projection
+    stratum.py             RegioStaR donor stratification (Phase 4B)
   cells.py prepared_cells.py control_spec.py controls.py seed.py
   batch.py merge.py        1-km-atomic bin-packing; cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
@@ -243,6 +255,21 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
   income.py                unified INKAR scaling + high_income >= 5000 EUR
   missing.py stratum.py enriched_adapter.py
 ```
+
+Note: `popsim/stratum.py` (top-level, above) and `popsim/mid/stratum.py` (the
+`mid` submodule) are two distinct modules with the same base name -- import
+the full dotted path to disambiguate.
+
+Cache-neutrality of the `mid/` split: unlike the `secondary_chainsolvers` /
+`enriched` stage packages (each with its own `validate()`), `mid` is a plain
+helper library called from `stage.py`, not itself a synpp stage -- no synpp
+stage currently content-hashes `mid`'s source, so the split from one module
+into eight submodules cannot devalidate any cache entry. The pre-existing gap
+this leaves untouched (`stage.py` has no `validate()` hashing its `mid`
+helper, so editing `mid` alone never invalidates the cache) is a known
+helper-trap scheduled to be closed when `popsim/stage.py` is split (issue
+#267, module 3), which is expected to add that `validate()` over the whole
+`mid` package.
 
 New configs (worktree): `config_popsim_mid_braunschweig.yml`,
 `config_popsim_open_braunschweig.yml`, `config_smoke_{simple_ipf,popsim_mid,

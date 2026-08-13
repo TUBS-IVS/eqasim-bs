@@ -358,7 +358,8 @@ MiD sample sizes (full MiD2023_Haushalte.csv, DE-wide):
   Added `build_aggregation_map()` and `source_columns_union()` helpers.
 - `prepared_cells.py`: `add_aggregated_controls(cells, aggregation_map)` sums source cols
   into derived names; logs WARNING for missing source cols (partial sum); empty map = no-op.
-- `mid.py`: `load_mid_seed` loads `"haustyp"` alongside `H_GR`, `H_MIETE`; adds `"haustyp"`
+- `mid/seed_loading.py` [path updated for the #267 package split; was `mid.py`]:
+  `load_mid_seed` loads `"haustyp"` alongside `H_GR`, `H_MIETE`; adds `"haustyp"`
   to `extra_household_cols` in `select_seed_columns`.
 - `stage.py`: `execute` uses `build_source_columns` + `build_aggregation_map` to load raw
   source cols and then derive aggregated cols before `run_popsim_mid`.
@@ -411,7 +412,8 @@ synthetic persons frame via `assembly.map_mid_person_attributes`:
 | `building_type_3class` | `haustyp`   | `attributes.map_building_type_3class` → 3-class label |
 | `hh_type5`             | persons ages | `seed.derive_hh_type5` called on expanded persons  |
 
-`H_MIETE` and `haustyp` are added to `MID_HOUSEHOLD_ATTR_COLS` in `mid.py`.
+`H_MIETE` and `haustyp` are added to `MID_HOUSEHOLD_ATTR_COLS` in `mid/donor.py`
+[path updated for the #267 package split; was `mid.py`].
 The join is conditional on column presence (`available_attrs` filter in `assembly.py`):
 absent columns (ENTD path, legacy test fixtures) are silently skipped.
 
