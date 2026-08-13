@@ -18,6 +18,9 @@ remaining internal use (the VG250/per-Kreis helpers) and re-exports every
 name below so existing callers of ``build_dashboard.<name>`` keep working
 unchanged.
 
+``REPO_ROOT`` (needed to build ``MID_DIR``) is imported from the leaf module
+``paths.py`` rather than recomputed privately here.
+
 This module must not import ``build_dashboard`` -- that would create an
 import cycle between the facade and this leaf module.
 """
@@ -30,11 +33,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from braunschweig.analysis.dashboard.paths import REPO_ROOT
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
 
 # MiD P13 distance bands (km).  Upper bound 250 km used for >=100 km bin.

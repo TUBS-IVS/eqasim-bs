@@ -36,6 +36,11 @@ sibling module ``mid_reference.py``. The per-run metric computation
 cluster (``ZGB_ARS5``, ``VG250_ZIP``, ``VG250_CACHE``), live in the sibling
 module ``spatial_metrics.py``. All are re-exported below so existing callers
 of ``build_dashboard.<name>`` keep working unchanged.
+
+The canonical ``REPO_ROOT``/``DASHBOARD_DIR``/``RUNS_DIR`` path constants live
+in the leaf module ``paths.py`` (imported, not recomputed, by this facade and
+every sibling that needs them) to avoid duplicated path derivation drifting
+apart across the package.
 """
 
 from __future__ import annotations
@@ -62,6 +67,9 @@ from braunschweig.analysis.dashboard.mid_reference import _earth_movers_distance
 from braunschweig.analysis.dashboard.mid_reference import _safe_read_csv  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.mid_reference import _to_km_bands  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.mid_reference import load_mid_reference  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.paths import DASHBOARD_DIR
+from braunschweig.analysis.dashboard.paths import REPO_ROOT
+from braunschweig.analysis.dashboard.paths import RUNS_DIR
 from braunschweig.analysis.dashboard.run_metrics import _detect_sample_rate  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import _find_sim_output  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import metrics_eqasim  # noqa: F401  (re-exports)
@@ -77,12 +85,8 @@ from braunschweig.analysis.dashboard.spatial_metrics import metrics_per_kreis  #
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day  # noqa: F401  (re-exports)
 
 # ---------------------------------------------------------------------------
-# Paths
+# Constants
 # ---------------------------------------------------------------------------
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DASHBOARD_DIR = Path(__file__).resolve().parent
-RUNS_DIR = DASHBOARD_DIR / "runs"
 
 # Mode mapping eqasim -> MiD.  MiD P12_1 reports any-mode used per commute
 # (rows can sum >100 %).  We compare to the synth main mode.

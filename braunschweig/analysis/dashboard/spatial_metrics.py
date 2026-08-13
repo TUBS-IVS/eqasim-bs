@@ -10,8 +10,9 @@ during an earlier extraction step; see that module's docstring history).
 ``ZGB_ARS5``, ``VG250_ZIP`` and ``VG250_CACHE`` move here with the functions
 because they are used exclusively by this cluster. ``REPO_ROOT`` and
 ``DASHBOARD_DIR`` (needed to build ``VG250_ZIP``/``VG250_CACHE``) had no other
-use left in ``run_metrics.py`` once this cluster moved out, so they move here
-too rather than being left behind as dead code.
+use left in ``run_metrics.py`` once this cluster moved out; they are now
+imported from the leaf module ``paths.py`` rather than recomputed privately
+here.
 
 ``KREIS_NAMES`` is imported from the sibling module ``mid_reference.py`` (its
 owner); this module never imports ``run_metrics`` or ``build_dashboard`` back.
@@ -34,13 +35,12 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.analysis.dashboard.mid_reference import KREIS_NAMES
+from braunschweig.analysis.dashboard.paths import DASHBOARD_DIR
+from braunschweig.analysis.dashboard.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
-# Paths
+# Constants
 # ---------------------------------------------------------------------------
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DASHBOARD_DIR = Path(__file__).resolve().parent
 
 # ZGB-8 Kreis ARS codes (5-digit) used for spatial joins.
 ZGB_ARS5 = list(KREIS_NAMES.keys())
