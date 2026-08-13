@@ -77,6 +77,9 @@ unchanged. The submodules extracted so far:
                       which only holds the shared age-bin edges and
                       minimum-observations helper (see that module's
                       docstring)
+    entd_seed         the ENTD -> MiD PopulationSim seed-schema mapping
+                      (``seed_columns``, ``built_seed_columns``,
+                      ``build_seed``)
 
 Further extractions (schema-mapping method bodies) are tracked under issue
 #267 and will be added to this list as they land.
@@ -112,7 +115,13 @@ from braunschweig.popsim.attributes import (
     derive_bicycle_availability,
 )
 from braunschweig.popsim import income as _income_module
-from braunschweig.popsim.seed import (
+# SeedColumns is still used here as a method return-type annotation.
+# CompletenessReport, filter_complete_households and select_seed_columns are no
+# longer called directly here (their only call sites moved into entd_seed.py,
+# issue #267 split, Task 3) but stay imported for module-namespace parity: they
+# were already accessible as braunschweig.popsim.sources.entd.<name> before the
+# split and the parity gate pins that.
+from braunschweig.popsim.seed import (  # noqa: F401  (namespace parity, see above)
     CompletenessReport,
     SeedColumns,
     filter_complete_households,
@@ -130,13 +139,20 @@ from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_BY_INCOME
 # Sibling modules of this package (issue #267 split): the vocabulary lookups
 # and the schema helpers below were extracted verbatim out of this module and
 # are re-exported here so external imports of this facade keep working
-# unchanged (see the "Module layout" docstring section above). The last five
-# names (INCOME_CLASS_BY_GROUP, PT_TICKET_CATEGORIES, and the three
-# import-time guard-loop variables _cls/_h4_class/_label plus _pt_cats,
-# _valid_income_labels) are not part of this module's real API -- they are
-# incidental module-level names that existed here before the split (loop
-# variables leak to module scope in Python) and are re-exported purely for
-# namespace-parity/backward-compatibility, not because callers should use them.
+# unchanged (see the "Module layout" docstring section above). INCOME_CLASS_BY_GROUP
+# and PT_TICKET_CATEGORIES are not part of this module's real API either, but ARE
+# re-exported for namespace-parity/backward-compatibility, not because callers
+# should use them.
+#
+# _cls, _h4_class, _label, _pt_cats and _valid_income_labels are deliberately
+# NOT re-exported (controller ruling, issue #267 item C): they are import-time
+# FOR-LOOP scratch variables inside entd_vocabulary.py's vocabulary-drift
+# guards (Python leaks loop variables to module scope), not API -- they only
+# ever showed up in dir(entd) as a re-export artifact of the original
+# monolithic module. No consumer in braunschweig/, tests/ or scripts/
+# references any of them (verified). check_namespace.py's ACCIDENTAL_BASELINE_NAMES
+# documents this removal so the parity gate does not treat their absence as a
+# regression.
 from braunschweig.popsim.sources.entd_vocabulary import (  # noqa: F401  (re-exports)
     ENTD_BUILT_SEED_COLUMNS,
     ENTD_DETOUR_FACTOR,
@@ -150,11 +166,6 @@ from braunschweig.popsim.sources.entd_vocabulary import (  # noqa: F401  (re-exp
     _HH_JOIN_COLS,
     _PT_TYPE_NONE,
     _PT_TYPE_SUBSCRIBER,
-    _cls,
-    _h4_class,
-    _label,
-    _pt_cats,
-    _valid_income_labels,
 )
 from braunschweig.popsim.sources.entd_schema import (  # noqa: F401  (re-exports)
     _require_columns,
@@ -181,6 +192,15 @@ from braunschweig.popsim.sources.entd_diary_matching import (  # noqa: F401  (re
     match_donors,
 )
 
+# The seed-building helpers below were extracted verbatim into entd_seed.py
+# (issue #267 split, Task 3). EntdSource.seed_columns, .built_seed_columns and
+# .build_seed are one-line delegations to these module-level functions.
+from braunschweig.popsim.sources.entd_seed import (
+    build_seed as _build_seed,
+    built_seed_columns as _built_seed_columns,
+    seed_columns as _seed_columns,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -205,7 +225,7 @@ class EntdSource:
         ENTD columns are already in eqasim canonical names; no day-of-week
         completeness filter is needed.
         """
-        return ENTD_SEED_COLUMNS
+        return _seed_columns()
 
     def built_seed_columns(self) -> SeedColumns:
         """Return the column schema of the seed frames produced by :meth:`build_seed`.
@@ -222,7 +242,7 @@ class EntdSource:
         SeedColumns
             :data:`ENTD_BUILT_SEED_COLUMNS` (``household_id="H_ID"``, etc.).
         """
-        return ENTD_BUILT_SEED_COLUMNS
+        return _built_seed_columns()
 
     def build_seed(
         self,
@@ -298,149 +318,7 @@ class EntdSource:
         KeyError
             If required columns are absent from either frame.
         """
-        _require_columns(households, ["household_id", "household_weight"], table_name="ENTD households")
-        _require_columns(
-            persons,
-            ["household_id", "person_id", "person_weight", "age", "sex"],
-            table_name="ENTD persons",
-        )
-
-        # Defensive guard (no-silent-fallback): the PopulationSim seed must carry the
-        # FULL household composition. If the donor is accidentally the eqasim
-        # person-matching frame (data.hts.selected -> data.hts.entd.reweighted keeps
-        # ~1 person/household for IPF matching), the synthetic households would all
-        # be 1-person. Warn loudly on a near-1 persons/household mean so the wiring
-        # mistake is observable instead of producing a silently wrong population.
-        n_hh_in = households["household_id"].nunique()
-        mean_pph = len(persons) / max(n_hh_in, 1)
-        if mean_pph < 1.2:
-            logger.warning(
-                "[EntdSource.build_seed] donor has only %.2f persons/household "
-                "(%d persons / %d households) -- this looks like the reweighted "
-                "person-matching frame, NOT the full composition. The PopulationSim "
-                "seed must come from data.hts.entd.filtered (multi-person households), "
-                "or every synthetic household will have exactly one person.",
-                mean_pph, len(persons), n_hh_in,
-            )
-
-        # --- Validate and map sex -> HP_SEX (1=male, 2=female) ----------------
-        # This is a fail-fast guard: an unmapped value would silently produce NaN
-        # in HP_SEX and break the PopulationSim sex-margin controls.
-        sex_map = {"male": 1, "female": 2}
-        unmapped_sex = set(persons["sex"].unique()) - set(sex_map)
-        if unmapped_sex:
-            raise ValueError(
-                f"[EntdSource.build_seed] persons 'sex' column contains unmapped "
-                f"value(s) {unmapped_sex!r}. Only 'male' and 'female' are accepted. "
-                f"Fix the ENTD person frame before building the PopulationSim seed."
-            )
-
-        # --- Rename household columns to MiD seed schema ----------------------
-        hh_seed = households.copy()
-        hh_seed = hh_seed.rename(columns={
-            "household_id": "H_ID",
-            "household_weight": "H_GEW",
-        })
-
-        # --- Rename person columns to MiD seed schema (retain ENTD attrs) -----
-        p_seed = persons.copy()
-        p_seed = p_seed.rename(columns={
-            "household_id": "H_ID",
-            "person_id": "P_ID",
-            "person_weight": "P_GEW",
-            "age": "HP_ALTER",
-        })
-        p_seed["HP_SEX"] = p_seed["sex"].map(sex_map)
-        # Retain original sex string for downstream map_demographics (eqasim uses
-        # the "sex" column; expand.map_demographics re-derives it from HP_SEX).
-        # HP_SEX is the PopulationSim-visible column; sex stays as an extra.
-
-        # --- Build HP_ID: unique integer per person ---------------------------
-        # HP_ID is the PopulationSim person id (must be a unique integer).
-        # Formula: H_ID * scale + P_ID (avoids collisions within each household's
-        # P_ID range when household ids are large ENTD integers).
-        # Scale = smallest power of 10 > max(P_ID), so ids don't overlap across
-        # households.  The ENTD donor (~14k persons) is small; overflow is impossible.
-        max_pid = int(p_seed["P_ID"].max()) if len(p_seed) > 0 else 1
-        scale = 1
-        while scale <= max_pid:
-            scale *= 10
-        hp_id_candidate = p_seed["H_ID"].astype(np.int64) * scale + p_seed["P_ID"].astype(np.int64)
-        if hp_id_candidate.duplicated().any():
-            logger.warning(
-                "[EntdSource.build_seed] HP_ID formula H_ID*%d+P_ID produced "
-                "%d duplicate(s); falling back to sequential arange(1..n).",
-                scale,
-                int(hp_id_candidate.duplicated().sum()),
-            )
-            p_seed["HP_ID"] = np.arange(1, len(p_seed) + 1, dtype=np.int64)
-        else:
-            p_seed["HP_ID"] = hp_id_candidate
-
-        # --- Apply completeness filter (no-op: ENTD has no day-of-week filter) -
-        # Using the standard filter_complete_households with the ENTD column mapping
-        # (day_filter_col=None -> every household is "complete").  This produces a
-        # CompletenessReport with completeness_rate=1.0 and drop_rate=0.0.
-        # We use a temporary SeedColumns with H_ID/H_GEW/P_ID/P_GEW/HP_ALTER/HP_SEX
-        # column names (the renamed frame) so the filter runs correctly.
-        _mid_like_cols = SeedColumns(
-            household_id="H_ID",
-            household_weight="H_GEW",
-            person_household_id="H_ID",
-            person_id="P_ID",
-            person_weight="P_GEW",
-            age="HP_ALTER",
-            sex="HP_SEX",
-            day_filter_col=None,
-            day_filter_values=None,
-        )
-        hh_seed, p_seed, report = filter_complete_households(
-            hh_seed, p_seed, _mid_like_cols, day_filter_values=None
-        )
-
-        # --- Compute H_GR: persons per household (Tier-1 household_size control) --
-        # H_GR is derived as the count of persons per (renamed) H_ID on the
-        # post-completeness-filter seed frames. This is the DONOR household size.
-        # PopulationSim evaluates the Tier-1 expression ``(households.H_GR == N)``
-        # on the seed households frame, so H_GR must be present here.
-        hgr = p_seed["H_ID"].value_counts().rename("H_GR")
-        hh_seed = hh_seed.merge(hgr, left_on="H_ID", right_index=True, how="left")
-        hh_seed["H_GR"] = hh_seed["H_GR"].fillna(0).astype(int)
-
-        # --- select_seed_columns: add STAAT=1, keep essentials + extras -------
-        # Extra household columns: urban_type (Phase 4B donor stratification),
-        # H_GR (Tier-1 household-size control; Task 7).
-        # Extra person columns: all ENTD attribute columns present on the renamed
-        # frame (minus the essentials already selected, minus HP_SEX which is added
-        # separately in the extra_person_cols so it stays).
-        # We retain all ENTD-origin columns so map_person_attributes can use them
-        # directly without another join -- this is the key design decision.
-        hh_extra = [c for c in ("urban_type", "RegioStaR7", "H_GR") if c in hh_seed.columns]
-        # Person extras: HP_ID + every ENTD attribute column (after rename, these
-        # include employed, studies, has_license, has_pt_subscription,
-        # socioprofessional_class, sex (original string), number_of_trips,
-        # trip_weight, departement_id, and anything else the ENTD cleaned stage
-        # produces).  Essentials are H_ID, P_ID, P_GEW, HP_ALTER, HP_SEX.
-        essential_person_cols = {"H_ID", "P_ID", "P_GEW", "HP_ALTER", "HP_SEX"}
-        p_extra = ["HP_ID"] + [
-            c for c in p_seed.columns
-            if c not in essential_person_cols and c not in ("HP_ID", "STAAT")
-        ]
-
-        hh_seed, p_seed = select_seed_columns(
-            hh_seed, p_seed, _mid_like_cols,
-            extra_household_cols=hh_extra,
-            extra_person_cols=p_extra,
-        )
-
-        logger.info(
-            "[EntdSource.build_seed] seed built: %d households, %d persons "
-            "(completeness_rate=%.3f). "
-            "Person columns: %s.",
-            len(hh_seed), len(p_seed), report.completeness_rate,
-            list(p_seed.columns),
-        )
-        return hh_seed, p_seed, report
+        return _build_seed(households, persons)
 
     def load_donor(
         self,
