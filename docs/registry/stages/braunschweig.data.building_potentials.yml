@@ -1,0 +1,24 @@
+stage: braunschweig.data.building_potentials
+title: Building activity potentials
+layer: work
+description: Loads the building-level activity-potential parquet (TUBS-IVS potentials pipeline;
+  work/secondary/education weights per building) that redistributes aggregate zone totals onto
+  individual buildings (ADR-0025).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/building_potentials.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- building_activity_potentials
+features:
+- building_potentials_secondary
+- building_potentials_work
+decisions:
+- ADR-0025

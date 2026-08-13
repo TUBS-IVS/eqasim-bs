@@ -1,0 +1,20 @@
+stage: braunschweig.freight.extraction
+title: Freight trip extraction
+layer: freight
+description: Runs the Java freight contrib to route german-wide freight trips on the German network
+  and classify internal/in/out/through for the ZGB (ADR-0030; ~3h, shared via the stage cache).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/freight/extraction.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- freight_longhaul_v3
+decisions:
+- ADR-0030

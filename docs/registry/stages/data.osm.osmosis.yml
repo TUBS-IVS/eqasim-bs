@@ -1,0 +1,15 @@
+stage: data.osm.osmosis
+title: osmosis runner
+layer: spatial
+description: Upstream osmosis wrapper.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- data/osm/osmosis.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

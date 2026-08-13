@@ -1,0 +1,26 @@
+stage: braunschweig.data.buildings
+title: Residential buildings with capacity
+layer: home
+description: Builds the typed residential building inventory (ALKIS footprints x LoD2 height/volume
+  typing) with dwelling capacity used for home placement (ADR-0008/0009).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/buildings.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- alkis_buildings
+- lod2_heights
+- zensus2022_grid_cells
+features:
+- alkis_home_matching
+- lod2_height_volume_typing
+decisions:
+- ADR-0008
+- ADR-0009

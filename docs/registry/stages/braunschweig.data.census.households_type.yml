@@ -1,0 +1,18 @@
+stage: braunschweig.data.census.households_type
+title: Zensus household-type margin
+layer: population
+description: Reads Zensus 2022 1000A-2081 households by size and type per Gemeinde (optional IPF
+  margin).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/households_type.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- zensus2022_households_type

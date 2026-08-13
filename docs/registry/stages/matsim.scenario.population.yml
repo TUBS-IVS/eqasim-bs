@@ -1,0 +1,27 @@
+stage: matsim.scenario.population
+title: MATSim plans writer
+layer: matsim
+description: Writes plans.xml; the braunschweig wrapper adds cordon in-commuter injection and
+  carless re-mode on top of the upstream writer.
+lineage:
+  type: overridden
+  upstream: matsim.scenario.population
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- matsim/scenario/population.py
+- braunschweig/matsim/scenario/population.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.matsim.scenario.population
+  popsim_open: braunschweig.matsim.scenario.population
+features:
+- carless_routing_remode
+- urban_parking
+decisions:
+- ADR-0022
+- ADR-0029

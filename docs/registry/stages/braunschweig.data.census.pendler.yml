@@ -1,0 +1,20 @@
+stage: braunschweig.data.census.pendler
+title: BA Pendleratlas commuter flows
+layer: cordon
+description: Reads the BA Pendleratlas Ein-/Auspendler Kreis-OD flows -- gravity calibration target
+  and the volume frame of the cordon in-commuter injection.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/pendler.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- ba_pendleratlas
+features:
+- einpendler_injection

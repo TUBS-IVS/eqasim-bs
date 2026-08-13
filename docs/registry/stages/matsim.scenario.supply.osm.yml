@@ -1,0 +1,18 @@
+stage: matsim.scenario.supply.osm
+title: Road network build
+layer: matsim
+description: Upstream pt2matsim OSM network conversion over the ZGB/cordon extract.
+lineage:
+  type: configured
+  upstream: null
+  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
+    baseline.
+code:
+- matsim/scenario/supply/osm.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- osm_niedersachsen

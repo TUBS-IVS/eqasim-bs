@@ -1,0 +1,17 @@
+stage: braunschweig.data.census.household_size
+title: Zensus household-size margin
+layer: population
+description: Reads Zensus 2022 5000H-2001 households by size per Gemeinde (IPF margin).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/household_size.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- zensus2022_households_size

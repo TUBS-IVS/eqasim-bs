@@ -1,0 +1,18 @@
+stage: braunschweig.data.inkar.household_income
+title: INKAR income (popsim)
+layer: attributes
+description: INKAR per-Kreis household income read for the PopulationSim income mechanisms (placement_income
+  / kreis control).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/inkar/household_income.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- inkar_household_income

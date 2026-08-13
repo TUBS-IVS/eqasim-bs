@@ -1,0 +1,23 @@
+stage: braunschweig.popsim.completed_donor
+title: Completed donor households
+layer: population
+description: Member-completes the MiD seed households (mirror sampling to declared H_GR, weekend-plan
+  match) -- cached once and shared across runs (Tier B2).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/popsim/completed_donor.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- mid2023_b1
+features:
+- popsim_method
+decisions:
+- ADR-0002
+- ADR-0059

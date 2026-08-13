@@ -1,0 +1,18 @@
+stage: braunschweig.data.bbsr.regiostar
+title: RegioStaR typology
+layer: spatial
+description: Reads the BMV/BBSR RegioStaR reference file and maps every Gemeinde to its RegioStaR-7
+  class (segmentation key for gravity slopes and MiD reference tables).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/bbsr/regiostar.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- regiostar

@@ -1,0 +1,26 @@
+stage: synthesis.population.spatial.secondary.distance_distributions
+title: Secondary distance CDFs
+layer: secondary
+description: 'Distance distributions for secondary legs: production resolves to the MiD purpose-resolved
+  CDFs (braunschweig.popsim.distance_distributions, ADR-0026); popsim_open deliberately keeps
+  the upstream ENTD CDFs (ENTD is its donor survey).'
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.secondary.distance_distributions
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/secondary/distance_distributions.py
+- braunschweig/popsim/distance_distributions.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.popsim.distance_distributions
+features:
+- secondary_distance_by_purpose
+decisions:
+- ADR-0026
+- ADR-0057

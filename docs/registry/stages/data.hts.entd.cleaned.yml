@@ -1,0 +1,16 @@
+stage: data.hts.entd.cleaned
+title: ENTD cleaning
+layer: behavior
+description: Upstream ENTD 2008 cleaning -- the French HTS reused as the open activity-chain donor.
+lineage:
+  type: configured
+  upstream: null
+  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
+    baseline.
+code:
+- data/hts/entd/cleaned.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

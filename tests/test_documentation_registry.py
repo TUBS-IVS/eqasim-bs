@@ -66,3 +66,39 @@ def test_feature_code_paths_and_tests_exist():
             test_path = str(test).partition("::")[0]
             assert os.path.exists(os.path.join(REPO_ROOT, test_path)), (
                 f"{record['feature']}: declared test missing: {test}")
+
+
+def test_stage_registry_covers_every_dag_node():
+    """Every DAG node has a stage record; records outside every DAG must be the
+    explicitly parked ones (production False, all pipelines not_used)."""
+    nodes = _dag_union_nodes()
+    records = {record["stage"]: record for record in registries.load_stages(REPO_ROOT)}
+    missing = nodes - set(records)
+    assert not missing, f"DAG stages without a registry record: {sorted(missing)}"
+    for stage, record in records.items():
+        if stage not in nodes:
+            assert record["production"] is False and all(
+                value == "not_used" for value in record["pipelines"].values()), (
+                f"{stage}: not in any DAG snapshot but not declared as parked")
+
+
+def test_stage_production_flag_matches_the_production_dag():
+    production_nodes = set(dag.load_snapshot(REPO_ROOT, "production")["nodes"])
+    for record in registries.load_stages(REPO_ROOT):
+        assert record["production"] == (record["stage"] in production_nodes), (
+            f"{record['stage']}: production flag contradicts the production DAG")
+
+
+def test_stage_feature_references_resolve():
+    feature_ids = {record["feature"] for record in registries.load_features(REPO_ROOT)}
+    for record in registries.load_stages(REPO_ROOT):
+        for feature in record.get("features") or []:
+            assert feature in feature_ids, (
+                f"{record['stage']}: unknown feature reference '{feature}'")
+
+
+def test_stage_code_paths_exist():
+    for record in registries.load_stages(REPO_ROOT):
+        for path in record["code"]:
+            assert os.path.exists(os.path.join(REPO_ROOT, path)), (
+                f"{record['stage']}: code path missing: {path}")

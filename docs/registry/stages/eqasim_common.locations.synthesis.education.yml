@@ -1,0 +1,16 @@
+stage: eqasim_common.locations.synthesis.education
+title: Education assignment (legacy)
+layer: education
+description: Upstream-style education assignment used by the IPF fixture when education gravity
+  is off.
+lineage:
+  type: inherited
+  upstream: null
+  notes: Region-neutral code relocated from the inherited Bavaria tree into eqasim_common/ (ADR-0001).
+code:
+- eqasim_common/locations/synthesis/education.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false

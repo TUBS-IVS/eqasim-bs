@@ -246,7 +246,7 @@ def parse_feature(doc: Any, source_file: str) -> dict:
 
 _STAGE_REQUIRED = ("stage", "title", "layer", "description", "lineage", "code",
                    "pipelines", "production")
-_STAGE_OPTIONAL = ("inputs", "features", "decisions", "notes")
+_STAGE_OPTIONAL = ("inputs", "features", "decisions", "notes", "resolves_to")
 
 
 def parse_stage(doc: Any, source_file: str) -> dict:

@@ -1,0 +1,20 @@
+stage: braunschweig.data.cordon_pt_gates
+title: PT entry gates (Bahnhof)
+layer: cordon
+description: Derives rail entry stations for in-commuters from the GTFS schedule intersected with
+  the cordon (ADR-0029).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/cordon_pt_gates.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- gtfs_feed
+features:
+- cordon_gates

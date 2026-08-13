@@ -1,0 +1,15 @@
+stage: matsim.runtime.git
+title: git runtime probe
+layer: infrastructure
+description: Upstream stage recording the git state for provenance.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- matsim/runtime/git.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

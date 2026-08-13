@@ -1,0 +1,15 @@
+stage: synthesis.population.spatial.primary.candidates
+title: Primary candidate build
+layer: work
+description: Upstream primary-location candidate preparation.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- synthesis/population/spatial/primary/candidates.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

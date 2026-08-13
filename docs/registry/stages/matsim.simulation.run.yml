@@ -1,0 +1,21 @@
+stage: matsim.simulation.run
+title: MATSim simulation run
+layer: matsim
+description: Runs RunSimulation from the eqasim-java-bs jar (mode choice per config -- OFF in
+  every committed config; SimWrapper Layer-1 dashboards per ADR-0074).
+lineage:
+  type: extended
+  upstream: null
+  notes: null
+code:
+- matsim/simulation/run.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+features:
+- simwrapper_layer1
+decisions:
+- ADR-0033
+- ADR-0074

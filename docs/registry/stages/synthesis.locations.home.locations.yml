@@ -1,0 +1,21 @@
+stage: synthesis.locations.home.locations
+title: Home location pool
+layer: home
+description: See alias seam.
+lineage:
+  type: overridden
+  upstream: synthesis.locations.home.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/locations/home/locations.py
+- braunschweig/locations/home.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+resolves_to:
+  popsim_mid: braunschweig.locations.home
+  popsim_open: braunschweig.locations.home
+  simple_ipf_open: braunschweig.locations.home

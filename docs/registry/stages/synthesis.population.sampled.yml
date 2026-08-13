@@ -1,0 +1,15 @@
+stage: synthesis.population.sampled
+title: Population sampling
+layer: population
+description: Upstream sampling_rate downsampling of the synthetic population.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- synthesis/population/sampled.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

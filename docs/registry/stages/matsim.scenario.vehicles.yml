@@ -1,0 +1,20 @@
+stage: matsim.scenario.vehicles
+title: MATSim vehicles writer
+layer: matsim
+description: Writes vehicles.xml from the synthesized household fleet (braunschweig wrapper).
+lineage:
+  type: overridden
+  upstream: matsim.scenario.vehicles
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- matsim/scenario/vehicles.py
+- braunschweig/matsim/scenario/vehicles.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.matsim.scenario.vehicles
+  popsim_open: braunschweig.matsim.scenario.vehicles

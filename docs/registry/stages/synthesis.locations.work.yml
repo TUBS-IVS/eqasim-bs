@@ -1,0 +1,21 @@
+stage: synthesis.locations.work
+title: Work location pool (seam)
+layer: work
+description: Work location pool seam resolving to braunschweig.locations.work.
+lineage:
+  type: overridden
+  upstream: synthesis.locations.work
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/locations/work.py
+- braunschweig/locations/work.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: active
+  simple_ipf_open: active
+production: false
+resolves_to:
+  popsim_mid: braunschweig.locations.work
+  popsim_open: braunschweig.locations.work
+  simple_ipf_open: braunschweig.locations.work

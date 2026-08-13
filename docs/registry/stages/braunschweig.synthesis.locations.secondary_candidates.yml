@@ -1,0 +1,18 @@
+stage: braunschweig.synthesis.locations.secondary_candidates
+title: Secondary candidate set
+layer: secondary
+description: 'Builds the secondary-location candidate set from building potentials (REPLACE strategy)
+  incl. the smart ''other'' potential and SrV landuse points (ADR-0025, #27, #262).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/locations/secondary_candidates.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- building_potentials_secondary

@@ -1,0 +1,26 @@
+stage: synthesis.population.spatial.commute_distance
+title: Commute distances
+layer: work
+description: 'Commute-distance sampling: popsim workflows take distances from the donor trips
+  (braunschweig.popsim.commute_distance); the IPF path samples MiD 2023 P13 Kreis CDFs over the
+  ENTD donors (braunschweig.synthesis.spatial.commute_distance).'
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.commute_distance
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/commute_distance.py
+- braunschweig/popsim/commute_distance.py
+- braunschweig/synthesis/spatial/commute_distance.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.popsim.commute_distance
+  popsim_open: braunschweig.popsim.commute_distance
+  simple_ipf_open: braunschweig.synthesis.spatial.commute_distance
+inputs:
+- mid2023_reference_tables

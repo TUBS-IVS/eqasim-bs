@@ -1,0 +1,18 @@
+stage: braunschweig.data.zensus_grid.population
+title: Zensus 100m population grid
+layer: home
+description: Reads the open Zensus-2022 100m population grid for home-density weighting in the
+  legacy IPF path.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/zensus_grid/population.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- zensus2022_grid_open

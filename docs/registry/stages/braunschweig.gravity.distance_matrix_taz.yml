@@ -1,0 +1,22 @@
+stage: braunschweig.gravity.distance_matrix_taz
+title: TAZ distance matrix
+layer: work
+description: Centroid distance matrix at RVB TAZ resolution for the parked sub-zonal work gravity
+  (ADR-0067).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: Parked permanently OFF per ADR-0067 together with braunschweig.data.spatial.taz.
+code:
+- braunschweig/gravity/distance_matrix_taz.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+features:
+- taz_work_location_choice
+decisions:
+- ADR-0049
+- ADR-0050
+- ADR-0067
