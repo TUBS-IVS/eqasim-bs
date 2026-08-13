@@ -15,15 +15,20 @@ re-exported here (``# noqa: F401  (re-exports)`` blocks below) so external
 imports of ``braunschweig.analysis.simwrapper.spatial_export`` keep working
 unchanged. Submodules extracted so far:
 
-    fleet    Fleet map tab: vehicle geolocation, BEV/brand/powertrain mix by
-             Kreis (``load_fleet``, ``fleet_by_kreis``, ``_brand_mix_by_kreis``,
-             ``_powertrain_mix_by_kreis``, ``emit_fleet``). Also carries the
-             generic ``write_xyt_csv`` / ``write_kreis_choropleth_geojson``
-             writers -- moved there (rather than left in this facade) because
-             ``emit_fleet`` needs them and no dedicated "generic layer
-             writers" sibling exists yet; ``emit_socio`` below still calls
-             them via this facade's re-export. See the ``fleet`` module
-             docstring for the full disclosure.
+    fleet        Fleet map tab: vehicle geolocation, BEV/brand/powertrain mix
+                 by Kreis (``load_fleet``, ``fleet_by_kreis``,
+                 ``_brand_mix_by_kreis``, ``_powertrain_mix_by_kreis``,
+                 ``emit_fleet``).
+
+    geo_layers   Generic geometry-aware writers shared across tabs:
+                 ``write_xyt_csv`` (xytime point-cloud CSV) and
+                 ``write_kreis_choropleth_geojson`` (Kreis choropleth
+                 GeoJSON). Task 1 had to place these temporarily inside
+                 ``fleet`` (no dedicated sibling existed yet and leaving them
+                 here would have forced a facade-import cycle); Task 2
+                 relocated them into this dedicated sibling. ``emit_socio``
+                 below still calls ``write_xyt_csv`` via this facade's
+                 re-export.
 
 The remaining tabs (spatial demand, socio, behaviour, commuters, student
 commuters) and ``export_spatial`` itself are still defined directly below;
@@ -56,15 +61,18 @@ LOGGER = logging.getLogger("braunschweig.analysis.simwrapper.spatial")
 from . import fleet  # noqa: F401  (submodule re-export)
 from .fleet import (  # noqa: F401  (re-exports)
     BEV_POWERTRAIN_VALUE,
-    MAX_XYT_POINTS,
     _MIN_BRAND_COVERAGE,
     _REQUIRED_FLEET_COLS,
-    _XYT_SAMPLE_SEED,
     _brand_mix_by_kreis,
     _powertrain_mix_by_kreis,
     emit_fleet,
     fleet_by_kreis,
     load_fleet,
+)
+from . import geo_layers  # noqa: F401  (submodule re-export)
+from .geo_layers import (  # noqa: F401  (re-exports)
+    MAX_XYT_POINTS,
+    _XYT_SAMPLE_SEED,
     write_kreis_choropleth_geojson,
     write_xyt_csv,
 )
