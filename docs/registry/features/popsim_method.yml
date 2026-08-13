@@ -23,7 +23,7 @@ introduced:
   adr: ADR-0002
 detail_doc: docs/features/household-synthesis.md
 code_paths:
-- braunschweig/popsim/stage.py
+- braunschweig/popsim/stage/
 - braunschweig/population/selector.py
 evidence:
   tests:
@@ -38,7 +38,7 @@ evidence:
   fallback_rate:
     instrumented: false
     note: |
-      The method switch itself is a hard-fail guard, not a rate-logged fallback. The popsim producer stage (braunschweig/popsim/stage.py) has its own extensive fallback logging for sub-features, declared separately in this register (e.g. income_spatial_tilt.yml).
+      The method switch itself is a hard-fail guard, not a rate-logged fallback. The popsim producer stage (braunschweig/popsim/stage/) has its own extensive fallback logging for sub-features, declared separately in this register (e.g. income_spatial_tilt.yml).
   reference:
     kind: none
     note: |

@@ -250,12 +250,48 @@ an exact-filename collision with the pre-existing, unrelated-in-content
 `braunschweig.popsim.stratum` module (Phase-4A stratum-KEY mapping). Unlike the
 `secondary_chainsolvers` / `enriched` stage packages, `mid` is a helper
 library, not a synpp stage: it has no `configure`/`execute`/`validate()` of
-its own and is called directly from `stage.py`. Cache-neutrality: no synpp
-stage currently content-hashes `mid`'s source, so this split cannot devalidate
-any cache entry; the pre-existing gap it leaves open (`stage.py` lacks a
-`validate()` over its `mid` helper, so editing `mid` alone never invalidates
-the cache) is scheduled to close when `popsim/stage.py` itself is split
-(issue #267, module 3).
+its own and is called directly from `stage`. Cache-neutrality: no synpp stage
+content-hashes `mid`'s source directly, so this split alone did not devalidate
+any cache entry; the pre-existing gap it left open (no `validate()` over the
+`mid` helper, so editing `mid` alone never invalidated the cache) closed when
+`popsim/stage.py` itself was split into the `stage/` package (issue #267,
+module 3) -- see below.
+
+### popsim.stage package (`braunschweig/popsim/stage/`, split #267 module 3)
+
+The synpp producer stage (`configure`/`execute`/`validate`) is now a package:
+a facade `__init__.py` (imports, the module-level first-party helper bindings
+`validate()` hashes, the `execute()` orchestration decomposed into 26 named
+private steps, and re-export blocks for every submodule) plus six extracted
+submodules -- `batch_cache` (work-dir batch cache invalidation), `cell_attributes`
+(per-cell ARS/RegioStaR7 join + Kreis-code derivation), `config_keys` (LEAF:
+every `KEY_*` config-key constant plus the two per-attribute KREIS control
+toggle dicts), `controls_builder` (`controls.csv` assembly + aggregation/
+source-column/per-Kreis-total helpers), `source_resolution` (donor-source
+resolution + active KREIS attribute-control entries) and `tilt_columns`
+(income spatial-tilt cell-column selection) -- see STRUCTURE.md for one-line
+purposes.
+
+The stage gained a `validate()` hook it never had before, closing the
+synpp `get_stage_hash`-only-hashes-the-stage-file helper trap documented above
+for `mid`. Coverage: the package's own six submodules; the whole `mid` package
+one level deep (its `__init__` plus all eight submodules); the whole `sources`
+donor-adapter package one level deep (`base`/`entd`/`mid`); the remaining
+non-stage first-party helper modules imported at module level (the two
+`braunschweig.data.mid` income-table modules, `assembly`, `batch`, `income`,
+`income_kreis_control`, `income_spatial_tilt`, `plausibility`,
+`prepared_cells`); and, one level deep, the two synpp stages this stage calls
+as plain undeclared libraries -- `data.census.household_size` and
+`synthesis.population.enriched` (its `__init__` plus its six submodules, since
+the called `_apply_housing_tenure` lives in `enriched.housing_tenure`). The
+DEFERRED (function-level) first-party dependencies are covered too, by dotted
+name rather than module object, lazily imported inside `validate()`. The
+transitive surface beyond this explicit, one-level-deep enumeration is
+deliberately NOT covered and is documented as such in the module docstring --
+listed explicitly (never `dir()` or a glob) so both dropping and adding a
+covered module is a visible diff. One-off effect: this stage gains a
+validation token it never had, so the first run after merge recomputes it and
+everything downstream once.
 
 ### Trip/vocabulary convergence
 

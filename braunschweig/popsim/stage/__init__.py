@@ -122,8 +122,10 @@ from __future__ import annotations
 import hashlib
 import importlib
 import inspect
+import json  # noqa: F401 -- namespace parity only; the pre-split module had this at top level
 import logging
 import os
+import shutil  # noqa: F401 -- namespace parity only; the pre-split module had this at top level
 from pathlib import Path
 
 import numpy as np
@@ -235,17 +237,19 @@ from braunschweig.popsim.sources import mid as _sources_mid
 # ---------------------------------------------------------------------------
 
 from . import batch_cache
-# ``hashlib`` is NOT re-exported from batch_cache any more: validate() below
-# needs it directly, so it is imported from the standard library at the top of
-# this file (as the pre-split module did). The module-level ``hashlib`` name --
-# and hence the namespace seen by consumers -- is the same object either way.
+# ``hashlib``, ``json`` and ``shutil`` are NOT re-exported from batch_cache any
+# more: each is imported from the standard library directly at the top of this
+# file instead (as the pre-split module did). Re-exporting them from a
+# submodule purely to satisfy namespace parity would make the facade's
+# published names depend on batch_cache's own import list -- a later edit that
+# dropped one of them from batch_cache would silently break this stage's
+# public namespace. The module-level names -- and hence the namespace seen by
+# consumers -- are the same objects either way.
 from .batch_cache import (  # noqa: F401  (re-exports)
     WORK_DIR_SIGNATURE_FILE,
     _frame_content_signature,
     compute_batch_config_signature,
-    json,
     purge_stale_batches_on_config_change,
-    shutil,
 )
 from . import cell_attributes
 from .cell_attributes import (  # noqa: F401  (re-exports)

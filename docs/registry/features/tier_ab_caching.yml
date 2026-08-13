@@ -19,7 +19,7 @@ introduced:
   adr: ADR-0037
 detail_doc: docs/features/cache-share.md
 code_paths:
-- braunschweig/popsim/stage.py
+- braunschweig/popsim/stage/
 evidence:
   tests:
   - tests/test_allfeat_caching_config.py
@@ -31,7 +31,7 @@ evidence:
   fallback_rate:
     instrumented: false
     note: |
-      No primary-vs-fallback rate log exists for the caching mechanism itself (synpp's own hash-validation handles hit/miss silently). The closest instrumented log is the stale-batch guard (braunschweig/popsim/stage.py), which logs how many stale batch folders were purged when the popsim config changed -- a safety guard, not a fallback rate.
+      No primary-vs-fallback rate log exists for the caching mechanism itself (synpp's own hash-validation handles hit/miss silently). The closest instrumented log is the stale-batch guard (braunschweig/popsim/stage/), which logs how many stale batch folders were purged when the popsim config changed -- a safety guard, not a fallback rate.
   reference:
     kind: none
     note: Infrastructure feature (stage caching); no external reference applies.
