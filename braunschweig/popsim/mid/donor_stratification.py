@@ -6,7 +6,11 @@
                                    stratum value
 
 Extracted verbatim from the stage module (``__init__``); see the package
-docstring for the stage-level context.
+docstring for the stage-level context. Named ``donor_stratification`` (issue
+#267) rather than ``stratum`` to avoid an exact-filename collision with the
+pre-existing ``braunschweig.popsim.stratum`` module, which covers a different
+concern (Phase-4A stratum-KEY mapping, e.g. ``cell_urban_class_from_rs7``) and
+is not touched by this rename.
 """
 
 from __future__ import annotations

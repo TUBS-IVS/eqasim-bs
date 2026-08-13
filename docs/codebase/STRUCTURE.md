@@ -241,10 +241,10 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
     control_cells.py       control-cell loading, ZGB filtering, control totals
     csv_format.py          MiD CSV field-separator detection
     donor.py               MiD donor attribute + Wege (trip) table loading
+    donor_stratification.py RegioStaR donor stratification (Phase 4B)
     kreis_controls.py      Tier-3 KREIS control tables + per-batch apportionment
     participation.py       participation-control seed derivation
     seed_loading.py        consistent MiD seed load + completed-donor projection
-    stratum.py             RegioStaR donor stratification (Phase 4B)
   cells.py prepared_cells.py control_spec.py controls.py seed.py
   batch.py merge.py        1-km-atomic bin-packing; cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
@@ -256,9 +256,12 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
   missing.py stratum.py enriched_adapter.py
 ```
 
-Note: `popsim/stratum.py` (top-level, above) and `popsim/mid/stratum.py` (the
-`mid` submodule) are two distinct modules with the same base name -- import
-the full dotted path to disambiguate.
+Note: `popsim/stratum.py` (top-level, above; Phase-4A stratum-KEY mapping,
+e.g. `cell_urban_class_from_rs7`) and `popsim/mid/donor_stratification.py`
+(Phase-4B dominant-stratum + seed filtering) cover the same feature area
+(RegioStaR donor stratification) but are distinct modules; the `mid`
+submodule was named `stratum.py` until issue #267 renamed it to end an
+exact-filename collision between the two.
 
 Cache-neutrality of the `mid/` split: unlike the `secondary_chainsolvers` /
 `enriched` stage packages (each with its own `validate()`), `mid` is a plain

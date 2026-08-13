@@ -225,8 +225,11 @@ round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
 `mid/` (formerly one ~1900-line `mid.py`) is a stage package since #267: a pure
 facade `__init__.py` (imports + the `MID_SEED_COLUMNS` alias + re-export
 blocks only, no logic) plus eight submodules — `batches`, `control_cells`,
-`csv_format`, `donor`, `kreis_controls`, `participation`, `seed_loading`,
-`stratum` — see STRUCTURE.md for one-line purposes. Unlike the
+`csv_format`, `donor`, `donor_stratification`, `kreis_controls`,
+`participation`, `seed_loading` — see STRUCTURE.md for one-line purposes.
+`donor_stratification` was named `stratum` until it was renamed (#267) to end
+an exact-filename collision with the pre-existing, unrelated-in-content
+`braunschweig.popsim.stratum` module (Phase-4A stratum-KEY mapping). Unlike the
 `secondary_chainsolvers` / `enriched` stage packages, `mid` is a helper
 library, not a synpp stage: it has no `configure`/`execute`/`validate()` of
 its own and is called directly from `stage.py`. Cache-neutrality: no synpp

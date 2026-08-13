@@ -50,6 +50,14 @@ and the re-export blocks below. Submodules extracted:
                    ``MID_WEGE_REQUIRED_COLS``, ``load_mid_attributes``,
                    ``drop_invalid_households``, ``load_completed_donor``,
                    ``load_mid_wege``)
+    donor_stratification
+                   RegioStaR donor stratification (Phase 4B): dominant stratum
+                   per 1 km parent by majority vote, and donor-seed filtering to
+                   one stratum (``dominant_stratum_for_1km``,
+                   ``filter_seed_to_stratum``). Named distinctly from the
+                   sibling top-level ``braunschweig.popsim.stratum`` module
+                   (Phase-4A stratum-KEY mapping) to avoid an exact-filename
+                   collision (issue #267).
     kreis_controls Tier-3 KREIS control tables (imported cleancensus kreis_*
                    parquets) and per-batch Kreis apportionment
                    (``merge_kreis_control_tables``, ``load_kreis_control_table``,
@@ -61,10 +69,6 @@ and the re-export blocks below. Submodules extracted:
                    ``derive_work_participation_seed``)
     seed_loading   The consistent MiD seed load + the completed-donor
                    projection (``load_mid_seed``, ``project_completed_seed``)
-    stratum        RegioStaR donor stratification (Phase 4B): dominant stratum
-                   per 1 km parent by majority vote, and donor-seed filtering to
-                   one stratum (``dominant_stratum_for_1km``,
-                   ``filter_seed_to_stratum``)
 """
 
 from __future__ import annotations
@@ -136,6 +140,12 @@ from .donor import (  # noqa: F401  (re-exports)
     load_mid_wege,
 )
 
+from . import donor_stratification
+from .donor_stratification import (  # noqa: F401  (re-exports)
+    dominant_stratum_for_1km,
+    filter_seed_to_stratum,
+)
+
 from . import kreis_controls
 from .kreis_controls import (  # noqa: F401  (re-exports)
     _KREIS_CONTROL_FILES,
@@ -164,12 +174,6 @@ from .seed_loading import (  # noqa: F401  (re-exports)
     attributes,
     load_mid_seed,
     project_completed_seed,
-)
-
-from . import stratum
-from .stratum import (  # noqa: F401  (re-exports)
-    dominant_stratum_for_1km,
-    filter_seed_to_stratum,
 )
 
 # Re-exported for convenience: callers that already import braunschweig.popsim.mid

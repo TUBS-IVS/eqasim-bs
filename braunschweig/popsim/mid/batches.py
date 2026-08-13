@@ -38,12 +38,16 @@ package ``__init__`` (#267 split constraint): ``build_control_totals`` and
 and ``_kreis_pop_from_crosswalk`` from ``kreis_controls.py`` (task 7).
 
 ``run_popsim_mid`` (below) has a local loop variable named ``stratum``
-(``for stratum, km_ids in sorted(...)``). Importing the sibling module object
-as ``from . import stratum`` would let that loop variable shadow the module
-inside this file, so the RegioStaR stratification helpers are imported BY NAME
-ONLY: ``from .stratum import dominant_stratum_for_1km, filter_seed_to_stratum``.
-The loop variable itself is kept unchanged (verbatim-move constraint); only the
-import style is adjusted to avoid the collision.
+(``for stratum, km_ids in sorted(...)``). The sibling module holding the
+RegioStaR stratification helpers is named ``donor_stratification`` (renamed
+from ``stratum`` in issue #267 to end a filename collision with the
+pre-existing ``braunschweig.popsim.stratum`` module), so importing it as
+``from . import donor_stratification`` no longer collides with the loop
+variable; the helpers are still imported BY NAME
+(``from .donor_stratification import dominant_stratum_for_1km,
+filter_seed_to_stratum``) for readability at the call site, matching the style
+of the other sibling imports above. The loop variable itself is kept
+unchanged (verbatim-move constraint).
 """
 
 from __future__ import annotations
@@ -61,7 +65,7 @@ from braunschweig.popsim import merge as mergemod
 
 from .control_cells import _ARS_COLUMN, build_control_totals
 from .kreis_controls import _batch_kreis_apportion_weights, _kreis_pop_from_crosswalk
-from .stratum import dominant_stratum_for_1km, filter_seed_to_stratum
+from .donor_stratification import dominant_stratum_for_1km, filter_seed_to_stratum
 
 logger = logging.getLogger(__name__)
 
