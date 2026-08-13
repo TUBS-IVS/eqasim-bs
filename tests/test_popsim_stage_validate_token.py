@@ -14,11 +14,17 @@ have:
 - the token CHANGES when the source of ANY listed helper changes (otherwise the
   hook does not close the trap),
 - ``_HELPER_MODULES`` really covers the ``braunschweig.popsim.mid`` package, the
-  ``braunschweig.popsim.sources`` donor adapters, the stage package's own
+  ``braunschweig.popsim.sources`` donor adapters, the
+  ``braunschweig.synthesis.population.enriched`` package, the stage package's own
   submodules AND the other first-party helper modules the stage imports, so a
   future edit that DROPS coverage fails loudly here instead of silently
   re-opening the gap,
-- every submodule DISCOVERED on disk under those three packages is listed, so a
+- the DEFERRED (function-level) first-party dependencies named in
+  ``_DEFERRED_HELPER_MODULE_NAMES`` are all importable and every one of them
+  really contributes to the digest -- they are direct dependencies of the stage's
+  result (``control_spec`` owns the control catalog), so a name that silently
+  stopped being hashed would re-open the trap for it,
+- every submodule DISCOVERED on disk under those four packages is listed, so a
   helper ADDED later cannot stay silently uncovered (the literal expectation
   lists only catch removals),
 - and the only synpp stages listed are the two documented UNDECLARED library
@@ -107,6 +113,39 @@ UNDECLARED_STAGE_LIBRARY_MODULE_NAMES = (
     "braunschweig.synthesis.population.enriched",
 )
 
+# The ``enriched`` package enumerated ONE level deep: its stage ``__init__`` plus
+# every submodule. ``inspect.getsource`` of a package returns only its
+# ``__init__``, and the function the popsim stage actually calls,
+# ``_apply_housing_tenure``, lives in ``enriched.housing_tenure`` -- so listing the
+# package alone would hash the facade and leave an edit to the tenure helper
+# invisible to the token. Written out literally for the same reason as the lists
+# above.
+EXPECTED_ENRICHED_MODULE_NAMES = (
+    "braunschweig.synthesis.population.enriched",
+    "braunschweig.synthesis.population.enriched.availability",
+    "braunschweig.synthesis.population.enriched.base",
+    "braunschweig.synthesis.population.enriched.economic_status",
+    "braunschweig.synthesis.population.enriched.housing_tenure",
+    "braunschweig.synthesis.population.enriched.income_distribution",
+    "braunschweig.synthesis.population.enriched.vehicle_ownership",
+)
+
+# The DEFERRED (function-level) first-party direct dependencies, covered by dotted
+# NAME in ``_DEFERRED_HELPER_MODULE_NAMES`` and imported lazily inside
+# ``validate()``. Written out literally, again as an independent statement of what
+# MUST be covered: dropping one from the stage tuple cannot hide by also
+# disappearing from this list.
+EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.mid.tenure_by_income",
+    "braunschweig.parallelism",
+    "braunschweig.popsim.control_spec",
+    "braunschweig.popsim.employment_grid",
+    "braunschweig.popsim.folders",
+    "braunschweig.popsim.kreis_attribute_control",
+    "braunschweig.popsim.placement_income",
+    "braunschweig.popsim.zensus_employment_age",
+)
+
 # Packages whose submodules must ALL appear in _HELPER_MODULES. Discovered
 # dynamically (see test_helper_modules_cover_every_discovered_submodule) so a
 # helper module ADDED later cannot stay unlisted. Enumerated one level deep only,
@@ -115,6 +154,7 @@ DYNAMICALLY_ENUMERATED_PACKAGE_NAMES = (
     "braunschweig.popsim.stage",
     "braunschweig.popsim.mid",
     "braunschweig.popsim.sources",
+    "braunschweig.synthesis.population.enriched",
 )
 
 HEX_DIGITS = set("0123456789abcdef")
@@ -156,17 +196,23 @@ def test_validate_returns_stable_lowercase_md5_hex():
 
 
 def test_validate_hashes_exactly_the_listed_modules_in_order():
-    """The digest must be md5 over ``_HELPER_MODULES`` sources, in tuple order.
+    """The digest must be md5 over both listed sets, in tuple order.
 
-    The expectation is recomputed FROM ``_HELPER_MODULES``, so this pins the
-    hashing rule and the deterministic ITERATION ORDER only -- a set or ``dir()``
-    based order would make the token vary between processes -- not which modules
-    are covered. The covered set is pinned by the literal expectation lists and
-    the discovery test below.
+    ``_HELPER_MODULES`` (module objects) first, then
+    ``_DEFERRED_HELPER_MODULE_NAMES`` (dotted names, imported lazily). The
+    expectation is recomputed FROM those two tuples, so this pins the hashing rule
+    and the deterministic ITERATION ORDER only -- a set or ``dir()`` based order
+    would make the token vary between processes -- not which modules are covered.
+    The covered set is pinned by the literal expectation lists and the discovery
+    test below.
     """
     expected = hashlib.md5()
     for module in stage._HELPER_MODULES:
         expected.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in stage._DEFERRED_HELPER_MODULE_NAMES:
+        expected.update(
+            inspect.getsource(importlib.import_module(module_name)).encode("utf-8")
+        )
 
     assert stage.validate(None) == expected.hexdigest()
 
@@ -210,6 +256,108 @@ def test_validate_token_changes_when_a_listed_helper_source_changes(
 
     monkeypatch.undo()
     assert stage.validate(None) == baseline_token
+
+
+# ---------------------------------------------------------------------------
+# the deferred (function-level) first-party dependencies
+# ---------------------------------------------------------------------------
+
+def test_deferred_helper_modules_are_all_importable():
+    """Every deferred name must import and expose retrievable source.
+
+    ``validate()`` resolves these lazily at RUN time; if one cannot be imported it
+    raises rather than skipping the module, so an unimportable name here would
+    break every run instead of quietly shrinking the token. Catch that at test
+    time.
+    """
+    for module_name in stage._DEFERRED_HELPER_MODULE_NAMES:
+        module = importlib.import_module(module_name)
+        assert module.__name__ == module_name
+        assert inspect.getsource(module).strip(), f"no source for {module_name}"
+
+
+@pytest.mark.parametrize("target_module_name", EXPECTED_DEFERRED_HELPER_MODULE_NAMES)
+def test_validate_token_changes_when_a_deferred_helper_source_changes(
+        monkeypatch, target_module_name):
+    """A changed DEFERRED dependency's source must change the token too.
+
+    These are function-level imports, so they were absent from the module-level
+    set the token was originally built from -- ``control_spec`` in particular owns
+    the control catalog, so an edit there changes the stage's controls without
+    changing this file. Parametrised over EVERY name, so a single one falling out
+    of the hashed loop fails here rather than silently reusing stale cached output.
+    """
+    baseline_token = stage.validate(None)
+    target_module = importlib.import_module(target_module_name)
+
+    real_getsource = inspect.getsource
+
+    def fake_getsource(object_):
+        if object_ is target_module:
+            return real_getsource(object_) + "\n# simulated deferred helper edit\n"
+        return real_getsource(object_)
+
+    monkeypatch.setattr(inspect, "getsource", fake_getsource)
+    changed_token = stage.validate(None)
+
+    assert changed_token != baseline_token
+    assert len(changed_token) == 32
+
+    monkeypatch.undo()
+    assert stage.validate(None) == baseline_token
+
+
+def test_deferred_helper_module_names_are_exactly_the_expected_names():
+    """The deferred set must match the literal expectation, in the same order.
+
+    Order matters because the digest is order-dependent, and the covered SET
+    matters because each entry is a direct dependency of the stage's result. An
+    addition or a removal therefore has to be a visible edit to BOTH tuples.
+    """
+    assert stage._DEFERRED_HELPER_MODULE_NAMES == EXPECTED_DEFERRED_HELPER_MODULE_NAMES
+
+
+def test_deferred_names_do_not_duplicate_the_module_level_helpers():
+    """No module may be covered twice, once per mechanism.
+
+    A name in both tuples would be hashed twice and, worse, would hide a mistake
+    about WHICH mechanism covers it (module object vs lazy dotted name).
+    """
+    listed = {module.__name__ for module in stage._HELPER_MODULES}
+    overlap = sorted(listed.intersection(stage._DEFERRED_HELPER_MODULE_NAMES))
+
+    assert not overlap, (
+        "modules covered by BOTH _HELPER_MODULES and _DEFERRED_HELPER_MODULE_NAMES: "
+        f"{overlap}"
+    )
+    assert len(stage._DEFERRED_HELPER_MODULE_NAMES) == len(
+        set(stage._DEFERRED_HELPER_MODULE_NAMES)
+    ), "duplicate entries in _DEFERRED_HELPER_MODULE_NAMES"
+
+
+def test_validate_raises_naming_the_module_when_a_deferred_import_fails(monkeypatch):
+    """A broken deferred dependency must be LOUD, never silently unhashed.
+
+    Swallowing the failure would drop that module from the token exactly when its
+    code is broken, i.e. keep the stale cached output alive at the worst possible
+    moment (CLAUDE.md: no silent fallbacks). The raised message must name the
+    module so the failure is diagnosable without a debugger.
+    """
+    target_module_name = stage._DEFERRED_HELPER_MODULE_NAMES[0]
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name, *args, **kwargs):
+        if name == target_module_name:
+            raise ImportError("simulated broken deferred dependency")
+        return real_import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+    with pytest.raises(RuntimeError) as error_info:
+        stage.validate(None)
+
+    assert target_module_name in str(error_info.value)
+    assert isinstance(error_info.value.__cause__, ImportError)
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +421,24 @@ def test_helper_modules_cover_the_undeclared_stage_libraries():
     assert not missing, (
         f"undeclared synpp-stage libraries missing from _HELPER_MODULES: {missing}"
     )
+
+
+def test_helper_modules_cover_the_enriched_package_one_level_deep():
+    """The ``enriched`` package must be covered ``__init__`` + submodules.
+
+    ``inspect.getsource`` of a package yields only its ``__init__``, while the
+    function the popsim stage calls -- ``_apply_housing_tenure`` -- lives in
+    ``enriched.housing_tenure``. Listing the package alone therefore hashes the
+    facade and leaves an edit to the tenure sampling (or to any sibling reached
+    through the facade) invisible to the token, which is the same trap the ``mid``
+    and ``sources`` packages are enumerated one level deep to avoid.
+    """
+    listed = [module.__name__ for module in stage._HELPER_MODULES]
+
+    missing = [
+        name for name in EXPECTED_ENRICHED_MODULE_NAMES if name not in listed
+    ]
+    assert not missing, f"enriched modules missing from _HELPER_MODULES: {missing}"
 
 
 def test_helper_modules_cover_every_discovered_submodule():
