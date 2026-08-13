@@ -15,6 +15,13 @@ from __future__ import annotations
 from .activity_types import LEISURE_SUBTYPE_ACTIVITIES, OTHER_SUBTYPE_ACTIVITIES
 
 
+# Maps each secondary chainsolver activity to its attached candidate-potential
+# column. The two shop subtypes (Tier 2: secondary_shop_daily_split) map to
+# genuinely distinct split retail potentials; the aggregate "shop" maps to the
+# summed pot_shop and is the only shop key on the OFF path. The leisure/other
+# subtypes (Task 4) map to the SAME aggregate potential as their parent purpose
+# -- there is no per-subtype building potential yet (a dedicated "pot_visit"
+# column is deferred to a later task).
 _ACTIVITY_POTENTIAL_COLUMN = {
     "shop": "pot_shop",
     "shop_daily": "pot_shop_daily",
