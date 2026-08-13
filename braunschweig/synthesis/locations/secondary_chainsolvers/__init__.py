@@ -32,6 +32,8 @@ on the input distribution side.
 from __future__ import annotations
 
 import copy
+import hashlib
+import inspect
 import multiprocessing as mp
 import time
 from collections import defaultdict
@@ -64,6 +66,31 @@ def external_candidates_cordon_warning(external_on, cordon_on):
                 "will not be converted to 'outside' activities and may be unroutable "
                 "in MATSim. Enable cordon_enabled or disable secondary_external_candidates.")
     return None
+
+
+# ---------------------------------------------------------------------------
+# synpp cache validation
+# ---------------------------------------------------------------------------
+
+# Extracted helper submodules of this stage package. synpp's get_stage_hash
+# only hashes THIS file's source (inspect.getsource of the stage module), so
+# without the validate() hook below a change confined to a helper submodule
+# would silently reuse the stale cached stage output on a partial rerun.
+# Every submodule extracted from this package MUST be listed here.
+_HELPER_MODULES: Tuple[Any, ...] = ()
+
+
+def validate(context):
+    """synpp validation token: md5 over the helper submodules' sources.
+
+    synpp compares this token against the one stored with the cached stage
+    output and devalidates the cache on mismatch, so helper-only source
+    changes recompute the stage just like changes to this file itself.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 # ---------------------------------------------------------------------------
