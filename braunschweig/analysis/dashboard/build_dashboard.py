@@ -28,13 +28,14 @@ exclusively by them (``MID_DIR``, ``KREIS_NAMES``, ``P13_BINS_KM``,
 ``P13_LABELS``) and the generic ``_safe_read_csv`` helper, live in the
 sibling module ``mid_reference.py``. The per-run metric computation
 (``metrics_eqasim``, ``metrics_matsim``) and its supporting helpers
-(``_find_sim_output``, ``_detect_sample_rate``, and the VG250/per-Kreis
-spatial cluster ``_ensure_vg250``/``_load_zgb_kreise``/``_classify_points``/
-``metrics_time_of_day``/``metrics_per_kreis``/``metrics_od_matrix`` that
-``metrics_matsim`` calls), along with the constants used exclusively by that
+(``_find_sim_output``, ``_detect_sample_rate``) live in the sibling module
+``run_metrics.py``. The VG250/per-Kreis spatial cluster that
+``metrics_matsim`` calls (``_ensure_vg250``/``_load_zgb_kreise``/
+``_classify_points``/``metrics_time_of_day``/``metrics_per_kreis``/
+``metrics_od_matrix``), along with the constants used exclusively by that
 cluster (``ZGB_ARS5``, ``VG250_ZIP``, ``VG250_CACHE``), live in the sibling
-module ``run_metrics.py``. All are re-exported below so existing callers of
-``build_dashboard.<name>`` keep working unchanged.
+module ``spatial_metrics.py``. All are re-exported below so existing callers
+of ``build_dashboard.<name>`` keep working unchanged.
 """
 
 from __future__ import annotations
@@ -61,19 +62,19 @@ from braunschweig.analysis.dashboard.mid_reference import _earth_movers_distance
 from braunschweig.analysis.dashboard.mid_reference import _safe_read_csv  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.mid_reference import _to_km_bands  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.mid_reference import load_mid_reference  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import VG250_CACHE  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import VG250_ZIP  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import ZGB_ARS5  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import _classify_points  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import _detect_sample_rate  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import _ensure_vg250  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import _find_sim_output  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import _load_zgb_kreise  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import metrics_eqasim  # noqa: F401  (re-exports)
 from braunschweig.analysis.dashboard.run_metrics import metrics_matsim  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import metrics_od_matrix  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import metrics_per_kreis  # noqa: F401  (re-exports)
-from braunschweig.analysis.dashboard.run_metrics import metrics_time_of_day  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import VG250_CACHE  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import VG250_ZIP  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import ZGB_ARS5  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import _classify_points  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import _ensure_vg250  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import _load_zgb_kreise  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import metrics_od_matrix  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import metrics_per_kreis  # noqa: F401  (re-exports)
+from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day  # noqa: F401  (re-exports)
 
 # ---------------------------------------------------------------------------
 # Paths
