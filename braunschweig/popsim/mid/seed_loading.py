@@ -9,20 +9,22 @@
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
 
-``detect_csv_separator`` moved to its own leaf module ``csv_format.py`` (task 4
-ruling, see that module's docstring): it has call sites in this module AND in
-``donor.py`` (task 5's ``load_mid_attributes`` / ``load_mid_wege``), so it is a
-multi-module dependency rather than a single-consumer helper -- both later
-submodules import it from ``csv_format`` directly rather than duplicating it.
+``detect_csv_separator`` moved to its own leaf module ``csv_format.py``
+(issue #267 task 4 ruling; see that module's docstring): it has call sites
+in this module AND in ``donor.py`` (``load_mid_attributes`` / ``load_mid_wege``),
+so it is a multi-module dependency rather than a single-consumer helper --
+both later submodules import it from ``csv_format`` directly rather than
+duplicating it.
 
 ``load_mid_wege`` is called by both functions below and now lives in the
-sibling module ``donor.py`` (task 5; it also has consumers outside this
-package, e.g. ``trips_stage.py`` / ``stage.py`` / ``sources/mid.py``, so
-relocating it was not a task-4 concern). It is imported here as a normal
-module-level sibling import (``from .donor import load_mid_wege``); the
-earlier function-local workaround imports (needed only while ``load_mid_wege``
-still lived in the partially-initialized package ``__init__``) are gone.
-``donor.py`` does not import this module, so no import cycle results.
+sibling module ``donor.py`` (it also has consumers outside this package,
+e.g. ``trips_stage.py`` / ``stage.py`` / ``sources/mid.py``, so relocating it
+was out of scope for this module's own extraction). It is imported here as
+a normal module-level sibling import (``from .donor import load_mid_wege``);
+the earlier function-local workaround imports (needed only while
+``load_mid_wege`` still lived in the partially-initialized package
+``__init__``) are gone. ``donor.py`` does not import this module, so no
+import cycle results.
 """
 
 from __future__ import annotations

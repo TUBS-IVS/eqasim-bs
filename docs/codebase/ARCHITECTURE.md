@@ -222,9 +222,9 @@ round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
 `income.py::apply_inkar_income_eur` — one INKAR per-Kreis scaling + one
 `high_income >= 5000 EUR` rule for BOTH popsim sources (commit a8cce14).
 
-`mid/` (formerly one ~1900-line `mid.py`) is a stage package since #267: a pure
+`mid/` (formerly one ~1900-line `mid.py`) is a helper package since #267: a pure
 facade `__init__.py` (imports + the `MID_SEED_COLUMNS` alias + re-export
-blocks only, no logic) plus eight submodules — `batches`, `control_cells`,
+blocks only, no logic) plus eight submodules — `batch_folders`, `control_cells`,
 `csv_format`, `donor`, `donor_stratification`, `kreis_controls`,
 `participation`, `seed_loading` — see STRUCTURE.md for one-line purposes.
 `donor_stratification` was named `stratum` until it was renamed (#267) to end

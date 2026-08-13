@@ -18,16 +18,16 @@ docstring for the stage-level context.
 alongside ``load_kreis_control_table``, its only consumer in the original module.
 
 ``resolved_kreis_per_cell`` defaults its ``ars_col`` parameter to
-``_ARS_COLUMN``, defined in the sibling leaf module ``control_cells.py``
-(task 3). It is imported here directly (``from .control_cells import
-_ARS_COLUMN``) rather than through the package ``__init__``: submodules must
-not import from the package facade (#267 split constraint).
+``_ARS_COLUMN``, defined in the sibling leaf module ``control_cells.py``. It
+is imported here directly (``from .control_cells import _ARS_COLUMN``)
+rather than through the package ``__init__``: submodules must not import
+from the package facade (#267 split constraint).
 
 ``Optional`` is imported here for this module's own annotations
 (``load_kreis_control_table``'s ``restrict_to_kreise`` parameter). Namespace
 parity for external consumers of ``braunschweig.popsim.mid.Optional`` is kept
 by a direct ``from typing import Optional`` in ``__init__.py`` rather than by
-re-exporting it from this module (Task 10 review follow-up: re-exporting a
+re-exporting it from this module (a later review follow-up: re-exporting a
 stdlib generic alias through a sibling submodule was a fragile indirection).
 
 ``resolved_kreis_per_cell``, ``_kreis_pop_from_crosswalk`` and
@@ -35,7 +35,7 @@ stdlib generic alias through a sibling submodule was a fragile indirection).
 "Folder assembly + orchestration" section header that also covers
 ``assemble_batch_folder`` / ``cell_groups`` / ``run_popsim_mid`` -- those three
 stay in ``__init__.py`` under that original header, so a new dedicated header is
-introduced below for the functions moved here (precedent: task 5's
+introduced below for the functions moved here (precedent: the sibling module
 ``participation.py`` introduced its own "Participation" header for functions
 lifted out of the original module's shared "Seed" section).
 """

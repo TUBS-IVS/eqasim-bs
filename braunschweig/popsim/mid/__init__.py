@@ -21,12 +21,13 @@ every extracted submodule name so external imports of
 hashes this package's source, so the split is cache-neutral by construction;
 closing that pre-existing helper-trap gap (a synpp ``validate()`` hashing the
 whole package) is module 3's job (``popsim/stage.py``, issue #267). This
-``batches`` extraction is the last of the #267 split: every remaining piece of
-implementation has moved out, and this file is now a pure facade holding only
-the docstring, imports, the ``MID_SEED_COLUMNS`` alias, the sibling imports,
-and the re-export blocks below. Submodules extracted:
+``batch_folders`` extraction is the last extraction of the ``mid`` package
+split: every remaining piece of implementation has moved out, and this file
+is now a pure facade holding only the docstring, imports, the
+``MID_SEED_COLUMNS`` alias, the sibling imports, and the re-export blocks
+below. Submodules extracted:
 
-    batches        Batch folder assembly and the PopulationSim runner: builds
+    batch_folders  Batch folder assembly and the PopulationSim runner: builds
                    one PopulationSim run folder per batch (with optional Tier-3
                    KREIS controls), groups 1 km parents into batches, executes
                    and merges them, and reports LP-integerizer feasibility and
@@ -34,7 +35,12 @@ and the re-export blocks below. Submodules extracted:
                    ``cell_groups``, ``run_popsim_mid``,
                    ``summarize_integerizer_feasibility``,
                    ``MAX_MISSING_BATCH_RATE``,
-                   ``INTEGERIZER_INFEASIBLE_WARN_RATE``)
+                   ``INTEGERIZER_INFEASIBLE_WARN_RATE``). Named distinctly
+                   from the sibling top-level ``braunschweig.popsim.batch``
+                   module (1 km-atomic bin-packing of cells into batches; this
+                   module builds the PopulationSim run-folder CONTENTS and
+                   calls that module's runner) to end a one-character
+                   ``batch``/``batches`` collision (issue #267 final review).
     control_cells  Control-cell loading (targeted parquet columns), ZGB Kreis
                    filtering, and per-geography integerized control totals
                    (``control_base_columns``, ``load_control_cells``,
@@ -83,8 +89,8 @@ from braunschweig.popsim import seed as seedmod
 # braunschweig.popsim.mid module path unchanged.
 # ---------------------------------------------------------------------------
 
-from . import batches
-from .batches import (  # noqa: F401  (re-exports)
+from . import batch_folders
+from .batch_folders import (  # noqa: F401  (re-exports)
     INTEGERIZER_INFEASIBLE_WARN_RATE,
     Iterable,
     MAX_MISSING_BATCH_RATE,

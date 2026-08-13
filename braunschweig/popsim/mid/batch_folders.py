@@ -1,5 +1,14 @@
 """Batch folder assembly and the PopulationSim runner for the popsim mid stage.
 
+Named ``batch_folders`` (not ``batches``) to stay distinct from the sibling
+top-level ``braunschweig.popsim.batch`` module: that parent module does the
+1 km-atomic bin-packing of 100 m cells into batches, while this module builds
+each batch's PopulationSim run-FOLDER contents and invokes that parent
+module's batch runner. The two names were one character apart (``batch`` vs
+``batches``) before this module was renamed during the #267 final review --
+the same ambiguity class as the ``stratum``/``donor_stratification`` rename
+below.
+
 - ``summarize_integerizer_feasibility`` -- aggregate PopulationSim LP-integerizer
                                            feasibility across a run's batch logs
 - ``_run_batches_and_merge``            -- run every batch, merge, and fail loudly
@@ -15,10 +24,11 @@
                                            which ``summarize_integerizer_feasibility`` warns
 
 Extracted verbatim from the stage module (``__init__``); see the package
-docstring for the stage-level context. This is the last extraction of the #267
-split: after this module, ``__init__.py`` holds only the package docstring,
-imports, the ``MID_SEED_COLUMNS`` alias, the ``from . import ...`` line, and
-the re-export blocks -- a pure facade with no logic of its own.
+docstring for the stage-level context. This is the last extraction of the
+``mid`` package split: after this module, ``__init__.py`` holds only the
+package docstring, imports, the ``MID_SEED_COLUMNS`` alias, the
+``from . import ...`` line, and the re-export blocks -- a pure facade with no
+logic of its own.
 
 ``MAX_MISSING_BATCH_RATE`` and ``INTEGERIZER_INFEASIBLE_WARN_RATE`` move here
 alongside their sole consumers (``_run_batches_and_merge`` and
@@ -34,8 +44,8 @@ the public namespace is unchanged.
 
 Sibling imports go directly to the sibling submodule, never through the
 package ``__init__`` (#267 split constraint): ``build_control_totals`` and
-``_ARS_COLUMN`` from ``control_cells.py`` (task 3); ``_batch_kreis_apportion_weights``
-and ``_kreis_pop_from_crosswalk`` from ``kreis_controls.py`` (task 7).
+``_ARS_COLUMN`` from ``control_cells.py``; ``_batch_kreis_apportion_weights``
+and ``_kreis_pop_from_crosswalk`` from ``kreis_controls.py``.
 
 ``run_popsim_mid`` (below) has a local loop variable named ``stratum``
 (``for stratum, km_ids in sorted(...)``). The sibling module holding the

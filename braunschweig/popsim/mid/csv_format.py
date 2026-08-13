@@ -6,9 +6,9 @@ Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
 
 This is a small leaf module (issue #267 task 4 ruling): ``detect_csv_separator``
-has call sites in BOTH ``seed_loading.load_mid_seed`` (this task) and the donor
-loaders ``load_mid_attributes`` / ``load_mid_wege`` (task 5's ``donor.py``), so
-it is a multi-module dependency rather than belonging to a single consumer. It
+has call sites in BOTH ``seed_loading.load_mid_seed`` and the donor loaders
+``load_mid_attributes`` / ``load_mid_wege`` (``donor.py``), so it is a
+multi-module dependency rather than belonging to a single consumer. It
 is therefore extracted here, and both later submodules import it from this
 module directly (never from the package ``__init__``); it is also re-exported
 from ``__init__.py`` so the public namespace is unchanged.

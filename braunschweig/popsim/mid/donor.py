@@ -14,19 +14,20 @@ Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
 
 ``detect_csv_separator`` is imported from the leaf module ``csv_format.py``
-(task 4 ruling; see that module's docstring): both ``load_mid_attributes`` and
-``load_mid_wege`` below need it, mirroring ``seed_loading.load_mid_seed``.
+(issue #267 task 4 ruling; see that module's docstring): both
+``load_mid_attributes`` and ``load_mid_wege`` below need it, mirroring
+``seed_loading.load_mid_seed``.
 
 ``load_mid_wege`` moves here from the package ``__init__`` (it previously had
-to stay there because ``seed_loading.py`` -- extracted in task 4, before this
-task -- imports it locally inside ``load_mid_seed`` / ``project_completed_seed``
-to avoid a partially-initialized-package ImportError; see that module's
+to stay there because ``seed_loading.py`` -- extracted before this module --
+imports it locally inside ``load_mid_seed`` / ``project_completed_seed`` to
+avoid a partially-initialized-package ImportError; see that module's
 docstring). Now that ``load_mid_wege`` lives in this sibling leaf module,
 ``seed_loading.py`` imports it as a normal module-level sibling import
 (``from .donor import load_mid_wege``) and both function-local workaround
-imports + their explanatory comments are removed (task 5 cleanup, carried
-forward from the task 4 review). ``donor.py`` does not import ``seed_loading``,
-so no import cycle results.
+imports + their explanatory comments are removed (cleanup carried forward
+from the ``seed_loading``/``csv_format`` extraction review). ``donor.py``
+does not import ``seed_loading``, so no import cycle results.
 
 ``MID_SEED_COLUMNS`` is aliased again here (module-level) so
 ``load_completed_donor``'s body -- which references the bare name -- moves
@@ -37,7 +38,7 @@ the comment there. This is a two-line alias, not a duplicated derivation.
 The ``braunschweig.popsim.member_completion`` import (aliased ``completion``,
 needed for ``completion.complete_members`` / ``completion.MemberCompletionReport``
 in ``load_completed_donor``) moves here for the same reason as the leaf-module
-constants in earlier tasks: it had no other consumer left in ``__init__.py``
+constants in earlier extractions: it had no other consumer left in ``__init__.py``
 once ``load_completed_donor`` moved. It is re-exported from ``__init__.py`` so
 the public namespace is unchanged.
 """

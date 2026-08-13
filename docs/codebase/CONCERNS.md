@@ -406,14 +406,15 @@ Confirmed by adversarial verification against code + the real local MiD raw data
    `sex="unknown"` -> MATSim attribute `"u"`; code 9 should be imputed per the
    missing policy; legacy paths emit only male/female.
 9. `braunschweig/popsim/mid/seed_loading.py:121` (`hhgr_gr`) / `:190` (`alter_gr1`)
-   [path updated for the #267 package split; was `mid.py:330`]: the conditioning
-   columns (`alter_gr1`, `hhgr_gr`) for group-conditioned imputation are never
-   loaded, so the documented within-age-band imputation silently degrades to
-   the global pool.
+   [path updated for the #267 package split; was `mid.py:330`] (content not
+   re-verified; #267 path-only update): the conditioning columns (`alter_gr1`,
+   `hhgr_gr`) for group-conditioned imputation are never loaded, so the
+   documented within-age-band imputation silently degrades to the global pool.
 10. `braunschweig/popsim/mid/seed_loading.py:240` [path updated for the #267
-    package split; was `mid.py:322`]: `day_filter_values or default` — the day
-    filter cannot be disabled (None and () both fall back to (1,2,3)), contract
-    inconsistent with `filter_complete_households`.
+    package split; was `mid.py:322`] (content not re-verified; #267 path-only
+    update): `day_filter_values or default` — the day filter cannot be
+    disabled (None and () both fall back to (1,2,3)), contract inconsistent
+    with `filter_complete_households`.
 11. `matsim/writers.py:25` `long_or_string_type` decides the Java type PER VALUE:
     mixed Long/String for the same attribute in one file is possible; float
     contamination writes "123.0" as java.lang.Long (Java parse failure); legacy

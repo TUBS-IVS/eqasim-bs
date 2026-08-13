@@ -236,8 +236,12 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
                            __init__.py -- helper library, NOT a synpp stage,
                            so no configure/execute/validate() -- + re-exports
                            of every submodule below); cells -> controls ->
-                           seed -> batches -> merge
-    batches.py             batch folder assembly + PopulationSim runner
+                           seed -> batch_folders -> merge
+    batch_folders.py       Batch FOLDER assembly + PopulationSim runner (NOT
+                           the parent `batch.py` below -- one character apart
+                           on purpose: that module bin-packs cells INTO
+                           batches; this one writes each batch's PopulationSim
+                           run-folder contents and invokes that runner)
     control_cells.py       control-cell loading, ZGB filtering, control totals
     csv_format.py          MiD CSV field-separator detection
     donor.py               MiD donor attribute + Wege (trip) table loading
@@ -246,7 +250,10 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
     participation.py       participation-control seed derivation
     seed_loading.py        consistent MiD seed load + completed-donor projection
   cells.py prepared_cells.py control_spec.py controls.py seed.py
-  batch.py merge.py        1-km-atomic bin-packing; cell-disjoint merge
+  batch.py merge.py        1-km-atomic bin-packing of cells INTO batches (the
+                           parent module `mid/batch_folders.py` above calls
+                           this one -- distinct module, distinct job); merge.py
+                           does the cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
   sources/{base,mid,entd}.py             donor adapter Protocol + 2 sources
   trips.py trips_stage.py plan_validation.py   MiD Wege -> eqasim trips + repair
