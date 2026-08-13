@@ -23,10 +23,12 @@ alongside ``load_kreis_control_table``, its only consumer in the original module
 _ARS_COLUMN``) rather than through the package ``__init__``: submodules must
 not import from the package facade (#267 split constraint).
 
-``Optional`` is re-exported from ``__init__.py`` (facade block below) for
-namespace parity: in the original module it was a stranded typing import whose
-sole consumer, ``load_kreis_control_table``'s ``restrict_to_kreise`` parameter,
-moves here.
+``Optional`` is imported here for this module's own annotations
+(``load_kreis_control_table``'s ``restrict_to_kreise`` parameter). Namespace
+parity for external consumers of ``braunschweig.popsim.mid.Optional`` is kept
+by a direct ``from typing import Optional`` in ``__init__.py`` rather than by
+re-exporting it from this module (Task 10 review follow-up: re-exporting a
+stdlib generic alias through a sibling submodule was a fragile indirection).
 
 ``resolved_kreis_per_cell``, ``_kreis_pop_from_crosswalk`` and
 ``_batch_kreis_apportion_weights`` sat, in the original module, under a shared

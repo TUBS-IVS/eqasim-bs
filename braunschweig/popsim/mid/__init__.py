@@ -69,6 +69,8 @@ and the re-export blocks below. Submodules extracted:
 
 from __future__ import annotations
 
+from typing import Optional  # noqa: F401  (namespace parity: re-exported for consumers)
+
 from braunschweig.popsim import seed as seedmod
 
 # ---------------------------------------------------------------------------
@@ -136,7 +138,6 @@ from .donor import (  # noqa: F401  (re-exports)
 
 from . import kreis_controls
 from .kreis_controls import (  # noqa: F401  (re-exports)
-    Optional,
     _KREIS_CONTROL_FILES,
     _batch_kreis_apportion_weights,
     _kreis_pop_from_crosswalk,

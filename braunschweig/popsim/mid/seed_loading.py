@@ -522,7 +522,7 @@ def _split_kreis_entries_by_level(
 
 def _derive_projected_participation_seed_columns(
     persons: pd.DataFrame,
-    columns,
+    columns: seedmod.SeedColumns,
     mid_dir: Union[str, Path, None],
     *,
     active_kreis_entry_names: set[str],

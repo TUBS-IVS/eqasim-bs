@@ -9,6 +9,10 @@
 - ``cell_groups``                       -- map each 1 km parent to its 100 m children
 - ``run_popsim_mid``                    -- batch the cells, run PopulationSim, merge,
                                            and (optionally) stratify by RegioStaR (4B)
+- ``MAX_MISSING_BATCH_RATE``            -- tolerated missing-batch rate for
+                                           ``_run_batches_and_merge`` (0 by default)
+- ``INTEGERIZER_INFEASIBLE_WARN_RATE``  -- LP-integerizer infeasibility rate above
+                                           which ``summarize_integerizer_feasibility`` warns
 
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context. This is the last extraction of the #267
