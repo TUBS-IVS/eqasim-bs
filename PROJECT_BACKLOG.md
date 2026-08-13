@@ -70,12 +70,13 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   measured); (f) MiD-vs-SrV realized-distance level gap ~1.5-2x (pre-existing, both A/B runs;
   overlaps calibration-corner scope).
 
-- **[0.6]** Escort family post-merge remainder (PR #260 MERGED 2026-08-12; ADR-0074 carry-over
-  DONE 2026-08-13 on the #262 branch): java companion PR (`feature/escort-activity-type`,
-  eqasim-java-bs c9a1f79); validation CLI `--escort-passive-education`; dissolve the escort
-  worktrees (local `feature-escort-purpose-201` + felix `~/wt-escort`); minor doc touch-ups
-  (label the "5-8%" docstring cardinality as assumption, ADR-0072 citation note; ADR-0073
-  heading fixed on the #262 branch).
+- **[0.6]** Escort family post-merge remainder (PR #260 MERGED 2026-08-12; ADR-0074 DONE;
+  worktrees dissolved 2026-08-13, felix artifacts -> `~/run_archives/`): java companion
+  **PR eqasim-java-bs#15 OPEN** (title check green, build pending; Copilot comment addressed
+  @a7afe3bf2); validation CLI **PR #264 OPEN** (`--escort-passive-education`, 25 tests green,
+  reviewed clean; branch `fix/escort-validation-cli-256`, worktree `escort-validation-cli`
+  kept until merge). REMAINING after those merge: minor doc touch-ups (label the "5-8%"
+  docstring cardinality as assumption, ADR-0072 citation note).
   ISSUES to confirm+open (user-pending, carried): (a) carla distance propagation —
   desired-distance layers inert under top_n (re-confirmed by the #262 A/B: substrate moves,
   realized medians ~unchanged; knobs: selection=mnl [wired], dist_dev_weight, dp_sample;

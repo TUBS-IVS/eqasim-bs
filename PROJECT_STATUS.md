@@ -9,7 +9,7 @@ Updated: 2026-08-12 · Details: docs/features/ · History: docs/archive/ · Deci
 - Current validated scale: 25% (`*_25pct_allfeat`) full run plus per-Kreis control-smokes; **no 100% production run exists yet on the newest code** (Tier-A/B caching now makes one affordable — see backlog #1).
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
-- Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
+- Last full-suite green: **2026-08-13, local `eqasim` env, 3572 passed / 32 skipped / 0 failed** (on the merged #262 head; prior: 2026-08-12 local 3318/32 post-#259-fix, 2026-07-19 felix 3170/0).
 - Current focus: (a) **SrV location types #262 COMPLETE + 5% A/B VALIDATED** — **[PR #263](https://github.com/TUBS-IVS/eqasim-bs/pull/263) OPEN** (leisure landuse points 0->31.9%, errand typed buildings 0->75.5%, draw shares within 1.8pp of SrV refs, purpose mix byte-identical; RUNS.md `srv262-AB-5pct-2026-08-12`, ADR-0075). (b) escort family PR #260 + test-fix PR #261 MERGED 2026-08-12; remainder = backlog [0.6] (java companion PR, CLI flag, worktree dissolution). Next: merge #263 -> 100% production run on the 2.2.0 stack.
 
 ## 2. Feature matrix
