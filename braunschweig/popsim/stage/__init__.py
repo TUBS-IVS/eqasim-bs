@@ -25,6 +25,19 @@ The active donor source is controlled by ``braunschweig.population.popsim.source
 implementation. Switching to ``"entd"`` (Phase 2) will route the seed build, donor
 loading, and attribute mapping through the ENTD adapter without changing the
 structural PopulationSim orchestration.
+
+Package layout (issue #267 split; formerly one ~1900-line module, itself the
+rename of the legacy ``stage.py``): this ``__init__`` is the synpp stage
+(``configure``/``execute``) and re-exports every extracted submodule name, so
+external imports of the stage module path keep working unchanged. Submodules
+extracted so far:
+
+    tilt_columns  Income-tilt cell-column selection (issue #136): extends the
+                  parquet load column list with the tilt cell columns
+                  (rent, Eigentuemerquote, HH weight) in the SAME
+                  ``load_control_cells`` read, and builds the tilt working
+                  frame from the already-loaded cells (``tilt_extra_load_columns``,
+                  ``extract_tilt_cells``).
 """
 
 from __future__ import annotations
@@ -58,6 +71,22 @@ from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import sources
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
+
+# ---------------------------------------------------------------------------
+# Package submodules (extracted stage sections). Every name is re-exported
+# here so external consumers (calibration scripts, tests) keep importing from
+# the stage module path unchanged.
+# ---------------------------------------------------------------------------
+
+from . import tilt_columns
+from .tilt_columns import (  # noqa: F401  (re-exports)
+    _TILT_ARS_COL,
+    _TILT_HH_COL,
+    _TILT_QUOTE_COL,
+    _TILT_RENT_COL,
+    extract_tilt_cells,
+    tilt_extra_load_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,58 +156,6 @@ KEY_INCOME_TILT = "braunschweig.population.popsim.income_spatial_tilt"
 KEY_INCOME_TILT_BETA = "braunschweig.population.popsim.income_tilt_beta"
 KEY_INCOME_TILT_CLIP = "braunschweig.population.popsim.income_tilt_clip"
 
-# Tilt-specific cell columns (cleaned parquet names; see prepared_cells.clean_col_name):
-#   raw: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m-Gitter"
-#     -> clean: "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
-#   raw: "Eigentuemerquote_Eigentuemerquote_100m-Gitter"
-#     -> clean: "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
-# Suppression-ADJUSTED household totals are the correct tilt weight: the raw cell
-# totals suppress small cells (NaN), making them 0-weight and biasing the Kreis-mean
-# normalization toward large dense cells only. The _adj column fills suppressed cells
-# with the cleancensus imputed estimates so every cell carries a proper weight.
-_TILT_RENT_COL = "durchschnMieteQM_Durchschn_Nettokaltmiete_100m_Gitter"
-_TILT_QUOTE_COL = "Eigentuemerquote_Eigentuemerquote_100m_Gitter"
-_TILT_HH_COL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
-_TILT_ARS_COL = "RegionalSchlussel_ARS"
-
-
-def tilt_extra_load_columns(enabled: bool, load_cols: list[str]) -> list[str]:
-    """Extend the parquet load column list with the income-tilt cell columns.
-
-    Issue #136: the tilt columns are fetched in the SINGLE ``load_control_cells``
-    read instead of a second national parquet scan. When ``enabled`` is False the
-    input list is returned as an unchanged copy (OFF path byte-identical);
-    ``load_control_cells`` silently skips columns absent from the parquet, exactly
-    like the old raw-name mapping did.
-    """
-    out = list(load_cols)
-    if not enabled:
-        return out
-    for column in (_TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL):
-        if column not in out:
-            out.append(column)
-    return out
-
-
-def extract_tilt_cells(cells: pd.DataFrame) -> pd.DataFrame:
-    """Build the income-tilt working frame from the already-loaded cells frame.
-
-    Selects the cell id + the tilt columns (rent, Eigentuemerquote, HH weight,
-    ARS) that are present; absent optional columns stay absent, matching the old
-    raw-parquet mapping (the downstream code then warns and uses a neutral
-    index / uniform weight). The cells frame is already ZGB-filtered, so no
-    row filtering is needed (this replaces a full national-row parquet re-read).
-    """
-    if "ZENSUS100m" not in cells.columns:
-        raise ValueError(
-            "[popsim.stage] cells frame carries no 'ZENSUS100m' column; cannot "
-            "build the income-tilt cell frame from it."
-        )
-    columns = ["ZENSUS100m"] + [
-        c for c in (_TILT_RENT_COL, _TILT_QUOTE_COL, _TILT_HH_COL, _TILT_ARS_COL)
-        if c in cells.columns
-    ]
-    return cells[columns].copy()
 # Kreis-Income-Control: real MiD income draw + max-entropy per-Kreis calibration.
 # Default ON (project rule). When ON it OVERWRITES the apply_inkar_income_eur output
 # (build_persons) with a real continuous draw reshaped to the per-Kreis INKAR target.
