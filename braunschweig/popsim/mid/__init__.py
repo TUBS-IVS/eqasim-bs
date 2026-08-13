@@ -38,6 +38,10 @@ extracted so far:
                    ``MID_WEGE_REQUIRED_COLS``, ``load_mid_attributes``,
                    ``drop_invalid_households``, ``load_completed_donor``,
                    ``load_mid_wege``)
+    kreis_controls Tier-3 KREIS control tables (imported cleancensus kreis_*
+                   parquets) and per-batch Kreis apportionment
+                   (``merge_kreis_control_tables``, ``load_kreis_control_table``,
+                   ``resolved_kreis_per_cell``)
     participation  Participation-control seed derivation from the realised
                    weekday plan (``derive_trip_class_seed``,
                    ``compute_has_purpose_trip``, ``compute_has_work_trip``,
@@ -55,7 +59,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence, Union
+from typing import Iterable, Mapping, Sequence, Union
 
 import pandas as pd
 
@@ -105,6 +109,17 @@ from .donor import (  # noqa: F401  (re-exports)
     load_completed_donor,
     load_mid_attributes,
     load_mid_wege,
+)
+
+from . import kreis_controls
+from .kreis_controls import (  # noqa: F401  (re-exports)
+    Optional,
+    _KREIS_CONTROL_FILES,
+    _batch_kreis_apportion_weights,
+    _kreis_pop_from_crosswalk,
+    load_kreis_control_table,
+    merge_kreis_control_tables,
+    resolved_kreis_per_cell,
 )
 
 from . import participation
@@ -239,168 +254,8 @@ def _run_batches_and_merge(
 
 
 # --------------------------------------------------------------------------- #
-# Tier-3 KREIS control table (imported cleancensus kreis_* tables)
-# --------------------------------------------------------------------------- #
-
-_KREIS_CONTROL_FILES = (
-    "kreis_erwerbsstatus.parquet",
-    "kreis_schulabschluss.parquet",
-    "kreis_berufl_abschluss.parquet",
-)
-
-
-def merge_kreis_control_tables(
-    tables: Sequence[pd.DataFrame], *, key: str = "ARS_kreis"
-) -> pd.DataFrame:
-    """Merge the cleancensus per-topic kreis_* tables into one keyed by ``key``.
-
-    Each topic table (erwerbsstatus / schulabschluss / berufl_abschluss) carries
-    ``ARS_kreis`` + a label column (Name) + its STP source columns. They are
-    outer-joined on ``key``; duplicate non-key columns (e.g. Name) are kept once.
-    """
-    if not tables:
-        raise ValueError("merge_kreis_control_tables: no tables given.")
-    merged = tables[0].copy()
-    for table in tables[1:]:
-        dup = [c for c in table.columns if c != key and c in merged.columns]
-        merged = merged.merge(table.drop(columns=dup), on=key, how="outer")
-    return merged
-
-
-def load_kreis_control_table(
-    kreis_dir: Union[str, Path],
-    *,
-    files: Sequence[str] = _KREIS_CONTROL_FILES,
-    restrict_to_kreise: Optional[Iterable[str]] = None,
-) -> pd.DataFrame:
-    """Load + merge the imported Tier-3 kreis_* control tables from ``kreis_dir``.
-
-    Reads the per-topic parquets (employment / school / vocational education) and
-    merges them on ``ARS_kreis`` (re-padded to the 5-digit zero-padded string that
-    matches the crosswalk's KREIS = ARS[:5]) into one table whose columns are the
-    census_source classes the Tier-3 controls sum.
-
-    The committed cleancensus kreis_* tables span ALL German Kreise (~400 rows).
-    When ``restrict_to_kreise`` is given, the merged table is filtered to that set
-    (each entry normalised to the 5-digit zero-padded ARS the table stores) so the
-    accumulator carries only the rows the run actually looks up downstream, rather
-    than ~390 national rows that ``build_kreis_control_totals`` never reads
-    (issue #147; historically, before the KREIS-merge guard was scoped to the run's
-    Kreise, these carried national rows caused a guard false-positive). Kreise in
-    ``restrict_to_kreise`` that are absent from the
-    national table are simply not present in the result (no phantom rows); the
-    downstream per-Kreis target loaders fail-fast on a genuinely missing Kreis.
-    """
-    base = Path(kreis_dir)
-    tables: list[pd.DataFrame] = []
-    for name in files:
-        path = base / name
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Tier-3 kreis control table not found: {path}. Import the cleancensus "
-                "gemeinde_controls/kreis_* parquets into this directory first."
-            )
-        table = pd.read_parquet(path)
-        table["ARS_kreis"] = table["ARS_kreis"].astype(str).str.zfill(5)
-        tables.append(table)
-    merged = merge_kreis_control_tables(tables)
-    if restrict_to_kreise is not None:
-        wanted = {str(k).zfill(5) for k in restrict_to_kreise}
-        n_before = len(merged)
-        merged = merged[merged["ARS_kreis"].isin(wanted)].reset_index(drop=True)
-        logger.info(
-            "[popsim.mid] load_kreis_control_table: restricted national Tier-3 table "
-            "from %d to %d Kreis row(s) matching the run's %d Kreis(e) (issue #147).",
-            n_before, len(merged), len(wanted),
-        )
-    return merged
-
-
-# --------------------------------------------------------------------------- #
 # Folder assembly + orchestration
 # --------------------------------------------------------------------------- #
-
-
-def resolved_kreis_per_cell(
-    cells: pd.DataFrame,
-    *,
-    ars_col: str = _ARS_COLUMN,
-    weight_col: str = "POP_TOTAL_100m_adj",
-) -> pd.Series:
-    """Per-cell RESOLVED dominant Kreis (one dominant Kreis per 1 km parent).
-
-    Returns a Series aligned to ``cells.index`` giving each 100 m cell's resolved
-    Kreis, built from the identical region-wide crosswalk the batch backbone uses
-    (:func:`folders.build_geo_crosswalk` with ``resolve_parent_kreis=True`` and the
-    same ``POP_TOTAL_100m_adj`` weight). This is what ``folders.build_kreis_control_totals``
-    keys on, so grouping the per-Kreis attribute-control household/person totals by
-    this Series -- instead of the raw ``ARS[:5]`` -- makes the category targets
-    partition the SAME Kreis universe the 100 m backbone constrains (issue #147,
-    sub-item 1). A border cell whose 1 km parent's dominant Kreis differs from its
-    own ARS[:5] is attributed here to that dominant Kreis; region-wide per-Kreis
-    sums are unchanged because a 1 km parent is atomic to one Kreis after resolution.
-    """
-    xwalk = folders.build_geo_crosswalk(
-        cells,
-        id_col_100m="ZENSUS100m",
-        parent_col="ZENSUS1km",
-        ars_col=ars_col,
-        resolve_parent_kreis=True,
-        kreis_weight_col=weight_col,
-    )
-    kreis_of = xwalk.set_index(folders.GEO_100M)[folders.GEO_KREIS]
-    return cells["ZENSUS100m"].astype(str).map(kreis_of)
-
-
-def _kreis_pop_from_crosswalk(
-    cells_subset: pd.DataFrame,
-    geo_crosswalk: pd.DataFrame,
-    *,
-    weight_col: str = "POP_TOTAL_100m_adj",
-) -> dict[str, float]:
-    """Sum ``weight_col`` per RESOLVED dominant Kreis for the given cells.
-
-    Joins ``cells_subset`` (carrying ``ZENSUS100m`` + ``weight_col``) to the crosswalk's
-    resolved ``KREIS`` (one dominant Kreis per 1 km parent) and sums the weight per Kreis.
-    Keying on the crosswalk's resolved KREIS -- NOT raw ``ARS[:5]`` -- keeps this aligned
-    with :func:`folders.build_kreis_control_totals` (which keys on the same resolved
-    Kreis), so a boundary cell reassigned to its parent's dominant Kreis contributes its
-    population to that SAME Kreis here. Because the dominant Kreis is resolved per 1 km
-    parent and a parent is atomic to one batch, summing these per-batch dicts over all
-    batches reproduces the region-wide per-Kreis total exactly.
-    """
-    kreis_of = geo_crosswalk.set_index(folders.GEO_100M)[folders.GEO_KREIS]
-    work = pd.DataFrame(
-        {
-            folders.GEO_KREIS: cells_subset["ZENSUS100m"].astype(str).map(kreis_of),
-            "_w": pd.to_numeric(cells_subset[weight_col], errors="coerce").fillna(0.0).to_numpy(),
-        }
-    )
-    grouped = work.groupby(folders.GEO_KREIS, sort=False)["_w"].sum()
-    return {str(k): float(v) for k, v in grouped.items()}
-
-
-def _batch_kreis_apportion_weights(
-    cells_subset: pd.DataFrame,
-    geo_crosswalk: pd.DataFrame,
-    kreis_total_pop: Mapping[str, float],
-    *,
-    weight_col: str = "POP_TOTAL_100m_adj",
-) -> dict[str, float]:
-    """This batch's population share of each Kreis (for KREIS-marginal apportionment).
-
-    ``weight = batch_kreis_pop / kreis_total_pop`` per Kreis; a Kreis with zero (or
-    missing) region-wide total gets weight 0 (guard divide-by-zero -- no population
-    means no share to target). Summed over batches these shares equal 1 per Kreis
-    (the batch pops partition the region-wide total), so the apportioned KREIS
-    marginals reproduce the full marginal.
-    """
-    batch_pop = _kreis_pop_from_crosswalk(cells_subset, geo_crosswalk, weight_col=weight_col)
-    weights: dict[str, float] = {}
-    for kreis, pop in batch_pop.items():
-        total = float(kreis_total_pop.get(kreis, 0.0))
-        weights[kreis] = (pop / total) if total > 0 else 0.0
-    return weights
 
 
 def assemble_batch_folder(
