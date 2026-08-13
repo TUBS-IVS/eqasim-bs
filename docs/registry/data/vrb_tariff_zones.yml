@@ -1,0 +1,31 @@
+dataset: vrb_tariff_zones
+title: VRB tariff zones (Verkehrsverbund Region Braunschweig)
+inventory_id: H2
+provider: VRB
+vintage: null
+geography: null
+crs: null
+roles:
+- supply_input
+used_by:
+- braunschweig.data.vrb.zones
+acquisition:
+  method: scrape
+  source: https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen
+  script: scripts/build_vrb_stations_json.py
+storage:
+  expected_path: eqasim-data/data/vrb/tarifzonen.html -> vrb/stations.json
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: VRB terms
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: Feeds the OeV fare module of the Java simulation.

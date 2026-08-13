@@ -1,0 +1,31 @@
+dataset: genesis_svb_residence
+title: GENESIS 13111-06-02-4 SvB at residence (Kreis x sex x age)
+inventory_id: C1
+provider: Regionalstatistik / BA
+vintage: annual, 30.06. reference day
+geography: Germany, Kreis
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.employment
+acquisition:
+  method: manual_download
+  source: https://www.regionalstatistik.de/genesis/online (code 13111)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/13111-06-02-4.xlsx
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B2
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: SvB only (no civil servants/self-employed).
+notes: null

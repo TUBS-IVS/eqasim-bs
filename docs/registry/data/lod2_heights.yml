@@ -1,0 +1,31 @@
+dataset: lod2_heights
+title: LGLN LoD2 3D building model (heights)
+inventory_id: F5
+provider: LGLN
+vintage: null
+geography: null
+crs: null
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.buildings
+acquisition:
+  method: manual_download
+  source: https://opengeodata.lgln.niedersachsen.de (LoD2 tiles)
+  script: scripts/preprocess_lod2_heights.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/ (preprocessed into the buildings parquet)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/zero-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Volume-weighted dwelling capacity + MFH typing (ADR-0009).

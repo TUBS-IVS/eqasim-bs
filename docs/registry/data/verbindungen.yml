@@ -1,0 +1,36 @@
+dataset: verbindungen
+title: VerBindungen traffic cells + commuter OD (BMDV research project)
+inventory_id: A5
+provider: BMDV / DESTATIS via mobilithek.info
+vintage: Gebietsstand 2019-12-31 (one-off project result)
+geography: Germany, 3189 traffic cells
+crs: EPSG:4326 -> EPSG:25832
+roles:
+- validation_reference
+- calibration_target
+- spatial_input
+used_by:
+- braunschweig.data.verbindungen.margins
+- braunschweig.data.verbindungen.work_od
+- braunschweig.data.verbindungen.zones
+acquisition:
+  method: auto_script
+  source: https://mobilithek.info (offer 'VerBindungen')
+  script: scripts/download_verbindungen.py
+storage:
+  expected_path: eqasim-data/data/verbindungen/
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: LICENSE_FREE_USE_OPEN_DATA
+  restricted: false
+  redistribution: allowed
+limitations: Cell layout differs from the RVB zoning; join via AGS.
+notes: Zones + QZM commuter OD + SvB/aGeB margins; sub-Kreis validation reference (#124) and inner
+  calibration anchor (#193).

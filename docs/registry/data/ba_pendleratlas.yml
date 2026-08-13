@@ -1,0 +1,35 @@
+dataset: ba_pendleratlas
+title: BA Pendleratlas commuter flows (Ein-/Auspendler, Kreis OD)
+inventory_id: C4
+provider: Bundesagentur fuer Arbeit
+vintage: Gebietsstand 06/2025, data 01/2026
+geography: Kreis -> Kreis OD
+crs: null
+roles:
+- calibration_target
+- control
+used_by:
+- braunschweig.data.census.pendler
+- braunschweig.data.external_workplaces
+- braunschweig.synthesis.incommuters
+acquisition:
+  method: manual_download
+  source: https://statistik.arbeitsagentur.de (Pendleratlas, krpend)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/statistik_pendler_2026042493412.csv (+ ...93430.csv)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B5a
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: BA terms
+  restricted: false
+  redistribution: restricted
+limitations: SvB only, Kreis level, register-based potential commuters (no home-office adjustment).
+notes: Gravity IPF calibration target AND the volume frame of the cordon in-commuter injection;
+  the Auspendler file builds the external workplace pool.

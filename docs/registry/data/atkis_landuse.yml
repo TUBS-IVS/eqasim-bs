@@ -1,0 +1,32 @@
+dataset: atkis_landuse
+title: ATKIS Basis-DLM landuse (FS_LN_03)
+inventory_id: F2
+provider: LGLN
+vintage: null
+geography: Niedersachsen
+crs: EPSG:25832
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.landuse
+acquisition:
+  method: manual_download
+  source: https://opengeodata.lgln.niedersachsen.de ('ATKIS Basis-DLM')
+  script: scripts/preprocess_alkis_landuse.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/landuse/FS_LN_03_NI_260101.zip -> braunschweig/preprocessed/landuse.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: C2
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/zero-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Secondary activity substrate; SrV landuse-point seeding (#262) draws green/open-space candidates
+  from it.

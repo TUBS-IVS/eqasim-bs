@@ -1,0 +1,30 @@
+dataset: lsn_bbs_share_by_age
+title: NDS BBS share by age (committed control table)
+provider: derived in-repo from LSN
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+used_by:
+- braunschweig.data.education.student_share
+acquisition:
+  method: committed
+  source: regenerated via scripts/extract_bbs_share_by_age.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/nds_bbs_share_by_age.csv
+  committed: false
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0 (source)
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: null

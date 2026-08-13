@@ -1,0 +1,34 @@
+dataset: german_wide_freight_v3
+title: VSP german-wide-freight v3 (plans + DE/EU routing network)
+inventory_id: J1
+provider: TU Berlin VSP
+vintage: v3 (Lu et al. 2022)
+geography: Germany + European corridors
+crs: EPSG:25832
+roles:
+- supply_input
+- network
+- assumption_basis
+used_by:
+- braunschweig.data.freight.german_wide
+acquisition:
+  method: auto_script
+  source: https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/german-wide-freight/v3/
+  script: scripts/download_german_wide_freight.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/freight/german-wide-freight-v3/
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: VSP/MATSim open data (CC BY-NC-ND publication)
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Exogenous long-haul HGV demand; the injection is explicitly NOT calibrated against BASt
+  counts (freight assumptions are labelled).

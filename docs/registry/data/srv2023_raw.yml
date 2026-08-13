@@ -1,0 +1,32 @@
+dataset: srv2023_raw
+title: SrV 2023 city extension study Braunschweig + RGB (trip records)
+inventory_id: E5.1
+provider: TU Dresden / Stadt BS / RGB
+vintage: 2023 survey year
+geography: Stadt Braunschweig + RGB region
+crs: null
+roles:
+- calibration_target
+- validation_reference
+used_by: []
+acquisition:
+  method: restricted_delivery
+  source: Non-public delivery (SrV 2023 Aufstockung BS+RGB)
+  script: scripts/derive_srv_location_types.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/ (raw SUF local-only)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: scientific use, not redistributable
+  restricted: true
+  redistribution: forbidden
+limitations: null
+notes: 'Source of the committed srv2023_* aggregates: per-Kreis participation targets (#224, ADR-0055/0060),
+  escort destination types (#201), secondary location types (#262).'

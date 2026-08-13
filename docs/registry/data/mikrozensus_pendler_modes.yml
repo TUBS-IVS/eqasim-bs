@@ -1,0 +1,32 @@
+dataset: mikrozensus_pendler_modes
+title: Mikrozensus 2024 commuter mode/distance/time tables
+inventory_id: E7
+provider: DESTATIS
+vintage: '2024'
+geography: null
+crs: null
+roles:
+- validation_reference
+- calibration_target
+used_by:
+- braunschweig.synthesis.incommuters
+acquisition:
+  method: auto_script
+  source: https://www-genesis.destatis.de (Mikrozensus Pendler tables)
+  script: scripts/download_mikrozensus_pendler.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mikrozensus/mikrozensus2024_*.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Cordon mode balancer reference (in-commuter mode split, ADR-0063).

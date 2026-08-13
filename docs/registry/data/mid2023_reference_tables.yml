@@ -1,0 +1,36 @@
+dataset: mid2023_reference_tables
+title: Committed MiD 2023 aggregate reference tables
+inventory_id: E4
+provider: derived in-repo from MiD 2023 sources
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+- validation_reference
+- calibration_target
+used_by:
+- braunschweig.data.mid.data
+- braunschweig.data.mid.references
+- synthesis.population.spatial.commute_distance
+acquisition:
+  method: committed
+  source: regenerated via scripts/extract_mid_*.py + scripts/seed_mid_*.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_*.csv
+  committed: false
+  local_only: false
+verification:
+  verifier_entry: B10a
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed)
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: 'The only MiD content in the repository: small aggregate tables (P9/P12.1/P13/P17.1/P24.1/T43/W1/W12/H4/H7...)
+  that every reference comparison and CDF override reads.'

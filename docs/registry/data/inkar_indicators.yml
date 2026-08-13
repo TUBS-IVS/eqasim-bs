@@ -1,0 +1,30 @@
+dataset: inkar_indicators
+title: BBSR INKAR additional indicators (density, unemployment, ...)
+inventory_id: D2
+provider: BBSR INKAR
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://www.inkar.de
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/E_*.xls
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B9
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: null

@@ -1,0 +1,31 @@
+dataset: kba_fz_registrations
+title: KBA FZ 27 / FZ 12.1 / EV time series / Regionalstatistik 46251
+inventory_id: I1
+provider: Kraftfahrt-Bundesamt / Regionalstatistik
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://www.kba.de (FZ tables) + https://www.regionalstatistik.de (46251)
+  script: scripts/extract_kba_fleet.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/kba/{fz27_202501.xlsx,fz12_2025.xlsx,raw/}
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: KBA terms / dl-de/by-2-0
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: Raw sources of the committed kba/derived tables (fleet segment/brand mix, powertrains,
+  Gemeinde BEV shares).

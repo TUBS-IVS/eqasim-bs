@@ -1,0 +1,33 @@
+dataset: vg250_ew
+title: VG250-EW administrative boundaries with population (BKG)
+inventory_id: A1
+provider: BKG
+vintage: annual edition, Gebietsstand 31.12.
+geography: Germany, Gemeinde/Kreis polygons
+crs: EPSG:25832
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.cordon_gemeinden
+- data.spatial.departments
+- data.spatial.municipalities
+acquisition:
+  method: manual_download
+  source: https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete/
+  script: null
+storage:
+  expected_path: eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: A1
+requirements:
+  synthesis: required
+  matsim: required
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: Population only at Gemeinde level; the Zensus grid is finer.
+notes: null

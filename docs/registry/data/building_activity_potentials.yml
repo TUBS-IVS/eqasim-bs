@@ -1,0 +1,32 @@
+dataset: building_activity_potentials
+title: Building-level activity potentials (TUBS-IVS pipeline)
+inventory_id: F4
+provider: TUBS-IVS Activities-and-Potentials-Calculation-Pipeline
+vintage: null
+geography: null
+crs: null
+roles:
+- derived_input
+used_by:
+- braunschweig.data.building_potentials
+acquisition:
+  method: derived
+  source: separate TUBS-IVS pipeline (LLM/volume/Bosserhof classification)
+  script: scripts/import_building_activity_potentials.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/buildings/building_activity_potentials.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: derived from dl-de/zero-2-0 + ODbL
+  restricted: false
+  redistribution: restricted
+limitations: Modelled weights, not observed headcounts; aggregate references (GENESIS SvB, LSN)
+  stay authoritative (ADR-0025).
+notes: null

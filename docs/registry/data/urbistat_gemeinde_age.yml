@@ -1,0 +1,33 @@
+dataset: urbistat_gemeinde_age
+title: urbistat Gemeinde population by age class (web scrape)
+inventory_id: B2
+provider: Urbistat S.r.l.
+vintage: null
+geography: ZGB-8, Gemeinde
+crs: null
+roles:
+- derived_input
+used_by:
+- braunschweig.data.census.population
+acquisition:
+  method: scrape
+  source: https://urbistat.com (AdminStat tables)
+  script: scripts/scrape_urbistat_bs.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/urbistat_age_gemeinden.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B1b
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: urbistat terms (non-official)
+  restricted: false
+  redistribution: forbidden
+limitations: Non-official scrape used ONLY as a Gemeinde-within-Kreis share key in the legacy
+  IPF; the official replacement (Zensus 1000A-3082, use_zensus_gemeinde_shares) is implemented
+  but not activated in any committed config (see docs/codebase/CONCERNS.md).
+notes: null

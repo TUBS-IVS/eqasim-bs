@@ -1,0 +1,32 @@
+dataset: cleancensus_kreis_controls
+title: cleancensus Kreis control tables (employment, degrees)
+inventory_id: B6
+provider: TUBS-IVS cleancensus (from Zensus 2022)
+vintage: '2022-05-15'
+geography: Germany (ZGB used), Kreis (ARS-5)
+crs: null
+roles:
+- control
+used_by:
+- data.census.filtered
+acquisition:
+  method: derived
+  source: https://github.com/TUBS-IVS/cleancensus
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/kreis_controls/
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0 (source data)
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: 'Tier-3 controls and the employment-grid level; required by control_tiers ...tier3 and
+  employment_grid: on.'

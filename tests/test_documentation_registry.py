@@ -102,3 +102,39 @@ def test_stage_code_paths_exist():
         for path in record["code"]:
             assert os.path.exists(os.path.join(REPO_ROOT, path)), (
                 f"{record['stage']}: code path missing: {path}")
+
+
+def test_data_registry_parses_and_covers_every_stage_input():
+    datasets = {record["dataset"] for record in registries.load_data(REPO_ROOT)}
+    assert len(datasets) >= 52
+    for record in registries.load_stages(REPO_ROOT):
+        for dataset in record.get("inputs") or []:
+            assert dataset in datasets, (
+                f"{record['stage']}: unknown dataset reference '{dataset}'")
+
+
+def test_data_registry_used_by_references_resolve():
+    stage_ids = {record["stage"] for record in registries.load_stages(REPO_ROOT)}
+    for record in registries.load_data(REPO_ROOT):
+        for stage in record.get("used_by") or []:
+            assert stage in stage_ids, (
+                f"{record['dataset']}: unknown stage reference '{stage}'")
+
+
+def test_data_registry_verifier_entries_resolve():
+    """Every declared verifier_entry must match an Input name prefix of the
+    canonical input verifier, so the registry and the preflight stay in sync."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "verify_braunschweig_inputs",
+        os.path.join(REPO_ROOT, "scripts", "verify_braunschweig_inputs.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    prefixes = {entry.name.split()[0] for entry in module.INPUTS}
+    for record in registries.load_data(REPO_ROOT):
+        entry = (record.get("verification") or {}).get("verifier_entry")
+        if entry:
+            assert entry in prefixes, (
+                f"{record['dataset']}: verifier_entry '{entry}' does not match any "
+                "Input name prefix in scripts/verify_braunschweig_inputs.py")

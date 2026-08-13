@@ -1,0 +1,32 @@
+dataset: mid2023_regional_report
+title: MiD 2023 regional report Grossraum Braunschweig (infas 7555)
+inventory_id: E2.1
+provider: infas / BMDV
+vintage: null
+geography: null
+crs: null
+roles:
+- validation_reference
+- calibration_target
+used_by: []
+acquisition:
+  method: restricted_delivery
+  source: Non-public delivery (regional report tables)
+  script: scripts/extract_mid_tables.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/ (source PDFs local-only)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B10
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: not redistributable
+  restricted: true
+  redistribution: forbidden
+limitations: null
+notes: Source of the committed aggregate reference tables (mid2023_reference_tables); only the
+  small derived CSVs are committed.

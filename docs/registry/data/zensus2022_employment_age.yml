@@ -1,0 +1,30 @@
+dataset: zensus2022_employment_age
+title: Zensus 2022 2000S-2001 employed persons by age group
+inventory_id: B7
+provider: Statistische Aemter
+vintage: '2022-05-15'
+geography: Kreis (exact for kreisfreie Staedte)
+crs: null
+roles:
+- control
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://ergebnisse.zensus2022.de
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: Landkreise fall back to the national age structure (documented fallback in braunschweig/popsim/zensus_employment_age.py).
+notes: null
