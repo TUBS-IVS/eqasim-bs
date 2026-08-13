@@ -224,7 +224,7 @@ append, same-cell resample fallback) that the legacy path does not have.
 
 ### popsim package (braunschweig/popsim/, 27 modules)
 
-`stage.py` (producer stage) -> `mid.py` (orchestration: filter ZGB cells ->
+`stage.py` (producer stage) -> `mid/` (orchestration: filter ZGB cells ->
 control totals -> seed -> `batch.py` greedy 1-km-atomic bin-packing ->
 PopulationSim subprocess per batch via `uv` -> `merge.py` cell-disjoint merge) ->
 `expand.py`/`assembly.py` (households -> donor persons, attribute mapping,
@@ -233,6 +233,23 @@ round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
 `seed_columns/load_donor/map_person_attributes/build_trips`). Income:
 `income.py::apply_inkar_income_eur` — one INKAR per-Kreis scaling + one
 `high_income >= 5000 EUR` rule for BOTH popsim sources (commit a8cce14).
+
+`mid/` (formerly one ~1900-line `mid.py`) is a helper package since #267: a pure
+facade `__init__.py` (imports + the `MID_SEED_COLUMNS` alias + re-export
+blocks only, no logic) plus eight submodules — `batch_folders`, `control_cells`,
+`csv_format`, `donor`, `donor_stratification`, `kreis_controls`,
+`participation`, `seed_loading` — see STRUCTURE.md for one-line purposes.
+`donor_stratification` was named `stratum` until it was renamed (#267) to end
+an exact-filename collision with the pre-existing, unrelated-in-content
+`braunschweig.popsim.stratum` module (Phase-4A stratum-KEY mapping). Unlike the
+`secondary_chainsolvers` / `enriched` stage packages, `mid` is a helper
+library, not a synpp stage: it has no `configure`/`execute`/`validate()` of
+its own and is called directly from `stage.py`. Cache-neutrality: no synpp
+stage currently content-hashes `mid`'s source, so this split cannot devalidate
+any cache entry; the pre-existing gap it leaves open (`stage.py` lacks a
+`validate()` over its `mid` helper, so editing `mid` alone never invalidates
+the cache) is scheduled to close when `popsim/stage.py` itself is split
+(issue #267, module 3).
 
 ### Trip/vocabulary convergence
 

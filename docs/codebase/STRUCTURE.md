@@ -232,9 +232,28 @@ braunschweig/population/   Method selector + contract
   schema.py                unified persons/households output contract
 braunschweig/popsim/       PopulationSim workflow (27 modules)
   stage.py                 synpp producer stage (replaces data.census.filtered)
-  mid.py                   orchestration (cells -> controls -> seed -> batches -> merge)
+  mid/                     orchestration package (split #267; pure facade
+                           __init__.py -- helper library, NOT a synpp stage,
+                           so no configure/execute/validate() -- + re-exports
+                           of every submodule below); cells -> controls ->
+                           seed -> batch_folders -> merge
+    batch_folders.py       Batch FOLDER assembly + PopulationSim runner (NOT
+                           the parent `batch.py` below -- one character apart
+                           on purpose: that module bin-packs cells INTO
+                           batches; this one writes each batch's PopulationSim
+                           run-folder contents and invokes that runner)
+    control_cells.py       control-cell loading, ZGB filtering, control totals
+    csv_format.py          MiD CSV field-separator detection
+    donor.py               MiD donor attribute + Wege (trip) table loading
+    donor_stratification.py RegioStaR donor stratification (Phase 4B)
+    kreis_controls.py      Tier-3 KREIS control tables + per-batch apportionment
+    participation.py       participation-control seed derivation
+    seed_loading.py        consistent MiD seed load + completed-donor projection
   cells.py prepared_cells.py control_spec.py controls.py seed.py
-  batch.py merge.py        1-km-atomic bin-packing; cell-disjoint merge
+  batch.py merge.py        1-km-atomic bin-packing of cells INTO batches (the
+                           parent module `mid/batch_folders.py` above calls
+                           this one -- distinct module, distinct job); merge.py
+                           does the cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
   sources/{base,mid,entd}.py             donor adapter Protocol + 2 sources
   trips.py trips_stage.py plan_validation.py   MiD Wege -> eqasim trips + repair
@@ -243,6 +262,24 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
   income.py                unified INKAR scaling + high_income >= 5000 EUR
   missing.py stratum.py enriched_adapter.py
 ```
+
+Note: `popsim/stratum.py` (top-level, above; Phase-4A stratum-KEY mapping,
+e.g. `cell_urban_class_from_rs7`) and `popsim/mid/donor_stratification.py`
+(Phase-4B dominant-stratum + seed filtering) cover the same feature area
+(RegioStaR donor stratification) but are distinct modules; the `mid`
+submodule was named `stratum.py` until issue #267 renamed it to end an
+exact-filename collision between the two.
+
+Cache-neutrality of the `mid/` split: unlike the `secondary_chainsolvers` /
+`enriched` stage packages (each with its own `validate()`), `mid` is a plain
+helper library called from `stage.py`, not itself a synpp stage -- no synpp
+stage currently content-hashes `mid`'s source, so the split from one module
+into eight submodules cannot devalidate any cache entry. The pre-existing gap
+this leaves untouched (`stage.py` has no `validate()` hashing its `mid`
+helper, so editing `mid` alone never invalidates the cache) is a known
+helper-trap scheduled to be closed when `popsim/stage.py` is split (issue
+#267, module 3), which is expected to add that `validate()` over the whole
+`mid` package.
 
 New configs (worktree): `config_popsim_mid_braunschweig.yml`,
 `config_popsim_open_braunschweig.yml`, `config_smoke_{simple_ipf,popsim_mid,
