@@ -1,10 +1,15 @@
 # STRUCTURE
 
-> **Staleness note (2026-06-26):** reflects the 2026-06-08 layout. New since then:
+> **Do not hand-maintain trees here (2026-08-13, ADR-0077):** the authoritative
+> stage inventory is `docs/generated/STAGES.md` (from `docs/registry/stages/`),
+> the pipeline `docs/generated/PIPELINE.md`, active state
+> `docs/generated/STATUS.md`; open work lives in GitHub issues. This file keeps
+> package-layout conventions and entry points; dated trees below are snapshots.
+
+> **Staleness note (2026-06-26, historical):** reflects the 2026-06-08 layout. New since then:
 > `braunschweig/calibration/` (calibration corner — on `worktree-calibration-corner`),
 > `braunschweig/data/building_potentials.py`, `braunschweig/popsim/{distance_distributions,
-> shop_subtype}.py`, `braunschweig/analysis/popsim_validation/`. Current feature
-> state: see ARCHITECTURE.md banner; open work: see CONCERNS.md banner.
+> shop_subtype}.py`, `braunschweig/analysis/popsim_validation/`.
 
 Directory layout and entry points for `eqasim-bs`. Verified from the directory
 tree (`docs/codebase/.codebase-scan.txt`) and direct listings.

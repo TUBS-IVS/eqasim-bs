@@ -785,11 +785,14 @@ def check_no_retired_dependencies(context: CheckContext) -> List[Finding]:
                                                 f"code references the retired "
                                                 f"{target}"))
     for scope in _D6_SCOPES:
-        text = context.read_repo_text(scope)
+        lines = context.read_repo_text(scope).splitlines()
         for target in _D6_TARGETS:
-            for line in text.splitlines():
-                if target in line and "retired" not in line.lower() \
-                        and "archive" not in line.lower():
+            for index, line in enumerate(lines):
+                if target not in line:
+                    continue
+                # sentences wrap: judge the mention in a one-line-each-side window
+                window = " ".join(lines[max(0, index - 1):index + 2]).lower()
+                if not any(word in window for word in ("retired", "archive", "stub")):
                     findings.append(Finding(scope, "D6-retired", WARN,
                                             f"still points at {target} without "
                                             f"marking it retired: {line.strip()[:90]}"))

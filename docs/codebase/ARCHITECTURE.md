@@ -1,9 +1,15 @@
 # ARCHITECTURE
 
-> **CURRENT STATE — 2026-06-26 (read this first).** The sections below dated
+> **Current state is GENERATED, not maintained here (2026-08-13, ADR-0077):**
+> the actual pipeline is `docs/generated/PIPELINE.md`, stage semantics/lineage
+> `docs/generated/STAGES.md` + `docs/registry/stages/`, active feature state
+> `docs/generated/STATUS.md`, the 10-minute model `docs/MODEL_OVERVIEW.md`.
+> This file keeps DURABLE architecture concepts and dated historical snapshots;
+> do not read any dated section below as current.
+
+> **CURRENT STATE — 2026-06-26 (historical snapshot).** The sections below dated
 > 2026-06-08/10 are HISTORICAL (they describe the `feature/education-gravity-bs`
-> / popsim-refactor era). This banner block reflects the actual current state.
-> Authoritative source remains `CLAUDE.md`.
+> / popsim-refactor era).
 
 ## Feature inventory — what was implemented in the last weeks (verified from `git log --all`)
 

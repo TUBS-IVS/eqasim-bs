@@ -1,9 +1,10 @@
 # Onboarding — eqasim-bs
 
 > A durable entry point for a new contributor (human or a fresh Claude session) to pick up
-> the work with full context. For the *live* feature/branch state see
-> [../PROJECT_STATUS.md](../PROJECT_STATUS.md); for the *why* behind each decision see
-> [DECISIONS.md](DECISIONS.md); for binding rules + deep feature detail see
+> the work with full context. For the *live* feature state see
+> [generated/STATUS.md](generated/STATUS.md) (generated; retired dashboard stubs:
+> PROJECT_STATUS.md/PROJECT_BACKLOG.md); for the *why* behind each decision see
+> [decisions/](decisions/); for binding rules + deep feature detail see
 > [../CLAUDE.md](../CLAUDE.md) and [features/](features/).
 
 ## 1. What this project is
@@ -83,11 +84,14 @@ A **1% smoke** is the intended fast end-to-end test vehicle before claiming a st
 | Doc | Purpose |
 |---|---|
 | `CLAUDE.md` | Binding rules + working discipline (authoritative) |
-| `docs/features/*` | Deep per-feature detail (split out of CLAUDE.md) |
-| `PROJECT_STATUS.md` | At-a-glance feature/branch dashboard (live state) |
-| `PROJECT_BACKLOG.md` | Ranked open/partial/dropped work |
-| `docs/DECISIONS.md` | ADR log — the *why*, commit/PR-linked, back to the bavaria baseline |
-| `RUNS.md` | Simulation run ledger |
+| `docs/DOCUMENTATION_GOVERNANCE.md` | Who owns which fact (registry system) |
+| `docs/MODEL_OVERVIEW.md` | The 10-minute scientific model overview |
+| `docs/generated/STATUS.md` | What is active NOW (generated — never edit) |
+| `docs/registry/{features,stages,data}/` | Feature / Stage / Data registries (maintained sources) |
+| `docs/decisions/` | One ADR file per decision — the *why*, back to the bavaria baseline |
+| `docs/runs/` | One manifest per significant run (validation evidence) |
+| `docs/features/*` | Deep per-feature scientific detail (no live state) |
+| GitHub issues (fork) | The only backlog (`PROJECT_STATUS.md`/`PROJECT_BACKLOG.md` are retired stubs) |
 | `docs/UPSTREAM_DELTA.md` | What eqasim-bs adds vs. eqasim-bavaria |
 | `CONTRIBUTING.md` | The canonical feature workflow + human contract |
 | `docs/codebase/` | Architecture, structure, stack, conventions, integrations, testing, concerns |
