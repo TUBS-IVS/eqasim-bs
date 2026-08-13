@@ -28,9 +28,9 @@ structural PopulationSim orchestration.
 
 Package layout (issue #267 split; formerly one ~1900-line module, itself the
 rename of the legacy ``stage.py``): this ``__init__`` is the synpp stage
-(``configure``/``execute``) and re-exports every extracted submodule name, so
-external imports of the stage module path keep working unchanged. Submodules
-extracted so far:
+(``configure``/``execute``/``validate``) and re-exports every extracted submodule
+name, so external imports of the stage module path keep working unchanged.
+Submodules extracted so far:
 
     config_keys   All ``KEY_*`` config-key constants (all under
                   ``braunschweig.population.popsim.*``) plus the
@@ -71,10 +71,27 @@ extracted so far:
                   work-dir batch-input signature
                   (``compute_batch_config_signature``, backed by
                   ``_frame_content_signature``).
+
+``validate()`` hashes the sources of every helper module this stage's result
+depends on -- this package's own submodules AND every module of the
+``braunschweig.popsim.mid`` helper package (its ``__init__`` plus its eight
+submodules) -- into the synpp validation token, because synpp's
+``get_stage_hash`` covers only THIS file's source: without the hook a change
+confined to a helper devalidates nothing and the stale cached stage output is
+silently reused.
+
+DELIBERATE BEHAVIOUR CHANGE (issue #267): this stage previously had NO
+``validate()`` at all, so it carried no validation token. Adding one is a
+one-off cache event -- synpp sees a token where there was none, so the FIRST run
+after this change recomputes this stage and everything downstream exactly once.
+Every run after that is cache-stable again, and from then on a helper-only edit
+correctly recomputes the stage instead of silently reusing stale output.
 """
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -101,18 +118,40 @@ from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
+# The eight submodules of the braunschweig.popsim.mid helper package, imported
+# EXPLICITLY (never via dir() or a glob) so their sources participate in the
+# synpp validation token built by validate() below. The package itself is
+# already imported above as ``mid``; only these submodule bindings are new.
+# The ``_mid_`` prefix is deliberate: it keeps every alias clear of the stage
+# facade's re-exported names (e.g. the sibling top-level ``batch`` /
+# ``prepared_cells`` modules and ``_kreis_controls_map``), which some of these
+# submodule names come close to.
+from braunschweig.popsim.mid import batch_folders as _mid_batch_folders
+from braunschweig.popsim.mid import control_cells as _mid_control_cells
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
+from braunschweig.popsim.mid import donor as _mid_donor
+from braunschweig.popsim.mid import donor_stratification as _mid_donor_stratification
+from braunschweig.popsim.mid import kreis_controls as _mid_kreis_controls
+from braunschweig.popsim.mid import participation as _mid_participation
+from braunschweig.popsim.mid import seed_loading as _mid_seed_loading
+
 # ---------------------------------------------------------------------------
 # Package submodules (extracted stage sections). Every name is re-exported
 # here so external consumers (calibration scripts, tests) keep importing from
 # the stage module path unchanged.
+# Each submodule MUST also be listed in _HELPER_MODULES below so its source
+# participates in the synpp cache-validation token.
 # ---------------------------------------------------------------------------
 
 from . import batch_cache
+# ``hashlib`` is NOT re-exported from batch_cache any more: validate() below
+# needs it directly, so it is imported from the standard library at the top of
+# this file (as the pre-split module did). The module-level ``hashlib`` name --
+# and hence the namespace seen by consumers -- is the same object either way.
 from .batch_cache import (  # noqa: F401  (re-exports)
     WORK_DIR_SIGNATURE_FILE,
     _frame_content_signature,
     compute_batch_config_signature,
-    hashlib,
     json,
     purge_stale_batches_on_config_change,
     shutil,
@@ -198,6 +237,70 @@ from .tilt_columns import (  # noqa: F401  (re-exports)
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# synpp cache validation
+# ---------------------------------------------------------------------------
+
+# Every helper module whose source can change this stage's RESULT: the six
+# submodules extracted from this package, plus the whole
+# ``braunschweig.popsim.mid`` package (its ``__init__`` -- imported above as
+# ``mid`` -- and its eight submodules), which carries the seed / donor / control
+# / batch-folder logic execute() orchestrates.
+#
+# synpp's get_stage_hash only hashes THIS file's source, so without the
+# validate() hook below a change confined to any of these helpers would
+# silently reuse the stale cached stage output on a partial rerun. Listed
+# EXPLICITLY (never dir() / globbing) so dropping a module is a visible diff,
+# and iterated in the order written so the digest is deterministic.
+# Every module extracted from this package MUST be listed here.
+_HELPER_MODULES = (
+    # this package's submodules
+    batch_cache,
+    cell_attributes,
+    config_keys,
+    controls_builder,
+    source_resolution,
+    tilt_columns,
+    # the braunschweig.popsim.mid helper package: __init__ + its submodules
+    mid,
+    _mid_batch_folders,
+    _mid_control_cells,
+    _mid_csv_format,
+    _mid_donor,
+    _mid_donor_stratification,
+    _mid_kreis_controls,
+    _mid_participation,
+    _mid_seed_loading,
+)
+
+
+def validate(context):
+    """synpp validation token: md5 over every helper module's source.
+
+    synpp stores the value returned here alongside the cached stage output and
+    devalidates that cache when the value changes, so a helper-only source
+    change recomputes the stage exactly like an edit to this file. The hook is
+    needed because synpp's ``get_stage_hash`` hashes ONLY the stage module's own
+    source (``inspect.getsource`` of this file): without it, an edit to one of
+    this package's submodules or to a ``braunschweig.popsim.mid`` module -- i.e.
+    to the code that actually builds the seed, controls and batches -- would
+    leave the token unchanged and the stale cached output would be reused
+    silently.
+
+    This stage had NO ``validate()`` before issue #267, so it carried no token
+    at all; gaining one is a deliberate, documented one-off recompute of this
+    stage and everything downstream (see the module docstring).
+
+    ``_HELPER_MODULES`` is iterated in the order written -- not a set, not
+    ``dir()`` output -- so the digest is reproducible across processes and
+    platforms. ``context`` is unused: the token depends on source text only.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):
