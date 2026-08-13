@@ -40,9 +40,10 @@ evidence:
       OFF on a hardlinked cache copy (purpose mix byte-identical, 0.0000pp).
   fallback_rate:
     instrumented: true
-    log_marker: '[srv-location]'
-    note: Marginal-fallback shares are logged per category (leisure 1.2% / other 17.1% on the
-      5% A/B, below the 20% warn threshold).
+    log_marker: srv location draw
+    note: Draw-share deviations vs the pinned SrV references are logged per category with a WARNING
+      at/above srv_location_share_warn_pp; the chainsolver primary/fallback split is logged separately
+      ([braunschweig.secondary_chainsolvers] primary/fallback split).
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv
