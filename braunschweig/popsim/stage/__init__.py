@@ -38,6 +38,16 @@ extracted so far:
                   ``load_control_cells`` read, and builds the tilt working
                   frame from the already-loaded cells (``tilt_extra_load_columns``,
                   ``extract_tilt_cells``).
+    source_resolution
+                  Donor-source resolution (``_resolve_source``, a thin factory
+                  wrapper around ``braunschweig.popsim.sources.get_source``) and
+                  KREIS attribute-control activation (``active_kreis_entries``,
+                  MiD-only). Its facade import is placed further down this file
+                  (not with the block above) because ``active_kreis_entries``
+                  needs the ``_KREIS_CONTROL_TOGGLE_KEY`` lookup table, which
+                  stays defined here (it maps REGISTRY entry names to several
+                  ``KEY_*`` config constants ``configure`` also reads directly),
+                  imported back into the submodule after that dict exists.
 """
 
 from __future__ import annotations
@@ -69,7 +79,6 @@ from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
-from braunschweig.popsim import sources
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 
 # ---------------------------------------------------------------------------
@@ -235,33 +244,6 @@ KEY_EBIKE_SEED_COLUMN = "braunschweig.population.popsim.ebike_seed_column"
 KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 
 
-def _resolve_source(source_name: str) -> sources.PopsimSource:
-    """Return a PopsimSource adapter for the given source name.
-
-    This thin helper is factored out of ``execute`` so it can be called and
-    tested independently without running PopulationSim.
-
-    Parameters
-    ----------
-    source_name:
-        Short lowercase source identifier, e.g. ``"mid"``.  Passed through to
-        :func:`braunschweig.popsim.sources.get_source`.
-
-    Returns
-    -------
-    PopsimSource
-        A fresh adapter instance for ``source_name``.
-
-    Raises
-    ------
-    NotImplementedError
-        If ``source_name`` is planned-but-not-yet-implemented (e.g. ``"entd"``).
-    ValueError
-        If ``source_name`` is not a known or planned source name.
-    """
-    return sources.get_source(source_name)
-
-
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.
 _KREIS_CONTROL_TOGGLE_KEY = {
@@ -293,46 +275,21 @@ _KREIS_CONTROL_DEFAULT = {
     "education_participation": "on",
 }
 
+# ---------------------------------------------------------------------------
+# Package submodule: source_resolution. Placed HERE (not with the top-of-file
+# tilt_columns facade block) because active_kreis_entries' module-level
+# _KREIS_CONTROL_TOGGLE_KEY import needs the dict defined immediately above to
+# already exist on this partially-initialized package module -- importing the
+# submodule any earlier would raise ImportError. See source_resolution's
+# module docstring for the full rationale.
+# ---------------------------------------------------------------------------
 
-def active_kreis_entries(context, source_name):
-    """Return the KREIS attribute-control REGISTRY entries active for this run.
-
-    An entry is active when its per-attribute toggle resolves to "on" AND the donor
-    source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
-    ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
-    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all nine
-    entries (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class,
-    employment_status, work_participation, leisure_participation, education_participation)
-    default "on". The has_ebike source column (H_ANZPED) was server-verified 2026-07-08
-    (issue #116). trip_class (2026-07-08 follow-on), employment_status (feature #172 task
-    4), and work_participation / leisure_participation / education_participation (feature
-    #224 tasks 4-5) are PERSON-level entries; each is wired on both seed paths (its
-    per-Kreis target partitions the PERSON total, not the household total -- see the
-    KREIS block in execute()). employment_status additionally restricts that PERSON
-    total to age >= 14 (its REGISTRY entry's min_age), see person_total_by_kreis_min_age.
-
-    Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
-    argument (a positional default raises ``TypeError``; the same pitfall was fixed for
-    home_cell's ``KEY_HOME_MATCHING`` before). The per-entry defaults are therefore
-    declared once in :func:`configure` (``context.config(KEY, default)`` on the
-    ConfigContext) and this function reads the RESOLVED value by key only.
-
-    Returns the entries in REGISTRY order (economic_status first), so downstream
-    catalog rendering and count-table merges are deterministic.
-    """
-    from braunschweig.popsim import kreis_attribute_control as _kac
-    if source_name != "mid":
-        return []
-    active = []
-    for entry in _kac.REGISTRY:
-        toggle_key = _KREIS_CONTROL_TOGGLE_KEY.get(entry.name)
-        if toggle_key is None:
-            raise ValueError(
-                f"active_kreis_entries: no config toggle registered for REGISTRY entry "
-                f"{entry.name!r}; add it to _KREIS_CONTROL_TOGGLE_KEY.")
-        if str(context.config(toggle_key)).strip().lower() == "on":
-            active.append(entry)
-    return active
+from . import source_resolution
+from .source_resolution import (  # noqa: F401  (re-exports)
+    _resolve_source,
+    active_kreis_entries,
+    sources,
+)
 
 
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
