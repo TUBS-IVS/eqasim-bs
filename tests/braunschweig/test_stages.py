@@ -634,13 +634,22 @@ def _execute_base_source():
 
     ``_execute_base`` was decomposed into named ``_step_*`` orchestration steps
     (issue #267), so the blocks pinned below now live in those step functions
-    rather than in ``_execute_base`` itself. Inspecting the module that DEFINES
-    ``_execute_base`` (``...enriched.base``) makes the pins follow the moved
-    blocks automatically while keeping them exactly as strict: that module holds
-    ``_execute_base`` and every one of its steps, and nothing else that could
-    satisfy the assertions.
+    rather than in ``_execute_base`` itself. This is FUNCTION-FAMILY-scoped
+    rather than module-scoped: it concatenates the source of ``_execute_base``,
+    every ``_step_*``-named attribute of its defining module, and the
+    ``_condition_pt_subscription_for_sampling`` sub-helper of
+    ``_step_sample_pt_subscription`` (A6; a non-``_step_`` name because it is not
+    itself called by the orchestrator). Scoping to the family rather than the
+    whole module means the pins keep following this exact function group even if
+    unrelated code is later added to (or moved out of) the defining module.
     """
-    return inspect.getsource(inspect.getmodule(_enriched_module._execute_base))
+    module = inspect.getmodule(_enriched_module._execute_base)
+    functions = [_enriched_module._execute_base]
+    functions += [
+        getattr(module, name) for name in dir(module) if name.startswith("_step_")
+    ]
+    functions.append(module._condition_pt_subscription_for_sampling)
+    return "\n".join(inspect.getsource(fn) for fn in functions)
 
 
 class TestConstraintListNotMutated:

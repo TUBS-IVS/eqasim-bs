@@ -82,7 +82,6 @@ def _compute_zone_membership(df_homes, df_zones):
     return df_homes
 
 
-# Helper: map IPF hh_size values onto the bins present in df_income.
 def _build_income_size_map(income_bins):
     """Map IPF hh_size values onto the bins present in df_income.
 
@@ -664,6 +663,11 @@ def _step_derive_economic_status(context, df_persons):
 
     OFF: exact legacy path (commit c65399d) -- economic_status mapped 1:1 from
     the already-sampled income EUR-class; income untouched -> byte-identical.
+
+    Returns ``df_persons``: rebound rather than mutated in place, because both
+    branches delegate to a submodule helper (``_derive_economic_status_from_hhtype``
+    / ``_derive_economic_status``) that returns the updated frame; the caller
+    reassigns its local to the result.
     """
     if context.config("status_from_hhtype"):
         df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
@@ -699,6 +703,11 @@ def _step_sample_cars_income_aware(context, df_persons):
     final number_of_cars == 0 (the bug this order fixes). The downstream fleet
     stage (F5, braunschweig.synthesis.vehicles.cars.household) reads this final,
     income-aware number_of_cars, so vehicle generation is income-coupled.
+
+    Returns ``df_persons``: rebound rather than mutated in place when the
+    feature is ON, because ``_sample_cars_income_aware`` returns the updated
+    frame; the caller reassigns its local to the result. When OFF, the
+    untouched input frame is returned unchanged.
     """
     if context.config("cars_income_aware"):
         df_regiostar_cars = context.stage("braunschweig.data.bbsr.regiostar")
@@ -730,16 +739,25 @@ def _step_derive_consistent_car_availability(context, df_persons, mid, _vehicle_
         )
 
 
-def _step_condition_pt_subscription(context, df_persons, pt_probs, PT_TICKET_CATEGORIES):
+def _condition_pt_subscription_for_sampling(context, df_persons, pt_probs, PT_TICKET_CATEGORIES):
     """A6: condition pt_subscription on student / employment status (+car hook).
-    Default ON. OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF of the
-    caller is used unchanged (byte-identical sampling, since the same pt_probs
-    feed the same +8572 RNG stream).
+
+    This is a sub-helper of :func:`_step_sample_pt_subscription` (NOT itself
+    called by the ``_execute_base`` orchestrator), hence the non-``_step_``
+    name. Default ON. OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF
+    of the caller is used unchanged (byte-identical sampling, since the same
+    pt_probs feed the same +8572 RNG stream).
 
     ``PT_TICKET_CATEGORIES`` is threaded in from the caller, which already
     imported it for the IPF, so the reference-table import still happens exactly
     once; the parameter therefore keeps the constant's name. Returns the
     (possibly re-weighted) ``pt_probs``.
+
+    Mutation contract: on the missing-column fallback path (``employed`` and/or
+    ``studies`` absent from ``df_persons``, e.g. ``reactivate_person_attributes``
+    is OFF), this function ADDS the missing column(s) to ``df_persons`` in place,
+    set to all-``False``, before conditioning on them -- it does not only read
+    them.
     """
     if context.config("pt_subscription_conditioned"):
         # (1) DATA-FREE logical constraint: the work/study-bound combined ticket
@@ -987,7 +1005,7 @@ def _step_sample_pt_subscription(context, df_persons):
     row_sums[row_sums == 0] = 1.0
     pt_probs = pt_probs / row_sums
 
-    pt_probs = _step_condition_pt_subscription(
+    pt_probs = _condition_pt_subscription_for_sampling(
         context, df_persons, pt_probs, PT_TICKET_CATEGORIES
     )
 
@@ -1026,6 +1044,12 @@ def _step_finalise_columns(context, df_persons):
 
     Also drops the temporary ``commune_id`` helper column again unless the OUTER
     execute() still needs it (see the inline comment below).
+
+    Returns ``df_persons``: rebound (not mutated in place) only on the
+    ``commune_id``-drop branch, where ``.drop(columns=...)`` returns a new
+    frame; the caller reassigns its local to the result. The other branch
+    (``commune_id`` absent or still needed downstream) mutates the input frame
+    in place and returns it unchanged.
     """
     df_persons["is_munich_resident"] = (
         df_persons["inside_munich"]
