@@ -11,16 +11,9 @@
   are MiD-only).
 
 ``_KREIS_CONTROL_TOGGLE_KEY`` (the per-entry config-key lookup table
-``active_kreis_entries`` reads) stays defined in the package ``__init__``:
-it maps each REGISTRY entry name to a ``KEY_*`` config-key constant declared
-there, several of which ``configure`` also reads directly, so moving the
-lookup table here would require re-importing NINE constants back from the
-facade instead of one. This module instead imports the already-built lookup
-table back (``from . import _KREIS_CONTROL_TOGGLE_KEY``), which is safe only
-because ``__init__.py`` imports this submodule AFTER
-``_KREIS_CONTROL_TOGGLE_KEY`` is defined (the facade import block sits right
-after it, not with the top-of-file ``tilt_columns`` block -- see the package
-docstring).
+``active_kreis_entries`` reads) lives in the sibling leaf submodule
+``braunschweig.popsim.stage.config_keys`` alongside every ``KEY_*`` config-key
+constant ``configure`` reads directly; this module imports it from there.
 
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
@@ -28,7 +21,7 @@ docstring for the stage-level context.
 
 from braunschweig.popsim import sources
 
-from . import _KREIS_CONTROL_TOGGLE_KEY
+from .config_keys import _KREIS_CONTROL_TOGGLE_KEY
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
