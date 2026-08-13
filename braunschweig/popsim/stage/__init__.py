@@ -72,13 +72,21 @@ Submodules extracted so far:
                   (``compute_batch_config_signature``, backed by
                   ``_frame_content_signature``).
 
-``validate()`` hashes the sources of every helper module this stage's result
-depends on -- this package's own submodules AND every module of the
-``braunschweig.popsim.mid`` helper package (its ``__init__`` plus its eight
-submodules) -- into the synpp validation token, because synpp's
-``get_stage_hash`` covers only THIS file's source: without the hook a change
-confined to a helper devalidates nothing and the stale cached stage output is
-silently reused.
+``validate()`` folds the sources of the helper modules this stage's result
+depends on into the synpp validation token, because synpp's ``get_stage_hash``
+covers only THIS file's source: without the hook a change confined to a helper
+devalidates nothing and the stale cached stage output is silently reused. The
+token covers every FIRST-PARTY, NON-STAGE module imported at module level by
+this package -- its own six submodules, all nine ``braunschweig.popsim.mid``
+modules, and the other module-level helper imports (the two
+``braunschweig.data.mid`` income tables, ``assembly``, ``batch``, ``income``,
+``income_kreis_control``, ``income_spatial_tilt``, ``plausibility``,
+``prepared_cells``, ``sources``). It deliberately does NOT cover modules that
+are themselves synpp stages (synpp hashes those from their own source; the one
+such import here is ``braunschweig.data.census.household_size``), and it does
+NOT walk the TRANSITIVE import surface -- the covered set is bounded to direct
+imports, so a change deep inside a dependency of a listed helper is not
+reflected in the token. See ``validate()`` for the full statement.
 
 DELIBERATE BEHAVIOUR CHANGE (issue #267): this stage previously had NO
 ``validate()`` at all, so it carried no validation token. Adding one is a
@@ -86,6 +94,9 @@ one-off cache event -- synpp sees a token where there was none, so the FIRST run
 after this change recomputes this stage and everything downstream exactly once.
 Every run after that is cache-stable again, and from then on a helper-only edit
 correctly recomputes the stage instead of silently reusing stale output.
+Widening the covered set (as done when the non-stage first-party helpers above
+were added) changes the token's VALUE once for the same reason, with the same
+one-off recompute and no other behaviour change.
 """
 
 from __future__ import annotations
@@ -108,6 +119,16 @@ from braunschweig.data.mid.income_by_status import (
     load_income_by_status_bundesland,
     load_income_by_status_raumtyp,
 )
+
+# The two ``braunschweig.data.mid`` income-table modules are ALSO bound as
+# modules (not only via their loader functions above) so their sources
+# participate in the validation token built by validate() below. The
+# ``_data_mid_`` prefix distinguishes them from the ``_mid_`` aliases of the
+# ``braunschweig.popsim.mid`` submodules further down; neither prefix collides
+# with any name this facade re-exports.
+from braunschweig.data.mid import income_by_size as _data_mid_income_by_size
+from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
+
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
@@ -243,17 +264,34 @@ logger = logging.getLogger(__name__)
 # synpp cache validation
 # ---------------------------------------------------------------------------
 
-# Every helper module whose source can change this stage's RESULT: the six
-# submodules extracted from this package, plus the whole
-# ``braunschweig.popsim.mid`` package (its ``__init__`` -- imported above as
-# ``mid`` -- and its eight submodules), which carries the seed / donor / control
-# / batch-folder logic execute() orchestrates.
+# Every FIRST-PARTY, NON-STAGE module that this stage package imports at module
+# level -- i.e. the helper code whose source can change this stage's RESULT
+# without changing this file:
+#
+#   1. the six submodules extracted from this package,
+#   2. the whole ``braunschweig.popsim.mid`` package (its ``__init__`` --
+#      imported above as ``mid`` -- and its eight submodules), which carries the
+#      seed / donor / control / batch-folder logic execute() orchestrates,
+#   3. the remaining first-party helper modules imported at module level here or
+#      by a submodule: the two ``braunschweig.data.mid`` income tables, the
+#      popsim persons assembly, the PopulationSim batch runner, the income /
+#      income-Kreis-control / income-spatial-tilt helpers, the plausibility
+#      checks, the prepared-cells loader and the donor-source registry.
 #
 # synpp's get_stage_hash only hashes THIS file's source, so without the
 # validate() hook below a change confined to any of these helpers would
 # silently reuse the stale cached stage output on a partial rerun. Listed
-# EXPLICITLY (never dir() / globbing) so dropping a module is a visible diff,
-# and iterated in the order written so the digest is deterministic.
+# EXPLICITLY (never dir() / globbing, never a transitive import walk) so both
+# dropping and adding a module is a visible diff, and iterated in the order
+# written so the digest is deterministic.
+#
+# Modules that are THEMSELVES synpp stages (they expose both ``configure`` and
+# ``execute``) are deliberately NOT listed: synpp hashes a stage from its own
+# source, so double-covering it would only add churn. The one such import here
+# is ``braunschweig.data.census.household_size`` (used for its
+# ``kreis_household_stats`` helper); see validate() for the residual this
+# leaves, because that stage is not a declared dependency of this one.
+#
 # Every module extracted from this package MUST be listed here.
 _HELPER_MODULES = (
     # this package's submodules
@@ -273,6 +311,18 @@ _HELPER_MODULES = (
     _mid_kreis_controls,
     _mid_participation,
     _mid_seed_loading,
+    # other first-party, non-stage helper modules imported at module level,
+    # ordered by dotted module path
+    _data_mid_income_by_size,
+    _data_mid_income_by_status,
+    assembly,
+    batch,
+    _income,
+    _kic,
+    _ist,
+    _plausibility,
+    prepared_cells,
+    sources,
 )
 
 
@@ -289,9 +339,30 @@ def validate(context):
     leave the token unchanged and the stale cached output would be reused
     silently.
 
-    This stage had NO ``validate()`` before issue #267, so it carried no token
-    at all; gaining one is a deliberate, documented one-off recompute of this
-    stage and everything downstream (see the module docstring).
+    COVERED (``_HELPER_MODULES``): every FIRST-PARTY, NON-STAGE module that this
+    stage package imports at module level -- its own six submodules, all nine
+    ``braunschweig.popsim.mid`` modules, and the remaining module-level helper
+    imports (the two ``braunschweig.data.mid`` income tables,
+    ``braunschweig.popsim.assembly`` / ``batch`` / ``income`` /
+    ``income_kreis_control`` / ``income_spatial_tilt`` / ``plausibility`` /
+    ``prepared_cells`` / ``sources``).
+
+    DELIBERATELY NOT COVERED, in both cases to avoid churn without benefit:
+
+    * Modules that are themselves synpp stages (``configure`` AND ``execute``):
+      synpp derives their hash from their own source, so listing one here would
+      only add churn. The single such import is
+      ``braunschweig.data.census.household_size``, imported purely for its
+      ``kreis_household_stats`` helper and NOT requested via ``context.stage``.
+      Because it is not a declared dependency, its own stage hash does not
+      propagate here -- an edit confined to ``kreis_household_stats`` therefore
+      does not devalidate this stage's cache. That residual is accepted rather
+      than papered over by hashing a stage module; closing it properly means
+      moving the helper out of the stage module or declaring the dependency.
+    * The TRANSITIVE import surface. The set is bounded to modules imported
+      directly by this package; a module imported only by one of the listed
+      helpers is not walked, so an edit deep inside such a dependency is not
+      reflected in the token.
 
     ``_HELPER_MODULES`` is iterated in the order written -- not a set, not
     ``dir()`` output -- so the digest is reproducible across processes and

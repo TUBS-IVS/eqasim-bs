@@ -13,9 +13,13 @@ must have:
   keeps the cache usable at all),
 - the token CHANGES when the source of ANY listed helper changes (otherwise the
   hook does not close the trap),
-- ``_HELPER_MODULES`` really covers the ``braunschweig.popsim.mid`` package, so a
-  future edit that drops mid coverage fails loudly here instead of silently
-  re-opening the gap.
+- ``_HELPER_MODULES`` really covers the ``braunschweig.popsim.mid`` package, the
+  stage package's own submodules AND the other first-party, non-stage helper
+  modules the stage imports at module level, so a future edit that drops
+  coverage fails loudly here instead of silently re-opening the gap,
+- and NO listed module is itself a synpp stage: a stage is hashed by synpp from
+  its own source, so listing one would only add churn -- this assertion pins the
+  "non-stage helpers only" boundary of the covered set.
 
 The "source changed" case is simulated by monkeypatching ``inspect.getsource``
 for ONE listed module; no file on disk is written or modified, and nothing
@@ -54,6 +58,22 @@ EXPECTED_STAGE_SUBMODULE_NAMES = (
     "braunschweig.popsim.stage.controls_builder",
     "braunschweig.popsim.stage.source_resolution",
     "braunschweig.popsim.stage.tilt_columns",
+)
+
+# The remaining first-party, NON-STAGE modules the stage package imports at
+# module level (directly or, for ``sources``, via a submodule). Also written out
+# literally, for the same reason as the lists above.
+EXPECTED_OTHER_HELPER_MODULE_NAMES = (
+    "braunschweig.data.mid.income_by_size",
+    "braunschweig.data.mid.income_by_status",
+    "braunschweig.popsim.assembly",
+    "braunschweig.popsim.batch",
+    "braunschweig.popsim.income",
+    "braunschweig.popsim.income_kreis_control",
+    "braunschweig.popsim.income_spatial_tilt",
+    "braunschweig.popsim.plausibility",
+    "braunschweig.popsim.prepared_cells",
+    "braunschweig.popsim.sources",
 )
 
 HEX_DIGITS = set("0123456789abcdef")
@@ -157,6 +177,39 @@ def test_helper_modules_cover_this_packages_submodules():
         name for name in EXPECTED_STAGE_SUBMODULE_NAMES if name not in listed
     ]
     assert not missing, f"stage submodules missing from _HELPER_MODULES: {missing}"
+
+
+def test_helper_modules_cover_the_other_first_party_helpers():
+    """The non-stage first-party helpers imported at module level must be hashed.
+
+    ``execute()`` / ``configure()`` also depend on module-level imports outside
+    this package and outside ``braunschweig.popsim.mid`` (the income tables, the
+    persons assembly, the PopulationSim batch runner, the income helpers, the
+    plausibility checks, the prepared-cells loader, the donor-source registry).
+    A change confined to any of them must devalidate the cached stage output, so
+    dropping one from ``_HELPER_MODULES`` has to fail here.
+    """
+    listed = [module.__name__ for module in stage._HELPER_MODULES]
+
+    missing = [
+        name for name in EXPECTED_OTHER_HELPER_MODULE_NAMES if name not in listed
+    ]
+    assert not missing, f"first-party helpers missing from _HELPER_MODULES: {missing}"
+
+
+def test_helper_modules_contains_no_synpp_stage():
+    """No listed module may itself be a synpp stage (``configure`` + ``execute``).
+
+    synpp derives a stage's hash from that stage's own source, so listing a real
+    stage here would add cache churn without closing any gap. Pinning it also
+    documents the boundary of the covered set: non-stage helper modules only.
+    """
+    stages = [
+        module.__name__ for module in stage._HELPER_MODULES
+        if hasattr(module, "configure") and hasattr(module, "execute")
+    ]
+
+    assert not stages, f"synpp stages must not be listed in _HELPER_MODULES: {stages}"
 
 
 def test_helper_modules_has_no_duplicates():
