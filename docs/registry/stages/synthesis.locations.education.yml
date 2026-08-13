@@ -1,0 +1,24 @@
+stage: synthesis.locations.education
+title: Education location pool
+layer: education
+description: Education facility pool resolving to eqasim_common.locations.education (region-neutral
+  extraction of the upstream stage, ADR-0001).
+lineage:
+  type: overridden
+  upstream: synthesis.locations.education
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/locations/education.py
+- eqasim_common/locations/education.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: eqasim_common.locations.education
+  popsim_open: eqasim_common.locations.education
+  simple_ipf_open: eqasim_common.locations.education
+features:
+- building_potentials_education

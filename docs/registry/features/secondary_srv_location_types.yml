@@ -1,0 +1,67 @@
+feature: secondary_srv_location_types
+title: SrV-grounded secondary location types for leisure/other (#262)
+area: secondary
+description: 'Every leisure/other secondary leg draws an OBSERVED SrV 2023 BS+RGB location category
+  conditioned on mode and distance band AFTER its desired distance is sampled; the drawn category
+  (not the MiD subtype) decides placement substrate: typed buildings via the Bosserhof mapping,
+  green/open space via ATKIS landuse grid points, or the residential visit pool (design A2, ADR-0075).'
+stages:
+- synthesis.population.spatial.secondary.locations
+- braunschweig.data.bosserhof_location_category
+- braunschweig.data.external_secondary_points
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - secondary_srv_location_types
+introduced:
+  issue: '#262'
+  pr: '#263'
+  adr: ADR-0075
+detail_doc: docs/features/secondary-location-types.md
+code_paths:
+- braunschweig/synthesis/locations/secondary_chainsolvers/
+- braunschweig/data/bosserhof_location_category.py
+evidence:
+  tests:
+  - tests/test_derive_srv_location_types.py
+  - tests/test_srv_location_candidates.py
+  - tests/test_srv_location_decider.py
+  - tests/test_srv_location_legloop.py
+  - tests/test_srv_location_summary.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_srv_location_legloop.py
+    note: Flag defaults False in code -> byte-identical OFF; the 5% A/B ran leg B with the flag
+      OFF on a hardlinked cache copy (purpose mix byte-identical, 0.0000pp).
+  fallback_rate:
+    instrumented: true
+    log_marker: srv location draw
+    note: Draw-share deviations vs the pinned SrV references are logged per category with a WARNING
+      at/above srv_location_share_warn_pp; the chainsolver primary/fallback split is logged separately
+      ([braunschweig.secondary_chainsolvers] primary/fallback split).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv
+    note: Draw-coherence reference srv2023_secondary_type_shares.csv sits next to it.
+validation:
+  state: measured_vs_reference
+  runs:
+  - srv262-AB-5pct-2026-08-12
+  metric: all 9 drawn category shares within 1.8pp of the pinned SrV references; leisure landuse-point
+    substrate 0 -> 31.9%; other typed-building substrate 0 -> 75.5%; purpose mix byte-identical
+  note: Draw-coherence and substrate A/B on the server at 5%; realised distances stay ~1.5-2x
+    above SrV euclid medians in BOTH runs (pre-existing MiD level gap) -- NOT a behavioural validation
+    (ADR-0075).
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: 'Two #262-sourced findings await issue triage: the leisure_visit pool has no
+    external escape (10.8% clip at the region edge) and the MiD-vs-SrV realized distance level
+    gap overlaps the calibration-corner scope.'
+  source: ADR-0075

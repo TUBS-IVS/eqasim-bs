@@ -1,0 +1,73 @@
+feature: escort_purpose
+title: 'Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive
+  education (#201/#256/#257)'
+area: behavior
+description: Escort trips (Bringen/Holen) become a dedicated activity purpose with SrV-derived
+  destination-type draw weights, are anchored at the youngest child's education location within
+  the household (consecutive-run rule, overflow to draw), get per-destination-type distance layers
+  (SrV between-type structure on the MiD level), and passive escort legs (W_ZWECK 13) become the
+  child's own education trip.
+stages:
+- synthesis.population.trips
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - escort_purpose
+  - escort_household_link
+  - escort_distance_by_type
+  - escort_passive_education
+introduced:
+  issue: '#201'
+  pr: '#260'
+  adr: ADR-0073
+detail_doc: docs/features/escort-purpose.md
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/sources/mid.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/
+- braunschweig/matsim/scenario/facilities.py
+evidence:
+  tests:
+  - tests/test_escort_chainsolvers.py
+  - tests/test_escort_facilities.py
+  - tests/test_escort_links.py
+  - tests/test_derive_escort_location_weights.py
+  - tests/test_derive_escort_w_zweck_split.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_escort_chainsolvers.py
+    note: 'Flags default False in code; the OFF path reproduces the pre-escort behaviour byte-identically
+      per the feature''s TDD gate (PR #260).'
+  fallback_rate:
+    instrumented: false
+    note: Escort anchoring logs anchored vs overflow-to-draw counts in the run log (91.8%/8.2%
+      on the 2026-08-12 re-run); no single stable log marker is pinned here yet.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv
+    note: Plus srv2023_escort_distance_factors.csv and mid2023_escort_w_zweck_split.csv (same
+      directory).
+validation:
+  state: measured_vs_reference
+  runs:
+  - escort-AB-5pct-2026-08-11
+  - escort-anchorfix-5pct-2026-08-12
+  metric: escort relabel exact vs pinned SrV/MiD CSVs; escorter<=17 share 20.2% -> 9.1%; anchored
+    91.8%, overflow 8.2%; purpose mix byte-identical
+  note: 5% A/B draw-coherence and anchoring re-validation on the server; NOT a behavioural validation
+    (ADR-0072/0073).
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Post-merge remainder (java companion PR, validation CLI flag) tracked in the
+    backlog-migration issues; no owner verdict on realised escort behaviour yet.
+  source: ADR-0073
+notes: 'Java companion eqasim-java-bs PR #15 and validation-CLI PR #264 landed 2026-08-13; PR
+  #260 merged 2026-08-12.'

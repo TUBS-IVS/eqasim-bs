@@ -1,0 +1,52 @@
+feature: sector_aware_attraction_tilt
+title: Sector-aware attraction tilt (#128)
+area: work
+description: Tilts workplace attraction by economic sector using the BA gemband employment by
+  Wirtschaftsabteilung; measured 9x WORSE against observed per-Gemeinde SvB inflow and parked
+  (ADR-0065).
+stages:
+- data.od.weighted
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: parked
+production:
+  enabled: false
+  flags:
+  - braunschweig.gravity.sector_aware_enabled
+introduced:
+  issue: '#128'
+  pr: null
+  adr: ADR-0065
+detail_doc: docs/features/gravity.md
+code_paths:
+- braunschweig/gravity/model.py
+evidence:
+  tests:
+  - tests/test_work_sector_aware.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: The feature is default OFF; the OFF path IS the shipped behaviour.
+  fallback_rate:
+    instrumented: false
+    note: Not applicable while the feature is parked and never executed in a run.
+  reference:
+    kind: none
+    note: |
+      The GENESIS 13111-01-03-5 table the tilt was measured against is not committed to this repository. The measurement that killed the feature (per-Gemeinde inflow fit 9x worse against observed SvB) is recorded in ADR-0065 but cannot be re-derived from the repo.
+validation:
+  state: measured_vs_reference
+  runs:
+  - sector-aware-ab-2026-07-15
+  metric: within-Kreis inflow total variation OFF 0.009 vs ON 0.087 (9x worse); distance bands
+    unchanged
+  note: Measured against observed GENESIS SvB am Arbeitsort (local-only file); the measured regression
+    is why the feature is parked.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0065 contains the measured verdict (parked, default OFF, code kept as gated-off infrastructure). Restating it as an owner assessment is a five-minute job and would make this the first fully-assessed row.
+  source: ADR-0065

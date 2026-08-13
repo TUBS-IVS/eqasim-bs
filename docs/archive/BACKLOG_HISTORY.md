@@ -1,3 +1,6 @@
+> **HISTORICAL DOCUMENT. NOT AUTHORITATIVE FOR CURRENT MODEL STATUS.**
+> Dated backlog history; open work lives exclusively as GitHub issues (ADR-0077).
+
 # Backlog history — archived news feed (eqasim-bs)
 
 Dated "New (…)" / "Resolved (…)" sections moved verbatim from PROJECT_BACKLOG.md

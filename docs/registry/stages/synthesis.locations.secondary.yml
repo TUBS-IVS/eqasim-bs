@@ -1,0 +1,22 @@
+stage: synthesis.locations.secondary
+title: Secondary location pool
+layer: secondary
+description: Secondary location pool resolving to braunschweig.locations.secondary (ZGB catalog
+  + building potentials).
+lineage:
+  type: overridden
+  upstream: synthesis.locations.secondary
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/locations/secondary.py
+- braunschweig/locations/secondary.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.locations.secondary
+  popsim_open: braunschweig.locations.secondary
+  simple_ipf_open: braunschweig.locations.secondary

@@ -1,0 +1,36 @@
+id: matsim-e2e-2.2.0-kreis03101-2026-07-23
+date: '2026-07-23'
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_matsim.yml
+  notes: '1-Kreis 03101, freight ON; felix; PR #239 fixes on the eqasim-java 2.2.0 jar'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: Kreis 03101
+pipeline:
+  targets:
+  - matsim.output
+classification:
+- wiring_proof
+status:
+  execution: completed
+environment: server (64c/128GB)
+validation:
+- metric: e2e pipeline reachability on eqasim-java 2.2.0
+  reference: null
+  result: '8/8 stages green: synthesis -> in-commuters (times imputed) -> routing -> cutter ->
+    freight injection -> real MATSim QSim iteration 0 (SwissRailRaptor PT) -> 68 files archived'
+  notes: GREEN PROOF, NOT validation. Guice/ASM 'major version 69' confirmed non-fatal printInjector
+    DEBUG diagnostic.
+features:
+  note: eqasim-java 2.2.0 matsim.output e2e with freight; 0 iterations (iteration 0 only)
+artifacts:
+- simulation_output + matsim_output archive (felix)
+issues: []
+decisions:
+- ADR-0071
+source: 'RUNS.md row 2026-07-23; PR #239; SESSION_LOG 2026-07-23'

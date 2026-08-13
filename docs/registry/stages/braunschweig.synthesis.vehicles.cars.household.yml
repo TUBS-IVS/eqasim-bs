@@ -1,0 +1,30 @@
+stage: braunschweig.synthesis.vehicles.cars.household
+title: Household fleet synthesis
+layer: fleet
+description: 'Instantiates per-household vehicle fleets: KBA segment/brand mix, HSN/TSN engine
+  attributes, electric-share calibration, consistency v2 (ADR-0019/0020/0021).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/vehicles/cars/household.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- kba_fleet_derived
+- hsn_tsn_lookup
+features:
+- fleet_consistency_v2
+- fleet_electric_calibration
+- fleet_hsn_tsn_attributes
+- fleet_realism_upgrade
+- fleet_segment_brand_mix
+- household_fleet
+decisions:
+- ADR-0019
+- ADR-0020
+- ADR-0021

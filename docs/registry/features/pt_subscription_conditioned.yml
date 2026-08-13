@@ -1,0 +1,55 @@
+feature: pt_subscription_conditioned
+title: PT subscription (P24.1, 3-margin IPF)
+area: attributes
+description: PT subscription type as a categorical 3-margin IPF on MiD P24.1 (Kreis x sex x age),
+  optionally conditioned on car availability (ADR-0012).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - pt_subscription_conditioned
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0012
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/availability.py
+evidence:
+  tests:
+  - tests/test_pt_subscription_conditioned.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      No dedicated top-level flag-OFF byte-identity test was found (only a sub-mechanism absent-crosstab no-op test).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.enriched] WARNING: pt_subscription_conditioned'
+    note: |
+      Warns when a required column is missing (treated as all-False) and separately reports degenerate-row and car-margin primary/fallback counts.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P24_1.csv
+    note: Also draws on the committed by-sex/by-age/by-car-availability P24.1 tables.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0012 documents the design. This flag lives in synthesis/population/enriched.py and is dead under the active popsim_mid production method; it is only live via the simple_ipf_open fixture. No owner verdict on realised fit has been recorded.
+  source: ADR-0012
+notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
+  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
+  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
+  25% fixture).'

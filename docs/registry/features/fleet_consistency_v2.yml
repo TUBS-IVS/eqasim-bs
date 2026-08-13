@@ -1,0 +1,56 @@
+feature: fleet_consistency_v2
+title: Fleet consistency v2 + income-age
+area: fleet
+description: 'Internal fleet consistency v2: vehicle counts, types and income-coupled vehicle
+  age are reconciled within each household (ADR-0020).'
+stages:
+- braunschweig.synthesis.vehicles.cars.household
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - fleet_consistency_v2
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0020
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/vehicles/fleet_sampling_de.py
+- braunschweig/synthesis/vehicles/cars/household.py
+evidence:
+  tests:
+  - tests/test_fleet_consistency_e2e.py
+  - tests/test_fleet_sampling_de.py
+  - tests/test_fleet_age_euro_joint.py
+  - tests/test_vehicles_per_household.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_fleet_consistency_e2e.py
+    note: test_off_path_byte_identical confirms the OFF path is unchanged.
+  fallback_rate:
+    instrumented: true
+    log_marker: sonstige redistribution (consistency_v2)
+    note: |
+      Logs the share of "sonstige" (other/unclassified) vehicles redistributed to modelled segments under consistency_v2. The income-age coupling itself (fleet_age_income_coupling) has no separate rate log identified in this pass.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_economic_status_matrix.csv
+    note: |
+      Consumes the same committed KBA fleet tables as household_fleet.yml/ fleet_segment_brand_mix.yml plus MiD economic-status tables under eqasim-data/data/braunschweig/mid/.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI scalar currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0020 documents PR #12/#13 (merged 2026-06-18); no owner verdict on realised consistency/income-age fit has been recorded for this register.
+  source: ADR-0020

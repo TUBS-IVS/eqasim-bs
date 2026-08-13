@@ -1,0 +1,35 @@
+dataset: srv2023_reference_tables
+title: Committed SrV 2023 aggregate reference tables
+inventory_id: E5.2
+provider: derived in-repo from SrV 2023 BS+RGB
+vintage: null
+geography: null
+crs: null
+roles:
+- control
+- calibration_target
+- validation_reference
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: regenerated via scripts/build_srv_participation_aggregate.py, scripts/derive_srv_location_types.py,
+    scripts/derive_escort_location_weights.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_*.csv
+  committed: false
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed)
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Participation-by-Kreis controls, escort destination/distance factors, location-type-by-distance
+  and draw-share references.

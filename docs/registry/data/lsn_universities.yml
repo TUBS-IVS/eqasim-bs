@@ -1,0 +1,33 @@
+dataset: lsn_universities
+title: LSN Hochschulstatistik student enrollment (SS 2025)
+inventory_id: G3
+provider: LSN
+vintage: SS 2025
+geography: null
+crs: null
+roles:
+- supply_input
+used_by:
+- braunschweig.data.schools.university_facilities
+- braunschweig.synthesis.student_incommuters
+acquisition:
+  method: manual_download
+  source: https://www.statistik.niedersachsen.de (Hochschulstatistik)
+  script: scripts/seed_nds_hochschulen.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/nds_hochschulen.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Also drives the student in-commuter volume (#140); scripts/download_destatis_hochschulen.py
+  fetches the DESTATIS complement.

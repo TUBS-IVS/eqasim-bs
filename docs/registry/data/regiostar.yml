@@ -1,0 +1,32 @@
+dataset: regiostar
+title: RegioStaR regional-statistical typology reference file (BMV/BBSR)
+inventory_id: A2
+provider: BMV / BBSR
+vintage: Gebietsstand 2020
+geography: Germany, Gemeinde (AGS)
+crs: null
+roles:
+- spatial_input
+- reference_table
+used_by:
+- braunschweig.data.bbsr.regiostar
+acquisition:
+  method: auto_script
+  source: https://www.bmv.de/SharedDocs/DE/Anlage/G/regiostar-referenzdateien.xlsx
+  script: scripts/download_regiostar.py
+storage:
+  expected_path: eqasim-data/data/regiostar/regiostar_referenzdatei.xlsx
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B11
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: Gebietsstand 2020 -- check manually after municipal mergers.
+notes: null

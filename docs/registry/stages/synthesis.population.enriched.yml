@@ -1,0 +1,39 @@
+stage: synthesis.population.enriched
+title: Attribute enrichment
+layer: attributes
+description: 'Attribute enrichment seam. popsim workflows resolve to the thin braunschweig.popsim.enriched_adapter
+  (donor attributes pass through -- the legacy enrichment does NOT run, issue #255); simple_ipf_open
+  resolves to the full braunschweig enrichment (economic status, income, licence, PT subscription,
+  cars, tenure).'
+lineage:
+  type: overridden
+  upstream: synthesis.population.enriched
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/enriched.py
+- braunschweig/popsim/enriched_adapter.py
+- braunschweig/synthesis/population/enriched/
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.popsim.enriched_adapter
+  popsim_open: braunschweig.popsim.enriched_adapter
+  simple_ipf_open: braunschweig.synthesis.population.enriched
+features:
+- consistent_car_availability
+- driving_licence_enrichment
+- economic_status_bayes
+- household_income_distribution
+- housing_tenure
+- income_aware_cars
+- pt_subscription_conditioned
+- reactivated_person_attributes
+decisions:
+- ADR-0011
+- ADR-0012
+- ADR-0013
+- ADR-0017

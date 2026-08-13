@@ -1,0 +1,30 @@
+dataset: ba_pendler_detailed
+title: BA commuter flows by NACE economic section
+inventory_id: C6
+provider: Bundesagentur fuer Arbeit
+vintage: null
+geography: null
+crs: null
+roles:
+- calibration_target
+used_by: []
+acquisition:
+  method: auto_script
+  source: https://statistik.arbeitsagentur.de (quarterly detail tables)
+  script: scripts/download_ba_pendler_detailed.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/ (per-export file name)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: BA terms
+  restricted: false
+  redistribution: restricted
+limitations: Feeds only the PARKED sector-aware tilt (ADR-0065); download URL changes per quarter.
+notes: null

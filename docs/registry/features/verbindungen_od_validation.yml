@@ -1,0 +1,55 @@
+feature: verbindungen_od_validation
+title: VerBindungen sub-Kreis OD validation (#124)
+area: validation
+description: 'Validates the realised work-OD assignment against the open VerBindungen 2019 QZM
+  sub-Kreis commuter matrix (issue #124, phase 1).'
+stages:
+- braunschweig.analysis.verbindungen_validation
+- braunschweig.data.verbindungen.work_od
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: '#124'
+  pr: '#189'
+  adr: ADR-0066
+detail_doc: docs/features/gravity.md
+code_paths:
+- braunschweig/analysis/verbindungen_validation.py
+- braunschweig/data/verbindungen/work_od.py
+evidence:
+  tests:
+  - tests/test_verbindungen_validation.py
+  - tests/test_verbindungen_data.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      Per ADR-0066, this is a read-only analysis/validation stage with no scientific-output change from the merge; there is no gated production behaviour to test OFF-path byte-identity against.
+  fallback_rate:
+    instrumented: false
+    note: |
+      verbindungen_validation.py contains extensive CLAUDE.md fallback-transparency comments and multiple candidate print statements (e.g. a "partial-zero renorm fallback rows" detail string), but no single marker was pinned to an exact verified line in this pass -- flagged for the owner to confirm and wire into this declaration.
+  reference:
+    kind: none
+    note: |
+      The VerBindungen 2019 QZM open-data files (QZM-Berufspendler-VerBindungen-Verkehrszellen.csv, SvBaGeB_Statisch_*_Verkehrszellen.csv) are NOT committed and the eqasim-data/data/verbindungen/ directory does not exist in this checkout -- confirmed by ADR-0068 as a known "local raw-data gap."
+validation:
+  state: measured_vs_reference
+  runs:
+  - verbindungen-ab-2026-07-16
+  metric: realised check-B weighted TVD 0.137, band EMD 0.080, intra-cell share 0.4694 vs reference
+    0.4687
+  note: Committed open reference (730 relations, 510,095 commuters); vintage drift 2019 vs 2025
+    Pearson r 0.9984.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0066 documents the design and the check-B measurement; no owner verdict beyond the ADR itself has been recorded, and the underlying VerBindungen raw data is not committed.
+  source: ADR-0066

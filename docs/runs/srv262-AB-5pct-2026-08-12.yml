@@ -1,0 +1,44 @@
+id: srv262-AB-5pct-2026-08-12
+date: 2026-08-12/13
+repository:
+  commit: c25cd46
+  branch: feature/srv-location-types-262
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/srv_location_reuse_5pct.yml
+  notes: felix ~/wt-srv262 @ c25cd46, branch feature/srv-location-types-262; leg A 54/54 stages
+    85 min, leg B = flag OFF on a cp -al cache copy, 12 stages 46 min, 0 errors each
+sampling:
+  rate: 5% (~56k persons; popsim skipped via popsim_work_escort_reuse batches)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+environment: server (64c/128GB)
+validation:
+- metric: 9 drawn SrV category shares
+  reference: pinned srv2023 draw references (committed)
+  result: all within 1.8pp; marginal fallback leisure 1.2% / other 17.1% (<20% warn)
+  notes: Draw coherence, NOT behavioural validation.
+- metric: substrate shift (A/B)
+  reference: leg B = secondary_srv_location_types OFF
+  result: leisure landuse points 0 -> 31.9%; other typed buildings 0 -> 75.5%; purpose mix byte-identical
+    (0.0000pp); realized medians ~unchanged (leisure 3.87 -> 3.96 km; top_n inertness, pre-existing)
+  artifact: ~/run_archives/wt-srv262/srv262_deepdive_results.json (felix)
+features:
+  note: 'SrV location types #262 A/B: category draw, landuse candidates, errand buildings, per-category
+    boundary clip'
+artifacts:
+- cache/output_bs_5pct_srv262(+_off)
+- ~/run_archives/wt-srv262/srv262_deepdive.py (felix)
+issues:
+- '#262'
+decisions:
+- ADR-0075
+source: RUNS.md row 2026-08-12; A/B report Artifact (2026-08-13)

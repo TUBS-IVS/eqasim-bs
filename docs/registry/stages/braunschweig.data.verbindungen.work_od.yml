@@ -1,0 +1,24 @@
+stage: braunschweig.data.verbindungen.work_od
+title: VerBindungen commuter OD
+layer: work
+description: 'Loads the open VerBindungen 2019 QZM sub-Kreis commuter OD matrix (validation reference
+  #124 and inner calibration anchor #193).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/verbindungen/work_od.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- verbindungen
+features:
+- verbindungen_anchor
+- verbindungen_od_validation
+decisions:
+- ADR-0066
+- ADR-0068

@@ -4,45 +4,34 @@
 
 MATSim + eqasim scientific transport-simulation research. Treat the codebase as research software: correctness, reproducibility, traceability, clarity, and maintainability outrank quick but fragile solutions. Follow MATSim/eqasim style and structure closely; implementations must be professional, modular, documented, and suitable for scientific use.
 
-## Project navigation & status (read this first)
+## Model documentation governance (read this first)
 
-The living project-management layer. Consult these for orientation and **keep them current** (end every work session with `/close`, which updates them):
+Information is maintained ONCE, machine-readable, and rendered into views (full ownership model: `docs/DOCUMENTATION_GOVERNANCE.md`; migration decision: ADR-0077). Truth hierarchy:
 
-- **`PROJECT_STATUS.md`** (committed) — ≤120-line dashboard: live state, feature matrix (built / status / location / validated-against), branch-PR map, top-of-backlog pointer. **First stop** for "what exists / where / how far along".
-- **`PROJECT_BACKLOG.md`** (committed) — the single ranked, **open-work-only** backlog (≤250 lines); canonical open-work source, do not start a competing list. Dated history: `docs/archive/BACKLOG_HISTORY.md`.
-- **`SESSION_LOG.md`** (gitignored) — chronological log, newest on top; rotates at 10 entries (older -> `docs/archive/SESSION_LOG_*.md`, gitignored).
-- **`docs/DECISIONS.md`** (committed) — ADRs, with a one-line-per-ADR index header.
-- **`docs/codebase/`** (committed; only `.codebase-scan.txt` gitignored) — architecture/onboarding: `STACK`, `STRUCTURE`, `ARCHITECTURE`, `CONVENTIONS`, `INTEGRATIONS`, `TESTING`, `CONCERNS`.
-- **`docs/archive/`** (committed) — rotated history (`BACKLOG_HISTORY.md`, older `SESSION_LOG_*.md`).
-- **`docs/superpowers/{specs,plans}/`** (gitignored) — per-feature design specs + execution plans.
-- **Claude memory** (`~/.claude/.../memory/`) — curated long-term facts: `MEMORY.md` index plus `ARCHIVE.md` (condensed completed work); travels with `~/.claude`, not the repo.
+- **Code** = implementation truth; **synpp DAG** (`synpp.run(dryrun=True)`, committed snapshots `docs/registry/dag/*.json`) = stage existence/dependency truth.
+- **Resolved canonical production config** (`configs/base_bs.yml` + `configs/overlays/test_100pct.yml`; flags live ONLY in the base, overlays are scale-only) = active-state truth.
+- **Stage Registry** `docs/registry/stages/*.yml` = stage semantics + Bavaria lineage (inherited/configured/extended/overridden/braunschweig_new).
+- **Feature Registry** `docs/registry/features/*.yml` = feature semantics, evidence pointers, lifecycle × production × per-pipeline applicability.
+- **Data Registry** `docs/registry/data/*.yml` = dataset provenance, licensing, exact expected paths (README data setup is checked against it).
+- **ADRs** `docs/decisions/ADR-NNNN-*.md` (one file per record; ids append-only; `docs/decisions/README.md` has numbering notes) = scientific/architectural rationale incl. rejected approaches.
+- **GitHub issues** on `TUBS-IVS/eqasim-bs` = the ONLY backlog (issue-first rule below).
+- **Run manifests** `docs/runs/<run_id>.yml` = executed runs + validation evidence. Never claim validation without reference + run + comparison evidence recorded there.
+- **README.md** = public setup/install/data-acquisition contract; assess README impact whenever repository dependencies, environment, required inputs, input paths, downloader/import scripts, the canonical config, verification, run commands, or outputs change.
+- **`docs/generated/*.md`** (STATUS/PIPELINE/STAGES/FEATURES/DATA/LINEAGE/DECISIONS/RUNS) = generated views — NEVER edit manually; rebuild with `python -m braunschweig.documentation build`; `... check` must show 0 FAIL (CI runs it metadata-only).
+- **Retired (pointer stubs only, content archived under `docs/archive/`):** `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, the `RUNS.md` ledger, the monolithic `docs/DECISIONS.md`. Never resurrect them or any parallel STATUS-style state; the readiness register (`docs/readiness/`, branch `feature/readiness-register`) was generalized into the Feature Registry and stays historical.
+- **`SESSION_LOG.md`** (gitignored) = local session narrative; **Claude memory** (`~/.claude/.../memory/`) = durable lessons; **`docs/superpowers/{specs,plans}/`** (gitignored) = per-feature designs; **`docs/codebase/`** = contributor notes; **`docs/features/*.md`** = per-feature scientific method (no live state — production state lives in the registry/generated views).
 
-**Working discipline (one task, fully closed before the next):** the single canonical feature workflow is documented in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in the backlog with a status — never just left lying around.
+Maintenance duties: every new/changed stage → Stage Registry (+ `... dag` if the graph changed); every feature → Feature Registry; every dataset → Data Registry + `scripts/verify_braunschweig_inputs.py` + README; every substantive decision → ADR; every significant run → run manifest; every substantial PR → `documentation build` + `check` (the PR template carries this checklist). Never invent history: `unknown` is a valid value; convergence ≠ validation; a smoke ≠ validation.
 
-**Mandatory at `/close` (end of every session):** update `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, `SESSION_LOG.md`; add a `RUNS.md` row if a run happened; add/update an ADR in `docs/DECISIONS.md` if a decision was made; sync the GitHub Project board; apply the issue-first rule for newly discovered work.
+**Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
+
+**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, and apply the issue-first rule for newly discovered work.
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the alias on a new machine:
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
 Never push without explicit per-push confirmation (see the git policy below).
 
-## Fact ownership — one fact, one place
-
-| Fact type | Owning file | Others get at most |
-|---|---|---|
-| Decision + rationale | docs/DECISIONS.md (ADR) | 1 status line / link |
-| Open work item | PROJECT_BACKLOG.md | top-5 pointer in STATUS |
-| Feature existence/status/location | PROJECT_STATUS.md matrix | — |
-| Session narrative | SESSION_LOG.md (local) | — |
-| Run record | RUNS.md | — |
-| Durable lesson / working rule | memory (type: feedback) | — |
-| Data-source pointer | memory (type: reference) or docs/features | — |
-| Feature deep-dive | docs/features/*.md | link from STATUS matrix |
-
-Layer budgets (compaction thresholds, checked only at /close — exceeding one never blocks work; /close simply condenses/archives the file back under its threshold): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · PROJECT_STATUS.md ≤ 150 lines · PROJECT_BACKLOG.md ≤ 250 lines · SESSION_LOG.md ≤ 10 entries.
-
-## Feature detail
-
-Deep per-feature documentation (data sources, flags, references, assumptions) lives in `docs/features/*.md` and is indexed, with current status, from the `PROJECT_STATUS.md` feature matrix. Per "Fact ownership" above, feature existence/status/location is owned by the STATUS matrix and each deep-dive by its `docs/features/` page; go to the STATUS matrix for the per-feature links (gravity, education/university gravity, household synthesis, regional control targets, MiD reference tables, building potentials, secondary distances, detour/circuity, student in-commuters, freight, cache-share, calibration corner, run analysis + SimWrapper dashboards).
+Layer budgets (checked only at /close — exceeding one never blocks work): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · SESSION_LOG.md ≤ 10 entries. Registries have no budget (one fact per file scales).
 
 ## Language policy
 

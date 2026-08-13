@@ -1,0 +1,55 @@
+feature: kreis_income_control
+title: Kreis income control (popsim)
+area: attributes
+description: Per-Kreis income redraw against the INKAR household-income level inside the PopulationSim
+  workflow.
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - braunschweig.population.popsim.income_kreis_control
+introduced:
+  issue: null
+  pr: null
+  adr: null
+detail_doc: docs/features/regional-control-targets.md
+code_paths:
+- braunschweig/popsim/income_kreis_control.py
+evidence:
+  tests:
+  - tests/test_popsim_income_kreis_control.py
+  - tests/test_popsim_stage_income_kreis_control.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_income_kreis_control.py
+    note: test_apply_off_path_is_byte_identical confirms the OFF path is unchanged.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[income_kreis_control] applied: region_mean='
+    note: Logs region_mean, Kreis count, and a pmf_fallback rate on every application, plus separate
+      degenerate-target warnings.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H4_income_by_size.csv
+    note: |
+      The INKAR per-Kreis income relativity is NOT committed (same gap already documented in placement_income_l2.yml).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    No dedicated ADR exists for the original income_kreis_control mechanism itself -- it is only mentioned inside ADR-0054 (an unmerged design precursor) and ADR-0069 (which documents what SUPERSEDES it, placement_income). Unlike most Attrs features, this flag IS wired into braunschweig/popsim/stage.py and IS true in configs/base_bs.yml -- genuinely live under the active popsim_mid production method, though currently overridden whenever placement_income is ON (the current default; see placement_income_l2.yml).
+  source: null
+notes: 'ADR-0069: placement_income (code default ON) supersedes this mechanism in every committed
+  configuration; the code path remains as gated infra.'

@@ -1,0 +1,40 @@
+id: anchor-holdout-2026-07-17
+date: '2026-07-17'
+repository:
+  commit: b64123d
+  branch: unknown
+configuration:
+  base: offline holdout CLI scripts/run_anchor_holdout.py
+  overlays: []
+  notes: felix ~/wt/verbindungen-anchor @ b64123d (branch via git bundle), READ-ONLY from cache_bs_100pct_allfeat_popsim;
+    baseline gravity+IPF recomputed offline; + diagnose_anchor_p13.py @ 4c0a206
+sampling:
+  rate: 100% all-features popsim cache (15,129 OD relations, join coverage 100%)
+  scope: ZGB-8
+pipeline:
+  targets: []
+classification:
+- ab_test
+- calibration
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: pre-registered rule v2 gates (k=5 folds, seeds 20260716+42)
+  reference: VerBindungen QZM + MiD P13-by-RS7 + P38.2 (committed)
+  result: (i') AO srmse 0.1300->0.1316 neutral-within-noise; (ii) P13-by-RS7 EMD 5/6 classes improve,
+    class 72 .1724->.1760 flagged; P38.2 6/9 regions improve; labelled-fit TVD .1136->.0809; leak
+    check PASS gap 0.0; verdict default_flip_supported=False
+  artifact: ~/wt/verbindungen-anchor/{holdout_out_seed*,diag_p13_72}/
+  notes: ADR-0068 records the HUMAN OVERRIDE that set the anchor default ON despite the neutral
+    gate.
+features:
+  note: inner VerBindungen anchor A/B (#193), offline (no MATSim)
+artifacts:
+- scratchpad copies of holdout outputs
+issues:
+- '#193'
+decisions:
+- ADR-0068
+source: RUNS.md row 2026-07-17

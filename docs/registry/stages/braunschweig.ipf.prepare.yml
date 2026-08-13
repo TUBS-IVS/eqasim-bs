@@ -1,0 +1,22 @@
+stage: braunschweig.ipf.prepare
+title: IPF margin preparation
+layer: population
+description: Assembles the margin tables for the IPF from the census data stages.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/ipf/prepare.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+features:
+- household_size_margin
+- ipf_synthesis_legacy
+- joint_age_size_margin
+decisions:
+- ADR-0003
+- ADR-0004

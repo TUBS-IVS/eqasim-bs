@@ -1,0 +1,15 @@
+stage: synthesis.population.spatial.locations
+title: Location join
+layer: secondary
+description: Upstream join of persons to their chosen activity locations.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- synthesis/population/spatial/locations.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

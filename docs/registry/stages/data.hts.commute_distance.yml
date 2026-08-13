@@ -1,0 +1,15 @@
+stage: data.hts.commute_distance
+title: HTS commute distances
+layer: behavior
+description: Upstream ENTD commute-distance extraction (IPF path).
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- data/hts/commute_distance.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false

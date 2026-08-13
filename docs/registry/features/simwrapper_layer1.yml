@@ -1,0 +1,50 @@
+feature: simwrapper_layer1
+title: SimWrapper Layer-1 (MATSim Java contrib)
+area: analysis
+description: MATSim-side SimWrapper Layer-1 dashboards written by the Java contrib during the
+  simulation (ADR-0033; default ON since ADR-0074).
+stages:
+- matsim.simulation.run
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: supported
+production:
+  enabled: true
+  flags:
+  - simwrapper_dashboards
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0033
+detail_doc: docs/features/run-analysis.md
+code_paths:
+- matsim/simulation/run.py
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: 'false'
+    note: |
+      ADR-0033 and docs/features/run-analysis.md both describe this layer as "default off, byte-identical when off", but no test was found asserting that -- and the code itself registers the default as true (see the assessment note below), so the claim cannot be made without a matching test.
+  fallback_rate:
+    instrumented: false
+    note: Boolean CLI-arg passthrough to the Java contrib, not a fallback-rate computation.
+  reference:
+    kind: none
+    note: This is a visualisation dashboard layer; no external reference applies.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI applies to a dashboard-export toggle.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    DISCREPANCY FOUND while researching this declaration: matsim/simulation/run.py:21 registers `context.config("simwrapper_dashboards", True)` -- a code-level default of TRUE -- while docs/features/run-analysis.md:66, PROJECT_STATUS.md and ADR-0033 all state the default is FALSE. The key is absent from configs/base_bs.yml and every overlay, so the code default is what actually governs behaviour. In practice this is inert either way, because the Java SimWrapperModule / `RunSimulation --simwrapper` contrib itself is not present in this fork's eqasim-java-bs `main` (per docs/features/run-analysis.md:59-64) -- it lives on the unmerged `feature/simwrapper-dashboards` branch. This default-value mismatch should be resolved by the owner (fix the code default, or update the docs/ADR) before this row can be assessed.
+  source: null
+notes: 'Issue #253: the code default is True (ADR-0074 records the flip to ON) while ADR-0033
+  and the retired STATUS matrix still said False -- the documentation contradiction is tracked
+  there.'

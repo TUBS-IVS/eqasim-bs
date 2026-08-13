@@ -1,0 +1,53 @@
+feature: shared_stage_cache
+title: Shared stage-cache (prime-on-launch)
+area: infrastructure
+description: 'Prime-on-launch shared persistent stage cache: expensive sampling-independent stage
+  artifacts (freight routing, Tier-A stages) are copied from a shared store before synpp runs;
+  hash mismatches recompute safely (ADR-0036).'
+stages: []
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cache_share_enabled
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0036
+detail_doc: docs/features/cache-share.md
+code_paths:
+- braunschweig/cache_share.py
+- scripts/run_synpp.py
+evidence:
+  tests:
+  - tests/test_cache_share.py
+  - tests/test_cache_share_cli.py
+  - tests/test_run_synpp_prime.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      Caching is a performance layer around synpp's own stage hashing; it does not change which stage outputs are produced, so byte-identity is not a meaningful OFF-path claim.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[cache_share] prime: primed'
+    note: |
+      Logs primed/already-present/forced/missing-in-store counts on prime, and already-in-store/skipped counts on export.
+  reference:
+    kind: none
+    note: Infrastructure feature (stage caching); no external reference applies.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI applies to a caching mechanism.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0036 documents the design; no owner verdict on realised cache-hit reliability has been recorded.
+  source: ADR-0036

@@ -1,0 +1,19 @@
+stage: braunschweig.locations.work
+title: Work location pool
+layer: work
+description: ZGB workplace pool from ALKIS/OSM + building potentials plus one synthetic workplace
+  per external Kreis (out-commuter escape).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/locations/work.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- building_potentials_work
+- taz_work_location_choice

@@ -1,0 +1,48 @@
+feature: freight_assumptions
+title: Assumptions (truck PCE / max velocity)
+area: freight
+description: 'The freight injection carries two uncalibrated assumptions: truck passenger-car
+  equivalent 3.5 and maximum velocity 80 km/h (ADR-0030); both are labelled ASSUMPTION pending
+  a BASt count calibration.'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0030
+detail_doc: docs/features/freight.md
+code_paths:
+- braunschweig/matsim/simulation/prepare.py
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: These are static numeric defaults, not a gated code path.
+  fallback_rate:
+    instrumented: false
+    note: |
+      Not applicable -- freight_truck_pce and freight_truck_max_velocity_kmh are static config defaults passed as CLI args to the Java freight injector, not a runtime primary/fallback branch.
+  reference:
+    kind: assumption
+    note: |
+      ASSUMPTION. freight_truck_pce=3.5 and freight_truck_max_velocity_kmh=80 (the German StVO HGV speed limit) are explicit, uncalibrated assumptions per ADR-0030's own consequences section. A BASt HGV-count calibration is a parked follow-up (ADR-0034 / backlog Tier 3.2). No committed reference file exists for either value.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No realised freight KPI can be validated without an external HGV-count reference.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0030 records the assumption explicitly; no owner verdict on whether uncalibrated freight PCE/velocity is acceptable in published results has been recorded (same open question as freight_longhaul_v3.yml).
+  source: ADR-0030

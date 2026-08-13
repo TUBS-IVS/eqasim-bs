@@ -1,0 +1,24 @@
+stage: braunschweig.ipf.model
+title: IPF fit
+layer: population
+description: Runs the in-house IPF over the configured margins (population, household size/type,
+  employment, optional joint age x size).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/ipf/model.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+features:
+- employment_margin
+- household_size_margin
+- ipf_synthesis_legacy
+decisions:
+- ADR-0002
+- ADR-0003
+- ADR-0014

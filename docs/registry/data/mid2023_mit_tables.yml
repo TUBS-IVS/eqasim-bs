@@ -1,0 +1,30 @@
+dataset: mid2023_mit_tables
+title: MiD 2023 'Mobilitaet in Tabellen' online tool exports
+inventory_id: E3
+provider: infas / BMDV
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://www.mobilitaet-in-tabellen.de (free login)
+  script: scripts/extract_mid_income_by_size.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/ (mid2023_income_by_*.csv sources)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: tool terms
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: null

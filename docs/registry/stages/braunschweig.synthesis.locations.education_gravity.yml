@@ -1,0 +1,20 @@
+stage: braunschweig.synthesis.locations.education_gravity
+title: Education gravity assignment
+layer: education
+description: Assigns students to school/Kita/university facilities by the calibrated per-level,
+  per-RS7 gravity models (ADR-0024).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/locations/education_gravity.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+features:
+- education_gravity
+decisions:
+- ADR-0024

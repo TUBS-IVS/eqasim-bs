@@ -1,0 +1,36 @@
+stage: data.od.weighted
+title: Work/education OD matrix
+layer: work
+description: 'The gravity seam: braunschweig.gravity.model computes distance-decay OD matrices
+  calibrated on BA Pendleratlas (per-RS7 slopes, VerBindungen inner anchor, IPF to observed Kreis
+  flows).'
+lineage:
+  type: overridden
+  upstream: data.od.weighted
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- data/od/weighted.py
+- braunschweig/gravity/model.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.gravity.model
+  popsim_open: braunschweig.gravity.model
+  simple_ipf_open: braunschweig.gravity.model
+features:
+- gravity_od
+- gravity_slope_by_rs7
+- per_band_commute_friction
+- sector_aware_attraction_tilt
+- svb_wohn_work_production_mass
+- taz_work_location_choice
+- verbindungen_anchor
+decisions:
+- ADR-0023
+- ADR-0065
+- ADR-0066
+- ADR-0068

@@ -1,0 +1,18 @@
+stage: matsim.scenario.supply.gtfs
+title: Transit schedule build
+layer: matsim
+description: Upstream pt2matsim GTFS conversion over the regional feed.
+lineage:
+  type: configured
+  upstream: null
+  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
+    baseline.
+code:
+- matsim/scenario/supply/gtfs.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- gtfs_feed

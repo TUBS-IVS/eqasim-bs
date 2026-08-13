@@ -1,0 +1,15 @@
+stage: data.hts.entd.filtered
+title: ENTD filtering
+layer: behavior
+description: Upstream ENTD filtering.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- data/hts/entd/filtered.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: active
+  simple_ipf_open: active
+production: false

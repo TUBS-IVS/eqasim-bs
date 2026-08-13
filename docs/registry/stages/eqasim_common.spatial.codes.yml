@@ -1,0 +1,15 @@
+stage: eqasim_common.spatial.codes
+title: Spatial code tables
+layer: spatial
+description: Region-neutral spatial code tables (ADR-0001).
+lineage:
+  type: inherited
+  upstream: null
+  notes: Region-neutral code relocated from the inherited Bavaria tree into eqasim_common/ (ADR-0001).
+code:
+- eqasim_common/spatial/codes.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

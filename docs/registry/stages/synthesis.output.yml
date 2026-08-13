@@ -1,0 +1,16 @@
+stage: synthesis.output
+title: Synthesis output writer
+layer: infrastructure
+description: Writes the unified population/trips/locations output (CSV/parquet + meta); the terminal
+  synthesis stage.
+lineage:
+  type: extended
+  upstream: null
+  notes: null
+code:
+- synthesis/output.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

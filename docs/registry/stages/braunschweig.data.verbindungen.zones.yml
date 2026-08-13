@@ -1,0 +1,17 @@
+stage: braunschweig.data.verbindungen.zones
+title: VerBindungen zones
+layer: spatial
+description: Loads the VerBindungen traffic-cell geometry and its AGS mapping.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/verbindungen/zones.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- verbindungen

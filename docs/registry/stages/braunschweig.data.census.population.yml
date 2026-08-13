@@ -1,0 +1,21 @@
+stage: braunschweig.data.census.population
+title: Population margins (Kreis -> Gemeinde)
+layer: population
+description: 'Builds Gemeinde x sex x age population weights: DESTATIS 12411-0018 Kreis levels
+  distributed with the urbistat Gemeinde-within-Kreis share (or, behind use_zensus_gemeinde_shares,
+  the official Zensus 1000A-3082 share).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/population.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- destatis_population_kreis
+- urbistat_gemeinde_age
+- zensus2022_age_sex_size

@@ -1,0 +1,21 @@
+stage: matsim.output
+title: MATSim output stage
+layer: matsim
+description: Runs the MATSim simulation chain to its output; extended with the run-named durable
+  archive (ADR-0064).
+lineage:
+  type: extended
+  upstream: null
+  notes: null
+code:
+- matsim/output.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+features:
+- matsim_output_archive
+decisions:
+- ADR-0064
+- ADR-0071

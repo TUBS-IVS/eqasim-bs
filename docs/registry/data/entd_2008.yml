@@ -1,0 +1,32 @@
+dataset: entd_2008
+title: ENTD 2008 French national household travel survey
+inventory_id: E6
+provider: INSEE / SDES
+vintage: '2008'
+geography: France
+crs: null
+roles:
+- donor
+used_by:
+- data.hts.entd.raw
+acquisition:
+  method: manual_download
+  source: https://www.statistiques.developpement-durable.gouv.fr/enquete-nationale-transports-et-deplacements-entd-2008
+  script: null
+storage:
+  expected_path: eqasim-data/data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: A3
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: INSEE/SDES open data
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Open activity-chain donor of simple_ipf_open and popsim_open, inherited from the upstream
+  eqasim pipeline.

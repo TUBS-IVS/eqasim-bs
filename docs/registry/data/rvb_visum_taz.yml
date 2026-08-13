@@ -1,0 +1,31 @@
+dataset: rvb_visum_taz
+title: RVB VISUM Verkehrszellen (traffic analysis zones)
+inventory_id: A4
+provider: Regionalverband Grossraum Braunschweig
+vintage: null
+geography: RVB model region, sub-communal zones
+crs: EPSG:32632 -> EPSG:25832
+roles:
+- spatial_input
+used_by: []
+acquisition:
+  method: restricted_delivery
+  source: Direct delivery by RVB (not public)
+  script: scripts/import_rvb_verkehrszellen.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: proprietary (RVB)
+  restricted: true
+  redistribution: forbidden
+limitations: Feature taz_work_location_choice is parked permanently OFF (ADR-0067); the data is
+  needed only to re-enable it locally.
+notes: null

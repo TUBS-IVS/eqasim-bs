@@ -1,0 +1,15 @@
+stage: matsim.runtime.pt2matsim
+title: pt2matsim build
+layer: matsim
+description: Upstream pt2matsim build for network/schedule conversion.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- matsim/runtime/pt2matsim.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

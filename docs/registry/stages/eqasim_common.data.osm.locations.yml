@@ -1,0 +1,15 @@
+stage: eqasim_common.data.osm.locations
+title: OSM activity locations
+layer: secondary
+description: Region-neutral OSM location extraction (ADR-0001).
+lineage:
+  type: inherited
+  upstream: null
+  notes: Region-neutral code relocated from the inherited Bavaria tree into eqasim_common/ (ADR-0001).
+code:
+- eqasim_common/data/osm/locations.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

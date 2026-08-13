@@ -1,0 +1,38 @@
+id: sector-aware-ab-2026-07-15
+date: '2026-07-15'
+repository:
+  commit: efd981c
+  branch: unknown
+configuration:
+  base: config_ab128_off.yml / config_ab128_on.yml
+  overlays: []
+  notes: 'felix ~/wt-128-ab: detached worktree @ efd981c main + PR #184''s 2 fix files overlaid;
+    derived from config_gravity_only_braunschweig.yml + 3 missing aliases; run: [braunschweig.gravity.model]
+    only; private cache'
+sampling:
+  rate: 1% legacy simple_ipf path (census-level gravity margins; ZGB-8, 123 communes)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - data.od.weighted
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: within-Kreis inflow total variation
+  reference: observed SvB am Arbeitsort per Gemeinde (GENESIS 13111-01-03-5)
+  result: OFF 0.009 vs ON 0.087 (9x worse); distance bands TV 0.003 unchanged; offline function-level
+    prediction matched realised per-Kreis TVs to ~1%
+  artifact: ~/wt-128-ab/{ab128_off.log,ab128_on.log,work_od_off.p}
+  notes: The measured regression that parked the feature (ADR-0065).
+features:
+  note: 'sector-aware tilt A/B (#128): first-ever successful ON run (post KeyError fix)'
+artifacts: []
+issues:
+- '#128'
+decisions:
+- ADR-0065
+source: 'RUNS.md row 2026-07-15; PR #184'

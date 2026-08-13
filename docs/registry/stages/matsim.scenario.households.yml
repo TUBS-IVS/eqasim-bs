@@ -1,0 +1,20 @@
+stage: matsim.scenario.households
+title: MATSim households writer
+layer: matsim
+description: Writes households.xml including injected subpopulations (braunschweig wrapper).
+lineage:
+  type: overridden
+  upstream: matsim.scenario.households
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- matsim/scenario/households.py
+- braunschweig/matsim/scenario/households.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.matsim.scenario.households
+  popsim_open: braunschweig.matsim.scenario.households

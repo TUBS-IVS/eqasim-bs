@@ -1,0 +1,17 @@
+stage: braunschweig.data.vrb.zones
+title: VRB tariff zones
+layer: matsim
+description: Parses the VRB tariff-zone table into the stations.json the Java fare module consumes.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/vrb/zones.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- vrb_tariff_zones

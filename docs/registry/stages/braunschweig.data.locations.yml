@@ -1,0 +1,16 @@
+stage: braunschweig.data.locations
+title: Activity location catalog
+layer: secondary
+description: Builds the ZGB activity-location catalog from ALKIS/ATKIS/OSM (the legacy candidate
+  set that building potentials replace where enabled).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/locations.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

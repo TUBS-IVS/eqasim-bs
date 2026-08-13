@@ -1,5 +1,12 @@
 # CONCERNS
 
+> **Actionable items live as GitHub issues (2026-08-13, ADR-0077)** — notably
+> the readiness-register findings #251–#255 (flags OFF despite ON-claims,
+> simple_ipf_open-only enrichment features, simwrapper default contradiction,
+> ADR path errors, uninstrumented employment-margin fallback). This file keeps
+> fragile-area notes and dated audit narratives for context; treat every dated
+> claim below as a snapshot, not current state.
+
 ## Feature-wiring audit vs. the active popsim run config (2026-07-10)
 
 Full front-to-back check: every implemented feature vs. `config_server_braunschweig_100pct_allfeat_popsim.yml`

@@ -1,0 +1,42 @@
+stage: data.census.filtered
+title: Population synthesis producer
+layer: population
+description: 'THE population-method seam: upstream''s filtered census becomes the synthetic household/person
+  producer. popsim_mid/popsim_open resolve it to braunschweig.popsim.stage (PopulationSim at the
+  Zensus grid), simple_ipf_open to braunschweig.ipf.attributed (in-house IPF).'
+lineage:
+  type: overridden
+  upstream: data.census.filtered
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- data/census/filtered.py
+- braunschweig/ipf/attributed.py
+- braunschweig/popsim/stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.popsim.stage
+  popsim_open: braunschweig.popsim.stage
+  simple_ipf_open: braunschweig.ipf.attributed
+inputs:
+- zensus2022_grid_cells
+- cleancensus_kreis_controls
+- mid2023_b1
+- srv2023_reference_tables
+features:
+- age_aware_composition
+- housing_tenure
+- income_spatial_tilt
+- ipf_synthesis_legacy
+- kreis_income_control
+- placement_income_l2
+- popsim_method
+- sex_aware_couples
+- srv_participation_controls
+- tier3_kreis_controls
+decisions:
+- ADR-0002

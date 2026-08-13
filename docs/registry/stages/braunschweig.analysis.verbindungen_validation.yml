@@ -1,0 +1,20 @@
+stage: braunschweig.analysis.verbindungen_validation
+title: VerBindungen OD validation
+layer: validation
+description: 'Compares the realised work OD against the VerBindungen 2019 QZM reference (weighted
+  TVD, band EMD, intra-cell share; #124).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/analysis/verbindungen_validation.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- verbindungen_od_validation
+decisions:
+- ADR-0066

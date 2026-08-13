@@ -1,0 +1,32 @@
+dataset: ba_gemband
+title: BA Beschaeftigtenstatistik Gemeindedaten (gemband-dlk)
+inventory_id: C3
+provider: Bundesagentur fuer Arbeit
+vintage: quarterly (file 202506)
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://statistik.arbeitsagentur.de (Beschaeftigung, Gemeindeband)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B4
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: BA terms
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: Source of the parked svb_wohn production mass (ADR-0066) and the parked sector-aware tilt
+  (ADR-0065).

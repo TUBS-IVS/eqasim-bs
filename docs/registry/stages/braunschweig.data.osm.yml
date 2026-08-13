@@ -1,0 +1,17 @@
+stage: braunschweig.data.osm
+title: OSM POIs
+layer: spatial
+description: Loads the preprocessed OSM POI parquet (secondary activity candidates).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/osm.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- osm_niedersachsen

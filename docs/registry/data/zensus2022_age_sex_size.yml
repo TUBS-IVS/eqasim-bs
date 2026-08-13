@@ -1,0 +1,32 @@
+dataset: zensus2022_age_sex_size
+title: Zensus 2022 1000A-3082 persons by age, sex, household size
+inventory_id: B4
+provider: Statistische Aemter
+vintage: '2022-05-15'
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.population
+acquisition:
+  method: manual_download
+  source: https://ergebnisse.zensus2022.de (flat-file export)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/1000A-3082_de_flat.zip
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: Counts PERSONS, not households.
+notes: 'Joint age x size IPF margin AND the official replacement for the urbistat Gemeinde share
+  key (use_zensus_gemeinde_shares; not activated in any committed config -- issue #251 family).'

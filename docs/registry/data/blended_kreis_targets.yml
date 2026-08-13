@@ -1,0 +1,31 @@
+dataset: blended_kreis_targets
+title: Blended per-Kreis target tables (target2026_*)
+inventory_id: K1
+provider: derived in-repo from MiD x SrV x LSN
+vintage: null
+geography: null
+crs: null
+roles:
+- control
+- calibration_target
+used_by: []
+acquisition:
+  method: derived
+  source: scripts/build_blended_kreis_targets.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/targets/target2026_*.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived (source restrictions apply)
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: null

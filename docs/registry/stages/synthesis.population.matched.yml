@@ -1,0 +1,18 @@
+stage: synthesis.population.matched
+title: HTS statistical matching
+layer: behavior
+description: 'Upstream ENTD statistical matching (IPF path; carries the reactivated person attributes
+  #ADR-0018).'
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- synthesis/population/matched.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+features:
+- reactivated_person_attributes

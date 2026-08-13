@@ -1,0 +1,18 @@
+stage: data.hts.entd.raw
+title: ENTD raw input
+layer: behavior
+description: Upstream ENTD raw CSV reader (entd_2008/ inputs).
+lineage:
+  type: configured
+  upstream: null
+  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
+    baseline.
+code:
+- data/hts/entd/raw.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- entd_2008

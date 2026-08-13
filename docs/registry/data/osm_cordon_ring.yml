@@ -1,0 +1,31 @@
+dataset: osm_cordon_ring
+title: OSM Germany ring extract for the cordon network
+inventory_id: F3.2
+provider: OpenStreetMap / Geofabrik (clipped in-repo)
+vintage: null
+geography: null
+crs: null
+roles:
+- network
+used_by:
+- braunschweig.data.cordon_network
+acquisition:
+  method: derived
+  source: clipped from the Germany extract
+  script: scripts/clip_osm_to_cordon_ring.py
+storage:
+  expected_path: eqasim-data/data/osm/germany-latest.zgb_ring.osm.pbf (+ osm/cordon/)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: ODbL 1.0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Ring-buffered network source so cordon gates have real infrastructure outside the ZGB (cordon_network_source_buffer_m).

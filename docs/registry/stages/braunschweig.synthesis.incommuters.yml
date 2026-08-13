@@ -1,0 +1,26 @@
+stage: braunschweig.synthesis.incommuters
+title: In-commuter agents
+layer: cordon
+description: Generates the cordon-crossing worker agents from BA Pendleratlas flows with donor-timed
+  home-work-home plans and the Mikrozensus mode balance (ADR-0029).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/incommuters.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- ba_pendleratlas
+- mikrozensus_pendler_modes
+features:
+- cordon_mode_balancer
+- einpendler_injection
+decisions:
+- ADR-0028
+- ADR-0029
+- ADR-0063

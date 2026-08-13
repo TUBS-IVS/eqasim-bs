@@ -1,0 +1,32 @@
+dataset: genesis_svb_workplace
+title: GENESIS 13111-01-03-5 SvB at workplace (Gemeinde)
+inventory_id: C2
+provider: Regionalstatistik / BA
+vintage: annual, 30.06. reference day
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.employees
+acquisition:
+  method: manual_download
+  source: https://www.regionalstatistik.de/genesis/online (code 13111)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/13111-01-03-5.xlsx
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B3
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Attraction mass of the work gravity model; the building potentials only distribute it within
+  the zone.

@@ -1,0 +1,28 @@
+stage: synthesis.population.spatial.home.locations
+title: Home placement
+layer: home
+description: 'Home placement seam: popsim workflows resolve to braunschweig.synthesis.locations.home_cell
+  (cell-accurate ALKIS placement, ADR-0007/0008); the IPF path keeps the commune-level weighted
+  draw.'
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.home.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/home/locations.py
+- braunschweig/synthesis/locations/home_cell.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.locations.home_cell
+  popsim_open: braunschweig.synthesis.locations.home_cell
+features:
+- alkis_home_matching
+- cell_accurate_homes
+decisions:
+- ADR-0007
+- ADR-0008

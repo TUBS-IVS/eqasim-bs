@@ -1,0 +1,21 @@
+stage: braunschweig.synthesis.student_incommuters
+title: Student in-commuters
+layer: cordon
+description: Adds university student in-commuters from LSN enrollment with DESTATIS origin structure
+  (#140).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/student_incommuters.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- lsn_universities
+- destatis_population_kreis
+features:
+- student_incommuters

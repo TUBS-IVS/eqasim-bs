@@ -1,0 +1,58 @@
+feature: taz_work_location_choice
+title: TAZ sub-zonal work location choice
+area: work
+description: Sub-communal (RVB VISUM Verkehrszellen) work-location choice for kreisfreie Staedte;
+  permanently OFF per ADR-0067 (superseded in practice by building potentials), OFF path byte-identical.
+stages:
+- data.od.weighted
+- braunschweig.locations.work
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: parked
+production:
+  enabled: false
+  flags:
+  - taz_work_location_choice
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0067
+detail_doc: docs/features/taz-work-location.md
+code_paths:
+- braunschweig/data/spatial/taz.py
+- braunschweig/gravity/distance_matrix_taz.py
+evidence:
+  tests:
+  - tests/test_taz_off_byte_identical.py
+  - tests/test_distance_matrix_taz.py
+  - tests/test_taz_equivalence.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_taz_off_byte_identical.py
+    note: |
+      test_off_path_does_not_request_taz_stages and test_explicit_false_identical_to_default confirm the OFF path (default) is byte-identical and requests no TAZ stages at all.
+  fallback_rate:
+    instrumented: false
+    note: |
+      Not applicable -- the OFF path is a zero-runtime-cost skip by design, no fallback logic applies.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P13.csv
+    note: |
+      ADR-0050 quotes the aggregate EMD as ~0.054 against this same MiD P13 reference. TAZ zone geometry itself is built on proprietary RVB VISUM Verkehrszellen data, which per ADR-0067 is explicitly local-only/non-publishable and NOT committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Three ADRs together document the full history: ADR-0049 (approved building TAZ after ruling out the Wolfsburg-misfit-as-model-bug hypothesis), ADR-0050 (measured the friction re-fit as unnecessary, parked pending flag-ON validation at scale), and ADR-0067 (the terminal decision: stays permanently OFF, superseded in practice by building potentials). No owner verdict beyond the ADR chain has been recorded here.
+  source: ADR-0067
+notes: 'ADR-0067: stays permanently OFF; requires proprietary RVB VISUM zone data that is local-only
+  and never committed.'

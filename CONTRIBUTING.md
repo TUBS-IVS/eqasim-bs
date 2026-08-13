@@ -24,11 +24,19 @@ onto the `superpowers` skill chain, named in brackets.)
 8. **Land** — open the PR **always via `git pr`** (base = the fork `TUBS-IVS/eqasim-bs`,
    never the `eqasim-org/eqasim-bavaria` upstream); after merge, delete the branch + prune
    the worktree `[finishing-a-development-branch]`.
-9. **Record** — update `PROJECT_STATUS.md`, `PROJECT_BACKLOG.md`, `SESSION_LOG.md`,
-   `RUNS.md` (if a run happened), add/update the **ADR** in `docs/DECISIONS.md`, sync the
-   GitHub Project board, and close the issue.
+9. **Record** — update the **model registries** for what changed (new/changed stage →
+   `docs/registry/stages/`, feature → `docs/registry/features/`, dataset →
+   `docs/registry/data/` + `scripts/verify_braunschweig_inputs.py` + README data setup),
+   add an **ADR** (`docs/decisions/ADR-NNNN-*.md`) for any substantive decision, add a
+   **run manifest** (`docs/runs/<run_id>.yml`) if a significant run happened, then
+   `python -m braunschweig.documentation build && python -m braunschweig.documentation check`
+   and commit the regenerated `docs/generated/*`. Update `SESSION_LOG.md` (local), sync the
+   GitHub Project board, and close the issue. See
+   [docs/DOCUMENTATION_GOVERNANCE.md](docs/DOCUMENTATION_GOVERNANCE.md) for the full
+   ownership model.
 
-`/close` enforces step 9 at session end.
+`/close` enforces step 9 at session end. (`PROJECT_STATUS.md`, `PROJECT_BACKLOG.md` and
+the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/run rows there.)
 
 ## Branches & PRs
 

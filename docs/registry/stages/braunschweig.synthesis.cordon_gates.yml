@@ -1,0 +1,20 @@
+stage: braunschweig.synthesis.cordon_gates
+title: Cordon gate assignment
+layer: cordon
+description: Assigns road gates / rail entry stations to in-commuter agents by a population-gravity
+  model over external origins (ADR-0029).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/synthesis/cordon_gates.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+features:
+- cordon_gates
+decisions:
+- ADR-0029

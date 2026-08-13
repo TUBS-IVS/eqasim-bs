@@ -1,0 +1,33 @@
+dataset: alkis_buildings
+title: ALKIS Hausumringe Niedersachsen (official building footprints)
+inventory_id: F1.1
+provider: LGLN
+vintage: null
+geography: Niedersachsen
+crs: EPSG:25832
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.alkis
+- braunschweig.data.buildings
+acquisition:
+  method: manual_download
+  source: https://opengeodata.lgln.niedersachsen.de ('Hausumringe Niedersachsen')
+  script: scripts/preprocess_alkis_landuse.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/buildings/gebaeude-ni.zip -> braunschweig/preprocessed/alkis_buildings.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: C1
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/zero-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Preprocess once with scripts/preprocess_alkis_landuse.py; stages read only the compact
+  parquet.

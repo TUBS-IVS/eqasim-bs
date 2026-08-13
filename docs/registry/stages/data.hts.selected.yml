@@ -1,0 +1,15 @@
+stage: data.hts.selected
+title: HTS selection
+layer: behavior
+description: Upstream HTS selection seam (ENTD).
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- data/hts/selected.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: active
+  simple_ipf_open: active
+production: false

@@ -1,0 +1,15 @@
+stage: braunschweig.data.mid.zones
+title: MiD zone mapping
+layer: behavior
+description: Maps MiD regional codes onto ZGB zones for reference-table joins.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/mid/zones.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false

@@ -1,0 +1,31 @@
+dataset: zensus2022_households_size
+title: Zensus 2022 5000H-2001 households by size (Gemeinde)
+inventory_id: B3.1
+provider: Statistische Aemter
+vintage: '2022-05-15'
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.household_size
+acquisition:
+  method: manual_download
+  source: https://ergebnisse.zensus2022.de (flat-file export)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/5000H-2001_de_flat.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B7
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: IPF household-size margin (legacy path).

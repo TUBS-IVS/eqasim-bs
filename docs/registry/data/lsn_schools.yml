@@ -1,0 +1,31 @@
+dataset: lsn_schools
+title: LSN Schulverzeichnis ABS + BBS (school registers)
+inventory_id: G1
+provider: LSN
+vintage: ABS 2025 / BBS 2024
+geography: Niedersachsen
+crs: null
+roles:
+- supply_input
+used_by:
+- braunschweig.data.schools.facilities
+acquisition:
+  method: manual_download
+  source: https://www.statistik.niedersachsen.de (Schulverzeichnis_ABS_2025.xlsx, Verzeichnis_der_BBS_2024.xlsx)
+  script: scripts/extract_nds_schools.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/nds_schools_zgb.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Regenerated locally (geocoded facility CSV is not committed for data-protection reasons).

@@ -1,0 +1,18 @@
+stage: braunschweig.data.mid.data
+title: MiD reference data bundle
+layer: behavior
+description: Loads the committed MiD 2023 aggregate reference tables (CDFs and shares) used by
+  the legacy IPF path.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/mid/data.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- mid2023_reference_tables

@@ -1,0 +1,32 @@
+dataset: kba_fe4_licences
+title: KBA FE4 driving-licence stock (Bundesland)
+inventory_id: I3
+provider: Kraftfahrt-Bundesamt
+vintage: '2024'
+geography: null
+crs: null
+roles:
+- reference_table
+used_by:
+- braunschweig.data.census.licenses
+acquisition:
+  method: manual_download
+  source: https://www.kba.de (Fahrerlaubnisbestand FE4)
+  script: null
+storage:
+  expected_path: eqasim-data/data/germany/fe4_2024.xlsx
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: A2
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: KBA terms
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: Legacy licence seeding; superseded by the MiD P17.1 raking (ADR-0013) but still read by
+  the legacy IPF path.
