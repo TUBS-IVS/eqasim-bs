@@ -1,0 +1,42 @@
+id: verbindungen-ab-2026-07-16
+date: '2026-07-16'
+repository:
+  commit: ebd6fd8
+  branch: main (detached + fix overlay)
+configuration:
+  base: offline driver ab_driver.py
+  overlays: []
+  notes: 'felix ~/wt/verbindungen-ab: detached worktree @ main ebd6fd8 + margin_check dtype fix
+    overlaid; READ-ONLY from cache_bs_100pct_allfeat_popsim; gravity+Pendleratlas-IPF recomputed
+    offline, only the production mass differs between legs'
+sampling:
+  rate: 100% all-features popsim_mid cache (271,091 of 311,434 workers inside the 44 ZGB cells;
+    12.95% cross-cordon)
+  scope: ZGB-8
+pipeline:
+  targets: []
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: realised work OD vs VerBindungen 2019 QZM
+  reference: committed open reference (730 relations, 510,095 commuters)
+  result: check-B weighted TVD 0.137, band EMD 0.080, intra-cell 0.4694 vs ref 0.4687; check-A
+    home-margin Pearson r 0.9968; vintage 2019 vs 2025 Pearson r 0.9984 (max drift 0.0076)
+  artifact: ~/wt/verbindungen-ab/ab_out/realised_100pct/
+- metric: '#132 svb_wohn production-mass A/B'
+  reference: same QZM reference (paired, OD-level)
+  result: weighted TVD 0.1136 (population) -> 0.1137 (svb_wohn), negligible
+  artifact: ~/wt/verbindungen-ab/ab_out/od_ab/
+features:
+  note: 'VerBindungen validation (#124) of the 100pct realised assignment + #132 svb_wohn A/B'
+artifacts: []
+issues:
+- '#124'
+- '#132'
+decisions:
+- ADR-0066
+source: RUNS.md row 2026-07-16

@@ -1,0 +1,43 @@
+id: placement-income-l2-gate-2026-07-18
+date: '2026-07-18'
+repository:
+  commit: 6a02b6c
+  branch: feature/placement-income-l2
+configuration:
+  base: config_gate_placement_income_{off,on}.yml (2-Kreis gate configs)
+  overlays: []
+  notes: 'local worktree placement-income-l2 @ 6a02b6c; 2 Kreise 03102+03103; run: [data.census.filtered]
+    only; gate_popsim_settings_tier3_kreis.yaml; max_cells=1000, num_workers=1; OFF batch outputs
+    copied into the ON work_dir so the PopulationSim solve ran ONCE for both legs'
+sampling:
+  rate: 1% (113,968 HH / 228,585 persons per leg)
+  scope: Kreise 03102+03103
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+environment: local (68GB/28free)
+validation:
+- metric: invariants on real output
+  reference: OFF leg (income_kreis_control redraw)
+  result: 'economic_status/cars x Kreis, economic_status x CELL, HH x CELL, age x sex_raw x CELL,
+    age x CELL, clone-counts-per-donor: all max|d|=0'
+- metric: income-cars coherence within (Kreis, status)
+  reference: INKAR Kreis relativity (committed)
+  result: 'Spearman 0.174 (redraw) -> 0.364 (placement), +0.19; attainment: redraw hits +0.8%/+0.5%,
+    placement approaches +4.7%/-3.1% (converged=False, 52% no-freedom)'
+  artifact: cache_gate_l2_on/gate_placement_income_report.md
+  notes: Coherence gain + control preservation; convergence is not validation.
+features:
+  note: placement_income L2 (#108) OFF vs ON; employment_status kreis-control OFF
+artifacts:
+- cache_gate_l2_{off,on}
+issues:
+- '#108'
+decisions:
+- ADR-0069
+source: RUNS.md row 2026-07-18

@@ -1,0 +1,37 @@
+id: config-cleanup-synth-smoke-2026-07-22
+date: '2026-07-22'
+repository:
+  commit: 7d62dd8
+  branch: unknown
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test.yml
+  notes: composed via run_synpp.py 2-arg form; felix detached worktree @ 7d62dd8; settings_tier3_mef100_intseed_numba.yaml
+sampling:
+  rate: 1 Kreis 03101 (full-pop synth)
+  scope: Kreis 03101
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+environment: server
+validation:
+- metric: composition/runtime proof
+  reference: null
+  result: 'the batch settings.yaml PopulationSim actually used has FLOAT_SEED_WEIGHTS: false +
+    USE_NUMBA: true + mef 100; integerizer OPTIMAL; 6 KREIS controls logged active'
+  notes: NOT a real-world validation -- composed-config verification.
+features:
+  note: 'composed-config verification (int-seed+numba + 6 KREIS controls incl. #224)'
+artifacts:
+- cache_bs_test (felix)
+issues:
+- '#224'
+decisions:
+- ADR-0070
+source: 'RUNS.md row 2026-07-22; PR #234'

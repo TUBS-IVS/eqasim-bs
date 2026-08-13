@@ -1,0 +1,45 @@
+id: escort-AB-5pct-2026-08-11
+date: 2026-08-11/12
+repository:
+  commit: 11e3822
+  branch: feature/escort-purpose-201
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/escort_reuse_5pct.yml
+  notes: felix ~/wt-escort @ 11e3822 + toggle diagnostic (escort_distance_by_type OFF on a cache
+    copy)
+sampling:
+  rate: 5% (~56k persons; popsim batches reused from the 100% run)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+environment: server (64c/128GB)
+validation:
+- metric: escort relabel + linking
+  reference: pinned SrV/MiD escort CSVs (committed) + W1 active-adjusted refs
+  result: relabel exact; escorter<=17 share 20.2% -> 9.1%; household link 58.5%; 0 NaN
+  notes: Draw/structure coherence, NOT behavioural validation.
+- metric: escort_distance_by_type realized effect (#257 toggle)
+  reference: toggle A/B on the same cache
+  result: behaviourally INERT on realized distances (<2km 33.5 vs 33.4%); zero-leg artifact identified
+    as one-link collapse (674 legs, 9.0%)
+features:
+  note: 'escort family #201+#256+#257 all ON; combined A+B validation + #257 toggle diagnostic'
+artifacts:
+- cache_bs_5pct_escort(+_btoggle)
+- ~/run_archives/wt-escort/baseline_11e3822/ (felix)
+issues:
+- '#201'
+- '#256'
+- '#257'
+decisions:
+- ADR-0072
+source: RUNS.md row 2026-08-11/12; earlier 1% attempt OOM-killed the VM (num_workers-16 full-pool
+  recurrence)

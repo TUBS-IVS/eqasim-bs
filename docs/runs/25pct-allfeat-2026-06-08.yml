@@ -1,0 +1,37 @@
+id: 25pct-allfeat-2026-06-08
+date: 2026-06-08 (approx)
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: config_server_braunschweig_25pct_allfeat_popsim.yml (pre-composition standalone)
+  overlays: []
+  notes: popsim_mid + fleet + income/cars/tenure + cordon (all-features)
+sampling:
+  rate: 25%
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+classification:
+- production_candidate
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: commute distance EMD vs MiD P13
+  reference: MiD P13 (committed)
+  result: ~0.065
+- metric: secondary distances vs MiD W12
+  reference: MiD W12 (committed)
+  result: see calibration feature docs
+features:
+  note: the 25% all-features baseline the current feature set was validated at
+artifacts:
+- cache_bs_25pct_allfeat
+- output_bs_25pct_allfeat
+issues: []
+decisions: []
+source: RUNS.md row 2026-06-08; SESSION_LOG + calibration feature docs
