@@ -31,20 +31,15 @@ on the input distribution side.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import inspect
-import multiprocessing as mp
 import time
-from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import shapely.geometry as geo
 
-from braunschweig import parallelism
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
@@ -107,23 +102,6 @@ from .parallel_solving import (  # noqa: F401  (re-exports)
 from .results import (  # noqa: F401  (re-exports)
     _extract_locations,
 )
-
-# Worker-process state (set by _init_chain_worker, read by _solve_person_shard)
-# lives in parallel_solving as MUTABLE module globals. A static re-export would
-# freeze the import-time value (None), so these are delegated dynamically via
-# the module-level __getattr__ below (PEP 562) to always reflect the current
-# worker state.
-_WORKER_STATE_ATTRIBUTES = (
-    "_WORKER_LOCATIONS_DF", "_WORKER_SOLVER", "_WORKER_SCORER_SPEC",
-)
-
-
-def __getattr__(name):
-    if name in _WORKER_STATE_ATTRIBUTES:
-        return getattr(parallel_solving, name)
-    raise AttributeError(
-        f"module {__name__!r} has no attribute {name!r}"
-    )
 from .fallback import (  # noqa: F401  (re-exports)
     _build_rda_candidate_index,
     _fallback_place,
@@ -220,11 +198,22 @@ from .activity_types import (  # noqa: F401  (re-exports)
     SHOP_SUBTYPE_ACTIVITIES,
 )
 
+# Worker-process state (set by _init_chain_worker, read by _solve_person_shard)
+# lives in parallel_solving as MUTABLE module globals. A static re-export would
+# freeze the import-time value (None), so these are delegated dynamically via
+# the module-level __getattr__ below (PEP 562) to always reflect the current
+# worker state.
+_WORKER_STATE_ATTRIBUTES = (
+    "_WORKER_LOCATIONS_DF", "_WORKER_SOLVER", "_WORKER_SCORER_SPEC",
+)
 
-# ---------------------------------------------------------------------------
-# Pure helpers (unit-testable without a synpp context)
-# ---------------------------------------------------------------------------
 
+def __getattr__(name):
+    if name in _WORKER_STATE_ATTRIBUTES:
+        return getattr(parallel_solving, name)
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
