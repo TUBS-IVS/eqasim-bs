@@ -30,9 +30,16 @@ unchanged. Submodules extracted so far:
                  below still calls ``write_xyt_csv`` via this facade's
                  re-export.
 
-The remaining tabs (spatial demand, socio, behaviour, commuters, student
-commuters) and ``export_spatial`` itself are still defined directly below;
-later tasks of the same split will extract them into further siblings.
+    trip_demand  Spatial demand tab: ``_trips_xy`` (hexagon-map OD
+                 coordinates), ``_purpose_to_mode`` (purpose->mode trip
+                 counts), and ``emit_fleet``-style tab emitter
+                 ``emit_spatial_demand``. ``_purpose_to_mode`` is consumed by
+                 ``emit_behaviour`` below (still defined in this facade) via
+                 this sibling's re-export.
+
+The remaining tabs (socio, behaviour, commuters, student commuters) and
+``export_spatial`` itself are still defined directly below; later tasks of
+the same split will extract them into further siblings.
 """
 
 from __future__ import annotations
@@ -75,6 +82,12 @@ from .geo_layers import (  # noqa: F401  (re-exports)
     _XYT_SAMPLE_SEED,
     write_kreis_choropleth_geojson,
     write_xyt_csv,
+)
+from . import trip_demand  # noqa: F401  (submodule re-export)
+from .trip_demand import (  # noqa: F401  (re-exports)
+    _purpose_to_mode,
+    _trips_xy,
+    emit_spatial_demand,
 )
 
 
@@ -145,57 +158,6 @@ def _socio_by_kreis(homes_df: "pd.DataFrame") -> pd.DataFrame:
     return result
 
 
-def _trips_xy(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a slim DataFrame of origin/destination x/y coordinates.
-
-    Filters out:
-    - Rows where ``mode == "outside"`` (cordon marker trips with no internal geometry).
-    - Rows where ``origin_x`` is null (no valid origin coordinate).
-
-    Retains rows where ``destination_x`` is null (origin still valid; null
-    destination is written as NaN in the output CSV).
-
-    Args:
-        df: Full eqasim_trips DataFrame (sep=";").  Must contain columns
-            ``origin_x``, ``origin_y``, ``destination_x``, ``destination_y``,
-            ``mode``.
-
-    Returns:
-        DataFrame with exactly four columns:
-        ``origin_x``, ``origin_y``, ``destination_x``, ``destination_y``.
-    """
-    mask = df["mode"].ne("outside") & df["origin_x"].notna()
-    subset = df.loc[mask, ["origin_x", "origin_y", "destination_x", "destination_y"]]
-    return subset.reset_index(drop=True)
-
-
-def _purpose_to_mode(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate trip counts by (following_purpose, mode) for the sankey.
-
-    Drops rows where ``mode == "outside"`` so external cordon trips do not
-    appear in the flow diagram.
-
-    Args:
-        df: Full eqasim_trips DataFrame (sep=";").  Must contain columns
-            ``following_purpose`` and ``mode``.
-
-    Returns:
-        DataFrame with columns ``from``, ``to``, ``value`` (trip count),
-        one row per (following_purpose, mode) pair present in the data.
-        Sorted descending by ``value`` for stable output.
-    """
-    filtered = df[df["mode"].ne("outside")].copy()
-    counts = (
-        filtered.groupby(["following_purpose", "mode"], sort=True)
-        .size()
-        .reset_index(name="value")
-        .rename(columns={"following_purpose": "from", "mode": "to"})
-        .sort_values("value", ascending=False)
-        .reset_index(drop=True)
-    )
-    return counts
-
-
 def _economic_status_ordinal(series: pd.Series) -> pd.Series:
     """Map economic_status category strings to ordinal codes 1..5.
 
@@ -211,85 +173,6 @@ def _economic_status_ordinal(series: pd.Series) -> pd.Series:
         Float series of ordinal codes (NaN for unknowns).
     """
     return series.map(_ECONOMIC_STATUS_CODE).astype(float)
-
-
-# ---------------------------------------------------------------------------
-# Tab 1: Spatial demand (hexagons)
-# ---------------------------------------------------------------------------
-
-def emit_spatial_demand(
-    sim_output_dir: Path | None,
-    folder: Path,
-) -> "dict[str, Any] | None":
-    """Write ``trips_xy.csv`` and return the Spatial demand dashboard tab.
-
-    Reads ``eqasim_trips.csv`` from ``sim_output_dir`` (the resolved
-    ``simulation_output/`` directory, e.g. as returned by
-    ``build_dashboard._find_sim_output``).  Keeps origin/destination x/y for
-    all trips except cordon ``outside`` trips.  Returns ``None`` with a
-    WARNING when the file is absent.
-
-    File written: ``<folder>/trips_xy.csv``
-    (columns: origin_x, origin_y, destination_x, destination_y).
-
-    Args:
-        sim_output_dir: Resolved path to the MATSim ``simulation_output/``
-            directory, or ``None`` when the sim output could not be located.
-        folder: SimWrapper dashboard output folder.
-
-    Returns:
-        Dashboard dict or ``None``.
-    """
-    trips_path: Path | None = None
-    if sim_output_dir is not None:
-        trips_path = Path(sim_output_dir) / "eqasim_trips.csv"
-        if not trips_path.exists():
-            trips_path = None
-
-    if trips_path is None:
-        LOGGER.warning(
-            "[spatial_demand] eqasim_trips.csv not found in %s -- "
-            "spatial demand tab skipped",
-            sim_output_dir,
-        )
-        return None
-
-    df = pd.read_csv(trips_path, sep=";")
-    df = drop_freight_agents(df, label="spatial_demand")
-    xy = _trips_xy(df)
-    LOGGER.info("[spatial_demand] %d trips after filtering (mode!=outside, origin_x notna)", len(xy))
-
-    folder = Path(folder)
-    folder.mkdir(parents=True, exist_ok=True)
-    xy.to_csv(folder / "trips_xy.csv", index=False, encoding="utf-8")
-    LOGGER.info("[spatial_demand] wrote trips_xy.csv (%d rows)", len(xy))
-
-    return w.dashboard(
-        "Spatial demand",
-        "Trip origins & destinations (hexagon density)",
-        {
-            # One big map card per row (full width) so it renders large.
-            "hex": [
-                w.card_hexagons(
-                    "Trip origins and destinations",
-                    "trips_xy.csv",
-                    from_x="origin_x",
-                    from_y="origin_y",
-                    to_x="destination_x",
-                    to_y="destination_y",
-                    aggregation_name="Trips",
-                    from_title="Origins",
-                    to_title="Destinations",
-                    radius=300,
-                    height=13,
-                    description=(
-                        "Each hexagon colour encodes trip count. "
-                        "Select 'Origins' or 'Destinations' in the panel."
-                    ),
-                )
-            ]
-        },
-    )
 
 
 # ---------------------------------------------------------------------------
