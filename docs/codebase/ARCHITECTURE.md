@@ -280,16 +280,19 @@ donor-adapter package one level deep (`base`/`entd`/`mid`); the remaining
 non-stage first-party helper modules imported at module level (the two
 `braunschweig.data.mid` income-table modules, `assembly`, `batch`, `income`,
 `income_kreis_control`, `income_spatial_tilt`, `plausibility`,
-`prepared_cells`); and, one level deep, the two synpp stages this stage calls
-as plain undeclared libraries -- `data.census.household_size` and
-`synthesis.population.enriched` (its `__init__` plus its six submodules, since
-the called `_apply_housing_tenure` lives in `enriched.housing_tenure`). The
-DEFERRED (function-level) first-party dependencies are covered too, by dotted
-name rather than module object, lazily imported inside `validate()`. The
-transitive surface beyond this explicit, one-level-deep enumeration is
-deliberately NOT covered and is documented as such in the module docstring --
-listed explicitly (never `dir()` or a glob) so both dropping and adding a
-covered module is a visible diff. One-off effect: this stage gains a
+`prepared_cells`); and `data.census.household_size`, the one synpp stage this
+stage calls as a plain undeclared library at module level. The DEFERRED
+(function-level) first-party dependencies are covered too, by dotted name
+rather than module object, lazily imported inside `validate()` -- including
+`synthesis.population.enriched`, the second undeclared library stage, one level
+deep (its `__init__` plus its six submodules, since the called
+`_apply_housing_tenure` lives in `enriched.housing_tenure`): a dotted-name entry
+enumerates a package exactly as module objects do, so the import SITE alone
+decides which of the two tuples a module lands in. The transitive surface beyond
+this explicit, one-level-deep enumeration is deliberately NOT covered; the
+covered/not-covered boundary is stated canonically in one place, `validate()`'s
+docstring, and is listed explicitly (never `dir()` or a glob) so both dropping
+and adding a covered module is a visible diff. One-off effect: this stage gains a
 validation token it never had, so the first run after merge recomputes it and
 everything downstream once.
 
