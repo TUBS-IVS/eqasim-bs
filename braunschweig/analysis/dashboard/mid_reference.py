@@ -5,24 +5,31 @@ depends on (``_to_km_bands``, ``_earth_movers_distance``), moved verbatim from
 ``build_dashboard.py``.
 
 It also owns ``MID_DIR``, ``KREIS_NAMES``, ``P13_BINS_KM`` and ``P13_LABELS``:
-these constants are used exclusively by the functions above (no other
-function in ``build_dashboard.py`` referenced them before this split) and are
-moved here with them rather than left behind. The same applies to
+at the time of this extraction these constants were used exclusively by the
+functions above (no other function in ``build_dashboard.py`` referenced
+them), so they were moved here with them rather than left behind. A later
+split step gave ``KREIS_NAMES`` a second user: the VG250/per-Kreis cluster
+now in ``spatial_metrics.py`` imports it directly from this module (see that
+module's docstring); ``MID_DIR``, ``P13_BINS_KM`` and ``P13_LABELS`` remain
+used only by the functions above. The same applies to
 ``_safe_read_csv``: it is a generic CSV-reading helper (also used later by
 ``metrics_eqasim``/``metrics_matsim``), but at the time of this extraction it
 had no sibling module to own it yet, and ``load_mid_reference`` needs it.
 Leaving any of these in ``build_dashboard.py`` would force this module to
 import back from the facade, creating an import cycle -- so they were moved
-here instead. ``build_dashboard.py`` re-imports ``KREIS_NAMES`` for its own
-remaining internal use (the VG250/per-Kreis helpers) and re-exports every
-name below so existing callers of ``build_dashboard.<name>`` keep working
-unchanged.
+here instead. ``build_dashboard.py`` re-imports ``KREIS_NAMES`` only to
+re-export it (see the ``# noqa: F401 (re-exports)`` marker there); the
+VG250/per-Kreis helpers that actually use ``KREIS_NAMES`` internally now live
+in ``spatial_metrics.py``, which imports it directly from this module (see
+that module's docstring). Every name defined here is re-exported by
+``build_dashboard.py`` so existing callers of ``build_dashboard.<name>`` keep
+working unchanged.
 
 ``REPO_ROOT`` (needed to build ``MID_DIR``) is imported from the leaf module
 ``paths.py`` rather than recomputed privately here.
 
 This module must not import ``build_dashboard`` -- that would create an
-import cycle between the facade and this leaf module.
+import cycle between the facade and this module.
 """
 
 from __future__ import annotations

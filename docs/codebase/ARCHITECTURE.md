@@ -140,9 +140,10 @@ reference — a test or patch must target the submodule attribute
 ## Dashboard module split (issue #267, sibling-module split)
 
 `braunschweig/analysis/dashboard/build_dashboard.py` was split into a facade
-plus six sibling modules in the same package (`docs/codebase/STRUCTURE.md` has
-the submodule table). Unlike the `enriched` / `secondary_chainsolvers` stage
-packages above, this is **not a package conversion**:
+plus six domain siblings and a `paths.py` leaf (seven sibling modules in
+total, `docs/codebase/STRUCTURE.md` has the submodule table). Unlike the
+`enriched` / `secondary_chainsolvers` stage packages above, this is
+**not a package conversion**:
 `braunschweig/analysis/dashboard/` was already a package (it has its own
 `__init__.py`), so the split needed no `git mv` and changed no import path at
 all -- `braunschweig.analysis.dashboard.build_dashboard` resolves exactly as

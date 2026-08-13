@@ -15,7 +15,7 @@ step); this module never imports ``build_dashboard`` back.
 existing callers of ``build_dashboard.<name>`` keep working unchanged.
 
 This module must not import ``build_dashboard`` -- that would create an
-import cycle between the facade and this leaf module.
+import cycle between the facade and this module.
 """
 
 from __future__ import annotations

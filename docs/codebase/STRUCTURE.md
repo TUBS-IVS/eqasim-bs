@@ -98,7 +98,7 @@ braunschweig/
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
                    run_education_validation.py, dashboard/ (facade +
-                   6 sibling modules, sibling-module split since #267 --
+                   7 sibling modules, sibling-module split since #267 --
                    see subsection below), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
 ```
@@ -107,7 +107,8 @@ braunschweig/
 
 `build_dashboard.py` (1601 -> 146 lines) is the facade: docstring, imports,
 re-export blocks, `render_dashboard()` and `main()` (the CLI entry point).
-Content moved into six sibling modules inside the **same** package (the
+Content moved into six domain siblings plus a `paths.py` leaf (seven sibling
+modules in total, see the table below) inside the **same** package (the
 directory already had its own `__init__.py` before this split) -- **this is a
 sibling-module split, not a package conversion**: no `git mv`, no import-path
 change at all, so the whole class of path-reference breakage a package
@@ -127,7 +128,7 @@ never arose here.
 Import graph is acyclic with `paths` and `html_template` as leaves; no sibling
 imports the facade. `build_dashboard.py` is not itself a synpp stage (it is a
 CLI script invoked directly -- see `docs/features/run-analysis.md`), so unlike
-the `enriched` / `secondary_chainsolvers` stage packages below there is no
+the `enriched` / `secondary_chainsolvers` stage packages above there is no
 `validate()` cache-invalidation concern here. External modules import several
 `_private` names through the facade (e.g. `braunschweig/analysis/simwrapper/export.py`
 imports `_load_zgb_kreise`, `spatial_export.py` imports `_find_sim_output`), so

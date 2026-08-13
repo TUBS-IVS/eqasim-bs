@@ -23,7 +23,7 @@ owner); this module never imports ``run_metrics`` or ``build_dashboard`` back.
 existing callers of ``build_dashboard.<name>`` keep working unchanged.
 
 This module must not import ``run_metrics`` or ``build_dashboard`` -- that
-would create an import cycle between the facade/sibling and this leaf module.
+would create an import cycle between the facade/sibling and this module.
 """
 
 from __future__ import annotations

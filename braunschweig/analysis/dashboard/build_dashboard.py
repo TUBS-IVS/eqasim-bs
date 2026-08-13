@@ -23,10 +23,11 @@ Module layout: this file is the facade for the ``dashboard`` package. The
 large ``HTML_TEMPLATE`` string literal used by ``render_dashboard`` lives in
 the sibling module ``html_template.py``. The MiD 2023 reference loader
 (``load_mid_reference``) and the distance-band helpers it depends on
-(``_to_km_bands``, ``_earth_movers_distance``), along with the constants used
-exclusively by them (``MID_DIR``, ``KREIS_NAMES``, ``P13_BINS_KM``,
-``P13_LABELS``) and the generic ``_safe_read_csv`` helper, live in the
-sibling module ``mid_reference.py``. The per-run metric computation
+(``_to_km_bands``, ``_earth_movers_distance``), along with ``MID_DIR``,
+``P13_BINS_KM`` and ``P13_LABELS`` (used exclusively by them), ``KREIS_NAMES``
+(also used by the VG250/per-Kreis cluster in ``spatial_metrics.py``, see
+below), and the generic ``_safe_read_csv`` helper, live in the sibling module
+``mid_reference.py``. The per-run metric computation
 (``metrics_eqasim``, ``metrics_matsim``) and its supporting helpers
 (``_find_sim_output``, ``_detect_sample_rate``) live in the sibling module
 ``run_metrics.py``. The VG250/per-Kreis spatial cluster that
