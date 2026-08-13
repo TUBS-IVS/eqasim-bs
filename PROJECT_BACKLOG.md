@@ -81,8 +81,9 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
   desired-distance layers inert under top_n (re-confirmed by the #262 A/B: substrate moves,
   realized medians ~unchanged; knobs: selection=mnl [wired], dist_dev_weight, dp_sample;
   USER runs the experiments); (b) zero-leg measurement convention — collapse consecutive
-  same-anchor activities before distance scoring; (c) secondary_chainsolvers.py file split
-  (now ~5k lines after #262).
+  same-anchor activities before distance scoring; (c) DONE 2026-08-13 — chainsolver stage
+  split merged (issue #266, PR #268, ADR-0076: stage package + validate() token, server
+  suite 3585/30/0); remaining oversized modules tracked as its own Tier-4 item below.
 
 - **[0.1]** Calibration-corner remainder — bulk already on `main` (PR #18/#19); remainder on
   `reconcile/calibration-remainder` — run the server test suite, then push as one PR.
@@ -154,6 +155,12 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 - **[4.3]** ~~Config cleanup (**#81**)~~ **RESOLVED-IN-REVIEW — [PR #234](https://github.com/TUBS-IVS/eqasim-bs/pull/234)** (closes #81/#230): 37 root `config_*.yml` -> composed `configs/base_bs.yml` + per-scale overlays; 9 fixtures -> `configs/fixtures/`, 15 ballast `git rm`'d, root config-free. **MERGED 2026-07-22** (closed #81/#230). ADR-0070.
 - **[4.4]** Factor a reusable 1km-cell control-fit smoke test (planned in the PR #173 /
   `in_ausbildung` control spec, not yet built) — no issue yet.
+- **[4.5]** Oversized-module refactors, **issue [#267](https://github.com/TUBS-IVS/eqasim-bs/issues/267)**
+  (follow-up to the merged #266 chainsolver split): `synthesis/population/enriched.py` (2890),
+  `popsim/mid.py` (1938), `popsim/stage.py` (1908), `analysis/dashboard/build_dashboard.py` (1601),
+  `analysis/simwrapper/spatial_export.py` (1593), `popsim/sources/entd.py` (1487),
+  `gravity/model.py` (1483). Ground rules = ADR-0076 (pure moves, facade re-exports,
+  synpp `validate()` token where a stage delegates to helpers); one module per PR.
 
 ### TIER 5 — Drop / do NOT re-attempt (recorded so we don't loop back)
 
