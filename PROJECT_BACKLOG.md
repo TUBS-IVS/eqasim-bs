@@ -59,23 +59,29 @@ pre-trim text (effort/status columns, commit hashes, branch names) is preserved 
 
 ### TIER 0 — Do now (cheap, high urgency, prevents loss / unblocks everything)
 
-- **[0.6]** **PR #260 OPEN:** escort family #201+#256+#257 + multi-child anchoring — branch
-  `feature/escort-purpose-201` @d08367d (anchor fix SDD-built, Fable final review 0 Critical;
-  re-run 2026-08-12 @5f10f25: consecutive zero-legs 674->96, all residual same-facility;
-  ADR-0073 on branch). REMAINING: merge #260 -> dissolve worktree -> java companion PR
-  (`feature/escort-activity-type`, eqasim-java-bs c9a1f79); validation CLI
-  `--escort-passive-education`; post-merge touch-ups (ADR-0073 heading "PR pending" -> merged,
-  label the "5-8%" docstring cardinality as assumption, ADR-0072 citation note).
-  **ADR carry-over:** local-only ADR "MATSim contribs lockstep via ${matsim.version} +
-  SimWrapper Layer-1 ON" (was 0d117f7's ADR-0071, collided with origin's 0071) is NOT in main
-  -> re-add as **ADR-0074 AFTER #260 merges** (source: branch `backup/pm-0d117f7`).
-  ISSUES to confirm+open (user-pending): (a) carla distance propagation — desired-distance
-  layers inert under top_n (affects shop/leisure subtype layers too, never measured; knobs:
-  selection=mnl [wired], dist_dev_weight, dp_sample; USER runs the experiments);
-  (b) zero-leg measurement convention — collapse consecutive same-anchor activities before
-  distance scoring; (c) secondary_chainsolvers.py file split (3.4k lines);
-  (d) 7 pre-existing full-suite failures (freight-injection mock drift + student-incommuter
-  mocked geodata; zero-diff-proven vs 11e3822).
+- **[0.8]** **PR #263 OPEN:** SrV location types #262 — branch `feature/srv-location-types-262`
+  @d2a36a6 (SDD-built, Fable final review clean, suite 3572/0; 5% A/B VALIDATED, RUNS.md
+  `srv262-AB-5pct-2026-08-12`: leisure landuse points 0->31.9%, errand typed buildings 0->75.5%,
+  draw shares within 1.8pp of SrV refs, purpose mix byte-identical; ADR-0075 on branch).
+  REMAINING: merge #263 -> dissolve worktrees (`srv-location-types-262` local + `~/wt-srv262`
+  felix) -> sync gitignored spec copy amendments to the main checkout.
+  ISSUES to confirm+open (user-pending, #262-sourced): (e) leisure_visit pool has no external
+  escape — 10.8% of excursion-labeled visit legs clip at the region edge (structural, now
+  measured); (f) MiD-vs-SrV realized-distance level gap ~1.5-2x (pre-existing, both A/B runs;
+  overlaps calibration-corner scope).
+
+- **[0.6]** Escort family post-merge remainder (PR #260 MERGED 2026-08-12; ADR-0074 carry-over
+  DONE 2026-08-13 on the #262 branch): java companion PR (`feature/escort-activity-type`,
+  eqasim-java-bs c9a1f79); validation CLI `--escort-passive-education`; dissolve the escort
+  worktrees (local `feature-escort-purpose-201` + felix `~/wt-escort`); minor doc touch-ups
+  (label the "5-8%" docstring cardinality as assumption, ADR-0072 citation note; ADR-0073
+  heading fixed on the #262 branch).
+  ISSUES to confirm+open (user-pending, carried): (a) carla distance propagation —
+  desired-distance layers inert under top_n (re-confirmed by the #262 A/B: substrate moves,
+  realized medians ~unchanged; knobs: selection=mnl [wired], dist_dev_weight, dp_sample;
+  USER runs the experiments); (b) zero-leg measurement convention — collapse consecutive
+  same-anchor activities before distance scoring; (c) secondary_chainsolvers.py file split
+  (now ~5k lines after #262).
 
 - **[0.1]** Calibration-corner remainder — bulk already on `main` (PR #18/#19); remainder on
   `reconcile/calibration-remainder` — run the server test suite, then push as one PR.
