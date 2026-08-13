@@ -15,19 +15,14 @@ ruling, see that module's docstring): it has call sites in this module AND in
 multi-module dependency rather than a single-consumer helper -- both later
 submodules import it from ``csv_format`` directly rather than duplicating it.
 
-``load_mid_wege`` is called by both functions below but still lives in the
-package ``__init__`` at this point in the split (it moves to ``donor.py`` in
-task 5; it also has consumers outside this package, e.g. ``trips_stage.py`` /
-``stage.py`` / ``sources/mid.py``, so relocating it is not a task-4 concern).
-Importing it at THIS module's top level would fail: the package facade below
-imports ``seed_loading`` before ``__init__.py`` defines ``load_mid_wege``
-further down the file, so ``from braunschweig.popsim.mid import
-load_mid_wege`` at module scope would raise an ImportError against the
-partially initialized package. Both call sites therefore import it locally,
-immediately before use; by the time either function is actually CALLED
-(always after the package has fully initialized), the name resolves normally.
-This is a mechanical consequence of the split ordering (task 4 runs before
-task 5), not a behavior change.
+``load_mid_wege`` is called by both functions below and now lives in the
+sibling module ``donor.py`` (task 5; it also has consumers outside this
+package, e.g. ``trips_stage.py`` / ``stage.py`` / ``sources/mid.py``, so
+relocating it was not a task-4 concern). It is imported here as a normal
+module-level sibling import (``from .donor import load_mid_wege``); the
+earlier function-local workaround imports (needed only while ``load_mid_wege``
+still lived in the partially-initialized package ``__init__``) are gone.
+``donor.py`` does not import this module, so no import cycle results.
 """
 
 from __future__ import annotations
@@ -44,6 +39,7 @@ from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
 
 from .csv_format import detect_csv_separator
+from .donor import load_mid_wege
 from .participation import derive_participation_seed
 from .participation import derive_trip_class_seed
 
@@ -332,10 +328,6 @@ def load_mid_seed(
         if f"{purpose}_participation" in active_kreis_entry_names
     ]
     if _active_participation_purposes:
-        # Local import: load_mid_wege still lives in the package __init__ at this point
-        # in the #267 split (moves to donor.py in task 5); see the module docstring above
-        # for why this cannot be a module-level import here.
-        from braunschweig.popsim.mid import load_mid_wege
         wege = load_mid_wege(mid_dir)
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
@@ -529,10 +521,6 @@ def project_completed_seed(
                 f"{_active_participation_purposes} is active but mid_dir is not set; cannot "
                 f"load the MiD Wege table to derive participation flags for {_active_participation_purposes} (no silent fallback)."
             )
-        # Local import: load_mid_wege still lives in the package __init__ at this point
-        # in the #267 split (moves to donor.py in task 5); see the module docstring above
-        # for why this cannot be a module-level import here.
-        from braunschweig.popsim.mid import load_mid_wege
         wege = load_mid_wege(mid_dir)
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
