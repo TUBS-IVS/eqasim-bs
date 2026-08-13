@@ -187,7 +187,7 @@ def test_build_plans_df_leisure_decider_tags_leg_and_uses_subtype_distance():
         "shop": _flat_distribution(),
         "other": _flat_distribution(),
     }
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_problem(), layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
     )
@@ -208,7 +208,7 @@ def test_build_plans_df_leisure_subtype_distance_layer_fallback_counted():
         "shop": _flat_distribution(),
         "other": _flat_distribution(),
     }
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_problem(), layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_visit",
     )
@@ -229,7 +229,7 @@ def test_build_plans_df_other_rest_keeps_aggregate_placement_and_distance():
         "shop": _flat_distribution(),
         "leisure": _flat_distribution(),
     }
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _other_problem(), layered, 2.0, np.random.RandomState(2),
         other_subtype_decider=lambda mode, tt: "other_rest",
     )
@@ -250,7 +250,7 @@ def test_build_plans_df_other_errand_short_tags_leg_and_uses_subtype_distance():
         "shop": _flat_distribution(),
         "leisure": _flat_distribution(),
     }
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _other_problem(), layered, 2.0, np.random.RandomState(2),
         other_subtype_decider=lambda mode, tt: "other_errand_short",
     )
@@ -266,7 +266,7 @@ def test_build_plans_df_other_subtype_distance_layer_fallback_counted():
         "shop": _flat_distribution(),
         "leisure": _flat_distribution(),
     }
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _other_problem(), layered, 2.0, np.random.RandomState(2),
         other_subtype_decider=lambda mode, tt: "other_escort",
     )
@@ -285,11 +285,11 @@ def test_build_plans_df_off_path_byte_identical_leisure_and_other_deciders_none(
     problems = _bounded_problems_mixed()
     distributions = _flat_distribution()
 
-    explicit_off_df, explicit_meta, explicit_unbounded, explicit_stats = sc._build_plans_df(
+    explicit_off_df, explicit_meta, explicit_unbounded, explicit_stats, _desired_by_category = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5),
         leisure_subtype_decider=None, other_subtype_decider=None,
     )
-    default_df, default_meta, default_unbounded, default_stats = sc._build_plans_df(
+    default_df, default_meta, default_unbounded, default_stats, _desired_by_category = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5),
     )
 
@@ -431,7 +431,7 @@ def test_carla_accepts_leisure_subtype_activities_smoke():
         "shop": _flat_distribution(),
         "other": _flat_distribution(),
     }
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _leisure_problem(), layered, 2.0, np.random.RandomState(3),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
     )
@@ -467,7 +467,7 @@ def test_carla_accepts_other_subtype_activities_smoke():
         "shop": _flat_distribution(),
         "leisure": _flat_distribution(),
     }
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _other_problem(), layered, 2.0, np.random.RandomState(4),
         other_subtype_decider=lambda mode, tt: "other_escort",
     )
@@ -857,7 +857,7 @@ def test_excursion_desired_distances_and_anchors_extracts_only_excursion_legs():
         "other": _flat_distribution(),
     }
     problems = _leisure_problem()  # origin=(0,0), destination=(1000,1000)
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
     )
@@ -875,7 +875,7 @@ def test_excursion_desired_distances_and_anchors_empty_when_no_excursion_legs():
         "other": _flat_distribution(),
     }
     problems = _leisure_problem()
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_local",
     )
@@ -969,7 +969,7 @@ def test_excursion_boundary_clip_end_to_end_on_synthetic_scenario():
             "destination": np.array([[10.0, 10.0]]),
         },
     ]
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         problems, layered, 2.0, np.random.RandomState(1),
         leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
     )

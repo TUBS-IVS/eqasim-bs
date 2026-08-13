@@ -62,6 +62,7 @@ def configure(context):
     # Needed for the fail-fast cross-flag guard below (the flag itself is
     # owned by the chainsolvers stage; read-only here).
     context.config("secondary_leisure_subtype_split", False)
+    context.config("secondary_other_subtype_split", False)
     context.config("leisure_visit_building_potential", False)
     # Unconditional declaration (issue #201 fix): escort_purpose must not be
     # declared ONLY inside `if sec_enabled:` above or as the right operand of
@@ -75,6 +76,19 @@ def configure(context):
     context.config("escort_purpose", False)
     if context.config("leisure_visit_building_potential") or context.config("escort_purpose"):
         context.stage("braunschweig.data.buildings")
+
+    # SrV-grounded location-category candidates (issue #262): declare
+    # UNCONDITIONALLY, exactly like escort_purpose above -- never move this
+    # inside `if sec_enabled:` or make it the right operand of a short-
+    # circuited `or`, or the same #201 trap recurs (execute()'s one-arg
+    # config() read would crash with synpp's PipelineError instead of
+    # reaching the intended ValueError guard below).
+    srv_location_types = context.config("secondary_srv_location_types", False)
+    context.config("secondary_landuse_grid_spacing_meters", 150.0)
+    if srv_location_types:
+        context.stage("braunschweig.data.landuse")
+        context.stage("braunschweig.data.bosserhof_location_category")
+        context.stage("data.spatial.municipalities")
 
 
 def execute(context):
@@ -91,10 +105,13 @@ def execute(context):
     sec_enabled = context.config("secondary_building_potentials")
     leisure_visit = bool(context.config("leisure_visit_building_potential"))
     escort_on = bool(context.config("escort_purpose"))
+    srv_location_types = bool(context.config("secondary_srv_location_types"))
+    leisure_subtype_split = bool(context.config("secondary_leisure_subtype_split"))
+    other_subtype_split = bool(context.config("secondary_other_subtype_split"))
 
     # Same fail-fast guards as the chainsolvers (they must hold wherever the
     # candidate set is assembled; no silent fallback to a degenerate set).
-    if leisure_visit and not context.config("secondary_leisure_subtype_split"):
+    if leisure_visit and not leisure_subtype_split:
         raise ValueError(
             "[braunschweig.secondary_candidates] leisure_visit_building_potential "
             "requires secondary_leisure_subtype_split to be ON (there is no "
@@ -105,6 +122,18 @@ def execute(context):
             "[braunschweig.secondary_candidates] leisure_visit_building_potential "
             "requires secondary_building_potentials to be ON (the residential visit "
             "placement needs the pot_visit candidate column)."
+        )
+    if srv_location_types and not (
+        sec_enabled and leisure_subtype_split and other_subtype_split and leisure_visit
+    ):
+        raise ValueError(
+            "[braunschweig.secondary_candidates] secondary_srv_location_types requires "
+            "secondary_building_potentials, secondary_leisure_subtype_split, "
+            "secondary_other_subtype_split, AND leisure_visit_building_potential to all "
+            "be ON (the SrV location-category candidates are built on top of the "
+            "building-potential candidate set, the leisure/other subtype split, and "
+            "the residential visit machinery that type-15 escort-leisure legs route "
+            "onto); no silent fallback to a partial category set is performed."
         )
 
     if not sec_enabled:
@@ -165,5 +194,88 @@ def execute(context):
         )
         df_secondary = append_escort_candidates(
             df_secondary, context.stage("synthesis.locations.education"))
+
+    if srv_location_types:
+        from braunschweig.data.bosserhof_location_category import BUILDING_CATEGORIES
+        from braunschweig.synthesis.locations.landuse_candidates import (
+            LANDUSE_LAYER_TO_CATEGORY,
+            grid_seed_polygons,
+        )
+        from braunschweig.synthesis.locations.secondary_chainsolvers import (
+            append_external_category_escapes,
+            append_landuse_candidates,
+            append_location_category_columns,
+            check_category_supply,
+            check_visit_pool_supply,
+        )
+
+        # min_volume_m3 / cap_percentile mirror secondary_other_min_volume_m3 /
+        # secondary_other_cap_percentile (the same cap-and-floor formula
+        # secondary_other_potential.derive_other_potential uses) -- both are
+        # declared unconditionally whenever secondary_building_potentials is ON
+        # (configure(), directly inside the `if sec_enabled:` block, not nested
+        # under secondary_other_smart_potential), which is guaranteed here
+        # because the guard above already requires secondary_building_potentials
+        # ON whenever secondary_srv_location_types is ON.
+        df_secondary = append_location_category_columns(
+            df_secondary,
+            context.stage("braunschweig.data.building_potentials"),
+            context.stage("braunschweig.data.bosserhof_location_category"),
+            min_volume_m3=float(context.config("secondary_other_min_volume_m3")),
+            cap_percentile=float(context.config("secondary_other_cap_percentile")),
+        )
+
+        df_landuse = context.stage("braunschweig.data.landuse")
+        df_landuse_seedable = df_landuse[df_landuse["layer"].isin(LANDUSE_LAYER_TO_CATEGORY.keys())]
+        spacing_m = float(context.config("secondary_landuse_grid_spacing_meters"))
+        df_landuse_points = grid_seed_polygons(df_landuse_seedable, spacing_m)
+
+        df_secondary = append_landuse_candidates(
+            df_secondary, df_landuse_points, LANDUSE_LAYER_TO_CATEGORY,
+            context.stage("data.spatial.municipalities"),
+        )
+
+        # Non-empty check (CLAUDE.md fallback transparency): every SrV
+        # location category must carry at least one positive-potential
+        # candidate, or the wiring (mapping / grid seeding / potential join)
+        # is broken. All six categories are checked -- the three leisure_*
+        # categories (masking pot_leisure on sec_b_* buildings), the two
+        # errand_* categories (derived from df_potentials by
+        # append_location_category_columns via the cap-and-floor formula
+        # above, including newly appended sec_b_* rows for errand-class
+        # buildings absent from the input candidates), and leisure_outdoor
+        # (landuse-only, no building counterpart).
+        #
+        # ORDER MATTERS (re-review finding): this runs on the escape-FREE frame,
+        # i.e. BEFORE append_external_category_escapes below. The escapes give
+        # every external Gemeinde centroid a positive potential in all six
+        # categories, so checking afterwards would make the guard unfalsifiable
+        # whenever secondary_external_candidates is ON (its default) -- a broken
+        # building mapping or landuse seeding would pass on external supply
+        # alone. The guard must measure genuine IN-AREA supply.
+        check_category_supply(df_secondary, BUILDING_CATEGORIES + ("leisure_outdoor",))
+
+        # The SEVENTH category, leisure_visit, is placed on the residential visit
+        # pool (offers_visit / pot_visit), whose column names do not follow the
+        # "pot_<category>" scheme check_category_supply keys on -- hence its own
+        # guard, run at the same point and on the same escape-free frame.
+        # leisure_visit is deliberately excluded from the external escapes, and
+        # leisure_visit_building_potential is a hard prerequisite of
+        # secondary_srv_location_types, so zero visit supply here is always broken
+        # wiring (a residential append that did not run, or ran on an empty /
+        # zero-weight buildings frame), never thin data. Without this the omission
+        # would only surface later inside the measure-only excursion
+        # boundary-clip diagnostic -- the wrong place to discover it.
+        check_visit_pool_supply(df_secondary)
+
+        # Long-distance reach parity (post-Task-8 review finding): the external
+        # Gemeinde centroids are category-agnostic distance escapes -- without
+        # this step every category leg would be confined to in-area candidates
+        # and long desired distances would clip to the region edge, a regression
+        # versus the OFF path. Applied LAST: after both category-column appends
+        # (so every pot_<category> column exists and the landuse mixed-pool
+        # mean-normalisation above still measures BUILDING potentials only) and
+        # after the supply check above (so it cannot mask missing in-area supply).
+        df_secondary = append_external_category_escapes(df_secondary)
 
     return df_secondary

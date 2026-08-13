@@ -1,6 +1,6 @@
 # PROJECT STATUS — eqasim-bs (dashboard)
 
-Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
+Updated: 2026-08-12 · Details: docs/features/ · History: docs/archive/ · Decisions: docs/DECISIONS.md
 
 ## 1. Live state
 
@@ -10,7 +10,7 @@ Updated: 2026-07-23 · Details: docs/features/ · History: docs/archive/ · Deci
 - Mode choice is OFF in every run config (`mode_choice: false`) — no calibrated modal split exists; do not read any run's mode shares as behaviourally validated.
 - Convergence caveat: the eqasim termination criterion stops a run when mode shares STABILISE, not when they match observed data — stabilisation is not validation.
 - Last full-suite green: 2026-07-19, felix, 3170 passed / 0 failed; no full-suite re-run is recorded in `SESSION_LOG.md` since PR #225 (2026-07-20).
-- Current focus: (a) **escort family #201+#256+#257 + multi-child anchoring COMPLETE** — **[PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) OPEN, MERGEABLE** (closes all three; conflicts vs main resolved 2026-08-12); anchor-fix re-run @5f10f25: consecutive zero-legs 674->96 (-86%), all residual same-facility siblings. (b) eqasim-java 2.2.0 e2e-green; PR #239 MERGED (8ee06c0). Next: merge #260 -> java companion PR -> 100% production run on the 2.2.0 stack.
+- Current focus: (a) **SrV location types #262 COMPLETE + 5% A/B VALIDATED** — **[PR #263](https://github.com/TUBS-IVS/eqasim-bs/pull/263) OPEN** (leisure landuse points 0->31.9%, errand typed buildings 0->75.5%, draw shares within 1.8pp of SrV refs, purpose mix byte-identical; RUNS.md `srv262-AB-5pct-2026-08-12`, ADR-0075). (b) escort family PR #260 + test-fix PR #261 MERGED 2026-08-12; remainder = backlog [0.6] (java companion PR, CLI flag, worktree dissolution). Next: merge #263 -> 100% production run on the 2.2.0 stack.
 
 ## 2. Feature matrix
 
@@ -20,7 +20,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 
 | Feature | Status | Flag / config key | Validated against | Detail doc |
 |---|---|---|---|---|
-| **[Location]** NEW — Escort family: dedicated purpose + SrV draw (#201), passive-as-education (#256), distance-by-type (#257), multi-child anchoring (ADR-0073) | 🟢 complete on branch, twice run-validated (@5f10f25: consecutive zero-legs 674->96, purpose mix invariant); **PR #260 OPEN** | `escort_purpose`, `escort_household_link`, `escort_passive_education`, `escort_distance_by_type` (all ON in base_bs) | pinned `srv2023_escort_destination_types.csv` + `srv2023_escort_distance_factors.csv` + `mid2023_escort_w_zweck_split.csv`; W1 active-adjusted refs | `docs/features/escort-purpose.md` (branch); ADR-0072/0073 (branch) |
+| **[Location]** Escort family: dedicated purpose + SrV draw (#201), passive-as-education (#256), distance-by-type (#257), multi-child anchoring (ADR-0073) | 🟢 **MERGED (PR #260, 2026-08-12)**, twice run-validated; remainder backlog [0.6] (java companion PR, CLI flag) | `escort_purpose`, `escort_household_link`, `escort_passive_education`, `escort_distance_by_type` (all ON in base_bs) | pinned `srv2023_escort_destination_types.csv` + `srv2023_escort_distance_factors.csv` + `mid2023_escort_w_zweck_split.csv`; W1 active-adjusted refs | `docs/features/escort-purpose.md`; ADR-0072/0073 |
 | **[Synthesis]** IPF synthesis (legacy default) | ✅ | `population.method: simple_ipf_open` | Zensus 2022, GENESIS | docs/features/household-synthesis.md |
 | **[Synthesis]** popsim_open / popsim_mid | ✅ alt paths (popsim_mid ON in allfeat_popsim) | `population.method` | Zensus + MiD 2023 | docs/features/household-synthesis.md |
 | **[Synthesis]** Household-size margin | 🟢 | `ipf.use_household_size_margin` | Zensus 1000A-2081 | docs/features/household-synthesis.md |
@@ -51,6 +51,7 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 | **[Fleet]** Fleet consistency v2 + income-age | ✅ (PR #12/#13) | folded into household fleet | KBA/MiD | `synthesis/vehicles/` |
 | **[Fleet]** Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check) | 🟡 pushed `feature/fleet-quality-and-data`, server-verify + merge pending | `fleet_ev_income_tilt` / `fleet_euro6_substage` | KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB | `synthesis/vehicles/fleet_sampling_de.py` |
 | **[Fleet]** Carless routing re-mode | 🟢 | `remode_carless_car_legs` | routing consistency | `matsim/simulation/prepare.py` |
+| **[Location]** NEW — SrV-grounded secondary location types (leisure/other) (#262) | 🟢 built, ON in `base_bs.yml`; **5% A/B VALIDATED** (`srv262-AB-5pct-2026-08-12`: landuse 0->31.9%, draw shares ≤1.8pp off refs, purpose mix invariant); **PR #263 OPEN** | `secondary_srv_location_types` (+4 prereq flags, all in `base_bs.yml`) | pinned `srv2023_location_type_by_distance.csv` + `srv2023_secondary_type_shares.csv` (draw-coherence) + A/B substrate/distance analysis (RUNS.md) | docs/features/secondary-location-types.md; ADR-0075 |
 | **[Location]** Gravity OD (work/edu) | ✅ | `gravity_slope -0.065` | BA Pendleratlas | docs/features/gravity.md |
 | **[Location]** Per-RS7 gravity slope | 🟢 | `gravity_slope_by_regiostar7` | BA Pendler Poisson GLM | docs/features/gravity.md |
 | **[Location]** Education gravity (schools/Kita/uni) | 🟢 (allfeat) | `education_gravity_enabled` | MiD T43, Destatis MZ 2024 | docs/features/education-gravity.md |
@@ -91,8 +92,9 @@ carries forward one row of the pre-trim matrix (or is marked NEW); detail lives 
 
 ## 3. Branches & PRs
 
-**1 open PR:** [#260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) — escort family #201+#256+#257 + multi-child anchoring (58 commits incl. main-merge; **MERGEABLE**, conflicts resolved 2026-08-12: STATUS/BACKLOG took main, DECISIONS = main + ADR-0072/0073 appended). PR #234, #237, #238, and #239 (eqasim-java 2.2.0 matsim.output green) all MERGED 2026-07-22/23. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
-- `feature/escort-purpose-201` (worktree `feature-escort-purpose-201`) — **escort family, [PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) OPEN @ d08367d**; twice run-validated (`~/wt-escort`); dissolve worktree after merge; java companion `feature/escort-activity-type` (eqasim-java-bs, c9a1f79) needs its own PR post-merge.
+**1 open PR:** [#263](https://github.com/TUBS-IVS/eqasim-bs/pull/263) — SrV location types #262 (26 commits; 5% A/B validated, suite 3572/0, Fable final review clean). PR #260 (escort family) + #261 (test-double fixes) MERGED 2026-08-12. Local branches not yet merged into `main` (`git branch --no-merged main`), most checked out as `.claude/worktrees/*`:
+- `feature/srv-location-types-262` (worktree `srv-location-types-262`) — **[PR #263](https://github.com/TUBS-IVS/eqasim-bs/pull/263) OPEN @ d2a36a6**; A/B-validated (`~/wt-srv262` on felix); dissolve both worktrees after merge.
+- `feature/escort-purpose-201` (worktree `feature-escort-purpose-201`) — MERGED via PR #260; dissolve worktree (+ felix `~/wt-escort`); java companion `feature/escort-activity-type` (eqasim-java-bs, c9a1f79) needs its own PR (backlog [0.6]).
 
 - `worktree-calibration-corner` (worktree `calibration-corner`) — calibration-corner remainder, backlog #1, server test run pending.
 - `feature/fleet-quality-and-data` (worktree `eqasim-bs-fleet`) — fleet realism upgrade, backlog [1.5], server phase + PR pending.
@@ -113,7 +115,7 @@ Stale worktree dirs pending removal (branch already merged into `main`): `placem
 
 ## 4. Top of the backlog
 
-1. Merge [PR #260](https://github.com/TUBS-IVS/eqasim-bs/pull/260) (escort family) → dissolve worktree → java companion PR; then backlog [0.6] follow-ups (issues, ADR-0074 carry-over, CLI flag).
+1. Merge [PR #263](https://github.com/TUBS-IVS/eqasim-bs/pull/263) (SrV location types) → dissolve worktrees; then backlog [0.6] escort remainder (java companion PR, CLI flag) + the user-pending issue proposals (a/b/c/e/f).
 2. Calibration-corner remainder — run the server test suite, then push as one PR.
 3. Push `integration/all-features` once the remainder above lands.
 4. 100% production run on the newest code (Tier-A/B caching makes it affordable).

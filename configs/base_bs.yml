@@ -80,6 +80,18 @@ config:
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
   education_building_distribution: true
+  # SrV-grounded location types for leisure/other secondary activities (issue
+  # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location
+  # category conditioned on (E_HVM_5 mode, euclidean-equivalent distance band)
+  # AFTER its desired distance is sampled (design A2;
+  # docs/superpowers/specs/2026-08-12-srv-location-types-design.md); the drawn
+  # category -- not the MiD distance subtype -- decides WHERE the leg is
+  # placed (buildings via the Bosserhof mapping, green/open space via ATKIS
+  # landuse grid seeding, or the existing residential visit pool). Requires
+  # secondary_building_potentials, secondary_leisure_subtype_split,
+  # secondary_other_subtype_split, leisure_visit_building_potential all ON
+  # (checked, fail-fast). Defaults False in code -> byte-identical OFF.
+  secondary_srv_location_types: true
 
   data_path: eqasim-data/data
   # Archive simulation_output/ into <output_path>/matsim_output/ after the run

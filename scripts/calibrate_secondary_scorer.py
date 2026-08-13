@@ -441,7 +441,7 @@ def calibrate(
     logger.info("[calibrate-scorer] %d problems in %.1fs.", len(problems), time.time() - t0)
 
     random = np.random.RandomState(random_seed)
-    plans_df, problem_meta, unbounded_idx, _ = _build_plans_df(
+    plans_df, problem_meta, unbounded_idx, _, _ = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
     )
     logger.info(

@@ -34,6 +34,7 @@ from __future__ import annotations
 import copy
 import multiprocessing as mp
 import time
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 import geopandas as gpd
@@ -216,6 +217,36 @@ def configure(context):
     # residential candidate rows themselves are appended by the
     # secondary_candidates stage, which owns the braunschweig.data.buildings dep.
     context.config("leisure_visit_building_potential", False)
+
+    # SrV-grounded location types (issue #262). When ON, every leisure / other
+    # leg draws an OBSERVED SrV-2023-BS+RGB destination category conditioned on
+    # (mode, euclidean distance band) AFTER its desired distance was sampled
+    # (design A2), and that category -- not the MiD distance subtype -- decides
+    # where the leg is placed. The eqasim output purpose stays "leisure" /
+    # "other"; the category is internal to the chainsolver. Requires the
+    # building-potential candidate set, both subtype splits and the residential
+    # visit machinery (checked, fail-fast, in execute() via
+    # _validate_srv_location_type_prerequisites). OFF (default) is
+    # byte-identical.
+    #
+    # Both keys are declared UNCONDITIONALLY -- never inside an `if` block and
+    # never as the right operand of a short-circuiting `or` (the issue #201 trap
+    # documented at secondary_candidates.py: an undeclared key makes execute()'s
+    # one-argument config() read raise synpp's PipelineError instead of reaching
+    # the intended fail-fast guard).
+    context.config("secondary_srv_location_types", False)
+    context.config("srv_location_type_probs_path", DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH)
+
+    # Per-run draw-summary artifact (issue #262, Task 9): a draw-coherence
+    # check comparing the drawn category shares / desired-distance medians
+    # against the pinned SrV reference (srv2023_secondary_type_shares.csv).
+    # Declared UNCONDITIONALLY (see the comment above on the two keys just
+    # above) so a misconfigured OFF-flag run never hits synpp's
+    # declared-keys-only PipelineError; the writer itself only runs when
+    # secondary_srv_location_types is ON (execute() checks the flag before
+    # loading either path).
+    context.config("srv_location_type_shares_path", DEFAULT_SRV_LOCATION_TYPE_SHARES_PATH)
+    context.config("srv_location_share_warn_pp", DEFAULT_SRV_LOCATION_SHARE_WARN_PP)
 
 
 # ---------------------------------------------------------------------------
@@ -779,6 +810,780 @@ def append_escort_candidates(candidates: gpd.GeoDataFrame,
     return out
 
 
+# ---------------------------------------------------------------------------
+# SrV-grounded location-category candidates (issue #262): per-category
+# building offer/potential columns + ATKIS landuse grid-point candidates.
+# ---------------------------------------------------------------------------
+
+# Offer/potential columns for the SrV location categories (issue #262).
+#
+# PLAN AMENDMENT (issue #262, post-Task-4 review): the leisure_* categories
+# genuinely MASK the pot_leisure aggregate a sec_b_* row already carries (see
+# ``build_secondary_candidates`` for how pot_leisure is derived) -- that part
+# is unchanged. The errand_* categories do NOT mask pot_other: every sec_b_*
+# row carries pot_other=0.0 by construction (build_secondary_candidates keeps
+# only buildings with retail>0 | leisure>0), and errand-class buildings
+# (hospitals, authorities, service businesses, ...) are therefore excluded
+# from the candidate set entirely. Masking pot_other would be a structural
+# zero-supply bug, not a thin-data limitation. ``append_location_category_columns``
+# now derives the two errand categories' potential directly from
+# ``df_potentials`` (the ``derive_other_potential`` cap-and-floor formula,
+# applied per category -- see that function for the shared numerics) and
+# appends a NEW ``sec_b_<building_id>`` candidate row for every errand-class
+# building missing from ``candidates``. The dict below is kept as the
+# leisure/errand grouping key other callers (e.g.
+# ``secondary_candidates.execute``) use to select the leisure subset; for the
+# errand entries it no longer means "mask this column literally".
+SRV_BUILDING_CATEGORY_BASE_POTENTIAL = {
+    "leisure_culture": "pot_leisure",
+    "leisure_gastronomy": "pot_leisure",
+    "leisure_sports": "pot_leisure",
+    "errand_authority_medical": "pot_other",
+    "errand_service": "pot_other",
+}
+
+
+def append_location_category_columns(candidates: gpd.GeoDataFrame,
+                                      df_potentials: gpd.GeoDataFrame,
+                                      mapping: pd.DataFrame,
+                                      *, min_volume_m3: float = 50.0,
+                                      cap_percentile: float = 0.99) -> gpd.GeoDataFrame:
+    """Add per-category offer/potential columns to the candidates frame (issue #262).
+
+    For each of the five ``SRV_BUILDING_CATEGORY_BASE_POTENTIAL`` categories,
+    adds ``offers_<category>`` (bool) and ``pot_<category>`` (float) to
+    EVERY row of ``candidates``. The three ``leisure_*`` categories MASK the
+    existing ``pot_leisure`` aggregate on ``sec_b_<building_id>`` rows already
+    present in ``candidates``: for a row whose Bosserhof class maps to
+    ``<category>`` in ``mapping``, ``pot_<category> = pot_leisure`` (a mask,
+    not a new formula) and ``offers_<category> = pot_<category> > 0``.
+
+    The two ``errand_*`` categories (``errand_authority_medical``,
+    ``errand_service``) are DIFFERENT: masking ``pot_other`` would be
+    structurally zero everywhere, because ``build_secondary_candidates`` sets
+    ``pot_other=0.0`` on every ``sec_b_*`` row and excludes errand-class
+    buildings (hospitals, authorities, services, ...) from the candidate set
+    entirely (its keep-filter is ``retail > 0 | leisure > 0``). Their
+    potential is instead computed directly from ``df_potentials`` with the
+    same cap-and-floor formula as ``secondary_other_potential.derive_other_potential``,
+    applied per category:
+
+        cap_<category>  = nanquantile(potential_generic over buildings whose
+                           class maps to <category>, cap_percentile)
+        pot_<category>  = min(potential_generic, cap_<category>) where the
+                           building's class maps to <category>, else 0.0
+        pot_<category>  = 0.0 where volume_m3 < min_volume_m3
+
+    A building with a positive computed potential is guaranteed a
+    ``sec_b_<building_id>`` candidate row: if one already exists (e.g. the
+    building also has retail/leisure potential) its errand columns are
+    updated in place; otherwise a NEW row is appended, carrying ONLY that
+    errand category's offer/potential (every other offer/potential column --
+    ``offers_shop``, ``offers_leisure``, ``offers_other``, ``offers_escort``,
+    the other four SrV categories, etc. -- is ``False`` / ``0.0``). A
+    class-member building that is NOT already a candidate and whose computed
+    potential is zero (``volume_m3 < min_volume_m3``, or a class with no
+    members forcing the all-building quantile cap onto a zero row) gets NO
+    new row at all -- appending an inert all-False/0.0 row would only pollute
+    the candidate set (and, downstream, ``facilities.xml``) without ever being
+    selectable.
+
+    Every row that is neither a matching leisure building nor a matching
+    errand building -- non-building candidates (external centroids,
+    ``sec_res_*``, ``sec_edu_*``, legacy ``sec_*`` catalog rows) and building
+    rows whose class is unmapped in ``mapping`` -- gets ``False`` / ``0.0``
+    for all five columns. An unmapped class is a VALID outcome (not every
+    Bosserhof class maps to one of the five categories), not an error.
+
+    The external Gemeinde centroids are the one family that must not STAY at
+    ``False`` / ``0.0``: they are category-agnostic long-distance escapes, and
+    :func:`append_external_category_escapes` re-opens every category on them
+    once all category columns exist (i.e. after the landuse append). That step
+    is deliberately NOT done here -- adding ``pot_leisure_outdoor`` at this point
+    would both create a column this function has no building source for and let
+    ewz population counts contaminate the landuse mixed-pool scale factor in
+    :func:`append_landuse_candidates`.
+
+    Parameters
+    ----------
+    candidates:
+        The existing secondary-candidate GeoDataFrame; must already carry
+        ``pot_leisure`` (added by ``build_secondary_candidates``).
+    df_potentials:
+        ``braunschweig.data.building_potentials`` frame: ``building_id``,
+        ``bosserhof_class_clean``, ``potential_generic``, ``volume_m3``,
+        ``commune_id``, ``geometry`` (footprint polygon or point).
+    mapping:
+        ``braunschweig.data.bosserhof_location_category`` frame:
+        ``bosserhof_class``, ``location_category`` (one of
+        ``bosserhof_location_category.BUILDING_CATEGORIES``).
+    min_volume_m3:
+        Errand potential is zeroed for buildings with ``volume_m3`` below
+        this threshold (mirrors ``secondary_other_min_volume_m3``; the
+        ``secondary_candidates`` stage passes the configured value).
+    cap_percentile:
+        Quantile of ``potential_generic`` (over each errand category's own
+        class-member buildings) used as that category's potential cap
+        (mirrors ``secondary_other_cap_percentile``).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        ``candidates`` with the ten new columns (five offers_/pot_ pairs),
+        plus any newly appended errand-only ``sec_b_<building_id>`` rows.
+
+    Raises
+    ------
+    ValueError
+        If ``candidates`` is missing ``pot_leisure``, or
+        ``df_potentials``/``mapping`` is missing a required column
+        (fail-fast; no silent fallback to an all-zero category set).
+    """
+    if "pot_leisure" not in candidates.columns:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "requires candidates to already carry column 'pot_leisure' (produced by "
+            "build_secondary_candidates); available: %s." % list(candidates.columns)
+        )
+    missing_potentials = [c for c in ["building_id", "bosserhof_class_clean", "potential_generic",
+                                      "volume_m3", "commune_id", "geometry"]
+                          if c not in df_potentials.columns]
+    if missing_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "building_potentials source is missing column(s) %s; available: %s."
+            % (missing_potentials, list(df_potentials.columns))
+        )
+    missing_mapping = [c for c in ["bosserhof_class", "location_category"]
+                       if c not in mapping.columns]
+    if missing_mapping:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_location_category_columns "
+            "category mapping is missing column(s) %s; available: %s."
+            % (missing_mapping, list(mapping.columns))
+        )
+
+    out = candidates.copy()
+    categories = list(SRV_BUILDING_CATEGORY_BASE_POTENTIAL)
+    for category in categories:
+        out["offers_" + category] = False
+        out["pot_" + category] = 0.0
+
+    category_by_class = dict(zip(
+        mapping["bosserhof_class"].astype(str), mapping["location_category"].astype(str),
+    ))
+    leisure_categories = [c for c, base in SRV_BUILDING_CATEGORY_BASE_POTENTIAL.items()
+                          if base == "pot_leisure"]
+    errand_categories = [c for c, base in SRV_BUILDING_CATEGORY_BASE_POTENTIAL.items()
+                         if base == "pot_other"]
+
+    # --- leisure categories: UNCHANGED -- mask the existing pot_leisure
+    # aggregate on sec_b_* rows already present in candidates. ---
+    building_mask = out["location_id"].astype(str).str.startswith("sec_b_")
+    n_building_rows = int(building_mask.sum())
+
+    class_by_building = dict(zip(
+        df_potentials["building_id"].astype(str),
+        df_potentials["bosserhof_class_clean"].astype(str),
+    ))
+    building_ids = out.loc[building_mask, "location_id"].astype(str).str.slice(len("sec_b_"))
+    classes = building_ids.map(class_by_building)
+    row_categories = classes.map(category_by_class)
+
+    n_class_matched = int(classes.notna().sum())
+    n_category_mapped = int(row_categories.notna().sum())
+    per_category_counts = {
+        category: int((row_categories == category).sum()) for category in categories
+    }
+
+    for category in leisure_categories:
+        matched_index = row_categories.index[row_categories == category]
+        if len(matched_index):
+            out.loc[matched_index, "pot_" + category] = out.loc[matched_index, "pot_leisure"].astype(float)
+            out.loc[matched_index, "offers_" + category] = out.loc[matched_index, "pot_" + category] > 0.0
+
+    print(
+        "[braunschweig.secondary_chainsolvers] leisure location category columns: %d "
+        "sec_b_* building candidates; class matched %d/%d (%.1f%%), mapped to a "
+        "leisure_* category %d/%d (%.1f%%); per-category counts: %s"
+        % (n_building_rows, n_class_matched, n_building_rows,
+           100.0 * n_class_matched / n_building_rows if n_building_rows else 0.0,
+           n_category_mapped, n_class_matched,
+           100.0 * n_category_mapped / n_class_matched if n_class_matched else 0.0,
+           per_category_counts)
+    )
+    n_unmatched_building = n_building_rows - n_class_matched
+    if n_unmatched_building:
+        print(
+            "WARNING: [braunschweig.secondary_chainsolvers] %d/%d sec_b_* candidates "
+            "have no matching building_id in the building_potentials source "
+            "(df_potentials); they carry False/0.0 for the leisure_* SrV location "
+            "categories -- verify braunschweig.data.building_potentials and the "
+            "building candidate set share the same building_id space."
+            % (n_unmatched_building, n_building_rows)
+        )
+
+    # --- errand categories: derived independently from df_potentials, using
+    # the derive_other_potential cap-and-floor formula per category (plan
+    # amendment, issue #262). ---
+    building_out_index = dict(zip(building_ids.values, building_ids.index))
+
+    generic = pd.to_numeric(df_potentials["potential_generic"], errors="coerce").astype(float).to_numpy()
+    volume = pd.to_numeric(df_potentials["volume_m3"], errors="coerce").astype(float).to_numpy()
+    potential_building_ids = df_potentials["building_id"].astype(str).to_numpy()
+    potential_classes = df_potentials["bosserhof_class_clean"].astype(str).to_numpy()
+    potential_commune = df_potentials["commune_id"].astype(str).to_numpy()
+    potential_geometry = df_potentials.geometry
+    is_point_geometry = (potential_geometry.geom_type == "Point").to_numpy()
+    potential_points = np.where(
+        is_point_geometry, potential_geometry.values, potential_geometry.centroid.values)
+
+    category_of_building = pd.Series(potential_classes).map(category_by_class)
+    present_out_index = pd.Series(potential_building_ids).map(building_out_index)
+    present_mask = present_out_index.notna().to_numpy()
+
+    all_offer_columns = [c for c in out.columns if c.startswith("offers_")]
+    all_potential_columns = [c for c in out.columns if c.startswith("pot_")]
+
+    append_frames = []
+    n_appended_total = 0
+    per_category_supply = {}
+
+    for category in errand_categories:
+        member_mask = (category_of_building == category).to_numpy()
+        n_members = int(member_mask.sum())
+        if n_members:
+            cap = float(np.nanquantile(generic[member_mask], cap_percentile))
+        else:
+            cap = float(np.nanquantile(generic, cap_percentile))
+            print(
+                "WARNING: [braunschweig.secondary_chainsolvers] no buildings map to "
+                "location category '%s' in the Bosserhof mapping; potential cap "
+                "derived from the all-building potential_generic quantile instead."
+                % category
+            )
+        pot = np.where(member_mask, np.minimum(generic, cap), 0.0)
+        pot = np.where(volume < float(min_volume_m3), 0.0, pot)
+        offers = pot > 0.0
+        per_category_supply[category] = int(offers.sum())
+
+        update_mask = member_mask & present_mask
+        if update_mask.any():
+            target_index = present_out_index[update_mask].to_numpy()
+            out.loc[target_index, "pot_" + category] = pot[update_mask]
+            out.loc[target_index, "offers_" + category] = offers[update_mask]
+
+        # Only append a NEW row for a building with a genuinely positive
+        # computed potential (per the docstring's "positive computed
+        # potential is guaranteed a row" contract). Without the `& offers`
+        # condition, every class-member building below min_volume_m3 (or with
+        # a NaN potential_generic) would still gain an inert all-False/0.0
+        # sec_b_* row -- dead weight in facilities.xml that never offers
+        # anything and contradicts that contract.
+        append_mask = member_mask & ~present_mask & offers
+        n_appended = int(append_mask.sum())
+        n_appended_total += n_appended
+        if n_appended:
+            data = {
+                "location_id": ["sec_b_" + b for b in potential_building_ids[append_mask]],
+                "commune_id": potential_commune[append_mask],
+                "iris_id": potential_commune[append_mask],
+                "geometry": potential_points[append_mask],
+            }
+            for column in all_offer_columns:
+                data[column] = np.zeros(n_appended, dtype=bool)
+            for column in all_potential_columns:
+                data[column] = np.zeros(n_appended, dtype=float)
+            data["offers_" + category] = offers[append_mask]
+            data["pot_" + category] = pot[append_mask]
+            append_frames.append(gpd.GeoDataFrame(data, crs=out.crs))
+
+    if append_frames:
+        out = gpd.GeoDataFrame(
+            pd.concat([out] + append_frames, ignore_index=True), crs=out.crs)
+
+    print(
+        "[braunschweig.secondary_chainsolvers] errand location category columns: "
+        "%d new sec_b_* candidates appended for errand-class buildings absent from "
+        "the candidate set; positive-potential rows per category: %s (min_volume_m3=%s, "
+        "cap_percentile=%s)"
+        % (n_appended_total, per_category_supply, min_volume_m3, cap_percentile)
+    )
+    return out
+
+
+def check_category_supply(candidates: gpd.GeoDataFrame, categories) -> None:
+    """Raise if any category in ``categories`` has zero positive-potential rows.
+
+    A region-wide zero supply for a location category means the candidate
+    universe carries no ``pot_<category> > 0`` row anywhere, so the carla
+    solver could never select that category regardless of demand -- this is
+    a wiring failure (a broken mapping, a grid-seeding gap, a potential-join
+    miss), not merely thin data, and must be surfaced loudly (CLAUDE.md
+    "Fallback transparency").
+
+    MUST be called on the ESCAPE-FREE frame, i.e. BEFORE
+    :func:`append_external_category_escapes`: those escapes give every external
+    Gemeinde centroid a positive potential in every category, which would make
+    this guard unfalsifiable whenever ``secondary_external_candidates`` is ON
+    (its default). The check exists to prove genuine IN-AREA supply.
+
+    Parameters
+    ----------
+    candidates:
+        The assembled candidate GeoDataFrame; expected to carry
+        ``pot_<category>`` for every entry in ``categories``.
+    categories:
+        Iterable of category names to check.
+
+    Raises
+    ------
+    RuntimeError
+        Naming every category with zero positive-potential rows (a missing
+        ``pot_<category>`` column counts as zero supply).
+    """
+    empty = []
+    for category in categories:
+        column = "pot_" + category
+        if column not in candidates.columns or not (candidates[column].astype(float) > 0.0).any():
+            empty.append(category)
+    if empty:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] zero candidate supply for location "
+            "categor%s %s -- every pot_<category> column has no positive-potential "
+            "rows; this indicates broken wiring (mapping / grid seeding / potential "
+            "join), not thin data."
+            % ("y" if len(empty) == 1 else "ies", empty)
+        )
+
+
+def check_visit_pool_supply(candidates: gpd.GeoDataFrame) -> None:
+    """Raise if the residential visit pool has zero positive-potential rows.
+
+    Sibling of :func:`check_category_supply` for the ONE SrV location category
+    whose candidate pool does not follow the ``pot_<category>`` naming scheme:
+    ``leisure_visit`` is placed on the residential visit candidates
+    (``VISIT_OFFER_COLUMN`` / ``VISIT_POTENTIAL_COLUMN``, appended by
+    :func:`append_residential_visit_candidates`), so a ``categories`` entry
+    cannot cover it. Kept as a dedicated function rather than widening
+    ``check_category_supply``'s ``"pot_" + category`` semantics, so the message
+    can name the actual producer of that pool.
+
+    ``leisure_visit_building_potential`` is a hard prerequisite of
+    ``secondary_srv_location_types`` (see
+    :func:`_validate_srv_location_type_prerequisites`), so with the flag ON a
+    zero-supply visit pool always means broken wiring -- the residential append
+    never ran, ran on an empty/zero-weight building frame, or lost its column --
+    never merely thin data. Without this guard the omission would only surface
+    much later, from inside the measure-only excursion boundary-clip diagnostic
+    (``_srv_excursion_boundary_clip_lines``), which is the wrong place to
+    discover a broken candidate set.
+
+    MUST be called on the escape-free frame, next to
+    :func:`check_category_supply`: ``leisure_visit`` is deliberately excluded
+    from :func:`append_external_category_escapes`, so its supply can only ever
+    come from in-area residential rows.
+
+    Raises
+    ------
+    RuntimeError
+        If ``VISIT_POTENTIAL_COLUMN`` is missing or has no positive row.
+    """
+    column = VISIT_POTENTIAL_COLUMN
+    if column not in candidates.columns or not (candidates[column].astype(float) > 0.0).any():
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] zero candidate supply for location "
+            "category 'leisure_visit' -- the residential visit pool ('%s') has no "
+            "positive-potential rows; this indicates broken wiring "
+            "(append_residential_visit_candidates did not run, or ran on an empty / "
+            "zero-weight braunschweig.data.buildings frame), not thin data. Note that "
+            "'leisure_visit' is excluded from the external Gemeinde-centroid escapes, "
+            "so this pool is its only source of candidates." % column
+        )
+
+
+def append_landuse_candidates(candidates: gpd.GeoDataFrame,
+                              df_landuse_points: gpd.GeoDataFrame,
+                              layer_to_category: Dict[str, str],
+                              df_municipalities: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Append one landuse grid-point candidate row per seeded point (issue #262).
+
+    ``df_landuse_points`` is the output of
+    ``braunschweig.synthesis.locations.landuse_candidates.grid_seed_polygons``
+    (columns ``layer``, ``represented_area_m2``, ``geometry`` (Point)): each
+    point becomes a ``sec_lu_<n>`` candidate row (``n`` = its positional
+    index in ``df_landuse_points``, stable because grid seeding is
+    deterministic) carrying ``offers_<category>=True`` /
+    ``pot_<category>=represented_area_m2`` for its layer's category
+    (``layer_to_category[layer]``) and ``False`` / ``0.0`` for every other
+    offer/potential column already on ``candidates``, mirroring the
+    column-fill pattern of :func:`append_residential_visit_candidates`. Any
+    category column named by ``layer_to_category`` that does not yet exist
+    on ``candidates`` (e.g. ``leisure_outdoor``, which has no building
+    counterpart) is added here, defaulting to ``False`` / ``0.0`` on the
+    pre-existing rows.
+
+    ``commune_id`` / ``iris_id`` are attached by a point-in-polygon spatial
+    join against ``df_municipalities`` (predicate ``"within"``). Points that
+    fall outside every municipality polygon are outside the study area and
+    are DROPPED (counted and logged -- no silent fallback to an unset zone
+    id). ``iris_id`` is set equal to ``commune_id`` because
+    ``data.spatial.municipalities`` does not carry a separate IRIS code
+    (mirroring the ``iris_col`` fallback already used by
+    ``append_residential_visit_candidates`` / ``append_escort_candidates``
+    when the finer-grained id is unavailable).
+
+    Scale coherence in MIXED pools (plan amendment, issue #262): a category
+    such as ``leisure_culture`` or ``leisure_sports`` can carry candidates
+    from TWO incompatible-unit sources -- buildings (``pot_<category>``
+    already on ``candidates``, a disaggregated zonal person-mass potential,
+    see :func:`append_location_category_columns`) and landuse grid points
+    (``represented_area_m2``, a constant per grid cell). The combined carla
+    scorer's default ``attr_transform="linear"`` feeds these raw magnitudes
+    directly into the score, so whichever source happens to carry the larger
+    numbers would dominate the within-category ranking regardless of actual
+    relative attractiveness. ASSUMPTION: an AVERAGE landuse point should rank
+    like an AVERAGE building of the same category. To realise that, every
+    mixed category's landuse potentials are rescaled by a single factor
+    (``mean(positive building pot_<category>) / mean(raw landuse pot_<category>)``)
+    so the two source means coincide, while the relative AREA RATIOS among a
+    category's own landuse points are preserved exactly (a pure linear
+    rescale, not a reshaping). A category with NO building counterpart at
+    all (``leisure_outdoor``: ``append_location_category_columns`` never
+    creates a ``pot_leisure_outdoor`` column, because there is no building
+    source for it) is a PURE landuse pool -- every candidate in it carries
+    the same kind of potential, so the constant scale cancels out in a
+    same-scale ranking and is intentionally left unnormalised. A category
+    whose ``pot_<category>`` column exists (mixed by design) but has zero
+    positive building rows in the current region keeps its raw areas (there
+    is nothing to normalise against) and logs a ``WARNING`` rather than
+    silently normalising by an undefined factor; :func:`check_category_supply`
+    still governs whether that is a hard failure.
+
+    Parameters
+    ----------
+    candidates:
+        The existing secondary-candidate GeoDataFrame. Should already carry
+        the five SrV building-category columns (i.e. called AFTER
+        :func:`append_location_category_columns`) so those columns are
+        correctly zero-filled for the new landuse rows rather than added
+        fresh here.
+    df_landuse_points:
+        ``grid_seed_polygons`` output: ``layer``, ``represented_area_m2``,
+        ``geometry`` (Point).
+    layer_to_category:
+        ATKIS layer name -> SrV location category, e.g.
+        ``landuse_candidates.LANDUSE_LAYER_TO_CATEGORY``.
+    df_municipalities:
+        ``data.spatial.municipalities`` frame: ``commune_id``, ``geometry``
+        (polygon), same CRS as ``candidates`` or reprojectable to it.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        ``candidates`` concatenated with one landuse-candidate row per point
+        that falls inside a municipality.
+
+    Raises
+    ------
+    ValueError
+        If ``df_landuse_points`` is missing a required column, if
+        ``df_municipalities`` is missing ``commune_id``, or if
+        ``df_landuse_points`` carries a ``layer`` value with no entry in
+        ``layer_to_category`` (fail-fast; no silent drop of an unrecognised
+        layer).
+    """
+    required_points = ["layer", "represented_area_m2", "geometry"]
+    missing_points = [c for c in required_points if c not in df_landuse_points.columns]
+    if missing_points:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates landuse "
+            "point source is missing column(s) %s; available: %s."
+            % (missing_points, list(df_landuse_points.columns))
+        )
+    if "commune_id" not in df_municipalities.columns:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates "
+            "municipalities source is missing the 'commune_id' column; available: %s."
+            % list(df_municipalities.columns)
+        )
+    unknown_layers = sorted(set(df_landuse_points["layer"].astype(str)) - set(layer_to_category))
+    if unknown_layers:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_landuse_candidates: "
+            "df_landuse_points has layer(s) %s with no entry in layer_to_category "
+            "(known: %s)." % (unknown_layers, sorted(layer_to_category))
+        )
+
+    n_before = len(candidates)
+    base = candidates.copy()
+
+    categories = sorted(set(layer_to_category.values()))
+    for category in categories:
+        if ("offers_" + category) not in base.columns:
+            base["offers_" + category] = False
+        if ("pot_" + category) not in base.columns:
+            base["pot_" + category] = 0.0
+
+    pts = df_landuse_points.copy()
+    if pts.crs is not None and candidates.crs is not None and pts.crs != candidates.crs:
+        pts = pts.to_crs(candidates.crs)
+    municipalities = df_municipalities
+    if (municipalities.crs is not None and candidates.crs is not None
+            and municipalities.crs != candidates.crs):
+        municipalities = municipalities.to_crs(candidates.crs)
+
+    n_total = len(pts)
+    pts_indexed = gpd.GeoDataFrame(
+        {"_row": np.arange(n_total)}, geometry=pts.geometry.values, crs=candidates.crs)
+    joined = gpd.sjoin(
+        pts_indexed, municipalities[["commune_id", "geometry"]],
+        how="left", predicate="within",
+    ).drop(columns=["index_right"])
+    # A point exactly on a shared municipality border can match more than one
+    # polygon; keep the first match (deterministic row order) so every input
+    # point contributes at most one output row.
+    joined = joined.drop_duplicates(subset="_row", keep="first").set_index("_row")
+    commune_by_row = joined["commune_id"].reindex(range(n_total))
+
+    kept_mask = commune_by_row.notna().to_numpy()
+    n_kept = int(kept_mask.sum())
+    n_dropped = n_total - n_kept
+
+    kept_n = np.arange(n_total)[kept_mask]
+    layer_kept = df_landuse_points["layer"].to_numpy()[kept_mask]
+    area_kept = df_landuse_points["represented_area_m2"].astype(float).to_numpy()[kept_mask]
+    geom_kept = pts.geometry.to_numpy()[kept_mask]
+    commune_kept = commune_by_row.to_numpy()[kept_mask].astype(str)
+    category_kept = np.array([layer_to_category[layer] for layer in layer_kept])
+
+    offer_columns_all = [c for c in base.columns if c.startswith("offers_")]
+    potential_columns_all = [c for c in base.columns if c.startswith("pot_")]
+
+    data = {
+        "location_id": ["sec_lu_%d" % n for n in kept_n],
+        "commune_id": commune_kept,
+        "iris_id": commune_kept,
+        "geometry": geom_kept,
+    }
+    for column in offer_columns_all:
+        data[column] = np.zeros(n_kept, dtype=bool)
+    for column in potential_columns_all:
+        data[column] = np.zeros(n_kept, dtype=float)
+    for category in categories:
+        mask = category_kept == category
+        data["offers_" + category][mask] = True
+        data["pot_" + category][mask] = area_kept[mask]
+
+    # Scale-normalize mixed categories (plan amendment, issue #262): see the
+    # docstring section "Scale coherence in MIXED pools" above for the
+    # rationale. Checked against the INCOMING `candidates` frame (i.e.
+    # building supply only, before this function's own default-column fill
+    # above), because that is the sole source of the "does this category
+    # already carry buildings" signal.
+    for category in categories:
+        column = "pot_" + category
+        category_mask = category_kept == category
+        n_points = int(category_mask.sum())
+        if n_points == 0:
+            continue
+        if column not in candidates.columns:
+            # Pure landuse pool (e.g. leisure_outdoor): no building
+            # counterpart exists, so there is nothing to normalize against
+            # and no normalization is needed -- every candidate in this pool
+            # is on the same (area) scale already.
+            continue
+        building_values = pd.to_numeric(candidates[column], errors="coerce").astype(float)
+        positive_building = building_values[building_values > 0.0]
+        raw_values = data[column][category_mask]
+        if len(positive_building) == 0:
+            print(
+                "WARNING: [braunschweig.secondary_chainsolvers] landuse category "
+                "'%s' shares column '%s' with building candidates but has zero "
+                "positive-potential building rows in this region -- keeping raw "
+                "represented_area_m2 landuse potentials (no scale factor applied); "
+                "check_category_supply still governs hard failure if the category's "
+                "total supply is zero." % (category, column)
+            )
+            continue
+        building_mean = float(positive_building.mean())
+        landuse_raw_mean = float(np.mean(raw_values))
+        if landuse_raw_mean == 0.0:
+            print(
+                "WARNING: [braunschweig.secondary_chainsolvers] landuse category "
+                "'%s' has zero raw represented_area_m2 potential across its %d "
+                "point(s); cannot mean-normalize against the building scale -- "
+                "keeping raw (zero) landuse potentials." % (category, n_points)
+            )
+            continue
+        factor = building_mean / landuse_raw_mean
+        data[column][category_mask] = raw_values * factor
+        print(
+            "[braunschweig.secondary_chainsolvers] landuse potential scale-"
+            "normalization: category=%s factor=%.4f building_mean=%.3f "
+            "landuse_raw_mean=%.3f n_points=%d"
+            % (category, factor, building_mean, landuse_raw_mean, n_points)
+        )
+
+    landuse_rows = gpd.GeoDataFrame(data, crs=candidates.crs)
+    out = gpd.GeoDataFrame(
+        pd.concat([base, landuse_rows], ignore_index=True), crs=candidates.crs)
+
+    n_after = len(out)
+    growth_factor = (n_after / n_before) if n_before else float("inf")
+    print(
+        "[braunschweig.secondary_chainsolvers] landuse candidates: %d/%d grid points "
+        "inside a municipality kept, %d dropped (outside the study area boundary); "
+        "locations frame %d -> %d rows after appending %d landuse candidates "
+        "(growth x%.2f)"
+        % (n_kept, n_total, n_dropped, n_before, n_after, n_kept, growth_factor)
+    )
+    if growth_factor > VISIT_CANDIDATE_WARN_FACTOR:
+        print(
+            "WARNING: [braunschweig.secondary_chainsolvers] landuse candidate growth "
+            "factor x%.2f exceeds VISIT_CANDIDATE_WARN_FACTOR=%.1f -- this materially "
+            "increases the carla candidate universe and solve cost; verify "
+            "secondary_landuse_grid_spacing_meters is not set too fine for the "
+            "region's landuse extent."
+            % (growth_factor, VISIT_CANDIDATE_WARN_FACTOR)
+        )
+    return out
+
+
+def external_centroid_mask(candidates: gpd.GeoDataFrame) -> pd.Series:
+    """Boolean mask selecting the external Gemeinde-centroid candidate rows.
+
+    External centroids are the long-distance escape hatch appended by
+    :func:`build_secondary_candidates` when ``secondary_external_candidates`` is
+    ON: they let carla match a desired distance that reaches beyond the study
+    area instead of truncating it to the area edge. They are identified exactly
+    as that function constructs them -- ``location_id`` IS the bare
+    ``commune_id`` (every in-area family is prefixed: ``sec_b_``, ``sec_lu_``,
+    ``sec_res_``, ``sec_edu_``, legacy ``sec_``) AND all three base purposes are
+    offered (which no other family does: legacy rows are ``other``-only,
+    building rows never offer ``other``, visit/education rows offer neither).
+    Both conditions are required so a hypothetical unprefixed in-area id cannot
+    be mistaken for an external centroid.
+    """
+    return (
+        (candidates["location_id"].astype(str) == candidates["commune_id"].astype(str))
+        & candidates["offers_shop"].astype(bool)
+        & candidates["offers_leisure"].astype(bool)
+        & candidates["offers_other"].astype(bool)
+    )
+
+
+def append_external_category_escapes(candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Make external Gemeinde centroids candidates for EVERY SrV location
+    category (issue #262, post-Task-8 review finding).
+
+    External centroids are category-AGNOSTIC distance escapes: before this
+    feature they offered all three base purposes with the same population (ewz)
+    potential precisely so a long desired distance could be realised outside the
+    study area. :func:`append_location_category_columns` (buildings) and
+    :func:`append_landuse_candidates` (ATKIS grid points) both leave them at
+    ``False`` / ``0.0`` for every category, so under
+    ``secondary_srv_location_types`` a ``leisure_culture`` / ``leisure_gastronomy``
+    / ``leisure_sports`` / ``leisure_outdoor`` / ``errand_*`` leg would have NO
+    external candidate at all and its desired distance would clip to the region
+    edge -- a reach REGRESSION versus the OFF path, where the same leg was a
+    plain ``leisure`` / ``other`` leg with external candidates available. This
+    function restores that role: for every external-centroid row (see
+    :func:`external_centroid_mask`) each category gets ``offers_<category> =
+    True`` and ``pot_<category>`` = the row's existing ``pot_leisure`` (leisure
+    categories) or ``pot_other`` (errand categories), i.e. the same ewz value the
+    aggregate offers already carry.
+
+    ``leisure_visit`` is deliberately NOT touched: its candidate pool is the
+    residential building stock (``offers_visit`` / ``pot_visit``, Task 5, issue
+    #127) and external centroids never offered ``offers_visit`` on the OFF path
+    either -- extending them here would be a behaviour CHANGE, not a regression
+    fix.
+
+    Call order -- this is the LAST step of the candidate assembly:
+
+    * AFTER both :func:`append_location_category_columns` and
+      :func:`append_landuse_candidates`, so every ``pot_<category>`` column
+      exists (``leisure_outdoor`` is created only by the landuse append) and so
+      the landuse mixed-pool mean-normalisation still compares landuse points
+      against BUILDING potentials only -- ewz population counts must never enter
+      that scale factor. Missing category columns therefore raise (fail-fast on a
+      wrong call order rather than silently skipping a category).
+    * AFTER :func:`check_category_supply`, which must measure genuine IN-AREA
+      supply: these escapes give every external centroid a positive potential in
+      every category, so running them first would make that guard unfalsifiable
+      whenever ``secondary_external_candidates`` is ON (its default) and a broken
+      building mapping or landuse seeding would pass on external supply alone.
+
+    Parameters
+    ----------
+    candidates:
+        Assembled candidate GeoDataFrame carrying ``location_id``,
+        ``commune_id``, the three base offers, ``pot_leisure`` / ``pot_other``
+        and every ``offers_``/``pot_`` pair of
+        ``EXTERNAL_CATEGORY_ESCAPE_CATEGORIES``.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        A copy of ``candidates`` with the external rows' category columns set.
+        Row count and row order are unchanged (no rows are added or dropped).
+
+    Raises
+    ------
+    ValueError
+        If a required base or category column is missing.
+    """
+    required_base = ["location_id", "commune_id", "offers_shop", "offers_leisure",
+                     "offers_other", "pot_leisure", "pot_other"]
+    missing_base = [column for column in required_base if column not in candidates.columns]
+    if missing_base:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_external_category_escapes "
+            "requires column(s) %s on the candidate frame; available: %s."
+            % (missing_base, list(candidates.columns))
+        )
+    missing_category = [
+        column
+        for category in EXTERNAL_CATEGORY_ESCAPE_CATEGORIES
+        for column in ("offers_" + category, "pot_" + category)
+        if column not in candidates.columns
+    ]
+    if missing_category:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] append_external_category_escapes is "
+            "missing category column(s) %s -- call it AFTER "
+            "append_location_category_columns AND append_landuse_candidates (which "
+            "create them), never before." % missing_category
+        )
+
+    out = candidates.copy()
+    mask = external_centroid_mask(out)
+    external_index = out.index[mask]
+    if len(external_index) == 0:
+        print(
+            "[braunschweig.secondary_chainsolvers] external category escapes: no external "
+            "Gemeinde-centroid rows in the candidate set (secondary_external_candidates "
+            "OFF) -- no category escape rows added; long leisure/other desired distances "
+            "can only be realised inside the study area."
+        )
+        return out
+
+    for category in EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        base_column = "pot_leisure" if category in SRV_LEISURE_CATEGORIES else "pot_other"
+        out.loc[external_index, "pot_" + category] = \
+            out.loc[external_index, base_column].astype(float)
+        out.loc[external_index, "offers_" + category] = True
+    print(
+        "[braunschweig.secondary_chainsolvers] external category escapes: %d external "
+        "Gemeinde centroids now offer all %d SrV location categories at their aggregate "
+        "(ewz) potential -- category-agnostic long-distance escapes, mirroring their "
+        "pre-flag any-purpose role ('leisure_visit' stays residential-only)."
+        % (len(external_index), len(EXTERNAL_CATEGORY_ESCAPE_CATEGORIES))
+    )
+    return out
+
+
 def build_scorer(enabled: bool, mode: str, pot_weight: float, dist_dev_weight: float,
                  attr_transform: str = "linear"):
     """Construct the chainsolvers combined Scorer, or None when disabled (the
@@ -997,7 +1802,8 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                         leisure_subtype_split: bool = False,
                         other_subtype_split: bool = False,
                         leisure_visit_building_potential: bool = False,
-                        escort_purpose: bool = False):
+                        escort_purpose: bool = False,
+                        srv_location_types: bool = False):
     """Convert eqasim secondary candidates -> chainsolvers ``locations_df``.
 
     When ``with_potentials`` is True a ``potentials`` column is added: a
@@ -1062,6 +1868,39 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     non-positive potential, mirroring the shop-subtype zero-skip.
     ``escort_purpose`` requires ``with_potentials`` (the escort placement needs
     the education/visit/aggregate potential columns).
+
+    When ``srv_location_types`` is True (issue #262, Task 8) the leisure/other
+    placement vocabulary becomes the SrV-2023 location CATEGORIES instead of the
+    MiD distance subtypes, because with the SrV decider active the MiD subtype is
+    only a distance label and never a placement activity (see
+    ``_build_plans_df``). Concretely, and REGARDLESS of
+    ``leisure_subtype_split`` / ``other_subtype_split`` (which then only drive
+    the distance layers):
+
+    * a leisure-offering row emits the aggregate ``"leisure"`` activity (the
+      placement target of the ``leisure_misc`` category) PLUS one activity per
+      ``SRV_LEISURE_CATEGORIES`` member it actually offers
+      (``leisure_culture`` / ``leisure_gastronomy`` / ``leisure_sports`` at
+      ``pot_<category>`` from the building categories; ``leisure_outdoor`` and
+      the landuse share of culture/sports from the ``sec_lu_*`` grid points;
+      ``leisure_visit`` at ``offers_visit`` / ``pot_visit`` on the residential
+      candidates), each dropped for a non-positive potential exactly like the
+      shop subtypes;
+    * an ``other``-offering row emits the aggregate ``"other"`` activity (for
+      ``other_misc``) plus ``errand_authority_medical`` / ``errand_service``
+      where their potential is positive;
+    * the four MiD leisure subtypes and the three MiD other subtypes are NOT
+      emitted (``leisure_visit`` survives only because it is ALSO an SrV
+      category);
+    * shop and escort emission is unchanged.
+
+    ``srv_location_types`` requires ``with_potentials`` and fails fast when any
+    ``offers_``/``pot_`` column of a placement category is missing from
+    ``df_secondary`` -- a missing column means the candidate set was not built by
+    the ``secondary_candidates`` stage's SrV branch, and silently skipping that
+    category's offers would leave carla with no candidates for it (no silent
+    fallback). OFF (default) is byte-identical, even on a candidate frame that
+    already carries the category columns.
     """
     if shop_daily_split and not with_potentials:
         raise ValueError(
@@ -1105,6 +1944,34 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
             "with_potentials (the escort placement needs the education/visit/"
             "aggregate potential columns)."
         )
+    if srv_location_types and not with_potentials:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] srv_location_types requires "
+            "with_potentials (the SrV location-category placement needs the "
+            "per-category pot_<category> columns)."
+        )
+    if srv_location_types:
+        # Fail-fast on an incomplete candidate frame (same rationale as the
+        # leisure_visit_building_potential check above): a missing category
+        # column would otherwise silently remove that category's candidates.
+        srv_required_columns = [
+            column
+            for category in SRV_PLACEMENT_CATEGORIES
+            for column in (srv_category_offer_column(category),
+                           srv_category_potential_column(category))
+        ]
+        srv_missing_columns = [
+            column for column in dict.fromkeys(srv_required_columns)
+            if column not in df_secondary.columns
+        ]
+        if srv_missing_columns:
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] srv_location_types is ON but the "
+                "locations frame has no %s column(s) (the SrV location-category candidates "
+                "were not assembled -- run the braunschweig.synthesis.locations."
+                "secondary_candidates stage with secondary_srv_location_types ON, or "
+                "disable srv_location_types)." % srv_missing_columns
+            )
     activities = []
     potentials = []
     # Activity emission order. With a split ON, the aggregate offer is either
@@ -1115,7 +1982,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         (("shop_daily", "offers_shop"), ("shop_non_daily", "offers_shop"))
         if shop_daily_split else (("shop", "offers_shop"),)
     )
-    if leisure_subtype_split:
+    # Issue #262: with the SrV categories owning placement, the MiD subtypes are
+    # no longer placement activities at all -- the leisure/other vocabulary is
+    # the aggregate purpose (for the ``*_misc`` categories) plus one activity per
+    # drawable category. Checked FIRST so it overrides the MiD-subtype branches
+    # below, which the same run also has ON (they still drive the distances).
+    srv_category_offer_specs = tuple(
+        (name, srv_category_offer_column(name)) for name in SRV_PLACEMENT_CATEGORIES
+    ) if srv_location_types else ()
+    if srv_location_types:
+        leisure_offer_specs = (("leisure", "offers_leisure"),) + tuple(
+            spec for spec in srv_category_offer_specs if spec[0] in SRV_LEISURE_CATEGORIES
+        )
+    elif leisure_subtype_split:
         leisure_offer_specs = tuple(
             (name, VISIT_OFFER_COLUMN if (leisure_visit_building_potential and name == "leisure_visit")
              else "offers_leisure")
@@ -1123,10 +2002,16 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
         )
     else:
         leisure_offer_specs = (("leisure", "offers_leisure"),)
-    other_offer_specs = (
-        tuple((name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES) + (("other", "offers_other"),)
-        if other_subtype_split else (("other", "offers_other"),)
-    )
+    if srv_location_types:
+        other_offer_specs = (("other", "offers_other"),) + tuple(
+            spec for spec in srv_category_offer_specs if spec[0] in SRV_OTHER_CATEGORIES
+        )
+    elif other_subtype_split:
+        other_offer_specs = tuple(
+            (name, "offers_other") for name in OTHER_SUBTYPE_ACTIVITIES
+        ) + (("other", "offers_other"),)
+    else:
+        other_offer_specs = (("other", "offers_other"),)
     escort_offer_specs = (
         (
             ("escort_edu_kindergarten", "offers_escort_edu_kindergarten"),
@@ -1147,9 +2032,19 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     potential_column_by_activity = dict(_ACTIVITY_POTENTIAL_COLUMN)
     if leisure_visit_building_potential:
         potential_column_by_activity["leisure_visit"] = VISIT_POTENTIAL_COLUMN
+    # Issue #262: every drawable SrV category is placed on its OWN potential
+    # (pot_<category>, or pot_visit for "leisure_visit"), never on the shared
+    # aggregate the MiD subtypes use.
+    if srv_location_types:
+        potential_column_by_activity.update({
+            category: srv_category_potential_column(category)
+            for category in SRV_PLACEMENT_CATEGORIES
+        })
     cols = ["offers_shop", "offers_leisure", "offers_other"]
     if escort_purpose:
         cols = cols + list(ESCORT_EDU_OFFER_BY_TYPE.values()) + [ESCORT_RESIDENTIAL_OFFER_COLUMN]
+    if srv_location_types:
+        cols = cols + [offer for _, offer in srv_category_offer_specs]
     if with_potentials:
         # Only require the potential columns actually consumed by the active
         # offer_specs, so a non-split path does not demand subtype potential
@@ -1196,6 +2091,11 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
                     continue
                 if escort_purpose and act == "escort_residential" and pot <= 0.0:
                     continue
+                # Issue #262: a row that advertises an SrV category without a
+                # positive potential for it is not a candidate for that category
+                # (e.g. a leisure building whose culture potential is zero).
+                if srv_location_types and act in SRV_PLACEMENT_CATEGORIES and pot <= 0.0:
+                    continue
                 acts.append(act)
                 pots.append(pot)
             else:
@@ -1232,6 +2132,31 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
 # exist, keeping the OFF path byte-identical.
 SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
 FIXED_PURPOSES = {"home", "work", "education"}
+
+# Helper column carrying a leisure/other leg's MiD distance LABEL (the subtype
+# group that drove its distance layer) alongside the SrV placement category
+# (issue #262). Present ONLY when the SrV location decider is active: with SrV
+# placement ON the placement activity is the drawn category, so this is the only
+# remaining handle on the MiD subtype -- the Task-6 excursion boundary-clip
+# diagnostic selects its legs through it. Like ``_leg_index`` / ``_problem_idx``
+# it is stage-internal and dropped before ``cs.solve()``.
+DISTANCE_LABEL_COLUMN = "_distance_label"
+
+# Stage-internal plans_df columns chainsolvers must never see. Order matters for
+# the OFF path: dropping the same two legacy columns keeps that frame identical.
+PLANS_HELPER_COLUMNS = ("_leg_index", "_problem_idx", DISTANCE_LABEL_COLUMN)
+
+
+def _plans_frame_for_solver(plans_df: pd.DataFrame) -> pd.DataFrame:
+    """Drop the stage-internal helper columns before handing plans to ``cs.solve``.
+
+    ``DISTANCE_LABEL_COLUMN`` only exists on the SrV ON path, so the drop list is
+    filtered to the columns actually present -- on the OFF path this removes
+    exactly the two legacy helpers, byte-identically to the previous inline
+    ``drop(columns=["_leg_index", "_problem_idx"])``.
+    """
+    return plans_df.drop(
+        columns=[column for column in PLANS_HELPER_COLUMNS if column in plans_df.columns])
 
 
 def _problem_legs(problem) -> List[Dict[str, Any]]:
@@ -1288,12 +2213,15 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     leisure_subtype_decider=None,
                     other_subtype_decider=None,
                     escort_location_decider=None,
-                    escort_distance_by_type: bool = False) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int], Dict[str, int]]:
+                    escort_distance_by_type: bool = False,
+                    srv_location_decider=None) -> Tuple[pd.DataFrame, List[Dict[str, Any]], List[int],
+                                                        Dict[str, int], Dict[str, List[float]]]:
     """Assemble the chainsolvers plans_df from BOUNDED problems only.
 
-    Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats)``.
-    Unbounded problems (tail / head / floating chains) are excluded — carla
-    needs both endpoints anchored. They are placed by ``_fallback_place``.
+    Returns ``(plans_df, problem_meta, unbounded_indices, subtype_stats,
+    desired_by_category)``. Unbounded problems (tail / head / floating
+    chains) are excluded — carla needs both endpoints anchored. They are
+    placed by ``_fallback_place``.
 
     ``shop_subtype_decider`` (Tier 2: secondary_shop_daily_split). When None
     (default / OFF) the leg loop is byte-identical to the pre-feature path: a
@@ -1339,6 +2267,52 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     the single aggregate ``escort`` layer (one-level fallback to ``other`` only)
     and ``subtype_stats`` carries no ``escort_type_distance_layer_fallback`` key
     at all, so callers can gate their own logging on the key's presence.
+
+    ``srv_location_decider`` (issue #262, design A2) DECOUPLES placement from the
+    MiD distance label for the two SrV-covered purposes
+    (``SRV_LOCATION_PURPOSES``: leisure, other). It is the callable built by
+    ``_build_srv_location_decider`` -- ``(purpose, mode, distance_m) ->
+    (category, used_marginal)`` -- and is called AFTER ``_sample_leg_distance``,
+    so the category is drawn conditioned on the leg's ALREADY SAMPLED desired
+    distance and the SrV type<->distance correlation carries over. The drawn
+    category (resolved through ``SRV_AGGREGATE_PLACEMENT``, which maps the two
+    ``*_misc`` categories back onto the plain aggregate purpose) becomes the
+    placement activity, REPLACING the MiD subtype assignment: with this decider
+    active the leisure/other subtype deciders still choose the DISTANCE layer
+    (and still count their outcomes) but no longer set the placement activity.
+    Draws come from that decider's own dedicated seeded RNG (NOT ``random``), so
+    the distance-sampling stream -- and hence the OFF path -- stays
+    byte-identical. Its counters live in a dedicated ``subtype_stats`` key
+    namespace (``SRV_LOCATION_STAT_PREFIX`` + category, plus one
+    ``srv_location_marginal_fallback_<purpose>`` counter PER PURPOSE for draws
+    resolved from that purpose's marginal distribution because the pinned table
+    has no matching (mode, band) cell): ``leisure_visit`` is both a MiD subtype
+    and an SrV category, so shared keys would double-count in both log lines, and
+    a pooled fallback counter would let a badly covered purpose hide behind a
+    well covered one. Default None (OFF) leaves the leg loop byte-identical.
+
+    With that decider active the frame gains ONE extra column,
+    ``DISTANCE_LABEL_COLUMN`` (``"_distance_label"``): the MiD subtype group that
+    drove the leg's distance layer, i.e. what the placement activity would have
+    been without the SrV draw (the drawn leisure/other subtype; the aggregate
+    purpose for a leg without an active subtype decider or with an
+    ``"other_rest"`` outcome; ``None`` for shop / escort / fixed-anchor legs). It
+    is what keeps the Task-6 excursion boundary-clip diagnostic measurable under
+    SrV placement (see ``_srv_excursion_boundary_clip_lines``), is stage-internal
+    like ``_leg_index`` / ``_problem_idx`` (dropped by
+    ``_plans_frame_for_solver`` before ``cs.solve``), and is NOT emitted at all on
+    the OFF path, so that frame keeps exactly its legacy columns.
+
+    ``desired_by_category`` (issue #262, Task 9) collects, for every leg the
+    ``srv_location_decider`` actually drew a category for, that leg's already
+    -sampled desired distance in KILOMETRES, keyed by the BARE (unprefixed)
+    category name -- ``{category: [desired_km, ...]}``. This is a draw-
+    coherence input only: it lets ``srv_location_draw_summary`` compare the
+    DRAWN desired-distance median against the SrV euclidean-equivalent median
+    for the same category. It reuses ``distance_m`` already sampled by
+    ``_sample_leg_distance`` for the leg (no extra RNG draw) and appends in the
+    same deterministic leg-loop order as ``subtype_stats``. Stays an empty
+    dict on the OFF path (``srv_location_decider is None``).
     """
     # Columnar accumulators: one typed list per output column instead of one
     # dict per leg row. At 100% (~3-4M leg rows) the list-of-dicts build held
@@ -1356,6 +2330,9 @@ def _build_plans_df(problems: List[Dict[str, Any]],
     col_to_y: List[float] = []
     col_leg_index: List[int] = []
     col_prob_idx: List[int] = []
+    # Issue #262: MiD distance label per leg, filled (and emitted) ONLY when the
+    # SrV location decider is active -- see DISTANCE_LABEL_COLUMN.
+    col_distance_label: List[Any] = []
 
     problem_meta: List[Dict[str, Any]] = []
     unbounded_idx: List[int] = []
@@ -1380,6 +2357,28 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         subtype_stats["escort_distance_layer_fallback"] = 0
         if escort_distance_by_type:
             subtype_stats["escort_type_distance_layer_fallback"] = 0
+    if srv_location_decider is not None:
+        # Prefixed keys (see SRV_LOCATION_STAT_PREFIX): "leisure_visit" is both a
+        # MiD subtype and an SrV category, so unprefixed counters would be shared
+        # between the two deciders and inflate both log lines.
+        subtype_stats.update({
+            SRV_LOCATION_STAT_PREFIX + name: 0
+            for name in SRV_LEISURE_CATEGORIES + SRV_OTHER_CATEGORIES
+        })
+        # One marginal-fallback counter PER PURPOSE (never pooled): the purposes
+        # differ several-fold in leg volume, so a single pooled counter would let
+        # a badly covered purpose hide behind a well covered one.
+        subtype_stats.update({
+            srv_location_marginal_fallback_stat(purpose): 0
+            for purpose in SRV_LOCATION_PURPOSES
+        })
+
+    # Draw-coherence input for srv_location_draw_summary (issue #262, Task 9):
+    # the desired distance (km) of every leg the SrV decider drew a category
+    # for, keyed by the BARE category name (unprefixed -- unlike subtype_stats,
+    # there is no "leisure_visit" collision here since this dict is never
+    # shared with the MiD subtype counters). Stays empty on the OFF path.
+    desired_by_category: Dict[str, List[float]] = defaultdict(list)
 
     for prob_idx, problem in enumerate(problems):
         if problem["origin"] is None or problem["destination"] is None:
@@ -1426,6 +2425,19 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 to_act_type if to_act_type in SECONDARY_PURPOSES else "other"
             )
 
+            # Issue #262: the MiD distance LABEL of a leisure/other leg, i.e. the
+            # subtype group that would have been the placement activity before
+            # this feature. Emitted as DISTANCE_LABEL_COLUMN on the ON path only
+            # (see the docstring), where it is the only surviving handle on the
+            # MiD subtype -- the Task-6 excursion boundary-clip diagnostic
+            # selects its legs through it. Defaults to the aggregate purpose,
+            # which is also the layer a leg without an active subtype decider
+            # (or an "other_rest" outcome) actually samples; None for shop /
+            # escort / fixed-anchor legs, which have no MiD subtype label.
+            distance_label = (
+                to_act_type if to_act_type in SRV_LOCATION_PURPOSES else None
+            )
+
             # Tier 2: resolve a shop leg to its daily / non-daily subtype. The
             # subtype is the chainsolver activity (-> retail_daily / non_daily
             # placement) AND the distance purpose (-> shop_daily / non_daily
@@ -1448,9 +2460,15 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             # the group is BOTH the chainsolver activity AND (with a logged
             # fallback to the aggregate "leisure" layer when the subtype
             # distance layer is absent) the distance purpose.
+            #
+            # Issue #262: when the SrV location decider is active it OWNS the
+            # placement activity (drawn further below, from the sampled desired
+            # distance), so the MiD group here stays a pure DISTANCE label.
             if leisure_subtype_decider is not None and to_act_type == "leisure":
                 group = leisure_subtype_decider(leg["mode"], leg["travel_time"])
-                placement_act = group
+                if srv_location_decider is None:
+                    placement_act = group
+                distance_label = group
                 subtype_stats[group] += 1
                 if _purpose_in_distributions(distributions, group):
                     distance_purpose = group
@@ -1464,11 +2482,17 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             # key -- placement_act and distance_purpose deliberately stay at
             # their to_act_type == "other" default for that outcome, so rest
             # legs are placed and distance-sampled exactly as on the OFF path.
+            #
+            # Issue #262: as in the leisure block above, an active SrV location
+            # decider owns the placement activity and the MiD outcome here stays
+            # a pure DISTANCE label.
             if other_subtype_decider is not None and to_act_type == "other":
                 outcome = other_subtype_decider(leg["mode"], leg["travel_time"])
                 subtype_stats[outcome] += 1
                 if outcome != "other_rest":
-                    placement_act = outcome
+                    if srv_location_decider is None:
+                        placement_act = outcome
+                    distance_label = outcome
                     if _purpose_in_distributions(distributions, outcome):
                         distance_purpose = outcome
                     else:
@@ -1501,6 +2525,25 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                 leisure_correction_factor, random,
             )
 
+            # Issue #262 (design A2): draw the SrV-2023 location CATEGORY AFTER
+            # the desired distance, so the type<->distance correlation observed in
+            # SrV carries over to the placement. The drawn category replaces the
+            # MiD subtype as the placement activity ("leisure_misc"/"other_misc"
+            # resolve back to the plain aggregate purpose); the distance keeps the
+            # MiD layer it was already sampled from. Shop and escort legs never
+            # reach this decider -- they have their own.
+            if srv_location_decider is not None and to_act_type in SRV_LOCATION_PURPOSES:
+                category, used_marginal = srv_location_decider(
+                    to_act_type, leg["mode"], distance_m)
+                placement_act = SRV_AGGREGATE_PLACEMENT.get(category, category)
+                subtype_stats[SRV_LOCATION_STAT_PREFIX + category] += 1
+                if used_marginal:
+                    subtype_stats[srv_location_marginal_fallback_stat(to_act_type)] += 1
+                # Draw-coherence input (issue #262, Task 9): the leg's already
+                # -sampled desired distance, in km, keyed by the BARE category
+                # name. No extra RNG draw -- distance_m was sampled above.
+                desired_by_category[category].append(distance_m / 1000.0)
+
             # from_x/from_y: known iff first leg AND origin is fixed
             if li == 0:
                 from_x, from_y = origin_xy
@@ -1523,13 +2566,19 @@ def _build_plans_df(problems: List[Dict[str, Any]],
             col_to_y.append(to_y)
             col_leg_index.append(li)
             col_prob_idx.append(prob_idx)
+            if srv_location_decider is not None:
+                # ON path only: appended (and the column emitted) solely when the
+                # SrV decider is active, so the OFF-path frame keeps exactly its
+                # legacy columns and stays byte-identical.
+                col_distance_label.append(distance_label)
 
     if not col_uid:
         # Preserve the legacy empty-frame shape (from_records([]) has NO
         # columns) so the no-bounded-legs early return behaves identically.
-        return pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats
+        return (pd.DataFrame.from_records([]), problem_meta, unbounded_idx, subtype_stats,
+                dict(desired_by_category))
 
-    plans_df = pd.DataFrame({
+    plans_data = {
         "unique_person_id": col_uid,
         "unique_leg_id": col_leg_id,
         "to_act_type": col_act,
@@ -1540,8 +2589,13 @@ def _build_plans_df(problems: List[Dict[str, Any]],
         "to_y": col_to_y,
         "_leg_index": col_leg_index,
         "_problem_idx": col_prob_idx,
-    })
-    return plans_df, problem_meta, unbounded_idx, subtype_stats
+    }
+    if srv_location_decider is not None:
+        # Appended LAST so the OFF path's column order is untouched (the golden
+        # frame-equality tests pin it).
+        plans_data[DISTANCE_LABEL_COLUMN] = col_distance_label
+    plans_df = pd.DataFrame(plans_data)
+    return plans_df, problem_meta, unbounded_idx, subtype_stats, dict(desired_by_category)
 
 
 def _build_rda_candidate_index(df_secondary: pd.DataFrame):
@@ -1882,13 +2936,23 @@ def _extract_locations(result_df: pd.DataFrame,
     # map-back ("other_rest" needs no entry here: it is never a chainsolver
     # activity name, see _build_other_subtype_decider). Issue #201:
     # ESCORT_LOCATION_ACTIVITIES (the drawn location-TYPE names) map back to
-    # the eqasim "escort" purpose the same implicit way.
+    # the eqasim "escort" purpose the same implicit way. Issue #262: the drawn
+    # SrV location categories (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES)
+    # map back to "leisure" / "other" by exactly the same mechanism -- they are
+    # chainsolver-internal placement activities that never reach the output
+    # schema. The two aggregate-placement categories ("leisure_misc",
+    # "other_misc") never appear as a to_act_type (SRV_AGGREGATE_PLACEMENT
+    # resolves them to the plain purpose in the leg loop), so their membership
+    # here is inert -- listing the full vocabulary keeps this set in lockstep
+    # with the category constants instead of encoding that indirection twice.
     secondary_acts = (
         set(SECONDARY_PURPOSES)
         | set(SHOP_SUBTYPE_ACTIVITIES)
         | set(LEISURE_SUBTYPE_ACTIVITIES)
         | set(OTHER_SUBTYPE_ACTIVITIES)
         | set(ESCORT_LOCATION_ACTIVITIES)
+        | set(SRV_LEISURE_CATEGORIES)
+        | set(SRV_OTHER_CATEGORIES)
     )
     is_secondary = pd.Series(to_act, dtype=object).isin(secondary_acts).to_numpy()
     coords_present = ~(np.isnan(to_x) | np.isnan(to_y))
@@ -2305,9 +3369,10 @@ DEFAULT_EXCURSION_CLIP_WARNING_SHARE = 0.50
 
 
 def _excursion_desired_distances_and_anchors_m(plans_df: pd.DataFrame,
-                                                problems: List[Dict[str, Any]]
+                                                problems: List[Dict[str, Any]],
+                                                row_mask=None
                                                 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Desired distances (metres) and anchors for ``"leisure_excursion"`` legs.
+    """Desired distances (metres) and anchors for the selected excursion legs.
 
     ``plans_df`` must still carry ``_problem_idx`` (i.e. be the frame returned
     by ``_build_plans_df``, before the caller drops the helper columns for
@@ -2319,17 +3384,39 @@ def _excursion_desired_distances_and_anchors_m(plans_df: pd.DataFrame,
     reference point for the candidate-reach ceiling: it is always available,
     unlike an intermediate, still-unresolved secondary location.
 
+    ``row_mask`` selects the rows to measure. ``None`` (default) keeps the legacy
+    selection -- ``to_act_type == "leisure_excursion"``, i.e. the placement
+    activity, which IS the MiD subtype whenever ``secondary_srv_location_types``
+    is OFF. With that flag ON the placement activity is the drawn SrV category
+    instead, so the caller passes a boolean mask built from
+    ``DISTANCE_LABEL_COLUMN`` (optionally intersected with a placement category);
+    the coordinate/anchor logic below is shared by both paths rather than
+    duplicated (issue #262).
+
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
         ``(desired_m, anchors_xy)``, parallel arrays of length
-        n_excursion_legs; ``anchors_xy`` has shape ``(n, 2)``. Both are empty
-        when no ``"leisure_excursion"`` leg is present (the flag is OFF, or
-        no bounded leg happened to draw that group).
+        n_selected_legs; ``anchors_xy`` has shape ``(n, 2)``. Both are empty
+        when the selection matches no row (e.g. the flag is OFF and no bounded
+        leg happened to draw that group).
+
+    Raises
+    ------
+    ValueError
+        If ``row_mask`` length does not match ``plans_df``.
     """
     if plans_df.empty or "to_act_type" not in plans_df.columns:
         return np.array([], dtype=float), np.empty((0, 2), dtype=float)
-    mask = (plans_df["to_act_type"] == "leisure_excursion").to_numpy()
+    if row_mask is None:
+        mask = (plans_df["to_act_type"] == "leisure_excursion").to_numpy()
+    else:
+        mask = np.asarray(row_mask, dtype=bool)
+        if mask.shape != (len(plans_df),):
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] row_mask must have one entry "
+                f"per plans_df row: got {mask.shape}, expected ({len(plans_df)},)."
+            )
     if not mask.any():
         return np.array([], dtype=float), np.empty((0, 2), dtype=float)
     desired_m = plans_df.loc[mask, "distance_meters"].to_numpy(dtype=float)
@@ -2383,7 +3470,8 @@ def _candidate_reach_ceiling_m(anchors_xy: np.ndarray, candidate_xy: np.ndarray)
 
 
 def _excursion_boundary_clip_summary(n_clipped: int, n_total: int,
-                                     warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE) -> str:
+                                     warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE,
+                                     placement_category: str = None) -> str:
     """Build the one-line ``"leisure_excursion"`` boundary-clip transparency summary.
 
     Pure (no I/O, no randomness, no side effects) -- mirrors
@@ -2401,21 +3489,123 @@ def _excursion_boundary_clip_summary(n_clipped: int, n_total: int,
         n_total: total ``"leisure_excursion"`` legs measured this run.
         warning_share: clip share (in [0, 1]) at or above which the line is
             prefixed with ``"WARNING: "``.
+        placement_category: with ``secondary_srv_location_types`` ON the same
+            measurement is resolved per DRAWN placement category (each category
+            has its own candidate pool, hence its own reach ceiling); naming it
+            here tags the line ``[placement=<category>]``. ``None`` (default)
+            produces the legacy, placement-agnostic wording unchanged.
     """
+    scope = f" [placement={placement_category}]" if placement_category else ""
     if n_total == 0:
         return (
             "[braunschweig.secondary_chainsolvers] leisure_excursion "
-            "boundary-clip: 0 bounded 'leisure_excursion' legs this run "
+            f"boundary-clip{scope}: 0 bounded 'leisure_excursion' legs this run "
             "(nothing to measure)."
         )
     share = n_clipped / n_total
     prefix = "WARNING: " if share >= warning_share else ""
     return (
         f"[braunschweig.secondary_chainsolvers] {prefix}leisure_excursion "
-        f"boundary-clip: {n_clipped:,}/{n_total:,} ({share * 100.0:.1f}%) "
+        f"boundary-clip{scope}: {n_clipped:,}/{n_total:,} ({share * 100.0:.1f}%) "
         "bounded excursion legs sample a desired distance beyond the "
         "farthest available candidate and clip to the region edge."
     )
+
+
+def _srv_placement_potential_column(placement_activity: str) -> str:
+    """Candidate potential column backing a drawn SrV placement activity.
+
+    The drawn category is the chainsolver activity, so its candidate pool is
+    exactly the rows the emission in :func:`_build_locations_df` offers it to:
+    a category activity maps to its own ``pot_<category>`` (``pot_visit`` for
+    ``leisure_visit``, see :func:`srv_category_potential_column`), while the two
+    aggregate-placement categories resolve to the plain purpose and therefore to
+    ``pot_leisure`` / ``pot_other`` via ``_ACTIVITY_POTENTIAL_COLUMN``. One
+    mapping, used by both the emission and this diagnostic.
+    """
+    if placement_activity in SRV_PLACEMENT_CATEGORIES:
+        return srv_category_potential_column(placement_activity)
+    return _ACTIVITY_POTENTIAL_COLUMN[placement_activity]
+
+
+def _srv_excursion_boundary_clip_lines(plans_df: pd.DataFrame,
+                                       problems: List[Dict[str, Any]],
+                                       df_secondary,
+                                       warning_share: float = DEFAULT_EXCURSION_CLIP_WARNING_SHARE
+                                       ) -> List[str]:
+    """Excursion boundary-clip lines under SrV placement, PER DRAWN CATEGORY.
+
+    Restores the Task-6 diagnostic (issue #127) for the
+    ``secondary_srv_location_types`` ON path, where it had gone structurally
+    inert: the diagnostic used to select its legs by placement activity
+    ``== "leisure_excursion"``, but with SrV placement the activity is the drawn
+    category and the MiD subtype survives only as ``DISTANCE_LABEL_COLUMN``.
+    Legs are therefore selected by that label, and then grouped by the drawn
+    placement category -- each category is placed on its OWN candidate pool
+    (landuse points for ``leisure_outdoor``, residential rows for
+    ``leisure_visit``, the aggregate buildings for ``leisure_misc``, plus the
+    external Gemeinde centroids, which carry every category potential since the
+    escape step), so each has its own reach ceiling and must be measured
+    separately. Measurement only: reads the already-sampled desired distances
+    and the already-assembled candidate set, places nothing, draws no random
+    number.
+
+    Returns one line per drawn category (alphabetically, for a deterministic
+    log) plus one aggregate total line, or a single "nothing to measure" line
+    when no bounded excursion leg exists.
+
+    Raises
+    ------
+    RuntimeError
+        If a drawn placement category has zero positive-potential candidates --
+        broken wiring rather than thin data, mirroring the legacy
+        ``pot_leisure`` fail-fast.
+    """
+    if plans_df.empty or DISTANCE_LABEL_COLUMN not in plans_df.columns:
+        return [_excursion_boundary_clip_summary(0, 0)]
+    excursion_mask = (plans_df[DISTANCE_LABEL_COLUMN] == "leisure_excursion").to_numpy()
+    if not excursion_mask.any():
+        return [_excursion_boundary_clip_summary(0, 0)]
+
+    lines = []
+    n_clipped_all = 0
+    n_total_all = 0
+    placement_acts = plans_df.loc[excursion_mask, "to_act_type"]
+    for category in sorted(set(placement_acts)):
+        category_mask = excursion_mask & (plans_df["to_act_type"] == category).to_numpy()
+        desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(
+            plans_df, problems, row_mask=category_mask)
+        if desired_m.size == 0:
+            continue
+        potential_column = _srv_placement_potential_column(category)
+        if potential_column not in df_secondary.columns:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip: "
+                f"placement category {category!r} needs candidate column "
+                f"'{potential_column}', which the candidate set does not carry -- the "
+                "SrV candidate wiring is broken."
+            )
+        category_candidates = df_secondary.loc[df_secondary[potential_column] > 0.0]
+        if len(category_candidates) == 0:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] leisure_excursion boundary-clip "
+                f"found zero candidates with {potential_column} > 0, but bounded "
+                f"'leisure_excursion' legs were placed on {category!r} -- the candidate "
+                "wiring is broken (this is not an expected empty-candidate run)."
+            )
+        candidate_xy = np.column_stack((
+            category_candidates.geometry.x.to_numpy(),
+            category_candidates.geometry.y.to_numpy(),
+        ))
+        ceiling_m = _candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+        _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
+        n_clipped_all += n_clipped
+        n_total_all += n_total
+        lines.append(_excursion_boundary_clip_summary(
+            n_clipped, n_total, warning_share=warning_share, placement_category=category))
+    lines.append(_excursion_boundary_clip_summary(
+        n_clipped_all, n_total_all, warning_share=warning_share))
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -2829,6 +4019,546 @@ def _build_escort_location_decider(context, random_seed: int):
     return decide
 
 
+# ---------------------------------------------------------------------------
+# Issue #262 (Task 7): pinned SrV-2023 location-type probabilities for
+# leisure / other legs, and the per-leg decider that draws from them.
+# ---------------------------------------------------------------------------
+
+# One further dedicated RNG-stream offset than the escort location decider, so
+# this decider's draws cannot perturb the shop/leisure/other subtype streams,
+# the escort location stream, or the distance-sampling RNG (``random``) --
+# turning ``secondary_srv_location_types`` ON/OFF (or any sibling flag) never
+# perturbs another stream, and the OFF path stays byte-identical.
+SRV_LOCATION_SEED_OFFSET = 90215  # SHOP_SUBTYPE_SEED_OFFSET + 4
+
+# Location-category vocabulary for the two SrV-covered purposes (Task 1,
+# scripts/derive_srv_location_types.py); must match the pinned CSV's
+# "category" column exactly -- checked at load time by
+# ``load_srv_location_type_probs``.
+SRV_LEISURE_CATEGORIES = ("leisure_culture", "leisure_gastronomy", "leisure_misc",
+                          "leisure_outdoor", "leisure_sports", "leisure_visit")
+SRV_OTHER_CATEGORIES = ("errand_authority_medical", "errand_service", "other_misc")
+
+# Categories whose eqasim placement_act stays the AGGREGATE purpose (i.e. they
+# do not correspond to a more specific facility type than plain
+# "leisure"/"other" -- consulted by the stage that resolves a drawn category
+# to a candidate-search activity).
+SRV_AGGREGATE_PLACEMENT = {"leisure_misc": "leisure", "other_misc": "other"}
+
+# The two eqasim purposes the SrV location-type table covers (Task 8). Shop legs
+# and escort legs have their own dedicated deciders and must never reach the SrV
+# decider (which raises on any other purpose, see _build_srv_location_decider).
+SRV_LOCATION_PURPOSES = ("leisure", "other")
+
+# The drawn categories that become their OWN chainsolver placement activity
+# (everything except the two aggregate-placement categories above). Each one
+# needs an ``offers_<category>`` / ``pot_<category>`` candidate column pair --
+# except "leisure_visit", which reuses the residential visit machinery's
+# ``offers_visit`` / ``pot_visit`` columns (Task 5, issue #127).
+SRV_PLACEMENT_CATEGORIES = tuple(
+    name for name in SRV_LEISURE_CATEGORIES + SRV_OTHER_CATEGORIES
+    if name not in SRV_AGGREGATE_PLACEMENT
+)
+
+# Categories the external Gemeinde centroids act as long-distance escapes for
+# (see append_external_category_escapes): every placement category that has its
+# own ``pot_<category>`` column. "leisure_visit" is excluded because its pool is
+# the residential building stock (offers_visit / pot_visit) and external
+# centroids never offered that on the OFF path either.
+EXTERNAL_CATEGORY_ESCAPE_CATEGORIES = tuple(
+    name for name in SRV_PLACEMENT_CATEGORIES if name != "leisure_visit"
+)
+
+# ``subtype_stats`` key namespace for the SrV draws. A prefix is REQUIRED, not
+# cosmetic: "leisure_visit" is simultaneously a MiD distance subtype (see
+# LEISURE_SUBTYPE_ACTIVITIES) and an SrV location category, so unprefixed
+# counters would be incremented by both deciders and BOTH log lines (the MiD
+# subtype labelling line and the SrV draw line) would report inflated counts.
+SRV_LOCATION_STAT_PREFIX = "srv_location_"
+
+# Marginal-fallback counters are kept PER PURPOSE, not pooled (review finding):
+# leisure legs outnumber "other" legs several times over, so a pooled rate lets a
+# badly covered purpose hide behind a well covered one (e.g. 45% fallback on
+# "other" reads as ~5% pooled). Both the reported rate and the escalation
+# threshold below therefore apply per purpose.
+SRV_LOCATION_MARGINAL_FALLBACK_STAT_PREFIX = "srv_location_marginal_fallback_"
+
+# Pinned probability table produced by scripts/derive_srv_location_types.py
+# (Task 1). Committed reference data -- regenerate there, never edit by hand.
+DEFAULT_SRV_LOCATION_TYPE_PROBS_PATH = (
+    "eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv"
+)
+
+# HEURISTIC escalation threshold, applied PER PURPOSE (share of that purpose's
+# drawn legs resolved from its MARGINAL distribution instead of its (mode, band)
+# cell). Mirrors the escort distance-by-type precedent: above this share the
+# conditional table is effectively not doing its job, which is a failure signal
+# rather than a tolerated cost (CLAUDE.md fallback-transparency rule 2). Not a
+# scientifically derived bound.
+SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE = 0.2
+
+
+def srv_location_marginal_fallback_stat(purpose: str) -> str:
+    """``subtype_stats`` key counting ``purpose``'s marginal-fallback draws."""
+    return SRV_LOCATION_MARGINAL_FALLBACK_STAT_PREFIX + purpose
+
+
+def srv_category_offer_column(category: str) -> str:
+    """Candidate offer column advertising ``category`` as a placement activity.
+
+    "leisure_visit" is served by the residential visit candidates
+    (``VISIT_OFFER_COLUMN``, appended by
+    :func:`append_residential_visit_candidates`); every other placement category
+    carries its own ``offers_<category>`` column from
+    :func:`append_location_category_columns` (buildings) or
+    :func:`append_landuse_candidates` (ATKIS grid points).
+    """
+    return VISIT_OFFER_COLUMN if category == "leisure_visit" else "offers_" + category
+
+
+def srv_category_potential_column(category: str) -> str:
+    """Candidate potential column for ``category`` (see
+    :func:`srv_category_offer_column` for the leisure_visit exception)."""
+    return VISIT_POTENTIAL_COLUMN if category == "leisure_visit" else "pot_" + category
+
+
+def _validate_srv_location_type_prerequisites(*, srv_location_types: bool,
+                                              secondary_building_potentials: bool,
+                                              leisure_subtype_split: bool,
+                                              other_subtype_split: bool,
+                                              leisure_visit_building_potential: bool) -> None:
+    """Fail fast when ``secondary_srv_location_types`` is ON without the flags it
+    is built on top of (issue #262, Task 8).
+
+    Mirrors the identical guard in
+    ``braunschweig.synthesis.locations.secondary_candidates.execute`` (the
+    candidate set and the chainsolver must agree on the feature's preconditions):
+
+    * ``secondary_building_potentials`` -- the per-category candidate columns
+      only exist on the building-potential candidate set,
+    * ``secondary_leisure_subtype_split`` / ``secondary_other_subtype_split`` --
+      the MiD subtypes still supply the DISTANCE layers the category is drawn
+      from (A2 draws the type conditioned on the sampled desired distance),
+    * ``leisure_visit_building_potential`` -- the drawn ``leisure_visit``
+      category is placed on the residential ``pot_visit`` candidates.
+
+    Raises ``RuntimeError`` naming every missing flag; a no-op when the feature
+    is OFF (no silent fallback to a partial category set).
+    """
+    if not srv_location_types:
+        return
+    missing = [
+        name for name, enabled in (
+            ("secondary_building_potentials", secondary_building_potentials),
+            ("secondary_leisure_subtype_split", leisure_subtype_split),
+            ("secondary_other_subtype_split", other_subtype_split),
+            ("leisure_visit_building_potential", leisure_visit_building_potential),
+        )
+        if not enabled
+    ]
+    if missing:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_srv_location_types requires "
+            f"{', '.join(missing)} to be ON (the SrV location-category placement is built "
+            "on top of the building-potential candidate set, the MiD leisure/other "
+            "subtype distance layers, and the residential visit machinery the drawn "
+            "'leisure_visit' category is placed on). Enable the flag(s) above or disable "
+            "secondary_srv_location_types."
+        )
+
+
+def _srv_location_draw_summary_lines(subtype_stats: Dict[str, int]) -> List[str]:
+    """One draw-rate line per SrV-covered purpose plus a pooled-total line.
+
+    Pure (no I/O, no randomness) so the exact wording is testable. Each purpose's
+    line reports how many bounded legs drew each location category AND that
+    purpose's OWN marginal-fallback rate -- draws resolved from the purpose's
+    marginal distribution because the pinned table has no ``(mode, distance
+    band)`` cell for the leg (CLAUDE.md fallback transparency: the rate must
+    always be observable, not only when it is non-zero). The
+    ``SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE`` escalation is evaluated PER
+    PURPOSE, because a pooled rate lets a badly covered purpose hide behind a
+    well covered one (the purposes differ in leg volume by several times). The
+    trailing pooled line is informational only and never warns.
+    """
+    lines = []
+    n_all = 0
+    n_marginal_all = 0
+    for purpose, categories in (
+        ("leisure", SRV_LEISURE_CATEGORIES), ("other", SRV_OTHER_CATEGORIES),
+    ):
+        counts = {
+            name: subtype_stats[SRV_LOCATION_STAT_PREFIX + name] for name in categories
+        }
+        n_legs = sum(counts.values())
+        n_all += n_legs
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_legs):.1f}%)"
+            for name, count in counts.items()
+        )
+        n_marginal = subtype_stats[srv_location_marginal_fallback_stat(purpose)]
+        n_marginal_all += n_marginal
+        share = (n_marginal / n_legs) if n_legs else 0.0
+        prefix = "WARNING: " if share >= SRV_LOCATION_MARGINAL_FALLBACK_WARN_SHARE else ""
+        lines.append(
+            f"[braunschweig.secondary_chainsolvers] {prefix}srv location draw ({purpose}): "
+            f"{n_legs:,} bounded {purpose} legs -> {shares}; marginal fallback (no "
+            f"(mode, band) cell in the pinned table) {n_marginal:,}/{n_legs:,} "
+            f"({share * 100.0:.1f}%)"
+        )
+    lines.append(
+        "[braunschweig.secondary_chainsolvers] srv location draw: marginal fallback "
+        f"total {n_marginal_all:,}/{n_all:,} "
+        f"({_rate_pct(n_marginal_all, n_all):.1f}%) -- see the per-purpose lines above "
+        "for the rates the warning threshold is applied to"
+    )
+    return lines
+
+
+# Pinned draw-vs-reference table produced by scripts/derive_srv_location_types.py
+# (Task 1). Committed reference data -- regenerate there, never edit by hand.
+# Also carries purpose="shop" rows (a validation-only contribution for a
+# different feature, issue #242); srv_location_draw_summary EXCLUDES them --
+# shop location choice is not decided by this decider.
+DEFAULT_SRV_LOCATION_TYPE_SHARES_PATH = (
+    "eqasim-data/data/braunschweig/srv/srv2023_secondary_type_shares.csv"
+)
+
+# HEURISTIC escalation threshold (percentage points, NOT a scientifically
+# derived bound): the maximum tolerated |drawn_share - reference_share| for a
+# category before the per-run draw-summary writer emits a WARN. Configurable
+# via ``srv_location_share_warn_pp`` (declared in ``configure``).
+DEFAULT_SRV_LOCATION_SHARE_WARN_PP = 5.0
+
+# Column order of the srv_location_draw_summary.csv artifact and the
+# DataFrame returned by srv_location_draw_summary(); kept as a module
+# constant so the writer and the tests agree on the schema.
+SRV_LOCATION_DRAW_SUMMARY_COLUMNS = (
+    "purpose", "category", "drawn_share", "reference_share",
+    "drawn_median_desired_km", "reference_median_euclid_km", "n_drawn",
+)
+
+# Honesty note (CLAUDE.md "No invented reference values" + issue #262 plan):
+# this summary is a DRAW-COHERENCE check, not a validation of realised model
+# output against SrV. Reused verbatim as the CSV header comment and quoted in
+# the function docstring below so both surfaces state the same caveat.
+SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE = (
+    "This table compares DRAWN desired-distance medians (the leg's sampled "
+    "target distance, before candidate search) against the SrV "
+    "euclidean-equivalent medians of srv2023_secondary_type_shares.csv. It is "
+    "a draw-coherence check on the category<->distance decider, NOT a "
+    "validation of REALISED (placed) distances: carla's candidate search can "
+    "still deviate from the desired distance (top_n selection inertness, "
+    "backlog Tier-0 item (a)), which is assessed separately in the A/B "
+    "validation run. Never read this file as \"validated against SrV\"."
+)
+
+
+def srv_location_draw_summary(subtype_stats: Dict[str, int],
+                               desired_by_category: Dict[str, List[float]],
+                               shares_df: pd.DataFrame) -> pd.DataFrame:
+    """Per-category drawn-vs-reference coherence table (issue #262, Task 9).
+
+    IMPORTANT -- read before using this table: it compares DRAWN
+    desired-distance medians against the SrV euclidean-equivalent medians. It
+    is a draw-coherence check on the ``srv_location_decider``, NOT a
+    validation of REALISED (placed) distances -- carla's candidate search can
+    still deviate from the desired distance (top_n selection inertness,
+    backlog Tier-0 item (a)); that is assessed in the A/B validation run, not
+    here. See :data:`SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE`.
+
+    Parameters
+    ----------
+    subtype_stats:
+        The ``subtype_stats`` dict returned by ``_build_plans_df`` (namespaced
+        ``SRV_LOCATION_STAT_PREFIX + category`` draw counters). Missing keys
+        are treated as zero draws (a category the decider never drew in this
+        run, e.g. under a small/synthetic input).
+    desired_by_category:
+        The ``desired_by_category`` dict returned by ``_build_plans_df``:
+        ``{category: [desired_km, ...]}``, keyed by the BARE category name.
+        A category absent from this dict gets a NaN
+        ``drawn_median_desired_km`` (no legs to take a median over).
+    shares_df:
+        The pinned ``srv2023_secondary_type_shares.csv`` frame (columns
+        ``purpose``, ``category``, ``weight_share``, ``weighted_median_euclid_km``,
+        among others -- see :func:`load_srv_location_type_shares`). Its
+        ``purpose="shop"`` rows are VALIDATION-ONLY rows for a different
+        feature (issue #242) and are excluded here: this decider only draws
+        for ``SRV_LOCATION_PURPOSES`` (leisure, other).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per ``(purpose, category)`` for every category in
+        ``SRV_LEISURE_CATEGORIES`` / ``SRV_OTHER_CATEGORIES`` (the full pinned
+        vocabulary for the two SrV-covered purposes), columns
+        :data:`SRV_LOCATION_DRAW_SUMMARY_COLUMNS`. ``drawn_share`` is
+        ``n_drawn`` over that PURPOSE's total drawn legs (sums to 1.0 per
+        purpose when at least one leg was drawn); a category the decider
+        never drew still gets its own row with ``n_drawn=0`` and
+        ``drawn_share=0.0`` (never silently omitted). ``reference_share`` /
+        ``reference_median_euclid_km`` are looked up from ``shares_df``; a
+        category absent from the pinned reference (should not occur for the
+        fixed vocabulary above, but not assumed) gets NaN there instead of a
+        fabricated value.
+    """
+    shares_lookup = shares_df[shares_df["purpose"].isin(SRV_LOCATION_PURPOSES)].set_index(
+        ["purpose", "category"]
+    )
+
+    rows = []
+    for purpose, categories in (
+        ("leisure", SRV_LEISURE_CATEGORIES), ("other", SRV_OTHER_CATEGORIES),
+    ):
+        counts = {
+            category: int(subtype_stats.get(SRV_LOCATION_STAT_PREFIX + category, 0))
+            for category in categories
+        }
+        n_legs = sum(counts.values())
+        for category in categories:
+            n_drawn = counts[category]
+            drawn_share = (n_drawn / n_legs) if n_legs else float("nan")
+            desired_km = desired_by_category.get(category, [])
+            drawn_median_desired_km = float(np.median(desired_km)) if desired_km else float("nan")
+            if (purpose, category) in shares_lookup.index:
+                reference_row = shares_lookup.loc[(purpose, category)]
+                reference_share = float(reference_row["weight_share"])
+                reference_median_euclid_km = float(reference_row["weighted_median_euclid_km"])
+            else:
+                reference_share = float("nan")
+                reference_median_euclid_km = float("nan")
+            rows.append({
+                "purpose": purpose,
+                "category": category,
+                "drawn_share": drawn_share,
+                "reference_share": reference_share,
+                "drawn_median_desired_km": drawn_median_desired_km,
+                "reference_median_euclid_km": reference_median_euclid_km,
+                "n_drawn": n_drawn,
+            })
+    return pd.DataFrame(rows, columns=list(SRV_LOCATION_DRAW_SUMMARY_COLUMNS))
+
+
+def load_srv_location_type_shares(path: str) -> pd.DataFrame:
+    """Load the pinned ``srv2023_secondary_type_shares.csv`` reference table.
+
+    Thin wrapper around ``pd.read_csv(path, comment="#")`` (the file's header
+    is a block of ``#``-prefixed provenance comments, see the file itself);
+    kept as a named function so the load convention is documented once and
+    both the stage writer and the tests share it.
+    """
+    return pd.read_csv(path, comment="#")
+
+
+_SRV_LOCATION_TYPE_REQUIRED_COLUMNS = (
+    "purpose", "mode", "band_lower_km", "band_upper_km", "is_marginal",
+    "category", "probability", "n_legs_unweighted",
+)
+_SRV_LOCATION_TYPE_CATEGORIES_BY_PURPOSE = {
+    "leisure": frozenset(SRV_LEISURE_CATEGORIES),
+    "other": frozenset(SRV_OTHER_CATEGORIES),
+}
+_SRV_LOCATION_TYPE_PROB_TOLERANCE = 1e-6
+
+
+def load_srv_location_type_probs(path: str) -> Dict[str, Dict[str, Any]]:
+    """Load and validate the pinned SrV-2023-BS+RGB location-type probability
+    table (Task 1, ``scripts/derive_srv_location_types.py`` ->
+    ``eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv``).
+
+    Returns ``{purpose: {"band_edges_km": tuple, "cells": {(mode, band_idx):
+    {category: probability}}, "marginal": {category: probability}}}`` for the
+    two SrV-covered purposes, ``"leisure"`` and ``"other"``. Distance bands are
+    EUCLIDEAN-equivalent kilometres: the pinned CSV converts the survey's
+    routed GIS distance via ``euclid_km = routed_km / DETOUR_FACTOR`` with
+    DETOUR_FACTOR=1.3 -- the same routed->euclidean assumption already used for
+    the MiD distance layers (see the CSV's header comment). ``band_idx`` is the
+    0-based index of a row's ``(band_lower_km, band_upper_km)`` pair within the
+    shared, purpose-independent ``band_edges_km`` tuple.
+
+    The pinned CSV omits cells thinner than its derive-script ``min_obs``
+    threshold (see its header comment), so a given purpose's non-marginal rows
+    may not cover every ``(mode, band)`` combination, and may not even mention
+    every band. The band schedule itself, however, is common to both purposes
+    (one derive-script run over one shared banding) -- so the edge tuple is
+    reconstructed from the UNION of non-marginal ``(band_lower_km,
+    band_upper_km)`` pairs across BOTH purposes, validated for monotonicity and
+    contiguity over that union, and then reused for both purposes: even a
+    purpose with zero non-marginal rows of its own gets the other purpose's
+    edges, and a ``ValueError`` is raised only if NEITHER purpose has any
+    non-marginal rows at all.
+
+    Raises ``ValueError`` on: a missing required column; an unknown category
+    for a purpose (i.e. not in ``SRV_LEISURE_CATEGORIES`` /
+    ``SRV_OTHER_CATEGORIES``); cell or marginal probabilities that do not sum
+    to 1 within ``1e-6``; a missing marginal row set for a purpose; or
+    non-monotonic/non-contiguous band edges reconstructed from the rows.
+    """
+    frame = pd.read_csv(path, comment="#")
+
+    missing_columns = sorted(set(_SRV_LOCATION_TYPE_REQUIRED_COLUMNS) - set(frame.columns))
+    if missing_columns:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: missing required "
+            f"column(s) {missing_columns}; expected "
+            f"{sorted(_SRV_LOCATION_TYPE_REQUIRED_COLUMNS)}."
+        )
+
+    non_marginal = frame[frame["is_marginal"] == 0]
+    if non_marginal.empty:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: no non-marginal "
+            "rows found for either purpose; cannot reconstruct band edges."
+        )
+    edge_pairs = sorted(set(
+        (float(lower), float(upper))
+        for lower, upper in zip(non_marginal["band_lower_km"], non_marginal["band_upper_km"])
+    ))
+    band_lowers = [lower for lower, _ in edge_pairs]
+    band_uppers = [upper for _, upper in edge_pairs]
+    if any(next_lower != upper for next_lower, upper in zip(band_lowers[1:], band_uppers[:-1])):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: non-contiguous band "
+            f"edges reconstructed from the non-marginal rows: lowers={band_lowers}, "
+            f"uppers={band_uppers}."
+        )
+    band_edges = tuple([band_lowers[0]] + band_uppers)
+    if any(a >= b for a, b in zip(band_edges, band_edges[1:])):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {path}: non-monotonic band "
+            f"edges reconstructed from the non-marginal rows: {band_edges}."
+        )
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for purpose, allowed_categories in _SRV_LOCATION_TYPE_CATEGORIES_BY_PURPOSE.items():
+        purpose_rows = frame[frame["purpose"] == purpose]
+
+        unknown_categories = sorted(set(purpose_rows["category"]) - allowed_categories)
+        if unknown_categories:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: unknown "
+                f"category(ies) {unknown_categories} for purpose {purpose!r}; "
+                f"allowed: {sorted(allowed_categories)}."
+            )
+
+        marginal_rows = purpose_rows[purpose_rows["is_marginal"] == 1]
+        if marginal_rows.empty:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: missing marginal "
+                f"row(s) for purpose {purpose!r}."
+            )
+        marginal = {
+            str(category): float(probability)
+            for category, probability in zip(marginal_rows["category"], marginal_rows["probability"])
+        }
+        marginal_sum = sum(marginal.values())
+        if abs(marginal_sum - 1.0) > _SRV_LOCATION_TYPE_PROB_TOLERANCE:
+            raise ValueError(
+                f"[braunschweig.secondary_chainsolvers] {path}: marginal "
+                f"probabilities for purpose {purpose!r} sum to {marginal_sum}, "
+                f"expected 1.0 (tolerance {_SRV_LOCATION_TYPE_PROB_TOLERANCE})."
+            )
+
+        cells: Dict[Tuple[str, int], Dict[str, float]] = {}
+        cell_rows = purpose_rows[purpose_rows["is_marginal"] == 0]
+        for (mode, lower, upper), group in cell_rows.groupby(
+            ["mode", "band_lower_km", "band_upper_km"], sort=False
+        ):
+            band_idx = band_edges.index(float(lower))
+            cell_probs = {
+                str(category): float(probability)
+                for category, probability in zip(group["category"], group["probability"])
+            }
+            cell_sum = sum(cell_probs.values())
+            if abs(cell_sum - 1.0) > _SRV_LOCATION_TYPE_PROB_TOLERANCE:
+                raise ValueError(
+                    f"[braunschweig.secondary_chainsolvers] {path}: cell "
+                    f"probabilities for purpose {purpose!r}, mode {mode!r}, band "
+                    f"[{lower}, {upper}) sum to {cell_sum}, expected 1.0 "
+                    f"(tolerance {_SRV_LOCATION_TYPE_PROB_TOLERANCE})."
+                )
+            cells[(str(mode), band_idx)] = cell_probs
+
+        result[purpose] = {
+            "band_edges_km": band_edges,
+            "cells": cells,
+            "marginal": marginal,
+        }
+
+    return result
+
+
+def _build_srv_location_decider(context, random_seed: int):
+    """Build the per-leg SrV-2023 location-category decider, or ``None`` when
+    OFF.
+
+    Issue #262 (Task 7): for ``"leisure"``/``"other"`` legs, draws a
+    SrV-2023-BS+RGB observed destination category conditioned on ``(mode,
+    euclidean distance band)`` from the pinned probability table (Task 1;
+    see ``load_srv_location_type_probs``). Returns a callable ``(purpose: str,
+    mode: str, distance_m: float) -> (category: str, used_marginal: bool)``
+    when ``secondary_srv_location_types`` is ON, else ``None`` (the
+    byte-identical OFF path).
+
+    ``distance_m`` must be the same EUCLIDEAN-equivalent distance used
+    elsewhere in this stage's distance-band lookups, in METRES -- it is
+    converted to euclidean km internally (``distance_m / 1000.0``) to match
+    the pinned table's ``band_edges_km``; see ``load_srv_location_type_probs``
+    for the routed->euclidean (DETOUR_FACTOR=1.3) assumption behind those
+    bands. A distance that lands exactly on a band edge is assigned to the
+    UPPER band (``np.searchsorted(band_edges[1:], ..., side="right")``),
+    matching the pinned CSV's half-open ``[lower, upper)`` bands.
+
+    ``purpose`` must be ``"leisure"`` or ``"other"`` -- any other value raises
+    ``ValueError`` immediately, since escort and shop legs have their own
+    dedicated deciders (``_build_escort_location_decider`` /
+    ``_build_shop_subtype_decider``) and must never reach this one.
+
+    A ``(mode, band)`` cell absent from the pinned table (thinner than the
+    derive script's ``min_obs`` threshold) falls back to the purpose's
+    marginal distribution; the call reports this via the returned
+    ``used_marginal`` flag so callers can log the fallback rate explicitly
+    rather than let it happen silently (CLAUDE.md "Fallback transparency").
+
+    Every call draws exactly ONE uniform sample from a dedicated seeded RNG,
+    ``np.random.RandomState(random_seed + SRV_LOCATION_SEED_OFFSET)``, resolved
+    via ``_inverse_cdf_choice`` over the SORTED category names of the resolved
+    probability vector. This stream is separate from the distance-sampling RNG
+    (``random``), the shop/leisure/other subtype streams, and the escort
+    location stream, so enabling/disabling ``secondary_srv_location_types`` (or
+    any sibling flag) never perturbs another decider's draws -- the OFF path
+    stays byte-identical.
+    """
+    if not context.config("secondary_srv_location_types"):
+        return None
+
+    path = context.config("srv_location_type_probs_path")
+    tables = load_srv_location_type_probs(path)
+
+    rng = np.random.RandomState(int(random_seed) + SRV_LOCATION_SEED_OFFSET)
+
+    def decide(purpose: str, mode: str, distance_m: float) -> Tuple[str, bool]:
+        table = tables.get(purpose)
+        if table is None:
+            raise ValueError(
+                "[braunschweig.secondary_chainsolvers] _build_srv_location_decider: "
+                f"unknown purpose {purpose!r}; expected one of {sorted(tables)} "
+                "(escort/shop legs must not reach the SrV location decider)."
+            )
+        band_edges = table["band_edges_km"]
+        distance_km = distance_m / 1000.0
+        band_idx = int(np.searchsorted(band_edges[1:], distance_km, side="right"))
+        cell_probs = table["cells"].get((mode, band_idx))
+        used_marginal = cell_probs is None
+        probs = table["marginal"] if used_marginal else cell_probs
+        group_names = tuple(sorted(probs))
+        category = _inverse_cdf_choice(probs, group_names, rng.random_sample())
+        return category, used_marginal
+
+    return decide
+
+
 def _build_escort_distance_factor_map(context):
     """{activity_name: factor} for escort distance-by-type (A3), or None when OFF.
 
@@ -2896,6 +4626,96 @@ def _rate_pct(count, total) -> float:
     guarded formula is defined once instead of being repeated inline at
     each call site."""
     return 100.0 * count / total if total else 0.0
+
+
+# Filename of the per-run draw-summary artifact written by
+# _write_srv_location_draw_summary (issue #262, Task 9). Kept as a module
+# constant so the writer and any downstream reader agree on the name.
+SRV_LOCATION_DRAW_SUMMARY_FILENAME = "srv_location_draw_summary.csv"
+
+
+def _write_srv_location_draw_summary(context, subtype_stats: Dict[str, int],
+                                      desired_by_category: Dict[str, List[float]]) -> None:
+    """Write the per-run draw-summary artifact and WARN on large deviations
+    (issue #262, Task 9).
+
+    Loads the pinned ``srv_location_type_shares_path`` reference table, builds
+    :func:`srv_location_draw_summary`, and writes it as
+    ``SRV_LOCATION_DRAW_SUMMARY_FILENAME`` under the stage's synpp output
+    directory (``context.path()``), prefixed with
+    :data:`SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE` as a ``#``-commented CSV
+    header (mirrors the pinned-CSV convention used by
+    ``scripts/derive_srv_location_types.py``: read back with
+    ``pd.read_csv(path, comment="#")``). Emits one WARN line per category
+    whose ``|drawn_share - reference_share|`` exceeds
+    ``srv_location_share_warn_pp`` percentage points (a category with no
+    pinned reference, i.e. NaN ``reference_share``, is skipped -- there is
+    nothing to compare against, and that is not itself a draw failure).
+
+    This is a stage-side effect (file I/O + logging), never called on the OFF
+    path -- the caller in ``execute()`` gates it on
+    ``srv_location_decider is not None``.
+    """
+    shares_path = context.config("srv_location_type_shares_path")
+    shares_df = load_srv_location_type_shares(shares_path)
+    summary_df = srv_location_draw_summary(subtype_stats, desired_by_category, shares_df)
+
+    # Zero-leg purpose (review finding, Minor): a purpose with reference rows
+    # but NO drawn legs at all is near-100% non-coverage and must be loud, not
+    # silent -- the per-category loop below would otherwise say nothing about
+    # it (drawn_share is 0.0 for every one of its categories, which reads like
+    # "no deviation" unless the total is checked separately).
+    for purpose in SRV_LOCATION_PURPOSES:
+        n_purpose_drawn = int(summary_df.loc[summary_df["purpose"] == purpose, "n_drawn"].sum())
+        if n_purpose_drawn == 0:
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: 0 drawn legs for purpose {purpose!r} while "
+                "secondary_srv_location_types is ON -- verify this run actually "
+                f"produced bounded {purpose!r} legs (an entirely unbounded/"
+                "fallback-only run would explain this, but a bounded run with "
+                "zero draws for a whole purpose is a wiring bug, not noise)."
+            )
+
+    warn_pp = float(context.config("srv_location_share_warn_pp"))
+    for row in summary_df.itertuples(index=False):
+        if pd.isna(row.reference_share):
+            # Fallback-transparency rule (CLAUDE.md): a category from the fixed
+            # code vocabulary (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES)
+            # with NO row in the pinned reference is a vocabulary-drift signal
+            # -- e.g. the CSV was regenerated with a renamed or dropped
+            # category -- and must be surfaced loudly, never silently skipped.
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: {row.purpose}/{row.category} has NO matching row in "
+                f"the pinned reference ({shares_path}) -- possible drift between "
+                "the code vocabulary (SRV_LEISURE_CATEGORIES / SRV_OTHER_CATEGORIES) "
+                "and the pinned CSV; reference_share/reference_median_euclid_km "
+                "are NaN and this category cannot be compared."
+            )
+            continue
+        deviation_pp = abs(row.drawn_share - row.reference_share) * 100.0
+        if deviation_pp > warn_pp:
+            print(
+                "[braunschweig.secondary_chainsolvers] WARNING: srv location draw "
+                f"summary: {row.purpose}/{row.category} drawn_share "
+                f"{row.drawn_share * 100.0:.1f}% deviates from the pinned reference "
+                f"share {row.reference_share * 100.0:.1f}% by {deviation_pp:.1f} "
+                f"percentage points (> srv_location_share_warn_pp={warn_pp:.1f})."
+            )
+
+    output_path = "%s/%s" % (context.path(), SRV_LOCATION_DRAW_SUMMARY_FILENAME)
+    with open(output_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            "# " + SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.replace("\n", "\n# ") + "\n"
+        )
+        handle.write(f"# Reference: {shares_path}\n")
+        handle.write(f"# srv_location_share_warn_pp={warn_pp}\n")
+        summary_df.to_csv(handle, index=False)
+    print(
+        "[braunschweig.secondary_chainsolvers] wrote srv location draw summary "
+        f"({len(summary_df)} category rows) to {output_path}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -3022,6 +4842,21 @@ def execute(context):
     escort_location_decider = _build_escort_location_decider(context, random_seed)
     leisure_visit_building_potential = bool(context.config("leisure_visit_building_potential"))
 
+    # SrV location types (issue #262, A2). The prerequisite guard runs HERE --
+    # earlier than its sibling flag guards further below -- so a misconfigured
+    # run fails before the pinned probability CSV is loaded and before any leg is
+    # placed; the guard itself is pure and mirrors the identical one in the
+    # secondary_candidates stage.
+    srv_location_types_on = bool(context.config("secondary_srv_location_types"))
+    _validate_srv_location_type_prerequisites(
+        srv_location_types=srv_location_types_on,
+        secondary_building_potentials=bool(context.config("secondary_building_potentials")),
+        leisure_subtype_split=leisure_subtype_split,
+        other_subtype_split=other_subtype_split,
+        leisure_visit_building_potential=leisure_visit_building_potential,
+    )
+    srv_location_decider = _build_srv_location_decider(context, random_seed)
+
     fallback_strategy = (
         context.config("braunschweig.chainsolvers.fallback") or "rda"
     )
@@ -3072,13 +4907,14 @@ def execute(context):
         f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
     )
 
-    plans_df, problem_meta, unbounded_idx, subtype_stats = _build_plans_df(
+    plans_df, problem_meta, unbounded_idx, subtype_stats, desired_by_category = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
         shop_subtype_decider=shop_subtype_decider,
         leisure_subtype_decider=leisure_subtype_decider,
         other_subtype_decider=other_subtype_decider,
         escort_location_decider=escort_location_decider,
         escort_distance_by_type=escort_distance_factor_map is not None,
+        srv_location_decider=srv_location_decider,
     )
     if escort_location_decider is None and len(plans_df) and \
             (plans_df["to_act_type"] == "escort").any():
@@ -3176,6 +5012,16 @@ def execute(context):
                     "effectively not working (check escort_distance_factor_activities "
                     "vs the draw vocabulary)."
                 )
+    if srv_location_decider is not None:
+        # Drawn-category rates per purpose + the marginal-fallback rate
+        # (CLAUDE.md fallback transparency). Counts cover BOUNDED leisure/other
+        # legs only; unbounded chains go to the fallback placer untyped.
+        for line in _srv_location_draw_summary_lines(subtype_stats):
+            print(line)
+        # Task 9: per-run draw-summary CSV artifact + share/median coherence
+        # WARNs against the pinned SrV reference. A draw-coherence check only
+        # -- see SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.
+        _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
@@ -3325,7 +5171,15 @@ def execute(context):
     # already-finalised candidate set (df_secondary) -- this block places
     # nothing and draws no random number; see the module-level comment above
     # _excursion_boundary_clip_summary.
-    if leisure_subtype_decider is not None:
+    if leisure_subtype_decider is not None and srv_location_decider is not None:
+        # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
+        # label only -- no plan row carries it as a placement activity. The
+        # measurement is therefore driven by DISTANCE_LABEL_COLUMN and resolved
+        # per DRAWN placement category, each against its own candidate pool (and
+        # hence its own reach ceiling).
+        for line in _srv_excursion_boundary_clip_lines(plans_df, problems, df_secondary):
+            print(line)
+    elif leisure_subtype_decider is not None:
         desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
         if desired_m.size > 0:
             excursion_candidates = df_secondary.loc[df_secondary["pot_leisure"] > 0.0]
@@ -3355,6 +5209,7 @@ def execute(context):
         other_subtype_split=other_subtype_split,
         leisure_visit_building_potential=leisure_visit_building_potential,
         escort_purpose=escort_purpose_on,
+        srv_location_types=srv_location_types_on,
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
@@ -3363,8 +5218,9 @@ def execute(context):
     # the downstream fallback, so the serial path stays byte-identical.
     base_seed = int(random.randint(0, 2**31 - 1))
 
-    # Drop helper columns chainsolvers does not expect.
-    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    # Drop helper columns chainsolvers does not expect (issue #262 adds the
+    # ON-path-only DISTANCE_LABEL_COLUMN to that set).
+    plans_for_cs = _plans_frame_for_solver(plans_df)
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
     n_total = len(unique_persons)
 

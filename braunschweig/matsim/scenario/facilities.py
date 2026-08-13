@@ -68,6 +68,10 @@ def configure(context):
     # is kept alongside it for the same reason.
     context.config("leisure_visit_building_potential", False)
     context.config("escort_purpose", False)
+    # SrV-grounded location-category offers fold (issue #262): declared here for
+    # the same reason as escort_purpose -- this stage's secondary_facility_frame()
+    # reads it to decide the category-column fold into leisure/other.
+    context.config("secondary_srv_location_types", False)
     # Only consumed to widen the coverage check with the education facility ids
     # that household-linked escort anchors reference (#201 Phase 2).
     context.config("escort_household_link", False)
@@ -76,7 +80,8 @@ def configure(context):
     context.stage("synthesis.population.spatial.secondary.locations")
 
 
-def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
+def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True,
+                             secondary_srv_location_types=False):
     """Map the assembled candidate frame onto the facilities SECONDARY_FIELDS.
 
     ``offers_visit`` rows (residential leisure_visit candidates) are folded
@@ -93,6 +98,13 @@ def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
     ``braunschweig.synthesis.locations.secondary_candidates``) and simply
     passes through the ``SECONDARY_FIELDS`` selection below, in both cases.
 
+    SrV-grounded location-category columns (issue #262) fold into leisure/other
+    only when ``secondary_srv_location_types`` is ON: ``offers_leisure`` gets
+    all four category columns (culture, gastronomy, sports, outdoor), and
+    ``offers_other`` gets the two errand categories (authority_medical, service).
+    Each category column is guard-checked for presence when the flag is ON,
+    raising a hard ValueError if missing -- no silent fold-skip.
+
     Parameters
     ----------
     df_candidates:
@@ -101,11 +113,17 @@ def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
     leisure_visit_enabled:
         Whether ``leisure_visit_building_potential`` is ON. Keyword-only so
         callers cannot pass it positionally by mistake.
+    secondary_srv_location_types:
+        Whether ``secondary_srv_location_types`` is ON. Keyword-only. When ON,
+        category-column offers fold into leisure/other. OFF (default): no fold,
+        byte-identical treatment.
 
     Raises
     ------
     ValueError
-        If ``df_candidates`` is missing a required ``SECONDARY_FIELDS`` column.
+        If ``secondary_srv_location_types`` is ON but a required category column
+        is missing, or if ``df_candidates`` is missing a required
+        ``SECONDARY_FIELDS`` column.
     """
     df = df_candidates.copy()
     if "offers_visit" in df.columns and leisure_visit_enabled:
@@ -114,6 +132,48 @@ def secondary_facility_frame(df_candidates, *, leisure_visit_enabled=True):
         # feature actually places on these rows; escort-only residential rows
         # (escort_purpose ON, leisure_visit OFF) advertise just "escort".
         df["offers_leisure"] = df["offers_leisure"] | df["offers_visit"]
+
+    if secondary_srv_location_types:
+        # Fold SrV location-category columns into the base eqasim leisure/other
+        # offers: every sec_lu_* candidate must advertise the base purpose its
+        # internal category maps onto (e.g. "leisure" for culture/sports/etc,
+        # "other" for errand authority/service).
+        leisure_category_columns = [
+            "offers_leisure_culture",
+            "offers_leisure_gastronomy",
+            "offers_leisure_sports",
+            "offers_leisure_outdoor",
+        ]
+        errand_category_columns = [
+            "offers_errand_authority_medical",
+            "offers_errand_service",
+        ]
+
+        # Hard guard: when the flag is ON, every category column MUST exist.
+        # No silent skip -- this catches stage-interface divergence immediately.
+        missing_leisure = [c for c in leisure_category_columns if c not in df.columns]
+        if missing_leisure:
+            raise ValueError(
+                "[braunschweig.facilities] secondary_srv_location_types is ON but "
+                "required leisure category column(s) %s are missing; available: %s"
+                % (missing_leisure, list(df.columns))
+            )
+        missing_errand = [c for c in errand_category_columns if c not in df.columns]
+        if missing_errand:
+            raise ValueError(
+                "[braunschweig.facilities] secondary_srv_location_types is ON but "
+                "required errand category column(s) %s are missing; available: %s"
+                % (missing_errand, list(df.columns))
+            )
+
+        # Fold all leisure-category columns into offers_leisure
+        for col in leisure_category_columns:
+            df["offers_leisure"] = df["offers_leisure"] | df[col]
+
+        # Fold all errand-category columns into offers_other
+        for col in errand_category_columns:
+            df["offers_other"] = df["offers_other"] | df[col]
+
     missing = [c for c in base.SECONDARY_FIELDS if c not in df.columns]
     if missing:
         raise ValueError(
@@ -163,6 +223,7 @@ def execute(context):
         df_secondary = secondary_facility_frame(
             context.stage("braunschweig.synthesis.locations.secondary_candidates"),
             leisure_visit_enabled=bool(context.config("leisure_visit_building_potential")),
+            secondary_srv_location_types=bool(context.config("secondary_srv_location_types")),
         )
 
     # Fail-early check: all realised secondary ids must be writable facilities.

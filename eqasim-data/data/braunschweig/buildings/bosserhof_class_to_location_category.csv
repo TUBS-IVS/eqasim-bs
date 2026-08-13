@@ -1,0 +1,23 @@
+# Source: issue TUBS-IVS/eqasim-bs#262 + design spec docs/superpowers/specs/2026-08-12-srv-location-types-design.md (local)
+# ASSUMPTION: hotels excluded from leisure_gastronomy (lodging, not dining)
+# Do not edit manually; regenerate with scripts/seed_bosserhof_class_to_location_category.py
+bosserhof_class,location_category
+arenas large events,leisure_culture
+business oriented services,errand_service
+craft businesses,errand_service
+craft courtyards,errand_service
+customer oriented services,errand_service
+customer service,errand_service
+entertainment culture,leisure_culture
+facilities for culture leisure and sports,leisure_sports
+fitness wellness,leisure_sports
+hospitals,errand_authority_medical
+large cinemas,leisure_culture
+large discos fun leisure pools,leisure_sports
+nursing homes,errand_authority_medical
+public facilities,errand_authority_medical
+restaurants gastronomy,leisure_gastronomy
+services,errand_service
+theme parks,leisure_culture
+transport,errand_service
+vehicle electrical repair,errand_service
