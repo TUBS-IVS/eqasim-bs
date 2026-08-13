@@ -439,8 +439,9 @@ def test_incommuter_person_defaults_include_housing_tenure_unknown():
 
 
 def test_popsim_stage_wires_housing_tenure():
-    import pathlib
-    src = pathlib.Path("braunschweig/popsim/stage.py").read_text(encoding="utf-8")
+    from tests.conftest import popsim_stage_package_source_text
+
+    src = popsim_stage_package_source_text()
     assert 'context.config("synthesise_housing_tenure", True)' in src
     assert "_apply_housing_tenure" in src
     assert "regiostar_tenure" in src
