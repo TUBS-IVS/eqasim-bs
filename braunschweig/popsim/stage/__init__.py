@@ -72,6 +72,13 @@ Submodules extracted so far:
                   (``compute_batch_config_signature``, backed by
                   ``_frame_content_signature``).
 
+``execute()`` itself is decomposed into the named private orchestration steps
+defined directly above it (see the banner comment there): each step is a
+verbatim move of one commented block, called in the original order and threading
+its data through parameters and return values only, so the call order and the
+seeded RNG draw order are unchanged. Three blocks stay inline in ``execute``,
+each with its reason documented at the block.
+
 ``validate()`` folds the sources of the helper modules this stage's result
 depends on into the synpp validation token, because synpp's ``get_stage_hash``
 covers only THIS file's source: without the hook a change confined to a helper
@@ -548,8 +555,38 @@ def configure(context):
         context.stage("data.hts.entd.filtered", alias="hts_donor")
 
 
-def execute(context) -> pd.DataFrame:
-    """Run popsim_mid and return the merged expanded-household table."""
+# --------------------------------------------------------------------------- #
+# Orchestration steps of execute()
+#
+# Named private steps of the synpp ``execute`` below. Every step is a VERBATIM
+# move of one commented block out of ``execute``; the block's leading comment is
+# kept in the step docstring, comments inside a block stay where they were. The
+# steps are called in exactly the original order and thread their data
+# explicitly through parameters and return values (no module-level state), so
+# the call order -- and with it the seeded RNG draw order (``rng`` /
+# ``kreis_seed_rng``) -- is unchanged: inlining the calls back reproduces the
+# pre-split statement stream one-for-one.
+#
+# A step parameter always carries the SAME name as the caller's local, so a
+# rebinding step returns the value and ``execute`` reassigns it; steps that only
+# mutate an object in place say so in their ``Mutates:`` line.
+#
+# Three blocks stay INLINE in ``execute`` on purpose; each carries its reason
+# there. In short: the PopulationSim seed build, because a source-inspection test
+# pins its ``context.stage("completed_donor")`` delegation inside ``execute``'s
+# own source; and the placement_income reallocation plus its own-income consumer,
+# because ``_pi_diag`` is bound only when placement runs and is read again behind
+# a different guard further down, so neither block can move without adding an
+# initialiser statement the original does not have.
+# --------------------------------------------------------------------------- #
+
+def _read_stage_paths(context):
+    """Read the popsim input/output path config keys.
+
+    Returns: ``(cells_path, mid_dir, controls_path, settings_path, logging_path,
+    popsimprep_dir, uv_path)``.
+    Mutates: nothing.
+    """
     cells_path = context.config(KEY_CELLS)
     mid_dir = context.config(KEY_MID)
     controls_path = context.config(KEY_CONTROLS)
@@ -557,8 +594,20 @@ def execute(context) -> pd.DataFrame:
     logging_path = context.config(KEY_LOGGING)
     popsimprep_dir = context.config(KEY_POPSIMPREP)
     uv_path = context.config(KEY_UV)
-    # synpp's ExecuteContext.config() takes only the key; the defaults are
-    # registered in configure() (3000 / 3 / "mid" / False) and resolved here.
+    return cells_path, mid_dir, controls_path, settings_path, logging_path, popsimprep_dir, uv_path
+
+
+def _read_batching_and_scope_config(context):
+    """Read the batching, worker, work-dir and regional-scope config keys.
+
+    synpp's ExecuteContext.config() takes only the key; the defaults are
+    registered in configure() (3000 / 3 / "mid" / False) and resolved here.
+
+    Returns: ``(max_cells, num_workers, work_dir, kreise, source_name,
+    stratify_regiostar, complete_members)``.
+    Mutates: CREATES ``work_dir`` on disk (``mkdir(parents=True,
+    exist_ok=True)``) and logs the resolved worker count.
+    """
     max_cells = int(context.config(KEY_MAX_CELLS))
     # Worker count honours the auto sentinel (0/null/"auto" -> cores - reserve), so
     # the batch runner scales with the box it lands on. An explicit positive integer
@@ -586,9 +635,24 @@ def execute(context) -> pd.DataFrame:
     # Member completion (D3) applies to the MiD donor source only: the ENTD
     # frames have no declared-size column and need no completion.
     complete_members = bool(context.config(KEY_COMPLETE_MEMBERS)) and source_name == "mid"
+    return (
+        max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
+        complete_members,
+    )
 
-    # Seeded RNG for the stochastic attribute imputation in build_persons
-    # (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
+
+def _create_seeded_rngs(context):
+    """Create the two seeded RNG streams this stage draws from.
+
+    Seeded RNG for the stochastic attribute imputation in build_persons
+    (offset +74511 keeps the stream disjoint from the enriched-stage offsets).
+
+    Returns: ``(random_seed, rng, kreis_seed_rng)``. Both ``RandomState``
+    objects are created here and consumed IN THE ORIGINAL ORDER by the steps
+    below (``kreis_seed_rng`` in the seed build, ``rng`` in the persons
+    expansion), so no draw moves across a step boundary.
+    Mutates: nothing.
+    """
     random_seed = int(context.config("random_seed"))
     rng = np.random.RandomState(random_seed + 74511)
     # Seeded RNG for the count-style KREIS-control seed-column derivations
@@ -596,11 +660,19 @@ def execute(context) -> pd.DataFrame:
     # load_mid_seed). Offset +24680 keeps the stream disjoint from the +74511 imputation
     # stream above; derived from the pipeline random_seed so the seed is reproducible.
     kreis_seed_rng = np.random.RandomState(random_seed + 24680)
+    return random_seed, rng, kreis_seed_rng
 
-    source = _resolve_source(source_name)
-    logger.info("[popsim.stage] active donor source: %s", source.name)
 
-    # Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
+def _read_control_config(context, source_name: str):
+    """Read the control-set, seed-day-filter and KREIS-control config keys.
+
+    Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
+
+    Returns: ``(control_tiers, seed_day_filter, controls_source,
+    employment_grid_on, active_entries, active_entry_names, status_prior_n,
+    ebike_seed_column_cfg, importance_profile)``.
+    Mutates: nothing.
+    """
     control_tiers_str = context.config(KEY_CONTROL_TIERS)
     control_tiers = tuple(t.strip() for t in control_tiers_str.split(",") if t.strip())
     # Seed reporting-day filter: "off"/"all" -> keep all kernwo (no day filter, ()),
@@ -624,6 +696,20 @@ def execute(context) -> pd.DataFrame:
     ebike_seed_column_cfg = str(context.config(KEY_EBIKE_SEED_COLUMN)).strip() or None
     # Importance profile: default "uniform" -> importance untouched (byte-identical).
     importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
+    return (
+        control_tiers, seed_day_filter, controls_source, employment_grid_on,
+        active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
+        importance_profile,
+    )
+
+
+def _build_control_frame(controls_source, controls_path, source_name: str, control_tiers,
+        employment_grid_on: bool, active_entry_names, importance_profile: str):
+    """Build the PopulationSim ``controls.csv`` frame and its base cell columns.
+
+    Returns: ``(controls_df, base_cols)``.
+    Mutates: nothing.
+    """
     controls_df = build_controls_df(
         controls_source=controls_source,
         controls_path=controls_path,
@@ -636,12 +722,24 @@ def execute(context) -> pd.DataFrame:
     if importance_profile and importance_profile != "uniform":
         logger.info("[popsim.stage] importance profile applied: %s", importance_profile)
     base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
+    return controls_df, base_cols
 
-    # Tier-3 KREIS controls (employment / education): when active, load the imported
-    # per-Kreis census table and derive the {control_name: census_source} map from the
-    # catalog's KREIS-geography controls expressible by the active seed. Passed to
-    # run_popsim_mid, which builds control_totals_KREIS.csv per batch. When tier3 is
-    # absent both stay None -> the tier0-2 folder is byte-identical.
+
+def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_name: str, kreise):
+    """Load the Tier-3 per-Kreis control table and its census-column map.
+
+    Tier-3 KREIS controls (employment / education): when active, load the imported
+    per-Kreis census table and derive the {control_name: census_source} map from the
+    catalog's KREIS-geography controls expressible by the active seed. Passed to
+    run_popsim_mid, which builds control_totals_KREIS.csv per batch. When tier3 is
+    absent both stay None -> the tier0-2 folder is byte-identical.
+
+    Returns: ``(kreis_table, kreis_controls_map, household_control_names)`` --
+    the first two are ``None`` when Tier-3 is inactive, the third is the
+    (possibly empty) set of household-level KREIS control names that
+    :func:`_derive_kreis_attribute_control_targets` fills in place below.
+    Mutates: nothing.
+    """
     kreis_table = None
     kreis_controls_map = None
     # Household-level KREIS control names (keys of kreis_controls_map) that must be
@@ -670,11 +768,23 @@ def execute(context) -> pd.DataFrame:
             "(restricted to the run's %d Kreise) from %s",
             len(kreis_controls_map), len(kreis_table), len(kreise), kreis_dir,
         )
+    return kreis_table, kreis_controls_map, household_control_names
 
-    # For catalog-based controls with multi-column census sources (e.g. building_type),
-    # load the raw source columns from the parquet (union of all census_source tuples)
-    # rather than the derived control names.  For tier0-only or CSV-based controls,
-    # source_cols == base_cols == current behaviour -> byte-identical.
+
+def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
+        employment_grid_on: bool, cells_path):
+    """Resolve the column set loaded from the prepared-cells parquet.
+
+    For catalog-based controls with multi-column census sources (e.g. building_type),
+    load the raw source columns from the parquet (union of all census_source tuples)
+    rather than the derived control names.  For tier0-only or CSV-based controls,
+    source_cols == base_cols == current behaviour -> byte-identical.
+
+    Returns: ``load_cols`` (rebound by the employment-grid and income-tilt
+    blocks, so the caller MUST reassign it).
+    Mutates: nothing; reads only the parquet SCHEMA when the employment grid
+    control is on.
+    """
     source_cols_override = build_source_columns(
         controls_source=controls_source,
         seed=source_name,
@@ -710,27 +820,46 @@ def execute(context) -> pd.DataFrame:
     load_cols = tilt_extra_load_columns(
         bool(context.config(KEY_INCOME_TILT)), list(load_cols)
     )
+    return load_cols
 
-    cells = mid.load_control_cells(cells_path, load_cols)
-    cells = mid.filter_zgb_cells(cells, kreise)
 
-    # Derive the multi-column aggregated control columns (e.g. building_type_*).
-    # For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
-    # unchanged -> byte-identical.
+def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers) -> pd.DataFrame:
+    """Derive the multi-column aggregated control columns on the cells frame.
+
+    Derive the multi-column aggregated control columns (e.g. building_type_*).
+    For tier0-only: agg_map is empty -> add_aggregated_controls returns cells
+    unchanged -> byte-identical.
+
+    Returns: the cells frame with the aggregated control columns (MUST be
+    reassigned).
+    Mutates: nothing in place.
+    """
     agg_map = build_aggregation_map(
         controls_source=controls_source,
         seed=source_name,
         tiers=control_tiers,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
+    return cells
 
-    # Employment grid control (Task 5): inject the ten per-cell
-    # EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from the
-    # committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
-    # load_age_shares; exact for the kreisfreie Staedte, national fallback for the
-    # Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
-    # Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
-    # dependency is no longer used. When OFF, none of this runs -> byte-identical.
+
+def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool) -> pd.DataFrame:
+    """Inject the ten per-cell employment-grid target columns (Task 5).
+
+    Employment grid control (Task 5): inject the ten per-cell
+    EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from the
+    committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
+    load_age_shares; exact for the kreisfreie Staedte, national fallback for the
+    Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
+    Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
+    dependency is no longer used. When OFF, none of this runs -> byte-identical.
+
+    Returns: the cells frame with the ten ``EMPLOYED_*_agg`` columns (MUST be
+    reassigned); returned unchanged when the control is off.
+    Mutates: nothing in place (the block copies the frame before adding the
+    Kreis column); reads the Kreis employment parquet and the committed
+    age-share reference CSV.
+    """
     if employment_grid_on:
         from braunschweig.popsim import employment_grid as _eg
         from braunschweig.popsim import zensus_employment_age as _za
@@ -822,74 +951,15 @@ def execute(context) -> pd.DataFrame:
             "(census levels from %s, age shape from %s, %d Kreise).",
             _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
         )
+    return cells
 
-    # Build the PopulationSim seed.
-    # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
-    # files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
-    # For source="entd": the ENTD donor frames are transformed to MiD column
-    # schema by EntdSource.build_seed so the downstream (expand, map_demographics)
-    # runs unchanged; only map_person_attributes is ENTD-specific.
-    # The completed donor frames (member completion ON) are loaded here, ahead
-    # of PopulationSim, because the SEED is derived from them; they are reused
-    # verbatim as the expansion donor tables further below (ONE completion pass
-    # -> seed and expansion contain the same fillers).
-    completed_donor_households = None
-    completed_donor_persons = None
-    if source_name == "entd":
-        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
-        # (registered in configure() as alias "hts_donor") and build the seed.
-        # context.stage() is idempotent in synpp; retrieving the same alias twice
-        # returns the same cached result, so this does not re-run the stage.
-        hts_hh_seed, hts_persons_seed, _hts_trips_seed = context.stage("hts_donor")
-        seed_households, seed_persons, report = source.build_seed(
-            hts_hh_seed, hts_persons_seed
-        )
-    elif complete_members:
-        # popsim_mid with member completion (D3, default ON): the donor build
-        # (member completion + weekend-plan match) is produced by the cached
-        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
-        # The same completed frames feed BOTH the PopulationSim seed (projected
-        # here) AND the expansion donor tables below.
-        donor = context.stage("completed_donor")
-        completed_donor_households = donor.households
-        completed_donor_persons = donor.persons
-        report = donor.completeness_report
-        completion_report = donor.completion_report
-        seed_columns = source.seed_columns()
-        # project_completed_seed derives hh_type5 (Tier-1 household_type) like
-        # load_mid_seed does, so the seed carries it for the household_type control.
-        # number_of_cars / number_of_bicycles / has_ebike are derived here too, from
-        # the raw H_ANZAUTO / anzpedrad / H_ANZPED columns the completed_donor stage
-        # already carries (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike is fully wired
-        # (server-verified 2026-07-08, issue #116 resolved); project_completed_seed
-        # only raises if has_ebike is active AND ebike_seed_column_cfg is unset.
-        seed_households, seed_persons = mid.project_completed_seed(
-            completed_donor_households, completed_donor_persons, seed_columns,
-            kreis_control_entries=active_entries,
-            kreis_seed_rng=kreis_seed_rng,
-            ebike_seed_column=ebike_seed_column_cfg,
-            mid_dir=mid_dir,
-        )
-        # Surface the build reports on THIS run too (so they are present even when
-        # the completed_donor stage was served from cache and its execute did not run).
-        context.set_info(
-            "member_completion_filled", completion_report.n_households_filled
-        )
-        context.set_info(
-            "member_completion_persons_added", completion_report.n_persons_added
-        )
-    else:
-        # popsim_mid, complete_members=False: reads MiD CSV files directly from
-        # mid_dir. This path is byte-identical to all prior versions.
-        seed_columns = source.seed_columns()
-        seed_households, seed_persons, report = mid.load_mid_seed(
-            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
-            kreis_control_entries=active_entries,
-            kreis_seed_rng=kreis_seed_rng,
-            ebike_seed_column=ebike_seed_column_cfg,
-        )
-    context.set_info("seed_completeness_rate", report.completeness_rate)
 
+def _prepare_batch_runner(context, uv_path, popsimprep_dir, stratify_regiostar: bool):
+    """Build the per-batch PopulationSim runner and log the stratification flag.
+
+    Returns: ``run_one`` -- the per-batch subprocess callable.
+    Mutates: nothing.
+    """
     run_one = batch.make_populationsim_run_one(
         command_prefix=(str(uv_path), "run", "--no-sync", "populationsim"),
         cwd=popsimprep_dir,
@@ -901,14 +971,29 @@ def execute(context) -> pd.DataFrame:
         "[popsim.stage] stratify_regiostar=%s (Phase 4B donor stratification).",
         stratify_regiostar,
     )
-    # KREIS attribute controls (issue #109 + S1c): derive each ACTIVE registered attribute's
-    # per-Kreis household targets from its committed blended MiD shares x the per-Kreis
-    # household total (summed cell HH_TOTAL, so the category targets partition EXACTLY the
-    # household total PopulationSim controls per Kreis -> IPF-consistent). Merge into the KREIS
-    # control totals + map so run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE
-    # the config signature below so a control toggle invalidates stale batches. MiD-only
-    # (active_kreis_entries returns [] for non-MiD sources). With only economic_status active,
-    # this is byte-identical to the L1 wiring except the target now comes from the blended CSV.
+    return run_one
+
+
+def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active_entries, status_prior_n: float,
+        kreis_table, kreis_controls_map, household_control_names: set):
+    """Derive the per-Kreis targets of the active KREIS attribute controls.
+
+    KREIS attribute controls (issue #109 + S1c): derive each ACTIVE registered attribute's
+    per-Kreis household targets from its committed blended MiD shares x the per-Kreis
+    household total (summed cell HH_TOTAL, so the category targets partition EXACTLY the
+    household total PopulationSim controls per Kreis -> IPF-consistent). Merge into the KREIS
+    control totals + map so run_popsim_mid emits them in control_totals_KREIS.csv. Runs BEFORE
+    the config signature below so a control toggle invalidates stale batches. MiD-only
+    (active_kreis_entries returns [] for non-MiD sources). With only economic_status active,
+    this is byte-identical to the L1 wiring except the target now comes from the blended CSV.
+
+    Returns: ``(kreis_table, kreis_controls_map)`` -- both are REBOUND here
+    (the accumulator starts from the Tier-3 pair and merges one table per
+    active entry), so the caller MUST reassign both.
+    Mutates: ``household_control_names`` IN PLACE -- every household-level
+    entry's control names are added to the set the caller passed in (the
+    batch apportionment then uses the household share for them, issue #148).
+    """
     if active_entries:
         from braunschweig.popsim import kreis_attribute_control as _kac
         from braunschweig.popsim import control_spec as _cs_kac
@@ -1013,13 +1098,27 @@ def execute(context) -> pd.DataFrame:
                         f"KREIS attribute control merge left NaN targets for {_ctl.name} at "
                         f"ARS_kreis {_bad} (missing from this control's target; refusing to "
                         f"under-constrain a Kreis the run synthesises).")
+    return kreis_table, kreis_controls_map
 
-    # Purge stale batch folders if the popsim config/control set changed since the last
-    # run that used this work_dir (the work_dir persists outside synpp's stage cache, so
-    # a config change would otherwise leave old completion markers that the batch runner
-    # skips -> stale-config population for those cells). Signature = everything that
-    # determines a batch's inputs (the full control set, the PopulationSim settings, the
-    # batching/stratification, the donor source, the KREIS controls, the seed-day filter).
+
+def _purge_stale_batches_for_changed_config(controls_df: pd.DataFrame, settings_path, max_cells: int,
+        stratify_regiostar: bool, source_name: str, employment_grid_on: bool,
+        kreis_controls_map, seed_day_filter, seed_households: pd.DataFrame,
+        seed_persons: pd.DataFrame, kreis_table, active_entries,
+        status_prior_n: float, work_dir) -> None:
+    """Purge work-dir batch folders whose batch inputs changed since the last run.
+
+    Purge stale batch folders if the popsim config/control set changed since the last
+    run that used this work_dir (the work_dir persists outside synpp's stage cache, so
+    a config change would otherwise leave old completion markers that the batch runner
+    skips -> stale-config population for those cells). Signature = everything that
+    determines a batch's inputs (the full control set, the PopulationSim settings, the
+    batching/stratification, the donor source, the KREIS controls, the seed-day filter).
+
+    Returns: nothing.
+    Mutates: DELETES stale ``batch_*`` folders under ``work_dir`` and rewrites
+    the config-signature file there.
+    """
     _config_signature = compute_batch_config_signature(
         controls_df=controls_df,
         settings_text=Path(settings_path).read_text(encoding="utf-8"),
@@ -1036,6 +1135,20 @@ def execute(context) -> pd.DataFrame:
         status_prior_n=status_prior_n,
     )
     purge_stale_batches_on_config_change(work_dir, _config_signature)
+
+
+def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
+        seed_households: pd.DataFrame, seed_persons: pd.DataFrame, work_dir,
+        settings_path, logging_path, max_cells: int, run_one, num_workers: int,
+        source, stratify_regiostar: bool, kreis_table, kreis_controls_map,
+        household_control_names: set):
+    """Run PopulationSim per 1 km batch and merge the expanded households.
+
+    Returns: ``merge_report`` (its ``combined`` frame is the merged expanded
+    household table).
+    Mutates: writes the per-batch PopulationSim folders under ``work_dir`` and
+    reports the merge counts via ``context.set_info``.
+    """
     merge_report = mid.run_popsim_mid(
         cells, base_cols, controls_df, seed_households, seed_persons,
         work_dir=Path(work_dir),
@@ -1053,13 +1166,23 @@ def execute(context) -> pd.DataFrame:
     context.set_info("popsim_n_households", merge_report.n_rows)
     context.set_info("popsim_n_cells", merge_report.n_cells)
     context.set_info("popsim_n_missing_batches", merge_report.n_missing)
+    return merge_report
 
-    # Surface the PopulationSim integerizer feasibility (no-silent-fallback): some
-    # zones return INFEASIBLE and fall back to smart-rounded weights inside
-    # PopulationSim. That is otherwise buried in the per-batch logs; aggregate and
-    # log it here (WARNING above INTEGERIZER_INFEASIBLE_WARN_RATE). A high rate is a
-    # quality signal (control set over-constrained for small cells -- common at low
-    # sampling rates), not a hard failure: a smart-rounded population is still produced.
+
+def _log_integerizer_feasibility(context, work_dir) -> None:
+    """Aggregate and log the PopulationSim integerizer feasibility.
+
+    Surface the PopulationSim integerizer feasibility (no-silent-fallback): some
+    zones return INFEASIBLE and fall back to smart-rounded weights inside
+    PopulationSim. That is otherwise buried in the per-batch logs; aggregate and
+    log it here (WARNING above INTEGERIZER_INFEASIBLE_WARN_RATE). A high rate is a
+    quality signal (control set over-constrained for small cells -- common at low
+    sampling rates), not a hard failure: a smart-rounded population is still produced.
+
+    Returns: nothing.
+    Mutates: nothing (reads the per-batch PopulationSim logs); reports the
+    infeasible rate/count via ``context.set_info``.
+    """
     feas = mid.summarize_integerizer_feasibility(work_dir)
     context.set_info("popsim_integerizer_infeasible_rate", feas["infeasible_rate"])
     context.set_info("popsim_integerizer_n_infeasible", feas["n_infeasible"])
@@ -1080,27 +1203,54 @@ def execute(context) -> pd.DataFrame:
         feas["n_simul_retry_failed"], feas["n_logs"],
     )
 
-    # Load the per-Kreis INKAR income scale (registered in configure).
-    # Used by assembly.build_persons to scale household_income_eur and set
-    # high_income with the unified numeric rule (>= 5000 EUR) for both sources.
-    # Hoisted above the cell-attribute join so the placement_income reallocation
-    # below can also consume it (build_persons still receives it further down).
+
+def _load_inkar_income_scale(context):
+    """Load the per-Kreis INKAR income scale from the synpp DAG.
+
+    Load the per-Kreis INKAR income scale (registered in configure).
+    Used by assembly.build_persons to scale household_income_eur and set
+    high_income with the unified numeric rule (>= 5000 EUR) for both sources.
+    Hoisted above the cell-attribute join so the placement_income reallocation
+    below can also consume it (build_persons still receives it further down).
+
+    Returns: ``inkar_income``.
+    Mutates: nothing.
+    """
     inkar_income = context.stage("inkar_income")
+    return inkar_income
 
-    # Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
-    # from the cells frame back onto the merged PopulationSim output: the ARS
-    # feeds assembly.derive_zone_ids (commune/departement/iris ids, bug D1) and
-    # the cell RS7 becomes the spatial stage-B chain-matching key on every
-    # expanded synthetic person (see join_cell_attributes).
+
+def _join_cell_attributes_onto_merged_output(merge_report, cells: pd.DataFrame) -> pd.DataFrame:
+    """Join the per-cell attributes onto the merged PopulationSim output.
+
+    Join the per-cell attributes (12-digit ARS + RegioStaR7 when available)
+    from the cells frame back onto the merged PopulationSim output: the ARS
+    feeds assembly.derive_zone_ids (commune/departement/iris ids, bug D1) and
+    the cell RS7 becomes the spatial stage-B chain-matching key on every
+    expanded synthetic person (see join_cell_attributes).
+
+    Returns: ``combined`` -- the merged household table with the per-cell
+    attributes joined on.
+    Mutates: nothing.
+    """
     combined = join_cell_attributes(merge_report.combined, cells)
+    return combined
 
-    # Load the donor attribute tables through the active source adapter.
-    # For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
-    # For source="entd": EntdSource.load_donor receives the frames injected from
-    # the data.hts.selected stage (no filesystem read).
-    # Loaded here, directly above the placement_income reallocation, because that
-    # block needs the donor income + household size; it has no dependency on the
-    # cell-attribute join above (donor loading and the join are independent).
+
+def _load_donor_tables(context, source, source_name: str, mid_dir, complete_members: bool,
+        completed_donor_households, completed_donor_persons):
+    """Load the donor attribute tables through the active source adapter.
+
+    For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
+    For source="entd": EntdSource.load_donor receives the frames injected from
+    the data.hts.selected stage (no filesystem read).
+    Loaded here, directly above the placement_income reallocation, because that
+    block needs the donor income + household size; it has no dependency on the
+    cell-attribute join above (donor loading and the join are independent).
+
+    Returns: ``(donor_households, donor_persons)``.
+    Mutates: nothing.
+    """
     if source_name == "entd":
         # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
         # (registered in configure as alias "hts_donor") and inject them.
@@ -1123,69 +1273,50 @@ def execute(context) -> pd.DataFrame:
         # popsim_mid, complete_members=False (legacy): reads MiD CSV files
         # directly from mid_dir.
         donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+    return donor_households, donor_persons
 
-    # --- placement_income (L2, issue #108): signature-preserving donor reallocation --
-    # Runs BEFORE expansion so every downstream attribute/trip join follows the donor.
-    # Permutes WHICH donor sits in which Kreis inside exact control-signature groups, so
-    # every PopulationSim control aggregate and every donor's clone count are preserved
-    # while the per-Kreis income mean is pushed toward the construct-corrected INKAR
-    # relativity. MiD-only (needs the hheink_gr1 donor income). OFF -> combined unchanged.
+
+def _resolve_placement_income_flag(context, source_name: str) -> bool:
+    """Resolve whether the placement_income donor reallocation is active.
+
+    --- placement_income (L2, issue #108): signature-preserving donor reallocation --
+    Runs BEFORE expansion so every downstream attribute/trip join follows the donor.
+    Permutes WHICH donor sits in which Kreis inside exact control-signature groups, so
+    every PopulationSim control aggregate and every donor's clone count are preserved
+    while the per-Kreis income mean is pushed toward the construct-corrected INKAR
+    relativity. MiD-only (needs the hheink_gr1 donor income). OFF -> combined unchanged.
+
+    Returns: ``placement_income_on``.
+    Mutates: nothing.
+    """
     _placement_flag = bool(context.config(KEY_PLACEMENT_INCOME))
     placement_income_on = _placement_flag and source_name == "mid"
     if _placement_flag and source_name != "mid":
         logger.info("[popsim.stage] placement_income requested but source=%s carries no "
                     "hheink_gr1 donor income; feature inactive for this source.", source_name)
-    if placement_income_on:
-        from braunschweig.popsim import placement_income as _pi
-        from braunschweig.popsim import control_spec as _cs_pi
-        _pi.check_controls_source_compatible(placement_income_on, controls_source)
-        _pi_catalog = _cs_pi.full_catalog(
-            include_tiers=control_tiers,
-            include_employment_grid=employment_grid_on,
-            kreis_control_names=active_entry_names,
-        )
-        _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
-        _signatures = _pi.donor_control_signatures(
-            _pi_controls, seed_households, seed_persons, seed=source_name)
-        _expected = _pi.donor_expected_income_eur(donor_households)
-        _ars5 = derive_geo_kreis_from_ars(combined[mid._ARS_COLUMN])
-        _slots = pd.DataFrame({"H_ID": combined["H_ID"].to_numpy(), "ars5": _ars5.to_numpy()},
-                              index=combined.index)
-        _stats = _pi.slots_kreis_stats(_slots, donor_households)
-        _rf = _kic.build_kreis_income_targets(
-            inkar_income, _stats, sorted(_slots["ars5"].unique()), hhsize_correct=True)
-        _assignment, _pi_diag = _pi.reallocate_slots(
-            _slots, signatures=_signatures, expected_income_eur=_expected, target_factor=_rf)
-        combined = combined.assign(H_ID=_assignment.to_numpy())
-        # Traceable per-run diagnostic (research-reporting rule): one row per Kreis.
-        # "converged" (in _pi_diag) refers ONLY to the continuous lambda solve; the
-        # achieved per-Kreis fit is realized_after vs target_mean (never call this
-        # "calibrated to INKAR" -- convergence is not validation).
-        _sorted_kreise = sorted(_pi_diag["kreis_target_mean"])
-        _diag_rows = pd.DataFrame({
-            "ars5": _sorted_kreise,
-            "target_mean_eur": [_pi_diag["kreis_target_mean"][k] for k in _sorted_kreise],
-            "realized_before_eur": [_pi_diag["kreis_realized_before"].get(k) for k in _sorted_kreise],
-            "realized_after_eur": [_pi_diag["kreis_realized_after"].get(k) for k in _sorted_kreise],
-            "lambda": [_pi_diag["kreis_lambda"][k] for k in _sorted_kreise],
-            "clamped": [_pi_diag["kreis_clamped"][k] for k in _sorted_kreise],
-        })
-        _diag_rows.to_csv(Path(work_dir) / "placement_income_diag.csv", index=False)
-        _residuals = [
-            abs(_pi_diag["kreis_realized_after"].get(k, float("nan")) - v) / max(_pi_diag["region_mean"], 1.0)
-            for k, v in _pi_diag["kreis_target_mean"].items()
-        ]
-        _finite = [r for r in _residuals if not np.isnan(r)]
-        _worst = max(_finite) if _finite else float("nan")
-        context.set_info("placement_income_moved_share", _pi_diag["moved_share"])
-        context.set_info("placement_income_no_freedom_share", _pi_diag["no_freedom_slot_share"])
-        context.set_info("placement_income_worst_residual_pct", 100.0 * _worst)
+    return placement_income_on
 
-    # Expand the merged donor households into the full eqasim persons frame.
-    # pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
-    # (data-protection requirement for the restricted MiD scientific-use licence).
-    # pseudonymise=False (ENTD): source_* are set directly to the open ENTD ids
-    # by EntdSource.map_person_attributes; no surrogate mapping is needed.
+
+def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_households: pd.DataFrame,
+        donor_persons: pd.DataFrame, rng, source, source_name: str, inkar_income,
+        placement_income_on: bool):
+    """Expand the merged donor households into the full eqasim persons frame.
+
+    pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
+    (data-protection requirement for the restricted MiD scientific-use licence).
+    pseudonymise=False (ENTD): source_* are set directly to the open ENTD ids
+    by EntdSource.map_person_attributes; no surrogate mapping is needed.
+
+    Returns: ``(persons, pseudonym_map, pseudonymise, income_path, _pi_path)``.
+    The last element is the ``placement_income`` module alias bound by this
+    block's function-local import; it is returned (rather than re-imported)
+    because the caller's own placement block below still calls
+    ``_pi_path.apply_own_income`` on it, and re-importing would add a statement
+    the original does not have.
+    Mutates: nothing in place; draws from ``rng`` inside
+    ``assembly.build_persons`` (the only RNG use in this step) and reports the
+    person count via ``context.set_info``.
+    """
     pseudonymise = (source_name == "mid")
     # When income_kreis_control is ON it OVERWRITES household_income_eur with a fresh
     # per-Kreis continuous draw further below, so the INKAR midpoint scaling inside
@@ -1210,22 +1341,33 @@ def execute(context) -> pd.DataFrame:
         skip_inkar_income_scale=income_path["skip_inkar_scale"],
     )
     context.set_info("popsim_n_persons", len(persons))
+    return persons, pseudonym_map, pseudonymise, income_path, _pi_path
 
-    # housing_tenure parity (P2): main wired the enriched-path tenure sampler
-    # (braunschweig.synthesis.population.enriched._apply_housing_tenure, categories
-    # rent/own/other, RNG offset +83947) into the popsim stage. On THIS branch the
-    # popsim build_persons ALREADY derives ``housing_tenure`` directly from the MiD
-    # donor flag H_MIETE via attributes.map_housing_tenure (categories
-    # owner/renter/unknown) -- that donor-derived column is the AUTHORITATIVE tenure
-    # source consumed by (a) the Tier-2 tenure CONTROL catalog (control_spec, which
-    # matches owner/renter) and (b) the spatial income tilt below (which routes on
-    # tenure == "owner" / "renter"). Letting _apply_housing_tenure run
-    # unconditionally would OVERWRITE owner/renter/unknown with rent/own/other,
-    # silently turning the income tilt into a no-op (no row would equal "owner"/
-    # "renter") and changing the control-aligned attribute vocabulary. We therefore
-    # keep main's mechanism only as a FALLBACK: run it solely when build_persons did
-    # NOT already provide housing_tenure (e.g. the ENTD path, where H_MIETE is
-    # absent). When the donor column is present (MiD path) it is preserved verbatim.
+
+def _apply_housing_tenure_parity(context, persons: pd.DataFrame, random_seed: int) -> pd.DataFrame:
+    """Apply the enriched-path housing_tenure sampler as a FALLBACK (parity P2).
+
+    housing_tenure parity (P2): main wired the enriched-path tenure sampler
+    (braunschweig.synthesis.population.enriched._apply_housing_tenure, categories
+    rent/own/other, RNG offset +83947) into the popsim stage. On THIS branch the
+    popsim build_persons ALREADY derives ``housing_tenure`` directly from the MiD
+    donor flag H_MIETE via attributes.map_housing_tenure (categories
+    owner/renter/unknown) -- that donor-derived column is the AUTHORITATIVE tenure
+    source consumed by (a) the Tier-2 tenure CONTROL catalog (control_spec, which
+    matches owner/renter) and (b) the spatial income tilt below (which routes on
+    tenure == "owner" / "renter"). Letting _apply_housing_tenure run
+    unconditionally would OVERWRITE owner/renter/unknown with rent/own/other,
+    silently turning the income tilt into a no-op (no row would equal "owner"/
+    "renter") and changing the control-aligned attribute vocabulary. We therefore
+    keep main's mechanism only as a FALLBACK: run it solely when build_persons did
+    NOT already provide housing_tenure (e.g. the ENTD path, where H_MIETE is
+    absent). When the donor column is present (MiD path) it is preserved verbatim.
+
+    Returns: the persons frame (rebound when the fallback runs, so the caller
+    MUST reassign); unchanged on the MiD path, where the donor-derived
+    ``housing_tenure`` column is already present.
+    Mutates: nothing in place.
+    """
     if context.config("synthesise_housing_tenure") and "housing_tenure" not in persons.columns:
         from braunschweig.data.mid.tenure_by_income import (
             load_tenure_by_income_bundesland,
@@ -1241,22 +1383,24 @@ def execute(context) -> pd.DataFrame:
             context.stage("regiostar_tenure"),
             random_seed,
         )
+    return persons
 
-    # --- placement_income (L2, issue #108): keep each donor's OWN income ------------
-    # When placement is active, household_income_eur becomes a seeded continuous draw
-    # WITHIN each household's own MiD hheink_gr1 bracket (one draw per household); the
-    # per-Kreis relativity was already imposed by the donor reallocation above, so the
-    # redraw and the spatial tilt below are both skipped (see resolve_income_path).
-    # _pi_diag is defined iff placement is active (same condition as income_path
-    # ["placement"], which resolve_income_path returns True only when placement_income_on).
-    if income_path["placement"]:
-        persons, _own_diag = _pi_path.apply_own_income(persons, random_seed=random_seed)
-        persons.attrs["placement_income_diag"] = {**_pi_diag, **_own_diag}
 
-    # --- Kreis-Income-Control (real MiD draw + max-entropy per-Kreis calibration) ---
-    # Replaces the build_persons midpoint x INKAR_scale income with a real continuous
-    # draw reshaped per Kreis to the construct-corrected INKAR target. Runs BEFORE the
-    # within-Kreis spatial tilt (which is Kreis-mean-preserving and layers on top).
+def _apply_kreis_income_control(context, persons: pd.DataFrame, inkar_income, income_path: dict,
+        random_seed: int) -> pd.DataFrame:
+    """Apply the Kreis-Income-Control redraw (real MiD draw + per-Kreis fit).
+
+    --- Kreis-Income-Control (real MiD draw + max-entropy per-Kreis calibration) ---
+    Replaces the build_persons midpoint x INKAR_scale income with a real continuous
+    draw reshaped per Kreis to the construct-corrected INKAR target. Runs BEFORE the
+    within-Kreis spatial tilt (which is Kreis-mean-preserving and layers on top).
+
+    Returns: the persons frame (rebound when the redraw runs, so the caller
+    MUST reassign); unchanged when ``income_path['redraw']`` is False.
+    Mutates: sets ``persons.attrs['kreis_income_control_diag']`` in place on
+    the rebound frame; draws from the seeded ``random_seed`` stream inside
+    ``apply_kreis_income_control``.
+    """
     if income_path["redraw"]:
         _kc_data_path = context.config("data_path")
         _kc_scope = [str(p) for p in context.config(KEY_KREISE)]
@@ -1297,14 +1441,29 @@ def execute(context) -> pd.DataFrame:
             context.config(KEY_INCOME_KC_METHOD), context.config(KEY_INCOME_KC_HHSIZE),
             persons.attrs["kreis_income_control_diag"]["kreis_realized_mean"],
         )
+    return persons
 
-    # --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
-    # Applies a within-Kreis income redistribution guided by per-cell net cold rent
-    # (renters) and Eigentümerquote (owners), preserving each Kreis's income mean
-    # exactly.  Controlled by KEY_INCOME_TILT (default ON per project rule), unless
-    # placement_income is active -- resolve_income_path then forces income_path["tilt"]
-    # False (the tilt would rescale the donor's own income). When OFF, the income frame
-    # is byte-identical.
+
+def _apply_spatial_income_tilt(context, persons: pd.DataFrame, cells: pd.DataFrame, income_path: dict) -> pd.DataFrame:
+    """Apply the within-Kreis spatial income tilt (Nettokaltmiete GAMMA layer).
+
+    --- Spatial income tilt (Nettokaltmiete GAMMA layer, Task 3) ---------------
+    Applies a within-Kreis income redistribution guided by per-cell net cold rent
+    (renters) and Eigentümerquote (owners), preserving each Kreis's income mean
+    exactly.  Controlled by KEY_INCOME_TILT (default ON per project rule), unless
+    placement_income is active -- resolve_income_path then forces income_path["tilt"]
+    False (the tilt would rescale the donor's own income). When OFF, the income frame
+    is byte-identical.
+
+    Returns: the persons frame (rebound when the tilt is applied, so the caller
+    MUST reassign); unchanged when the tilt is off or shielded.
+    Mutates: sets ``persons['high_income']`` and
+    ``persons.attrs['income_tilt_diag']`` in place on the rebound frame.
+    BOTH original ``if income_tilt_enabled`` blocks live in this one step
+    deliberately: the first block can DISABLE the tilt mid-section (missing ARS
+    column) and binds ``_tilt_cells`` only when enabled, so splitting them
+    would need an initialiser statement the original does not have.
+    """
     income_tilt_enabled = income_path["tilt"]
     income_tilt_beta = float(context.config(KEY_INCOME_TILT_BETA))
     income_tilt_clip = float(context.config(KEY_INCOME_TILT_CLIP))
@@ -1455,11 +1614,21 @@ def execute(context) -> pd.DataFrame:
                 for k, v in _tilt_diag.items()
                 if v is not None
             }
+    return persons
 
-    # Per-capita income view alongside the per-household household_income_eur.
-    # Computed on the FINAL income (after Kreis-Income-Control + spatial tilt) so both
-    # the per-household construct (household_income_eur) and the per-capita construct
-    # (≈ INKAR income-je-Einwohner ordering) are available downstream.
+
+def _add_derived_income_views(persons: pd.DataFrame) -> pd.DataFrame:
+    """Add the per-capita and equivalised income views.
+
+    Per-capita income view alongside the per-household household_income_eur.
+    Computed on the FINAL income (after Kreis-Income-Control + spatial tilt) so both
+    the per-household construct (household_income_eur) and the per-capita construct
+    (≈ INKAR income-je-Einwohner ordering) are available downstream.
+
+    Returns: the persons frame with the additive income-view columns (MUST be
+    reassigned).
+    Mutates: nothing in place.
+    """
     if {"household_income_eur", "household_size"}.issubset(persons.columns):
         persons = _kic.add_per_capita_income(persons)
 
@@ -1470,13 +1639,22 @@ def execute(context) -> pd.DataFrame:
     # invented references).
     if {"household_income_eur", "consumption_units"}.issubset(persons.columns):
         persons = _income.add_income_per_consumption_unit(persons)
+    return persons
 
-    # Write the local-only pseudonym map for MiD so internal re-linking is possible.
-    # This file maps each surrogate source_person_id / source_household_id back
-    # to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it
-    # lives in the pipeline work_dir which is a local-only, gitignored path.
-    # For ENTD (pseudonymise=False) the map is empty (no surrogates were assigned)
-    # but is still written for consistency.
+
+def _write_pseudonym_map(work_dir, pseudonym_map: pd.DataFrame, pseudonymise: bool) -> None:
+    """Write the local-only pseudonym map into the work dir.
+
+    Write the local-only pseudonym map for MiD so internal re-linking is possible.
+    This file maps each surrogate source_person_id / source_household_id back
+    to the raw MiD H_ID / P_ID.  It MUST NOT be committed or published; it
+    lives in the pipeline work_dir which is a local-only, gitignored path.
+    For ENTD (pseudonymise=False) the map is empty (no surrogates were assigned)
+    but is still written for consistency.
+
+    Returns: nothing.
+    Mutates: WRITES ``pseudonym_map.csv`` into ``work_dir``.
+    """
     pseudonym_map_path = Path(work_dir) / "pseudonym_map.csv"
     pseudonym_map.to_csv(pseudonym_map_path, index=False)
     logger.info(
@@ -1485,11 +1663,242 @@ def execute(context) -> pd.DataFrame:
         pseudonym_map_path, len(pseudonym_map), pseudonymise,
     )
 
-    # Joint (cross-attribute) plausibility invariants (issue #133): run LAST so
-    # every attribute overwrite above (income control, tilt, tenure parity) is
-    # covered. WARN-only (measure-before-harden, like the minor-employment
-    # guard); the report is attached to persons.attrs so it survives the synpp
-    # cache and can feed a validation summary without re-running the stage.
+
+def _attach_joint_plausibility_report(persons: pd.DataFrame) -> None:
+    """Run the joint (cross-attribute) plausibility invariants on the final frame.
+
+    Joint (cross-attribute) plausibility invariants (issue #133): run LAST so
+    every attribute overwrite above (income control, tilt, tenure parity) is
+    covered. WARN-only (measure-before-harden, like the minor-employment
+    guard); the report is attached to persons.attrs so it survives the synpp
+    cache and can feed a validation summary without re-running the stage.
+
+    Returns: nothing.
+    Mutates: sets ``persons.attrs['joint_plausibility']`` IN PLACE (the frame
+    itself is not rebound, so the caller keeps using its own reference).
+    """
     persons.attrs["joint_plausibility"] = _plausibility.check_joint_plausibility(persons)
+
+
+def execute(context) -> pd.DataFrame:
+    """Run popsim_mid and return the merged expanded-household table."""
+    (
+        cells_path, mid_dir, controls_path, settings_path, logging_path,
+        popsimprep_dir, uv_path,
+    ) = _read_stage_paths(context)
+    (
+        max_cells, num_workers, work_dir, kreise, source_name, stratify_regiostar,
+        complete_members,
+    ) = _read_batching_and_scope_config(context)
+    random_seed, rng, kreis_seed_rng = _create_seeded_rngs(context)
+
+    source = _resolve_source(source_name)
+    logger.info("[popsim.stage] active donor source: %s", source.name)
+
+    (
+        control_tiers, seed_day_filter, controls_source, employment_grid_on,
+        active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
+        importance_profile,
+    ) = _read_control_config(context, source_name)
+    controls_df, base_cols = _build_control_frame(
+        controls_source, controls_path, source_name, control_tiers,
+        employment_grid_on, active_entry_names, importance_profile,
+    )
+    kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
+        context, control_tiers, controls_source, source_name, kreise,
+    )
+    load_cols = _resolve_cell_load_columns(
+        context, controls_source, source_name, control_tiers, base_cols,
+        employment_grid_on, cells_path,
+    )
+
+    cells = mid.load_control_cells(cells_path, load_cols)
+    cells = mid.filter_zgb_cells(cells, kreise)
+    cells = _add_aggregated_control_columns(
+        cells, controls_source, source_name, control_tiers,
+    )
+    cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
+
+    # The seed build stays INLINE: a source-inspection test pins the delegation
+    # to the cached completed_donor stage inside execute()'s OWN source
+    # (tests/test_completed_donor_stage.py::
+    # test_popsim_stage_consumes_completed_donor_stage greps
+    # inspect.getsource(execute) for it), and the delegation sits inside the
+    # member-completion branch, so the whole branch has to stay here. It is one
+    # if/elif/else over the donor source; kreis_seed_rng is drawn from on the two
+    # MiD paths exactly as before.
+    #
+    # Build the PopulationSim seed.
+    # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
+    # files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
+    # For source="entd": the ENTD donor frames are transformed to MiD column
+    # schema by EntdSource.build_seed so the downstream (expand, map_demographics)
+    # runs unchanged; only map_person_attributes is ENTD-specific.
+    # The completed donor frames (member completion ON) are loaded here, ahead
+    # of PopulationSim, because the SEED is derived from them; they are reused
+    # verbatim as the expansion donor tables further below (ONE completion pass
+    # -> seed and expansion contain the same fillers).
+    completed_donor_households = None
+    completed_donor_persons = None
+    if source_name == "entd":
+        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
+        # (registered in configure() as alias "hts_donor") and build the seed.
+        # context.stage() is idempotent in synpp; retrieving the same alias twice
+        # returns the same cached result, so this does not re-run the stage.
+        hts_hh_seed, hts_persons_seed, _hts_trips_seed = context.stage("hts_donor")
+        seed_households, seed_persons, report = source.build_seed(
+            hts_hh_seed, hts_persons_seed
+        )
+    elif complete_members:
+        # popsim_mid with member completion (D3, default ON): the donor build
+        # (member completion + weekend-plan match) is produced by the cached
+        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
+        # The same completed frames feed BOTH the PopulationSim seed (projected
+        # here) AND the expansion donor tables below.
+        donor = context.stage("completed_donor")
+        completed_donor_households = donor.households
+        completed_donor_persons = donor.persons
+        report = donor.completeness_report
+        completion_report = donor.completion_report
+        seed_columns = source.seed_columns()
+        # project_completed_seed derives hh_type5 (Tier-1 household_type) like
+        # load_mid_seed does, so the seed carries it for the household_type control.
+        # number_of_cars / number_of_bicycles / has_ebike are derived here too, from
+        # the raw H_ANZAUTO / anzpedrad / H_ANZPED columns the completed_donor stage
+        # already carries (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike is fully wired
+        # (server-verified 2026-07-08, issue #116 resolved); project_completed_seed
+        # only raises if has_ebike is active AND ebike_seed_column_cfg is unset.
+        seed_households, seed_persons = mid.project_completed_seed(
+            completed_donor_households, completed_donor_persons, seed_columns,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+            mid_dir=mid_dir,
+        )
+        # Surface the build reports on THIS run too (so they are present even when
+        # the completed_donor stage was served from cache and its execute did not run).
+        context.set_info(
+            "member_completion_filled", completion_report.n_households_filled
+        )
+        context.set_info(
+            "member_completion_persons_added", completion_report.n_persons_added
+        )
+    else:
+        # popsim_mid, complete_members=False: reads MiD CSV files directly from
+        # mid_dir. This path is byte-identical to all prior versions.
+        seed_columns = source.seed_columns()
+        seed_households, seed_persons, report = mid.load_mid_seed(
+            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+        )
+    context.set_info("seed_completeness_rate", report.completeness_rate)
+
+    run_one = _prepare_batch_runner(
+        context, uv_path, popsimprep_dir, stratify_regiostar,
+    )
+    kreis_table, kreis_controls_map = _derive_kreis_attribute_control_targets(
+        context, cells, active_entries, status_prior_n, kreis_table,
+        kreis_controls_map, household_control_names,
+    )
+    _purge_stale_batches_for_changed_config(
+        controls_df, settings_path, max_cells, stratify_regiostar, source_name,
+        employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
+        seed_persons, kreis_table, active_entries, status_prior_n, work_dir,
+    )
+    merge_report = _run_populationsim_batches(
+        context, cells, base_cols, controls_df, seed_households, seed_persons,
+        work_dir, settings_path, logging_path, max_cells, run_one, num_workers,
+        source, stratify_regiostar, kreis_table, kreis_controls_map,
+        household_control_names,
+    )
+    _log_integerizer_feasibility(context, work_dir)
+    inkar_income = _load_inkar_income_scale(context)
+    combined = _join_cell_attributes_onto_merged_output(merge_report, cells)
+    donor_households, donor_persons = _load_donor_tables(
+        context, source, source_name, mid_dir, complete_members,
+        completed_donor_households, completed_donor_persons,
+    )
+    placement_income_on = _resolve_placement_income_flag(context, source_name)
+
+    # The donor reallocation stays INLINE: it binds ``_pi_diag`` only when
+    # placement is active, and that diagnostic is consumed by the own-income
+    # block further down (behind ``income_path["placement"]``, the same
+    # condition). Extracting it would need either an initialiser statement the
+    # original does not have or a call nested inside this guard, so the block is
+    # left where it was rather than risking the call/RNG order.
+    if placement_income_on:
+        from braunschweig.popsim import placement_income as _pi
+        from braunschweig.popsim import control_spec as _cs_pi
+        _pi.check_controls_source_compatible(placement_income_on, controls_source)
+        _pi_catalog = _cs_pi.full_catalog(
+            include_tiers=control_tiers,
+            include_employment_grid=employment_grid_on,
+            kreis_control_names=active_entry_names,
+        )
+        _pi_controls = _cs_pi.controls_for_seed(_pi_catalog, source_name)
+        _signatures = _pi.donor_control_signatures(
+            _pi_controls, seed_households, seed_persons, seed=source_name)
+        _expected = _pi.donor_expected_income_eur(donor_households)
+        _ars5 = derive_geo_kreis_from_ars(combined[mid._ARS_COLUMN])
+        _slots = pd.DataFrame({"H_ID": combined["H_ID"].to_numpy(), "ars5": _ars5.to_numpy()},
+                              index=combined.index)
+        _stats = _pi.slots_kreis_stats(_slots, donor_households)
+        _rf = _kic.build_kreis_income_targets(
+            inkar_income, _stats, sorted(_slots["ars5"].unique()), hhsize_correct=True)
+        _assignment, _pi_diag = _pi.reallocate_slots(
+            _slots, signatures=_signatures, expected_income_eur=_expected, target_factor=_rf)
+        combined = combined.assign(H_ID=_assignment.to_numpy())
+        # Traceable per-run diagnostic (research-reporting rule): one row per Kreis.
+        # "converged" (in _pi_diag) refers ONLY to the continuous lambda solve; the
+        # achieved per-Kreis fit is realized_after vs target_mean (never call this
+        # "calibrated to INKAR" -- convergence is not validation).
+        _sorted_kreise = sorted(_pi_diag["kreis_target_mean"])
+        _diag_rows = pd.DataFrame({
+            "ars5": _sorted_kreise,
+            "target_mean_eur": [_pi_diag["kreis_target_mean"][k] for k in _sorted_kreise],
+            "realized_before_eur": [_pi_diag["kreis_realized_before"].get(k) for k in _sorted_kreise],
+            "realized_after_eur": [_pi_diag["kreis_realized_after"].get(k) for k in _sorted_kreise],
+            "lambda": [_pi_diag["kreis_lambda"][k] for k in _sorted_kreise],
+            "clamped": [_pi_diag["kreis_clamped"][k] for k in _sorted_kreise],
+        })
+        _diag_rows.to_csv(Path(work_dir) / "placement_income_diag.csv", index=False)
+        _residuals = [
+            abs(_pi_diag["kreis_realized_after"].get(k, float("nan")) - v) / max(_pi_diag["region_mean"], 1.0)
+            for k, v in _pi_diag["kreis_target_mean"].items()
+        ]
+        _finite = [r for r in _residuals if not np.isnan(r)]
+        _worst = max(_finite) if _finite else float("nan")
+        context.set_info("placement_income_moved_share", _pi_diag["moved_share"])
+        context.set_info("placement_income_no_freedom_share", _pi_diag["no_freedom_slot_share"])
+        context.set_info("placement_income_worst_residual_pct", 100.0 * _worst)
+
+    (
+        persons, pseudonym_map, pseudonymise, income_path, _pi_path,
+    ) = _expand_donor_households_to_persons(
+        context, combined, donor_households, donor_persons, rng, source,
+        source_name, inkar_income, placement_income_on,
+    )
+    persons = _apply_housing_tenure_parity(context, persons, random_seed)
+
+    # --- placement_income (L2, issue #108): keep each donor's OWN income ------------
+    # When placement is active, household_income_eur becomes a seeded continuous draw
+    # WITHIN each household's own MiD hheink_gr1 bracket (one draw per household); the
+    # per-Kreis relativity was already imposed by the donor reallocation above, so the
+    # redraw and the spatial tilt below are both skipped (see resolve_income_path).
+    # _pi_diag is defined iff placement is active (same condition as income_path
+    # ["placement"], which resolve_income_path returns True only when placement_income_on).
+    if income_path["placement"]:
+        persons, _own_diag = _pi_path.apply_own_income(persons, random_seed=random_seed)
+        persons.attrs["placement_income_diag"] = {**_pi_diag, **_own_diag}
+
+    persons = _apply_kreis_income_control(
+        context, persons, inkar_income, income_path, random_seed,
+    )
+    persons = _apply_spatial_income_tilt(context, persons, cells, income_path)
+    persons = _add_derived_income_views(persons)
+    _write_pseudonym_map(work_dir, pseudonym_map, pseudonymise)
+    _attach_joint_plausibility_report(persons)
 
     return persons
