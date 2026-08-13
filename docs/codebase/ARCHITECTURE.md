@@ -137,6 +137,23 @@ that already imported the original (e.g. `enriched.base`) keeps its own bound
 reference — a test or patch must target the submodule attribute
 (`enriched.base.pd`), not the facade (`enriched.pd`).
 
+## Dashboard module split (issue #267, sibling-module split)
+
+`braunschweig/analysis/dashboard/build_dashboard.py` was split into a facade
+plus six sibling modules in the same package (`docs/codebase/STRUCTURE.md` has
+the submodule table). Unlike the `enriched` / `secondary_chainsolvers` stage
+packages above, this is **not a package conversion**:
+`braunschweig/analysis/dashboard/` was already a package (it has its own
+`__init__.py`), so the split needed no `git mv` and changed no import path at
+all -- `braunschweig.analysis.dashboard.build_dashboard` resolves exactly as
+it did before. It is also not a synpp stage (`build_dashboard.py` is a CLI
+script; see `docs/features/run-analysis.md`), so there is no
+`configure`/`execute`/`validate()` and no cache-neutrality question -- the
+split is a pure module reorganisation, cache-neutral and behaviour-neutral by
+construction. The one place a silent character-level change would matter is
+the `HTML_TEMPLATE` string literal moved verbatim into `html_template.py`; its
+byte-identity was verified explicitly as part of the split.
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative

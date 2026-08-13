@@ -97,9 +97,41 @@ braunschweig/
                    synthesis/replacement_education_gravity.py (flag-gated drop-in)
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
-                   run_education_validation.py, dashboard/, *.ipynb
+                   run_education_validation.py, dashboard/ (facade +
+                   6 sibling modules, sibling-module split since #267 --
+                   see subsection below), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
 ```
+
+### `braunschweig/analysis/dashboard/` (dashboard module, sibling-module split #267)
+
+`build_dashboard.py` (1601 -> 146 lines) is the facade: docstring, imports,
+re-export blocks, `render_dashboard()` and `main()` (the CLI entry point).
+Content moved into six sibling modules inside the **same** package (the
+directory already had its own `__init__.py` before this split) -- **this is a
+sibling-module split, not a package conversion**: no `git mv`, no import-path
+change at all, so the whole class of path-reference breakage a package
+conversion risks (stale absolute imports, config references, notebook paths)
+never arose here.
+
+| Module | Lines | Content |
+|---|---|---|
+| `html_template.py` | 873 | the dashboard's HTML/CSS/JS template literal (`HTML_TEMPLATE`) |
+| `run_metrics.py` | 270 | eqasim + MATSim run metrics, sim-output discovery, sample-rate detection |
+| `spatial_metrics.py` | 190 | VG250/ZGB Kreis classification, time-of-day, per-Kreis and OD metrics |
+| `mid_reference.py` | 179 | MiD reference tables, km-band binning, earth-mover distance |
+| `run_records.py` | 101 | run-record assembly, writing, collection |
+| `comparisons.py` | 95 | model-vs-reference comparison table |
+| `paths.py` | 30 | leaf: `REPO_ROOT`, `DASHBOARD_DIR`, `RUNS_DIR` anchors |
+
+Import graph is acyclic with `paths` and `html_template` as leaves; no sibling
+imports the facade. `build_dashboard.py` is not itself a synpp stage (it is a
+CLI script invoked directly -- see `docs/features/run-analysis.md`), so unlike
+the `enriched` / `secondary_chainsolvers` stage packages below there is no
+`validate()` cache-invalidation concern here. External modules import several
+`_private` names through the facade (e.g. `braunschweig/analysis/simwrapper/export.py`
+imports `_load_zgb_kreise`, `spatial_export.py` imports `_find_sim_output`), so
+the facade re-exports every public and private name the siblings define.
 
 ## `eqasim_common/` (region-neutral)
 
