@@ -119,6 +119,18 @@ CLAUDE.md). Representative remaps (from `configs/fixtures/config_local_braunschw
 | `matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` |
 | `data.spatial.iris` / `data.spatial.codes` | `eqasim_common.data.spatial.iris` / `eqasim_common.spatial.entd_codes` |
 
+`synthesis.population.enriched` and `synthesis.population.spatial.secondary.locations`
+now alias to **stage packages** rather than single files
+(`braunschweig/synthesis/population/enriched/`, split #267;
+`braunschweig/synthesis/locations/secondary_chainsolvers/`, split #266) — see
+STRUCTURE.md for their submodule layout; the dotted stage path is unchanged
+because each package's `__init__.py` is the synpp stage module. Monkeypatch
+surface: their facade re-exports (e.g. `enriched.delegate` / `enriched.pd` /
+`enriched.np` / `enriched.gpd`) are live only at import time, so a submodule
+that already imported the original (e.g. `enriched.base`) keeps its own bound
+reference — a test or patch must target the submodule attribute
+(`enriched.base.pd`), not the facade (`enriched.pd`).
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative
