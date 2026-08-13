@@ -629,6 +629,20 @@ import inspect
 from braunschweig.synthesis.population import enriched as _enriched_module
 
 
+def _execute_base_source():
+    """Source of ``_execute_base`` together with its ``_step_*`` helpers.
+
+    ``_execute_base`` was decomposed into named ``_step_*`` orchestration steps
+    (issue #267), so the blocks pinned below now live in those step functions
+    rather than in ``_execute_base`` itself. Inspecting the module that DEFINES
+    ``_execute_base`` (``...enriched.base``) makes the pins follow the moved
+    blocks automatically while keeping them exactly as strict: that module holds
+    ``_execute_base`` and every one of its steps, and nothing else that could
+    satisfy the assertions.
+    """
+    return inspect.getsource(inspect.getmodule(_enriched_module._execute_base))
+
+
 class TestConstraintListNotMutated:
     """FIX 2.2: the car/bike availability blocks must copy the cached MiD
     constraint list (``list(mid["..."])``) before ``.append(...)`` so the
@@ -652,7 +666,7 @@ class TestConstraintListNotMutated:
         assert cached_list == [{"sex": "male", "target": 0.5}]
 
     def test_source_copies_cached_constraint_lists(self):
-        src = inspect.getsource(_enriched_module._execute_base)
+        src = _execute_base_source()
         # Both availability blocks must take a copy before appending.
         assert 'list(mid["car_availability_constraints"])' in src, \
             "car constraints must be copied before append (FIX 2.2)"
@@ -670,7 +684,7 @@ class TestRandomSeedOffsetsDistinct:
     +8572, making the two draws correlated by construction)."""
 
     def test_pt_and_car_bike_seed_offsets_differ(self):
-        src = inspect.getsource(_enriched_module._execute_base)
+        src = _execute_base_source()
         import re
 
         offsets = [
@@ -681,9 +695,9 @@ class TestRandomSeedOffsetsDistinct:
         ]
         # PT block (+8572) and car/bike block must both be present and distinct.
         assert 8572 in offsets, "PT block must keep its +8572 offset"
-        # There must be at least two RandomState constructions in this function
-        # and no offset may be used twice (every independent draw is its own
-        # stream).
+        # There must be at least two RandomState constructions across
+        # _execute_base and its steps, and no offset may be used twice (every
+        # independent draw is its own stream).
         assert len(offsets) >= 2
         assert len(offsets) == len(set(offsets)), \
             f"RNG seed offsets must all be distinct, got {offsets} (FIX 2.6)"

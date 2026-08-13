@@ -6,7 +6,10 @@ PT-subscription IPF imputation plus census/MiD household_size and
 household_income sampling:
 
 - :func:`_configure_base` / :func:`_execute_base` -- the inherited
-  configure()/execute() of the bavaria base stage.
+  configure()/execute() of the bavaria base stage. ``_execute_base`` is a pure
+  orchestrator: each of its former in-line blocks is now a private ``_step_*``
+  function (see the "Orchestration steps" section below), called in exactly the
+  original order, so the call sequence and the RNG-draw order are unchanged.
 - :func:`_compute_zone_membership` -- FIX 3.8 per-home zone membership via a
   single spatial join.
 - :func:`_build_income_size_map` / :func:`_income_bin_for_size` -- map IPF
@@ -33,7 +36,6 @@ from .vehicle_ownership import _binarise_availability, _sample_cars_income_aware
 
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
-# Helper: map IPF hh_size values onto the bins present in df_income.
 
 def _compute_zone_membership(df_homes, df_zones):
     """Add ``inside_<zone>`` boolean columns to ``df_homes`` (FIX 3.8).
@@ -80,6 +82,7 @@ def _compute_zone_membership(df_homes, df_zones):
     return df_homes
 
 
+# Helper: map IPF hh_size values onto the bins present in df_income.
 def _build_income_size_map(income_bins):
     """Map IPF hh_size values onto the bins present in df_income.
 
@@ -210,19 +213,28 @@ def _configure_base(context):
         context.stage("braunschweig.data.bbsr.regiostar")
 
 
-def _execute_base(context):
-    """Inherited execute() from bavaria.synthesis.population.enriched.
+# --- Orchestration steps of _execute_base ----------------------------------
+#
+# Named steps of the inherited execute(), each holding exactly one block of the
+# former monolithic implementation and keeping that block's comment as its
+# docstring. ``_execute_base`` calls them in the original order and threads the
+# data through explicitly (parameters / return values, no module state), so the
+# call sequence and the RNG-draw order are unchanged.
 
-    Overrides car availability, bike availability and transit subscription
-    based on MiD data, then samples household_size and household_income from
-    the German census/MiD reference tables.
+
+def _step_merge_home_zone_membership(context, df_persons):
+    """Merge the home locations and their MiD zone membership onto the persons.
+
+    ``commune_id`` is carried alongside the geometry so the MiD
+    household-type x region economic-status derivation (status_from_hhtype)
+    can resolve each home's RegioStaR-7 raumtyp. It is dropped again before
+    returning so the output schema is unchanged when the flag is off.
+
+    Returns ``(df_persons, mid)``: the persons frame with the per-home
+    ``inside_<zone>`` / ``inside_external`` membership columns merged in, plus
+    the cached ``braunschweig.data.mid.data`` stage object, which the car/bike
+    availability IPF and the deferred A5 rake further down still need.
     """
-    df_persons = delegate.execute(context)
-
-    # ``commune_id`` is carried alongside the geometry so the MiD
-    # household-type x region economic-status derivation (status_from_hhtype)
-    # can resolve each home's RegioStaR-7 raumtyp. It is dropped again before
-    # returning so the output schema is unchanged when the flag is off.
     _home_cols = ["household_id", "geometry"]
     _df_home_src = context.stage("synthesis.population.spatial.home.locations")
     _needs_commune = (
@@ -253,9 +265,16 @@ def _execute_base(context):
         crs=df_homes.crs,
     )
 
-    iterations = 1000
+    return df_persons, mid
 
-    # CAR AVAILABILITY
+
+def _step_impute_car_availability(context, df_persons, mid, iterations):
+    """CAR AVAILABILITY.
+
+    Rakes the per-person ``car_availability`` weight onto the MiD
+    car-availability constraints (plus the configured minimum-age constraint).
+    Mutates ``df_persons`` in place.
+    """
     df_persons["car_availability"] = 1.0
     # Copy the cached constraint list before appending: ``mid`` is the cached
     # ``braunschweig.data.mid.data`` stage object, so appending to the original
@@ -289,7 +308,14 @@ def _execute_base(context):
     print("Factors", "min:", min(factors), "max:", max(factors), "mean:", np.mean(factors))
     print(df_persons["car_availability"].min(), df_persons["car_availability"].max())
 
-    # BIKE AVAILABILITY
+
+def _step_impute_bicycle_availability(context, df_persons, mid, iterations):
+    """BIKE AVAILABILITY.
+
+    Rakes the per-person ``bicycle_availability`` weight onto the MiD
+    bicycle-availability constraints (plus the configured minimum-age
+    constraint). Mutates ``df_persons`` in place.
+    """
     df_persons["bicycle_availability"] = 1.0
     # Copy the cached constraint list before appending (see car-availability
     # block above): never mutate the cached ``braunschweig.data.mid.data``
@@ -323,21 +349,26 @@ def _execute_base(context):
             factors.append(factor)
     print("Factors", "min:", min(factors), "max:", max(factors), "mean:", np.mean(factors))
 
-    # DRIVING LICENCE (categorical, MiD 2023 P17.1).
-    #
-    # Three-margin IPF (raking) on the 4-way contingency table
-    #   Xl[kreis, sex, age_bin, license_category]
-    # with target marginals from MiD P17.1 (per-Kreis page 87 + sex/age
-    # margins also page 87, Tabelle A).  Mirrors the PT-subscription block
-    # below but for the {ja, nein, keine_angabe} licence categories.
-    #
-    # The boolean ``has_license`` (later renamed to ``has_driving_license``
-    # by the eqasim output writer) is then derived as
-    #   has_license = pt_subscription_type ∈ LICENSE_TRUE  (= {"ja"})
-    # and overwrites the HTS-matched value coming from
-    # ``synthesis.population.enriched``.  ``keine_angabe`` is conservatively
-    # mapped to ``False`` (see ``LICENSE_TRUE``); persons below
-    # ``LICENSE_MIN_AGE`` are forced to ``"nein"`` deterministically.
+
+def _step_impute_driving_licence(context, df_persons):
+    """DRIVING LICENCE (categorical, MiD 2023 P17.1).
+
+    Three-margin IPF (raking) on the 4-way contingency table
+      Xl[kreis, sex, age_bin, license_category]
+    with target marginals from MiD P17.1 (per-Kreis page 87 + sex/age
+    margins also page 87, Tabelle A).  Mirrors the PT-subscription block
+    below but for the {ja, nein, keine_angabe} licence categories.
+
+    The boolean ``has_license`` (later renamed to ``has_driving_license``
+    by the eqasim output writer) is then derived as
+      has_license = pt_subscription_type ∈ LICENSE_TRUE  (= {"ja"})
+    and overwrites the HTS-matched value coming from
+    ``synthesis.population.enriched``.  ``keine_angabe`` is conservatively
+    mapped to ``False`` (see ``LICENSE_TRUE``); persons below
+    ``LICENSE_MIN_AGE`` are forced to ``"nein"`` deterministically.
+
+    Mutates ``df_persons`` in place (``license_type``, ``has_license``).
+    """
     from braunschweig.data.mid.reference_tables import (
         load_license_breakdown,
         load_license_margins,
@@ -501,16 +532,22 @@ def _execute_base(context):
         f"{df_persons['has_license'].mean():.1%}"
     )
 
-    # VEHICLE COUNTS + CAR / BIKE AVAILABILITY (A-REORDER causal chain).
-    #
-    # The MiD-H7 household car count (number_of_cars) and MiD-H12.3 bike count
-    # (number_of_bicycles) are sampled HERE -- after the licence IPF and before
-    # car_availability -- so the consistent-car_availability feature (A5) can
-    # condition car_availability on both the per-person licence and the household
-    # car count. This sampling was historically done in the OUTER execute() after
-    # this stage returned; it uses its own RNG stream (+91731), independent of the
-    # licence (+5417) / PT (+8572) / binarisation (+23761) streams, so moving it
-    # earlier is output-identical.
+
+def _step_sample_vehicle_counts(context, df_persons):
+    """VEHICLE COUNTS + CAR / BIKE AVAILABILITY (A-REORDER causal chain).
+
+    The MiD-H7 household car count (number_of_cars) and MiD-H12.3 bike count
+    (number_of_bicycles) are sampled HERE -- after the licence IPF and before
+    car_availability -- so the consistent-car_availability feature (A5) can
+    condition car_availability on both the per-person licence and the household
+    car count. This sampling was historically done in the OUTER execute() after
+    this stage returned; it uses its own RNG stream (+91731), independent of the
+    licence (+5417) / PT (+8572) / binarisation (+23761) streams, so moving it
+    earlier is output-identical.
+
+    Mutates ``df_persons`` in place and returns the vehicle-count RNG seed,
+    which the deferred A5 car-availability rake reuses.
+    """
     _vehicle_seed = context.config("random_seed")
     _vehicle_data_path = context.config("data_path")
     _sample_vehicle_counts(df_persons, _vehicle_data_path, _vehicle_seed)
@@ -531,13 +568,15 @@ def _execute_base(context):
         # set HERE (independent of the later income-aware cars draw).
         _binarise_availability(df_persons, _vehicle_seed, apply_car=True)
 
-    # NOTE: the A5 consistent car_availability derivation and the A6 PT
-    # subscription block (which conditions on car_availability) are computed
-    # FURTHER DOWN, after the income-aware number_of_cars draw, so they see the
-    # FINAL car count. See the "A5/A6 (deferred)" block after _sample_cars_income_aware.
+    return _vehicle_seed
 
-    # Household size: keep IPF-balanced values when the margin was active,
-    # otherwise sample from the German census reference table.
+
+def _step_sample_household_size(context, df_persons):
+    """Household size: keep IPF-balanced values when the margin was active,
+    otherwise sample from the German census reference table.
+
+    Mutates ``df_persons`` in place (``household_size``).
+    """
     if context.config("braunschweig.ipf.use_household_size_margin"):
         df_persons["household_size"] = df_persons["household_size"].astype("category")
         print(
@@ -574,8 +613,13 @@ def _execute_base(context):
 
         df_persons["household_size"] = df_persons["household_size"].astype("category")
 
-    # Household income (overwrite). The reference table can be 5-bin
-    # (Bavaria GENESIS) or 6-bin (Braunschweig MiD H4); pick adaptively.
+
+def _step_sample_household_income(context, df_persons):
+    """Household income (overwrite). The reference table can be 5-bin
+    (Bavaria GENESIS) or 6-bin (Braunschweig MiD H4); pick adaptively.
+
+    Mutates ``df_persons`` in place (``household_income``, ``high_income``).
+    """
     df_income = context.stage("braunschweig.data.census.household_income")
     income_bins = set(df_income["household_size"].astype(str).unique())
     income_size_map, scheme = _build_income_size_map(income_bins)
@@ -608,16 +652,19 @@ def _execute_base(context):
 
     df_persons["high_income"] = df_persons["household_income"] == "5000+"
 
-    # 5-class MiD economic status.
-    #
-    # ON (status_from_hhtype, default): sample economic_status from the MiD
-    # P(status | hhtype, region) (Bayes; NDS base tilted by RegioStaR-7 raumtyp)
-    # and RE-DERIVE household_income / high_income from the sampled status, so the
-    # much stronger household-type predictor drives both. household_income_eur is
-    # computed downstream (INKAR scaling) from the re-derived class.
-    #
-    # OFF: exact legacy path (commit c65399d) -- economic_status mapped 1:1 from
-    # the already-sampled income EUR-class; income untouched -> byte-identical.
+
+def _step_derive_economic_status(context, df_persons):
+    """5-class MiD economic status.
+
+    ON (status_from_hhtype, default): sample economic_status from the MiD
+    P(status | hhtype, region) (Bayes; NDS base tilted by RegioStaR-7 raumtyp)
+    and RE-DERIVE household_income / high_income from the sampled status, so the
+    much stronger household-type predictor drives both. household_income_eur is
+    computed downstream (INKAR scaling) from the re-derived class.
+
+    OFF: exact legacy path (commit c65399d) -- economic_status mapped 1:1 from
+    the already-sampled income EUR-class; income untouched -> byte-identical.
+    """
     if context.config("status_from_hhtype"):
         df_regiostar = context.stage("braunschweig.data.bbsr.regiostar")
         df_persons = _derive_economic_status_from_hhtype(
@@ -629,25 +676,30 @@ def _execute_base(context):
     else:
         df_persons = _derive_economic_status(df_persons)
 
-    # INCOME/HOUSEHOLD-TYPE-AWARE number_of_cars (cars_income_aware). Default ON.
-    #
-    # The legacy per-Kreis MiD-H7 number_of_cars was already sampled in the
-    # VEHICLE COUNTS block (above, before car_availability). Here -- now that
-    # economic_status, the Haushaltstyp inputs (age / hh_type) and commune_id
-    # (raumtyp) are all available -- it is OVERWRITTEN by a draw from the
-    # MiD-coupled pmf P(num_cars | hhtype, status, raumtyp), raked per Kreis back
-    # to the MiD-H7 marginal so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7
-    # control (only the within-Kreis allocation by income/hhtype/raumtyp changes).
-    # OFF -> the legacy H7 draw is left untouched (byte-identical).
-    #
-    # CAUSAL ORDER (A5/A6 consistency): the A5 consistent car_availability
-    # derivation and the A6 PT-subscription block are run AFTER this income-aware
-    # draw (see the "A5/A6 (deferred)" block immediately below), so they condition
-    # on the FINAL income-aware number_of_cars rather than the legacy H7 draw.
-    # Otherwise a household could end up with car_availability != "none" while its
-    # final number_of_cars == 0 (the bug this order fixes). The downstream fleet
-    # stage (F5, braunschweig.synthesis.vehicles.cars.household) reads this final,
-    # income-aware number_of_cars, so vehicle generation is income-coupled.
+    return df_persons
+
+
+def _step_sample_cars_income_aware(context, df_persons):
+    """INCOME/HOUSEHOLD-TYPE-AWARE number_of_cars (cars_income_aware). Default ON.
+
+    The legacy per-Kreis MiD-H7 number_of_cars was already sampled in the
+    VEHICLE COUNTS block (above, before car_availability). Here -- now that
+    economic_status, the Haushaltstyp inputs (age / hh_type) and commune_id
+    (raumtyp) are all available -- it is OVERWRITTEN by a draw from the
+    MiD-coupled pmf P(num_cars | hhtype, status, raumtyp), raked per Kreis back
+    to the MiD-H7 marginal so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7
+    control (only the within-Kreis allocation by income/hhtype/raumtyp changes).
+    OFF -> the legacy H7 draw is left untouched (byte-identical).
+
+    CAUSAL ORDER (A5/A6 consistency): the A5 consistent car_availability
+    derivation and the A6 PT-subscription block are run AFTER this income-aware
+    draw (see the "A5/A6 (deferred)" block immediately below), so they condition
+    on the FINAL income-aware number_of_cars rather than the legacy H7 draw.
+    Otherwise a household could end up with car_availability != "none" while its
+    final number_of_cars == 0 (the bug this order fixes). The downstream fleet
+    stage (F5, braunschweig.synthesis.vehicles.cars.household) reads this final,
+    income-aware number_of_cars, so vehicle generation is income-coupled.
+    """
     if context.config("cars_income_aware"):
         df_regiostar_cars = context.stage("braunschweig.data.bbsr.regiostar")
         df_persons = _sample_cars_income_aware(
@@ -657,41 +709,139 @@ def _execute_base(context):
             df_regiostar_cars,
         )
 
-    # A5/A6 (deferred): now that number_of_cars is FINAL (income-aware draw above,
-    # or the legacy H7 draw if cars_income_aware is OFF), derive the consistent
-    # car_availability (A5) and then the PT subscription (A6, which conditions on
-    # car_availability). Moving these here -- rather than next to the vehicle-count
-    # block -- guarantees A5 sees the final household car count, so no household
-    # gets car_availability != "none" with a final number_of_cars == 0.
-    #
-    # RNG: A5 consumes its own seeded stream (random_seed + 41719) exactly once;
-    # PT consumes (random_seed + 8572) exactly once. Both are independent of the
-    # income-aware cars stream (+47629) and the vehicle-count / binarisation
-    # streams, so the OFF paths stay byte-identical -- only the call ORDER moved.
+    return df_persons
+
+
+def _step_derive_consistent_car_availability(context, df_persons, mid, _vehicle_seed):
+    """A5 (deferred): derive car_availability conditionally (licence + FINAL
+    household cars) and rake to the P19 marginal. The car Bernoulli uniform was
+    already consumed (apply_car=False) in the vehicle block to keep the
+    BICYCLE binarisation byte-identical; here car_availability is overwritten.
+
+    No-op when consistent_car_availability is OFF -- the legacy free-P19
+    binarisation already set car_availability in the vehicle-count step.
+    ``_vehicle_seed`` keeps the name of the caller's local (the seed returned by
+    :func:`_step_sample_vehicle_counts`). Mutates ``df_persons`` in place.
+    """
     if context.config("consistent_car_availability"):
-        # A5: derive car_availability conditionally (licence + FINAL household
-        # cars) and rake to the P19 marginal. The car Bernoulli uniform was
-        # already consumed (apply_car=False) in the vehicle block to keep the
-        # BICYCLE binarisation byte-identical; here car_availability is overwritten.
         _derive_car_availability_consistent(
             df_persons, mid, _vehicle_seed,
             context.config("braunschweig.minimum_age.car_availability"),
         )
 
-    # PT SUBSCRIPTION (categorical, MiD 2023 P24.1).
-    #
-    # Three-margin IPF (raking) on the 4-way contingency table
-    #   X[kreis, sex, age_bin, ticket_type]
-    # with target marginals:
-    #   M_K[kreis, ticket]  = T_K[kreis]  * by_kreis[kreis][ticket]
-    #   M_S[sex, ticket]    = T_S[sex]    * by_sex[sex][ticket]
-    #   M_A[age, ticket]    = T_A[age]    * by_age[age][ticket]
-    # and row totals T[kreis, sex, age] preserved (i.e. sum_c X = T).
-    #
-    # After convergence each person in cell (k, s, a) gets the probability
-    # vector P[k, s, a, :] = X[k, s, a, :] / sum_c X[k, s, a, :], which is
-    # then sampled categorically.  ``has_pt_subscription`` is finally
-    # derived as the union of the flatrate categories.
+
+def _step_condition_pt_subscription(context, df_persons, pt_probs, PT_TICKET_CATEGORIES):
+    """A6: condition pt_subscription on student / employment status (+car hook).
+    Default ON. OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF of the
+    caller is used unchanged (byte-identical sampling, since the same pt_probs
+    feed the same +8572 RNG stream).
+
+    ``PT_TICKET_CATEGORIES`` is threaded in from the caller, which already
+    imported it for the IPF, so the reference-table import still happens exactly
+    once; the parameter therefore keeps the constant's name. Returns the
+    (possibly re-weighted) ``pt_probs``.
+    """
+    if context.config("pt_subscription_conditioned"):
+        # (1) DATA-FREE logical constraint: the work/study-bound combined ticket
+        # category requires employed OR studies; zero it for everyone else and
+        # re-normalise. employed/studies are produced upstream (attributed stage,
+        # reactivate_person_attributes); fall back to all-False if the columns are
+        # absent (e.g. flag OFF in attributed) -- which then zeroes the work/study
+        # ticket for everyone, a documented but loud limitation.
+        for _col in ("employed", "studies"):
+            if _col not in df_persons.columns:
+                print(
+                    f"[braunschweig.enriched] WARNING: pt_subscription_conditioned "
+                    f"is ON but column '{_col}' is missing; treating it as all-False "
+                    f"(work/study ticket will be unavailable). Enable "
+                    f"reactivate_person_attributes to fix."
+                )
+                df_persons[_col] = False
+        pt_probs = _condition_pt_subscription_probs(
+            pt_probs, df_persons, PT_TICKET_CATEGORIES
+        )
+        print(
+            "[braunschweig.enriched] PT A6 conditioning: work/study ticket zeroed "
+            f"for {df_persons.attrs.get('pt_subscription_workstudy_zeroed_count', 0)} "
+            "non-working/non-studying persons; degenerate->fahre_nie fallback "
+            f"{df_persons.attrs.get('pt_subscription_degenerate_fallback_count', 0)}"
+        )
+
+        # (2) DATA-DEPENDENT carless<->PT correlation. Only an extra margin when
+        # the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab is present; otherwise the
+        # loader returns None and logs an INFO fallback (documented, not silent).
+        from braunschweig.data.mid.reference_tables import (
+            load_pt_subscription_by_car_availability,
+        )
+        pt_by_car = load_pt_subscription_by_car_availability(
+            context.config("data_path")
+        )
+        if pt_by_car is None:
+            print(
+                "[braunschweig.enriched] PT A6: carless<->PT car-availability "
+                "margin NOT applied (cross-tab CSV absent; coupling uncalibrated)."
+            )
+        else:
+            # Re-weight each person's PT vector toward P(ticket | their
+            # car_availability) from the MiD cross-tab, then lightly rake back to
+            # the P24.1 marginal so the aggregate target stays matched (the
+            # carless<->PT-pass coupling is imposed WITHIN persons; the column
+            # levels are preserved). car_availability is already categorical at
+            # this point ({none, some, all} with A5 ON, {none, all} with A5 OFF)
+            # and reflects the FINAL income-aware number_of_cars (A5 ran above).
+            if "car_availability" not in df_persons.columns:
+                print(
+                    "[braunschweig.enriched] WARNING: PT A6 car-availability "
+                    "cross-tab present but 'car_availability' column missing; "
+                    "carless<->PT coupling skipped."
+                )
+            else:
+                pt_probs = _apply_car_availability_pt_margin(
+                    pt_probs, df_persons, PT_TICKET_CATEGORIES, pt_by_car,
+                )
+                _car_primary = df_persons.attrs.get(
+                    "pt_subscription_car_margin_primary_count", 0
+                )
+                _car_fallback = df_persons.attrs.get(
+                    "pt_subscription_car_margin_fallback_count", 0
+                )
+                _car_rate = df_persons.attrs.get(
+                    "pt_subscription_car_margin_fallback_rate", 0.0
+                )
+                _car_dev = df_persons.attrs.get(
+                    "pt_subscription_car_margin_max_dev_pp", float("nan")
+                )
+                _level = "WARNING: " if _car_rate > 0.5 else ""
+                print(
+                    f"[braunschweig.enriched] {_level}PT A6 carless<->PT margin "
+                    f"applied: primary {_car_primary}, fallback {_car_fallback} "
+                    f"({_car_rate:.2%}) persons without a usable car_availability; "
+                    f"P24.1 marginal restored to max |Δ| {_car_dev:.2f} pp "
+                    f"(cross-tab keys {sorted(pt_by_car.keys())})."
+                )
+
+    return pt_probs
+
+
+def _step_sample_pt_subscription(context, df_persons):
+    """PT SUBSCRIPTION (categorical, MiD 2023 P24.1).
+
+    Three-margin IPF (raking) on the 4-way contingency table
+      X[kreis, sex, age_bin, ticket_type]
+    with target marginals:
+      M_K[kreis, ticket]  = T_K[kreis]  * by_kreis[kreis][ticket]
+      M_S[sex, ticket]    = T_S[sex]    * by_sex[sex][ticket]
+      M_A[age, ticket]    = T_A[age]    * by_age[age][ticket]
+    and row totals T[kreis, sex, age] preserved (i.e. sum_c X = T).
+
+    After convergence each person in cell (k, s, a) gets the probability
+    vector P[k, s, a, :] = X[k, s, a, :] / sum_c X[k, s, a, :], which is
+    then sampled categorically.  ``has_pt_subscription`` is finally
+    derived as the union of the flatrate categories.
+
+    Mutates ``df_persons`` in place (``pt_subscription_type``,
+    ``has_pt_subscription``).
+    """
     from braunschweig.data.mid.reference_tables import (
         load_pt_subscription_breakdown,
         load_pt_subscription_margins,
@@ -837,88 +987,9 @@ def _execute_base(context):
     row_sums[row_sums == 0] = 1.0
     pt_probs = pt_probs / row_sums
 
-    # A6: condition pt_subscription on student / employment status (+car hook).
-    # Default ON. OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF above
-    # is used unchanged (byte-identical sampling, since the same pt_probs feed the
-    # same +8572 RNG stream).
-    if context.config("pt_subscription_conditioned"):
-        # (1) DATA-FREE logical constraint: the work/study-bound combined ticket
-        # category requires employed OR studies; zero it for everyone else and
-        # re-normalise. employed/studies are produced upstream (attributed stage,
-        # reactivate_person_attributes); fall back to all-False if the columns are
-        # absent (e.g. flag OFF in attributed) -- which then zeroes the work/study
-        # ticket for everyone, a documented but loud limitation.
-        for _col in ("employed", "studies"):
-            if _col not in df_persons.columns:
-                print(
-                    f"[braunschweig.enriched] WARNING: pt_subscription_conditioned "
-                    f"is ON but column '{_col}' is missing; treating it as all-False "
-                    f"(work/study ticket will be unavailable). Enable "
-                    f"reactivate_person_attributes to fix."
-                )
-                df_persons[_col] = False
-        pt_probs = _condition_pt_subscription_probs(
-            pt_probs, df_persons, PT_TICKET_CATEGORIES
-        )
-        print(
-            "[braunschweig.enriched] PT A6 conditioning: work/study ticket zeroed "
-            f"for {df_persons.attrs.get('pt_subscription_workstudy_zeroed_count', 0)} "
-            "non-working/non-studying persons; degenerate->fahre_nie fallback "
-            f"{df_persons.attrs.get('pt_subscription_degenerate_fallback_count', 0)}"
-        )
-
-        # (2) DATA-DEPENDENT carless<->PT correlation. Only an extra margin when
-        # the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab is present; otherwise the
-        # loader returns None and logs an INFO fallback (documented, not silent).
-        from braunschweig.data.mid.reference_tables import (
-            load_pt_subscription_by_car_availability,
-        )
-        pt_by_car = load_pt_subscription_by_car_availability(
-            context.config("data_path")
-        )
-        if pt_by_car is None:
-            print(
-                "[braunschweig.enriched] PT A6: carless<->PT car-availability "
-                "margin NOT applied (cross-tab CSV absent; coupling uncalibrated)."
-            )
-        else:
-            # Re-weight each person's PT vector toward P(ticket | their
-            # car_availability) from the MiD cross-tab, then lightly rake back to
-            # the P24.1 marginal so the aggregate target stays matched (the
-            # carless<->PT-pass coupling is imposed WITHIN persons; the column
-            # levels are preserved). car_availability is already categorical at
-            # this point ({none, some, all} with A5 ON, {none, all} with A5 OFF)
-            # and reflects the FINAL income-aware number_of_cars (A5 ran above).
-            if "car_availability" not in df_persons.columns:
-                print(
-                    "[braunschweig.enriched] WARNING: PT A6 car-availability "
-                    "cross-tab present but 'car_availability' column missing; "
-                    "carless<->PT coupling skipped."
-                )
-            else:
-                pt_probs = _apply_car_availability_pt_margin(
-                    pt_probs, df_persons, PT_TICKET_CATEGORIES, pt_by_car,
-                )
-                _car_primary = df_persons.attrs.get(
-                    "pt_subscription_car_margin_primary_count", 0
-                )
-                _car_fallback = df_persons.attrs.get(
-                    "pt_subscription_car_margin_fallback_count", 0
-                )
-                _car_rate = df_persons.attrs.get(
-                    "pt_subscription_car_margin_fallback_rate", 0.0
-                )
-                _car_dev = df_persons.attrs.get(
-                    "pt_subscription_car_margin_max_dev_pp", float("nan")
-                )
-                _level = "WARNING: " if _car_rate > 0.5 else ""
-                print(
-                    f"[braunschweig.enriched] {_level}PT A6 carless<->PT margin "
-                    f"applied: primary {_car_primary}, fallback {_car_fallback} "
-                    f"({_car_rate:.2%}) persons without a usable car_availability; "
-                    f"P24.1 marginal restored to max |Δ| {_car_dev:.2f} pp "
-                    f"(cross-tab keys {sorted(pt_by_car.keys())})."
-                )
+    pt_probs = _step_condition_pt_subscription(
+        context, df_persons, pt_probs, PT_TICKET_CATEGORIES
+    )
 
     # Sample categorical via inverse-CDF with a dedicated RNG seed.
     random = np.random.RandomState(context.config("random_seed") + 8572)
@@ -946,10 +1017,16 @@ def _execute_base(context):
         f"{df_persons['has_pt_subscription'].mean():.1%}"
     )
 
-    # Urban-area resident flag (legacy Munich/Paris name kept for downstream
-    # compatibility). Region-neutral default: only set when the regional
-    # enricher attaches an "inside_<region>" column. Braunschweig overrides
-    # this via the post-execute hook below (is_bs_resident → is_urban_resident).
+
+def _step_finalise_columns(context, df_persons):
+    """Urban-area resident flag (legacy Munich/Paris name kept for downstream
+    compatibility). Region-neutral default: only set when the regional
+    enricher attaches an "inside_<region>" column. Braunschweig overrides
+    this via the post-execute hook below (is_bs_resident → is_urban_resident).
+
+    Also drops the temporary ``commune_id`` helper column again unless the OUTER
+    execute() still needs it (see the inline comment below).
+    """
     df_persons["is_munich_resident"] = (
         df_persons["inside_munich"]
         if "inside_munich" in df_persons.columns
@@ -969,6 +1046,62 @@ def _execute_base(context):
         and not context.config("synthesise_housing_tenure")
     ):
         df_persons = df_persons.drop(columns=["commune_id"])
+
+    return df_persons
+
+
+def _execute_base(context):
+    """Inherited execute() from bavaria.synthesis.population.enriched.
+
+    Overrides car availability, bike availability and transit subscription
+    based on MiD data, then samples household_size and household_income from
+    the German census/MiD reference tables.
+
+    Orchestrator only: every block of the former monolithic implementation now
+    lives in one of the ``_step_*`` functions above and is called here in
+    exactly the original order, so the call sequence and the RNG-draw order are
+    unchanged.
+    """
+    df_persons = delegate.execute(context)
+
+    df_persons, mid = _step_merge_home_zone_membership(context, df_persons)
+
+    iterations = 1000
+
+    _step_impute_car_availability(context, df_persons, mid, iterations)
+    _step_impute_bicycle_availability(context, df_persons, mid, iterations)
+    _step_impute_driving_licence(context, df_persons)
+
+    _vehicle_seed = _step_sample_vehicle_counts(context, df_persons)
+
+    # NOTE: the A5 consistent car_availability derivation and the A6 PT
+    # subscription block (which conditions on car_availability) are computed
+    # FURTHER DOWN, after the income-aware number_of_cars draw, so they see the
+    # FINAL car count. See the "A5/A6 (deferred)" block after _sample_cars_income_aware.
+
+    _step_sample_household_size(context, df_persons)
+    _step_sample_household_income(context, df_persons)
+
+    df_persons = _step_derive_economic_status(context, df_persons)
+    df_persons = _step_sample_cars_income_aware(context, df_persons)
+
+    # A5/A6 (deferred): now that number_of_cars is FINAL (income-aware draw above,
+    # or the legacy H7 draw if cars_income_aware is OFF), derive the consistent
+    # car_availability (A5) and then the PT subscription (A6, which conditions on
+    # car_availability). Moving these here -- rather than next to the vehicle-count
+    # block -- guarantees A5 sees the final household car count, so no household
+    # gets car_availability != "none" with a final number_of_cars == 0.
+    #
+    # RNG: A5 consumes its own seeded stream (random_seed + 41719) exactly once;
+    # PT consumes (random_seed + 8572) exactly once. Both are independent of the
+    # income-aware cars stream (+47629) and the vehicle-count / binarisation
+    # streams, so the OFF paths stay byte-identical -- only the call ORDER moved.
+    _step_derive_consistent_car_availability(
+        context, df_persons, mid, _vehicle_seed
+    )
+    _step_sample_pt_subscription(context, df_persons)
+
+    df_persons = _step_finalise_columns(context, df_persons)
 
     return df_persons
 
