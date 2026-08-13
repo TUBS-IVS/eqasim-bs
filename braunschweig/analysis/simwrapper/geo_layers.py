@@ -14,7 +14,7 @@ GeoDataFrames and produce the geo-referenced data files those cards point at:
 
 Both writers are shared across tabs: the ``fleet`` tab
 (:mod:`braunschweig.analysis.simwrapper.fleet`) and the ``socio`` tab
-(``emit_socio`` in :mod:`braunschweig.analysis.simwrapper.spatial_export`) both
+(``emit_socio`` in :mod:`braunschweig.analysis.simwrapper.socio`) both
 call :func:`write_xyt_csv`; :func:`write_kreis_choropleth_geojson` is currently
 only called by the fleet tab. Neither tab owns them, so they were relocated
 here from ``fleet.py`` -- where Task 1 of this split had to place them

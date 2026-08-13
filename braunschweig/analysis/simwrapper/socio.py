@@ -33,6 +33,10 @@ _ECONOMIC_STATUS_CODE: dict[str, int] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Pure helper functions (testable without disk I/O)
+# ---------------------------------------------------------------------------
+
 def _socio_by_kreis(homes_df: "pd.DataFrame") -> pd.DataFrame:
     """Aggregate socio-economic metrics per Kreis (5-digit ars5 code).
 

@@ -34,8 +34,9 @@ unchanged. Submodules extracted so far:
                  coordinates), ``_purpose_to_mode`` (purpose->mode trip
                  counts), and ``emit_fleet``-style tab emitter
                  ``emit_spatial_demand``. ``_purpose_to_mode`` is consumed by
-                 ``emit_behaviour`` below (still defined in this facade) via
-                 this sibling's re-export.
+                 ``emit_behaviour``, which lives in the ``behaviour`` sibling
+                 below and imports it directly from ``trip_demand``, not via
+                 this facade.
 
     socio        Socio tab: ``_socio_by_kreis`` (per-Kreis income/car/status
                  aggregation), ``_economic_status_ordinal`` (category ->
@@ -75,9 +76,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any  # noqa: F401  (TYPE_CHECKING kept for namespace parity)
 
-import pandas as pd
+import pandas as pd  # noqa: F401  (kept for namespace parity; unused directly in this facade)
 
 from braunschweig.analysis.simwrapper import writers as w
 
@@ -86,8 +87,8 @@ LOGGER = logging.getLogger("braunschweig.analysis.simwrapper.spatial")
 # ---------------------------------------------------------------------------
 # Package submodules (extracted layer sections). Every name is re-exported
 # here so external consumers (export.main(), tests) keep importing from this
-# facade module path unchanged. This split is incremental (issue #267);
-# further sibling modules will be added here by later tasks.
+# facade module path unchanged. This split (issue #267) is now complete; see
+# the module docstring above for the full list of extracted siblings.
 # ---------------------------------------------------------------------------
 
 from . import fleet  # noqa: F401  (submodule re-export)

@@ -27,7 +27,9 @@ dedicated "generic layer writers" sibling existed yet (leaving them in the
 the same split relocated both writers into the dedicated
 :mod:`braunschweig.analysis.simwrapper.geo_layers` sibling; this module now
 imports them from there. ``write_xyt_csv`` is also called by ``emit_socio``
-(still defined in the facade) via the facade's re-export of ``geo_layers``.
+(now defined in the :mod:`braunschweig.analysis.simwrapper.socio` sibling),
+which imports it directly from ``geo_layers``, not via this module or the
+``spatial_export`` facade.
 """
 
 from __future__ import annotations
