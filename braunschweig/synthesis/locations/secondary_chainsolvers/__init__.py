@@ -490,6 +490,313 @@ def _prepare_primary(context):
 # synpp execute
 # ---------------------------------------------------------------------------
 
+def _apply_escort_household_link(context, df_trips):
+    """Household escort link (issue #201 Phase 2), or a no-op when OFF.
+
+    Before the assignment problems are enumerated, rewrite linked escorters'
+    plan-level "escort" purposes to the fixed "escort_linked" purpose so they
+    anchor at the child's education location instead of drawing a location
+    type; unlinked escorters keep the plain "escort" purpose and go through
+    the SrV-weighted draw. Returns ``(df_trips, linked_location_rows,
+    escort_activity_anchors)`` -- the latter two are ``None`` when the flag
+    is OFF (the byte-identical path).
+    """
+    if not bool(context.config("escort_household_link")):
+        return df_trips, None, None
+    if not bool(context.config("escort_purpose")):
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_household_link requires "
+            "escort_purpose to be ON (there is no plan-level escort purpose to link)."
+        )
+    from braunschweig.synthesis.locations.escort_links import (
+        assign_escort_anchors, build_escort_links,
+    )
+    df_persons_link = context.stage("synthesis.population.sampled")
+    if "HP_ALTER" not in df_persons_link.columns:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_household_link needs the "
+            "HP_ALTER age column on synthesis.population.sampled (popsim_mid "
+            "persons carry it); disable escort_household_link for producers "
+            "without it."
+        )
+    df_persons_link = df_persons_link[["person_id", "household_id", "HP_ALTER"]]
+    _df_work_link, df_education_link = context.stage(
+        "synthesis.population.spatial.primary.locations")
+    df_escort_links, link_stats = build_escort_links(
+        df_persons_link, df_education_link, df_trips,
+        max_child_age_years=int(
+            context.config("escort_household_link_max_child_age_years")),
+    )
+    # Per-activity anchors under the consecutive-run rule (multi-child
+    # fix): the trip rewrite, the anchors dict for the problem splitter,
+    # and the appended location rows ALL derive from this ONE assignment,
+    # so every escort_linked boundary resolves by construction.
+    linked_location_rows, anchor_stats = assign_escort_anchors(
+        df_trips, df_escort_links)
+    df_trips = rewrite_linked_escort_trips(df_trips, linked_location_rows)
+    escort_activity_anchors = {
+        (row.person_id, row.activity_index): row.geometry
+        for row in linked_location_rows.itertuples(index=False)
+    }
+    print(
+        "[braunschweig.secondary_chainsolvers] escort household link: "
+        f"{link_stats['n_linked']:,}/{link_stats['n_escorters']:,} escorters "
+        f"linked ({100.0 * link_stats['link_rate'] if link_stats['n_escorters'] else 0.0:.1f}%) "
+        f"to {link_stats['n_child_links']:,} escorter-child links; "
+        f"{anchor_stats['n_anchored']:,}/{anchor_stats['n_escort_activities']:,} "
+        f"escort activities anchored across {anchor_stats['n_runs']:,} runs, "
+        f"{anchor_stats['n_overflow_to_draw']:,} beyond the linkable children "
+        "-> SrV-weighted draw."
+    )
+    return df_trips, linked_location_rows, escort_activity_anchors
+
+
+def _build_scorer_spec(context, sec_enabled):
+    """Scorer spec forwarded to the workers, or ``None`` when potentials are OFF.
+
+    "_cs_parameters" carries the optional carla selection parameters dict and
+    is popped in _solve_person_shard before forwarding the remaining keys to
+    build_scorer(**...). Pass parameters= to cs.setup ONLY for "mnl"; for all
+    other values (including the default "top_n") pass nothing so carla uses
+    its native defaults -- the only way to stay byte-identical. CarlaConfig
+    has no temperature field; secondary_scorer_mnl_temperature is reserved
+    for Task 8 eval and is NOT wired into cs.setup here.
+    """
+    if not sec_enabled:
+        return None
+    selection = str(context.config("secondary_scorer_selection") or "top_n")
+    cs_parameters = (
+        {
+            "selection_strategy_complex_case": "mnl",
+            "selection_strategy_two_leg_case": "mnl",
+        }
+        if selection == "mnl" else None
+    )
+    return {
+        "enabled": True,
+        "mode": context.config("secondary_scorer_mode"),
+        "pot_weight": context.config("secondary_scorer_pot_weight"),
+        "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
+        "attr_transform": str(context.config("secondary_scorer_attr_transform") or "linear"),
+        "_cs_parameters": cs_parameters,
+    }
+
+
+def _validate_candidate_flag_prerequisites(*, sec_enabled, shop_daily_split,
+                                           leisure_subtype_split, other_subtype_split,
+                                           leisure_visit_building_potential,
+                                           escort_purpose_on):
+    """Fail fast on flag combinations the candidate set cannot serve.
+
+    Tier 2 / Task 4 require the building-potential candidate set: the subtype
+    legs (shop_daily/non_daily; leisure_local/visit/activity/excursion;
+    other_errand_short/long, other_escort) can only be placed at buildings
+    carrying those subtype activities, which exist only on the
+    with_potentials path. A subtype split without building potentials would
+    leave carla with no candidates for the subtype activities -> fail fast
+    (no silent fallback). Task 5 (issue #127): the residential pot_visit
+    placement checks every precondition too -- a broken wiring here must
+    never quietly degrade to the Task-4 shared-potential behaviour.
+    """
+    if shop_daily_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_shop_daily_split "
+            "requires secondary_building_potentials to be ON (the daily / "
+            "non-daily shop placement needs the retail_daily / retail_non_daily "
+            "building candidates). Enable secondary_building_potentials or "
+            "disable secondary_shop_daily_split."
+        )
+    if leisure_subtype_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_leisure_subtype_split "
+            "requires secondary_building_potentials to be ON (the leisure subtype "
+            "placement needs the pot_leisure building candidates). Enable "
+            "secondary_building_potentials or disable secondary_leisure_subtype_split."
+        )
+    if other_subtype_split and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] secondary_other_subtype_split "
+            "requires secondary_building_potentials to be ON (the other "
+            "errand/escort subtype placement needs the pot_other building "
+            "candidates). Enable secondary_building_potentials or disable "
+            "secondary_other_subtype_split."
+        )
+    if leisure_visit_building_potential and not leisure_subtype_split:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "requires secondary_leisure_subtype_split to be ON (there is no "
+            "'leisure_visit' activity without the leisure subtype split). Enable "
+            "secondary_leisure_subtype_split or disable "
+            "leisure_visit_building_potential."
+        )
+    if leisure_visit_building_potential and not sec_enabled:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
+            "requires secondary_building_potentials to be ON (the residential visit "
+            "placement needs the pot_visit candidate column on the building-potential "
+            "candidate frame). Enable secondary_building_potentials or disable "
+            "leisure_visit_building_potential."
+        )
+    if escort_purpose_on and not sec_enabled:
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
+            "secondary_building_potentials to be ON (the escort placement needs "
+            "the education/residential/aggregate candidate potentials). Enable "
+            "secondary_building_potentials or disable escort_purpose."
+        )
+
+
+def _report_excursion_boundary_clip(plans_df, problems, df_secondary, *,
+                                    leisure_subtype_decider, srv_location_decider):
+    """Excursion boundary-clip transparency (Task 6, issue #127).
+
+    Reads the already-sampled desired distances (plans_df["distance_meters"])
+    and the already-finalised candidate set (df_secondary) -- this reporting
+    places nothing and draws no random number; see the module-level comment
+    above _excursion_boundary_clip_summary. A no-op when the leisure subtype
+    split is OFF (no "leisure_excursion" legs exist then).
+    """
+    if leisure_subtype_decider is not None and srv_location_decider is not None:
+        # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
+        # label only -- no plan row carries it as a placement activity. The
+        # measurement is therefore driven by DISTANCE_LABEL_COLUMN and resolved
+        # per DRAWN placement category, each against its own candidate pool (and
+        # hence its own reach ceiling).
+        for line in _srv_excursion_boundary_clip_lines(plans_df, problems, df_secondary):
+            print(line)
+    elif leisure_subtype_decider is not None:
+        desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
+        if desired_m.size > 0:
+            excursion_candidates = df_secondary.loc[df_secondary["pot_leisure"] > 0.0]
+            if len(excursion_candidates) == 0:
+                raise RuntimeError(
+                    "[braunschweig.secondary_chainsolvers] leisure_excursion "
+                    "boundary-clip check found zero candidates with "
+                    "pot_leisure > 0, but leisure_subtype_split sampled "
+                    "bounded 'leisure_excursion' legs -- the building-"
+                    "potentials wiring is broken (this is not an expected "
+                    "empty-candidate run)."
+                )
+            candidate_xy = np.column_stack((
+                excursion_candidates.geometry.x.to_numpy(),
+                excursion_candidates.geometry.y.to_numpy(),
+            ))
+            ceiling_m = _candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+            _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
+        else:
+            n_clipped, n_total = 0, 0
+        print(_excursion_boundary_clip_summary(n_clipped, n_total))
+
+
+def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
+                            shop_subtype_decider, leisure_subtype_decider,
+                            other_subtype_decider, escort_location_decider,
+                            srv_location_decider):
+    """Log per-decider draw shares and distance-layer fallback rates.
+
+    One block per ACTIVE decider (an OFF decider is ``None`` and prints
+    nothing, keeping the OFF path byte-identical). Counts cover BOUNDED legs
+    only -- unbounded chains go to the fallback placer untagged. Logging and
+    the per-run SrV draw-summary artifact only; no placed result, selection,
+    or RNG draw is affected (CLAUDE.md fallback transparency).
+    """
+    if shop_subtype_decider is not None:
+        n_daily = subtype_stats["shop_daily"]
+        n_nondaily = subtype_stats["shop_non_daily"]
+        n_shop_legs = n_daily + n_nondaily
+        realised_daily = (n_daily / n_shop_legs) if n_shop_legs else 0.0
+        n_dist_fb = subtype_stats["distance_layer_fallback"]
+        print(
+            "[braunschweig.secondary_chainsolvers] shop subtype labelling "
+            "(bounded shop legs only; unbounded go to fallback untagged): "
+            f"{n_shop_legs:,} bounded shop legs -> daily {n_daily:,} "
+            f"({100.0 * realised_daily:.1f}%), non_daily {n_nondaily:,} "
+            f"({100.0 * (1.0 - realised_daily):.1f}%); "
+            f"distance-layer fallback to aggregate 'shop' "
+            f"{n_dist_fb:,}/{n_shop_legs:,} "
+            f"({_rate_pct(n_dist_fb, n_shop_legs):.1f}%)"
+        )
+    if leisure_subtype_decider is not None:
+        n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
+        n_leisure_legs = sum(n_by_group.values())
+        n_dist_fb = subtype_stats["leisure_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_leisure_legs):.1f}%)"
+            for name, count in n_by_group.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] leisure subtype labelling "
+            "(bounded leisure legs only; unbounded go to fallback untagged): "
+            f"{n_leisure_legs:,} bounded leisure legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'leisure' "
+            f"{n_dist_fb:,}/{n_leisure_legs:,} "
+            f"({_rate_pct(n_dist_fb, n_leisure_legs):.1f}%)"
+        )
+    if other_subtype_decider is not None:
+        n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
+        n_other_legs = sum(n_by_outcome.values())
+        n_dist_fb = subtype_stats["other_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_other_legs):.1f}%)"
+            for name, count in n_by_outcome.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] other subtype labelling "
+            "(bounded other legs only; unbounded go to fallback untagged): "
+            f"{n_other_legs:,} bounded other legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'other' "
+            f"{n_dist_fb:,}/{n_other_legs:,} "
+            f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
+        )
+    if escort_location_decider is not None:
+        n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}
+        n_escort_legs = sum(n_by_type.values())
+        n_dist_fb = subtype_stats["escort_distance_layer_fallback"]
+        shares = ", ".join(
+            f"{name} {count:,} ({_rate_pct(count, n_escort_legs):.1f}%)"
+            for name, count in n_by_type.items()
+        )
+        print(
+            "[braunschweig.secondary_chainsolvers] escort location draw "
+            "(bounded escort legs only; unbounded go to fallback untyped): "
+            f"{n_escort_legs:,} bounded escort legs -> {shares}; "
+            f"distance-layer fallback to aggregate 'other' "
+            f"{n_dist_fb:,}/{n_escort_legs:,} "
+            f"({_rate_pct(n_dist_fb, n_escort_legs):.1f}%)"
+        )
+        if "escort_type_distance_layer_fallback" in subtype_stats:
+            n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
+            print(
+                "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
+                f"per-type layer used {n_escort_legs - n_type_fb - n_dist_fb:,}"
+                f"/{n_escort_legs:,} escort legs "
+                f"({_rate_pct(n_escort_legs - n_type_fb - n_dist_fb, n_escort_legs):.1f}%), "
+                f"fallback to aggregate 'escort' {n_type_fb:,} "
+                f"({_rate_pct(n_type_fb, n_escort_legs):.1f}%)"
+            )
+            # 0.2 (20%) is a HEURISTIC escalation threshold (final-review finding,
+            # not a scientifically derived bound): above it the per-type layers are
+            # effectively not doing their job (CLAUDE.md fallback-transparency rule
+            # 2 -- a high fallback rate is a failure signal, not a tolerated cost).
+            if n_escort_legs and n_type_fb > 0.2 * n_escort_legs:
+                print(
+                    "[braunschweig.secondary_chainsolvers] WARNING: per-type "
+                    "distance-layer fallback above 20% -- the per-type layers are "
+                    "effectively not working (check escort_distance_factor_activities "
+                    "vs the draw vocabulary)."
+                )
+    if srv_location_decider is not None:
+        # Drawn-category rates per purpose + the marginal-fallback rate
+        # (CLAUDE.md fallback transparency). Counts cover BOUNDED leisure/other
+        # legs only; unbounded chains go to the fallback placer untyped.
+        for line in _srv_location_draw_summary_lines(subtype_stats):
+            print(line)
+        # Task 9: per-run draw-summary CSV artifact + share/median coherence
+        # WARNs against the pinned SrV reference. A draw-coherence check only
+        # -- see SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.
+        _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
+
+
 def execute(context):
     # Import eagerly (not used here directly) to fail fast with a clear error if
     # the optional dependency is missing, rather than deep inside a worker; the
@@ -504,61 +811,9 @@ def execute(context):
         df_trips["arrival_time"] - df_trips["departure_time"]
     )
 
-    # Household escort link (issue #201 Phase 2): before enumerating assignment
-    # problems, rewrite linked escorters' plan-level "escort" purposes to the
-    # fixed "escort_linked" purpose so they anchor at the child's education
-    # location instead of drawing a location type. Unlinked escorters keep the
-    # plain "escort" purpose and go through the SrV-weighted draw.
-    escort_household_link = bool(context.config("escort_household_link"))
-    df_escort_links = None
-    linked_location_rows = None
-    escort_activity_anchors = None
-    if escort_household_link:
-        if not bool(context.config("escort_purpose")):
-            raise RuntimeError(
-                "[braunschweig.secondary_chainsolvers] escort_household_link requires "
-                "escort_purpose to be ON (there is no plan-level escort purpose to link)."
-            )
-        from braunschweig.synthesis.locations.escort_links import (
-            assign_escort_anchors, build_escort_links,
-        )
-        df_persons_link = context.stage("synthesis.population.sampled")
-        if "HP_ALTER" not in df_persons_link.columns:
-            raise RuntimeError(
-                "[braunschweig.secondary_chainsolvers] escort_household_link needs the "
-                "HP_ALTER age column on synthesis.population.sampled (popsim_mid "
-                "persons carry it); disable escort_household_link for producers "
-                "without it."
-            )
-        df_persons_link = df_persons_link[["person_id", "household_id", "HP_ALTER"]]
-        _df_work_link, df_education_link = context.stage(
-            "synthesis.population.spatial.primary.locations")
-        df_escort_links, link_stats = build_escort_links(
-            df_persons_link, df_education_link, df_trips,
-            max_child_age_years=int(
-                context.config("escort_household_link_max_child_age_years")),
-        )
-        # Per-activity anchors under the consecutive-run rule (multi-child
-        # fix): the trip rewrite, the anchors dict for the problem splitter,
-        # and the appended location rows ALL derive from this ONE assignment,
-        # so every escort_linked boundary resolves by construction.
-        linked_location_rows, anchor_stats = assign_escort_anchors(
-            df_trips, df_escort_links)
-        df_trips = rewrite_linked_escort_trips(df_trips, linked_location_rows)
-        escort_activity_anchors = {
-            (row.person_id, row.activity_index): row.geometry
-            for row in linked_location_rows.itertuples(index=False)
-        }
-        print(
-            "[braunschweig.secondary_chainsolvers] escort household link: "
-            f"{link_stats['n_linked']:,}/{link_stats['n_escorters']:,} escorters "
-            f"linked ({100.0 * link_stats['link_rate'] if link_stats['n_escorters'] else 0.0:.1f}%) "
-            f"to {link_stats['n_child_links']:,} escorter-child links; "
-            f"{anchor_stats['n_anchored']:,}/{anchor_stats['n_escort_activities']:,} "
-            f"escort activities anchored across {anchor_stats['n_runs']:,} runs, "
-            f"{anchor_stats['n_overflow_to_draw']:,} beyond the linkable children "
-            "-> SrV-weighted draw."
-        )
+    df_trips, linked_location_rows, escort_activity_anchors = (
+        _apply_escort_household_link(context, df_trips)
+    )
     df_primary, crs = _prepare_primary(context)
 
     distance_distributions = context.stage(
@@ -695,101 +950,14 @@ def execute(context):
         f"[braunschweig.secondary_chainsolvers] bounded problems: "
         f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
     )
-    if shop_subtype_decider is not None:
-        n_daily = subtype_stats["shop_daily"]
-        n_nondaily = subtype_stats["shop_non_daily"]
-        n_shop_legs = n_daily + n_nondaily
-        realised_daily = (n_daily / n_shop_legs) if n_shop_legs else 0.0
-        n_dist_fb = subtype_stats["distance_layer_fallback"]
-        print(
-            "[braunschweig.secondary_chainsolvers] shop subtype labelling "
-            "(bounded shop legs only; unbounded go to fallback untagged): "
-            f"{n_shop_legs:,} bounded shop legs -> daily {n_daily:,} "
-            f"({100.0 * realised_daily:.1f}%), non_daily {n_nondaily:,} "
-            f"({100.0 * (1.0 - realised_daily):.1f}%); "
-            f"distance-layer fallback to aggregate 'shop' "
-            f"{n_dist_fb:,}/{n_shop_legs:,} "
-            f"({_rate_pct(n_dist_fb, n_shop_legs):.1f}%)"
-        )
-    if leisure_subtype_decider is not None:
-        n_by_group = {name: subtype_stats[name] for name in LEISURE_SUBTYPE_ACTIVITIES}
-        n_leisure_legs = sum(n_by_group.values())
-        n_dist_fb = subtype_stats["leisure_distance_layer_fallback"]
-        shares = ", ".join(
-            f"{name} {count:,} ({_rate_pct(count, n_leisure_legs):.1f}%)"
-            for name, count in n_by_group.items()
-        )
-        print(
-            "[braunschweig.secondary_chainsolvers] leisure subtype labelling "
-            "(bounded leisure legs only; unbounded go to fallback untagged): "
-            f"{n_leisure_legs:,} bounded leisure legs -> {shares}; "
-            f"distance-layer fallback to aggregate 'leisure' "
-            f"{n_dist_fb:,}/{n_leisure_legs:,} "
-            f"({_rate_pct(n_dist_fb, n_leisure_legs):.1f}%)"
-        )
-    if other_subtype_decider is not None:
-        n_by_outcome = {name: subtype_stats[name] for name in (*OTHER_SUBTYPE_ACTIVITIES, "other_rest")}
-        n_other_legs = sum(n_by_outcome.values())
-        n_dist_fb = subtype_stats["other_distance_layer_fallback"]
-        shares = ", ".join(
-            f"{name} {count:,} ({_rate_pct(count, n_other_legs):.1f}%)"
-            for name, count in n_by_outcome.items()
-        )
-        print(
-            "[braunschweig.secondary_chainsolvers] other subtype labelling "
-            "(bounded other legs only; unbounded go to fallback untagged): "
-            f"{n_other_legs:,} bounded other legs -> {shares}; "
-            f"distance-layer fallback to aggregate 'other' "
-            f"{n_dist_fb:,}/{n_other_legs:,} "
-            f"({_rate_pct(n_dist_fb, n_other_legs):.1f}%)"
-        )
-    if escort_location_decider is not None:
-        n_by_type = {name: subtype_stats[name] for name in ESCORT_LOCATION_ACTIVITIES}
-        n_escort_legs = sum(n_by_type.values())
-        n_dist_fb = subtype_stats["escort_distance_layer_fallback"]
-        shares = ", ".join(
-            f"{name} {count:,} ({_rate_pct(count, n_escort_legs):.1f}%)"
-            for name, count in n_by_type.items()
-        )
-        print(
-            "[braunschweig.secondary_chainsolvers] escort location draw "
-            "(bounded escort legs only; unbounded go to fallback untyped): "
-            f"{n_escort_legs:,} bounded escort legs -> {shares}; "
-            f"distance-layer fallback to aggregate 'other' "
-            f"{n_dist_fb:,}/{n_escort_legs:,} "
-            f"({_rate_pct(n_dist_fb, n_escort_legs):.1f}%)"
-        )
-        if "escort_type_distance_layer_fallback" in subtype_stats:
-            n_type_fb = subtype_stats["escort_type_distance_layer_fallback"]
-            print(
-                "[braunschweig.secondary_chainsolvers] escort distance-by-type: "
-                f"per-type layer used {n_escort_legs - n_type_fb - n_dist_fb:,}"
-                f"/{n_escort_legs:,} escort legs "
-                f"({_rate_pct(n_escort_legs - n_type_fb - n_dist_fb, n_escort_legs):.1f}%), "
-                f"fallback to aggregate 'escort' {n_type_fb:,} "
-                f"({_rate_pct(n_type_fb, n_escort_legs):.1f}%)"
-            )
-            # 0.2 (20%) is a HEURISTIC escalation threshold (final-review finding,
-            # not a scientifically derived bound): above it the per-type layers are
-            # effectively not doing their job (CLAUDE.md fallback-transparency rule
-            # 2 -- a high fallback rate is a failure signal, not a tolerated cost).
-            if n_escort_legs and n_type_fb > 0.2 * n_escort_legs:
-                print(
-                    "[braunschweig.secondary_chainsolvers] WARNING: per-type "
-                    "distance-layer fallback above 20% -- the per-type layers are "
-                    "effectively not working (check escort_distance_factor_activities "
-                    "vs the draw vocabulary)."
-                )
-    if srv_location_decider is not None:
-        # Drawn-category rates per purpose + the marginal-fallback rate
-        # (CLAUDE.md fallback transparency). Counts cover BOUNDED leisure/other
-        # legs only; unbounded chains go to the fallback placer untyped.
-        for line in _srv_location_draw_summary_lines(subtype_stats):
-            print(line)
-        # Task 9: per-run draw-summary CSV artifact + share/median coherence
-        # WARNs against the pinned SrV reference. A draw-coherence check only
-        # -- see SRV_LOCATION_DRAW_SUMMARY_HONESTY_NOTE.
-        _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
+    _log_subtype_draw_rates(
+        context, subtype_stats, desired_by_category,
+        shop_subtype_decider=shop_subtype_decider,
+        leisure_subtype_decider=leisure_subtype_decider,
+        other_subtype_decider=other_subtype_decider,
+        escort_location_decider=escort_location_decider,
+        srv_location_decider=srv_location_decider,
+    )
     print(
         f"[braunschweig.secondary_chainsolvers] fallback strategy: "
         f"{fallback_strategy}"
@@ -835,33 +1003,7 @@ def execute(context):
         f"building chainsolvers context..."
     )
     sec_enabled = context.config("secondary_building_potentials")
-    if sec_enabled:
-        # Build the scorer spec. "_cs_parameters" carries the optional carla
-        # selection parameters dict and is popped in _solve_person_shard before
-        # forwarding the remaining keys to build_scorer(**...).
-        selection = str(context.config("secondary_scorer_selection") or "top_n")
-        # Pass parameters= to cs.setup ONLY for "mnl"; for all other values
-        # (including the default "top_n") pass nothing so carla uses its native
-        # defaults -- the only way to stay byte-identical. CarlaConfig has no
-        # temperature field; secondary_scorer_mnl_temperature is reserved for
-        # Task 8 eval and is NOT wired into cs.setup here.
-        cs_parameters = (
-            {
-                "selection_strategy_complex_case": "mnl",
-                "selection_strategy_two_leg_case": "mnl",
-            }
-            if selection == "mnl" else None
-        )
-        scorer_spec = {
-            "enabled": True,
-            "mode": context.config("secondary_scorer_mode"),
-            "pot_weight": context.config("secondary_scorer_pot_weight"),
-            "dist_dev_weight": context.config("secondary_scorer_dist_dev_weight"),
-            "attr_transform": str(context.config("secondary_scorer_attr_transform") or "linear"),
-            "_cs_parameters": cs_parameters,
-        }
-    else:
-        scorer_spec = None
+    scorer_spec = _build_scorer_spec(context, sec_enabled)
     # NOTE: the RDA/unbounded fallback intentionally uses the LEGACY frame
     # (df_secondary_legacy); only the primary chainsolver solve uses the
     # REPLACE candidates. The assembled set (gpkg sec_b_* + legacy other +
@@ -872,103 +1014,24 @@ def execute(context):
     if sec_enabled:
         df_secondary = context.stage(
             "braunschweig.synthesis.locations.secondary_candidates")
-    # Tier 2 / Task 4 require the building-potential candidate set: the subtype
-    # legs (shop_daily/non_daily; leisure_local/visit/activity/excursion;
-    # other_errand_short/long, other_escort) can only be placed at buildings
-    # carrying those subtype activities, which exist only on the
-    # with_potentials path. A subtype split without building potentials would
-    # leave carla with no candidates for the subtype activities -> fail fast
-    # (no silent fallback).
-    if shop_daily_split and not sec_enabled:
-        raise RuntimeError(
-            "[braunschweig.secondary_chainsolvers] secondary_shop_daily_split "
-            "requires secondary_building_potentials to be ON (the daily / "
-            "non-daily shop placement needs the retail_daily / retail_non_daily "
-            "building candidates). Enable secondary_building_potentials or "
-            "disable secondary_shop_daily_split."
-        )
-    if leisure_subtype_split and not sec_enabled:
-        raise RuntimeError(
-            "[braunschweig.secondary_chainsolvers] secondary_leisure_subtype_split "
-            "requires secondary_building_potentials to be ON (the leisure subtype "
-            "placement needs the pot_leisure building candidates). Enable "
-            "secondary_building_potentials or disable secondary_leisure_subtype_split."
-        )
-    if other_subtype_split and not sec_enabled:
-        raise RuntimeError(
-            "[braunschweig.secondary_chainsolvers] secondary_other_subtype_split "
-            "requires secondary_building_potentials to be ON (the other "
-            "errand/escort subtype placement needs the pot_other building "
-            "candidates). Enable secondary_building_potentials or disable "
-            "secondary_other_subtype_split."
-        )
-    # Task 5, issue #127: residential pot_visit placement for leisure_visit
-    # legs. Fail-fast (no silent fallback to pot_leisure) on every
-    # precondition -- a broken wiring here must never quietly degrade to the
-    # Task-4 shared-potential behaviour.
-    if leisure_visit_building_potential and not leisure_subtype_split:
-        raise ValueError(
-            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
-            "requires secondary_leisure_subtype_split to be ON (there is no "
-            "'leisure_visit' activity without the leisure subtype split). Enable "
-            "secondary_leisure_subtype_split or disable "
-            "leisure_visit_building_potential."
-        )
-    if leisure_visit_building_potential and not sec_enabled:
-        raise ValueError(
-            "[braunschweig.secondary_chainsolvers] leisure_visit_building_potential "
-            "requires secondary_building_potentials to be ON (the residential visit "
-            "placement needs the pot_visit candidate column on the building-potential "
-            "candidate frame). Enable secondary_building_potentials or disable "
-            "leisure_visit_building_potential."
-        )
-    if escort_purpose_on and not sec_enabled:
-        raise RuntimeError(
-            "[braunschweig.secondary_chainsolvers] escort_purpose requires "
-            "secondary_building_potentials to be ON (the escort placement needs "
-            "the education/residential/aggregate candidate potentials). Enable "
-            "secondary_building_potentials or disable escort_purpose."
-        )
     # The residential visit candidates themselves are appended by the
     # secondary_candidates stage (df_secondary above already carries them when
     # the flag is ON); _build_locations_df below still needs the flag for the
     # offers_visit/pot_visit schema wiring and its own fail-fast check.
+    _validate_candidate_flag_prerequisites(
+        sec_enabled=sec_enabled,
+        shop_daily_split=shop_daily_split,
+        leisure_subtype_split=leisure_subtype_split,
+        other_subtype_split=other_subtype_split,
+        leisure_visit_building_potential=leisure_visit_building_potential,
+        escort_purpose_on=escort_purpose_on,
+    )
 
-    # Task 6, issue #127: excursion boundary-clip transparency. Reads the
-    # already-sampled desired distances (plans_df["distance_meters"]) and the
-    # already-finalised candidate set (df_secondary) -- this block places
-    # nothing and draws no random number; see the module-level comment above
-    # _excursion_boundary_clip_summary.
-    if leisure_subtype_decider is not None and srv_location_decider is not None:
-        # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
-        # label only -- no plan row carries it as a placement activity. The
-        # measurement is therefore driven by DISTANCE_LABEL_COLUMN and resolved
-        # per DRAWN placement category, each against its own candidate pool (and
-        # hence its own reach ceiling).
-        for line in _srv_excursion_boundary_clip_lines(plans_df, problems, df_secondary):
-            print(line)
-    elif leisure_subtype_decider is not None:
-        desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
-        if desired_m.size > 0:
-            excursion_candidates = df_secondary.loc[df_secondary["pot_leisure"] > 0.0]
-            if len(excursion_candidates) == 0:
-                raise RuntimeError(
-                    "[braunschweig.secondary_chainsolvers] leisure_excursion "
-                    "boundary-clip check found zero candidates with "
-                    "pot_leisure > 0, but leisure_subtype_split sampled "
-                    "bounded 'leisure_excursion' legs -- the building-"
-                    "potentials wiring is broken (this is not an expected "
-                    "empty-candidate run)."
-                )
-            candidate_xy = np.column_stack((
-                excursion_candidates.geometry.x.to_numpy(),
-                excursion_candidates.geometry.y.to_numpy(),
-            ))
-            ceiling_m = _candidate_reach_ceiling_m(anchors_xy, candidate_xy)
-            _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
-        else:
-            n_clipped, n_total = 0, 0
-        print(_excursion_boundary_clip_summary(n_clipped, n_total))
+    _report_excursion_boundary_clip(
+        plans_df, problems, df_secondary,
+        leisure_subtype_decider=leisure_subtype_decider,
+        srv_location_decider=srv_location_decider,
+    )
 
     locations_df = _build_locations_df(
         df_secondary, with_potentials=sec_enabled,
