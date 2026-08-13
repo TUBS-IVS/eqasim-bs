@@ -101,6 +101,21 @@ the realized education mean is definitionally higher (expected ~7.1 km,
 derived ASSUMPTION mixing W1 weights with W12 means) -- report it as
 definitional, do not calibrate against it.
 
+The `scripts/validate_bs_10pct` 10% report cannot tell from the output
+CSV/XML files alone which of the two baselines is scored for a given run --
+that ambiguity is exactly what is being validated, so the mode must be
+declared explicitly via `--escort-passive-education` (issue #256, default
+False = raw baseline). The declaration is written to the JSON payload
+(`escort_passive_education`, `purpose_mix_scored_baseline`: `"raw_w1"` or
+`"active_adjusted"`); when the flag is passed, the HTML additionally tags
+section 5.3b as `SCORED (declared via --escort-passive-education)` and
+section 5.3 as `informational`. Without the flag the HTML stays
+byte-identical to the pre-#256-CLI report (no baseline is tagged, since the
+report cannot know which one is authoritative without the declaration).
+Declaring the flag on an escort-absent population logs a loud warning
+instead of crashing or silently scoring a table that carries no
+active/passive split.
+
 ## Follow-ups
 #241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).
 #243 was folded into this feature (education-type split).
