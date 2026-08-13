@@ -1,6 +1,6 @@
 {
  "config": {
-  "base": "configs/fixtures/config_local_braunschweig.yml",
+  "base": "configs/fixtures/config_local_braunschweig_25pct.yml",
   "overlay": null
  },
  "edges": [
@@ -14,6 +14,10 @@
   ],
   [
    "braunschweig.data.bbsr.regiostar",
+   "braunschweig.synthesis.vehicles.cars.household"
+  ],
+  [
+   "braunschweig.data.bbsr.regiostar",
    "data.census.filtered"
   ],
   [
@@ -23,18 +27,6 @@
   [
    "braunschweig.data.bbsr.regiostar",
    "synthesis.population.enriched"
-  ],
-  [
-   "braunschweig.data.bosserhof_purpose",
-   "braunschweig.synthesis.locations.secondary_candidates"
-  ],
-  [
-   "braunschweig.data.building_potentials",
-   "braunschweig.synthesis.locations.secondary_candidates"
-  ],
-  [
-   "braunschweig.data.building_potentials",
-   "synthesis.locations.work"
   ],
   [
    "braunschweig.data.buildings",
@@ -63,10 +55,6 @@
   [
    "braunschweig.data.census.households_type",
    "braunschweig.ipf.prepare"
-  ],
-  [
-   "braunschweig.data.census.households_type",
-   "data.census.filtered"
   ],
   [
    "braunschweig.data.census.licenses",
@@ -101,10 +89,6 @@
    "synthesis.locations.work"
   ],
   [
-   "braunschweig.data.freight.german_wide",
-   "braunschweig.freight.extraction"
-  ],
-  [
    "braunschweig.data.inkar.household_income",
    "synthesis.population.enriched"
   ],
@@ -115,6 +99,10 @@
   [
    "braunschweig.data.locations",
    "synthesis.locations.secondary"
+  ],
+  [
+   "braunschweig.data.locations",
+   "synthesis.locations.work"
   ],
   [
    "braunschweig.data.mid.data",
@@ -153,14 +141,6 @@
    "synthesis.locations.home.locations"
   ],
   [
-   "braunschweig.freight.extraction",
-   "braunschweig.freight.trips"
-  ],
-  [
-   "braunschweig.freight.trips",
-   "matsim.simulation.prepare"
-  ],
-  [
    "braunschweig.ipf.model",
    "data.census.filtered"
   ],
@@ -169,8 +149,8 @@
    "braunschweig.ipf.model"
   ],
   [
-   "braunschweig.synthesis.locations.secondary_candidates",
-   "synthesis.population.spatial.secondary.locations"
+   "braunschweig.synthesis.vehicles.cars.household",
+   "synthesis.vehicles.vehicles"
   ],
   [
    "data.census.filtered",
@@ -290,15 +270,7 @@
   ],
   [
    "data.spatial.municipalities",
-   "braunschweig.data.building_potentials"
-  ],
-  [
-   "data.spatial.municipalities",
    "braunschweig.data.verbindungen.zones"
-  ],
-  [
-   "data.spatial.municipalities",
-   "braunschweig.freight.extraction"
   ],
   [
    "data.spatial.municipalities",
@@ -382,10 +354,6 @@
   ],
   [
    "matsim.runtime.eqasim",
-   "braunschweig.freight.extraction"
-  ],
-  [
-   "matsim.runtime.eqasim",
    "matsim.output"
   ],
   [
@@ -407,10 +375,6 @@
   [
    "matsim.runtime.git",
    "matsim.runtime.pt2matsim"
-  ],
-  [
-   "matsim.runtime.java",
-   "braunschweig.freight.extraction"
   ],
   [
    "matsim.runtime.java",
@@ -502,10 +466,6 @@
   ],
   [
    "matsim.simulation.run",
-   "braunschweig.analysis.simwrapper_export"
-  ],
-  [
-   "matsim.simulation.run",
    "matsim.output"
   ],
   [
@@ -526,10 +486,6 @@
   ],
   [
    "synthesis.locations.secondary",
-   "braunschweig.synthesis.locations.secondary_candidates"
-  ],
-  [
-   "synthesis.locations.secondary",
    "matsim.scenario.facilities"
   ],
   [
@@ -545,10 +501,6 @@
    "synthesis.population.spatial.primary.locations"
   ],
   [
-   "synthesis.output",
-   "braunschweig.analysis.simwrapper_export"
-  ],
-  [
    "synthesis.population.activities",
    "matsim.scenario.population"
   ],
@@ -559,6 +511,10 @@
   [
    "synthesis.population.activities",
    "synthesis.population.spatial.locations"
+  ],
+  [
+   "synthesis.population.enriched",
+   "braunschweig.synthesis.vehicles.cars.household"
   ],
   [
    "synthesis.population.enriched",
@@ -587,10 +543,6 @@
   [
    "synthesis.population.enriched",
    "synthesis.population.spatial.primary.candidates"
-  ],
-  [
-   "synthesis.population.enriched",
-   "synthesis.vehicles.cars.default"
   ],
   [
    "synthesis.population.enriched",
@@ -670,6 +622,10 @@
   ],
   [
    "synthesis.population.spatial.home.zones",
+   "braunschweig.synthesis.vehicles.cars.household"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
    "synthesis.population.spatial.home.locations"
   ],
   [
@@ -737,10 +693,6 @@
    "synthesis.population.spatial.secondary.locations"
   ],
   [
-   "synthesis.vehicles.cars.default",
-   "synthesis.vehicles.vehicles"
-  ],
-  [
    "synthesis.vehicles.passengers.default",
    "synthesis.vehicles.vehicles"
   ],
@@ -758,11 +710,8 @@
   ]
  ],
  "nodes": [
-  "braunschweig.analysis.simwrapper_export",
   "braunschweig.data.alkis",
   "braunschweig.data.bbsr.regiostar",
-  "braunschweig.data.bosserhof_purpose",
-  "braunschweig.data.building_potentials",
   "braunschweig.data.buildings",
   "braunschweig.data.census.employees",
   "braunschweig.data.census.employment",
@@ -774,7 +723,6 @@
   "braunschweig.data.census.population",
   "braunschweig.data.education.student_share",
   "braunschweig.data.external_workplaces",
-  "braunschweig.data.freight.german_wide",
   "braunschweig.data.inkar.household_income",
   "braunschweig.data.landuse",
   "braunschweig.data.locations",
@@ -786,11 +734,9 @@
   "braunschweig.data.verbindungen.zones",
   "braunschweig.data.vrb.zones",
   "braunschweig.data.zensus_grid.population",
-  "braunschweig.freight.extraction",
-  "braunschweig.freight.trips",
   "braunschweig.ipf.model",
   "braunschweig.ipf.prepare",
-  "braunschweig.synthesis.locations.secondary_candidates",
+  "braunschweig.synthesis.vehicles.cars.household",
   "data.census.filtered",
   "data.gtfs.cleaned",
   "data.hts.commute_distance",
@@ -848,12 +794,10 @@
   "synthesis.population.spatial.secondary.distance_distributions",
   "synthesis.population.spatial.secondary.locations",
   "synthesis.population.trips",
-  "synthesis.vehicles.cars.default",
   "synthesis.vehicles.passengers.default",
   "synthesis.vehicles.vehicles"
  ],
  "targets": [
-  "braunschweig.analysis.simwrapper_export",
   "matsim.output",
   "synthesis.output"
  ]

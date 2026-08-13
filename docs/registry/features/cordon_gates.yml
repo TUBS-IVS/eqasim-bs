@@ -1,0 +1,57 @@
+feature: cordon_gates
+title: Gates (road + PT/Bahnhof)
+area: cordon
+description: Derives road gates and rail entry stations from the network intersected with the
+  cordon polygon; in-commuters enter the scenario through these gates (ADR-0029).
+stages:
+- braunschweig.synthesis.cordon_gates
+- braunschweig.data.cordon_pt_gates
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_enabled
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0029
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/cordon_gates.py
+- braunschweig/data/cordon/gates.py
+- braunschweig/data/cordon_pt_gates.py
+evidence:
+  tests:
+  - tests/test_cordon_gates.py
+  - tests/test_cordon_gates_stage.py
+  - tests/test_cordon_gate_assignment.py
+  - tests/test_cordon_pt_gates_stage.py
+  - tests/test_pt_reachability.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: No dedicated OFF-path byte-identity test name found for the gate-derivation stages.
+  fallback_rate:
+    instrumented: true
+    log_marker: eligible rail entry stations
+    note: |
+      cordon_pt_gates.py logs a PRIMARY-containment-vs-population-catchment-fallback rate for rail entry stations, with a hard warning when ALL stations use the nearest-Gemeinde fallback.
+  reference:
+    kind: none
+    note: |
+      OSM and GTFS network/schedule inputs are consumed via the supply pipeline (osm_path/gtfs_path config keys) as local-only extracts, not discrete committed eqasim-data files. The VG250 external-Gemeinde lookup used for gate population-gravity assignment is likewise not committed (same gap as cordon_network_ring.yml).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI applies to gate derivation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0029 documents the design; no owner verdict on realised gate coverage/placement has been recorded. No docs/features/*.md exists for the cordon subsystem.
+  source: ADR-0029

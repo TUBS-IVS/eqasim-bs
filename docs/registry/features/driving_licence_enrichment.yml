@@ -1,0 +1,52 @@
+feature: driving_licence_enrichment
+title: Driving licence (P17.1, 3-margin IPF)
+area: attributes
+description: Driving licence as a categorical 3-margin IPF (raking) on MiD 2023 P17.1 (Kreis x
+  sex x age), replacing the KBA-based licence model (ADR-0013).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags: []
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0013
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/base.py
+evidence:
+  tests:
+  - tests/test_mid_reference_tables.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: Always-on enrichment with no config flag.
+  fallback_rate:
+    instrumented: false
+    note: |
+      By design this is fail-fast, not fallback: test_license_breakdown_missing_03zgb_raises_no_averaged_fallback confirms the loader raises rather than averaging/falling back when a required region is absent. No primary/fallback rate applies.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P17_1.csv
+    note: Also draws on the committed by-sex/by-age P17.1 tables.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0013 documents the design. This enrichment lives in synthesis/population/enriched.py, which is the legacy simple_ipf_open stage -- dead under the active popsim_mid production method, only live via the simple_ipf_open fixture. No owner verdict on realised fit has been recorded.
+  source: ADR-0013
+notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
+  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
+  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
+  25% fixture).'

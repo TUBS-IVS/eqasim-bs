@@ -1,0 +1,52 @@
+feature: parallel_chainsolvers
+title: Parallel chainsolvers
+area: infrastructure
+description: Runs the secondary-location chainsolvers (carla) across worker processes (auto-scaled
+  to cpu_count - 2) instead of single-threaded.
+stages:
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.chainsolvers.parallel
+introduced:
+  issue: null
+  pr: null
+  adr: null
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/locations/secondary_chainsolvers/
+evidence:
+  tests:
+  - tests/test_chainsolvers_parallel.py
+  - tests/test_secondary_chainsolvers.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      tests/test_chainsolvers_parallel.py tests parallel-vs-serial reproducibility (same seeds -> same result) rather than a boolean-flag OFF/ON byte-identity claim.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'primary/fallback split:'
+    note: |
+      Logs the primary(carla)-vs-fallback(rda) placement split for the chainsolver as a whole; this instruments the solver's own primary/fallback choice, not specifically the parallel-vs-serial execution mode, but fires on every run of the module regardless of braunschweig.chainsolvers.parallel.
+  reference:
+    kind: none
+    note: Infrastructure feature (parallel execution); no external reference applies.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI applies to a parallelisation mechanism.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    No ADR was found for this feature (searched docs/DECISIONS.md for "chainsolver" and "parallel"; all hits concern the unrelated scorer/pot_weight/version-pin topics). No owner verdict on realised parallel-vs-serial correctness/performance has been recorded.
+  source: null

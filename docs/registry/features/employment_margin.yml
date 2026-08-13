@@ -1,0 +1,49 @@
+feature: employment_margin
+title: Employment margin (IPF)
+area: attributes
+description: IPF margin raking employment to the GENESIS SvB registers instead of survey P9 shares
+  (ADR-0014); IPF-workflow-only by construction.
+stages:
+- braunschweig.ipf.model
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - braunschweig.ipf.use_employment_margin
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0014
+detail_doc: null
+code_paths:
+- braunschweig/ipf/model.py
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      No dedicated flag-OFF byte-identity test found; tests/test_ipf_selectors.py's byte-identity test covers an unrelated selector refactor, not this flag's ON/OFF behaviour.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No fallback-rate log found for the "path not configured -> outer-product proxy" branch described below -- this silent fallback is itself uninstrumented.
+  reference:
+    kind: none
+    note: |
+      The GENESIS SvB employees table (braunschweig.employees_path, braunschweig/13111-01-03-5.xlsx) is not committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    DISCREPANCY FOUND: braunschweig.ipf.use_employment_margin gates only an ADDITIONAL joint Kreis x hh_size x employed margin (TASK-010), which needs braunschweig.ipf.employment_by_hhsize_path -- a path that is never set in any committed config. With the flag ON but no path configured, braunschweig/ipf/model.py:631-650 silently falls back to an "outer-product proxy" (comment: "informative smoke test only; preserves marginals") instead of a real Zensus/GENESIS cross-tab, and this fallback is not logged at all. Separately, the BASE always-on employment margin (the one actually "raked to GENESIS SvB" per ADR-0014's title, unconditional, not gated by this flag) is a different mechanism entirely. The STATUS-matrix row and ADR-0014's title likely do not refer to the same mechanism as the flag they cite. docs/features/household-synthesis.md does not mention this flag at all. This needs owner attention before the row can be marked reliably "on".
+  source: ADR-0014

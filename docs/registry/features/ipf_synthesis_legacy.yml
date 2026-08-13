@@ -1,0 +1,56 @@
+feature: ipf_synthesis_legacy
+title: IPF synthesis (legacy default)
+area: population
+description: The in-house IPF population synthesis (4-6 margins, age-aware composition) with ENTD
+  trip donors -- the original workflow, kept as the simple_ipf_open method (ADR-0002).
+stages:
+- data.census.filtered
+- braunschweig.ipf.model
+- braunschweig.ipf.prepare
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: supported
+production:
+  enabled: false
+  flags:
+  - braunschweig.population.method
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0002
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+- braunschweig/ipf/prepare.py
+- braunschweig/ipf/model.py
+- braunschweig/ipf/attributed.py
+evidence:
+  tests:
+  - tests/test_simple_ipf_open_baseline.py
+  - tests/test_population_config.py
+  - tests/test_population_selector.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: This is a population-synthesis METHOD (one of three), not a boolean toggle.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.ipf.attributed] assigned hh_type to'
+    note: |
+      Logs the share of households whose hh_type was drawn from a scope-wide fallback vs. forced to 'other_multi' (gated by the related use_household_type_margin flag).
+  reference:
+    kind: none
+    note: |
+      The Zensus 2022 / GENESIS raw inputs this chain reads (e.g. braunschweig/1000A-2081_de_flat.zip) are NOT committed; tests explicitly skip when the local-only file is absent (tests/test_population_controls_census.py).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0002 documents all three synthesis methods including this legacy default. NOTE: configs/base_bs.yml:155 sets braunschweig.population.method to popsim_mid, not simple_ipf_open -- this legacy method is the code-level default (used only when the key is absent from a config), not what the current production base config actually runs.
+  source: ADR-0002

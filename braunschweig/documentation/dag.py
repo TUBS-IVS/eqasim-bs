@@ -43,7 +43,10 @@ PIPELINE_CONFIGS: Dict[str, Dict[str, Optional[str]]] = {
         "overlay": None,
     },
     "simple_ipf_open": {
-        "base": os.path.join("configs", "fixtures", "config_local_braunschweig.yml"),
+        # The 25% fixture is the committed real-data configuration of the legacy
+        # IPF workflow (the one issue #255 designates as where the enriched-stage
+        # attribute features actually execute), not the 1% laptop smoke.
+        "base": os.path.join("configs", "fixtures", "config_local_braunschweig_25pct.yml"),
         "overlay": None,
     },
 }

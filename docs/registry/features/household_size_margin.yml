@@ -1,0 +1,52 @@
+feature: household_size_margin
+title: Household-size margin
+area: population
+description: Per-commune household-size margin from Zensus 2022 in the legacy IPF (ADR-0003).
+stages:
+- braunschweig.ipf.prepare
+- braunschweig.ipf.model
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - braunschweig.ipf.use_household_size_margin
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0003
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+- braunschweig/ipf/prepare.py
+- braunschweig/ipf/model.py
+- braunschweig/ipf/attributed.py
+evidence:
+  tests:
+  - tests/test_hh_size_margin.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: No dedicated OFF-path byte-identity test name found; OFF-path coverage is indirect (feasibility
+      matrix tests).
+  fallback_rate:
+    instrumented: false
+    note: |
+      No distinct fallback-rate log found for the size-margin constraint itself (only for the downstream hh_type-assignment draw that additionally consumes it, see ipf_synthesis_legacy.yml).
+  reference:
+    kind: none
+    note: |
+      braunschweig/1000A-2081_de_flat.zip (Zensus 2022) is NOT committed to this repository and absent from disk.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    DISCREPANCY FOUND: this flag IS set true in configs/base_bs.yml:193, but base_bs.yml's active braunschweig.population.method is popsim_mid, on which this legacy-IPF-only flag is a documented dead key (configs/fixtures/config_popsim_mid_braunschweig.yml explicitly lists it among flags the popsim path never reads). PROJECT_STATUS.md's 🟢 legend ("flag-gated, ON in real-data run configs") does not note that the flag is inert under the method actually used in production. ADR-0003 documents the design; no owner verdict on this discrepancy has been recorded.
+  source: ADR-0003

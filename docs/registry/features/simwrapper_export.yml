@@ -1,0 +1,56 @@
+feature: simwrapper_export
+title: SimWrapper export (8 chart + 4 map + commuter tabs)
+area: analysis
+description: synpp export stage writing a multi-tab SimWrapper dashboard bundle (demographics,
+  mode shares, choropleths, commuter flows) from any run output (ADR-0033).
+stages:
+- braunschweig.analysis.simwrapper_export
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - simwrapper_export_enabled
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0033
+detail_doc: docs/features/run-analysis.md
+code_paths:
+- braunschweig/analysis/simwrapper/
+- braunschweig/analysis/simwrapper_export.py
+evidence:
+  tests:
+  - tests/test_simwrapper_writers.py
+  - tests/test_simwrapper_export.py
+  - tests/test_simwrapper_spatial.py
+  - tests/test_simwrapper_commuters.py
+  - tests/test_simwrapper_stage.py
+  off_path_byte_identical:
+    claimed: 'false'
+    note: |
+      simwrapper_export_enabled defaults to true in code (braunschweig/analysis/simwrapper_export.py:26) and is not overridden in configs/base_bs.yml or the overlays; no OFF-path byte-identity test is declared.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'geolocation: primary (geometry matched)'
+    note: |
+      spatial_export.py logs a primary(geometry-matched)-vs-no-match fleet geolocation rate; export.py separately logs a skipped/no-data-per-tab warning (a count, not a rate) when a chart tab has no data.
+  reference:
+    kind: none
+    note: |
+      This feature re-visualises metrics already produced by the dashboard record it consumes; it does not introduce an independent external reference of its own.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI scalar specific to the export step is attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0033 documents the design (8 chart/table tabs + 4 map tabs + a commuter tab); no owner verdict on export completeness/correctness across the current tab set has been recorded.
+  source: ADR-0033

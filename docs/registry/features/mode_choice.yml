@@ -1,0 +1,49 @@
+feature: mode_choice
+title: Mode choice
+area: matsim
+description: eqasim discrete mode choice; OFF in every committed config because no calibrated
+  modal-split reference exists -- run mode shares are not behaviourally validated.
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: supported
+production:
+  enabled: false
+  flags:
+  - mode_choice
+introduced:
+  issue: null
+  pr: null
+  adr: null
+detail_doc: null
+code_paths:
+- matsim/simulation/prepare.py
+- synthesis/output.py
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      mode_choice is false in every committed config; no dedicated current test exercises the flag (a historical test_population_with_mode_choice exists only in tests/baselines/pytest_baseline.txt, a frozen FAILED snapshot, not a live test).
+  fallback_rate:
+    instrumented: false
+    note: Feature is OFF everywhere; no fallback/primary logging pattern applies.
+  reference:
+    kind: none
+    note: |
+      No modal-split calibration target exists in this repository; mode choice is kept OFF precisely because no calibrated reference is available (see docs/codebase/CONCERNS.md).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: Not applicable while OFF.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    No ADR was found (this is an upstream eqasim feature kept OFF, not a Braunschweig design decision). No owner verdict is needed while the feature stays OFF; revisit if/when a modal- split target becomes available.
+  source: null

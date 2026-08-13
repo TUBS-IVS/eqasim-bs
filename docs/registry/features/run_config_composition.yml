@@ -1,0 +1,51 @@
+feature: run_config_composition
+title: Run-config composition (base + per-scale overlay)
+area: infrastructure
+description: Run configs are composed from a fixed feature base (configs/base_bs.yml) plus a thin
+  per-scale overlay; every override is logged and the resolved doc is written to .merged_config.yml
+  (ADR-0070).
+stages: []
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: null
+  pr: '#234'
+  adr: ADR-0070
+detail_doc: docs/DECISIONS.md
+code_paths:
+- braunschweig/config_compose.py
+- scripts/run_synpp.py
+evidence:
+  tests:
+  - tests/test_config_compose.py
+  - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      There is no boolean flag; this feature IS the config-loading mechanism itself (base + overlay via `scripts/run_synpp.py <base> <overlay>`).
+  fallback_rate:
+    instrumented: false
+    note: |
+      Not applicable -- deterministic deep-merge, no primary/fallback distinction. Every override is logged instead for transparency (config_compose.py logs "[config-merge] ... overridden, ... added" on every compose call), which is a different kind of instrumentation than a fallback rate.
+  reference:
+    kind: none
+    note: |
+      ADR-0070 cites a "felix synthesis smoke (base_bs.yml + test.yml, 1 Kreis, real data)" as the validating run, but this is a manual smoke test described in prose, not a committed file or a RUNS.md-recorded run.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI applies to a config-composition mechanism.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0070 documents the design and cites the felix synthesis smoke as validation; that smoke run is not recorded in RUNS.md, so C6 cannot confirm it. No further owner verdict recorded.
+  source: ADR-0070

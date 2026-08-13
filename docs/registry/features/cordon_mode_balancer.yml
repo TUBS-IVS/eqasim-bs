@@ -1,0 +1,54 @@
+feature: cordon_mode_balancer
+title: Mode balancer
+area: cordon
+description: Balances in-commuter modes against the Mikrozensus commuter mode split so injected
+  agents do not arrive all-car (ADR-0029).
+stages:
+- braunschweig.synthesis.incommuters
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_enabled
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0029
+detail_doc: null
+code_paths:
+- braunschweig/data/cordon/mode_balancer.py
+- braunschweig/synthesis/incommuters.py
+evidence:
+  tests:
+  - tests/test_mode_balancer.py
+  - tests/test_cordon_mode_reference.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      tests/test_mode_balancer.py documents a determinism guarantee (identical seeds -> byte-identical modes_final), which is a reproducibility test, not an OFF-path (cordon_enabled=False) byte-identity test.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.incommuters] mode balancer:'
+    note: |
+      Logs the Mikrozensus PT target vs. forced-to-car/promoted/final-PT counts, with a WARNING when a residual remains because rail access is too scarce to fully restore the target -- explicitly commented as CLAUDE.md no-silent-fallback compliance.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mikrozensus/mid2023_commute_mode_by_distance_de.csv
+    note: |
+      Also draws on the committed mid_mode_margin_by_bundesland.csv under the same directory.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI scalar currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0029 documents the design; no owner verdict on realised mode-balance quality has been recorded. No docs/features/*.md exists for the cordon subsystem.
+  source: ADR-0029

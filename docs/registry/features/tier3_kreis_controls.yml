@@ -1,0 +1,52 @@
+feature: tier3_kreis_controls
+title: Tier-3 Kreis controls
+area: attributes
+description: Adds the Kreis-level Tier-3 PopulationSim controls (employment, school and vocational
+  degrees from cleancensus Kreis tables) on top of the grid controls (ADR-0015).
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.control_tiers
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0015
+detail_doc: null
+code_paths:
+- braunschweig/popsim/control_spec.py
+evidence:
+  tests:
+  - tests/test_popsim_tier3_controls.py
+  - tests/test_popsim_validation_tier3.py
+  - tests/test_control_spec_catalog.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: control_tiers is a list-valued config key (tier0..tier3), not a boolean toggle.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No rate-style fallback log found; missing kreis_controls data raises FileNotFoundError/ ValueError (fail-fast), not a silent fallback with a rate to log.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv
+    note: |
+      The Tier-3/employment-grid kreis_controls directory itself (braunschweig.population.popsim.kreis_controls_dir) is explicitly gitignored and absent from this checkout; only this companion employment-by-age reference file is committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0015 documents the design (Codeplan-B1 crosswalk). docs/features/regional-control-targets.md exists but documents a different (5-entry economic_status/cars/bicycles/ebike/trip_class) registry, not this Tier-3 mechanism -- the detail_doc does not actually cover this feature, so it is omitted from this declaration rather than pointed at the wrong doc. No owner verdict on realised Tier-3 fit has been recorded.
+  source: ADR-0015

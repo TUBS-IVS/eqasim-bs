@@ -1,0 +1,53 @@
+feature: per_band_commute_friction
+title: 'Calibration: per-band commute friction'
+area: work
+description: Per-distance-band commute gravity friction factors; built as gated infra and left
+  OFF because the commute distribution already fits MiD P13 (ADR-0041 rejected pinning).
+stages:
+- data.od.weighted
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: supported
+production:
+  enabled: false
+  flags:
+  - gravity_friction_factors
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0041
+detail_doc: docs/features/calibration-corner.md
+code_paths:
+- braunschweig/gravity/friction.py
+- braunschweig/gravity/model.py
+evidence:
+  tests:
+  - tests/test_gravity_friction.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_gravity_friction.py
+    note: test_off_path_is_byte_identical_to_exp_friction confirms the default (None) path is
+      byte-identical to the legacy exp(slope*d) friction.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[friction] per-RS7: matched'
+    note: |
+      Logs a matched(per-RS7 band)-vs-fallback(exp) origin rate when per-RS7 band factors are supplied.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P13.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: ADR-0041 reports a measured commute EMD of 0.037 (below the 0.08 materiality threshold)
+    on cache_bs_25pct_allfeat; not copied here until attributable to a run recorded in RUNS.md.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0041 is a REJECTED decision: keep gravity_friction_factors unset (None); pinning was rejected because the model already fits P13 without it. No further owner verdict is needed while this stays off by design, but no owner sign-off has been formally recorded here.
+  source: ADR-0041
