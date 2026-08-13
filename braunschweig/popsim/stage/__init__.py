@@ -76,24 +76,27 @@ Submodules extracted so far:
 defined directly above it (see the banner comment there): each step is a
 verbatim move of one commented block, called in the original order and threading
 its data through parameters and return values only, so the call order and the
-seeded RNG draw order are unchanged. Three blocks stay inline in ``execute``,
+seeded RNG draw order are unchanged. Two blocks stay inline in ``execute``,
 each with its reason documented at the block.
 
 ``validate()`` folds the sources of the helper modules this stage's result
 depends on into the synpp validation token, because synpp's ``get_stage_hash``
 covers only THIS file's source: without the hook a change confined to a helper
 devalidates nothing and the stale cached stage output is silently reused. The
-token covers every FIRST-PARTY, NON-STAGE module imported at module level by
-this package -- its own six submodules, all nine ``braunschweig.popsim.mid``
-modules, and the other module-level helper imports (the two
+token covers this package's own six submodules, all nine
+``braunschweig.popsim.mid`` modules, the ``braunschweig.popsim.sources`` package
+one level deep (registry ``__init__`` plus the ``base`` / ``entd`` / ``mid``
+donor adapters), the other non-stage module-level helper imports (the two
 ``braunschweig.data.mid`` income tables, ``assembly``, ``batch``, ``income``,
 ``income_kreis_control``, ``income_spatial_tilt``, ``plausibility``,
-``prepared_cells``, ``sources``). It deliberately does NOT cover modules that
-are themselves synpp stages (synpp hashes those from their own source; the one
-such import here is ``braunschweig.data.census.household_size``), and it does
-NOT walk the TRANSITIVE import surface -- the covered set is bounded to direct
-imports, so a change deep inside a dependency of a listed helper is not
-reflected in the token. See ``validate()`` for the full statement.
+``prepared_cells``) and the two synpp stages used here as plain function
+libraries without a declared dependency
+(``braunschweig.data.census.household_size``,
+``braunschweig.synthesis.population.enriched``). It deliberately does NOT cover
+this stage's DECLARED stage dependencies (synpp hashes those through the DAG
+edge), the DEFERRED function-level first-party imports, or the TRANSITIVE import
+surface. See ``validate()`` for the full statement, including which residual gaps
+that leaves.
 
 DELIBERATE BEHAVIOUR CHANGE (issue #267): this stage previously had NO
 ``validate()`` at all, so it carried no validation token. Adding one is a
@@ -136,6 +139,26 @@ from braunschweig.data.mid.income_by_status import (
 from braunschweig.data.mid import income_by_size as _data_mid_income_by_size
 from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 
+# The two modules that ARE themselves synpp stages but are used HERE as plain
+# function libraries, bound as MODULES so their sources participate in the
+# validation token built by validate() below. A synpp stage legitimately belongs
+# in this helper token when -- and only when -- BOTH of these hold:
+#   (a) this stage calls into it as a LIBRARY (``kreis_household_stats`` /
+#       ``_apply_housing_tenure``), not via ``context.stage(...)``, and
+#   (b) it is NOT among the stage dependencies configure() declares, so synpp
+#       never propagates its own stage hash into this stage's cache key.
+# Neither mechanism therefore covers these two: without the entries below, an
+# edit confined to either helper function leaves this stage's cached output
+# silently stale. ``household_size`` is the only such stage imported at MODULE
+# level; ``enriched`` is imported at FUNCTION level inside
+# _apply_housing_tenure_parity (an import site does not change the cache
+# residual, so it is listed on the same grounds). The stages configure() DOES
+# declare (inkar_income, regiostar_tenure, completed_donor,
+# data.hts.entd.filtered) remain deliberately unlisted -- synpp hashes those
+# through the declared DAG edge, so listing them would only add churn.
+from braunschweig.data.census import household_size as _census_household_size
+from braunschweig.synthesis.population import enriched as _population_enriched
+
 from braunschweig.popsim import assembly
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
@@ -162,6 +185,19 @@ from braunschweig.popsim.mid import donor_stratification as _mid_donor_stratific
 from braunschweig.popsim.mid import kreis_controls as _mid_kreis_controls
 from braunschweig.popsim.mid import participation as _mid_participation
 from braunschweig.popsim.mid import seed_loading as _mid_seed_loading
+
+# The braunschweig.popsim.sources donor-adapter package enumerated ONE level
+# deep, again EXPLICITLY (never via dir() or a glob). The package ``__init__``
+# (re-exported below as ``sources`` via source_resolution) is only the small
+# name -> adapter registry; the behaviour that shapes this stage's RESULT lives
+# in the adapter submodules: ``mid`` is the default donor path, ``entd`` the
+# popsim_open path, ``base`` the shared adapter protocol they implement. Listing
+# the registry alone would leave a seed-build or attribute-mapping edit invisible
+# to the token. Deliberately NOT recursed deeper: the covered set stays bounded
+# to one level, exactly as for the mid package above.
+from braunschweig.popsim.sources import base as _sources_base
+from braunschweig.popsim.sources import entd as _sources_entd
+from braunschweig.popsim.sources import mid as _sources_mid
 
 # ---------------------------------------------------------------------------
 # Package submodules (extracted stage sections). Every name is re-exported
@@ -271,19 +307,27 @@ logger = logging.getLogger(__name__)
 # synpp cache validation
 # ---------------------------------------------------------------------------
 
-# Every FIRST-PARTY, NON-STAGE module that this stage package imports at module
-# level -- i.e. the helper code whose source can change this stage's RESULT
-# without changing this file:
+# Every FIRST-PARTY module whose source can change this stage's RESULT without
+# changing this file, and whose hash no other mechanism already carries:
 #
 #   1. the six submodules extracted from this package,
 #   2. the whole ``braunschweig.popsim.mid`` package (its ``__init__`` --
 #      imported above as ``mid`` -- and its eight submodules), which carries the
 #      seed / donor / control / batch-folder logic execute() orchestrates,
-#   3. the remaining first-party helper modules imported at module level here or
-#      by a submodule: the two ``braunschweig.data.mid`` income tables, the
-#      popsim persons assembly, the PopulationSim batch runner, the income /
-#      income-Kreis-control / income-spatial-tilt helpers, the plausibility
-#      checks, the prepared-cells loader and the donor-source registry.
+#   3. the whole ``braunschweig.popsim.sources`` package one level deep (its
+#      registry ``__init__`` plus the ``base`` / ``entd`` / ``mid`` donor
+#      adapters), which carries the seed build, donor loading and attribute
+#      mapping of the active source,
+#   4. the remaining non-stage first-party helper modules imported at module
+#      level here or by a submodule: the two ``braunschweig.data.mid`` income
+#      tables, the popsim persons assembly, the PopulationSim batch runner, the
+#      income / income-Kreis-control / income-spatial-tilt helpers, the
+#      plausibility checks and the prepared-cells loader,
+#   5. the two modules that ARE synpp stages but are used here as plain function
+#      libraries WITHOUT being declared as dependencies
+#      (``braunschweig.data.census.household_size``,
+#      ``braunschweig.synthesis.population.enriched``); see the import comment
+#      above for why a synpp stage legitimately appears in a helper token.
 #
 # synpp's get_stage_hash only hashes THIS file's source, so without the
 # validate() hook below a change confined to any of these helpers would
@@ -292,12 +336,12 @@ logger = logging.getLogger(__name__)
 # dropping and adding a module is a visible diff, and iterated in the order
 # written so the digest is deterministic.
 #
-# Modules that are THEMSELVES synpp stages (they expose both ``configure`` and
-# ``execute``) are deliberately NOT listed: synpp hashes a stage from its own
-# source, so double-covering it would only add churn. The one such import here
-# is ``braunschweig.data.census.household_size`` (used for its
-# ``kreis_household_stats`` helper); see validate() for the residual this
-# leaves, because that stage is not a declared dependency of this one.
+# Modules that are themselves synpp stages AND are DECLARED dependencies of this
+# stage (``context.stage(...)`` in configure: inkar_income, regiostar_tenure,
+# completed_donor, data.hts.entd.filtered) are deliberately NOT listed: synpp
+# hashes those from their own source and propagates it through the declared DAG
+# edge, so double-covering them would only add churn. Group 5 above is the
+# complement of that rule, not an exception to it.
 #
 # Every module extracted from this package MUST be listed here.
 _HELPER_MODULES = (
@@ -318,6 +362,12 @@ _HELPER_MODULES = (
     _mid_kreis_controls,
     _mid_participation,
     _mid_seed_loading,
+    # the braunschweig.popsim.sources donor-adapter package: __init__ + its
+    # submodules (enumerated ONE level deep, not recursed further)
+    sources,
+    _sources_base,
+    _sources_entd,
+    _sources_mid,
     # other first-party, non-stage helper modules imported at module level,
     # ordered by dotted module path
     _data_mid_income_by_size,
@@ -329,7 +379,11 @@ _HELPER_MODULES = (
     _ist,
     _plausibility,
     prepared_cells,
-    sources,
+    # synpp stages used here as plain function libraries whose dependency this
+    # stage does NOT declare, so their own stage hash never reaches this stage
+    # (see the import comment above), ordered by dotted module path
+    _census_household_size,
+    _population_enriched,
 )
 
 
@@ -346,26 +400,50 @@ def validate(context):
     leave the token unchanged and the stale cached output would be reused
     silently.
 
-    COVERED (``_HELPER_MODULES``): every FIRST-PARTY, NON-STAGE module that this
-    stage package imports at module level -- its own six submodules, all nine
-    ``braunschweig.popsim.mid`` modules, and the remaining module-level helper
-    imports (the two ``braunschweig.data.mid`` income tables,
+    COVERED (``_HELPER_MODULES``): its own six submodules; all nine
+    ``braunschweig.popsim.mid`` modules; the ``braunschweig.popsim.sources``
+    package one level deep (registry ``__init__`` plus the ``base`` / ``entd`` /
+    ``mid`` donor adapters); the remaining non-stage first-party modules imported
+    at module level (the two ``braunschweig.data.mid`` income tables,
     ``braunschweig.popsim.assembly`` / ``batch`` / ``income`` /
     ``income_kreis_control`` / ``income_spatial_tilt`` / ``plausibility`` /
-    ``prepared_cells`` / ``sources``).
+    ``prepared_cells``); and the two synpp stages this package uses as plain
+    function libraries without declaring the dependency
+    (``braunschweig.data.census.household_size`` for ``kreis_household_stats``,
+    ``braunschweig.synthesis.population.enriched`` for ``_apply_housing_tenure``)
+    -- for those two neither synpp's own stage hashing nor a declared DAG edge
+    reaches this stage, so the token is the only mechanism that can see them.
 
-    DELIBERATELY NOT COVERED, in both cases to avoid churn without benefit:
+    DELIBERATELY NOT COVERED:
 
-    * Modules that are themselves synpp stages (``configure`` AND ``execute``):
-      synpp derives their hash from their own source, so listing one here would
-      only add churn. The single such import is
-      ``braunschweig.data.census.household_size``, imported purely for its
-      ``kreis_household_stats`` helper and NOT requested via ``context.stage``.
-      Because it is not a declared dependency, its own stage hash does not
-      propagate here -- an edit confined to ``kreis_household_stats`` therefore
-      does not devalidate this stage's cache. That residual is accepted rather
-      than papered over by hashing a stage module; closing it properly means
-      moving the helper out of the stage module or declaring the dependency.
+    * Modules that are themselves synpp stages AND are DECLARED dependencies of
+      this stage (``context.stage(...)`` in ``configure``:
+      ``braunschweig.data.inkar.household_income``,
+      ``braunschweig.data.bbsr.regiostar``,
+      ``braunschweig.popsim.completed_donor``, ``data.hts.entd.filtered``).
+      synpp derives their hash from their own source and propagates it through
+      the declared edge, so listing one here would only add churn.
+      ``braunschweig.data.census.household_size`` is the only synpp stage this
+      package imports at MODULE level and
+      ``braunschweig.synthesis.population.enriched`` the only one imported at
+      FUNCTION level; both are undeclared, hence COVERED above rather than
+      excluded here. Residual on the ``enriched`` entry: ``inspect.getsource``
+      of a package yields its ``__init__`` only, and ``_apply_housing_tenure``
+      itself lives in ``enriched.housing_tenure``, so an edit confined to that
+      submodule is still invisible to this token (closing it means listing that
+      submodule too, or declaring the dependency).
+    * The DEFERRED (function-level) first-party import surface. These modules are
+      DIRECT dependencies of this stage's result -- not transitive ones -- but
+      they are imported inside a function body (to keep the import cost off the
+      module-import path and out of ``configure``-only runs) and are therefore
+      absent from the module-level set this token was built from:
+      ``braunschweig.popsim.control_spec`` (the control catalog itself),
+      ``kreis_attribute_control``, ``placement_income``, ``employment_grid``,
+      ``zensus_employment_age``, ``folders``, ``braunschweig.parallelism`` and
+      ``braunschweig.data.mid.tenure_by_income``. An edit confined to any of them
+      changes this stage's output without changing the token; this is the largest
+      remaining gap and is accepted only because listing a deferred import here
+      would re-introduce, at module level, the import cost the deferral avoids.
     * The TRANSITIVE import surface. The set is bounded to modules imported
       directly by this package; a module imported only by one of the listed
       helpers is not walked, so an edit deep inside such a dependency is not
@@ -571,10 +649,8 @@ def configure(context):
 # rebinding step returns the value and ``execute`` reassigns it; steps that only
 # mutate an object in place say so in their ``Mutates:`` line.
 #
-# Three blocks stay INLINE in ``execute`` on purpose; each carries its reason
-# there. In short: the PopulationSim seed build, because a source-inspection test
-# pins its ``context.stage("completed_donor")`` delegation inside ``execute``'s
-# own source; and the placement_income reallocation plus its own-income consumer,
+# Two blocks stay INLINE in ``execute`` on purpose; each carries its reason
+# there. In short: the placement_income reallocation and its own-income consumer,
 # because ``_pi_diag`` is bound only when placement runs and is read again behind
 # a different guard further down, so neither block can move without adding an
 # initialiser statement the original does not have.
@@ -952,6 +1028,92 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
             _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
         )
     return cells
+
+
+def _build_populationsim_seed(context, source, source_name: str, mid_dir, complete_members: bool,
+        seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg):
+    """Build the PopulationSim seed through the active donor source.
+
+    Build the PopulationSim seed.
+    For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
+    files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
+    For source="entd": the ENTD donor frames are transformed to MiD column
+    schema by EntdSource.build_seed so the downstream (expand, map_demographics)
+    runs unchanged; only map_person_attributes is ENTD-specific.
+    The completed donor frames (member completion ON) are loaded here, ahead
+    of PopulationSim, because the SEED is derived from them; they are reused
+    verbatim as the expansion donor tables further below (ONE completion pass
+    -> seed and expansion contain the same fillers).
+
+    Returns: ``(completed_donor_households, completed_donor_persons,
+    seed_households, seed_persons)``. The first two stay ``None`` on every path
+    except member completion, where ``_load_donor_tables`` further down reuses
+    them verbatim as the expansion donor tables.
+    Mutates: draws from ``kreis_seed_rng`` on the two MiD paths (the count-style
+    KREIS-control 99-code imputation inside the seed loaders) in the unchanged
+    order, and reports the seed completeness rate plus the member-completion
+    counts via ``context.set_info``.
+    """
+    completed_donor_households = None
+    completed_donor_persons = None
+    if source_name == "entd":
+        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
+        # (registered in configure() as alias "hts_donor") and build the seed.
+        # context.stage() is idempotent in synpp; retrieving the same alias twice
+        # returns the same cached result, so this does not re-run the stage.
+        hts_hh_seed, hts_persons_seed, _hts_trips_seed = context.stage("hts_donor")
+        seed_households, seed_persons, report = source.build_seed(
+            hts_hh_seed, hts_persons_seed
+        )
+    elif complete_members:
+        # popsim_mid with member completion (D3, default ON): the donor build
+        # (member completion + weekend-plan match) is produced by the cached
+        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
+        # The same completed frames feed BOTH the PopulationSim seed (projected
+        # here) AND the expansion donor tables below.
+        donor = context.stage("completed_donor")
+        completed_donor_households = donor.households
+        completed_donor_persons = donor.persons
+        report = donor.completeness_report
+        completion_report = donor.completion_report
+        seed_columns = source.seed_columns()
+        # project_completed_seed derives hh_type5 (Tier-1 household_type) like
+        # load_mid_seed does, so the seed carries it for the household_type control.
+        # number_of_cars / number_of_bicycles / has_ebike are derived here too, from
+        # the raw H_ANZAUTO / anzpedrad / H_ANZPED columns the completed_donor stage
+        # already carries (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike is fully wired
+        # (server-verified 2026-07-08, issue #116 resolved); project_completed_seed
+        # only raises if has_ebike is active AND ebike_seed_column_cfg is unset.
+        seed_households, seed_persons = mid.project_completed_seed(
+            completed_donor_households, completed_donor_persons, seed_columns,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+            mid_dir=mid_dir,
+        )
+        # Surface the build reports on THIS run too (so they are present even when
+        # the completed_donor stage was served from cache and its execute did not run).
+        context.set_info(
+            "member_completion_filled", completion_report.n_households_filled
+        )
+        context.set_info(
+            "member_completion_persons_added", completion_report.n_persons_added
+        )
+    else:
+        # popsim_mid, complete_members=False: reads MiD CSV files directly from
+        # mid_dir. This path is byte-identical to all prior versions.
+        seed_columns = source.seed_columns()
+        seed_households, seed_persons, report = mid.load_mid_seed(
+            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
+            kreis_control_entries=active_entries,
+            kreis_seed_rng=kreis_seed_rng,
+            ebike_seed_column=ebike_seed_column_cfg,
+        )
+    context.set_info("seed_completeness_rate", report.completeness_rate)
+    return (
+        completed_donor_households, completed_donor_persons, seed_households,
+        seed_persons,
+    )
 
 
 def _prepare_batch_runner(context, uv_path, popsimprep_dir, stratify_regiostar: bool):
@@ -1719,81 +1881,13 @@ def execute(context) -> pd.DataFrame:
     )
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
 
-    # The seed build stays INLINE: a source-inspection test pins the delegation
-    # to the cached completed_donor stage inside execute()'s OWN source
-    # (tests/test_completed_donor_stage.py::
-    # test_popsim_stage_consumes_completed_donor_stage greps
-    # inspect.getsource(execute) for it), and the delegation sits inside the
-    # member-completion branch, so the whole branch has to stay here. It is one
-    # if/elif/else over the donor source; kreis_seed_rng is drawn from on the two
-    # MiD paths exactly as before.
-    #
-    # Build the PopulationSim seed.
-    # For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
-    # files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
-    # For source="entd": the ENTD donor frames are transformed to MiD column
-    # schema by EntdSource.build_seed so the downstream (expand, map_demographics)
-    # runs unchanged; only map_person_attributes is ENTD-specific.
-    # The completed donor frames (member completion ON) are loaded here, ahead
-    # of PopulationSim, because the SEED is derived from them; they are reused
-    # verbatim as the expansion donor tables further below (ONE completion pass
-    # -> seed and expansion contain the same fillers).
-    completed_donor_households = None
-    completed_donor_persons = None
-    if source_name == "entd":
-        # popsim_open: retrieve the cleaned ENTD frames from the synpp DAG
-        # (registered in configure() as alias "hts_donor") and build the seed.
-        # context.stage() is idempotent in synpp; retrieving the same alias twice
-        # returns the same cached result, so this does not re-run the stage.
-        hts_hh_seed, hts_persons_seed, _hts_trips_seed = context.stage("hts_donor")
-        seed_households, seed_persons, report = source.build_seed(
-            hts_hh_seed, hts_persons_seed
-        )
-    elif complete_members:
-        # popsim_mid with member completion (D3, default ON): the donor build
-        # (member completion + weekend-plan match) is produced by the cached
-        # braunschweig.popsim.completed_donor stage (ONE pass, shared across runs).
-        # The same completed frames feed BOTH the PopulationSim seed (projected
-        # here) AND the expansion donor tables below.
-        donor = context.stage("completed_donor")
-        completed_donor_households = donor.households
-        completed_donor_persons = donor.persons
-        report = donor.completeness_report
-        completion_report = donor.completion_report
-        seed_columns = source.seed_columns()
-        # project_completed_seed derives hh_type5 (Tier-1 household_type) like
-        # load_mid_seed does, so the seed carries it for the household_type control.
-        # number_of_cars / number_of_bicycles / has_ebike are derived here too, from
-        # the raw H_ANZAUTO / anzpedrad / H_ANZPED columns the completed_donor stage
-        # already carries (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike is fully wired
-        # (server-verified 2026-07-08, issue #116 resolved); project_completed_seed
-        # only raises if has_ebike is active AND ebike_seed_column_cfg is unset.
-        seed_households, seed_persons = mid.project_completed_seed(
-            completed_donor_households, completed_donor_persons, seed_columns,
-            kreis_control_entries=active_entries,
-            kreis_seed_rng=kreis_seed_rng,
-            ebike_seed_column=ebike_seed_column_cfg,
-            mid_dir=mid_dir,
-        )
-        # Surface the build reports on THIS run too (so they are present even when
-        # the completed_donor stage was served from cache and its execute did not run).
-        context.set_info(
-            "member_completion_filled", completion_report.n_households_filled
-        )
-        context.set_info(
-            "member_completion_persons_added", completion_report.n_persons_added
-        )
-    else:
-        # popsim_mid, complete_members=False: reads MiD CSV files directly from
-        # mid_dir. This path is byte-identical to all prior versions.
-        seed_columns = source.seed_columns()
-        seed_households, seed_persons, report = mid.load_mid_seed(
-            mid_dir, columns=seed_columns, day_filter_values=seed_day_filter,
-            kreis_control_entries=active_entries,
-            kreis_seed_rng=kreis_seed_rng,
-            ebike_seed_column=ebike_seed_column_cfg,
-        )
-    context.set_info("seed_completeness_rate", report.completeness_rate)
+    (
+        completed_donor_households, completed_donor_persons, seed_households,
+        seed_persons,
+    ) = _build_populationsim_seed(
+        context, source, source_name, mid_dir, complete_members, seed_day_filter,
+        active_entries, kreis_seed_rng, ebike_seed_column_cfg,
+    )
 
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,
