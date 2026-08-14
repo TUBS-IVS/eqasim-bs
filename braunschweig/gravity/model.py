@@ -25,9 +25,12 @@ Module layout (issue #267 split): this module remains the synpp stage
 ``braunschweig.gravity.model`` for every consumer. Sections extracted from it
 live in SIBLING modules of the ``braunschweig.gravity`` package (alongside the
 pre-existing ``friction``, ``production_mass``, ``taz_margins``,
-``verbindungen_anchor`` and ``distance_matrix_taz``) and every name they define
-is re-exported here, so external imports keep working unchanged. Siblings
-extracted so far:
+``verbindungen_anchor`` and ``distance_matrix_taz``) and every module-level
+name they define -- except each sibling's own ``logger`` object, where one
+exists (``od`` and ``kreis_calibration`` bind it to the literal
+``"braunschweig.gravity.model"`` name rather than defining a distinct logger;
+see the re-export block below) -- is re-exported here, so external imports keep
+working unchanged. Siblings extracted so far:
 
     attraction_vector   the gravity destination attraction vector: the
                         employees-at-workplace headcount and the flag-gated
@@ -79,11 +82,15 @@ from braunschweig.gravity import attraction_vector, balancing, base, kreis_calib
 from braunschweig.gravity.friction import build_friction_matrix  # noqa: F401  (namespace parity, see below)
 
 # ``os``, ``np``, ``pd``, ``ars_to_ags8`` and ``build_friction_matrix`` above are
-# no longer used by this module's own code: their sole call sites (formerly
-# ``_read_betriebe_per_commune``, ``compute_work_od``, ``_calibrate`` and
-# ``_append_outbound_flows``) moved verbatim to ``braunschweig.gravity.od`` and
-# ``braunschweig.gravity.kreis_calibration`` (issue #267), which import them
-# directly for their own use. They are kept bound here anyway so
+# no longer used by this module's own code (issue #267 split): ``os``,
+# ``ars_to_ags8`` and ``build_friction_matrix`` had a single call site each,
+# formerly ``_read_betriebe_per_commune``/``compute_work_od``, which moved
+# verbatim to ``braunschweig.gravity.od``; ``np`` and ``pd`` had MANY call
+# sites and moved to every computational sibling (``attraction_vector``,
+# ``balancing``, ``od`` and ``kreis_calibration`` each import their own
+# ``numpy``/``pandas`` -- only the orchestration-only ``base`` sibling needs
+# neither). Every sibling that needs one of these five names now imports it
+# directly for its own use. They are kept bound here anyway so
 # ``dir(braunschweig.gravity.model)`` still contains every name it did before
 # the split (the namespace-parity contract this stage's split is held to --
 # see ``.superpowers/sdd/2026-08-14-split-gravity-model/check_namespace.py``);
@@ -93,9 +100,15 @@ from braunschweig.gravity.friction import build_friction_matrix  # noqa: F401  (
 # ---------------------------------------------------------------------------
 # Sibling modules extracted from this stage. Every module-level name they
 # define is re-exported here so external consumers (the pipeline, calibration
-# scripts, tests) keep importing from ``braunschweig.gravity.model`` unchanged.
-# Each sibling MUST also be listed in _HELPER_MODULES below so its source
-# participates in the synpp cache-validation token.
+# scripts, tests) keep importing from ``braunschweig.gravity.model`` unchanged
+# -- EXCEPT each sibling's own ``logger`` object (``od.logger`` and
+# ``kreis_calibration.logger`` are bound to the literal
+# ``"braunschweig.gravity.model"`` name, so they resolve to the SAME
+# ``logging.Logger`` instance as this module's own ``logger`` below via
+# Python's name-keyed logger cache; nothing currently imports a sibling's
+# ``logger`` attribute directly, so this is a documented non-goal rather than
+# a gap). Each sibling MUST also be listed in _HELPER_MODULES below so its
+# source participates in the synpp cache-validation token.
 # ---------------------------------------------------------------------------
 
 from braunschweig.gravity.attraction_vector import (  # noqa: F401  (re-exports)

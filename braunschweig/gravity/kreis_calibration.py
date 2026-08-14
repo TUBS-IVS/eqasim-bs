@@ -29,11 +29,12 @@ to ``"braunschweig.gravity.kreis_calibration"`` here) so every
 ``LogRecord.name`` emitted by the moved code is unchanged.
 
 ``braunschweig.gravity.model`` re-exports every public and private name defined
-here, so existing imports of the stage module path (including the test suite,
-which imports several of these names directly) keep working. This module must
-NEVER depend on ``braunschweig.gravity.model`` in any direction other than
-downward (that would close an import cycle): the dependency runs strictly
-model -> kreis_calibration.
+here -- except its module-level ``logger`` object (see the re-export block in
+``model.py``) -- so existing imports of the stage module path (including the
+test suite, which imports several of these names directly) keep working. This
+module must NEVER depend on ``braunschweig.gravity.model`` in any direction
+other than downward (that would close an import cycle): the dependency runs
+strictly model -> kreis_calibration.
 """
 
 from __future__ import annotations

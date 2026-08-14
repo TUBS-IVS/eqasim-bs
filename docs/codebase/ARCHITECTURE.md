@@ -137,6 +137,47 @@ that already imported the original (e.g. `enriched.base`) keeps its own bound
 reference — a test or patch must target the submodule attribute
 (`enriched.base.pd`), not the facade (`enriched.pd`).
 
+## Module split note: gravity siblings vs. stage packages (#267)
+
+`braunschweig/gravity/model.py` (1483 lines) was split into sibling modules
+inside the ALREADY-EXISTING `braunschweig/gravity/` package: `attraction_vector.py`
+(destination attraction, incl. the flag-gated sector-aware tilt), `balancing.py`
+(the doubly-constrained Furness/IPF balancing loop and per-origin RegioStaR-7
+friction-slope resolution), `od.py` (the pure work-OD gravity computation),
+`kreis_calibration.py` (the BA-Pendleratlas Kreis-level IPF calibration and
+outbound-flow injection) and `base.py` (the inherited eqasim-bavaria base
+execution) -- alongside the pre-existing siblings `friction.py`,
+`production_mass.py`, `taz_margins.py`, `verbindungen_anchor.py` and
+`distance_matrix_taz.py`.
+
+This is a different shape of split from the `enriched`/`secondary_chainsolvers`
+STAGE PACKAGES described above (where the package's `__init__.py` BECOMES the
+synpp stage module): here `model.py` stays a plain module and remains the sole
+synpp stage (`configure`/`execute`/`validate`); the package directory structure
+and the import path `braunschweig.gravity.model` are UNCHANGED. `model.py`
+re-exports every name its siblings define, so external imports (pipeline,
+calibration scripts, tests) keep working unchanged.
+
+The split gave this stage a `validate()` hook it never had before. synpp's
+`get_stage_hash` hashes only the stage module's OWN source
+(`inspect.getsource` of `model.py`), never its siblings', so without a
+`validate()` hook a change confined to a sibling would silently reuse the
+STALE cached stage output on a partial rerun. The new `validate()` folds every
+sibling's source into an md5 token (`_HELPER_MODULES` in `model.py`); because
+the stage had no token before this split, the FIRST run after this change has
+no stored token to compare against and therefore recomputes this stage and
+everything downstream of it ONCE -- a deliberate, one-off cost, not a bug.
+Subsequent runs devalidate correctly on sibling-only edits.
+
+**Standing rule: every new sibling module added under `braunschweig/gravity/`
+MUST be appended to the `_HELPER_MODULES` tuple in `model.py`.** A sibling
+missing from that tuple is invisible to `get_stage_hash`/`validate()`, so its
+changes silently reuse stale cached output on a partial rerun -- exactly the
+failure this split's `validate()` hook exists to prevent. (This rule previously
+existed only in a gitignored scratch gate under
+`.superpowers/sdd/2026-08-14-split-gravity-model/`; this paragraph is its
+durable home.)
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative

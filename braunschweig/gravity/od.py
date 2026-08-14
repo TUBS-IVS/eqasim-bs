@@ -20,10 +20,13 @@ bound to the literal ``"braunschweig.gravity.model"`` name (not
 ``__name__``, which would resolve to ``"braunschweig.gravity.od"`` here) so
 every ``LogRecord.name`` emitted by the moved code is unchanged.
 
-``braunschweig.gravity.model`` re-exports every public name defined here, so
-existing imports of the stage module path keep working. This module must NEVER
-depend on ``braunschweig.gravity.model`` in any direction other than downward
-(that would close an import cycle): the dependency runs strictly model -> od.
+``braunschweig.gravity.model`` re-exports every name defined here -- including
+the private ``_read_betriebe_per_commune`` and ``_GEMBAND_COLUMN_NAMES`` --
+except its module-level ``logger`` object (see the re-export block in
+``model.py``), so existing imports of the stage module path keep working. This
+module must NEVER depend on ``braunschweig.gravity.model`` in any direction
+other than downward (that would close an import cycle): the dependency runs
+strictly model -> od.
 """
 
 from __future__ import annotations

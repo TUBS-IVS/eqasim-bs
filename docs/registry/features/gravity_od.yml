@@ -19,6 +19,11 @@ introduced:
   adr: null
 detail_doc: docs/features/gravity.md
 code_paths:
+- braunschweig/gravity/base.py
+- braunschweig/gravity/attraction_vector.py
+- braunschweig/gravity/balancing.py
+- braunschweig/gravity/od.py
+- braunschweig/gravity/kreis_calibration.py
 - braunschweig/gravity/model.py
 evidence:
   tests:

@@ -13,11 +13,11 @@ model output and the console log are byte-identical to the pre-split stage.
 The prefixes deliberately still read ``model`` because they identify the STAGE
 that emits them, not the file that hosts the code.
 
-``braunschweig.gravity.model`` re-exports every public name defined here, so
-existing imports of the stage module path keep working. This module must NEVER
-depend on ``braunschweig.gravity.model`` in any direction other than downward
-(that would close an import cycle): the dependency runs strictly
-model -> balancing.
+``braunschweig.gravity.model`` re-exports every name defined here -- including
+the private ``_build_origin_slope_vector`` -- so existing imports of the stage
+module path keep working. This module must NEVER depend on
+``braunschweig.gravity.model`` in any direction other than downward (that
+would close an import cycle): the dependency runs strictly model -> balancing.
 """
 
 from __future__ import annotations

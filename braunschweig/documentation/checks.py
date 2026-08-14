@@ -70,7 +70,7 @@ CODE_DEFAULT_TRUE = {
         "braunschweig/synthesis/student_incommuters.py (tri-state default None = ON "
         "when education_gravity_enabled, which configs/base_bs.yml sets true)",
     "braunschweig.gravity.verbindungen_anchor_enabled":
-        "braunschweig/gravity/model.py:1052 (ADR-0068, default ON)",
+        "braunschweig/gravity/model.py:277 (ADR-0068, default ON)",
 }
 
 #: Overlay keys that are legitimately per-scale (check K5): everything else in an

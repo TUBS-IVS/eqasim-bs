@@ -87,7 +87,20 @@ braunschweig/
     inspire/ zensus_grid/ vrb/ gtfs/   landuse, 100 m grid population, VRB zones, GTFS
     alkis.py buildings.py landuse.py locations.py osm.py external_workplaces.py
   ipf/             Iterative Proportional Fitting: model, prepare, attributed
-  gravity/         model.py — work/education distance-decay gravity (per-RS7 slope)
+  gravity/         model.py — synpp stage (configure/execute/validate) for work/education
+                   distance-decay gravity (per-RS7 slope); facade + SIBLING split since #267
+                   (plain modules added to the pre-existing package, NOT a stage package like
+                   enriched/secondary_chainsolvers below -- braunschweig.gravity.model stays a
+                   normal module and the import path is unchanged): attraction_vector.py
+                   (destination attraction incl. the flag-gated sector-aware tilt), balancing.py
+                   (Furness/IPF balancing loop + per-RS7 slope resolution), od.py (pure work-OD
+                   gravity computation), kreis_calibration.py (BA-Pendleratlas Kreis IPF
+                   calibration + outbound flows), base.py (inherited eqasim-bavaria base
+                   execution); pre-existing siblings friction.py, production_mass.py,
+                   taz_margins.py, verbindungen_anchor.py, distance_matrix_taz.py unchanged.
+                   model.py re-exports every sibling name so external imports keep working;
+                   every new sibling MUST be added to model.py's `_HELPER_MODULES` tuple (see
+                   ARCHITECTURE.md).
   synthesis/
     population/    enriched/ (stage package since #267: __init__ = synpp stage (configure/execute/validate) + re-exports; submodules availability, base, economic_status, housing_tenure, income_distribution, vehicle_ownership -- PT-ticket/licence IPF), regiostar.py
     locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers/ (stage package: __init__ = synpp stage + re-exports; submodules distance_sampling, candidates, srv_candidates, plans, fallback, results, parallel_solving, deciders, srv_location_types, reporting, escort, activity_types, candidate_columns)

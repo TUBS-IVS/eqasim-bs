@@ -21,6 +21,8 @@ introduced:
 detail_doc: docs/features/calibration-corner.md
 code_paths:
 - braunschweig/gravity/friction.py
+- braunschweig/gravity/base.py
+- braunschweig/gravity/od.py
 - braunschweig/gravity/model.py
 evidence:
   tests:
