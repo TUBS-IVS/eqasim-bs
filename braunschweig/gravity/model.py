@@ -19,10 +19,29 @@ Output schema is identical to ``braunschweig.gravity.model``::
 
 Returned as ``(df_work_od, df_education_od)`` tuple. Education uses the
 uncalibrated gravity result (no equivalent observed data).
+
+Module layout (issue #267 split): this module remains the synpp stage
+(``configure``/``execute``/``validate``) and the import path
+``braunschweig.gravity.model`` for every consumer. Sections extracted from it
+live in SIBLING modules of the ``braunschweig.gravity`` package (alongside the
+pre-existing ``friction``, ``production_mass``, ``taz_margins``,
+``verbindungen_anchor`` and ``distance_matrix_taz``) and every name they define
+is re-exported here, so external imports keep working unchanged. Siblings
+extracted so far:
+
+    attraction_vector   the gravity destination attraction vector: the
+                        employees-at-workplace headcount and the flag-gated
+                        sector-aware establishment-density tilt
+
+Because this module is a synpp STAGE, ``validate()`` below folds every sibling
+source into the stage's cache-validation token -- see the comment on
+``_HELPER_MODULES``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
 import os
 
@@ -30,9 +49,58 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
+from braunschweig.gravity import attraction_vector
 from braunschweig.gravity.friction import build_friction_matrix
 
+# ---------------------------------------------------------------------------
+# Sibling modules extracted from this stage. Every module-level name they
+# define is re-exported here so external consumers (the pipeline, calibration
+# scripts, tests) keep importing from ``braunschweig.gravity.model`` unchanged.
+# Each sibling MUST also be listed in _HELPER_MODULES below so its source
+# participates in the synpp cache-validation token.
+# ---------------------------------------------------------------------------
+
+from braunschweig.gravity.attraction_vector import (  # noqa: F401  (re-exports)
+    SECTOR_AWARE_TILT_EXPONENT,
+    apply_sector_aware_attraction,
+    build_destination_attraction,
+)
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# synpp cache validation
+# ---------------------------------------------------------------------------
+
+# Sibling modules whose source is part of this stage's behaviour. synpp's
+# ``get_stage_hash`` hashes only THIS file's source (``inspect.getsource`` of
+# the stage module), so code that moved into a sibling left that hash: without
+# the ``validate()`` hook below, a change confined to a sibling would silently
+# reuse the STALE cached stage output on a partial rerun. Listed explicitly and
+# in a deterministic order (never via ``dir()`` or a directory glob) so the
+# token depends only on the sources, not on import or filesystem order. Every
+# module extracted from this stage MUST be appended here.
+_HELPER_MODULES = (attraction_vector,)
+
+
+def validate(context):
+    """synpp validation token: md5 over the sibling modules' sources.
+
+    synpp calls ``validate`` for every stage, stores the returned token
+    alongside the cached stage output and devalidates that cache when the token
+    changes on a later run, so a sibling-only source change recomputes this
+    stage exactly like an edit to this file would.
+
+    This stage had NO ``validate`` hook before the #267 split, so the token is
+    new: the first run after this change has no stored token to compare against
+    and therefore recomputes this stage and everything downstream of it ONCE.
+    Subsequent runs reuse the cache normally.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 # --- Inherited from eqasim-bavaria -----------------------------------------
@@ -49,168 +117,11 @@ DEFAULT_DIAGONAL = 1.0
 ZERO_TOTAL_SELF_LOOP_WARN_PERCENT = 5.0
 
 
-# --- Sector-aware destination attraction (model-improvement item #8) --------
-#
-# The work-flow gravity model draws destinations with a doubly-constrained
-# balancing whose destination *attraction* vector is the employees-at-workplace
-# headcount per Gemeinde (``braunschweig.data.census.employees``). A pure
-# headcount discards the sectoral composition of a Gemeinde: a Gemeinde with one
-# dominant large employer and a service-heavy Gemeinde with many small firms can
-# carry the same headcount yet differ structurally. The BA Gemeindedaten publish
-# a per-Gemeinde establishment count ``n_betriebe`` (number of Betriebe / local
-# units), already documented in
-# ``braunschweig.data.census.employment_gemband``. The establishment count per
-# employee is a robust, always-present sectoral-structure signal.
-#
-# Behind ``braunschweig.gravity.sector_aware_enabled`` (default False -> the OFF
-# path is byte-identical to the legacy headcount attraction) the attraction is
-# tilted by the per-Gemeinde establishment density (Betriebe per employee)
-# *relative to the Kreis mean*. The tilt is normalised to a flow-weighted mean of
-# 1.0 WITHIN each Kreis, so the Kreis-level attraction total is preserved and the
-# downstream BA-Pendler IPF (which constrains Kreis-pair flows,
-# ``_calibrate``) stays consistent; only the sub-Kreis (Gemeinde) attraction is
-# reshaped. The mechanism deliberately does NOT consume the sector-split BA OD
-# ``braunschweig.data.ba.pendler_detailed`` because that file is not pinned in
-# any config (the loader returns an empty frame when its path is unset); the
-# always-present ``n_betriebe`` count is used instead.
-
-# Exponent on the establishment-density tilt. 1.0 = full tilt (linear in the
-# Betriebe-per-employee ratio); kept as a module constant rather than a magic
-# number so a future config option can override it without changing the maths.
-SECTOR_AWARE_TILT_EXPONENT = 1.0
-
-
-def apply_sector_aware_attraction(
-    df_employees: pd.DataFrame,
-    df_betriebe: pd.DataFrame | None,
-    enabled: bool,
-    tilt_exponent: float = SECTOR_AWARE_TILT_EXPONENT,
-) -> pd.DataFrame:
-    """Tilt the destination ``employees`` attraction by establishment density.
-
-    Parameters
-    ----------
-    df_employees
-        Destination attraction with columns ``commune_id`` (12-digit ARS; the
-        first 5 characters are the Kreis) and ``employees`` (headcount).
-    df_betriebe
-        Per-Gemeinde establishment counts with columns ``commune_id`` and
-        ``n_betriebe``. May be ``None`` only when ``enabled`` is ``False``.
-    enabled
-        Sector-aware flag. When ``False`` the input frame is returned
-        unchanged (byte-identical to the legacy headcount attraction).
-    tilt_exponent
-        Exponent applied to the within-Kreis density ratio (default 1.0).
-
-    Returns
-    -------
-    pd.DataFrame
-        A copy of ``df_employees`` with a tilted ``employees`` column when
-        ``enabled``; the unchanged input when not.
-
-    Notes
-    -----
-    For Gemeinde ``g`` in Kreis ``k`` the establishment density is
-    ``rho_g = n_betriebe_g / employees_g`` (Betriebe per employee). Within each
-    Kreis a relative tilt ``t_g = (rho_g / rho_bar_k) ** tilt_exponent`` is
-    formed, where ``rho_bar_k`` is the employee-weighted mean density of the
-    Kreis. The tilt is renormalised so the employee-weighted mean tilt within
-    the Kreis is exactly 1.0, hence ``sum_g employees_g * t_g = sum_g
-    employees_g`` -- the Kreis attraction total is preserved and only the
-    sub-Kreis split changes. Gemeinden absent from ``df_betriebe`` or with a
-    non-positive establishment count receive a neutral tilt (1.0) so no Gemeinde
-    is boosted out of nothing or collapsed to zero. Gemeinden with zero
-    headcount stay at zero (the tilt is multiplicative).
-    """
-    if not enabled:
-        return df_employees
-
-    if df_betriebe is None:
-        raise ValueError(
-            "[braunschweig.gravity.model] sector-aware attraction is enabled "
-            "but no establishment-count table (n_betriebe) was provided."
-        )
-
-    df = df_employees.copy()
-    df["__kreis"] = df["commune_id"].astype(str).str[:5]
-
-    betriebe_lookup = (
-        df_betriebe.groupby("commune_id")["n_betriebe"].sum().astype(float)
-    )
-    n_betriebe = df["commune_id"].map(betriebe_lookup).to_numpy()
-    employees = df["employees"].to_numpy(dtype=float)
-
-    # Establishment density rho_g = Betriebe per employee. Undefined where the
-    # Gemeinde has no headcount or no/zero establishments.
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rho = np.where(
-            (employees > 0.0) & (n_betriebe > 0.0),
-            n_betriebe / employees,
-            np.nan,
-        )
-    df["__rho"] = rho
-
-    # Employee-weighted mean density per Kreis (over Gemeinden with a defined
-    # rho). Used as the within-Kreis reference so the tilt is dimensionless.
-    df["__w_rho"] = np.where(np.isfinite(rho), employees * rho, 0.0)
-    df["__w_def"] = np.where(np.isfinite(rho), employees, 0.0)
-    grp = df.groupby("__kreis")
-    rho_bar = (grp["__w_rho"].transform("sum")
-               / grp["__w_def"].transform("sum")).to_numpy()
-
-    # Relative tilt; Gemeinden without a defined density (or in a Kreis with no
-    # defined density at all) get a neutral tilt of 1.0.
-    with np.errstate(divide="ignore", invalid="ignore"):
-        tilt = np.where(
-            np.isfinite(rho) & np.isfinite(rho_bar) & (rho_bar > 0.0),
-            (rho / rho_bar) ** float(tilt_exponent),
-            1.0,
-        )
-    df["__tilt"] = tilt
-
-    # Renormalise the tilt to an employee-weighted mean of 1.0 within each Kreis
-    # so the Kreis attraction total is preserved exactly.
-    df["__w_tilt"] = employees * tilt
-    norm = (grp["__w_tilt"].transform("sum")
-            / grp["employees"].transform("sum")).to_numpy()
-    tilt_normalised = np.where(norm > 0.0, tilt / norm, 1.0)
-
-    df["employees"] = employees * tilt_normalised
-    df = df.drop(columns=["__kreis", "__rho", "__w_rho", "__w_def",
-                          "__tilt", "__w_tilt"])
-
-    n_reshaped = int((~np.isclose(tilt_normalised, 1.0)).sum())
-    print(
-        "[braunschweig.gravity.model] sector-aware attraction ON: "
-        f"establishment-density tilt reshaped {n_reshaped} Gemeinde attractions "
-        "(Kreis totals preserved)."
-    )
-    return df
-
-
-def build_destination_attraction(
-    df_employees_raw: pd.DataFrame,
-    df_betriebe: pd.DataFrame | None,
-    sector_aware_enabled: bool,
-) -> pd.DataFrame:
-    """Build the gravity destination attraction from the raw employees stage output.
-
-    Owns the schema handoff between ``braunschweig.data.census.employees``
-    (columns ``commune_id``/``weight``) and ``apply_sector_aware_attraction``
-    (which reads ``employees``): the rename happens BEFORE the flag-gated tilt.
-    Applying the tilt to the raw stage frame crashed the ON path with
-    ``KeyError: 'employees'`` because the rename only happened downstream
-    (issue #128).
-
-    Returns a frame with columns ``commune_id`` and ``employees``; on the OFF
-    path the values are byte-identical to the legacy headcount attraction.
-    """
-    df_employees = df_employees_raw.rename(columns={"weight": "employees"})[
-        ["commune_id", "employees"]
-    ]
-    return apply_sector_aware_attraction(
-        df_employees, df_betriebe, enabled=sector_aware_enabled,
-    )
+# --- Sector-aware destination attraction: see the sibling module ------------
+# ``SECTOR_AWARE_TILT_EXPONENT``, ``apply_sector_aware_attraction`` and
+# ``build_destination_attraction`` were moved verbatim to
+# ``braunschweig.gravity.attraction_vector`` (issue #267) and are re-exported
+# above, so ``model.build_destination_attraction`` still resolves.
 
 
 # Iteration cap for the doubly-constrained balancing in ``evaluate_gravity``.
