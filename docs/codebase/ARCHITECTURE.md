@@ -178,6 +178,16 @@ existed only in a gitignored scratch gate under
 `.superpowers/sdd/2026-08-14-split-gravity-model/`; this paragraph is its
 durable home.)
 
+**Known gap, not created by this split:** `_HELPER_MODULES` today covers only
+the five siblings this split extracted. Four pre-existing siblings under
+`braunschweig/gravity/` -- `friction.py`, `production_mass.py`,
+`taz_margins.py` and `verbindungen_anchor.py` (default ON, ADR-0068) -- are
+also behaviour dependencies of the `model.py` stage but are NOT in that tuple.
+This split did not create that gap (the stage had no `validate()` hook at all
+before it, so those four were already outside the hash) and did not widen it.
+It remains open: closing it (adding them to the tuple) is a separate,
+behaviour-affecting cache change, not documented here as done.
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative

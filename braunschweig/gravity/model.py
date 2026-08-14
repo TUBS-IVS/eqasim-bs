@@ -59,8 +59,9 @@ working unchanged. Siblings extracted so far:
                         ``DEFAULT_DIAGONAL``)
 
 With this sibling's extraction, this module now holds only its docstring,
-imports, re-export blocks, the ``_HELPER_MODULES``/``validate()`` cache-token
-machinery, and the ``configure``/``execute`` synpp hooks themselves.
+imports, re-export blocks, the module ``logger``, the
+``_HELPER_MODULES``/``validate()`` cache-token machinery, and the
+``configure``/``execute`` synpp hooks themselves.
 
 Because this module is a synpp STAGE, ``validate()`` below folds every sibling
 source into the stage's cache-validation token -- see the comment on
@@ -144,6 +145,12 @@ from braunschweig.gravity.base import (  # noqa: F401  (re-exports)
     _execute_gravity_base,
 )
 
+# Unused by this module's own code since the #267 split (both former
+# ``logger.*`` call sites moved to ``od.py``/``kreis_calibration.py``, which
+# bind the identical logger name -- see the re-export block above); kept
+# solely for facade namespace parity (the same contract as the ``os``/``np``/
+# ``pd``/``ars_to_ags8``/``build_friction_matrix`` bindings above) -- do not
+# remove.
 logger = logging.getLogger(__name__)
 
 
@@ -151,7 +158,7 @@ logger = logging.getLogger(__name__)
 # synpp cache validation
 # ---------------------------------------------------------------------------
 
-# Sibling modules whose source is part of this stage's behaviour. synpp's
+# The five sibling modules EXTRACTED FROM THIS STAGE by the #267 split. synpp's
 # ``get_stage_hash`` hashes only THIS file's source (``inspect.getsource`` of
 # the stage module), so code that moved into a sibling left that hash: without
 # the ``validate()`` hook below, a change confined to a sibling would silently
@@ -159,6 +166,16 @@ logger = logging.getLogger(__name__)
 # in a deterministic order (never via ``dir()`` or a directory glob) so the
 # token depends only on the sources, not on import or filesystem order. Every
 # module extracted from this stage MUST be appended here.
+#
+# This tuple is NOT a complete list of this stage's behaviour dependencies.
+# The pre-existing siblings ``friction.py``, ``production_mass.py``,
+# ``taz_margins.py`` and ``verbindungen_anchor.py`` (default ON, ADR-0068) are
+# also read by ``execute()`` but are not folded into this token -- a known,
+# pre-existing gap. The #267 split did not create it (this stage had NO
+# ``validate()`` hook at all before the split, so those four were already
+# outside the hash) and did not widen it; closing it would mean adding them
+# here, which is a behaviour-affecting cache change and belongs in its own,
+# separate change, not this one.
 _HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od)
 
 
