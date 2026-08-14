@@ -11,6 +11,19 @@
 > category (c) to (b) — issue #289 folded its four uncovered package siblings
 > into `validate()` via `_DEFERRED_HELPER_MODULE_NAMES`, so the (c) count is now
 > 85 (36 production-reachable). No other row has changed.
+>
+> **Gated since issue #291:** `tests/test_synpp_helper_hash_invariant.py`
+> enforces the narrower **own-package-siblings-only** slice of this inventory
+> (a stage's helper submodules living in its own directory — the #267
+> sibling-split pattern, not every first-party import counted above) as a
+> shrinking allow-list; a NEW own-package coverage gap now fails CI instead of
+> silently joining this file's uncovered-module lists. The full first-party
+> surface this audit inventories remains un-gated, un-fixed debt — see that
+> test module's docstring for exactly why the scope is narrower than this
+> file's counts, and for the two concrete AST-resolver bugs (an
+> `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare
+> `from . import name` relative-import binding) that a rough sizing probe for
+> that gate hit and that are recorded there so they are not reintroduced.
 
 ## Scope
 
