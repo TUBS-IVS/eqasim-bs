@@ -68,10 +68,13 @@ BANDS: list[tuple[float, float, str]] = [
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
 
-# eqasim main mode -> MiD P12_1 category, kept consistent with
-# braunschweig.analysis.dashboard.build_dashboard.MODE_LABEL.  Only the four
-# MiD P12_1 columns (auto / oeffentlich / fahrrad / zu_fuss) have a reference,
-# so car_passenger is folded into "Car" for the commute comparison.
+# eqasim main mode -> MiD P12_1 category. Deliberately NOT the same mapping as
+# braunschweig.analysis.dashboard.comparisons.MODE_LABEL (which the dashboard
+# facade re-exports): only the four MiD P12_1 columns
+# (auto / oeffentlich / fahrrad / zu_fuss) have a reference, so car_passenger is
+# folded into "Car" here, whereas MODE_LABEL keeps it as its own label. Keep the
+# four shared labels spelled identically to MODE_LABEL's, so the two comparisons
+# report the same category names.
 MODE_TO_MID: dict[str, str] = {
     "car": "Car",
     "car_passenger": "Car",
