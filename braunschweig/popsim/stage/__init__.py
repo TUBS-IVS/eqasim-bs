@@ -185,6 +185,21 @@ from braunschweig.popsim.sources import base as _sources_base
 from braunschweig.popsim.sources import entd as _sources_entd
 from braunschweig.popsim.sources import mid as _sources_mid
 
+# The seven siblings the ENTD adapter was split into (#267/#287). ``entd`` above
+# is now only the delegating facade, so without these the attribute mapping, trip
+# building, seed construction, diary matching, vocabulary, donor loading and
+# schema of the popsim_open donor path would all be invisible to the token -- the
+# exact hole the ``sources`` comment above warns about, just one level lower.
+# These are import-cost-neutral: ``sources/__init__`` already imports ``entd``,
+# which imports all seven.
+from braunschweig.popsim.sources import entd_attributes as _sources_entd_attributes
+from braunschweig.popsim.sources import entd_diary_matching as _sources_entd_diary_matching
+from braunschweig.popsim.sources import entd_donor as _sources_entd_donor
+from braunschweig.popsim.sources import entd_schema as _sources_entd_schema
+from braunschweig.popsim.sources import entd_seed as _sources_entd_seed
+from braunschweig.popsim.sources import entd_trips as _sources_entd_trips
+from braunschweig.popsim.sources import entd_vocabulary as _sources_entd_vocabulary
+
 # ---------------------------------------------------------------------------
 # Package submodules (extracted stage sections). Every name is re-exported
 # here so external consumers (calibration scripts, tests) keep importing from
@@ -335,6 +350,13 @@ _HELPER_MODULES = (
     sources,
     _sources_base,
     _sources_entd,
+    _sources_entd_attributes,
+    _sources_entd_diary_matching,
+    _sources_entd_donor,
+    _sources_entd_schema,
+    _sources_entd_seed,
+    _sources_entd_trips,
+    _sources_entd_vocabulary,
     _sources_mid,
     # other first-party, non-stage helper modules imported at module level,
     # ordered by dotted module path
