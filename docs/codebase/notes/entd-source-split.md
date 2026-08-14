@@ -11,8 +11,9 @@ donor to `sources/mid.py`.
 ## Split shape and import path
 
 Sibling-module split, **not** a package conversion (unlike `mid/` or the
-`enriched`/`secondary_chainsolvers` stage packages). `entd.py` (currently 652
-lines; 1487 lines before the split, per PR #287) stays a single module:
+`enriched`/`secondary_chainsolvers` stage packages). `entd.py` (currently 453
+lines; 1487 lines before the split per PR #287, 652 lines after it, before
+the docstring dedup below) stays a single module:
 `sources/` gained no `entd/` subdirectory and no `__init__.py`, so the import
 path `braunschweig.popsim.sources.entd` is unchanged. `entd.py` remains a
 **delegating class facade**: `EntdSource`'s full public surface — 8 method
@@ -71,6 +72,43 @@ siblings — or `entd.py` itself — does devalidate the popsim-stage cache**,
 because `braunschweig.popsim.stage` is the consumer that hashes this
 package's source; nothing in `entd.py`/its siblings hashes it directly.
 
+## Method docstrings (issue #295 dedup)
+
+Through PR #287 and up to issue #295, each of the eight `EntdSource` methods
+in `entd.py` carried its OWN full docstring, and that docstring was
+byte-identical to the docstring on the sibling module function it delegates
+to (verified with an AST-level comparison across all eight before #295: every
+one matched exactly, character for character -- no method fell into a
+"different audience, different content" case, and no pair disagreed). #287
+kept both copies deliberately: that PR's warrant was a byte-identical
+relocation with a proven-unchanged public surface, so deleting documentation
+there would have weakened the guarantee it was making. #295 is the deliberate
+cleanup: two copies of the same description drift (the #267 programme found
+this exact pattern repeatedly), and the copy a reader reaches first -- the
+facade -- was the one furthest from the code it describes.
+
+The chosen shape: **documentation lives on the delegate** (the sibling
+function each method calls), not on the facade. Concretely, per method:
+
+- the method's own docstring in `entd.py` is now only the delegate's ONE-LINE
+  summary sentence plus an explicit `:func:` pointer to the delegate -- this
+  is what a reader scanning `entd.py`'s source sees;
+- immediately after the class body, an explicit block assigns
+  `EntdSource.<method>.__doc__ = <delegate>.__doc__` for all eight methods.
+  This is necessary because `inspect.getdoc` follows CLASS INHERITANCE (a
+  subclass without its own docstring inherits a base class's) but does
+  **not** follow a delegation call inside a method body -- without this
+  assignment, `help(EntdSource.<method>)` / `inspect.getdoc(...)` would
+  silently fall back to the one-line summary above instead of the delegate's
+  full contract, which is the "adapter's `help()` output goes empty/shrinks"
+  regression #295 explicitly guards against.
+
+Net effect: the full documentation text exists exactly once (on the
+delegate), `entd.py` shrank from 652 to 453 lines, and runtime introspection
+(`help()`, `inspect.getdoc`) is unchanged from before the dedup --
+`tests/test_entd_facade_docstrings.py` pins both the non-empty resolved
+docstring per method and the eight method signatures pinned since #287.
+
 ## Standing rules
 
 - Every sibling added under `braunschweig/popsim/sources/` for the ENTD
@@ -84,4 +122,6 @@ package's source; nothing in `entd.py`/its siblings hashes it directly.
 
 PR #287 (`refactor/split-entd`), part of the collective oversized-module
 backlog issue #267. Cache-coverage follow-up: PR #296
-(`fix/popsim-token-covers-entd-siblings`).
+(`fix/popsim-token-covers-entd-siblings`). Docstring dedup follow-up: issue
+#295 (`docs/entd-docstring-dedup`), which reduced `entd.py` from 652 to 453
+lines with no signature or behaviour change (see "Method docstrings" above).
