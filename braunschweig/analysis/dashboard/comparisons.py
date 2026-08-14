@@ -78,12 +78,13 @@ def build_comparisons(eqa: dict, ms: dict, mid: dict) -> dict[str, Any]:
     # mode share — work commute vs MiD P12_1 ZGB
     if ms.get("commute") and ms["commute"].get("mode_share_pct"):
         sim_ms = ms["commute"]["mode_share_pct"]
+        # Translated through MODE_LABEL rather than an inline literal: the two
+        # were duplicates of each other, which left MODE_LABEL with no reader
+        # while another module's comment still cited it as the canonical map.
+        # Insertion order matches MODE_LABEL's, so the resulting keys and their
+        # order are unchanged.
         sim_translated = {
-            "Car": sim_ms.get("car", 0.0),
-            "Car (passenger)": sim_ms.get("car_passenger", 0.0),
-            "PT": sim_ms.get("pt", 0.0),
-            "Bicycle": sim_ms.get("bicycle", 0.0),
-            "Walk": sim_ms.get("walk", 0.0),
+            label: sim_ms.get(mode, 0.0) for mode, label in MODE_LABEL.items()
         }
         mid_ms = mid["p12_modal_split_zgb"]
         cmp["work_mode_share"] = {
