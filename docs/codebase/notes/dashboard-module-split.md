@@ -62,12 +62,19 @@ This is the opposite situation from `braunschweig/gravity/model.py` and
   byte-identity was verified explicitly as part of the split, and any future
   move of it must be verified the same way rather than reviewed by eye.
 
-## Known duplication
+## Known duplication (resolved)
 
-`spatial_metrics.py` locates and reads the VG250 archive independently of
-`braunschweig/analysis/spatial.py`, and the two disagree about what a missing
-archive means (one raises, the other returns `None`). Tracked as issue #293;
-not addressed by this split, which is a verbatim relocation.
+`spatial_metrics.py` used to locate and read the VG250 archive independently
+of `braunschweig/analysis/spatial.py`, and the two disagreed about what a
+missing archive means (one raised, the other returned `None` with no log
+line). Not addressed by this split (a verbatim relocation) -- tracked as
+issue #293 and fixed separately: `spatial_metrics.py`'s `VG250_ZIP`,
+`VG250_CACHE` and `_ensure_vg250` now delegate to the single shared loader
+in `spatial.py` (`load_vg250_layer` / `_resolve_vg250_gpkg`), which keeps
+each caller's original failure mode (raise for the analysis/validation path,
+`None` + a logged `warning` for the dashboard) but makes both decisions
+explicit in one place instead of an accident of which module is imported.
+See `spatial.py`'s module docstring for the strict/tolerant contract.
 
 ## PR / issue reference
 

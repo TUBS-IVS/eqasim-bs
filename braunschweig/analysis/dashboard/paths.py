@@ -12,10 +12,13 @@ too rather than staying a ``build_dashboard.py``-only constant; any future
 sibling that needs it (e.g. a run-records module) can import it from here
 without recomputing.
 
-Domain-specific derived paths (``MID_DIR`` in ``mid_reference.py``,
-``VG250_ZIP``/``VG250_CACHE`` in ``spatial_metrics.py``) are not moved here:
-they are owned by the sibling whose data they describe, and are built from the
-anchors below.
+Domain-specific derived paths (``MID_DIR`` in ``mid_reference.py``) are not
+moved here: they are owned by the sibling whose data they describe, and are
+built from the anchors below. ``VG250_ZIP``/``VG250_CACHE`` in
+``spatial_metrics.py`` are the exception: since issue #293 they are
+re-exports of the shared VG250 loader's constants in
+``braunschweig.analysis.spatial`` (outside this package), not built from the
+anchors here.
 
 This module must import nothing from this package -- it is a leaf that every
 sibling (and the facade) may depend on.
