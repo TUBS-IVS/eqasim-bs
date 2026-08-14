@@ -56,21 +56,21 @@ PRODUCTION_OVERLAY = os.path.join("configs", "overlays", "test_100pct.yml")
 #: VALUE additionally needs the default). Each entry names its evidence.
 CODE_DEFAULT_TRUE = {
     "status_from_hhtype": "braunschweig/synthesis/population/enriched/base.py",
-    "synthesise_housing_tenure": "braunschweig/popsim/stage.py",
+    "synthesise_housing_tenure": "braunschweig/popsim/stage/__init__.py",
     "simwrapper_dashboards": "matsim/simulation/run.py (ADR-0074; issue #253)",
     "work_building_potentials": "braunschweig/locations/work.py",
     "freight_enabled": "braunschweig/matsim/simulation/prepare.py",
     "braunschweig.population.popsim.placement_income":
-        "braunschweig/popsim/stage.py (ADR-0069, default ON)",
+        "braunschweig/popsim/stage/__init__.py (ADR-0069, default ON)",
     "fleet_consistency_v2": "braunschweig/synthesis/vehicles/cars/household.py:299",
     "simwrapper_export_enabled": "braunschweig/analysis/simwrapper_export.py:26",
     "braunschweig.population.popsim.work_participation_kreis_control":
-        "braunschweig/popsim/stage.py _KREIS_CONTROL_DEFAULT ('on', #224)",
+        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
     "cordon_student_incommuters_enabled":
         "braunschweig/synthesis/student_incommuters.py (tri-state default None = ON "
         "when education_gravity_enabled, which configs/base_bs.yml sets true)",
     "braunschweig.gravity.verbindungen_anchor_enabled":
-        "braunschweig/gravity/model.py:1052 (ADR-0068, default ON)",
+        "braunschweig/gravity/model.py:307 (ADR-0068, default ON)",
 }
 
 #: Overlay keys that are legitimately per-scale (check K5): everything else in an

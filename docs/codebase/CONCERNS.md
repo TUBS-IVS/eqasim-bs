@@ -37,12 +37,12 @@ output paths `*_kreis5`, `settings_tier3_mef100_intseed_numba.yaml`, `num_worker
 
 **Verified WIRED in the running kreis5 config (no action):** popsim_mid tier0-3 + employment_grid +
 `optimized_2026_06_30` importance profile; all five KREIS attribute controls (economic_status, cars,
-bicycles, has_ebike, trip_class) default `"on"` in `braunschweig/popsim/stage.py`; W_ZWD #127 splits
+bicycles, has_ebike, trip_class) default `"on"` in `braunschweig/popsim/stage/`; W_ZWD #127 splits
 (`secondary_leisure_subtype_split`, `secondary_other_subtype_split`, `leisure_visit_building_potential`) true;
 income tilt + income_kreis_control; education gravity; building potentials (work/secondary/edu);
 purpose-resolved distances; fleet (household/brands/HSN-TSN/BEV); cordon; freight; urban parking;
 remode_carless; per-RS7 gravity; enrichment flags default-True (PT-Abo, licence, cars-income, tenure,
-status, income-EUR — consumed by `braunschweig/synthesis/population/enriched.py` + `popsim/stage.py`,
+status, income-EUR — consumed by `braunschweig/synthesis/population/enriched.py` + `popsim/stage/`,
 i.e. active on the popsim path).
 
 **Deliberately OFF (documented, no action):** `taz_work_location_choice` (Phase-3 validation open, #83),
@@ -56,7 +56,8 @@ i.e. active on the popsim path).
 configs are inert (simple_ipf path only).
 
 Evidence: `config_server_braunschweig_100pct_allfeat_popsim.yml`, `config_server_braunschweig_25pct_allfeat_popsim.yml`,
-`braunschweig/popsim/stage.py:252-320`, `braunschweig/gravity/model.py:646`,
+`braunschweig/popsim/stage/__init__.py:252-320` (pre-split line numbers, not reverified
+against the post-#267 package layout), `braunschweig/gravity/model.py:646`,
 `braunschweig/data/census/population.py:118-123`, commits `2732c18`, `3703292`, `a0ecee3`, `1f55fc2`.
 
 ---
@@ -399,8 +400,9 @@ Confirmed by adversarial verification against code + the real local MiD raw data
    completeness only, not member completeness — 16.9 % of kept seed households
    have fewer person rows than `H_GR` (verified on raw data) -> household size/
    composition biased low, unlogged.
-5. `braunschweig/popsim/stage.py:256` calls `assembly.build_persons` without
-   `rng` -> all attribute imputation runs on hard-coded `RandomState(0)`;
+5. `braunschweig/popsim/stage/__init__.py:256` (pre-split line number, not
+   reverified against the post-#267 package layout) calls `assembly.build_persons`
+   without `rng` -> all attribute imputation runs on hard-coded `RandomState(0)`;
    `random_seed` is not even declared in configure(), so seed changes neither
    change imputation nor invalidate the synpp cache.
 6. `braunschweig/popsim/trips.py:48`: raw `hvm` used instead of the
