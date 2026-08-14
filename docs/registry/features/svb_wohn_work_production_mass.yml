@@ -21,6 +21,7 @@ introduced:
 detail_doc: docs/features/gravity.md
 code_paths:
 - braunschweig/gravity/production_mass.py
+- braunschweig/gravity/base.py
 - braunschweig/gravity/model.py
 evidence:
   tests:

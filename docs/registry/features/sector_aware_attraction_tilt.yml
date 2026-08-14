@@ -21,6 +21,9 @@ introduced:
   adr: ADR-0065
 detail_doc: docs/features/gravity.md
 code_paths:
+- braunschweig/gravity/attraction_vector.py
+- braunschweig/gravity/base.py
+- braunschweig/gravity/od.py
 - braunschweig/gravity/model.py
 evidence:
   tests:

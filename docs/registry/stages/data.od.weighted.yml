@@ -12,6 +12,11 @@ lineage:
 code:
 - data/od/weighted.py
 - braunschweig/gravity/model.py
+- braunschweig/gravity/base.py
+- braunschweig/gravity/attraction_vector.py
+- braunschweig/gravity/balancing.py
+- braunschweig/gravity/od.py
+- braunschweig/gravity/kreis_calibration.py
 pipelines:
   popsim_mid: active
   popsim_open: active
