@@ -5,6 +5,9 @@
 > the pipeline `docs/generated/PIPELINE.md`, active state
 > `docs/generated/STATUS.md`; open work lives in GitHub issues. This file keeps
 > package-layout conventions and entry points; dated trees below are snapshots.
+> Per-module split notes (one module/package per file: shape, import-path
+> impact, cache/`validate()` consequences, standing rules) live under
+> `docs/codebase/notes/`, not here.
 
 > **Staleness note (2026-06-26, historical):** reflects the 2026-06-08 layout. New since then:
 > `braunschweig/calibration/` (calibration corner — on `worktree-calibration-corner`),
@@ -88,22 +91,20 @@ braunschweig/
     alkis.py buildings.py landuse.py locations.py osm.py external_workplaces.py
   ipf/             Iterative Proportional Fitting: model, prepare, attributed
   gravity/         model.py — synpp stage (configure/execute/validate) for work/education
-                   distance-decay gravity (per-RS7 slope); facade + SIBLING split since #267
-                   (plain modules added to the pre-existing package, NOT a stage package like
-                   enriched/secondary_chainsolvers below -- braunschweig.gravity.model stays a
-                   normal module and the import path is unchanged): attraction_vector.py
-                   (destination attraction incl. the flag-gated sector-aware tilt), balancing.py
-                   (Furness/IPF balancing loop + per-RS7 slope resolution), od.py (pure work-OD
-                   gravity computation), kreis_calibration.py (BA-Pendleratlas Kreis IPF
-                   calibration + outbound flows), base.py (inherited eqasim-bavaria base
-                   execution); pre-existing siblings friction.py, production_mass.py,
-                   taz_margins.py, verbindungen_anchor.py, distance_matrix_taz.py unchanged.
-                   model.py re-exports every sibling name so external imports keep working;
-                   every new sibling MUST be added to model.py's `_HELPER_MODULES` tuple (see
-                   ARCHITECTURE.md).
+                   distance-decay gravity (per-RS7 slope); facade + 5 sibling modules
+                   (attraction_vector, balancing, od, kreis_calibration, base) plus the
+                   pre-existing siblings friction.py, production_mass.py, taz_margins.py,
+                   verbindungen_anchor.py, distance_matrix_taz.py — see
+                   docs/codebase/notes/gravity-model-split.md
   synthesis/
-    population/    enriched/ (stage package since #267: __init__ = synpp stage (configure/execute/validate) + re-exports; submodules availability, base, economic_status, housing_tenure, income_distribution, vehicle_ownership -- PT-ticket/licence IPF), regiostar.py
-    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers/ (stage package: __init__ = synpp stage + re-exports; submodules distance_sampling, candidates, srv_candidates, plans, fallback, results, parallel_solving, deciders, srv_location_types, reporting, escort, activity_types, candidate_columns)
+    population/    enriched/ (stage package: submodules availability, base, economic_status,
+                   housing_tenure, income_distribution, vehicle_ownership — see
+                   docs/codebase/notes/enriched-split.md), regiostar.py
+    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers/
+                   (stage package: submodules distance_sampling, candidates, srv_candidates,
+                   plans, fallback, results, parallel_solving, deciders, srv_location_types,
+                   reporting, escort, activity_types, candidate_columns — see
+                   docs/codebase/notes/secondary-chainsolvers-split.md)
     spatial/       commute_distance.py (MiD P13 override), home_zones.py
     income.py
   locations/       home.py, work.py, secondary.py,
@@ -111,45 +112,10 @@ braunschweig/
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
                    run_education_validation.py, dashboard/,
-                   simwrapper/ (spatial_export.py: facade + 6 sibling
-                   modules, sibling-module split since #267 -- see
-                   subsection below), *.ipynb
+                   simwrapper/ (spatial_export.py: facade + 6 sibling modules — see
+                   docs/codebase/notes/simwrapper-spatial-export-split.md), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
 ```
-
-### `braunschweig/analysis/simwrapper/spatial_export.py` (sibling-module split #267)
-
-`spatial_export.py` (1593 -> 251 lines) is the facade: docstring, imports,
-`LOGGER`, the re-export blocks, and `export_spatial()` (the registry-based
-driver wired into `export.py`'s `main()`). Content moved into six sibling
-modules inside the **same** package (`braunschweig/analysis/simwrapper/`
-already had its own `__init__.py` before this split) -- **this is a
-sibling-module split, not a package conversion**: no `git mv`, no import-path
-change at all, so `braunschweig.analysis.simwrapper.spatial_export` resolves
-exactly as it did before.
-
-| Module | Lines | Content |
-|---|---|---|
-| `socio.py` | 469 | socio-demographic Kreis layer, economic-status ordinal mapping |
-| `fleet.py` | 456 | fleet points/choropleth layer, brand and powertrain mixes |
-| `commuter_tabs.py` | 246 | commuter + student-commuter SimWrapper tabs |
-| `behaviour.py` | 171 | purpose-to-mode sankey + per-Kreis car-share scatter layer |
-| `trip_demand.py` | 161 | spatial demand layer (trip origin/destination hexagons), purpose-to-mode aggregation |
-| `geo_layers.py` | 160 | geometry-consuming writers: xytime point-cloud CSV, Kreis choropleth GeoJSON |
-
-Two names deliberately do not match their nearest existing neighbour, because
-the package was already crowded with related names: `geo_layers.py` is
-distinct from the pre-existing `writers.py` (pure dashboard-card/CSV/YAML
-builders that never touch geometry or a CRS), and `commuter_tabs.py` is
-distinct from the pre-existing `commuters.py` (a pure OD-matrix analysis
-library) and `student_commuters.py` (pure aggregation + plain-CSV writer) --
-`commuter_tabs.py` is the presentation layer that calls into both and builds
-the SimWrapper dashboard cards. No sibling imports the facade back (sibling ->
-sibling imports are used instead, e.g. `behaviour.py` imports
-`trip_demand._purpose_to_mode` directly); every name a sibling defines is
-re-exported through the facade so external imports of
-`braunschweig.analysis.simwrapper.spatial_export` (tests, `export.py`) keep
-working unchanged.
 
 ## `eqasim_common/` (region-neutral)
 
@@ -287,12 +253,9 @@ braunschweig/population/   Method selector + contract
   schema.py                unified persons/households output contract
 braunschweig/popsim/       PopulationSim workflow (27 modules)
   stage/                   synpp producer stage (replaces data.census.filtered;
-                           stage package since #267: __init__ = synpp stage
-                           (configure/execute/validate) + re-exports of every
-                           submodule below, plus the 26-step execute()
-                           orchestration); submodules batch_cache,
-                           cell_attributes, config_keys, controls_builder,
-                           source_resolution, tilt_columns
+                           stage package, submodules batch_cache, cell_attributes,
+                           config_keys, controls_builder, source_resolution,
+                           tilt_columns) — see docs/codebase/notes/popsim-stage-split.md
     batch_cache.py         Work-dir batch cache invalidation: config-signature
                            guard + stale `batch_*` folder purge on config change
     cell_attributes.py     Per-cell attribute joining (12-digit ARS +
@@ -309,11 +272,9 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
                            a run
     tilt_columns.py        Income spatial-tilt cell-column selection (issue
                            #136 single-parquet-read helpers)
-  mid/                     orchestration package (split #267; pure facade
-                           __init__.py -- helper library, NOT a synpp stage,
-                           so no configure/execute/validate() -- + re-exports
-                           of every submodule below); cells -> controls ->
-                           seed -> batch_folders -> merge
+  mid/                     orchestration package (helper library, NOT a synpp
+                           stage; cells -> controls -> seed -> batch_folders ->
+                           merge) — see docs/codebase/notes/popsim-mid-split.md
     batch_folders.py       Batch FOLDER assembly + PopulationSim runner (NOT
                            the parent `batch.py` below -- one character apart
                            on purpose: that module bin-packs cells INTO
@@ -322,7 +283,8 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
     control_cells.py       control-cell loading, ZGB filtering, control totals
     csv_format.py          MiD CSV field-separator detection
     donor.py               MiD donor attribute + Wege (trip) table loading
-    donor_stratification.py RegioStaR donor stratification (Phase 4B)
+    donor_stratification.py RegioStaR donor stratification (Phase 4B; renamed
+                           from stratum.py, see docs/codebase/notes/popsim-mid-split.md)
     kreis_controls.py      Tier-3 KREIS control tables + per-batch apportionment
     participation.py       participation-control seed derivation
     seed_loading.py        consistent MiD seed load + completed-donor projection
@@ -333,64 +295,14 @@ braunschweig/popsim/       PopulationSim workflow (27 modules)
                            does the cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
   sources/       base.py (donor adapter Protocol), mid.py (MiD source), entd.py
-                 (ENTD source: facade + 7 siblings since #267, see note below)
+                 (ENTD source: facade + 7 siblings — see
+                 docs/codebase/notes/entd-source-split.md)
   trips.py trips_stage.py plan_validation.py   MiD Wege -> eqasim trips + repair
   commute_distance.py distance_distributions.py
   handoff.py               100m cell -> building round-robin assignment
   income.py                unified INKAR scaling + high_income >= 5000 EUR
   missing.py stratum.py enriched_adapter.py
 ```
-
-Note: `popsim/stratum.py` (top-level, above; Phase-4A stratum-KEY mapping,
-e.g. `cell_urban_class_from_rs7`) and `popsim/mid/donor_stratification.py`
-(Phase-4B dominant-stratum + seed filtering) cover the same feature area
-(RegioStaR donor stratification) but are distinct modules; the `mid`
-submodule was named `stratum.py` until issue #267 renamed it to end an
-exact-filename collision between the two.
-
-Cache-neutrality of the `mid/` split: `mid` is a plain helper library called
-from the `stage` package, not itself a synpp stage, so the split from one
-module into eight submodules alone did not devalidate any cache entry. The gap
-this used to leave open -- no synpp stage content-hashed `mid`'s source, so
-editing `mid` alone silently reused the stale cached stage output on a partial
-rerun -- is now CLOSED (issue #267, module 3): `braunschweig/popsim/stage.py`
-was itself split into the `stage/` package above, and its new `validate()`
-hook content-hashes the whole `mid` package (its `__init__` plus all eight
-submodules, one level deep) as part of a wider token. See
-`docs/codebase/ARCHITECTURE.md` "popsim package" for the token's full
-covered/uncovered boundary (it also covers this package's own six submodules,
-the `sources` donor-adapter package one level deep, several non-stage
-first-party helper modules, and -- one level deep -- the two synpp stages used
-here as undeclared libraries, `data.census.household_size` and
-`synthesis.population.enriched`; the transitive surface beyond that is
-deliberately NOT covered).
-
-`sources/entd.py` (1487 -> 652 lines) is a **sibling split**, not a package
-conversion like `mid/` or the `enriched`/`secondary_chainsolvers` stage
-packages above: it stays a single module (`sources/` gained no `entd/`
-subdirectory, no `__init__.py`, no import-path change) and `entd.py` remains
-a **delegating class facade** -- `EntdSource`'s public surface (all 8 method
-names and signatures, pinned by `check_namespace.py`) stays in `entd.py`, but
-every method body now is a one-line delegation to a module-level function in
-one of seven siblings in the same package:
-
-  `entd_attributes.py` (360) person-attribute mapping · `entd_trips.py` (295)
-  trip building · `entd_seed.py` (292) seed building + seed-column sets ·
-  `entd_diary_matching.py` (263) chain matching of trip-less persons to
-  diary donors · `entd_vocabulary.py` (205) ENTD constants/column
-  vocabularies · `entd_donor.py` (158) donor loading + donor/cell stratum
-  derivation · `entd_schema.py` (59) column requirements + donor-schema
-  conversion.
-
-This split was safe as a mechanical body-move because `EntdSource` carries
-**no instance state** -- `self` never appears inside a method body in the
-original module, so nothing had to be threaded through an instance when the
-bodies moved out. Every sibling binds its logger to the literal facade name
-(`logging.getLogger("braunschweig.popsim.sources.entd")`, not `__name__`), so
-`LogRecord.name` values are unchanged. Like `mid/`, this is cache-neutral: no
-synpp stage content-hashes `sources/entd.py`'s internals beyond the file
-itself, and `entd.py`'s import path is untouched, so no cache entry is
-devalidated by the split.
 
 New configs (worktree): `config_popsim_mid_braunschweig.yml`,
 `config_popsim_open_braunschweig.yml`, `config_smoke_{simple_ipf,popsim_mid,
