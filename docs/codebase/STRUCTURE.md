@@ -111,7 +111,9 @@ braunschweig/
                    synthesis/replacement_education_gravity.py (flag-gated drop-in)
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
-                   run_education_validation.py, dashboard/,
+                   run_education_validation.py, dashboard/ (build_dashboard.py:
+                   facade + 7 sibling modules — see
+                   docs/codebase/notes/dashboard-module-split.md),
                    simwrapper/ (spatial_export.py: facade + 6 sibling modules — see
                    docs/codebase/notes/simwrapper-spatial-export-split.md), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
