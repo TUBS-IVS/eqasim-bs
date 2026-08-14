@@ -97,9 +97,46 @@ braunschweig/
                    synthesis/replacement_education_gravity.py (flag-gated drop-in)
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
-                   run_education_validation.py, dashboard/, *.ipynb
+                   run_education_validation.py, dashboard/,
+                   simwrapper/ (spatial_export.py: facade + 6 sibling
+                   modules, sibling-module split since #267 -- see
+                   subsection below), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
 ```
+
+### `braunschweig/analysis/simwrapper/spatial_export.py` (sibling-module split #267)
+
+`spatial_export.py` (1593 -> 251 lines) is the facade: docstring, imports,
+`LOGGER`, the re-export blocks, and `export_spatial()` (the registry-based
+driver wired into `export.py`'s `main()`). Content moved into six sibling
+modules inside the **same** package (`braunschweig/analysis/simwrapper/`
+already had its own `__init__.py` before this split) -- **this is a
+sibling-module split, not a package conversion**: no `git mv`, no import-path
+change at all, so `braunschweig.analysis.simwrapper.spatial_export` resolves
+exactly as it did before.
+
+| Module | Lines | Content |
+|---|---|---|
+| `socio.py` | 469 | socio-demographic Kreis layer, economic-status ordinal mapping |
+| `fleet.py` | 456 | fleet points/choropleth layer, brand and powertrain mixes |
+| `commuter_tabs.py` | 246 | commuter + student-commuter SimWrapper tabs |
+| `behaviour.py` | 171 | purpose-to-mode sankey + per-Kreis car-share scatter layer |
+| `trip_demand.py` | 161 | spatial demand layer (trip origin/destination hexagons), purpose-to-mode aggregation |
+| `geo_layers.py` | 160 | geometry-consuming writers: xytime point-cloud CSV, Kreis choropleth GeoJSON |
+
+Two names deliberately do not match their nearest existing neighbour, because
+the package was already crowded with related names: `geo_layers.py` is
+distinct from the pre-existing `writers.py` (pure dashboard-card/CSV/YAML
+builders that never touch geometry or a CRS), and `commuter_tabs.py` is
+distinct from the pre-existing `commuters.py` (a pure OD-matrix analysis
+library) and `student_commuters.py` (pure aggregation + plain-CSV writer) --
+`commuter_tabs.py` is the presentation layer that calls into both and builds
+the SimWrapper dashboard cards. No sibling imports the facade back (sibling ->
+sibling imports are used instead, e.g. `behaviour.py` imports
+`trip_demand._purpose_to_mode` directly); every name a sibling defines is
+re-exported through the facade so external imports of
+`braunschweig.analysis.simwrapper.spatial_export` (tests, `export.py`) keep
+working unchanged.
 
 ## `eqasim_common/` (region-neutral)
 

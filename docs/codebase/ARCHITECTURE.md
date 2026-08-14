@@ -137,6 +137,25 @@ that already imported the original (e.g. `enriched.base`) keeps its own bound
 reference — a test or patch must target the submodule attribute
 (`enriched.base.pd`), not the facade (`enriched.pd`).
 
+## SimWrapper spatial export module split (issue #267, sibling-module split)
+
+`braunschweig/analysis/simwrapper/spatial_export.py` was split into a facade
+plus six sibling modules in the same package (`docs/codebase/STRUCTURE.md` has
+the submodule table). Unlike the `enriched` / `secondary_chainsolvers` stage
+packages above, this is **not a package conversion**:
+`braunschweig/analysis/simwrapper/` was already a package (it has its own
+`__init__.py`), so the split needed no `git mv` and changed no import path at
+all -- `braunschweig.analysis.simwrapper.spatial_export` resolves exactly as
+it did before. `spatial_export.py` is also not itself a synpp stage (the
+stage is `braunschweig.analysis.simwrapper_export`, which calls into
+`export.py`'s `main()`, which in turn calls `spatial_export.export_spatial()`),
+so there is no `configure`/`execute`/`validate()` and no cache-invalidation
+question for this split either -- it is a pure module reorganisation,
+cache-neutral and behaviour-neutral by construction. The one fallback-rate
+log line the split had to carry verbatim (mandatory per CLAUDE.md's "no
+silent fallbacks" rule) moved into the `fleet` sibling; see
+`docs/registry/features/simwrapper_export.yml`'s `fallback_rate` entry.
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative
