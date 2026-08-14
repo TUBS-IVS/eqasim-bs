@@ -46,7 +46,11 @@ from braunschweig.popsim.chain_matching import (  # noqa: E402 (kept near use)
 # same module, and braunschweig.popsim.trips, which imports data.hts.hts).
 from synthesis.population.matched import household_size_class, match_donors
 
-logger = logging.getLogger(__name__)
+# Logger name string identical to the facade's (braunschweig.popsim.sources.entd)
+# so log records emitted from here are indistinguishable from records emitted
+# before the extraction; logging.getLogger caches by name, so this returns the
+# SAME logger object as the facade's `logging.getLogger(__name__)`.
+logger = logging.getLogger("braunschweig.popsim.sources.entd")
 
 # ---------------------------------------------------------------------------
 # Diary-donor chain matching (trip-less persons)
