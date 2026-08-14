@@ -143,10 +143,18 @@ def test_completed_donor_stage_execute_returns_frames_and_writes_trace(tmp_path)
 import inspect
 
 from braunschweig.popsim import stage as popsim_stage
+from tests.conftest import popsim_stage_package_source_text
 
 
 def test_popsim_stage_consumes_completed_donor_stage():
-    src = inspect.getsource(popsim_stage.execute)
+    # Pinned against the WHOLE stage package rather than inspect.getsource(
+    # popsim_stage.execute): execute() is decomposed into named orchestration
+    # steps, so the completed_donor delegation lives in the seed-build step
+    # (_build_populationsim_seed), not in execute()'s own source text. The
+    # package-wide helper keeps the positive assertion working wherever the
+    # delegation sits and makes both negative assertions STRICTER (the patterns
+    # must now be absent from every module of the package, not just one file).
+    src = popsim_stage_package_source_text()
     # The inline member-completion build is gone (delegated to the stage)...
     assert "mid.load_completed_donor(" not in src
     assert "reassign_weekend_plan_sources(" not in src

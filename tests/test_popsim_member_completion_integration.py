@@ -17,12 +17,11 @@ True) gates the whole path; False reproduces the legacy load_mid_seed +
 load_donor behaviour byte-identically.
 """
 
-import pathlib
-
 import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import assembly, mid, trips
+from tests.conftest import popsim_stage_package_source_text
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +359,7 @@ def test_join_cell_attributes_without_regiostar7_is_graceful(caplog):
 # ---------------------------------------------------------------------------
 
 def test_stage_flag_off_uses_legacy_path():
-    src = pathlib.Path("braunschweig/popsim/stage.py").read_text(encoding="utf-8")
+    src = popsim_stage_package_source_text()
     # The flag exists with default True (project rule: features default ON).
     assert '"braunschweig.population.popsim.complete_members"' in src
     assert "context.config(KEY_COMPLETE_MEMBERS, True)" in src

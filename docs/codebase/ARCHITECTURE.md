@@ -188,6 +188,25 @@ before it, so those four were already outside the hash) and did not widen it.
 It remains open: closing it (adding them to the tuple) is a separate,
 behaviour-affecting cache change, not documented here as done.
 
+## SimWrapper spatial export module split (issue #267, sibling-module split)
+
+`braunschweig/analysis/simwrapper/spatial_export.py` was split into a facade
+plus six sibling modules in the same package (`docs/codebase/STRUCTURE.md` has
+the submodule table). Unlike the `enriched` / `secondary_chainsolvers` stage
+packages above, this is **not a package conversion**:
+`braunschweig/analysis/simwrapper/` was already a package (it has its own
+`__init__.py`), so the split needed no `git mv` and changed no import path at
+all -- `braunschweig.analysis.simwrapper.spatial_export` resolves exactly as
+it did before. `spatial_export.py` is also not itself a synpp stage (the
+stage is `braunschweig.analysis.simwrapper_export`, which calls into
+`export.py`'s `main()`, which in turn calls `spatial_export.export_spatial()`),
+so there is no `configure`/`execute`/`validate()` and no cache-invalidation
+question for this split either -- it is a pure module reorganisation,
+cache-neutral and behaviour-neutral by construction. The one fallback-rate
+log line the split had to carry verbatim (mandatory per CLAUDE.md's "no
+silent fallbacks" rule) moved into the `fleet` sibling; see
+`docs/registry/features/simwrapper_export.yml`'s `fallback_rate` entry.
+
 ## Data flow (high level)
 
 Federal + Niedersachsen statistical inputs feed an **IPF** (Iterative
@@ -286,8 +305,9 @@ control totals -> seed -> `batch.py` greedy 1-km-atomic bin-packing ->
 PopulationSim subprocess per batch via `uv` -> `merge.py` cell-disjoint merge) ->
 `expand.py`/`assembly.py` (households -> donor persons, attribute mapping,
 pseudonymisation surrogates for MiD) -> `handoff.py` (cell -> building
-round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
-`seed_columns/load_donor/map_person_attributes/build_trips`). Income:
+round-robin). Donor adapters: `sources/base.py` (Protocol:
+`seed_columns/load_donor/map_person_attributes/build_trips`), `sources/mid.py`,
+`sources/entd.py` (facade + 7 siblings since #267, see below). Income:
 `income.py::apply_inkar_income_eur` — one INKAR per-Kreis scaling + one
 `high_income >= 5000 EUR` rule for BOTH popsim sources (commit a8cce14).
 
@@ -301,12 +321,73 @@ an exact-filename collision with the pre-existing, unrelated-in-content
 `braunschweig.popsim.stratum` module (Phase-4A stratum-KEY mapping). Unlike the
 `secondary_chainsolvers` / `enriched` stage packages, `mid` is a helper
 library, not a synpp stage: it has no `configure`/`execute`/`validate()` of
-its own and is called directly from `stage.py`. Cache-neutrality: no synpp
-stage currently content-hashes `mid`'s source, so this split cannot devalidate
-any cache entry; the pre-existing gap it leaves open (`stage.py` lacks a
-`validate()` over its `mid` helper, so editing `mid` alone never invalidates
-the cache) is scheduled to close when `popsim/stage.py` itself is split
-(issue #267, module 3).
+its own and is called directly from `stage`. Cache-neutrality: no synpp stage
+content-hashes `mid`'s source directly, so this split alone did not devalidate
+any cache entry; the pre-existing gap it left open (no `validate()` over the
+`mid` helper, so editing `mid` alone never invalidated the cache) closed when
+`popsim/stage.py` itself was split into the `stage/` package (issue #267,
+module 3) -- see below.
+
+### popsim.stage package (`braunschweig/popsim/stage/`, split #267 module 3)
+
+The synpp producer stage (`configure`/`execute`/`validate`) is now a package:
+a facade `__init__.py` (imports, the module-level first-party helper bindings
+`validate()` hashes, the `execute()` orchestration decomposed into 26 named
+private steps, and re-export blocks for every submodule) plus six extracted
+submodules -- `batch_cache` (work-dir batch cache invalidation), `cell_attributes`
+(per-cell ARS/RegioStaR7 join + Kreis-code derivation), `config_keys` (LEAF:
+every `KEY_*` config-key constant plus the two per-attribute KREIS control
+toggle dicts), `controls_builder` (`controls.csv` assembly + aggregation/
+source-column/per-Kreis-total helpers), `source_resolution` (donor-source
+resolution + active KREIS attribute-control entries) and `tilt_columns`
+(income spatial-tilt cell-column selection) -- see STRUCTURE.md for one-line
+purposes.
+
+The stage gained a `validate()` hook it never had before, closing the
+synpp `get_stage_hash`-only-hashes-the-stage-file helper trap documented above
+for `mid`. Coverage: the package's own six submodules; the whole `mid` package
+one level deep (its `__init__` plus all eight submodules); the whole `sources`
+donor-adapter package one level deep (`base`/`entd`/`mid`); the remaining
+non-stage first-party helper modules imported at module level (the two
+`braunschweig.data.mid` income-table modules, `assembly`, `batch`, `income`,
+`income_kreis_control`, `income_spatial_tilt`, `plausibility`,
+`prepared_cells`); and `data.census.household_size`, the one synpp stage this
+stage calls as a plain undeclared library at module level. The DEFERRED
+(function-level) first-party dependencies are covered too, by dotted name
+rather than module object, lazily imported inside `validate()` -- including
+`synthesis.population.enriched`, the second undeclared library stage, one level
+deep (its `__init__` plus its six submodules, since the called
+`_apply_housing_tenure` lives in `enriched.housing_tenure`): a dotted-name entry
+enumerates a package exactly as module objects do, so the import SITE alone
+decides which of the two tuples a module lands in. The transitive surface beyond
+this explicit, one-level-deep enumeration is deliberately NOT covered; the
+covered/not-covered boundary is stated canonically in one place, `validate()`'s
+docstring, and is listed explicitly (never `dir()` or a glob) so both dropping
+and adding a covered module is a visible diff. One-off effect: this stage gains a
+validation token it never had, so the first run after merge recomputes it and
+everything downstream once.
+
+`sources/entd.py` (1487 -> 652 lines) is a **sibling split**, not a package
+conversion like `mid/`: `sources/` gained no `entd/` subdirectory and no
+`__init__.py`, so the import path `braunschweig.popsim.sources.entd` is
+unchanged. `entd.py` stays a **delegating class facade** -- `EntdSource`'s
+full public surface (8 method names and signatures, pinned by
+`check_namespace.py`) remains defined in `entd.py`, but every method body is
+now a one-line delegation to a module-level function in one of seven
+siblings: `entd_attributes` (person-attribute mapping), `entd_trips` (trip
+building), `entd_seed` (seed building), `entd_diary_matching` (chain matching
+of trip-less persons to diary donors), `entd_vocabulary` (ENTD constants and
+column vocabularies), `entd_donor` (donor loading, donor/cell stratum
+derivation), `entd_schema` (column requirements, donor-schema conversion) --
+see STRUCTURE.md for line counts. This body-move was safe because
+`EntdSource` carries no instance state (`self` never appears inside a method
+body in the original module), so nothing needed to be threaded through an
+instance when the bodies moved out. Every sibling binds its logger to the
+literal facade name (`logging.getLogger("braunschweig.popsim.sources.entd")`,
+not `__name__`), so `LogRecord.name` values are unchanged by the split.
+Cache-neutrality: like `mid/`, no synpp stage content-hashes `entd.py`'s
+internals beyond the file itself, and the import path is untouched, so the
+split cannot devalidate any cache entry.
 
 ### Trip/vocabulary convergence
 

@@ -12,7 +12,7 @@ lineage:
 code:
 - data/census/filtered.py
 - braunschweig/ipf/attributed.py
-- braunschweig/popsim/stage.py
+- braunschweig/popsim/stage/
 pipelines:
   popsim_mid: active
   popsim_open: active

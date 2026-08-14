@@ -20,7 +20,7 @@ introduced:
   adr: null
 detail_doc: docs/features/regional-control-targets.md
 code_paths:
-- braunschweig/popsim/stage.py
+- braunschweig/popsim/stage/
 - braunschweig/analysis/population_validation/participation_fit.py
 evidence:
   tests:
