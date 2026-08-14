@@ -6,6 +6,11 @@
 > commit. Re-run the method (see "Method") to refresh it; treat any number
 > here as stale the moment the codebase changes. Produced for issue #290; it
 > deliberately fixes nothing (see "Scope").
+>
+> **Already fixed since the snapshot:** `braunschweig.gravity.model` moved from
+> category (c) to (b) — issue #289 folded its four uncovered package siblings
+> into `validate()` via `_DEFERRED_HELPER_MODULE_NAMES`, so the (c) count is now
+> 85 (36 production-reachable). No other row has changed.
 
 ## Scope
 

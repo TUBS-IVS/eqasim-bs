@@ -71,6 +71,7 @@ source into the stage's cache-validation token -- see the comment on
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 import os  # noqa: F401  (unused here; kept for facade namespace parity, see below)
@@ -166,17 +167,39 @@ logger = logging.getLogger(__name__)
 # in a deterministic order (never via ``dir()`` or a directory glob) so the
 # token depends only on the sources, not on import or filesystem order. Every
 # module extracted from this stage MUST be appended here.
-#
-# This tuple is NOT a complete list of this stage's behaviour dependencies.
-# The pre-existing siblings ``friction.py``, ``production_mass.py``,
-# ``taz_margins.py`` and ``verbindungen_anchor.py`` (default ON, ADR-0068) are
-# also read by ``execute()`` but are not folded into this token -- a known,
-# pre-existing gap. The #267 split did not create it (this stage had NO
-# ``validate()`` hook at all before the split, so those four were already
-# outside the hash) and did not widen it; closing it would mean adding them
-# here, which is a behaviour-affecting cache change and belongs in its own,
-# separate change, not this one.
 _HELPER_MODULES = (attraction_vector, balancing, base, kreis_calibration, od)
+
+# The four pre-existing package siblings this stage's result also depends on,
+# covered by dotted NAME rather than as module objects because every one of them
+# is imported LAZILY, inside a function, and binding them at module level here
+# would change this stage's import timing for no benefit:
+#   - ``verbindungen_anchor`` (default ON, ADR-0068) is imported inside
+#     ``execute()``;
+#   - ``production_mass`` and ``taz_margins`` are imported inside
+#     ``base._execute_gravity_base``;
+#   - ``friction``'s ``build_friction_matrix`` is called from
+#     ``od.compute_work_od`` (this file imports the FUNCTION for facade parity,
+#     which does not make the module's source reachable for hashing).
+# ``production_mass`` additionally imports ``_GEMBAND_COLUMN_NAMES`` back from
+# this facade inside a function; deferring the import here keeps that lazy
+# resolution untouched instead of turning it into an import-time cycle.
+#
+# Before this tuple existed these four were outside the stage hash, so an edit
+# to any of them silently reused stale cached output on a partial rerun. The
+# #267 split did not create that gap (this stage had no ``validate()`` hook at
+# all before it); this change closes it, and therefore devalidates more cached
+# output than the split did -- deliberately, once.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.gravity.friction",
+    "braunschweig.gravity.production_mass",
+    "braunschweig.gravity.taz_margins",
+    "braunschweig.gravity.verbindungen_anchor",
+)
+
+# ``braunschweig.gravity.distance_matrix_taz`` is deliberately NOT covered: it
+# is its own synpp stage (``configure``/``execute``), declared as a dependency
+# and hashed by synpp in its own right, so folding its source in here would
+# double-count it rather than close a gap.
 
 
 def validate(context):
@@ -187,14 +210,52 @@ def validate(context):
     changes on a later run, so a sibling-only source change recomputes this
     stage exactly like an edit to this file would.
 
+    THIS DOCSTRING IS THE CANONICAL STATEMENT of what the token covers. It folds
+    in two groups: the five siblings extracted from this stage by the #267 split
+    (``_HELPER_MODULES``, bound as module objects because this file imports them
+    at module level anyway) and the four pre-existing package siblings the stage
+    reaches through function-level imports (``_DEFERRED_HELPER_MODULE_NAMES``,
+    resolved by dotted name at RUN time so their deferral is preserved).
+
+    It does NOT cover: ``braunschweig.gravity.distance_matrix_taz`` (its own
+    synpp stage, hashed by synpp itself), what those nine modules import in
+    turn (the boundary is one level deep), or third-party sources (pinned by the
+    environment). See ``docs/codebase/notes/synpp-helper-hash-audit.md`` for how
+    that boundary compares across the repo.
+
     This stage had NO ``validate`` hook before the #267 split, so the token is
     new: the first run after this change has no stored token to compare against
     and therefore recomputes this stage and everything downstream of it ONCE.
     Subsequent runs reuse the cache normally.
+
+    Raises:
+        RuntimeError: if a module named in ``_DEFERRED_HELPER_MODULE_NAMES``
+            cannot be imported or has no retrievable source; the original error
+            is chained.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        # Resolved here, at RUN time, so importing them adds no import-time cost
+        # and cannot turn the deferred back-import in ``production_mass`` into a
+        # cycle. A failure is re-raised (never swallowed) naming the module: a
+        # dependency that no longer imports is broken, and dropping it from the
+        # token would keep the stale cached output alive at exactly that moment.
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"gravity model validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}). It is a direct "
+                "dependency of this stage's result and is listed in "
+                "_DEFERRED_HELPER_MODULE_NAMES, so it must be importable with a "
+                "retrievable source; fix the module (or remove it from that tuple "
+                "if the dependency is genuinely gone) -- it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 
