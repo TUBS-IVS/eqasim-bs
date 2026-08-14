@@ -77,11 +77,20 @@ EXPECTED_STAGE_SUBMODULE_NAMES = (
 # The donor-adapter package enumerated ONE level deep: its registry ``__init__``
 # plus every adapter submodule. The ``__init__`` alone is only the name -> adapter
 # registry; the seed build, donor loading and attribute mapping that shape the
-# stage's result live in the adapters, so all four must be covered.
+# stage's result live in the adapters, so all of them must be covered. Since #287
+# the ENTD adapter is a facade over seven siblings, and those siblings -- not
+# ``entd`` itself -- now hold that behaviour, so they belong here too.
 EXPECTED_SOURCES_MODULE_NAMES = (
     "braunschweig.popsim.sources",
     "braunschweig.popsim.sources.base",
     "braunschweig.popsim.sources.entd",
+    "braunschweig.popsim.sources.entd_attributes",
+    "braunschweig.popsim.sources.entd_diary_matching",
+    "braunschweig.popsim.sources.entd_donor",
+    "braunschweig.popsim.sources.entd_schema",
+    "braunschweig.popsim.sources.entd_seed",
+    "braunschweig.popsim.sources.entd_trips",
+    "braunschweig.popsim.sources.entd_vocabulary",
     "braunschweig.popsim.sources.mid",
 )
 
