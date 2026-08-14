@@ -52,19 +52,28 @@ stored token to compare against and therefore recomputes this stage and
 everything downstream of it once — a deliberate, one-off cost, not a bug.
 Subsequent runs devalidate correctly on sibling-only edits.
 
-**Known gap, not created by this split, and not yet closed:**
-`_HELPER_MODULES` today covers only the 5 siblings this split extracted
-(`attraction_vector`, `balancing`, `base`, `kreis_calibration`, `od`) — verified
-current as of this writing. The 4 pre-existing siblings `friction.py`,
-`production_mass.py`, `taz_margins.py` and `verbindungen_anchor.py` (default
-ON, ADR-0068) are also behaviour dependencies of the `model.py` stage
-(`execute()` reads them, some via lazy imports) but are **not** in that
-tuple. This split did not create that gap — the stage had no `validate()`
-hook at all before it, so those 4 were already outside the hash — and did not
-widen it. Closing it (adding them to `_HELPER_MODULES`) is a separate,
-behaviour-affecting cache change and is not documented here as done. (The
-entd-source split, `entd-source-split.md`, shows what closing an analogous
-gap later looks like — see PR #296 there.)
+**The gap this split left open has since been closed (issue #289).** At the time
+of the split, `_HELPER_MODULES` covered only the 5 siblings the split extracted
+(`attraction_vector`, `balancing`, `base`, `kreis_calibration`, `od`), while the
+4 pre-existing siblings `friction.py`, `production_mass.py`, `taz_margins.py`
+and `verbindungen_anchor.py` (default ON, ADR-0068) were behaviour dependencies
+sitting outside the hash. The split did not create that gap — the stage had no
+`validate()` hook at all before it — and did not widen it.
+
+Those four are now covered by **dotted name** in
+`_DEFERRED_HELPER_MODULE_NAMES`, resolved inside `validate()` at run time,
+because every one of them is imported lazily inside a function; binding them at
+module level would have changed the stage's import timing, and in
+`production_mass`'s case would have turned its deferred back-import of
+`_GEMBAND_COLUMN_NAMES` from this facade into an import-time cycle. The token
+therefore folds in **nine** modules by two mechanisms.
+
+`distance_matrix_taz.py` remains deliberately uncovered: it is its own synpp
+stage, hashed by synpp in its own right, so folding its source in here would
+double-count it rather than close a gap. `tests/test_gravity_validate_token.py`
+pins both tuples literally, enumerates the package from disk so a newly added
+module cannot stay unlisted, and asserts that `distance_matrix_taz` really is
+still a stage — otherwise its exclusion would silently become a gap.
 
 ## Standing rules
 
