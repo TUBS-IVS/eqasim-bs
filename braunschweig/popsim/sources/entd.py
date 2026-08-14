@@ -211,15 +211,20 @@ from braunschweig.synthesis.population.enriched import (  # noqa: F401  (namespa
 # re-exported for namespace-parity/backward-compatibility, not because callers
 # should use them.
 #
-# _cls, _h4_class, _label, _pt_cats and _valid_income_labels are deliberately
-# NOT re-exported (controller ruling, issue #267 item C): they are import-time
-# FOR-LOOP scratch variables inside entd_vocabulary.py's vocabulary-drift
-# guards (Python leaks loop variables to module scope), not API -- they only
-# ever showed up in dir(entd) as a re-export artifact of the original
-# monolithic module. No consumer in braunschweig/, tests/ or scripts/
-# references any of them (verified). check_namespace.py's ACCIDENTAL_BASELINE_NAMES
-# documents this removal so the parity gate does not treat their absence as a
-# regression.
+# _cls, _label, _h4_class, _pt_cats and _valid_income_labels are deliberately
+# NOT re-exported (controller ruling, issue #267 item C); they are not API and
+# split two ways:
+#   - _cls, _label, _h4_class are genuinely leaked FOR-LOOP variables inside
+#     entd_vocabulary.py's vocabulary-drift guards (Python leaks loop variables
+#     to module scope);
+#   - _pt_cats and _valid_income_labels are ordinary module-level assignments
+#     that feed an import-time guard, not loop variables.
+# In the original monolithic module these were genuine module-level names
+# defined directly in entd.py; only after the extraction into entd_vocabulary.py
+# did they become names this facade would otherwise re-export. No consumer in
+# braunschweig/, tests/ or scripts/ references any of them (verified).
+# check_namespace.py's ACCIDENTAL_BASELINE_NAMES documents this removal so the
+# parity gate does not treat their absence as a regression.
 from braunschweig.popsim.sources.entd_vocabulary import (  # noqa: F401  (re-exports)
     ENTD_BUILT_SEED_COLUMNS,
     ENTD_DETOUR_FACTOR,

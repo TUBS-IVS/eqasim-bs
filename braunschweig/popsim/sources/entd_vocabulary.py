@@ -9,10 +9,14 @@ household-join column lists used by :meth:`EntdSource.map_person_attributes`
 and :meth:`EntdSource.build_seed`.
 
 Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267);
-``entd.py`` re-exports every name here so external imports of the facade
-module are unaffected. Kept separate from ``entd_schema`` (the column-presence
-/ donor-schema-rename helpers) because these are static lookup tables and
-category vocabularies, not behaviour.
+``entd.py`` re-exports every public name here so external imports of the
+facade module are unaffected. Five import-time guard locals (``_cls``,
+``_label``, ``_h4_class``, ``_pt_cats``, ``_valid_income_labels``) are
+deliberately not re-exported -- see ``entd.py``'s "Sibling modules" comment
+and ``check_namespace.py``'s ``ACCIDENTAL_BASELINE_NAMES``. Kept separate
+from ``entd_schema`` (the column-presence / donor-schema-rename helpers)
+because these are static lookup tables and category vocabularies, not
+behaviour.
 """
 
 from __future__ import annotations
@@ -168,7 +172,6 @@ from braunschweig.constants import ROUTED_DETOUR_FACTOR as ENTD_DETOUR_FACTOR  #
 # PT ticket defaults (ENTD has no ticket-type field)
 # ---------------------------------------------------------------------------
 
-# PT ticket defaults (ENTD has no ticket-type field).
 # Subscribers -> a representative flatrate category (must be in PT_TICKET_FLATRATE
 # AND PT_TICKET_CATEGORIES). Non-subscribers -> never-uses.
 _PT_TYPE_SUBSCRIBER = "wochen_monat_ohne_abo"

@@ -258,7 +258,7 @@ any cache entry; the pre-existing gap it leaves open (`stage.py` lacks a
 the cache) is scheduled to close when `popsim/stage.py` itself is split
 (issue #267, module 3).
 
-`sources/entd.py` (1487 -> 622 lines) is a **sibling split**, not a package
+`sources/entd.py` (1487 -> 652 lines) is a **sibling split**, not a package
 conversion like `mid/`: `sources/` gained no `entd/` subdirectory and no
 `__init__.py`, so the import path `braunschweig.popsim.sources.entd` is
 unchanged. `entd.py` stays a **delegating class facade** -- `EntdSource`'s

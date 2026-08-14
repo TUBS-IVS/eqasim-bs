@@ -33,7 +33,7 @@ import pandas as pd
 # popsim_mid stage B matched chain replacement (braunschweig.popsim.trips);
 # single-sourced in braunschweig.popsim.chain_matching (re-exported here for
 # backward compatibility of the module-level names).
-from braunschweig.popsim.chain_matching import (  # noqa: E402 (kept near use)
+from braunschweig.popsim.chain_matching import (  # noqa: F401  (re-exports)
     CHAIN_MATCHING_AGE_BOUNDARIES,
     CHAIN_MATCHING_MINIMUM_OBSERVATIONS,
     derive_age_class,

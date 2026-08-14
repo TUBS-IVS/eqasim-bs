@@ -287,7 +287,7 @@ helper-trap scheduled to be closed when `popsim/stage.py` is split (issue
 #267, module 3), which is expected to add that `validate()` over the whole
 `mid` package.
 
-`sources/entd.py` (1487 -> 622 lines) is a **sibling split**, not a package
+`sources/entd.py` (1487 -> 652 lines) is a **sibling split**, not a package
 conversion like `mid/` or the `enriched`/`secondary_chainsolvers` stage
 packages above: it stays a single module (`sources/` gained no `entd/`
 subdirectory, no `__init__.py`, no import-path change) and `entd.py` remains
@@ -296,11 +296,11 @@ names and signatures, pinned by `check_namespace.py`) stays in `entd.py`, but
 every method body now is a one-line delegation to a module-level function in
 one of seven siblings in the same package:
 
-  `entd_attributes.py` (358) person-attribute mapping · `entd_trips.py` (293)
-  trip building · `entd_seed.py` (289) seed building + seed-column sets ·
+  `entd_attributes.py` (360) person-attribute mapping · `entd_trips.py` (295)
+  trip building · `entd_seed.py` (292) seed building + seed-column sets ·
   `entd_diary_matching.py` (263) chain matching of trip-less persons to
-  diary donors · `entd_vocabulary.py` (202) ENTD constants/column
-  vocabularies · `entd_donor.py` (155) donor loading + donor/cell stratum
+  diary donors · `entd_vocabulary.py` (205) ENTD constants/column
+  vocabularies · `entd_donor.py` (158) donor loading + donor/cell stratum
   derivation · `entd_schema.py` (59) column requirements + donor-schema
   conversion.
 
