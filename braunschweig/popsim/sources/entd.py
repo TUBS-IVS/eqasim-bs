@@ -87,9 +87,14 @@ unchanged. The submodules extracted so far:
                       builder (``build_trips``, ~260 lines: direct donor-trip
                       join plus diary-donor chain matching for non-diary
                       persons)
+    entd_donor        donor loading (``load_donor``) and the two donor
+                      stratum-derivation helpers (``donor_stratum``,
+                      ``cell_stratum``)
 
-Further extractions (schema-mapping method bodies) are tracked under issue
-#267 and will be added to this list as they land.
+This completes the ENTD source split (issue #267): every EntdSource method
+body has moved to a sibling; this facade now holds only the docstring,
+imports, the re-export blocks above, and EntdSource as a thin delegating
+class.
 
 Load strategy
 -------------
@@ -147,7 +152,14 @@ from braunschweig.popsim.seed import (  # noqa: F401  (namespace parity, see abo
     filter_complete_households,
     select_seed_columns,
 )
-from braunschweig.popsim.stratum import cell_urban_class_from_rs7, entd_urban_class
+# cell_urban_class_from_rs7 and entd_urban_class are no longer called directly
+# here (their only call sites moved into entd_donor.py, issue #267 split,
+# Task 6) but stay imported for module-namespace parity, the same rationale
+# as the other "no longer called directly" imports above.
+from braunschweig.popsim.stratum import (  # noqa: F401  (namespace parity, see above)
+    cell_urban_class_from_rs7,
+    entd_urban_class,
+)
 # CONTRACT and apply_per_person_jitter are no longer called directly here
 # (their only call site moved into entd_trips.py, issue #267 split, Task 5)
 # but stay imported for module-namespace parity, the same rationale as above.
@@ -243,6 +255,16 @@ from braunschweig.popsim.sources.entd_attributes import (
 # to this module-level function.
 from braunschweig.popsim.sources.entd_trips import (
     build_trips as _build_trips,
+)
+
+# The donor loading and stratum-derivation helpers below were extracted
+# verbatim into entd_donor.py (issue #267 split, Task 6). EntdSource.load_donor,
+# .donor_stratum and .cell_stratum are one-line delegations to these
+# module-level functions.
+from braunschweig.popsim.sources.entd_donor import (
+    load_donor as _load_donor,
+    donor_stratum as _donor_stratum,
+    cell_stratum as _cell_stratum,
 )
 
 logger = logging.getLogger(__name__)
@@ -393,37 +415,7 @@ class EntdSource:
         FileNotFoundError
             If a parquet file is absent (only when not injected).
         """
-        if injected is not None:
-            households, persons, trips = injected
-            persons = entd_persons_to_donor_schema(persons)
-            logger.info(
-                "[EntdSource] using injected donor frames: "
-                "%d households, %d persons, %d trips (persons mapped to donor schema "
-                "H_ID/P_ID/HP_ALTER/HP_SEX)",
-                len(households), len(persons), len(trips),
-            )
-            return households, persons, trips
-
-        data_dir = Path(data_dir)
-        hh_path = data_dir / "entd_households.parquet"
-        p_path = data_dir / "entd_persons.parquet"
-        t_path = data_dir / "entd_trips.parquet"
-        for path in (hh_path, p_path, t_path):
-            if not path.is_file():
-                raise FileNotFoundError(
-                    f"[EntdSource] ENTD parquet file not found: {path}. "
-                    "Run the popsim_open export step or pass injected frames."
-                )
-        households = pd.read_parquet(hh_path)
-        persons = pd.read_parquet(p_path)
-        trips = pd.read_parquet(t_path)
-        persons = entd_persons_to_donor_schema(persons)
-        logger.info(
-            "[EntdSource] loaded donor: %d households, %d persons, %d trips from %s "
-            "(persons mapped to donor schema H_ID/P_ID/HP_ALTER/HP_SEX)",
-            len(households), len(persons), len(trips), data_dir,
-        )
-        return households, persons, trips
+        return _load_donor(data_dir, injected=injected)
 
     def map_person_attributes(
         self,
@@ -525,7 +517,7 @@ class EntdSource:
         KeyError
             If ``urban_type`` is absent from ``seed_households``.
         """
-        return seed_households["urban_type"].map(entd_urban_class)
+        return _donor_stratum(seed_households)
 
     def cell_stratum(self, cells: pd.DataFrame) -> pd.Series:
         """Return the per-100m-cell stratum label for donor stratification.
@@ -554,7 +546,7 @@ class EntdSource:
             If a RS7 code is outside 71-77 (delegates to
             :func:`braunschweig.data.bbsr.regiostar.regiostar2_label`).
         """
-        return cells["RegioStaR7"].map(cell_urban_class_from_rs7)
+        return _cell_stratum(cells)
 
     def build_trips(
         self,
