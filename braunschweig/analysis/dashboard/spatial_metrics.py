@@ -7,12 +7,12 @@ This module holds the VG250/per-Kreis spatial cluster that ``run_metrics.py``'s
 had received them, together with their constants, from ``build_dashboard.py``
 during an earlier extraction step; see that module's docstring history).
 
-``ZGB_ARS5``, ``VG250_ZIP`` and ``VG250_CACHE`` move here with the functions
-because they are used exclusively by this cluster. ``REPO_ROOT`` and
-``DASHBOARD_DIR`` (needed to build ``VG250_ZIP``/``VG250_CACHE``) had no other
-use left in ``run_metrics.py`` once this cluster moved out; they are now
-imported from the leaf module ``paths.py`` rather than recomputed privately
-here.
+``ZGB_ARS5`` is defined here because it is used exclusively by this cluster.
+``VG250_ZIP`` and ``VG250_CACHE`` used to be built here too (from ``REPO_ROOT``
+and ``DASHBOARD_DIR``, imported from the leaf module ``paths.py``); as of
+issue #293 they are re-exported from the shared loader module
+``braunschweig.analysis.spatial`` instead (see below), so this module no
+longer needs ``paths.py`` at all.
 
 ``KREIS_NAMES`` is imported from the sibling module ``mid_reference.py`` (its
 owner); this module never imports ``run_metrics`` or ``build_dashboard`` back.
@@ -24,6 +24,23 @@ existing callers of ``build_dashboard.<name>`` keep working unchanged.
 
 This module must not import ``run_metrics`` or ``build_dashboard`` -- that
 would create an import cycle between the facade/sibling and this module.
+
+**VG250 loading (issue #293).** Locating, extracting and reading the VG250
+archive is no longer duplicated here: ``VG250_ZIP``, ``VG250_CACHE`` and
+``_ensure_vg250`` now delegate to the single shared loader in
+``braunschweig.analysis.spatial`` (the module already documented as the
+canonical source of ``REPO_ROOT``/``ZGB8`` for the analysis package; see that
+module's docstring for the full strict/tolerant contract). This is a plain
+sibling-package import (``braunschweig.analysis.spatial``, not
+``braunschweig.analysis.dashboard.*``), so it does not touch the
+facade-reexport / no-import-cycle rules above -- ``spatial.py`` is outside
+this package and never imports the dashboard facade back.
+``_ensure_vg250`` keeps its ``Path | None`` signature and its tolerant
+(``strict=False``) failure mode -- a missing archive is logged as a
+``warning`` by the shared loader and ``None`` is returned so the rest of the
+dashboard still renders without the per-Kreis panel -- but the caching
+strategy, the failure-mode decision and the log line all now live in one
+place instead of being re-implemented per caller.
 """
 
 from __future__ import annotations
@@ -34,9 +51,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from braunschweig.analysis import spatial
 from braunschweig.analysis.dashboard.mid_reference import KREIS_NAMES
-from braunschweig.analysis.dashboard.paths import DASHBOARD_DIR
-from braunschweig.analysis.dashboard.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,9 +61,10 @@ from braunschweig.analysis.dashboard.paths import REPO_ROOT
 # ZGB-8 Kreis ARS codes (5-digit) used for spatial joins.
 ZGB_ARS5 = list(KREIS_NAMES.keys())
 
-# VG250 cached extraction path (zip is shipped under eqasim-data/data/germany/).
-VG250_ZIP = REPO_ROOT / "eqasim-data" / "data" / "germany" / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
-VG250_CACHE = DASHBOARD_DIR / ".cache" / "DE_VG250.gpkg"
+# Re-exported from the shared loader (braunschweig.analysis.spatial) so
+# existing importers of these names keep working; see the module docstring.
+VG250_ZIP = spatial.VG250_ZIP
+VG250_CACHE = spatial.VG250_CACHE
 
 # ---------------------------------------------------------------------------
 # VG250 / spatial helpers (per-Kreis + OD matrix)
@@ -55,20 +72,16 @@ VG250_CACHE = DASHBOARD_DIR / ".cache" / "DE_VG250.gpkg"
 
 
 def _ensure_vg250() -> Path | None:
-    """Extract DE_VG250.gpkg from the zip into the dashboard cache (once)."""
-    if VG250_CACHE.exists():
-        return VG250_CACHE
-    if not VG250_ZIP.exists():
-        return None
-    import zipfile
-    VG250_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(VG250_ZIP) as z:
-        target = next((n for n in z.namelist() if n.endswith("DE_VG250.gpkg")), None)
-        if target is None:
-            return None
-        with z.open(target) as src, open(VG250_CACHE, "wb") as dst:
-            dst.write(src.read())
-    return VG250_CACHE
+    """Extract DE_VG250.gpkg from the shared archive into the shared cache.
+
+    Delegates to :func:`braunschweig.analysis.spatial._resolve_vg250_gpkg`
+    with ``strict=False``: the dashboard's per-Kreis panel is one optional
+    metric among many, so a missing archive is logged as a ``warning`` (by
+    the shared loader) and ``None`` is returned rather than raising -- see
+    that module's docstring for why the analysis/validation path instead
+    raises.
+    """
+    return spatial._resolve_vg250_gpkg(strict=False)
 
 
 def _load_zgb_kreise():

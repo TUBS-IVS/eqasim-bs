@@ -4,11 +4,40 @@ Exposes the ZGB-8 Kreise map, VG250 / RegioStaR path constants, and loaders
 that attach Kreis, commune_id and RegioStaR-7 to home points.  Extracted from
 ``braunschweig.analysis.run_mid_validation`` so multiple analysis modules can
 share the same definitions without duplication.
+
+This module is also the single owner of VG250 archive access (issue #293):
+before this, ``braunschweig.analysis.spatial`` and
+``braunschweig.analysis.dashboard.spatial_metrics`` each located the archive,
+extracted it and read ``DE_VG250.gpkg`` independently, with different
+caching strategies (re-read-per-call vs. extract-once) and -- the part that
+mattered scientifically -- different opinions on what a missing archive
+means (one raised, the other returned ``None`` with no log line). Both now
+go through :func:`load_vg250_layer` / :func:`_resolve_vg250_gpkg` below:
+
+- The **strict** analysis/validation path (this module's ``load_kreise`` and
+  ``load_gemeinden``) raises ``FileNotFoundError`` naming the expected path.
+  A missing per-Kreis geography there would silently invalidate the whole
+  validation run, so failing loudly is the only defensible behaviour.
+- The **tolerant** dashboard path (``dashboard.spatial_metrics._ensure_vg250``)
+  returns ``None`` so the rest of the dashboard still renders without the
+  per-Kreis panel -- but it now logs an explicit ``warning`` naming the
+  missing archive and the metrics that will be omitted, so the gap is never
+  silent (see CLAUDE.md "Fallback transparency"). A one-shot warning is
+  correct here, not a fallback rate: this is a single input either present
+  or absent, not a per-item primary/fallback split.
+
+Both callers also now share one caching decision: the archive is extracted
+once into :data:`VG250_CACHE` and re-extracted only if the cache is older
+than the source zip (so a data refresh in ``eqasim-data`` can not silently
+keep serving stale cached content, which was a risk of the dashboard's
+former extract-once-forever cache).
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -46,6 +75,11 @@ VG250_INNER = (
     "vg250-ew_ebenen_1231/DE_VG250.gpkg"
 )
 
+# Shared extract-once cache for the VG250 GeoPackage (gitignored via the
+# repo-wide "**/.cache/" rule). Both the strict and tolerant callers read
+# through this single location; see the module docstring for why.
+VG250_CACHE = REPO_ROOT / ".cache" / "vg250" / "DE_VG250.gpkg"
+
 # RegioStaR-7 reference for per-Raumtyp diagnostics. Filename pinned via
 # scripts/download_regiostar.py (TASK-004); not regenerated here.
 REGIOSTAR_XLSX = (
@@ -64,6 +98,77 @@ REGIOSTAR7_LABELS: dict[int, str] = {
 }
 
 
+def _resolve_vg250_gpkg(*, strict: bool) -> Path | None:
+    """Return a local path to the extracted ``DE_VG250.gpkg``, the single
+    place that decides what a missing VG250 archive means.
+
+    Extracts the archive into :data:`VG250_CACHE` once and re-uses that copy
+    on subsequent calls, re-extracting only if the cache predates the source
+    zip's modification time (so a data refresh is picked up automatically
+    instead of requiring a manual cache clear).
+
+    Parameters
+    ----------
+    strict:
+        ``True`` (the analysis/validation callers): raise
+        ``FileNotFoundError`` naming the expected archive path when it is
+        missing. A missing per-Kreis geography would silently invalidate the
+        whole run, so failing loudly is the only defensible behaviour there.
+
+        ``False`` (the dashboard caller): log an explicit ``warning`` naming
+        the missing archive and the metrics that will be omitted, then
+        return ``None`` so the rest of the dashboard still renders. This is
+        a single input either present or absent -- a one-shot warning is the
+        right instrument, not a fallback rate (see CLAUDE.md "Fallback
+        transparency").
+    """
+    if not VG250_ZIP.exists():
+        if strict:
+            raise FileNotFoundError(
+                f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
+            )
+        LOGGER.warning(
+            "VG250 archive not found at %s; per-Kreis dashboard metrics "
+            "(Kreis polygons, per-Kreis mode share/km, OD matrix) will be "
+            "omitted for this run.  Re-run the synpp data download to restore it.",
+            VG250_ZIP,
+        )
+        return None
+    if not VG250_CACHE.exists() or VG250_CACHE.stat().st_mtime < VG250_ZIP.stat().st_mtime:
+        VG250_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        # Extract to a unique temporary file in the SAME directory and then
+        # os.replace() it into place: that call is atomic on one filesystem, so
+        # a concurrent reader either sees the previous complete copy or the new
+        # complete one, never a half-written gpkg. Writing VG250_CACHE directly
+        # would also leave a truncated file with a NEWER mtime than the zip if
+        # the process died mid-write -- the freshness check below would then
+        # accept the corrupt cache forever instead of re-extracting it.
+        temporary_path = VG250_CACHE.with_name(f"{VG250_CACHE.name}.{os.getpid()}.part")
+        try:
+            with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as src:
+                with open(temporary_path, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+            os.replace(temporary_path, VG250_CACHE)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+    return VG250_CACHE
+
+
+def load_vg250_layer(layer: str, *, strict: bool = True) -> gpd.GeoDataFrame | None:
+    """Read one VG250 layer (e.g. ``"vg250_gem"``, ``"vg250_krs"``) through
+    the shared extract-once cache.
+
+    See :func:`_resolve_vg250_gpkg` for the ``strict``/tolerant failure-mode
+    contract. Returns ``None`` only when ``strict=False`` and the archive is
+    absent; with ``strict=True`` (the default) a missing archive always
+    raises, so callers that pass the default never see ``None``.
+    """
+    path = _resolve_vg250_gpkg(strict=strict)
+    if path is None:
+        return None
+    return gpd.read_file(path, layer=layer)
+
+
 def load_kreise(homes_crs: Any) -> gpd.GeoDataFrame:
     """Load ZGB-8 Kreis polygons keyed by 5-digit ARS (``ars5``).
 
@@ -73,12 +178,7 @@ def load_kreise(homes_crs: Any) -> gpd.GeoDataFrame:
     reprojected to ``homes_crs``, and a ``kreis_name`` column is added from
     the :data:`ZGB8` display-name map.
     """
-    if not VG250_ZIP.exists():
-        raise FileNotFoundError(
-            f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
-        )
-    with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as fh:
-        vg = gpd.read_file(fh, layer="vg250_gem")
+    vg = load_vg250_layer("vg250_gem", strict=True)
     vg["ars5"] = vg["ARS"].astype(str).str[:5]
     kreise = (
         vg[vg["ars5"].isin(ZGB8)][["ars5", "geometry"]]
@@ -96,12 +196,7 @@ def load_gemeinden(homes_crs: Any) -> gpd.GeoDataFrame:
     The 8-digit AGS used by the RegioStaR reference and downstream stages
     is ``ARS[0:5] + ARS[9:12]`` (Kreis prefix + 3-digit Gemeinde number).
     """
-    if not VG250_ZIP.exists():
-        raise FileNotFoundError(
-            f"VG250 archive missing: {VG250_ZIP}.  Re-run the synpp data download."
-        )
-    with zipfile.ZipFile(VG250_ZIP) as z, z.open(VG250_INNER) as fh:
-        vg = gpd.read_file(fh, layer="vg250_gem")
+    vg = load_vg250_layer("vg250_gem", strict=True)
     ars = vg["ARS"].astype(str).str.zfill(12)
     vg["commune_id"] = ars.str[:5] + ars.str[9:12]
     vg["ars5"] = vg["commune_id"].str[:5]
