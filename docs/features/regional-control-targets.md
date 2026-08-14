@@ -220,7 +220,7 @@ income<->car-ownership coherence improved within (Kreis, status)
 (0.174 -> 0.364), and an honest attainment trade: the redraw hit the INKAR
 mean more exactly (+0.8%/+0.5%) while placement only approaches it
 (+4.7%/-3.1%, 52% of households have no signature-preserving freedom to move).
-Entry points: `braunschweig/popsim/placement_income.py`, `popsim/stage.py`;
+Entry points: `braunschweig/popsim/placement_income.py`, `popsim/stage/`;
 gate harness `scripts/gate_placement_income.py`. See ADR-0069 in
 `docs/DECISIONS.md` and spec `docs/superpowers/specs/2026-07-04-income-
 weighted-household-placement-design.md`.

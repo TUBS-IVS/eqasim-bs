@@ -22,7 +22,7 @@ introduced:
 detail_doc: docs/features/mid-reference-tables.md
 code_paths:
 - braunschweig/synthesis/population/enriched/housing_tenure.py
-- braunschweig/popsim/stage.py
+- braunschweig/popsim/stage/
 evidence:
   tests:
   - tests/test_housing_tenure.py
@@ -49,5 +49,5 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0017 is a combined ADR covering four flags at once (see household_income_distribution.yml). UNLIKE the other three flags in that ADR, this one is independently wired into braunschweig/popsim/stage.py as well (test_popsim_stage_wires_housing_tenure confirms) -- genuinely live under the active popsim_mid production method, not only under the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
+    ADR-0017 is a combined ADR covering four flags at once (see household_income_distribution.yml). UNLIKE the other three flags in that ADR, this one is independently wired into braunschweig/popsim/stage/ as well (test_popsim_stage_wires_housing_tenure confirms) -- genuinely live under the active popsim_mid production method, not only under the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
   source: ADR-0017

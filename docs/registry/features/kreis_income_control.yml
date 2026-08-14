@@ -49,7 +49,7 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    No dedicated ADR exists for the original income_kreis_control mechanism itself -- it is only mentioned inside ADR-0054 (an unmerged design precursor) and ADR-0069 (which documents what SUPERSEDES it, placement_income). Unlike most Attrs features, this flag IS wired into braunschweig/popsim/stage.py and IS true in configs/base_bs.yml -- genuinely live under the active popsim_mid production method, though currently overridden whenever placement_income is ON (the current default; see placement_income_l2.yml).
+    No dedicated ADR exists for the original income_kreis_control mechanism itself -- it is only mentioned inside ADR-0054 (an unmerged design precursor) and ADR-0069 (which documents what SUPERSEDES it, placement_income). Unlike most Attrs features, this flag IS wired into braunschweig/popsim/stage/ and IS true in configs/base_bs.yml -- genuinely live under the active popsim_mid production method, though currently overridden whenever placement_income is ON (the current default; see placement_income_l2.yml).
   source: null
 notes: 'ADR-0069: placement_income (code default ON) supersedes this mechanism in every committed
   configuration; the code path remains as gated infra.'

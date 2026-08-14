@@ -236,7 +236,29 @@ braunschweig/population/   Method selector + contract
   config.py                fail-fast config validation (MiD only for popsim_mid)
   schema.py                unified persons/households output contract
 braunschweig/popsim/       PopulationSim workflow (27 modules)
-  stage.py                 synpp producer stage (replaces data.census.filtered)
+  stage/                   synpp producer stage (replaces data.census.filtered;
+                           stage package since #267: __init__ = synpp stage
+                           (configure/execute/validate) + re-exports of every
+                           submodule below, plus the 26-step execute()
+                           orchestration); submodules batch_cache,
+                           cell_attributes, config_keys, controls_builder,
+                           source_resolution, tilt_columns
+    batch_cache.py         Work-dir batch cache invalidation: config-signature
+                           guard + stale `batch_*` folder purge on config change
+    cell_attributes.py     Per-cell attribute joining (12-digit ARS +
+                           RegioStaR7) onto the merged PopulationSim output,
+                           plus Kreis-code derivation from a cell ARS
+    config_keys.py         LEAF (no intra-package imports): every KEY_* config
+                           key constant plus the two per-attribute KREIS
+                           control toggle dicts
+    controls_builder.py    PopulationSim `controls.csv` frame assembly + the
+                           derived aggregation map, source-column list and
+                           per-Kreis person-total helpers
+    source_resolution.py   Donor-source resolution (`_resolve_source`) + the
+                           active KREIS attribute-control registry entries for
+                           a run
+    tilt_columns.py        Income spatial-tilt cell-column selection (issue
+                           #136 single-parquet-read helpers)
   mid/                     orchestration package (split #267; pure facade
                            __init__.py -- helper library, NOT a synpp stage,
                            so no configure/execute/validate() -- + re-exports
@@ -275,16 +297,22 @@ e.g. `cell_urban_class_from_rs7`) and `popsim/mid/donor_stratification.py`
 submodule was named `stratum.py` until issue #267 renamed it to end an
 exact-filename collision between the two.
 
-Cache-neutrality of the `mid/` split: unlike the `secondary_chainsolvers` /
-`enriched` stage packages (each with its own `validate()`), `mid` is a plain
-helper library called from `stage.py`, not itself a synpp stage -- no synpp
-stage currently content-hashes `mid`'s source, so the split from one module
-into eight submodules cannot devalidate any cache entry. The pre-existing gap
-this leaves untouched (`stage.py` has no `validate()` hashing its `mid`
-helper, so editing `mid` alone never invalidates the cache) is a known
-helper-trap scheduled to be closed when `popsim/stage.py` is split (issue
-#267, module 3), which is expected to add that `validate()` over the whole
-`mid` package.
+Cache-neutrality of the `mid/` split: `mid` is a plain helper library called
+from the `stage` package, not itself a synpp stage, so the split from one
+module into eight submodules alone did not devalidate any cache entry. The gap
+this used to leave open -- no synpp stage content-hashed `mid`'s source, so
+editing `mid` alone silently reused the stale cached stage output on a partial
+rerun -- is now CLOSED (issue #267, module 3): `braunschweig/popsim/stage.py`
+was itself split into the `stage/` package above, and its new `validate()`
+hook content-hashes the whole `mid` package (its `__init__` plus all eight
+submodules, one level deep) as part of a wider token. See
+`docs/codebase/ARCHITECTURE.md` "popsim package" for the token's full
+covered/uncovered boundary (it also covers this package's own six submodules,
+the `sources` donor-adapter package one level deep, several non-stage
+first-party helper modules, and -- one level deep -- the two synpp stages used
+here as undeclared libraries, `data.census.household_size` and
+`synthesis.population.enriched`; the transitive surface beyond that is
+deliberately NOT covered).
 
 New configs (worktree): `config_popsim_mid_braunschweig.yml`,
 `config_popsim_open_braunschweig.yml`, `config_smoke_{simple_ipf,popsim_mid,

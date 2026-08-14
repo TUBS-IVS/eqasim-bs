@@ -19,8 +19,10 @@ there is no ``configure``/``execute``/``validate()`` hook here. It re-exports
 every extracted submodule name so external imports of
 ``braunschweig.popsim.mid`` keep working unchanged. No synpp stage currently
 hashes this package's source, so the split is cache-neutral by construction;
-closing that pre-existing helper-trap gap (a synpp ``validate()`` hashing the
-whole package) is module 3's job (``popsim/stage.py``, issue #267). This
+that pre-existing helper-trap gap (a synpp ``validate()`` hashing the whole
+package) was closed by module 3 (``braunschweig.popsim.stage``, now itself a
+package under ``popsim/stage/``, issue #267): its ``validate()`` content-hashes
+this whole package one level deep. This
 ``batch_folders`` extraction is the last extraction of the ``mid`` package
 split: every remaining piece of implementation has moved out, and this file
 is now a pure facade holding only the docstring, imports, the
