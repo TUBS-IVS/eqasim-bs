@@ -57,9 +57,32 @@ Module layout
 -------------
 This module is the facade for the ENTD donor source: ``EntdSource`` (the
 public class) stays here, while sibling modules in this package hold helpers
-extracted out of it (issue #267 split). Every extracted name is re-exported
-here so external imports of ``braunschweig.popsim.sources.entd`` keep working
-unchanged. The submodules extracted so far:
+extracted out of it (issue #267 split). Two different relationships exist
+between this facade and its siblings, and only the first is a "re-export" in
+the strict sense:
+
+- **Re-exports** (``entd_vocabulary``, ``entd_schema``, ``entd_diary_matching``):
+  these siblings hold constants and helpers that already had bare
+  module-level names (or, for the chain-matching helpers, are themselves
+  re-exported from ``braunschweig.popsim.chain_matching``). Every one of
+  these names is imported here UNDER ITS ORIGINAL NAME (each import block
+  marked ``# noqa: F401 (re-exports)``), so external imports of
+  ``braunschweig.popsim.sources.entd`` keep resolving those exact names
+  unchanged; ``check_namespace.py`` pins this.
+- **Delegation targets** (``entd_seed``, ``entd_attributes``, ``entd_trips``,
+  ``entd_donor``): these siblings hold the eight ``EntdSource`` method
+  bodies (``seed_columns``, ``built_seed_columns``, ``build_seed``,
+  ``map_person_attributes``, ``build_trips``, ``load_donor``,
+  ``donor_stratum``, ``cell_stratum``). Those functions were ONLY ever
+  class-method bodies before this split -- never bare module-level names --
+  so there is nothing of theirs to re-export: each is imported here under a
+  private leading-underscore alias (e.g. ``build_trips as _build_trips``)
+  purely as the internal target of the matching ``EntdSource`` method's
+  one-line delegation. ``EntdSource`` remains the sole public entry point
+  for all eight; ``dir(entd)`` never exposed (and still does not expose) a
+  bare ``build_trips``, ``map_person_attributes``, etc.
+
+The submodules extracted so far:
 
     entd_vocabulary   seed column mapping (``ENTD_SEED_COLUMNS`` /
                       ``ENTD_BUILT_SEED_COLUMNS``), the income_class -> MiD
@@ -93,8 +116,27 @@ unchanged. The submodules extracted so far:
 
 This completes the ENTD source split (issue #267): every EntdSource method
 body has moved to a sibling; this facade now holds only the docstring,
-imports, the re-export blocks above, and EntdSource as a thin delegating
-class.
+imports (the re-export blocks and the delegation-alias import blocks
+described above), and EntdSource as a thin delegating class.
+
+Namespace-parity imports
+-------------------------
+A separate group of imports below (``numpy``; ``assembly``'s
+``_AGE_RANGE_BINS``/``_AGE_RANGE_LABELS``/``_household_availability``;
+``attributes``' ``derive_car_availability``/``derive_bicycle_availability``;
+the ``income`` module alias; ``seed``'s ``CompletenessReport``/
+``filter_complete_households``/``select_seed_columns``; ``stratum``'s
+``cell_urban_class_from_rs7``/``entd_urban_class``; ``trips_stage``'s
+``CONTRACT``/``apply_per_person_jitter``; and ``enriched``'s
+``ECONOMIC_STATUS_BY_INCOME_CLASS``) are no longer CALLED directly in this
+file -- their only call sites moved into whichever sibling now owns the
+corresponding method body. They stay imported here (each marked
+``# noqa: F401``) purely so ``dir(braunschweig.popsim.sources.entd)`` -- and
+therefore anything introspecting or ``from``-importing these names off this
+facade -- keeps seeing exactly the same module-level names as before the
+split. Each import block below carries only a short pointer back to this
+paragraph plus its own moved-to location; this paragraph is the one place
+that states the rationale.
 
 Load strategy
 -------------
@@ -113,56 +155,40 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-# numpy (np) is no longer called directly here (its only call site moved into
-# entd_trips.py, issue #267 split, Task 5) but stays imported for
-# module-namespace parity, the same rationale as the other "no longer called
-# directly" imports below.
+# np: moved to entd_trips.py (Task 5). Namespace-parity import, see docstring.
 import numpy as np  # noqa: F401  (namespace parity, see above)
 import pandas as pd
 
-# _AGE_RANGE_BINS, _AGE_RANGE_LABELS and _household_availability are no longer
-# called directly here (their only call sites moved into entd_attributes.py,
-# issue #267 split, Task 4) but stay imported for module-namespace parity, the
-# same rationale as the braunschweig.popsim.seed import block below. ADULT_AGE
-# was already unused before this split (kept for the same reason).
+# Moved to entd_attributes.py (Task 4); namespace-parity import, see
+# docstring. ADULT_AGE was already unused before this split.
 from braunschweig.popsim.assembly import (  # noqa: F401  (namespace parity, see above)
     _AGE_RANGE_BINS,
     _AGE_RANGE_LABELS,
     _household_availability,
     ADULT_AGE,
 )
-# derive_car_availability / derive_bicycle_availability: same rationale --
-# their only call sites moved into entd_attributes.py (Task 4).
+# Moved to entd_attributes.py (Task 4); namespace-parity import, see docstring.
 from braunschweig.popsim.attributes import (  # noqa: F401  (namespace parity, see above)
     derive_car_availability,
     derive_bicycle_availability,
 )
-# _income_module: only used (ENTD_INCOME_CLASS_MIDPOINT_EUR) inside the moved
-# map_person_attributes body; kept imported for module-namespace parity.
+# Moved to entd_attributes.py (Task 4); namespace-parity import, see docstring.
 from braunschweig.popsim import income as _income_module  # noqa: F401  (namespace parity)
-# SeedColumns is still used here as a method return-type annotation.
-# CompletenessReport, filter_complete_households and select_seed_columns are no
-# longer called directly here (their only call sites moved into entd_seed.py,
-# issue #267 split, Task 3) but stay imported for module-namespace parity: they
-# were already accessible as braunschweig.popsim.sources.entd.<name> before the
-# split and the parity gate pins that.
+# SeedColumns is still used here as a method return-type annotation. The other
+# three names moved to entd_seed.py (Task 3); namespace-parity import, see
+# docstring.
 from braunschweig.popsim.seed import (  # noqa: F401  (namespace parity, see above)
     CompletenessReport,
     SeedColumns,
     filter_complete_households,
     select_seed_columns,
 )
-# cell_urban_class_from_rs7 and entd_urban_class are no longer called directly
-# here (their only call sites moved into entd_donor.py, issue #267 split,
-# Task 6) but stay imported for module-namespace parity, the same rationale
-# as the other "no longer called directly" imports above.
+# Moved to entd_donor.py (Task 6); namespace-parity import, see docstring.
 from braunschweig.popsim.stratum import (  # noqa: F401  (namespace parity, see above)
     cell_urban_class_from_rs7,
     entd_urban_class,
 )
-# CONTRACT and apply_per_person_jitter are no longer called directly here
-# (their only call site moved into entd_trips.py, issue #267 split, Task 5)
-# but stay imported for module-namespace parity, the same rationale as above.
+# Moved to entd_trips.py (Task 5); namespace-parity import, see docstring.
 from braunschweig.popsim.trips_stage import (  # noqa: F401  (namespace parity, see above)
     CONTRACT,
     apply_per_person_jitter,
@@ -171,9 +197,8 @@ from braunschweig.popsim.trips_stage import (  # noqa: F401  (namespace parity, 
 # Legacy EUR-class -> 5-class economic status map (the status_from_hhtype=False
 # fallback semantics). No circular import: braunschweig.synthesis never imports
 # from braunschweig.popsim (verified), and this package already imports from the
-# shared synthesis tree (synthesis.population.matched below). No longer called
-# directly here (its only call site moved into entd_attributes.py, issue #267
-# split, Task 4); kept imported for module-namespace parity.
+# shared synthesis tree (synthesis.population.matched below). Moved to
+# entd_attributes.py (Task 4); namespace-parity import, see docstring.
 from braunschweig.synthesis.population.enriched import (  # noqa: F401  (namespace parity, see above)
     ECONOMIC_STATUS_BY_INCOME_CLASS,
 )

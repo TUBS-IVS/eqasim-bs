@@ -6,11 +6,13 @@ direct pass-through of the ENTD-cleaned columns plus three derivations
 defaults (``pt_subscription_type``, ``household_income``/``economic_status``
 from ``income_class``).
 
-Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267);
-``entd.py`` re-exports the name so external imports of the facade module are
-unaffected. ``EntdSource.map_person_attributes`` is a one-line delegation to
-the module-level function here (``EntdSource`` has no instance state, so
-``self`` carried nothing the moved body needed).
+Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267).
+``map_person_attributes`` was only ever a class-method body before this
+split, never a bare module-level name, so there is nothing to re-export:
+``entd.py`` imports it under the private alias ``_map_person_attributes`` as
+the internal delegation target for ``EntdSource.map_person_attributes``,
+which remains the public entry point (``EntdSource`` has no instance state,
+so ``self`` carried nothing the moved body needed).
 """
 
 from __future__ import annotations

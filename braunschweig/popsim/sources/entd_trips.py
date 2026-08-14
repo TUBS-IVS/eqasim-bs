@@ -9,11 +9,13 @@ trips) via the legacy hierarchical-relaxation statistical matching in
 donor's chain.  All coverage and mobility rates are logged (CLAUDE.md
 no-silent-fallback).
 
-Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267);
-``entd.py`` re-exports the name so external imports of the facade module are
-unaffected. ``EntdSource.build_trips`` is a one-line delegation to the
-module-level function here (``EntdSource`` has no instance state, so ``self``
-carried nothing the moved body needed).
+Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267).
+``build_trips`` was only ever a class-method body before this split, never a
+bare module-level name, so there is nothing to re-export: ``entd.py`` imports
+it under the private alias ``_build_trips`` as the internal delegation target
+for ``EntdSource.build_trips``, which remains the public entry point
+(``EntdSource`` has no instance state, so ``self`` carried nothing the moved
+body needed).
 """
 
 from __future__ import annotations

@@ -10,12 +10,15 @@
   so the entire proven downstream (seed build, expand, map_demographics) runs
   unchanged.
 
-Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267);
-``entd.py`` re-exports these names so external imports of the facade module
-are unaffected. ``EntdSource.seed_columns``, ``EntdSource.built_seed_columns``
-and ``EntdSource.build_seed`` are one-line delegations to the module-level
-functions here (``EntdSource`` has no instance state, so ``self`` carries
-nothing the moved bodies needed).
+Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267).
+``seed_columns``, ``built_seed_columns`` and ``build_seed`` were only ever
+class-method bodies before this split, never bare module-level names, so
+there is nothing to re-export: ``entd.py`` imports them under the private
+aliases ``_seed_columns``, ``_built_seed_columns`` and ``_build_seed`` as the
+internal delegation targets for ``EntdSource.seed_columns``,
+``EntdSource.built_seed_columns`` and ``EntdSource.build_seed``, which remain
+the public entry points (``EntdSource`` has no instance state, so ``self``
+carries nothing the moved bodies needed).
 """
 
 from __future__ import annotations

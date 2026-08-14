@@ -8,12 +8,15 @@
 - :func:`cell_stratum`: the per-100m-cell RS2 stratum label, derived from the
   cell's ``RegioStaR7`` code, in the same label space as :func:`donor_stratum`.
 
-Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267);
-``entd.py`` re-exports the name so external imports of the facade module are
-unaffected. ``EntdSource.load_donor``, ``EntdSource.donor_stratum`` and
-``EntdSource.cell_stratum`` are one-line delegations to the module-level
-functions here (``EntdSource`` has no instance state, so ``self`` carried
-nothing the moved bodies needed).
+Extracted verbatim from ``braunschweig.popsim.sources.entd`` (issue #267).
+``load_donor``, ``donor_stratum`` and ``cell_stratum`` were only ever
+class-method bodies before this split, never bare module-level names, so
+there is nothing to re-export: ``entd.py`` imports them under the private
+aliases ``_load_donor``, ``_donor_stratum`` and ``_cell_stratum`` as the
+internal delegation targets for ``EntdSource.load_donor``,
+``EntdSource.donor_stratum`` and ``EntdSource.cell_stratum``, which remain
+the public entry points (``EntdSource`` has no instance state, so ``self``
+carried nothing the moved bodies needed).
 """
 
 from __future__ import annotations

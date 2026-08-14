@@ -235,8 +235,9 @@ control totals -> seed -> `batch.py` greedy 1-km-atomic bin-packing ->
 PopulationSim subprocess per batch via `uv` -> `merge.py` cell-disjoint merge) ->
 `expand.py`/`assembly.py` (households -> donor persons, attribute mapping,
 pseudonymisation surrogates for MiD) -> `handoff.py` (cell -> building
-round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
-`seed_columns/load_donor/map_person_attributes/build_trips`). Income:
+round-robin). Donor adapters: `sources/base.py` (Protocol:
+`seed_columns/load_donor/map_person_attributes/build_trips`), `sources/mid.py`,
+`sources/entd.py` (facade + 7 siblings since #267, see below). Income:
 `income.py::apply_inkar_income_eur` — one INKAR per-Kreis scaling + one
 `high_income >= 5000 EUR` rule for BOTH popsim sources (commit a8cce14).
 
@@ -256,6 +257,28 @@ any cache entry; the pre-existing gap it leaves open (`stage.py` lacks a
 `validate()` over its `mid` helper, so editing `mid` alone never invalidates
 the cache) is scheduled to close when `popsim/stage.py` itself is split
 (issue #267, module 3).
+
+`sources/entd.py` (1487 -> 622 lines) is a **sibling split**, not a package
+conversion like `mid/`: `sources/` gained no `entd/` subdirectory and no
+`__init__.py`, so the import path `braunschweig.popsim.sources.entd` is
+unchanged. `entd.py` stays a **delegating class facade** -- `EntdSource`'s
+full public surface (8 method names and signatures, pinned by
+`check_namespace.py`) remains defined in `entd.py`, but every method body is
+now a one-line delegation to a module-level function in one of seven
+siblings: `entd_attributes` (person-attribute mapping), `entd_trips` (trip
+building), `entd_seed` (seed building), `entd_diary_matching` (chain matching
+of trip-less persons to diary donors), `entd_vocabulary` (ENTD constants and
+column vocabularies), `entd_donor` (donor loading, donor/cell stratum
+derivation), `entd_schema` (column requirements, donor-schema conversion) --
+see STRUCTURE.md for line counts. This body-move was safe because
+`EntdSource` carries no instance state (`self` never appears inside a method
+body in the original module), so nothing needed to be threaded through an
+instance when the bodies moved out. Every sibling binds its logger to the
+literal facade name (`logging.getLogger("braunschweig.popsim.sources.entd")`,
+not `__name__`), so `LogRecord.name` values are unchanged by the split.
+Cache-neutrality: like `mid/`, no synpp stage content-hashes `entd.py`'s
+internals beyond the file itself, and the import path is untouched, so the
+split cannot devalidate any cache entry.
 
 ### Trip/vocabulary convergence
 
