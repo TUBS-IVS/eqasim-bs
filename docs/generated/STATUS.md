@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 69 | stages: 115 | datasets: 52 | ADRs: 80 | run manifests: 20
+- Features: 69 | stages: 115 | datasets: 52 | ADRs: 86 | run manifests: 20
 
 ## Population synthesis
 
@@ -57,14 +57,14 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Vehicle fleet
 
-3 stage(s), 3 in the production DAG. Datasets: `hsn_tsn_lookup`, `kba_fleet_derived`
+3 stage(s), 3 in the production DAG. Datasets: `hsn_tsn_lookup`, `kba_fleet_derived`, `mid2023_b1`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Fleet consistency v2 + income-age](../registry/features/fleet_consistency_v2.yml) | active | ON | A/A/- | unvalidated |  |
 | [BEV/electric calibration](../registry/features/fleet_electric_calibration.yml) | active | ON | A/A/- | unvalidated |  |
 | [HSN/TSN engine attrs (kW/ccm/fuel)](../registry/features/fleet_hsn_tsn_attributes.yml) | active | ON | A/A/- | unvalidated |  |
-| [Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check)](../registry/features/fleet_realism_upgrade.yml) | EXPERIMENTAL | off | i/i/- | unvalidated |  |
+| [Fleet realism upgrade (all-Kreise fuel/euro, EV-income tilt, Euro-6 substage, RS7 cross-check)](../registry/features/fleet_realism_upgrade.yml) | active | ON | A/A/- | unvalidated | [#277](https://github.com/TUBS-IVS/eqasim-bs/issues/277) |
 | [German fleet segment+brand mix](../registry/features/fleet_segment_brand_mix.yml) | active | ON | A/A/- | unvalidated |  |
 | [Household fleet (vs default car)](../registry/features/household_fleet.yml) | active | ON | A/A/A | unvalidated |  |
 

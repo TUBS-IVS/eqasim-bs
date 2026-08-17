@@ -143,6 +143,82 @@ KBA_SEGMENT_MAP = {
     "sonstige": "sonstige",
 }
 
+def _report_unmapped_segments(where: str, unmapped_stock: "dict[str, float]",
+                              mapped_stock: float) -> None:
+    """Log the segment labels that did not map, with their stock share.
+
+    Naming the offending LABELS is the actionable part: a bare skipped-row count
+    reads like a tolerable residual, while the label plus its stock share says
+    whether a whole segment just vanished. Skipping an unknown label is legitimate
+    on its own (a source may carry an "Unbekannt" residual); what is NOT
+    legitimate is a canonical segment ending up without model rows, and that is
+    checked against the segment marginal in :func:`_check_segment_model_coverage`.
+    """
+    if not unmapped_stock:
+        return
+    total = mapped_stock + sum(unmapped_stock.values())
+    share = sum(unmapped_stock.values()) / total if total > 0 else 0.0
+    detail = ", ".join(
+        f"{label!r} ({stock:,.0f}, {100.0 * stock / total:.2f}%)"
+        for label, stock in sorted(unmapped_stock.items(),
+                                   key=lambda kv: -kv[1])
+    )
+    logger.warning(
+        "[%s] %d segment label(s) did not map via KBA_SEGMENT_MAP and were "
+        "skipped: %s; that is %.2f%% of the source stock. Add a label to "
+        "KBA_SEGMENT_MAP (or extend segment_lookup_key if it is only a spelling "
+        "variant) if one of these should have been kept.",
+        where, len(unmapped_stock), detail, 100.0 * share,
+    )
+
+
+def _check_segment_model_coverage(df_segment_model: pd.DataFrame,
+                                  df_segment_powertrain: pd.DataFrame) -> None:
+    """Every segment of the segment MARGINAL must have model rows.
+
+    The segment marginal (FZ 27.10 -> ``kba_segment_powertrain.csv``) decides how
+    many cars are drawn into each segment; the model table
+    (``kba_segment_model.csv``) supplies the brand/model pool for that segment. A
+    segment present in the first but missing from the second is not a tolerable
+    data gap: every car drawn into it gets an EMPTY brand and model, and with it no
+    HSN/TSN engine attributes and no per-model fuel weighting.
+
+    Measured trigger (issue #277): the 2026 Modellreihen export writes
+    ``"GELÄNDEWAGEN"`` with an umlaut. The ASCII-only key lookup missed it, so all
+    56 Geländewagen model rows were skipped while FZ 27.10 kept the segment --
+    5.6% of drawn cars ended up with an empty brand, silently.
+    """
+    marginal = set(df_segment_powertrain["segment"].astype(str))
+    modelled = set(df_segment_model["segment"].astype(str))
+    missing = sorted(marginal - modelled)
+    if missing:
+        raise ValueError(
+            f"segments present in the segment marginal but absent from "
+            f"kba_segment_model.csv: {missing}. Every car drawn into them would "
+            "carry an empty brand/model. Check KBA_SEGMENT_MAP / "
+            "segment_lookup_key against the raw source's segment spellings."
+        )
+    logger.info(
+        "[segment coverage] all %d marginal segment(s) have model rows "
+        "(model table covers %d segment(s))", len(marginal), len(modelled),
+    )
+
+
+def segment_lookup_key(label: str) -> str:
+    """Normalise a source segment label for the segment-map lookup.
+
+    Lower-cases, folds German umlauts/eszett to the ASCII spelling the maps use
+    and collapses whitespace, so a source that writes ``"GELÄNDEWAGEN"``,
+    ``"Gelaendewagen"`` or ``"gelandewagen"`` all reach the same entry. Applied at
+    EVERY segment-map lookup; a map miss then means a genuinely unknown segment,
+    not a spelling variant.
+    """
+    text = str(label).strip().lower()
+    for umlaut, ascii_form in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        text = text.replace(umlaut, ascii_form)
+    return " ".join(text.split())
+
+
 # MiD German segment name -> canonical snake_case segment.
 # MiD uses "Sportgelaendewagen" for what KBA calls SUVs, and
 # "nicht zuzuordnen" for the residual ("Sonstige").  MiD has no Wohnmobile block.
@@ -392,7 +468,7 @@ def extract_segment_powertrain() -> pd.DataFrame:
             continue
         if label.startswith("1. januar"):
             break  # next year's block
-        canonical = KBA_SEGMENT_MAP.get(label)
+        canonical = KBA_SEGMENT_MAP.get(segment_lookup_key(label))
         if canonical is None:
             continue
         total = _coerce_count(_cell(row, 2), counter)
@@ -769,7 +845,7 @@ def extract_segment_model() -> pd.DataFrame:
                 break
             if "Kraftfahrt-Bundesamt" in seg_label:
                 break
-            canonical = KBA_SEGMENT_MAP.get(seg_label.lower().strip())
+            canonical = KBA_SEGMENT_MAP.get(segment_lookup_key(seg_label))
             if canonical is not None:
                 current_segment = canonical
         model = _cell(row, 2)
@@ -876,15 +952,18 @@ def extract_segment_model_2026(path=None) -> pd.DataFrame:
     counter = CoercionCounter("Modellreihen 2026 segment_model")
     df = _read_modellreihen(path)
     records = []
-    n_unmapped = 0
+    unmapped_stock: dict[str, float] = {}
+    mapped_stock = 0.0
     for _, row in df.iterrows():
-        seg_key = str(row["Segment"]).strip().lower()
+        seg_key = segment_lookup_key(row["Segment"])
         canonical = KBA_SEGMENT_MAP.get(seg_key)
-        if canonical is None:
-            n_unmapped += 1
-            continue
-        model = f"{str(row['Marke']).strip()} {str(row['Modellreihe']).strip()}"
         count = _coerce_count(row["Anzahl"], counter)
+        if canonical is None:
+            label = str(row["Segment"]).strip()
+            unmapped_stock[label] = unmapped_stock.get(label, 0.0) + count
+            continue
+        mapped_stock += count
+        model = f"{str(row['Marke']).strip()} {str(row['Modellreihe']).strip()}"
         records.append({
             "segment": canonical,
             "model": model,
@@ -892,12 +971,8 @@ def extract_segment_model_2026(path=None) -> pd.DataFrame:
             "stichtag": "2026-01-01",
         })
     counter.log()
-    if n_unmapped > 0:
-        logger.warning(
-            "[extract_segment_model_2026] %d row(s) with unmapped segment skipped "
-            "(no KBA_SEGMENT_MAP entry); valid rows: %d",
-            n_unmapped, len(records),
-        )
+    _report_unmapped_segments("extract_segment_model_2026", unmapped_stock,
+                              mapped_stock)
     frame = pd.DataFrame(records)
     segment_totals = frame.groupby("segment")["count"].transform("sum")
     frame["share"] = frame["count"] / segment_totals
@@ -960,8 +1035,7 @@ def extract_model_fuel(path=None) -> pd.DataFrame:
     n_hybrid_checked = 0
     n_hybrid_mismatch = 0
     for _, row in df.iterrows():
-        seg_key = str(row["Segment"]).strip().lower()
-        canonical = KBA_SEGMENT_MAP.get(seg_key)
+        canonical = KBA_SEGMENT_MAP.get(segment_lookup_key(row["Segment"]))
         if canonical is None:
             n_unmapped += 1
             continue
@@ -1055,7 +1129,7 @@ def extract_mid_segment_by_status(path: Path, segment_map: dict, region_name_map
         if cell0.lower().startswith("pkw-segmentierung nach kba"):
             # The segment name follows the last "- ".
             after = cell0.split("- ")[-1].strip().lower()
-            canonical = segment_map.get(after)
+            canonical = segment_map.get(segment_lookup_key(after))
             block_starts.append((index, canonical, after))
 
     records = []
@@ -1623,7 +1697,8 @@ def main() -> None:
                 f"(raw xlsx are local-only; see {KBA_DIR / 'README.md'})."
             )
 
-    _write(extract_segment_powertrain(), "kba_segment_powertrain.csv")
+    df_segment_powertrain = extract_segment_powertrain()
+    _write(df_segment_powertrain, "kba_segment_powertrain.csv")
     _write(extract_kreis_powertrain(), "kba_kreis_powertrain.csv")
     _write(extract_gemeinde_private_bev(), "kba_gemeinde_private_bev.csv")
     _write(extract_fuel_euro_nds(), "kba_fuel_euro_nds.csv")
@@ -1632,7 +1707,11 @@ def main() -> None:
     _write(extract_brand_powertrain(), "kba_brand_powertrain.csv")
     # kba_segment_model.csv is now produced from the 2026 Modellreihen source
     # (extract_segment_model_2026) instead of the legacy FZ 12.1 xlsx.
-    _write(extract_segment_model_2026(), "kba_segment_model.csv")
+    df_segment_model = extract_segment_model_2026()
+    # Fail before writing: a segment without model rows would silently emit cars
+    # with an empty brand/model (issue #277).
+    _check_segment_model_coverage(df_segment_model, df_segment_powertrain)
+    _write(df_segment_model, "kba_segment_model.csv")
     _write(extract_model_fuel(), "kba_model_fuel.csv")
     _write(
         extract_mid_segment_by_status(MID_BUNDESLAND_PATH, MID_SEGMENT_MAP,

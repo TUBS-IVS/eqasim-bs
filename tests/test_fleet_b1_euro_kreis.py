@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -714,15 +715,38 @@ class TestFleetSamplerFromDataPathWithEuroCSV:
 class TestFleetSamplerFallbackNoEuroCSV:
     """Fallback: kba_kreis_euro.csv absent -> age_euro_joint_kreis is None."""
 
-    def test_age_euro_joint_kreis_is_none_on_committed_data(self):
-        """On the committed data path (no euro CSV) age_euro_joint_kreis must be None."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
+    def test_age_euro_joint_kreis_is_none_when_the_euro_csv_is_absent(self, tmp_path):
+        """With kba_kreis_euro.csv absent, age_euro_joint_kreis must be None.
+
+        The absence is CONSTRUCTED: the table is committed since issue #277, so
+        reading the real data path would assert the opposite of what this test is
+        for (and would pass vacuously before the table existed).
+        """
+        real_derived = DATA / "braunschweig" / "kba" / "derived"
+        if not real_derived.exists():
             pytest.skip("real derived data directory absent")
-        sampler = fs.FleetSampler.from_data_path(DATA_PATH)
+        derived = tmp_path / "braunschweig" / "kba" / "derived"
+        derived.mkdir(parents=True)
+        for src in real_derived.glob("*.csv"):
+            if src.name == "kba_kreis_euro.csv":
+                continue
+            try:
+                (derived / src.name).symlink_to(src)
+            except OSError:
+                shutil.copy2(src, derived / src.name)
+        sampler = fs.FleetSampler.from_data_path(str(tmp_path))
         assert sampler.age_euro_joint_kreis is None, (
             "age_euro_joint_kreis must be None when kba_kreis_euro.csv is absent; "
             f"got {type(sampler.age_euro_joint_kreis)}"
         )
+
+    def test_age_euro_joint_kreis_is_built_on_committed_data(self):
+        """The PRIMARY path: with the committed per-Kreis euro table present, the
+        per-Kreis joint must actually be built (ADR-0081/ADR-0082)."""
+        if not (DATA / "braunschweig" / "kba" / "derived" / "kba_kreis_euro.csv").exists():
+            pytest.skip("kba_kreis_euro.csv absent")
+        sampler = fs.FleetSampler.from_data_path(DATA_PATH)
+        assert sampler.age_euro_joint_kreis is not None
 
     def test_fallback_logged(self, caplog):
         """A log message must state that the national (FZ 27.4) joint is used."""

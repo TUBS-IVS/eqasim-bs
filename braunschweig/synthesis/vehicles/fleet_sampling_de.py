@@ -67,6 +67,13 @@ POWERTRAINS: tuple[str, ...] = ft.POWERTRAIN_LABELS
 #: Electric (plug-in) powertrains tilted by the Gemeinde private BEV/PHEV share.
 ELECTRIC_POWERTRAINS: tuple[str, ...] = ("bev", "phev")
 
+#: Key under which a Gemeinde/Kreis electric-share map carries the COMBINED
+#: electric share (BEV + PHEV + fuel cell) instead of a per-powertrain split.
+#: Some KBA per-Gemeinde editions publish only that combined share; the tilt then
+#: scales the whole electric mass by one factor, which preserves the within-Kreis
+#: BEV:PHEV ratio rather than inventing one (ADR-0086).
+COMBINED_ELECTRIC_KEY: str = "electric_combined"
+
 
 # --------------------------------------------------------------------------- #
 # Gemeinde-name normalisation for the FZ 27.17 tilt join (issue #161)
@@ -277,6 +284,9 @@ class PowertrainModel:
     # Gemeinde (municipal merger, see GEMEINDE_GEBIETSSTAND_CROSSWALK). Counted
     # separately from primary/fallback so the crosswalk stays observable.
     _gemeinde_crosswalked: int = field(default=0)
+    # Electric powertrains tilted via the COMBINED electric share because the
+    # source published no BEV/PHEV split for that Gemeinde (ADR-0086).
+    _gemeinde_combined: int = field(default=0)
     _grid_primary: int = field(default=0)
     _grid_fallback: int = field(default=0)
 
@@ -717,9 +727,14 @@ class PowertrainModel:
                 weight_primary += 1
             kreis_weighted = weighted_sums.setdefault(kreis_ags5, {})
             kreis_weight = weight_sums.setdefault(kreis_ags5, {})
-            for col, pt in (("bev_share", "bev"), ("phev_share", "phev")):
-                val = row[col]
-                if pd.notna(val):
+            # ADR-0086: the combined electric share is accumulated alongside the
+            # per-powertrain ones, so the denominator exists for whichever of the
+            # two the numerator side can supply. A zero is NOT a measured share
+            # here either (see _gemeinde_electric_share_2026).
+            for col, pt in (("bev_share", "bev"), ("phev_share", "phev"),
+                            ("ev_share", COMBINED_ELECTRIC_KEY)):
+                val = row[col] if col in row else None
+                if val is not None and pd.notna(val) and float(val) > 0.0:
                     kreis_weighted[pt] = kreis_weighted.get(pt, 0.0) + weight * float(val)
                     kreis_weight[pt] = kreis_weight.get(pt, 0.0) + weight
 
@@ -869,13 +884,26 @@ class PowertrainModel:
         if gem_shares is None or kreis_shares is None:
             self._gemeinde_fallback += 1
             return pmf
-        self._gemeinde_primary += 1
         idx = {p: i for i, p in enumerate(self.powertrains)}
         tilted = pmf.copy()
+        # ADR-0086: prefer the per-powertrain share; where the source publishes only
+        # the combined electric share, tilt both electric powertrains by that single
+        # factor (preserving the Kreis BEV:PHEV ratio instead of inventing one).
+        # Which path was taken is counted so an inert tilt can never hide again.
+        combined_factor = None
+        gem_combined = gem_shares.get(COMBINED_ELECTRIC_KEY)
+        kreis_combined = kreis_shares.get(COMBINED_ELECTRIC_KEY, 0.0)
+        if gem_combined is not None and kreis_combined > 0.0:
+            combined_factor = float(np.clip(gem_combined / kreis_combined, 0.2, 5.0))
+        applied = False
         for pt in ELECTRIC_POWERTRAINS:
             kreis_share = kreis_shares.get(pt, 0.0)
             gem_share = gem_shares.get(pt)
             if gem_share is None or kreis_share <= 0.0:
+                if combined_factor is not None:
+                    tilted[idx[pt]] *= combined_factor
+                    applied = True
+                    self._gemeinde_combined += 1
                 continue
             # Clip the tilt to [0.2, 5] so a tiny denominator cannot explode a
             # single Gemeinde's electric share. F8 NOTE: the 0.2 lower floor is
@@ -885,6 +913,13 @@ class PowertrainModel:
             # are not represented at the extreme (acceptable trade-off).
             factor = float(np.clip(gem_share / kreis_share, 0.2, 5.0))
             tilted[idx[pt]] *= factor
+            applied = True
+        # A key match that tilts NOTHING is a fallback, not a primary hit: counting
+        # it as primary is what let the 2026-source defect read as "tilt working".
+        if applied:
+            self._gemeinde_primary += 1
+        else:
+            self._gemeinde_fallback += 1
         return tilted
 
     def _apply_grid_tilt(self, pmf: np.ndarray,
@@ -976,6 +1011,12 @@ class PowertrainModel:
             100.0 * self._gemeinde_primary / gtot if gtot else 0.0,
             self._gemeinde_fallback, 100.0 * grate,
         )
+        if self._gemeinde_combined:
+            logger.info(
+                "%s powertrain Gemeinde tilt: %d electric-powertrain tilt(s) used "
+                "the COMBINED electric share (source publishes no BEV/PHEV split "
+                "for that Gemeinde, ADR-0086)", tag, self._gemeinde_combined,
+            )
         if self._gemeinde_crosswalked:
             logger.info(
                 "%s powertrain Gemeinde tilt: %d/%d cars (%.2f%%) reached their "
@@ -1026,17 +1067,58 @@ def _gemeinde_electric_share_2026(
     NaN is dropped entirely (no entry in the output map).
     """
     out: dict[tuple[str, str], dict[str, float]] = {}
+    # A share column that is zero (or NaN) for EVERY row carries no information --
+    # the KBA arcgis export ships editions where exactly that is true of the
+    # BEV/plug-in-hybrid columns. Treating those zeros as measured shares is what
+    # made the whole Gemeinde tilt inert (issue #277); a zero inside an otherwise
+    # informative column, by contrast, IS a measurement (a genuine no-EV pocket)
+    # and is kept. Only the two columns that DRIVE the tilt are screened this way;
+    # ``fuelcell_share`` is stored as-is because hydrogen is never tilted.
+    tilt_columns = {"bev_share": "bev", "phev_share": "phev"}
+    informative = {
+        col: bool((pd.to_numeric(df[col], errors="coerce").fillna(0.0) > 0.0).any())
+        for col in tilt_columns if col in df.columns
+    }
+    degenerate = sorted(col for col, ok in informative.items() if not ok)
+    if degenerate and len(df) > 0:
+        logger.warning(
+            "[fleet_de] Gemeinde EV tilt source (2026): column(s) %s carry no "
+            "positive value in any of the %d row(s) -- treated as ABSENT, not as "
+            "measured zeros. The tilt uses the combined electric share instead "
+            "(ADR-0086).", degenerate, len(df),
+        )
+    n_split = 0
     for _, row in df.iterrows():
         key = (str(row["kreis_ags5"]), str(row["gemeinde_norm"]))
         shares: dict[str, float] = {}
-        for col, pt in (("bev_share", "bev"),
-                        ("phev_share", "phev"),
-                        ("fuelcell_share", "hydrogen")):
+        for col, pt in tilt_columns.items():
+            if not informative.get(col, False):
+                continue
             val = row[col]
             if pd.notna(val):
                 shares[pt] = float(val)
         if shares:
+            n_split += 1
+        if "fuelcell_share" in row and pd.notna(row["fuelcell_share"]):
+            shares["hydrogen"] = float(row["fuelcell_share"])
+        # The KBA arcgis export ships editions in which ONLY the combined
+        # "Pkw Elektro Anteil" carries information and every BEV / plug-in-hybrid /
+        # fuel-cell column is a literal 0 (verified for the 2026.04 edition: 113/113
+        # ZGB rows). Storing those zeros as if they were measured shares makes the
+        # whole Gemeinde tilt inert -- the defect issue #277 found. The combined
+        # share is kept under COMBINED_ELECTRIC_KEY so the tilt can operate on the
+        # total electric mass instead (ADR-0086).
+        ev_total = row.get("ev_share")
+        if pd.notna(ev_total) and float(ev_total) > 0.0:
+            shares[COMBINED_ELECTRIC_KEY] = float(ev_total)
+        if shares:
             out[key] = shares
+    if out:
+        logger.info(
+            "[fleet_de] Gemeinde EV tilt source (2026): %d/%d row(s) carry a "
+            "per-powertrain BEV/PHEV split; the rest tilt on the combined "
+            "electric share.", n_split, len(out),
+        )
     return out
 
 
@@ -2096,26 +2178,28 @@ def _draw_age_consistent_with_euro(rng: np.random.Generator,
 # --------------------------------------------------------------------------- #
 # Task 7: per-Kreis electric-mass recalibration on the feasible support (Bug 2)
 # --------------------------------------------------------------------------- #
-def _electric_rake_factors(
+def _powertrain_rake_factors(
     pmfs: np.ndarray, kreis_target_share: dict[str, float],
-    electric_idx: dict[str, int], max_iterations: int = 50,
+    target_idx: dict[str, int], max_iterations: int = 50,
     tolerance: float = 1e-9, kreis: str = "?",
 ) -> tuple[np.ndarray, dict[str, float]]:
-    """Per-electric-powertrain multiplicative scale factors for ONE Kreis.
+    """Per-powertrain multiplicative scale factors for ONE Kreis.
 
-    Task 6 masks every car's powertrain pmf to its model-feasible set, which
-    systematically removes bev/phev mass from combustion-only models and so
-    drives the per-Kreis electric share BELOW the FZ 27.15 target. This computes,
-    for each electric powertrain ``e`` (bev, phev), a scale factor ``alpha_e``
-    such that scaling every car's ``pmf_i[e]`` by ``alpha_e`` and renormalising
-    makes the EXPECTED per-Kreis count of ``e`` equal the FZ 27.15 target
-    (``N_kreis * share_e``).
+    Task 6 masks every car's powertrain pmf to its model-feasible set and weights
+    it by the per-model fuel mix, which distorts the per-Kreis powertrain
+    distribution away from the raked target: electric mass is removed from
+    combustion-only models, and the model-fuel weights bias the surviving
+    combustion mass. This computes, for each powertrain ``e`` passed in
+    ``target_idx``, a scale factor ``alpha_e`` such that scaling every car's
+    ``pmf_i[e]`` by ``alpha_e`` and renormalising makes the EXPECTED per-Kreis
+    share of ``e`` equal its target (ADR-0085).
 
     Feasibility is preserved by construction: scaling only re-weights cars that
     already carry nonzero feasible mass on ``e`` (a combustion-only car has
-    ``pmf_i[e] == 0`` and stays 0 under any finite scale). bev and phev are
-    coupled (raising one steals renormalised mass from the other), so the two
-    factors are found by a small fixed-point iteration.
+    ``pmf_i[e] == 0`` and stays 0 under any finite scale). The powertrains are
+    coupled (raising one steals renormalised mass from the others), so the factors
+    are found by a small fixed-point iteration -- a one-dimensional multiplicative
+    raking over the masked support.
 
     Parameters
     ----------
@@ -2123,7 +2207,7 @@ def _electric_rake_factors(
         for the cars of this Kreis (each row sums to 1).
     kreis_target_share : {powertrain -> FZ 27.15 share} for this Kreis (the
         electric entries are the rake targets).
-    electric_idx : {electric powertrain -> column index in ``pmfs``}.
+    target_idx : {powertrain -> column index in ``pmfs``} for every powertrain to rake.
     kreis : Kreis code, used only to make the WARNING log messages below
         traceable; has no effect on the computed factors/residuals.
 
@@ -2154,12 +2238,12 @@ def _electric_rake_factors(
     factors = np.ones(n_pt, dtype=float)
     residuals: dict[str, float] = {}
     if n_cars == 0:
-        return factors, {e: 0.0 for e in electric_idx}
+        return factors, {e: 0.0 for e in target_idx}
 
-    electric_cols = list(electric_idx.values())
+    target_cols = list(target_idx.values())
     targets = np.array(
-        [kreis_target_share.get(e, 0.0) for e in electric_idx], dtype=float)
-    cols = np.array(electric_cols, dtype=int)
+        [kreis_target_share.get(e, 0.0) for e in target_idx], dtype=float)
+    cols = np.array(target_cols, dtype=int)
 
     # Fixed-point iteration on the electric scale factors. After each update we
     # renormalise every car's pmf with the current factors and measure the mean
@@ -2196,26 +2280,26 @@ def _electric_rake_factors(
     np.divide(scaled, denom, out=scaled, where=denom > 0)
     achieved = scaled[:, cols].mean(axis=0)
 
-    for j, e in enumerate(electric_idx):
+    for j, e in enumerate(target_idx):
         factors[cols[j]] = alpha[j]
         resid = float(achieved[j] - targets[j])
         residuals[e] = resid
         # No silent fallback (F5): an unreachable target -- from either side --
-        # means the model-feasibility mask leaves too little (or too much)
-        # electric-capable mass to hit the FZ 27.15 share for this Kreis.
+        # means the model-feasibility mask leaves too little (or too much) mass on
+        # this powertrain to hit the per-Kreis target share.
         if resid < -0.01:
             logger.warning(
-                "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
+                "[fleet_de] Task 7 per-Kreis powertrain rake: Kreis %s "
                 "%s UNREACHABLE (under target) -- target %.4f, max achievable "
-                "%.4f (residual %.4f); too few electric-capable cars.",
+                "%.4f (residual %.4f); too few cars whose feasible set allows it.",
                 kreis, e, targets[j], targets[j] + resid, resid,
             )
         elif resid > 0.01:
             logger.warning(
-                "[fleet_de] Task 7 per-Kreis electric rake: Kreis %s "
+                "[fleet_de] Task 7 per-Kreis powertrain rake: Kreis %s "
                 "%s UNREACHABLE (over target) -- target %.4f, min achievable "
-                "%.4f (residual %.4f); forced electric-only models cannot be "
-                "scaled down further.",
+                "%.4f (residual %.4f); the mask forces this powertrain on too "
+                "many cars to scale it down further.",
                 kreis, e, targets[j], targets[j] + resid, resid,
             )
     return factors, residuals
@@ -2663,7 +2747,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         # rake guarantees it), so the per-Kreis bev/phev share returns to FZ 27.15.
         # Feasibility is preserved (a combustion-only car has 0 electric mass and
         # stays 0 under any finite scale).
-        electric_idx = {e: _powertrain_idx[e] for e in ELECTRIC_POWERTRAINS}
+        # ADR-0085: rake EVERY powertrain, not only the electric ones. Masking plus
+        # the per-model fuel weights distort the whole distribution, and correcting
+        # the electric mass alone left the combustion split biased by +10.2pp petrol
+        # against the committed 46251-02 ZGB reference (measured with
+        # scripts/measure_combustion_split.py).
+        target_idx = dict(_powertrain_idx)
         kreis_factors: dict[str, np.ndarray] = {}
         rows_by_kreis: dict[str, list[int]] = {}
         for i in range(n):
@@ -2671,15 +2760,19 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         for kreis, rows in rows_by_kreis.items():
             pmfs = np.array([car_pmf[i] for i in rows], dtype=float)
             unmasked = np.array([car_unmasked_pmf[i] for i in rows], dtype=float)
-            # Target electric share = mean unmasked (tilted) electric mass.
+            # Target = mean UNMASKED (Gemeinde/grid/income-tilted) pmf. That vector
+            # is what PowertrainModel already raked onto the per-Kreis KBA marginal,
+            # so raking back onto it restores the reference distribution while
+            # keeping the tilts and using the model-fuel weights only as a
+            # WITHIN-support preference.
             target = {
                 e: float(unmasked[:, idx].mean())
-                for e, idx in electric_idx.items()
+                for e, idx in target_idx.items()
             }
             # Unreachable-target WARNINGs (both under- and over-shoot, F5) are
-            # logged inside _electric_rake_factors itself, keyed by ``kreis``.
-            factors, residuals = _electric_rake_factors(
-                pmfs, target, electric_idx, kreis=kreis)
+            # logged inside _powertrain_rake_factors itself, keyed by ``kreis``.
+            factors, residuals = _powertrain_rake_factors(
+                pmfs, target, target_idx, kreis=kreis)
             kreis_factors[kreis] = factors
 
         # PASS 2: apply the per-Kreis rake factor, draw the powertrain, then

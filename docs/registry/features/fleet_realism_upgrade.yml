@@ -1,50 +1,120 @@
 feature: fleet_realism_upgrade
-title: Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check)
+title: Fleet realism upgrade (all-Kreise fuel/euro, EV-income tilt, Euro-6 substage, RS7 cross-check)
 area: fleet
-description: EV-income tilt, Euro-6 substage and RegioStaR-7 cross-check for the household fleet;
-  built on branch feature/fleet-quality-and-data (ADR-0051 reserved), server verification and
-  merge still pending.
+description: Regionalises the household fleet's powertrain and Euro-class references to ALL German
+  Kreise (Destatis 46251-02/-03), adds a within-Kreis EV-income tilt from MiD 2023 Autos micro-data,
+  a conditional Euro-6 substage for combustion Euro-6 cars, per-model fuel weights, a 2026 per-Gemeinde
+  EV tilt with a 5 km grid refinement, and a logging-only RegioStaR-7 EV cross-check.
 stages:
 - braunschweig.synthesis.vehicles.cars.household
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: active
+  popsim_open: active
   simple_ipf_open: not_used
-lifecycle: experimental
+lifecycle: active
 production:
-  enabled: false
-  flags: []
+  enabled: true
+  flags:
+  - fleet_ev_income_tilt
+  - fleet_euro6_substage
+  - fleet_electric_calibration
 introduced:
-  issue: null
+  issue: 277
   pr: null
-  adr: null
+  adr: ADR-0081
 detail_doc: null
 code_paths:
 - braunschweig/synthesis/vehicles/cars/household.py
+- braunschweig/synthesis/vehicles/fleet_sampling_de.py
+- braunschweig/synthesis/vehicles/fleet_validation.py
+- braunschweig/data/kba/fleet_tables.py
+- scripts/extract_kba_fleet.py
+- scripts/build_mid_antrieb_by_status.py
 evidence:
-  tests: []
+  tests:
+  - tests/test_fleet_b1_fuel_marginal.py
+  - tests/test_fleet_b1_euro_kreis.py
+  - tests/test_fleet_ev_income_tilt.py
+  - tests/test_fleet_euro6_substage.py
+  - tests/test_fleet_gemeinde_ev_2026.py
+  - tests/test_fleet_grid_tilt_wiring.py
+  - tests/test_fleet_model_fuel_weight.py
+  - tests/test_fleet_kreis_marginal_guard.py
+  - tests/test_gemeinde_normalize.py
+  - tests/test_ev_regiostar7.py
+  - tests/test_electric_euro.py
+  - tests/test_mid_antrieb_by_status.py
   off_path_byte_identical:
-    claimed: not_applicable
+    claimed: false
     note: |
-      The feature does not exist on main at all (fleet_ev_income_tilt / fleet_euro6_substage appear nowhere in this branch's source); it lives only on the unmerged origin/feature/fleet-quality-and-data branch (43 commits ahead of the merge-base).
+      The legacy path (consistency_v2=False) keeps its exact schema and code, but it is NOT
+      byte-identical to the pre-branch baseline: the shared segment-IPF zero-row seed improvement
+      (commit 9eb2050, seed the NDS status marginal instead of uniform) shifts segment draws in both
+      paths. User-signed-off 2026-07-03; the two OFF-path goldens
+      (tests/fixtures/fleet_v1_golden.parquet, feature_b_age_off_golden.parquet) were regenerated on
+      2026-08-17 after the derived tables and ADR-0084/0085/0086 fixes landed. Measured spread of the
+      regeneration on the OFF frame: segment 15.8% of rows, model 15.8%, brand 12.3%, type_id 11.2%,
+      powertrain 2.5%, euro_class 2.1%, age 1.8% (all downstream of the segment draw; the four input
+      columns are identical).
   fallback_rate:
-    instrumented: false
-    note: Not evaluated -- the code does not exist on main.
-  reference:
-    kind: none
+    instrumented: true
+    log_marker: 'powertrain Gemeinde tilt: primary'
     note: |
-      Sources named in the matrix (KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB) are referenced only in unmerged branch commit messages; no committed derived table exists on main.
+      Per-run rates are logged per population label ("residents" / "in-commuters") for the powertrain
+      Kreis lookup, the Gemeinde tilt (incl. a separate count of Gebietsstand-crosswalked and
+      combined-electric-share tilts), the 5 km grid tilt, the brand/model draw, the HBEFA size map,
+      the Euro-6 substage draw (per-Kreis / national / no-data) and the model-feasibility mask.
+      Two instrumentation defects found and fixed during the merge: a Gemeinde whose key matched but
+      whose factors were all skipped used to count as a PRIMARY hit (ADR-0086), and the segment-model
+      coverage gap that emptied the gelaendewagen brand pool was only visible as a 5.6% brand/model
+      fallback rate (now a hard coverage check in the extractor).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/kba/derived/
+    note: |
+      Per-Kreis fuel/euro: Destatis Regionalstatistik 46251-02/-03, Stichtag 2025-01-01
+      (kba_kreis_fuel.csv, 403 Kreise; kba_kreis_euro.csv). Euro-6 substage: FZ 27.4 + 46251-03
+      (kba_fuel_euro6_substage_nds.csv). Per-model fuel: KBA Modellreihen 01.01.2026
+      (kba_model_fuel.csv, kba_segment_model.csv, 658 model series). Per-Gemeinde EV: KBA 2026.04
+      (kba_gemeinde_ev.csv, 113 ZGB Gemeinden -- combined electric share only, see ADR-0086).
+      5 km grid: kba_ev_grid.csv (714 cells). National age anchor: KBA/Statista ID3438
+      (kba_age_national.csv). EV-income tilt: MiD 2023 B1 Autos micro-data, 290930 vehicle records,
+      A_GEW-weighted (mid2023_antrieb_by_status.csv).
 validation:
+  # unvalidated is deliberate: the numbers under `metric` are reference-consistency
+  # measurements from committed diagnostic SCRIPTS, not from an executed pipeline
+  # run, and no run manifest exists for this state. Upgrading to
+  # measured_vs_reference requires a recorded run (schema-enforced).
   state: unvalidated
   runs: []
-  metric: null
-  note: Not applicable -- unmerged.
+  metric: |
+    Realised vs committed reference, measured on the merge state (2026-08-17):
+    petrol share of combustion cars, ZGB aggregate = 0.665..0.667 against the 46251-02 reference
+    0.670 (deviation -0.3 to -0.5pp, n=7168..10771; scripts/measure_combustion_split.py). Before the
+    ADR-0085 all-powertrain rake the same measurement read 0.772 (+10.2pp).
+    Gemeinde-name join coverage: 116/116 populated ZGB Gemeinden, zero false matches
+    (scripts/measure_gemeinde_join_coverage.py, ADR-0083).
+    MiD BEV gradient reproduced by the tilt input: 1.04% (very_low) to 8.27% (very_high).
+  note: |
+    Reference-anchored spot checks pass, but NO full pipeline run has been executed on this state:
+    no 1% or 25% smoke, no run manifest, no MATSim run. The state is "reference-consistent", not
+    "validated against observed travel behaviour". Vehicle attributes do not enter mode choice; they
+    feed the fleet composition analyses and would feed an HBEFA emissions run (not configured).
 assessment:
-  status: pending
-  by: null
-  date: null
+  status: reviewed
+  by: merge of issue #277
+  date: '2026-08-17'
   pending_reason: |
-    Not merged. ADR-0051 is only reserved in docs/DECISIONS.md's index (a placeholder noting it belongs to this branch) -- no ADR body exists on main. A draft ADR-0051 exists on the unmerged branch itself (tip commit "docs(fleet): ADR-0051 final-review addendum + OFF-path baseline sign-off") but is not part of the canonical DECISIONS.md log until merged.
-  source: null
-notes: Unmerged branch feature/fleet-quality-and-data; the flags (fleet_ev_income_tilt, fleet_euro6_substage)
-  do not exist on main yet.
+    Outstanding before this can be called validated: a pipeline smoke on the merged state with a run
+    manifest recording the per-run fallback rates and the realised-vs-reference deviations, plus the
+    100% re-run the fleet change devalidates. The Euro-6 substage remains emissions-relevant only if
+    the HBEFA emissions contrib is actually run.
+  source: docs/decisions/ADR-0081..ADR-0086
+notes: |
+  Merged from feature/fleet-quality-and-data (issue #277). Activating the derived tables for the
+  first time exposed six defects that the absent-CSV fallbacks had hidden: a semicolon/comma
+  delimiter assumption in the Modellreihen reader, an umlaut-blind segment map that emptied the
+  gelaendewagen model pool (5.6% empty brands), the Euro-6 substage overwriting euro_class and
+  thereby zeroing the FZ 27.4 comparison (ADR-0084), a +10.2pp petrol bias from raking only the
+  electric mass (ADR-0085), a structurally zero BEV/PHEV column that made the Gemeinde tilt inert
+  (ADR-0086), and four tests that asserted the absence of tables which are now committed.

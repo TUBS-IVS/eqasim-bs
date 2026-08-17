@@ -33,7 +33,7 @@ may only name run manifests (no run, no claim).
 | [fleet_consistency_v2](../registry/features/fleet_consistency_v2.yml) | fleet | active | ON | A/A/- | 4 | proven | marker | committed | unvalidated | pending |
 | [fleet_electric_calibration](../registry/features/fleet_electric_calibration.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | committed | unvalidated | pending |
 | [fleet_hsn_tsn_attributes](../registry/features/fleet_hsn_tsn_attributes.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | none | unvalidated | pending |
-| [fleet_realism_upgrade](../registry/features/fleet_realism_upgrade.yml) | fleet | experimental | off | i/i/- | 0 | -- | none | none | unvalidated | pending |
+| [fleet_realism_upgrade](../registry/features/fleet_realism_upgrade.yml) | fleet | active | ON | A/A/- | 12 | not claimed | marker | committed | unvalidated | merge of issue, 2026-08-17 |
 | [fleet_segment_brand_mix](../registry/features/fleet_segment_brand_mix.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | committed | unvalidated | pending |
 | [freight_analysis_exclusion](../registry/features/freight_analysis_exclusion.yml) | freight | active | ON | A/-/- | 1 | -- | marker | none | unvalidated | pending |
 | [freight_assumptions](../registry/features/freight_assumptions.yml) | freight | active | ON | A/i/i | 0 | -- | none | assumption | unvalidated | pending |

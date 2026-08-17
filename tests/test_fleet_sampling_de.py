@@ -174,9 +174,15 @@ def test_every_spec_is_valid_hbefa_type(sampled):
         assert row["hbefa_tech"] in allowed_tech
         assert row["hbefa_size"] in hbefa.HBEFA_SIZE_CLASSES
     # And reconstruct a VehicleType from each spec row to validate the triple.
+    # ADR-0084: the HBEFA emission concept is refined by the Euro-6 substage where
+    # one was drawn, so the reconstruction must use the same effective euro label
+    # the sampler used -- euro_class alone would rebuild a coarser type_id.
     for _, car in df_spec.sample(500, random_state=1).iterrows():
+        substage = car.get("euro6_substage", ft.EURO6_SUBSTAGE_NOT_APPLICABLE)
+        euro_for_hbefa = (substage if substage in ft.EURO6_SUBSTAGE_LABELS
+                          else car["euro_class"])
         vt = hbefa.vehicle_type_for(
-            car["powertrain"], car["euro_class"], car["segment"])
+            car["powertrain"], euro_for_hbefa, car["segment"])
         assert hbefa.is_valid_vehicle_type(vt)
         assert vt.type_id == car["type_id"]
 
@@ -448,10 +454,10 @@ def test_electric_rake_warns_on_overshoot(caplog):
     above and must log a WARNING carrying a POSITIVE residual.
     """
     pmfs = np.array([[1.0, 0.0]] * 20, dtype=float)  # col 0 = bev, col 1 = other
-    electric_idx = {"bev": 0}
+    target_idx = {"bev": 0}
     with caplog.at_level(logging.WARNING):
-        factors, residuals = fs._electric_rake_factors(
-            pmfs, {"bev": 0.5}, electric_idx, kreis="TEST_OVERSHOOT")
+        factors, residuals = fs._powertrain_rake_factors(
+            pmfs, {"bev": 0.5}, target_idx, kreis="TEST_OVERSHOOT")
     assert residuals["bev"] > 0.01
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("UNREACHABLE" in r.message for r in warnings), (
@@ -463,10 +469,10 @@ def test_electric_rake_warns_on_undershoot(caplog):
     """F5 (regression): the pre-existing under-shoot WARNING still fires when
     a Kreis has too little feasible electric mass to reach the target."""
     pmfs = np.array([[0.0, 1.0]] * 20, dtype=float)  # col 0 = bev, col 1 = other
-    electric_idx = {"bev": 0}
+    target_idx = {"bev": 0}
     with caplog.at_level(logging.WARNING):
-        factors, residuals = fs._electric_rake_factors(
-            pmfs, {"bev": 0.5}, electric_idx, kreis="TEST_UNDERSHOOT")
+        factors, residuals = fs._powertrain_rake_factors(
+            pmfs, {"bev": 0.5}, target_idx, kreis="TEST_UNDERSHOOT")
     assert residuals["bev"] < -0.01
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("UNREACHABLE" in r.message for r in warnings)
@@ -811,7 +817,7 @@ def test_age_income_off_unchanged():
 
 
 # --------------------------------------------------------------------------- #
-# Task 5 (final) — age×status validation panel + MiD-match e2e.
+# Task 5 (final) — age x status validation panel + MiD-match e2e.
 # --------------------------------------------------------------------------- #
 
 def test_synthetic_age_status_matches_mid():

@@ -2,13 +2,18 @@ stage: braunschweig.synthesis.vehicles.cars.household
 title: Household fleet synthesis
 layer: fleet
 description: 'Instantiates per-household vehicle fleets: KBA segment/brand mix, HSN/TSN engine
-  attributes, electric-share calibration, consistency v2 (ADR-0019/0020/0021).'
+  attributes, electric-share calibration, consistency v2 (ADR-0019/0020/0021), and the fleet realism
+  upgrade -- per-Kreis fuel/euro references for all German Kreise, a within-Kreis EV-income tilt, a
+  conditional Euro-6 substage in its own column, and an all-powertrain per-Kreis rake
+  (ADR-0081/0082/0083/0084/0085/0086).'
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/synthesis/vehicles/cars/household.py
+- braunschweig/synthesis/vehicles/fleet_sampling_de.py
+- braunschweig/synthesis/vehicles/fleet_validation.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -17,6 +22,7 @@ production: true
 inputs:
 - kba_fleet_derived
 - hsn_tsn_lookup
+- mid2023_b1
 features:
 - fleet_consistency_v2
 - fleet_electric_calibration
@@ -28,3 +34,9 @@ decisions:
 - ADR-0019
 - ADR-0020
 - ADR-0021
+- ADR-0081
+- ADR-0082
+- ADR-0083
+- ADR-0084
+- ADR-0085
+- ADR-0086

@@ -293,22 +293,27 @@ class TestFromDataPathWithFuelCSV:
 class TestFromDataPathFallback:
     """Fallback: when kba_kreis_fuel.csv is absent, fall back to FZ 27.15."""
 
-    def test_fallback_builds_successfully_on_real_data(self, caplog):
-        """from_data_path on the committed data path (no fuel CSV) must succeed.
+    def test_builds_successfully_on_committed_data(self, caplog):
+        """from_data_path on the committed data path must succeed and cover the ZGB.
 
-        The committed data directory does NOT contain kba_kreis_fuel.csv, so
-        from_data_path must fall back to the FZ 27.15 NDS-split path without
-        raising an exception.
+        Since issue #277 the committed data DOES contain kba_kreis_fuel.csv, and it
+        covers ALL German Kreise (ADR-0082 item 6: cross-cordon in-commuters get
+        their real home-Kreis mix). The invariant is therefore no longer "exactly
+        the 8 ZGB Kreise" but "the 8 ZGB Kreise are covered, extras allowed" --
+        which is also what the loader's own `_require_zgb_subset` enforces.
         """
         if not (DATA / "braunschweig" / "kba" / "derived").exists():
             pytest.skip("real derived data directory absent")
         segs = _segments()
         with caplog.at_level(logging.INFO):
             model = fs.PowertrainModel.from_data_path(DATA_PATH, segs)
-        # Must have all 8 ZGB Kreise.
-        assert len(model.kreis_segment_powertrain) == len(ft.ZGB_KREISE_AGS5), (
-            f"Expected {len(ft.ZGB_KREISE_AGS5)} Kreise, "
-            f"got {len(model.kreis_segment_powertrain)}"
+        covered = set(model.kreis_segment_powertrain)
+        missing = set(ft.ZGB_KREISE_AGS5) - covered
+        assert not missing, f"ZGB Kreise missing from the fuel marginal: {sorted(missing)}"
+        # Sanity that this is the all-Kreise table, not a silent ZGB-only fallback.
+        assert len(covered) > len(ft.ZGB_KREISE_AGS5), (
+            f"expected the all-Kreise 46251-02 table (~400 Kreise), got only "
+            f"{len(covered)} -- looks like the ZGB-only FZ 27.15 fallback"
         )
 
     def test_fallback_log_message_fired(self, caplog):
