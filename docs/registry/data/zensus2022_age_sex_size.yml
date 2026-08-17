@@ -30,10 +30,11 @@ licensing:
   redistribution: allowed
 limitations: Counts PERSONS, not households.
 notes: |
-  Two independent consumers. (1) The joint age x size IPF margin
-  (braunschweig.ipf.use_joint_age_size_margin) is ON in every simple_ipf_open run config
-  since issue #251, so this file is required for those runs -- it is local-only, not
-  committed, so a fresh clone must download it before an IPF run. (2) The open-data
-  replacement for the non-redistributable urbistat Gemeinde share key
-  (braunschweig.census.use_zensus_gemeinde_shares) is still not activated in any committed
-  config -- that half of the #251 family remains open.
+  Two independent consumers, both activated by issue #251, so this file is now required for
+  every IPF run: (1) the joint age x household-size IPF margin
+  (braunschweig.ipf.use_joint_age_size_margin) via
+  braunschweig.data.census.households_size_age; (2) the Gemeinde-within-Kreis population
+  share (braunschweig.census.use_zensus_gemeinde_shares), replacing the scraped,
+  redistribution-forbidden urbistat table (dataset urbistat_gemeinde_age). It is local-only
+  and not committed, so a fresh clone must download it before an IPF run; the popsim
+  production path does not use it.

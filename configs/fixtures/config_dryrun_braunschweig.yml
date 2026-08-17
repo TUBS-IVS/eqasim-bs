@@ -48,10 +48,13 @@ config:
     - "03157"
     - "03158"
 
+  # Gemeinde population shares from the OPEN Zensus 2022 table 1000A-3082 instead
+  # of the scraped, non-redistributable urbistat table (#251). Set here too so the
+  # resolved stage graph matches the real IPF run configs (it adds
+  # braunschweig.data.census.households_size_age as a dependency).
+  braunschweig.census.use_zensus_gemeinde_shares: true
+
   # Data paths (identical to the smoke / validation configs).
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
-  braunschweig.buildings_path: braunschweig/buildings
   osm_network_path: osm/niedersachsen-latest.osm.pbf
 
   # External OSM toolchain (Windows paths, identical to

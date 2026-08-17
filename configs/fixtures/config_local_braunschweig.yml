@@ -76,7 +76,6 @@ config:
 
   java_memory: 32G
 
-  home_location_sampling: weighted
   mode_choice: false
   # Optimization step (1): richer exogenous HTS matching keys. See
   # config_local_braunschweig_25pct.yml for the full rationale.
@@ -159,14 +158,17 @@ config:
     - "03157"
     - "03158"
 
+  # Gemeinde population shares from the OPEN Zensus 2022 table 1000A-3082 instead
+  # of the scraped, non-redistributable urbistat table (#251). Only the spatial key
+  # WITHIN a Kreis changes; Kreis totals stay the official DESTATIS 12411-0018
+  # figures. See config_local_braunschweig_25pct.yml for the full rationale.
+  braunschweig.census.use_zensus_gemeinde_shares: true
+
   # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
-  # GENESIS / Regionaldatenbank exports for Niedersachsen
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
 
   # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
   # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
@@ -191,9 +193,6 @@ config:
   # area weight by spatially-joined Zensus 2022 100m population, then
   # normalises per Gemeinde so inter-Gemeinde totals stay pinned.
   braunschweig.home_density_weighting: true
-
-  # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
-  braunschweig.buildings_path: braunschweig/buildings
 
   # Geofabrik snapshot for Niedersachsen
   osm_network_path: osm/niedersachsen-latest.osm.pbf

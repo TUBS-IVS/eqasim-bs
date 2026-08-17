@@ -54,6 +54,10 @@
   ],
   [
    "braunschweig.data.census.households_size_age",
+   "braunschweig.data.census.population"
+  ],
+  [
+   "braunschweig.data.census.households_size_age",
    "braunschweig.ipf.prepare"
   ],
   [

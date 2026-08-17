@@ -51,7 +51,6 @@ config:
   matsim_write_events_interval: 0   # 0 = only final iteration
   matsim_write_plans_interval: 50
 
-  home_location_sampling: weighted
   mode_choice: false
   # Optimization step (1): richer, behaviourally-relevant HTS matching keys.
   # Beyond the legacy [sex, age_class, has_license] we add the EXOGENOUS
@@ -228,14 +227,20 @@ config:
     - "03157"
     - "03158"
 
+  # Gemeinde population shares from the OPEN Zensus 2022 table 1000A-3082 instead
+  # of the scraped, non-redistributable urbistat table (#251). Only the spatial key
+  # WITHIN a Kreis changes -- the Kreis totals remain the official DESTATIS
+  # 12411-0018 figures. The Zensus source carries the authoritative 12-digit ARS,
+  # so it needs no fuzzy Gemeinde-name matching against VG250, and its age-band
+  # edges align with the DESTATIS classes (urbistat smears DESTATIS class 10,
+  # ages 10-14, into its 12-17 band). Affects the IPF population path only.
+  braunschweig.census.use_zensus_gemeinde_shares: true
+
   # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
-  # GENESIS / Regionaldatenbank exports for Niedersachsen
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
 
   # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
   # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
@@ -258,9 +263,6 @@ config:
 
   # TASK-003: Density-weighted home sampling (Zensus 2022 100m).
   braunschweig.home_density_weighting: true
-
-  # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
-  braunschweig.buildings_path: braunschweig/buildings
 
   # Geofabrik snapshot for Niedersachsen
   osm_network_path: osm/niedersachsen-latest.osm.pbf

@@ -27,7 +27,15 @@ licensing:
   license: urbistat terms (non-official)
   restricted: false
   redistribution: forbidden
-limitations: Non-official scrape used ONLY as a Gemeinde-within-Kreis share key in the legacy
-  IPF; the official replacement (Zensus 1000A-3082, use_zensus_gemeinde_shares) is implemented
-  but not activated in any committed config (see docs/codebase/CONCERNS.md).
-notes: null
+limitations: |
+  Non-official scrape, usable ONLY as a Gemeinde-within-Kreis share key in the legacy IPF.
+  Coarse age bands (DESTATIS class 10, ages 10-14, is smeared into the 12-17 band) and matched
+  to VG250 by fuzzy Gemeinde NAME, which is brittle: a name-normalisation mismatch silently
+  drops a Gemeinde's population from the redistribution.
+notes: |
+  NO LONGER USED BY ANY COMMITTED CONFIG. Since issue #251 every run config on the IPF
+  population path sets braunschweig.census.use_zensus_gemeinde_shares: true, so the official
+  Zensus 1000A-3082 share (dataset zensus2022_age_sex_size, 12-digit ARS, no name matching)
+  is taken instead. This file remains only as the code-default fallback when that flag is
+  off, and it is no longer needed to reproduce any committed configuration -- which also
+  removes a redistribution-forbidden input from the reproducible path.
