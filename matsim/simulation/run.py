@@ -15,9 +15,11 @@ def configure(context):
     # MATSim SimWrapper dashboards (network volumes, mode share, trips), written
     # by the Java SimWrapperModule into the simulation output directory. Default
     # ON per the project feature-flag policy (analysis-only module: simulation
-    # results are unaffected, the run gains dashboard files). Set false for a
-    # byte-identical output directory; passes --simwrapper to
-    # org.eqasim.braunschweig.RunSimulation either way.
+    # results are unaffected, the run gains dashboard files); ADR-0074, pinned by
+    # tests/test_simwrapper_dashboards_default.py. Set false for a byte-identical
+    # output directory: the --simwrapper option is then omitted from the
+    # org.eqasim.braunschweig.RunSimulation call (see execute below) and the Java
+    # side applies its own false default.
     context.config("simwrapper_dashboards", True)
     context.config("processes")
     # MATSim thread counts, decoupled from the (memory-bound) synthesis worker
