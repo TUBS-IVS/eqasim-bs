@@ -554,6 +554,17 @@ def _allocate_types_for_bucket(type_shares_by_bucket, fallback, commune_id,
     return ["other_multi"] * n
 
 
+# Share of composition slots that may be relaxed (see build_bucket_households)
+# before the age-aware pass is reported as a warning rather than plain info. A
+# nonzero rate is expected: the requested hh_type shares come from Zensus
+# 1000A-2081 while the adult/child pool comes from the IPF, and the two need not
+# agree exactly inside every (commune, hh_size) bucket. A LARGE share means the
+# type shares and the age structure disagree systematically -- the requested
+# composition is then mostly not what the run actually produced, which must be
+# visible rather than silently absorbed into free fill slots.
+COMPOSITION_RELAXATION_WARN_FRACTION: float = 0.20
+
+
 def form_households_age_aware(df: pd.DataFrame, random_seed: int,
                               df_household_type: pd.DataFrame,
                               cfg: dict) -> pd.DataFrame:
@@ -610,7 +621,11 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
     hh_type = np.empty(n, dtype=object)
     household_size = np.zeros(n, dtype=np.int64)
     next_hid = 0
-    n_relaxed_buckets = 0
+    # Fallback observability (CLAUDE.md "no silent fallbacks"): the composition
+    # relaxation inside build_bucket_households fires per bucket whose adult/child
+    # pool cannot serve the requested hh_type composition. Accumulate it here and
+    # report ONE rate after the loop.
+    relaxation_stats: dict = {}
 
     for (cid, size_int), g in repeated.groupby(
         ["commune_id", "_hh_size_int"], sort=True, observed=True,
@@ -628,7 +643,8 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
         bucket_ages = ages_all[idx]
         bucket_is_female = None if is_female_all is None else is_female_all[idx]
         local_of_person, realised_types = build_bucket_households(
-            bucket_ages, types, sizes, cfg, rng=rng, is_female=bucket_is_female)
+            bucket_ages, types, sizes, cfg, rng=rng, is_female=bucket_is_female,
+            relaxation_stats=relaxation_stats)
 
         for local_h in range(n_chunks):
             sel = idx[local_of_person == local_h]
@@ -636,6 +652,29 @@ def form_households_age_aware(df: pd.DataFrame, random_seed: int,
             hh_type[sel] = realised_types[local_h]
             household_size[sel] = len(sel)
         next_hid += n_chunks
+
+    # Primary-vs-fallback rate of the composition relaxation over ALL buckets.
+    # Reported unconditionally (also at 0%) so a run log always states how much of
+    # the requested composition was actually met.
+    relaxed_slots = relaxation_stats.get("relaxed_slots", 0)
+    relaxed_persons = relaxation_stats.get("persons", 0)
+    if relaxed_persons:
+        relaxed_share = relaxed_slots / relaxed_persons
+        message = (
+            "[braunschweig.ipf.attributed] composition slots: primary "
+            "{:,}/{:,} ({:.1%}), relaxed {:,} ({:.1%}) in {:,}/{:,} buckets".format(
+                relaxed_persons - relaxed_slots, relaxed_persons,
+                1.0 - relaxed_share, relaxed_slots, relaxed_share,
+                relaxation_stats.get("buckets_relaxed", 0),
+                relaxation_stats.get("buckets", 0)))
+        print(message)
+        if relaxed_share > COMPOSITION_RELAXATION_WARN_FRACTION:
+            print("[braunschweig.ipf.attributed] WARNING: composition relaxation "
+                  "rate {:.1%} exceeds the {:.0%} threshold; the requested Zensus "
+                  "hh_type composition is largely NOT being met -- check that the "
+                  "IPF age structure and the 1000A-2081 type shares are "
+                  "consistent.".format(relaxed_share,
+                                       COMPOSITION_RELAXATION_WARN_FRACTION))
 
     # Global hard rule: eliminate any remaining all-children household (a bucket
     # that had no adult at all -- e.g. a tiny rural commune-size cell that

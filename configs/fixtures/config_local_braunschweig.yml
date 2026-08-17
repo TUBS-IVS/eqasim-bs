@@ -123,6 +123,16 @@ config:
   braunschweig.ipf.use_employment_margin: true
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
+  # --- IPF household realism (#251): joint age x household-size margin
+  # (ADR-0004), age-aware household composition (ADR-0005), sex-aware couple
+  # pairing (ADR-0006). All three require the size margin above; sex-aware
+  # pairing additionally requires age-aware chunking. See
+  # config_local_braunschweig_25pct.yml for the full rationale and the
+  # provenance caveats on the two hardcoded shares.
+  braunschweig.ipf.use_joint_age_size_margin: true
+  braunschweig.ipf.age_aware_chunking: true
+  braunschweig.chunking.sex_aware_couples: true
+
   gtfs_path: gtfs
   osm_path: osm
 

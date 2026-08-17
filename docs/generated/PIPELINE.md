@@ -111,6 +111,7 @@ flowchart LR
 | `braunschweig.data.census.employment` | attributes | x | x | x |
 | `braunschweig.data.census.household_income` | attributes | -- | -- | x |
 | `braunschweig.data.census.household_size` | population | -- | -- | x |
+| `braunschweig.data.census.households_size_age` | population | -- | -- | x |
 | `braunschweig.data.census.households_type` | population | -- | -- | x |
 | `braunschweig.data.census.licenses` | attributes | -- | -- | x |
 | `braunschweig.data.census.pendler` | cordon | x | x | x |

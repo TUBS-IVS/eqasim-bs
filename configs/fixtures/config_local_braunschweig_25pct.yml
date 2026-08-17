@@ -182,6 +182,31 @@ config:
   # stage falls back to an outer-product proxy of the existing margins.
   braunschweig.ipf.use_employment_margin: true
 
+  # --- IPF household realism (#251) --------------------------------------
+  # ADR-0004/0005/0006 decided these three refinements and the code has been in
+  # place and unit-tested since; issue #251 found that no committed config ever
+  # enabled them, so no run had ever executed them. All three require the size
+  # margin above, and sex-aware pairing additionally requires age-aware chunking
+  # -- braunschweig.ipf.config_validation enforces both at stage entry.
+
+  # Joint age x household-size margin from Zensus 2022 1000A-3082 (ADR-0004).
+  # Raked (2D IPF) against the population and size marginals before use, so it
+  # agrees with both and cannot make the IPF infeasible. Suppresses implausible
+  # age/size combinations such as children in single-person households.
+  braunschweig.ipf.use_joint_age_size_margin: true
+
+  # Age-aware household composition (ADR-0005). Forms households within each
+  # (commune_id, hh_size) bucket from children-driven capacity plus a mother-age
+  # anchor instead of the legacy age-blind chunking of IPF weights. The anchor is
+  # a hardcoded default, not a committed table (docs/features/household-synthesis.md).
+  braunschweig.ipf.age_aware_chunking: true
+
+  # Sex-aware couple pairing inside the age-aware composition pass (ADR-0006).
+  # Opposite-sex-first allocation at the DEFAULT_SAME_SEX_COUPLE_SHARE default
+  # (0.011); that share's provenance is prose-documented, not a committed table.
+  # Byte-identical to legacy sex-blind pairing when the IPF emits no sex column.
+  braunschweig.chunking.sex_aware_couples: true
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm

@@ -9,6 +9,7 @@ roles:
 - control
 used_by:
 - braunschweig.data.census.population
+- braunschweig.data.census.households_size_age
 acquisition:
   method: manual_download
   source: https://ergebnisse.zensus2022.de (flat-file export)
@@ -28,5 +29,11 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: Counts PERSONS, not households.
-notes: 'Joint age x size IPF margin AND the official replacement for the urbistat Gemeinde share
-  key (use_zensus_gemeinde_shares; not activated in any committed config -- issue #251 family).'
+notes: |
+  Two independent consumers. (1) The joint age x size IPF margin
+  (braunschweig.ipf.use_joint_age_size_margin) is ON in every simple_ipf_open run config
+  since issue #251, so this file is required for those runs -- it is local-only, not
+  committed, so a fresh clone must download it before an IPF run. (2) The open-data
+  replacement for the non-redistributable urbistat Gemeinde share key
+  (braunschweig.census.use_zensus_gemeinde_shares) is still not activated in any committed
+  config -- that half of the #251 family remains open.

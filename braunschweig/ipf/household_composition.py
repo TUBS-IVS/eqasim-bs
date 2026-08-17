@@ -292,7 +292,8 @@ def _realised_type(member_ages: list[float], min_adult: int) -> str:
 
 def build_bucket_households(ages: np.ndarray, hh_types: list[str],
                            sizes: list[int], cfg: dict, rng=None,
-                           is_female: np.ndarray | None = None):
+                           is_female: np.ndarray | None = None,
+                           relaxation_stats: dict | None = None):
     """Assign the persons of one (commune, hh_size) bucket to households.
 
     ``hh_types`` and ``sizes`` describe the household shells (one per household).
@@ -306,7 +307,13 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
     couples are paired by ``optimal_adult_pairs`` (min within-pair age gap) and
     children placed by ``assign_children_to_households`` (min parent-child gap
     deviation). When the pool cannot meet the requested composition the demand
-    is relaxed toward free fill slots (logged); no person is ever dropped.
+    is relaxed toward free fill slots; no person is ever dropped.
+
+    That relaxation is a FALLBACK and must stay observable. Pass a dict as
+    ``relaxation_stats`` to accumulate ``relaxed_slots`` / ``persons`` /
+    ``buckets`` / ``buckets_relaxed`` across calls, so the caller can report one
+    primary-vs-fallback rate for the whole run; the per-bucket line is then
+    suppressed. Omit it (unit tests, direct calls) to keep the per-bucket print.
     """
     ages = np.asarray(ages)
     n = len(ages)
@@ -344,9 +351,22 @@ def build_bucket_households(ages: np.ndarray, hh_types: list[str],
 
     relaxed = _reduce_demand(a_req, len(adult_arr))
     relaxed += _reduce_demand(c_req, len(child_arr))
-    if relaxed:
-        print(f"[household_composition] relaxed {relaxed} composition slot(s) "
-              f"due to pool shortage in a {n}-person bucket")
+    if relaxation_stats is None:
+        # Direct/unit-test call: keep the per-bucket diagnostic.
+        if relaxed:
+            print(f"[household_composition] relaxed {relaxed} composition slot(s) "
+                  f"due to pool shortage in a {n}-person bucket")
+    else:
+        # Pipeline call: accumulate so the CALLER can report one primary-vs-
+        # fallback rate over all buckets instead of one line per bucket (a
+        # per-bucket count says nothing about how much of the run relaxed).
+        relaxation_stats["relaxed_slots"] = (
+            relaxation_stats.get("relaxed_slots", 0) + relaxed)
+        relaxation_stats["persons"] = relaxation_stats.get("persons", 0) + n
+        relaxation_stats["buckets"] = relaxation_stats.get("buckets", 0) + 1
+        if relaxed:
+            relaxation_stats["buckets_relaxed"] = (
+                relaxation_stats.get("buckets_relaxed", 0) + 1)
 
     # Grow child-bearing capacity so every child gets a (young) adult instead of
     # spilling onto the oldest childless-shell adults (see _ensure_child_capacity).

@@ -8,7 +8,7 @@ stages:
 pipelines:
   popsim_mid: not_used
   popsim_open: not_used
-  simple_ipf_open: inactive
+  simple_ipf_open: active
 lifecycle: supported
 production:
   enabled: false
@@ -34,7 +34,13 @@ evidence:
       A skip-count warning exists for Kreise with a zero row/column total (braunschweig/ipf/joint_age_size.py), but it is a skip count, not a primary/fallback rate percentage.
   reference:
     kind: none
-    note: braunschweig/1000A-3082_de_flat.zip (Zensus 2022) is NOT committed and absent from disk.
+    note: |
+      No observed validation reference exists for this feature. The margin's INPUT,
+      eqasim-data/data/braunschweig/1000A-3082_de_flat.zip (Zensus 2022, 58.6 MB), is
+      present locally but gitignored, so it is not a committed reference either.
+      (An earlier note recorded it as "absent from disk"; that is no longer true --
+      the file is in place and braunschweig.data.census.households_size_age loads it,
+      194,148 cells across 10,786 communes.)
 validation:
   state: unvalidated
   runs: []
@@ -45,7 +51,15 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    DISCREPANCY FOUND: braunschweig.ipf.use_joint_age_size_margin is NOT set to true anywhere in any committed config (configs/base_bs.yml, every overlay, every fixture) -- code default is False (braunschweig/ipf/prepare.py). It is explicitly listed as an intentionally-absent dead key on the active popsim_mid path. This directly contradicts PROJECT_STATUS.md's 🟢 legend ("flag-gated, ON in real-data run configs"): the flag appears to be OFF everywhere. This should be resolved by the owner -- either the matrix symbol is wrong, or a config that sets this flag is missing. ADR-0004 documents the design but not this discrepancy.
+    Issue #251's config discrepancy is RESOLVED: braunschweig.ipf.use_joint_age_size_margin
+    is now true in all four committed simple_ipf_open run configs, and the margin was
+    proven to execute on real data (SK Braunschweig, 1000A-3082: 36 joint cells raked to
+    252,962 persons; post-IPF max relative deviation 0.5698%, so the extra margin does not
+    make the IPF infeasible). What remains pending is SCIENTIFIC assessment, not wiring:
+    no recorded run has compared the resulting age x household-size structure to an
+    observed reference, so validation.state stays 'unvalidated'. The flag is correctly
+    absent from the popsim_mid/popsim_open configs -- the IPF is not the production
+    population method, so the key would be dead there.
   source: ADR-0004
-notes: 'Issue #251: the flag is not set in any committed run configuration (PROJECT_STATUS.md
-  previously marked it ON); the IPF path itself is not the production population method.'
+notes: 'Issue #251: enabled in the four simple_ipf_open run configs and pinned by
+  tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
