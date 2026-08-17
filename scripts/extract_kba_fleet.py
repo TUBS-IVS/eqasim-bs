@@ -69,9 +69,18 @@ hand-edit the derived CSVs; re-run this script instead.
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Running this file directly puts ``scripts/`` on sys.path, not the repository
+# root, so the ``braunschweig`` package would be unimportable in the local
+# imports further down (extract_gemeinde_ev reuses the production Gemeinde-name
+# normaliser). Prepend the repo root explicitly.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import openpyxl
@@ -783,6 +792,11 @@ def extract_segment_model() -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # kba_modellreihen_bestand_2020_2026.csv helpers
 # --------------------------------------------------------------------------- #
+#: Columns the Modellreihen export must carry for the downstream extractors.
+MODELLREIHEN_REQUIRED_COLUMNS = ("Berichtszeitpunkt", "Segment", "Marke",
+                                 "Modellreihe", "Anzahl")
+
+
 def _read_modellreihen(path) -> pd.DataFrame:
     """Read the KBA Modellreihen CSV (utf-8-sig), filter to 01.01.2026.
 
@@ -790,16 +804,41 @@ def _read_modellreihen(path) -> pd.DataFrame:
     ``Berichtszeitpunkt, Segment, Marke, Modellreihe, Anzahl, Diesel,
     Hybrid, Hybrid_Plugin, BEV, gewerblich``.
 
+    The delimiter is SNIFFED rather than assumed: the KBA portal has shipped this
+    export both comma-separated (the 2020-2026 file in ``kba/raw``) and
+    semicolon-separated. A hard-coded separator loads the whole file into a
+    single column and fails later with an opaque ``KeyError`` on the first
+    expected column name, so the resolved column set is validated here and the
+    error names the file and what was actually parsed.
+
     Args:
         path: Path-like or str pointing at the raw CSV.
 
     Returns:
         DataFrame with only the 01.01.2026 rows.
+
+    Raises:
+        ValueError: if the parsed frame lacks any of
+            :data:`MODELLREIHEN_REQUIRED_COLUMNS`.
     """
-    raw = pd.read_csv(path, sep=";", encoding="utf-8-sig", dtype=str)
+    # sep=None + the python engine runs csv.Sniffer over the header.
+    raw = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig",
+                      dtype=str)
     # Normalise column names (strip leading/trailing whitespace).
     raw.columns = [c.strip() for c in raw.columns]
+    missing = [c for c in MODELLREIHEN_REQUIRED_COLUMNS if c not in raw.columns]
+    if missing:
+        raise ValueError(
+            f"{path}: Modellreihen export is missing the required column(s) "
+            f"{missing}. Parsed {len(raw.columns)} column(s): "
+            f"{list(raw.columns)[:8]}{' ...' if len(raw.columns) > 8 else ''}. "
+            "A single parsed column means the delimiter could not be sniffed -- "
+            "check that the file is a KBA Modellreihen Bestand export."
+        )
+    logger.info("[modellreihen] %s: parsed %d columns, %d rows",
+                path, len(raw.columns), len(raw))
     filtered = raw[raw["Berichtszeitpunkt"].str.strip() == "01.01.2026"].copy()
+    logger.info("[modellreihen] %d rows at Stichtag 01.01.2026", len(filtered))
     return filtered
 
 

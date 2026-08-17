@@ -580,7 +580,8 @@ def test_feasibility_tier_split_logged_and_counted(monkeypatch, caplog):
     monkeypatch.setattr(fs, "_draw_brand_model", _fake_draw_brand_model)
 
     with caplog.at_level(logging.INFO):
-        df_spec, _ = fs.sample_fleet(
+        # consistency_v2=True returns the 3-tuple (spec, types, validation summary).
+        df_spec, _, _ = fs.sample_fleet(
             df_cars, DATA_PATH, random_seed=1, sampler=local_sampler,
             consistency_v2=True)
 
@@ -754,9 +755,9 @@ def test_age_income_off_unchanged():
                              'gemeinde': float('nan'),
                              'raumtyp': int(rng.choice([71,72,73,74,75,76,77]))})
         df_cars = pd.DataFrame(rows)
-        df_spec, _ = fs.sample_fleet(df_cars, 'eqasim-data/data',
-                                     random_seed=42, consistency_v2=True,
-                                     age_income_coupling=False)
+        df_spec, _, _ = fs.sample_fleet(df_cars, 'eqasim-data/data',
+                                        random_seed=42, consistency_v2=True,
+                                        age_income_coupling=False)
         df_spec[['age', 'age_band']].to_parquet(
             'tests/fixtures/feature_b_age_off_golden.parquet', index=False)
         "

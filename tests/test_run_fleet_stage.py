@@ -124,6 +124,28 @@ def _regiostar():
     ])
 
 
+def _home_locations():
+    """Per-household home locations with geometry (EPSG:25832).
+
+    ``configure()`` declares ``synthesis.population.spatial.home.locations``
+    unconditionally (T9b: it enters the synpp cache key), so the stub context has
+    to resolve it even for the Gemeinde-only calibration mode that never reads
+    it at runtime. Coordinates are inside the ZGB bbox; the exact positions are
+    irrelevant here -- the grid join itself is covered by
+    ``tests/test_fleet_grid_tilt_wiring.py``.
+    """
+    geopandas = pytest.importorskip("geopandas")
+    from shapely.geometry import Point
+
+    homes = _homes()
+    return geopandas.GeoDataFrame(
+        homes,
+        geometry=[Point(605000.0 + 100.0 * i, 5790000.0 + 100.0 * i)
+                  for i in range(len(homes))],
+        crs="EPSG:25832",
+    )
+
+
 def _stub(config_overrides=None, path=None):
     # Mimics the synpp context AFTER configure(): every config key the stage
     # registers (with its default) is resolvable by key alone in execute(), per
@@ -142,6 +164,10 @@ def _stub(config_overrides=None, path=None):
         "fleet_consistency_v2": True,
         "fleet_age_income_coupling": True,
         "fleet_ev_income_tilt": True,
+        # Task B4/B5 (euro6 substage) is likewise read without a default in
+        # execute(); every single-argument context.config() key of execute() must
+        # be present here (see tests/test_execute_context_config_contract.py).
+        "fleet_euro6_substage": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }
@@ -150,6 +176,7 @@ def _stub(config_overrides=None, path=None):
         "synthesis.population.enriched": _persons(),
         "synthesis.population.spatial.home.zones": _homes(),
         "braunschweig.data.bbsr.regiostar": _regiostar(),
+        "synthesis.population.spatial.home.locations": _home_locations(),
     }
     return _StubContext(config, stages, path=path)
 
@@ -163,6 +190,8 @@ def test_stage_configure_declares_dependencies():
     assert "synthesis.population.enriched" in ctx.requested_stages
     assert "synthesis.population.spatial.home.zones" in ctx.requested_stages
     assert "braunschweig.data.bbsr.regiostar" in ctx.requested_stages
+    # T9b: declared unconditionally so the grid-tilt input is part of the cache key.
+    assert "synthesis.population.spatial.home.locations" in ctx.requested_stages
     assert "data_path" in ctx.requested_configs
     assert "random_seed" in ctx.requested_configs
 

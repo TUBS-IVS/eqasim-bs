@@ -502,7 +502,13 @@ def test_all_zero_tracked_falls_back_to_binary_mask_via_sample_fleet(sampler_rea
     seg_model_df = ft.load_segment_model(DATA_PATH)
     ff = sampler_real.feasible_fuels
 
+    # The model must have a feasible set that is a PROPER subset of POWERTRAINS,
+    # otherwise the assertion below is vacuous: a model registered with every
+    # powertrain (VW Golf, for instance, carries all six in the HSN/TSN lookup)
+    # makes the binary mask permit everything, so a restricted draw is
+    # indistinguishable from an unmasked one.
     test_model = None
+    test_feasible = None
     for _, row in seg_model_df.sort_values("count", ascending=False).iterrows():
         model_str = str(row["model"])
         if not model_str:
@@ -510,13 +516,17 @@ def test_all_zero_tracked_falls_back_to_binary_mask_via_sample_fleet(sampler_rea
         brand = model_str.split(" ", 1)[0]
         mf = model_family(canonical_brand(brand) or "", model_str)
         feasible = ff.model_feasible_powertrains(brand, mf)
-        if feasible is not None and "petrol" in feasible and "diesel" in feasible:
+        if (feasible is not None
+                and "petrol" in feasible and "diesel" in feasible
+                and set(feasible) < set(fs.POWERTRAINS)):
             test_model = model_str
+            test_feasible = set(feasible)
             break
 
     if test_model is None:
-        pytest.skip("No model with petrol+diesel feasible set found; "
-                    "cannot verify the all-zero guard.")
+        pytest.skip("No model with a petrol+diesel feasible set that is a proper "
+                    "subset of POWERTRAINS found; the all-zero guard cannot be "
+                    "verified observably.")
 
     # All five tracked shares are 0 for this (synthetic) model row -> the
     # fixed helper returns an all-zero vector (neutral == 0 too).
@@ -549,12 +559,13 @@ def test_all_zero_tracked_falls_back_to_binary_mask_via_sample_fleet(sampler_rea
                     "the all-zero guard.")
 
     # The guard must fall back to the binary mask: draws stay restricted to the
-    # feasible set (petrol/diesel), and the row is counted as model_constrained
-    # (not degraded to the unmasked "segment_fallback" pmf, which could draw
-    # any powertrain the Kreis pmf allows).
-    assert set(sub["powertrain"].unique()).issubset({"petrol", "diesel"}), (
+    # model's OWN feasible set, and the row is counted as model_constrained (not
+    # degraded to the unmasked "segment_fallback" pmf, which could draw any
+    # powertrain the Kreis pmf allows).
+    assert set(sub["powertrain"].unique()).issubset(test_feasible), (
         f"All-zero weighted mask for '{test_model}' did not fall back to the "
-        f"binary feasibility mask: drew {sorted(sub['powertrain'].unique())}."
+        f"binary feasibility mask: drew {sorted(sub['powertrain'].unique())}, "
+        f"feasible set is {sorted(test_feasible)}."
     )
     assert (sub["powertrain_feasibility"] == "model_constrained").all(), (
         "All-zero weighted mask must be counted as a model_constrained "
