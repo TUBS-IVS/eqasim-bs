@@ -21,8 +21,12 @@ evidence, not editable prose.
 
 ## Numbering notes (traceable, not invented — carried over from the monolith)
 
-> ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
-> ADR-0052 in the body) and has no file here. ADR-0052/0053/0054 carry no date field
+> ADR-0051 was reserved for the fleet branch record and stays PERMANENTLY UNUSED:
+> when `feature/fleet-quality-and-data` merged (issue #277, 2026-08-17) its two
+> drafted records were renumbered to the next free numbers, ADR-0081 (drafted as
+> ADR-0050, which collides with main's TAZ-friction ADR-0050) and ADR-0082
+> (drafted as ADR-0051); both renumberings are recorded in those records' own
+> headings and bodies. ADR-0052/0053/0054 carry no date field
 > in their own body text (unlike every other entry, which states one); their index
 > date is `n/a` rather than inferred from surrounding entries, per the project's
 > "no invented reference values" rule. ADR numbering in the body is not always

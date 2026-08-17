@@ -100,6 +100,32 @@ def test_segment_powertrain_segment_share_sums_to_one():
     assert frame["segment_share"].sum() == pytest.approx(1.0, abs=1e-6)
 
 
+def test_segment_powertrain_suppressed_alt_drive_cell_does_not_propagate_nan(monkeypatch):
+    """F9: a KBA-suppressed alt-drive cell (placeholder "." / "()") must not
+    leave a NaN in bev/phev/hybrid/gas/alt_total (np.nan_to_num guard)."""
+    header = [None, "1. Januar 2025"] + [None] * 13
+    row = [None] * 15
+    row[1] = "Minis"          # col1 = segment label (KBA_SEGMENT_MAP key)
+    row[2] = 1000             # col2 = total
+    row[7] = "."              # col7 = BEV, KBA-suppressed -> NaN pre-guard
+    row[8] = 0                # col8 = fuel cell
+    row[9] = 5                # col9 = PHEV
+    row[10] = 10              # col10 = hybrid total
+    row[13] = "()"            # col13 = gas, KBA-suppressed -> NaN pre-guard
+    row[14] = 0               # col14 = hydrogen (Wasserstoff)
+    monkeypatch.setattr(ekf, "_read_sheet", lambda path, sheet: [header, row])
+
+    frame = ekf.extract_segment_powertrain()
+
+    assert len(frame) == 1
+    for column in ("bev", "phev", "hybrid", "gas", "alt_total"):
+        assert not frame[column].isna().any(), f"{column} leaked a NaN"
+    assert frame.loc[0, "bev"] == 0.0
+    assert frame.loc[0, "gas"] == 0.0
+    assert np.isfinite(frame.loc[0, "bev_share"])
+    assert np.isfinite(frame.loc[0, "gas_share"])
+
+
 # --------------------------------------------------------------------------- #
 # kba_kreis_powertrain.csv (FZ 27.15)
 # --------------------------------------------------------------------------- #
@@ -113,6 +139,32 @@ def test_kreis_powertrain_covers_all_zgb_kreise():
     assert frame["total"].gt(0).all()
     # BEV share is a plausible registration share (0..30 %).
     assert frame["bev_share"].between(0, 0.30).all()
+
+
+def test_kreis_powertrain_suppressed_alt_drive_cell_does_not_propagate_nan(monkeypatch):
+    """F9: a KBA-suppressed alt-drive cell must not leave a NaN in
+    bev/phev/hybrid/gas/alt_total (np.nan_to_num guard)."""
+    kreis_code = next(iter(ekf.ZGB_KREISE))
+    row = [None] * 15
+    row[2] = kreis_code       # col2 = Kennziffer (Kreis AGS-5)
+    row[3] = ekf.ZGB_KREISE[kreis_code]
+    row[4] = 100000           # col4 = total
+    row[5] = 8000             # col5 = alt total
+    row[9] = "."              # col9 = BEV, KBA-suppressed -> NaN pre-guard
+    row[10] = "()"            # col10 = PHEV, KBA-suppressed -> NaN pre-guard
+    row[11] = 500             # col11 = hybrid total
+    row[14] = 200             # col14 = gas insgesamt
+    monkeypatch.setattr(ekf, "_read_sheet", lambda path, sheet: [row])
+
+    frame = ekf.extract_kreis_powertrain()
+
+    assert len(frame) == 1
+    for column in ("bev", "phev", "hybrid", "gas", "alt_total"):
+        assert not frame[column].isna().any(), f"{column} leaked a NaN"
+    assert frame.loc[0, "bev"] == 0.0
+    assert frame.loc[0, "phev"] == 0.0
+    assert np.isfinite(frame.loc[0, "bev_share"])
+    assert np.isfinite(frame.loc[0, "phev_share"])
 
 
 # --------------------------------------------------------------------------- #

@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.data.bbsr.regiostar import ars_to_ags8
@@ -263,20 +264,165 @@ def legacy_one_car_per_person(df_persons: pd.DataFrame) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Pure helpers for the 5 km EV grid tilt (T9b)
+# --------------------------------------------------------------------------- #
+
+def grid_ev_share_for_homes(homes_gdf, grid_df: pd.DataFrame) -> pd.Series:
+    """Assign each household the EV share of the 5 km grid cell it falls in.
+
+    Reprojects home points from EPSG:25832 to EPSG:3857, then assigns each
+    point to the grid cell whose ``[minx, maxx] x [miny, maxy]`` bounds
+    contain it (a spatial join via geopandas).  Returns a ``pd.Series``
+    indexed by ``household_id`` with the ``ev_share`` of the matched cell.
+
+    Households that fall outside all cells, or whose matched cell is
+    ``suppressed`` or has a NaN ``ev_share``, receive ``NaN``.  The
+    matched/unmatched count is logged so the fallback rate is observable
+    (no-silent-fallback rule).
+
+    Parameters
+    ----------
+    homes_gdf:
+        GeoDataFrame with at least ``household_id`` and ``geometry``
+        (EPSG:25832 points).
+    grid_df:
+        DataFrame with columns ``cell_id, ev_share, minx, miny, maxx, maxy,
+        suppressed`` (EPSG:3857 cell bounds) as returned by
+        :func:`braunschweig.data.kba.fleet_tables.load_ev_grid`.
+
+    Returns
+    -------
+    pd.Series indexed by ``household_id`` with dtype ``float64``.
+    NaN for unmatched/suppressed/invalid cells.
+    """
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    # Reproject home points from EPSG:25832 to EPSG:3857 for spatial join.
+    homes = homes_gdf[["household_id", "geometry"]].copy()
+    homes = homes.to_crs("EPSG:3857")
+
+    # Build grid cell polygons (box) from bounds.
+    if grid_df.empty:
+        logger.warning(
+            "[vehicles.household] grid_ev_share_for_homes: empty grid DataFrame; "
+            "all %d households will get NaN ev_share (fallback to Gemeinde tilt).",
+            len(homes),
+        )
+        return pd.Series(np.nan, index=homes_gdf["household_id"], dtype=float,
+                         name="ev_share")
+
+    # Mark suppressed / NaN rows so we can assign NaN after the join.
+    grid = grid_df.copy()
+    grid["_ev_share_effective"] = grid.apply(
+        lambda r: np.nan if (r["suppressed"] or not np.isfinite(r.get("ev_share", np.nan)))
+        else float(r["ev_share"]),
+        axis=1,
+    )
+    cell_geoms = [
+        box(row["minx"], row["miny"], row["maxx"], row["maxy"])
+        for _, row in grid.iterrows()
+    ]
+    gdf_cells = gpd.GeoDataFrame(
+        grid[["cell_id", "_ev_share_effective"]].copy(),
+        geometry=cell_geoms,
+        crs="EPSG:3857",
+    )
+
+    # Spatial join: each home point -> containing cell.
+    joined = gpd.sjoin(
+        homes.rename(columns={"geometry": "geometry"}),
+        gdf_cells,
+        how="left",
+        predicate="within",
+    )
+
+    # Defensive dedup: with predicate="within" a point strictly inside a cell
+    # matches exactly one cell, so a well-formed tiling grid yields no duplicates
+    # (the real edge case is a boundary/exterior point matching NONE, handled by
+    # the left join -> NaN). Keep one row per household as a harmless safeguard
+    # against any degenerate overlapping-cell input.
+    joined = joined.drop_duplicates(subset=["household_id"], keep="first")
+
+    matched = int(joined["_ev_share_effective"].notna().sum())
+    total = len(homes)
+    unmatched = total - matched
+    (logger.warning if unmatched > total * 0.5 else logger.info)(
+        "[vehicles.household] grid_ev_share_for_homes: "
+        "matched %d/%d households (%.1f%%); unmatched/suppressed %d (%.1f%%) "
+        "-> NaN (fallback to Gemeinde tilt).",
+        matched, total, 100.0 * matched / total if total else 0.0,
+        unmatched, 100.0 * unmatched / total if total else 0.0,
+    )
+
+    result = joined.set_index("household_id")["_ev_share_effective"]
+    result.name = "ev_share"
+    return result
+
+
+def gemeinde_grid_mean(df: pd.DataFrame) -> pd.Series:
+    """Household-weighted mean ``grid_ev_share`` within each commune.
+
+    For each household in ``df``, returns the mean of ``grid_ev_share`` over
+    all households sharing the same ``commune_id``, excluding NaN shares.
+    When all shares in a commune are NaN the mean is NaN.
+
+    Because every household in the same commune gets the SAME mean, the ratio
+    ``grid_ev_share / gemeinde_grid_mean`` averages to ~1 within a commune
+    (household-weighted), so the Gemeinde-level EV aggregate is preserved by
+    the T9a tilt.
+
+    Parameters
+    ----------
+    df:
+        DataFrame with at least ``household_id``, ``commune_id`` and
+        ``grid_ev_share`` columns.
+
+    Returns
+    -------
+    pd.Series indexed by ``household_id``.
+    """
+    # nanmean: NaN shares are excluded (skipna=True is the pandas default).
+    # Use a reset-index copy so the transform index matches the household_id
+    # assignment and there are no alignment surprises with non-default indices.
+    work = df[["household_id", "commune_id", "grid_ev_share"]].reset_index(drop=True)
+    commune_mean = (
+        work.groupby("commune_id")["grid_ev_share"]
+        .transform("mean")  # default skipna=True -> NaN-excluded mean per commune
+    )
+    result = pd.Series(
+        commune_mean.values,
+        index=work["household_id"],
+        name="gemeinde_grid_mean",
+        dtype=float,
+    )
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # synpp stage: vehicles_method == "household"
 # --------------------------------------------------------------------------- #
 #: Allowed values for the electric-share calibration mode (``fleet_electric_calibration``).
-#: Only the per-Kreis KBA FZ 27.15 mix with the per-Gemeinde FZ 27.17 BEV tilt is
-#: implemented (the model the per-vehicle chain in
-#: :mod:`braunschweig.synthesis.vehicles.fleet_sampling_de` realises); the key exists
-#: so an unsupported mode fails early rather than silently ignoring the request.
-FLEET_ELECTRIC_CALIBRATIONS = ("kreis_mix_gemeinde_bev_tilt",)
+#: ``"kreis_mix_gemeinde_grid_bev_tilt"`` (default) adds a per-household
+#: sub-communal 5 km grid tilt on top of the Gemeinde tilt; the grid CSV
+#: ``kba_ev_grid.csv`` must be present.  When the CSV is absent the mode falls
+#: back to Gemeinde-only (logged).  ``"kreis_mix_gemeinde_bev_tilt"`` is the
+#: legacy Gemeinde-only mode (no grid CSV needed).
+FLEET_ELECTRIC_CALIBRATIONS = (
+    "kreis_mix_gemeinde_bev_tilt",
+    "kreis_mix_gemeinde_grid_bev_tilt",
+)
 
 
 def configure(context):
     context.stage("synthesis.population.enriched")
     context.stage("synthesis.population.spatial.home.zones")
     context.stage("braunschweig.data.bbsr.regiostar")
+    # T9b: home locations (with geometry) are needed to assign each household
+    # to its 5 km EV grid cell.  The stage is always declared in configure so
+    # the synpp cache key includes it; whether it is actually USED at runtime
+    # depends on the ``fleet_electric_calibration`` mode and grid CSV availability.
+    context.stage("synthesis.population.spatial.home.locations")
     context.config("data_path")
     context.config("random_seed")
     context.config("hbefa_segment_size_map", None)
@@ -302,7 +448,29 @@ def configure(context):
     # byte-identical to pre-Feature-B. Only active when consistency_v2 is also
     # True (the tilt lives inside the v2 block of sample_fleet).
     context.config("fleet_age_income_coupling", True)
-    context.config("fleet_electric_calibration", "kreis_mix_gemeinde_bev_tilt")
+    # Task B2: EV-income tilt flag. When True (default) the v2 path applies
+    # f_pt(status) = clip(P(pt|status)/P(pt|all), 0.2, 5.0), pt in {bev, phev},
+    # from the committed MiD 2023 powertrain-by-economic-status table -- a
+    # within-Kreis redistribution toward higher-status households that leaves
+    # the per-Kreis electric AGGREGATE (Task 7 rake target) unchanged. False,
+    # or an absent mid2023_antrieb_by_status.csv (server-generated, not always
+    # present locally), disables the tilt (byte-identical). Only active when
+    # consistency_v2 is also True (the tilt lives inside the v2 block of
+    # sample_fleet).
+    context.config("fleet_ev_income_tilt", True)
+    # Task B5: Euro-6 substage (6ab/6d-temp/6d) conditional draw flag. When
+    # True (default) the v2 path refines a combustion vehicle's headline
+    # "euro6" draw into one of the three real Euro-6 substages via the
+    # per-Kreis / national FZ 27.4 fallback chain (see
+    # fleet_sampling_de.Euro6SubstageModel). False, consistency_v2=False, or
+    # absent substage CSVs (server-generated, not always present locally)
+    # leave the plain "euro6" label (byte-identical).
+    context.config("fleet_euro6_substage", True)
+    # T9b: default is the new grid-tilt mode; falls back gracefully to Gemeinde-
+    # only when kba_ev_grid.csv is absent.  The legacy Gemeinde-only mode
+    # ("kreis_mix_gemeinde_bev_tilt") remains supported for explicit rollback.
+    context.config("fleet_electric_calibration",
+                   "kreis_mix_gemeinde_grid_bev_tilt")
     # Optional override for the KBA derived-CSV directory. Default None -> the
     # readers (braunschweig.data.kba.fleet_tables) resolve the tables under
     # ``data_path``; the key is registered so an explicit override invalidates the
@@ -325,6 +493,8 @@ def execute(context):
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
     consistency_v2 = bool(context.config("fleet_consistency_v2"))
     age_income_coupling = bool(context.config("fleet_age_income_coupling"))
+    ev_income_tilt = bool(context.config("fleet_ev_income_tilt"))
+    euro6_substage = bool(context.config("fleet_euro6_substage"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -349,6 +519,78 @@ def execute(context):
     df_cars = build_household_car_frame(df_persons, df_homes, df_regiostar)
     df_cars = assign_vehicle_ids(df_cars)
 
+    # T9b: grid EV tilt -- attach per-household grid_ev_share + gemeinde_grid_mean
+    # columns when the grid-tilt mode is requested and the grid CSV is available.
+    # On ANY of {grid CSV absent, home.locations unavailable, empty join}: do NOT
+    # add the columns and fall back to Gemeinde-only tilt (no-silent-fallback rule).
+    if electric_calibration == "kreis_mix_gemeinde_grid_bev_tilt":
+        _grid_cols_added = False
+        try:
+            from braunschweig.data.kba import fleet_tables as ft
+            grid_df = ft.load_ev_grid(fleet_data_path)
+            # Home locations stage provides per-household geometry (EPSG:25832)
+            # + commune_id.
+            df_home_locs = context.stage(
+                "synthesis.population.spatial.home.locations")
+            # The home locations frame has household_id + commune_id + geometry.
+            # Build the per-household grid ev_share via spatial join.
+            ev_series = grid_ev_share_for_homes(df_home_locs, grid_df)
+            # Attach grid_ev_share to df_cars (join on household_id).
+            df_cars = df_cars.join(
+                ev_series.rename("grid_ev_share"), on="household_id", how="left")
+            # Attach commune_id for the Gemeinde mean computation.
+            commune_map = (
+                df_home_locs[["household_id", "commune_id"]]
+                .drop_duplicates("household_id")
+                .set_index("household_id")["commune_id"]
+            )
+            df_cars["_commune_id_grid"] = df_cars["household_id"].map(commune_map)
+            # Compute per-Gemeinde household-weighted mean of grid_ev_share.
+            # We need the mean indexed by household_id over the car frame (one row
+            # per car, multiple cars per household).  Build a household-level
+            # helper frame first so each household contributes exactly once to
+            # the mean, then broadcast back.
+            hh_grid = (
+                df_cars[["household_id", "_commune_id_grid", "grid_ev_share"]]
+                .drop_duplicates("household_id")
+                .rename(columns={"_commune_id_grid": "commune_id"})
+            )
+            hh_grid_mean = gemeinde_grid_mean(hh_grid)
+            df_cars = df_cars.join(
+                hh_grid_mean.rename("gemeinde_grid_mean"),
+                on="household_id", how="left",
+            )
+            df_cars = df_cars.drop(columns=["_commune_id_grid"])
+            _grid_cols_added = True
+            logger.info(
+                "[vehicles.household] fleet_electric_calibration=%s: "
+                "grid tilt columns attached (grid_ev_share + gemeinde_grid_mean).",
+                electric_calibration,
+            )
+        except FileNotFoundError:
+            logger.info(
+                "[vehicles.household] fleet_electric_calibration=%s: "
+                "kba_ev_grid.csv absent -> falling back to Gemeinde-only tilt "
+                "(no grid columns on df_cars).",
+                electric_calibration,
+            )
+        except Exception as exc:  # noqa: BLE001 -- log (with traceback) and degrade gracefully
+            # exc_info=True captures the full traceback so an UNEXPECTED failure
+            # here (e.g. a wrong column name, a geopandas/shapely import error, a
+            # CRS mismatch) is diagnosable from the run log instead of being
+            # silently masked as a graceful fallback (no-silent-fallback rule).
+            logger.warning(
+                "[vehicles.household] fleet_electric_calibration=%s: "
+                "grid tilt setup failed (%s) -> falling back to Gemeinde-only "
+                "tilt (no grid columns on df_cars).",
+                electric_calibration, exc, exc_info=True,
+            )
+        if not _grid_cols_added:
+            logger.info(
+                "[vehicles.household] grid tilt not active for this run; "
+                "Gemeinde-only tilt will be used."
+            )
+
     logger.info(
         "[vehicles.household] %d vehicles for %d households (mean %.2f cars/HH "
         "over car-owning households)",
@@ -357,11 +599,26 @@ def execute(context):
     )
 
     # Attach the full KBA/HBEFA spec to every household car (F4 chain).
-    df_spec, df_vehicle_types = fleet.sample_fleet(
+    # Task 3: consistency_v2=True returns a 3-tuple (df_spec, df_types, summary);
+    # the legacy path (consistency_v2=False) returns the original 2-tuple.
+    _fleet_result = fleet.sample_fleet(
         df_cars, fleet_data_path, random_seed=random_seed, size_map=size_map,
         model_brands=model_brands, consistency_v2=consistency_v2,
         age_income_coupling=age_income_coupling,
+        ev_income_tilt=ev_income_tilt,
+        euro6_substage=euro6_substage,
         population_label="residents")
+    if len(_fleet_result) == 3:
+        df_spec, df_vehicle_types, _ = _fleet_result
+    else:
+        df_spec, df_vehicle_types = _fleet_result
+    # The grid-tilt inputs (grid_ev_share, gemeinde_grid_mean) were consumed
+    # during the powertrain draw inside sample_fleet; they are NOT vehicle
+    # attributes. Drop them here so they do not leak into df_vehicles /
+    # vehicles.csv (and do not receive meaningless median fills on the routing
+    # default_car rows in _add_default_cars_for_non_owners). ``errors="ignore"``
+    # keeps this a no-op when the grid tilt was inactive (columns absent).
+    df_spec = df_spec.drop(columns=["grid_ev_share", "gemeinde_grid_mean"], errors="ignore")
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the

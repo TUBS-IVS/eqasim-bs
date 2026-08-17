@@ -29,6 +29,9 @@ DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
 import matsim.scenario.vehicles as writer  # noqa: E402
+from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
+from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
+from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 from braunschweig.synthesis.vehicles.cars import household as hh  # noqa: E402
 
 DATA_PATH = str(DATA)
@@ -121,6 +124,28 @@ def _regiostar():
     ])
 
 
+def _home_locations():
+    """Per-household home locations with geometry (EPSG:25832).
+
+    ``configure()`` declares ``synthesis.population.spatial.home.locations``
+    unconditionally (T9b: it enters the synpp cache key), so the stub context has
+    to resolve it even for the Gemeinde-only calibration mode that never reads
+    it at runtime. Coordinates are inside the ZGB bbox; the exact positions are
+    irrelevant here -- the grid join itself is covered by
+    ``tests/test_fleet_grid_tilt_wiring.py``.
+    """
+    geopandas = pytest.importorskip("geopandas")
+    from shapely.geometry import Point
+
+    homes = _homes()
+    return geopandas.GeoDataFrame(
+        homes,
+        geometry=[Point(605000.0 + 100.0 * i, 5790000.0 + 100.0 * i)
+                  for i in range(len(homes))],
+        crs="EPSG:25832",
+    )
+
+
 def _stub(config_overrides=None, path=None):
     # Mimics the synpp context AFTER configure(): every config key the stage
     # registers (with its default) is resolvable by key alone in execute(), per
@@ -132,11 +157,17 @@ def _stub(config_overrides=None, path=None):
         "fleet_model_enabled": True,
         "fleet_model_brands": True,
         "fleet_hsn_tsn_attributes": True,
-        # fleet_consistency_v2 (PR #12) and fleet_age_income_coupling (PR #13) are read
-        # without a default in execute() (configure() registers their defaults); the stub
-        # context does not carry configure-time defaults, so the test must provide them.
+        # fleet_consistency_v2 (PR #12), fleet_age_income_coupling (PR #13) and
+        # fleet_ev_income_tilt (Task B2) are read without a default in execute()
+        # (configure() registers their defaults); the stub context does not carry
+        # configure-time defaults, so the test must provide them.
         "fleet_consistency_v2": True,
         "fleet_age_income_coupling": True,
+        "fleet_ev_income_tilt": True,
+        # Task B4/B5 (euro6 substage) is likewise read without a default in
+        # execute(); every single-argument context.config() key of execute() must
+        # be present here (see tests/test_execute_context_config_contract.py).
+        "fleet_euro6_substage": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }
@@ -145,6 +176,7 @@ def _stub(config_overrides=None, path=None):
         "synthesis.population.enriched": _persons(),
         "synthesis.population.spatial.home.zones": _homes(),
         "braunschweig.data.bbsr.regiostar": _regiostar(),
+        "synthesis.population.spatial.home.locations": _home_locations(),
     }
     return _StubContext(config, stages, path=path)
 
@@ -158,6 +190,8 @@ def test_stage_configure_declares_dependencies():
     assert "synthesis.population.enriched" in ctx.requested_stages
     assert "synthesis.population.spatial.home.zones" in ctx.requested_stages
     assert "braunschweig.data.bbsr.regiostar" in ctx.requested_stages
+    # T9b: declared unconditionally so the grid-tilt input is part of the cache key.
+    assert "synthesis.population.spatial.home.locations" in ctx.requested_stages
     assert "data_path" in ctx.requested_configs
     assert "random_seed" in ctx.requested_configs
 
@@ -335,3 +369,54 @@ def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path):
     assert "engine_power_kw" in seen
     assert "displacement_ccm" in seen
     assert "hsn" in seen and "tsn" in seen
+
+
+# --------------------------------------------------------------------------- #
+# 6. F10: default_car routing rows carry the LEGACY vocab; typed fleet rows
+# carry only the CANONICAL German-fleet vocab. Never change the default-row
+# values (pre-existing output, accepted quirk -- see the docstring on
+# _legacy_default_fleet / _add_default_cars_for_non_owners and the ADR).
+# --------------------------------------------------------------------------- #
+CANONICAL_TECHNOLOGY_VOCAB = set(fs.POWERTRAINS)
+CANONICAL_EURO_VOCAB = set(ft.EURO_CLASS_LABELS) | {hbefa.ELECTRIC_EURO}
+
+
+def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab():
+    """The typed household fleet and the eqasim-core routing placeholder
+    (``default_car``) coexist in the same ``df_vehicles`` frame with two
+    DIFFERENT vocabularies for technology/euro/euro_class:
+
+      * NON-default rows (the differentiated German fleet) use the canonical
+        vocab: ``technology`` in ``fs.POWERTRAINS`` and ``euro``/``euro_class``
+        in ``ft.EURO_CLASS_LABELS`` plus the ``hbefa.ELECTRIC_EURO`` override.
+      * default rows (``type_id == "default_car"``, the routing placeholder
+        eqasim-core needs for every non-owner) keep the LEGACY vocab
+        (``technology="Gazole"``, ``euro=6`` (int), ``critair="Crit'air 1"``)
+        exactly as emitted by ``synthesis.vehicles.cars.default`` -- this is a
+        pre-existing, byte-comparability-preserving quirk (F10), NOT a bug to
+        silently mix into the German vocab.
+    """
+    ctx = _stub()
+    _, df_vehicles = hh.execute(ctx)
+
+    is_default = df_vehicles["type_id"] == "default_car"
+    assert is_default.any(), "fixture must include at least one routing default_car"
+    assert (~is_default).any(), "fixture must include at least one typed fleet car"
+
+    typed = df_vehicles[~is_default]
+    assert set(typed["technology"].unique()) <= CANONICAL_TECHNOLOGY_VOCAB, (
+        f"non-default technology values outside the canonical vocab: "
+        f"{set(typed['technology'].unique()) - CANONICAL_TECHNOLOGY_VOCAB}")
+    assert set(typed["euro"].unique()) <= CANONICAL_EURO_VOCAB, (
+        f"non-default euro values outside the canonical vocab: "
+        f"{set(typed['euro'].unique()) - CANONICAL_EURO_VOCAB}")
+    assert set(typed["euro_class"].unique()) <= CANONICAL_EURO_VOCAB, (
+        f"non-default euro_class values outside the canonical vocab: "
+        f"{set(typed['euro_class'].unique()) - CANONICAL_EURO_VOCAB}")
+
+    # The default rows are cleanly separable via type_id and keep their
+    # documented legacy values (unchanged by F10 -- doc-only fix).
+    default_rows = df_vehicles[is_default]
+    assert (default_rows["technology"] == "Gazole").all()
+    assert (default_rows["euro"] == 6).all()
+    assert (default_rows["critair"] == "Crit'air 1").all()

@@ -29,7 +29,12 @@ HBEFA emissions file:
     fuel-cell vehicles carry a technology-specific concept that does not encode
     a combustion Euro stage (``PC BEV``, ``PC P-Hybrid``, ``PC PHEV petrol``,
     ``PC Fuel Cell``), because HBEFA does not tabulate combustion Euro stages
-    for a pure-electric drivetrain.
+    for a pure-electric drivetrain;
+  * a Euro-6 combustion vehicle may carry one of the three Euro-6 substages
+    (Task B5, conditionally drawn -- see
+    :class:`braunschweig.synthesis.vehicles.fleet_sampling_de.Euro6SubstageModel`),
+    which map to their own concept strings ``PC <fuel> Euro-6ab`` /
+    ``PC <fuel> Euro-6d-temp`` / ``PC <fuel> Euro-6d``.
 
 The size class is one of ``small`` / ``medium`` / ``large`` (the HBEFA size
 classes that exist for every technology, including the electrified ones). The
@@ -75,6 +80,19 @@ POWERTRAIN_TO_TECHNOLOGY: dict[str, str] = {
 #: stage for them), so their euro_class is collapsed to a fixed concept below.
 COMBUSTION_POWERTRAINS: frozenset[str] = frozenset({"petrol", "diesel", "gas", "other"})
 
+#: Pure-electric drivetrains: BEV and hydrogen/fuel-cell.  These have NO
+#: combustion engine, so no combustion Euro stage applies.  PHEV and full hybrid
+#: DO have a combustion engine and therefore keep their drawn combustion Euro.
+ELECTRIC_EURO_POWERTRAINS: frozenset[str] = frozenset({"bev", "hydrogen"})
+
+#: Real euro_class category stored on pure-electric (BEV / hydrogen) vehicles.
+#: This is a genuine category label -- not a missing-data sentinel -- that
+#: signals "pure-electric drivetrain; no combustion Euro stage" while still
+#: being a fully imputed, non-null value.  HBEFA's ``emission_concept_for``
+#: already ignores euro for these powertrains, so the stored ``type_id`` /
+#: emission concept is unaffected -- this is provenance / semantic clarity only.
+ELECTRIC_EURO: str = "electric"
+
 #: Fixed (Euro-independent) emission concepts for the electrified / fuel-cell
 #: powertrains. These are the canonical VSP HBEFA passenger-car concepts.
 NON_COMBUSTION_EMISSION_CONCEPT: dict[str, str] = {
@@ -93,10 +111,20 @@ _COMBUSTION_CONCEPT_FUEL: dict[str, str] = {
 }
 
 #: Allowed Euro-class labels (must match
-#: :data:`braunschweig.data.kba.fleet_tables.EURO_CLASS_LABELS`). ``other`` is
-#: the KBA Sonstige residual; for a combustion vehicle it is treated as the
-#: oldest pre-Euro-1 stage in the HBEFA concept (``Euro-0``) so it still
-#: produces a valid, conservative concept string.
+#: :data:`braunschweig.data.kba.fleet_tables.EURO_CLASS_LABELS`, plus the three
+#: Task B5 Euro-6 substages). ``other`` is the KBA Sonstige residual; for a
+#: combustion vehicle it is treated as the oldest pre-Euro-1 stage in the HBEFA
+#: concept (``Euro-0``) so it still produces a valid, conservative concept
+#: string.
+#:
+#: Task B5: ``euro6ab`` / ``euro6dtemp`` / ``euro6d`` are the conditional
+#: Euro-6 substage refinement drawn by
+#: :class:`braunschweig.synthesis.vehicles.fleet_sampling_de.Euro6SubstageModel`
+#: (per-Kreis diesel/non-diesel composition from Regionalstatistik 46251-03,
+#: falling back to the national FZ 27.4 substage split, falling back to plain
+#: ``euro6`` when no substage data is available). The headline ``euro6``
+#: concept stays mapped for that final fallback and for any legacy caller that
+#: still passes the plain label.
 EURO_TO_HBEFA_STAGE: dict[str, str] = {
     "euro1": "Euro-1",
     "euro2": "Euro-2",
@@ -104,6 +132,9 @@ EURO_TO_HBEFA_STAGE: dict[str, str] = {
     "euro4": "Euro-4",
     "euro5": "Euro-5",
     "euro6": "Euro-6",
+    "euro6ab": "Euro-6ab",
+    "euro6dtemp": "Euro-6d-temp",
+    "euro6d": "Euro-6d",
     "other": "Euro-0",
 }
 

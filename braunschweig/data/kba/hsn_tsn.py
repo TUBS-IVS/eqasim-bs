@@ -402,6 +402,13 @@ class HsnTsnLookup:
     # Populated when from_data_path is called (kba_segment_model.csv available).
     # Empty dict when only from_frame is used (e.g. in unit tests without data_path).
     segment_fuel_pools: dict[tuple[str, str], VariantPool] = field(default_factory=dict)
+    # Task 4: variant pools for the exact/model tiers, keyed by
+    # (brand, family, fuel_group) and (brand, family) respectively. These restore
+    # within-group engine variance for the closest match tiers (exact/model) while
+    # preserving the pool median as the central value (same as the old deterministic
+    # median record).
+    brand_model_fuel_pools: dict[tuple[str, str, str], VariantPool] = field(default_factory=dict)
+    brand_model_pools: dict[tuple[str, str], VariantPool] = field(default_factory=dict)
     # Diagnostic counters (no-silent-fallback rule).
     _tier_counts: Counter = field(default_factory=Counter)
     _unmapped_brands: Counter = field(default_factory=Counter)
@@ -508,6 +515,23 @@ class HsnTsnLookup:
 
         global_record = _aggregate(df)
 
+        # Task 4: variant pools for the exact/model tiers.
+        # ASSUMPTION: the HSN/TSN catalog is unweighted (one row per variant),
+        # so the pool draw is uniform over variants; the median is preserved as
+        # the pool's central value.
+        brand_model_fuel_pools: dict[tuple[str, str, str], VariantPool] = {}
+        brand_model_pools: dict[tuple[str, str], VariantPool] = {}
+        for brand, brand_group in df.groupby("brand"):
+            for family, fam_group in brand_group.groupby("_family"):
+                if not family:
+                    continue
+                brand_model_pools[(str(brand), str(family))] = VariantPool.from_group(
+                    fam_group,
+                    str(fam_group["fuel"].mode().iloc[0]) if len(fam_group) else "")
+                for fuel, fuel_group in fam_group.groupby("fuel"):
+                    brand_model_fuel_pools[(str(brand), str(family), str(fuel))] = \
+                        VariantPool.from_group(fuel_group, str(fuel))
+
         brand_fuel: dict[tuple[str, str], EngineRecord] = {}
         brand_fuel_pools: dict[tuple[str, str], VariantPool] = {}
         brand_pools: dict[str, VariantPool] = {}
@@ -563,6 +587,8 @@ class HsnTsnLookup:
             brand_pools=brand_pools,
             global_pool=global_pool,
             segment_fuel_pools=segment_fuel_pools,
+            brand_model_fuel_pools=brand_model_fuel_pools,
+            brand_model_pools=brand_model_pools,
         )
 
     def lookup(self, fleet_brand: str, family: str,
@@ -691,6 +717,22 @@ class HsnTsnLookup:
             return None
         return self.segment_fuel_pools.get((str(segment), fuel_group))
 
+    def get_model_pool(self, brand: str, family: str,
+                       fuel: Optional[str] = None) -> Optional[VariantPool]:
+        """Return the variant pool for the exact or model tier.
+
+        Used by :func:`attach_hsn_tsn` for exact/model tier draws so that each
+        vehicle receives a varied engine rather than one identical median.
+        Tries the fuel-conditioned pool (exact tier key) first; falls back to
+        the fuel-agnostic model pool (model tier key). Returns ``None`` when no
+        pool is present (e.g. lookup built without Task 4 pools or unknown brand).
+        """
+        if fuel is not None:
+            pool = self.brand_model_fuel_pools.get((brand, family, fuel))
+            if pool is not None:
+                return pool
+        return self.brand_model_pools.get((brand, family))
+
     def log_tier_rates(self) -> None:
         """Log the per-tier match rates (no-silent-fallback rule).
 
@@ -726,7 +768,10 @@ class HsnTsnLookup:
             )
 
 
-_POOLED_TIERS = frozenset({"brand", "global", "segment"})
+# Task 4: exact and model tiers now draw from variant pools (like brand/global/
+# segment), so they are added to the pooled set. The exact/model pools preserve
+# the pool median as the central value while restoring within-group engine variance.
+_POOLED_TIERS = frozenset({"exact", "model", "brand", "global", "segment"})
 
 
 def attach_hsn_tsn(df_vehicles: pd.DataFrame,
@@ -747,12 +792,13 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
     record (which may reflect a different fuel for the same model family). This
     ensures a diesel car never carries "Benzin" in ``fuel_detail``.
 
-    For the pooled fallback tiers (``brand`` and ``global``) the engine numbers
-    (power_kw/ps, displacement, hsn/tsn) are drawn uniformly at random from the
-    matched variant pool so that unmatched cars do NOT all share one identical
-    engine fingerprint. The draw is deterministic given ``random_seed``. The
-    exact/model tiers are deterministic medians and are cached per distinct
-    vehicle spec for performance.
+    For ALL pooled tiers (``exact``, ``model``, ``brand``, ``segment``, ``global``)
+    the engine numbers (power_kw/ps, displacement, hsn/tsn) are drawn uniformly
+    at random from the matched variant pool so that vehicles do NOT all share one
+    identical engine fingerprint. The draw is deterministic given ``random_seed``.
+    The exact/model draws use a brand+family[+fuel] pool (Task 4: within-group
+    variance restored; pool median equals the old deterministic record). Pooled
+    draws are never cached so every vehicle gets an independent draw.
 
     Parameters
     ----------
@@ -829,7 +875,15 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
             if vehicle_tier in _POOLED_TIERS:
                 # Pool draw: per-vehicle random engine from the matched variant
                 # distribution. Never cached so every vehicle gets an independent draw.
-                if vehicle_tier == "segment" and seg_str is not None:
+                if vehicle_tier in ("exact", "model"):
+                    # Task 4: draw from the brand+family[+fuel] variant pool so that
+                    # exact/model matched vehicles get varied engine attributes rather
+                    # than the same deterministic median. The canonical brand is
+                    # already resolved in the lookup; resolve it here for the pool key.
+                    cb = canonical_brand(brand) or ""
+                    fuel_group = powertrain_to_fuel_group(powertrain)
+                    pool = lookup.get_model_pool(cb, family, fuel_group)
+                elif vehicle_tier == "segment" and seg_str is not None:
                     pool = lookup.get_segment_pool(seg_str, powertrain)
                 else:
                     pool = lookup.get_pool(brand, powertrain)
@@ -839,7 +893,8 @@ def attach_hsn_tsn(df_vehicles: pd.DataFrame,
                     rec = rec_raw
                 # Do NOT add to cache — the next vehicle at this spec must draw again.
             else:
-                # exact/model tiers are deterministic medians; cache them.
+                # No remaining deterministic (non-pooled) tiers after Task 4; keep
+                # the cache branch for forward compatibility.
                 rec = rec_raw
                 cache[key] = (rec, vehicle_tier)
         else:

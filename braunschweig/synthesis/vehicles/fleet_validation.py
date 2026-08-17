@@ -1,0 +1,147 @@
+"""Post-synthesis validator: realised fleet marginals vs the EFFECTIVE fed-in targets.
+
+The fleet is drawn from targets that are deliberately transformed (per-Kreis
+rake, income-age tilt, euro-age consistency projection). This compares the
+realised marginals to those EFFECTIVE targets (NOT the raw KBA tables) so the
+residual collapses to Monte-Carlo sampling error on a healthy model and still
+catches implementation bugs (e.g. the 4-yr age offset). Logging-only; no
+silent drift. See docs/superpowers/specs/2026-07-01-fleet-model-improvements-design.md.
+
+F4 NOTE (combustion-split traceability): the per-Kreis electric rake re-centres
+only the ELECTRIC (bev/phev) mass to the per-Kreis target. After the per-model
+fuel-weight mask, the per-Kreis petrol:diesel:gas:hybrid split is therefore NOT
+guaranteed to match the 46251-02 / FZ 27.15 combustion marginal, and this
+validator compares against the (already-weighted) EFFECTIVE pmf, so it does not
+police that drift. The realised per-Kreis combustion split should be
+spot-checked against 46251-02 in the per-run validation summary.
+"""
+from __future__ import annotations
+import logging
+import numpy as np
+import pandas as pd
+
+LOGGER = logging.getLogger("braunschweig.synthesis.vehicles.fleet_validation")
+
+#: Powertrains counted as "electric" for the RegioStaR7 KBA cross-check below.
+#: Matches the KBA "Pkw Elektro Anteil" definition used throughout this project's
+#: KBA extractors (see scripts/extract_kba_fleet.py::extract_gemeinde_ev's
+#: ev_share, which likewise combines BEV + PHEV + fuel-cell into one "Elektro"
+#: share, distinct from the separately reported bev_share/phev_share columns).
+_ELECTRIC_LIKE_POWERTRAINS = ("bev", "phev", "hydrogen")
+
+
+def _shares(series):
+    vc = series.value_counts(dropna=False)
+    n = float(vc.sum())
+    return {str(k): float(v) / n for k, v in vc.items()}, int(n)
+
+
+def validate_realised_margins(df_spec, expected, sample_rate: float = 1.0,
+                              tol_sigma: float = 4.0) -> dict:
+    """Compare realised marginals in df_spec to the effective target PMFs.
+
+    A dimension is flagged when the max absolute per-label deviation exceeds a
+    Monte-Carlo band: tol_sigma * sqrt(p*(1-p)/N_eff) (in pp), N_eff scaled by
+    sample_rate so a 1% sample is not falsely flagged. tol_sigma default 4.
+    """
+    out = {"dimensions": {}, "any_flagged": False}
+    for dim, exp in expected.items():
+        if dim not in df_spec.columns:
+            continue
+        realised, n = _shares(df_spec[dim])
+        n_eff = max(1.0, n * float(sample_rate))
+        labels = set(realised) | set(exp)
+        max_pp = 0.0
+        band_pp = 0.0
+        for lab in labels:
+            r = realised.get(lab, 0.0); e = float(exp.get(lab, 0.0))
+            max_pp = max(max_pp, abs(r - e) * 100.0)
+            band_pp = max(band_pp, tol_sigma * np.sqrt(max(e * (1 - e), 1e-9) / n_eff) * 100.0)
+        flagged = bool(max_pp > band_pp)
+        out["dimensions"][dim] = {"realised": realised, "expected": exp,
+                                  "max_abs_pp": round(max_pp, 3),
+                                  "band_pp": round(band_pp, 3), "flagged": flagged}
+        out["any_flagged"] = out["any_flagged"] or flagged
+        (LOGGER.warning if flagged else LOGGER.info)(
+            "[fleet_validation] %s: max dev %.2fpp (band %.2fpp) -> %s",
+            dim, max_pp, band_pp, "DRIFT" if flagged else "ok")
+    return out
+
+
+def crosscheck_ev_by_regiostar7(df_spec, df_rs7) -> dict:
+    """LOGGING-ONLY cross-check: realised EV share per home RegioStaR-7 code vs the
+    national KBA RegioStaR-7 EV share (``kba_ev_regiostar7.csv``, Task B6).
+
+    This NEVER flags the run and NEVER raises: the KBA reference is a NATIONAL
+    aggregate while the synthesised fleet is regional (Zukunftsregion
+    Braunschweig only). Per the project's no-invented-reference-value rule
+    (CLAUDE.md), a national figure cannot be treated as a regional target, so
+    this is reported purely as an order-of-magnitude CROSS-CHECK for the run
+    summary -- never as a pass/fail validation dimension (unlike
+    :func:`validate_realised_margins`, this helper has no ``flagged`` output).
+
+    Args:
+        df_spec: The realised fleet spec (one row per car), expected to carry
+            ``raumtyp`` (home RegioStaR-7 code 71..77, possibly ``NaN``) and
+            ``powertrain`` (one of
+            :data:`braunschweig.data.kba.fleet_tables.POWERTRAIN_LABELS`).
+        df_rs7: The KBA RegioStaR7 reference table (columns ``rs7, ev_share,
+            stichtag``), typically from
+            :func:`braunschweig.data.kba.fleet_tables.load_ev_regiostar7`.
+
+    Returns:
+        Dict keyed by the RegioStaR-7 int code -> ``{"realised": float,
+        "reference": float, "delta_pp": float, "n_cars": int}``, where
+        ``realised`` is the observed ``bev + phev + hydrogen`` share of cars
+        whose home is in that RegioStaR-7 code and ``reference`` is the KBA
+        national EV share for the same code. Returns an empty dict if the
+        required columns are absent or no row has a usable RegioStaR-7 code --
+        this is logged, never raised.
+    """
+    out: dict = {}
+    required_spec_columns = {"raumtyp", "powertrain"}
+    required_rs7_columns = {"rs7", "ev_share"}
+    if not required_spec_columns.issubset(df_spec.columns):
+        LOGGER.info(
+            "[crosscheck_ev_by_regiostar7] df_spec missing %s -- cross-check "
+            "skipped (national reference; logging-only, never flags the run).",
+            sorted(required_spec_columns - set(df_spec.columns)),
+        )
+        return out
+    if not required_rs7_columns.issubset(df_rs7.columns):
+        LOGGER.info(
+            "[crosscheck_ev_by_regiostar7] df_rs7 missing %s -- cross-check "
+            "skipped (national reference; logging-only, never flags the run).",
+            sorted(required_rs7_columns - set(df_rs7.columns)),
+        )
+        return out
+
+    reference = df_rs7.set_index("rs7")["ev_share"].to_dict()
+    for rs7_code, group in df_spec.groupby("raumtyp"):
+        if pd.isna(rs7_code):
+            continue
+        rs7_int = int(rs7_code)
+        reference_share = reference.get(rs7_int)
+        if reference_share is None:
+            LOGGER.info(
+                "[crosscheck_ev_by_regiostar7] rs7=%d: no KBA reference row -- "
+                "skipped.", rs7_int,
+            )
+            continue
+        n_cars = len(group)
+        realised_share = float(group["powertrain"].isin(_ELECTRIC_LIKE_POWERTRAINS).sum()) / n_cars
+        delta_pp = (realised_share - float(reference_share)) * 100.0
+        out[rs7_int] = {
+            "realised": round(realised_share, 4),
+            "reference": round(float(reference_share), 4),
+            "delta_pp": round(delta_pp, 3),
+            "n_cars": n_cars,
+        }
+        LOGGER.info(
+            "[crosscheck_ev_by_regiostar7] rs7=%d: realised=%.2f%% vs KBA national "
+            "reference=%.2f%% (delta=%.2fpp, n=%d cars) -- CROSS-CHECK only "
+            "(national reference vs regional model), NOT a validation target.",
+            rs7_int, realised_share * 100.0, float(reference_share) * 100.0,
+            delta_pp, n_cars,
+        )
+    return out

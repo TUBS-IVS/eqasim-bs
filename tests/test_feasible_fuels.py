@@ -152,7 +152,7 @@ def test_sample_fleet_model_constrained_never_infeasible():
                 "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
             })
     df_cars = pd.DataFrame(rows)
-    df_spec, _ = fs.sample_fleet(
+    df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=11, sampler=sampler, consistency_v2=True)
 
     violations = 0

@@ -1,5 +1,5 @@
 dataset: mid2023_b1
-title: MiD 2023 B1 microdata package (households, persons, trips, cars)
+title: MiD 2023 B1 microdata package (households, persons, trips, cars, ...)
 inventory_id: E1.1
 provider: BMDV / infas
 vintage: 2023 survey year
@@ -7,16 +7,33 @@ geography: Germany
 crs: null
 roles:
 - donor
+- reference_table
 used_by:
 - braunschweig.data.hts.mid_donor
 - braunschweig.popsim.completed_donor
 - data.census.filtered
+- braunschweig.synthesis.vehicles.cars.household
 acquisition:
   method: restricted_delivery
-  source: Restricted scientific-use file (BMDV/infas usage agreement)
+  source: |
+    Restricted scientific-use file (BMDV/infas usage agreement). Since 2025 MiD 2023 is distributed
+    through the BASt MobilityData-Campus
+    (https://www.bast.de/DE/Publikationen/Daten/VerhaltenundSicherheit/MDC/MobilityData-Campus_node.html);
+    infas no longer supplies it directly. Packages A/B1/B2 also appear on the Mobilithek, B3 only via
+    remote access. Where micro-data is not available, the free "Mobilitaet in Tabellen" tool
+    (https://mobilitaet-in-tabellen-2023.bast.de/) produces the same cross-tabulations -- that is
+    where the mid2023_mit_tables exports come from.
   script: null
 storage:
-  expected_path: eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv
+  expected_path: |
+    The B1 package lives OUTSIDE this repository, in the sibling popsimprep checkout:
+      <popsimprep>/inputs/MiD2023/MiD2023_B1_Datensatzpaket/CSV/MiD2023_{Haushalte,Personen,Wege,
+      Autos,Etappen,Reisen,Tagesreisen}.csv
+    That is the default path of scripts/build_mid_age_by_segment_status.py and
+    scripts/build_mid_antrieb_by_status.py (override with --mid-path). The three files the popsim
+    donor path needs are additionally synced to
+    eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv on the run
+    host; the Autos file is NOT synced there.
   committed: false
   local_only: true
 verification:
@@ -29,8 +46,22 @@ licensing:
   license: restricted scientific use
   restricted: true
   redistribution: forbidden
-limitations: Never committed, never redistributed. popsim_open and simple_ipf_open run without
-  it.
-notes: 'THE popsim_mid donor: every synthetic person carries a real MiD donor''s attributes and
-  travel-day chain. Raw ids are pseudonymised before any output; the surrogate map stays in the
-  local work dir.'
+limitations: |
+  Never committed, never redistributed. popsim_open and simple_ipf_open run without it. Only the
+  AGGREGATE cross tables derived from it are committed (kba/derived/mid2023_*.csv).
+notes: |
+  THE popsim_mid donor: every synthetic person carries a real MiD donor's attributes and travel-day
+  chain. Raw ids are pseudonymised before any output; the surrogate map stays in the local work dir.
+
+  The package has SEVEN sub-datasets, not three. The Autos file (one row per household car, 290930
+  records, vehicle weight A_GEW) is the source of two committed fleet tables:
+  mid2023_age_by_segment_status.csv and mid2023_antrieb_by_status.csv -- the latter built 2026-08-17
+  for issue #277 to activate the EV-income tilt. Recording the location matters: this entry
+  previously listed only the three popsim files, which is why the Autos file was believed to be
+  missing while it sat in the popsimprep checkout all along.
+
+  Further Autos variables not yet used, each a concrete modelling opportunity: A_HALTER
+  (private/company, which addresses the KBA register-vs-household caveat of ADR-0081), A_BAUJ
+  (vehicle age at micro level, joinable to oek_status and RegioStaR -- the axis ADR-0081 had to leave
+  national), A_KW / A_PS (engine attributes, currently approximated via the HSN/TSN scrape),
+  A_STELL / A_LADEN / anzladen (parking and home-charging context), A_JAHRESFL (annual mileage).

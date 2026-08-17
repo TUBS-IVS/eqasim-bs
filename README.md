@@ -189,7 +189,7 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 
 | Dataset | Needed for | How to obtain | Destination |
 |---------|-----------|---------------|-------------|
-| **MiD 2023 B1 microdata** (Haushalte, Personen, Wege, Autos) | the `popsim_mid` **production** workflow (donor) | BMDV/infas scientific-use agreement | `braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv` |
+| **MiD 2023 B1 microdata** (7 files: Haushalte, Personen, Wege, Autos, Etappen, Reisen, Tagesreisen) | the `popsim_mid` **production** workflow (donor); the `Autos` file additionally regenerates the committed fleet cross tables | BASt [MobilityData-Campus](https://www.bast.de/DE/Publikationen/Daten/VerhaltenundSicherheit/MDC/MobilityData-Campus_node.html) (usage agreement; infas no longer distributes it) | donor path: `braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv` · fleet tables read the full package from `<popsimprep>/inputs/MiD2023/MiD2023_B1_Datensatzpaket/CSV/` (or `--mid-path`) |
 | **MiD 2023 regional report** (infas 7555 PDF) | regenerating the committed `braunschweig/mid/mid2023_*.csv` aggregates | delivery by ZGB / BMDV | `braunschweig/Ergebnistabellen_MiD2023_…_Braunschweig.pdf` → `scripts/extract_mid_tables.py` |
 | **SrV 2023 BS+RGB trip records** | regenerating the committed `braunschweig/srv/srv2023_*.csv` aggregates (#224, #201, #262) | TU Dresden / Stadt BS / RGB scientific use | local SUF → `scripts/derive_srv_location_types.py` etc. |
 | **RVB VISUM Verkehrszellen** | only the permanently-OFF TAZ feature (ADR-0067) | RVB delivery | `braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet` |
@@ -213,6 +213,15 @@ tables keep all reference comparisons working.
 | Building activity potentials | TUBS-IVS potentials pipeline → `python scripts/import_building_activity_potentials.py` | `braunschweig/buildings/building_activity_potentials.parquet` |
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |
 | KBA derived fleet tables (committed) | `python scripts/extract_kba_fleet.py` | `braunschweig/kba/derived/*.csv` |
+| MiD fleet cross tables (committed) | `python scripts/build_mid_age_by_segment_status.py` and `python scripts/build_mid_antrieb_by_status.py` (both accept `--mid-path`) | `braunschweig/kba/derived/mid2023_{age_by_segment_status,antrieb_by_status}.csv` |
+
+Two diagnostics check the synthesised fleet against those committed references
+(they read data only and write nothing):
+
+```bash
+python scripts/measure_combustion_split.py        # realised petrol/diesel vs 46251-02 (ZGB)
+python scripts/measure_gemeinde_join_coverage.py  # Gemeinde-name join coverage of the EV tilt
+```
 
 The exhaustive acquisition companion (with every note and edge case) is
 [`eqasim-data/DOWNLOAD_CHECKLIST_BS.md`](eqasim-data/DOWNLOAD_CHECKLIST_BS.md).

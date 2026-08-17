@@ -272,7 +272,16 @@ config:
   fleet_model_enabled: true
   fleet_model_brands: true
   fleet_hsn_tsn_attributes: true
-  fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
+  # Fleet realism upgrade (issue #277, ADR-0081..ADR-0086). Stated explicitly here
+  # even though configure() registers the same defaults: the resolved canonical
+  # config is the active-state truth, and a production-enabled feature that appears
+  # nowhere in it is exactly the defect class ADR-0078/#253 removed.
+  fleet_ev_income_tilt: true
+  fleet_euro6_substage: true
+  # Grid mode adds the sub-communal 5 km EV tilt on top of the Gemeinde tilt; its
+  # input kba_ev_grid.csv (714 cells) is committed since #277. Falls back to
+  # Gemeinde-only (logged) if the CSV or the home-location geometry is missing.
+  fleet_electric_calibration: kreis_mix_gemeinde_grid_bev_tilt
 
   enable_urban_parking: true
   remode_carless_car_legs: true

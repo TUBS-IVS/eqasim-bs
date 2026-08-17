@@ -32,7 +32,7 @@ Restricted datasets are never committed or redistributed.
 | [inkar_household_income](../registry/data/inkar_household_income.yml) | control, reference_table | manual_download | `data/braunschweig/E_Haushaltseinkommen.xls` | r/-/r | no |
 | [inkar_indicators](../registry/data/inkar_indicators.yml) | reference_table | manual_download | `data/braunschweig/E_*.xls` | o/-/o | no |
 | [kba_fe4_licences](../registry/data/kba_fe4_licences.yml) | reference_table | manual_download | `data/germany/fe4_2024.xlsx` | o/-/- | no |
-| [kba_fleet_derived](../registry/data/kba_fleet_derived.yml) | reference_table, calibration_target | committed | `data/braunschweig/kba/derived/*.csv` | o/-/r | no |
+| [kba_fleet_derived](../registry/data/kba_fleet_derived.yml) | reference_table, calibration_target | committed (`scripts/extract_kba_fleet.py`) | `data/braunschweig/kba/derived/*.csv` | o/-/r | no |
 | [kba_fz_registrations](../registry/data/kba_fz_registrations.yml) | reference_table | manual_download (`scripts/extract_kba_fleet.py`) | `data/braunschweig/kba/{fz27_202501.xlsx,fz12_2025.xlsx,raw/}` | o/-/o | no |
 | [lod2_heights](../registry/data/lod2_heights.yml) | spatial_input | manual_download (`scripts/preprocess_lod2_heights.py`) | `data/braunschweig/ (preprocessed into the buildings parquet)` | o/-/r | no |
 | [lsn_bbs_share_by_age](../registry/data/lsn_bbs_share_by_age.yml) | reference_table | committed | `data/braunschweig/nds_bbs_share_by_age.csv` | o/-/o | no |
@@ -40,7 +40,15 @@ Restricted datasets are never committed or redistributed.
 | [lsn_kitas](../registry/data/lsn_kitas.yml) | supply_input | manual_download (`scripts/extract_nds_kitas.py`) | `data/braunschweig/schools/nds_kitas_zgb.csv` | o/-/r | no |
 | [lsn_schools](../registry/data/lsn_schools.yml) | supply_input | manual_download (`scripts/extract_nds_schools.py`) | `data/braunschweig/schools/nds_schools_zgb.csv` | o/-/r | no |
 | [lsn_universities](../registry/data/lsn_universities.yml) | supply_input | manual_download (`scripts/seed_nds_hochschulen.py`) | `data/braunschweig/schools/nds_hochschulen.csv` | o/-/r | no |
-| [mid2023_b1](../registry/data/mid2023_b1.yml) | donor | restricted_delivery | `data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv` | o/-/r | YES |
+| [mid2023_b1](../registry/data/mid2023_b1.yml) | donor, reference_table | restricted_delivery | `The B1 package lives OUTSIDE this repository, in the sibling popsimprep checkout:
+  <popsimprep>/inputs/MiD2023/MiD2023_B1_Datensatzpaket/CSV/MiD2023_{Haushalte,Personen,Wege,
+  Autos,Etappen,Reisen,Tagesreisen}.csv
+That is the default path of scripts/build_mid_age_by_segment_status.py and
+scripts/build_mid_antrieb_by_status.py (override with --mid-path). The three files the popsim
+donor path needs are additionally synced to
+data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv on the run
+host; the Autos file is NOT synced there.
+` | o/-/r | YES |
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |
 | [mid2023_regional_report](../registry/data/mid2023_regional_report.yml) | validation_reference, calibration_target | restricted_delivery (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/ (source PDFs local-only)` | o/-/o | YES |

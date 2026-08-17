@@ -995,12 +995,21 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
     # Derive a deterministic integer seed from the in-commuter rng so the fleet
     # draw is reproducible and decoupled from the rng's mutable internal state.
     fleet_seed = int(rng.integers(0, 2**31 - 1))
-    # population_label: origin Kreise lie outside the ZGB KBA tables, so the
-    # Kreis powertrain lookup legitimately runs at ~100% national fallback --
-    # the label keeps this block distinguishable from the residents' log.
-    df_spec, df_vehicle_types = fleet.sample_fleet(
+    # sample_fleet returns a 3-tuple (df_spec, df_types, validation_summary) under
+    # consistency_v2 (default True) and the legacy 2-tuple otherwise; handle both
+    # robustly (mirrors braunschweig.synthesis.vehicles.cars.household).
+    #
+    # population_label: with the all-Kreise 46251 tables (ADR-0081) an in-commuter
+    # now finds its REAL home-Kreis fuel/euro mix, so this block is no longer
+    # expected at ~100% national fallback -- the label keeps its fallback-rate log
+    # distinguishable from the residents' one.
+    _fleet_result = fleet.sample_fleet(
         df_cars, data_path, random_seed=fleet_seed,
-        population_label="in-commuters (origin outside ZGB, national fallback expected)")
+        population_label="in-commuters (origin outside ZGB)")
+    if len(_fleet_result) == 3:
+        df_spec, df_vehicle_types, _ = _fleet_result
+    else:
+        df_spec, df_vehicle_types = _fleet_result
 
     df_vehicles = pd.DataFrame({
         "owner_id": car_person_ids,

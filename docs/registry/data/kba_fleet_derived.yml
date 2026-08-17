@@ -1,8 +1,9 @@
 dataset: kba_fleet_derived
-title: Committed KBA fleet reference tables (kba/derived)
-provider: derived in-repo from KBA sources
-vintage: null
-geography: null
+title: Committed KBA/MiD fleet reference tables (kba/derived)
+provider: derived in-repo from KBA / Destatis / MiD sources
+vintage: 'mixed by design: 2025-01-01 (46251-02/-03, FZ 27), 2026-01-01 (Modellreihen, ID3438),
+  2026-04-01 (Gemeinde EV, EV grid), MiD 2023'
+geography: Germany (per-Kreis tables cover all ~400 Kreise; Gemeinde/grid tables cover the ZGB)
 crs: null
 roles:
 - reference_table
@@ -11,11 +12,18 @@ used_by:
 - braunschweig.synthesis.vehicles.cars.household
 acquisition:
   method: committed
-  source: regenerated via scripts/extract_kba_fleet.py + scripts/build_mid_age_by_segment_status.py
-  script: null
+  source: |
+    Regenerate with, in this order:
+      python scripts/extract_kba_fleet.py                      (18 tables from kba/ + kba/raw/)
+      python scripts/build_mid_age_by_segment_status.py        (MiD Autos micro-data)
+      python scripts/build_mid_antrieb_by_status.py            (MiD Autos micro-data)
+    The two MiD builders need --mid-path unless the B1 package sits at their default location
+    (see the mid2023_b1 entry). The extractor is idempotent: nine of the ten tables that predate
+    issue #277 regenerate byte-identically from unchanged raw inputs.
+  script: scripts/extract_kba_fleet.py
 storage:
   expected_path: eqasim-data/data/braunschweig/kba/derived/*.csv
-  committed: false
+  committed: true
   local_only: false
 verification:
   verifier_entry: null
@@ -27,6 +35,35 @@ licensing:
   license: aggregate values
   restricted: false
   redistribution: allowed
-limitations: null
-notes: Segment/brand mix, powertrain shares, Gemeinde BEV tilt, MiD age-by-segment cross tables
-  for the household fleet.
+limitations: |
+  Multiple Stichtag vintages coexist BY DESIGN (ADR-0081): each table carries its own stichtag
+  column and counts are never reconciled across vintages. Two source-side limitations are load-bearing
+  for the model and are handled explicitly rather than papered over:
+  * kba_gemeinde_ev.csv carries only the COMBINED electric share -- the KBA 2026.04 export publishes
+    literal zeros in every BEV / plug-in-hybrid / fuel-cell column (ADR-0086).
+  * Per-Kreis vehicle AGE and SEGMENT do not exist in any open source, so those axes stay national
+    (ADR-0081); kba_age_national.csv is a validation anchor, not an IPF control.
+  * mid2023_age_by_segment_status.csv has NO `wohnmobile` rows: MiD's `seg_kba` variable carries 13
+    codes (Minis .. Utilities, plus 95 "nicht zuzuordnen") and motorhomes are not among them, while
+    the KBA Pkw segmentation (FZ 27.10) does have a Wohnmobile segment worth 1.99% of the national
+    stock. Those cars therefore draw their age from the STATUS-only pool, i.e. the age profile of an
+    average car of that economic status. No source at hand closes this: FZ 27.7 breaks age down by
+    Fahrzeugklasse, where motorhomes sit inside "Sonstige Kfz" together with ambulances and fire
+    engines (a different universe), and FZ 12.1 / FZ 13.x name Wohnmobile without an age dimension.
+    MEASURED BOUND (24000-car draw, 2026-08-17): motorhomes are 2.15% of drawn cars at a mean age of
+    9.99 yr against the 10.49 yr fleet mean; were their true mean 3 / 5 / 8 years higher, the FLEET
+    mean age would move by only +0.06 / +0.11 / +0.17 yr. The bias is material for a statement about
+    the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates.
+  KBA counts vehicles REGISTERED in a Kreis (company cars at the business seat), the synthesis
+  produces HOUSEHOLD cars: spatial patterns are comparable, exact levels are not.
+notes: |
+  18 tables. Powertrain and Euro class per Kreis (kba_kreis_fuel.csv 403 Kreise, kba_kreis_euro.csv),
+  Euro-6 substage split (kba_fuel_euro6_substage_nds.csv), segment x powertrain, brand x powertrain,
+  segment -> model series and per-model fuel weights (kba_segment_model.csv / kba_model_fuel.csv,
+  658 series), per-Gemeinde EV 2026 and the 5 km EV grid (kba_gemeinde_ev.csv, kba_ev_grid.csv),
+  the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, still the Kreis-mean denominator
+  weight source), the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
+  (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
+  mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).
+  scripts/measure_combustion_split.py and scripts/measure_gemeinde_join_coverage.py check the
+  realised fleet against these tables.

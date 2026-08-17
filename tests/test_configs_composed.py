@@ -28,6 +28,10 @@ FEATURE_FLAGS_ON = [
     "secondary_other_subtype_split", "leisure_visit_building_potential",
     "education_building_distribution", "education_gravity_enabled",
     "fleet_model_enabled", "fleet_model_brands", "fleet_hsn_tsn_attributes",
+    # Fleet realism upgrade (issue #277, ADR-0081..ADR-0086). Guarded here so a
+    # production-enabled feature can never quietly disappear from the resolved
+    # config again -- the defect class ADR-0078/#253 removed.
+    "fleet_ev_income_tilt", "fleet_euro6_substage",
     "cordon_enabled", "enable_urban_parking", "remode_carless_car_legs",
     "braunschweig.home_density_weighting",
     "braunschweig.population.popsim.income_spatial_tilt",
@@ -77,7 +81,12 @@ def test_all_feature_flags_on_everywhere(overlay):
     assert cfg["braunschweig.population.popsim.control_tiers"] == "tier0,tier1,tier2,tier3"
     assert cfg["braunschweig.population.popsim.employment_grid"] == "on"
     assert cfg["vehicles_method"] == "household"
-    assert cfg["fleet_electric_calibration"] == "kreis_mix_gemeinde_bev_tilt"
+    # Grid mode since issue #277: the sub-communal 5 km EV tilt input
+    # (kba_ev_grid.csv, 714 cells) is committed, so the Gemeinde-only legacy mode is
+    # no longer the production choice. ADR-0081 declared the grid tilt default-ON
+    # with a logged fallback to Gemeinde-only when the CSV or the home geometry is
+    # missing, which is what makes arming it safe.
+    assert cfg["fleet_electric_calibration"] == "kreis_mix_gemeinde_grid_bev_tilt"
 
 
 @pytest.mark.parametrize("overlay", ALL_OVERLAYS)
