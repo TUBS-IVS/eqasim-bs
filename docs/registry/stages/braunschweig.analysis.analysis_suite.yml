@@ -1,0 +1,20 @@
+stage: braunschweig.analysis.analysis_suite
+title: Analysis suite
+layer: analysis
+description: 'Post-run analysis driver: dashboard, MiD validation, population validation; excludes
+  the freight subpopulation from person KPIs.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/analysis/analysis_suite.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- freight_analysis_exclusion
+decisions:
+- ADR-0031

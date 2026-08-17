@@ -1,0 +1,1869 @@
+> **HISTORICAL DOCUMENT. NOT AUTHORITATIVE FOR CURRENT MODEL STATUS.**
+> Archived verbatim on 2026-08-13 (ADR-0077). The authoritative decision records
+> now live as one file per ADR under [docs/decisions/](../decisions/); the
+> browsable index is generated to docs/generated/DECISIONS.md.
+
+# Architecture Decision Record (ADR) log — eqasim-bs
+
+## Index (one line per ADR — read the body section only when needed)
+
+| ADR | Date | Title |
+|---|---|---|
+| ADR-0000 | 2025-10-06 | eqasim-bavaria baseline (fork point) |
+| ADR-0001 | 2026-04-27 | Clean regional fork structure (`braunschweig/` + `eqasim_common/`) |
+| ADR-0002 | 2026-06-15 | Three population-synthesis workflows (`population.method`) |
+| ADR-0003 | 2026-06 | Per-commune household-size margin in the IPF |
+| ADR-0004 | 2026-06 | Joint age×household-size margin (#3) |
+| ADR-0005 | 2026-06-04 | Age-aware household composition (#3b) with children-driven capacity |
+| ADR-0006 | 2026-06 | Sex-aware couple pairing (~1.1% same-sex) |
+| ADR-0007 | 2026-06 | Cell-accurate (100m) home placement |
+| ADR-0008 | 2026-06-17 | ALKIS-typed, capacity-aware home matching |
+| ADR-0009 | 2026-06-17 | LoD2 height/volume building typing |
+| ADR-0010 | 2026-06-15 | Income spatial tilt (Nettokaltmiete) — and the zero-rent gate fix |
+| ADR-0011 | 2026-06 | Economic status via Bayes on household-type × region |
+| ADR-0012 | 2026-06 | PT subscription as a categorical 3-margin IPF (MiD P24.1) |
+| ADR-0013 | 2026-06 | Driving licence as a categorical 3-margin IPF (MiD P17.1) |
+| ADR-0014 | 2026-06 | Employment margin raked to GENESIS SvB (not survey P9) |
+| ADR-0015 | 2026-06-16 | Tier-3 Kreis-level PopulationSim controls |
+| ADR-0016 | 2026-06-18 | Per-cell employment grid control (age×sex-resolved 100m) |
+| ADR-0017 | 2026-06 | Income €, income-aware car count, consistent car availability, tenure |
+| ADR-0018 | 2026-06-07 | Reactivated person attributes (couple/studies/single-parent-child) |
+| ADR-0019 | 2026-06-07 | Household vehicle fleet (vs eqasim default car) |
+| ADR-0020 | 2026-06-18 | Fleet internal consistency v2 + income-coupled vehicle age |
+| ADR-0021 | 2026-06 | HSN/TSN scraper for engine attributes |
+| ADR-0022 | 2026-06-08 | Carless routing re-mode (routing/fleet consistency) |
+| ADR-0023 | 2026-06-01 | Per-RegioStaR-7 gravity distance slope |
+| ADR-0024 | 2026-06-03 | Education gravity (real schools / Kita / university) |
+| ADR-0025 | 2026-06-25 | Building-level activity potentials (work/secondary/education) — REPLACE |
+| ADR-0026 | 2026-06-25 | Purpose-resolved secondary distances (Tier 1 + Tier 2 daily/non-daily) |
+| ADR-0027 | 2026-06-26 | External secondary candidates (long-distance trips) |
+| ADR-0028 | 2026-06-02 | Cordon external-demand model — targeted crossing agents with full supply |
+| ADR-0029 | 2026-06-02..06-05 | Einpendler injection with road + PT/Bahnhof gates and mode balancer |
+| ADR-0030 | 2026-06-11 | Long-haul freight injection (german-wide-freight v3, hybrid Java→Python→Java) |
+| ADR-0031 | 2026-06-07 | MiD + population validation reporting |
+| ADR-0032 | 2026-06-23 | Integerizer-quality analysis (per-cell error map) |
+| ADR-0033 | 2026-06-08 | SimWrapper dashboard export (Python emitter + Java contrib) |
+| ADR-0034 | 2026-06-27 | Secondary leisure W12 fix (leisure_correction_factor) |
+| ADR-0035 | 2026-06-25 | Calibration corner (offline tooling, never imported by the runtime) |
+| ADR-0036 | 2026-06-22 | Shared persistent stage-cache (prime-on-launch) |
+| ADR-0037 | 2026-06-22 | Tier-A/B shareable-stage set + fixed popsim work_dir |
+| ADR-0038 | 2026-06 | Own editable `eqasim-java-bs` fork |
+| ADR-0039 | 2026-06 | Urban parking (Braunschweig inner ring) |
+| ADR-0040 | 2026-06-28 | Professionalized PM / tracking layer |
+| ADR-0041 | 2026-06-25 | REJECTED — Pin commute gravity friction factors |
+| ADR-0042 | 2026-06-25 | REJECTED — Distance-dependent detour curve f(d) as default |
+| ADR-0043 | 2026-06-27 | REJECTED — Tune secondary scorer `pot_weight` |
+| ADR-0044 | 2026-06 | REJECTED — Rake employment to MiD P9 |
+| ADR-0045 | 2026-06-15 | REJECTED — Within-Kreis extra income signal beyond the rent tilt |
+| ADR-0046 | 2026-06-24 | REJECTED — PopulationSim importance/expansion calibration framework |
+| ADR-0047 | 2026-06-25 | REJECTED — ATTACH strategy for building potentials (superseded by ADR-0025) |
+| ADR-0048 | 2026-06-28 | Function-aware secondary `other` potential + scorer scale-alignment |
+| ADR-0049 | 2026-06-30 | Wolfsburg commute "misfit" is an unreliable reference, not a model bug; sub-zonal (TAZ) is the real lever |
+| ADR-0050 | 2026-07-01 | TAZ per-RS7 gravity friction: built, then measured unnecessary; commute distribution already fits; validate flag-ON at scale instead |
+| ADR-0052 | n/a | Explicit value_map codes win over the generic MiD nonresponse set (issue #96 fix) |
+| ADR-0053 | n/a | Validate the household_size control on a PERSON basis, not a household count (issue #97 fix) |
+| ADR-0054 | n/a | Placement-based income geography: economic_status × Kreis control (MiD H4), retiring the post-hoc income overwrite (design; Phase 0/1 built, gated) |
+| ADR-0055 | 2026-07-08 | SrV 2023 aggregates use ZENSUS expansion weights; standard weights are stratum-internal |
+| ADR-0056 | 2026-07-10 | Full-pool PopulationSim runs use integer sub-balance seeds + numba (measured 40x; float-seed default is a full-pool trap) |
+| ADR-0057 | 2026-07-12 | Secondary distance distributions rescue MiD coded-time Wege from `wegmin_imp1` instead of dropping them |
+| ADR-0058 | 2026-07-13 | employment_status Phase-0 measured: uncalibrated P_BKAT donor already fits MiD P9 well; do NOT build the Phase-1 soft control |
+| ADR-0059 | 2026-07-13 | Large-HH (6+) validation gap is donor-bound, not weight-fixable; SrV rejected as a donor supplement |
+| ADR-0060 | 2026-07-13/14 | Correct the in_ausbildung over-representation with an SrV+MiD per-Kreis employment_status control (14+) |
+| ADR-0061 | 2026-07-14 | popsim KREIS-control universe hygiene: align per-Kreis targets to the resolved dominant Kreis (#147); complete fallback-transparency (#149/#150) |
+| ADR-0062 | 2026-07-14 | popsim: apportion household-level KREIS controls by household share, not population share (#148) |
+| ADR-0063 | 2026-07-15 | Per-Bundesland commute-mode reference for cross-cordon in-commuters (#129) |
+| ADR-0064 | 2026-07-15 | Archive MATSim `simulation_output/` into a stable run-named location (#156) |
+| ADR-0065 | 2026-07-15 | Sector-aware work-attraction tilt: measured, PARKED (default OFF); two enabling-path bugs fixed (#128) |
+| ADR-0066 | 2026-07-16 | VerBindungen sub-Kreis work-OD reference integrated (#124 P1); svb_wohn production mass measured, default OFF (#132) |
+| ADR-0067 | 2026-07-16 | TAZ sub-zonal work-location choice stays permanently OFF (superseded in practice by building potentials); TAZ issues closed |
+| ADR-0068 | 2026-07-17 | Inner VerBindungen calibration anchor: built, measured, default ON by HUMAN OVERRIDE of the pre-registered gate (#193) |
+| ADR-0069 | 2026-07-18 | placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden |
+| ADR-0070 | 2026-07-22 | Composed run configs (fixed base + per-scale overlay); int-seed+numba is the ONLY permitted PopulationSim regime (fixes the float-seed-config 20x slowdown); #229 fixed; config sprawl pruned |
+| ADR-0071 | 2026-07-23 | eqasim-java 2.2.0 `matsim.output` made e2e-green (in-commuter donor-time imputation, `controler.compressionType=gzip` pin, #229 config-key read); freight CLI for the MATSim 2026 contrib |
+| ADR-0072 | 2026-08-11 | Escort distance-by-type uses SrV between-type structure on the MiD level (A3, #257) |
+| ADR-0073 | 2026-08-12 | Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) |
+| ADR-0074 | 2026-07-22 | MATSim contribs in lockstep via `${matsim.version}` (no hard pins); `matsim.version` bumps are deliberate upgrade rounds; SimWrapper Layer-1 merged, `simwrapper_dashboards` default ON (carried over post-#260 from backup/pm-0d117f7, orig. numbered 0071 there) |
+| ADR-0075 | 2026-08-13 | SrV location types (#262): crosswalk A2 (MiD subtype = distance label, SrV category = placement), formula-based errand supply, mixed-pool mean normalization, external-centroid category escapes AFTER the supply guards |
+| ADR-0076 | 2026-08-13 | Oversized synpp stages become stage packages (same module path, re-export facade) with a `validate()` md5 token over helper submodules — closes the get_stage_hash helper trap; template for #267 |
+
+> **Index notes (traceable, not invented):** ADR-0051 is reserved (drafted on the unmerged fleet branch; see the note before
+> ADR-0052 in the body) and has no row here. ADR-0052/0053/0054 carry no date field in their own body
+> text (unlike every other entry, which states one); marked `n/a` rather than inferred from
+> surrounding entries, per the project's "no invented reference values" rule. ADR numbering in the
+> body is not always chronological (see the numbering-collision notes at/near ADR-0052, ADR-0056,
+> ADR-0067, and ADR-0068); this index is sorted by ADR number for lookup, not by date.
+
+> The retrospective *why* of this project: when each major feature or decision happened,
+> what problem forced it, what was chosen, and the evidence (commit / PR / spec / feature doc)
+> that grounds it. This complements [PROJECT_STATUS.md](../PROJECT_STATUS.md) (the live
+> at-a-glance feature/branch dashboard — the **authoritative current status**),
+> [PROJECT_BACKLOG.md](../PROJECT_BACKLOG.md) (ranked open work), and
+> [UPSTREAM_DELTA.md](UPSTREAM_DELTA.md) (the pinned bavaria baseline).
+
+## What an ADR is here
+
+Each entry records one substantive decision: the **context** (the problem), the **decision**
+(what was chosen), the **rationale** (why — grounded in a committed source), the
+**consequences** (what it enables or costs), and **evidence** (at least one committed reference:
+a commit hash, a merged PR number, a spec/plan path, or a feature doc). Per the project rule in
+`CLAUDE.md` ("no invented reference values"), every rationale and number traces to a committed
+source actually read; where the *why* is not recoverable from the record, the entry says so
+rather than guessing.
+
+## Status vocabulary
+
+- **active** — the decision is in force on `main`.
+- **superseded by ADR-NNNN** — replaced by a later decision (the entry stays for traceability).
+- **rejected** — tried or designed and deliberately not adopted (the "why we did NOT do it" is
+  recorded so it is not re-attempted; see PROJECT_BACKLOG.md §1 Tier 5).
+
+Flag note: nearly all model features are flag-gated with a **byte-identical OFF path** (the
+codebase default is OFF/`None`/legacy); "ON in run configs" means enabled in the committed
+real-data configs. Live per-feature status (✅/🟢/⚪/🟡) lives in PROJECT_STATUS.md §2.
+
+---
+
+### ADR-0000 · 2025-10-06 · eqasim-bavaria baseline (fork point)
+- **Status:** active
+- **Context:** A scientific MATSim/eqasim transport model was needed for the Zweckverband
+  Großraum Braunschweig (ZGB-8, Niedersachsen). Rather than build from scratch, the project
+  forks the closest existing regional eqasim configuration.
+- **Decision:** Fork `eqasim-org/eqasim-bavaria` at merge-base commit `b20fbe6` ("Merge pull
+  request #14 from eqasim-org/chore/rename", 2025-10-06) into `TUBS-IVS/eqasim-bs`. Inherit the
+  entire eqasim machinery (Python synpp synthesis from the French ENTD trip donor + census,
+  the Java MATSim modules for mode choice/scoring/simulation, and the Bavaria/Munich scenario
+  configs) and add a new `braunschweig/` region module on top.
+- **Rationale:** Upstream already provides the proven eqasim pipeline; eqasim-bs adds a new
+  region plus data-driven realism as a *delta* on a known baseline, keeping the history
+  traceable (UPSTREAM_DELTA.md).
+- **Consequences:** ~776 commits and a 303-file `braunschweig/` module (~70k insertions) sit on
+  top of the baseline; the French ENTD-2008 trip donor is inherited (and later flagged as the
+  highest-value replacement lever — see ADR-0038). PRs always target the fork base, never the
+  eqasim-org upstream.
+- **Evidence:** `docs/UPSTREAM_DELTA.md` (pinned merge-base `b20fbe6`); `CHANGELOG.md`
+  v0.1.0-bs (2026-04-27) first tagged regional release on top of `b20fbe6`.
+
+### ADR-0001 · 2026-04-27 · Clean regional fork structure (`braunschweig/` + `eqasim_common/`)
+- **Status:** active
+- **Context:** The upstream code was fenced inside a `bavaria/` package; a Braunschweig model
+  needed its own clearly separated module while keeping shared helpers reusable.
+- **Decision:** Lock the region to ZGB-8 (ARS prefixes 03101/03102/03103/03151/03153/03154/
+  03157/03158), introduce a region-neutral `eqasim_common/` package (shared OSM, gravity-distance,
+  spatial-code, location helpers) and a new `braunschweig/` package (IPF, location, gravity,
+  enrichment, MATSim simulation); migrate stage names `bavaria.* → braunschweig.*` with aliases
+  only where the DAG still consumes upstream leaf modules.
+- **Rationale:** Clean separation of region-specific from shared code, per the MATSim/eqasim
+  modularity convention in `CLAUDE.md`.
+- **Consequences:** First tagged release `v0.1.0-bs`; new configs (1%/10%/25%/dryrun), seed
+  `1234`, gravity slope `-0.065`; test suite rewritten around BS configs.
+- **Evidence:** `CHANGELOG.md` v0.1.0-bs (2026-04-27); produced by branch
+  `refactor/braunschweig-clean-fork`.
+
+---
+
+## Population synthesis
+
+### ADR-0002 · 2026-06-15 · Three population-synthesis workflows (`population.method`)
+- **Status:** active
+- **Context:** The inherited path is a single IPF-from-census synthesis. The project needed to
+  fold PopulationSim-based synthesis (from a separate `popsimprep` repo) into the synpp pipeline
+  while keeping the legacy IPF path intact and reproducible.
+- **Decision:** Add a `population.method` switch with three paths: `simple_ipf_open` (legacy
+  IPF, the default), `popsim_open` (PopulationSim on Zensus controls), and `popsim_mid`
+  (PopulationSim + MiD 2023 donor). The all-features production configs use `popsim_mid`.
+- **Rationale:** Mirror the proven eqasim ENTD pipeline structure exactly (reuse its helpers/
+  schema/vocab) rather than approximate it; keep alternative paths flag-selected for
+  reproducibility (memory `project-popsim-three-workflows`).
+- **Consequences:** `braunschweig/popsim/` becomes the production synthesis path; downstream
+  gravity/location/mode-choice all run on the popsim output, so popsim is "the foundation"
+  (re-tuning popsim forces re-tuning gravity — PROJECT_BACKLOG.md §1).
+- **Evidence:** PR #1 "Feature/population method workflows" (merged 2026-06-15); commit
+  `cd9d217`; PROJECT_STATUS.md §2.1.
+
+### ADR-0003 · 2026-06 · Per-commune household-size margin in the IPF
+- **Status:** active
+- **Context:** The base IPF balanced persons to census but did not pin household sizes per
+  commune, so the synthesised size distribution drifted from Zensus.
+- **Decision:** Add a flag-gated per-commune household-size margin
+  (`ipf.use_household_size_margin`) from Zensus 2022 1000A-2081.
+- **Rationale:** Anchor the synthetic size distribution to a committed Zensus table; the joint
+  age×size margin (ADR-0004) and age-aware composition (ADR-0005) build on it
+  (`docs/features/household-synthesis.md`).
+- **Consequences:** Prerequisite for the joint age×size margin; OFF path byte-identical.
+- **Evidence:** `docs/features/household-synthesis.md`; PROJECT_STATUS.md §2.1 (Zensus 1000A-2081).
+
+### ADR-0004 · 2026-06 · Joint age×household-size margin (#3)
+- **Status:** active
+- **Context:** A flat size margin balances size independently of age, so the IPF would invent
+  the joint distribution (not knowing large households skew toward school-age children while
+  1-person households skew elderly).
+- **Decision:** Add the observed age×size correlation to the IPF at Kreis resolution over coarse
+  age groups `(15,30,40,50,60)`, 2D-raked to stay consistent with both the population age and the
+  size margin (so it cannot make the IPF infeasible). Flag `ipf.use_joint_age_size_margin`,
+  source Zensus 2022 1000A-3082.
+- **Rationale:** All age-group edges are native ALTKL2 band edges, so aggregating the Zensus
+  joint never splits a band (no assumption); the refined `[30,40)/[40,50)` split pins family-size
+  households the old `[30,60)` group could not (`docs/features/household-synthesis.md`).
+- **Consequences:** Once the composition routing fix (ADR-0005) is in place, the refined bounds
+  reduce the parent-child gap>50 share from 2.70% to 0.77%; structural zero (children in 1-person
+  HH) held at exactly zero so the IPF does not diverge.
+- **Evidence:** `docs/features/household-synthesis.md`; `tests/test_joint_age_size.py`;
+  PROJECT_STATUS.md §2.1 (Zensus 1000A-3082).
+
+### ADR-0005 · 2026-06-04 · Age-aware household composition (#3b) with children-driven capacity
+- **Status:** active
+- **Context:** The legacy random within-bucket chunk + independent hh_type draw produced
+  implausible "single parents": ~23% of placed children had a youngest household adult 55+ years
+  older (mean gap 84 years), because surplus children spilled onto elderly childless-shell adults.
+- **Decision:** Replace it with one coupled optimisation pass per `(commune, hh_size)` bucket
+  (`form_households_age_aware`, flag `ipf.age_aware_chunking`): hard adult/child composition per
+  hh_type, age-gap-minimising couple pairing, children placed by a sorted rank match around a
+  target gap drawn `N(31.8, 5.5)`, and `_ensure_child_capacity` grows child-bearing capacity so
+  no surplus child lands on an elderly adult.
+- **Rationale:** The mother-age-at-birth target 31.8 is Destatis 2024 (committed reference); the
+  sorted rank match is the same 1-D optimum as a Hungarian LAP but `O(n log n)` instead of
+  `O(n^3)`, essential because formation runs on the full ~1.13M-person population
+  (`docs/features/household-synthesis.md`).
+- **Consequences:** gap>55 tail drops to ~0.3% (~0.03% with refined bounds), mean gap 39→26;
+  `child_parent_age_target_weight=0.85` then lifts the realised mean back to 31.8. No person ever
+  dropped; all-children households hard-blocked.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-04-age-aware-household-chunking-design.md`;
+  plan `2026-06-04-age-aware-household-chunking.md`; `docs/features/household-synthesis.md`;
+  `tests/test_household_composition.py`.
+
+### ADR-0006 · 2026-06 · Sex-aware couple pairing (~1.1% same-sex)
+- **Status:** active
+- **Context:** Sex-blind age-adjacent couple pairing yields ~48% same-sex couples (every pair is
+  sex-random), which is grossly unrealistic.
+- **Decision:** Pair couples opposite-sex by default with a small calibrated same-sex share
+  (`DEFAULT_SAME_SEX_COUPLE_SHARE=0.011`) via an opposite-first allocation `max(intended, forced)`
+  that never drops anyone. Flag `chunking.sex_aware_couples` (OFF = legacy sex-blind, byte-identical).
+- **Rationale:** 1.1% is Statistisches Bundesamt Mikrozensus 2025 (204,000 same-sex couples,
+  ~50/50 male/female, vs ~18.9M couples) — a committed reference
+  (`docs/features/household-synthesis.md`).
+- **Consequences:** Realised share converges toward 1.1% as sampling rate rises (~2.9% at 25%,
+  the residual being genuine local sex imbalance in small Gemeinden).
+- **Evidence:** `docs/features/household-synthesis.md`; PROJECT_STATUS.md §2.1 (Destatis MZ 2025).
+
+### ADR-0007 · 2026-06 · Cell-accurate (100m) home placement
+- **Status:** active
+- **Context:** PopulationSim expands households per 100m Zensus cell, so homes should be placed
+  within the household's own 100m cell, not just its commune.
+- **Decision:** Place each household in a real building inside its `ZENSUS100m` cell
+  (`synthesis/locations/home_cell.py`), using intersection-based footprint→cell membership to
+  reduce boundary orphans, with a commune-level area-weighted fallback for empty cells.
+- **Rationale:** Uses the Zensus 100m grid (committed); intersection join reduces orphans vs a
+  centroid test (commit `73c8acf`).
+- **Consequences:** Active on the popsim path; the legacy area-weighted draw (with the 400m² cap)
+  is retained only for the non-popsim path; later refined by ALKIS-typed matching (ADR-0008).
+- **Evidence:** commits `73c8acf`, `88078d3`, `bf1be42`; PROJECT_STATUS.md §2.1 (Zensus 100m grid).
+
+### ADR-0008 · 2026-06-17 · ALKIS-typed, capacity-aware home matching
+- **Status:** active
+- **Context:** The area-weighted home draw ignored both the household's `building_type_3class`
+  (EFH/MFH/sonstiges) and the ALKIS building function/capacity, so EFH households landed on MFH
+  footprints and vice versa; a 400m² area cap dropped exactly the apartment blocks MFH households
+  should live in.
+- **Decision:** Match households to buildings using the household building type and ALKIS-typed
+  footprint capacity within each cell, producing the best realistic household↔building combination
+  (data-driven; ZGB-8 scope only, national generalisation explicitly out of scope).
+- **Rationale:** Rich per-cell Zensus 2022 building/dwelling/size data is now in the prepared
+  parquet that was unavailable when the original placement was written (spec §1).
+- **Consequences:** Removes the type-fidelity defect and the 400m² cap workaround.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-17-alkis-typed-home-matching-design.md`;
+  PR #14 "Feature/alkis typed home matching" (merged 2026-06-18); PROJECT_STATUS.md §2.1.
+
+### ADR-0009 · 2026-06-17 · LoD2 height/volume building typing
+- **Status:** active
+- **Context:** Building type and dwelling capacity were inferred from footprint area alone, which
+  cannot distinguish a tall apartment block from a large flat building.
+- **Decision:** Join LoD2 3D building heights by ALKIS `OI` (non-destructive, coverage logged) and
+  type/size buildings by `building_volume(area, height)` end-to-end (volume-rank MFH typing,
+  `MFH_MIN_FLOORS=4`, volume-weighted slots).
+- **Rationale:** `MFH_MIN_FLOORS=4` was tuned on a Salzgitter real-population sweep; the consumer
+  side is fully wired and verified 2026-06-27 (PROJECT_BACKLOG.md §2.2).
+- **Consequences:** Better dwelling-capacity realism feeding ADR-0008.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-17-lod2-height-volume-capacity-design.md`;
+  plan `2026-06-17-lod2-height-volume-capacity.md`; PROJECT_STATUS.md §2.1
+  (verified 2026-06-27); `test_preprocess_alkis_oi.py`.
+
+### ADR-0010 · 2026-06-15 · Income spatial tilt (Nettokaltmiete) — and the zero-rent gate fix
+- **Status:** active
+- **Context:** Household income within a Kreis was spatially flat; rent data offers a sub-Kreis
+  signal. An initial implementation appeared to *flip* the income–rent correlation negative.
+- **Decision:** Apply a within-Kreis income tilt by Nettokaltmiete (flag `popsim.income_spatial_tilt`,
+  INKAR/Zensus rent), mean-preserving. The "flip" was diagnosed as a gate bug — the correlation
+  filter did not exclude `rent==0` cells, so the owner-index in zero-rent cells dragged it negative;
+  fixed to exclude zero-rent cells (commit `36ee20b`).
+- **Rationale:** On non-zero-rent cells the tilt gives ΔPearson +0.032 with the mean preserved;
+  a within-Kreis *extra* signal beyond size/tenure/age was deliberately dropped (ADR-0036)
+  (memory `project-income-spatial-tilt`).
+- **Consequences:** Active on the popsim path; INKAR regional scale 0.88–1.09 (03101=1.0014).
+- **Evidence:** merge `c604653`; fix commit `36ee20b`; PROJECT_STATUS.md §2.1 (INKAR/Zensus rent).
+
+---
+
+## Attribute enrichment
+
+### ADR-0011 · 2026-06 · Economic status via Bayes on household-type × region
+- **Status:** active
+- **Context:** Mapping economic status 1:1 from the income €-class is a weak predictor.
+- **Decision:** Determine `economic_status` (5 BMDV classes) from the stronger Haushaltstyp×Region
+  predictor by Bayes `P(status|hhtype,region) ∝ P(hhtype|status,region)·P(status|region)`, with the
+  Niedersachsen Bundesland table as base and the national RegioStaR-7 raumtyp table as a within-NDS
+  tilt; then re-derive `household_income` from the sampled status. Flag `status_from_hhtype`
+  (code default true; OFF reproduces commit c65399d byte-identically).
+- **Rationale:** Haushaltstyp×Region is the much stronger signal; the raumtyp table is national so it
+  is applied only as a within-NDS tilt, not as a base (CLAUDE.md "Economic status from MiD").
+- **Consequences:** Income and status agree by construction; primary/fallback classification rate is
+  logged (no silent fallback).
+- **Evidence:** CLAUDE.md "Economic status from MiD household-type × region";
+  `tests/test_status_from_hhtype.py`; PROJECT_STATUS.md §2.2 (MiD status×hhtype×region).
+
+### ADR-0012 · 2026-06 · PT subscription as a categorical 3-margin IPF (MiD P24.1)
+- **Status:** active
+- **Context:** A single boolean `has_pt_subscription` loses the ticket-type structure and is not
+  conditioned on demographics.
+- **Decision:** Assign each person a categorical `pt_subscription_type` from a 3-margin IPF (raking)
+  on `X[kreis, sex, age_bin, ticket_type]` against MiD 2023 P24.1 Kreis/sex/age margins;
+  derive `has_pt_subscription = type ∈ PT_TICKET_FLATRATE`. Flag `pt_subscription_conditioned`.
+- **Rationale:** The flatrate set matches the legacy single-target Kreis share within ±1pp (tested);
+  MiD's three margins are independently rounded to integer percent, so raking finds a least-squares
+  compromise within ~5pp on the worst cell (CLAUDE.md "PT ticket type").
+- **Consequences:** Reference CSVs are seeded only via `scripts/seed_mid_constraint_tables.py`
+  (hard-coding percentages in Python is prohibited).
+- **Evidence:** CLAUDE.md "PT ticket type (P24.1)"; `tests/test_mid_reference_tables.py`;
+  PROJECT_STATUS.md §2.2 (MiD P24.1).
+
+### ADR-0013 · 2026-06 · Driving licence as a categorical 3-margin IPF (MiD P17.1)
+- **Status:** active
+- **Context:** Licence was taken from KBA FE4.x via the IPF model; MiD P17.1 offers a directly
+  conditioned categorical.
+- **Decision:** Assign `license_type ∈ {ja,nein,keine_angabe}` to persons ≥18 from a 3-margin IPF
+  on `Xl[kreis, sex, age_bin, license_category]` against MiD 2023 P17.1; `has_license = (type=="ja")`.
+  The BF17/begleitetes-Fahren option is intentionally ignored.
+- **Rationale:** MiD margins are integer-percent-rounded spanning 19–94%, so raking finds a
+  least-squares compromise within ~10pp on the worst cell (CLAUDE.md "Driving licence (P17.1)").
+- **Consequences:** The legacy KBA-FE4 `license` column is still produced but is no longer the source
+  of truth; `keine_angabe` conservatively maps to False.
+- **Evidence:** CLAUDE.md "Driving licence (P17.1)"; tests `test_license_ipf_three_margins_converges...`;
+  PROJECT_STATUS.md §2.2 (MiD P17.1).
+
+### ADR-0014 · 2026-06 · Employment margin raked to GENESIS SvB (not survey P9)
+- **Status:** active
+- **Context:** Employment could be controlled from the MiD P9 survey or the GENESIS register.
+- **Decision:** Add an employment margin to the IPF (`ipf.use_employment_margin`) raked to GENESIS
+  SvB (register data), and do NOT rake to MiD P9.
+- **Rationale:** P9 is survey noise (~900/Kreis, 43–59% spread, ~4pp definitional difference);
+  raking to it would overfit noise (PROJECT_BACKLOG.md §1 Tier 5). See the rejected ADR-0035.
+- **Consequences:** Employment is anchored to register totals; P9 is used as a validation
+  cross-check only.
+- **Evidence:** PROJECT_STATUS.md §2.2 (GENESIS SvB); PROJECT_BACKLOG.md Tier 5
+  ("Raking employment to MiD P9"); memory `synthesis-method-and-optimization`.
+
+### ADR-0015 · 2026-06-16 · Tier-3 Kreis-level PopulationSim controls
+- **Status:** active
+- **Context:** The popsim controls were 100m/1km only; some marginals (e.g. education attributes)
+  are better controlled at Kreis level via a Codeplan-B1 crosswalk.
+- **Decision:** Add Tier-3 Kreis controls (`popsim.control_tiers: …tier3`, `popsim/control_spec.py`)
+  sourced from Zensus + GENESIS, plumbed through a KREIS geography with the Codeplan-B1 crosswalk
+  fix, landed dormant-first then live-wired across several PRs.
+- **Rationale:** Built incrementally (foundation/dormant → live wiring → fixes) to keep each PR
+  reviewable, per the working discipline in `CLAUDE.md`.
+- **Consequences:** Adds 7 KREIS-level controls; measured fit at KREIS mean |%dev| 2.40%
+  (PROJECT_BACKLOG.md step-1b).
+- **Evidence:** PRs #3/#4/#5/#6/#7/#8 (merged 2026-06-16..06-17); PROJECT_STATUS.md §2.2.
+
+### ADR-0016 · 2026-06-18 · Per-cell employment grid control (age×sex-resolved 100m)
+- **Status:** active
+- **Context:** Employment was controlled at Kreis level; a 100m age×sex-resolved employment target
+  sharpens the spatial employment distribution.
+- **Decision:** Add an opt-in age×sex-resolved 100m employment-grid control.
+- **Rationale:** not recoverable from the committed record in detail beyond the PR title; the PR
+  describes it as "age×sex-resolved 100m employment (opt-in)".
+- **Consequences:** Opt-in; feeds the popsim controls used for the all-features run.
+- **Evidence:** PR #9 "Employment grid control — age×sex-resolved 100m employment (opt-in)"
+  (merged 2026-06-18).
+
+### ADR-0017 · 2026-06 · Income €, income-aware car count, consistent car availability, tenure
+- **Status:** active
+- **Context:** Several enrichment attributes needed to be made internally consistent and
+  data-grounded: household income in €, number of cars, car availability, and housing tenure.
+- **Decision:** Add flag-gated stages: `income_eur_from_distribution` (MiD H4/brackets + INKAR
+  class-midpoint scaling), `cars_income_aware` (MiD H7), `consistent_car_availability`
+  (MiD P19/P17.1/H7), and `synthesise_housing_tenure` (MiD income×Wohnen, for completeness).
+- **Rationale:** Each is grounded in a committed MiD/INKAR reference table (CLAUDE.md MiD reference
+  table inventory); all flag-gated so OFF is byte-identical.
+- **Consequences:** Internally consistent socio-economic attribute set for the synthetic population.
+- **Evidence:** CLAUDE.md "Reference data: MiD 2023 constraint tables"; PROJECT_STATUS.md §2.2.
+
+### ADR-0018 · 2026-06-07 · Reactivated person attributes (couple/studies/single-parent-child)
+- **Status:** active
+- **Context:** Some eqasim person attributes were dormant in the BS path and needed real-data
+  grounding to be reactivated.
+- **Decision:** Reactivate the attributes (flag `reactivate_person_attributes`) grounded on
+  Destatis education data (e.g. student share).
+- **Rationale:** spec "Tier-A attribute reactivation" (2026-06-07); grounded on Destatis education.
+- **Consequences:** Restores attributes used downstream; flag-gated.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-07-tier-a-attribute-reactivation-design.md`;
+  plan `2026-06-07-tier-a-attribute-reactivation.md`; PROJECT_STATUS.md §2.2 (Destatis education).
+
+---
+
+## Vehicle fleet
+
+### ADR-0019 · 2026-06-07 · Household vehicle fleet (vs eqasim default car)
+- **Status:** active
+- **Context:** The inherited path gives every car owner a generic default car; a realistic German
+  fleet (segments, brands, powertrains, engine attributes) is needed for emissions/realism.
+- **Decision:** Build a per-household fleet (`vehicles_method: household`) grounded in MiD H7 and
+  KBA registration data, with a German segment+brand mix (`fleet_model_enabled`/`_brands`, KBA FZ),
+  BEV/electric calibration (`fleet_electric_calibration`, KBA FZ 27.15/27.17), and HSN/TSN engine
+  attributes (kW/ccm/fuel, `fleet_hsn_tsn_attributes`).
+- **Rationale:** Each layer is grounded in a committed KBA/MiD reference (spec
+  `2026-06-07-fleet-kba-mid-design.md`); all flag-gated.
+- **Consequences:** Enables fleet-level analysis (brand/powertrain maps); emissions wiring
+  (HBEFA consumption) is parked (PROJECT_BACKLOG.md Tier 3.5).
+- **Evidence:** spec `docs/superpowers/specs/2026-06-07-fleet-kba-mid-design.md`; plan
+  `2026-06-07-fleet-kba-mid.md`; PROJECT_STATUS.md §2.3.
+
+### ADR-0020 · 2026-06-18 · Fleet internal consistency v2 + income-coupled vehicle age
+- **Status:** active
+- **Context:** The first fleet draw produced physically inconsistent vehicles (e.g.
+  "diesel Lamborghini") and an income-blind vehicle age.
+- **Decision:** Add a brand-level HSN/TSN feasibility fallback (consistency v2) and an
+  income-coupled vehicle-age tilt (`fleet_age_income_coupling`, AgeIncomeModel with a fallback ladder).
+- **Rationale:** The consistency v2 kills impossible brand×powertrain×fuel combinations and forces
+  Tesla→BEV; the income-age coupling asserts the MiD income-age gradient *spread* (not an absolute
+  KBA-anchored level), so the OFF golden stays byte-identical (commits `42132d4`, `4ed63d3`).
+- **Consequences:** Realistic, internally consistent per-household fleet; fleet evaluation panel
+  added to population_validation.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-18-fleet-vehicle-consistency-and-income-age-design.md`;
+  PR #12 (consistency, merged 2026-06-18) and PR #13 (income-age, merged 2026-06-18);
+  PROJECT_STATUS.md §2.3.
+
+### ADR-0021 · 2026-06 · HSN/TSN scraper for engine attributes
+- **Status:** active
+- **Context:** Real engine attributes (kW, ccm, fuel) per vehicle model require an HSN/TSN lookup
+  not shipped with KBA aggregates.
+- **Decision:** Scrape hsn-tsn.de (`scripts/scrape_hsn_tsn.py`, 1 request/brand) into a kW/ccm/fuel
+  lookup and map scraped brands onto the fleet (62-brand coverage).
+- **Rationale:** Provides the per-model engine attributes the HBEFA wiring will need; mapping
+  table covers all fleet brands (memory `hsn-tsn-scraper`).
+- **Consequences:** Engine attributes present on vehicles; not yet consumed for emissions (Tier 3.5).
+- **Evidence:** commits `1092221`, `4e231f9`; memory `hsn-tsn-scraper`; PROJECT_STATUS.md §2.3
+  (KBA HSN/TSN scraper).
+
+### ADR-0022 · 2026-06-08 · Carless routing re-mode (routing/fleet consistency)
+- **Status:** active
+- **Context:** MATSim routing could assign car legs to agents whose household has no car (a
+  household-fleet × routing gap).
+- **Decision:** Re-mode car legs for carless agents (`remode_carless_car_legs`,
+  `matsim/simulation/prepare.py`), and give every non-owner a routing `default_car` so eqasim-core
+  car coverage holds.
+- **Rationale:** Routing consistency — the fleet and the routed mode must agree (memory
+  `allfeatures-run-fleet-routing-fix`).
+- **Consequences:** Closes the fleet×routing gap; OFF path unaffected.
+- **Evidence:** memory `allfeatures-run-fleet-routing-fix`; commit `b736953`; PROJECT_STATUS.md §2.3.
+
+---
+
+## Location choice / gravity
+
+### ADR-0023 · 2026-06-01 · Per-RegioStaR-7 gravity distance slope
+- **Status:** active
+- **Context:** A single distance-decay slope `exp(slope·d)` decays urban and rural commutes at the
+  same rate, which is unrealistic (urban origins have flatter slopes / longer commutes).
+- **Decision:** Differentiate the slope by the origin Gemeinde's RegioStaR-7 class
+  (`gravity_slope_by_regiostar7`), holding the flow-weighted mean equal to `gravity_slope=-0.065`
+  so the regional mean commute is unchanged; only the sub-Kreis distribution is differentiated.
+  Fill RS7-absent Gemeinden by geographic nearest neighbour.
+- **Rationale:** A per-origin fit with destination FE is rank-deficient on the BA Pendleratlas
+  data (distance collinear with per-destination dummies), so a single identified full-panel Poisson
+  GLM pools within-origin distance variation; anchors chosen by an adaptive ring (CLAUDE.md
+  "Gravity model").
+- **Consequences:** Realistic sub-Kreis commute distribution; pinned values in run configs (re-run
+  the script, do not hand-edit).
+- **Evidence:** plan `docs/superpowers/plans/2026-06-01-per-regiostar7-gravity-slope.md`; spec
+  `2026-06-01-per-regiostar7-gravity-slope-completion-design.md`; `tests/test_gravity_ring_calibration.py`;
+  PROJECT_STATUS.md §2.4 (BA Pendleratlas Poisson GLM).
+
+### ADR-0024 · 2026-06-03 · Education gravity (real schools / Kita / university)
+- **Status:** active
+- **Context:** The generic OSM hard-radius education sampler ignores real facility capacity and
+  distance decay, and uses coarse age bands.
+- **Decision:** Assign all education levels by real-data distance-decay gravity: school-age pupils to
+  real Niedersachsen schools (doubly-constrained capacity Furness), kindergarten to real Kita Plätze
+  (same model), and university students to real Hochschulen (singly-constrained decay). Flag
+  `education_gravity_enabled` (OFF = legacy OSM, byte-identical).
+- **Rationale:** Doubly-constrained prevents a tiny nearby school swallowing pupils; the
+  singly-constrained university choice lets the distance tail reach far universities whose huge
+  enrollment is mostly non-resident; the 16–19 BBS/Oberstufe split (`education_bbs_share=0.681`) is
+  NDS enrollment (CLAUDE.md "Education gravity model").
+- **Consequences:** Real facilities (local-only data, not committed); per-(RS7,level) slopes
+  calibrated to MiD T43 / Destatis MZ 2024; legacy bands change only on the ON path.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-03-education-gravity-design.md`; plans
+  `2026-06-03-{education-gravity,kita-education,university-education,bbs-oberstufe-split,education-slope-calibration}.md`;
+  `docs/features/education-gravity.md`; PROJECT_STATUS.md §2.4.
+
+### ADR-0025 · 2026-06-25 · Building-level activity potentials (work/secondary/education) — REPLACE
+- **Status:** active
+- **Context:** Without building-level potentials, every activity is placed at a zone centroid or a
+  uniform random building, so large offices/shops/schools do not attract proportionally more trips.
+- **Decision:** Redistribute work, secondary, and education locations to individual OSM/ALKIS
+  buildings weighted by a floor-area-based activity potential (from the TUBS-IVS Activities-and-
+  Potentials pipeline). For work and secondary the building set REPLACES the candidate set (real
+  computed `potential_work`/`pot_*` from the parquet); education ATTACHES within the assigned
+  facility. Flags `work_/secondary_/education_building_potentials` (OFF byte-identical).
+- **Rationale:** A mid-session pivot chose REPLACE over the earlier ATTACH strategy (ADR-0037);
+  aggregate controls (GENESIS SvB, OD flows, NDS enrollment) remain authoritative — potentials only
+  govern within-zone/within-school placement (`docs/features/building-potentials.md`).
+- **Consequences:** `area*floors` becomes only the OFF/legacy path; real `potential_work` Census-SvB
+  cross-check printed. Reshaped within-zone placement (which made the old "0.47" commute figure stale).
+- **Evidence:** spec `docs/superpowers/specs/2026-06-25-building-activity-potentials-design.md`;
+  PR #16 (merged 2026-06-25) + PR #17 (Copilot follow-up); `docs/features/building-potentials.md`;
+  PROJECT_STATUS.md §2.4.
+
+### ADR-0026 · 2026-06-25 · Purpose-resolved secondary distances (Tier 1 + Tier 2 daily/non-daily)
+- **Status:** active
+- **Context:** `_sample_leg_distance` drew the desired distance per mode only, so a shop-by-car and
+  a leisure-by-car leg drew the same distribution, diluting shop distances by the longer leisure tail.
+- **Decision:** Tier 1 — build per-(purpose×mode×band) distributions (`secondary_distance_by_purpose`).
+  Tier 2 — split shopping into daily/non-daily (`secondary_shop_daily_split`) via a seeded subtype
+  imputation from MiD W_ZWD, with daily/non-daily distances and `retail_daily`/`retail_non_daily`
+  building placement. Both flags ON in the all-features popsim configs.
+- **Rationale:** MiD W_GEW means show ~3× shop and ~5× leisure subtype distance ranges; OFF baseline
+  EMD (shop 0.053/leisure 0.064/other 0.018) is below the 0.08 threshold, so this is a realism
+  *refinement*, not a broken-model fix; sparse-cell fallback rate is logged (no silent fallback)
+  (`docs/features/secondary-distances.md`).
+- **Consequences:** The eqasim output purpose stays shop/leisure/other; resolution is internal.
+  A later leisure W12 fix (ADR-0033) corrected a double-counting interaction.
+- **Evidence:** `docs/features/secondary-distances.md`; commits `c68c8df`, `706b87a`, `8e98e3d`;
+  PROJECT_STATUS.md §2.4 (MiD W12 per-purpose).
+
+### ADR-0027 · 2026-06-26 · External secondary candidates (long-distance trips)
+- **Status:** active
+- **Context:** Some leisure/other secondary trips exceed the ~50km study area (~6% leisure / ~3%
+  other), so carla truncates them to the area edge instead of matching the long MiD desired distance.
+- **Decision:** Append German Gemeinde centroids OUTSIDE ZGB (population-weighted) to the secondary
+  candidate set (`secondary_external_candidates`, on only where `cordon_enabled`); eqasim's
+  `RunScenarioCutter` converts the boundary-crossing trip into a fixed "outside" activity.
+- **Rationale:** Reuses the existing out-commuter mechanism (`external_workplaces`); direction is a
+  distance-only proxy (ASSUMPTION, no secondary OD data); a warning is logged if on without cordon
+  (CLAUDE.md "External secondary candidates").
+- **Consequences:** Matches the long desired-distance tail; OFF path byte-identical.
+- **Evidence:** PR #19 (merged 2026-06-26); commits `0cc2ad2`, `c4fcdda`, `d1aa17c`;
+  CLAUDE.md "External secondary candidates".
+
+---
+
+## Cordon / cross-border (Einpendler)
+
+### ADR-0028 · 2026-06-02 · Cordon external-demand model — targeted crossing agents with full supply
+- **Status:** active
+- **Context:** The synthetic population is resident-only ZGB, so demand ENTERING the region
+  (in-commuters, visitors, through-traffic) is not represented, undercounting network/PT load.
+- **Decision:** Build a cordon/external-demand extension as **targeted cordon-crossing agents**
+  (Approach B), with **full eqasim agents with external homes** and a MATSim **supply extension** to
+  the cordon ring; decomposed and built in order: (1) supply extension → (2) in-commuters →
+  (3) external visitors → (4) through-traffic, where 3 & 4 are out of scope.
+- **Rationale:** Approach A (synthesise all of Hannover, discard non-crossers) wastes ~90% and needs
+  structural data we have only for ZGB; Approach B reuses the `external_workplaces` pattern and the
+  all-Germany BA Pendler matrix already on disk (spec D-1..D-5).
+- **Consequences:** Supply must cover the ring (prerequisite); sub-projects 3 & 4 never started
+  (PROJECT_BACKLOG.md Tier 3.4 — through-freight is covered separately by ADR-0030).
+- **Evidence:** spec/roadmap `docs/superpowers/specs/2026-06-02-cordon-external-demand-roadmap.md`
+  (Decisions D-1..D-5); PROJECT_STATUS.md §2.5.
+
+### ADR-0029 · 2026-06-02..06-05 · Einpendler injection with road + PT/Bahnhof gates and mode balancer
+- **Status:** active
+- **Context:** In-commuter agents need a network entry point and a mode that matches observed
+  cross-border travel.
+- **Decision:** Inject in-commuters (`cordon_enabled`, `synthesis/incommuters.py`,
+  `incommuter_merge/`) entering via road and PT/Bahnhof gates (OSM, GTFS), with a mode balancer
+  grounded on Mikrozensus modes; cordon network built by enlarge-then-cut.
+- **Rationale:** Gates give a realistic entry geometry; the mode reference and balancer ground the
+  cross-cordon mode split on Mikrozensus (committed reference) (spec set 06-02..06-05).
+- **Consequences:** `einpendler_extern` cross-cordon demand validated; uncalibrated gate
+  gravity-beta/capacity-exponent parked (PROJECT_BACKLOG.md Tier 3.3).
+- **Evidence:** specs `2026-06-02-incommuter-agents-v1*-design.md`,
+  `2026-06-03-incommuter-mode-reference-design.md`, `2026-06-05-cross-cordon-external-demand-design.md`;
+  plan `2026-06-05-cordon-einpendler-injection.md`; PROJECT_STATUS.md §2.5.
+
+---
+
+## Freight
+
+### ADR-0030 · 2026-06-11 · Long-haul freight injection (german-wide-freight v3, hybrid Java→Python→Java)
+- **Status:** active
+- **Context:** Heavy-goods through-traffic on the ZGB motorways (A2/A7/A39) is not represented;
+  correctly classifying TRANSIT vs INTERNAL/INCOMING/OUTGOING requires routing each freight trip on
+  the German-wide network (a straight-line OD test would miss exactly the through-traffic).
+- **Decision:** Inject long-haul road freight from the VSP german-wide-freight v3 model via a
+  three-stage hybrid: (1) the published matsim `RunExtractFreightTrips` Java tool, run once per
+  category (cached, 100%, sampling-rate independent); (2) a Python trips stage parsing the plans;
+  (3) a Java `RunInjectFreight` hook after the cordon cut, Bernoulli-sampled to the run's sampling
+  rate. Flag `freight_enabled` (code default true; OFF byte-identical). Freight agents are isolated
+  from mode choice and excluded from all person-travel analysis.
+- **Rationale:** The published, peer-reviewed Java tool routes+classifies+trims correctly; the build
+  writes no category attribute, so the unmodified tool is run once per `--tripType` (verified on the
+  real output: all 49,758 trips came back `unknown`). Freight sampling is required because the qsim
+  flowCapacityFactor is scaled to the sampling rate (CLAUDE.md "Long-haul freight injection").
+- **Consequences:** `freight_truck_pce=3.5` and `_max_velocity_kmh=80` are explicit ASSUMPTIONS
+  (StVO / uncalibrated); a BASt HGV-count calibration is a parked follow-up (ADR-0034 / Tier 3.2).
+- **Evidence:** plan `docs/superpowers/plans/2026-06-11-german-wide-freight-injection.md`;
+  `docs/features/freight.md`; memory `project-freight-injection`; PROJECT_STATUS.md §2.6.
+
+---
+
+## Analysis / dashboards
+
+### ADR-0031 · 2026-06-07 · MiD + population validation reporting
+- **Status:** active
+- **Context:** Runs need reproducible validation against the committed reference data.
+- **Decision:** Add an MiD-validation report (`analysis/run_mid_validation.py` vs MiD
+  P9/P12_1/P13/P17_1), a combined full analysis (`run_full_analysis.py`), a PopulationSim-style
+  population validation (`analysis/population_validation/` vs Zensus: controls/quality/geo), and an
+  education enrollment validation (vs LSN capacity).
+- **Rationale:** Validation against committed references is mandatory (CLAUDE.md); population
+  validation mirrors PopulationSim control validation (spec 2026-06-07).
+- **Consequences:** `report.json`/`summary.md`/figures per run; default-on inside full analysis.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-07-population-validation-design.md`;
+  `docs/features/run-analysis.md`; `tests/test_run_mid_validation.py`; PROJECT_STATUS.md §2.7.
+
+### ADR-0032 · 2026-06-23 · Integerizer-quality analysis (per-cell error map)
+- **Status:** active
+- **Context:** PopulationSim hits the household total exactly but may squeeze out large/rare
+  household types; this needs to be visible per cell.
+- **Decision:** Add an integerizer-quality report (per-control split, per-cell %-dev, GPKG 100m-cell
+  map, CLI) under `analysis/integerizer_quality/`.
+- **Rationale:** Makes the 100m composition under-fit measurable (it later showed ZENSUS100m mean
+  |%dev| 6.04%, max 27.87% — the evidence behind the rejected importance calibration, ADR-0039)
+  (PROJECT_BACKLOG.md step-1b).
+- **Consequences:** Provided the measurement that proved importance tuning would not help (controls
+  already hit) and is donor-bound.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-23-integerizer-quality-analysis-design.md`;
+  commits `7b09658`, `f9c9417`; PROJECT_STATUS.md §2.7.
+
+### ADR-0033 · 2026-06-08 · SimWrapper dashboard export (Python emitter + Java contrib)
+- **Status:** active
+- **Context:** Run analytics should be viewable inside the MATSim/SimWrapper ecosystem, not only as
+  the project's HTML dashboard.
+- **Decision:** Two layers: (1) the MATSim simwrapper contrib behind `--simwrapper` (default off,
+  byte-identical when off); (2) a Python emitter (`analysis/simwrapper/`) converting the existing
+  dashboard `record` into SimWrapper CSV+YAML (8 chart/table tabs + 4 map tabs + a commuter tab),
+  default-on inside full analysis and as a synpp stage writing only a new `simwrapper/` subfolder.
+- **Rationale:** No scientific logic is duplicated (it reuses the existing dashboard `record` and
+  spatial helpers); tabs whose source data is absent are skipped with an explicit log (no silent
+  skip) (CLAUDE.md "SimWrapper dashboards").
+- **Consequences:** Existing run outputs stay byte-identical; works in synthesis-only and full modes.
+- **Evidence:** plan `docs/superpowers/plans/2026-06-08-simwrapper-dashboard-export.md`;
+  memory `project-simwrapper-dashboard`; PROJECT_STATUS.md §2.7.
+
+### ADR-0034 · 2026-06-27 · Secondary leisure W12 fix (leisure_correction_factor)
+- **Status:** active
+- **Context:** A full 100% synthesis-only validation run revealed the realised secondary leisure
+  distribution was off (W12 leisure EMD 0.131).
+- **Decision:** Apply the legacy `leisure_correction_factor=2.0` only on the legacy per-mode path,
+  not when the Tier-1 purpose-resolved distances are active (it was double-counting with the
+  purpose-resolved distances, a mode-only-era heuristic).
+- **Rationale:** With the fix, W12 leisure EMD 0.131→0.050 at 100% (all purposes pass; shop/other
+  unchanged) — measured, not assumed (SESSION_LOG 2026-06-27).
+- **Consequences:** Corrects an interaction introduced by ADR-0026.
+- **Evidence:** PR #20 (merged 2026-06-27); commit `ba734c9`; SESSION_LOG.md 2026-06-27.
+
+---
+
+## Calibration corner
+
+### ADR-0035 · 2026-06-25 · Calibration corner (offline tooling, never imported by the runtime)
+- **Status:** active
+- **Context:** Several offline calibrators (gravity per-RS7 slope, gravity decay, education slopes)
+  and new distribution-calibration loops needed a single, clearly separated home.
+- **Decision:** Create `braunschweig/calibration/` as the single home for offline calibration:
+  shared metrics (`band_shares`/`emd_on_bands`/`apply_detour`), MiD distribution targets (P13/T43/W12
+  loaders), per-model loops + CLIs + reports. It consumes runtime components and emits pinned YAML;
+  it is never imported by the runtime pipeline. The three legacy calibrators are migrated in as
+  `_legacy_*` with thin `scripts/calibrate_*.py` shims preserving behaviour.
+- **Rationale:** Runtime model components stay with the model (per-band friction in `gravity/friction.py`,
+  the chainsolvers scorer in its own stage); the corner holds only the offline loops, keeping
+  simulation setup separate from analysis (`docs/features/calibration-corner.md`).
+- **Consequences:** A clean place to build (and measure) calibrations before pinning; per-band
+  commute friction wired into the model but defaulting to `None` (legacy `exp(slope·d)`).
+- **Evidence:** PR #18 (merged 2026-06-26); `docs/features/calibration-corner.md`;
+  `tests/test_calibration_migration_shims.py`; PROJECT_STATUS.md §2.4.
+
+---
+
+## Infrastructure
+
+### ADR-0036 · 2026-06-22 · Shared persistent stage-cache (prime-on-launch)
+- **Status:** active
+- **Context:** Expensive sampling-rate-independent synpp stages (above all the ~3h freight Java
+  routing) are recomputed on every fresh run because synpp caches per `working_directory`.
+- **Decision:** Add `braunschweig.cache_share` + a `scripts/run_synpp.py` launcher that PRIMES a
+  shared store before synpp runs and EXPORTS after a successful run, by copying synpp's cache
+  artifacts (never recomputing synpp's hash — synpp re-validates the hash on load). Flags
+  `cache_share_enabled` (true) / `cache_share_export` (true); `enabled: false` is a pure no-op.
+- **Rationale:** We copy artifacts and let synpp decide validity, so a primed entry whose hash does
+  not match is ignored and recomputed (never corruption, only a forgone speedup, logged as a miss)
+  (`docs/features/cache-share.md`).
+- **Consequences:** Freight routing runs once and is reused across runs/machines; auto-export uses
+  `skip_existing=True` so the store is never overwritten.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md`;
+  spec `2026-06-23-auto-export-shared-cache-design.md`; `docs/features/cache-share.md`;
+  `tests/test_cache_share.py`; PROJECT_STATUS.md §2.8.
+
+### ADR-0037 · 2026-06-22 · Tier-A/B shareable-stage set + fixed popsim work_dir
+- **Status:** active (config wiring partial)
+- **Context:** Beyond the freight chain, many synpp stages (and the popsim donor build) are
+  sampling-/path-independent and could be shared across runs, but sharing `popsim.stage` needs a
+  single fixed work_dir so its hash is identical.
+- **Decision:** Share the 32 empirically verified sampling-/path-independent stages plus
+  `popsim.stage` and `popsim.completed_donor`, using a single fixed
+  `braunschweig.population.popsim.work_dir` across all configs, protected by a stale-batch guard.
+- **Rationale:** The MiD donor build depends only on MiD data/seed/day-filter/weekend flag (not on
+  controls/sampling/work_dir), so it is computed once and reused across all runs (`docs/features/cache-share.md`).
+- **Consequences:** Makes a 100% production run affordable; config wiring is partial
+  (PROJECT_BACKLOG.md Tier 1.3).
+- **Evidence:** spec `docs/superpowers/specs/2026-06-22-tier-a-b-caching-design.md`;
+  plan `2026-06-22-tier-a-b-caching.md`; PROJECT_STATUS.md §2.8.
+
+### ADR-0038 · 2026-06 · Own editable `eqasim-java-bs` fork
+- **Status:** active
+- **Context:** The MATSim/Java side needed project-specific changes (parking, freight injection,
+  mode availability, SimWrapper contrib) not in the upstream bavaria Java.
+- **Decision:** Build our own editable Java project (the `braunschweig` Java module) wired via
+  `eqasim_source_path` (`../eqasim-java-bs`), pinned to MATSim `2025.0-PR3568`, instead of the
+  upstream bavaria clone.
+- **Rationale:** The pipeline builds our editable Java, so Java-side features land in our fork
+  (memory `eqasim-java-bs-own-fork`; UPSTREAM_DELTA.md).
+- **Consequences:** Java features (ADR-0039 parking, ADR-0030 freight injection) live in the fork.
+- **Evidence:** `docs/UPSTREAM_DELTA.md`; memory `eqasim-java-bs-own-fork`; PROJECT_STATUS.md §2.8.
+
+### ADR-0039 · 2026-06 · Urban parking (Braunschweig inner ring)
+- **Status:** active
+- **Context:** Realistic parking pressure is concentrated in the Braunschweig inner ring.
+- **Decision:** Add urban parking (`enable_urban_parking`, `matsim/simulation/prepare.py` + Java),
+  enabled in the 25%/100% server configs for realism, scoped to the BS inner ring only.
+- **Rationale:** Enabled "for more realistic" behaviour in the server configs (commit `b005a0d`);
+  inner-ring-only scope per memory `project-building-activity-potentials`.
+- **Consequences:** Flag-gated; ON in the server real-data configs.
+- **Evidence:** commits `b005a0d`, `bccb21f`; PROJECT_STATUS.md §2.8.
+
+### ADR-0040 · 2026-06-28 · Professionalized PM / tracking layer
+- **Status:** active
+- **Context:** The project history and open work were spread across memory files and ad-hoc notes;
+  a durable, committed PM layer was needed for traceability and onboarding.
+- **Decision:** Add `PROJECT_STATUS.md` (feature matrix), `PROJECT_BACKLOG.md` (ranked open work),
+  `docs/DECISIONS.md` (this ADR log), `docs/UPSTREAM_DELTA.md`, `docs/ONBOARDING.md`,
+  `CONTRIBUTING.md`, `.github/` templates, `RUNS.md`, and split deep feature detail into
+  `docs/features/*` (verbatim, no-loss), leaving CLAUDE.md as rules-only.
+- **Rationale:** Single sources of truth, kept current via `/close`, per the working discipline in
+  CLAUDE.md (spec 2026-06-28).
+- **Consequences:** One canonical backlog/status; CLAUDE.md and git win on disagreement.
+- **Evidence:** spec `docs/superpowers/specs/2026-06-28-pm-layer-professionalization-design.md`;
+  PR #21 (merged 2026-06-28); commits `6b2bdd4`, `d2401a9`, `67a3cd5`.
+
+---
+
+## Rejected / not-adopted decisions
+
+> Recorded so they are not re-attempted. The "why we did NOT do it" is half the value; each cites
+> the measurement that killed it (PROJECT_BACKLOG.md §1 Tier 5).
+
+### ADR-0041 · 2026-06-25 · REJECTED — Pin commute gravity friction factors
+- **Status:** rejected
+- **Context:** A per-band commute friction (`gravity_friction_factors`) was built to make the
+  realised home→work distance distribution match MiD P13, motivated by a historical "EMD 0.47 FAIL".
+- **Decision:** Do NOT pin any friction factors; leave them at the `None` default (legacy
+  `exp(slope·d)`); keep the machinery as gated-off infrastructure.
+- **Rationale:** Measured on `cache_bs_25pct_allfeat`, the model already matches P13 (donor targets
+  EMD 0.0037, gravity OD EMD 0.037, realised straight-line ~0.065, all below the 0.08 threshold). The
+  "0.47 FAIL" was a STALE figure on MATSim-routed distances from a run *before* the building-activity
+  potentials (ADR-0025) reshaped placement (`docs/features/calibration-corner.md`).
+- **Consequences:** Pipeline stays byte-identical to legacy friction; lesson "measure before
+  calibrating" reinforced.
+- **Evidence:** `docs/features/calibration-corner.md` (Finding 2026-06-25); commit `1a10e15`;
+  PROJECT_BACKLOG.md Tier 5; memory `feedback-measure-before-calibrating`.
+
+### ADR-0042 · 2026-06-25 · REJECTED — Distance-dependent detour curve f(d) as default
+- **Status:** rejected
+- **Context:** Circuity decays with distance (Giacomin & Levinson 2015), so a fitted curve
+  `c(d)=c_inf+a·exp(-d/tau)` could in principle improve the euclidean→routed axis vs the constant 1.3.
+- **Decision:** Keep the constant detour factor 1.3 as the DEFAULT; the fitted curve is opt-in
+  infrastructure (`mode="curve"`) only.
+- **Rationale:** Fitted on the 25% synthesis and measured: commute EMD vs P13 0.0878→0.0849
+  (Δ~0.003), pooled secondary walk vs W12 0.0712→0.0729 (slightly worse) — both far below the 0.01
+  materiality threshold (`docs/features/detour-circuity.md` VERDICT 2026-06-25).
+- **Consequences:** No education re-pin; pipeline byte-identical to the pre-Tier-3 constant 1.3; the
+  pt-uplift placeholder must be verified before any future curve activation.
+- **Evidence:** `docs/features/detour-circuity.md` (VERDICT); commit `4de2d51`,
+  `5aa7fe5` (`band_shift_impact.csv`); SESSION_LOG.md 2026-06-25; PROJECT_BACKLOG.md Tier 5.
+
+### ADR-0043 · 2026-06-27 · REJECTED — Tune secondary scorer `pot_weight`
+- **Status:** rejected
+- **Context:** The combined chainsolvers scorer's `pot_weight` (pull toward large buildings) might
+  add a residual distance distortion worth tuning.
+- **Decision:** Keep `secondary_scorer_pot_weight` at the default 1.0; do not tune it.
+- **Rationale:** A sweep at 100% showed `pot_weight` is a *concentration* knob — raising it makes the
+  building-capacity fit WORSE (over-concentration), while distance never breaks even up to 128;
+  default 1.0 is optimal (memory `feedback-capacity-fit-sampling-power`; SESSION_LOG 2026-06-27).
+- **Consequences:** Scorer weights stay at config values; the real within-zone lever is a building
+  worker-count dataset, not the scorer.
+- **Evidence:** SESSION_LOG.md 2026-06-27; commit `8196ec3` (scorer-sweep bench);
+  memory `feedback-capacity-fit-sampling-power`; PROJECT_BACKLOG.md Tier 5.
+
+### ADR-0044 · 2026-06 · REJECTED — Rake employment to MiD P9
+- **Status:** rejected
+- **Context:** Employment could be controlled against the MiD P9 survey instead of the GENESIS
+  register (see ADR-0014).
+- **Decision:** Do NOT rake employment to P9; keep it raked to GENESIS 13111 (register).
+- **Rationale:** P9 is survey noise (~900/Kreis, 43–59% spread, ~4pp definitional difference); raking
+  to it would overfit noise. P9 is a validation cross-check, not a control (PROJECT_BACKLOG.md Tier 5).
+- **Consequences:** Employment anchored to register totals.
+- **Evidence:** PROJECT_BACKLOG.md Tier 5 ("Raking employment to MiD P9");
+  memory `synthesis-method-and-optimization`.
+
+### ADR-0045 · 2026-06-15 · REJECTED — Within-Kreis extra income signal beyond the rent tilt
+- **Status:** rejected
+- **Context:** Beyond the Nettokaltmiete rent tilt (ADR-0010), an additional sub-Kreis income signal
+  was considered.
+- **Decision:** Do NOT add a within-Kreis *extra* income signal; keep only the rent tilt (+0.032 Pearson).
+- **Rationale:** No external sub-Kreis income ground truth exists (RWI-GEO-GRID is FDZ-restricted),
+  and the size/tenure/age controls already dominate the within-Kreis income variation
+  (PROJECT_BACKLOG.md Tier 5; memory `project-income-spatial-tilt`).
+- **Consequences:** A Kreis-level income control (via INKAR targets) remains a deferred future option
+  (PROJECT_BACKLOG.md Tier 3.1), distinct from this rejected within-Kreis extra signal.
+- **Evidence:** PROJECT_BACKLOG.md Tier 5 + Tier 3.1; memory `project-income-spatial-tilt`.
+
+### ADR-0046 · 2026-06-24 · REJECTED — PopulationSim importance/expansion calibration framework
+- **Status:** rejected (design only; recommend formal close)
+- **Context:** Every popsim control carries a uniform importance 1000; the PopulationSim docs
+  recommend iterative importance/expansion tuning. A coordinate-descent calibration framework was
+  designed (with donor KPIs held out and a baseline-vs-tuned verdict).
+- **Decision:** Do NOT build/activate the importance calibration; keep it parked as design only.
+- **Rationale:** Measured on the 100% run, the controls are already hit (HH total exact, 11/43,598
+  cells off, +0.022%), so importance tuning "would not help"; bumping importance instead makes the
+  simultaneous integerizer THRASH (no completion at 3×/10×) or hit INFEASIBLE even at the doc's own
+  1e9 recommendation; the residual 100m composition under-fit is donor-bound (rare/large HH types are
+  thin in the MiD seed), so the real lever is the German MiD donor, not importance
+  (PROJECT_BACKLOG.md step-1b/proof iteration).
+- **Consequences:** The 19KB design+plan stay on disk unbuilt; the recommended lever is ADR-0038
+  (German MiD donor, deferred).
+- **Evidence:** spec `docs/superpowers/specs/2026-06-24-popsim-importance-calibration-design.md`;
+  plan `2026-06-24-popsim-importance-calibration.md`; PROJECT_BACKLOG.md §1 (step-1b, nachsteuern
+  proof) + Tier 5; commits `841fe05`, `2619fd1`, `d31c7eb`; memory `project-popsim-importance-calibration`.
+
+### ADR-0047 · 2026-06-25 · REJECTED — ATTACH strategy for building potentials
+- **Status:** superseded by ADR-0025
+- **Context:** Building-level activity potentials for work/secondary were first designed to ATTACH a
+  potential weight to the existing zone-level candidate set.
+- **Decision:** Replace ATTACH with REPLACE (use the gpkg buildings as the candidate set directly) for
+  work and secondary, after a mid-session pivot.
+- **Rationale:** not recoverable from the committed record beyond the pivot itself; recorded in the
+  backlog as "Replaced by REPLACE (gpkg buildings as candidate set) after mid-session pivot"
+  (PROJECT_BACKLOG.md Tier 5).
+- **Consequences:** Work/secondary source candidates from real `potential_work`/`pot_*` buildings;
+  education keeps ATTACH within the assigned facility (ADR-0025).
+- **Evidence:** PROJECT_BACKLOG.md Tier 5 ("ATTACH strategy for building potentials");
+  memory `project-building-activity-potentials`; PR #16.
+
+### ADR-0048 · 2026-06-28 · Function-aware secondary `other` potential + scorer scale-alignment
+- **Status:** active on PR #77 (open, Closes #27) — Part A active; Part B scorer calibration server-deferred.
+- **Context:** The secondary `other` potential was the raw `potential_generic =
+  volume_m3 × bosserhof_class_weight`, which is function-blind. The VW-Werk Wolfsburg (8.9M m³ →
+  26.7M potential, a real building) and steel/wholesale giants dominated the chainsolvers `other`
+  candidate score, concentrating errand activities on industrial mega-structures. The realised
+  distance distribution was unaffected (carla's ring candidate generation bounds distance) — the
+  defect was within-pool placement, not distance.
+- **Decision:** (A) Derive `potential_other = min(generic, cap) × (broad_share + errand_share·1(class
+  ∈ whitelist))`, zeroed below `min_volume_m3`, from a committed Bosserhof-class→eqasim-purpose
+  mapping CSV; attach it to the legacy `other` candidates instead of raw `generic`. (B) Bump the
+  chainsolvers pin to `d8d8ae7d` for the native `Scorer(attr_transform="log1p")` + `mnl` selection
+  (use the library lever, no downstream pre-scaling) and add a measure-first calibration CLI; defer
+  pinning `attr_transform`/weights and any `dp_sample`/`mnl` A/B to a server run.
+- **Rationale:** `other` = MiD 2023 W_ZWECK 5 Erledigung (45.7%) + 6 Bringen/Holen (23.1%) + 10 anderer
+  (31.2%) collapsed into one eqasim `other`, so it cannot be restricted to service buildings;
+  broad_share=0.54/errand_share=0.46 are those W_GEW-weighted shares (`MiD2023_Wege.csv`). Whitelist =
+  11 errand classes; research institutes + car dealerships excluded (user decision). A uniform cap
+  (whitelist-generic percentile, applied to all) tames the volume tail. OFF byte-identical; no invented
+  values; pinning gated on a measured W12 win (shop 0.053/leisure 0.064/other 0.018) — convergence ≠
+  validation.
+- **Consequences:** Errand placement no longer over-attracted to factories; Part A enabled in the 5
+  real configs; chainsolvers bump backward-compatible (attr_transform defaults to "linear").
+- **Evidence:** PR #77; issue #27; spec/plan `docs/superpowers/{specs,plans}/2026-06-28-smart-other-potential*`
+  (gitignored); memory `project-smart-other-potential`; commits `8fdb2f3..4af644a` on `feature/smart-other-potential`.
+
+### ADR-0049 — Wolfsburg commute "misfit" is an unreliable reference, not a model bug; sub-zonal (TAZ) is the real lever
+
+- **Date:** 2026-06-30
+- **Decision:** Do NOT calibrate the gravity to fix the Wolfsburg per-Kreis commute EMD (0.209
+  vs MiD P13). A systematic-debugging pass ruled out every candidate cause and showed the model
+  is defensible; the **per-Kreis MiD P13 target for Wolfsburg is n_weighted=39 / n_unweighted=126**
+  and is **inconsistent with the authoritative BA Pendleratlas full count**. The genuine,
+  scientifically-defensible improvement lever is **sub-zonal resolution** (eqasim IRIS-analog):
+  run the work location choice at VISUM-Verkehrszellen (TAZ) resolution so the gravity forms
+  distances *inside* the kreisfreie Staedte (BS/SZ/WOB = 1 Gemeinde each).
+- **Why (ruled out, all checked against real data):** friction is moot (1 Gemeinde -> gravity
+  cannot shape intra-city); real VW-concentrated worker data barely moves it (0.209->0.19; homes+
+  jobs co-located ~4 km, centroids 1.2 km); the in/out split **= BA exactly** (78.2% intra, svb
+  53,015 / out 11,550); Hannover/Berlin out-commuters ARE simulated (external workplaces ~7.4% ~= BA)
+  and ARE in the EMD; excluding the far tail makes it WORSE (the gap is missing 10-30 km, not the
+  tail); routing would need ~4x detour (RS7-72 circuity ~1.2). Arithmetic: BA caps out-commuting
+  at 22% but MiD wants 53% at 10-30 km -> the surplus can be neither out-commuters nor intra-city
+  in a 15-km town -> the n=39 MiD sample is unrepresentative. Calibrating to it would be overfitting
+  to noise (forbidden: anti-overfitting / no-invented-references).
+- **Consequence:** (1) evaluate per-Kreis fit only where `n_weighted >= ~80`, else use ROBUST
+  references (ZGB-aggregate n=1583, per-RS7) -- drives the distance_fit module's n-awareness
+  hardening; (2) TAZ sub-zonal work location choice approved (issues #79 / #80) -- flag-gated
+  default OFF, TAZ data local-only (proprietary VISUM), reuse the zone-agnostic eqasim functions
+  (distance_matrix via the zone stage, gravity / candidates / define_distance_ordering), BA stays
+  the Kreis-level anchor.
+- **Evidence:** this session's debugging; `eqasim-data/data/braunschweig/mid/mid2023_P13.csv`
+  (WOB row n_weighted=39); BA Pendleratlas + census employment stages (svb/out); specs
+  `docs/superpowers/specs/2026-06-29-distance-fit-diagnostics-design.md` and
+  `2026-06-30-taz-subzonal-work-location-choice-design.md`; memory
+  `feedback-robust-reference-not-perkreis-noise`, `project-taz-subzonal-work-location`.
+
+### ADR-0050 — TAZ per-RS7 gravity friction: built, then measured unnecessary; commute distribution already fits; validate flag-ON at scale instead
+
+- **Date:** 2026-07-01
+- **Decision:** Do NOT pin the TAZ per-RS7 / per-band `gravity_friction_factors` calibration.
+  The machinery was fully built and reviewed (branch `feature/taz-gravity-calibration`, 6 commits
+  `c8655b1..3c2ebb5` — a `--taz` mode in `scripts/calibrate_gravity_distribution.py` re-fitting friction
+  on the TAZ work-OD via `compute_work_od` + TAZ-aware `_calibrate`, work-pass-scoped so it cannot leak
+  into the education Gemeinde pass), but the pre-calibration measurement showed friction is **not
+  needed**. The branch is **PARKED (pushed to the fork as backup, not merged)** as gated-off infra,
+  reusable only if a future measurement shows a real gap. The remaining Phase-3 work is to **validate the flag-ON TAZ
+  feature at scale** (run the 100% population with `taz_work_location_choice: true`,
+  `matsim_last_iteration: 0`), not to calibrate.
+- **Why (measured, traceable references only):** (1) **Mechanism** — eqasim's two-stage location
+  choice was verified adversarially to be a BIJECTION: `candidates.py` draws exactly one candidate zone
+  per person from the (gravity-synthesised) OD, and `locations.py::define_distance_ordering` only
+  RE-PAIRS candidates to persons to match each survey `commute_distance`. So the AGGREGATE distance
+  distribution is set by the gravity candidate pool; friction is a legitimate lever on it, but the
+  per-person matching does not change the aggregate. (2) **Fit** — on the CURRENT 100% `popsim_mid`
+  population (flag-OFF, ZGB-resident-filtered commutes vs the committed `mid2023_P13.csv`), the
+  aggregate EMD is **~0.054** (< the ~0.08 no-recalibration band). The earlier "0.47 FAIL" was a stale
+  pre-building-potentials number. So the aggregate already fits — recalibrating would be fixing a
+  working model. (3) **WOB** — per-Kreis Wolfsburg EMD ~0.21 is the n=39 noise outlier of ADR-0049, not
+  a target. (4) **1% flag-ON A/B first-look** — flag-ON IMPROVES the aggregate (EMD 0.057 -> 0.033) by
+  correcting commune-centroid over-concentration of <=5 km commutes toward P13; the compact-city
+  intuition was backwards (centroids were too short, TAZ lengthens within-commune commutes to realistic
+  building distances).
+- **Consequence:** friction branch parked (infra only); Phase-3 becomes a **validation run** of the
+  merged flag-ON TAZ (issue #83 re-scoped) + a spatial validation map (new issue); the flag-ON 100%
+  run needs a multi-hour popsim rebuild because origin/main's popsim/secondary sources differ from the
+  commit that built the existing 24G flag-OFF cache (the "cheap cache prime" premise is dead, per the
+  Phase-3 measure-first note in `project-taz-subzonal-work-location`).
+- **Evidence:** this session's measurement; branch `feature/taz-gravity-calibration` @ `3c2ebb5`
+  (+ SDD ledger `.superpowers/sdd/progress.md`); `synthesis/population/spatial/primary/{candidates,locations}.py`;
+  `eqasim-data/data/braunschweig/mid/mid2023_P13.csv`; memory `project-taz-subzonal-work-location`,
+  `feedback-measure-before-calibrating`, `feedback-robust-reference-not-perkreis-noise`. Follows ADR-0049.
+
+### ADR-0052 — Explicit value_map codes win over the generic MiD nonresponse set (issue #96 fix)
+
+> ADR-0051 is reserved for the fleet-quality branch (`fix/fleet-age-joint-ipf`), not yet merged; this
+> ADR takes 0052 to avoid a second number collision (cf. the ADR-0050 fleet/TAZ collision noted above).
+
+- **Decision:** in `braunschweig/popsim/missing.resolve`, an attribute's explicitly enumerated
+  `value_map` codes are removed from the generic item-nonresponse set before classification:
+  `nonresponse_set = (NONRESPONSE_CODES - set(spec.value_map)) | set(spec.impute_codes)`. An explicit
+  substantive code always beats the generic convention; a per-spec `impute_codes` entry still forces
+  imputation.
+- **Why:** MiD missing codes are field-width dependent (Handbuch Kap. 5.1: "index digit 9 prefixed to
+  the field width" -> bare `9` = keine Angabe only for single-digit fields). The flat
+  `NONRESPONSE_CODES = {9, 99, ...}` ignored width, so for two-digit `P_TAET` (1..17) the substantive
+  code **9 = Schueler/in** (keine Angabe = 99) was classified as nonresponse and imputed. Because
+  `resolve` classifies nonresponse before the `value_map` lookup, every pupil was imputed from the
+  non-pupil valid pool of its `alter_gr1` band (14-17 dominated by Azubis P_TAET=8 -> True), inflating
+  the written `employed` flag for 14-17yo to ~96% and the region rate ~7-9pp over Zensus (issue #96).
+  The same latent collision affected `hheink_gr1=9` (4000-4600 EUR) and `H_ANZAUTO/H_ANZRAD=9`.
+- **Scope:** OUTPUT attribute mappers only. The popsim Tier-3 employment control (`control_spec.py`)
+  evaluates raw `P_TAET.isin([1,2,3,4,6,8])` and was already correct; the population-validation
+  employment control read the broken `employed` column and inherited the inflation. So this was neither
+  the controls nor the calibration — it was `attributes.map_employed`.
+- **Consequence / follow-up:** may change scientific outputs (minor employment -> ~0, region rate
+  -7-9pp closer to Zensus, income distribution slightly corrected; 20+ rate ~unchanged). A 100% re-run
+  is required to regenerate corrected outputs (Phase-0 blocker for #99). A new minor-employment
+  plausibility guard (`controls.check_minor_employment`, PR #102) watches the under-15 employed rate,
+  default WARN; flip to `raise=True` after the re-run measures the true post-fix rate
+  (`feedback-measure-before-calibrating`; the 0.5% bound is an ASSUMPTION).
+- **Evidence:** PR **#101** (merged `8f652c4`); canonical pytest on felix 320 passed; TDD tests in
+  `tests/test_popsim_missing.py` + `test_popsim_attributes_missing.py`; real pre-fix 100% output
+  measured at age<=14 employed = 19.84%. Distinct from **#25** (stale erwerb test, fixed independently
+  by `d6556b6`+`aaafc60`). Memory `project-employed-code9-fix`, `feedback-no-silent-fallbacks`.
+
+### ADR-0053 — Validate the household_size control on a PERSON basis, not a household count (issue #97 fix)
+
+- **Decision:** the population-validation `household_size` control is registered person-weighted.
+  `bucket_household_control` gains an optional `weight_column`; `household_size` passes
+  `weight_column="household_size"`, so the realized `synthetic_count` is the SUM of household sizes per
+  bin (persons living in a household of that size class) instead of a household count. Default
+  `weight_column=None` keeps `cars_per_hh` / `bicycles_per_hh` byte-identical. The
+  `households_type.load_household_size_by_commune` docstrings/log were corrected (weight = persons).
+- **Why:** Zensus 2022 table 1000A-2081 reports PERSONS in private households by size class, not
+  household counts — pinned by the committed test
+  `tests/test_hh_size_margin.py::TestHouseholdTypeLoader.test_zgb_persons_match_zensus_reference`
+  (ZGB total ~1.135M persons, not ~0.56M households), and `braunschweig/ipf/prepare.py` consumes it
+  "in persons". The control's target loader is therefore a person share, while the realized side
+  counted households — comparing household-shares against person-shares produced a spurious deviation
+  (region 1-person: household basis 43.5% vs person target 21.6%). The apples-to-apples fix is to make
+  the realized side persons too (the unconditional reason; the IPF-margin argument is secondary — the
+  validated 100% run is `popsim_mid`, and the simple-IPF size margin is default-off).
+- **Consequence:** the `household_size` control values in every population-validation report change
+  (person basis). On `output_bs_100pct_allfeat_popsim` a felix re-validation moved household_size from
+  **7.7pp/"needs improvement" to 1.44pp/"good"** (SRMSE 2.07→0.18); classes 1-4 fit <1.2pp, exposing
+  the true residual = 5/6+ donor-bound underrepresentation (a real modelling limitation, #99 territory).
+  All OTHER controls stayed byte-identical (diff), confirming the change is isolated. Status-deck QA
+  figures refreshed (#104). No synthesis output changed — the IPF/synthesis was always correct.
+- **Evidence:** PR **#103** (merged `141284e`), TDD tests in `tests/test_population_controls.py`; the
+  felix re-validation diff (only household_size rows changed); follow-ups #105 (PR #106, docstring) +
+  #104 (PR #107, deck). Memory `project-status-presentation`, `feedback-felix-isolated-worktree-rerun`,
+  `feedback-no-invented-reference-values`.
+
+---
+
+### ADR-0054 — Placement-based income geography: economic_status × Kreis control (MiD H4), retiring the post-hoc income overwrite (design; Phase 0/1 built, gated)
+
+- **Status:** accepted (design + Phase-0/1 reference data & gate diagnostic built on branch
+  `worktree-income-placement-refdata-gate`, pushed to the fork as backup, **not merged**); the model
+  change (L1/L2) is **gated** on a server Phase-0 measurement — not yet on `main`.
+- **Decision:** the spatial income geography of `popsim_mid` must emerge from WHICH real MiD donor
+  households PopulationSim places where — an `economic_status` × Kreis control (target = **MiD H4
+  status-by-Kreis**) with a within-(Kreis,status) reconciliation of the income LEVEL to INKAR via the
+  real class-internal donor income spread — and the post-hoc `income_kreis_control` EUR overwrite is
+  bypassed (flag `placement_income`, default-ON, OFF byte-identical). Scope **deliberately excludes**
+  SAE/Fay-Herriot/Bayes-fusion/net-wealth/FDZ: a direct per-Kreis target exists (H4) and the population
+  is donor-based, so Raking/IPF suffices. A sub-Kreis wealth surface (LSN income-tax + BORIS
+  Bodenrichtwerte + Zensus Wohnfläche + SGB-II, dasymetric, mean-preserving), validated against KBA
+  EV/Gemeinde, revisits the rejected ADR-0045 with a Gemeinde anchor + a validation path.
+- **Why:** measured on `output_bs_100pct_allfeat_popsim` — the income NUMBER already tracks INKAR
+  (Spearman 1.00 per-capita) but is INERT: `economic_status` composition is nearly flat across Kreise
+  (CV 0.033), and car ownership follows tenure/household-size (ρ 0.98 / 0.91), not income (ρ 0.14) — so
+  the post-hoc overwrite carries no coherent household bundle. The MiD regional study gives a direct
+  per-Kreis status target the synthetic does not reproduce (Salzgitter synthetic `hoch 33 / very_low 12`
+  vs H4 `hoch 42 / very_low 5`). User requirement (2026-07-04): placement-based, not post-hoc ("a scaled
+  number afterwards is useless"). Also established this session: the trip-purpose / mobility "gaps"
+  (work +21pp, leisure −20pp, mobility −8pp) are **metric artifacts** (eqasim `work`=arbeit+dienstlich
+  vs W1 arbeit; `freizeit` folds W_ZWECK-10 into `other`; unweighted synthetic vs P_GEW-weighted P36_1),
+  not synthesis errors — the twin reproduces the MiD purpose mix to ~3pp on a consistent taxonomy.
+- **Consequences:** Phase 0/1 built + tested (H4 extraction+CSV, `status_by_kreis` loader, Phase-0
+  `placement_income_gate` diagnostic; 11 tests) and pushed as backup. Issues **#108** (hub) / **#109**
+  (Phase 2 L1/L2) / **#110** (Phase 3 L3); PROJECT_BACKLOG 3.1 now points to #108. The model change is
+  NOT yet built — gated on the server Phase-0 gate (with the overwrite off, does the existing placement
+  already reproduce per-Kreis income + status, and is the donor pool sufficient?).
+- **Evidence:** branch `worktree-income-placement-refdata-gate` @ `2d8e8aa` (origin fork, no PR); spec
+  `docs/superpowers/specs/2026-07-04-income-weighted-household-placement-design.md`; plan
+  `docs/superpowers/plans/2026-07-04-income-placement-reference-data-and-gate.md`; diagnostics
+  `scratchpad/{phase0_income_geo,mobility_by_age,purpose_decomp}.py`; MiD H4 (infas 7555 PDF, page 20);
+  issues #108/#109/#110; memory `project-income-placement-control`, `feedback-validate-metric-apples-to-apples`.
+
+### ADR-0056 — Full-pool PopulationSim runs use integer sub-balance seeds + numba (measured 40x; float-seed default is a full-pool trap)
+
+> Numbering: 0055 is taken on `origin/main` (SrV ZENSUS-weight fix); this ADR takes 0056.
+
+- **Date:** 2026-07-10 · **Status:** accepted (quality A/B vs float reference PENDING)
+- **Problem:** the kreis5 100% popsim campaign (full national donor pool, `stratify_regiostar=false` —
+  deliberate quality decision, per-stratum donors fit worse) projected ~8 days for 30 batches. Measured
+  root cause (batch_000 live logs + pipeline.h5 inspection + shape-exact micro-benchmark on felix): with
+  upstream default `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: true`, parent-level float weights are strictly
+  positive for EVERY household in EVERY zone (observed down to 1e-248), so the sub-balancer's
+  `weight > 0` filter never drops rows — every 1km cell (~148 households) balanced all 53,459 signature
+  rows x 1000 iterations (~741 s/parent; python balancer benchmarked at 741 ms/iter at exactly this
+  shape). The balancer can never converge-exit at fine geographies (requires `max_gamma_dif < 1e-5`,
+  observed 7–190), so the 1000-iteration ceiling is always paid in full.
+- **Decision:** for full-pool runs, the popsim settings file
+  (`settings_tier3_mef100_intseed_numba.yaml` on felix, referenced by `config_run_kreis5_100pct.yml`) sets
+  (1) `SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` — sub-balances seed from the parent's INTEGER weights
+  (mean 143 positive rows per 1km parent instead of 53,459; upstream's own code comment supports this:
+  "using balanced_weight slows down simul and doesn't improve results"), and
+  (2) `USE_NUMBA: true` — measured 2.4x/iteration, numerically identical to 1e-13, `cache=True`.
+  Iteration capping (`MAX_BALANCE_ITERATIONS_SIMULTANEOUS`) was considered and REJECTED: the importance
+  schedule decays every 100 iterations, so truncation changes results; unnecessary after lever 1.
+- **Measured evidence (A/B, batch_000 copy, felix, 2026-07-10):** full batch in **1,958 s (32.6 min)** vs
+  the float production run's >14 h unfinished (~22 h projected) = ~40x. 1km household totals fit EXACTLY
+  in both regimes (93 zones, 13,767 HH, zero deviation). The stopped float run was relaunched 14:11 with
+  the new settings; ~28 min/batch confirmed in production.
+- **Honest limitation:** integer seeds change the donor-selection cascade, i.e. results differ from the
+  float regime. The fine-grained quality comparison (100m composition, donor diversity, person marginals)
+  runs against a dedicated float reference batch (`bench_batch_float` on felix, done ~2026-07-11); until
+  that comparison is clean, the speedup is operational, not scientifically validated.
+- **Related:** per-batch `pipeline.h5` is ~15 GB at full pool (12.1 GB = dense `ZENSUS100m_weights`,
+  ~215 M rows, 99.9% zeros) and verified dead after batch completion — interim server watcher deletes it;
+  permanent stage.py flag tracked as **issue #153** (fix shipped 2026-07-10 as **PR #155**, default-ON
+  `cleanup_batch_pipeline`; merge pending the felix pytest after the run). Two verified upstream bugs (populationsim v0.10.0):
+  missing `MIN_GAMMA` clamp in the python single balancer (NaN risk; `balancers.py:84-89`) and hardcoded
+  `converged=True` on no-progress exits (`balancers.py:111-112`) — both bypassed by `USE_NUMBA: true`.
+- **Evidence:** felix `~/wt-kreis-run/logs/run_kreis5.log` (stop/relaunch markers), A/B outputs
+  `~/bench_batch_int/output/timing_log.csv`, benchmark `~/bench_balancer.py`, watcher
+  `~/cleanup_batch_h5.log`; issue #153; memory `project-popsim-fullpool-perf-fix`.
+
+---
+
+### ADR-0055 — SrV 2023 aggregates use ZENSUS expansion weights; standard weights are stratum-internal
+
+- **Date:** 2026-07-08
+- **Status:** accepted (fix branch `fix/srv-zensus-weights`, follows the PR #113 data layer)
+- **Context:** The first release of the committed SrV 2023 reference tables (PR #113) weighted all
+  aggregation levels with `GEWICHT_HH` / `GEWICHT_P` ("fuer Standardauswertungen"). A post-merge weight
+  audit (systematic debugging) established empirically that these weights are normalized to mean ~1
+  WITHIN each `ST_CODE` stratum (per-stratum means 0.99-1.26) while the true expansion factor varies
+  18x-70x across strata, and additionally varies per municipality within the two
+  kleinstaedtisch-doerflich strata (ratio CV 0.89-1.33). Any aggregate crossing strata — the per-Kreis
+  rows for GF/GS/HE/PE/WF, all totals, the age bands — therefore weighted strata by SAMPLE share
+  instead of population share (e.g. Helmstedt: 66% sample share vs 36% population share for stratum 98).
+- **Decision:** All SrV aggregate extractions use `GEWICHT_*_ZENSUS` ("fuer stadtuebergreifende
+  Auswertungen", full expansion to Zensus 2022, per municipality) for EVERY aggregation level. All
+  committed SrV tables, the blended `target2026_*` tables and all test pins were regenerated against
+  independently pre-computed reference values (never pinned to the pipeline's own output).
+- **Impact:** cars up to 4.7 pp (Gifhorn cars_1), bikes up to 3.0 pp, ebike-HH up to -2.6 pp (WF),
+  region-total car-free 11.8% -> 13.6%; Braunschweig + Salzgitter rows invariant (single-stratum);
+  blend sources shifted (economic_status BS `mid_arbitrated` -> `blend`, HE/WF/GS -> `srv_arbitrated`).
+  Part of the earlier MiD-vs-SrV "divergence" for HE/WF was this weighting artifact; the Goslar
+  car-ownership divergence persists.
+- **Evidence:** weight audit scripts (session scratchpad `srv_weight_audit{,2}.py`,
+  `srv_zensus_reference_values.py`); codebook weight definitions (SrV2023_Datenkodierung_SciUse.xlsx);
+  memory `project-srv2023-braunschweig-data`.
+
+---
+
+### ADR-0057 — Secondary distance distributions rescue MiD coded-time Wege from `wegmin_imp1` instead of dropping them
+
+- **Status:** accepted 2026-07-12 (PR #165, commit `f212d73`; Closes #160). Changes scientific outputs.
+- **Context:** `braunschweig/popsim/distance_distributions.py` built the empirical secondary distance /
+  travel-time distributions (consumed by `CustomDistanceSampler` for all shop/leisure/other/education
+  secondary-activity placement) from MiD Wege clock times `W_SZS/W_SZM/W_AZS/W_AZM`. Those columns carry
+  the MiD design codes 99 ("keine Angabe", ~1%) and 701 ("bei regelmaessigen beruflichen Wegen nicht
+  erhoben" — rbW summary records of regular commuters, ~10%). `mid_time_seconds` NaN'd `travel_time` for
+  these rows and the `travel_time >= 0` filter then silently removed all of them BEFORE any logging — a
+  ~11% loss that is NOT missing-at-random (systematically commuters), biasing the distributions away from
+  the commuter travel profile. This is the same MiD-code pathology for which the sibling consumer
+  `trips.py` already has the dedicated `time_imputation.py` Stage-A cascade; that fix had never been
+  ported to this second, independent consumer.
+- **Decision:** reconstruct `travel_time` for coded-time rows from `wegmin_imp1` (MiD's own imputed
+  per-trip duration in minutes; `* 60` -> seconds), the exact same primary source Stage A trusts for a
+  trip's OWN duration. Only rows whose `wegmin_imp1` is itself coded/missing
+  (`>= WEGMIN_CODE_THRESHOLD`, reused from `time_imputation.py`) are dropped. An explicit
+  observed / imputed / dropped rate is logged every run, with a `CODED_TIME_DROP_WARN_RATE = 2%`
+  escalation (per the mandatory no-silent-fallback rule).
+- **Rejected alternative:** reusing the full `time_imputation.impute_chain_times` cascade — it
+  reconstructs whole per-person day schedules (RNG-seeded anchor/duration pools) because `trips.py` needs
+  valid absolute clock times; this aggregate stage only needs a DURATION as a binning key, so the
+  lighter, fully-deterministic `wegmin_imp1` reuse is preferred (no RNG, no chain machinery).
+- **Consequence:** future `popsim_mid` runs using the by-purpose / shop / leisure / other secondary
+  distance distributions change quantitatively (commuter-relevant trips now included). The running kreis5
+  100% run produced its secondary-distance stage with the old code — a re-run decision is tracked in
+  PROJECT_BACKLOG.md. Part of the same wave: **#161** (fleet Gemeinde-tilt name normalization),
+  **#162** (canonical `EMPLOYED_TAET` in weekend matching), **#163** (14 fallback-transparency items) —
+  those are bug/instrumentation fixes, not separate architectural decisions.
+- **Evidence:** PR #165; commit `f212d73`; `braunschweig/popsim/distance_distributions.py` Step 3b +
+  module docstring; `braunschweig/popsim/time_imputation.py`; memory `project-audit-wave-2026-07-12`.
+
+---
+
+### ADR-0058 — employment_status Phase-0 measured: uncalibrated P_BKAT donor already fits MiD P9 well; do NOT build the Phase-1 soft control
+
+- **Status:** accepted 2026-07-13. Measurement only — no code/output change. Supersedes the
+  "Phase 1 conditional on Phase-0" clause in the employment_status feature (PR #168 MERGED).
+- **Context:** `employment_status` (7-class MiD-P9 taxonomy, derived in `assembly.build_persons`
+  from the MiD `P_BKAT` donor column) was shipped deliberately as Phase 0 = MEASURE FIRST, no
+  calibration. The open question was whether to add a Phase-1 per-Kreis SOFT popsim control on the
+  collapsed robust classes (vollzeit / teilzeit / marginal+azubi / not). That decision was made
+  conditional on how well the UNCALIBRATED attribute already matches the independent MiD 2023 P9
+  reference (`eqasim-data/data/braunschweig/mid/mid2023_P9.csv`, "Personen ab 14 Jahre"). NB:
+  `employment_status` is never raked/steered to P9, so this is genuine INDEPENDENT validation, not
+  a fit check.
+- **Decision:** the Phase-0 fit is already good, so **Phase 1 (soft control) is NOT built** — in
+  line with the project's measure-before-calibrating / anti-overfitting principle. Measured on the
+  existing kreis5 100% population (8 ZGB Kreise, 1,124,108 persons, age 14+), reusing the real
+  validation code (`controls.build_registry` -> `control_validation.evaluate_all` ->
+  `quality_assessment.assess`): **SRMSE 0.194, mean |Δ| 1.88 pp, grade "good", 100% of the 56
+  Kreis×class cells within 10 pp, 92.9% within 5 pp, r² 0.979.** Region-wide class deltas are all
+  small; the only notable ones are `in_ausbildung` +1.7 pp (3.6% vs 1.9%) and `vollzeit` +1.6 pp,
+  with `geringfuegig` -1.2 pp and `nicht_erwerbstaetig` -1.2 pp. A soft control would mostly only
+  move `in_ausbildung`, which is better addressed at the source (P_BKAT code 6 vs the P9
+  in_ausbildung definition / age base) than by raking.
+- **How measured (honesty caveats):** reused the cached kreis5 balancing (verified: single process,
+  no populationsim workers, no signature purge — the 60 batches were reused, no ~4.5 h re-balance).
+  The employment_status column was regenerated by force-recomputing `braunschweig.popsim.stage`
+  (a trivial source-comment bump, since synpp `get_stage_hash` only hashes the stage module, not
+  the `assembly.py`/`attributes.py` helpers). The measurement was computed DIRECTLY off the cached
+  `popsim.stage` persons frame (Kreis = home-cell `KREIS`, equivalent to the homes.gpkg spatial join
+  `run_population_validation` uses), skipping the irrelevant secondary/work location chainsolvers and
+  MATSim — employment_status is a pure person attribute consumed by neither. This population predates
+  **#170** (Azubi employment_target fix, MERGED 2026-07-13) and the GEO_KREIS zfill fix, so the
+  canonical number should be re-confirmed on the next full-main run.
+- **Consequence / open points:** (1) the definitive employment_status validation drops out of the
+  next full "everything on main" 100% run (via `analysis_suite` population_validation) — re-confirm
+  the fit and whether #170 changed the `in_ausbildung` skew; (2) **#167** (SPC_BY_P_BKAT misreads
+  P_BKAT as Berufskategorie) remains OPEN and dormant — a separate P_BKAT-meaning bug.
+- **Evidence:** measurement script `measure_empstatus.py` (scratchpad; reuses committed validation
+  code); MiD reference `mid2023_P9.csv`; PR #168 (feature); memory
+  `project-employment-status-and-pbkat-bugs`.
+
+### ADR-0059 — Large-HH (6+) validation gap is donor-bound, not weight-fixable; SrV rejected as a donor supplement
+
+- **Status:** accepted 2026-07-13. Diagnostic session — no code/output change. Refines the
+  standing "household composition is donor-bound" note (§ backlog, ADR-0056) with concrete numbers
+  and a specific rejected option.
+- **Context:** the `household_size` validation control on the newest synthesis (**kreis5 100% run**,
+  2026-07-10, controls export 2026-07-12, `output_bs_100pct_allfeat_popsim_kreis5`) still shows the
+  6+ class under target: **2.92% of persons vs Zensus-2022 reference 4.75% = 61.5% of reference,
+  Δ -1.83 pp** — the one material outlier. The 5-person gap is now essentially closed (96.5%, was
+  88.5% in the 06-30 export). Question raised: can we (a) weight the 6+ control harder, and/or
+  (b) enrich the donor pool with SrV 2023 households to close it?
+- **Decision — (a) importance is exhausted:** the kreis5 run already used importance profile
+  `optimized_2026_06_30`, in which the 6+ control (`6_Personen_und_mehr_..._ZENSUS100m`) carries
+  **importance 2000** (4× the size-1-5 controls at 500) with `max_expansion_factor: 100`, and 6+
+  still hits only 61.5%. This empirically confirms the gap is **donor-bound, not weight-fixable**:
+  raising importance further only makes the balancer sacrifice the well-fit controls (age×sex, HH
+  total) for a target the seed's fixed person-bundles cannot express. Do NOT raise `six` further.
+- **Decision — (b) SrV rejected as a donor supplement:** we DO hold SrV 2023 record-level microdata
+  (`eqasim-data/data/braunschweig/srv/srv2023_raw/` — Haushalte/Personen/Wege.csv + SPSS + codebook),
+  so it is technically feasible. But **SrV Braunschweig+RGB has only 63 six-plus households = 0.78%**
+  of 8,106 — the SAME rarity as the MiD full-pool seed (1,661 distinct 6+ = 0.76%). Large HH are
+  ~1% of the real population; every general-population survey mirrors that scarcity, so SrV adds no
+  large-HH depth (~+4% distinct records at identical share). Three further costs: (1) **circularity**
+  — SrV is already our per-Kreis TARGET source (ADR-0055 MiD=donor / SrV=targets); SrV-as-donor would
+  fit SrV to SrV and destroy validation independence; (2) **schema harmonization** — the donor supplies
+  person attributes AND trip chains, and SrV uses different variable coding (`V_ANZ_PERS`, `GEWICHT_HH_*`,
+  its own Wege taxonomy) vs MiD (`H_GR`, `H_GEW`, `P_TAET`, `bildung1/2`); (3) different weight base
+  (national MiD vs regional SrV). ADR-0056 also found the full national pool fits better than
+  regional/per-stratum donors. SrV's genuine value stays where it is: per-Kreis targets and a local
+  trip/mobility source — not the donor.
+- **Candidate lever (UNVERIFIED, deferred):** the plausible mechanism is that 6+ is controlled at
+  ZENSUS100m, where per-cell targets are tiny (~0.3-0.4 HH) and integerization rounds them to 0 across
+  thousands of cells, "crumbling away" the rare class. Controlling 6+ at a COARSER geography
+  (1km / Kreis) would give integer-friendly targets. **Not yet verified** whether PopulationSim
+  integerizes at 100m regardless of control geography (which would blunt the fix) — must be checked
+  before any implementation. Tracked under #99 (regional-correct popsim); no issue opened yet
+  (verify-first).
+- **Evidence:** kreis5 controls `output_bs_100pct_allfeat_popsim_kreis5/analysis/population_validation/`
+  (on felix); seed 6+ count from `popsim_work_allfeat_opt/batch_000/data/seed_households.csv`; SrV 6+
+  count from `SrV2023_Haushalte.csv` (`V_ANZ_PERS`); importance in the run's `controls.csv`;
+  `control_spec.py` IMPORTANCE_PROFILES; ADR-0055 (SrV=targets), ADR-0056 (full-pool > per-stratum);
+  memory `project-large-hh-6plus-donor-bound`.
+
+---
+
+### ADR-0060 — Correct the in_ausbildung over-representation with an SrV+MiD per-Kreis employment_status control (14+)
+
+- **Status:** accepted 2026-07-13/14. PR #173 (Closes #172, MERGED). Changes scientific outputs (flag default-on;
+  OFF byte-identical). Follows ADR-0058 (which measured the attribute and deferred a Phase-1 control); this
+  ADR builds a control for the ONE class that materially deviated (in_ausbildung), not the whole taxonomy.
+- **Context:** synthetic `employment_status = in_ausbildung` is ~1.9x over-represented (3.6% vs the regional
+  truth ~1.9%). Root cause (issue #172): NOT an age-structure or reference artifact — two independent regional
+  references agree (MiD P9 1.93% and the newly extracted **SrV V_ERW=8** 1.87%). It is a two-stage
+  compositional inflation of Azubis among young employed persons: MiD survey 24% -> completed-donor SEED 32%
+  (member completion) -> balanced 40% (balancer up-weighting). Because `employment_status` was not a control,
+  it floated free of the regional evidence.
+- **Decision:** register `employment_status` as a per-Kreis soft PopulationSim control raked to a blended
+  MiD-P9 + SrV-V_ERW target (`target2026_employment_status_by_kreis.csv`, via `blend_kreis_target` with
+  Dirichlet shrinkage for the thin per-Kreis Azubi cells). The SrV `V_ERW` variable (codeplan
+  `SrV2023_Datenkodierung_SciUse.xlsx`) cleanly separates Schueler(6)/Student(7)/**In Ausbildung(8)**; only
+  V_ERW=8 maps to `in_ausbildung`, apples-to-apples with the P_BKAT-derived seed. The control uses a **14+
+  age universe on BOTH halves** (an `& (persons.HP_ALTER >= 14)` clause in the seed expression AND a
+  14+ per-Kreis total, `person_total_by_kreis_min_age`) so target and realized share the P9/SrV "ab 14 Jahre"
+  base — avoiding the #97-class universe mismatch. `employment_status` is derived onto the popsim seed in both
+  seed paths (load_mid_seed + project_completed_seed), mirroring trip_class.
+- **Consequence / honesty note:** making `employment_status` a steering control means its
+  population_validation control is now `independence="partially_independent"` (its P9 target is one input to
+  the steering blend), NOT `independent` — corrected per the MANDATORY "convergence != independent validation"
+  rule (final-review finding, commit 453cd59). The canonical in_ausbildung re-measure drops out of the next
+  full "everything on main" run.
+- **Rejected alternatives:** (a) fixing member completion alone (the balancer half would remain; a control
+  pins the output regardless); (b) an SrV PT-subscription (`V_OEV_FK`) control — it is a usage-conditional
+  ticket-TYPE, not a population Abo-ownership rate, and MiD is the better source; (c) SrV migration (`V_MIGR`)
+  — a separate feature, dropped.
+- **Evidence:** PR #173; 1-Kreis popsim smoke (Braunschweig, 8 workers): control rakes in_ausbildung
+  **2.98% (unraked kreis5) -> 2.09%** (target 2.01%); commits 400c344..453cd59; spec/plan under
+  `docs/superpowers/`; memory `project-employment-status-and-pbkat-bugs`, `feedback-popsim-smoke-scoping`.
+
+## ADR-0061 — popsim KREIS-control universe hygiene: align per-Kreis targets to the resolved dominant Kreis (#147); complete fallback-transparency (#149/#150) (2026-07-14, PR #175 MERGED)
+
+- **Context (issue #147):** two per-Kreis universe inconsistencies in the popsim_mid KREIS attribute-control
+  path. (sub-1) The per-Kreis household/person totals the category targets partition were grouped by the RAW
+  `ARS[:5]` of each 100 m cell (`stage._kac_kreis`), while the batch KREIS backbone
+  (`folders.build_kreis_control_totals`) and its apportionment key on the RESOLVED dominant Kreis per 1 km
+  parent (`_resolve_parent_kreis`, POP_TOTAL_100m_adj weight). For border cells reassigned to a neighbouring
+  Kreis the two universes disagreed. (sub-2) The Tier-3 `kreis_table` was pre-populated with the full national
+  set (~400 Kreise) and left-merged, carrying rows never read downstream. The original authors deliberately
+  DEFERRED sub-1 "measure-first" (documented in `_resolve_parent_kreis`).
+- **Decision:** align sub-1 now (user-approved). `stage._kac_kreis` uses `mid.resolved_kreis_per_cell`, which
+  builds the identical region-wide crosswalk the backbone uses (resolve_parent_kreis=True, same weight), so the
+  category targets partition the SAME Kreis universe the 100 m backbone constrains. sub-2:
+  `mid.load_kreis_control_table(restrict_to_kreise=)` filters the national table to the run's Kreise at load.
+- **Consequence / honesty note:** sub-1 is a **scientific-output change of ~0.1% of cells** (100% run
+  ~48/43598 border cells) — their household/person target attribution moves onto their parent's dominant
+  Kreis. **Region-wide per-Kreis sums are provably unchanged** (a 1 km parent is atomic to one resolved Kreis).
+  sub-2 is pure hygiene, no output change (dropped rows were never read). The **realized** synthetic effect is
+  not verifiable in unit tests and needs a small resolved-Kreis A/B rerun of one multi-batch Kreis on felix
+  before it is treated as validated (tracked in memory + SESSION_LOG, not as a separate issue by choice).
+- **Also in PR #175 (#149/#150, fallback-transparency, not output-changing):** shared helper
+  `cells.sum_columns_logging_nan` wired into all four multi-column row-sum sites (make the skipna NaN->0
+  suppression observable); `add_aggregated_controls` raises when ALL source columns are missing. **#163**
+  (14-item fallback-transparency wave 2) was found already implemented+merged via PR #165 and verify-closed.
+- **Evidence:** PR #175 (merged, origin/main 5466b74); TDD (`resolved_kreis_per_cell` border-cell + no-border
+  equivalence, `restrict_to_kreise`); senior-reviewer subagent confirmed identical crosswalk params + 1 km
+  atomicity + `resolved ⊆ kreise`; 1108 popsim tests green. Memory `project-popsim-controls-audit-fix`.
+
+## ADR-0062 — popsim: apportion household-level KREIS controls by household share, not population share (#148) (2026-07-14, PR #176 OPEN)
+
+- **Context (issue #148, measure-first DONE):** when a Kreis is split across PopulationSim batches, each batch
+  targets its share of the Kreis marginal. The share was ALWAYS the batch's population share
+  (POP_TOTAL_100m_adj), applied uniformly — including to HOUSEHOLD-level controls (economic_status,
+  number_of_cars, number_of_bicycles, has_ebike). Where persons-per-household varies across a Kreis's batches
+  the household-level targets are mis-apportioned. Measured on the completed 100% run `popsim_work_allfeat_opt`
+  (60 batches, 8 all-multi-batch Kreise): persons-per-household 1.85-2.25 across Kreise; **~5.9% of the region
+  economic_status household total reallocated across the spatial batches within each Kreis** (max 2046 HH in
+  one batch) — MATERIAL, not the originally-hedged "immaterial".
+- **Decision:** apportion household-level KREIS controls by the batch's HOUSEHOLD share
+  (`HH_TOTAL_CENSUS_COLUMN`); keep the population share for person-level controls (employment / education /
+  trip_class). `folders.build_kreis_control_totals` gains `household_apportion_weights` + `household_control_names`
+  (both default None -> byte-identical legacy); `mid.run_popsim_mid` computes the region-wide household total per
+  resolved Kreis (`kreis_total_hh`) when household controls are active, and RAISES if the HH column is absent
+  with household controls active (no silent fall-back to pop share); `stage.py` collects the household-level
+  attribute-control names (`_ctl.level == "household"`).
+- **Consequence / honesty note:** **scientific-output change** to the WITHIN-Kreis spatial distribution of
+  household-level controls (and anything downstream, e.g. income placement #108). **Region-wide sums provably
+  unchanged** (per-batch household shares partition to 1, same machinery as the pop path). The REALIZED effect
+  needs a small hh-share A/B rerun of one multi-batch Kreis on felix (the measured KPI is the target
+  apportionment, an upper-bound proxy).
+- **Evidence:** PR #176 (open; merges origin/main cleanly after resolving the folders.py conflict with PR #175
+  — combined #150 NaN-logging sum + #148 level-aware weights); TDD incl. end-to-end cross-batch sum invariant
+  + raise guard; senior-reviewer subagent found no correctness defects; 1121 popsim tests green. Memory
+  `project-popsim-controls-audit-fix`.
+
+---
+
+## ADR-0063 — Per-Bundesland commute-mode reference for cross-cordon in-commuters (#129) (2026-07-15, PR #180 MERGED)
+
+- **Context:** `braunschweig.data.mikrozensus.reference.build_mode_reference_by_bundesland` (+ committed GENESIS
+  12251-0105/0106 margin CSVs `mid_mode_margin_by_bundesland.csv` / `mid_distance_margin_by_bundesland.csv`) had
+  **zero callers**. Production (`incommuters.execute`) gave every cross-cordon in-commuter the same NATIONAL
+  PT/car split, although a traceable regional reference already existed — a direct instance of the "no invented
+  reference values; use the committed regional reference that exists" rule.
+- **Decision:** select the commute-mode reference **per in-commuter by its origin Bundesland** (first 2 ARS
+  digits via new `bundesland_of_ars` / `BUNDESLAND_BY_ARS2`), built only for the Bundeslaender present among the
+  source Kreise (`source_bundeslaender`); missing Laender fall back to the national reference, logged
+  (WARNING > 5%). New pure helper `assign_fixed_mode_per_agent` (per-agent-reference twin of `assign_fixed_mode`,
+  byte-identical on a homogeneous list). Gated by `cordon_incommuter_mode_reference_by_bundesland` (default ON;
+  OFF byte-identical for the same seed). The two umlaut CSV names are spliced via `chr(0xFC)` so the source
+  stays ASCII while byte-matching the UTF-8 CSV (test-guarded).
+- **Consequence / honesty note:** the realised aggregate effect is **small**. felix 25% run (17,105 in-commuters,
+  seed 1234, mode balancer on): in-commuter PT share 15.28% (national) -> 15.15% (per-Bundesland) = **-0.13 pp**.
+  The issue premise (in-commuters predominantly NDS/ST, PT far below the national blend) did NOT translate into a
+  large shift — the national reference already yields ~15% PT at in-commuter (long) distances. An early
+  single-distance NDS/ST-only hand proxy suggested -2.3 pp; it used invented test reference values and OVERSTATED
+  the effect (superseded; measure, don't assert). Primary coverage IS real: 16/16 source Laender, primary
+  17105/17105 (100%), fallback 0%.
+- **Evidence:** PR #180 (Closes #129, MERGED `2490c37`); RUNS row `incommuter-mode-bundesland-smoke-2026-07-15`;
+  memory `project-incommuter-mode-reference-by-bundesland`, `feedback-no-divergent-branch-against-shared-cache`.
+
+---
+
+## ADR-0064 — Archive MATSim `simulation_output/` into a stable run-named location (#156) (2026-07-15, PR #181 MERGED)
+
+- **Context:** MATSim run results lived ONLY inside synpp hash-named cache dirs
+  (`cache_.../matsim.simulation.run__<hash>.cache/simulation_output/`). Verified semantics (synpp 1.5.1,
+  `pipeline.py:806`): a cache dir is wiped without warning whenever the SAME hash is re-executed, and hash-named
+  dirs are opaque to humans — during the 2026-07-10 server cleanup the only copies of the 100% and 25% MATSim
+  outputs were nearly deleted. The eqasim scenario-export `output_*` dirs do NOT contain the MATSim output
+  (events/plans/ITERS). Flag default-on; OFF byte-identical, and the archive does not modify `simulation_output`
+  itself (no scientific-output change).
+- **Decision:** extend the terminal export stage `matsim.output` to mirror `simulation_output/` from
+  `context.path("matsim.simulation.run")` into a stable `<output_path>/matsim_output/`. Two stdlib helpers in
+  `matsim/output.py`: `mirror_directory_tree` (recreate tree; **hardlink** via `os.link`, **copy fallback** via
+  `shutil.copy2` on `OSError`; rmtree an existing target first) and `archive_simulation_output` (rate logging +
+  provenance + fail-clean). Gated on `run_matsim AND archive_matsim_output` (new flag, default ON).
+- **Fallback transparency (CLAUDE.md):** the hardlink-vs-copy rate is always logged; a 100%-fallback
+  (`hardlink_count == 0`, `file_count > 0`) emits a WARNING (source and target on different volumes -> the
+  zero-extra-disk property was lost). Provenance `ARCHIVE_INFO.json` (mirrors `documentation/meta_output.py`)
+  records `source_hash_dir`, UTC `created`, and file/hardlink/copy counts. If the run produced no output
+  (`file_count == 0`, e.g. a stale/wiped cache) it raises a clear `RuntimeError` naming the source + #156 and
+  leaves no half/empty archive — the exact loss scenario this feature guards against.
+- **Rejected alternatives:** (a) a dedicated `matsim.archive` synpp stage — more wiring, must be added to every
+  config, no benefit; (b) mirroring from inside `matsim.simulation.run` — that stage does not know `output_path`
+  and would mix "run the simulation" with "export/archive". Chose extending `matsim.output` (A).
+- **Testing note:** local `pytest` cannot collect the test module because the repo's namespace `matsim/` package
+  (no `__init__.py`) is shadowed by a system `matsim-tools` install (documented, pre-existing; memory
+  `reference-local-test-env-matsim-shadowing`); all six behaviours were verified via importlib load, formal
+  pytest GREEN + e2e deferred to the server `eqasim` env.
+- **Evidence:** PR #181 (Closes #156, MERGED `f83a81f`); subagent-driven TDD (3 tasks + per-task reviews + opus
+  whole-branch review); memory `project-matsim-output-archive-156`; interim manual hardlink archives on felix
+  under `eqasim-data/matsim_archive/` (2026-07-10).
+
+## ADR-0065 — Sector-aware work-attraction tilt: measured, PARKED (default OFF); two enabling-path bugs fixed (#128) (2026-07-15)
+
+- **Context:** `apply_sector_aware_attraction` (`a0ecee3`, model-improvement item #8) tilts the per-Gemeinde
+  gravity work attraction by establishment density (`n_betriebe`/employee vs the Kreis mean, Kreis totals
+  preserved). Built flag-gated (default OFF), never activated in any config, never recorded in PM docs.
+  Issue #128 asked: A/B-measure, then flip the default or park with an ADR. Original intent (legitimate):
+  equal-headcount Gemeinden with one dominant plant vs many small firms should not commute identically;
+  eqasim-IDF fills this with SIRENE establishment microdata that Braunschweig lacks.
+- **Measurement (2026-07-15, felix `~/wt-128-ab`, gravity-only A/B, private working dir, ZGB-8, only the flag
+  differs; ON arm re-executed exactly 1 stage — all upstream inputs byte-identical):**
+  (1) commute-distance band distribution unchanged (TV 0.003, mean 9.17 -> 9.21 km);
+  (2) per-Gemeinde work inflows vs the OBSERVED SvB-am-Arbeitsort counts: OFF mean within-Kreis TV 0.009
+  (near-exact), ON 0.087 — **9x worse** (LK Gifhorn 0.21; Gifhorn Stadt observed 20,299 -> ON 12,909, -36%).
+  An independent offline run of the same function on the raw XLSX predicted the per-Kreis TVs to ~1%.
+- **Decision: PARK — default stays OFF; no config enables the flag.** The mechanism cannot help by
+  construction: the destination attraction IS an observed per-Gemeinde marginal (GENESIS 13111-01-03-5, SvB am
+  Arbeitsort), the doubly-constrained balancing reproduces it, and the tilt strictly moves the margin away from
+  observed data using a proxy carrying no information about inflow totals (establishment density is
+  definitionally low in large-plant towns -> systematically drains the Kreisstaedte). The structural concern
+  lives on other axes: within-Gemeinde placement is already covered by the building work potentials
+  (PR #15/#16); structure-dependent commute SHAPE would be WZ-sectoral friction (issue #128 "phase 2",
+  deliberately deferred, overfitting risk). Code + tests stay (now runnable and documented as
+  measured-and-rejected); removal was considered and rejected as unnecessary.
+- **Bugs fixed on the enabling path (same PR):** (a) the ON path had NEVER been runnable — the tilt was applied
+  to the raw stage schema `(commune_id, weight)` before the `weight -> employees` rename -> `KeyError:
+  'employees'`; unit tests fed the helper the post-rename schema and stayed green (the CLAUDE.md
+  "test the primary method" failure mode). Fixed via `build_destination_attraction` owning the rename-then-tilt
+  handoff + regression tests on the true stage schema. (b) `braunschweig.data.census.employees` padded 5-digit
+  LANDKREIS aggregate rows to fabricated 8-digit AGS; the codes merge dropped them and the loss accounting
+  reported 26.9% "lost" SvB on the full ZGB-8 scope — above the 25% raise threshold, so **every full-region run
+  would have aborted** (kreis-subset runs stayed under the threshold, hiding it). Now only 5-digit AGS whose
+  padded form is a real Gemeinde in the codes table are treated as kreisfrei; aggregates are excluded and
+  logged (merge loss now 0.00%). Same guard applied to the gemband `n_betriebe` reader.
+- **No scientific-output change:** OFF path byte-identical (tilt) and merge-output identical (aggregates were
+  already dropped, only the accounting/raise changes); the fixes alter behaviour only where the pipeline
+  previously crashed.
+- **Evidence:** issue #128 (measurement comment 2026-07-15); A/B artefacts on felix `~/wt-128-ab`
+  (`ab128_off.log`, `ab128_on.log`, `work_od_off.p`, cache `braunschweig.gravity.model__{47c862d…,b158f62d…}`);
+  contract-test finding in `analysis_suite.py` spun off as #183.
+
+## ADR-0070 — Composed run configs (fixed base + per-scale overlay); int-seed+numba is the only permitted PopulationSim regime (2026-07-22)
+
+- **Status:** accepted 2026-07-22. PR #234 (branch `feature/config-composition-cleanup`; closes #81, #230). Non-breaking: 1-arg `run_synpp.py <config>` byte-unchanged.
+- **Context:** 37 hand-duplicated `config_*.yml`. A merged-#224 100% run was ~20x slow (~9-10h/batch); systematic-debugging (`timing_log.csv`) found `sub_balancing.geography=ZENSUS100m` = 8.5h/batch, balancer `converged False` at every 1km parent. Root cause = the run config's `settings_path` pointed at the NON-numba `settings_tier3_mef100.yaml` (the float-seed trap of ADR-0056/#155), NOT the #224 participation controls (KREIS controls = 13s same timing_log). The ADR-0056 perf fix lived only in `settings_tier3_mef100_intseed_numba.yaml`, which no committed config referenced. Configs had also drifted (100% one had silently lost the smart-'other'-potential block).
+- **Decision:** one composed source of truth. `braunschweig/config_compose.py` deep-merges a thin per-scale overlay into a fixed `configs/base_bs.yml`, logging every override (`[config-merge] ...`; no silent merges). `scripts/run_synpp.py` gains a 2-arg form that writes the resolved doc to `<working_directory>/.merged_config.yml` and runs THAT (provenance, cache_share, synpp, export all see one config). Overlays carry ONLY per-scale knobs; the base carries every feature flag + `settings_path` = `settings_tier3_mef100_intseed_numba.yaml`. int-seed+numba (`SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true` + `max_expansion_factor: 100`) is hereby the ONLY permitted PopulationSim regime; float-seed settings must never be wired into a run config again. Guarded by `tests/test_configs_composed.py` (asserts intseed_numba per scale AND that `base_bs.yml` itself is free of per-scale keys — anti-drift lock). 9 fixtures -> `configs/fixtures/`; 15 ballast configs removed (recoverable from history); 13 server-local tarred.
+- **Why (measured):** felix synthesis smoke (`base_bs.yml + test.yml`, 1 Kreis, real data) — the batch `settings.yaml` PopulationSim ACTUALLY used carries `FLOAT_SEED_WEIGHTS: false` + `USE_NUMBA: true` + `mef 100` (int-seed at runtime), integerizer status OPTIMAL / "3 of 1907 off-round" (converges cleanly, NOT the float-seed non-convergence), 6 KREIS controls (incl. #224) logged active. Whole-branch review (opus) clean; feature suites green.
+- **#229 (double-fixed, resolved in the merge):** this branch (Task 3) and a parallel session (PR #231) both fixed #229. The `f2e713d` merge adopted PR #231's cleaner approach — `pt2matsim`/`eqasim` `configure()` call `git.configure()`/`maven.configure()`/`java.configure()` (delegate, so declares cannot drift) instead of duplicating the option list. #229 already CLOSED via #231; the contract test `tests/test_runtime_config_declares.py` still guards it.
+- **Behaviour changes (intended, documented):** all scales move to int-seed+numba / mef100 (1%/25% were float-seed, mef 30); the composed 100% config regains every base feature block; all scale overlays run the identical analysis stage list and `matsim_last_iteration: 0` (production iterations set per run). One-time: the runtime `configure()` change re-hashes the `pt2matsim`/`eqasim` stages -> one-off jar/clone rebuild.
+- **Open:** the matsim (`test_matsim.yml`, #229 runtime) smoke is DEFERRED pending a local `eqasim-java-bs` update (`eqasim_source_path` `../eqasim-java-bs` breaks from a `~/wt/` worktree). Complements ADR-0056 (makes its int-seed+numba regime mandatory-by-wiring). Memories `project-config-composition-cleanup`, `project-popsim-fullpool-perf-fix`.
+
+## ADR-0069 — placement_income (L2 of #108): donor keeps its own MiD income, per-Kreis INKAR relativity approached by signature-preserving donor reallocation; default ON, redraw+tilt overridden (2026-07-18)
+
+- **Status:** accepted 2026-07-18. New feature flag `braunschweig.population.popsim.placement_income`
+  default ON (project convention); OFF byte-identical to the prior path. Branch
+  `worktree-placement-income-l2` (off `origin/main` @ `1e907c8`), 12 commits, PR pending.
+- **Context:** L1 (#109, PR #112) made the economic-STATUS geography placement-based, but the income
+  NUMBER was still produced post-hoc by `income_kreis_control` (a fresh per-Kreis draw calibrated to
+  INKAR). That draw hits the per-Kreis mean but breaks household coherence: the income a household
+  carries is no longer ITS donor's income, so income no longer tracks the same household's real MiD
+  car ownership / diary. Consumer audit (2026-07-17): the EUR value is behaviourally consumed by
+  exactly one channel — MATSim mode choice (`BraunschweigCar/PtUtilityEstimator`,
+  `(income/ref)^lambdaCostIncome`, lambda IDF-transferred, provisional); the vehicle fleet consumes
+  `economic_status` (not the EUR); everything else is descriptive.
+- **Decision:** when the flag is ON, each synthetic household keeps its OWN MiD income (a seeded
+  within-own-bracket draw), and the per-Kreis INKAR relativity is APPROACHED by permuting which real
+  donors sit in which Kreis — strictly inside exact control-signature groups (donors with identical
+  contribution to every active control are interchangeable), after the PopulationSim merge and before
+  build_persons. ON overrides both `income_kreis_control` (redraw skipped) AND `income_spatial_tilt`
+  (skipped — it would rescale the own income); both overrides are logged (no silent precedence). A
+  `controls_source != "catalog"` + placement-ON combination fail-fasts (signatures are catalog-derived).
+- **Why (measured — 2-Kreis OFF/ON gate, 03102+03103, 1%, report `cache_gate_l2_on/gate_placement_income_report.md`):**
+  (1) INVARIANTS hold exactly on real output — economic_status×Kreis, number_of_cars×Kreis,
+  economic_status×CELL, HH-count×CELL, age×sex_raw×CELL, age×CELL, and per-donor clone counts all
+  max|Δ|=0 OFF vs ON. (2) COHERENCE income↔number_of_cars within (Kreis, economic_status) rises from
+  Spearman **0.174 (redraw) to 0.364 (placement), Δ+0.19** — the designed benefit. (3) ATTAINMENT is an
+  HONEST TRADE: the redraw hits the per-Kreis INKAR mean near-exactly (+0.8%/+0.5%); placement only
+  approaches it (03102 +4.7%, 03103 −3.1%, both correct direction), because the continuous λ solve does
+  not converge (`converged=False`) and 52.1% of slots sit in singleton signature groups with no
+  reallocation freedom. `converged` refers ONLY to the λ solve, never phrased as "calibrated to INKAR"
+  (convergence ≠ validation).
+- **Consequence / limits:** placement buys household coherence (and a coherent mode-choice cost
+  sensitivity) at the cost of exact per-Kreis-mean fit. The no-freedom share (here 52%) bounds the
+  achievable movement and is reported per run (diag CSV + a >90% WARNING). One harmless non-determinism:
+  reallocation reorders persons, perturbing the SEEDED binary-sex imputation of the ~977 diverse/no-answer
+  (HP_SEX 3/9) persons — not a control (100m sex controls count HP_SEX==1/2 only; age×sex_raw is Δ0).
+- **Out of scope (separate):** the B' clone-count-reallocation escalation, signature relaxation, a local
+  λ/reference re-estimation (Task B1), and #110 (sub-Kreis wealth surface). The payoff at the sub-Kreis
+  (Gemeinde) level is measured next by G1/G2 (LSN Z9170111), which double as the #110 gate.
+- **Operational notes (local popsim_mid gate runs):** the default-ON per-Kreis attribute controls emit a
+  KREIS geography, so a KREIS-enabled PopulationSim settings file is required (the local popsimprep
+  `settings.yaml` is a stale 4-level file; the server `settings_tier3_mef100_intseed_numba.yaml` was
+  mirrored). Full-donor-pool batches need ~25–30 GB each — on a 68 GB/28 GB-free box, `max_cells=1000`
+  + `num_workers=1` fit; `max_cells=3000` OOM'd. The expensive batch solve is independent of
+  `placement_income`, so OFF's batch outputs were copied into the ON work_dir (all 7 batches skipped) —
+  the solve ran once for both legs.
+- **Evidence:** spec `docs/superpowers/specs/2026-07-17-placement-income-l2-design.md`; plan
+  `docs/superpowers/plans/2026-07-17-placement-income-l2.md`; `braunschweig/popsim/placement_income.py`;
+  `braunschweig/analysis/population_validation/placement_income_gate.py`; gate report above; ADR-0069
+  extends the #108 design after ADR (L1) status control; memory `project-income-placement-control`,
+  `project-income-spatial-tilt`.
+
+---
+
+## ADR-0067 — TAZ sub-zonal work-location choice stays permanently OFF (superseded in practice by building potentials); TAZ issues closed (2026-07-16)
+
+- **Status:** accepted 2026-07-16. No code or output change (the feature was already flag-gated default OFF and
+  OFF in all four real-data configs). Extends ADR-0050 (which had parked the friction re-fit and left the
+  "validate flag-ON at scale" step open); this ADR closes that step out as won't-do. Number is 0067 to avoid
+  colliding with ADR-0066 (svb_wohn) already on `origin/main`.
+- **Context:** TAZ work-location choice (VISUM Verkehrszellen, issue #79) was built to give the WORK gravity a
+  sub-commune resolution so intra-city commutes in the kreisfreie Staedte (BS/SZ/WOB) do not collapse to the
+  commune centroid. Phase 1+2 merged (PR #85) but the flag was never enabled in any production run; Phase 3
+  friction was built and parked (ADR-0050). In the meantime the building-level activity potentials (PR #16, ON
+  in all production configs) took over the same job from the other side: they place work at real OSM/ALKIS
+  buildings weighted by `potential_work`, so the within-commune work location — and thus the intra-city commute
+  distance — is already resolved below the commune without TAZ.
+- **Decision:** keep TAZ **permanently OFF**. Do NOT run the outstanding same-commit 25%/100% A/B; the decision
+  is that the building potentials are the intra-city resolution mechanism and TAZ is not pursued further. The
+  TAZ code stays merged on `main` behind `taz_work_location_choice: false` (OFF byte-identical, zero runtime
+  cost) and is reactivatable if a future measurement ever shows a real intra-city gap.
+- **Why (measured / traceable):** (1) the mechanisms are complementary but the building potentials already
+  cover the intra-city gap TAZ targeted — gravity sets *which zone* (with distance decay), potentials set
+  *which building* within it (attraction mass), and with potentials ON the work building is a real scattered
+  location, not the centroid. (2) On the current 100% `popsim_mid` population the aggregate commute-distance
+  distribution (flag-OFF, building-potentials ON, ZGB-resident) already fits MiD P13 (EMD ~0.054, below the
+  0.08 band; ADR-0050). (3) The only signal *for* TAZ was a 1% A/B (EMD 0.057 -> 0.033) that is noisy and
+  cross-commit; a clean same-commit re-measurement was judged not worth it against an already-passing model.
+  (4) The RVB VISUM Verkehrszellen are proprietary / local-only / non-publishable — a reproducibility liability
+  that the open OSM/ALKIS building-potentials path avoids.
+- **Consequence:** four TAZ issues closed on `TUBS-IVS/eqasim-bs` — **#79** completed (feature merged, kept
+  flag-gated OFF), **#83 / #95 / #80** not planned (scale validation, validation map, open-data pseudo-zone
+  alternative). The parked branch `feature/taz-gravity-calibration` remains as backup only.
+- **Evidence:** ADR-0050; `docs/features/taz-work-location.md`; `docs/features/building-potentials.md`;
+  issues #79/#80/#83/#95 (closed 2026-07-16); memory `project-taz-subzonal-work-location`,
+  `project-building-activity-potentials`.
+
+---
+
+## ADR-0066 — VerBindungen sub-Kreis work-OD reference integrated (#124 P1); svb_wohn production mass measured, default OFF (#132) (2026-07-16, PR #189/#190 MERGED)
+
+- **Context:** Below the Kreis pair (BA Pendleratlas anchor) the model's work-OD had no ground
+  truth, so neither the sub-Kreis destination choice nor the #132 question (gravity production mass
+  = total population vs. employed residents `svb_wohn`) could be measured. The VerBindungen project
+  (StBA/BMDV FuE 97.421/2019, open data) publishes 2019 commuter OD on Verkehrszellen. PR #189 added
+  the download + loaders + a default-ON validation stage (checks A margin / B conditional-OD /
+  C vintage-drift); PR #190 wired it into the three allfeat server configs.
+- **Measured ZGB geography (live files 2026-07-15):** 44 cells over 129 Gemeinden — Braunschweig
+  split into 2 stadtteil cells, Salzgitter into 3, **Wolfsburg NOT subdivided** (issue #124's
+  "Stadtteil resolution for BS/WOB/SZ" was too optimistic). The reference resolves the between-cell
+  axis WITHIN each Kreis, not city-internal structure. QZM ZGB-internal: 730 relations >= 10,
+  510,095 commuters, intra-cell share 46.9 % (Germany-wide totals match the report exactly:
+  41,030,553). DBF caps `ags_0` at 254 chars -> 34/3,189 cells nationally truncated (0 in ZGB).
+- **Baseline validation of the current 100pct all-features run** (felix `~/wt/verbindungen-ab` @ main,
+  read-only from `cache_bs_100pct_allfeat_popsim`; realised home-cell x work-cell assignment vs the
+  2019 reference, share-based, censoring-aware):
+  - home-cell worker margins (check A) vs BA `Statisch_WO`: SRMSE 0.132, **Pearson r 0.9968** — the
+    popsim + home placement put the right number of workers in the right cells;
+  - conditional work-OD (check B): **weighted TVD 0.137**, band EMD 0.080, censored model share only
+    1.6 % (censoring does not explain the gap); **intra-cell share model 0.4694 vs reference 0.4687**
+    — near-exact;
+  - vintage drift (check C, 2019 QZM vs 2025 Pendleratlas Kreis pairs): **Pearson r 0.9984,
+    max abs share drift 0.0076** — the sub-Kreis structure is essentially stable 2019->2025;
+  - 12.95 % of workers sit outside the ZGB cells (cross-cordon out-commuters), reported not dropped.
+- **#132 A/B (paired, OD-level: Gemeinde gravity + Pendleratlas IPF recomputed offline from the same
+  cached inputs, only the production mass differs; stadtteil cells collapsed to their parent Gemeinde
+  so the Gemeinde-path OD is compared like-for-like; svb_wohn primary 113/118 Gemeinden, 4.2 %
+  Kreis-mean fallback):** weighted TVD **0.1136 (population) -> 0.1137 (svb_wohn)** = +0.0001
+  (no improvement on the primary metric); band EMD -0.0044 and intra-cell share -0.0015 (a whisper
+  closer to the reference). Effect is negligible.
+- **Decision: #132 default stays OFF (`work_production_mass: population`); the flag stays available.**
+  The Kreis-level Pendleratlas IPF is the binding anchor and swamps the production-mass refinement —
+  same outcome pattern as ADR-0065 (#128) and the #129 in-commuter A/B. Flipping the default is not
+  justified by the data; the code + tests stay (measured-and-parked).
+- **Stage-3 calibration gate (whether to promote VerBindungen from validation reference to a
+  sub-Kreis calibration anchor): NOT decided here — deferred to a follow-up issue.** Both gate
+  criteria are technically met (the check-B gap of ~0.11-0.14 TVD is real, not censoring-explained;
+  vintage drift is small, so a 2019 anchor is low-risk), but weighted TVD ~0.14 is already a
+  reasonable doubly-constrained gravity fit and there is **no committed threshold** for "substantial
+  enough to calibrate" (CLAUDE.md: no invented reference values) — so the promote/park call is a
+  team judgment, proposed as an issue rather than auto-taken. If ever built, sub-Kreis OD becomes
+  labelled **fit**, not validated, and independent validation moves to MiD distance distributions.
+- **One real bug surfaced only by this 100pct e2e A/B (not by the unit tests):** `margin_check`
+  received the reference margin as a nullable `Float64` Series (BA counts carry Dominanz NAs), and
+  `np.corrcoef` crashes on a masked-backed Series under the run server's older numpy; the unit tests
+  used plain `float64` fixtures and stayed green. Fixed by materialising the share vectors as plain
+  `float64` before the reduction, with a `Float64`-reference regression test (the CLAUDE.md
+  "test the primary method on representative input" / "e2e smoke over mocked tests" failure mode).
+- **No scientific-output change from the merge:** the validation stage is read-only analysis;
+  #132 default OFF path is byte-identical to the pre-change gravity (verified against the base commit
+  in review).
+- **Evidence:** PR #189 (reference + #132 code), PR #190 (server wiring); A/B artefacts on felix
+  `~/wt/verbindungen-ab/ab_out/` (`realised_100pct/`, `od_ab/{summary_population,summary_svb_wohn,
+  ab_table}.csv`); driver `scripts`-local `ab_driver.py`; run row `verbindungen-ab-2026-07-16` in
+  RUNS.md; memory `project-verbindungen-reference-124-132`.
+
+---
+
+## ADR-0068 — Inner VerBindungen calibration anchor: built, measured, default ON by HUMAN OVERRIDE of the pre-registered gate (#193) (2026-07-17)
+
+- **Context:** #193 built a flag-gated inner calibration level that transfers the VerBindungen 2019
+  within-Kreis-pair ROW-CONDITIONAL destination shares into the calibrated work OD (comparison-zone
+  level, 41 zones; Kreis-pair block totals conserved to 1e-9, asserted; censoring rule A; every
+  fallback counted/logged). The plan's pre-registered decision rule v1 gated the default flip on a
+  held-out CV improvement; the final whole-branch review PROVED that criterion structurally inert
+  for this in-sample anchor (the anchor never touches held-out flows; pinned by
+  `test_heldout_cv_is_inert_by_construction`). Rule v2 (amended 2026-07-17 BEFORE any measurement
+  run) replaced it on the two provably discriminating axes: (i') AO-margin corroboration beyond
+  measured fold noise AND (ii) no P13-by-RS7 EMD regression beyond per-class measured fold noise;
+  P38.2-vs-MiD directional only; the CV retained as a harness-leak detector.
+- **Measured (100pct cache, 2026-07-17, seeds 20260716 + 42 -> gate-identical, seed-stable):**
+  `default_flip_supported = False`. Fit axis (LABELLED FIT) weighted TVD 0.1136 -> 0.0809; leak
+  check PASS (per-fold gap exactly 0.0); (i') AO srmse 0.1300 -> 0.1316 = NEUTRAL within fold noise
+  (~0.003), so the demanded positive corroboration failed; (ii) P13 EMD improved in 5/6 RS7 classes
+  (75: .188->.148, 76: .083->.065, 77: .160->.148, 73: .141->.124), class 72 regressed
+  .1724 -> .1760 beyond its (very tight, 0.0003-0.0006) fold noise; P38.2 vs MiD improved in 6/9
+  regions incl. the 03ZGB aggregate (.2287 -> .2245). Coverage default measured: 30 = 3x censoring
+  bound keeps 205/239 rows (85.8%) and 98.2% of anchorable mass.
+- **Class-72 diagnosis (`scripts/diagnose_anchor_p13.py`, reproduces the verdict EMDs exactly):**
+  the shift is a SMALL SYSTEMATIC SHORTENING spread over all 8 (BS-origin, dest-Kreis) blocks
+  (mean-km shifts -1.7 to -4.3; leave-one-in contributions each <= 0.0006): the 2019 QZM observes
+  BS residents working in NEARER zones within each dest Kreis than gravity predicts. Cross-checked
+  against BOTH reference flavours (user question 2026-07-17): vs the NATIONAL MiD RS7-72 class AND
+  vs the REGIONAL per-Kreis P38.2 tables from the MiD 2023 Braunschweig report -- the three cities
+  also worsen slightly against their own regional references (03101 +0.0019, 03102 +0.0045,
+  03103 +0.0029) while ALL FIVE Landkreise improve (up to -0.0263) and 03ZGB improves; the
+  city-side signals sit inside the thin-n directional range this project itself assigns to the
+  per-Kreis tables. KNOWN LIMITATION of the distance axes as ABSOLUTE measures (user-identified):
+  the holdout compares the INTERNAL ZGB-to-ZGB OD only (the CLI runs before
+  `_append_outbound_flows`), while the MiD references describe ALL commutes of residents incl.
+  out-of-region destinations (~13% cross-cordon per the 2019 QZM), which land disproportionately
+  in the 30km+ bands -- so the pre-existing mid-band gap (model 0.109 vs target 0.191 at 30-50km)
+  is to a substantial degree a STUDY-AREA-TRUNCATION artifact, not purely model misfit
+  (scale-plausible, not decomposed). Both variants share the same truncation, so the A/B DELTAS
+  remain internally consistent; the axes are used as deltas only. The distance axis itself is a
+  detour-scaled Euclidean proxy, identical for both variants.
+- **Decision (HUMAN OVERRIDE, explicitly NOT "gate passed"):** default ON
+  (`braunschweig.gravity.verbindungen_anchor_enabled = True` in both declaring stages). Rationale:
+  evidence judged net-positive (5/6 P13 classes + P38.2 ZGB improve; AO neutral, not worse; the one
+  dissent is tiny, mechanically understood, and points from a national class average toward locally
+  observed 2019 structure); gate v2 judged too strict in hindsight (it demanded positive
+  corroboration on an axis that can legitimately be neutral, and per-class fold noise is an
+  ultra-tight floor for the dominant city class). The pre-registered verdict, both seeds, and this
+  override are recorded verbatim -- the gate was NOT bent post-hoc; it was overridden transparently.
+- **Consequences:** scientific outputs CHANGE for every config that does not set the flag False
+  (work OD destination structure within Kreis pairs; downstream location choice). With the anchor
+  ON, VerBindungen check B is stamped `reference_role=fit` (automatic in the stage; REQUIRED
+  `--reference-role` on the cache runner); independent validation = MiD distance axes. Pipelines
+  now need the verbindungen raw data unless the flag is set False (local raw-data gap: set False
+  locally or restore the drop). Existing synpp caches re-execute gravity + downstream on next run.
+  Artefacts: server `~/wt/verbindungen-anchor/{holdout_out_seed20260716,holdout_out_seed42,diag_p13_72}/`.
+  Follow-up: numbering note -- ADR-0067 (TAZ) lives on main (merged 2026-07-17); this ADR appends as 0068.
+
+## ADR-0071 — eqasim-java 2.2.0 matsim.output made e2e-green: in-commuter time imputation, gzip pin, #229 config (2026-07-23)
+
+- **Status:** Accepted.
+- **Context:** eqasim-java 2.2.0 (MATSim 2026w12, JDK 25) was integrated earlier (PR #208/#211), but
+  `matsim.output` had never run to completion on the new stack. A 1-Kreis (03101) end-to-end run with
+  freight ON surfaced four independent breakages between the pipeline and the 2.2.0 jar.
+- **Decision:**
+  1. **Freight CLI** adapted to the MATSim 2026 `longDistanceFreightGER` application contrib:
+     `--LegMode`->`--legMode`, `--tripType`->`--geographicalTripType`, and an explicit
+     `--subpopulation freight` (the tool now defaults to `longDistanceFreight`, but the whole
+     downstream pipeline -- merge, replanning config, `analysis/freight_filter.py`, injection --
+     keys on `freight`). This fix landed on `main` independently, so PR #239 does not carry it.
+  2. **In-commuter routing:** ~16% of work (and ~2% of education) HTS donors have an untimed return
+     leg -> NaN activity end_time -> MATSim "undefined activity end time". `impute_incommuter_times`
+     fills the missing times from same-subpopulation fully-timed donors using a fixed-seed local
+     `RandomState` -- deterministic, never touches the caller RNG, byte-identical when nothing is
+     missing. Mirrors the established item-non-response imputation in `braunschweig/popsim/missing.py`
+     (impute from comparable respondents) rather than a silent first/last fallback.
+  3. **Compression:** pin `controler.compressionType=gzip`. MATSim 2026 defaults to `zst`, but the
+     pipeline's existence asserts (`matsim.simulation.run`, `matsim.output` archive) and all
+     downstream analysis consume the historical `.gz` names.
+  4. **#229 config contract:** `matsim/output.py` reads `run_matsim` as a declared key (1-arg
+     `context.config("run_matsim")`) in `execute`, matching the synpp per-stage contract (defaults
+     belong in `configure`).
+- **Consequences:** `matsim.output` is 8/8 green on 2.2.0 -- real QSim iteration 0 (SwissRailRaptor
+  PT), 68 output files archived. The Guice/ASM "major version 69" line under JDK 25 was root-caused
+  (via /systematic-debugging) as a NON-FATAL `printInjector` DEBUG diagnostic (caught), not a run
+  blocker. No behavioural validation is implied: this is a wiring/green proof (convergence !=
+  validation). Fixes on PR #239 (rebased clean onto `main`, MERGEABLE). The car/bike control-fit gap
+  (urban-concentrated ~3.6-4.7pp on category shares) is tracked as issue #240 (MiD-informed 1 km
+  disaggregation of the KREIS control). No scientific outputs change for existing runs: imputation is
+  byte-identical when no times are missing; the gzip pin and the config read are behaviour-preserving.
+
+> **Live status note.** This log is the retrospective *why*. For the current state of every feature
+> (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)
+> and `git log`; where this log and those disagree, `CLAUDE.md` and git win.
+
+## ADR-0072 — Escort distance-by-type uses SrV between-type structure on the MiD level (A3, #257) (2026-08-11)
+
+- **Status:** accepted 2026-08-11. Branch `feature/escort-purpose-201` (worktree
+  `.claude/worktrees/feature-escort-purpose-201`, stacks on #201), PR pending.
+  Flag `escort_distance_by_type` defaults False (code); `true` in `configs/base_bs.yml`
+  (features-default-ON convention); OFF path byte-identical (no layer synthesis,
+  no draw-stream change).
+- **Context:** the 5% validation run (`output_bs_5pct_escort`, baseline 2026-08-11)
+  showed the escort trip-length distribution wrong in SHAPE while right in MEAN
+  once `escort_purpose`/`escort_household_link` were wired: <2 km share 25.6 %
+  vs 39-40.8 % reference (MiD W12 / donor legs), band L1 vs W12 27.8 pp. Root
+  cause (systematic-debugging): every escort leg sampled ONE pooled aggregate
+  `escort` distance layer regardless of the drawn destination type, so a Kita
+  drop-off (typically 1-2 km) and a residential escort drew from the same
+  distribution.
+- **Decision: A3** -- keep the distance LEVEL from MiD, take only the between-type
+  STRUCTURE from SrV. Per-type layers are synthesized at runtime
+  (`_synthesize_escort_type_layers` in `secondary_chainsolvers.py`) as deep copies
+  of the MiD-built `escort` layer, each destination type's `values` array scaled
+  by a SrV-derived factor, `factor_c = weighted_median(GIS length | category c) / weighted_median(GIS length | all escort legs)`,
+  computed in `scripts/derive_escort_location_weights.py`.
+  Rejected alternatives: **A2** (full SrV per-type length distributions) -- mixes
+  survey levels (different sample, weights, length variable than the MiD-built
+  layer every other purpose uses); **A1** (alias each type to an existing MiD
+  purpose layer, e.g. `escort_edu_*` -> `education`) -- kept only as the
+  gate-fail pivot, not needed here. The A3-vs-A1 choice was gated on a
+  pre-registered coherence check (spec section 3, see Evidence).
+- **Evidence:** coherence gate PASS (`compute_length_coherence`, comparing SrV
+  `V_ZWECK==12` `GIS_LAENGE_GUELTIG` against MiD `W_ZWECK==6` `wegkm_imp` on nine
+  W12 length bands plus overall medians; ASSUMPTION thresholds L1<=25.0 pp, ratio
+  in [0.67,1.5]): band_l1_pp=9.29 (threshold 25.0), median_ratio=0.929 (in
+  [0.67,1.5]; SrV median 2.73 km vs MiD median 2.94 km). Source: header of the
+  pinned `srv2023_escort_distance_factors.csv` (under
+  `eqasim-data/data/braunschweig/srv/`), generated 2026-08-11 by
+  `scripts/derive_escort_location_weights.py` from `SrV2023_Wege.csv` (GEWICHT_W-weighted,
+  GIS coverage 82.45 % of valid-BHOL escort legs, n_valid=2602) and `MiD2023_Wege.csv`.
+- **Consequences:** per-type distance layers are synthesized inside the chainsolver
+  stage at runtime (no upstream cache invalidation -- the shared `distance_distributions`
+  stage is untouched). Thin categories `edu_university` (n=11) and `shop` (n=13)
+  are neutralized to `factor_applied=1.0` (documented, `min_obs=30`), not silently
+  dropped. Under the pinned draw weights (`DEFAULT_ESCORT_LOCATIONS_WEIGHTS`) and
+  factors (`DEFAULT_ESCORT_DISTANCE_FACTORS`), the expected escort distance level
+  shifts by `sum(w_c x factor_c) = 1.0305` (+3.1 %) versus the pre-A3 pooled layer
+  -- a known, accepted by-construction drift, well inside the +-20 % mean criterion
+  of spec section 7 (documented as an ASSUMPTION in `docs/features/escort-purpose.md`).
+  Missing per-type layers fall back COUNTED and two-level (drawn type -> aggregate
+  `escort` -> `other`); a >20 % per-type fallback rate now raises a loud runtime
+  WARNING (final-review hardening, #257). The 5% validation re-run
+  (`configs/overlays/escort_reuse_5pct.yml`, popsim batches reused) reports the
+  realised shift and the new band-fit metrics against the 2026-08-11 baseline
+  (goals, not hard gates, per spec section 7). Related, explicitly out of scope:
+  #256 (MiD W_ZWECK 13 passive-side semantics) does not affect these factors --
+  they encode between-type structure, not level, and remain valid if #256 later
+  changes the base `escort` layer's composition.
+- **Evidence artefacts:** spec `docs/superpowers/specs/2026-08-11-escort-distance-by-type-design.md`;
+  plan `docs/superpowers/plans/2026-08-11-escort-distance-by-type.md`;
+  `docs/features/escort-purpose.md`.
+
+## ADR-0073 — Escort multi-child anchoring: consecutive-run rule, overflow to draw (#201) (2026-08-12, merged via PR #260)
+
+- **Status:** accepted.
+- **Context:** the Phase-2 household link anchored ALL of an escorter's escort
+  activities at ONE child's school (youngest). Multi-drop chains
+  (home->school->school->work) collapsed onto one point: 674 zero-distance
+  escort legs (~9% of escort legs) in the 5% run of 2026-08-11 (RUNS.md row
+  `escort-AB-5pct-2026-08-11`) -- an artifact, not behaviour. Non-consecutive
+  escort activities (bring ... fetch) at the same location are correct and
+  unaffected.
+- **Decision:** anchor per activity. `build_escort_links` returns ALL linkable
+  household children (youngest first); maximal blocks of consecutive escort
+  activities anchor at DISTINCT children in rank order; separate blocks restart
+  at the youngest (bring/fetch pairs stay at the same schools -- assumption:
+  chains visit children youngest-first, the surveys do not observe within-chain
+  child order); activities beyond the linkable children fall back to the
+  SrV-weighted draw (rate-logged), NEVER cycled back to child 0 (cycling would
+  recreate the artifact for one-child households). `find_assignment_problems`
+  gains an optional per-activity anchor table ((person_id, activity_index) ->
+  geometry) consulted at escort_linked boundaries; the legacy path (no table)
+  is unchanged. No new flag: this corrects a documented assumption INSIDE the
+  unmerged `escort_household_link` feature.
+- **Consequences:** remaining zero-distance escort->escort legs ~= same-school
+  siblings (genuine); anchored/overflow rates are logged by the stage; the
+  follow-up 5% re-run measures the drop in consecutive zero-legs and re-checks
+  the W1/W12 invariants before the PR.
+- **Evidence:** commits `223ff6d` (consecutive-run anchor assignment),
+  `d8b66b9` (per-activity anchor table wiring), `200dcd4` (anchor at distinct
+  children, overflow to draw) on branch `feature/escort-purpose-201`;
+  `docs/features/escort-purpose.md`. The run record
+  `escort-AB-5pct-2026-08-11` (674 zero-distance legs; also cited in the
+  module docstring of `braunschweig/synthesis/locations/escort_links.py`)
+  exists as a pending-commit RUNS.md row in the main checkout as of
+  2026-08-12 and becomes traceable in-repo once that PM-layer commit lands or
+  this branch merges; it is not present in this branch's own committed
+  RUNS.md as of this commit.
+
+## ADR-0074 — MATSim contribs in lockstep via `${matsim.version}`; property bumps are deliberate upgrade rounds; SimWrapper Layer-1 merged with `simwrapper_dashboards` default ON (2026-07-22, java-bs#12 + PR #233/#236; carried over post-#260 from `backup/pm-0d117f7`, where it was numbered ADR-0071 before colliding with origin's 0071)
+
+- **Context:** issue #215 found `--simwrapper` inert on eqasim-java-bs main (the Java Layer-1 lived
+  only on an unmerged pre-2.2.0 branch). Porting it exposed a second, worse problem: the braunschweig
+  pom hard-pinned `org.matsim.contrib:application` to `2025.0-PR3568` while the parent
+  `matsim.version` was `2026.0-2026w12` — the stale pin kept the build green and thereby HID that
+  MATSim 2026 moved `ExtractRelevantFreightTrips` to
+  `org.matsim.application.prepare.longDistanceFreightGER.tripExtraction` and renamed its CLI
+  (`--legMode`, `--geographicalTripType`, new `--subpopulation` defaulting to `longDistanceFreight`
+  instead of hard-coded `freight`).
+- **Decision:** (1) all `org.matsim.contrib` dependencies reference `${matsim.version}` — never a
+  literal copy of its value (artifact existence verified on repo.matsim.org before commit);
+  (2) any bump of `matsim.version` (incl. dependabot, e.g. java-bs#8 → 2027.0) is a deliberate
+  upgrade round with package/CLI verification, never an auto-merge; (3) the pipeline passes
+  `--subpopulation freight` explicitly (downstream merge/replanning/freight_filter/analysis key on
+  `freight`); (4) per the feature-flag policy, `simwrapper_dashboards` defaults ON (#236) —
+  SimWrapperModule is analysis-only, `false` restores a byte-identical output directory.
+- **Consequences:** the jar change invalidates the freight-extraction synpp cache → one-time
+  re-extraction (~4×45 min); freshly extracted plans are NOT guaranteed byte-identical to the
+  2025-build outputs (upstream tool changed: person tagging, internal refactor) — treat pre/post
+  freight comparisons accordingly. Every MATSim run now writes SimWrapper dashboards into its
+  output directory; first real SimWrapperModule execution is still pending (build-verified only).
+  Verification recorded in PR java-bs#12 (full reactor exit 0, braunschweig tests 4/4, `--help`
+  CLI contract) and PR #233 (freight suites 19/19).
+
+## ADR-0075 — SrV location types (#262): crosswalk A2, formula-based errand supply, mixed-pool mean normalization, escapes after guards (2026-08-13, PR #263 pending)
+
+- **Context:** issue #262 transfers the escort feature's SrV-grounded location refinement to
+  leisure/other secondary activities. Three design decisions were contested during brainstorming
+  and two plan defects surfaced during execution; all are recorded here with their committed
+  sources (the feature doc `docs/features/secondary-location-types.md`, the pinned CSVs under
+  `eqasim-data/data/braunschweig/srv/` and `.../buildings/`, and PR #263).
+- **Decision:** (1) **crosswalk A2** — MiD W_ZWD subtypes remain the per-leg DISTANCE labels
+  (layers unchanged); a per-leg SrV `V_ZWECK` category, drawn from pinned
+  P(type | E_HVM_5 mode, euclidean-equivalent distance band) AFTER desired-distance sampling,
+  owns PLACEMENT (rejected: A1 travel-time conditioning — weaker type↔distance coupling;
+  SrV-primary draw — discards donor information; unified taxonomy — forces re-estimating all
+  distance layers). (2) **Errand supply via the spec formula** — `min(potential_generic, cap) ×
+  class-membership` per category with errand-class buildings appended as candidates; the plan's
+  original pot_other masking was a defect (sec_b_* rows carry pot_other=0.0 by construction,
+  errand-class buildings were excluded by the keep-filter → structurally zero supply).
+  (3) **Mixed-pool mean normalization** — landuse-point potentials in pools shared with buildings
+  (leisure_culture/sports) are scaled to the category's building-potential mean (ASSUMPTION:
+  an average landuse point ranks like an average building; needed because the linear
+  attr_transform feeds raw magnitudes into the combined score); pure pools (leisure_outdoor)
+  stay raw-area. (4) **External-centroid category escapes AFTER the seven-pool supply guards** —
+  escapes restore long-distance reach for category legs but would structurally neuter
+  `check_category_supply`/`check_visit_pool_supply` if applied first (found by scoped re-review,
+  fixed with a mutation-proof ordering test). (5) The spec's original per-leg two-level candidate
+  fallback chain is SUPERSEDED by the guard+escape architecture (final-review finding).
+- **Consequences:** 5% A/B (RUNS.md `srv262-AB-5pct-2026-08-12`): leisure placements move
+  buildings 67.7→34.7%, landuse points 0→31.9%; errands to typed buildings 0→75.5%; all 9 drawn
+  shares within 1.8 pp of the pinned SrV references; purpose mix byte-identical. Known limits,
+  documented not hidden: realized distance medians nearly unchanged (top_n desired-distance
+  inertness, pre-existing backlog item); MiD-vs-SrV distance level gap (~1.5–2×) present in both
+  runs (pre-existing); `leisure_visit` boundary clip 10.8% (residential-only pool, no external
+  escape by design — now measurable via the restored per-category clip diagnostic).
+
+## ADR-0076 — Oversized synpp stage modules become stage PACKAGES with a `validate()` source token (2026-08-13, PR #268 MERGED)
+
+- **Context:** `braunschweig/synthesis/locations/secondary_chainsolvers.py` had grown to 5327
+  lines (~70 functions, 14 sections) — far outside the small-focused-modules convention and
+  hard to review. Naive extraction into helper modules would have armed the known synpp cache
+  trap: `get_stage_hash` = md5 over ONLY the stage module's own source, so helper-only changes
+  silently reuse stale cached stage output on partial reruns.
+- **Decision:** (1) Convert the stage file into a **package with the same synpp module path**
+  (`secondary_chainsolvers/__init__.py` = stage; `inspect.getsource` of a package yields its
+  `__init__`), keeping config aliases and every external import working via a full re-export
+  facade. (2) Split sections into 13 single-responsibility submodules (largest 800 lines),
+  one pure-move commit each, `git diff --color-moved` reviewed. (3) Close the cache trap with
+  the synpp 1.6.2 module-level **`validate(context)` hook** (token stored with the cached
+  output and compared per run, synpp `pipeline.py` 779–782): both `secondary_chainsolvers`
+  and `secondary_candidates` return md5 over all `_HELPER_MODULES` sources, so helper-only
+  edits recompute exactly like stage-file edits. (4) Mutable worker globals (`_WORKER_*`)
+  are delegated live via module-level `__getattr__` (PEP 562) — a static re-export would
+  freeze the import-time value. (5) `execute()` decomposed ~600→~360 lines into named steps
+  with identical call and RNG-draw order. This is the template for the remaining oversized
+  modules (issue #267).
+- **Consequences:** Behavior-preserving (server suite on the PR head: 3585 passed / 30
+  skipped / 0 failed; local full-suite failure sets identical to main, deltas explained by
+  worktree data parity). The changed stage hash devalidates the chainsolver stage +
+  downstream once on the next partial rerun; old cache entries stay keyed under the old
+  hash, so a rollback restores validity. One source-inspection test moved with its block
+  (guarded-writer invariant unchanged).
+
+> **Live status note.** This log is the retrospective *why*. For the current state of every feature
+> (merged / flag-on / infra-only / open PR), always defer to [PROJECT_STATUS.md](../PROJECT_STATUS.md)
+> and `git log`; where this log and those disagree, `CLAUDE.md` and git win.

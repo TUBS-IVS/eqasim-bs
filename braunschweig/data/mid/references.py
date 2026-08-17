@@ -69,9 +69,12 @@ def _csv_path(context, table: str) -> str:
 
 
 def _load_table(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    df["ars5"] = df["ars5"].astype(str)
-    df["kreis"] = df["kreis"].astype(str)
+    # dtype=str at READ time: pandas' int64 inference would strip the leading
+    # zero of a purely numeric ars5 column irreversibly ("03101" -> 3101), and
+    # a post-hoc .astype(str) would only re-stringify the already-wrong "3101".
+    # Today the "03ZGB" Gesamt row happens to force object dtype, but nothing
+    # enforces that row's presence, so the padding must not depend on it.
+    df = pd.read_csv(path, dtype={"ars5": str, "kreis": str})
     return df
 
 

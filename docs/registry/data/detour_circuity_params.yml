@@ -1,0 +1,30 @@
+dataset: detour_circuity_params
+title: Detour/circuity parameters c(d) per network mode
+inventory_id: K2
+provider: derived in-repo (OSM graph measurement)
+vintage: null
+geography: null
+crs: null
+roles:
+- calibration_target
+used_by: []
+acquisition:
+  method: committed
+  source: scripts/calibrate_detour_circuity.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/calibration/detour_circuity_params.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Measured immaterial vs the constant 1.3 (ADR-0042); kept as opt-in infra.

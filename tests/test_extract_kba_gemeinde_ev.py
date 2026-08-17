@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 
 import scripts.extract_kba_fleet as ex
-from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde
+from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde_name
 
 
 # Inline fixture CSV (utf-8-sig encoded in the tmp_path write below).
@@ -91,11 +91,15 @@ def test_required_columns_present(kba_gemeinde_ev_csv):
     assert expected.issubset(set(df.columns))
 
 
-def test_gemeinde_norm_matches_normalize_gemeinde(kba_gemeinde_ev_csv):
-    """gemeinde_norm must equal normalize_gemeinde(gemeinde) for every row."""
+def test_gemeinde_norm_matches_normalize_gemeinde_name(kba_gemeinde_ev_csv):
+    """gemeinde_norm must equal normalize_gemeinde_name(gemeinde) for every row.
+
+    The extractor and the population side MUST use the identical normaliser --
+    otherwise the tilt join silently degrades to the Kreis fallback.
+    """
     df = ex.extract_gemeinde_ev(kba_gemeinde_ev_csv)
     for _, row in df.iterrows():
-        expected_norm = normalize_gemeinde(row["gemeinde"])
+        expected_norm = normalize_gemeinde_name(row["gemeinde"])
         assert row["gemeinde_norm"] == expected_norm, (
             f"gemeinde_norm mismatch for {row['gemeinde']!r}: "
             f"got {row['gemeinde_norm']!r}, expected {expected_norm!r}"

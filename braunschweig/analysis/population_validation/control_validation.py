@@ -50,6 +50,17 @@ def evaluate_control(control, frames, geo, data_path: str) -> pd.DataFrame:
     # RIGHT-join so every target category is evaluated -- filling synthetic_count
     # = 0 where the synthetic population produced none (the key validation case
     # the previous inner join silently dropped).
+    # No-silent-fallback rule: target geos WITHOUT any synthetic data are
+    # excluded from the deviation (their per-geo shares would be 0/0). Log
+    # them: an unexpectedly missing commune means an empty synthetic area,
+    # which must be visible, not silently absent from the score.
+    dropped_geos = sorted(set(target["geo_id"]) - set(totals.index))
+    if dropped_geos:
+        LOGGER.warning(
+            "control %s: %d target geo(s) carry NO synthetic data and are "
+            "excluded from the deviation; examples: %s",
+            control.name, len(dropped_geos), dropped_geos[:3],
+        )
     target = target[target["geo_id"].isin(totals.index)]
     merged = realized.merge(target, on=["geo_id", "category"], how="right")
     merged["synthetic_count"] = merged["synthetic_count"].fillna(0).astype(int)
@@ -68,8 +79,11 @@ def evaluate_control(control, frames, geo, data_path: str) -> pd.DataFrame:
     merged["control"] = control.name
     merged["family"] = control.family
     merged["geography"] = control.geography
+    # fit_check / partially_independent / independent -- carried through to
+    # quality_summary so fit checks are never graded as independent validation.
+    merged["independence"] = getattr(control, "independence", "independent")
     return merged[[
-        "control", "family", "geography", "geo_id", "category",
+        "control", "family", "geography", "independence", "geo_id", "category",
         "synthetic_count", "synthetic_pct", "target_pct", "target_count",
         "delta_pp", "pct_diff",
     ]]

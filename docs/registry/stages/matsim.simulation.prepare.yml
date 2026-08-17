@@ -1,0 +1,29 @@
+stage: matsim.simulation.prepare
+title: MATSim run preparation
+layer: matsim
+description: Prepares the MATSim run (config, freight injection, urban parking, subpopulations)
+  via braunschweig.matsim.simulation.prepare.
+lineage:
+  type: overridden
+  upstream: matsim.simulation.prepare
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- matsim/simulation/prepare.py
+- braunschweig/matsim/simulation/prepare.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.matsim.simulation.prepare
+  popsim_open: braunschweig.matsim.simulation.prepare
+  simple_ipf_open: braunschweig.matsim.simulation.prepare
+features:
+- cordon_network_ring
+- freight_assumptions
+- mode_choice
+decisions:
+- ADR-0030
+- ADR-0039

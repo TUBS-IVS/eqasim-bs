@@ -570,6 +570,74 @@ def test_build_rda_candidate_index_preserves_candidate_order():
 
 
 # ---------------------------------------------------------------------------
+# Issue #201 spec amendment: escort fallback pool must be any-type, not
+# unplaceable. The LEGACY fallback frame (``_df_secondary_fallback`` above)
+# predates issue #201 and never carries an ``offers_escort`` column; a
+# purpose whose offer column is absent must get the FULL candidate set (an
+# all-True mask -- "any-type pool"), not be omitted / left with zero
+# candidates (docs/superpowers/specs/2026-07-24-escort-purpose-design.md,
+# section 3, scope amendment).
+# ---------------------------------------------------------------------------
+
+def test_build_rda_candidate_index_missing_offer_column_uses_any_type_pool():
+    """A purpose with no offers_<purpose> column on the fallback frame
+    (currently only "escort") gets an any-type pool -- the FULL candidate
+    set -- instead of being omitted from the index. Purposes that DO carry
+    their offer column (shop/leisure/other here) stay unaffected, i.e. still
+    filtered by that column exactly as before."""
+    points = [geo.Point(float(i), float(i)) for i in range(4)]
+    df_secondary = gpd.GeoDataFrame(
+        {
+            "location_id": ["F0", "F1", "F2", "F3"],
+            "offers_shop":    [True, False, True, False],
+            "offers_leisure": [False, True, False, True],
+            "offers_other":   [True, True, False, False],
+            # Deliberately no "offers_escort" column: the LEGACY frame
+            # predates issue #201 and never carries one.
+        },
+        geometry=points,
+        crs="EPSG:25832",
+    )
+    assert "offers_escort" not in df_secondary.columns
+
+    index = sc._build_rda_candidate_index(df_secondary)
+
+    assert set(index.data.keys()) == sc.SECONDARY_PURPOSES
+    # Any-type pool: the escort pool is the full candidate set, in order.
+    assert list(index.data["escort"]["identifiers"]) == list(df_secondary["location_id"].values)
+    assert len(index.data["escort"]["identifiers"]) == len(df_secondary)
+    expected_coords = np.column_stack((
+        df_secondary.geometry.x.values, df_secondary.geometry.y.values,
+    ))
+    assert np.array_equal(index.data["escort"]["locations"], expected_coords)
+    # Unaffected: purposes with an offer column still respect it exactly.
+    assert list(index.data["shop"]["identifiers"]) == ["F0", "F2"]
+    assert list(index.data["leisure"]["identifiers"]) == ["F1", "F3"]
+    assert list(index.data["other"]["identifiers"]) == ["F0", "F1"]
+
+
+def test_fallback_place_can_place_escort_problem_without_offers_escort_column():
+    """``_fallback_place`` must place an escort-purpose leg from the
+    any-type pool even though the LEGACY frame has no offers_escort column,
+    instead of silently skipping it (the pre-fix 0-candidates behaviour)."""
+    df_secondary = _df_secondary_fallback()
+    assert "offers_escort" not in df_secondary.columns
+    problems = [{
+        "person_id": 900, "activity_index": 3, "size": 1,
+        "purposes": ["escort"],
+    }]
+    random = np.random.RandomState(123)
+
+    rows, conv = sc._fallback_place(problems, [0], df_secondary, random, "EPSG:25832")
+
+    assert len(rows) == 1, "the escort leg must be placed, not skipped"
+    person_id, activity_index, location_id, point = rows[0]
+    assert (person_id, activity_index) == (900, 3)
+    assert location_id in set(df_secondary["location_id"].values)
+    assert conv == [(True, 1)]
+
+
+# ---------------------------------------------------------------------------
 # FIX 2.3: _resample_distributions must not mutate the (synpp-cached) input.
 # ---------------------------------------------------------------------------
 
@@ -913,7 +981,7 @@ def test_build_plans_df_columnar_matches_reference():
         problems, distributions, 2.0, np.random.RandomState(5))
     # OFF path (shop_subtype_decider=None): the 4th return is the subtype stats
     # (all zero) and the frame must stay value-identical to the legacy build.
-    new_df, new_meta, new_unbounded, subtype_stats = sc._build_plans_df(
+    new_df, new_meta, new_unbounded, subtype_stats, _desired_by_category = sc._build_plans_df(
         problems, distributions, 2.0, np.random.RandomState(5))
 
     assert ref_meta == new_meta
@@ -924,10 +992,30 @@ def test_build_plans_df_columnar_matches_reference():
     assert subtype_stats == {}
 
 
+def test_build_plans_df_srv_location_decider_off_matches_reference():
+    """Issue #262 (Task 8) OFF-path golden: with ``srv_location_decider=None``
+    (the flag OFF), the plans frame -- placement activities, sampled distances,
+    dtypes and row order -- must stay byte-identical to the pre-feature
+    reference build, and no SrV counter may be allocated."""
+    problems = _bounded_problems()
+    distributions = _flat_distribution()
+
+    ref_df, ref_meta, ref_unbounded = _build_plans_df_reference(
+        problems, distributions, 2.0, np.random.RandomState(5))
+    off_df, off_meta, off_unbounded, subtype_stats, _desired_by_category = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(5),
+        srv_location_decider=None)
+
+    assert ref_meta == off_meta
+    assert ref_unbounded == off_unbounded
+    pd.testing.assert_frame_equal(off_df, ref_df)
+    assert subtype_stats == {}
+
+
 def test_build_plans_df_empty_keeps_legacy_shape():
     # All problems unbounded -> legacy from_records([]) frame (no columns).
     problems = [p for p in _bounded_problems() if p["origin"] is None]
-    new_df, meta, unbounded, _subtype_stats = sc._build_plans_df(
+    new_df, meta, unbounded, _subtype_stats, _desired_by_category = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(0))
     assert len(new_df) == 0 and len(new_df.columns) == 0
     assert meta == [] and unbounded == list(range(len(problems)))
@@ -939,7 +1027,7 @@ def test_build_plans_df_empty_keeps_legacy_shape():
 
 def test_person_row_ranges_match_groupby_subframes():
     problems = _bounded_problems()
-    plans_df, _, _, _ = sc._build_plans_df(
+    plans_df, _, _, _, _ = sc._build_plans_df(
         problems, _flat_distribution(), 2.0, np.random.RandomState(5))
     plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
@@ -1087,7 +1175,7 @@ def test_build_plans_df_subtype_decider_tags_shop_legs_and_uses_subtype_distance
                "shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(1),
         shop_subtype_decider=lambda mode, tt: "shop_daily",
     )
@@ -1104,7 +1192,7 @@ def test_build_plans_df_subtype_distance_layer_fallback_counted():
     layered = {"shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    df, meta, unbounded, stats = sc._build_plans_df(
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(1),
         shop_subtype_decider=lambda mode, tt: "shop_non_daily",
     )
@@ -1146,7 +1234,7 @@ def test_carla_accepts_shop_subtype_activities_smoke():
                "shop": _flat_distribution(),
                "leisure": _flat_distribution(),
                "other": _flat_distribution()}
-    plans_df, meta, unbounded, stats = sc._build_plans_df(
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
         _shop_problem(), layered, 2.0, np.random.RandomState(3),
         shop_subtype_decider=lambda mode, tt: "shop_daily",
     )

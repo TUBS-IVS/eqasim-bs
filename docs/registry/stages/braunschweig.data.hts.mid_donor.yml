@@ -1,0 +1,23 @@
+stage: braunschweig.data.hts.mid_donor
+title: MiD 2023 donor build
+layer: population
+description: Loads and repairs the restricted MiD 2023 B1 microdata into the popsim_mid donor
+  pool (household/person/Wege validation, missing-data policy, pseudonymisation).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/hts/mid_donor.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- mid2023_b1
+features:
+- popsim_method
+decisions:
+- ADR-0002
+- ADR-0057

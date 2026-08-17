@@ -32,9 +32,13 @@ from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon.plans import (
-    assign_fixed_mode, build_incommuter_activities, build_incommuter_locations,
-    build_incommuter_trips, extract_commute_times, sample_donors,
-    select_commuter_donors, straight_line_distance_km)
+    assign_fixed_mode, assign_fixed_mode_per_agent, build_incommuter_activities,
+    build_incommuter_locations, build_incommuter_trips, extract_commute_times,
+    impute_incommuter_times,
+    sample_donors, select_commuter_donors, straight_line_distance_km)
+# Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
+# mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
+from braunschweig.data.mikrozensus.reference import bundesland_of_ars
 # NOTE: braunschweig.data.cordon.pt_reachability imports RAIL_LIKE_MODES from this
 # module (incommuters), which creates a circular dependency if imported at module level.
 # weight_entry_stations and sample_pt_station_per_agent are therefore imported LOCALLY
@@ -66,6 +70,14 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
     has_pt_subscription=False, pt_subscription_type="fahre_nie",
     high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
+    # In-commuters live outside the ZGB cordon, so the MiD-derived
+    # ``housing_tenure`` completeness attribute (synthesise_housing_tenure,
+    # braunschweig.synthesis.population.enriched) is not applicable to them.
+    # Without an explicit default, ``concat_frame``'s reindex to the resident
+    # columns fills NaN for this column, and the MATSim writer's ``str(NaN)``
+    # then emits the literal string "nan" as the housingTenure attribute
+    # value. "unknown" documents the gap explicitly instead.
+    housing_tenure="unknown",
 )
 
 
@@ -260,6 +272,32 @@ def build_pt_entry_stops(stops, routes, kreise, zgb_kreise):
         rows, columns=["source_ars5", "stop_id", "x", "y", "n_zgb_routes", "is_rail"])
 
 
+def assemble_incommuter_core_frames(person_ids, home_x, home_y, mid_x, mid_y,
+                                    mid_location_ids, depart_home_s, arrive_mid_s,
+                                    depart_mid_s, arrive_home_s, modes,
+                                    crs, middle_purpose="work"):
+    """Build the shared Home->MIDDLE->Home core frames (trips, activities,
+    locations) for an in-commuter subpopulation. ``middle_purpose`` is "work" for
+    SvB commuters and "education" for students. ``mid_location_ids`` are the unique
+    per-agent middle-activity facility ids. Returns dict[trips, activities,
+    locations]; ``trips['mode']`` is the per-agent mode repeated over the 2 legs."""
+    # Complete any item-nonresponse in the donor timings BEFORE building trips + activities
+    # so both frames share the same finite times -- a non-final activity without an end time
+    # makes MATSim's PlanRouter abort ("undefined activity end time"). See impute_incommuter_times.
+    depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s = impute_incommuter_times(
+        depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s, middle_purpose=middle_purpose)
+    trips = build_incommuter_trips(person_ids, depart_home_s, arrive_mid_s,
+                                   depart_mid_s, arrive_home_s,
+                                   middle_purpose=middle_purpose)
+    trips["mode"] = np.repeat(np.asarray(modes), 2)
+    activities = build_incommuter_activities(person_ids, depart_home_s, arrive_mid_s,
+                                             depart_mid_s, arrive_home_s,
+                                             middle_purpose=middle_purpose)
+    locations = build_incommuter_locations(person_ids, home_x, home_y, mid_x, mid_y,
+                                           mid_location_ids, crs)
+    return {"trips": trips, "activities": activities, "locations": locations}
+
+
 def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             zgb_work, mode_reference, hts_persons,
                             hts_trips, person_col, n_residents, n_resident_households,
@@ -271,7 +309,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             inkar_income=None, data_path=None,
                             real_origin=False, gemeinden=None,
                             zgb_polygon=None, source_buffer_m=45000.0,
-                            mode_balance=False):
+                            mode_balance=False,
+                            mode_reference_by_bundesland=None):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -333,6 +372,17 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     if the residual > 0 (rail access too scarce to fully restore the target).
     """
     inbound = select_inbound_flows(flows, zgb_kreise, in_ring_kreise=set(assignment["ars5"]))
+    # OD validation target for the per-run cordon analysis (#134): the full-population
+    # BA inbound SvB flow per external source Kreis, direction "ein". Derived from the
+    # SAME select_inbound_flows frame the agents are expanded from, so the downstream
+    # realized-vs-target check (od_deviation_vs_target) is a consistency / coverage
+    # check rather than an independent validation. Schema [ars5, direction, n_target].
+    od_target = (
+        inbound.groupby("orig_ars", as_index=False)["flow"].sum()
+        .rename(columns={"orig_ars": "ars5", "flow": "n_target"})
+    )
+    od_target["direction"] = "ein"
+    od_target = od_target[["ars5", "direction", "n_target"]]
     agents = expand_to_agents(inbound, sampling_rate)
     n = len(agents)
     if n == 0:
@@ -359,9 +409,43 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # cordon are negligible, so the reference is restricted to ``commute_modes`` (the
     # dropped probability mass is redistributed proportionally; see restrict_to_modes).
     dist_km = straight_line_distance_km(gate_x, gate_y, work_x, work_y)
-    restricted_reference = restrict_to_modes(mode_reference, allowed=commute_modes)
+    restricted_national = restrict_to_modes(mode_reference, allowed=commute_modes)
     band_fn = lambda d: route_distance_band(d, detour_factor=detour_factor, edges=band_edges)
-    modes_mikro = list(assign_fixed_mode(dist_km, restricted_reference, band_fn, rng))
+
+    # Per-agent restricted mode reference (#129).  Default (mode_reference_by_bundesland
+    # is None): every agent uses the single national reference and the region-neutral
+    # assign_fixed_mode is called -> byte-identical to the pre-#129 behaviour.  When a
+    # per-Bundesland reference dict is supplied, each agent is assigned the restricted
+    # reference of its origin Bundesland (first 2 ARS digits), falling back to the
+    # national reference (observably, logged) for any Bundesland absent from the dict.
+    if mode_reference_by_bundesland is None:
+        restricted_reference = restricted_national
+        agent_references = None
+        modes_mikro = list(assign_fixed_mode(dist_km, restricted_reference, band_fn, rng))
+    else:
+        restricted_by_bl = {
+            bl: restrict_to_modes(ref, allowed=commute_modes)
+            for bl, ref in mode_reference_by_bundesland.items()
+        }
+        agent_bl = [bundesland_of_ars(a) for a in orig_ars]
+        agent_references = [
+            restricted_by_bl.get(bl, restricted_national) for bl in agent_bl
+        ]
+        n_fallback = sum(1 for bl in agent_bl if bl not in restricted_by_bl)
+        if n:
+            share = 100.0 * n_fallback / n
+            level = "WARNING: " if share > 5.0 else ""
+            print(
+                f"[braunschweig.incommuters] {level}per-Bundesland mode reference: "
+                f"primary {n - n_fallback}/{n} ({100.0 - share:.1f}%), "
+                f"national fallback {n_fallback} ({share:.1f}%) in-commuters had no "
+                f"per-Bundesland reference for their origin Land -> national blend. A "
+                f"high rate means a systematic ARS-prefix vs Bundesland-name key "
+                f"mismatch.",
+                flush=True,
+            )
+        modes_mikro = list(assign_fixed_mode_per_agent(
+            dist_km, agent_references, band_fn, rng))
 
     # 3a) Mode balancer (flag-gated, default OFF via mode_balance=False).
     # When ON: pass Mikrozensus modes through balance_incommuter_modes so the global PT
@@ -392,10 +476,12 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         # Per-agent reachability: True iff source Kreis has a station.
         can_board_pt = np.array([str(a) in _rail_kreise for a in orig_ars], dtype=bool)
 
-        # Per-agent PT propensity: P(pt | distance band) from the restricted reference.
+        # Per-agent PT propensity: P(pt | distance band) from the agent's restricted
+        # reference (per-Bundesland when active, else the single national reference).
         pt_propensity = np.array([
-            restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
-            for d in dist_km
+            (agent_references[i] if agent_references is not None
+             else restricted_reference).get(band_fn(d), {}).get("pt", 0.0)
+            for i, d in enumerate(dist_km)
         ], dtype=float)
 
         modes_balanced, _bal_stats = balance_incommuter_modes(
@@ -565,21 +651,20 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         donors, hts_trips, person_col, dist_km, home_to_gate_km,
         gate_speed_kmh, detour_factor)
 
-    trips = build_incommuter_trips(person_ids, depart_home, arrive_work, depart_work, arrive_home)
-    trips["mode"] = np.repeat(np.asarray(modes), 2)
     # Home stays a normal "home" activity here. The eqasim scenario cutter converts
     # it to an "outside" activity (its location is at the gate / beyond the cordon),
     # which is the native point where outside activities are created -- creating them
     # pre-cut would leave RunPreparation's LinkAssignment without a facility.
-    activities = build_incommuter_activities(person_ids, depart_home, arrive_work,
-                                             depart_work, arrive_home)
     # Each in-commuter workplace gets a unique facility id so it never collides with a
     # resident work facility; the facilities-writer override registers it. Home keeps
     # the placeholder id (-1); the population writer references home_<household_id>,
     # which the facilities override also registers.
-    work_facility_ids = [f"ic_work_{int(pid)}" for pid in person_ids]
-    locations = build_incommuter_locations(person_ids, home_x, home_y, work_x, work_y,
-                                           work_facility_ids, zgb_work.crs)
+    core = assemble_incommuter_core_frames(
+        person_ids, home_x, home_y, work_x, work_y,
+        [f"ic_work_{int(pid)}" for pid in person_ids],
+        depart_home, arrive_work, depart_work, arrive_home, modes,
+        zgb_work.crs, middle_purpose="work")
+    trips, activities, locations = core["trips"], core["activities"], core["locations"]
 
     # Per-agent monthly household income (EUR) from the origin-Kreis INKAR level,
     # replacing the legacy hardcoded constant. Falls back to the regional mean (logged)
@@ -661,8 +746,9 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # the expected outcome. Expressed as a [direction, mode, share_pct_target]
     # frame consumed by write_cordon_validation's modal_split_deviation.
     _pt_target_shares = np.array([
-        restricted_reference.get(band_fn(d), {}).get("pt", 0.0)
-        for d in dist_km
+        (agent_references[i] if agent_references is not None
+         else restricted_reference).get(band_fn(d), {}).get("pt", 0.0)
+        for i, d in enumerate(dist_km)
     ], dtype=float)
     _pt_target_share_pct = float(100.0 * _pt_target_shares.mean()) if n > 0 else 0.0
     _car_target_share_pct = 100.0 - _pt_target_share_pct
@@ -674,7 +760,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     return dict(persons=persons, trips=trips, activities=activities,
                 locations=locations, vehicles=vehicles,
                 vehicle_types=vehicle_types, households=households,
-                validation=validation, mode_target=mode_target)
+                validation=validation, mode_target=mode_target,
+                od_target=od_target)
 
 
 def _sample_workplaces(dest_ars, zgb_work, rng):
@@ -911,8 +998,14 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
     # sample_fleet returns a 3-tuple (df_spec, df_types, validation_summary) under
     # consistency_v2 (default True) and the legacy 2-tuple otherwise; handle both
     # robustly (mirrors braunschweig.synthesis.vehicles.cars.household).
+    #
+    # population_label: with the all-Kreise 46251 tables (ADR-0081) an in-commuter
+    # now finds its REAL home-Kreis fuel/euro mix, so this block is no longer
+    # expected at ~100% national fallback -- the label keeps its fallback-rate log
+    # distinguishable from the residents' one.
     _fleet_result = fleet.sample_fleet(
-        df_cars, data_path, random_seed=fleet_seed)
+        df_cars, data_path, random_seed=fleet_seed,
+        population_label="in-commuters (origin outside ZGB)")
     if len(_fleet_result) == 3:
         df_spec, df_vehicle_types, _ = _fleet_result
     else:
@@ -1000,7 +1093,8 @@ def _empty_frames(crs):
         households=pd.DataFrame(columns=["household_id", "person_id"]),
         validation=pd.DataFrame(columns=["ars5", "direction", "mode", "entry_kind",
                                          "entry_x", "entry_y", "gate_id"]),
-        mode_target=pd.DataFrame(columns=["direction", "mode", "share_pct_target"]))
+        mode_target=pd.DataFrame(columns=["direction", "mode", "share_pct_target"]),
+        od_target=pd.DataFrame(columns=["ars5", "direction", "n_target"]))
 
 
 def configure(context):
@@ -1044,6 +1138,13 @@ def configure(context):
     # Default True: the feature is active by default.  Set to False to reproduce the
     # legacy lossy PT->car reassignment (byte-identical for same rng seed).
     context.config("cordon_incommuter_mode_balance", True)
+    # Per-Bundesland in-commuter mode reference (#129).  When True, each in-commuter
+    # draws its commute mode from its origin Bundesland's Mikrozensus reference
+    # (GENESIS 12251-0105/0106) instead of one national blend; origin Laender missing
+    # from the margin CSVs fall back to the national reference (logged).  Default True:
+    # the traceable regional reference is used by default.  Set to False to reproduce
+    # the single-national-reference behaviour (byte-identical for the same seed).
+    context.config("cordon_incommuter_mode_reference_by_bundesland", True)
     # Declared unconditionally (independent of real_origin) so execute() can verify the
     # pre-clipped osm/cordon ring was built with the configured source buffer
     # (verify_clip_signature) -- a stale clip would silently change the road extent.
@@ -1062,7 +1163,9 @@ def configure(context):
     # provide, so the population-agnostic aliased dependency is correct.
     context.stage("synthesis.population.enriched")  # RAW, for n_residents
     context.stage("braunschweig.data.inkar.household_income")  # origin-Kreis income level
-    context.stage("data.hts.selected", alias="hts")
+    # German MiD donor (not ENTD): in-commuter trip TIMING comes from German
+    # behaviour. See braunschweig.data.hts.mid_donor + the design spec.
+    context.stage("braunschweig.data.hts.mid_donor", alias="hts")
     if context.config("cordon_incommuter_real_origin"):
         # ZGB polygon for in-ring test + VG250 config for external Gemeinden loading.
         context.stage("data.spatial.municipalities")
@@ -1092,7 +1195,9 @@ def execute(context):
         float(context.config("cordon_network_source_buffer_m")),
     )
 
-    from braunschweig.data.mikrozensus.reference import load_commute_mode_by_distance
+    from braunschweig.data.mikrozensus.reference import (
+        build_mode_reference_by_bundesland, load_commute_mode_by_distance,
+        source_bundeslaender)
 
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
     residents = context.stage("synthesis.population.enriched")
@@ -1121,8 +1226,31 @@ def execute(context):
             flush=True,
         )
 
+    # Resolve the BA-Pendler flows once (reused for the OD-target frame inside
+    # build_incommuter_frames and to derive the source Bundeslaender below).
+    flows = context.stage("braunschweig.data.census.pendler")
+
+    # Per-Bundesland mode reference (#129, default ON).  Build ONLY the references for
+    # the Bundeslaender actually present among the in-commuter source Kreise (fewer IPF
+    # fits); origin Laender without a reference fall back to national inside
+    # build_incommuter_frames (logged).  When the flag is off, pass None so the mode
+    # draw is byte-identical to the single-national-reference behaviour.
+    if bool(context.config("cordon_incommuter_mode_reference_by_bundesland")):
+        present_bundeslaender = source_bundeslaender(flows["orig_ars"])
+        mode_reference_by_bundesland = build_mode_reference_by_bundesland(
+            context.config("data_path"), bundeslaender=present_bundeslaender)
+        print(
+            f"[braunschweig.synthesis.incommuters] per-Bundesland mode reference ON: "
+            f"built references for {len(mode_reference_by_bundesland)}/"
+            f"{len(present_bundeslaender)} source Bundeslaender "
+            f"{present_bundeslaender} (others -> national fallback)",
+            flush=True,
+        )
+    else:
+        mode_reference_by_bundesland = None
+
     frames = build_incommuter_frames(
-        flows=context.stage("braunschweig.data.census.pendler"),
+        flows=flows,
         zgb_kreise={str(p) for p in context.config("braunschweig.political_prefix")},
         sampling_rate=float(context.config("sampling_rate")),
         gates=gate_volume["gates"], assignment=gate_volume["assignment"],
@@ -1152,6 +1280,7 @@ def execute(context):
         zgb_polygon=zgb_polygon,
         source_buffer_m=source_buffer_m,
         mode_balance=mode_balance,
+        mode_reference_by_bundesland=mode_reference_by_bundesland,
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")

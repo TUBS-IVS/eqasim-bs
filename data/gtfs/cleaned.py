@@ -16,6 +16,18 @@ def configure(context):
     context.config("cordon_enabled", False)
     context.config("cordon_network_source_buffer_m", 0.0)
 
+    # Demand-responsive / placeholder service exclusion (issue #200). "Flexo", the
+    # demand-responsive service of the Regionalverband Grossraum Braunschweig, appears
+    # in the ZGB GTFS feed as a single route rolled out as thousands of placeholder
+    # trips. Imported unchanged it would overstate scheduled PT supply, so it is
+    # dropped at preprocessing. The exclusion is data-driven and configurable so other
+    # feeds carrying similar on-demand placeholders (e.g. AST / Rufbus elsewhere) can be
+    # handled without code changes. Patterns are case-insensitive regular expressions;
+    # anchor with ^...$ for an exact route_short_name match. Defaults exclude Flexo only.
+    context.config("gtfs_excluded_route_short_name_patterns", ["^Flexo$"])
+    context.config("gtfs_excluded_agency_ids", [])
+    context.config("gtfs_excluded_agency_name_patterns", [])
+
     context.stage("data.spatial.municipalities")
 
 def execute(context):
@@ -31,10 +43,25 @@ def execute(context):
             df_area, context.config("cordon_enabled"),
             context.config("cordon_network_source_buffer_m"))
 
+    # Route exclusion rules (demand-responsive / placeholder services, issue #200)
+    excluded_route_patterns = context.config("gtfs_excluded_route_short_name_patterns")
+    excluded_agency_ids = context.config("gtfs_excluded_agency_ids")
+    excluded_agency_name_patterns = context.config("gtfs_excluded_agency_name_patterns")
+
     # Load and cut feeds
     feeds = []
     for path in input_files:
         feed = gtfs.read_feed(path)
+
+        # Drop demand-responsive / placeholder services (e.g. ZGB "Flexo") so they are
+        # not imported as scheduled PT. Applied before the spatial cut so the logged
+        # match counts reflect the full feed rather than only the in-area remainder.
+        feed = gtfs.filter_routes(
+            feed,
+            excluded_route_short_name_patterns = excluded_route_patterns,
+            excluded_agency_ids = excluded_agency_ids,
+            excluded_agency_name_patterns = excluded_agency_name_patterns)
+
         feed = gtfs.cut_feed(feed, df_area)
 
         # This was fixed in pt2matsim, so we can remove one a new release (> 20.7) is available.

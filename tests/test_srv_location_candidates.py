@@ -1,0 +1,770 @@
+"""Per-category building potentials + landuse candidate assembly (issue #262).
+
+Task 4: two pure helpers in ``secondary_chainsolvers`` that (a) derive the
+five SrV-grounded building categories' offer/potential columns, and (b) turn
+deterministic landuse grid points into ``sec_lu_*`` candidate rows. Both are
+pure functions (no synpp context).
+
+PLAN AMENDMENT (post-Task-4 review): the leisure_* categories genuinely MASK
+the existing pot_leisure aggregate (unchanged). The errand_* categories
+CANNOT mask pot_other -- every sec_b_* row carries pot_other=0.0 by
+construction and errand-class buildings (hospitals, services, ...) are
+excluded from build_secondary_candidates' candidate set entirely (its
+keep-filter is retail>0 | leisure>0). append_location_category_columns now
+derives the errand potential directly from df_potentials (the
+derive_other_potential cap-and-floor formula, applied per category) and
+appends a new sec_b_<building_id> row for every errand-class building absent
+from the input candidates.
+"""
+import geopandas as gpd
+import pandas as pd
+import pytest
+from shapely.geometry import Point, box
+
+from braunschweig.data.bosserhof_location_category import BUILDING_CATEGORIES
+from braunschweig.synthesis.locations import landuse_candidates
+from braunschweig.synthesis.locations import secondary_chainsolvers as sc
+
+
+def test_srv_building_category_base_potential_matches_building_categories():
+    """Drift guard: the five keys of SRV_BUILDING_CATEGORY_BASE_POTENTIAL (the
+    leisure/errand grouping used throughout secondary_chainsolvers) must stay
+    exactly in sync with bosserhof_location_category.BUILDING_CATEGORIES (the
+    committed mapping CSV's allowed vocabulary) -- a category added to one
+    without the other would silently fall out of either the candidate-building
+    machinery or the mapping-CSV validation."""
+    assert set(sc.SRV_BUILDING_CATEGORY_BASE_POTENTIAL.keys()) == set(BUILDING_CATEGORIES)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+def _mini_candidates():
+    """Three candidate rows: one sec_b_* building (leisure) + one sec_b_*
+    building (unmapped class) + one legacy 'sec_0' row.
+
+    Errand-class buildings (hospitals, ...) are deliberately ABSENT here --
+    they never make it into build_secondary_candidates' gpkg output (its
+    keep-filter is retail>0 | leisure>0), which is exactly the structural gap
+    append_location_category_columns's errand path has to compensate for by
+    appending new rows (see _mini_potentials below).
+    """
+    return gpd.GeoDataFrame({
+        "location_id": ["sec_b_b1", "sec_b_b3", "sec_0"],
+        "commune_id": ["1", "1", "1"],
+        "iris_id": ["1", "1", "1"],
+        "offers_shop": [False, False, False],
+        "offers_leisure": [True, False, False],
+        "offers_other": [False, False, True],
+        "offers_escort": [True, True, True],
+        "pot_shop": [0.0, 0.0, 0.0],
+        "pot_shop_daily": [0.0, 0.0, 0.0],
+        "pot_shop_non_daily": [0.0, 0.0, 0.0],
+        "pot_leisure": [5.0, 0.0, 0.0],
+        "pot_other": [0.0, 0.0, 3.0],
+        "geometry": [Point(0, 0), Point(2, 2), Point(3, 3)],
+    }, crs="EPSG:25832")
+
+
+def _mini_potentials():
+    """building_id b1 (cinema, maps to leisure_culture, already a candidate),
+    b3 (office, unmapped class, already a candidate); b2/b4/b5 (hospitals,
+    maps to errand_authority_medical) are NOT in _mini_candidates() -- they
+    only ever surface as NEW sec_b_* rows appended by
+    append_location_category_columns.
+
+    potential_generic for the three hospitals is [500, 100, 400] so the
+    default cap_percentile=0.99 caps b2's 500 down to ~498 (demonstrating the
+    cap), while b5's volume_m3=10 is below the default
+    min_volume_m3=50 floor (demonstrating the volume floor) regardless of its
+    generic potential.
+    """
+    return gpd.GeoDataFrame({
+        "building_id": ["b1", "b3", "b2", "b4", "b5"],
+        "bosserhof_class_clean": [
+            "large cinemas", "normal office", "hospitals", "hospitals", "hospitals",
+        ],
+        "potential_generic": [999.0, 50.0, 500.0, 100.0, 400.0],
+        "volume_m3": [999.0, 999.0, 1000.0, 1000.0, 10.0],
+        "commune_id": ["1", "1", "1", "1", "1"],
+        "geometry": [Point(0, 0), Point(2, 2), Point(50, 50), Point(60, 60), Point(70, 70)],
+    }, crs="EPSG:25832")
+
+
+def _mini_mapping():
+    """No class maps to leisure_gastronomy or errand_service in
+    _mini_potentials() -- both stay genuinely zero-supply categories, used by
+    the check_category_supply "all empty" test below."""
+    return pd.DataFrame({
+        "bosserhof_class": ["large cinemas", "hospitals", "restaurants"],
+        "location_category": ["leisure_culture", "errand_authority_medical", "leisure_gastronomy"],
+    })
+
+
+def _mini_landuse_points():
+    """Four grid points: one per leisure layer inside the study municipality,
+    plus one 'ln_sportanlage' point far outside it (dropped)."""
+    return gpd.GeoDataFrame({
+        "layer": [
+            "ln_freiluftundnaherholung", "ln_sportanlage",
+            "ln_kulturundunterhaltung", "ln_sportanlage",
+        ],
+        "represented_area_m2": [22500.0, 22500.0, 100.0, 22500.0],
+        "geometry": [Point(10, 10), Point(20, 20), Point(30, 30), Point(9999, 9999)],
+    }, crs="EPSG:25832")
+
+
+def _mini_municipalities():
+    return gpd.GeoDataFrame({
+        "commune_id": ["1"],
+        "geometry": [box(0, 0, 100, 100)],
+    }, crs="EPSG:25832")
+
+
+# ---------------------------------------------------------------------------
+# append_location_category_columns -- leisure categories (unchanged: masks
+# the existing pot_leisure aggregate on pre-existing sec_b_* rows).
+# ---------------------------------------------------------------------------
+
+def test_building_category_columns_mask_existing_potentials():
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    row = out[out.location_id == "sec_b_b1"].iloc[0]
+    assert row["offers_leisure_culture"] and row["pot_leisure_culture"] == 5.0
+    assert not row["offers_leisure_gastronomy"] and row["pot_leisure_gastronomy"] == 0.0
+    assert not row["offers_leisure_sports"] and row["pot_leisure_sports"] == 0.0
+    # A leisure building must not spuriously pick up an errand category.
+    assert not row["offers_errand_authority_medical"] and row["pot_errand_authority_medical"] == 0.0
+
+
+def test_unmapped_class_gets_no_category():
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    row = out[out.location_id == "sec_b_b3"].iloc[0]
+    for category in sc.SRV_BUILDING_CATEGORY_BASE_POTENTIAL:
+        assert not row["offers_" + category]
+        assert row["pot_" + category] == 0.0
+
+
+def test_non_building_rows_never_get_a_category():
+    """The legacy 'sec_0' row is not a sec_b_* building candidate; it must
+    stay False/0.0 for all five categories even though it carries a non-zero
+    pot_other."""
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    row = out[out.location_id == "sec_0"].iloc[0]
+    for category in sc.SRV_BUILDING_CATEGORY_BASE_POTENTIAL:
+        assert not row["offers_" + category]
+        assert row["pot_" + category] == 0.0
+
+
+def test_missing_base_potential_column_raises():
+    candidates = _mini_candidates().drop(columns=["pot_leisure"])
+    with pytest.raises(ValueError, match="pot_leisure"):
+        sc.append_location_category_columns(candidates, _mini_potentials(), _mini_mapping())
+
+
+def test_missing_potentials_source_column_raises():
+    potentials = _mini_potentials().drop(columns=["bosserhof_class_clean"])
+    with pytest.raises(ValueError, match="bosserhof_class_clean"):
+        sc.append_location_category_columns(_mini_candidates(), potentials, _mini_mapping())
+
+
+def test_missing_mapping_column_raises():
+    mapping = _mini_mapping().drop(columns=["location_category"])
+    with pytest.raises(ValueError, match="location_category"):
+        sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), mapping)
+
+
+def test_building_not_in_potentials_gets_no_category_and_warns(capsys):
+    """A sec_b_* candidate whose building_id has no row in df_potentials is a
+    join gap -- it must fall back to False/0.0 for the leisure categories,
+    not raise, but the fallback rate must be surfaced (CLAUDE.md fallback
+    transparency). _mini_candidates() has 2 sec_b_* rows (b1, b3); dropping
+    b3 from the potentials source leaves 1/2 unmatched."""
+    potentials = _mini_potentials()
+    potentials = potentials[potentials["building_id"] != "b3"]
+    out = sc.append_location_category_columns(_mini_candidates(), potentials, _mini_mapping())
+    row = out[out.location_id == "sec_b_b3"].iloc[0]
+    assert not row["offers_leisure_culture"] and row["pot_leisure_culture"] == 0.0
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "1/2" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# append_location_category_columns -- errand categories (plan amendment:
+# derived from df_potentials via the derive_other_potential cap-and-floor
+# formula, appending new sec_b_* rows for buildings absent from candidates).
+# ---------------------------------------------------------------------------
+
+def test_errand_categories_use_derived_potential_formula():
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+
+    # b2/b4 are hospital-class buildings absent from the input candidates with
+    # a positive computed potential; each must be appended as a brand-new
+    # sec_b_* row. b5 (volume_m3=10 < min_volume_m3=50) computes to zero
+    # potential and must NOT be appended at all -- see
+    # test_zero_offer_errand_building_is_not_appended below.
+    assert {"sec_b_b2", "sec_b_b4"} <= set(out["location_id"])
+    assert "sec_b_b5" not in set(out["location_id"])
+
+    # cap = nanquantile([100.0, 400.0, 500.0], 0.99) == 498.0
+    row_b2 = out[out.location_id == "sec_b_b2"].iloc[0]  # generic=500 > cap -> capped
+    assert row_b2["offers_errand_authority_medical"]
+    assert row_b2["pot_errand_authority_medical"] == pytest.approx(498.0)
+
+    row_b4 = out[out.location_id == "sec_b_b4"].iloc[0]  # generic=100 < cap -> unchanged
+    assert row_b4["offers_errand_authority_medical"]
+    assert row_b4["pot_errand_authority_medical"] == pytest.approx(100.0)
+
+    # A new errand-only row must not offer anything else -- not the other
+    # errand category, not either base purpose, not any leisure category.
+    for row in (row_b2, row_b4):
+        assert not row["offers_shop"] and row["pot_shop"] == 0.0
+        assert not row["offers_leisure"] and row["pot_leisure"] == 0.0
+        assert not row["offers_other"] and row["pot_other"] == 0.0
+        assert not row["offers_escort"]
+        assert not row["offers_errand_service"] and row["pot_errand_service"] == 0.0
+        assert not row["offers_leisure_culture"] and not row["offers_leisure_gastronomy"]
+        assert not row["offers_leisure_sports"]
+        assert row["commune_id"] == "1" and row["iris_id"] == "1"
+
+
+def test_zero_offer_errand_building_is_not_appended():
+    """A tiny-volume errand-class building absent from the input candidates
+    must not gain an inert all-False/0.0 sec_b_* row: appending one would
+    pollute the candidate set (and, downstream, facilities.xml) with a row
+    that carla can never select (review finding, issue #262)."""
+    potentials = gpd.GeoDataFrame({
+        "building_id": ["h_tiny"],
+        "bosserhof_class_clean": ["hospitals"],
+        "potential_generic": [400.0],
+        "volume_m3": [10.0],  # below the default min_volume_m3=50.
+        "commune_id": ["1"],
+        "geometry": [Point(70, 70)],
+    }, crs="EPSG:25832")
+    mapping = pd.DataFrame({
+        "bosserhof_class": ["hospitals"],
+        "location_category": ["errand_authority_medical"],
+    })
+    out = sc.append_location_category_columns(_mini_candidates(), potentials, mapping)
+    assert "sec_b_h_tiny" not in set(out["location_id"])
+    assert len(out) == len(_mini_candidates())  # no row appended at all
+
+
+def test_errand_category_updates_existing_row_in_place():
+    """A building that is BOTH an errand-class building AND already a
+    candidate (e.g. it also has retail/leisure potential) must get its
+    errand columns updated on the existing row, not duplicated."""
+    candidates = _mini_candidates()
+    extra_row = gpd.GeoDataFrame({
+        "location_id": ["sec_b_b2"], "commune_id": ["1"], "iris_id": ["1"],
+        "offers_shop": [True], "offers_leisure": [False], "offers_other": [False],
+        "offers_escort": [True],
+        "pot_shop": [12.0], "pot_shop_daily": [12.0], "pot_shop_non_daily": [0.0],
+        "pot_leisure": [0.0], "pot_other": [0.0], "geometry": [Point(50, 50)],
+    }, crs="EPSG:25832")
+    candidates = gpd.GeoDataFrame(
+        pd.concat([candidates, extra_row], ignore_index=True), crs=candidates.crs)
+    n_before = len(candidates)
+
+    out = sc.append_location_category_columns(candidates, _mini_potentials(), _mini_mapping())
+
+    assert len(out[out.location_id == "sec_b_b2"]) == 1  # updated in place, not duplicated
+    row_b2 = out[out.location_id == "sec_b_b2"].iloc[0]
+    assert row_b2["offers_errand_authority_medical"]
+    assert row_b2["pot_errand_authority_medical"] == pytest.approx(498.0)
+    assert row_b2["offers_shop"] and row_b2["pot_shop"] == 12.0  # pre-existing columns untouched
+    # b4 is still absent from candidates with a positive potential -> appended
+    # fresh; b5's potential computes to zero (volume floor) -> not appended.
+    assert len(out) == n_before + 1
+    assert "sec_b_b5" not in set(out["location_id"])
+
+
+def test_errand_category_new_row_uses_polygon_centroid_geometry():
+    potentials = gpd.GeoDataFrame({
+        "building_id": ["h1"],
+        "bosserhof_class_clean": ["hospitals"],
+        "potential_generic": [200.0],
+        "volume_m3": [1000.0],
+        "commune_id": ["1"],
+        "geometry": [box(0, 0, 10, 10)],
+    }, crs="EPSG:25832")
+    mapping = pd.DataFrame({
+        "bosserhof_class": ["hospitals"],
+        "location_category": ["errand_authority_medical"],
+    })
+    out = sc.append_location_category_columns(_mini_candidates(), potentials, mapping)
+    row = out[out.location_id == "sec_b_h1"].iloc[0]
+    expected_centroid = box(0, 0, 10, 10).centroid
+    assert row["geometry"].equals_exact(expected_centroid, tolerance=1e-9)
+
+
+def test_errand_category_cap_percentile_and_min_volume_are_configurable():
+    potentials = gpd.GeoDataFrame({
+        "building_id": ["h1", "h2", "h3"],
+        "bosserhof_class_clean": ["hospitals", "hospitals", "hospitals"],
+        "potential_generic": [100.0, 300.0, 500.0],
+        "volume_m3": [1000.0, 1000.0, 40.0],
+        "commune_id": ["1", "1", "1"],
+        "geometry": [Point(1, 1), Point(2, 2), Point(3, 3)],
+    }, crs="EPSG:25832")
+    mapping = pd.DataFrame({
+        "bosserhof_class": ["hospitals"],
+        "location_category": ["errand_authority_medical"],
+    })
+    out = sc.append_location_category_columns(
+        _mini_candidates(), potentials, mapping, min_volume_m3=45.0, cap_percentile=0.5)
+
+    row_h1 = out[out.location_id == "sec_b_h1"].iloc[0]
+    row_h2 = out[out.location_id == "sec_b_h2"].iloc[0]
+    # median of [100, 300, 500] = 300 (the cap at cap_percentile=0.5).
+    assert row_h1["pot_errand_authority_medical"] == pytest.approx(100.0)
+    assert row_h2["pot_errand_authority_medical"] == pytest.approx(300.0)
+    # h3's volume_m3=40 < min_volume_m3=45 -> floored to zero potential, so it
+    # is not appended as a new row at all (see
+    # test_zero_offer_errand_building_is_not_appended).
+    assert "sec_b_h3" not in set(out["location_id"])
+
+
+def test_errand_category_zero_members_warns_and_yields_no_supply(capsys):
+    """errand_service has no class-member buildings anywhere in
+    _mini_potentials() -- the per-category cap must fall back to the
+    all-building quantile (mirroring derive_other_potential's own fallback)
+    and the fact must be logged, not silently swallowed."""
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "errand_service" in captured.out
+    assert not out["offers_errand_service"].any()
+    assert (out["pot_errand_service"] == 0.0).all()
+
+
+# ---------------------------------------------------------------------------
+# check_category_supply
+# ---------------------------------------------------------------------------
+
+def test_check_category_supply_raises_for_zero_supply_category():
+    candidates = _mini_candidates()  # has no pot_leisure_gastronomy column at all
+    with pytest.raises(RuntimeError, match="leisure_gastronomy"):
+        sc.check_category_supply(candidates, ["leisure_gastronomy"])
+
+
+def test_check_category_supply_passes_when_positive_potential_exists():
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    # Must not raise: leisure_culture (b1, 5.0) and errand_authority_medical
+    # (b2/b4, appended with positive potential) both have a positive row.
+    sc.check_category_supply(out, ["leisure_culture", "errand_authority_medical"])
+
+
+def test_check_category_supply_names_all_empty_categories():
+    out = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    with pytest.raises(RuntimeError, match="leisure_gastronomy.*errand_service|errand_service.*leisure_gastronomy"):
+        sc.check_category_supply(out, ["leisure_culture", "leisure_gastronomy", "errand_service"])
+
+
+# ---------------------------------------------------------------------------
+# append_landuse_candidates
+# ---------------------------------------------------------------------------
+
+def test_landuse_rows_added_with_area_potential_and_commune():
+    candidates = _mini_candidates()
+    out = sc.append_landuse_candidates(
+        candidates, _mini_landuse_points(), landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+        _mini_municipalities())
+    lu = out[out.location_id.str.startswith("sec_lu_")]
+    assert len(lu) == 3  # the point at (9999, 9999) is outside the municipality
+    assert (lu["offers_leisure_outdoor"] | lu["offers_leisure_sports"] | lu["offers_leisure_culture"]).all()
+    assert (lu["pot_shop"] == 0.0).all()
+    assert lu["commune_id"].notna().all()
+    assert (lu["commune_id"] == "1").all()
+    assert (lu["iris_id"] == "1").all()
+
+    row0 = out[out.location_id == "sec_lu_0"].iloc[0]
+    assert row0["offers_leisure_outdoor"] and row0["pot_leisure_outdoor"] == 22500.0
+    assert not row0["offers_leisure_sports"] and not row0["offers_leisure_culture"]
+
+    row2 = out[out.location_id == "sec_lu_2"].iloc[0]
+    assert row2["offers_leisure_culture"] and row2["pot_leisure_culture"] == 100.0
+
+
+def test_landuse_preserves_pre_existing_category_values():
+    """When append_location_category_columns already ran, its per-building
+    category values for pre-existing rows must survive the landuse append
+    untouched (only new landuse rows get fresh category values)."""
+    candidates = sc.append_location_category_columns(_mini_candidates(), _mini_potentials(), _mini_mapping())
+    out = sc.append_landuse_candidates(
+        candidates, _mini_landuse_points(), landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+        _mini_municipalities())
+    row = out[out.location_id == "sec_b_b1"].iloc[0]
+    assert row["offers_leisure_culture"] and row["pot_leisure_culture"] == 5.0
+
+
+def test_point_outside_municipalities_dropped_and_counted(capsys):
+    candidates = _mini_candidates()
+    out = sc.append_landuse_candidates(
+        candidates, _mini_landuse_points(), landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+        _mini_municipalities())
+    assert "sec_lu_3" not in set(out["location_id"])
+    captured = capsys.readouterr()
+    assert "3/4" in captured.out
+    assert "1 dropped" in captured.out
+
+
+def test_landuse_unknown_layer_raises():
+    points = _mini_landuse_points()
+    points.loc[0, "layer"] = "ln_unknown_layer"
+    with pytest.raises(ValueError, match="ln_unknown_layer"):
+        sc.append_landuse_candidates(
+            _mini_candidates(), points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+            _mini_municipalities())
+
+
+def test_landuse_missing_municipality_commune_id_raises():
+    municipalities = _mini_municipalities().rename(columns={"commune_id": "zone_id"})
+    with pytest.raises(ValueError, match="commune_id"):
+        sc.append_landuse_candidates(
+            _mini_candidates(), _mini_landuse_points(), landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+            municipalities)
+
+
+def test_landuse_missing_points_column_raises():
+    points = _mini_landuse_points().drop(columns=["represented_area_m2"])
+    with pytest.raises(ValueError, match="represented_area_m2"):
+        sc.append_landuse_candidates(
+            _mini_candidates(), points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+            _mini_municipalities())
+
+
+def test_landuse_growth_factor_warn(capsys):
+    """A large landuse point count relative to the tiny candidates base must
+    trigger the VISIT_CANDIDATE_WARN_FACTOR growth-guard warning."""
+    candidates = _mini_candidates()
+    many_points = gpd.GeoDataFrame({
+        "layer": ["ln_sportanlage"] * 20,
+        "represented_area_m2": [100.0] * 20,
+        "geometry": [Point(1 + 0.01 * i, 1 + 0.01 * i) for i in range(20)],
+    }, crs="EPSG:25832")
+    sc.append_landuse_candidates(
+        candidates, many_points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY,
+        _mini_municipalities())
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "growth" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# append_landuse_candidates -- scale coherence in mixed candidate pools
+# (plan amendment, issue #262). Building pot_<category> is a disaggregated
+# zonal person-mass; landuse pot_<category> is represented_area_m2. A mixed
+# category's landuse potentials must be mean-normalized to the building
+# scale so the linear combined scorer does not let whichever source happens
+# to carry larger raw numbers dominate the within-category ranking.
+# ---------------------------------------------------------------------------
+
+def test_mixed_pool_landuse_potentials_are_mean_normalized_to_building_scale():
+    """leisure_culture is a MIXED category here: one culture building
+    (pot_leisure_culture=8.0) plus two culture landuse points (areas 22500,
+    45000). The landuse potentials must be rescaled so their mean equals the
+    building mean (8.0), while their relative area ratio (1:2) is preserved."""
+    candidates = _mini_candidates()
+    candidates["offers_leisure_culture"] = [True, False, False]
+    candidates["pot_leisure_culture"] = [8.0, 0.0, 0.0]
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_kulturundunterhaltung", "ln_kulturundunterhaltung"],
+        "represented_area_m2": [22500.0, 45000.0],
+        "geometry": [Point(10, 10), Point(20, 20)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+
+    lu = out[out.location_id.str.startswith("sec_lu_")].sort_values("location_id")
+    pots = lu["pot_leisure_culture"].to_numpy()
+    assert len(pots) == 2
+    assert pots[1] / pots[0] == pytest.approx(2.0)  # relative area ratio preserved
+    assert pots.mean() == pytest.approx(8.0)  # mean matches the building scale
+
+    row = out[out.location_id == "sec_b_b1"].iloc[0]
+    assert row["pot_leisure_culture"] == 8.0  # the pre-existing building row is untouched
+
+
+def test_pure_pool_landuse_potentials_stay_raw():
+    """leisure_outdoor has no building counterpart (append_location_category_columns
+    never creates pot_leisure_outdoor) -- its landuse points must keep their
+    raw represented_area_m2 potential, unnormalized."""
+    candidates = _mini_candidates()
+    assert "pot_leisure_outdoor" not in candidates.columns
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_freiluftundnaherholung"],
+        "represented_area_m2": [12345.0],
+        "geometry": [Point(10, 10)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    row = out[out.location_id == "sec_lu_0"].iloc[0]
+    assert row["pot_leisure_outdoor"] == 12345.0
+
+
+def test_mixed_category_with_zero_building_supply_stays_raw_and_warns(capsys):
+    """pot_leisure_sports exists (mixed category by design) but every
+    building row is zero in this region -- keep raw areas (nothing to
+    normalize against) and warn loudly, no silent normalization by an
+    undefined factor."""
+    candidates = _mini_candidates()
+    candidates["offers_leisure_sports"] = [False, False, False]
+    candidates["pot_leisure_sports"] = [0.0, 0.0, 0.0]
+
+    points = gpd.GeoDataFrame({
+        "layer": ["ln_sportanlage"],
+        "represented_area_m2": [22500.0],
+        "geometry": [Point(10, 10)],
+    }, crs="EPSG:25832")
+
+    out = sc.append_landuse_candidates(
+        candidates, points, landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    row = out[out.location_id == "sec_lu_0"].iloc[0]
+    assert row["pot_leisure_sports"] == 22500.0  # raw, unnormalized
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "leisure_sports" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# append_external_category_escapes -- long-distance reach parity (post-Task-8
+# review finding). External Gemeinde centroids are category-AGNOSTIC distance
+# escapes: without this step a leisure_culture / errand_* leg would have no
+# out-of-area candidate at all and its long desired distance would clip to the
+# region edge, a regression versus the OFF path where the same leg was a plain
+# "leisure" / "other" leg with external candidates available.
+# ---------------------------------------------------------------------------
+
+_EWZ = 12345.0
+
+
+def _mixed_family_candidates():
+    """One row per candidate family, all carrying the full category column set:
+    external Gemeinde centroid (location_id == commune_id, all three base
+    offers), building, landuse point, residential visit, education, legacy
+    catalog row."""
+    families = {
+        "location_id": ["03151000", "sec_b_b1", "sec_lu_0", "sec_res_7", "sec_edu_3", "sec_0"],
+        "commune_id": ["03151000", "1", "1", "1", "1", "1"],
+        "offers_shop": [True, False, False, False, False, False],
+        "offers_leisure": [True, True, False, False, False, False],
+        "offers_other": [True, False, False, False, False, True],
+        "pot_leisure": [_EWZ, 5.0, 0.0, 0.0, 0.0, 0.0],
+        "pot_other": [_EWZ, 0.0, 0.0, 0.0, 0.0, 3.0],
+    }
+    n = len(families["location_id"])
+    for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        families["offers_" + category] = [False] * n
+        families["pot_" + category] = [0.0] * n
+    # Genuine in-area supply per category family (the building offers culture,
+    # the landuse point offers outdoor) so the escapes are visibly ADDITIVE
+    # rather than the only supply.
+    families["offers_leisure_culture"][1] = True
+    families["pot_leisure_culture"][1] = 5.0
+    families["offers_leisure_outdoor"][2] = True
+    families["pot_leisure_outdoor"][2] = 22500.0
+    families[sc.VISIT_OFFER_COLUMN] = [False, False, False, True, False, False]
+    families[sc.VISIT_POTENTIAL_COLUMN] = [0.0, 0.0, 0.0, 9.0, 0.0, 0.0]
+    families["geometry"] = [Point(i, i) for i in range(n)]
+    return gpd.GeoDataFrame(families, crs="EPSG:25832")
+
+
+def test_external_centroid_mask_selects_only_the_centroid_row():
+    mask = sc.external_centroid_mask(_mixed_family_candidates())
+    assert list(mask) == [True, False, False, False, False, False]
+
+
+def test_external_row_offers_every_category_at_its_aggregate_potential(capsys):
+    out = sc.append_external_category_escapes(_mixed_family_candidates())
+    row = out[out.location_id == "03151000"].iloc[0]
+    for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+        assert row["offers_" + category], category
+        # ewz for both families: pot_leisure for leisure_*, pot_other for errand_*.
+        assert row["pot_" + category] == _EWZ, category
+    # Row count / order unchanged (no rows added or dropped).
+    assert list(out["location_id"]) == list(_mixed_family_candidates()["location_id"])
+    assert "external category escapes: 1 external" in capsys.readouterr().out
+
+
+def test_external_escapes_leave_leisure_visit_residential_only():
+    """leisure_visit's pool is the residential stock; external centroids never
+    offered offers_visit on the OFF path either, so extending them here would be
+    a behaviour CHANGE, not a regression fix."""
+    assert "leisure_visit" not in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES
+    out = sc.append_external_category_escapes(_mixed_family_candidates())
+    row = out[out.location_id == "03151000"].iloc[0]
+    assert not row[sc.VISIT_OFFER_COLUMN]
+    assert row[sc.VISIT_POTENTIAL_COLUMN] == 0.0
+
+
+def test_external_escapes_leave_every_other_candidate_family_untouched():
+    before = _mixed_family_candidates()
+    out = sc.append_external_category_escapes(before)
+    for location_id in ("sec_b_b1", "sec_lu_0", "sec_res_7", "sec_edu_3", "sec_0"):
+        row = out[out.location_id == location_id].iloc[0]
+        expected = before[before.location_id == location_id].iloc[0]
+        for category in sc.EXTERNAL_CATEGORY_ESCAPE_CATEGORIES:
+            assert bool(row["offers_" + category]) == bool(expected["offers_" + category]), \
+                (location_id, category)
+            assert row["pot_" + category] == expected["pot_" + category], (location_id, category)
+
+
+def test_external_escapes_without_any_external_row_is_a_no_op(capsys):
+    candidates = _mixed_family_candidates()
+    candidates = candidates[candidates.location_id != "03151000"].reset_index(drop=True)
+    out = sc.append_external_category_escapes(candidates)
+    pd.testing.assert_frame_equal(pd.DataFrame(out.drop(columns="geometry")),
+                                  pd.DataFrame(candidates.drop(columns="geometry")))
+    assert "no external Gemeinde-centroid rows" in capsys.readouterr().out
+
+
+def test_external_escapes_require_the_category_columns_to_exist_already():
+    """Fail-fast on a wrong call order: the landuse append owns
+    pot_leisure_outdoor, so calling this before it must raise rather than
+    silently skip that category."""
+    candidates = _mixed_family_candidates().drop(
+        columns=["offers_leisure_outdoor", "pot_leisure_outdoor"])
+    with pytest.raises(ValueError, match="pot_leisure_outdoor"):
+        sc.append_external_category_escapes(candidates)
+
+
+def test_external_escapes_require_the_base_columns():
+    candidates = _mixed_family_candidates().drop(columns=["pot_other"])
+    with pytest.raises(ValueError, match="pot_other"):
+        sc.append_external_category_escapes(candidates)
+
+
+_HUGE_EWZ = 99999.0
+
+
+def _mini_candidates_with_external(ewz=_HUGE_EWZ):
+    """``_mini_candidates()`` plus one external Gemeinde centroid row (the
+    ``build_secondary_candidates`` shape: ``location_id == commune_id``, all
+    three base purposes offered, every aggregate potential = ewz). The ewz is
+    deliberately huge relative to the building potentials so any leak into the
+    landuse mean-normalization scale factor is unmistakable."""
+    base = _mini_candidates()
+    external = gpd.GeoDataFrame({
+        "location_id": ["03459999"],
+        "commune_id": ["03459999"],
+        "iris_id": ["03459999"],
+        "offers_shop": [True],
+        "offers_leisure": [True],
+        "offers_other": [True],
+        "offers_escort": [True],
+        "pot_shop": [ewz],
+        "pot_shop_daily": [ewz],
+        "pot_shop_non_daily": [ewz],
+        "pot_leisure": [ewz],
+        "pot_other": [ewz],
+        "geometry": [Point(500, 500)],
+    }, crs="EPSG:25832")
+    return gpd.GeoDataFrame(
+        pd.concat([base, external], ignore_index=True), crs=base.crs)
+
+
+def _culture_landuse_points():
+    return gpd.GeoDataFrame({
+        "layer": ["ln_kulturundunterhaltung", "ln_kulturundunterhaltung"],
+        "represented_area_m2": [22500.0, 45000.0],
+        "geometry": [Point(10, 10), Point(20, 20)],
+    }, crs="EPSG:25832")
+
+
+def _assemble_srv_candidates(candidates):
+    """Run the stage's assembly sequence in order: category columns -> landuse
+    append -> external escapes. Returns the frame after EACH step so a test can
+    assert what a step did and did not do."""
+    with_categories = sc.append_location_category_columns(
+        candidates, _mini_potentials(), _mini_mapping())
+    with_landuse = sc.append_landuse_candidates(
+        with_categories, _culture_landuse_points(),
+        landuse_candidates.LANDUSE_LAYER_TO_CATEGORY, _mini_municipalities())
+    with_escapes = sc.append_external_category_escapes(with_landuse)
+    return with_categories, with_landuse, with_escapes
+
+
+def test_external_rows_do_not_contaminate_the_landuse_scale_factor():
+    """Call-order contract, end to end: with an external centroid present, the
+    mixed-pool mean-normalization must still measure BUILDING potentials only.
+    ``_mini_potentials()``'s cinema (b1) masks pot_leisure=5.0 into
+    pot_leisure_culture, so the two culture landuse points must be rescaled to
+    mean 5.0 -- if the external row's ewz (99,999) leaked into that mean the
+    landuse potentials would be ~4 orders of magnitude larger."""
+    with_categories, with_landuse, with_escapes = _assemble_srv_candidates(
+        _mini_candidates_with_external())
+
+    # Step 1 leaves the external row category-free (it is not a sec_b_* row).
+    external_after_categories = with_categories[
+        with_categories.location_id == "03459999"].iloc[0]
+    assert not external_after_categories["offers_leisure_culture"]
+    assert external_after_categories["pot_leisure_culture"] == 0.0
+
+    # Step 2: the landuse scale factor is the BUILDING mean (5.0), and the
+    # relative area ratio (1:2) survives.
+    landuse = with_landuse[with_landuse.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")
+    pots = landuse["pot_leisure_culture"].to_numpy()
+    assert len(pots) == 2
+    assert pots.mean() == pytest.approx(5.0)
+    assert pots[1] / pots[0] == pytest.approx(2.0)
+
+    # ... and it is IDENTICAL to the no-external control run: the presence of an
+    # external centroid does not move the scale factor at all.
+    _c, control_landuse, _e = _assemble_srv_candidates(_mini_candidates())
+    control_pots = control_landuse[
+        control_landuse.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")["pot_leisure_culture"].to_numpy()
+    assert pots == pytest.approx(control_pots)
+
+    # Step 3 sets the external row's category potentials -- and only then.
+    external_after_escapes = with_escapes[
+        with_escapes.location_id == "03459999"].iloc[0]
+    assert external_after_escapes["offers_leisure_culture"]
+    assert external_after_escapes["pot_leisure_culture"] == _HUGE_EWZ
+    # The landuse rows are untouched by the escape step.
+    escaped_landuse = with_escapes[with_escapes.location_id.str.startswith("sec_lu_")] \
+        .sort_values("location_id")["pot_leisure_culture"].to_numpy()
+    assert escaped_landuse == pytest.approx(pots)
+
+
+def test_visit_pool_supply_check_raises_without_a_positive_pot_visit_row():
+    """``leisure_visit``'s pool does not follow the ``pot_<category>`` naming
+    scheme, so ``check_category_supply`` cannot cover it -- and the external
+    escapes deliberately skip it. Its own guard closes that gap."""
+    candidates = _mixed_family_candidates()
+    assert (candidates[sc.VISIT_POTENTIAL_COLUMN] > 0.0).any()
+    sc.check_visit_pool_supply(candidates)  # happy path: the sec_res_ row supplies it
+
+    candidates[sc.VISIT_POTENTIAL_COLUMN] = 0.0
+    with pytest.raises(RuntimeError, match="leisure_visit"):
+        sc.check_visit_pool_supply(candidates)
+
+    with pytest.raises(RuntimeError, match=sc.VISIT_POTENTIAL_COLUMN):
+        sc.check_visit_pool_supply(
+            candidates.drop(columns=[sc.VISIT_POTENTIAL_COLUMN]))
+
+
+def test_supply_check_must_run_before_the_escapes_to_stay_falsifiable():
+    """Re-review finding: the external escapes give every centroid a positive
+    potential in EVERY category, so ``check_category_supply`` is only falsifiable
+    on the escape-FREE frame. This test pins both halves of that statement."""
+    _c, with_landuse, with_escapes = _assemble_srv_candidates(
+        _mini_candidates_with_external())
+
+    # No building and no landuse point supplies leisure_gastronomy here.
+    assert not (with_landuse["pot_leisure_gastronomy"] > 0.0).any()
+    with pytest.raises(RuntimeError, match="leisure_gastronomy"):
+        sc.check_category_supply(with_landuse, ("leisure_gastronomy",))
+
+    # After the escapes the external centroid ALONE satisfies the same check --
+    # exactly the masking the stage's call order prevents.
+    assert (with_escapes["pot_leisure_gastronomy"] > 0.0).any()
+    sc.check_category_supply(with_escapes, ("leisure_gastronomy",))

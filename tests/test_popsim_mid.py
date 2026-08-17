@@ -259,6 +259,68 @@ def test_assemble_batch_folder_apportions_kreis_by_pop_share(tmp_path):
     assert by["03153"] == pytest.approx(200.0)
 
 
+def test_assemble_batch_folder_household_control_uses_hh_share(tmp_path):
+    # issue #148: a household-level KREIS control is apportioned across batches by the
+    # batch's HOUSEHOLD share, a person-level control by the POPULATION share. This batch
+    # holds Kreis 03101 with pop 20 / full 50 (pop-share 0.4) but hh 30 / full 50
+    # (hh-share 0.6), so the two control types scale by different weights end-to-end.
+    from braunschweig.popsim import control_spec
+    hh_col = control_spec.HH_TOTAL_CENSUS_COLUMN
+    cells_subset = pd.DataFrame({
+        "ZENSUS100m": ["c1", "c2"],
+        "ZENSUS1km": ["p", "p"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP_TOTAL_100m_adj": [10.0, 10.0],   # batch pop = 20
+        hh_col: [15.0, 15.0],                 # batch households = 30
+        "POP": [1.0, 2.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0], "EMP": [500.0]})
+    mid.assemble_batch_folder(
+        tmp_path / "h", cells_subset, ["POP"], controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table,
+        kreis_controls_map={"economic_status_KREIS": ("ECON",), "employed_KREIS": ("EMP",)},
+        kreis_total_pop={"03101": 50.0},
+        kreis_total_hh={"03101": 50.0},
+        household_control_names={"economic_status_KREIS"},
+    )
+    df = pd.read_csv(tmp_path / "h" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    by = df.set_index("KREIS")
+    # household control -> hh-share 30/50 = 0.6 -> 1000*0.6 = 600
+    assert by.loc["03101", "economic_status_KREIS"] == pytest.approx(600.0)
+    # person control -> pop-share 20/50 = 0.4 -> 500*0.4 = 200
+    assert by.loc["03101", "employed_KREIS"] == pytest.approx(200.0)
+
+
+def test_assemble_batch_folder_kreis_total_hh_none_household_uses_pop_share(tmp_path):
+    # Legacy / byte-identical: with kreis_total_hh=None (no household apportionment basis
+    # supplied) even a named household control falls back to the population share, so the
+    # tier0-2 and pre-#148 behaviour is preserved exactly.
+    cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "ECON": [100.0, 200.0]})
+    mid.assemble_batch_folder(
+        tmp_path / "hn", cells_subset, base_cols, controls_df, seed_hh, seed_p,
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        kreis_table=kreis_table, kreis_controls_map={"economic_status_KREIS": ("ECON",)},
+        kreis_total_pop={"03101": 50.0, "03153": 5.0},
+        kreis_total_hh=None,
+        household_control_names={"economic_status_KREIS"},
+    )
+    df = pd.read_csv(tmp_path / "hn" / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+    by = df.set_index("KREIS")["economic_status_KREIS"]
+    # pop-share fallback: 03101 batch pop 20 / full 50 = 0.4 -> 100*0.4 = 40; 03153 5/5 -> 200
+    assert by["03101"] == pytest.approx(40.0)
+    assert by["03153"] == pytest.approx(200.0)
+
+
 def test_assemble_batch_folder_kreis_total_pop_none_is_full_marginal(tmp_path):
     # kreis_total_pop=None -> legacy full marginal (no apportionment), unchanged.
     cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
@@ -366,6 +428,99 @@ def test_run_popsim_mid_tier3_apportions_kreis_across_batches(tmp_path):
     assert sorted(captured) == pytest.approx([400.0, 600.0])
 
 
+def test_run_popsim_mid_household_control_uses_hh_share_and_sums_to_full_marginal(tmp_path):
+    # issue #148 end-to-end: one Kreis over two 1km parents forced into two batches
+    # (max_cells=1). Parent pA: pop 60 / hh 30; pB: pop 40 / hh 70 (persons-per-household
+    # differs across the batches). A HOUSEHOLD-level control (economic_status) must be
+    # apportioned by the hh share (0.3 / 0.7) and a PERSON-level control (employed) by
+    # the pop share (0.6 / 0.4); both must sum across batches to the full Kreis marginal.
+    from braunschweig.popsim import control_spec
+    hh_col = control_spec.HH_TOTAL_CENSUS_COLUMN
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["pA_c1", "pB_c1"],
+        "ZENSUS1km": ["pA", "pB"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000", "031010000000"],
+        "POP_TOTAL_100m_adj": [60.0, 40.0],
+        hh_col: [30.0, 70.0],
+        "POP": [60.0, 40.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0], "EMP": [500.0]})
+
+    econ: list[float] = []
+    emp: list[float] = []
+
+    def fake_run_one(folder):
+        from braunschweig.popsim import batch as b
+        df = pd.read_csv(Path(folder) / "data" / "control_totals_KREIS.csv", dtype={"KREIS": str})
+        by = df.set_index("KREIS")
+        econ.append(float(by["economic_status_KREIS"]["03101"]))
+        emp.append(float(by["employed_KREIS"]["03101"]))
+        xwalk = pd.read_csv(Path(folder) / "data" / "geo_cross_walk.csv", dtype=str)
+        out_dir = Path(folder) / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        xwalk.assign(H_ID=1).to_csv(out_dir / "final_expanded_household_ids.csv", index=False)
+        return b.BatchResult(str(folder), "succeeded", "ok", 0.0)
+
+    mid.run_popsim_mid(
+        cells, ["POP"], controls_df, seed_hh, seed_p,
+        work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+        max_cells=1, run_one=fake_run_one, num_workers=1,
+        kreis_table=kreis_table,
+        kreis_controls_map={"economic_status_KREIS": ("ECON",), "employed_KREIS": ("EMP",)},
+        household_control_names={"economic_status_KREIS"},
+    )
+    # household control -> hh share {0.3, 0.7} of 1000, summing to the full marginal.
+    assert sorted(econ) == pytest.approx([300.0, 700.0])
+    assert sum(econ) == pytest.approx(1000.0)
+    # person control -> pop share {0.6, 0.4} of 500, summing to the full marginal.
+    assert sorted(emp) == pytest.approx([200.0, 300.0])
+    assert sum(emp) == pytest.approx(500.0)
+    # The two control types were apportioned by DIFFERENT shares (the whole point of #148).
+    assert sorted(econ) != pytest.approx(sorted([500.0 * 0.6, 500.0 * 0.4]))
+
+
+def test_run_popsim_mid_raises_when_household_column_absent_with_household_controls(tmp_path):
+    # No-silent-fallback (CLAUDE.md): household controls active but the household-total
+    # column absent must RAISE, not silently apportion household controls by pop share.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["pA_c1"],
+        "ZENSUS1km": ["pA"],
+        "STAAT": 1, "WELT": 1,
+        "RegionalSchlussel_ARS": ["031010000000"],
+        "POP_TOTAL_100m_adj": [60.0],   # note: no HH_TOTAL_CENSUS_COLUMN
+        "POP": [60.0],
+    })
+    controls_df = pd.DataFrame(
+        {"target": ["POP_ZENSUS100m_target"], "geography": ["ZENSUS100m"],
+         "seed_table": ["persons"], "importance": [1000],
+         "control_field": ["POP_ZENSUS100m"], "expression": ["(persons.P_GEW > 0)"]}
+    )
+    seed_hh = pd.DataFrame({"H_ID": [1], "H_GEW": [2.0], "STAAT": [1]})
+    seed_p = pd.DataFrame({"H_ID": [1], "P_ID": [1], "STAAT": [1]})
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101"], "ECON": [1000.0]})
+
+    def never_called(folder):  # the guard must fire before any batch runs
+        raise AssertionError("run_one must not be reached; the HH-column guard should raise first")
+
+    with pytest.raises(ValueError, match="household-total column"):
+        mid.run_popsim_mid(
+            cells, ["POP"], controls_df, seed_hh, seed_p,
+            work_dir=tmp_path, settings_yaml="x: 1\n", logging_yaml="version: 1\n",
+            max_cells=1, run_one=never_called, num_workers=1,
+            kreis_table=kreis_table,
+            kreis_controls_map={"economic_status_KREIS": ("ECON",)},
+            household_control_names={"economic_status_KREIS"},
+        )
+
+
 def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
     # No kreis_table -> tier0-2 path: no KREIS control file (byte-identical baseline).
     cells_subset, base_cols, controls_df, seed_hh, seed_p = _kreis_batch_inputs()
@@ -374,6 +529,82 @@ def test_assemble_batch_folder_omits_kreis_without_table(tmp_path):
         settings_yaml="x: 1\n", logging_yaml="version: 1\n",
     )
     assert not (tmp_path / "b0" / "data" / "control_totals_KREIS.csv").exists()
+
+
+def _write_kreis_control_parquets(kreis_dir, ars_kreis):
+    """Write the three cleancensus kreis_* topic parquets for ``ars_kreis``.
+
+    Mirrors the shapes ``merge_kreis_control_tables`` expects so
+    ``load_kreis_control_table`` can be exercised end-to-end from disk.
+    """
+    n = len(ars_kreis)
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "ERWERBSTAT_KURZ_STP__11": [10.0] * n}).to_parquet(
+        kreis_dir / "kreis_erwerbsstatus.parquet")
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "SCHULABS_STP__21": [1.0] * n}).to_parquet(
+        kreis_dir / "kreis_schulabschluss.parquet")
+    pd.DataFrame({"ARS_kreis": ars_kreis, "Name": [f"K{a}" for a in ars_kreis],
+                  "BERUFABS_AUSF_STP__2": [3.0] * n}).to_parquet(
+        kreis_dir / "kreis_berufl_abschluss.parquet")
+
+
+def test_load_kreis_control_table_loads_all_national_rows_by_default(tmp_path):
+    # Without a restriction the full national table (all Kreise on disk) is returned.
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102", "09999", "16077"])
+    table = mid.load_kreis_control_table(tmp_path)
+    assert set(table["ARS_kreis"]) == {"03101", "03102", "09999", "16077"}
+
+
+def test_load_kreis_control_table_restricts_to_run_kreise(tmp_path):
+    # issue #147: the national tier3 table (~400 Kreise) is restricted to the run's
+    # Kreise at load time so the accumulator carries only rows that are actually
+    # looked up downstream. Kreise not on disk are simply absent (no phantom rows).
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102", "09999", "16077"])
+    table = mid.load_kreis_control_table(
+        tmp_path, restrict_to_kreise=["03101", "03102", "03153"])
+    assert set(table["ARS_kreis"]) == {"03101", "03102"}
+    # The out-of-scope national Kreise are dropped.
+    assert "09999" not in set(table["ARS_kreis"])
+    assert "16077" not in set(table["ARS_kreis"])
+
+
+def test_load_kreis_control_table_restrict_normalises_kreis_width(tmp_path):
+    # The run scope may arrive as ints / unpadded strings; restriction must match the
+    # zero-padded 5-digit ARS_kreis the table stores (e.g. 3101 -> "03101").
+    _write_kreis_control_parquets(tmp_path, ["03101", "03102"])
+    table = mid.load_kreis_control_table(tmp_path, restrict_to_kreise=[3101])
+    assert set(table["ARS_kreis"]) == {"03101"}
+
+
+def test_resolved_kreis_per_cell_uses_dominant_kreis_per_1km_parent():
+    # issue #147 sub-item 1: the per-Kreis attribute-control universe must key on the
+    # RESOLVED dominant Kreis per 1 km parent (matching folders.build_kreis_control_totals),
+    # not the raw ARS[:5]. A border cell whose 1 km parent is dominated (by
+    # POP_TOTAL_100m_adj) by a neighbouring Kreis is attributed to that dominant Kreis.
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB", "cC"],
+        "ZENSUS1km": ["P1", "P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031020000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 10.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    # Parent P1 is dominated by Kreis 03101 (100 vs 10), so cB (raw 03102) -> 03101.
+    assert list(resolved) == ["03101", "03101", "03153"]
+    assert list(resolved.index) == list(cells.index)
+
+
+def test_resolved_kreis_per_cell_matches_raw_when_no_border_cells():
+    # Each 1 km parent wholly inside one Kreis -> resolved Kreis equals raw ARS[:5]
+    # (interior cells unchanged; only border cells shift under the alignment).
+    cells = pd.DataFrame({
+        "ZENSUS100m": ["cA", "cB"],
+        "ZENSUS1km": ["P1", "P2"],
+        "RegionalSchlussel_ARS": ["031010000000", "031530000000"],
+        "POP_TOTAL_100m_adj": [100.0, 50.0],
+    })
+    resolved = mid.resolved_kreis_per_cell(cells)
+    assert list(resolved) == ["03101", "03153"]
 
 
 def test_merge_kreis_control_tables_joins_topics_on_ars():
@@ -451,20 +682,26 @@ def test_load_mid_attributes_reads_needed_columns(tmp_path):
     # imputation (bugfix wave), so the fixtures must include them.
     # H_GR / H_GEW and P_GEW / kernwo joined the attribute usecols so the
     # member-completed frames can serve BOTH expansion and the PopulationSim seed.
+    # anzpedrad / H_ANZPED joined MID_HOUSEHOLD_ATTR_COLS 2026-07-08 (bikes-incl-pedelec
+    # construct + verified e-bike column), so the fixture must include them too.
     (tmp_path / "MiD2023_Haushalte.csv").write_text(
-        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n1,3,4,1,2,72,2,2,1.0,1,1\n",
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        "1,3,4,1,2,2,0,72,2,2,1.0,1,1\n",
         encoding="utf-8",
     )
     # P_BKAT (Berufskategorie) is required for map_socioprofessional_class (bug D4 fix).
+    # anzwege1 (diary trip count) joined MID_PERSON_ATTR_COLS 2026-07-08 (person-level
+    # trip_class KREIS control), so the fixture must include it too.
     (tmp_path / "MiD2023_Personen.csv").write_text(
-        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,P_GEW,kernwo\n1,1,40,1,1,1,3,1,5,1.0,1\n",
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo\n"
+        "1,1,40,1,1,1,3,1,5,2,1.0,1\n",
         encoding="utf-8",
     )
     households, persons = mid.load_mid_attributes(tmp_path)
-    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "RegioStaR7", "hhgr_gr",
-            "H_GR", "H_GEW"} <= set(households.columns)
+    assert {"oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD", "anzpedrad", "H_ANZPED",
+            "RegioStaR7", "hhgr_gr", "H_GR", "H_GEW"} <= set(households.columns)
     assert {"P_TAET", "P_FSCHEIN", "P_FKARTE", "HP_ALTER", "HP_SEX", "P_BKAT", "alter_gr1",
-            "P_GEW", "kernwo"} <= set(persons.columns)
+            "anzwege1", "P_GEW", "kernwo"} <= set(persons.columns)
 
 
 # ---------------------------------------------------------------------------

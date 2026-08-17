@@ -78,6 +78,32 @@ def test_restrict_to_modes_falls_back_when_no_allowed_mode():
     assert restricted["x"] == {"car": 1.0}
 
 
+def test_restrict_to_modes_logs_warning_for_fallback_band(capsys):
+    """A walk/bike-only band has zero car/pt mass -> falls back and is logged as a
+    WARNING naming the affected band (CLAUDE.md "no silent fallbacks")."""
+    reference = {
+        "<0.5": {"walk": 0.7, "bike": 0.3},  # zero mass in (car, pt) -> fallback
+        "10-20": {"walk": 0.02, "car": 0.78, "pt": 0.20},  # primary
+    }
+    restricted = restrict_to_modes(reference, allowed=("car", "pt"))
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "<0.5" in out
+    assert "fallback 1" in out
+    assert restricted["<0.5"] == {"car": 1.0}
+
+
+def test_restrict_to_modes_normal_reference_stays_silent(capsys):
+    """Every band has nonzero mass in the allowed modes -> no fallback, no log."""
+    reference = {
+        "<0.5": {"walk": 0.1, "car": 0.7, "pt": 0.2},
+        "10-20": {"walk": 0.02, "car": 0.78, "pt": 0.20},
+    }
+    restrict_to_modes(reference, allowed=("car", "pt"))
+    out = capsys.readouterr().out
+    assert out == ""
+
+
 def test_route_distance_band_applies_detour():
     # 8 km straight-line * 1.3 = 10.4 km -> band uses routed distance
     band = route_distance_band(8.0, detour_factor=1.3, edges=MID_DISTANCE_EDGES)

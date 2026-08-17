@@ -1,0 +1,70 @@
+feature: age_aware_composition
+title: Age-aware composition (#3b)
+area: population
+description: 'Age-aware household composition in the legacy IPF: children-driven capacity and
+  a Destatis mother-age anchor shape who lives together when chunking IPF weights into households.'
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: supported
+production:
+  enabled: false
+  flags:
+  - braunschweig.ipf.age_aware_chunking
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0005
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+- braunschweig/ipf/household_composition.py
+- braunschweig/ipf/attributed.py
+evidence:
+  tests:
+  - tests/test_household_formation.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      test_execute_uses_legacy_path_when_age_aware_off is the closest OFF-path-equivalence test but is not literally named a byte-identity test.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.ipf.attributed] composition slots: primary'
+    note: |
+      The fallback is the composition relaxation in
+      braunschweig/ipf/household_composition.py: when a (commune, hh_size) bucket's
+      adult/child pool cannot serve the requested hh_type composition, the demand is
+      relaxed into free fill slots. It previously logged one absolute per-bucket count
+      and the aggregate counter in attributed.py was never incremented, so the run-wide
+      rate was unobservable. build_bucket_households now accumulates into an optional
+      relaxation_stats dict and braunschweig.ipf.attributed reports ONE primary-vs-
+      fallback rate, warning above COMPOSITION_RELAXATION_WARN_FRACTION (0.20).
+      Measured on the SK Braunschweig verification run: 33,906 of 252,954 slots
+      relaxed (13.4%) -- below the threshold, but non-trivial and now visible.
+  reference:
+    kind: assumption
+    note: |
+      Destatis 2024 mother-age target (31.8) is a hardcoded numeric constant (braunschweig/ipf/attributed.py, parent_child_gap_years default), not a committed data file or table. ADR-0005 cites it as a "committed reference" but no file path exists anywhere under eqasim-data/.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Issue #251's config discrepancy is RESOLVED: braunschweig.ipf.age_aware_chunking is
+    now true in all four committed simple_ipf_open run configs, and the pass was proven to
+    execute on real data (SK Braunschweig: 134,997 age-plausible, hh_type-consistent
+    households formed from 252,954 persons, 0 dropped). Two items remain pending, both
+    scientific rather than wiring: (1) no recorded run has compared the resulting
+    composition to an observed reference, so validation.state stays 'unvalidated';
+    (2) the Destatis mother-age anchor is a hardcoded default (see evidence.reference),
+    so the composition target itself is an assumption, not a committed table.
+  source: ADR-0005
+notes: 'Issue #251 / ADR-0078: enabled in the four simple_ipf_open run configs and pinned
+  by tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'

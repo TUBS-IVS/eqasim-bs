@@ -41,7 +41,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from braunschweig.calibration import circuity  # noqa: E402
 from braunschweig.calibration.metrics import emd_on_bands  # noqa: E402
 from braunschweig.calibration.secondary_measurement import (  # noqa: E402
+    SUBTYPE_DONOR_MEAN_KM_RANGE,
     mode_to_network,
+    per_group_distance_summary,
+    placement_share_at_positive_potential,
     w12_band_shares as _w12_band_shares,
 )
 from braunschweig.calibration.targets import (  # noqa: E402
@@ -334,6 +337,99 @@ def print_table(rows: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subtype validation additions (issue #127, Task 6)
+#
+# Optional column names a future cache MIGHT expose, carrying the internal
+# leisure/other subtype label per leg and the placed candidate's residential
+# ("leisure_visit") potential value. As of THIS task the synpp stage output
+# does NOT persist either: secondary_chainsolvers._extract_locations maps the
+# internal subtype activity (e.g. "leisure_visit") back to the aggregate
+# eqasim purpose ("leisure") before the locations/activities stages are
+# cached, so no currently-cached stage carries the subtype label past that
+# point. The checks below are written against these column names so they
+# activate automatically the moment a future stage change exposes them (no
+# invented data meanwhile); until then each logs an explicit, honest skip
+# rather than silently omitting the check (CLAUDE.md "no silent fallback").
+#
+# The equivalent LIVE transparency signal for the "leisure_excursion"
+# boundary-clip effect is already wired directly into the chainsolvers run
+# log (see secondary_chainsolvers._excursion_boundary_clip_summary), because
+# that data is available inside the solve step, before the subtype label is
+# discarded -- this script-side check covers the complementary per-group
+# mean-distance and leisure_visit-placement signals, which are not available
+# without persisting the label.
+# ---------------------------------------------------------------------------
+
+_SUBTYPE_ACTIVITY_COLUMN = "activity_subtype"
+_VISIT_POTENTIAL_COLUMN = "pot_visit"
+
+
+def build_subtype_report(distances_by_purpose: dict) -> None:
+    """Log per-group realised distances and the leisure_visit placement share.
+
+    Both checks require the internal subtype label (and, for the placement
+    check, the placed candidate's ``pot_visit`` value) on the realised legs
+    frame -- see the module note above for why neither is present on the
+    frames returned by ``measure_secondary_distances`` today. This function
+    checks for the columns and either reports the real numbers (once a future
+    stage exposes them) or logs a clear, traceable "not available in this
+    cache" line -- it never fabricates a result.
+    """
+    any_subtype_column_found = False
+    for purpose, df_purpose in distances_by_purpose.items():
+        if _SUBTYPE_ACTIVITY_COLUMN not in df_purpose.columns:
+            continue
+        any_subtype_column_found = True
+        summary = per_group_distance_summary(df_purpose, _SUBTYPE_ACTIVITY_COLUMN, "euclidean_km")
+        for _, row in summary.iterrows():
+            group = row["group"]
+            logger.info(
+                "[secondary-validate] subtype=%s: %d legs, mean realised=%.2f km.",
+                group, row["n"], row["mean_distance"],
+            )
+            donor_range = SUBTYPE_DONOR_MEAN_KM_RANGE.get(group)
+            if donor_range is not None:
+                lo, hi = donor_range
+                logger.info(
+                    "[secondary-validate] in-sample sanity (NOT a validated target "
+                    "-- see spec docs/superpowers/specs/"
+                    "2026-07-09-wzwd-leisure-errand-split-design.md): %s realised "
+                    "mean %.1f km vs measured donor range %.1f-%.1f km.",
+                    group, row["mean_distance"], lo, hi,
+                )
+    if not any_subtype_column_found:
+        logger.info(
+            "[secondary-validate] per-group subtype distances: NOT available in "
+            "this cache (the '%s' column is not yet exposed by the cached stage "
+            "output -- see issue #127 Task 6 follow-up). Skipping subtype rows.",
+            _SUBTYPE_ACTIVITY_COLUMN,
+        )
+
+    df_leisure = distances_by_purpose.get("leisure", pd.DataFrame())
+    has_subtype = _SUBTYPE_ACTIVITY_COLUMN in df_leisure.columns
+    has_pot_visit = _VISIT_POTENTIAL_COLUMN in df_leisure.columns
+    if has_subtype and has_pot_visit:
+        mask = df_leisure[_SUBTYPE_ACTIVITY_COLUMN] == "leisure_visit"
+        share, n_pos, n_total = placement_share_at_positive_potential(
+            df_leisure, _VISIT_POTENTIAL_COLUMN, group_mask=mask,
+        )
+        share_pct = 100.0 * share if n_total else float("nan")
+        logger.info(
+            "[secondary-validate] leisure_visit placement share (pot_visit > 0): "
+            "%d/%d (%.1f%%; expected ~100%% when leisure_visit_building_potential "
+            "is ON).",
+            n_pos, n_total, share_pct,
+        )
+    else:
+        logger.info(
+            "[secondary-validate] leisure_visit placement share: NOT available in "
+            "this cache (neither '%s' nor '%s' is exposed by the cached stage "
+            "output -- see issue #127 Task 6 follow-up). Skipping.",
+            _SUBTYPE_ACTIVITY_COLUMN, _VISIT_POTENTIAL_COLUMN,
+        )
+
+
+# ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
 
@@ -403,6 +499,15 @@ def main():
     # ------------------------------------------------------------------
     rows = build_report(distances, w12)
     print_table(rows)
+
+    # ------------------------------------------------------------------
+    # 4b. Subtype validation additions (issue #127, Task 6): per-group
+    # realised distances (in-sample sanity vs the spec's donor means) and the
+    # leisure_visit residential-placement share. See build_subtype_report's
+    # docstring for why these currently log an honest "not available" rather
+    # than real numbers on this cache.
+    # ------------------------------------------------------------------
+    build_subtype_report(distances)
 
     # ------------------------------------------------------------------
     # 5. Write optional CSV output

@@ -21,7 +21,8 @@ def configure(context):
     context.stage("data.spatial.codes")
 
     context.config("sampling_rate")
-    context.config("processes")
+    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
+    context.config("processes", volatile = True)
     # Thread count for the MATSim preparation/routing/config-generation steps and
     # the simulation (qsim + global numberOfThreads, baked into the generated
     # config). Defaults to None -> use "processes", so existing configs are

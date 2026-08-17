@@ -1,0 +1,55 @@
+feature: student_incommuters
+title: Student in-commuters (#140)
+area: cordon
+description: 'Adds university student in-commuters from LSN enrollment and DESTATIS origin structure
+  as cordon-crossing agents (tri-state flag, default ON when education gravity is on; #140).'
+stages:
+- braunschweig.synthesis.student_incommuters
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_student_incommuters_enabled
+introduced:
+  issue: '#140'
+  pr: '#219'
+  adr: null
+detail_doc: docs/features/student-incommuters.md
+code_paths:
+- braunschweig/synthesis/student_incommuters.py
+- braunschweig/data/education/student_incommuter_counts.py
+evidence:
+  tests:
+  - tests/test_student_incommuters_stage.py
+  - tests/test_student_incommuter_counts.py
+  - tests/test_student_incommuter_merge.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_student_incommuters_stage.py
+    note: |
+      The flag is tri-state (unset = default ON when education_gravity_enabled is on). The named test file is the declared evidence; the byte-identity test function still has to be pinned.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No primary-vs-fallback rate log was found in the student in-commuter builder, although the module documents itself as deliberately simpler than the SvB in-commuter path.
+  reference:
+    kind: none
+    note: |
+      The LSN SS2025 enrollment counts and DESTATIS 12411-0018 named in the STATUS matrix are NOT committed to this repository; only lsn2022_income_tax_by_kreis.csv is. The student in-commuter volumes therefore cannot currently be traced to a committed source from the repo alone, and no realised figure may be reported as validated until they are.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: PROJECT_STATUS records the server E2E dry-run and real-data validation as PENDING, so
+    no realised value exists to declare.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    No ADR exists for #140, and the STATUS matrix itself marks the validation run as pending. A merged default-ON feature without an ADR and without a validation run is exactly the combination this register is meant to make visible.
+  source: null

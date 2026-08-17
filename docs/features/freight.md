@@ -31,18 +31,22 @@ The injection is a **three-stage hybrid** (flag-gated; see below):
    (the union of the in-scope municipalities, plus the cordon buffer when
    `cordon_enabled`) on the German-wide network. The tool routes every freight
    trip, classifies it, trims each plan at the study-area boundary and shifts
-   the departure time by the access travel time. The matsim **2025.0-PR3568**
-   build writes **no category attribute** on the output persons (the
-   `geographical_Trip_Type` attribute only exists in later matsim-libs
-   versions -- verified on the real output: all 49 758 extracted trips came
-   back `unknown`), so the stage runs the **unmodified tool once per category**
-   (`--tripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each) and returns
-   `{category: plans_file}` -- the exact published classification, no geometric
-   heuristic (trimmed endpoints lie on network nodes *inside* the polygon, so a
-   point-in-polygon test cannot recover the category). Further verified CLI
-   quirks of this build: the option is `--LegMode` (capital L), there is no
-   `--subpopulation` option (it hard-codes `freight`), and plans/network/output
-   paths must be absolute (the tool NPEs on a bare `--output` filename). This
+   the departure time by the access travel time. The stage runs the
+   **unmodified tool once per category**
+   (`--geographicalTripType INTERNAL/INCOMING/OUTGOING/TRANSIT`, ~45 min each)
+   and returns `{category: plans_file}` -- the exact published classification,
+   no geometric heuristic (trimmed endpoints lie on network nodes *inside* the
+   polygon, so a point-in-polygon test cannot recover the category). The
+   matsim **2026** contrib build (in lockstep with the parent pom's
+   `matsim.version` since the dependency consolidation) also tags each output
+   person with the `geographical_Trip_Type` attribute; the per-category runs
+   remain the canonical partition. Verified CLI contract of this build (via
+   `--help` against the built jar): the options are `--legMode` (was
+   `--LegMode` in 2025.0-PR3568) and `--geographicalTripType` (was
+   `--tripType`); `--subpopulation freight` must be passed explicitly (the
+   tool now defaults to `longDistanceFreight`, the old build hard-coded
+   `freight`); plans/network/output paths must be absolute (the tool NPEs on
+   a bare `--output` filename). This
    stage is **sampling-rate independent** (cached by synpp), so the expensive
    routing runs once and is reused across sampling rates. The local-only inputs
    are validated up front by `braunschweig.data.freight.german_wide`, which
@@ -96,11 +100,13 @@ extraction stage additionally reads `freight_crs` (default EPSG:25832),
 `braunschweig/freight/german-wide-freight-v3/`). The **OFF path**
 (`freight_enabled: false`) is byte-identical to the pre-feature pipeline: no
 freight stages are requested, no injection runs, and the analysis filter is a
-no-op. The committed run configs reflect this -- the two real-data run configs
-(`config_local_braunschweig.yml`, `config_server_braunschweig_100pct.yml`) set
-`freight_enabled: true`; every other `config_*.yml` (dryrun, smoke, popsim,
-intermediate sampling rates) sets `freight_enabled: false` so they never require
-the local-only freight inputs.
+no-op. The committed run configs reflect this -- the composed all-features base
+`configs/base_bs.yml` (config-composition cleanup, #230; applies to every scale
+overlay) and the standalone fixture `configs/fixtures/config_local_braunschweig.yml`
+set `freight_enabled: true` (previously also set on the now-removed
+`config_server_braunschweig_100pct.yml`); every other `configs/fixtures/config_*.yml`
+(dryrun, smoke, popsim, intermediate sampling rates) sets `freight_enabled: false`
+so they never require the local-only freight inputs.
 
 A possible follow-up (NOT done) is to **calibrate the injected freight against
 BASt automatic HGV counts** at the ZGB counting stations (Dauerzaehlstellen), so

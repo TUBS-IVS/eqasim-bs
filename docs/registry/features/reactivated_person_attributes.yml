@@ -1,0 +1,70 @@
+feature: reactivated_person_attributes
+title: Reactivated attrs (couple/studies/SPC)
+area: attributes
+description: Reactivates the upstream couple/studies/single-parent-child person attributes that
+  the Bavaria fork had dropped (ADR-0018). Legacy simple_ipf_open flag -- under popsim_mid
+  studies and socioprofessional_class ARE produced, by attributes.map_studies and
+  attributes.map_socioprofessional_class (the latter calling the same
+  derive_socioprofessional_class); only couple is not produced, and it has no consumer
+  (ADR-0079).
+stages:
+- synthesis.population.enriched
+- synthesis.population.matched
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - reactivate_person_attributes
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0018
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/ipf/attributed.py
+- synthesis/population/matched.py
+evidence:
+  tests:
+  - tests/test_couple_attribute.py
+  - tests/test_studies_attribute.py
+  - tests/test_spc_attribute.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_couple_attribute.py
+    note: All three test files explicitly exercise the reactivate_person_attributes ON/OFF contract.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.ipf.attributed] couple: no hh_type column'
+    note: |
+      The couple sub-derivation logs when household formation is disabled (no hh_type column, couple stays False). derive_studies/derive_socioprofessional_class have NO equivalent fallback-rate logging -- ages outside the student-share table silently return 0.0 with no counted/logged fallback, a gap worth closing per CLAUDE.md fallback-transparency.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mikrozensus/student_share_by_age.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Wiring decided in ADR-0079: the FLAG governs nothing under popsim_mid, hence
+    not_used -- but two of the three attributes (studies, socioprofessional_class) ARE
+    produced there by the popsim attribute mappers, so not_used must not be read as
+    'attributes missing'. Only couple is absent, and it has no consumer: no writer
+    field in matsim.scenario.population.PERSON_FIELDS, no entry in
+    braunschweig/population/schema.py, no eqasim-java reader; the sole reference is a
+    plausibility check. Still pending: the studies/SPC sub-derivations lack
+    fallback-rate instrumentation (see fallback_rate.note).
+  source: ADR-0079 (mechanism decision); ADR-0018 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

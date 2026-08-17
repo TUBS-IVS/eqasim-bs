@@ -1,0 +1,59 @@
+feature: popsim_method
+title: popsim_open / popsim_mid
+area: population
+description: PopulationSim-based synthesis at the Zensus-2022 100m/1km grid from complete donor
+  households -- popsim_mid seeds with restricted MiD 2023 B1 microdata (donors carry their own
+  travel-day chains), popsim_open with the open ENTD seed (ADR-0002).
+stages:
+- data.census.filtered
+- braunschweig.popsim.completed_donor
+- braunschweig.data.hts.mid_donor
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.method
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0002
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+- braunschweig/popsim/stage/
+- braunschweig/population/selector.py
+evidence:
+  tests:
+  - tests/test_population_selector.py
+  - tests/test_popsim_open_config.py
+  - tests/test_popsim_open_entd.py
+  - tests/test_three_case_comparability.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      selector.py raises PopulationMethodNotImplemented for an unsupported method rather than falling back to another one, by explicit design (docstring: "never falls back") -- there is no OFF path to test byte-identity against.
+  fallback_rate:
+    instrumented: false
+    note: |
+      The method switch itself is a hard-fail guard, not a rate-logged fallback. The popsim producer stage (braunschweig/popsim/stage/) has its own extensive fallback logging for sub-features, declared separately in this register (e.g. income_spatial_tilt.yml).
+  reference:
+    kind: none
+    note: |
+      The MiD 2023 raw donor (braunschweig.population.popsim.mid_raw_path) and the Zensus 100m/1km grid parquets this method reads are NOT committed (local-only, explicitly documented as "never committed" in braunschweig/population/config.py).
+validation:
+  state: measured_vs_reference
+  runs:
+  - synth-100pct-2.2.0-2026-07-23
+  metric: 'control-fit vs committed controls (category shares): census-scale families mean ~0.25pp,
+    KREIS/SrV families mean ~1.1pp, car/bike ~3.6-4.7pp urban-concentrated'
+  note: Control fit against committed control tables; NOT a behavioural validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0002 documents all three methods; configs/base_bs.yml:155 confirms popsim_mid is the active production method. No owner verdict on realised popsim_mid fit quality has been recorded in this register (see also placement_income_l2.yml and srv_participation_controls.yml, which layer on top of this method).
+  source: ADR-0002

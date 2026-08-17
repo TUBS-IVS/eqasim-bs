@@ -1,0 +1,15 @@
+stage: eqasim_common.gravity.distance_matrix
+title: Zone distance matrix
+layer: work
+description: Centroid distance matrix between Gemeinde zones for the gravity models.
+lineage:
+  type: extended
+  upstream: null
+  notes: null
+code:
+- eqasim_common/gravity/distance_matrix.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

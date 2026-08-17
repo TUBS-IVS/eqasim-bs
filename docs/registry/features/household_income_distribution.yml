@@ -1,0 +1,63 @@
+feature: household_income_distribution
+title: Household income € + distribution
+area: attributes
+description: Draws household income in EUR from empirical MiD distributions with INKAR per-Kreis
+  scaling (ADR-0017); under popsim_mid the donor's own MiD income plus placement_income carries
+  this signal instead. Legacy simple_ipf_open mechanism -- under popsim_mid
+  attributes.map_household_income_eur plus income_spatial_tilt, income_kreis_control,
+  placement_income (ADR-0069) and the open-top Pareto tail supersede it (ADR-0079).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - income_eur_from_distribution
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0017
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/income_distribution.py
+evidence:
+  tests:
+  - tests/test_income_eur_distribution.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_income_eur_distribution.py
+    note: test_off_equivalence_byte_identical confirms the OFF path is unchanged.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'distribution household_income_eur:'
+    note: |
+      Logs a primary-vs-fallback (size-only pmf + rank-alignment when the status cell / NDS base is absent) rate, plus a separate INKAR join-coverage warning.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H4_income_by_size.csv
+    note: |
+      Also draws on several further committed MiD income tables under the same directory. The INKAR fine-tilt input (braunschweig.inkar_household_income_path, braunschweig/E_Haushaltseinkommen.xls) is NOT committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Wiring decided in ADR-0079: not ported to popsim_mid, where the donor's own income
+    class scaled by the INKAR per-Kreis factor plus the placement/tilt/control chain
+    supersede the H4 pmf draw. Still pending: no owner verdict on the realised income
+    distribution, and ADR-0017 remains a combined ADR covering four flags at once.
+  source: ADR-0079 (mechanism decision); ADR-0017 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

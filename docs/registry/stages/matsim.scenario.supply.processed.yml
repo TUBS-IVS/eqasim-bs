@@ -1,0 +1,15 @@
+stage: matsim.scenario.supply.processed
+title: Supply post-processing
+layer: matsim
+description: Upstream network/schedule post-processing.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- matsim/scenario/supply/processed.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

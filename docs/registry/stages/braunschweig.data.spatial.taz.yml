@@ -1,0 +1,23 @@
+stage: braunschweig.data.spatial.taz
+title: RVB VISUM traffic zones (TAZ)
+layer: spatial
+description: Loads the proprietary RVB VISUM Verkehrszellen for sub-communal work-location choice;
+  permanently OFF (ADR-0067), local-only data.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: Parked permanently OFF per ADR-0067; superseded in practice by building potentials. Reachable
+    only when taz_work_location_choice is enabled, which no committed config does.
+code:
+- braunschweig/data/spatial/taz.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+features:
+- taz_work_location_choice
+decisions:
+- ADR-0049
+- ADR-0050
+- ADR-0067

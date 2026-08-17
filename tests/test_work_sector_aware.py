@@ -217,3 +217,68 @@ def test_execute_gravity_base_off_path_passes_employees_unchanged():
     df = _employees()
     out = apply_sector_aware_attraction(df, None, enabled=False)
     assert out is df  # same object, no copy, no mutation on the OFF path
+
+
+# ---------------------------------------------------------------------------
+# Call-site schema (#128 regression): the employees STAGE returns
+# ``(commune_id, weight)`` -- NOT ``employees``. The tilt used to be applied
+# to the raw stage output before the ``weight -> employees`` rename, so
+# enabling the flag crashed the pipeline with ``KeyError: 'employees'``.
+# ``build_destination_attraction`` owns that handoff and is tested here with
+# the true stage schema (the primary path, per the CLAUDE.md fallback rule).
+# ---------------------------------------------------------------------------
+
+
+def _employees_stage_output() -> pd.DataFrame:
+    """The exact schema ``braunschweig.data.census.employees`` returns."""
+    return pd.DataFrame(
+        {
+            "commune_id": ["031010000000", "031010010000", "031530000000"],
+            "weight": [1000.0, 1000.0, 500.0],
+        }
+    )
+
+
+def test_build_destination_attraction_on_accepts_stage_schema():
+    """#128 regression: the ON path must work on the raw stage output
+    (``commune_id``/``weight``) without a KeyError and must tilt within-Kreis
+    attraction while preserving the Kreis totals."""
+    from braunschweig.gravity.model import build_destination_attraction
+
+    out = build_destination_attraction(
+        _employees_stage_output(), _betriebe(), sector_aware_enabled=True
+    )
+
+    assert list(out.columns) == ["commune_id", "employees"]
+    big = out[out["commune_id"] == "031010000000"]["employees"].iloc[0]
+    service = out[out["commune_id"] == "031010010000"]["employees"].iloc[0]
+    assert service > 1000.0 > big  # tilt applied toward the dense Gemeinde
+    assert np.isclose(big + service, 2000.0)  # Kreis total preserved
+
+
+def test_build_destination_attraction_off_matches_plain_rename():
+    """OFF path byte-identity: the result must equal the raw stage output with
+    only the ``weight -> employees`` rename (the legacy attraction vector)."""
+    from braunschweig.gravity.model import build_destination_attraction
+
+    raw = _employees_stage_output()
+    out = build_destination_attraction(raw, None, sector_aware_enabled=False)
+
+    expected = raw.rename(columns={"weight": "employees"})[
+        ["commune_id", "employees"]
+    ]
+    pd.testing.assert_frame_equal(out, expected)
+
+
+def test_execute_applies_tilt_after_weight_rename():
+    """Static guard: inside ``model.py`` the tilt must run via
+    ``build_destination_attraction`` (which renames first); a direct
+    ``apply_sector_aware_attraction`` call on the raw stage frame in
+    ``_execute_gravity_base`` reintroduces the #128 KeyError."""
+    import inspect
+
+    from braunschweig.gravity import model
+
+    source = inspect.getsource(model._execute_gravity_base)
+    assert "build_destination_attraction" in source
+    assert "apply_sector_aware_attraction" not in source

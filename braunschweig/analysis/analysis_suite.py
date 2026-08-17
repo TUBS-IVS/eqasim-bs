@@ -27,6 +27,11 @@ KEY_HOUSEHOLD_COMPOSITION = "analysis_household_composition"
 KEY_DASHBOARD = "analysis_dashboard"
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 KEY_METHOD = "braunschweig.population.method"
+# Issue #96 minor-employment plausibility guard (population_validation). The
+# default bound is single-sourced from controls.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE
+# (imported lazily where needed to keep stage import light).
+KEY_MINOR_EMP_MAX_RATE = "analysis_minor_employment_max_rate"  # fraction, under-15 employed share
+KEY_MINOR_EMP_RAISE = "analysis_minor_employment_raise"        # bool: raise vs warn on exceed
 
 
 def configure(context):
@@ -45,6 +50,11 @@ def configure(context):
     context.config(KEY_WORK_DIR, None)
     context.config(KEY_METHOD, None)
     context.config("analysis_working_directory", None)
+    from braunschweig.analysis.population_validation.controls import (
+        DEFAULT_MINOR_EMPLOYMENT_MAX_RATE,
+    )
+    context.config(KEY_MINOR_EMP_MAX_RATE, DEFAULT_MINOR_EMPLOYMENT_MAX_RATE)
+    context.config(KEY_MINOR_EMP_RAISE, False)
     if not context.config(KEY_ENABLED):
         return
     context.stage("synthesis.output")
@@ -100,11 +110,18 @@ def execute(context):
         "ran": [], "skipped": [], "failed": [],
     }
 
+    # ExecuteContext.config() takes the key alone; all defaults are declared in
+    # configure() (see tests/test_execute_context_config_contract.py).
     def _pop():
         from braunschweig.analysis.population_validation import run_population_validation as R
-        R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
+        argv = ["--run-output-dir", str(output_path), "--prefix", prefix,
+                "--minor-employment-max-rate",
+                str(context.config(KEY_MINOR_EMP_MAX_RATE))]
+        if context.config(KEY_MINOR_EMP_RAISE):
+            argv.append("--minor-employment-raise")
+        R.run(R._parse_args(argv))
     _run(summary, "population_validation",
-         context.config(KEY_POPULATION_VALIDATION, True), True, "", _pop)
+         context.config(KEY_POPULATION_VALIDATION), True, "", _pop)
 
     def _mid():
         from braunschweig.analysis import run_mid_validation as R
@@ -113,19 +130,19 @@ def execute(context):
             argv += ["--sim-cache", sim_cache]
         R.main(argv)
     _run(summary, "mid_validation",
-         context.config(KEY_MID_VALIDATION, True), True, "", _mid)
+         context.config(KEY_MID_VALIDATION), True, "", _mid)
 
     def _hh():
         from braunschweig.analysis import run_household_composition as R
         R.main(["--output-dir", str(output_path), "--prefix", prefix])
     _run(summary, "household_composition",
-         context.config(KEY_HOUSEHOLD_COMPOSITION, True), True, "", _hh)
+         context.config(KEY_HOUSEHOLD_COMPOSITION), True, "", _hh)
 
     def _popsim():
         from braunschweig.analysis.popsim_validation import run_popsim_control_validation as R
         R.run(R._parse_args(["--run-output-dir", str(output_path), "--prefix", prefix]))
     _run(summary, "popsim_validation",
-         context.config(KEY_POPSIM_VALIDATION, True), is_popsim, "not a popsim run", _popsim)
+         context.config(KEY_POPSIM_VALIDATION), is_popsim, "not a popsim run", _popsim)
 
     mid_dir = (str(Path(data_path) / "braunschweig" / "popsim" / "mid2023_raw")
                if data_path else None)
@@ -135,18 +152,34 @@ def execute(context):
         from braunschweig.analysis import run_integerizer_quality as R
         R.main(["--work-dir", work_dir, "--mid-dir", mid_dir, "--output-dir", str(output_path)])
     _run(summary, "integerizer_quality",
-         context.config(KEY_INTEGERIZER_QUALITY, True), iq_ready,
+         context.config(KEY_INTEGERIZER_QUALITY), iq_ready,
          "popsim work_dir / mid_dir not resolvable", _iq)
 
-    edu_ready = bool(working_directory) and Path(working_directory).is_dir()
+    # education_validation uniquely reads synpp CACHE stage pickles (named
+    # "<stage>__<hash>.p"), not the output dir. Gate on the cache dir existing AND
+    # carrying the stages education loads, so an unset/stale/incomplete cache SKIPS
+    # cleanly (loud, with the missing stage named) instead of failing red.
+    edu_required_stages = (
+        "braunschweig.synthesis.locations.education_gravity",
+        "braunschweig.data.schools.facilities",
+        "synthesis.population.spatial.home.locations",
+    )
+    if not (bool(working_directory) and Path(working_directory).is_dir()):
+        edu_ready = False
+        edu_reason = "working_directory not set (analysis_working_directory)"
+    else:
+        edu_missing = [s for s in edu_required_stages
+                       if not list(Path(working_directory).glob(f"{s}__*.p"))]
+        edu_ready = not edu_missing
+        edu_reason = ("" if edu_ready
+                      else f"education cache incomplete (missing {edu_missing[0]} pickle)")
     def _edu():
         from braunschweig.analysis import run_education_validation as R
         R.main(["--working-directory", str(working_directory),
                 "--sampling-rate", str(sampling_rate),
                 "--output-dir", str(output_path / "analysis" / "education_validation")])
     _run(summary, "education_validation",
-         context.config(KEY_EDUCATION_VALIDATION, True), edu_ready,
-         "working_directory not set (analysis_working_directory)", _edu)
+         context.config(KEY_EDUCATION_VALIDATION), edu_ready, edu_reason, _edu)
 
     def _dash():
         import sys as _sys
@@ -160,7 +193,7 @@ def execute(context):
         finally:
             _sys.argv = old
     _run(summary, "dashboard",
-         context.config(KEY_DASHBOARD, True), bool(sim_cache), "no MATSim sim cache", _dash)
+         context.config(KEY_DASHBOARD), bool(sim_cache), "no MATSim sim cache", _dash)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)

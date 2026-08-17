@@ -1,0 +1,22 @@
+stage: synthesis.population.income.selected
+title: Household income
+layer: attributes
+description: Income seam resolving to braunschweig.synthesis.income (MiD/INKAR-based) in every
+  workflow.
+lineage:
+  type: overridden
+  upstream: synthesis.population.income.selected
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/income/selected.py
+- braunschweig/synthesis/income.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+resolves_to:
+  popsim_mid: braunschweig.synthesis.income
+  popsim_open: braunschweig.synthesis.income
+  simple_ipf_open: braunschweig.synthesis.income

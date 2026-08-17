@@ -58,11 +58,46 @@ def configure(context):
     context.stage("eqasim_common.spatial.codes")
 
 
-def _coerce_int(series: pd.Series) -> pd.Series:
-    # GENESIS uses "." or "-" for suppressed/zero cells.
-    return (pd.to_numeric(series, errors="coerce")
-              .fillna(0)
-              .astype(int))
+# GENESIS legitimately uses "." (not surveyed) and "-" (exactly zero) as
+# suppression markers, which coerce to 0 by design and are NOT counted below.
+# Any OTHER non-numeric, non-empty cell that coerces to 0 (a shifted column, a
+# stray unit label, a header row that slipped past skiprows) is a genuine
+# parse failure masquerading as a real zero -- CLAUDE.md "Fallback
+# transparency" requires that to be counted and surfaced, not silently
+# swallowed by ``fillna(0)``.
+GENESIS_SUPPRESSION_MARKERS = {".", "-"}
+EMPLOYMENT_COERCE_WARN_FRACTION: float = 0.05
+EMPLOYMENT_COERCE_RAISE_FRACTION: float = 0.50
+
+
+def _coerce_int(series: pd.Series, column_name: str = "") -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    unexplained_mask = numeric.isna() & ~series.astype(str).str.strip().isin(
+        GENESIS_SUPPRESSION_MARKERS | {"", "nan", "None"}
+    )
+    unexplained_count = int(unexplained_mask.sum())
+    total = len(series)
+    if unexplained_count:
+        fraction = unexplained_count / total if total else 0.0
+        label = f" in column '{column_name}'" if column_name else ""
+        print(f"[braunschweig.employment] _coerce_int{label}: {unexplained_count}/{total} "
+              f"({100.0 * fraction:.1f}%) cells were non-numeric and NOT a recognised "
+              f"GENESIS suppression marker ({sorted(GENESIS_SUPPRESSION_MARKERS)}); "
+              f"coerced to 0 anyway, which silently masks a genuine parse failure.")
+        if fraction >= EMPLOYMENT_COERCE_RAISE_FRACTION:
+            raise RuntimeError(
+                f"_coerce_int{label} coerced {100.0 * fraction:.1f}% of cells to 0 for "
+                f"reasons other than the recognised GENESIS suppression markers (limit "
+                f"{100.0 * EMPLOYMENT_COERCE_RAISE_FRACTION:.0f}%). This almost certainly "
+                f"means the table format/column offsets changed -- refusing to continue "
+                f"with a corrupted employment marginal."
+            )
+        if fraction >= EMPLOYMENT_COERCE_WARN_FRACTION:
+            print(f"[braunschweig.employment] WARNING: _coerce_int{label} unexplained-zero "
+                  f"rate {100.0 * fraction:.1f}% exceeds the "
+                  f"{100.0 * EMPLOYMENT_COERCE_WARN_FRACTION:.0f}% threshold; verify the "
+                  f"input table still matches the documented column layout.")
+    return numeric.fillna(0).astype(int)
 
 
 def execute(context):
@@ -88,12 +123,26 @@ def execute(context):
     scope = set(df_codes["departement_id"].astype(str).unique())
     df = df[df["departement_id"].isin(scope)].copy()
 
+    # Fail fast on an empty result: zero rows after the 5-digit/scope filter
+    # means the AGS column lost its text form (e.g. numeric Excel cells strip
+    # the leading zero: "03101" -> 3101, length 4 -> every row dropped) or the
+    # table layout changed. Returning an empty marginal would silently feed
+    # "zero employment" into IPF downstream.
+    if df.empty:
+        raise RuntimeError(
+            "[braunschweig.employment] 0 rows left after the 5-digit AGS / "
+            f"scope filter (scope Kreise: {sorted(scope)}). The AGS column of "
+            "the GENESIS 13111-06-02-4 XLSX most likely lost its leading zero "
+            "(numeric cells) or the column layout shifted -- refusing to "
+            "return an empty employment marginal."
+        )
+
     # Drop "Insgesamt" totals, keep the seven bucket rows.
     df = df[df["age_class"].isin(AGE_CLASS_MAP)].copy()
     df["age_class"] = df["age_class"].map(AGE_CLASS_MAP).astype(int)
 
     for col in ["all_male", "all_female"]:
-        df[col] = _coerce_int(df[col])
+        df[col] = _coerce_int(df[col], column_name=col)
 
     # Long format, matching Bavaria.
     df_long = pd.melt(

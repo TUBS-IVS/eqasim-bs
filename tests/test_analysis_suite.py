@@ -11,23 +11,42 @@ sys.path.insert(0, str(REPO))
 from braunschweig.analysis import analysis_suite as AS  # noqa: E402
 
 
-class FakeContext:
-    """Minimal synpp context stand-in for stage unit tests."""
-    def __init__(self, config, paths=None):
-        self._config = dict(config)
-        self._paths = dict(paths or {})
+class FakeConfigurationContext:
+    """Stand-in for synpp's ConfigurationContext: ``config(key, default)``
+    collects declared options, preferring base-config values over declared
+    defaults (mirrors synpp.pipeline.ConfigurationContext.config)."""
+    def __init__(self, base_config):
+        self._base_config = dict(base_config)
+        self.required_config = {}
         self.declared_stages = []
 
     def config(self, key, *default):
-        if key in self._config:
-            return self._config[key]
-        if default:
-            return default[0]
-        raise KeyError(key)
+        if key in self._base_config:
+            self.required_config[key] = self._base_config[key]
+        elif default:
+            self.required_config.setdefault(key, default[0])
+        elif key not in self.required_config:
+            raise KeyError(f"config option '{key}' has no value and no default")
+        return self.required_config[key]
 
     def stage(self, name):
         self.declared_stages.append(name)
         return None
+
+
+class FakeContext:
+    """Stand-in for synpp's ExecuteContext: ``config()`` takes the key ALONE,
+    exactly like the real execute context. A stub accepting a default here
+    would silently tolerate the two-argument form that crashes at runtime
+    (see tests/test_execute_context_config_contract.py and issue #183)."""
+    def __init__(self, config, paths=None):
+        self._config = dict(config)
+        self._paths = dict(paths or {})
+
+    def config(self, key):
+        if key not in self._config:
+            raise KeyError(f"config option '{key}' is not requested")
+        return self._config[key]
 
     def path(self, name):
         return self._paths[name]
@@ -48,20 +67,29 @@ def _base_config(output_path, **overrides):
     return cfg
 
 
+def _execute_context(output_path, paths=None, **overrides):
+    """Build an execute-phase context the way synpp does: run the stage's own
+    configure() to resolve declared defaults, then expose the resolved config
+    through the strict key-only ExecuteContext stand-in."""
+    configuration = FakeConfigurationContext(_base_config(output_path, **overrides))
+    AS.configure(configuration)
+    return FakeContext(configuration.required_config, paths=paths)
+
+
 def _write_min_output(tmp_path):
     (tmp_path / "run_persons.csv").write_text("person_id\n1\n")
     return tmp_path
 
 
 def test_disabled_is_noop(tmp_path):
-    ctx = FakeContext(_base_config(tmp_path, analysis_suite_enabled=False))
+    ctx = _execute_context(tmp_path, analysis_suite_enabled=False)
     assert AS.execute(ctx) is None
     assert not (tmp_path / "analysis").exists()
 
 
 def test_malformed_output_raises(tmp_path):
     # enabled but no *_persons.csv in output_path -> hard error
-    ctx = FakeContext(_base_config(tmp_path))
+    ctx = _execute_context(tmp_path)
     with pytest.raises(FileNotFoundError):
         AS.execute(ctx)
 
@@ -80,7 +108,7 @@ def test_population_validation_runs_by_default(tmp_path, monkeypatch):
     _write_min_output(tmp_path)
     calls = []
     _install_pop_spy(monkeypatch, calls)
-    ctx = FakeContext(_base_config(tmp_path))
+    ctx = _execute_context(tmp_path)
     AS.execute(ctx)
     assert len(calls) == 1
     assert "--run-output-dir" in calls[0]["argv"]
@@ -92,7 +120,7 @@ def test_population_validation_flag_off(tmp_path, monkeypatch):
     _write_min_output(tmp_path)
     calls = []
     _install_pop_spy(monkeypatch, calls)
-    ctx = FakeContext(_base_config(tmp_path, analysis_population_validation=False))
+    ctx = _execute_context(tmp_path, analysis_population_validation=False)
     AS.execute(ctx)
     assert calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -103,7 +131,7 @@ def test_sub_analysis_failure_is_caught(tmp_path, monkeypatch):
     _write_min_output(tmp_path)
     calls = []
     _install_pop_spy(monkeypatch, calls, raise_exc=RuntimeError("boom"))
-    ctx = FakeContext(_base_config(tmp_path))
+    ctx = _execute_context(tmp_path)
     result = AS.execute(ctx)  # must NOT raise
     assert result is not None
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -122,7 +150,7 @@ def test_mid_and_household_run_by_default(tmp_path, monkeypatch):
         pytest.skip(f"optional dep missing for mid/hh imports: {exc}")
     monkeypatch.setattr(MID, "main", lambda argv: mid_calls.append(argv))
     monkeypatch.setattr(HH, "main", lambda argv: hh_calls.append(argv))
-    ctx = FakeContext(_base_config(tmp_path))
+    ctx = _execute_context(tmp_path)
     AS.execute(ctx)
     assert len(mid_calls) == 1 and "--output-dir" in mid_calls[0]
     assert "--sim-cache" not in mid_calls[0]        # no MATSim -> no sim cache passed
@@ -140,7 +168,7 @@ def test_popsim_skipped_when_not_popsim(tmp_path, monkeypatch):
     monkeypatch.setattr(PV, "_parse_args", lambda argv: {"argv": argv})
     monkeypatch.setattr(PV, "run", lambda ns: pv_calls.append(ns))
     monkeypatch.setattr(IQ, "main", lambda argv: iq_calls.append(argv))
-    ctx = FakeContext(_base_config(tmp_path))  # method=None -> not popsim
+    ctx = _execute_context(tmp_path)  # method=None -> not popsim
     AS.execute(ctx)
     assert pv_calls == [] and iq_calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -159,11 +187,11 @@ def test_popsim_and_integerizer_run_when_ready(tmp_path, monkeypatch):
     monkeypatch.setattr(PV, "_parse_args", lambda argv: {"argv": argv})
     monkeypatch.setattr(PV, "run", lambda ns: pv_calls.append(ns))
     monkeypatch.setattr(IQ, "main", lambda argv: iq_calls.append(argv))
-    ctx = FakeContext(_base_config(
+    ctx = _execute_context(
         tmp_path,
         **{"braunschweig.population.method": "popsim_mid",
            "braunschweig.population.popsim.work_dir": str(work),
-           "data_path": str(tmp_path)}))
+           "data_path": str(tmp_path)})
     AS.execute(ctx)
     assert len(pv_calls) == 1
     assert len(iq_calls) == 1 and "--work-dir" in iq_calls[0] and "--mid-dir" in iq_calls[0]
@@ -177,7 +205,7 @@ def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
     dash_calls, edu_calls = [], []
     monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
-    ctx = FakeContext(_base_config(tmp_path))  # no matsim, no working dir
+    ctx = _execute_context(tmp_path)  # no matsim, no working dir
     AS.execute(ctx)
     assert dash_calls == [] and edu_calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
@@ -193,8 +221,8 @@ def test_dashboard_runs_with_sim_cache(tmp_path, monkeypatch):
     dash_calls = []
     monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
     run_cache = tmp_path / "matsim.simulation.run__abc.cache"; run_cache.mkdir()
-    ctx = FakeContext(
-        _base_config(tmp_path, simwrapper_include_matsim=True),
+    ctx = _execute_context(
+        tmp_path, simwrapper_include_matsim=True,
         paths={"matsim.simulation.run": str(run_cache)})
     AS.execute(ctx)
     assert len(dash_calls) == 1
@@ -206,11 +234,33 @@ def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):
     _write_min_output(tmp_path)
     _install_pop_spy(monkeypatch, [])
     wd = tmp_path / "cache"; wd.mkdir()
+    # education loads these cached synpp stage pickles; stage them so it is "ready".
+    for _s in ("braunschweig.synthesis.locations.education_gravity",
+               "braunschweig.data.schools.facilities",
+               "synthesis.population.spatial.home.locations"):
+        (wd / f"{_s}__deadbeef.p").write_bytes(b"")
     edu_calls = []
     monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
-    ctx = FakeContext(_base_config(tmp_path, analysis_working_directory=str(wd)))
+    ctx = _execute_context(tmp_path, analysis_working_directory=str(wd))
     AS.execute(ctx)
     assert len(edu_calls) == 1
     assert "--working-directory" in edu_calls[0]
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     assert "education_validation" in summary["ran"]
+
+
+def test_education_skips_when_cache_incomplete(tmp_path, monkeypatch):
+    pytest.importorskip("braunschweig.analysis.run_education_validation")
+    import braunschweig.analysis.run_education_validation as EDU
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    wd = tmp_path / "cache"; wd.mkdir()  # exists but carries no stage pickles
+    edu_calls = []
+    monkeypatch.setattr(EDU, "main", lambda argv: edu_calls.append(argv))
+    ctx = _execute_context(tmp_path, analysis_working_directory=str(wd))
+    AS.execute(ctx)
+    assert edu_calls == []  # skipped, not run (and not a red failure)
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    assert not any(f["analysis"] == "education_validation" for f in summary["failed"])
+    reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
+    assert "cache incomplete" in reasons["education_validation"]

@@ -10,7 +10,8 @@ def configure(context):
     context.stage("matsim.scenario.supply.gtfs")
 
     context.config("data_path")
-    context.config("processes")
+    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
+    context.config("processes", volatile = True)
     # MATSim CPU thread budget for the pt2matsim PublicTransitMapper. The PT
     # mapping is CPU-bound, so it should use the (potentially higher) MATSim
     # thread budget rather than the memory-bound synthesis worker count. Defaults

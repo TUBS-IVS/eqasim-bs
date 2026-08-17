@@ -1,0 +1,32 @@
+id: popsim-smokes-2026-06-11
+date: '2026-06-11'
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: configs/fixtures/config_smoke_{simple_ipf,popsim_mid_mini,popsim_open_mini}.yml
+  overlays: []
+  notes: three population methods (regression smokes)
+sampling:
+  rate: 1% mini (BS city cells)
+  scope: Braunschweig city cells
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- smoke
+status:
+  execution: completed
+environment: local
+validation:
+- metric: three-case comparability
+  reference: null
+  result: fast suite 1504 passed; three-case comparability confirmed
+  artifact: docs/runs/2026-06-11_popsim_bugfix_wave.md
+features:
+  note: three population methods (regression)
+artifacts:
+- mini caches
+issues: []
+decisions: []
+source: RUNS.md row 2026-06-11; docs/runs/2026-06-11_popsim_bugfix_wave.md

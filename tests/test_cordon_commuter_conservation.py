@@ -170,6 +170,44 @@ def test_incommuter_no_agent_dropped_in_build_frames():
 
 
 # ---------------------------------------------------------------------------
+# Guard 2b: build_incommuter_frames emits the OD validation target (#134)
+# ---------------------------------------------------------------------------
+
+def test_build_incommuter_frames_emits_od_target():
+    """build_incommuter_frames returns od_target = full-population BA inbound per Kreis.
+
+    #134: the cordon validation OD deviation was dead because no od_target was ever
+    produced/passed. The synthesis now emits it (schema [ars5, direction, n_target],
+    direction "ein"), derived from the SAME select_inbound_flows frame the agents are
+    expanded from, so the analysis stage can report realized-vs-target per Kreis.
+    """
+    gates, assignment, flows, zgb_work, hts_persons, hts_trips = _minimal_inputs()
+    ZGB = {"03101"}
+    inbound = select_inbound_flows(flows, ZGB, in_ring_kreise=set(assignment["ars5"]))
+    expected = (inbound.groupby("orig_ars")["flow"].sum()
+                .rename("n_target").reset_index()
+                .rename(columns={"orig_ars": "ars5"}))
+
+    rng = np.random.default_rng(7)
+    frames = build_incommuter_frames(
+        flows=flows, zgb_kreise=ZGB, sampling_rate=0.05,
+        gates=gates, assignment=assignment, zgb_work=zgb_work,
+        mode_reference={">=10": {"car": 1.0}}, band_edges=(10,),
+        hts_persons=hts_persons, hts_trips=hts_trips, person_col="person_id",
+        n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0,
+    )
+
+    assert "od_target" in frames, "build_incommuter_frames must emit od_target (#134)"
+    od = frames["od_target"]
+    assert set(od.columns) == {"ars5", "direction", "n_target"}, list(od.columns)
+    assert (od["direction"] == "ein").all()
+    # Full-population BA inbound flow per external Kreis (NOT scaled by sampling_rate).
+    got = dict(zip(od["ars5"], od["n_target"]))
+    want = dict(zip(expected["ars5"], expected["n_target"]))
+    assert got == want, f"od_target {got} != BA inbound {want}"
+
+
+# ---------------------------------------------------------------------------
 # Guard 3: out-commuter EXT volume conserved per Kreis (largest-remainder exact)
 # ---------------------------------------------------------------------------
 

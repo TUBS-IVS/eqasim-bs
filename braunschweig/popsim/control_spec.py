@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 import pandas as pd
 
+from braunschweig.data.mid.status_by_kreis import STATUS_KEYS
+
 # The exact PopulationSim controls.csv column order. Renderers must preserve it.
 CONTROLS_CSV_COLUMNS: Sequence[str] = (
     "target",
@@ -58,6 +60,11 @@ GEO_100M = "ZENSUS100m"
 GEO_1KM = "ZENSUS1km"
 GEO_KREIS = "KREIS"
 GEO_GEMEINDE = "GEMEINDE"
+
+# The per-cell household-total census column (tier0 backbone HH_TOTAL control). Exposed at
+# module scope so the economic_status x Kreis control (issue #109) can sum it per Kreis to
+# get the household total its status targets must partition (IPF-consistent).
+HH_TOTAL_CENSUS_COLUMN = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
 
 # Nine ten-year age bands as (label, lower_bound, upper_bound). ``None`` marks an
 # open edge: the first band has no lower bound, the last band no upper bound.
@@ -392,7 +399,7 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
     list[CatalogControl]
         20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km).
     """
-    HH_TOTAL_BASE = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    HH_TOTAL_BASE = HH_TOTAL_CENSUS_COLUMN
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
 
     HH_TOTAL_EXPR = "(households.H_GEW > 0) & (households.H_GEW < np.inf)"
@@ -514,6 +521,22 @@ IMPORTANCE_PROFILES: dict[str, dict[str, int]] = {
         "age": 200,               # age x sex (well-fit -> down-weighted)
         "size15": 500,            # HH size 1-5
         "hhtype": 200,            # HH type
+        # KREIS attribute controls (registry tier -> group kreis_hard / kreis_soft, see
+        # importance_group_for_field): HARD entries (economic_status #109, number_of_cars
+        # #99, work_participation #224, leisure_participation #224, education_participation
+        # #224, trip_class #224 task 6) at the level of the other Kreis-scale socio
+        # controls ("employed" = 2000); SOFT entries (bikes / ebike / employment_status)
+        # carry NO profile entry and keep the uniform 1000, so they yield gracefully in
+        # small cells instead of fighting the Zensus backbone. Added 2026-07-08 with the
+        # registry wiring; NOT part of the 2026-06-30 offline search (the KREIS attribute
+        # controls did not exist then). Each HARD entry is classified automatically --
+        # its REGISTRY entry sets tier="hard", so importance_group_for_field maps its
+        # rendered control columns to this SAME "kreis_hard" group; no separate per-name
+        # profile entry is needed. trip_class was originally registered SOFT but was
+        # promoted to HARD by feature #224 task 6: the SOFT tier missed its SrV
+        # Mobilitaetsquote target (synthetic immobility ~26.5% vs. SrV target ~11.2%),
+        # so it is now pinned at the same weight as the other HARD Kreis controls.
+        "kreis_hard": 2_000,
     },
 }
 
@@ -546,6 +569,14 @@ def importance_group_for_field(control_field: str) -> str:
         return "employed"
     if s.startswith(("schulabschluss", "beruflabschluss")):
         return "edu"
+    # KREIS attribute controls (kreis_attribute_control.REGISTRY): the entry's tier
+    # ("hard"/"soft") maps to the group kreis_hard / kreis_soft, so a future registry
+    # entry is classified automatically. Matched by the rendered control-column prefix
+    # f"{entry.name}_" (e.g. "number_of_cars_3plus_KREIS" -> number_of_cars, hard).
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY as _KREIS_REGISTRY
+    for _entry in _KREIS_REGISTRY:
+        if s.startswith(f"{_entry.name}_"):
+            return f"kreis_{_entry.tier}"
     return "other"
 
 
@@ -897,7 +928,62 @@ def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
     return out
 
 
-def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False) -> List[CatalogControl]:
+# Generic per-Kreis attribute controls (S1a, issue #109 follow-up). A registered
+# KreisAttributeControl (kreis_attribute_control.REGISTRY) yields one GEO_KREIS control per
+# category: expression f"({table}.{seed_column} {predicate})" over the household/person seed
+# table; census_source = the derived per-Kreis count column (name_{label}) that stage.py injects
+# from the committed target CSV. MiD-only (ENTD cannot express the donor columns -> None, dropped
+# by controls_for_seed).
+def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogControl]:
+    """Build GEO_KREIS controls for a list of KreisAttributeControl.
+
+    When an entry carries ``min_age`` (not ``None``), its rendered MiD expression ANDs
+    in a person-age clause ``(persons.HP_ALTER >= min_age)`` so the control's universe
+    matches the age-restricted base its committed target's shares are reported over
+    (e.g. employment_status is MiD P9 / SrV 14+, feature #172 task 4) -- without this,
+    the seed attribute assigned to ALL persons (incl. <14) would let those persons
+    distort the category counts (the #97 universe trap). Entries with ``min_age=None``
+    (every pre-existing REGISTRY entry) are unaffected: their rendered expression is
+    byte-identical to before this field existed.
+    """
+    from braunschweig.popsim.kreis_attribute_control import control_columns as _cols
+    table_of = {"household": SEED_TABLE_HOUSEHOLDS, "person": SEED_TABLE_PERSONS}
+    out: List[CatalogControl] = []
+    for ctl in controls:
+        table = table_of[ctl.level]
+        for (label, predicate), col in zip(ctl.categories, _cols(ctl)):
+            expr = f"({table}.{ctl.seed_column} {predicate})"
+            if getattr(ctl, "min_age", None) is not None:
+                expr = f"{expr} & ({table}.HP_ALTER >= {ctl.min_age})"
+            out.append(
+                CatalogControl(
+                    name=col,
+                    geography=GEO_KREIS,
+                    seed_table=table,
+                    importance=importance,
+                    census_source=(col,),
+                    seed_expressions={"mid": expr, "entd": None},
+                )
+            )
+    return out
+
+
+def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
+    """Five economic_status x Kreis household controls (very_low..very_high).
+
+    Delegates to the generic registry factory (S1a); output byte-identical to the Phase 2 L1
+    controls. oek_status codes 1..5 map to very_low..very_high; census_source == control name,
+    so folders.build_kreis_control_totals sums a single identity column that stage.py injects
+    from the H4-derived count table.
+    """
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY
+    econ = [c for c in REGISTRY if c.name == "economic_status"]
+    return attribute_kreis_controls(econ, importance=importance)
+
+
+def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,
+                 include_status_kreis: bool = False,
+                 kreis_control_names: Sequence[str] = ()) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -927,6 +1013,22 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         catalog.extend(tier3_controls())
     if include_employment_grid:
         catalog.extend(employment_grid_controls())
+    # Generic per-Kreis attribute controls (S1c). ``kreis_control_names`` is the generalised
+    # knob (a list of REGISTRY entry names to render as GEO_KREIS controls). ``include_status_kreis``
+    # is kept as a backward-compat alias for ``kreis_control_names=("economic_status",)`` so
+    # existing callers/tests stay byte-identical.
+    _kreis_names = list(kreis_control_names)
+    if include_status_kreis and "economic_status" not in _kreis_names:
+        _kreis_names.append("economic_status")
+    if _kreis_names:
+        from braunschweig.popsim.kreis_attribute_control import REGISTRY as _KREIS_REGISTRY
+        _by_name = {c.name: c for c in _KREIS_REGISTRY}
+        _missing = [n for n in _kreis_names if n not in _by_name]
+        if _missing:
+            raise ValueError(
+                f"full_catalog: unknown KREIS attribute control name(s) {_missing}; "
+                f"known entries are {sorted(_by_name)}.")
+        catalog.extend(attribute_kreis_controls([_by_name[n] for n in _kreis_names]))
     return catalog
 
 

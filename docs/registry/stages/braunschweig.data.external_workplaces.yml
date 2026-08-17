@@ -1,0 +1,18 @@
+stage: braunschweig.data.external_workplaces
+title: External workplace pool
+layer: work
+description: One synthetic workplace per external Kreis weighted by BA Pendleratlas outbound flows,
+  so ZGB out-commuters are not artificially kept inside the region.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/external_workplaces.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- ba_pendleratlas

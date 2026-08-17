@@ -1,0 +1,26 @@
+stage: braunschweig.data.census.population
+title: Population margins (Kreis -> Gemeinde)
+layer: population
+description: |
+  Builds Gemeinde x sex x age population weights: DESTATIS 12411-0018 Kreis levels distributed
+  by a Gemeinde-within-Kreis share. Since issue #251 every IPF run config sets
+  braunschweig.census.use_zensus_gemeinde_shares, so the share comes from the official Zensus
+  1000A-3082 table (12-digit ARS, no Gemeinde-name matching); the scraped urbistat table is
+  only the code-default fallback when that flag is off.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/population.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- destatis_population_kreis
+- urbistat_gemeinde_age
+- zensus2022_age_sex_size
+decisions:
+- ADR-0078

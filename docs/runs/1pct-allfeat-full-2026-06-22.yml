@@ -1,0 +1,36 @@
+id: 1pct-allfeat-full-2026-06-22
+date: '2026-06-22'
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: config_local_braunschweig_1pct_allfeat_full.yml
+  overlays: []
+  notes: popsim_mid + fleet v2 + income-age + employment grid + cordon + ALKIS homes + freight;
+    10 MATSim iterations
+sampling:
+  rate: 1%
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+environment: local
+validation:
+- metric: wiring/convergence smoke
+  reference: null
+  result: see docs/runs/2026-06-22_1pct_allfeat_full_smoke_findings.md
+  artifact: docs/runs/2026-06-22_1pct_allfeat_full_smoke_findings.md
+  notes: Mode choice OFF -- NOT behavioural validation.
+features:
+  note: all-features 1% local smoke
+artifacts:
+- cache_bs_1pct_allfeat_full
+issues: []
+decisions: []
+source: RUNS.md row 2026-06-22

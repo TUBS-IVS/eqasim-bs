@@ -1,0 +1,32 @@
+id: 25pct-parking
+date: unknown
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: config_local_braunschweig_25pct_parking.yml
+  overlays: []
+  notes: urban parking (BS inner ring) comparison run
+sampling:
+  rate: 25%
+  scope: ZGB-8
+pipeline:
+  targets:
+  - matsim.output
+classification:
+- ab_test
+status:
+  execution: unknown
+environment: unknown
+validation:
+- metric: MiD validation report (parking vs no-parking)
+  reference: committed MiD reference tables
+  result: referenced in docs/features/run-analysis.md; date unknown
+features:
+  note: urban parking (BS inner ring)
+artifacts:
+- output_bs_25pct_parking
+issues: []
+decisions:
+- ADR-0039
+source: RUNS.md row (date unknown); feature docs

@@ -17,10 +17,11 @@ def execute(context):
     # Load data
     df = context.stage("braunschweig.data.locations")
 
-    # Activity types    
+    # Activity types
     df["offers_leisure"] = df["location_type"] == "leisure"
     df["offers_shop"] = df["location_type"] == "shop"
     df["offers_other"] = True
+    df["offers_escort"] = True  # issue #201: every catalog row may host an escort activity
 
     # Filter
     df = df[
@@ -33,5 +34,5 @@ def execute(context):
 
     return df[[
         "location_id", "commune_id", "iris_id", "geometry",
-        "offers_leisure", "offers_shop", "offers_other"
+        "offers_leisure", "offers_shop", "offers_other", "offers_escort"
     ]]

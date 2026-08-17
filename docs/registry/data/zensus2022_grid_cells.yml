@@ -1,0 +1,34 @@
+dataset: zensus2022_grid_cells
+title: cleancensus prepared Zensus 2022 grid (100 m + 1 km controls)
+inventory_id: B5
+provider: TUBS-IVS cleancensus (from Zensus 2022)
+vintage: '2022-05-15'
+geography: Germany (ZGB filtered), 100 m/1 km INSPIRE grid
+crs: EPSG:3035
+roles:
+- control
+used_by:
+- braunschweig.data.buildings
+- data.census.filtered
+acquisition:
+  method: derived
+  source: https://github.com/TUBS-IVS/cleancensus
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_{100m_de_prepared,1km_de_binned}.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0 (source data)
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: 'THE PopulationSim control totals: the _adj-reconciled cell marginals are the targets every
+  synthetic household/person is fitted to. Regenerate with the cleancensus pipeline (separate
+  repository).'

@@ -1,0 +1,989 @@
+"""Tests for the leisure/other subtype chainsolvers wiring (issue #127, Task 4).
+
+TDD: written BEFORE the implementation. Mirrors the existing shop_daily_split
+tests in tests/test_secondary_chainsolvers.py (same fixture style, same
+"stub distributions + stub decider" pattern for _build_plans_df, same
+_build_locations_df / _extract_locations coverage), extended for the leisure
+(4-group) and other (errand_short/errand_long/escort/rest) subtype splits.
+
+Scenarios covered:
+    (a) leisure legs get group-conditioned distances; a leisure_excursion leg
+        draws from the DISTINCT leisure_excursion CDF, not the aggregate one.
+    (b) other_rest legs keep the plain "other" placement AND distance (the
+        aggregate behaviour, unchanged from the OFF path).
+    (c) OFF path (both flags False / deciders None) stays byte-identical.
+    (d) internal -> eqasim purpose back-mapping (LEISURE_SUBTYPE_ACTIVITIES /
+        OTHER_SUBTYPE_ACTIVITIES / _ACTIVITY_POTENTIAL_COLUMN) is complete and
+        consistent.
+    (e) decider determinism: two deciders built from the same seed produce the
+        identical sequence of per-leg outcomes.
+"""
+from __future__ import annotations
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pytest
+from shapely import geometry as geo
+
+from braunschweig.synthesis.locations import secondary_chainsolvers as sc
+
+# ---------------------------------------------------------------------------
+# Shared fixtures (mirrors tests/test_secondary_chainsolvers.py style).
+# ---------------------------------------------------------------------------
+
+
+def _flat_distribution():
+    """Minimal mode-conditional distribution: one bound bucket, a uniform-step
+    CDF over a few candidate distance values (metres)."""
+    values = np.array([800.0, 1000.0, 1200.0, 1500.0])
+    cdf = np.array([0.25, 0.5, 0.75, 1.0])
+    return {
+        mode: {
+            "bounds": np.array([], dtype=float),
+            "distributions": [{"values": values.copy(), "cdf": cdf.copy()}],
+        }
+        for mode in ("car", "car_passenger", "pt", "bicycle", "walk")
+    }
+
+
+def _single_value_distribution(value: float):
+    """A degenerate one-value CDF: every draw returns exactly ``value``."""
+    return {
+        mode: {
+            "bounds": np.array([], dtype=float),
+            "distributions": [{"values": np.array([value]), "cdf": np.array([1.0])}],
+        }
+        for mode in ("car", "car_passenger", "pt", "bicycle", "walk")
+    }
+
+
+def _leisure_problem():
+    """One bounded problem, single leisure leg between two fixed anchors."""
+    return [{
+        "person_id": 200, "activity_index": 2, "size": 1,
+        "purposes": ["leisure"], "modes": ["car", "car"],
+        "travel_times": np.array([600.0, 600.0]),
+        "origin": np.array([[0.0, 0.0]]),
+        "destination": np.array([[1000.0, 1000.0]]),
+    }]
+
+
+def _other_problem():
+    """One bounded problem, single "other" leg between two fixed anchors."""
+    return [{
+        "person_id": 300, "activity_index": 2, "size": 1,
+        "purposes": ["other"], "modes": ["car", "car"],
+        "travel_times": np.array([600.0, 600.0]),
+        "origin": np.array([[0.0, 0.0]]),
+        "destination": np.array([[1000.0, 1000.0]]),
+    }]
+
+
+def _bounded_problems_mixed():
+    """A small deterministic set of shop/leisure/other bounded problems, used
+    for the OFF-path byte-identical check."""
+    rng = np.random.RandomState(11)
+    problems = []
+    for i, purpose in enumerate(["shop", "leisure", "other", "leisure", "other"]):
+        problems.append({
+            "person_id": 2000 + i,
+            "activity_index": int(rng.randint(0, 5)),
+            "size": 1,
+            "purposes": [purpose],
+            "modes": ["car", "car"],
+            "travel_times": rng.uniform(120.0, 1200.0, size=2),
+            "origin": rng.uniform(0.0, 2000.0, size=(1, 2)),
+            "destination": rng.uniform(0.0, 2000.0, size=(1, 2)),
+        })
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# (d) internal <-> eqasim purpose back-mapping: structural consistency.
+# ---------------------------------------------------------------------------
+
+
+def test_leisure_subtype_activities_match_purpose_subtype_leisure_groups():
+    from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS
+    assert set(sc.LEISURE_SUBTYPE_ACTIVITIES) == set(LEISURE_GROUPS)
+
+
+def test_other_subtype_activities_match_errand_groups_plus_escort():
+    from braunschweig.popsim.purpose_subtype import OTHER_ERRAND_GROUPS
+    assert set(sc.OTHER_SUBTYPE_ACTIVITIES) == set(OTHER_ERRAND_GROUPS) | {"other_escort"}
+    assert "other_rest" not in sc.OTHER_SUBTYPE_ACTIVITIES
+
+
+def test_activity_potential_column_covers_all_subtype_activities():
+    for name in sc.LEISURE_SUBTYPE_ACTIVITIES:
+        assert sc._ACTIVITY_POTENTIAL_COLUMN[name] == "pot_leisure"
+    for name in sc.OTHER_SUBTYPE_ACTIVITIES:
+        assert sc._ACTIVITY_POTENTIAL_COLUMN[name] == "pot_other"
+    # other_rest is never a chainsolver activity name -> no potential-column entry.
+    assert "other_rest" not in sc._ACTIVITY_POTENTIAL_COLUMN
+
+
+def test_extract_locations_secondary_acts_includes_all_new_subtypes():
+    """_extract_locations must not silently drop a subtype-tagged leg."""
+    rdf = pd.DataFrame({
+        "unique_person_id": ["9#0"] * 5,
+        "unique_leg_id": [f"9#0#{i}" for i in range(5)],
+        "to_act_type": [
+            "leisure_local", "leisure_excursion",
+            "other_errand_short", "other_escort", "other",
+        ],
+        "to_x": [0.0, 10.0, 20.0, 30.0, 40.0],
+        "to_y": [0.0, 10.0, 20.0, 30.0, 40.0],
+        "to_act_identifier": ["L1", "L2", "L3", "L4", "L5"],
+    })
+    meta = [{"problem_idx": 0, "person_id": 9, "activity_index": 5, "n_secondary": 5}]
+    secondary = gpd.GeoDataFrame(
+        {"location_id": ["L1", "L2", "L3", "L4", "L5"]},
+        geometry=[geo.Point(x, x) for x in (0, 10, 20, 30, 40)],
+        crs="EPSG:25832",
+    )
+    df_loc, df_conv = sc._extract_locations(rdf, meta, secondary, crs="EPSG:25832")
+    assert list(df_loc["person_id"]) == [9] * 5
+    assert "to_act_type" not in df_loc.columns
+    assert list(df_conv["valid"]) == [True]
+
+
+# ---------------------------------------------------------------------------
+# _inverse_cdf_choice: pure inverse-CDF selection helper.
+# ---------------------------------------------------------------------------
+
+
+def test_inverse_cdf_choice_selects_the_only_positive_group():
+    probs = {"a": 0.0, "b": 1.0, "c": 0.0}
+    names = ("a", "b", "c")
+    for draw in (0.0, 0.3, 0.999):
+        assert sc._inverse_cdf_choice(probs, names, draw) == "b"
+
+
+def test_inverse_cdf_choice_walks_cumulative_boundaries():
+    probs = {"a": 0.25, "b": 0.25, "c": 0.5}
+    names = ("a", "b", "c")
+    assert sc._inverse_cdf_choice(probs, names, 0.1) == "a"
+    assert sc._inverse_cdf_choice(probs, names, 0.3) == "b"
+    assert sc._inverse_cdf_choice(probs, names, 0.9) == "c"
+
+
+def test_inverse_cdf_choice_missing_name_defaults_to_zero_probability():
+    # A name absent from `probs` is treated as probability 0 (no KeyError).
+    probs = {"only": 1.0}
+    assert sc._inverse_cdf_choice(probs, ("only", "absent"), 0.5) == "only"
+
+
+# ---------------------------------------------------------------------------
+# (a) leisure legs: group-conditioned distance, excursion draws its own CDF.
+# ---------------------------------------------------------------------------
+
+
+def test_build_plans_df_leisure_decider_tags_leg_and_uses_subtype_distance():
+    layered = {
+        "leisure_excursion": _single_value_distribution(99000.0),  # distinct value
+        "leisure": _single_value_distribution(1000.0),             # aggregate
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _leisure_problem(), layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    rows = df[df["to_act_type"] == "leisure_excursion"]
+    assert len(rows) == 1
+    # Drawn from the DISTINCT leisure_excursion CDF, not the aggregate leisure one.
+    assert rows.iloc[0]["distance_meters"] == 99000.0
+    assert stats["leisure_excursion"] == 1
+    assert stats["leisure_local"] == 0 and stats["leisure_visit"] == 0 and stats["leisure_activity"] == 0
+    assert stats["leisure_distance_layer_fallback"] == 0
+
+
+def test_build_plans_df_leisure_subtype_distance_layer_fallback_counted():
+    # The subtype layer is ABSENT -> distance falls back to the aggregate
+    # "leisure" layer; the placement activity still carries the subtype.
+    layered = {
+        "leisure": _single_value_distribution(1234.0),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _leisure_problem(), layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_visit",
+    )
+    row = df[df["to_act_type"] == "leisure_visit"].iloc[0]
+    assert row["distance_meters"] == 1234.0
+    assert stats["leisure_visit"] == 1
+    assert stats["leisure_distance_layer_fallback"] == 1
+
+
+# ---------------------------------------------------------------------------
+# (b) other_rest: keeps the plain "other" placement AND distance.
+# ---------------------------------------------------------------------------
+
+
+def test_build_plans_df_other_rest_keeps_aggregate_placement_and_distance():
+    layered = {
+        "other": _single_value_distribution(4321.0),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _other_problem(), layered, 2.0, np.random.RandomState(2),
+        other_subtype_decider=lambda mode, tt: "other_rest",
+    )
+    row = df[df["to_act_type"] == "other"].iloc[0]
+    assert row["distance_meters"] == 4321.0  # aggregate "other" CDF, unchanged
+    assert stats["other_rest"] == 1
+    # No subtype activity counters incremented, and no distance-layer fallback
+    # (the rest outcome never even attempts the subtype lookup).
+    for name in sc.OTHER_SUBTYPE_ACTIVITIES:
+        assert stats[name] == 0
+    assert stats["other_distance_layer_fallback"] == 0
+
+
+def test_build_plans_df_other_errand_short_tags_leg_and_uses_subtype_distance():
+    layered = {
+        "other_errand_short": _single_value_distribution(555.0),
+        "other": _single_value_distribution(4321.0),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _other_problem(), layered, 2.0, np.random.RandomState(2),
+        other_subtype_decider=lambda mode, tt: "other_errand_short",
+    )
+    row = df[df["to_act_type"] == "other_errand_short"].iloc[0]
+    assert row["distance_meters"] == 555.0
+    assert stats["other_errand_short"] == 1
+    assert stats["other_distance_layer_fallback"] == 0
+
+
+def test_build_plans_df_other_subtype_distance_layer_fallback_counted():
+    layered = {
+        "other": _single_value_distribution(4321.0),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _other_problem(), layered, 2.0, np.random.RandomState(2),
+        other_subtype_decider=lambda mode, tt: "other_escort",
+    )
+    row = df[df["to_act_type"] == "other_escort"].iloc[0]
+    assert row["distance_meters"] == 4321.0  # fell back to aggregate "other"
+    assert stats["other_escort"] == 1
+    assert stats["other_distance_layer_fallback"] == 1
+
+
+# ---------------------------------------------------------------------------
+# (c) OFF path: byte-identical when both deciders are None (default).
+# ---------------------------------------------------------------------------
+
+
+def test_build_plans_df_off_path_byte_identical_leisure_and_other_deciders_none():
+    problems = _bounded_problems_mixed()
+    distributions = _flat_distribution()
+
+    explicit_off_df, explicit_meta, explicit_unbounded, explicit_stats, _desired_by_category = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(5),
+        leisure_subtype_decider=None, other_subtype_decider=None,
+    )
+    default_df, default_meta, default_unbounded, default_stats, _desired_by_category = sc._build_plans_df(
+        problems, distributions, 2.0, np.random.RandomState(5),
+    )
+
+    pd.testing.assert_frame_equal(explicit_off_df, default_df)
+    assert explicit_meta == default_meta
+    assert explicit_unbounded == default_unbounded
+    assert explicit_stats == default_stats == {}
+
+
+def test_build_locations_df_off_path_byte_identical_with_leisure_other_flags_false():
+    candidates = gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_0", "sec_1"],
+            "offers_shop": [False, False],
+            "offers_leisure": [True, False],
+            "offers_other": [False, True],
+            "pot_shop": [0.0, 0.0],
+            "pot_shop_daily": [0.0, 0.0],
+            "pot_shop_non_daily": [0.0, 0.0],
+            "pot_leisure": [4.0, 0.0],
+            "pot_other": [0.0, 6.0],
+        },
+        geometry=[geo.Point(0, 0), geo.Point(100, 100)],
+        crs="EPSG:25832",
+    )
+    explicit_off = sc._build_locations_df(
+        candidates, with_potentials=True,
+        leisure_subtype_split=False, other_subtype_split=False,
+    )
+    default = sc._build_locations_df(candidates, with_potentials=True)
+    pd.testing.assert_frame_equal(explicit_off, default)
+    assert explicit_off.loc[0, "activities"] == "leisure"
+    assert explicit_off.loc[1, "activities"] == "other"
+
+
+# ---------------------------------------------------------------------------
+# _build_locations_df: leisure/other subtype offer emission (candidate side).
+# ---------------------------------------------------------------------------
+
+
+def _leisure_other_split_candidates():
+    return gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_0", "sec_1"],
+            "offers_shop": [False, False],
+            "offers_leisure": [True, False],
+            "offers_other": [False, True],
+            "pot_shop": [0.0, 0.0],
+            "pot_shop_daily": [0.0, 0.0],
+            "pot_shop_non_daily": [0.0, 0.0],
+            "pot_leisure": [4.0, 0.0],
+            "pot_other": [0.0, 6.0],
+        },
+        geometry=[geo.Point(0, 0), geo.Point(50, 50)],
+        crs="EPSG:25832",
+    )
+
+
+def test_build_locations_df_leisure_subtype_split_emits_four_activities():
+    out = sc._build_locations_df(
+        _leisure_other_split_candidates(), with_potentials=True,
+        leisure_subtype_split=True,
+    )
+    assert out.loc[0, "activities"] == "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
+    # All four subtypes share the SAME pot_leisure value (no per-subtype
+    # potential yet) -- this is also a regression check for the duplicate
+    # "pot_leisure" column selection bug (see _build_locations_df docstring).
+    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
+    # sec_1 offers only "other" (unaffected by leisure_subtype_split).
+    assert out.loc[1, "activities"] == "other"
+
+
+def test_build_locations_df_other_subtype_split_emits_subtypes_plus_aggregate():
+    out = sc._build_locations_df(
+        _leisure_other_split_candidates(), with_potentials=True,
+        other_subtype_split=True,
+    )
+    # sec_0 offers only leisure (unaffected).
+    assert out.loc[0, "activities"] == "leisure"
+    # sec_1: three subtypes PLUS the aggregate "other" (kept for other_rest).
+    assert out.loc[1, "activities"] == "other_errand_short; other_errand_long; other_escort; other"
+    assert out.loc[1, "potentials"] == "6.0; 6.0; 6.0; 6.0"
+
+
+def test_build_locations_df_leisure_and_other_split_together():
+    out = sc._build_locations_df(
+        _leisure_other_split_candidates(), with_potentials=True,
+        leisure_subtype_split=True, other_subtype_split=True,
+    )
+    assert out.loc[0, "activities"] == "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
+    assert out.loc[1, "activities"] == "other_errand_short; other_errand_long; other_escort; other"
+
+
+def test_build_locations_df_leisure_split_requires_potentials():
+    with pytest.raises(ValueError, match="requires with_potentials"):
+        sc._build_locations_df(
+            _leisure_other_split_candidates(), with_potentials=False,
+            leisure_subtype_split=True,
+        )
+
+
+def test_build_locations_df_other_split_requires_potentials():
+    with pytest.raises(ValueError, match="requires with_potentials"):
+        sc._build_locations_df(
+            _leisure_other_split_candidates(), with_potentials=False,
+            other_subtype_split=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# carla smoke: the internal leisure/other subtype activities must be
+# accepted and placed by the real chainsolvers carla solver (no KeyError on
+# an unknown activity name; validates the offer_specs wiring end-to-end).
+# ---------------------------------------------------------------------------
+
+
+def test_carla_accepts_leisure_subtype_activities_smoke():
+    cs = pytest.importorskip("chainsolvers")
+    candidates = gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_0", "sec_1"],
+            "offers_shop": [False, False],
+            "offers_leisure": [True, True],
+            "offers_other": [False, False],
+            "pot_shop": [0.0, 0.0],
+            "pot_shop_daily": [0.0, 0.0],
+            "pot_shop_non_daily": [0.0, 0.0],
+            "pot_leisure": [4.0, 4.0],
+            "pot_other": [0.0, 0.0],
+        },
+        geometry=[geo.Point(0, 0), geo.Point(100, 100)],
+        crs="EPSG:25832",
+    )
+    locations_df = sc._build_locations_df(
+        candidates, with_potentials=True, leisure_subtype_split=True)
+    layered = {
+        "leisure_excursion": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _leisure_problem(), layered, 2.0, np.random.RandomState(3),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    ctx = cs.setup(locations_df=locations_df, solver="carla", rng_seed=7)
+    res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=plans_for_cs)
+    placed = res_df[res_df["to_act_type"] == "leisure_excursion"]
+    assert len(placed) == 1
+
+
+def test_carla_accepts_other_subtype_activities_smoke():
+    cs = pytest.importorskip("chainsolvers")
+    candidates = gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_0", "sec_1"],
+            "offers_shop": [False, False],
+            "offers_leisure": [False, False],
+            "offers_other": [True, True],
+            "pot_shop": [0.0, 0.0],
+            "pot_shop_daily": [0.0, 0.0],
+            "pot_shop_non_daily": [0.0, 0.0],
+            "pot_leisure": [0.0, 0.0],
+            "pot_other": [6.0, 6.0],
+        },
+        geometry=[geo.Point(0, 0), geo.Point(100, 100)],
+        crs="EPSG:25832",
+    )
+    locations_df = sc._build_locations_df(
+        candidates, with_potentials=True, other_subtype_split=True)
+    layered = {
+        "other_escort": _flat_distribution(),
+        "other": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "leisure": _flat_distribution(),
+    }
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _other_problem(), layered, 2.0, np.random.RandomState(4),
+        other_subtype_decider=lambda mode, tt: "other_escort",
+    )
+    plans_for_cs = plans_df.drop(columns=["_leg_index", "_problem_idx"])
+    ctx = cs.setup(locations_df=locations_df, solver="carla", rng_seed=8)
+    res_df, _seg, _v = cs.solve(ctx=ctx, plans_df=plans_for_cs)
+    placed = res_df[res_df["to_act_type"] == "other_escort"]
+    assert len(placed) == 1
+
+
+# ---------------------------------------------------------------------------
+# configure(): new flags declared, mid_dir required only when needed.
+# ---------------------------------------------------------------------------
+
+
+class _FakeContext:
+    def __init__(self, overrides=None):
+        self.overrides = overrides or {}
+        self.registered = {}
+        self.staged = []
+
+    def config(self, key, default=None):
+        # Mirror real synpp semantics: a key's value is resolved ONCE (from an
+        # override or the first-seen default) and stays fixed for subsequent
+        # re-reads of the same key without a default -- exactly how
+        # configure() re-reads "secondary_shop_daily_split" after declaring it.
+        if key in self.registered:
+            return self.registered[key]
+        value = self.overrides.get(key, default)
+        self.registered[key] = value
+        return value
+
+    def stage(self, name, *a, **k):
+        self.staged.append(name)
+        return None
+
+
+def test_configure_declares_leisure_and_other_flags_default_false():
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered["secondary_leisure_subtype_split"] is False
+    assert ctx.registered["secondary_other_subtype_split"] is False
+
+
+def test_configure_does_not_require_mid_dir_when_all_flags_off():
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert "braunschweig.population.popsim.mid_dir" not in ctx.registered
+
+
+def test_configure_requires_mid_dir_when_leisure_subtype_split_on():
+    ctx = _FakeContext({"secondary_leisure_subtype_split": True})
+    sc.configure(ctx)
+    assert "braunschweig.population.popsim.mid_dir" in ctx.registered
+
+
+def test_configure_requires_mid_dir_when_other_subtype_split_on():
+    ctx = _FakeContext({"secondary_other_subtype_split": True})
+    sc.configure(ctx)
+    assert "braunschweig.population.popsim.mid_dir" in ctx.registered
+
+
+# ---------------------------------------------------------------------------
+# Decider construction: synthetic (non-MiD-file) Wege frames via a
+# monkeypatched braunschweig.popsim.mid.load_mid_wege, mirroring the synthetic
+# Wege builder in tests/test_distance_distributions_subtypes.py. Never touches
+# real MiD data (local-only, not committed).
+# ---------------------------------------------------------------------------
+
+
+def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15):
+    row_id = row_id_start
+    for _ in range(n):
+        rows.append({
+            "H_ID": row_id, "P_ID": 0, "W_ID": 0,
+            "W_ZWECK": w_zweck, "W_ZWD": w_zwd,
+            "hvm_imp": 4,  # car for all rows -> single mode
+            "wegkm_imp": wegkm,
+            "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
+            "W_GEW": 1.0,
+        })
+        row_id += 1
+    return row_id
+
+
+def _decider_context(overrides, monkeypatch, wege_df):
+    from braunschweig.popsim import mid as mid_module
+    monkeypatch.setattr(mid_module, "load_mid_wege", lambda mid_dir: wege_df)
+    base = {
+        "secondary_distance_min_obs": 30,
+        "braunschweig.population.popsim.mid_dir": "unused_dummy_dir",
+    }
+    base.update(overrides)
+    return _FakeContext(base)
+
+
+def test_build_leisure_subtype_decider_returns_none_when_off():
+    ctx = _FakeContext({"secondary_leisure_subtype_split": False})
+    assert sc._build_leisure_subtype_decider(ctx, 1) is None
+
+
+def test_build_other_subtype_decider_returns_none_when_off():
+    ctx = _FakeContext({"secondary_other_subtype_split": False})
+    assert sc._build_other_subtype_decider(ctx, 1) is None
+
+
+def test_build_leisure_subtype_decider_deterministic_single_group(monkeypatch):
+    # All leisure (W_ZWECK=7) rows are W_ZWD=708 -> leisure_excursion marginal
+    # is 1.0, every other group is 0.0 -> the decider is fully deterministic
+    # regardless of the random draw.
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=708, wegkm=80.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    for tt in (100.0, 500.0, 900.0, 2000.0):
+        assert decide("car", tt) == "leisure_excursion"
+
+
+def test_build_leisure_subtype_decider_reproducible_across_builds(monkeypatch, capsys):
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=706, wegkm=5.0, n=20)   # leisure_local
+    _add_rows(rows, 100, w_zweck=7, w_zwd=701, wegkm=19.0, n=20)  # leisure_visit
+    _add_rows(rows, 200, w_zweck=7, w_zwd=702, wegkm=15.0, n=20)  # leisure_activity
+    _add_rows(rows, 300, w_zweck=7, w_zwd=708, wegkm=80.0, n=20)  # leisure_excursion
+    wege = pd.DataFrame(rows)
+    ctx1 = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+    ctx2 = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+
+    decide1 = sc._build_leisure_subtype_decider(ctx1, random_seed=42)
+    decide2 = sc._build_leisure_subtype_decider(ctx2, random_seed=42)
+
+    calls = [("car", float(t)) for t in range(100, 2000, 137)]
+    seq1 = [decide1(mode, tt) for mode, tt in calls]
+    seq2 = [decide2(mode, tt) for mode, tt in calls]
+    assert seq1 == seq2
+    # Every outcome must be one of the declared leisure groups.
+    assert set(seq1) <= set(sc.LEISURE_SUBTYPE_ACTIVITIES)
+
+    out = capsys.readouterr().out
+    assert "leisure subtype: marginal shares" in out
+
+
+def test_build_other_subtype_decider_deterministic_errand_short_only(monkeypatch):
+    # All "other" rows are errand (W_ZWECK=5) with W_ZWD=601 (errand_short) ->
+    # coarse marginal errand=1.0 (escort=rest=0.0), errand marginal
+    # other_errand_short=1.0 -> composed probability other_errand_short=1.0,
+    # fully deterministic regardless of the random draw.
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=601, wegkm=6.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_other_subtype_split": True}, monkeypatch, wege)
+
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    for tt in (100.0, 500.0, 900.0, 2000.0):
+        assert decide("car", tt) == "other_errand_short"
+
+
+def test_build_other_subtype_decider_reproducible_across_builds(monkeypatch, capsys):
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=601, wegkm=6.0, n=15)     # errand_short
+    _add_rows(rows, 100, w_zweck=5, w_zwd=603, wegkm=12.0, n=15)  # errand_long
+    _add_rows(rows, 200, w_zweck=6, w_zwd=7704, wegkm=3.0, n=15)  # escort (W_ZWD irrelevant)
+    _add_rows(rows, 300, w_zweck=10, w_zwd=999, wegkm=2.0, n=15)  # rest
+    wege = pd.DataFrame(rows)
+    ctx1 = _decider_context({"secondary_other_subtype_split": True}, monkeypatch, wege)
+    ctx2 = _decider_context({"secondary_other_subtype_split": True}, monkeypatch, wege)
+
+    decide1 = sc._build_other_subtype_decider(ctx1, random_seed=42)
+    decide2 = sc._build_other_subtype_decider(ctx2, random_seed=42)
+
+    calls = [("car", float(t)) for t in range(100, 2000, 137)]
+    seq1 = [decide1(mode, tt) for mode, tt in calls]
+    seq2 = [decide2(mode, tt) for mode, tt in calls]
+    assert seq1 == seq2
+    assert set(seq1) <= (set(sc.OTHER_SUBTYPE_ACTIVITIES) | {"other_rest"})
+
+    out = capsys.readouterr().out
+    assert "other subtype: coarse marginal shares" in out
+    assert "errand marginal shares" in out
+
+
+# ---------------------------------------------------------------------------
+# Task 5, issue #127: residential pot_visit placement for leisure_visit legs.
+#
+# (a) flag ON -> leisure_visit targets rows with pot_visit > 0 only.
+# (b) flag ON + residential source absent -> ValueError mentioning the flag.
+# (c) flag OFF -> locations frame byte-identical to the Task-4 state.
+# (d) growth-guard WARN fires above VISIT_CANDIDATE_WARN_FACTOR.
+# ---------------------------------------------------------------------------
+
+
+def _residential_buildings(n=2, weight=9.0, start_id=0):
+    return gpd.GeoDataFrame(
+        {
+            "building_id": list(range(start_id, start_id + n)),
+            "weight": [weight] * n,
+            "commune_id": ["03101000"] * n,
+            "iris_id": ["03101000"] * n,
+        },
+        geometry=[geo.Point(10.0 * i, 10.0 * i) for i in range(n)],
+        crs="EPSG:25832",
+    )
+
+
+def test_append_residential_visit_candidates_adds_pot_visit_rows(capsys):
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1, weight=9.0, start_id=5)
+
+    out = sc.append_residential_visit_candidates(candidates, residential)
+
+    assert len(out) == len(candidates) + 1
+    # Pre-existing rows: offers_visit / pot_visit added with neutral defaults.
+    assert list(out.loc[[0, 1], "offers_visit"]) == [False, False]
+    assert list(out.loc[[0, 1], "pot_visit"]) == [0.0, 0.0]
+    # The appended residential row offers ONLY "visit", with pot_visit = weight,
+    # and 0.0/False for every other purpose.
+    res_row = out.iloc[-1]
+    assert res_row["location_id"] == "sec_res_5"
+    assert bool(res_row["offers_visit"]) is True
+    assert float(res_row["pot_visit"]) == 9.0
+    for col in ("offers_shop", "offers_leisure", "offers_other"):
+        assert bool(res_row[col]) is False
+    for col in ("pot_shop", "pot_shop_daily", "pot_shop_non_daily", "pot_leisure", "pot_other"):
+        assert float(res_row[col]) == 0.0
+
+    out_log = capsys.readouterr().out
+    assert "leisure_visit_building_potential" in out_log
+
+
+def test_append_residential_visit_candidates_missing_column_raises():
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1).drop(columns=["weight"])
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc.append_residential_visit_candidates(candidates, residential)
+
+
+def test_append_residential_visit_candidates_growth_guard_warns(capsys):
+    # 2 base candidates + 10 residential rows -> 12 total, growth x6.0 > 3.0.
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=10, weight=5.0)
+
+    sc.append_residential_visit_candidates(candidates, residential)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "VISIT_CANDIDATE_WARN_FACTOR" in out
+
+
+def test_append_residential_visit_candidates_below_threshold_no_warning(capsys):
+    # 2 base candidates + 1 residential row -> 3 total, growth x1.5 < 3.0.
+    candidates = _leisure_other_split_candidates()
+    residential = _residential_buildings(n=1, weight=5.0)
+
+    sc.append_residential_visit_candidates(candidates, residential)
+
+    out = capsys.readouterr().out
+    assert "WARNING" not in out
+
+
+def _post_append_visit_candidates():
+    """Three-row candidate frame mimicking the output of
+    ``append_residential_visit_candidates``: sec_0 offers leisure (pot_leisure),
+    sec_1 offers other (pot_other), sec_res_2 offers ONLY visit (pot_visit)."""
+    base = _leisure_other_split_candidates()
+    base["offers_visit"] = [False, False]
+    base["pot_visit"] = [0.0, 0.0]
+    residential_row = gpd.GeoDataFrame(
+        {
+            "location_id": ["sec_res_2"],
+            "offers_shop": [False],
+            "offers_leisure": [False],
+            "offers_other": [False],
+            "offers_visit": [True],
+            "pot_shop": [0.0],
+            "pot_shop_daily": [0.0],
+            "pot_shop_non_daily": [0.0],
+            "pot_leisure": [0.0],
+            "pot_other": [0.0],
+            "pot_visit": [9.0],
+        },
+        geometry=[geo.Point(25, 25)],
+        crs="EPSG:25832",
+    )
+    return gpd.GeoDataFrame(pd.concat([base, residential_row], ignore_index=True), crs=base.crs)
+
+
+def test_build_locations_df_leisure_visit_building_potential_targets_pot_visit_rows_only():
+    out = sc._build_locations_df(
+        _post_append_visit_candidates(), with_potentials=True,
+        leisure_subtype_split=True, leisure_visit_building_potential=True,
+    )
+    # sec_0: leisure_visit dropped (offers_visit is False there); the other
+    # three leisure groups are unaffected (still keyed on offers_leisure).
+    assert out.loc[0, "activities"] == "leisure_local; leisure_activity; leisure_excursion"
+    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0"
+    # sec_1: unaffected ("other" only).
+    assert out.loc[1, "activities"] == "other"
+    # sec_res_2: the ONLY row offering leisure_visit, at its pot_visit value.
+    assert out.loc[2, "activities"] == "leisure_visit"
+    assert out.loc[2, "potentials"] == "9.0"
+
+
+def test_build_locations_df_leisure_visit_building_potential_requires_leisure_split():
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc._build_locations_df(
+            _post_append_visit_candidates(), with_potentials=True,
+            leisure_subtype_split=False, leisure_visit_building_potential=True,
+        )
+
+
+def test_build_locations_df_leisure_visit_building_potential_requires_pot_visit_column():
+    # Candidates WITHOUT the pot_visit column (residential source absent) ->
+    # fail-fast ValueError naming the flag, no silent fallback to pot_leisure.
+    with pytest.raises(ValueError, match="leisure_visit_building_potential"):
+        sc._build_locations_df(
+            _leisure_other_split_candidates(), with_potentials=True,
+            leisure_subtype_split=True, leisure_visit_building_potential=True,
+        )
+
+
+def test_build_locations_df_leisure_visit_building_potential_off_byte_identical():
+    candidates = _leisure_other_split_candidates()
+    explicit_off = sc._build_locations_df(
+        candidates, with_potentials=True, leisure_subtype_split=True,
+        leisure_visit_building_potential=False,
+    )
+    default = sc._build_locations_df(
+        candidates, with_potentials=True, leisure_subtype_split=True,
+    )
+    pd.testing.assert_frame_equal(explicit_off, default)
+    # Task-4 behaviour preserved: leisure_visit still shares pot_leisure.
+    assert explicit_off.loc[0, "activities"] == \
+        "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
+    assert explicit_off.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
+
+
+def test_visit_column_constants():
+    assert sc.VISIT_OFFER_COLUMN == "offers_visit"
+    assert sc.VISIT_POTENTIAL_COLUMN == "pot_visit"
+    assert sc.VISIT_CANDIDATE_WARN_FACTOR == 3.0
+
+
+def test_configure_declares_leisure_visit_building_potential_default_false():
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered["leisure_visit_building_potential"] is False
+    assert "braunschweig.data.buildings" not in ctx.staged
+
+
+def test_configure_does_not_stage_buildings_when_leisure_visit_building_potential_on():
+    # Ownership moved (commit ce85d5e): the residential candidate rows are
+    # appended by the shared braunschweig.synthesis.locations.secondary_candidates
+    # stage, which owns the braunschweig.data.buildings dependency (its
+    # configure() stages it when the flag is ON -- covered in
+    # tests/test_secondary_candidates_stage.py). The chainsolvers stage itself
+    # only reads the flag for its fail-fast guards and must NOT re-stage the
+    # buildings dependency.
+    ctx = _FakeContext({"leisure_visit_building_potential": True})
+    sc.configure(ctx)
+    assert "braunschweig.data.buildings" not in ctx.staged
+    # The shared candidate stage itself is staged under the
+    # secondary_building_potentials flag (the candidate-set owner), covered by
+    # its own tests; nothing more to assert here.
+
+
+# ---------------------------------------------------------------------------
+# Excursion boundary-clip transparency (issue #127, Task 6).
+#
+# TDD: written BEFORE the implementation. Covers the three pure helpers wired
+# into solve_secondary_locations (_excursion_desired_distances_and_anchors_m,
+# _candidate_reach_ceiling_m, _excursion_boundary_clip_summary) with
+# hand-built, synthetic data only -- no MiD/ALKIS data. Together they
+# reproduce, outside the full stage context, exactly what the production
+# wiring computes.
+# ---------------------------------------------------------------------------
+
+
+def test_excursion_desired_distances_and_anchors_extracts_only_excursion_legs():
+    layered = {
+        "leisure_excursion": _single_value_distribution(77_000.0),
+        "leisure": _single_value_distribution(1_000.0),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    problems = _leisure_problem()  # origin=(0,0), destination=(1000,1000)
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.tolist() == [77_000.0]
+    assert anchors_xy.shape == (1, 2)
+    # The anchor is the problem's fixed origin (0, 0), not the destination.
+    assert anchors_xy[0].tolist() == [0.0, 0.0]
+
+
+def test_excursion_desired_distances_and_anchors_empty_when_no_excursion_legs():
+    layered = {
+        "leisure": _single_value_distribution(1_000.0),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    problems = _leisure_problem()
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_local",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.shape == (0,)
+    assert anchors_xy.shape == (0, 2)
+
+
+def test_excursion_desired_distances_and_anchors_empty_plans_df():
+    empty = pd.DataFrame.from_records([])
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(empty, [])
+    assert desired_m.shape == (0,)
+    assert anchors_xy.shape == (0, 2)
+
+
+def test_candidate_reach_ceiling_matches_hand_computed_max_distance():
+    # One anchor at the origin, three candidates at known distances (3-4-5
+    # triangle + a farther point) -> the ceiling is the max, 100.0.
+    anchors_xy = np.array([[0.0, 0.0]])
+    candidate_xy = np.array([[3.0, 4.0], [6.0, 8.0], [60.0, 80.0]])  # dist 5, 10, 100
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    assert ceilings.shape == (1,)
+    assert ceilings[0] == pytest.approx(100.0)
+
+
+def test_candidate_reach_ceiling_per_anchor_independent():
+    anchors_xy = np.array([[0.0, 0.0], [100.0, 0.0]])
+    candidate_xy = np.array([[10.0, 0.0], [90.0, 0.0]])
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    # Anchor 0 (x=0): farthest candidate is x=90 -> distance 90.
+    # Anchor 1 (x=100): farthest candidate is x=10 -> distance 90.
+    assert ceilings.tolist() == pytest.approx([90.0, 90.0])
+
+
+def test_candidate_reach_ceiling_empty_candidates_raises():
+    with pytest.raises(ValueError, match="empty"):
+        sc._candidate_reach_ceiling_m(np.array([[0.0, 0.0]]), np.empty((0, 2)))
+
+
+def test_excursion_boundary_clip_summary_zero_total():
+    message = sc._excursion_boundary_clip_summary(0, 0)
+    assert "0 bounded 'leisure_excursion' legs" in message
+    assert "WARNING" not in message
+
+
+def test_excursion_boundary_clip_summary_below_warning_threshold():
+    message = sc._excursion_boundary_clip_summary(1, 10)
+    assert "1/10" in message
+    assert "(10.0%)" in message
+    assert "WARNING" not in message
+
+
+def test_excursion_boundary_clip_summary_at_or_above_warning_threshold():
+    message = sc._excursion_boundary_clip_summary(6, 10, warning_share=0.5)
+    assert "WARNING: " in message
+    assert "6/10" in message
+    assert "(60.0%)" in message
+
+
+def test_excursion_boundary_clip_summary_all_clipped_is_100_percent():
+    message = sc._excursion_boundary_clip_summary(5, 5)
+    assert "5/5" in message
+    assert "(100.0%)" in message
+    assert "WARNING: " in message
+
+
+def test_excursion_boundary_clip_end_to_end_on_synthetic_scenario():
+    """Assembles the three helpers exactly as solve_secondary_locations does,
+    on a small synthetic scenario with a known, hand-computable clip share."""
+    layered = {
+        "leisure_excursion": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    # Two bounded excursion problems, both anchored at the origin. Desired
+    # distances are drawn from _flat_distribution's values (800/1000/1200/1500 m).
+    problems = [
+        {
+            "person_id": 1, "activity_index": 1, "size": 1,
+            "purposes": ["leisure"], "modes": ["car", "car"],
+            "travel_times": np.array([600.0, 600.0]),
+            "origin": np.array([[0.0, 0.0]]),
+            "destination": np.array([[10.0, 10.0]]),
+        },
+        {
+            "person_id": 2, "activity_index": 1, "size": 1,
+            "purposes": ["leisure"], "modes": ["car", "car"],
+            "travel_times": np.array([600.0, 600.0]),
+            "origin": np.array([[0.0, 0.0]]),
+            "destination": np.array([[10.0, 10.0]]),
+        },
+    ]
+    plans_df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        problems, layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+    )
+    desired_m, anchors_xy = sc._excursion_desired_distances_and_anchors_m(plans_df, problems)
+    assert desired_m.shape == (2,)
+    # A single candidate only 500 m away from the anchor -- every desired
+    # distance (>= 800 m, see _flat_distribution) exceeds this ceiling, so
+    # both legs must clip.
+    candidate_xy = np.array([[500.0, 0.0]])
+    ceilings = sc._candidate_reach_ceiling_m(anchors_xy, candidate_xy)
+    from braunschweig.calibration.secondary_measurement import boundary_clip_share
+    share, n_clipped, n_total = boundary_clip_share(desired_m, ceilings)
+    assert n_total == 2
+    assert n_clipped == 2
+    assert share == pytest.approx(1.0)
+    message = sc._excursion_boundary_clip_summary(n_clipped, n_total)
+    assert "2/2" in message and "WARNING: " in message

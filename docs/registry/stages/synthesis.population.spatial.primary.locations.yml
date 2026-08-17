@@ -1,0 +1,26 @@
+stage: synthesis.population.spatial.primary.locations
+title: Primary location assignment
+layer: education
+description: 'Primary (work/education) location assignment: with education gravity ON it resolves
+  to braunschweig.locations.synthesis.replacement_education_gravity (gravity schools/Kita/uni),
+  else to the upstream replacement sampler.'
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.primary.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/primary/locations.py
+- braunschweig/locations/synthesis/replacement_education_gravity.py
+- eqasim_common/locations/synthesis/replacement.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.locations.synthesis.replacement_education_gravity
+  popsim_open: braunschweig.locations.synthesis.replacement_education_gravity
+  simple_ipf_open: eqasim_common.locations.synthesis.replacement
+features:
+- education_gravity

@@ -1,0 +1,19 @@
+stage: braunschweig.analysis.simwrapper_export
+title: SimWrapper export
+layer: analysis
+description: Writes the multi-tab SimWrapper dashboard bundle from a run output (ADR-0033).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/analysis/simwrapper_export.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- simwrapper_export
+decisions:
+- ADR-0033

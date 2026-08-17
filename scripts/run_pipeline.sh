@@ -6,7 +6,7 @@
 # This is the server-side runner invoked (inside a tmux session) by the Windows
 # orchestrator run_pipeline_on_server.ps1. It can also be called directly:
 #
-#   bash ~/eqasim-bs/scripts/run_pipeline.sh config_server_braunschweig_25pct.yml
+#   bash ~/eqasim-bs/scripts/run_pipeline.sh configs/fixtures/config_local_braunschweig_25pct.yml
 #
 # It writes a timestamped log next to the repo so a run can be followed with
 #   tail -f ~/eqasim-bs/logs/run_*.log
@@ -15,6 +15,12 @@
 #   - conda is installed at $CONDA_ROOT (default ~/miniforge3)
 #   - the conda environment is named "eqasim"
 #   - the working directory is the repository root
+#
+# NOTE: this script forwards exactly ONE config path to `python scripts/run_synpp.py`
+# (below), so it does not yet support the composed base+overlay form (config-
+# composition cleanup, #230; see configs/base_bs.yml). For a composed all-features
+# run, invoke run_synpp.py directly with two arguments instead of this script:
+#   python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 
 set -euo pipefail
 
@@ -22,7 +28,10 @@ REPO_DIR="${EQASIM_REPO_DIR:-$HOME/eqasim-bs}"
 CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
 CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
 
-CONFIG="${1:-config_server_braunschweig_25pct.yml}"
+# Default is a syntax placeholder only (its former Linux server counterpart,
+# config_server_braunschweig_25pct.yml, was removed as superseded ballast, #230);
+# ALWAYS pass an explicit config for a real run.
+CONFIG="${1:-configs/fixtures/config_local_braunschweig_25pct.yml}"
 
 cd "$REPO_DIR"
 
@@ -71,6 +80,25 @@ if ! command -v mvn >/dev/null 2>&1; then
 fi
 
 mkdir -p logs
+
+# Preflight: verify ALL required pipeline input data up front (issue #135).
+# Data completeness was previously only discovered as a stage crash deep in
+# the DAG, hours into a 64-core run. verify_braunschweig_inputs.py prints a
+# checklist with download sources for anything missing and exits non-zero.
+# Escape hatch: EQASIM_SKIP_VERIFY=1 skips the gate (e.g. for a deliberately
+# partial data tree feeding only cached stages).
+if [[ "${EQASIM_SKIP_VERIFY:-0}" != "1" ]]; then
+    echo "==> Preflight: verifying pipeline input data (EQASIM_SKIP_VERIFY=1 to skip)"
+    if ! PYTHONUTF8=1 python scripts/verify_braunschweig_inputs.py --matsim; then
+        echo "ERROR: input verification failed. Fix the missing inputs above" >&2
+        echo "       (download sources are listed per dataset), or re-run with" >&2
+        echo "       EQASIM_SKIP_VERIFY=1 if the missing inputs are known to be" >&2
+        echo "       served from cached stages." >&2
+        exit 1
+    fi
+else
+    echo "==> Preflight SKIPPED (EQASIM_SKIP_VERIFY=1)"
+fi
 
 # synpp's output stage (synthesis/output.py validate()) requires the configured
 # output directory to already exist and aborts the whole run otherwise. Extract

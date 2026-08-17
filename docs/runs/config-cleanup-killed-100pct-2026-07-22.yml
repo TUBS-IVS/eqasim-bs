@@ -1,0 +1,37 @@
+id: config-cleanup-killed-100pct-2026-07-22
+date: '2026-07-22'
+repository:
+  commit: cd05890
+  branch: main
+configuration:
+  base: config_100pct_popsim_only.yml (pre-composition standalone config)
+  overlays: []
+  notes: felix, main+#224 @ cd05890; settings_tier3_mef100.yaml = float-seed, no numba (the trap
+    ADR-0070 bans)
+sampling:
+  rate: 100% (1.13M, 8 Kreise)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- production_candidate
+status:
+  execution: killed
+environment: server (64c/128GB)
+validation:
+- metric: post-mortem (timing_log.csv)
+  reference: null
+  result: 'sub_balancing.geography=ZENSUS100m 8.5h/batch, balancer converged=False on every 1km
+    parent (~9-10h/batch, ~8 days/60); root cause = float-seed settings wired in the config, NOT
+    #224 (KREIS controls = 13s same log)'
+  notes: Not validation; the post-mortem that produced ADR-0070.
+features:
+  note: 'popsim_mid all-features + #224 participation controls'
+artifacts:
+- float-seed batches in cache_bs_100pct_allfeat_popsim discarded
+issues:
+- '#224'
+decisions:
+- ADR-0070
+source: RUNS.md row 2026-07-22

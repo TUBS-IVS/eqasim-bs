@@ -20,6 +20,7 @@ household car. The key scientific assertions:
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -283,6 +284,67 @@ def test_gemeinde_tilt_raises_local_bev_share():
 
 
 # --------------------------------------------------------------------------- #
+# Issue #161 -- Gemeinde-name normalisation for the FZ 27.17 tilt join.
+#
+# The KBA FZ 27.17 sheet is ASCII-transliterated and often abbreviated
+# ("RUEHEN", "GIFHORN,ST."); the household home Gemeinde comes from the BBSR
+# RegioStaR ``name_20`` reference and carries proper unicode umlauts and the
+# full suffix ("Ruehen" spelled "Rühen", "Gifhorn, Stadt"). Without
+# normalisation the join misses almost every Gemeinde (live 100% run: primary
+# 209285/684762 = 30.6%, fallback 69.4%).
+# --------------------------------------------------------------------------- #
+def test_normalize_gemeinde_name_folds_umlauts_suffixes_and_periods():
+    """Real mismatch examples from the live-run fallback (issue #161)."""
+    norm = fs.normalize_gemeinde_name
+    # KBA-side (already ASCII, abbreviated) vs RegioStaR-side (proper unicode,
+    # full suffix) must normalise to the SAME key.
+    assert norm("RUEHEN") == norm("Rühen") == "RUEHEN"
+    assert norm("GIFHORN,ST.") == norm("Gifhorn, Stadt") == "GIFHORN"
+    assert norm("BROME,FLECKEN") == norm("Brome, Flecken") == "BROME"
+    assert norm("WITTINGEN,ST.") == norm("Wittingen, Stadt") == "WITTINGEN"
+    assert norm("BAD HARZBURG,ST.") == norm("Bad Harzburg, Stadt") == "BAD HARZBURG"
+    # A Gemeinde with no comma-suffix at all is unaffected beyond upper-casing.
+    assert norm("Braunschweig") == "BRAUNSCHWEIG"
+    # Missing values normalise to the empty string, not a spurious match.
+    assert norm(None) == ""
+    assert norm(float("nan")) == ""
+
+
+def test_gemeinde_tilt_bridges_umlaut_and_suffix_mismatch(sampler):
+    """The Gemeinde tilt lookup must hit the PRIMARY path (not fall back to the
+    Kreis level) for a RegioStaR-style home Gemeinde label, even though the
+    committed KBA FZ 27.17 sheet spells the same Gemeinde differently.
+
+    Regression for issue #161: before the fix, ``_apply_gemeinde_tilt`` only
+    upper-cased the incoming label, so a real-unicode / full-suffix RegioStaR
+    name never matched the ASCII-transliterated, abbreviated FZ 27.17 key and
+    silently fell back to the Kreis-level share for the vast majority of
+    vehicles (live 100% run: 69.4% fallback).
+    """
+    pm = sampler.powertrain_model
+    segment = pm.segments[0]
+    # (kreis_ags5, RegioStaR-style label) -> the KBA FZ 27.17 counterpart is,
+    # respectively: "RUEHEN", "GIFHORN,ST.", "BROME,FLECKEN" (all Kreis 03151,
+    # verified against eqasim-data/data/braunschweig/kba/derived/
+    # kba_gemeinde_private_bev.csv).
+    cases = [
+        ("03151", "Rühen"),
+        ("03151", "Gifhorn, Stadt"),
+        ("03151", "Brome, Flecken"),
+    ]
+    for kreis, gemeinde in cases:
+        primary_before = pm._gemeinde_primary
+        fallback_before = pm._gemeinde_fallback
+        pm.powertrain_probabilities(segment, kreis, gemeinde)
+        assert pm._gemeinde_primary == primary_before + 1, (
+            f"Gemeinde tilt fell back to the Kreis level for "
+            f"(kreis={kreis!r}, gemeinde={gemeinde!r}); the normalised join "
+            f"should have hit the KBA FZ 27.17 entry (fallback count "
+            f"{pm._gemeinde_fallback} vs before {fallback_before})."
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Task 5 — sonstige redistribution (consistency_v2).
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
@@ -439,6 +501,100 @@ def test_provenance_columns_absent_on_off_path(sampled_v2_off):
     df_spec, _ = sampled_v2_off
     assert "brand_source" not in df_spec.columns
     assert "powertrain_feasibility" not in df_spec.columns
+
+
+# --------------------------------------------------------------------------- #
+# Issue #163 (feasible_fuels item) -- Tier-1 vs Tier-2 aggregate log split.
+#
+# model_feasible_powertrains resolves either Tier 1 (exact (brand, family) hit)
+# or Tier 2 (brand-wide union fallback); before this fix the aggregate log only
+# recorded "model_constrained" for BOTH, so a Tier1 -> Tier2 drift (the HSN/TSN
+# lookup losing family-level resolution) could not be observed.
+# --------------------------------------------------------------------------- #
+def test_feasible_fuels_tier_split_via_with_tier_method():
+    """FeasibleFuels.model_feasible_powertrains_with_tier must label an exact
+    (brand, family) hit as 'family' (Tier 1) and a brand-only hit as 'brand'
+    (Tier 2), and the plain model_feasible_powertrains wrapper must still
+    return the same feasible SET (backward compatible)."""
+    from braunschweig.data.kba.feasible_fuels import FeasibleFuels
+
+    lookup = pd.DataFrame([
+        {"brand": "Fiat", "model": "Fiat 500", "fuel": "Benzin"},
+    ])
+    ff = FeasibleFuels.from_frame(lookup)
+
+    # Tier 1: exact (brand, family) hit ("500" is known for Fiat).
+    feasible, tier = ff.model_feasible_powertrains_with_tier("FIAT", "500")
+    assert tier == "family"
+    assert feasible == {"petrol"}
+    assert ff.model_feasible_powertrains("FIAT", "500") == feasible
+
+    # Tier 2: brand known, family unknown ("punto" has no HSN/TSN row) ->
+    # brand-wide union fallback.
+    feasible2, tier2 = ff.model_feasible_powertrains_with_tier("FIAT", "punto")
+    assert tier2 == "brand"
+    assert feasible2 == {"petrol"}
+    assert ff.model_feasible_powertrains("FIAT", "punto") == feasible2
+
+    # Tier 3: brand truly unknown -> (None, None).
+    feasible3, tier3 = ff.model_feasible_powertrains_with_tier("FABRIKMARKE", "x")
+    assert feasible3 is None and tier3 is None
+    assert ff.model_feasible_powertrains("FABRIKMARKE", "x") is None
+
+
+def test_feasibility_tier_split_logged_and_counted(monkeypatch, caplog):
+    """sample_fleet's aggregate log must split Tier-1 vs Tier-2 model-constrained
+    hits, and the two counters must sum to the total 'model_constrained' count.
+
+    Uses a synthetic, deterministic feasible-fuels model (injected onto the
+    sampler) plus a monkeypatched brand/model draw so the Tier-1/Tier-2 mix is
+    known exactly: 2 cars draw a model with an exact (brand, family) HSN/TSN
+    row (Tier 1), 2 draw a model whose family is absent but whose brand is
+    known (Tier 2).
+    """
+    from braunschweig.data.kba.feasible_fuels import FeasibleFuels
+
+    lookup = pd.DataFrame([
+        {"brand": "Fiat", "model": "Fiat 500", "fuel": "Benzin"},
+    ])
+    ff = FeasibleFuels.from_frame(lookup)
+
+    df_cars = pd.DataFrame([{
+        "economic_status": "medium", "kreis_ags5": "03101",
+        "gemeinde": np.nan, "raumtyp": 72,
+    }] * 4)
+
+    local_sampler = fs.FleetSampler.from_data_path(DATA_PATH)
+    local_sampler.feasible_fuels = ff  # deterministic, small feasibility model
+
+    sequence = iter([
+        ("FIAT", "FIAT 500"),    # family "500" known -> Tier 1
+        ("FIAT", "FIAT PUNTO"),  # family "punto" unknown -> Tier 2 (brand fallback)
+        ("FIAT", "FIAT 500"),
+        ("FIAT", "FIAT PUNTO"),
+    ])
+
+    def _fake_draw_brand_model(rng, sampler_, segment):
+        return next(sequence)
+
+    monkeypatch.setattr(fs, "_draw_brand_model", _fake_draw_brand_model)
+
+    with caplog.at_level(logging.INFO):
+        df_spec, _ = fs.sample_fleet(
+            df_cars, DATA_PATH, random_seed=1, sampler=local_sampler,
+            consistency_v2=True)
+
+    # Every car got the (petrol-only) mask applied -- no no-overlap fallback.
+    assert (df_spec["powertrain_feasibility"] == "model_constrained").all()
+    assert (df_spec["powertrain"] == "petrol").all()
+
+    match = re.search(
+        r"tier1 exact-family=(\d+), tier2 brand-fallback=(\d+)", caplog.text)
+    assert match is not None, f"tier split not found in log output: {caplog.text!r}"
+    n_tier1, n_tier2 = int(match.group(1)), int(match.group(2))
+    assert n_tier1 == 2, f"expected 2 Tier-1 (exact-family) hits, got {n_tier1}"
+    assert n_tier2 == 2, f"expected 2 Tier-2 (brand-fallback) hits, got {n_tier2}"
+    assert n_tier1 + n_tier2 == 4, "tier counters must sum to the constrained total"
 
 
 # --------------------------------------------------------------------------- #
@@ -606,6 +762,12 @@ def test_age_income_off_unchanged():
         "
 
     The golden is committed to tests/fixtures/feature_b_age_off_golden.parquet.
+
+    Refresh history: regenerated 2026-06-18 after the brand-feasibility merge
+    (0d43aa5) and again 2026-07-16 after commit 0bcba37 (issue #92, reviewed)
+    deliberately replaced the independent age draw with the joint (age, euro)
+    IPF matched to the KBA age marginal -- the old golden froze the pre-#92
+    distribution (mean age 6.7 vs 9.8 years) and was never refreshed with it.
     """
     golden = _load_golden("feature_b_age_off_golden.parquet")
 

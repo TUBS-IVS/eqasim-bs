@@ -1,0 +1,31 @@
+dataset: bosserhof_mappings
+title: Bosserhof building-class mappings (purpose / location category)
+provider: derived in-repo
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+used_by:
+- braunschweig.data.bosserhof_location_category
+- braunschweig.data.bosserhof_purpose
+acquisition:
+  method: committed
+  source: seeded via scripts/seed_bosserhof_class_to_{purpose,location_category}.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/buildings/bosserhof_class_to_{purpose,location_category}.csv
+  committed: false
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: derived
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Maps building classes to secondary purposes (#27) and SrV location categories (#262).

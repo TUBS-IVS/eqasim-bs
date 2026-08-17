@@ -1,0 +1,18 @@
+stage: data.spatial.departments
+title: Kreis zones
+layer: spatial
+description: Upstream department contract carrying the ZGB Kreise.
+lineage:
+  type: configured
+  upstream: null
+  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
+    baseline.
+code:
+- data/spatial/departments.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- vg250_ew

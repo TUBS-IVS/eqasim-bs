@@ -1,0 +1,16 @@
+stage: documentation.meta_output
+title: Run meta output
+layer: infrastructure
+description: Writes the run's meta.json (versions, config, timestamps) -- inherited eqasim provenance
+  stage.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- documentation/meta_output.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

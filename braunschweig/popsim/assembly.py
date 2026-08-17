@@ -228,6 +228,10 @@ ADULT_AGE = 18
 _HOUSEHOLD_ATTRS = [
     "economic_status", "household_income", "household_income_eur",
     "number_of_cars", "number_of_bicycles",
+    # has_ebike (0/1 int, attributes.map_has_ebike from H_ANZPED): written onto the
+    # persons frame so the has_ebike KREIS control is measurable against the realized
+    # population, not just derivable on the seed (server-verified 2026-07-08).
+    "has_ebike",
     # Tier-2 popsim control attributes: housing_tenure and building_type_3class are
     # derived from H_MIETE / haustyp in attributes.map_housing_tenure /
     # map_building_type_3class and joined from donor_hh onto the persons frame so
@@ -244,6 +248,7 @@ def map_mid_person_attributes(
     *,
     donor_col: str = "H_ID",
     rng=None,
+    rs7_conditioning: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply the MiD attribute-mapping sequence to a pre-expanded, pre-zoned persons frame.
 
@@ -267,13 +272,20 @@ def map_mid_person_attributes(
     mid_households:
         The MiD donor household table (must contain the columns expected by the
         ``attributes.*`` household mappers: ``H_ID``, ``oek_status``,
-        ``hheink_gr1``, ``H_ANZAUTO``, ``H_ANZRAD``).
+        ``hheink_gr1``, ``H_ANZAUTO``, ``anzpedrad`` (bicycles including pedelecs,
+        the ``map_number_of_bicycles`` default source), and ``H_ANZPED`` (the
+        verified e-bike column, the ``map_has_ebike`` default source).
     donor_col:
         Column name of the donor household key (default ``H_ID``).
     rng:
         Random state for stochastic attribute imputation (employment, licence,
         PT subscription).  Defaults to ``np.random.RandomState(0)`` for backward
         compatibility.
+    rs7_conditioning:
+        Condition the item-nonresponse imputation pools additionally on
+        ``RegioStaR7`` (issue #131; default ON). Person-level mappers use the
+        PLACED home cell's RS7, household-level mappers the donor's survey home
+        region. ``False`` restores the one-dimensional pools (A/B escape hatch).
 
     Returns
     -------
@@ -282,24 +294,41 @@ def map_mid_person_attributes(
     """
     rng = rng if rng is not None else np.random.RandomState(0)
 
-    persons = attributes.map_employed(persons, rng=rng)
+    persons = attributes.map_employed(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    # employment_status (P9 taxonomy, MiD P_BKAT) rides alongside the boolean
+    # employed flag -- NOT a popsim control, additive for analysis/validation
+    # (see attributes.map_employment_status docstring).
+    persons = attributes.map_employment_status(persons, rng=rng, rs7_conditioning=rs7_conditioning)
     # Derive studies from P_TAET (Ausbildung/Schueler/Student -> True) BEFORE
     # map_socioprofessional_class, which uses the studies flag in its fallback path.
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.
     persons = attributes.map_studies(persons)
-    persons = attributes.map_has_license(persons, rng=rng)
-    persons = attributes.map_has_pt_subscription(persons, rng=rng)
+    persons = attributes.map_has_license(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    persons = attributes.map_has_pt_subscription(persons, rng=rng, rs7_conditioning=rs7_conditioning)
 
     donor_hh = attributes.map_building_type_3class(
         attributes.map_housing_tenure(
-            attributes.map_number_of_bicycles(
-                attributes.map_number_of_cars(
-                    attributes.map_household_income(
-                        attributes.map_household_income_eur(
-                            attributes.map_economic_status(mid_households)
-                        )
-                    )
-                )
+            attributes.map_has_ebike(
+                # map_number_of_bicycles now defaults to bikes_col="anzpedrad" (bicycles
+                # INCLUDING pedelecs/e-bikes, MiD H12.3 / SrV alle-Raeder construct;
+                # verified 2026-07-08), a deliberate construct change from the previous
+                # H_ANZRAD (conventional-bikes-only) default -- see the function docstring.
+                attributes.map_number_of_bicycles(
+                    attributes.map_number_of_cars(
+                        attributes.map_household_income(
+                            attributes.map_household_income_eur(
+                                attributes.map_economic_status(
+                                    mid_households, rs7_conditioning=rs7_conditioning
+                                ),
+                                rs7_conditioning=rs7_conditioning,
+                            ),
+                            rs7_conditioning=rs7_conditioning,
+                        ),
+                        rs7_conditioning=rs7_conditioning,
+                    ),
+                    rs7_conditioning=rs7_conditioning,
+                ),
+                rs7_conditioning=rs7_conditioning,
             )
         )
     )
@@ -316,14 +345,12 @@ def map_mid_person_attributes(
     # absent when the donor lacks H_MIETE / haustyp, e.g. on the ENTD path or in
     # existing test fixtures that pre-date the Tier-2 addition). The core attrs
     # (economic_status, household_income, household_income_eur, number_of_cars,
-    # number_of_bicycles) are always present after the attribute mappers above.
+    # number_of_bicycles, has_ebike) are always present after the attribute mappers
+    # above (MiD donor only; map_has_ebike raises if H_ANZPED is absent).
     available_attrs = [a for a in _HOUSEHOLD_ATTRS if a in donor_hh.columns]
-    persons = persons.merge(
-        donor_hh[[donor_col, *available_attrs]],
-        on=donor_col, how="left", suffixes=("", "_hh"),
+    persons = _attach_donor_household_attrs(
+        persons, donor_hh, donor_col, available_attrs,
     )
-    persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
-    persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
 
     persons["car_availability"] = _household_availability(
         persons, count_col="number_of_cars", adults_only=True,
@@ -399,7 +426,7 @@ def map_mid_person_attributes(
     persons, donor_map = assign_donor_surrogates(persons, donor_col=donor_col)
 
     persons = attributes.map_socioprofessional_class(persons)
-    persons = attributes.map_pt_subscription_type(persons, rng=rng)
+    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
 
     # weight = 1.0: popsim_mid produces an already-expanded population (each row
     # is one synthetic person, no stochastic rounding needed). synthesis.population.sampled
@@ -409,6 +436,44 @@ def map_mid_person_attributes(
     persons["weight"] = 1.0
 
     return persons, donor_map
+
+
+def _attach_donor_household_attrs(
+    persons: pd.DataFrame,
+    donor_hh: pd.DataFrame,
+    donor_col: str,
+    available_attrs: list,
+) -> pd.DataFrame:
+    """Left-merge donor household attributes onto persons, with join-coverage logging.
+
+    Every synthetic person's ``donor_col`` should reference an existing donor
+    household row (referential integrity of the expansion). An unmatched donor
+    id leaves the count attributes NaN, which the fills below silently turn
+    into "0 cars / 0 bicycles / no e-bike" -- so the match coverage is counted
+    and any unmatched person is surfaced as a WARNING instead of silently
+    zero-filled (CLAUDE.md no-silent-fallback).
+    """
+    persons = persons.merge(
+        donor_hh[[donor_col, *available_attrs]],
+        on=donor_col, how="left", suffixes=("", "_hh"),
+    )
+    unmatched = persons["number_of_cars"].isna()
+    n_unmatched = int(unmatched.sum())
+    n_total = len(persons)
+    if n_unmatched:
+        sample = sorted(persons.loc[unmatched, donor_col].astype(str).unique())[:5]
+        print(
+            f"[popsim.assembly] WARNING: donor household attrs: "
+            f"{n_unmatched}/{n_total} persons "
+            f"({100.0 * n_unmatched / n_total:.2f}%) reference a {donor_col} "
+            f"absent from the donor household frame -> count attributes "
+            f"zero-filled. Example ids: {sample}. A non-zero rate means the "
+            f"expansion and the donor pool diverged (key mismatch)."
+        )
+    persons["number_of_cars"] = persons["number_of_cars"].fillna(0).astype(int)
+    persons["number_of_bicycles"] = persons["number_of_bicycles"].fillna(0).astype(int)
+    persons["has_ebike"] = persons["has_ebike"].fillna(0).astype(int)
+    return persons
 
 
 def build_persons(
@@ -569,6 +634,13 @@ def build_persons(
         persons = _income_module.apply_inkar_income_eur(
             persons, inkar_scale, midpoint_series=midpoint_series,
         )
+
+    # OECD-modified consumption units per synthetic household (issue #130),
+    # reusing the upstream eqasim implementation. Pure age-structure -- stable
+    # under the later income overwrites (Kreis-Income-Control, spatial tilt);
+    # the equivalised income view is derived from the FINAL income in
+    # stage.execute (income.add_income_per_consumption_unit).
+    persons = _income_module.add_consumption_units(persons)
 
     schema.validate_person_columns(persons.columns)
     return persons, donor_map

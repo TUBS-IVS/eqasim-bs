@@ -20,9 +20,10 @@ Usage::
 
     python scripts/calibrate_secondary_scorer.py \\
         --working-directory eqasim-data/cache_bs_25pct_allfeat \\
-        --config config_server_braunschweig_25pct_allfeat_popsim.yml \\
+        --config eqasim-data/cache_bs_25pct_allfeat_popsim/.merged_config.yml \\
         --conc-weight 1.0 \\
         --output-dir eqasim-data/data/braunschweig/calibration/secondary
+    # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 
 Step 7 of feature/smart-other-potential (server-side only; no pinning here).
 """
@@ -440,7 +441,7 @@ def calibrate(
     logger.info("[calibrate-scorer] %d problems in %.1fs.", len(problems), time.time() - t0)
 
     random = np.random.RandomState(random_seed)
-    plans_df, problem_meta, unbounded_idx, _ = _build_plans_df(
+    plans_df, problem_meta, unbounded_idx, _, _ = _build_plans_df(
         problems, distance_distributions, leisure_corr, random,
     )
     logger.info(

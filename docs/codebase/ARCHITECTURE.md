@@ -1,9 +1,17 @@
 # ARCHITECTURE
 
-> **CURRENT STATE — 2026-06-26 (read this first).** The sections below dated
+> **Current state is GENERATED, not maintained here (2026-08-13, ADR-0077):**
+> the actual pipeline is `docs/generated/PIPELINE.md`, stage semantics/lineage
+> `docs/generated/STAGES.md` + `docs/registry/stages/`, active feature state
+> `docs/generated/STATUS.md`, the 10-minute model `docs/MODEL_OVERVIEW.md`.
+> This file keeps DURABLE architecture concepts and dated historical snapshots;
+> do not read any dated section below as current. Per-module split notes
+> (one module/package per file: shape, import-path impact, cache/`validate()`
+> consequences, standing rules) live under `docs/codebase/notes/`, not here.
+
+> **CURRENT STATE — 2026-06-26 (historical snapshot).** The sections below dated
 > 2026-06-08/10 are HISTORICAL (they describe the `feature/education-gravity-bs`
-> / popsim-refactor era). This banner block reflects the actual current state.
-> Authoritative source remains `CLAUDE.md`.
+> / popsim-refactor era).
 
 ## Feature inventory — what was implemented in the last weeks (verified from `git log --all`)
 
@@ -11,7 +19,7 @@
 
 | Area | Feature | Evidence |
 |---|---|---|
-| Location choice | **Building activity potentials** (PR #16, #17). Work + secondary location choice now **REPLACE** the ALKIS candidate set with OSM/ALKIS `building_activity_potentials.parquet` buildings, weighted by per-activity potential (`potential_work`, `potential_retail_daily/non_daily`, `potential_leisure`). Education + kita/university capacity distributed by building potential. chainsolvers pinned to combined-scorer commit `cb50c41`. | git `Merge PR #16`, `#17`; `braunschweig/data/building_potentials.py`, `braunschweig/locations/work.py`, `braunschweig/synthesis/locations/secondary_chainsolvers.py`; `CLAUDE.md` "Building-level activity potentials" |
+| Location choice | **Building activity potentials** (PR #16, #17). Work + secondary location choice now **REPLACE** the ALKIS candidate set with OSM/ALKIS `building_activity_potentials.parquet` buildings, weighted by per-activity potential (`potential_work`, `potential_retail_daily/non_daily`, `potential_leisure`). Education + kita/university capacity distributed by building potential. chainsolvers pinned to commit `d8d8ae7`. | git `Merge PR #16`, `#17`; `braunschweig/data/building_potentials.py`, `braunschweig/locations/work.py`, `braunschweig/synthesis/locations/secondary_chainsolvers/` (stage package since #266); `CLAUDE.md` "Building-level activity potentials" |
 | Fleet | **Fleet consistency v2** (PR #12) + **income-age coupling** (PR #13): brand HSN/TSN feasibility, per-Kreis BEV/PHEV recalibration, income-coupled vehicle age. | git PR #12/#13; memory `model-realism-data-integration.md` |
 | Home | **ALKIS-typed home matching** (PR #14): height-type buildings, H_GEW/P_GEW weighted weekend matching. | git PR #14 |
 | Controls | **Employment grid control** refined to **5 age groups**; **tier-3 Kreis controls** (via cleancensus kreis_controls import). | git 2026-06-18/22 |
@@ -41,7 +49,7 @@
    `braunschweig/popsim/distance_distributions.py` builds distance distributions per
    **(purpose × mode)** instead of mode-only; **Tier 2** `braunschweig/popsim/shop_subtype.py`
    splits shop → shop_daily / shop_non_daily (MiD W_ZWD) driving both desired distance
-   and building potential. Consumed only by `secondary_chainsolvers.py` (secondary
+   and building potential. Consumed only by the `secondary_chainsolvers` stage package (secondary
    activities) — **does NOT touch the education path**. Flag-gated (`secondary_distance_by_purpose`,
    `secondary_shop_daily_split`); ON only in the 2 all-features popsim configs.
 4. **Tier 3 distance-dependent detour/circuity** c(d): built, **measured immaterial vs
@@ -64,7 +72,7 @@ Work/education attraction is a **two-level system**:
 
 ---
 
-How the `eqasim-bs` pipeline is wired. Verified from `config_local_braunschweig.yml`
+How the `eqasim-bs` pipeline is wired. Verified from `configs/fixtures/config_local_braunschweig.yml`
 (the synpp run + alias map), `CLAUDE.md`, and the stage source files.
 
 ## synpp content-hashed DAG
@@ -78,13 +86,13 @@ a Python module exposing:
 - (optionally) `validate(...)` — cache-invalidation hook.
 
 Verified signature in `braunschweig/synthesis/locations/education_gravity.py`
-(`def configure(context)` line 184, `def execute(context)` line 216). synpp
+(`def configure(context)` line 239, `def execute(context)` line 310). synpp
 caches every stage under the `working_directory` (`eqasim-data/cache_bs*`), so a
 rerun only re-executes stages whose hashed inputs changed.
 
 ## Terminal stages
 
-`config_local_braunschweig.yml` requests two terminal outputs:
+`configs/fixtures/config_local_braunschweig.yml` requests two terminal outputs:
 
 ```yaml
 run:
@@ -100,7 +108,7 @@ names to the Braunschweig fork (`braunschweig.*`) or the region-neutral package
 documented constraint that forces several stages (e.g.
 `synthesis.population.enriched`) to alias *directly* to the fork rather than
 chaining through an intermediate (see the inline comment in the config and
-CLAUDE.md). Representative remaps (from `config_local_braunschweig.yml`):
+CLAUDE.md). Representative remaps (from `configs/fixtures/config_local_braunschweig.yml`):
 
 | Upstream stage | Aliased to |
 |----------------|-----------|
@@ -118,6 +126,16 @@ CLAUDE.md). Representative remaps (from `config_local_braunschweig.yml`):
 | `synthesis.population.spatial.commute_distance` | `braunschweig.synthesis.spatial.commute_distance` |
 | `matsim.simulation.prepare` | `braunschweig.matsim.simulation.prepare` |
 | `data.spatial.iris` / `data.spatial.codes` | `eqasim_common.data.spatial.iris` / `eqasim_common.spatial.entd_codes` |
+
+`synthesis.population.enriched` and `synthesis.population.spatial.secondary.locations`
+now alias to **stage packages** rather than single files
+(`braunschweig/synthesis/population/enriched/`;
+`braunschweig/synthesis/locations/secondary_chainsolvers/`) — see
+STRUCTURE.md for their submodule layout; the dotted stage path is unchanged
+because each package's `__init__.py` is the synpp stage module. Per-module
+split notes (shape, import-path impact, cache/`validate()` consequences,
+standing rules) live one-per-module under `docs/codebase/notes/`, not here —
+see `enriched-split.md` and `secondary-chainsolvers-split.md`.
 
 ## Data flow (high level)
 
@@ -170,7 +188,7 @@ model** distributes work/education trips calibrated to BA Pendleratlas flows;
 
 ## Evidence
 
-- `config_local_braunschweig.yml` (`run:`, `aliases:`, calibration config keys)
+- `configs/fixtures/config_local_braunschweig.yml` (`run:`, `aliases:`, calibration config keys)
 - `CLAUDE.md` ("Gravity model", "Education gravity model", "University students")
 - `braunschweig/synthesis/locations/education_gravity.py` (configure/execute, level bands, assign_by_* imports)
 - `README.md` "Pipeline architecture" (mermaid flow)
@@ -212,15 +230,26 @@ append, same-cell resample fallback) that the legacy path does not have.
 
 ### popsim package (braunschweig/popsim/, 27 modules)
 
-`stage.py` (producer stage) -> `mid.py` (orchestration: filter ZGB cells ->
+`stage.py` (producer stage) -> `mid/` (orchestration: filter ZGB cells ->
 control totals -> seed -> `batch.py` greedy 1-km-atomic bin-packing ->
 PopulationSim subprocess per batch via `uv` -> `merge.py` cell-disjoint merge) ->
 `expand.py`/`assembly.py` (households -> donor persons, attribute mapping,
 pseudonymisation surrogates for MiD) -> `handoff.py` (cell -> building
-round-robin). Donor adapters: `sources/{base,mid,entd}.py` (Protocol:
-`seed_columns/load_donor/map_person_attributes/build_trips`). Income:
+round-robin). Donor adapters: `sources/base.py` (Protocol:
+`seed_columns/load_donor/map_person_attributes/build_trips`), `sources/mid.py`,
+`sources/entd.py` (facade + 7 siblings, see `entd-source-split.md`). Income:
 `income.py::apply_inkar_income_eur` — one INKAR per-Kreis scaling + one
 `high_income >= 5000 EUR` rule for BOTH popsim sources (commit a8cce14).
+
+`mid/` (formerly one ~1900-line `mid.py`) is a helper package: a pure facade
+`__init__.py` plus eight submodules. `stage/` (formerly one ~1900-line
+`stage.py`) is the synpp producer stage, also now a package, with six
+extracted submodules. `sources/entd.py` (formerly 1487 lines) is a sibling
+split (not a package conversion) inside the `sources/` donor-adapter package.
+Per-module split notes (shape, import-path impact, cache/`validate()`
+consequences, standing rules) live one-per-module under
+`docs/codebase/notes/`, not here — see `popsim-mid-split.md`,
+`popsim-stage-split.md` and `entd-source-split.md`.
 
 ### Trip/vocabulary convergence
 
@@ -319,4 +348,4 @@ partitioning** (no H_ID renumbering) — `(ZENSUS100m, H_ID)` stays unique.
 
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb` (Steps 1-6),
 `popsimprep/batch_run_popsim.py`, `popsimprep/popsim/configs/settings.yaml`,
-`braunschweig/ipf/attributed.py`, `config_local_braunschweig.yml` (alias map).
+`braunschweig/ipf/attributed.py`, `configs/fixtures/config_local_braunschweig.yml` (alias map).

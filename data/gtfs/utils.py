@@ -15,6 +15,21 @@ OPTIONAL_SLOTS = [
     "feed_info", "translations", "attributions"
 ]
 
+# Identifier columns read as strings so numeric-looking ids and empty cells do
+# not flip column dtypes between feeds (upstream eqasim-france #427; same
+# dtype=str-at-read pattern as our key-matching audit, issues #191/#194).
+DTYPES = {
+    "stops": {
+        "stop_id": str, "parent_station": str
+    },
+    "agency": {
+        "agency_id": str
+    },
+    "routes": {
+        "agency_id": str
+    }
+}
+
 def read_feed(path):
     feed = {}
 
@@ -48,7 +63,7 @@ def read_feed(path):
                 print("  Loading %s.txt ..." % slot)
 
                 with zip.open("%s%s.txt" % (prefix, slot)) as f:
-                    feed[slot] = pd.read_csv(f, skipinitialspace = True)
+                    feed[slot] = pd.read_csv(f, skipinitialspace = True, dtype = DTYPES.get(slot, None))
             else:
                 print("  Not loading %s.txt" % slot)
 
@@ -72,6 +87,14 @@ def read_feed(path):
             print("WARNING Missing parent_station in stops, setting to NaN")
             df_stops["parent_station"] = np.nan
 
+        # Standalone stops (no parent station, location_type 0) are promoted to
+        # stations so cut_feed's station-based spatial cut does not silently drop
+        # them (upstream eqasim-france #521). Guarded on the column existing:
+        # feeds without location_type are legal (see cut_feed, upstream #309);
+        # upstream applies this unguarded and would raise a KeyError there.
+        if "location_type" in df_stops:
+            df_stops.loc[df_stops["parent_station"].isna() & (df_stops["location_type"] == 0), "location_type"] = 1
+
     if "transfers" in feed:
         df_transfers = feed["transfers"]
 
@@ -88,6 +111,9 @@ def read_feed(path):
 
     if "agency" in feed:
         df_agency = feed["agency"]
+        # agency_id is optional for single-agency feeds (upstream eqasim-france #512)
+        if "agency_id" not in df_agency.columns:
+            df_agency["agency_id"] = "generic"
         df_agency.loc[df_agency["agency_id"].isna(), "agency_id"] = "generic"
 
     if "routes" in feed:
@@ -136,12 +162,123 @@ def write_feed(feed, path):
                     print("  Writing %s.txt ..." % slot)
                     feed[slot].to_csv(f, index = None, lineterminator='\n')
 
+def filter_routes(feed,
+                  excluded_route_short_name_patterns = None,
+                  excluded_agency_ids = None,
+                  excluded_agency_name_patterns = None):
+    """Remove configured routes (and their trips, stop_times, frequencies) from a feed.
+
+    This drops demand-responsive / placeholder services that must NOT be imported as
+    scheduled public transport, because they enumerate bookable connections rather
+    than fixed departures every agent could board. The motivating case is "Flexo",
+    the demand-responsive service of the Regionalverband Grossraum Braunschweig
+    (ZGB), which appears in the GTFS feed as a single route rolled out as thousands
+    of placeholder trips (see issue #200).
+
+    Matching is additive: a route is removed if it matches ANY of the rules.
+      - excluded_route_short_name_patterns: regular expressions matched
+        (case-insensitive, substring via pandas.str.contains) against
+        routes.route_short_name. Anchor with ^...$ for exact names (e.g. "^Flexo$").
+      - excluded_agency_ids: agency_id values (compared as strings).
+      - excluded_agency_name_patterns: regular expressions matched
+        (case-insensitive) against agency.agency_name; expanded to their agency_ids.
+
+    Following the no-silent-fallback rule, the number of routes matched by each rule
+    and the total removed routes/trips/stop_times are logged explicitly. A configured
+    pattern that matches nothing is logged as a WARNING so a mistyped pattern is
+    visible instead of silently doing nothing.
+
+    The input feed is not mutated; a filtered copy is returned. Returns the feed
+    unchanged when no exclusion rules are configured.
+    """
+    excluded_route_short_name_patterns = excluded_route_short_name_patterns or []
+    excluded_agency_ids = [str(a) for a in (excluded_agency_ids or [])]
+    excluded_agency_name_patterns = excluded_agency_name_patterns or []
+
+    if (not excluded_route_short_name_patterns and not excluded_agency_ids
+            and not excluded_agency_name_patterns):
+        return feed
+
+    feed = copy_feed(feed)
+    df_routes = feed["routes"]
+
+    # Resolve agency-name patterns to concrete agency_ids via the agency table.
+    if excluded_agency_name_patterns and "agency" in feed:
+        agency_names = feed["agency"]["agency_name"].astype(str)
+        name_mask = pd.Series(False, index = feed["agency"].index)
+        for pattern in excluded_agency_name_patterns:
+            hits = agency_names.str.contains(pattern, case = False, regex = True, na = False)
+            print("[gtfs-filter] agency_name /%s/ matched %d agencies" % (pattern, int(hits.sum())))
+            name_mask |= hits
+        excluded_agency_ids = list(
+            set(excluded_agency_ids)
+            | set(feed["agency"].loc[name_mask, "agency_id"].astype(str))
+        )
+
+    route_short = (df_routes["route_short_name"].astype(str)
+                   if "route_short_name" in df_routes
+                   else pd.Series("", index = df_routes.index))
+    route_agency = (df_routes["agency_id"].astype(str)
+                    if "agency_id" in df_routes
+                    else pd.Series("", index = df_routes.index))
+
+    remove_mask = pd.Series(False, index = df_routes.index)
+
+    for pattern in excluded_route_short_name_patterns:
+        hits = route_short.str.contains(pattern, case = False, regex = True, na = False)
+        print("[gtfs-filter] route_short_name /%s/ matched %d routes" % (pattern, int(hits.sum())))
+        remove_mask |= hits
+
+    if excluded_agency_ids:
+        hits = route_agency.isin(excluded_agency_ids)
+        print("[gtfs-filter] agency_id in %s matched %d routes" % (excluded_agency_ids, int(hits.sum())))
+        remove_mask |= hits
+
+    removed_route_ids = set(df_routes.loc[remove_mask, "route_id"].astype(str))
+
+    if len(removed_route_ids) == 0:
+        print("[gtfs-filter] WARNING no routes matched the configured exclusion rules; feed unchanged")
+        return feed
+
+    # Cascade the removal: routes -> trips -> stop_times / frequencies.
+    df_trips = feed["trips"]
+    removed_trip_mask = df_trips["route_id"].astype(str).isin(removed_route_ids)
+    removed_trip_ids = set(df_trips.loc[removed_trip_mask, "trip_id"].astype(str))
+
+    n_routes_before = len(df_routes)
+    n_trips_before = len(df_trips)
+
+    feed["routes"] = df_routes[~df_routes["route_id"].astype(str).isin(removed_route_ids)].copy()
+    feed["trips"] = df_trips[~removed_trip_mask].copy()
+
+    n_stop_times_removed = 0
+    if "stop_times" in feed:
+        df_times = feed["stop_times"]
+        keep = ~df_times["trip_id"].astype(str).isin(removed_trip_ids)
+        n_stop_times_removed = int((~keep).sum())
+        feed["stop_times"] = df_times[keep].copy()
+
+    if "frequencies" in feed:
+        df_freq = feed["frequencies"]
+        feed["frequencies"] = df_freq[
+            ~df_freq["trip_id"].astype(str).isin(removed_trip_ids)
+        ].copy()
+
+    print("[gtfs-filter] removed %d/%d routes, %d/%d trips, %d stop_times "
+          "(demand-responsive / excluded services)" % (
+              len(removed_route_ids), n_routes_before,
+              len(removed_trip_ids), n_trips_before,
+              n_stop_times_removed))
+
+    return feed
+
 def cut_feed(feed, df_area, crs = None):
     feed = copy_feed(feed)
 
     df_stops = feed["stops"]
 
-    if np.count_nonzero(df_stops["location_type"] == 1) == 0:
+    # Feeds without a location_type column are valid GTFS (upstream eqasim-france #309)
+    if "location_type" not in df_stops.columns or np.count_nonzero(df_stops["location_type"] == 1) == 0:
         print("Warning! Location types seem to be malformatted. Keeping all stops.")
         df_stations = df_stops.copy()
     else:
@@ -284,31 +421,31 @@ def merge_two_feeds(first, second, suffix = "_merged"):
             df_first = first[collision["slot"]]
             df_second = second[collision["slot"]]
 
-            df_first[collision["identifier"]] = df_first[collision["identifier"]].astype(str)
-            df_second[collision["identifier"]] = df_second[collision["identifier"]].astype(str)
+            # The identifier column can be absent (e.g. attributions without the
+            # optional attribution_id; upstream eqasim-france #428). No astype(str)
+            # coercion: it turned genuine NaN into the string "nan" and broke
+            # isna()-based logic downstream (upstream eqasim-france #447).
+            if collision["identifier"] in df_first and collision["identifier"] in df_second:
+                df_concat = pd.concat([df_first, df_second], sort = True).drop_duplicates()
+                duplicate_ids = list(df_concat[df_concat[collision["identifier"]].duplicated()][collision["identifier"]].unique())
 
-            df_concat = pd.concat([df_first, df_second], sort = True).drop_duplicates()
-            duplicate_ids = list(df_concat[df_concat[collision["identifier"]].duplicated()][
-                collision["identifier"]].astype(str).unique())
+                if len(duplicate_ids) > 0:
+                    print("   Found %d duplicate identifiers in %s" % (
+                        len(duplicate_ids), collision["slot"]))
 
-            if len(duplicate_ids) > 0:
-                print("   Found %d duplicate identifiers in %s" % (
-                    len(duplicate_ids), collision["slot"]))
+                    replacement_ids = [str(id) + suffix for id in duplicate_ids]
 
-                replacement_ids = [str(id) + suffix for id in duplicate_ids]
+                    df_second[collision["identifier"]] = df_second[collision["identifier"]].replace(
+                        duplicate_ids, replacement_ids
+                    )
 
-                df_second[collision["identifier"]] = df_second[collision["identifier"]].replace(
-                    duplicate_ids, replacement_ids
-                )
-
-                for ref_slot, ref_identifier in collision["references"]:
-                    if ref_slot in first and ref_slot in second:
-                        first[ref_slot][ref_identifier] = first[ref_slot][ref_identifier].astype(str)
-                        second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].astype(str)
-
-                        second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].replace(
-                            duplicate_ids, replacement_ids
-                        )
+                    # Rewriting references only requires the second feed to carry the
+                    # referencing slot (upstream eqasim-france #521).
+                    for ref_slot, ref_identifier in collision["references"]:
+                        if ref_slot in second:
+                            second[ref_slot][ref_identifier] = second[ref_slot][ref_identifier].replace(
+                                duplicate_ids, replacement_ids
+                            )
 
     for slot in REQUIRED_SLOTS + OPTIONAL_SLOTS:
         if slot in first and slot in second:

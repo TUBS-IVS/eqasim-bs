@@ -1,5 +1,19 @@
 # Run analysis (post-simulation)
 
+### MATSim simulation output archive
+
+The `matsim.output` synpp stage mirrors the MATSim run's `simulation_output/`
+(events, plans, `ITERS/`, config, logfile) from the synpp hash-cache directory
+into a stable, run-named `<output_path>/matsim_output/`, so the archive
+survives a synpp cache-dir wipe (issue #156). Controlled by the
+`archive_matsim_output` config flag (default **true**); set it to `false` to
+skip archiving and leave `output_path` unchanged from today. Each file is
+hardlinked where possible (zero extra disk on the same volume) and copied as a
+fallback (e.g. cross-volume); the run log reports the primary(hardlink)-vs-
+fallback(copy) rate explicitly, with a warning if the hardlink rate is 0%. A
+provenance file `<output_path>/matsim_output/ARCHIVE_INFO.json` records the
+source hash directory, file/hardlink/copy counts and a UTC creation timestamp,
+mirroring the `documentation.meta_output` `*meta.json` pattern.
 
 The validation notebook `braunschweig/analysis/validation_mid2023.ipynb`
 has a runnable counterpart that produces every table, figure and
@@ -42,15 +56,24 @@ The run analytics can additionally be exported as a self-contained
 dashboard is viewable inside the MATSim/SimWrapper ecosystem. There are two
 complementary, flag-gated layers:
 
-**Layer 1 - MATSim simwrapper contrib (Java).** The `braunschweig` module
-(`../eqasim-java-bs`) depends on `org.matsim.contrib:simwrapper` (pinned to the
-active MATSim version `2025.0-PR3568`, verified present on `repo.matsim.org`).
-`RunSimulation` registers `SimWrapperModule` behind a `--simwrapper`
-CommandLine flag, so MATSim writes its standard dashboards (network volumes,
-mode share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. The
-pipeline (`matsim/simulation/run.py`) passes `--simwrapper true` only when the
-config key `simwrapper_dashboards` is set (**default `False`** -> a standard run
-is byte-identical).
+**Layer 1 - MATSim simwrapper contrib (Java).** Merged and active (ADR-0074,
+`eqasim-java-bs#12`; re-verified against the fork's `main` on 2026-08-17): the
+`braunschweig` module's `pom.xml` declares the `simwrapper` contrib and
+`org.eqasim.braunschweig.RunSimulation` imports `SimWrapperModule`, exposes a
+`simwrapper` command-line option and registers the module when that option is
+true. The Python side (`matsim.simulation.run`) reads the config key
+`simwrapper_dashboards` (**default `True`** per the feature-flag policy for an
+analysis-only module, ADR-0074) and appends `--simwrapper true` when it is set;
+`RunSimulation` then writes standard dashboards (network volumes, mode share,
+trips/legs) as `dashboard-*.yaml` into `simulation_output/`. Setting the key
+`false` omits the option entirely, so the Java side falls back to its own
+`false` default and the run's output directory stays byte-identical.
+
+> An earlier revision of this paragraph recorded Layer 1 as absent from the
+> fork and the flag as defaulting to `False`. Both statements predated ADR-0074
+> and were wrong on 2026-08-17; see issue #253. `tests/test_simwrapper_dashboards_default.py`
+> now pins the default from both the shipped `configure()` and
+> `braunschweig.documentation.checks.CODE_DEFAULT_TRUE`.
 
 **Layer 2 - Python emitter (`braunschweig.analysis.simwrapper`).** Converts the
 existing `record` dict from

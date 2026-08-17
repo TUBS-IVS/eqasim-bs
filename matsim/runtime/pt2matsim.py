@@ -13,6 +13,14 @@ def configure(context):
     context.config("pt2matsim_version", "22.3")
     context.config("pt2matsim_branch", "v22.3")
 
+    # synpp scopes config per stage: execute() may only read options THIS stage's
+    # configure() declared (issue #229; "Config option git_binary is not requested").
+    # Delegate to the helpers' own configure() so the declares cannot drift from the
+    # options git.run / maven.run / java.run actually read.
+    git.configure(context)
+    maven.configure(context)
+    java.configure(context)
+
 def run(context, command, arguments, vm_arguments=[]):
     version = context.config("pt2matsim_version")
 

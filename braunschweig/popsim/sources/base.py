@@ -35,12 +35,16 @@ map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
     ``assembly.build_persons`` raises :class:`TypeError` on a non-tuple return
     so a pseudonymisation-required source can never silently lose its map.
 
-build_trips(persons, donor_trips, *, random_seed) -> trips:
+build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
+            escort_passive_education=False) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
     by ``load_donor``.  ``random_seed`` controls the per-person departure-time
-    jitter (deterministic, reproducible).
+    jitter (deterministic, reproducible).  ``escort_purpose`` maps MiD W_ZWECK
+    {6, 13} to the dedicated 'escort' purpose (issue #201).
+    ``escort_passive_education`` further maps the passive leg (W_ZWECK 13) to
+    'education' instead of 'escort' (issue #256); requires ``escort_purpose``.
 """
 
 from __future__ import annotations
@@ -164,6 +168,8 @@ class PopsimSource(Protocol):
         donor_trips: pd.DataFrame,
         *,
         random_seed: int,
+        escort_purpose: bool = False,
+        escort_passive_education: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -175,6 +181,11 @@ class PopsimSource(Protocol):
             Donor trip table from load_donor.
         random_seed:
             Integer seed for the per-person departure-time jitter RNG.
+        escort_purpose:
+            map MiD W_ZWECK {6, 13} to the dedicated 'escort' purpose (issue #201).
+        escort_passive_education:
+            map the passive escort leg (W_ZWECK 13) to 'education' instead of
+            'escort' (issue #256). Requires ``escort_purpose=True``.
 
         Returns
         -------

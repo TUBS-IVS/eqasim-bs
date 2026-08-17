@@ -29,6 +29,13 @@ class Input:
     matsim_only: bool = False
     glob: bool = False
     optional: bool = False
+    #: The dataset is a restricted/non-public delivery (never redistributed);
+    #: a missing file is reported as [RESTRICTED] so the fix is "obtain via the
+    #: usage agreement", not "download".
+    restricted: bool = False
+    #: The file is generated locally from raw inputs by the listed script; a
+    #: missing file is reported as [GENERATED] so the fix is "run the script".
+    generated: bool = False
     required_files: List[str] = field(default_factory=list)
     alt_paths: List[str] = field(default_factory=list)
 
@@ -76,6 +83,7 @@ INPUTS: List[Input] = [
         rel_path="braunschweig/urbistat_age_gemeinden.csv",
         source="https://urbistat.com (Gemeinde-level age scrape, 11 classes; project archive).",
         notes="Read via braunschweig.urbistat_gemeinden_path. Provides Gemeinde-level shares disaggregating B1.",
+        restricted=True,
     ),
     Input(
         name="B2  GENESIS 13111-06-02-4 employees by residence",
@@ -141,12 +149,14 @@ INPUTS: List[Input] = [
         source="infas mobility report - provided by ZGB / BMDV (non-commercial).",
         notes="Source for BS commute-distance CDFs (P13). Process with scripts/extract_mid_tables.py.",
         optional=True,
+        restricted=True,
     ),
     Input(
         name="B10a MiD 2023 extracted CSVs (P9 / P12_1 / P13 / P17_1)",
         rel_path="braunschweig/mid",
         source="Generated locally by scripts/extract_mid_tables.py from B10.",
         notes="Required by braunschweig.data.mid.references and synthesis.spatial.commute_distance.",
+        generated=True,
         glob=True,
         required_files=[
             "mid2023_P9.csv",
@@ -174,18 +184,21 @@ INPUTS: List[Input] = [
     # --- C: Preprocessed ALKIS / ATKIS / OSM parquets ---------------------
     Input(
         name="C1  ALKIS buildings preprocessed parquet",
+        generated=True,
         rel_path="braunschweig/preprocessed/alkis_buildings.parquet",
         source="Run python scripts/preprocess_alkis_landuse.py (raw input: braunschweig/buildings/gebaeude-ni.zip from https://opengeodata.lgln.niedersachsen.de)",
         notes="dl-de/zero-2-0 (LGLN). Read by braunschweig/data/alkis.py.",
     ),
     Input(
         name="C2  ATKIS landuse preprocessed parquet",
+        generated=True,
         rel_path="braunschweig/preprocessed/landuse.parquet",
         source="Run python scripts/preprocess_alkis_landuse.py (raw input: braunschweig/landuse/FS_LN_03_NI_*.zip from https://opengeodata.lgln.niedersachsen.de)",
         notes="dl-de/zero-2-0 (LGLN). Read by braunschweig/data/landuse.py.",
     ),
     Input(
         name="C3  OSM POIs preprocessed parquet",
+        generated=True,
         rel_path="braunschweig/preprocessed/osm_pois.parquet",
         source="Run python scripts/preprocess_osm_pois.py (raw input: osm/niedersachsen-latest.osm.pbf from https://download.geofabrik.de)",
         notes="ODbL 1.0 (OSM contributors). Read by braunschweig/data/osm.py.",
@@ -261,9 +274,18 @@ def main() -> int:
         print(f"=== {title} ===")
         for r in rows:
             inp = r["input"]
-            tag = "[OK] " if r["status"] == "OK" else ("[??] " if inp.optional else "[--] ")
+            if r["status"] == "OK":
+                tag = "[OK]        "
+            elif inp.restricted:
+                tag = "[RESTRICTED]"
+            elif inp.generated:
+                tag = "[GENERATED] "
+            elif inp.optional:
+                tag = "[OPTIONAL]  "
+            else:
+                tag = "[MISSING]   "
             detail = f"{r['size_mb']:.1f} MB" if r["status"] == "OK" else r["detail"]
-            print(f"  {tag}{inp.name:<55} -> {inp.rel_path}  ({detail})")
+            print(f"  {tag} {inp.name:<55} -> {inp.rel_path}  ({detail})")
         print()
 
     render("synthesis.output (required + optional)", syn_results)

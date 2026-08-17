@@ -29,9 +29,9 @@ import pandas as pd
 from braunschweig.data.cordon.gate_assignment import gate_volume_summary
 from braunschweig.data.cordon.validation import (
     counts_by_kreis_direction_mode,
-    deviation_vs_target,
     gate_flows,
     modal_split_deviation,
+    od_deviation_vs_target,
 )
 
 
@@ -49,7 +49,8 @@ def write_cordon_validation(out_dir: str, agents: pd.DataFrame, od_target=None,
     os.makedirs(out_dir, exist_ok=True)
 
     counts = counts_by_kreis_direction_mode(agents)
-    commuter = (deviation_vs_target(counts, od_target, sampling_rate)
+    # od_target (BA Pendler, no mode) drives the mode-agnostic per-Kreis OD deviation.
+    commuter = (od_deviation_vs_target(counts, od_target, sampling_rate)
                 if od_target is not None else counts)
     commuter_path = os.path.join(out_dir, "commuter_validation.csv")
     commuter.to_csv(commuter_path, index=False)

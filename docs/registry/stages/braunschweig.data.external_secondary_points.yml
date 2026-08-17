@@ -1,0 +1,18 @@
+stage: braunschweig.data.external_secondary_points
+title: External secondary candidates
+layer: secondary
+description: Synthetic external centroids that let long-distance secondary legs escape the ZGB
+  instead of clipping at the boundary (ADR-0027).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/external_secondary_points.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+features:
+- secondary_srv_location_types

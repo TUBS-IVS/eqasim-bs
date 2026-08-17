@@ -1,0 +1,23 @@
+## Escort validation reuse run (issues #201/#257/#256): 5% downstream on the
+## completed 100% popsim batches. SERVER paths: popsim_work_escort_reuse is a
+## copy of popsim_work_allfeat_opt (so popsim is SKIPPED -> no PopulationSim
+## workers; num_workers: 3 is a fail-safe only, bounding RAM to ~90 GB if the
+## batches were ever to recompute). cache_share_export: false -> this run never
+## writes the shared store.
+working_directory: eqasim-data/cache_bs_5pct_escort
+
+run:
+  - synthesis.output
+
+config:
+  sampling_rate: 0.05
+  output_path: eqasim-data/output_bs_5pct_escort
+  analysis_working_directory: eqasim-data/cache_bs_5pct_escort
+  output_prefix: braunschweig_5pct_escort_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_escort_reuse
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  braunschweig.population.popsim.importance_profile: optimized_2026_06_30
+  cache_share_export: false
+  cache_share_recompute: []

@@ -28,6 +28,16 @@ COLUMN_NAMES = [
     "foreign_total", "foreign_male", "foreign_female",
 ]
 
+# An 8-digit AGS from the GENESIS export that does not match a ``commune_id``
+# in the eqasim_common codes table is dropped by the inner merge below without
+# any signal -- its SvB-Arbeitsort total simply disappears from the attraction
+# vector. A small drop rate is expected (Gemeinde mergers / territorial
+# reform lag between the two sources); a large one means the AGS scope
+# filtering above is broken and the gravity model would run on an incomplete
+# attraction vector.
+EMPLOYEES_AGS_DROP_WARN_FRACTION: float = 0.02
+EMPLOYEES_AGS_DROP_RAISE_FRACTION: float = 0.25
+
 
 def configure(context):
     context.config("data_path")
@@ -57,8 +67,19 @@ def execute(context):
     df_codes = context.stage("eqasim_common.spatial.codes")
     scope_kreise = set(df_codes["departement_id"].astype(str).unique())
 
-    # Normalize 5-digit kreisfreie AGS to 8-digit (BS 03101 -> 03101000).
-    mask_krfr = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    # Normalize 5-digit kreisfreie AGS to 8-digit (BS 03101 -> 03101000). Only
+    # a 5-digit AGS whose padded form is a real Gemeinde in the codes table is
+    # a kreisfreie Stadt. Other 5-digit scope rows are LANDKREIS aggregate
+    # totals; padding those fabricates non-existent AGS that the merge below
+    # would drop and the loss accounting would misreport as lost SvB weight
+    # (~27% on the full ZGB-8 scope -> spurious raise, #128 follow-up).
+    valid_gemeinde_ags = set(df_codes["ags"].astype(str))
+    mask_5digit_scope = (df["ags"].str.len() == 5) & df["ags"].isin(scope_kreise)
+    mask_krfr = mask_5digit_scope & (df["ags"] + "000").isin(valid_gemeinde_ags)
+    n_aggregate_rows = int((mask_5digit_scope & ~mask_krfr).sum())
+    if n_aggregate_rows:
+        print(f"[braunschweig.employees] excluded {n_aggregate_rows} five-digit "
+              f"Landkreis aggregate rows (Kreis totals, not Gemeinden)")
     df.loc[mask_krfr, "ags"] = df.loc[mask_krfr, "ags"] + "000"
 
     # Restrict to 8-digit AGS inside ZGB scope.
@@ -71,10 +92,37 @@ def execute(context):
 
     # Map AGS (8-digit) -> ARS/commune_id (12-digit) via the codes table.
     df_codes_scope = df_codes[df_codes["departement_id"].astype(str).isin(scope_kreise)]
+    rows_before = len(df)
+    ags_before = set(df["ags"].unique())
+    weight_before = df["weight"].sum()
     df = df.merge(
         df_codes_scope[["ags", "commune_id"]].astype(str),
         on="ags", how="inner",
     )
+
+    ags_unmatched = sorted(ags_before - set(df["ags"].unique()))
+    weight_after = df["weight"].sum()
+    lost_weight = weight_before - weight_after
+    lost_fraction = lost_weight / weight_before if weight_before else 0.0
+    print(f"[braunschweig.employees] AGS->commune_id merge: {len(df)}/{rows_before} rows "
+          f"matched, {len(ags_unmatched)} AGS unmatched, lost SvB Arbeitsort = "
+          f"{lost_weight:,.0f} ({100.0 * lost_fraction:.2f}%)")
+    if ags_unmatched:
+        print(f"[braunschweig.employees] unmatched AGS (sample up to 20): "
+              f"{ags_unmatched[:20]}")
+    if lost_fraction >= EMPLOYEES_AGS_DROP_RAISE_FRACTION:
+        raise RuntimeError(
+            f"AGS->commune_id merge lost {100.0 * lost_fraction:.1f}% of the SvB "
+            f"Arbeitsort total (limit {100.0 * EMPLOYEES_AGS_DROP_RAISE_FRACTION:.0f}%). "
+            f"This implausibly high loss almost certainly means the eqasim_common codes "
+            f"table does not cover the ZGB Gemeinden -- refusing to continue with a "
+            f"corrupted attraction vector."
+        )
+    if lost_fraction >= EMPLOYEES_AGS_DROP_WARN_FRACTION:
+        print(f"[braunschweig.employees] WARNING: AGS->commune_id merge dropped "
+              f"{100.0 * lost_fraction:.2f}% of the SvB Arbeitsort total, above the "
+              f"{100.0 * EMPLOYEES_AGS_DROP_WARN_FRACTION:.0f}% threshold. Verify the "
+              f"eqasim_common codes table is complete for the ZGB scope.")
 
     df = df[["commune_id", "weight"]].copy()
     df["weight"] = df["weight"].astype(float)

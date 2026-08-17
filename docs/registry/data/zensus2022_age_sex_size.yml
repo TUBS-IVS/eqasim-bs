@@ -1,0 +1,40 @@
+dataset: zensus2022_age_sex_size
+title: Zensus 2022 1000A-3082 persons by age, sex, household size
+inventory_id: B4
+provider: Statistische Aemter
+vintage: '2022-05-15'
+geography: Germany, Gemeinde
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.population
+- braunschweig.data.census.households_size_age
+acquisition:
+  method: manual_download
+  source: https://ergebnisse.zensus2022.de (flat-file export)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/1000A-3082_de_flat.zip
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: Counts PERSONS, not households.
+notes: |
+  Two independent consumers, both activated by issue #251, so this file is now required for
+  every IPF run: (1) the joint age x household-size IPF margin
+  (braunschweig.ipf.use_joint_age_size_margin) via
+  braunschweig.data.census.households_size_age; (2) the Gemeinde-within-Kreis population
+  share (braunschweig.census.use_zensus_gemeinde_shares), replacing the scraped,
+  redistribution-forbidden urbistat table (dataset urbistat_gemeinde_age). It is local-only
+  and not committed, so a fresh clone must download it before an IPF run; the popsim
+  production path does not use it.

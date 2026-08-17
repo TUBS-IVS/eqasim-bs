@@ -151,6 +151,46 @@ def test_build_kreis_control_totals_apportions_by_weight():
     assert totals["schul_low"].tolist() == pytest.approx([9.0, 10.8])
 
 
+def test_build_kreis_control_totals_household_controls_use_hh_share():
+    # issue #148: household-level KREIS controls must be apportioned across batches by
+    # the batch's HOUSEHOLD share, while person-level controls keep the POPULATION
+    # share. With genuinely different pop/hh shares (persons-per-household varies across
+    # a Kreis's batches) the two control types scale by different weights.
+    kreis_table = pd.DataFrame(
+        {
+            "ARS_kreis": ["03101", "03153"],
+            "ECON": [1000.0, 2000.0],   # household-level control source
+            "EMP": [500.0, 800.0],      # person-level control source
+        }
+    )
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"economic_status_KREIS": ("ECON",), "employed_KREIS": ("EMP",)},
+        apportion_weights={"03101": 0.6, "03153": 0.4},            # population share
+        household_apportion_weights={"03101": 0.5, "03153": 0.3},  # household share (differs)
+        household_control_names={"economic_status_KREIS"},
+    )
+    # household control -> household share.
+    assert totals["economic_status_KREIS"].tolist() == pytest.approx([500.0, 600.0])
+    # person control -> population share (unchanged).
+    assert totals["employed_KREIS"].tolist() == pytest.approx([300.0, 320.0])
+
+
+def test_build_kreis_control_totals_household_names_without_hh_weights_falls_back_to_pop():
+    # Defensive: if the caller names household controls but supplies no household
+    # weights, fall back to the population share rather than silently dropping the
+    # apportionment (keeps region-wide sums correct on the legacy path).
+    kreis_table = pd.DataFrame({"ARS_kreis": ["03101", "03153"], "ECON": [1000.0, 2000.0]})
+    totals = folders.build_kreis_control_totals(
+        kreis_table, _toy_kreis_xwalk(),
+        controls_map={"economic_status_KREIS": ("ECON",)},
+        apportion_weights={"03101": 0.6, "03153": 0.4},
+        household_apportion_weights=None,
+        household_control_names={"economic_status_KREIS"},
+    )
+    assert totals["economic_status_KREIS"].tolist() == pytest.approx([600.0, 800.0])
+
+
 def test_build_kreis_control_totals_weight_defaults_to_one_for_missing_kreis():
     # A Kreis absent from apportion_weights keeps its full marginal (weight 1.0).
     kreis_table = pd.DataFrame(

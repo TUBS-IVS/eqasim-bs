@@ -1,0 +1,35 @@
+stage: synthesis.population.spatial.secondary.locations
+title: Secondary location choice
+layer: secondary
+description: 'Secondary location choice resolving to the carla chainsolvers (braunschweig.synthesis.locations.secondary_chainsolvers):
+  parallel per-chain solving, purpose-resolved distances, SrV location types, escort placement.'
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.secondary.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/secondary/locations.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.locations.secondary_chainsolvers
+  popsim_open: braunschweig.synthesis.locations.secondary_chainsolvers
+  simple_ipf_open: braunschweig.synthesis.locations.secondary_chainsolvers
+features:
+- building_potentials_secondary
+- detour_circuity_curve
+- escort_purpose
+- parallel_chainsolvers
+- secondary_distance_by_purpose
+- secondary_srv_location_types
+decisions:
+- ADR-0026
+- ADR-0027
+- ADR-0034
+- ADR-0075
+- ADR-0076

@@ -1,0 +1,22 @@
+stage: data.spatial.iris
+title: Zone system (IRIS contract)
+layer: spatial
+description: Upstream IRIS zone contract filled by eqasim_common.data.spatial.iris from VG250
+  Gemeinden.
+lineage:
+  type: overridden
+  upstream: data.spatial.iris
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- data/spatial/iris.py
+- eqasim_common/data/spatial/iris.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: eqasim_common.data.spatial.iris
+  popsim_open: eqasim_common.data.spatial.iris
+  simple_ipf_open: eqasim_common.data.spatial.iris

@@ -1,0 +1,15 @@
+stage: braunschweig.analysis.cordon_validation
+title: Cordon validation
+layer: validation
+description: Per-gate validation outputs (CSV/GPKG) for the injected cordon demand.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/analysis/cordon_validation.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true

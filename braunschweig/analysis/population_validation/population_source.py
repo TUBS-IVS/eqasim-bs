@@ -35,6 +35,14 @@ def _detect_prefix(directory: Path) -> str:
         raise FileNotFoundError(
             f"No *_persons.csv in {directory}; pass prefix explicitly."
         )
+    if len(candidates) > 1:
+        # An alphabetical pick among MULTIPLE populations is arbitrary -- make
+        # it loud so a wrong-population validation cannot happen silently.
+        LOGGER.warning(
+            "%d *_persons.csv candidates in %s; picking %r alphabetically. "
+            "Pass an explicit prefix to disambiguate (candidates: %s)",
+            len(candidates), directory, candidates[0].name,
+            [c.name for c in candidates])
     return candidates[0].name[: -len("persons.csv")]
 
 
@@ -64,6 +72,12 @@ def _resolve_cache_dir(sim_cache: Path) -> Path:
         raise FileNotFoundError(
             f"No *_persons.csv found anywhere under sim cache {sim_cache}."
         )
+    if len(matches) > 1:
+        # Newest-mtime pick across cache dirs is fragile (a touch/copy can
+        # reorder it) -- log which one won so a stale pick is visible.
+        LOGGER.warning(
+            "%d *_persons.csv matches under %s; picking newest by mtime: %s",
+            len(matches), sim_cache, matches[-1])
     return matches[-1].parent
 
 

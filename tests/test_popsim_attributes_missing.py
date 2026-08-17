@@ -99,6 +99,42 @@ def test_employed_valid_codes_map_to_existing_semantics():
     assert out["employed"].isna().sum() == 0
 
 
+def test_employed_pupils_code9_map_to_false_not_imputed():
+    """Schueler (P_TAET=9) must map to employed=False, not be imputed.
+
+    Regression for issue #96: the generic item-nonresponse set contains 9, which
+    for the two-digit P_TAET field is the substantive category 'Schueler/in'
+    (keine Angabe is 99). Before the fix, every pupil was treated as nonresponse
+    and imputed from the non-pupil valid pool of its age band -- in the 14-17
+    band that pool is dominated by Azubis (P_TAET=8 -> True), inflating pupil
+    employment to ~96 %. All pupils must instead be deterministically False.
+    """
+    # A 14-17 age band: 900 Schueler (9) + 100 Azubi (8), one alter_gr1 band.
+    persons = pd.DataFrame({
+        "P_TAET": [9] * 900 + [8] * 100,
+        "alter_gr1": [3] * 1000,
+    })
+    out = a.map_employed(persons, rng=np.random.RandomState(0))
+    pupils = out.iloc[:900]
+    azubis = out.iloc[900:]
+    assert pupils["employed"].sum() == 0          # no pupil is employed
+    assert azubis["employed"].all()               # every Azubi stays employed
+    assert out["employed"].isna().sum() == 0
+
+
+def test_household_income_group9_maps_to_bracket_not_imputed():
+    """hheink_gr1=9 is the substantive income group 4000-4600 EUR (keine Angabe
+    is 99), so it must map to the group-9 midpoint, not be imputed.
+
+    Same field-width collision as issue #96: 9 is in the generic nonresponse set
+    but is a valid enumerated value_map key here.
+    """
+    hh = pd.DataFrame({"hheink_gr1": [9, 9, 9, 9], "hhgr_gr": [2, 2, 2, 2]})
+    out = a.map_household_income_eur(hh, rng=np.random.RandomState(0))
+    assert (out["household_income_eur"] == 4300.0).all()
+    assert out["household_income_eur"].isna().sum() == 0
+
+
 def test_employed_nonresponse_is_imputed():
     """P_TAET=99 (keine Angabe) must be imputed from the valid pool, never NaN."""
     persons = pd.DataFrame({"P_TAET": [1, 2, 8, 99], "alter_gr1": [3, 3, 3, 3]})
@@ -246,16 +282,19 @@ def test_pt_subscription_no_rng_backward_compatible():
 
 
 def test_number_of_bicycles_valid_codes_map_correctly():
-    """H_ANZRAD 0..10 map identity; no NaN for valid codes."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 3, 10]})
+    """anzpedrad 0..10 map identity; no NaN for valid codes.
+
+    anzpedrad = bicycles INCLUDING pedelecs/e-bikes (MiD H12.3 / SrV alle-Raeder
+    construct; the default source column since the 2026-07-08 construct fix)."""
+    hh = pd.DataFrame({"anzpedrad": [0, 3, 10]})
     out = a.map_number_of_bicycles(hh, rng=np.random.RandomState(0))
     assert list(out["number_of_bicycles"]) == [0, 3, 10]
     assert out["number_of_bicycles"].isna().sum() == 0
 
 
 def test_number_of_bicycles_missing_is_imputed_not_silently_zero():
-    """H_ANZRAD=99 is imputed from the valid pool in the same hhgr_gr group, not forced to 0."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 2, 99], "hhgr_gr": [1, 2, 2]})
+    """anzpedrad=99 is imputed from the valid pool in the same hhgr_gr group, not forced to 0."""
+    hh = pd.DataFrame({"anzpedrad": [0, 2, 99], "hhgr_gr": [1, 2, 2]})
     out = a.map_number_of_bicycles(hh, rng=np.random.RandomState(0))
     assert out["number_of_bicycles"].isna().sum() == 0
     assert (out["number_of_bicycles"] >= 0).all()
@@ -265,7 +304,7 @@ def test_number_of_bicycles_missing_is_imputed_not_silently_zero():
 
 def test_number_of_bicycles_no_rng_backward_compatible():
     """Callers that omit rng must not raise."""
-    hh = pd.DataFrame({"H_ANZRAD": [0, 1, 99]})
+    hh = pd.DataFrame({"anzpedrad": [0, 1, 99]})
     out = a.map_number_of_bicycles(hh)
     assert out["number_of_bicycles"].isna().sum() == 0
     assert (out["number_of_bicycles"] >= 0).all()

@@ -606,7 +606,8 @@ def execute(context):
         model_brands=model_brands, consistency_v2=consistency_v2,
         age_income_coupling=age_income_coupling,
         ev_income_tilt=ev_income_tilt,
-        euro6_substage=euro6_substage)
+        euro6_substage=euro6_substage,
+        population_label="residents")
     if len(_fleet_result) == 3:
         df_spec, df_vehicle_types, _ = _fleet_result
     else:

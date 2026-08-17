@@ -1,0 +1,62 @@
+feature: income_aware_cars
+title: 'Income-aware #cars'
+area: attributes
+description: Conditions the household car count on income (MiD H7) rather than sampling it income-blind
+  (ADR-0017). Legacy simple_ipf_open mechanism -- under popsim_mid the donor household's
+  observed H_ANZAUTO carries the car count jointly with that same household's income,
+  plus a hard number_of_cars KREIS control (ADR-0079).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - cars_income_aware
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0017
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/vehicle_ownership.py
+evidence:
+  tests:
+  - tests/test_cars_income_aware.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_cars_income_aware.py
+    note: test_off_equivalence_byte_identical confirms the OFF path is unchanged.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'income-aware number_of_cars: MiD-coupled'
+    note: |
+      Logs a primary(MiD-coupled PMF)-vs-fallback(legacy H7 PMF) rate, with fallback_reasons distinguishing "unclassifiable" from "missing_cell".
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H7_cars_by_kreis.csv
+    note: Also draws on committed mid2023_cars_by_status_hhtype.csv and mid2023_cars_by_raumtyp.csv.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Wiring decided in ADR-0079: not ported -- porting would be a REGRESSION, because
+    income and car count are jointly OBSERVED in the same donor household, so the
+    coupling that a conditioned pmf approximates is present by construction. Still
+    pending: no owner verdict on the realised car-count fit, and ADR-0017 remains a
+    combined ADR covering four flags at once.
+  source: ADR-0079 (mechanism decision); ADR-0017 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

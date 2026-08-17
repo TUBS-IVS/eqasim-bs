@@ -156,6 +156,35 @@ def test_typed_intersection_join_rescues_boundary_cell():
     )
 
 
+def test_typed_reports_and_still_defaults_unknown_btype():
+    """A household with a NaN/unmapped building_type_3class (e.g. MiD haustyp=95
+    "sonstige Angabe") must still default to efh_zfh (unchanged behaviour), but the
+    default must now be counted in TypedHomeReport (CLAUDE.md, no silent fallback)."""
+    buildings = _geo([(0, 80.0, 2689100, 4337000), (1, 1000.0, 2689100, 4337000)])
+    cells = pd.DataFrame([{
+        "ZENSUS100m": "CRS3035RES100mN2689100E4337000",
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter": 1.0,
+        "MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter": 1.0,
+        "FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 1.0,
+        "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter": 1.0,
+        "BewohntWhg_Leerstand_100m_Gitter": 2.0,
+        "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter": 2.0,
+    }])
+    households = pd.DataFrame({
+        "household_id": ["h_efh", "h_unknown"], "commune_id": ["031010000000"] * 2,
+        "ZENSUS100m": ["CRS3035RES100mN2689100E4337000"] * 2,
+        # h_unknown carries a value not present in _BTYPE_MAP (e.g. haustyp=95).
+        "building_type_3class": ["ein_zweifamilienhaus", None],
+        "household_size": [4, 1],
+    })
+    out, rep = home_cell.assign_homes_typed(households, buildings, cells, random_seed=1)
+    # Placement still succeeds (default applied, household not dropped).
+    assert set(out["household_id"]) == {"h_efh", "h_unknown"}
+    # The default is now counted, not silent.
+    assert rep.n_btype_defaulted == 1
+    assert rep.btype_default_rate == 0.5
+
+
 def test_typed_uses_height_for_capacity():
     import numpy as np, pandas as pd, geopandas as gpd
     from shapely.geometry import Point

@@ -108,7 +108,7 @@ def test_realised_counts_household_control_groups_by_cell():
     })
     donor_hh = pd.DataFrame({"H_ID": [10, 11, 12], "H_ANZAUTO": [0, 2, 1]})
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
-    result, n_resolved, n_skipped = ce.realised_counts(
+    result, n_resolved, n_skipped, _resolved = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_household_control()])
     assert n_resolved == 1
     assert n_skipped == 0
@@ -127,7 +127,7 @@ def test_realised_control_key_matches_target_convention(tmp_path):
     })
     donor_hh = pd.DataFrame({"H_ID": [10, 12], "H_ANZAUTO": [2, 1]})
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
-    realised, _, _ = ce.realised_counts(syn_hh, donor_hh, donor_p, [_make_household_control()])
+    realised, _, _, _ = ce.realised_counts(syn_hh, donor_hh, donor_p, [_make_household_control()])
     # Target exactly as produced from a real control_totals_ZENSUS100m.csv (suffixed column).
     ct = tmp_path / "control_totals_ZENSUS100m.csv"
     ct.write_text("ZENSUS100m,has_car_ZENSUS100m\ncellA,1\ncellB,1\n", encoding="utf-8")
@@ -158,7 +158,7 @@ def test_realised_counts_hh_type_control_uses_hh_type5_column():
         seed_table=control_spec.SEED_TABLE_HOUSEHOLDS, importance=1, census_source=("x",),
         seed_expressions={"mid": "(households.hh_type5 == 'paar_ohne_kind')"},
     )
-    result, n_resolved, n_skipped = ce.realised_counts(syn_hh, donor_hh, donor_p, [ctrl])
+    result, n_resolved, n_skipped, _resolved = ce.realised_counts(syn_hh, donor_hh, donor_p, [ctrl])
     assert n_resolved == 1 and n_skipped == 0
     key = "Paare_ohneKind_Typ_priv_HH_Familie_100m_Gitter_ZENSUS100m"
     by = {r.zensus100m: r.realised for r in result[result.control == key].itertuples()}
@@ -178,7 +178,7 @@ def test_realised_counts_person_control_joins_one_to_many():
         "HP_ALTER": [35, 25, 40],
     })
     donor_hh = pd.DataFrame({"H_ID": [10, 11]})
-    result, n_resolved, n_skipped = ce.realised_counts(
+    result, n_resolved, n_skipped, _resolved = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_person_control()])
     assert n_resolved == 1
     assert n_skipped == 0
@@ -203,7 +203,7 @@ def test_realised_counts_household_donor_dedup_guards_against_fanout():
     # H_ID 11 is duplicated with identical H_ANZAUTO — simulates a fan-out source
     donor_hh = pd.DataFrame({"H_ID": [10, 11, 11, 12], "H_ANZAUTO": [0, 2, 2, 1]})
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
-    result, n_resolved, n_skipped = ce.realised_counts(
+    result, n_resolved, n_skipped, _resolved = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_household_control()])
     by = {r.zensus100m: r.realised for r in result[result.control == "has_car_ZENSUS100m"].itertuples()}
     # cellA: only H_ID 11 qualifies (2 cars); duplicate must not inflate to 2
@@ -216,10 +216,11 @@ def test_realised_counts_none_expr_increments_skipped():
     syn_hh = pd.DataFrame({"ZENSUS100m": ["cellA"], "H_ID": [10]})
     donor_hh = pd.DataFrame({"H_ID": [10], "H_ANZAUTO": [1]})
     donor_p = pd.DataFrame({"H_ID": [], "HP_ALTER": []})
-    _, n_resolved, n_skipped = ce.realised_counts(
+    _, n_resolved, n_skipped, resolved = ce.realised_counts(
         syn_hh, donor_hh, donor_p, [_make_no_expr_control()])
     assert n_resolved == 0
     assert n_skipped == 1
+    assert resolved == set()
 
 
 # ---------------------------------------------------------------------------

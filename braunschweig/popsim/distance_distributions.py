@@ -43,6 +43,15 @@ Travel time derivation:
 where arrival_time and departure_time are seconds since midnight built from the MiD
 time columns W_AZS/W_AZM and W_SZS/W_SZM via braunschweig.popsim.trips.mid_time_seconds.
 
+Coded-time rescue (issue #160): W_SZS/W_SZM/W_AZS/W_AZM carry the MiD design codes 99
+("keine Angabe", ~1% of Wege) and 701 ("bei regelmaessigen beruflichen Wegen nicht
+erhoben" -- rbW summary records of REGULAR COMMUTERS, ~10%), which are NOT missing at
+random. mid_time_seconds NaNs travel_time for these rows; when this happens, the trip's
+travel_time is instead reconstructed from wegmin_imp1 (MiD's own imputed per-trip
+duration in minutes -- the same primary source braunschweig.popsim.time_imputation
+trusts for the trips.py consumer). Only rows where wegmin_imp1 is ITSELF coded/missing
+are dropped. The observed/imputed/dropped rate is logged explicitly (see run()).
+
 Trip weight:
     W_GEW  -- MiD Wege-Gewicht (Fallzahl-normalised expansion weight; mean ~1.0).
     Source: MiD 2023 Handbuch, Kap. 6.1-6.2 (Tab. weight reference table).
@@ -78,6 +87,7 @@ from synthesis.population.spatial.secondary.distance_distributions import (
     calculate_bounds,
 )
 
+from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
 from braunschweig.popsim.trips import map_mode, map_purpose, mid_time_seconds
 
 logger = logging.getLogger(__name__)
@@ -100,8 +110,20 @@ BIN_SIZE = 200
 REQUIRED_COLUMNS = ("H_ID", "P_ID", "W_ID", "W_ZWECK", "hvm_imp",
                     "wegkm_imp", "W_SZS", "W_SZM", "W_AZS", "W_AZM", "W_GEW")
 
-# Optional column kept when present (needed by Task 5 for shop daily split).
-_OPTIONAL_COLUMNS = ("W_ZWD",)
+# Warn threshold for the coded-clock-time-AND-invalid-wegmin_imp1 drop rate
+# (see Step 3 below). A rate above this almost always signals a broken
+# wegmin_imp1 join/load rather than genuinely unrecoverable trips (issue #160).
+CODED_TIME_DROP_WARN_RATE = 0.02
+
+# Optional columns kept when present:
+# - W_ZWD (Wegezweck-Detail): needed by the shop daily/non-daily split (Task 5) and by
+#   the leisure/other subtype splits below (Task 3, issue #127).
+# - W_ZWECK (raw MiD purpose code): dropped by default because map_purpose() already
+#   derives "purpose"/"following_purpose" from it and nothing downstream of Step 5
+#   needed the raw code -- until the other_subtype_split below, which must distinguish
+#   "other_errand" (W_ZWECK=5) from "other_escort" (W_ZWECK=6) even though BOTH map to
+#   the same following_purpose == "other" (issue #127, Task 3).
+_OPTIONAL_COLUMNS = ("W_ZWD", "W_ZWECK")
 
 
 def _build_preceding_purpose(wege: pd.DataFrame) -> pd.Series:
@@ -200,7 +222,11 @@ def _build_mode_distributions(df: pd.DataFrame) -> dict:
 
 
 def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
-        shop_daily_split: bool = False) -> dict:
+        shop_daily_split: bool = False,
+        leisure_subtype_split: bool = False,
+        other_subtype_split: bool = False,
+        escort_purpose: bool = False,
+        escort_passive_education: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -227,6 +253,34 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         fallback. If ``W_ZWD`` is absent, a warning is logged and the split is
         skipped silently (no KeyError). Pass False (default) to preserve the
         current behaviour.
+    leisure_subtype_split:
+        When True (and ``by_purpose=True`` and ``W_ZWD`` is present), adds one key per
+        ``purpose_subtype.LEISURE_GROUPS`` entry (``leisure_local``, ``leisure_visit``,
+        ``leisure_activity``, ``leisure_excursion``) built from the following_purpose
+        == "leisure" legs, grouped by their W_ZWD detail code. The aggregate
+        ``leisure`` key is kept as a fallback. If ``W_ZWD`` is absent, a warning is
+        logged and the split is skipped silently (mirrors ``shop_daily_split``).
+    other_subtype_split:
+        When True (and ``by_purpose=True``), adds ``other_escort`` (following_purpose
+        == "other" legs with the raw W_ZWECK code in ``purpose_subtype.
+        OTHER_ESCORT_ZWECK``; needs only W_ZWECK, not W_ZWD) and, when ``W_ZWD`` is
+        also present, ``other_errand_short``/``other_errand_long`` (following_purpose
+        == "other" legs with W_ZWECK in ``purpose_subtype.OTHER_ERRAND_ZWECK`` grouped
+        by ``purpose_subtype.OTHER_ERRAND_GROUPS``). The aggregate ``other`` key is
+        kept as a fallback (it also serves an ``other_rest`` group). If W_ZWD is
+        absent, only the errand short/long split is skipped (with a warning);
+        ``other_escort`` is still built since it does not depend on W_ZWD.
+    escort_purpose:
+        When True (issue #201), maps W_ZWECK {6, 13} legs to the dedicated
+        "escort" purpose so the purpose layer gains an "escort" key; requires
+        by_purpose for a dedicated layer, harmless otherwise.
+    escort_passive_education:
+        When True (issue #256), the passive escort leg (W_ZWECK 13) maps to
+        "education" instead of "escort" (forwarded to ``map_purpose``), so the
+        "escort" layer holds only the active W_ZWECK-6 legs. Requires
+        ``escort_purpose=True`` (enforced by ``map_purpose``); requires
+        by_purpose for a dedicated layer, harmless otherwise. Default False
+        keeps the OFF path byte-identical.
 
     Returns
     -------
@@ -246,6 +300,16 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             "secondary_shop_daily_split=True requires secondary_distance_by_purpose=True "
             "(the shop daily/non-daily distance layers live inside the per-purpose layer)."
         )
+    if leisure_subtype_split and not by_purpose:
+        raise ValueError(
+            "secondary_leisure_subtype_split=True requires secondary_distance_by_purpose=True "
+            "(the leisure subtype distance layers live inside the per-purpose layer)."
+        )
+    if other_subtype_split and not by_purpose:
+        raise ValueError(
+            "secondary_other_subtype_split=True requires secondary_distance_by_purpose=True "
+            "(the other subtype distance layers live inside the per-purpose layer)."
+        )
 
     missing = [c for c in REQUIRED_COLUMNS if c not in mid_wege.columns]
     if missing:
@@ -258,7 +322,10 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     df = mid_wege.copy()
 
     # --- Step 1: map mode and purpose from MiD codes. ----------------------
-    df = map_mode(map_purpose(df))
+    df = map_mode(map_purpose(
+        df, escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+    ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
 
@@ -274,8 +341,77 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     midnight_cross = df["travel_time"] < 0
     df.loc[midnight_cross, "travel_time"] += 24 * 3600
 
+    # --- Step 3b: rescue coded clock times via wegmin_imp1 (issue #160). ---
+    # W_SZS/W_SZM/W_AZS/W_AZM carry the MiD design codes 99 ("keine Angabe",
+    # item non-response, ~1% of Wege) and 701 ("bei regelmaessigen beruflichen
+    # Wegen nicht erhoben" -- rbW summary records of REGULAR COMMUTERS, ~10%),
+    # which are NOT missing at random (see braunschweig.popsim.time_imputation
+    # module docstring). mid_time_seconds NaNs travel_time for these rows;
+    # blindly dropping them (the previous behaviour) silently removed almost
+    # all commuter trips from the secondary distance distributions, biasing
+    # them towards non-commute travel.
+    #
+    # Unlike the trips.py consumer (braunschweig.popsim.time_imputation.
+    # impute_chain_times), this aggregate stage only needs the trip's
+    # DURATION as a quantile-binning key -- never an absolute clock time --
+    # so there is no need to reconstruct a full day schedule from empirical
+    # anchor/activity-duration pools. Instead we reuse the SAME primary data
+    # source stage A trusts for a trip's own duration: wegmin_imp1, MiD's own
+    # imputed per-trip duration in minutes (audited as fully populated and
+    # code-free for rbW rows; see time_imputation.py). Rows whose
+    # wegmin_imp1 is ITSELF coded/missing cannot be reconstructed and are
+    # dropped -- this should be rare, and the rate is logged below so a high
+    # drop rate (e.g. a broken wegmin_imp1 load) is never silent.
+    coded_clock_time = df["travel_time"].isna()
+    if "wegmin_imp1" in df.columns:
+        wegmin_minutes = df["wegmin_imp1"].astype(float)
+        wegmin_is_valid = (
+            wegmin_minutes.notna()
+            & (wegmin_minutes > 0)
+            & (wegmin_minutes < WEGMIN_CODE_THRESHOLD)
+        )
+        rescued = coded_clock_time & wegmin_is_valid
+        df.loc[rescued, "travel_time"] = wegmin_minutes.loc[rescued] * 60.0
+    else:
+        # wegmin_imp1 not supplied by the caller: no rescue is possible, so
+        # every coded-clock-time row is dropped below. Loud because this
+        # column is always present in production (mid.MID_WEGE_REQUIRED_COLS).
+        rescued = pd.Series(False, index=df.index)
+        if coded_clock_time.any():
+            logger.warning(
+                "[popsim.distance_distributions] %d rows have coded/missing clock "
+                "times (W_SZS/W_AZS design codes 99/701) but 'wegmin_imp1' is not "
+                "present in the input frame; none of these rows can be rescued and "
+                "all will be dropped from the distance distributions.",
+                int(coded_clock_time.sum()),
+            )
+
+    n_total_time = len(df)
+    n_rescued = int(rescued.sum())
+    n_observed = n_total_time - int(coded_clock_time.sum())
+    n_dropped_time = int(coded_clock_time.sum()) - n_rescued
+    logger.info(
+        "[popsim.distance_distributions] travel_time source: observed (valid "
+        "clock times) %d/%d (%.1f%%); imputed from wegmin_imp1 (coded W_SZS/"
+        "W_AZS, design codes 99/701) %d/%d (%.1f%%); dropped (coded clock time "
+        "AND invalid/missing wegmin_imp1) %d/%d (%.1f%%).",
+        n_observed, n_total_time, 100.0 * n_observed / n_total_time if n_total_time else 0.0,
+        n_rescued, n_total_time, 100.0 * n_rescued / n_total_time if n_total_time else 0.0,
+        n_dropped_time, n_total_time, 100.0 * n_dropped_time / n_total_time if n_total_time else 0.0,
+    )
+    if n_total_time > 0 and (n_dropped_time / n_total_time) > CODED_TIME_DROP_WARN_RATE:
+        logger.warning(
+            "[popsim.distance_distributions] %.1f%% of trips were dropped because "
+            "BOTH the clock time and wegmin_imp1 were coded/missing -- this exceeds "
+            "the %.0f%% expected-rare threshold and likely signals a data or join "
+            "problem rather than genuinely unrecoverable trips.",
+            100.0 * n_dropped_time / n_total_time,
+            100.0 * CODED_TIME_DROP_WARN_RATE,
+        )
+
     # Clamp to positive (zero-duration trips are kept; negative after repair
-    # cannot occur but guard against data errors).
+    # cannot occur but guard against data errors). Rows still NaN here are the
+    # unrescued coded-time rows counted/logged as "dropped" above.
     df = df[df["travel_time"] >= 0].copy()
 
     # --- Step 4: compute euclidean_distance in metres from wegkm_imp. ------
@@ -363,6 +499,84 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                 len(nondaily_df),
             )
 
+    # --- Step 8: leisure subtype sub-distributions (Task 3, issue #127). -----
+    # Splits following_purpose == "leisure" legs by their W_ZWD detail code into
+    # the groups defined in purpose_subtype.LEISURE_GROUPS (local/visit/activity/
+    # excursion). The aggregate "leisure" key is KEPT so downstream callers without
+    # the split can still use it as a fallback (mirrors the shop split above).
+    if leisure_subtype_split:
+        if "W_ZWD" not in df.columns:
+            logger.warning(
+                "[popsim.distance_distributions] leisure_subtype_split=True but "
+                "W_ZWD column is absent from the Wege frame; skipping the "
+                "leisure subtype split."
+            )
+        else:
+            from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS
+
+            leisure_df = df[df["following_purpose"] == "leisure"]
+            for group_name, codes in LEISURE_GROUPS.items():
+                group_df = leisure_df[leisure_df["W_ZWD"].isin(codes)]
+                logger.info(
+                    "[popsim.distance_distributions] leisure subtype %s: %d legs",
+                    group_name, len(group_df),
+                )
+                if len(group_df):
+                    out[group_name] = _build_mode_distributions(group_df)
+
+    # --- Step 9: other subtype sub-distributions (Task 3, issue #127). -------
+    # other_escort only needs the raw W_ZWECK code (Bringen/Holen has no W_ZWD
+    # detail); other_errand_short/long additionally need W_ZWD. The aggregate
+    # "other" key is KEPT as a fallback (it also serves an other_rest group).
+    if other_subtype_split:
+        if "W_ZWECK" not in df.columns:
+            logger.warning(
+                "[popsim.distance_distributions] other_subtype_split=True but "
+                "W_ZWECK column is absent from the Wege frame; skipping the "
+                "other subtype split entirely (other_escort also needs it)."
+            )
+        else:
+            from braunschweig.popsim.purpose_subtype import (
+                OTHER_ERRAND_GROUPS,
+                OTHER_ERRAND_ZWECK,
+                OTHER_ESCORT_ZWECK,
+            )
+
+            other_df = df[df["following_purpose"] == "other"]
+
+            if escort_purpose and len(other_df[other_df["W_ZWECK"].isin(OTHER_ESCORT_ZWECK)]) == 0:
+                logger.info(
+                    "[popsim.distance_distributions] escort_purpose ON: no W_ZWECK-6 "
+                    "legs remain under following_purpose == 'other'; the internal "
+                    "'other_escort' subtype layer is expectedly empty and skipped."
+                )
+
+            escort_df = other_df[other_df["W_ZWECK"].isin(OTHER_ESCORT_ZWECK)]
+            logger.info(
+                "[popsim.distance_distributions] other subtype other_escort: %d legs",
+                len(escort_df),
+            )
+            if len(escort_df):
+                out["other_escort"] = _build_mode_distributions(escort_df)
+
+            if "W_ZWD" not in df.columns:
+                logger.warning(
+                    "[popsim.distance_distributions] other_subtype_split=True but "
+                    "W_ZWD column is absent from the Wege frame; skipping the "
+                    "other_errand_short/long split (other_escort was still built "
+                    "since it does not depend on W_ZWD)."
+                )
+            else:
+                errand_df = other_df[other_df["W_ZWECK"].isin(OTHER_ERRAND_ZWECK)]
+                for group_name, codes in OTHER_ERRAND_GROUPS.items():
+                    group_df = errand_df[errand_df["W_ZWD"].isin(codes)]
+                    logger.info(
+                        "[popsim.distance_distributions] other subtype %s: %d legs",
+                        group_name, len(group_df),
+                    )
+                    if len(group_df):
+                        out[group_name] = _build_mode_distributions(group_df)
+
     return out
 
 
@@ -374,6 +588,10 @@ def configure(context):
     context.config("random_seed")
     context.config("secondary_distance_by_purpose", False)
     context.config("secondary_shop_daily_split", False)
+    context.config("secondary_leisure_subtype_split", False)
+    context.config("secondary_other_subtype_split", False)
+    context.config("escort_purpose", False)
+    context.config("escort_passive_education", False)
 
 
 def execute(context):
@@ -389,6 +607,10 @@ def execute(context):
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     by_purpose = context.config("secondary_distance_by_purpose")
     shop_daily_split = context.config("secondary_shop_daily_split")
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split")
+    other_subtype_split = context.config("secondary_other_subtype_split")
+    escort_purpose = context.config("escort_purpose")
+    escort_passive_education = context.config("escort_passive_education")
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -397,4 +619,12 @@ def execute(context):
     logger.info(
         "[popsim.distance_distributions] loaded %d MiD trips", len(mid_wege)
     )
-    return run(mid_wege, by_purpose=by_purpose, shop_daily_split=shop_daily_split)
+    return run(
+        mid_wege,
+        by_purpose=by_purpose,
+        shop_daily_split=shop_daily_split,
+        leisure_subtype_split=leisure_subtype_split,
+        other_subtype_split=other_subtype_split,
+        escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+    )

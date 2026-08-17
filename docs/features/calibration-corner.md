@@ -87,10 +87,13 @@ caches live:
 ```powershell
 python scripts/calibrate_gravity_distribution.py `
     --working-directory eqasim-data/cache_bs_25pct_allfeat `
-    --config config_server_braunschweig_25pct_allfeat_popsim.yml `
+    --config eqasim-data/cache_bs_25pct_allfeat_popsim/.merged_config.yml `
     --per-rs7 `
     --output-dir eqasim-data/data/braunschweig/calibration/commute
 ```
+
+(the composed run writes its exact resolved config to `.merged_config.yml`
+inside its `working_directory`; see `configs/base_bs.yml`.)
 
 If a calibration is warranted, paste the printed `gravity_friction_factors`
 YAML block into the all-features run configs (do not hand-edit the factors —

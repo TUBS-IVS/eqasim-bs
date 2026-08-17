@@ -1,0 +1,15 @@
+stage: synthesis.vehicles.passengers.default
+title: Default passenger entries
+layer: fleet
+description: Upstream passenger vehicle defaults.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- synthesis/vehicles/passengers/default.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

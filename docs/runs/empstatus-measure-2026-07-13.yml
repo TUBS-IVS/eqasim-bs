@@ -1,0 +1,34 @@
+id: empstatus-measure-2026-07-13
+date: '2026-07-13'
+repository:
+  commit: 66cca1c
+  branch: unknown
+configuration:
+  base: config_empstatus_measure.yml
+  overlays: []
+  notes: felix ~/wt-empstatus @ kreis5 66cca1c + employment_status delta (worktree since removed);
+    reused kreis5 balancing (60/60 batches, no re-balance); regenerated popsim.stage only; measured
+    directly off the cached persons frame
+sampling:
+  rate: 100% (1,124,108 persons, 8 Kreise)
+  scope: ZGB-8
+pipeline:
+  targets: []
+classification:
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: employment_status vs MiD 2023 P9 (independent)
+  reference: MiD 2023 P9 (committed reference table)
+  result: SRMSE 0.194, mean|d| 1.88pp, grade good, 100% cells <10pp, r^2=0.979
+  notes: Phase-0 measurement that led to ADR-0058 (do NOT build the Phase-1 soft control).
+features:
+  note: employment_status Phase-0 validation vs MiD P9 (attribute measurement)
+artifacts:
+- no output written; ephemeral
+issues: []
+decisions:
+- ADR-0058
+source: RUNS.md row 2026-07-13

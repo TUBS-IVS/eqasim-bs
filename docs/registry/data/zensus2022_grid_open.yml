@@ -1,0 +1,31 @@
+dataset: zensus2022_grid_open
+title: Zensus 2022 open 100 m population grid (INSPIRE)
+inventory_id: A3
+provider: Statistische Aemter / z22data mirror
+vintage: 2022-05-15 census day
+geography: Germany, 100 m INSPIRE grid
+crs: EPSG:3035 -> EPSG:25832
+roles:
+- spatial_input
+used_by:
+- braunschweig.data.zensus_grid.population
+acquisition:
+  method: auto_script
+  source: https://github.com/JsLth/z22data
+  script: scripts/download_zensus_grid.py
+storage:
+  expected_path: eqasim-data/data/zensus_grid/population_100m.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B12
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Used for home-density weighting (braunschweig.home_density_weighting).

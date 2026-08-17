@@ -1,0 +1,18 @@
+stage: braunschweig.data.cordon_gemeinden
+title: External Gemeinde lookup
+layer: cordon
+description: VG250-EW external municipalities with population weights for gate-side origin assignment
+  of in-commuters.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/cordon_gemeinden.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- vg250_ew

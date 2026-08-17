@@ -28,12 +28,13 @@ disables cache_share export so the shared store is not polluted.
 Usage (on the server, env eqasim)::
 
     python scripts/sweep_secondary_scorer.py \
-        --base-config config_server_braunschweig_1pct_allfeat_popsim.yml \
+        --base-config eqasim-data/cache_bs_1pct_allfeat_popsim/.merged_config.yml \
         --working-directory eqasim-data/cache_bs_1pct_allfeat_fit \
         --mid-dir eqasim-data/data/braunschweig/mid \
         --sampling-rate 0.01 \
         --pot-weights 0.5,1.0,2.0,4.0,8.0 \
         --output-dir eqasim-data/data/braunschweig/calibration/secondary/scorer_sweep
+    # (the composed run writes its exact resolved config there; see configs/base_bs.yml)
 """
 from __future__ import annotations
 

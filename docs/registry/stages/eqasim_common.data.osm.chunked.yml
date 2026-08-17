@@ -1,0 +1,16 @@
+stage: eqasim_common.data.osm.chunked
+title: OSM chunking
+layer: spatial
+description: Region-neutral OSM chunking (relocated from the Bavaria tree into eqasim_common,
+  ADR-0001).
+lineage:
+  type: inherited
+  upstream: null
+  notes: Region-neutral code relocated from the inherited Bavaria tree into eqasim_common/ (ADR-0001).
+code:
+- eqasim_common/data/osm/chunked.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

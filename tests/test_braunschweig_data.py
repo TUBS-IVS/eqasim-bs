@@ -45,6 +45,36 @@ ZGB_KREISE = ["03101", "03102", "03103", "03151",
               "03153", "03154", "03157", "03158"]
 
 
+def _income_xls_readable() -> bool:
+    """Whether the INKAR income smoke test can run on this machine.
+
+    Two conditions must hold, and a plain ``os.path.exists`` check covers
+    only the first:
+
+    1. The local-only raw file ``E_Haushaltseinkommen.xls`` is present. It is
+       gitignored (see the 2026-07-16 raw-data-loss note) and absent on
+       data-less machines.
+    2. The ``xlrd`` engine is importable. The file is a legacy BIFF/OLE2
+       ``.xls`` (not a renamed ``.xlsx``), which ``openpyxl`` cannot read;
+       ``pandas.read_excel`` therefore needs ``xlrd`` (declared in
+       ``environment.yml`` for the ``eqasim`` env). Without it the read
+       raises ``ImportError`` and the test FAILS instead of skipping.
+
+    Anchoring the path to ``DATA_ROOT`` (repo root) also makes the guard
+    independent of the pytest working directory. Returning ``False`` yields an
+    honest skip on a broken/data-less environment while the ``eqasim`` env,
+    which satisfies both conditions, still exercises the primary read path.
+    """
+    xls_path = DATA_ROOT / "braunschweig" / "E_Haushaltseinkommen.xls"
+    if not xls_path.exists():
+        return False
+    try:
+        import xlrd  # noqa: F401  (legacy .xls engine; openpyxl cannot read BIFF)
+    except ImportError:
+        return False
+    return True
+
+
 def _latest_cache(pattern: str):
     """Return the newest cache file matching *pattern*, or None.
 
@@ -814,6 +844,11 @@ class TestInkarFullPanel:
         assert list(df.columns) == ["ars5", "raumeinheit"]
         assert len(df) == 0
 
+    @pytest.mark.skipif(
+        not _income_xls_readable(),
+        reason="INKAR income smoke skipped: E_Haushaltseinkommen.xls absent "
+        "or xlrd engine unavailable (legacy .xls needs xlrd, not openpyxl)",
+    )
     def test_existing_income_xls_round_trips(self):
         """Reuse the shipped E_Haushaltseinkommen.xls as a smoke test."""
         from braunschweig.data.inkar import full_panel
@@ -902,7 +937,14 @@ class TestInspireLanduse:
         assert len(df) == 0
         assert df.crs is not None and df.crs.to_epsg() == 3035
 
-    def test_flag_on_missing_file_returns_empty(self, tmp_path):
+    def test_flag_on_missing_file_raises(self, tmp_path):
+        # Behaviour change (2026-07-17 FRAGILE hardening): with the flag ON but
+        # the tile missing, the stage used to return an empty frame + notice --
+        # a silent fallback that ran the whole pipeline as if the prior were
+        # merely uninformative (CLAUDE.md forbids silent fallbacks). It now fails
+        # loudly; the OFF path is the intended way to run without the prior.
+        import pytest
+
         from braunschweig.data.inspire import landuse
 
         ctx = StubContext(config={
@@ -910,8 +952,10 @@ class TestInspireLanduse:
             "braunschweig.inspire_landuse_path": "nope.parquet",
             "braunschweig.use_landuse_prior": True,
         })
-        df = landuse.execute(ctx)
-        assert len(df) == 0
+        with pytest.raises(RuntimeError, match="use_landuse_prior is ON"):
+            landuse.execute(ctx)
+        with pytest.raises(RuntimeError, match="use_landuse_prior is ON"):
+            landuse.validate(ctx)
 
 
 # ---------------------------------------------------------------------------

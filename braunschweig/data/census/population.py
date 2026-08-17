@@ -204,6 +204,66 @@ def _norm(s: str) -> str:
     return s
 
 
+# A urbistat Gemeinde-name entry that fails to match a VG250 polygon (fuzzy
+# name normalisation miss, spelling drift, a Gemeinde merger not yet reflected
+# in one of the two sources) is dropped from the share computation entirely --
+# its population is lost from the Gemeinde-within-Kreis redistribution. This is
+# expected to be near-zero on the genuine urbistat export; a large share means
+# the ``_norm`` normalisation broke (or one of the two source files changed
+# format) and the spatial redistribution is running on an incomplete base.
+URBISTAT_NAME_DROP_WARN_FRACTION: float = 0.05
+
+# Cell-level (kreis, sex, age) coverage lost across the multiplicative merge
+# (Gemeinde share x Kreis total). An inner merge silently drops the population
+# of any cell present on only one side -- there is no other signal for a
+# vanished Kreis or age band once the merge has run. The RAISE threshold is
+# set well above the WARN one because losing more than a tenth of the national
+# population cannot be scientifically defensible under any normal data drift.
+MERGE_LOST_POPULATION_WARN_FRACTION: float = 0.01
+MERGE_LOST_POPULATION_RAISE_FRACTION: float = 0.10
+
+
+def _log_merge_cell_coverage(df_shares: pd.DataFrame, df_destatis: pd.DataFrame,
+                             on_cols: list, label: str) -> None:
+    """Print unmatched (kreis, sex, age) cell counts on each side of a merge.
+
+    ``df_shares`` (Gemeinde shares) and ``df_destatis`` (Kreis totals, either
+    DESTATIS or Zensus derived) are about to be inner-joined on ``on_cols``. An
+    inner merge silently drops any cell key present on only one side; this
+    diagnostic surfaces exactly which keys are unmatched before that happens,
+    since a single vanished Kreis or age band is otherwise invisible in the
+    post-merge row/column counts (CLAUDE.md "Fallback transparency").
+    """
+    shares_keys = set(df_shares[on_cols].drop_duplicates().itertuples(index=False, name=None))
+    destatis_keys = set(df_destatis[on_cols].drop_duplicates().itertuples(index=False, name=None))
+    only_in_shares = shares_keys - destatis_keys
+    only_in_destatis = destatis_keys - shares_keys
+    print(f"[braunschweig.population] {label} merge on {on_cols}: "
+          f"{len(shares_keys)} share cells, {len(destatis_keys)} Kreis-total cells; "
+          f"{len(only_in_shares)} cells only in shares (dropped), "
+          f"{len(only_in_destatis)} cells only in Kreis totals (dropped)")
+    if only_in_shares:
+        print(f"[braunschweig.population] cells only in shares (sample up to 20): "
+              f"{sorted(only_in_shares)[:20]}")
+    if only_in_destatis:
+        print(f"[braunschweig.population] cells only in Kreis totals (sample up to 20): "
+              f"{sorted(only_in_destatis)[:20]}")
+
+
+def _check_population_preserved_by_kreis(got: pd.Series, expected: pd.Series) -> pd.Series:
+    """Return the per-Kreis population loss after the Gemeinde redistribution.
+
+    NaN-safe: ``got`` and ``expected`` are aligned on the UNION of their Kreis
+    index with missing entries treated as zero. A plain ``(got - expected)``
+    on differently-indexed Series instead produces NaN for any Kreis present
+    on only one side, and ``.abs().max()`` silently skips NaN by default --
+    so a Kreis that vanished entirely from ``got`` (every one of its cells
+    dropped by the merge) would otherwise show no diff at all.
+    """
+    got_aligned, expected_aligned = got.align(expected, fill_value=0)
+    return (got_aligned - expected_aligned).abs()
+
+
 def _load_urbistat_shares(path: str, df_vg: pd.DataFrame) -> pd.DataFrame:
     df = pd.read_csv(path, dtype={"kreis_ars": str})
     df["kreis_ars"] = df["kreis_ars"].str.zfill(5)
@@ -224,9 +284,17 @@ def _load_urbistat_shares(path: str, df_vg: pd.DataFrame) -> pd.DataFrame:
                       on=["kreis_ars", "norm"], how="left")
 
     lost = merged[merged["ARS"].isna()]["name"].unique()
+    total_names = df["name"].nunique()
     if len(lost):
-        print(f"[braunschweig.population] Dropping {len(lost)} urbistat entries "
-              f"not in VG250: {list(lost)}")
+        drop_fraction = len(lost) / total_names if total_names else 0.0
+        print(f"[braunschweig.population] Dropping {len(lost)}/{total_names} "
+              f"({100.0 * drop_fraction:.1f}%) urbistat entries not in VG250: {list(lost)}")
+        if drop_fraction >= URBISTAT_NAME_DROP_WARN_FRACTION:
+            print(f"[braunschweig.population] WARNING: urbistat name-match drop rate "
+                  f"{100.0 * drop_fraction:.1f}% exceeds the "
+                  f"{100.0 * URBISTAT_NAME_DROP_WARN_FRACTION:.0f}% threshold; each dropped "
+                  f"entry removes a Gemeinde's population from the redistribution. Verify "
+                  f"the VG250 Gemeinde-name normalisation still matches both sources.")
         merged = merged[~merged["ARS"].isna()].copy()
 
     merged = merged.rename(columns={"ARS": "commune_id",
@@ -313,12 +381,14 @@ def execute(context):
         df_zensus = context.stage("braunschweig.data.census.households_size_age")
         df_shares = _load_zensus_shares(df_zensus, scope_kreise)
         df_destatis["z_age"] = df_destatis["d_age"].map(DESTATIS_TO_ZENSUS_AGE)
+        _log_merge_cell_coverage(df_shares, df_destatis, ["kreis", "sex", "z_age"], "Zensus")
         merged = df_shares.merge(df_destatis, on=["kreis", "sex", "z_age"])
         print(f"[braunschweig.population] Gemeinde shares from Zensus 1000A-3082 "
               f"({df_shares['commune_id'].nunique()} communes)")
     else:
         df_shares = _load_urbistat_shares(urbistat_path, df_vg)
         df_destatis["u_age"] = df_destatis["d_age"].map(DESTATIS_TO_URBISTAT_AGE)
+        _log_merge_cell_coverage(df_shares, df_destatis, ["kreis", "sex", "u_age"], "urbistat")
         merged = df_shares.merge(df_destatis, on=["kreis", "sex", "u_age"])
     merged["weight"] = merged["share"] * merged["weight"]
 
@@ -334,8 +404,25 @@ def execute(context):
     check["kreis"] = check["commune_id"].astype(str).str[:5]
     got = check.groupby("kreis")["weight"].sum()
     expected = df_destatis.groupby("kreis")["weight"].sum()
-    diff = (got - expected).abs().max()
-    print(f"[braunschweig.population] Gemeinde->Kreis rounding diff max: {diff}")
+    per_kreis_diff = _check_population_preserved_by_kreis(got, expected)
+    diff = per_kreis_diff.max()
+    total_expected = expected.sum()
+    lost_fraction = per_kreis_diff.sum() / total_expected if total_expected else 0.0
+    print(f"[braunschweig.population] Gemeinde->Kreis rounding diff max: {diff} "
+          f"(total lost population share: {100.0 * lost_fraction:.2f}%)")
+    if lost_fraction >= MERGE_LOST_POPULATION_RAISE_FRACTION:
+        raise RuntimeError(
+            f"Gemeinde->Kreis population check lost {100.0 * lost_fraction:.1f}% of the "
+            f"DESTATIS total (limit {100.0 * MERGE_LOST_POPULATION_RAISE_FRACTION:.0f}%). "
+            f"This implausibly high loss almost certainly means a Kreis or age band was "
+            f"dropped by the Gemeinde-share merge -- refusing to continue with a "
+            f"corrupted population marginal."
+        )
+    if lost_fraction >= MERGE_LOST_POPULATION_WARN_FRACTION:
+        print(f"[braunschweig.population] WARNING: Gemeinde->Kreis merge lost "
+              f"{100.0 * lost_fraction:.2f}% of the DESTATIS population total, above the "
+              f"{100.0 * MERGE_LOST_POPULATION_WARN_FRACTION:.0f}% threshold. Verify no "
+              f"Kreis or age band vanished from the Gemeinde-share merge.")
 
     print(f"[braunschweig.population] {len(df_out)} rows, "
           f"{df_out['commune_id'].nunique()} communes, "

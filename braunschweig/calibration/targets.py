@@ -44,7 +44,10 @@ def _p13_row_to_band_shares(row):
 def load_p13_band_shares(mid_dir):
     """Commute-distance band shares per residence Kreis ars5 (+ '03ZGB')."""
     path = os.path.join(mid_dir, "mid2023_P13.csv")
-    df = pd.read_csv(path, comment="#")
+    # dtype=str at READ time: int64 inference would strip the ars5 leading zero
+    # irreversibly ("03101" -> 3101); today only the "03ZGB" Gesamt row forces
+    # object dtype by accident (same latent trap fixed in data.mid.references).
+    df = pd.read_csv(path, comment="#", dtype={"ars5": str})
     out = {}
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])

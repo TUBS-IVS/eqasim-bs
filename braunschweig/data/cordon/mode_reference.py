@@ -72,9 +72,17 @@ def restrict_to_modes(reference: dict, allowed=("car", "pt")) -> dict:
     otherwise assign walk to short gate->work distances. The dropped probability mass
     is redistributed proportionally over the kept modes; if a band has none of the
     allowed modes, it falls back to the first allowed mode with probability 1.
+
+    Fallback transparency (CLAUDE.md "no silent fallbacks"): a band that falls back
+    (zero mass in ``allowed``) is counted, and if any band fell back the affected
+    band labels are logged as a WARNING -- this reference is a Mikrozensus TABLE
+    (not per-agent), so even a single fallback band means that band's raw reference
+    has no car/pt mass at all, which is worth surfacing (e.g. a walk/bike-only short
+    band, or a mis-restricted ``allowed`` set).
     """
     allowed = tuple(allowed)
     out = {}
+    fallback_bands = []
     for band, dist in reference.items():
         kept = {m: float(p) for m, p in dist.items() if m in allowed}
         total = sum(kept.values())
@@ -82,6 +90,20 @@ def restrict_to_modes(reference: dict, allowed=("car", "pt")) -> dict:
             out[band] = {m: p / total for m, p in kept.items()}
         else:
             out[band] = {allowed[0]: 1.0}
+            fallback_bands.append(band)
+
+    n_bands = len(reference)
+    n_fallback = len(fallback_bands)
+    if n_fallback:
+        share = 100.0 * n_fallback / n_bands if n_bands else 0.0
+        print(
+            f"[braunschweig.cordon.mode_reference] WARNING: restrict_to_modes: "
+            f"primary {n_bands - n_fallback}/{n_bands} ({100.0 - share:.1f}%), "
+            f"fallback {n_fallback} ({share:.1f}%) distance band(s) had zero mass "
+            f"in the allowed modes {allowed} -> forced to {allowed[0]}=1.0. "
+            f"Affected bands: {sorted(str(b) for b in fallback_bands)}.",
+            flush=True,
+        )
     return out
 
 

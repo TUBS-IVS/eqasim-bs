@@ -111,19 +111,41 @@ def export_to_store_from_config(config_path):
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if not argv:
-        print("usage: python scripts/run_synpp.py <config.yml>", file=sys.stderr)
+    if len(argv) not in (1, 2):
+        print("usage: python scripts/run_synpp.py <config.yml> [<overlay.yml>]",
+              file=sys.stderr)
         return 1
     from braunschweig.logging_setup import setup_logging
+    from braunschweig.provenance import log_and_write_run_provenance
 
     log_path = setup_logging(level="INFO")
     logging.getLogger("braunschweig").info("Run log: %s", log_path)
-    prime_from_config(argv[0])
-    synpp.run_from_yaml(argv[0])
+
+    config_path = argv[0]
+    if len(argv) == 2:
+        # Composed form: deep-merge the per-scale overlay into the fixed base and run
+        # the persisted merged file, so provenance, cache_share priming, synpp, and
+        # export all see ONE identical resolved config (and the exact config used is
+        # stored with the run -- reproducibility).
+        from braunschweig import config_compose
+        merged = config_compose.compose(argv[0], argv[1])
+        config_path = config_compose.write_merged(merged, merged["working_directory"])
+
+    # Crash-proof provenance BEFORE synpp starts (issue #125): git commits of
+    # this repo + eqasim_source_path, config path, sampling_rate / hts / seed /
+    # population.method -- logged and persisted into the working_directory so
+    # even a killed run is traceable (meta_output.py only writes on success).
+    log_and_write_run_provenance(config_path)
+    prime_from_config(config_path)
+    # synpp 1.6.2 (pinned) requires run_from_yaml(path, working_directory, run, overrides)
+    # -- four positional arguments, not one (issue #220). Passing None/[]/{} makes
+    # Synpp.build_from_yml read working_directory and run from the YAML, reproducing the
+    # old single-argument behaviour without overriding any config.
+    synpp.run_from_yaml(config_path, None, [], {})
     # Export the shareable stage caches into the shared store ONLY after a successful
     # run (run_from_yaml raises on failure, so a failed/partial run never seeds the
     # store). Gated by cache_share_enabled + cache_share_export inside the helper.
-    export_to_store_from_config(argv[0])
+    export_to_store_from_config(config_path)
     return 0
 
 

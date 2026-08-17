@@ -1,0 +1,27 @@
+stage: synthesis.population.trips
+title: Trip/activity chains
+layer: behavior
+description: 'Builds each person''s daily activity chain. PopulationSim workflows resolve to braunschweig.popsim.trips_stage
+  (the donor''s own MiD/ENTD travel-day chain, escort relabel #201); the IPF path keeps the upstream
+  ENTD statistical matching.'
+lineage:
+  type: overridden
+  upstream: synthesis.population.trips
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/trips.py
+- braunschweig/popsim/trips_stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.popsim.trips_stage
+  popsim_open: braunschweig.popsim.trips_stage
+features:
+- escort_purpose
+decisions:
+- ADR-0072
+- ADR-0073

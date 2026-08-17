@@ -1,0 +1,20 @@
+# Blended per-Kreis control target, built by scripts/build_blended_kreis_targets.py
+# from COMMITTED reference tables only (no raw microdata). Rules: two-survey
+# agreement (<= 5.0 pp per category) -> precision blend; disagreement with a
+# register arbiter -> rank-agreement pick; disagreement without arbiter ->
+# MiD shrunk toward Gesamt (lambda = 0.3); Wolfsburg (03103) and Gesamt
+# always MiD. Column `source` records the rule per row;
+# shares are fractions summing to 1.
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
+# ASSUMPTION (SrV side): stratified PSU design over selected municipalities;
+# per-Kreis SrV inputs are assumption-grade (see srv2023_* headers).
+ars5,source,n_effective,very_low,low,medium,high,very_high
+Gesamt,mid,0,0.09,0.12,0.31,0.36,0.12
+03101,blend,2967,0.1213,0.1129,0.2943,0.3198,0.1517
+03103,mid,508,0.11,0.13,0.34,0.34,0.08
+03102,srv_arbitrated,667,0.1601,0.1803,0.3419,0.2432,0.0745
+03151,blend,2026,0.0976,0.1225,0.2668,0.3522,0.1609
+03157,mid_arbitrated,669,0.05,0.13,0.36,0.35,0.11
+03154,srv_arbitrated,672,0.1466,0.1393,0.3047,0.2766,0.1328
+03158,srv_arbitrated,736,0.1147,0.1712,0.2647,0.3089,0.1405
+03153,srv_arbitrated,933,0.1854,0.2074,0.2791,0.2499,0.0781

@@ -1,0 +1,21 @@
+stage: data.spatial.codes
+title: Spatial codes
+layer: spatial
+description: Upstream spatial-code contract resolving to eqasim_common.spatial.entd_codes.
+lineage:
+  type: overridden
+  upstream: data.spatial.codes
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- data/spatial/codes.py
+- eqasim_common/spatial/entd_codes.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: eqasim_common.spatial.entd_codes
+  popsim_open: eqasim_common.spatial.entd_codes
+  simple_ipf_open: eqasim_common.spatial.entd_codes

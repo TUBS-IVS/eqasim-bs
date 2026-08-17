@@ -36,6 +36,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--label", default=None)
+    # Issue #256: pass through when the synthetic population was built with
+    # escort_passive_education ON (the model's escort purpose is then
+    # ACTIVE-only), so the trip-coherence W1/W12 escort references are adjusted
+    # to the active-only pinned split instead of the both-sides MiD Begleitung
+    # figures (see trip_coherence.apply_escort_active_adjustment /
+    # w12_mean_length_target). Default False keeps the report byte-identical.
+    ap.add_argument("--escort-passive-education", dest="escort_passive_education",
+                    action="store_true", default=False)
     ns = ap.parse_args(argv)
 
     prefix = _detect_prefix(ns.output_dir)
@@ -49,7 +57,8 @@ def main(argv=None) -> int:
             persons = persons.merge(
                 hh[["household_id", "household_size"]], on="household_id", how="left")
 
-    report = TC.build_trip_coherence_report(persons, trips, DATA_PATH)
+    report = TC.build_trip_coherence_report(
+        persons, trips, DATA_PATH, escort_passive_education=ns.escort_passive_education)
 
     print(f"\n=== Trip coherence: {label} ===")
     print(f"persons={report['n_persons']:,}  trips={report['n_trips']:,}")

@@ -1,0 +1,56 @@
+feature: svb_wohn_work_production_mass
+title: svb_wohn work production mass (#132)
+area: work
+description: Uses SvB am Wohnort (BA gemband) instead of total population as the gravity production
+  mass; measured indistinguishable (TVD 0.1136 -> 0.1137) and parked (ADR-0066).
+stages:
+- data.od.weighted
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: parked
+production:
+  enabled: false
+  flags:
+  - braunschweig.gravity.work_production_mass
+introduced:
+  issue: '#132'
+  pr: null
+  adr: ADR-0066
+detail_doc: docs/features/gravity.md
+code_paths:
+- braunschweig/gravity/production_mass.py
+- braunschweig/gravity/base.py
+- braunschweig/gravity/model.py
+evidence:
+  tests:
+  - tests/test_gravity_production_mass.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_gravity_production_mass.py
+    note: |
+      test_gravity_off_path_is_byte_identical_and_education_invariant confirms the default ("population") mode is byte-identical and leaves education unaffected.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'mass = svb_wohn: primary'
+    note: |
+      Logs a primary(own svb_wohn)-vs-fallback(Kreis-mean rate x population) origin rate when work_production_mass="svb_wohn" is selected, with a configurable warning threshold.
+  reference:
+    kind: none
+    note: |
+      The svb_wohn input itself (BA Gemeindedaten XLSX, braunschweig/gemband-dlk-0-202506-xlsx.xlsx) and the VerBindungen QZM measurement reference used for the #132 A/B comparison are both NOT committed to this repository.
+validation:
+  state: measured_vs_reference
+  runs:
+  - verbindungen-ab-2026-07-16
+  metric: weighted OD TVD 0.1136 (population) -> 0.1137 (svb_wohn)
+  note: Paired A/B against the VerBindungen 2019 QZM reference; difference negligible, default
+    stays population.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0066 documents the A/B measurement and the decision to keep this default OFF (no improvement over the population proxy); restating it as an owner assessment is a short job given the ADR already carries the verdict.
+  source: ADR-0066

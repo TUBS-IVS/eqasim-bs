@@ -22,7 +22,7 @@ Two input modes are supported:
    tive shapefile.
 
 In both modes the GTFS feed (zip) supplies stop coordinates and names.
-The default path matches ``config_local_braunschweig.yml``:
+The default path matches ``configs/fixtures/config_local_braunschweig.yml``:
 ``data_path/gtfs/latest.zip``. Stops are filtered to the ZGB-8 bounding
 box (lon/lat WGS84).
 

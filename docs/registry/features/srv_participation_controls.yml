@@ -1,0 +1,55 @@
+feature: srv_participation_controls
+title: SrV participation controls (#224)
+area: attributes
+description: SrV-2023-anchored per-Kreis trip-participation controls (work / leisure / education
+  / errand shares) applied to the MiD donor draw in the PopulationSim workflow (#224).
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.work_participation_kreis_control
+introduced:
+  issue: '#224'
+  pr: '#225'
+  adr: null
+detail_doc: docs/features/regional-control-targets.md
+code_paths:
+- braunschweig/popsim/stage/
+- braunschweig/analysis/population_validation/participation_fit.py
+evidence:
+  tests:
+  - tests/test_participation_target.py
+  - tests/test_participation_fit.py
+  - tests/test_map_work_participation.py
+  - tests/test_leisure_education_participation.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_participation_target.py
+    note: |
+      PROJECT_STATUS records "default ON, OFF byte-identical" for PR #225; the specific byte-identity test function still has to be pinned in this declaration.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No primary-vs-fallback rate log was found for the participation controls. Per CLAUDE.md this instrumentation is mandatory for any path with a fallback and should be added.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: participation_gap_closed_share
+  note: PROJECT_STATUS reports a Kreis 03101 smoke (78/78/53/30 % of the MiD->SrV gap closed,
+    residual donor-bound). Not copied here until attributable to a RUNS.md row.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    No ADR exists for #224, so there is no written record of why the residual gap was accepted as donor-bound. This is the largest documentation gap among the pilot features.
+  source: null

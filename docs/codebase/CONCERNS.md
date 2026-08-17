@@ -1,5 +1,67 @@
 # CONCERNS
 
+> **Actionable items live as GitHub issues (2026-08-13, ADR-0077)** — notably
+> the readiness-register findings #251–#255 (flags OFF despite ON-claims,
+> simple_ipf_open-only enrichment features, simwrapper default contradiction,
+> ADR path errors, uninstrumented employment-margin fallback). This file keeps
+> fragile-area notes and dated audit narratives for context; treat every dated
+> claim below as a snapshot, not current state.
+
+## Feature-wiring audit vs. the active popsim run config (2026-07-10)
+
+Full front-to-back check: every implemented feature vs. `config_server_braunschweig_100pct_allfeat_popsim.yml`
+on `origin/main` (`b6ba420`) AND the actually-running untracked server config
+`~/wt-kreis-run/config_run_kreis5_100pct.yml` (fetched from felix; semantically identical except
+output paths `*_kreis5`, `settings_tier3_mef100_intseed_numba.yaml`, `num_workers 4`,
+`cache_share_recompute: completed_donor`).
+
+**GAP (very likely forgotten, affects the running kreis5 run):**
+- `secondary_other_smart_potential` + its whole 5-key block (`secondary_other_broad_share 0.54`,
+  `_errand_share 0.46`, `_min_volume_m3 50.0`, `_cap_percentile 0.99`, plus
+  `secondary_scorer_attr_transform: linear`, `secondary_scorer_selection: top_n`) is `true` in
+  ALL other real-data configs since `2732c18` (2026-06-28) but MISSING from the 100pct popsim
+  config (created 2026-06-30, `3703292`, without the block) → runs with default **False**.
+  Effect: `other` activities fall back to the generic (VW-plant-dominated) potential.
+  Cheap fix: add the block; popsim caches stay valid, only secondary-location stages recompute.
+
+**Built but never activated in ANY config, absent from PROJECT_STATUS/BACKLOG/DECISIONS (decide: wire or document as parked):**
+- `braunschweig.gravity.sector_aware_enabled` (default False; `a0ecee3` 2026-06-04) — establishment-density
+  sub-Kreis attraction tilt, `braunschweig/gravity/model.py`.
+- ~~`braunschweig.census.use_zensus_gemeinde_shares`~~ — **RESOLVED (issue #251).** Now `true` in all
+  five committed `simple_ipf_open` configs, so the open Zensus 1000A-3082 Gemeinde shares replace the
+  scraped non-redistributable urbistat table; pinned by `tests/test_census_gemeinde_shares_wired.py`.
+  Correctly absent from the popsim configs, where the stage is off the DAG.
+- `braunschweig.use_landuse_prior` (default False) — `braunschweig/data/inspire/landuse.py` has NO pipeline
+  consumer (orphaned stage; only tests reference it).
+- `education_bbs_share_by_age` (default None) — optional age-resolved BBS share; scalar 0.681 active instead.
+
+**Verified WIRED in the running kreis5 config (no action):** popsim_mid tier0-3 + employment_grid +
+`optimized_2026_06_30` importance profile; all five KREIS attribute controls (economic_status, cars,
+bicycles, has_ebike, trip_class) default `"on"` in `braunschweig/popsim/stage/`; W_ZWD #127 splits
+(`secondary_leisure_subtype_split`, `secondary_other_subtype_split`, `leisure_visit_building_potential`) true;
+income tilt + income_kreis_control; education gravity; building potentials (work/secondary/edu);
+purpose-resolved distances; fleet (household/brands/HSN-TSN/BEV); cordon; freight; urban parking;
+remode_carless; per-RS7 gravity; enrichment flags default-True (PT-Abo, licence, cars-income, tenure,
+status, income-EUR — consumed by `braunschweig/synthesis/population/enriched.py` + `popsim/stage/`,
+i.e. active on the popsim path).
+
+**Deliberately OFF (documented, no action):** `taz_work_location_choice` (Phase-3 validation open, #83),
+`gravity_friction_factors` (ADR-0050), circuity `mode=curve`, `simwrapper_dashboards` (Java Layer-1),
+`matching_similarity` (step 3 deferred), `mode_choice` (no modal-split target),
+`stratify_regiostar: false` (changed on main).
+
+**Config drift:** the live run config `config_run_kreis5_100pct.yml` is untracked on felix — commit it
+(or a copy) for traceability/RUNS.md. Note: local branch `docs/status-presentation` is BEHIND
+`origin/main` (misses PRs #144/#145/#146 + TAZ code); IPF chunking/joint-margin flags in the popsim
+configs are inert (simple_ipf path only).
+
+Evidence: `config_server_braunschweig_100pct_allfeat_popsim.yml`, `config_server_braunschweig_25pct_allfeat_popsim.yml`,
+`braunschweig/popsim/stage/__init__.py:252-320` (pre-split line numbers, not reverified
+against the post-#267 package layout), `braunschweig/gravity/model.py:646`,
+`braunschweig/data/census/population.py:118-123`, commits `2732c18`, `3703292`, `a0ecee3`, `1f55fc2`.
+
+---
+
 > **LIVE BACKLOG MOVED (2026-06-27).** The ranked open-work backlog now lives in
 > [PROJECT_BACKLOG.md](../../PROJECT_BACKLOG.md); the at-a-glance feature/status dashboard
 > in [PROJECT_STATUS.md](../../PROJECT_STATUS.md). To avoid two competing backlogs, treat
@@ -93,12 +155,15 @@ re-derived here; this file records what the current branch actually shows.
   2023 is BMDV non-commercial**, and the extracted CSVs are derivative works that
   inherit those terms (DOWNLOAD_CHECKLIST_BS.md). Anything committed must respect
   re-distribution rules; urbistat shares are explicitly non-redistributable.
-- **Legacy dead-config keys.** `config_local_braunschweig.yml` still carries
-  `braunschweig.population_path: …/12111-0001_population_ni.xlsx` and
-  `braunschweig.work_flow_path: …/pendler_ni.xlsx` (and `bavaria.buildings_path`-style
-  keys described in the checklist) that were read only by now-absent `bavaria/`
-  modules. DOWNLOAD_CHECKLIST_BS.md ("Legacy dead-config keys") confirms these
-  filenames need not exist on disk for the BS pipeline to run.
+- ~~**Legacy dead-config keys.**~~ **RESOLVED (issue #251).** Five keys were set across the
+  committed configs while no live code could read them and have been DELETED, not documented:
+  `home_location_sampling` and `osm_path_bavaria` (named by no source file at all), plus
+  `braunschweig.population_path`, `braunschweig.work_flow_path` and
+  `braunschweig.buildings_path` (read only by the inherited `eqasim_common.data.census.population`
+  / `.employees` / `eqasim_common.data.buildings` loaders, which the Braunschweig forks replaced
+  and which appear in no DAG snapshot and are no config's alias target). Two of them pointed at
+  files that do not exist on disk, which is how they surfaced. Note the scope the earlier entry
+  understated: the keys were in ten configs including `configs/base_bs.yml`, not one fixture.
 - **ENTD 2008 (French HTS) donor.** Activity chains are still seeded from a 2008
   French survey; a German HTS replacement is open work (README "Known limitations").
 
@@ -157,7 +222,7 @@ long wall times (README: 25 % run ~10 h).
 - `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`; `ls bavaria` absent
 - `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data` (38 files)
 - `environment.yml` (`name: ile-de-france`); `.github/workflows/tests.yml` (Java 17, branch `develop`)
-- `config_local_braunschweig.yml` (legacy keys, binary paths)
+- `configs/fixtures/config_local_braunschweig.yml` (legacy keys, binary paths)
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` ("Legacy dead-config keys", MiD non-commercial)
 - `docs/codebase/.codebase-scan.txt` (CODE METRICS, production TODOs, high-churn files)
 - `README.md` / `AGENTS.md` (documented branch, bavaria/, bug tracking)
@@ -338,8 +403,9 @@ Confirmed by adversarial verification against code + the real local MiD raw data
    completeness only, not member completeness — 16.9 % of kept seed households
    have fewer person rows than `H_GR` (verified on raw data) -> household size/
    composition biased low, unlogged.
-5. `braunschweig/popsim/stage.py:256` calls `assembly.build_persons` without
-   `rng` -> all attribute imputation runs on hard-coded `RandomState(0)`;
+5. `braunschweig/popsim/stage/__init__.py:256` (pre-split line number, not
+   reverified against the post-#267 package layout) calls `assembly.build_persons`
+   without `rng` -> all attribute imputation runs on hard-coded `RandomState(0)`;
    `random_seed` is not even declared in configure(), so seed changes neither
    change imputation nor invalidate the synpp cache.
 6. `braunschweig/popsim/trips.py:48`: raw `hvm` used instead of the
@@ -351,12 +417,16 @@ Confirmed by adversarial verification against code + the real local MiD raw data
 8. `braunschweig/popsim/expand.py:110`: HP_SEX 3 (614) / 9 (127 persons) ->
    `sex="unknown"` -> MATSim attribute `"u"`; code 9 should be imputed per the
    missing policy; legacy paths emit only male/female.
-9. `braunschweig/popsim/mid.py:330`: the conditioning columns (`alter_gr1`,
-   `hhgr_gr`) for group-conditioned imputation are never loaded, so the documented
-   within-age-band imputation silently degrades to the global pool.
-10. `braunschweig/popsim/mid.py:322`: `day_filter_values or default` — the day
-    filter cannot be disabled (None and () both fall back to (1,2,3)), contract
-    inconsistent with `filter_complete_households`.
+9. `braunschweig/popsim/mid/seed_loading.py:121` (`hhgr_gr`) / `:190` (`alter_gr1`)
+   [path updated for the #267 package split; was `mid.py:330`] (content not
+   re-verified; #267 path-only update): the conditioning columns (`alter_gr1`,
+   `hhgr_gr`) for group-conditioned imputation are never loaded, so the
+   documented within-age-band imputation silently degrades to the global pool.
+10. `braunschweig/popsim/mid/seed_loading.py:240` [path updated for the #267
+    package split; was `mid.py:322`] (content not re-verified; #267 path-only
+    update): `day_filter_values or default` — the day filter cannot be
+    disabled (None and () both fall back to (1,2,3)), contract inconsistent
+    with `filter_complete_households`.
 11. `matsim/writers.py:25` `long_or_string_type` decides the Java type PER VALUE:
     mixed Long/String for the same attribute in one file is possible; float
     contamination writes "123.0" as java.lang.Long (Java parse failure); legacy

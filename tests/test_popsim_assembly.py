@@ -33,6 +33,7 @@ def _mid_persons():
             "P_TAET": [1, 9, 11],     # employed, pupil, retired
             "P_FSCHEIN": [1, 2, 1],   # licence yes/no/yes
             "P_FKARTE": [3, 8, 5],    # Deutschlandticket, never, monthly-abo
+            "P_BKAT": [1, 7, 7],      # vollzeit, nicht_erwerbstaetig, nicht_erwerbstaetig
         }
     )
 
@@ -45,6 +46,12 @@ def _mid_households():
             "hheink_gr1": [4, 9],     # 1500-2000 -> 1750; 4000-4600 -> 4300
             "H_ANZAUTO": [1, 2],
             "H_ANZRAD": [2, 0],
+            # anzpedrad = bicycles INCLUDING pedelecs (default number_of_bicycles source,
+            # verified 2026-07-08); no pedelecs here, so it equals H_ANZRAD.
+            "anzpedrad": [2, 0],
+            # H_ANZPED = Anzahl Pedelecs (default has_ebike source, verified 2026-07-08);
+            # neither household owns one.
+            "H_ANZPED": [0, 0],
         }
     )
 

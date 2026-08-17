@@ -1,0 +1,19 @@
+stage: braunschweig.data.schools.university_facilities
+title: University facilities (LSN)
+layer: education
+description: Builds the university register from the LSN Hochschulstatistik enrollment (ADR-0024).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/schools/university_facilities.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- lsn_universities
+features:
+- building_potentials_education

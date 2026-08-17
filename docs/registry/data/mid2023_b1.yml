@@ -1,0 +1,36 @@
+dataset: mid2023_b1
+title: MiD 2023 B1 microdata package (households, persons, trips, cars)
+inventory_id: E1.1
+provider: BMDV / infas
+vintage: 2023 survey year
+geography: Germany
+crs: null
+roles:
+- donor
+used_by:
+- braunschweig.data.hts.mid_donor
+- braunschweig.popsim.completed_donor
+- data.census.filtered
+acquisition:
+  method: restricted_delivery
+  source: Restricted scientific-use file (BMDV/infas usage agreement)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: restricted scientific use
+  restricted: true
+  redistribution: forbidden
+limitations: Never committed, never redistributed. popsim_open and simple_ipf_open run without
+  it.
+notes: 'THE popsim_mid donor: every synthetic person carries a real MiD donor''s attributes and
+  travel-day chain. Raw ids are pseudonymised before any output; the surrogate map stays in the
+  local work dir.'

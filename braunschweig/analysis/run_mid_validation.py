@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from braunschweig.analysis import spatial
+from braunschweig.analysis import noise_bands, spatial
 from braunschweig.analysis.freight_filter import drop_freight_agents
 from braunschweig.calibration.circuity import LEGACY_DETOUR_FACTOR
 from braunschweig.data.mid.school_distance import build_target_table
@@ -68,10 +68,13 @@ BANDS: list[tuple[float, float, str]] = [
 
 MID_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "mid"
 
-# eqasim main mode -> MiD P12_1 category, kept consistent with
-# braunschweig.analysis.dashboard.build_dashboard.MODE_LABEL.  Only the four
-# MiD P12_1 columns (auto / oeffentlich / fahrrad / zu_fuss) have a reference,
-# so car_passenger is folded into "Car" for the commute comparison.
+# eqasim main mode -> MiD P12_1 category. Deliberately NOT the same mapping as
+# braunschweig.analysis.dashboard.comparisons.MODE_LABEL (which the dashboard
+# facade re-exports): only the four MiD P12_1 columns
+# (auto / oeffentlich / fahrrad / zu_fuss) have a reference, so car_passenger is
+# folded into "Car" here, whereas MODE_LABEL keeps it as its own label. Keep the
+# four shared labels spelled identically to MODE_LABEL's, so the two comparisons
+# report the same category names.
 MODE_TO_MID: dict[str, str] = {
     "car": "Car",
     "car_passenger": "Car",
@@ -96,6 +99,7 @@ class _Args:
     analysis_out: Path
     label: str
     sim_cache: Path | None
+    noise_bands: Path | None
 
 
 def _parse_args(argv: list[str] | None) -> _Args:
@@ -134,6 +138,17 @@ def _parse_args(argv: list[str] | None) -> _Args:
         "split is read from the MATSim simulation output (the eqasim pipeline "
         "trips.csv carries no mode). Omitted -> the modal-split block is skipped.",
     )
+    ap.add_argument(
+        "--noise-bands",
+        required=False,
+        default=None,
+        help="Path to a Monte-Carlo sampling-noise-band CSV, as written by "
+        "scripts/run_noise_bands.py (issue #126). When given, the tidy "
+        "metric_id/group view of this report is annotated with "
+        "band_q05/band_q95/within_noise_band and the honest-reporting note is "
+        "printed. Omitted (default) -> output is byte-identical to a run "
+        "without this flag.",
+    )
     ns = ap.parse_args(argv)
 
     output_dir = Path(ns.output_dir).resolve()
@@ -161,12 +176,17 @@ def _parse_args(argv: list[str] | None) -> _Args:
     if sim_cache is not None and not sim_cache.is_dir():
         ap.error(f"--sim-cache does not exist: {sim_cache}")
 
+    noise_bands_path = Path(ns.noise_bands).resolve() if ns.noise_bands is not None else None
+    if noise_bands_path is not None and not noise_bands_path.is_file():
+        ap.error(f"--noise-bands file does not exist: {noise_bands_path}")
+
     return _Args(
         output_dir=output_dir,
         prefix=prefix,
         analysis_out=analysis_out,
         label=ns.label or prefix.rstrip("_"),
         sim_cache=sim_cache,
+        noise_bands=noise_bands_path,
     )
 
 
@@ -228,9 +248,10 @@ def _load_mid() -> dict[str, pd.DataFrame]:
                 f"Missing MiD reference table: {path}. "
                 "Run scripts/seed_mid_constraint_tables.py first."
             )
-        df = pd.read_csv(path)
-        df["ars5"] = df["ars5"].astype(str)
-        df["kreis"] = df["kreis"].astype(str)
+        # dtype=str at READ time (same rationale as _load_noise_bands below):
+        # int64 inference would strip the ars5 leading zero irreversibly; a
+        # post-hoc .astype(str) cannot repair it.
+        df = pd.read_csv(path, dtype={"ars5": str, "kreis": str})
         tables[code] = df
     return tables
 
@@ -321,9 +342,14 @@ def _commute_distances(
     commute = work.merge(home_lookup, on="household_id", how="inner")
     if commute.empty:
         return commute.assign(distance_km=[], ars5=[], kreis_name=[])
-    commute["distance_km"] = commute.apply(
+    # Apples-to-apples with MiD P13 (self-reported ROUTE lengths): apply the
+    # project's constant detour factor to the Euclidean home->work distance,
+    # exactly like the calibration corner does. Comparing raw Euclidean km to
+    # P13 fabricated a ~-23% mean-distance gap (2026-07-12 validation audit).
+    from braunschweig.calibration.metrics import apply_detour
+    commute["distance_km"] = apply_detour(commute.apply(
         lambda r: r["home_geom"].distance(r["work_geom"]) / 1000.0, axis=1
-    )
+    ).to_numpy())
     commute = commute.merge(
         persons_kreis[["person_id", "ars5", "kreis_name"]],
         on="person_id",
@@ -336,6 +362,7 @@ def _commute_band_table(
     commute: pd.DataFrame, mid_p13: pd.DataFrame
 ) -> pd.DataFrame:
     p13 = mid_p13.set_index("ars5")
+    band_names = [name for _, _, name in BANDS]
     rows: list[dict[str, Any]] = []
     for ars5, label in ZGB8.items():
         sub = commute[commute["ars5"] == ars5]
@@ -343,14 +370,24 @@ def _commute_band_table(
             continue
         syn = band_share(sub["distance_km"].values)
         ref = p13.loc[ars5]
-        for _, _, name in BANDS:
+        # Renormalise the P13 distance bands to 100 over the 8 distance
+        # classes: the published rows include keine_feste_arbeit/keine_angabe
+        # mass (band sums 85-99 per Kreis), while the synthetic side is
+        # conditioned on having a work place. Without renormalisation every
+        # synthetic band carries a spurious positive offset (2026-07-12 audit;
+        # same convention as calibration targets._p13_row_to_band_shares).
+        ref_bands = np.array([float(ref.get(name, np.nan)) for name in band_names])
+        ref_total = np.nansum(ref_bands)
+        if ref_total > 0:
+            ref_bands = ref_bands * (100.0 / ref_total)
+        for name, mid_pct in zip(band_names, ref_bands):
             rows.append(
                 {
                     "ars5": ars5,
                     "kreis": label,
                     "band": name,
                     "synthetic_pct": syn[name],
-                    "mid_pct": float(ref.get(name, np.nan)),
+                    "mid_pct": float(mid_pct),
                 }
             )
     return pd.DataFrame(rows)
@@ -475,20 +512,26 @@ def _mode_share_table(
 # was measured immaterial for ZGB (EMD delta ~0.003) and is opt-in only:
 # pass mode="curve" to build_target_table / _education_distance_table explicitly.
 
-# Pupil-age -> school level, matching braunschweig.data.mid.school_distance
-# AGEGROUP_TO_LEVEL so realised education-trip distances are validated on the
-# same basis the gravity slopes were calibrated to. BBS / university pupils
-# (ages 18+) have no MiD Tabelle 43 target and are therefore not validated here.
+# Pupil-age -> school level, matching the SYNTHESIS assignment bands
+# (braunschweig.synthesis.locations.education_gravity._SCHOOL_BANDS: 0-5 / 6-9 /
+# 10-15 / 16-19), so each realised education distance is validated against the
+# T43 target of the level the pupil was actually ASSIGNED to. The previous local
+# bands (0-6/7-10/11-13/14-17) mislabelled the 6, 10, 14 and 15 year olds
+# (2026-07-12 validation audit). KNOWN CAVEAT: the 16-19 band ('oberstufe'
+# target) unavoidably includes BBS-assigned pupils because the run output does
+# not carry the realised school level; T43 has no BBS target, so their
+# (typically longer) distances bias the oberstufe comparison upward.
+# University pupils (20+) have no T43 target and are not validated here.
 _EDU_AGE_LEVELS: list[tuple[int, int, str]] = [
-    (0, 6, "kindergarten"),
-    (7, 10, "grundschule"),
-    (11, 13, "sekundar_1"),
-    (14, 17, "oberstufe"),
+    (0, 5, "kindergarten"),
+    (6, 9, "grundschule"),
+    (10, 15, "sekundar_1"),
+    (16, 19, "oberstufe"),
 ]
 
 
 def education_level_for_age(age: Any) -> str | None:
-    """MiD Tabelle 43 school level for a pupil age, or None outside its scope."""
+    """MiD Tabelle 43 school level for a pupil age (synthesis banding), or None."""
     if pd.isna(age):
         return None
     a = int(age)
@@ -674,21 +717,33 @@ def _plot_rs7_kpis(table: pd.DataFrame, path: Path) -> None:
     _save_fig(fig, path)
 
 
+def _hhsize_counts(households: pd.DataFrame) -> pd.Series:
+    """Household-size counts in natural order WITHOUT dropping any label.
+
+    The previous hardcoded ``reindex(["1","2","3","4","5+"])`` silently
+    dropped every household of size >= 5 on the popsim_mid path (raw counts
+    "5","6","7",...) and the "6+" bin of the 6-bin IPF scheme -- the labels
+    present in the data define the axis, not a fixed list.
+    """
+    counts = households["household_size"].astype(str).value_counts()
+
+    def _order_key(label: str):
+        stripped = label.rstrip("+")
+        try:
+            return (float(stripped), label.endswith("+"))
+        except ValueError:
+            return (float("inf"), True)
+
+    return counts.reindex(sorted(counts.index, key=_order_key))
+
+
 def _plot_demographics(
     persons: pd.DataFrame, households: pd.DataFrame, path: Path
 ) -> None:
-    hhsize_order = ["1", "2", "3", "4", "5+"]
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.5))
     persons["age"].hist(bins=30, ax=axes[0])
     axes[0].set_title("Age")
-    (
-        households["household_size"]
-        .astype(str)
-        .value_counts()
-        .reindex(hhsize_order)
-        .fillna(0)
-        .plot.bar(ax=axes[1])
-    )
+    _hhsize_counts(households).plot.bar(ax=axes[1])
     axes[1].set_title("Household size")
     households["number_of_cars"].value_counts().sort_index().plot.bar(ax=axes[2])
     axes[2].set_title("Cars per HH")
@@ -744,6 +799,175 @@ def _plot_homes_map(
     ax.legend()
     ax.set_axis_off()
     _save_fig(fig, path)
+
+
+# ---------------------------------------------------------------------------
+# Optional Monte-Carlo noise-band annotation (issue #126, task 4)
+# ---------------------------------------------------------------------------
+#
+# A noise band (built by scripts/run_noise_bands.py) quantifies how much a
+# validation metric moves under pure re-seeding at a FIXED sampling rate. It
+# is a triage signal, never a significance test and never a calibration
+# input -- see braunschweig/analysis/noise_bands.py's module docstring and
+# CLAUDE.md "No invented reference values; convergence is not validation".
+
+NOISE_BAND_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "metric_id", "group", "mean", "q05", "q95", "n_draws",
+    "sampling_rate", "pipeline_commit", "created_utc",
+)
+
+
+def annotate_with_bands(
+    tables: dict[str, pd.DataFrame],
+    bands: pd.DataFrame,
+    *,
+    metric_col: str = "metric_id",
+    group_col: str = "group",
+    value_col: str = "value",
+) -> dict[str, pd.DataFrame]:
+    """Annotate every tidy metric/group table in ``tables`` with noise bands.
+
+    Design choice (see the task brief for issue #126, task 4): this function
+    annotates the TIDY metric_id/group/value view of a report, not the wide
+    per-Kreis tables ``run()`` writes to CSV (``commute_mean_vs_p13.csv``,
+    ``license_vs_p17_1.csv``, ``employment_vs_p9.csv``, ...). Those wide
+    tables each use their own per-metric column names (``mean_synthetic_km``,
+    ``delta_pp``, ``delta_km``, ...), so mapping a band onto each one directly
+    would require a bespoke melt/merge/unmelt per table shape -- duplicating
+    the join ``noise_bands.merge_bands_into_report`` already implements once.
+    Instead, the caller (``_apply_noise_bands`` below) flattens the report
+    into the SAME tidy metric_id/group convention ``noise_bands.
+    _flatten_mid_report`` already defines for the Monte-Carlo sweep, and
+    passes only that single tidy table here -- ``merge_bands_into_report``
+    stays the ONE place the metric/group join happens.
+
+    Any table in ``tables`` that does not carry all of ``metric_col``,
+    ``group_col`` and ``value_col`` is not expressible in that convention
+    (e.g. a raw pass-through frame) and is returned UNCHANGED; no attempt is
+    made to guess a mapping for it, so callers can safely pass a mix of
+    banded and non-banded tables through one call.
+
+    Parameters
+    ----------
+    tables:
+        Mapping of table name -> DataFrame.
+    bands:
+        A noise-band frame as validated by ``_load_noise_bands`` (columns
+        ``metric_id``, ``group``, ``mean``, ``q05``, ``q95``, ``n_draws``,
+        plus provenance columns).
+
+    Returns
+    -------
+    A NEW dict with the same keys as ``tables``. Tables expressible in the
+    tidy convention carry the added ``band_q05``, ``band_q95``,
+    ``within_noise_band`` columns (via ``noise_bands.merge_bands_into_report``);
+    every other table is passed through as the SAME object, unmodified.
+    """
+    required_columns = {metric_col, group_col, value_col}
+    out: dict[str, pd.DataFrame] = {}
+    for name, table in tables.items():
+        if required_columns.issubset(table.columns):
+            out[name] = noise_bands.merge_bands_into_report(
+                table, bands,
+                metric_col=metric_col, group_col=group_col, value_col=value_col,
+            )
+        else:
+            out[name] = table
+    return out
+
+
+def _load_noise_bands(path: Path) -> pd.DataFrame:
+    """Load and validate a noise-band CSV (as written by ``scripts/run_noise_bands.py``).
+
+    Fails fast, listing every missing column, rather than letting a malformed
+    file silently produce all-NaN band columns downstream (see CLAUDE.md
+    "Fallback transparency" -- a missing column here must never look like "no
+    matching band" further down the pipeline).
+    """
+    # "group" carries ars5 Kreis codes with a leading zero (e.g. "03101") and
+    # "<regiostar7>_<level>" strings. dtype=str is passed at READ time (not
+    # via a later .astype(str)) because pandas' own int64 inference during
+    # pd.read_csv already strips the leading zero irreversibly for a
+    # purely-numeric "group" column -- a post-hoc cast would just re-stringify
+    # the already-wrong "3101". A silently mismatched group would otherwise
+    # show up only as an unexplained 100 % "no matching band" rate downstream.
+    bands = pd.read_csv(path, dtype={"group": str})
+    missing = [c for c in NOISE_BAND_REQUIRED_COLUMNS if c not in bands.columns]
+    if missing:
+        raise ValueError(
+            f"[mid_validation] --noise-bands file {path} is missing required "
+            f"column(s) {missing}; expected the schema written by "
+            f"scripts/run_noise_bands.py: {', '.join(NOISE_BAND_REQUIRED_COLUMNS)}."
+        )
+    return bands
+
+
+def _print_noise_band_note(bands: pd.DataFrame) -> None:
+    """Print the mandatory honest-reporting caveat for noise-band annotation.
+
+    ``scripts/run_noise_bands.py`` stamps the same ``sampling_rate`` /
+    ``pipeline_commit`` / ``created_utc`` on every row of one band file, so
+    the first row's values are representative of the whole file.
+    """
+    sampling_rate = bands["sampling_rate"].iloc[0]
+    n_draws = bands["n_draws"].iloc[0]
+    pipeline_commit = bands["pipeline_commit"].iloc[0]
+    print(
+        f"Noise bands measured at sampling_rate={sampling_rate} (N={n_draws}, "
+        f"commit {pipeline_commit}): a deviation INSIDE the band is "
+        "indistinguishable from sampling noise at that rate; outside is a "
+        "triage signal, not a significance test. Bands measured at a low "
+        "sampling rate are a conservative upper bound of the noise at "
+        "higher rates."
+    )
+
+
+def _apply_noise_bands(
+    report: dict[str, Any], noise_bands_path: Path | None, analysis_out: Path
+) -> dict[str, Any]:
+    """Optionally annotate ``report`` with pre-measured Monte-Carlo noise bands.
+
+    When ``noise_bands_path`` is ``None`` (the default -- no ``--noise-bands``
+    CLI flag): returns ``report`` UNCHANGED, as the SAME object. No file is
+    written and nothing is printed, so ``run()``'s output stays byte-identical
+    to a run without this feature.
+
+    When a path is given: loads and validates the band CSV (see
+    ``_load_noise_bands``), flattens ``report`` into the tidy metric_id/group
+    convention shared with ``noise_bands._flatten_mid_report`` -- the same
+    flattening the Monte-Carlo sweep (``scripts/run_noise_bands.py`` via
+    ``noise_bands.harvest_draw_metrics``) uses to harvest metrics from each
+    draw, so a band file produced by that sweep actually joins onto this
+    report -- annotates it via ``annotate_with_bands``, writes it to
+    ``<analysis_out>/noise_band_annotated_metrics.csv``, adds it to the
+    returned report dict under ``"noise_band_annotated_metrics"``, and PRINTS
+    the honest-reporting note (see ``_print_noise_band_note``).
+    """
+    if noise_bands_path is None:
+        return report
+    bands = _load_noise_bands(noise_bands_path)
+    # draw_seed=0 is a placeholder: this ``report`` is one finished run, not a
+    # Monte-Carlo draw, but _flatten_mid_report's shared REQUIRED_DRAW_COLUMNS
+    # schema always carries a draw_seed column; it is dropped again below
+    # because it carries no meaning here.
+    flattened = noise_bands._flatten_mid_report(report, draw_seed=0).drop(columns=["draw_seed"])
+    annotated = annotate_with_bands({"mid_metrics": flattened}, bands)
+    annotated_metrics = annotated["mid_metrics"]
+    annotated_metrics.to_csv(analysis_out / "noise_band_annotated_metrics.csv", index=False)
+    _print_noise_band_note(bands)
+    out_report = dict(report)
+    # merge_bands_into_report leaves within_noise_band as pandas' nullable
+    # "boolean" pd.NA for any report metric/group absent from the band file
+    # (a real case: a band sweep never has to cover every metric this report
+    # can produce). json.dumps cannot serialise pd.NA (TypeError), so it is
+    # converted to plain None here -- report.json must stay writable even
+    # when the band file only partially covers this report's metrics.
+    records = annotated_metrics.copy()
+    records["within_noise_band"] = records["within_noise_band"].apply(
+        lambda v: None if pd.isna(v) else bool(v)
+    )
+    out_report["noise_band_annotated_metrics"] = records.to_dict(orient="records")
+    return out_report
 
 
 # ---------------------------------------------------------------------------
@@ -1017,6 +1241,12 @@ def run(args: _Args) -> dict[str, Any]:
             if not mode_commute_cmp.empty else []
         ),
     }
+
+    # --- Optional Monte-Carlo noise-band annotation (issue #126, task 4). ---
+    # No-op (returns `report` unchanged) when --noise-bands was not given, so
+    # report.json / summary.md stay byte-identical to a run without this flag.
+    report = _apply_noise_bands(report, args.noise_bands, out)
+
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # --- summary.md ---

@@ -1,7 +1,7 @@
 # TESTING
 
-> **Staleness note (2026-06-26):** reflects the 2026-06-08 state. Now 259 `test_*`
-> files. Local caveat: the canonical pytest run is on the **server / `eqasim` conda
+> **Refreshed 2026-07-18.** ~344 `test_*.py` files on the current tree (count is
+> branch-dependent). Local caveat: the canonical pytest run is on the **server / `eqasim` conda
 > env** — system Python 3.13 shadows the repo-local `matsim` namespace package, so
 > synpp-layer tests fail locally but pass on the server (memory
 > `reference-local-test-env-matsim-shadowing.md`). New test suites cover calibration
@@ -31,7 +31,7 @@ Test setup for `eqasim-bs`. Verified from the `tests/` listing, `environment.yml
 
 ## Layout
 
-`tests/` holds 25 top-level test modules plus `tests/braunschweig/` (`test_stages.py`),
+`tests/` holds ~344 top-level `test_*.py` modules plus `tests/braunschweig/` (`test_stages.py`),
 `tests/baselines/`, `tests/testdata.py`, and `tests/__init__.py`. Tests group by
 feature/subsystem:
 

@@ -79,6 +79,24 @@ def assign_kreise_to_gates_with_volume(kreise: gpd.GeoDataFrame, gates: gpd.GeoD
                                distance_col="dist_m")
     joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_")])
     out = joined.merge(volume, on="ars5", how="left")
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): a volume row
+    # whose ars5 has no Kreis geometry is silently DROPPED by this left merge;
+    # a Kreis without a volume row is zero-filled below. Both must be visible,
+    # or a key-format drift would just zero out the cordon demand.
+    lost = volume[~volume["ars5"].isin(set(joined["ars5"]))]
+    if len(lost):
+        lost_total = int(lost[value_cols].sum().sum())
+        print(
+            f"[cordon.gate_assignment] WARNING: {len(lost)} volume row(s) "
+            f"({lost_total:,} commuters) have no Kreis geometry and were "
+            f"DROPPED from the gate assignment: {sorted(lost['ars5'].astype(str))}"
+        )
+    zero_filled = out.loc[out[value_cols].isna().all(axis=1), "ars5"]
+    if len(zero_filled):
+        print(
+            f"[cordon.gate_assignment] {len(zero_filled)} Kreis(e) with geometry "
+            f"but no volume row -> filled 0: {sorted(zero_filled.astype(str))}"
+        )
     for col in value_cols:
         out[col] = out[col].fillna(0).astype(int)
     out["distance_km"] = out["dist_m"] / 1000.0
@@ -144,6 +162,17 @@ def population_gravity_gate_assignment(gemeinden: gpd.GeoDataFrame, gates: gpd.G
     factor = factor.groupby("ars5", as_index=True).sum()
     long = (factor.reset_index()
             .melt(id_vars="ars5", var_name="gate_id", value_name="factor"))
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): a kreis_volume
+    # row whose ars5 has no Gemeinde in ``gemeinden`` gets no factor row, so its
+    # entire commuter volume silently vanishes from the assignment.
+    dropped = kreis_volume[~kreis_volume["ars5"].isin(set(factor.index))]
+    if len(dropped):
+        dropped_total = int(dropped[value_cols].sum().sum())
+        print(
+            f"[cordon.gate_assignment] WARNING: {len(dropped)} kreis_volume "
+            f"row(s) ({dropped_total:,} commuters) have no Gemeinde in the "
+            f"gemeinden frame -> volume DROPPED: {sorted(dropped['ars5'].astype(str))}"
+        )
     long = long.merge(kreis_volume, on="ars5", how="left")
     for col in value_cols:
         long[col] = (long[col].fillna(0.0) * long["factor"]).round().astype(int)

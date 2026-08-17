@@ -55,6 +55,20 @@ def enrollment_vs_capacity(assignments, facilities, sampling_rate):
     counts = (assignments.groupby("location_id").size()
               .rename("sampled").reset_index()
               .rename(columns={"location_id": "school_id"}))
+    # Join-coverage transparency (CLAUDE.md no-silent-fallback): assignments
+    # whose location_id has no facility row (different id scheme: universities
+    # "uni_*", Kitas) silently vanish from the per-school table -- count them
+    # so a wholesale key mismatch cannot masquerade as "no enrollment".
+    unmatched = counts[~counts["school_id"].isin(set(facilities["school_id"]))]
+    if len(unmatched):
+        n_pupils = int(unmatched["sampled"].sum())
+        LOGGER.info(
+            "enrollment_vs_capacity: %d assigned location id(s) (%d sampled "
+            "pupils) have no facility row and are excluded from the per-school "
+            "table (e.g. %s). A dominant share here means a school-id key "
+            "mismatch.", len(unmatched), n_pupils,
+            sorted(unmatched["school_id"].astype(str))[:5],
+        )
     out = facilities.merge(counts, on="school_id", how="left")
     out["sampled"] = out["sampled"].fillna(0.0)
     out["assigned_pupils"] = out["sampled"] / float(sampling_rate)

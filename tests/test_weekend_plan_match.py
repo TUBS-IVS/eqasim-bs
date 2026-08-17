@@ -399,6 +399,43 @@ def test_match_person_draws_proportional_to_p_gew():
     assert counts[50] > counts[60] * 3  # heavy person dominates
 
 
+def test_person_keys_employed_matches_canonical_employed_taet():
+    """_person_keys must classify 'employed' using the canonical EMPLOYED_TAET set
+    from attributes.py (issue #162), not the ad-hoc P_TAET.between(1, 6) range.
+    P_TAET=8 (Azubi/Ausbildung) IS employed per EMPLOYED_TAET; between(1,6) wrongly
+    excludes it. P_TAET=5 (Elternzeit) is NOT employed; between(1,6) wrongly includes it.
+    """
+    persons = pd.DataFrame({
+        "HP_ALTER": [30, 30],
+        "HP_SEX": [1, 1],
+        "P_FSCHEIN": [1, 1],
+        "P_FKARTE": [1, 1],
+        "P_TAET": [8, 5],  # Azubi (employed), Elternzeit (not employed)
+    })
+    keys = wpm._person_keys(persons)
+    assert bool(keys.loc[0, "employed"]) is True, "P_TAET=8 (Azubi) must be employed"
+    assert bool(keys.loc[1, "employed"]) is False, "P_TAET=5 (Elternzeit) must not be employed"
+
+
+def test_match_person_employed_key_uses_canonical_set():
+    """An Azubi (P_TAET=8) target must match an Azubi weekday donor at level 0 on
+    the 'employed' key, even though a Rentner (P_TAET=11, not employed) donor with
+    otherwise-identical keys is also present. The stale between(1, 6) rule treated
+    P_TAET=8 as NOT employed, which would incorrectly prefer the Rentner donor.
+    """
+    weekday = pd.DataFrame({
+        "H_ID": [50, 51], "P_ID": [1, 1],
+        "HP_ALTER": [20, 20], "HP_SEX": [1, 1],
+        "P_FSCHEIN": [1, 1], "P_TAET": [8, 11], "P_FKARTE": [1, 1],
+        "P_GEW": [1.0, 1.0],
+    })
+    target = pd.Series({
+        "HP_ALTER": 20, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 8, "P_FKARTE": 1,
+    })
+    h, p, level = wpm.match_person(target, weekday, rng=np.random.RandomState(0))
+    assert (h, p) == (50, 1) and level == 0
+
+
 def test_fallback_pool_excludes_weekend_reporting_persons():
     """The weekday_pool used for match_person must contain no weekend-reporting
     persons. Even if a person belongs to a household classified as 'weekday'

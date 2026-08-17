@@ -473,3 +473,59 @@ class TestBuildBucket:
             cfg=self._cfg(parent_child_weight=0.0))
         m = self._members(ages, hoh, 0)
         assert (m >= 18).sum() == 1 and (m < 18).sum() == 2
+
+
+class TestRelaxationObservability:
+    """The composition relaxation is a fallback and must be countable.
+
+    Without an accumulator the per-bucket diagnostic is printed (legacy
+    behaviour, relied on by direct calls); with one, the counts accumulate and
+    the per-bucket line is suppressed so the caller can report a single rate.
+    """
+
+    def _cfg(self):
+        return dict(min_adult_age=18, couple_age_weight=1.0,
+                    parent_child_weight=1.0, parent_child_gap_years=31)
+
+    # Two 'couple' shells (4 adult slots) but only one adult in the pool, so the
+    # adult demand cannot be met and must be relaxed.
+    _AGES = np.array([40, 8, 6, 4])
+    _TYPES = ["couple", "couple"]
+    _SIZES = [2, 2]
+
+    def test_accumulator_counts_relaxed_slots_and_buckets(self):
+        stats: dict = {}
+        hc.build_bucket_households(self._AGES, self._TYPES, self._SIZES,
+                                   cfg=self._cfg(), relaxation_stats=stats)
+        assert stats["relaxed_slots"] > 0
+        assert stats["persons"] == len(self._AGES)
+        assert stats["buckets"] == 1
+        assert stats["buckets_relaxed"] == 1
+
+    def test_accumulator_sums_across_buckets(self):
+        stats: dict = {}
+        for _ in range(3):
+            hc.build_bucket_households(self._AGES, self._TYPES, self._SIZES,
+                                       cfg=self._cfg(), relaxation_stats=stats)
+        assert stats["buckets"] == 3
+        assert stats["persons"] == 3 * len(self._AGES)
+
+    def test_a_feasible_bucket_counts_as_primary_not_relaxed(self):
+        # Guard against the rate being trivially 100%: a bucket whose pool meets
+        # the requested composition must record zero relaxed slots.
+        stats: dict = {}
+        hc.build_bucket_households(np.array([40, 38]), ["couple"], [2],
+                                   cfg=self._cfg(), relaxation_stats=stats)
+        assert stats["relaxed_slots"] == 0
+        assert stats["buckets"] == 1
+        assert stats.get("buckets_relaxed", 0) == 0
+
+    def test_accumulator_suppresses_the_per_bucket_line(self, capsys):
+        hc.build_bucket_households(self._AGES, self._TYPES, self._SIZES,
+                                   cfg=self._cfg(), relaxation_stats={})
+        assert "relaxed" not in capsys.readouterr().out
+
+    def test_without_accumulator_the_per_bucket_line_is_kept(self, capsys):
+        hc.build_bucket_households(self._AGES, self._TYPES, self._SIZES,
+                                   cfg=self._cfg())
+        assert "relaxed" in capsys.readouterr().out

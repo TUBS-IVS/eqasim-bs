@@ -1,0 +1,59 @@
+feature: sex_aware_couples
+title: Sex-aware couples (~1.1%)
+area: population
+description: Pairs couples sex-aware (~1.1% same-sex, Destatis MZ 2025) during IPF household composition
+  (ADR-0006).
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: supported
+production:
+  enabled: false
+  flags:
+  - braunschweig.chunking.sex_aware_couples
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0006
+detail_doc: docs/features/household-synthesis.md
+code_paths:
+- braunschweig/ipf/household_composition.py
+evidence:
+  tests:
+  - tests/test_household_composition.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_household_composition.py
+    note: |
+      test_sexes_none_is_byte_identical_to_legacy_pairing confirms the no-sex-data path (the flag only takes effect when sex is supplied) matches legacy pairing byte-for-byte. ADR-0006 itself also frames "OFF = legacy sex-blind, byte-identical."
+  fallback_rate:
+    instrumented: false
+    note: No fallback-rate log found; the opposite-first allocation is a pure function.
+  reference:
+    kind: assumption
+    note: |
+      DEFAULT_SAME_SEX_COUPLE_SHARE=0.011 is a hardcoded constant, provenance stated only in prose (docs/features/household-synthesis.md cites Destatis Mikrozensus 2025); no CSV/table is committed under eqasim-data/.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Issue #251's config discrepancy is RESOLVED: braunschweig.chunking.sex_aware_couples is
+    now true in all four committed simple_ipf_open run configs, together with its
+    prerequisite braunschweig.ipf.age_aware_chunking (sex-aware pairing runs inside the
+    age-aware composition pass). The verification run derived the couple attribute for
+    104,279/252,954 persons (41.2%) from hh_type, so the pairing had a real population to
+    act on. What remains pending is scientific: the ~1.1% same-sex share is the hardcoded
+    DEFAULT_SAME_SEX_COUPLE_SHARE with prose-only provenance (see evidence.reference), and
+    no recorded run has compared the realised share to an observed reference.
+  source: ADR-0006
+notes: 'Issue #251 / ADR-0078: enabled in the four simple_ipf_open run configs and pinned
+  by tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'

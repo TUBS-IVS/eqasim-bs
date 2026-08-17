@@ -1,0 +1,49 @@
+feature: tier_ab_caching
+title: Tier-A/B caching (32 stages + popsim)
+area: infrastructure
+description: Fixed shared popsim work_dir plus the verified Tier-A/B sampling-independent stage
+  set, so PopulationSim batches and 32 upstream stages are reused across sampling rates (ADR-0037).
+stages: []
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.work_dir
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0037
+detail_doc: docs/features/cache-share.md
+code_paths:
+- braunschweig/popsim/stage/
+evidence:
+  tests:
+  - tests/test_allfeat_caching_config.py
+  - tests/test_popsim_work_dir_guard.py
+  - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: A fixed shared work_dir changes cache reuse, not the stage outputs themselves.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No primary-vs-fallback rate log exists for the caching mechanism itself (synpp's own hash-validation handles hit/miss silently). The closest instrumented log is the stale-batch guard (braunschweig/popsim/stage/), which logs how many stale batch folders were purged when the popsim config changed -- a safety guard, not a fallback rate.
+  reference:
+    kind: none
+    note: Infrastructure feature (stage caching); no external reference applies.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No KPI applies to a caching mechanism.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0037 records this feature's status as "config wiring partial" (backlog [1.3]); the base config now enumerates a populated cache_share_stages list, which may mean the backlog item is stale -- worth a fresh check before this row is marked fully "on" without caveats.
+  source: ADR-0037

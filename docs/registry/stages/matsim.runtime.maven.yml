@@ -1,0 +1,15 @@
+stage: matsim.runtime.maven
+title: Maven runtime probe
+layer: infrastructure
+description: Upstream Maven detection for the Java build.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- matsim/runtime/maven.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true

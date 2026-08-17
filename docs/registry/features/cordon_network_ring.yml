@@ -1,0 +1,59 @@
+feature: cordon_network_ring
+title: Cordon network ring + cut
+area: cordon
+description: 'Extends the network by a buffered ring outside the ZGB and cuts demand at the cordon
+  so boundary-crossing traffic has real infrastructure to run on (ADR-0028, approach B: targeted
+  crossing agents with full supply).'
+stages:
+- braunschweig.data.cordon_network
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_enabled
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0028
+detail_doc: null
+code_paths:
+- braunschweig/data/spatial/cordon.py
+- braunschweig/data/cordon/network_clip.py
+- braunschweig/data/cordon/extent.py
+- braunschweig/matsim/simulation/prepare.py
+evidence:
+  tests:
+  - tests/test_cordon_polygon.py
+  - tests/test_cordon_network_clip.py
+  - tests/test_cordon_extent.py
+  - tests/test_cordon_clip_signature.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_cordon_network_clip.py
+    note: |
+      test_off_returns_dissolved_union confirms that with cordon_enabled=False the network build is byte-identical to the legacy (pre-cordon) clip.
+  fallback_rate:
+    instrumented: false
+    note: |
+      network_clip.py, extent.py and data/spatial/cordon.py are pure geometry functions with no logging at all; no fallback/primary rate applies.
+  reference:
+    kind: none
+    note: |
+      The VG250 municipality polygon (eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg...) is not committed to this repository and is absent from disk (gitignored, local-only).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI applies to network geometry preparation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0028 documents the design (Approach B: targeted cordon-crossing agents with full supply extension); no owner verdict on realised network-cut correctness has been recorded. No docs/features/*.md exists for the cordon subsystem as a whole -- worth adding one.
+  source: ADR-0028

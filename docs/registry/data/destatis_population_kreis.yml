@@ -1,0 +1,34 @@
+dataset: destatis_population_kreis
+title: DESTATIS 12411-0018 population by Kreis, sex, age
+inventory_id: B1
+provider: Statistisches Bundesamt (GENESIS)
+vintage: 2024-12-31 (annual)
+geography: Germany, Kreis
+crs: null
+roles:
+- control
+used_by:
+- braunschweig.data.census.population
+- braunschweig.synthesis.student_incommuters
+acquisition:
+  method: manual_download
+  source: https://www-genesis.destatis.de/genesis/online (code 12411, flat CSV)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/12411-0018_de.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B1
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Official LEVEL of the population margins in the legacy IPF; the popsim workflows take their
+  structure from the cleancensus grid instead. Also feeds student-in-commuter origins and validation
+  scripts.

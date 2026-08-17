@@ -64,15 +64,33 @@ MID_BASELINE = {
     #   leisure  ← Freizeit          (29 %)
     #   escort   ← Begleitung        ( 8 %)
     # Summe ohne "keine Angabe" (1 %), normiert auf 100 %.
-    # Hinweis: Der eqasim-Pipeline-Output kennt keine eigene "escort"-
-    # Kategorie (Begleitwege werden auf "other" abgebildet). Damit der
-    # Vergleich apples-to-apples bleibt, fassen wir Erledigung +
-    # Begleitung MiD-seitig ebenfalls zu "other" zusammen.
+    # Hinweis: Mit escort_purpose (issue #201) kennt der Pipeline-Output eine
+    # eigene "escort"-Kategorie; Begleitung wird daher NICHT mehr in "other"
+    # gefaltet. Laeuft der Report auf einer flag-OFF-Population (keine synth
+    # "escort"-Wege), faltet purpose_mix_w1_baseline() die 8/99 Begleitung
+    # wieder in "other" zurueck (-> 19/99), damit der Vergleich apples-to-apples
+    # bleibt; es gibt dann keine eigene "escort"-Zeile im Report.
+    #
+    # Note (issue #256, escort_passive_education): a population can also be
+    # built with an ACTIVE-only escort purpose (the escorted person's own
+    # passive leg is counted as "education" instead). The mixed Begleitung
+    # share below is not apples-to-apples with such a population, so a
+    # second, active-adjusted baseline is derived ON DEMAND -- never stored
+    # as a static key here, config.py stays static and import-time-CSV-free
+    # -- by metrics.purpose_mix_w1_active_baseline(present_purposes) from
+    # this dict plus the pinned active share loaded by
+    # references.escort_active_share() (eqasim-data/data/braunschweig/mid/
+    # mid2023_escort_w_zweck_split.csv). Like purpose_mix_w1_baseline(), it
+    # is presence-guarded: on an escort-absent population it degrades to
+    # the same folded 19/99 baseline instead of a spurious active-adjusted
+    # one. See metrics.purpose_mix_no_home_active() and validation-report
+    # section 5.3b, which renders both references side by side.
     "purpose_mix_w1": {
         "work":      (13 + 16) / 99,        # 0.293  (Arbeit + Dienst)
         "education":  6 / 99,               # 0.061  (Ausbildung)
         "shop":      16 / 99,               # 0.162  (Einkauf)
-        "other":     (11 + 8) / 99,         # 0.192  (Erledigung + Begleitung)
+        "other":     11 / 99,               # 0.111  (Erledigung)
+        "escort":     8 / 99,               # 0.081  (Begleitung)
         "leisure":   29 / 99,               # 0.293  (Freizeit)
     },
     # MiD 2023 P36.1 (p195): Mobilität am Stichtag (Mobilitätsquote).

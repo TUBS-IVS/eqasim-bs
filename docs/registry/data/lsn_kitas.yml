@@ -1,0 +1,31 @@
+dataset: lsn_kitas
+title: LSN Kindertageseinrichtungen (staff and places, K2300112)
+inventory_id: G4
+provider: LSN
+vintage: null
+geography: null
+crs: null
+roles:
+- supply_input
+used_by:
+- braunschweig.data.schools.kita_facilities
+acquisition:
+  method: manual_download
+  source: https://www1.nls.niedersachsen.de/statistik/
+  script: scripts/extract_nds_kitas.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/nds_kitas_zgb.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: null

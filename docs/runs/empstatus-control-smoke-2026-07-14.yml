@@ -1,0 +1,33 @@
+id: empstatus-control-smoke-2026-07-14
+date: '2026-07-14'
+repository:
+  commit: 453cd59
+  branch: feature/srv-employment-status-control
+configuration:
+  base: config_smoke_bs_on/off.yml
+  overlays: []
+  notes: felix ~/wt-empctrl @ 453cd59 feature/srv-employment-status-control; region-restricted
+    + cache_share_recompute:[] (completed_donor restored); 8 batches parallel
+sampling:
+  rate: 1 Kreis (Braunschweig 03101), max_cells 750, 8 workers
+  scope: Kreis 03101
+pipeline:
+  targets: []
+classification:
+- smoke
+- calibration
+status:
+  execution: completed
+environment: server
+validation:
+- metric: in_ausbildung (14+) control rake
+  reference: SrV+MiD per-Kreis employment_status target (committed aggregate)
+  result: 2.98% (unraked kreis5) -> 2.09%, target 2.01%; 14+ universe confirmed
+features:
+  note: 'SrV+MiD per-Kreis employment_status CONTROL smoke (PR #173)'
+artifacts:
+- ephemeral (scratch removed)
+issues: []
+decisions:
+- ADR-0060
+source: 'RUNS.md row 2026-07-14; PR #173'

@@ -12,6 +12,8 @@ and bicycle availability need additional MiD columns and are a follow-on.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 
@@ -19,19 +21,16 @@ from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
 
-# MiD P_BKAT (Berufskategorie) -> eqasim/INSEE CS1 occupation class.
-# P_BKAT has 6 substantive categories; the CS1 detail is collapsed to this coarse
-# crosswalk (documented assumption: no finer occupation distinction is available in
-# the standard MiD respondent table). MiD codebook codes:
-#   1 Angestellte/Arbeiter (White+Blue collar workers, largest group) -> 6 Worker
-#   2 Beamte (Civil servants)                                         -> 5 Employee
-#   3 Selbststaendige/Freiberufler (Self-employed, liberal professions)-> 3 Science
-#   4 mithelfende Familienangehoerige (Contributing family member)    -> 4 Intermediate
-#   5 in Ausbildung (Trainee/apprenticeship, employed)                -> 4 Intermediate
-#   6 geringfuegig Beschaeftigte (Marginal employment)               -> 6 Worker
-#   7 Nicht berufstaetig (not employed)   -- NOT in map -> fallback
-#  95 Nicht zuzuordnen (unclassifiable)   -- NOT in map -> fallback
-SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
+logger = logging.getLogger(__name__)
+
+# NOTE (issue #167): there is NO occupation ("Berufskategorie") variable in the
+# standard MiD respondent table. P_BKAT is "Umfang der Erwerbstaetigkeit"
+# (employment EXTENT; see EMPLOYMENT_STATUS_BY_P_BKAT below), NOT an occupation
+# code. The former SPC_BY_P_BKAT crosswalk mis-read P_BKAT as an occupation and is
+# removed; socioprofessional_class is derived from broad activity status via
+# braunschweig.ipf.attributed.derive_socioprofessional_class (see
+# map_socioprofessional_class), which is the eqasim/IPF path and documents that no
+# occupation data exists upstream of the HTS in this fork.
 
 # MiD P_TAET (Taetigkeit der Person): MiD official `erwerb` definition (Erwerbstätigkeit
 # ja/nein per MiD methodology). Source: MiD 2023 Codeplan B1 (Personen sheet, P_TAET):
@@ -51,6 +50,28 @@ SPC_BY_P_BKAT = {1: 6, 2: 5, 3: 3, 4: 4, 5: 4, 6: 6}
 # MiD official `erwerb` = Erwerbstätigkeit ja/nein (inkl. Auszubildende). P_TAET 1,2,3,4,6,8.
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
+
+# MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen col
+# 121; VERIFIED against the raw MiD2023_Personen.csv cross-tab with `erwerb`:
+# codes 1-6 all erwerb=1, code 7 erwerb=0). P9's seven reference columns are the
+# P_BKAT value labels 1..7 verbatim, so this is an exact apples-to-apples match
+# with NO P_TAET overlay needed -- code 6 IS in Ausbildung:
+#   1 Vollzeit erwerbstaetig                      -> vollzeit
+#   2 Teilzeit (18-<35 h/week)                    -> teilzeit
+#   3 geringfuegig (11-<18 h/week)                -> geringfuegig
+#   4 sonstiger Erwerbsumfang                     -> sonstiges
+#   5 erwerbstaetig ohne Angabe zum Umfang        -> erwerbstaetig_unspec
+#   6 in Ausbildung                               -> in_ausbildung
+#   7 nicht erwerbstaetig                         -> nicht_erwerbstaetig
+#   9 keine Angabe (item non-response)            -> imputed (missing policy)
+EMPLOYMENT_STATUS_BY_P_BKAT = {
+    1: "vollzeit", 2: "teilzeit", 3: "geringfuegig", 4: "sonstiges",
+    5: "erwerbstaetig_unspec", 6: "in_ausbildung", 7: "nicht_erwerbstaetig",
+}
+# Derived from EMPLOYMENT_STATUS_BY_P_BKAT (not re-listed literally) so the two
+# stay in sync by construction; dict insertion order (Python 3.7+) preserves the
+# codebook code order 1..7 above.
+EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
@@ -130,8 +151,35 @@ FKARTE_TO_CATEGORY: dict[int, str] = {
 PT_TICKET_NEVER = "fahre_nie"
 
 
+def imputation_group_cols(
+    frame: pd.DataFrame, base_col: str, *, rs7_conditioning: bool = True,
+    rs7_col: str = "RegioStaR7",
+) -> tuple:
+    """Conditioning-group columns for item-nonresponse imputation (issue #131).
+
+    Returns ``(base_col,)`` as before, extended by ``RegioStaR7`` when the frame
+    carries it and ``rs7_conditioning`` is on (default, project rule): licence /
+    PT subscription / cars / income of a rural household are then imputed from a
+    pool of the SAME urban-rural region type instead of a national pool including
+    big-city respondents. On donor household frames RS7 is the survey home
+    region; on expanded synthetic persons it is the PLACED home cell's RS7
+    (``stage.join_cell_attributes``). RS7 is only appended IN ADDITION to the
+    base column -- frames without the base column keep the old empty grouping
+    (minimal deviation from the previous per-mapper guards). Thin (base, RS7)
+    cells fall back to the global pool inside ``missing.resolve``, which counts
+    and logs that rate (``MissingReport.n_group_fallback``).
+    """
+    if base_col not in frame.columns:
+        return ()
+    cols = [base_col]
+    if rs7_conditioning and rs7_col in frame.columns:
+        cols.append(rs7_col)
+    return tuple(cols)
+
+
 def map_employed(
-    persons: pd.DataFrame, *, taet_col: str = "P_TAET", rng=None
+    persons: pd.DataFrame, *, taet_col: str = "P_TAET", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``employed`` from MiD ``P_TAET`` via the uniform missing policy.
 
@@ -160,12 +208,58 @@ def map_employed(
         source_col=taet_col,
         value_map=value_map,
         structural={},
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
     out["employed"], _ = missing.resolve(out, spec, rng=rng)
     out["employed"] = out["employed"].astype(bool)
+    return out
+
+
+def map_employment_status(
+    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT", taet_col: str = "P_TAET",
+    rng=None, rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add a categorical ``employment_status`` (P9 taxonomy) from MiD ``P_BKAT``.
+
+    P_BKAT (Umfang der Erwerbstaetigkeit) maps 1:1 onto the P9 columns via
+    ``EMPLOYMENT_STATUS_BY_P_BKAT`` -- code 6 IS ``in_ausbildung`` directly, no
+    overlay from another column is needed (verified against the MiD 2023
+    Codeplan B1 and the raw MiD2023_Personen.csv cross-tab with `erwerb`).
+    Missing / code-9 P_BKAT (keine Angabe) is imputed from the valid pool within
+    the same age group via the uniform missing policy (rate logged; no silent
+    fallback). Additive: the boolean ``employed`` is untouched. This is now the
+    seed column for the per-Kreis ``employment_status`` popsim control (issue
+    #172), still also written for analysis/validation.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = dict(EMPLOYMENT_STATUS_BY_P_BKAT)
+    spec = missing.AttributeSpec(
+        name="employment_status",
+        source_col=bkat_col,
+        value_map=value_map,
+        structural={},
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default="nicht_erwerbstaetig",
+    )
+    out = persons.copy()
+    # taet_col is kept only for API symmetry with map_employed; P_BKAT code 6 IS
+    # in_ausbildung directly, so this function does not read P_TAET at all.
+    out["employment_status"], _ = missing.resolve(out, spec, rng=rng)
+    out["employment_status"] = out["employment_status"].astype(str)
+
+    # Observability (no silent fallback): the boolean `employed` (from P_TAET)
+    # and `employment_status` (from P_BKAT) are DISTINCT MiD variables; log how
+    # often they agree so a low rate surfaces as a data-quality signal.
+    if "employed" in out.columns:
+        employed_side = out["employment_status"].isin(
+            [c for c in EMPLOYMENT_STATUS_CATEGORIES if c != "nicht_erwerbstaetig"])
+        agree = float((employed_side == out["employed"].astype(bool)).mean())
+        _log = logger.warning if agree < 0.9 else logger.info
+        _log("[attributes] employment_status vs employed agreement: %.1f%% "
+             "(distinct MiD vars P_BKAT vs P_TAET)", 100.0 * agree)
+
     return out
 
 
@@ -214,7 +308,8 @@ def map_studies(
 
 
 def map_has_license(
-    persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None
+    persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
 
@@ -240,7 +335,7 @@ def map_has_license(
         value_map={1: True, 2: False},
         structural={403: False},          # under legal age: deterministic False
         impute_codes=(202, 404),          # interview-mode / coverage on adults: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
@@ -250,7 +345,8 @@ def map_has_license(
 
 
 def map_economic_status(
-    households: pd.DataFrame, *, status_col: str = "oek_status", rng=None
+    households: pd.DataFrame, *, status_col: str = "oek_status", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``economic_status`` (very_low..very_high) from MiD ``oek_status`` via the uniform missing policy.
 
@@ -270,7 +366,7 @@ def map_economic_status(
         source_col=status_col,
         value_map=ECONOMIC_STATUS_BY_OEK_STATUS,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -279,7 +375,8 @@ def map_economic_status(
 
 
 def map_household_income(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add the categorical ``household_income`` class from the MiD income group via the uniform missing policy.
 
@@ -297,7 +394,7 @@ def map_household_income(
         source_col=group_col,
         value_map=INCOME_CLASS_BY_GROUP,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -306,7 +403,8 @@ def map_household_income(
 
 
 def map_household_income_eur(
-    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None
+    households: pd.DataFrame, *, group_col: str = "hheink_gr1", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``household_income_eur`` from the MiD ``hheink_gr1`` group midpoints via the uniform missing policy.
 
@@ -325,7 +423,7 @@ def map_household_income_eur(
         source_col=group_col,
         value_map=INCOME_GROUP_MIDPOINT_EUR,
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=None,
     )
     out = households.copy()
@@ -336,7 +434,8 @@ def map_household_income_eur(
 
 
 def map_number_of_cars(
-    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO", rng=None
+    households: pd.DataFrame, *, cars_col: str = "H_ANZAUTO", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add ``number_of_cars`` from MiD ``H_ANZAUTO`` via the uniform missing policy.
 
@@ -356,7 +455,7 @@ def map_number_of_cars(
         source_col=cars_col,
         value_map={i: i for i in range(0, 11)},
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=0,
     )
     out = households.copy()
@@ -380,7 +479,8 @@ def derive_car_availability(n_cars: int, n_adults: int) -> str:
 
 
 def map_has_pt_subscription(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
@@ -417,7 +517,7 @@ def map_has_pt_subscription(
         value_map=value_map,
         structural={402: False},          # Kind unter 14: deterministic under-14 floor
         impute_codes=(202, 206),          # interview-mode / adult proxy coverage: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=False,
     )
     out = persons.copy()
@@ -427,7 +527,8 @@ def map_has_pt_subscription(
 
 
 def map_pt_subscription_type(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None
+    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add a categorical ``pt_subscription_type`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
@@ -464,7 +565,7 @@ def map_pt_subscription_type(
         value_map=FKARTE_TO_CATEGORY,
         structural={402: PT_TICKET_NEVER},   # Kind unter 14: deterministic under-14 floor
         impute_codes=(202, 206),             # interview-mode / adult proxy coverage: impute
-        group_cols=("alter_gr1",) if "alter_gr1" in persons.columns else (),
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
         default=PT_TICKET_NEVER,
     )
     out = persons.copy()
@@ -484,16 +585,31 @@ def map_pt_subscription_type(
 
 
 def map_number_of_bicycles(
-    households: pd.DataFrame, *, bikes_col: str = "H_ANZRAD", rng=None
+    households: pd.DataFrame, *, bikes_col: str = "anzpedrad", rng=None,
+    rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
-    """Add ``number_of_bicycles`` from MiD ``H_ANZRAD`` via the uniform missing policy.
+    """Add ``number_of_bicycles`` from the MiD combined bicycle column via the uniform missing policy.
 
-    MiD codebook: 0..10 valid bicycle counts. 99 (keine Angabe, item non-response) ->
-    imputed from the valid pool within the same household-size group (hhgr_gr) when
-    present, else from the global valid pool. Previously, 99 was silently mapped to 0
-    (``BIKES_MISSING_CODE``); now it is imputed to avoid a systematic bias toward
-    zero-bicycle households. ``BIKES_MISSING_CODE`` is retained as a module constant
-    for any downstream code that may still reference it.
+    CONSTRUCT (server-verified 2026-07-08 on the MiD B1 household microdata, 218,039
+    valid rows): the committed target construct is bicycles INCLUDING pedelecs/e-bikes
+    -- MiD codebook table H12.3 "Anzahl Fahrraeder/Pedelecs/E-Bikes im Haushalt", and the
+    matching SrV side (``E_ANZ_RAD_ALLE_6``, "alle Raeder", table
+    ``srv2023_bikes_incl_ebikes_by_kreis.csv``). The MiD household file provides this
+    combined count directly as ``anzpedrad`` (default ``bikes_col``), verified to equal
+    ``min(H_ANZRAD + H_ANZPED, 10)`` on ALL 218,039 valid rows (0 mismatches; the 99
+    missing code propagates unchanged). DELIBERATE CONSTRUCT CHANGE: the previous default
+    (``H_ANZRAD``, conventional bicycles EXCLUDING pedelecs) systematically understated
+    household bicycle ownership against the incl-pedelec target (~31 % of households own
+    >= 1 pedelec); this default now matches the popsim control, the written
+    ``number_of_bicycles`` attribute, and the H12.3 reference to ONE construct.
+
+    MiD codebook: 0..10 valid bicycle counts (``anzpedrad`` is top-coded at 10, same as
+    the source columns; irrelevant for the 4+ control clip). 99 (keine Angabe, item
+    non-response) -> imputed from the valid pool within the same household-size group
+    (hhgr_gr) when present, else from the global valid pool. Previously, 99 was silently
+    mapped to 0 (``BIKES_MISSING_CODE``); now it is imputed to avoid a systematic bias
+    toward zero-bicycle households. ``BIKES_MISSING_CODE`` is retained as a module
+    constant for any downstream code that may still reference it.
 
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
@@ -504,13 +620,190 @@ def map_number_of_bicycles(
         source_col=bikes_col,
         value_map={i: i for i in range(0, 11)},
         structural={},
-        group_cols=("hhgr_gr",) if "hhgr_gr" in households.columns else (),
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning),
         default=0,
     )
     out = households.copy()
     out["number_of_bicycles"], _ = missing.resolve(out, spec, rng=rng)
     out["number_of_bicycles"] = out["number_of_bicycles"].astype(int)
     return out
+
+
+def map_has_ebike(
+    households: pd.DataFrame, *, ebike_col: str = "H_ANZPED", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add a 0/1 ``has_ebike`` household flag from the MiD household e-bike column.
+
+    VERIFIED (2026-07-08, MiD B1 household microdata, 218,039 rows): the household
+    e-bike column is ``H_ANZPED`` (Anzahl Pedelecs; values 0..10, missing code 99, the
+    same code schema as ``H_ANZAUTO`` / ``H_ANZRAD``). Any value >= 1 means the
+    household owns at least one operational pedelec, which is treated as the
+    ``has_ebike`` control per the SrV target construct (``V_ANZ_ERAD``, household owns
+    >= 1 operational e-bike). Missing code 99 is imputed within ``hhgr_gr`` (else global
+    pool) before binarisation. Raises KeyError if ``ebike_col`` is absent (no silent
+    fallback).
+
+    Remaining ASSUMPTION (documented, not server-verifiable from the MiD codebook
+    alone): MiD "Pedelec" is treated as equivalent to SrV "E-Rad" for the purpose of
+    this control; the SrV construct may additionally include S-Pedelecs (higher-power
+    e-bikes classed as mofas), which MiD's Pedelec question may not capture. This is a
+    minor construct edge case and is not expected to materially bias the control.
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if ebike_col not in households.columns:
+        raise KeyError(
+            f"map_has_ebike: source column {ebike_col!r} absent from the household frame "
+            f"(has {list(households.columns)}); cannot seed the has_ebike control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name="_ebike_count", source_col=ebike_col,
+        value_map={i: i for i in range(0, 11)}, structural={},
+        group_cols=imputation_group_cols(households, "hhgr_gr", rs7_conditioning=rs7_conditioning), default=0)
+    out = households.copy()
+    counts, _ = missing.resolve(out, spec, rng=rng)
+    out["has_ebike"] = (counts.astype(int) >= 1).astype(int)
+    return out
+
+
+def map_trip_class(
+    persons: pd.DataFrame, *, trips_col: str = "anzwege1", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``trip_class`` (0..3) from MiD ``anzwege1`` via the uniform missing policy.
+
+    Class scheme (matches the SrV 2023 trip-class target, ``target2026_trip_class_by_kreis.csv``,
+    built by ``scripts/build_trip_class_target.py`` from ``E_ANZ_WEGE``): 0 trips -> class 0;
+    1-2 trips -> class 1; 3-4 trips -> class 2; 5+ trips -> class 3.
+
+    MiD codebook: ``anzwege1`` (Anzahl Wege am Stichtag) is valid over 0..50. The codes
+    803 (30,041 weekday persons, server-verified 2026-07-08 on MiD B1) and 804 (2,714)
+    mark persons whose trip module is not covered (no diary / rueckwirkende Wegeerhebung
+    only) -- item non-response, NOT zero trips. Diary non-response correlates with
+    mobility (persons who could not be surveyed on their trips are not a random subset
+    of the mobile/immobile population), so these codes must never be dropped or forced to
+    a class; they are declared in ``impute_codes`` and imputed from the valid pool within
+    the same age band (``alter_gr1``) when present, else the global valid pool.
+    ``default=1`` (the modal SrV class, 1-2 trips) is used only if the valid pool is empty.
+
+    Raises ``KeyError`` if ``trips_col`` is absent (no silent fallback to a guessed
+    column name).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if trips_col not in persons.columns:
+        raise KeyError(
+            f"map_trip_class: source column {trips_col!r} absent from the person frame "
+            f"(has {list(persons.columns)}); cannot seed the trip_class control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    value_map = {n: (0 if n == 0 else 1 if n <= 2 else 2 if n <= 4 else 3) for n in range(0, 51)}
+    spec = missing.AttributeSpec(
+        name="trip_class",
+        source_col=trips_col,
+        value_map=value_map,
+        structural={},
+        impute_codes=(803, 804),          # trip module not covered (no diary): impute
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default=1,
+    )
+    out = persons.copy()
+    out["trip_class"], _ = missing.resolve(out, spec, rng=rng)
+    out["trip_class"] = out["trip_class"].astype(int)
+    return out
+
+
+def map_participation(
+    persons: pd.DataFrame, name: str, *, source_col: str, rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``<name>`` (0/1) "participation" control from a per-person
+    purpose-trip flag via the uniform missing policy (mirrors ``map_trip_class``
+    precisely). Generic core behind ``map_work_participation`` / ``map_leisure_
+    participation`` / ``map_education_participation`` (feature #224 task 5) --
+    parametrized by ``name`` (the output column / ``missing.AttributeSpec`` name) rather
+    than duplicated per purpose.
+
+    ``source_col`` is expected to already carry the per-person purpose-trip flag {0, 1},
+    or one of the MiD 803/804 diary non-response codes (trip module not covered -- see
+    ``mid.compute_has_purpose_trip``, which derives this column from the person's Wege).
+    As with ``trip_class``, 803/804 are item non-response, NOT "no trip" -- diary
+    non-response correlates with mobility, so these codes must never be dropped or
+    forced to 0; they are declared in ``impute_codes`` and imputed from the valid {0, 1}
+    pool within the same age band (``alter_gr1``) when present, else the global valid
+    pool. ``default=0`` (no trip) is used only if the valid pool is empty.
+
+    Raises ``KeyError`` if ``source_col`` is absent (no silent fallback to a guessed
+    column name).
+
+    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
+    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    """
+    if source_col not in persons.columns:
+        raise KeyError(
+            f"map_participation: source column {source_col!r} absent from the person "
+            f"frame (has {list(persons.columns)}); cannot seed the {name} control.")
+    rng = rng if rng is not None else np.random.RandomState(0)
+    spec = missing.AttributeSpec(
+        name=name,
+        source_col=source_col,
+        value_map={0: 0, 1: 1},
+        structural={},
+        impute_codes=(803, 804),          # trip module not covered (no diary): impute
+        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
+        default=0,
+    )
+    out = persons.copy()
+    out[name], _ = missing.resolve(out, spec, rng=rng)
+    out[name] = out[name].astype(int)
+    return out
+
+
+def map_work_participation(
+    persons: pd.DataFrame, *, source_col: str = "work_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``work_participation`` (0/1) from a per-person work-trip flag.
+
+    Thin wrapper over :func:`map_participation` (name="work_participation"); kept as a
+    named entry point so existing callers/tests stay unchanged. See that function's
+    docstring for the full 803/804 non-response imputation policy.
+    """
+    return map_participation(
+        persons, "work_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
+def map_leisure_participation(
+    persons: pd.DataFrame, *, source_col: str = "leisure_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``leisure_participation`` (0/1) from a per-person leisure-trip
+    flag (W_ZWECK=7; see ``mid.PARTICIPATION_W_ZWECK``).
+
+    Thin wrapper over :func:`map_participation` (name="leisure_participation"); mirrors
+    ``map_work_participation`` exactly (feature #224 task 5).
+    """
+    return map_participation(
+        persons, "leisure_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
+
+
+def map_education_participation(
+    persons: pd.DataFrame, *, source_col: str = "education_participation_src", rng=None,
+    rs7_conditioning: bool = True,
+) -> pd.DataFrame:
+    """Add an int-coded ``education_participation`` (0/1) from a per-person
+    education-trip flag (W_ZWECK in {3, 11, 12}; see ``mid.PARTICIPATION_W_ZWECK``).
+
+    Thin wrapper over :func:`map_participation` (name="education_participation");
+    mirrors ``map_work_participation`` exactly (feature #224 task 5).
+    """
+    return map_participation(
+        persons, "education_participation", source_col=source_col, rng=rng,
+        rs7_conditioning=rs7_conditioning)
 
 
 def derive_bicycle_availability(n_bikes: int, n_persons: int) -> str:
@@ -708,32 +1001,25 @@ def map_beruflabschluss(persons: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def map_socioprofessional_class(
-    persons: pd.DataFrame, *, bkat_col: str = "P_BKAT"
-) -> pd.DataFrame:
-    """Add ``socioprofessional_class`` (CS1 1-8) from MiD occupation, with fallback.
+def map_socioprofessional_class(persons: pd.DataFrame) -> pd.DataFrame:
+    """Add ``socioprofessional_class`` (eqasim/INSEE CS1 1-8) from broad activity status.
 
-    Primary path: MiD ``P_BKAT`` (Berufskategorie) is mapped to the eqasim/INSEE CS1
-    code via ``SPC_BY_P_BKAT`` (codes 1..6 -> CS1 codes 3..6; ~0 % structural
-    missing in the MiD). Codes 7 (nicht berufstaetig) and 95 (nicht zuzuordnen) are
-    NOT in the map and fall through to the broad-activity fallback.
+    There is NO occupation variable in the standard MiD respondent table, so CS1 is
+    derived from the broad activity status the synthesis DOES carry --
+    ``derive_socioprofessional_class(employed, age, studies)`` from
+    ``braunschweig.ipf.attributed`` -- exactly the eqasim/IPF path, so the popsim and
+    IPF populations share one CS1 code space. Age is a documented coarse seniority
+    proxy for the active classes (NOT measured occupation).
 
-    Fallback path: ``derive_socioprofessional_class(employed, age, studies)`` from
-    ``braunschweig.ipf.attributed`` is used when (a) the ``P_BKAT`` column is absent
-    entirely, or (b) the code for a given person does not resolve via ``SPC_BY_P_BKAT``
-    (i.e. code 7 or 95). This is consistent with the IPF path and re-uses the same
-    function, so both paths produce values in the same CS1 code space.
-
-    The fallback rate is printed for transparency (CLAUDE.md: no silent fallbacks).
-    ``derive_socioprofessional_class`` resets its index to 0-based internally, so the
-    returned Series is realigned to the input DataFrame's index before ``.fillna`` to
-    avoid a misaligned join.
+    Issue #167: the former ``SPC_BY_P_BKAT`` primary path mis-read MiD ``P_BKAT``
+    ("Umfang der Erwerbstaetigkeit" = employment EXTENT; see
+    ``EMPLOYMENT_STATUS_BY_P_BKAT``) as an occupation "Berufskategorie" crosswalk. That
+    crosswalk was semantically invalid and is removed; ``P_BKAT`` no longer influences
+    ``socioprofessional_class`` at all (it feeds only ``map_employment_status``).
 
     Args:
         persons: DataFrame with at least ``employed`` (bool) and ``age`` (int).
-            ``studies`` (bool) is used by the fallback if present; defaults to False.
-            ``bkat_col`` is optional (absent column -> all fallback).
-        bkat_col: name of the MiD Berufskategorie column (default ``P_BKAT``).
+            ``studies`` (bool) is used if present; defaults to False.
 
     Returns:
         A copy of ``persons`` with the integer ``socioprofessional_class`` column added.
@@ -741,31 +1027,9 @@ def map_socioprofessional_class(
     out = persons.copy()
     studies = out["studies"] if "studies" in out.columns else pd.Series(False, index=out.index)
 
-    # derive_socioprofessional_class resets the index to 0-based internally
-    # (pd.Series(...).reset_index(drop=True) at every input), so the returned Series
-    # has index 0..N-1. Realign to out.index before .fillna to prevent a silent
-    # misaligned join when the input has a non-default index.
-    fallback = derive_socioprofessional_class(out["employed"], out["age"], studies)
-    fallback = pd.Series(fallback.to_numpy(), index=out.index)
-    import logging
-    logger = logging.getLogger(__name__)
-
-    if bkat_col in out.columns:
-        mapped = out[bkat_col].map(SPC_BY_P_BKAT)
-        n_primary = int(mapped.notna().sum())
-        n_fallback = int(mapped.isna().sum())
-        n_total = len(out)
-        logger.info(
-            "socioprofessional_class: primary (P_BKAT) %d/%d (%.1f%%), "
-            "fallback (broad-activity) %d/%d (%.1f%%).",
-            n_primary, n_total, 100.0 * n_primary / max(n_total, 1),
-            n_fallback, n_total, 100.0 * n_fallback / max(n_total, 1),
-        )
-        out["socioprofessional_class"] = mapped.fillna(fallback).astype(int)
-    else:
-        logger.info(
-            "socioprofessional_class: P_BKAT column absent -> all %d persons "
-            "use the broad-activity fallback.", len(out),
-        )
-        out["socioprofessional_class"] = fallback.astype(int)
+    # derive_socioprofessional_class resets the index to 0-based internally, so realign
+    # the returned Series to out.index before assignment to avoid a misaligned join
+    # when the input has a non-default index.
+    spc = derive_socioprofessional_class(out["employed"], out["age"], studies)
+    out["socioprofessional_class"] = pd.Series(spc.to_numpy(), index=out.index).astype(int)
     return out

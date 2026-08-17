@@ -1,0 +1,54 @@
+feature: alkis_home_matching
+title: ALKIS-typed home matching
+area: home
+description: Households are matched to ALKIS building footprints typed by function and capacity
+  (ADR-0008) instead of being scattered uniformly; the PopulationSim workflows place each household
+  inside its own Zensus 100m cell.
+stages:
+- synthesis.population.spatial.home.locations
+- braunschweig.data.buildings
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0008
+detail_doc: docs/features/building-potentials.md
+code_paths:
+- braunschweig/synthesis/locations/home_cell.py
+- braunschweig/synthesis/locations/building_typing.py
+evidence:
+  tests:
+  - tests/test_home_cell_typed.py
+  - tests/test_building_typing.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      No boolean config flag; behaviour is entirely driven by presence/absence of census counts and ALKIS/height data. test_no_census_signal_all_nan_height_stays_all_efh documents a byte-identical all-EFH fallback for the no-signal case specifically.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[home_typed] %d HH: in-cell'
+    note: |
+      Logs in-cell rate, type-match rate, zero-building count (with nearest-neighbour-cell rescue), over-capacity count, and btype-default rate, escalating to a warning above a named threshold constant.
+  reference:
+    kind: none
+    note: |
+      The ALKIS-typed footprint parquet (braunschweig.alkis_path, default braunschweig/preprocessed/alkis_buildings.parquet) is NOT committed -- it is generated locally by scripts/preprocess_alkis_landuse.py, which IS committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0008 documents the design (ZGB-8 scope only, national generalisation explicitly out of scope); no owner verdict on realised type-match quality has been recorded.
+  source: ADR-0008

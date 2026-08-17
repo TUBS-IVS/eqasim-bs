@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import json
+import logging
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,8 @@ import pandas as pd
 from . import metrics, diagnostics
 from .config import MID_BASELINE, SAMPLING_RATE, THRESHOLDS, ZGB8
 from .style import deviation_class
+
+LOG = logging.getLogger(__name__)
 
 
 CSS = """
@@ -67,6 +70,45 @@ footer { background:#1a2940; color:#a8b3c4; padding: 22px 32px; font-size:0.85em
 }
 """
 
+# Label for report section 5.3b (issue #256, escort_passive_education). Kept
+# as a single string constant -- not split across an f-string block with
+# embedded newlines -- so it stays byte-identical to the specification and
+# remains a reliable anchor for grep / downstream tooling. Adjacent string
+# literals concatenate with no inserted characters, so wrapping the Python
+# source across lines here does not alter the value.
+ACTIVE_BASELINE_LABEL = (
+    "W1 active-adjusted (escort_passive_education; derived: begleitung x "
+    "active_share, ausbildung + passive; see mid2023_escort_w_zweck_split.csv)"
+)
+
+# Scored-baseline pointer values written to the JSON payload (issue #256).
+# These name WHICH of the two already-emitted purpose-mix tables
+# (purpose_mix_no_home / purpose_mix_no_home_active) is authoritative for
+# scoring under the declared --escort-passive-education mode. Neither table
+# is ever removed -- both stay in the payload regardless of the declaration.
+SCORED_BASELINE_RAW = "raw_w1"
+SCORED_BASELINE_ACTIVE_ADJUSTED = "active_adjusted"
+
+
+def _scored_baseline_badge(is_active_adjusted_section: bool, escort_passive_education: bool) -> str:
+    """Visible SCORED / informational tag for report sections 5.3 / 5.3b.
+
+    Only rendered when ``--escort-passive-education`` was explicitly declared
+    on the CLI. With no declaration the report has no way of knowing which of
+    the two baselines is authoritative for this particular run (that is
+    exactly the ambiguity issue #256 asks to resolve), so tagging one of them
+    as "SCORED" by default would assert something that is not actually known.
+    The no-flag HTML therefore stays byte-identical to the report as it was
+    before this CLI flag existed; the badge only appears once the operator
+    has made the declaration explicit.
+    """
+    if not escort_passive_education:
+        return ""
+    is_scored = is_active_adjusted_section
+    if is_scored:
+        return ' <span class="badge ok">SCORED (declared via --escort-passive-education)</span>'
+    return ' <span class="badge warn">informational</span>'
+
 
 def _git_sha() -> str:
     try:
@@ -120,14 +162,26 @@ def _df_to_html(df: pd.DataFrame, dev_cols: dict[str, str] | None = None,
     return "".join(out)
 
 
-def build_report(plots: dict[str, str], out_dir: Path) -> Path:
-    """Assemble the full HTML and write it to out_dir/report.html."""
+def build_report(plots: dict[str, str], out_dir: Path,
+                 escort_passive_education: bool = False) -> Path:
+    """Assemble the full HTML and write it to out_dir/report.html.
+
+    ``escort_passive_education`` (issue #256, default False -- byte-identical
+    HTML) declares which MiD W1 purpose-mix baseline is authoritative for
+    THIS run: the raw both-sides Begleitung baseline (section 5.3, default)
+    or the active-adjusted baseline (section 5.3b, when the synthesis was
+    built with ``escort_passive_education`` ON). The report is post-hoc and
+    cannot infer this from the output files, so it must be declared by the
+    caller. Both baseline tables are always rendered; only the declared one
+    is tagged "SCORED" (see ``_scored_baseline_badge``).
+    """
     pop = metrics.population_per_kreis()
     pop_total = pop[pop["ars5"] == "TOTAL"].iloc[0]
     summary = metrics.trip_summary()
     mode_share = metrics.mode_share_overall()
     purpose = metrics.purpose_mix()
     purpose_no_home = metrics.purpose_mix_no_home()
+    purpose_no_home_active = metrics.purpose_mix_no_home_active()
     mob_quote = metrics.mobility_quote()
     duration = metrics.trip_duration_distribution()
     distance = metrics.trip_distance_distribution()
@@ -260,7 +314,7 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         <h3>5.2 Activity-purpose mix</h3>
         {_df_to_html(purpose, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
-        <h3>5.3 Activity-purpose mix — ohne Heimwege (vs. MiD W1)</h3>
+        <h3>5.3 Activity-purpose mix — ohne Heimwege (vs. MiD W1){_scored_baseline_badge(False, escort_passive_education)}</h3>
         <p>Synthetische Wege gefiltert auf <code>following_purpose != "home"</code>
         und auf 100 % renormiert. Vergleich gegen MiD 2023 W1
         (<em>Hauptwegezweck analog MiD 2008</em>, p231 GR-BS): Heimwege werden
@@ -268,10 +322,39 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
         eigene <code>home</code>-Kategorie. Mapping eqasim → W1:
         <code>work ← Arbeit + Dienst</code>, <code>education ← Ausbildung</code>,
         <code>shop ← Einkauf</code>,
-        <code>other ← Erledigung + Begleitung</code> (eqasim kennt keine
-        eigene <code>escort</code>-Kategorie),
-        <code>leisure ← Freizeit</code>.</p>
+        <code>other ← Erledigung</code>, <code>escort ← Begleitung</code>,
+        <code>leisure ← Freizeit</code>. Ohne <code>escort_purpose</code>
+        (issue #201) enthält die Population keine eigene
+        <code>escort</code>-Kategorie; Begleitung wird dann in
+        <code>other</code> zurückgefaltet (8/99 → other 19/99).</p>
         {_df_to_html(purpose_no_home, dev_cols={"deviation_pp": "purpose_mix_l1"},
+                     fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
+        <h3>5.3b Activity-purpose mix — ohne Heimwege (W1 active-adjusted){_scored_baseline_badge(True, escort_passive_education)}</h3>
+        <p class="note"><strong>{html.escape(ACTIVE_BASELINE_LABEL)}</strong></p>
+        <p>Zweite Referenz für Populationen mit aktivem
+        <code>escort_passive_education</code> (issue #256): der
+        <code>escort</code>-Zweck des Modells bildet in diesem Fall nur die
+        AKTIVE Begleitung ab (Bringen/Holen, MiD W_ZWECK 6); das passive
+        Wegeende der begleiteten Person (W_ZWECK 13) zählt im Modell als
+        <code>education</code>. Die MiD-W1-Begleitung-Zeile (8/99) mischt
+        beide Seiten, ist also mit einer solchen Population nicht
+        apples-to-apples vergleichbar. Diese Tabelle skaliert Begleitung
+        daher auf ihren aktiven Anteil und faltet den passiven Rest in
+        <code>education</code>: <code>escort_active = begleitung x
+        active_share</code>, <code>education_adjusted = ausbildung +
+        begleitung x (1 - active_share)</code>; alle übrigen Zweckkategorien
+        bleiben unverändert und die Gesamtmasse ist erhalten
+        (massenerhaltend). <code>active_share</code> ist der
+        W_GEW-gewichtete Anteil aktiver (W_ZWECK 6) Wege an allen
+        MiD-Begleitwegen, aus der gepinnten
+        <code>mid2023_escort_w_zweck_split.csv</code> (nie hartkodiert).</p>
+        <p>Dieser Report ist post-hoc (er liest nur Ausgabedateien) und kann
+        den Flag-Zustand der zugrunde liegenden Population nicht erkennen;
+        deshalb werden Abschnitt 5.3 (W1 roh) und 5.3b (W1
+        active-adjusted) parallel gezeigt — je nachdem, ob die Population
+        mit <code>escort_passive_education</code> erzeugt wurde, ist die
+        eine oder die andere Referenz die korrekte.</p>
+        {_df_to_html(purpose_no_home_active, dev_cols={"deviation_pp": "purpose_mix_l1"},
                      fmt={"synth_share": ".3f", "mid_share": ".3f", "deviation_pp": "+.2f"})}
         <h3>5.4 Mobilitätsquote (vs. MiD P36.1)</h3>
         <p>Anteil Personen mit mindestens einem Weg am Stichtag (Basis = alle
@@ -315,7 +398,13 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
     purpose_remap = diagnostics.purpose_mix_remapped()
 
     # Build regression-guard table from the JSON payload (build it now in-memory).
-    json_payload = _build_json_payload(od_stats, hh_summary)
+    # regression_guard_status only reads population / trip_summary / mode_share /
+    # od_stats (see diagnostics.KPI_TOLERANCES) -- it does not consume either
+    # purpose-mix baseline, so the escort_passive_education declaration has no
+    # effect on the guard's pass/fail status; it is threaded through here only
+    # so the JSON payload it is built from carries the declaration too.
+    json_payload = _build_json_payload(od_stats, hh_summary,
+                                       escort_passive_education=escort_passive_education)
     guard = diagnostics.regression_guard_status(json_payload, od_stats)
 
     def _guard_row(r):
@@ -409,18 +498,52 @@ def build_report(plots: dict[str, str], out_dir: Path) -> Path:
 
 
 def _build_json_payload(od_stats: dict | None = None,
-                       hh_summary: pd.DataFrame | None = None) -> dict:
-    """Assemble the machine-readable payload (shared by HTML guard table and JSON dump)."""
+                       hh_summary: pd.DataFrame | None = None,
+                       escort_passive_education: bool = False) -> dict:
+    """Assemble the machine-readable payload (shared by HTML guard table and JSON dump).
+
+    ``escort_passive_education`` (issue #256, default False) is the declared
+    CLI mode; see :func:`build_report` / :func:`write_json_summary` for the
+    full rationale. It is surfaced in the payload as two fields:
+
+    - ``escort_passive_education``: the declared bool, verbatim.
+    - ``purpose_mix_scored_baseline``: ``"active_adjusted"`` or ``"raw_w1"``,
+      pointing at which of ``purpose_mix_no_home`` (raw) /
+      ``purpose_mix_no_home_active`` (active-adjusted) is authoritative for
+      scoring under the declared mode. Both tables are always present.
+
+    If the declaration is True but the synthetic population carries no
+    ``escort`` purpose, the declaration is inapplicable (there is no
+    active/passive split to score) -- a loud warning is logged (mirrors the
+    presence-guard language in ``metrics.purpose_mix_w1_active_baseline``);
+    the active-adjusted table has already degraded to the raw presence-folded
+    baseline in that case, so no data is corrupted, only the pointer's
+    practical effect is void.
+    """
     summary = metrics.trip_summary()
     pop = metrics.population_per_kreis()
     mode = metrics.mode_share_overall()
     purpose_raw = metrics.purpose_mix_raw()
     purpose = metrics.purpose_mix()
     purpose_remap = diagnostics.purpose_mix_remapped()
+    purpose_no_home = metrics.purpose_mix_no_home()
+    purpose_no_home_active = metrics.purpose_mix_no_home_active()
     if od_stats is None:
         _, od_stats = diagnostics.od_fit_stats(top_n=200)
     if hh_summary is None:
         hh_summary, _ = diagnostics.hh_size_fit_per_kreis()
+
+    escort_present = not purpose_no_home.empty and "escort" in set(purpose_no_home["purpose"])
+    if escort_passive_education and not escort_present:
+        LOG.warning(
+            "--escort-passive-education was declared, but the synthetic population "
+            "carries no 'escort' purpose (issue #256): the declaration is "
+            "inapplicable to this run. purpose_mix_w1_active_baseline has already "
+            "degraded to the presence-folded raw baseline, so purpose_mix_no_home_active "
+            "is identical to purpose_mix_no_home here -- the 'purpose_mix_scored_baseline' "
+            "pointer below points at a table that carries no active/passive split."
+        )
+
     return {
         "generated_at": dt.datetime.now().isoformat(),
         "sampling_rate": SAMPLING_RATE,
@@ -429,7 +552,21 @@ def _build_json_payload(od_stats: dict | None = None,
         "mode_share": mode.to_dict(orient="records"),
         "purpose_mix_raw": purpose_raw.to_dict(orient="records"),
         "purpose_mix": purpose.to_dict(orient="records"),
-        "purpose_mix_no_home": metrics.purpose_mix_no_home().to_dict(orient="records"),
+        "purpose_mix_no_home": purpose_no_home.to_dict(orient="records"),
+        # Active-adjusted W1 reference (issue #256, escort_passive_education);
+        # see report section 5.3b for the dual-labelled explanation. The
+        # label travels with the numbers so a downstream consumer of the
+        # JSON (without the HTML prose) still knows this baseline degrades
+        # to the raw purpose_mix_no_home values on an escort-absent run.
+        "purpose_mix_no_home_active": purpose_no_home_active.to_dict(orient="records"),
+        "purpose_mix_no_home_active_label": ACTIVE_BASELINE_LABEL,
+        # Declared CLI mode + scored-baseline pointer (issue #256). Neither
+        # purpose_mix_no_home* table is removed by this declaration -- it only
+        # points at which one is authoritative for scoring under this run.
+        "escort_passive_education": escort_passive_education,
+        "purpose_mix_scored_baseline": (
+            SCORED_BASELINE_ACTIVE_ADJUSTED if escort_passive_education else SCORED_BASELINE_RAW
+        ),
         "mobility_quote": metrics.mobility_quote(),
         "purpose_mix_remapped": purpose_remap.to_dict(orient="records"),
         "od_fit": od_stats,
@@ -439,9 +576,15 @@ def _build_json_payload(od_stats: dict | None = None,
     }
 
 
-def write_json_summary(out_dir: Path) -> Path:
-    """Machine-readable KPI dump (incl. calibration diagnostics)."""
-    payload = _build_json_payload()
+def write_json_summary(out_dir: Path, escort_passive_education: bool = False) -> Path:
+    """Machine-readable KPI dump (incl. calibration diagnostics).
+
+    ``escort_passive_education`` (issue #256, default False -- byte-identical
+    payload apart from the two new declaration fields) is threaded straight
+    into :func:`_build_json_payload`; see its docstring for the payload
+    contract.
+    """
+    payload = _build_json_payload(escort_passive_education=escort_passive_education)
     payload["regression_guard"] = diagnostics.regression_guard_status(
         payload, payload["od_fit"]
     ).to_dict(orient="records")

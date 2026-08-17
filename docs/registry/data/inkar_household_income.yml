@@ -1,0 +1,33 @@
+dataset: inkar_household_income
+title: BBSR INKAR average household income per Kreis
+inventory_id: D1
+provider: BBSR INKAR
+vintage: null
+geography: Germany, Kreis x year
+crs: null
+roles:
+- control
+- reference_table
+used_by:
+- braunschweig.data.census.household_income
+- braunschweig.data.inkar.household_income
+acquisition:
+  method: manual_download
+  source: https://www.inkar.de
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/E_Haushaltseinkommen.xls
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B8
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Income level anchor for placement_income (ADR-0069) and the legacy income scaling.

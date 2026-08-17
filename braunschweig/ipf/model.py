@@ -6,6 +6,8 @@ Adapted for Braunschweig:
   was removed in Phase 4.3 along with the rest of the bavaria/ tree.
 - Includes a post-IPF margin-deviation control check (BUG-009 fix).
 """
+import os
+
 import pandas as pd
 import numpy as np
 import itertools
@@ -218,6 +220,111 @@ def run_ipf_iterations(selectors, targets, weights, *, max_iterations, tolerance
     return weights, iteration, converged, iteration_factors
 
 
+def load_employment_by_hhsize_targets(path_config_value, data_path):
+    """Load the (Kreis x hh_size x employed) cross-tab for the TASK-010 margin.
+
+    The margin has exactly one source: a long-form CSV with the columns
+    ``departement_id, hh_size, employed, weight`` (Zensus 2022 13111-06-02-4 or
+    an equivalent register cross-tab), configured through
+    ``braunschweig.ipf.employment_by_hhsize_path``.
+
+    There is deliberately NO substitute. Until ADR-0080 an absent cross-tab fell
+    back to the outer product of the existing employment and hh_size marginals,
+    described in the code as adding no information beyond what the IPF already
+    enforced. That is false: a product of marginals is not implied by those
+    marginals, so the block imposed statistical independence of employment and
+    household size, overwriting the correlation carried by the donor seed. Every
+    base margin stayed satisfied, so neither convergence nor the post-IPF margin
+    check could reveal it (issue #252). Failing loudly is the honest alternative
+    -- the flag is only meaningful with real data behind it.
+
+    :param path_config_value: ``braunschweig.ipf.employment_by_hhsize_path``
+        (``None`` when unset); relative values resolve against ``data_path``.
+    :param data_path: the run's ``data_path``.
+    :returns: DataFrame with ``departement_id`` (str), ``hh_size`` (str),
+        ``employed`` (bool) and ``weight``.
+    :raises RuntimeError: when no path is configured, the file does not exist,
+        or the required columns are missing.
+    """
+    if not path_config_value:
+        raise RuntimeError(
+            "[braunschweig.ipf.model] braunschweig.ipf.use_employment_margin is "
+            "enabled but braunschweig.ipf.employment_by_hhsize_path is unset. "
+            "The (Kreis x hh_size x employed) margin requires a real cross-tab "
+            "in long form with columns departement_id, hh_size, employed, "
+            "weight (Zensus 2022 13111-06-02-4 or equivalent). Configure that "
+            "path, or set braunschweig.ipf.use_employment_margin: false. No "
+            "substitute margin is constructed -- see ADR-0080."
+        )
+
+    full_path = (
+        path_config_value if os.path.isabs(path_config_value)
+        else os.path.join(data_path, path_config_value)
+    )
+    if not os.path.exists(full_path):
+        raise RuntimeError(
+            "[braunschweig.ipf.model] braunschweig.ipf.employment_by_hhsize_path "
+            f"resolves to {full_path}, which does not exist. Provide the "
+            "(Kreis x hh_size x employed) cross-tab there, or set "
+            "braunschweig.ipf.use_employment_margin: false."
+        )
+
+    emp_targets_long = pd.read_csv(full_path, dtype={
+        "departement_id": str,
+        "hh_size": str,
+    })
+    required_columns = {"departement_id", "hh_size", "employed", "weight"}
+    missing = required_columns - set(emp_targets_long.columns)
+    if missing:
+        raise RuntimeError(
+            f"[braunschweig.ipf.model] {full_path} missing columns: "
+            f"{sorted(missing)}"
+        )
+    emp_targets_long["employed"] = emp_targets_long["employed"].astype(bool)
+
+    print(
+        "[braunschweig.ipf.model] Loaded {:,} (Kreis x hh_size x employed) "
+        "targets from {}".format(len(emp_targets_long), full_path)
+    )
+    return emp_targets_long
+
+
+def _map_departement_index(emp_targets_long, dep_id_to_index):
+    """Map the employment-margin ``departement_id`` onto the IPF Kreis index.
+
+    Join-coverage transparency (CLAUDE.md no-silent-fallback): rows whose
+    ``departement_id`` is absent from the population's Kreis set are dropped
+    (legitimate when the CSV covers more Kreise than the scope), but the drop
+    is COUNTED and logged -- and if NOTHING matches, the configured margin
+    would be silently inert (zero constraints appended, feature "on" doing
+    nothing), which raises instead.
+    """
+    emp_targets_long = emp_targets_long.copy()
+    emp_targets_long["departement_index"] = (
+        emp_targets_long["departement_id"].astype(str).map(dep_id_to_index)
+    )
+    dropped = emp_targets_long[emp_targets_long["departement_index"].isna()]
+    kept = emp_targets_long.dropna(subset=["departement_index"]).copy()
+    if len(kept) == 0:
+        raise RuntimeError(
+            "[braunschweig.ipf.model] employment-by-hhsize margin: 0 of "
+            f"{len(emp_targets_long)} target rows matched the population Kreis "
+            f"set {sorted(dep_id_to_index)} (CSV departement_id sample: "
+            f"{sorted(dropped['departement_id'].astype(str).unique())[:5]}). "
+            "The configured margin would be silently inert -- most likely a "
+            "key-format mismatch (e.g. un-padded Kreis codes)."
+        )
+    if len(dropped):
+        print(
+            "[braunschweig.ipf.model] employment-by-hhsize margin: matched "
+            f"{len(kept)}/{len(emp_targets_long)} target rows; dropped "
+            f"{len(dropped)} rows outside the population Kreis set: "
+            f"{sorted(dropped['departement_id'].astype(str).unique())[:5]}"
+        )
+    kept["departement_index"] = kept["departement_index"].astype(int)
+    return kept
+
+
 def configure(context):
     context.stage("braunschweig.ipf.prepare")
     context.config("braunschweig.minimum_age.employment", 16)
@@ -246,12 +353,14 @@ def configure(context):
     # TASK-010 — additional 4-way (Kreis × hh_size × employed) joint
     # margin sourced from a Kreis-level cross-tab (e.g. Zensus 2022
     # 13111-06-02-4 reshaped to long form). Requires
-    # ``use_household_size_margin`` to be on. When the flag is enabled
-    # but no supporting CSV is configured, the seed-prior is computed
-    # via outer product of the existing employment- and hh_size-margins
-    # (a pure marginal-consistency check that does not add information
-    # beyond what the existing IPF already enforces — useful as a
-    # smoke test before wiring real Zensus cross-tabs).
+    # ``use_household_size_margin`` to be on, and requires
+    # ``employment_by_hhsize_path`` to name an existing cross-tab: with
+    # the flag on and no cross-tab the stage RAISES (ADR-0080). It used
+    # to substitute the outer product of the existing employment- and
+    # hh_size-margins, which is not the no-op its comment claimed — a
+    # product of marginals is not implied by those marginals, so the
+    # block forced employment and household size to be independent and
+    # overwrote the donor seed's correlation (issue #252). Default off.
     context.config("braunschweig.ipf.use_employment_margin", False)
     context.config(
         "braunschweig.ipf.employment_by_hhsize_path",
@@ -551,112 +660,72 @@ def execute(context):
         selector_blocks.append((_block_start, len(selectors)))
 
     # TASK-010 — optional Kreis × hh_size × employed joint margin.
-    # Sourced from a long-form CSV with columns
+    # Sourced exclusively from a long-form CSV with columns
     # ``departement_id, hh_size, employed, weight`` (Zensus 2022
-    # 13111-06-02-4 or equivalent). When the path is ``None`` or the
-    # file does not exist, fall back to an outer-product proxy derived
-    # from the existing employment- and hh_size-margins; this smoke
-    # tests the wiring without changing IPF behaviour materially.
+    # 13111-06-02-4 or equivalent) named by
+    # ``braunschweig.ipf.employment_by_hhsize_path``. An absent cross-tab
+    # raises: constructing a substitute from the existing marginals would
+    # impose an independence assumption the data does not support
+    # (issue #252, ADR-0080).
     use_employment_margin = bool(
         context.config("braunschweig.ipf.use_employment_margin")
     )
     # use_hh_size is guaranteed on when use_employment_margin is set
     # (validate_household_realism_config at the top of execute()).
     if use_employment_margin:
-        emp_path_cfg = context.config("braunschweig.ipf.employment_by_hhsize_path")
-        emp_targets_long = None
-        if emp_path_cfg:
-            import os as _os
-            full_path = (
-                emp_path_cfg if _os.path.isabs(emp_path_cfg)
-                else _os.path.join(context.config("data_path"), emp_path_cfg)
-            )
-            if _os.path.exists(full_path):
-                emp_targets_long = pd.read_csv(full_path, dtype={
-                    "departement_id": str,
-                    "hh_size": str,
-                })
-                required_cols = {"departement_id", "hh_size", "employed", "weight"}
-                missing = required_cols - set(emp_targets_long.columns)
-                if missing:
-                    raise RuntimeError(
-                        f"[braunschweig.ipf.model] {full_path} missing columns: "
-                        f"{sorted(missing)}"
-                    )
-                emp_targets_long["employed"] = (
-                    emp_targets_long["employed"].astype(bool)
-                )
-                print(
-                    "[braunschweig.ipf.model] Loaded {:,} (Kreis × hh_size × "
-                    "employed) targets from {}".format(
-                        len(emp_targets_long), full_path
-                    )
-                )
-        if emp_targets_long is None:
-            # Outer-product proxy from existing margins (informative
-            # smoke test only; preserves marginals).
-            emp_marginal = (
-                df_employment.groupby("departement_id", observed=True)
-                ["weight"].sum()
-                .rename("emp_total")
-            )
-            hhsize_marginal = (
-                df_household_size.assign(
-                    departement_id=df_household_size["commune_id"].astype(str).str[:5]
-                )
-                .groupby(["departement_id", "hh_size"], observed=True)
-                ["weight"].sum()
-                .rename("hhsize_total")
-            )
-            kreis_pop_total = hhsize_marginal.groupby(level=0).sum()
-            rows = []
-            for (dep_id, hh_size), n_in_hh in hhsize_marginal.items():
-                share = n_in_hh / max(kreis_pop_total.get(dep_id, 0.0), 1.0)
-                emp_in_hh = float(emp_marginal.get(dep_id, 0.0)) * share
-                rows.append({
-                    "departement_id": dep_id,
-                    "hh_size": hh_size,
-                    "employed": True,
-                    "weight": emp_in_hh,
-                })
-                rows.append({
-                    "departement_id": dep_id,
-                    "hh_size": hh_size,
-                    "employed": False,
-                    "weight": float(n_in_hh) - emp_in_hh,
-                })
-            emp_targets_long = pd.DataFrame(rows)
-            print(
-                "[braunschweig.ipf.model] No employment-by-hhsize CSV configured; "
-                f"using outer-product proxy ({len(emp_targets_long)} cells)."
-            )
+        emp_targets_long = load_employment_by_hhsize_targets(
+            context.config("braunschweig.ipf.employment_by_hhsize_path"),
+            context.config("data_path"),
+        )
 
         # Map departement_id -> departement_index
         dep_id_to_index = dict(zip(
             df_population["departement_id"].astype(str),
             df_population["departement_index"],
         ))
-        emp_targets_long = emp_targets_long.copy()
-        emp_targets_long["departement_index"] = (
-            emp_targets_long["departement_id"].astype(str).map(dep_id_to_index)
-        )
-        emp_targets_long = emp_targets_long.dropna(subset=["departement_index"])
-        emp_targets_long["departement_index"] = (
-            emp_targets_long["departement_index"].astype(int)
-        )
+        emp_targets_long = _map_departement_index(emp_targets_long, dep_id_to_index)
 
         emp_margin_indices = _build_group_indices(
             df_model, ["departement_index", "hh_size", "employed"])
         _block_start = len(selectors)
+        matched_cells = 0
         for _, row in context.progress(
             list(emp_targets_long.iterrows()),
             total=len(emp_targets_long),
             label="Generating employment-by-hhsize constraints",
         ):
             key = (int(row["departement_index"]), row["hh_size"], bool(row["employed"]))
-            selectors.append(emp_margin_indices.get(key, _EMPTY_SELECTOR))
+            selector = emp_margin_indices.get(key)
+            if selector is None:
+                selector = _EMPTY_SELECTOR
+            else:
+                matched_cells += 1
+            selectors.append(selector)
             targets.append(float(row["weight"]))
         selector_blocks.append((_block_start, len(selectors)))
+
+        # Cell-level join coverage (CLAUDE.md no-silent-fallback): a target cell
+        # with no matching df_model rows contributes an EMPTY selector, i.e. an
+        # inert constraint. That is legitimate for genuinely unoccupied cells but
+        # indistinguishable from a key-format mismatch unless the rate is stated.
+        n_cells = len(emp_targets_long)
+        print(
+            "[braunschweig.ipf.model] employment-by-hhsize margin: matched "
+            "{:,}/{:,} target cells ({:.1%}), {:,} inert ({:.1%}).".format(
+                matched_cells, n_cells, matched_cells / max(n_cells, 1),
+                n_cells - matched_cells,
+                (n_cells - matched_cells) / max(n_cells, 1),
+            )
+        )
+        if matched_cells == 0:
+            raise RuntimeError(
+                "[braunschweig.ipf.model] employment-by-hhsize margin: none of "
+                f"the {n_cells} target cells matched a (Kreis, hh_size, "
+                "employed) combination in the model -- every appended "
+                "constraint would be inert, so the enabled margin would do "
+                "nothing. Most likely an hh_size bin-label mismatch (expected "
+                f"{list(HH_SIZE_BINS)})."
+            )
 
     # Transform to index-based. Vectorised constraint groups already appended
     # ``(ascending_int64_index_array,)`` tuples (the exact representation of

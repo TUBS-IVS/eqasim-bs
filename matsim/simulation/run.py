@@ -12,10 +12,15 @@ def configure(context):
     context.config("matsim_last_iteration", 1)
     context.config("matsim_write_events_interval", 0)
     context.config("matsim_write_plans_interval", 0)
-    # Optional MATSim SimWrapper dashboards (network volumes, mode share, trips).
-    # Default off so the run is byte-identical; turning it on passes
-    # --simwrapper true to org.eqasim.braunschweig.RunSimulation.
-    context.config("simwrapper_dashboards", False)
+    # MATSim SimWrapper dashboards (network volumes, mode share, trips), written
+    # by the Java SimWrapperModule into the simulation output directory. Default
+    # ON per the project feature-flag policy (analysis-only module: simulation
+    # results are unaffected, the run gains dashboard files); ADR-0074, pinned by
+    # tests/test_simwrapper_dashboards_default.py. Set false for a byte-identical
+    # output directory: the --simwrapper option is then omitted from the
+    # org.eqasim.braunschweig.RunSimulation call (see execute below) and the Java
+    # side applies its own false default.
+    context.config("simwrapper_dashboards", True)
     context.config("processes")
     # MATSim thread counts, decoupled from the (memory-bound) synthesis worker
     # count. global.numberOfThreads (routing / replanning / scoring between
@@ -62,6 +67,13 @@ def execute(context):
         "--config:controler.writePlansInterval", str(write_plans_interval),
         "--config:global.numberOfThreads", str(global_threads),
         "--config:qsim.numberOfThreads", str(qsim_threads),
+        # eqasim-java 2.2.0 / MATSim 2026 defaults controler.compressionType to "zst", so
+        # the controler writes output_*.xml.zst. The pipeline's existence checks (the assert
+        # below, matsim.output's archive assert) and the downstream analysis all consume the
+        # historical ".gz" names, so pin gzip to keep output_*.xml.gz. (Standalone eqasim
+        # tools that write to explicit .gz paths -- e.g. RunPopulationRouting -- are already
+        # fine; only the controler's auto-named output followed the new default.)
+        "--config:controler.compressionType", "gzip",
     ]
     if simwrapper:
         run_args += ["--simwrapper", "true"]

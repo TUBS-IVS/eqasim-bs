@@ -1,0 +1,17 @@
+stage: braunschweig.data.education.student_share
+title: Student share by age
+layer: education
+description: Committed NDS student-share-by-age table for the legacy IPF education attributes.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/education/student_share.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- lsn_bbs_share_by_age

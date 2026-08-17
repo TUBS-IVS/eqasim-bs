@@ -1,0 +1,64 @@
+feature: economic_status_bayes
+title: Economic status (Bayes hhtype×region)
+area: attributes
+description: Samples economic_status from the MiD status x household-type x region distribution
+  via Bayes inversion (ADR-0011). Legacy simple_ipf_open mechanism -- under popsim_mid the
+  donor household's observed oek_status (attributes.map_economic_status) plus the hard
+  economic_status KREIS control supersede it (ADR-0079).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - status_from_hhtype
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0011
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/economic_status.py
+- braunschweig/data/mid/status_by_hhtype.py
+evidence:
+  tests:
+  - tests/test_status_from_hhtype.py
+  - tests/test_economic_status.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_economic_status.py
+    note: test_off_branch_uses_legacy_income_derived_status_unchanged confirms status_from_hhtype=False
+      reproduces the exact legacy 1:1 mapping.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'economic_status from MiD hhtype x region:'
+    note: Logs a primary(Bayes)-vs-fallback(unclassifiable household -> legacy income-class status)
+      rate.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_status_by_hhtype_bundesland.csv
+    note: Also draws on the committed mid2023_status_by_hhtype_raumtyp.csv.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Wiring decided in ADR-0079: not ported to popsim_mid, where the donor household's
+    observed oek_status plus the hard per-Kreis economic_status control supersede the
+    Bayes draw. Still pending: no owner verdict on the realised quality of THAT donor
+    mechanism (no recorded run attributes a KPI to it).
+  source: ADR-0079 (mechanism decision); ADR-0011 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

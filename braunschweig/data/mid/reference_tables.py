@@ -36,9 +36,16 @@ def _path(data_path: str, filename: str) -> str:
     return os.path.join(data_path, MID_SUBDIR, filename)
 
 
-def _read_csv(path: str) -> pd.DataFrame:
-    """Read a seed CSV that may have ``# ...`` comment header lines."""
-    return pd.read_csv(path, comment="#")
+def _read_csv(path: str, dtype: dict | None = None) -> pd.DataFrame:
+    """Read a seed CSV that may have ``# ...`` comment header lines.
+
+    ``dtype`` must be passed for key columns such as ``ars5``: pandas' int64
+    inference strips leading zeros from a purely numeric key column
+    irreversibly ("03101" -> 3101), and a post-hoc ``.astype(str)`` cannot
+    repair it. The region-aggregate row ("Gesamt"/"03ZGB") happens to force
+    object dtype today, but key padding must not depend on that accident.
+    """
+    return pd.read_csv(path, comment="#", dtype=dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +101,7 @@ def load_kreis_share_table(
         Numeric count buckets (e.g. ``[0, 1, 2, 3]``) parsed from the CSV
         column headers.
     """
-    df = _read_csv(_path(data_path, filename))
+    df = _read_csv(_path(data_path, filename), dtype={"ars5": str})
     if "ars5" not in df.columns:
         raise RuntimeError(f"{filename}: expected 'ars5' column")
     bucket_cols = [c for c in df.columns if c != "ars5"]
@@ -231,7 +238,7 @@ def load_pt_subscription_breakdown(
     deterministically, not the region vector. It is retained as a
     documented regional reference (and for tests).
     """
-    df = _read_csv(_path(data_path, "mid2023_P24_1.csv"))
+    df = _read_csv(_path(data_path, "mid2023_P24_1.csv"), dtype={"ars5": str})
     cols = list(PT_TICKET_CATEGORIES)
     by_kreis: dict[str, np.ndarray] = {}
     region: np.ndarray | None = None
@@ -424,7 +431,7 @@ def load_license_breakdown(
     deterministically, not the region vector. It is retained as a
     documented regional reference (and for tests).
     """
-    df = _read_csv(_path(data_path, "mid2023_P17_1.csv"))
+    df = _read_csv(_path(data_path, "mid2023_P17_1.csv"), dtype={"ars5": str})
     cols = list(LICENSE_CATEGORIES)
     by_kreis: dict[str, np.ndarray] = {}
     region: np.ndarray | None = None

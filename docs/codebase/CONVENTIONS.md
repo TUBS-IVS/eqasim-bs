@@ -18,7 +18,7 @@ Coding and data conventions in force for `eqasim-bs`. Verified from `CLAUDE.md`,
 - Source should be ASCII where possible; avoid non-ASCII in identifiers and string
   constants (CLAUDE.md "MATSim and eqasim style").
 - Chat responses to the user are in German (CLAUDE.md "Language policy"). Note the
-  config files contain German prose in comments (e.g. `config_local_braunschweig.yml`
+  config files contain German prose in comments (e.g. `configs/fixtures/config_local_braunschweig.yml`
   lines 100–124); this is the inherited fork state, not the stated target.
 
 ## Naming
@@ -91,7 +91,7 @@ processing"; bounding box in DOWNLOAD_CHECKLIST_BS.md).
 - `AGENTS.md` ("Repository conventions enforced now")
 - `braunschweig/synthesis/locations/education_gravity.py` (configure/execute, constant naming)
 - `tests/test_education_gravity_stage.py` (deterministic synthetic data)
-- `config_local_braunschweig.yml` (pinned calibrated values + "do not hand-edit" notes)
+- `configs/fixtures/config_local_braunschweig.yml` (pinned calibrated values + "do not hand-edit" notes)
 
 ---
 
@@ -129,3 +129,146 @@ refactor must bring its code into line.
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb`,
 `popsimprep/popsim/configs/_prep3_controls.csv`, `popsimprep/batch_run_popsim.py`,
 `CLAUDE.md` ("Fallback transparency", "Configuration", "eqasim specific rules").
+
+---
+
+## Example lists (moved from CLAUDE.md)
+
+Full good/bad example lists relocated from `CLAUDE.md` during the 2026-07 PM-layer
+compression. `CLAUDE.md` keeps one good + one bad example per topic and links here
+for the complete lists. These are illustrative examples; the binding rules remain in
+`CLAUDE.md`.
+
+### Configuration names
+
+Descriptive, unit-bearing (CLAUDE.md "Configuration"):
+
+```java
+maximumTransferDistanceMeters
+sampleSize
+randomSeed
+inputPopulationPath
+outputDirectory
+```
+
+Avoid:
+
+```
+x
+tmp
+value1
+param
+data
+```
+
+### Data-provenance filenames
+
+Prefer explicit, stable names (CLAUDE.md "Data provenance"):
+
+```
+population_hanover_2025_sample_0.10.xml.gz
+carrier_tours_baseline_2025_weekday.csv
+network_cleaned_epsg25832.xml.gz
+validation_summary_b2b_share_by_zone.csv
+```
+
+Avoid ambiguous names:
+
+```
+output.csv
+final.csv
+new_result.csv
+test.xml
+```
+
+### Units
+
+Explicit units in the name (CLAUDE.md "Units"):
+
+```
+travelTimeSeconds
+distanceMeters
+speedMetersPerSecond
+emissionsGrams
+costEuro
+durationHours
+```
+
+Avoid ambiguous names:
+
+```
+time
+distance
+speed
+cost
+```
+
+### Output-table column names (snake_case)
+
+CLAUDE.md "Output tables":
+
+```
+person_id
+tour_id
+carrier_id
+vehicle_id
+departure_time_seconds
+travel_time_seconds
+distance_meters
+co2_grams
+cost_euro
+```
+
+### Geospatial threshold names
+
+Distances/thresholds in meters (CLAUDE.md "Geospatial processing"):
+
+```
+maximumStopAccessDistanceMeters
+transferSearchRadiusMeters
+zoneAssignmentBufferMeters
+```
+
+### Class / component naming
+
+Descriptive (CLAUDE.md "Naming examples"):
+
+```
+CarrierDemandReader
+PopulationValidationWriter
+NetworkModeCleaner
+FreightScenarioBuilder
+TourDistanceAnalyzer
+```
+
+Avoid vague names:
+
+```
+Helper
+Utils
+Processor
+Manager
+Stuff
+NewClass
+```
+
+### Commit-message examples
+
+Clear messages that explain the change and its purpose (CLAUDE.md "Git and version control"):
+
+```
+Add validation for missing freight carrier capacities
+Refactor zone based transport cost caching
+Fix CRS handling in stop access distance calculation
+Document baseline scenario configuration
+```
+
+Avoid unclear messages:
+
+```
+fix
+update
+changes
+final
+new stuff
+```

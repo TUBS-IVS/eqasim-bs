@@ -5,9 +5,14 @@ import matsim.runtime.git as git
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
 
-DEFAULT_EQASIM_VERSION = "1.5.0"
-DEFAULT_EQASIM_BRANCH = "bavaria-main"
-DEFAULT_EQASIM_COMMIT = "3f7da9b"
+# eqasim-java-bs is rebased onto upstream eqasim-java v2.2.0 (ab938aaac, 2026-06-03).
+# The module version drives the built jar name (braunschweig-<version>.jar), so this
+# MUST match the <version> in eqasim-java-bs/braunschweig/pom.xml. Building v2.2.0
+# requires JDK 25 (upstream bumped maven.compiler source/target 21 -> 25); ensure the
+# felix build environment provides a JDK 25 (see docs/UPGRADE_SYNPP_AND_JAVA.md).
+DEFAULT_EQASIM_VERSION = "2.2.0"
+DEFAULT_EQASIM_BRANCH = "main"
+DEFAULT_EQASIM_COMMIT = "ab938aaac"
 
 def configure(context):
     context.stage("matsim.runtime.git")
@@ -24,6 +29,12 @@ def configure(context):
     # clone happens; the source is copied in and Maven-built, so local Java edits take
     # effect on the next run (see validate(), which keys the cache on the source mtime).
     context.config("eqasim_source_path", "")
+
+    # Same synpp per-stage config contract as pt2matsim (issue #229): delegate to the
+    # helpers' own configure() so the declares cannot drift from what git.run /
+    # maven.run actually read.
+    git.configure(context)
+    maven.configure(context)
 
 def run(context, command, arguments):
     # The eqasim stage returns the relative path of the built/provided jar (bavaria

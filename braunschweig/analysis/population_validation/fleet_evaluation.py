@@ -111,24 +111,19 @@ def build_fleet_evaluation(vehicles, out_dir: Path, data_path) -> dict:
         return {}
 
     # ------------------------------------------------------------------ #
-    # Filter to mode=='car' if mode column present (drop car_passenger etc.)
+    # Restrict to the household FLEET subset. vehicles.csv also carries eqasim
+    # per-person ROUTING vehicles (mode=='car' but no fleet attributes); mixing
+    # them in inflates every distribution with ~49% nan. The shared fleet filter
+    # keeps mode=='car' AND non-null household_id and logs the fleet/routing split.
     # ------------------------------------------------------------------ #
-    df = vehicles.copy()
-    if "mode" in df.columns:
-        n_before = len(df)
-        df = df[df["mode"] == "car"].copy()
-        n_dropped = n_before - len(df)
-        if n_dropped:
-            log.info(
-                "[fleet_evaluation] filtered %d non-car rows (mode != 'car'); "
-                "%d cars remain.", n_dropped, len(df)
-            )
-        if df.empty:
-            log.warning(
-                "[fleet_evaluation] no rows with mode=='car' after filtering; "
-                "fleet evaluation skipped."
-            )
-            return {}
+    from braunschweig.analysis import fleet_filter as _ff
+    df = _ff.fleet_vehicles(vehicles, context="fleet_evaluation").copy()
+    if df.empty:
+        log.warning(
+            "[fleet_evaluation] no household-fleet cars after filtering; "
+            "fleet evaluation skipped."
+        )
+        return {}
 
     # Coerce age to numeric.
     df["age"] = pd.to_numeric(df["age"], errors="coerce")

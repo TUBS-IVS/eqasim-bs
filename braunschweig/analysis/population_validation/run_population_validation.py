@@ -83,6 +83,20 @@ def _parse_args(argv):
     ap.add_argument("--whisker", choices=["stdev", "rmse", "both"], default="both")
     ap.add_argument("--geo", dest="geo", action="store_true", default=True)
     ap.add_argument("--no-geo", dest="geo", action="store_false")
+    # Issue #96 minor-employment plausibility guard: upper bound on the employed
+    # share among under-15s, and whether exceeding it raises (hard gate) or warns.
+    ap.add_argument("--minor-employment-max-rate", dest="minor_employment_max_rate",
+                    type=float, default=C.DEFAULT_MINOR_EMPLOYMENT_MAX_RATE)
+    ap.add_argument("--minor-employment-raise", dest="minor_employment_raise",
+                    action="store_true", default=False)
+    # Issue #256: pass through when the synthetic population was built with
+    # escort_passive_education ON (the model's escort purpose is then
+    # ACTIVE-only), so the trip-coherence W1/W12 escort references are adjusted
+    # to the active-only pinned split instead of the both-sides MiD Begleitung
+    # figures (see trip_coherence.apply_escort_active_adjustment /
+    # w12_mean_length_target). Default False keeps the report byte-identical.
+    ap.add_argument("--escort-passive-education", dest="escort_passive_education",
+                    action="store_true", default=False)
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
@@ -147,10 +161,32 @@ def run(ns) -> dict:
     quality = QA.assess(long)
     fam = QA.family_scores(quality)
 
+    # Issue #96 regression guard: the written `employed` flag must be ~0 for
+    # minors (age < 15). The employment control's age>=14 base hides employed
+    # under-15s, so inspect frames.persons directly. This is a region-wide pass/
+    # fail plausibility guard, conceptually distinct from the per-geo deviation
+    # controls, so it is recorded in a DEDICATED minor_employment_guard.csv (plus
+    # report.json / summary.md) rather than mixed into the per-geo controls_summary
+    # / whisker charts. In raise mode it aborts here (before any file is written),
+    # which is the intended hard-gate behaviour.
+    minor_emp = C.check_minor_employment(
+        frames.persons,
+        max_rate=ns.minor_employment_max_rate,
+        raise_on_exceed=ns.minor_employment_raise,
+    )
+
     long.to_csv(out / "controls_long.csv", index=False)
     summary.to_csv(out / "controls_summary.csv", index=False)
     quality.to_csv(out / "quality_summary.csv", index=False)
     fam.to_csv(out / "quality_by_family.csv", index=False)
+    # Fit checks (targets that steer the synthesis) rolled up SEPARATELY from
+    # genuinely independent references, so convergence is never reported as
+    # validation (2026-07-12 audit; see Control.independence).
+    QA.independence_scores(quality).to_csv(
+        out / "quality_by_independence.csv", index=False)
+    if minor_emp is not None:
+        pd.DataFrame([{"control": "employment_minor_plausibility", **minor_emp}]).to_csv(
+            out / "minor_employment_guard.csv", index=False)
 
     if ns.whisker in ("stdev", "both"):
         VC.dot_and_whisker(summary, out / "validation_chart_stdev.png", whisker="stdev")
@@ -173,7 +209,9 @@ def run(ns) -> dict:
                 persons_for_tc = persons_for_tc.merge(
                     frames.households[["household_id", "household_size"]],
                     on="household_id", how="left")
-            tc = TC.build_trip_coherence_report(persons_for_tc, frames.trips, DATA_PATH)
+            tc = TC.build_trip_coherence_report(
+                persons_for_tc, frames.trips, DATA_PATH,
+                escort_passive_education=ns.escort_passive_education)
             tc["mobility_by_segment"].to_csv(
                 out / "trip_coherence_mobility_by_segment.csv", index=False)
             pur = tc["purpose"]
@@ -277,7 +315,12 @@ def run(ns) -> dict:
         households_gdf = gpd.GeoDataFrame(households_geo, geometry="geometry", crs=frames.homes.crs)
         vehicles_gdf = None
         if frames.vehicles is not None:
-            veh = _attach_home_geometry_to_vehicles(frames.vehicles, frames.persons, home_geom)
+            # Export only the household FLEET vehicles to the explorer GPKG: the
+            # eqasim per-person ROUTING vehicles (mode=='car', no fleet attributes)
+            # would otherwise appear as ~49% nan rows in the vehicles layer.
+            from braunschweig.analysis import fleet_filter as _ff
+            fleet_veh = _ff.fleet_vehicles(frames.vehicles, context="geo_export")
+            veh = _attach_home_geometry_to_vehicles(fleet_veh, frames.persons, home_geom)
             if veh is not None:
                 vehicles_gdf = gpd.GeoDataFrame(veh, geometry="geometry", crs=frames.homes.crs)
         kreis_poly = kreise[["ars5", "geometry"]]
@@ -318,6 +361,7 @@ def run(ns) -> dict:
         "trip_coherence": trip_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
         "fleet_evaluation": _fe_paths,
+        "minor_employment": minor_emp,
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False),
                                      encoding="utf-8")
@@ -330,6 +374,13 @@ def run(ns) -> dict:
           "## Headline quality by family", "",
           fam.to_string(index=False) if not fam.empty else "_no targets_", "",
           "## Interpretation", "", _interpretation_markdown(quality), ""]
+    if minor_emp is not None:
+        md += ["## Minor-employment plausibility (issue #96 guard)", "",
+               f"- Employed share among under-{C.MINOR_MAX_AGE_YEARS + 1}s: "
+               f"{100 * minor_emp['rate']:.2f}% "
+               f"({minor_emp['n_employed']:,}/{minor_emp['n_minors']:,}), "
+               f"bound {100 * minor_emp['max_rate']:.2f}% "
+               f"-- {'EXCEEDED' if minor_emp['exceeded'] else 'ok'}", ""]
     if trip_json is not None:
         m = trip_json["mobility"]
         md += ["## Trip coherence (donor activity chains vs MiD)", "",

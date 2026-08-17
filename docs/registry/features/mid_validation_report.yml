@@ -1,0 +1,48 @@
+feature: mid_validation_report
+title: MiD validation report
+area: validation
+description: Compares run output against the committed MiD 2023 reference tables (P9/P12.1/P13/P17.1
+  and more) and writes the validation report (ADR-0031).
+stages: []
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0031
+detail_doc: docs/features/run-analysis.md
+code_paths:
+- braunschweig/analysis/run_mid_validation.py
+evidence:
+  tests:
+  - tests/test_run_mid_validation.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: Always-invoked analysis script with no config flag; there is no OFF path to test.
+  fallback_rate:
+    instrumented: false
+    note: No primary-vs-fallback rate log was found in run_mid_validation.py itself.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_P9.csv
+    note: |
+      Backs the P9 comparison; the report also compares against three further committed MiD tables (P12_1, P13, P17_1), all under eqasim-data/data/braunschweig/mid/.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: The report writes a per-run comparison table; no single KPI scalar is currently attributed
+    to a run recorded in RUNS.md.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0031 documents the decision to build this report; no owner verdict on the realised fit against MiD P9/P12_1/P13/P17_1 has been recorded for this register.
+  source: ADR-0031

@@ -1,0 +1,30 @@
+dataset: lsn_income_tax
+title: LSN income-tax statistics per Kreis (uniform bracket layering)
+inventory_id: D3
+provider: LSN
+vintage: 2022 assessment
+geography: Niedersachsen, Kreis
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: auto_script
+  source: https://www1.nls.niedersachsen.de/statistik/ (table 91701)
+  script: scripts/extract_lsn_income_tax_kreis.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/lsn/lsn2022_income_tax_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Reserved for the sub-Kreis wealth surface (#110, phase 3).

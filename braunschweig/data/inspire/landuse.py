@@ -69,13 +69,17 @@ def execute(context) -> gpd.GeoDataFrame:
 
     path = _resolve(context)
     if not os.path.exists(path):
-        print(
-            "[braunschweig.data.inspire.landuse] {} not found — returning "
-            "empty frame. Provide a Copernicus 100 m tile per "
-            "DOWNLOAD_CHECKLIST_BS.md to enable the spatial prior."
-            .format(path)
+        # Flag is ON but the tile is absent. Returning an empty prior here would
+        # let the whole run proceed as if the landuse prior were simply
+        # uninformative -- a silent fallback that masks a real configuration
+        # error (CLAUDE.md no-silent-fallback). Fail loudly instead; the OFF
+        # path (use_landuse_prior=False) is the intended way to run without it.
+        raise RuntimeError(
+            "[braunschweig.data.inspire.landuse] use_landuse_prior is ON but the "
+            "Copernicus 100 m tile is missing: {}. Provide it per "
+            "DOWNLOAD_CHECKLIST_BS.md, or set braunschweig.use_landuse_prior=False "
+            "to run without the spatial prior.".format(path)
         )
-        return _empty()
 
     gdf = gpd.read_parquet(path)
     if gdf.crs is None:
@@ -110,4 +114,11 @@ def validate(context):
     if not bool(context.config("braunschweig.use_landuse_prior")):
         return 0
     path = _resolve(context)
-    return os.path.getsize(path) if os.path.exists(path) else 0
+    if not os.path.exists(path):
+        # Consistent with execute(): a missing tile while the flag is ON is a
+        # configuration error, not a silently-tolerated zero-size input.
+        raise RuntimeError(
+            "[braunschweig.data.inspire.landuse] use_landuse_prior is ON but the "
+            "Copernicus 100 m tile is missing: {}.".format(path)
+        )
+    return os.path.getsize(path)

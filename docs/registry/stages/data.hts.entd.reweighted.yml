@@ -1,0 +1,15 @@
+stage: data.hts.entd.reweighted
+title: ENTD reweighting
+layer: behavior
+description: Upstream ENTD reweighting.
+lineage:
+  type: inherited
+  upstream: null
+  notes: null
+code:
+- data/hts/entd/reweighted.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: active
+  simple_ipf_open: active
+production: false

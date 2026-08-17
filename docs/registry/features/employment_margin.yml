@@ -1,0 +1,54 @@
+feature: employment_margin
+title: Employment margin (IPF)
+area: attributes
+description: IPF margin raking employment to the GENESIS SvB registers instead of survey P9 shares
+  (ADR-0014); IPF-workflow-only by construction. Note that ADR-0014's mechanism is the UNCONDITIONAL
+  (Kreis x sex x employment-age-class x employed) block, which is always built; the flag below gates
+  only the additional TASK-010 (Kreis x hh_size x employed) joint margin, which is parked (ADR-0080).
+stages:
+- braunschweig.ipf.model
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: inactive
+lifecycle: parked
+production:
+  enabled: false
+  flags:
+  - braunschweig.ipf.use_employment_margin
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0014
+detail_doc: null
+code_paths:
+- braunschweig/ipf/model.py
+evidence:
+  tests:
+  - tests/test_employment_margin_task010.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      No dedicated flag-OFF byte-identity test found; tests/test_ipf_selectors.py's byte-identity test covers an unrelated selector refactor, not this flag's ON/OFF behaviour.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[braunschweig.ipf.model] employment-by-hhsize margin: matched'
+    note: |
+      ADR-0080 removed the fallback rather than instrumenting it: with the flag on and no cross-tab configured, braunschweig.ipf.model now raises (load_employment_by_hhsize_targets). The join that remains is instrumented at both levels -- _map_departement_index logs and raises on Kreis-level coverage, and the TASK-010 selector loop logs the matched-vs-inert cell rate and raises at 0% match.
+  reference:
+    kind: none
+    note: |
+      The GENESIS SvB employees table (braunschweig.employees_path, braunschweig/13111-01-03-5.xlsx) is not committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    RESOLVED IN PART BY ADR-0080 (issue #252). The discrepancy this record reported is confirmed and acted on: braunschweig.ipf.use_employment_margin gates only the ADDITIONAL TASK-010 joint (Kreis x hh_size x employed) margin, which needs braunschweig.ipf.employment_by_hhsize_path -- set in no committed config -- while the margin actually "raked to GENESIS SvB" per ADR-0014 is the UNCONDITIONAL (Kreis x sex x employment-age-class x employed) block that no flag governs. The fallback the flag used to hit was not merely uninstrumented; it built the joint targets as the outer product of the existing marginals, which forces statistical independence of employment and household size and overwrites the donor seed's correlation while leaving every base margin satisfied. That substitute is removed, the flag now raises without a cross-tab, and it is parked (false in the four simple_ipf_open configs, deleted as a dead key from the five popsim configs).
+    STILL PENDING: the feature itself is unvalidated and cannot be assessed as "working" -- it is switched off. No OFF/ON pair was run on real data, so the magnitude of the removed distortion is unquantified; only its structural existence is demonstrated (tests/test_employment_margin_task010.py). Enabling it requires the real cross-tab tracked in issue #311.
+  source: ADR-0080

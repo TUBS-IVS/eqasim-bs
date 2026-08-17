@@ -1,0 +1,38 @@
+id: 100pct-kreis5-2026-07-10
+date: '2026-07-10'
+repository:
+  commit: b6ba420
+  branch: main
+configuration:
+  base: config_run_kreis5_100pct.yml
+  overlays: []
+  notes: felix ~/wt-kreis-run @ b6ba420 main; popsim settings settings_tier3_mef100_intseed_numba.yaml
+    (SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS=false + USE_NUMBA=true, ADR-0056)
+sampling:
+  rate: 100% (~1.13M persons, 558k households)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- production_candidate
+status:
+  execution: completed
+  notes: Ledger state was 'running'; completion is inferred from the later READ-ONLY reuse of
+    cache_bs_100pct_allfeat_popsim by verbindungen-ab-2026-07-16 and anchor-holdout-2026-07-17.
+environment: server (64c/128GB)
+validation:
+- metric: 1km household totals
+  reference: cell controls
+  result: exact
+  notes: Quality A/B vs the float reference batch was PENDING in the ledger.
+features:
+  note: popsim_mid full pool (stratify=false) + tier0-3 + employment_grid + 5 KREIS controls
+artifacts:
+- cache_bs_100pct_allfeat_popsim
+- output_bs_100pct_allfeat_popsim_kreis5
+- logs/run_kreis5.log
+issues: []
+decisions:
+- ADR-0056
+source: RUNS.md row 2026-07-10 (ledger row last updated while running)

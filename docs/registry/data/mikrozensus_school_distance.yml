@@ -1,0 +1,30 @@
+dataset: mikrozensus_school_distance
+title: Mikrozensus 2024 school-trip distance by school type
+inventory_id: E8
+provider: DESTATIS
+vintage: '2024'
+geography: null
+crs: null
+roles:
+- calibration_target
+used_by: []
+acquisition:
+  method: auto_script
+  source: https://www.destatis.de (Mikrozensus Pendler tables)
+  script: scripts/seed_mikrozensus_school_distance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mikrozensus/mikrozensus2024_school*.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Education-gravity slope calibration reference next to MiD T43.

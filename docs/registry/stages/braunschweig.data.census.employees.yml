@@ -1,0 +1,18 @@
+stage: braunschweig.data.census.employees
+title: SvB at workplace (Gemeinde)
+layer: work
+description: Reads GENESIS 13111-01-03-5 (SvB am Arbeitsort per Gemeinde) -- the attraction mass
+  of the work gravity model.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/employees.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+inputs:
+- genesis_svb_workplace

@@ -1,0 +1,30 @@
+dataset: clc_backbone
+title: Copernicus CLC+ Backbone / CLC 2018 landcover (100 m raster)
+inventory_id: F6
+provider: Copernicus Land Monitoring Service
+vintage: null
+geography: null
+crs: null
+roles:
+- spatial_input
+used_by: []
+acquisition:
+  method: manual_download
+  source: https://land.copernicus.eu (registration required)
+  script: null
+storage:
+  expected_path: eqasim-data/data/ (user-provided)
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: CC-BY 4.0
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: null

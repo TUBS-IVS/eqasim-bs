@@ -1,0 +1,32 @@
+name: Model registry / documentation check
+
+# Metadata-only: verifies the registries (features/stages/data), ADR records,
+# run manifests, resolved canonical config, committed DAG snapshots and the
+# generated views WITHOUT the scientific stack, proprietary data or synpp
+# (DAG re-extraction reports SKIP; data-file checks resolve committed paths
+# only). See docs/DOCUMENTATION_GOVERNANCE.md.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  documentation-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install metadata dependencies
+        run: pip install pyyaml pytest
+      - name: Documentation check (FAIL findings fail the job)
+        run: python -m braunschweig.documentation check --quiet --no-dag
+      - name: Registry guard tests
+        run: >
+          pytest -q
+          tests/test_documentation_schema.py
+          tests/test_documentation_registry.py
+          tests/test_documentation_checks.py

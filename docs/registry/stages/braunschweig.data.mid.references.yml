@@ -1,0 +1,18 @@
+stage: braunschweig.data.mid.references
+title: MiD validation references
+layer: validation
+description: Committed MiD 2023 reference tables (P9, P12.1, P13, P17.1, W1...) for validation
+  reporting.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/mid/references.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- mid2023_reference_tables

@@ -21,6 +21,64 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Fraction of NaN cells in a multi-column row-sum above which the (otherwise silent)
+# skipna=True suppression is escalated from INFO to WARNING. See
+# ``sum_columns_logging_nan`` and issue #150 (fallback-transparency rule, CLAUDE.md).
+NAN_SUM_WARN_FRACTION: float = 0.01
+
+
+def sum_columns_logging_nan(frame: "pd.DataFrame", columns, label: str) -> "pd.Series":
+    """Row-sum ``columns`` of ``frame`` with the NaN suppression made observable.
+
+    ``pandas.DataFrame.sum(axis=1)`` defaults to ``skipna=True``, so a NaN component
+    (e.g. a Zensus privacy-suppressed cell) is silently treated as 0 inside the sum.
+    That is numerically intended for these soft census aggregates, but it must not be
+    silent: this helper counts the NaN cells across ``columns`` and logs the rate
+    before performing the identical sum, so suppression is traceable per the mandatory
+    fallback-transparency rule (CLAUDE.md; issue #150).
+
+    Parameters
+    ----------
+    frame:
+        Source frame containing ``columns``.
+    columns:
+        Column labels to row-sum. An empty sequence yields an all-zero Series.
+    label:
+        Human-readable identifier of the derived quantity (used in the log line).
+
+    Returns
+    -------
+    pandas.Series
+        The row-sum (skipna semantics preserved) aligned to ``frame.index``; float
+        zeros when ``columns`` is empty.
+    """
+    cols = list(columns)
+    if not cols:
+        # An EMPTY column list yields an all-zero aggregate -- downstream that
+        # is indistinguishable from "zero employment/population", so it must
+        # never happen silently (e.g. a renamed parquet column making every
+        # pick miss; the #149 failure class).
+        logger.warning(
+            "[popsim.cells] %s: EMPTY column list -> all-zero row-sum. If this "
+            "aggregate is expected to carry data, the source columns were not "
+            "found (schema drift?).", label,
+        )
+        return pd.Series(0.0, index=frame.index)
+    block = frame[cols]
+    n_nan = int(block.isna().to_numpy().sum())
+    if n_nan:
+        total_cells = int(block.size)
+        rate = (n_nan / total_cells) if total_cells else 0.0
+        level = logging.WARNING if rate > NAN_SUM_WARN_FRACTION else logging.INFO
+        logger.log(
+            level,
+            "[popsim.cells] %s: %d/%d (%.2f%%) NaN cell(s) across %d column(s) "
+            "treated as 0 in the row-sum (skipna); suppression is observable.",
+            label, n_nan, total_cells, rate * 100.0, len(cols),
+        )
+    return block.sum(axis=1)
+
+
 # INSPIRE id, e.g. CRS3035RES100mN2689100E4337000 or CRS3035RES1000mN2689000E4337000.
 _INSPIRE_ID_RE = re.compile(r"^CRS3035RES(?P<res>\d+)mN(?P<north>\d+)E(?P<east>\d+)$")
 

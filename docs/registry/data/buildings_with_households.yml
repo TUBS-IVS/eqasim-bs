@@ -1,0 +1,30 @@
+dataset: buildings_with_households
+title: Building stock with cell link and dwelling flag
+inventory_id: F1.3
+provider: derived (popsimprep preprocessing)
+vintage: null
+geography: null
+crs: null
+roles:
+- derived_input
+used_by: []
+acquisition:
+  method: derived
+  source: popsimprep preprocessing step 5 (separate repository)
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/buildings/buildings_with_households_zgb.parquet
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: derived from dl-de/zero-2-0
+  restricted: false
+  redistribution: restricted
+limitations: null
+notes: Cell-accurate home placement candidate set for the popsim workflows.

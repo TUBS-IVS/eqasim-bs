@@ -1,6 +1,6 @@
 """1% smoke baseline regression for the Braunschweig synthesis pipeline.
 
-Drives ``config_local_braunschweig.yml`` end-to-end (``synthesis.output``)
+Drives ``configs/fixtures/config_local_braunschweig.yml`` end-to-end (``synthesis.output``)
 and validates the resulting CSV row counts against the locked baseline
 in ``tests/baselines/smoke_1pct_baseline.txt``.
 
@@ -40,7 +40,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SMOKE_CONFIG = REPO_ROOT / "config_local_braunschweig.yml"
+SMOKE_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_local_braunschweig.yml"
 BASELINE = REPO_ROOT / "tests" / "baselines" / "smoke_1pct_baseline.txt"
 DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
 BS_DATA_PATH = DATA_PATH / "braunschweig"
@@ -111,7 +111,7 @@ def _sha256_12(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 def _run_smoke(tmp_path: Path) -> Path:
-    """Run synthesis.output via config_local_braunschweig.yml; return output dir."""
+    """Run synthesis.output via configs/fixtures/config_local_braunschweig.yml; return output dir."""
     import synpp
 
     with SMOKE_CONFIG.open(encoding="utf-8") as fh:

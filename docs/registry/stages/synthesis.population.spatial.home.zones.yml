@@ -1,0 +1,21 @@
+stage: synthesis.population.spatial.home.zones
+title: Home zones
+layer: home
+description: Home-zone assignment seam resolving to braunschweig.synthesis.spatial.home_zones.
+lineage:
+  type: overridden
+  upstream: synthesis.population.spatial.home.zones
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to).
+code:
+- synthesis/population/spatial/home/zones.py
+- braunschweig/synthesis/spatial/home_zones.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.spatial.home_zones
+  popsim_open: braunschweig.synthesis.spatial.home_zones
+  simple_ipf_open: braunschweig.synthesis.spatial.home_zones

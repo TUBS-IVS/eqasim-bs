@@ -10,15 +10,16 @@ Runs the published matsim application-contrib extraction
 - the tool routes every freight trip on the Germany-Europe network,
   classifies it (INTERNAL / INCOMING / OUTGOING / TRANSIT), trims routes at
   the boundary and shifts departure times by the access travel time;
-- the tool is run ONCE PER CATEGORY (``--tripType INTERNAL/...``) because the
-  matsim 2025.0-PR3568 build does not tag persons with their category (the
-  ``geographical_Trip_Type`` attribute only exists in later matsim-libs
-  versions, verified on the real output). Four unmodified-tool runs give the
-  exact published classification without inventing a geometric heuristic --
-  trimmed endpoints lie on network nodes INSIDE the polygon, so an in/out
-  point test cannot recover the category reliably.
+- the tool is run ONCE PER CATEGORY (``--geographicalTripType INTERNAL/...``)
+  so downstream stages keep consuming one plans file per category. (The
+  matsim 2026 build additionally tags persons with the
+  ``geographical_Trip_Type`` attribute, which ``trips.py`` reads when
+  present; the per-category runs remain the canonical partition and keep
+  the stage outputs and caching unchanged.)
 - output is one 100% plans file per category with leg mode ``truck`` and
-  subpopulation ``freight`` -- sampling to the pipeline rate happens later.
+  subpopulation ``freight`` (passed explicitly; the matsim 2026 build
+  defaults to ``longDistanceFreight``) -- sampling to the pipeline rate
+  happens later.
   This stage is sampling-rate independent and therefore cached across
   sampling-rate changes (~4 x 45 min one-time routing cost).
 
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # The four geographic trip categories of the published extraction (partition of
 # the ZGB-relevant trips). Lowercase keys are our canonical labels; the tool's
-# --tripType option takes them uppercase.
+# --geographicalTripType option takes them uppercase.
 TRIP_CATEGORIES = ("internal", "incoming", "outgoing", "transit")
 OUTPUT_TEMPLATE = "zgb_freight.%s.100pct.plans.xml.gz"
 SUMMARY_NAME = "freight_extraction_summary.csv"
@@ -109,11 +110,16 @@ def execute(context):
             "--input-crs", crs,
             "--target-crs", crs,
             "--cut-on-boundary",
-            # NOTE: this contrib build (matsim 2025.0-PR3568) exposes "--LegMode"
-            # (capital L) and has no "--subpopulation" option (it hard-codes
-            # subpopulation "freight"). Verified against the tool's --help.
-            "--LegMode", "truck",
-            "--tripType", category.upper(),
+            # NOTE: option names of the matsim 2026 contrib build (verified
+            # against the tool's --help): --legMode (was --LegMode) and
+            # --geographicalTripType (was --tripType, same enum values).
+            # --subpopulation must be passed explicitly: the tool now defaults
+            # to "longDistanceFreight", while the whole downstream pipeline
+            # (merge, replanning config, freight_filter, analysis) keys on
+            # subpopulation "freight".
+            "--legMode", "truck",
+            "--geographicalTripType", category.upper(),
+            "--subpopulation", "freight",
             "--output", output_path,
         ])
 

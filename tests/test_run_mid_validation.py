@@ -63,15 +63,23 @@ class TestDfToMarkdown:
 
 
 class TestEducationLevelForAge:
-    def test_maps_t43_age_bands_to_levels(self) -> None:
+    # Bands mirror the SYNTHESIS assignment (education_gravity._SCHOOL_BANDS:
+    # 0-5 / 6-9 / 10-15 / 16-19), 2026-07-12 validation audit: the previous
+    # local 0-6/7-10/11-13/14-17 bands validated the 6/10/14/15-year-olds
+    # against the wrong level's T43 target.
+    def test_maps_synthesis_age_bands_to_levels(self) -> None:
         assert rmv.education_level_for_age(4) == "kindergarten"
-        assert rmv.education_level_for_age(8) == "grundschule"
-        assert rmv.education_level_for_age(12) == "sekundar_1"
+        assert rmv.education_level_for_age(5) == "kindergarten"
+        assert rmv.education_level_for_age(6) == "grundschule"
+        assert rmv.education_level_for_age(9) == "grundschule"
+        assert rmv.education_level_for_age(10) == "sekundar_1"
+        assert rmv.education_level_for_age(15) == "sekundar_1"
         assert rmv.education_level_for_age(16) == "oberstufe"
+        assert rmv.education_level_for_age(19) == "oberstufe"
 
     def test_returns_none_outside_t43_scope(self) -> None:
-        # BBS / university (18+) and infants below school age have no T43 target.
-        assert rmv.education_level_for_age(19) is None
+        # University pupils (20+) have no T43 target.
+        assert rmv.education_level_for_age(20) is None
         assert rmv.education_level_for_age(25) is None
         assert rmv.education_level_for_age(np.nan) is None
 

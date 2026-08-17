@@ -1,0 +1,22 @@
+stage: braunschweig.data.cordon_network
+title: Cordon ring network
+layer: cordon
+description: Clips the Germany-ring OSM extract to the buffered cordon ring and derives the network
+  extension outside the ZGB (ADR-0028).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/cordon_network.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+production: true
+inputs:
+- osm_cordon_ring
+features:
+- cordon_network_ring
+decisions:
+- ADR-0028

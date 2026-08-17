@@ -1,0 +1,20 @@
+stage: matsim.runtime.eqasim
+title: eqasim Java build
+layer: infrastructure
+description: Builds the eqasim Java package -- from the project's own eqasim-java-bs fork via
+  eqasim_source_path (ADR-0038).
+lineage:
+  type: extended
+  upstream: null
+  notes: null
+code:
+- matsim/runtime/eqasim.py
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+production: true
+features:
+- eqasim_java_fork
+decisions:
+- ADR-0038

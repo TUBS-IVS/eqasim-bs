@@ -1,0 +1,31 @@
+dataset: hsn_tsn_lookup
+title: HSN/TSN type-key lookup with technical vehicle data (scrape)
+inventory_id: I4
+provider: hsn-tsn.de (scrape)
+vintage: null
+geography: null
+crs: null
+roles:
+- derived_input
+used_by:
+- braunschweig.synthesis.vehicles.cars.household
+acquisition:
+  method: scrape
+  source: https://www.hsn-tsn.de
+  script: scripts/scrape_hsn_tsn.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/kba/hsn_tsn_lookup.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: website terms (unclear)
+  restricted: false
+  redistribution: forbidden
+limitations: Scraped lookup; regenerate with the scraper, do not redistribute.
+notes: null

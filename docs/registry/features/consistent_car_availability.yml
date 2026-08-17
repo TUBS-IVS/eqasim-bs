@@ -1,0 +1,68 @@
+feature: consistent_car_availability
+title: Consistent car_availability
+area: attributes
+description: Derives car_availability consistently from the MiD-P17.1 licence and the household
+  vehicle count instead of sampling it independently (ADR-0017). Legacy simple_ipf_open
+  mechanism, deliberately NOT ported -- under popsim_mid car_availability is derived per
+  household from cars vs. adults, and the licence is applied separately by the Java
+  mode availability as the inner gate (ADR-0079).
+stages:
+- synthesis.population.enriched
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: false
+  flags:
+  - consistent_car_availability
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0017
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/availability.py
+evidence:
+  tests:
+  - tests/test_car_availability_consistency.py
+  - tests/test_cars_caravail_consistency.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_cars_caravail_consistency.py
+    note: test_non_on_on_combos_byte_identical_to_legacy_order confirms the OFF combination matches
+      legacy ordering.
+  fallback_rate:
+    instrumented: true
+    log_marker: car_availability P19 rake fallback
+    note: |
+      Logs a per-zone fallback rate when the P19 "jederzeit" target is unreachable after the carless/licence floor (test_fallback_logged_when_target_unreachable confirms this is tested).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_H7_cars_by_kreis.csv
+    note: Also draws on committed P19 car-constraint and P17_1 tables under the same directory.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Wiring decided in ADR-0079: NOT ported for a substantive reason rather than because
+    a donor equivalent exists. The legacy rule is PERSON-level and sets
+    car_availability='none' for licence-less persons; in BraunschweigModeAvailability
+    'none' closes the entire car block INCLUDING car_passenger, while that same class
+    already applies the licence as the inner gate opening car on top of car_passenger.
+    Porting would filter the licence twice and suppress passenger trips for children
+    and non-driving adults. A P19 rake would additionally be simulation-neutral,
+    because BraunschweigPredictorUtils.hasCarAvailability compares only against 'none'.
+  source: ADR-0079 (mechanism decision); ADR-0017 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

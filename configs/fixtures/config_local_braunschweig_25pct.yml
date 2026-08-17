@@ -1,0 +1,340 @@
+## Synthetic population pipeline for the Braunschweig region (ZGB-8) - 25% sample
+## incl. MATSim outputs. Derived from config_local_braunschweig.yml; only the
+## sampling rate, the output prefix/folder and the `run` section differ.
+## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
+
+working_directory: eqasim-data/cache_bs_25pct
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  processes: 8
+
+  # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
+  hts: entd
+
+  sampling_rate: 0.25
+  random_seed: 1234
+
+  freight_enabled: false  # avoid requiring the local-only german-wide-freight inputs
+
+  data_path: eqasim-data/data
+  output_path: eqasim-data/output_bs_25pct
+  output_prefix: braunschweig_25pct_
+
+  # Vehicle fleet (spec A4 / Task F5): emit exactly the MiD-H7 number_of_cars
+  # vehicles per household (each owned by a licensed adult, typed via the
+  # KBA/HBEFA fleet chain) instead of one identical default car per person.
+  # OFF (vehicles_method: "default") reproduces the legacy fleet byte-identically.
+  vehicles_method: household
+  # German fleet model switches (Task F7), default ON. fleet_model_enabled:false
+  # (or vehicles_method:"default") reproduces the legacy single default_car fleet
+  # byte-identically. fleet_model_brands toggles the additive (non-HBEFA)
+  # brand/model attributes. fleet_electric_calibration selects the electric-share
+  # model (per-Kreis KBA FZ 27.15 mix + per-Gemeinde FZ 27.17 BEV tilt).
+  fleet_model_enabled: true
+  fleet_model_brands: true
+  # Additive HSN/TSN engine attributes (power kW/PS, displacement ccm, a
+  # representative HSN/TSN and the matched dominant fuel) attached to every
+  # vehicle by brand + model family. Completeness data only -- not consumed by
+  # the simulation yet. Default ON; OFF -> the six engine columns are absent and
+  # the writer emits no engine attributes (byte-identical to pre-feature).
+  fleet_hsn_tsn_attributes: true
+  fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
+
+  java_memory: 44G
+
+  # MATSim simulation iterations (0..N-1). N=200 → 200 iterations.
+  matsim_last_iteration: 199
+  matsim_write_events_interval: 0   # 0 = only final iteration
+  matsim_write_plans_interval: 50
+
+  mode_choice: false
+  # Optimization step (1): richer, behaviourally-relevant HTS matching keys.
+  # Beyond the legacy [sex, age_class, has_license] we add the EXOGENOUS
+  # demographic anchors that are genuinely populated on BOTH sides at matching
+  # time and drive daily mobility:
+  #   employed             -> commute vs. no commute (native both sides)
+  #   household_size_class -> trip generation (binned 1..5+, native both sides)
+  #   urban_class          -> urban/rural trip-length gradient (DE RegioStaR-2
+  #                           <-> FR unite-urbaine crosswalk; target column added
+  #                           by braunschweig.ipf.attributed.attach_urban_class)
+  # Order = matching priority: the LAST key is relaxed first, so the strongest
+  # anchors (sex, age_class) stay longest and the weaker ones drop first when a
+  # cell falls below matching_minimum_observations (the built-in anti-overfitting
+  # guard). socioprofessional_class is intentionally NOT added: on the target it
+  # is a deterministic function of (employed, age, studies), which are already
+  # keys, so it would only fragment cells without independent signal.
+  # car_availability / has_pt_subscription / economic_status are NOT added either:
+  # at the matching stage they are still placeholders (real values are derived
+  # downstream in braunschweig.synthesis.population.enriched), so matching on them
+  # would be matching on invented data. ``studies`` is appended automatically as
+  # the lowest-priority key by reactivate_person_attributes.
+  matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
+
+  # --- Tier A3: reactivate the synthesised couple / studies /
+  # socioprofessional_class person attributes (previously dead constants in
+  # braunschweig.ipf.attributed). couple is derived from the formed hh_type,
+  # studies from age x the Destatis education-participation share
+  # (braunschweig.data.education.student_share), socioprofessional_class from
+  # the broad activity status. When ON, ``studies`` is also appended as the
+  # lowest-priority HTS matching key so students get student activity-day
+  # donors. Default ON; set to false to reproduce the legacy byte-identical
+  # output (couple=False, studies=False, socioprofessional_class=0).
+  reactivate_person_attributes: true
+
+  # --- R-A: Gravity calibration (TASK-001).
+  # Poisson-GLM MLE on BA Pendleratlas (939 ZGB pairs) → β=−0.065
+  # (log-L +82 % vs default −0.18). Note: braunschweig.gravity.model
+  # post-IPFs Gemeinde flows against BA Kreis totals, so β affects only
+  # sub-Kreis distribution. commute_distance KPI is MiD-P13-overridden
+  # (see commute_distance.py) and therefore independent of β.
+  gravity_slope: -0.065
+  gravity_constant: -2.4
+  gravity_diagonal: 1.0
+  gravity_slope_by_regiostar7:
+    # Identified full-panel GLM on the 225 km ring; see
+    # scripts/calibrate_gravity_per_rs7.py --anchor-scope ring.
+    72: -0.0558
+    73: -0.0638
+    74: -0.0640
+    75: -0.0704
+    76: -0.0719
+    77: -0.0667
+
+  # --- IPF: per-commune household-size margin (Zensus 2022 1000A-2081)
+  # Adds ``hh_size`` as a fifth IPF margin so the synthetic population
+  # reproduces the strong urban–rural gradient in 1P-HH share that
+  # 5000H-2001 alone (regions-aggregated) cannot capture.
+  braunschweig.ipf.use_household_size_margin: true
+
+  # Determine economic_status from the MiD household-type x region predictor
+  # (Bayes: P(status|hhtype,region), Niedersachsen base tilted by RegioStaR-7),
+  # then re-derive household_income / household_income_eur from the sampled
+  # status. Household type is a much stronger SES predictor than the legacy 1:1
+  # income-class mapping. OFF -> legacy income-derived status (byte-identical).
+  status_from_hhtype: true
+
+  # Consistent car_availability (A5, causal IPF chain). Derive car_availability
+  # in {none, some, all} conditionally on the per-person MiD-P17.1 licence and
+  # the MiD-H7 household car count, then rake the residual to the MiD-P19
+  # "jederzeit" marginal. This makes car_availability consistent with cars and
+  # licences (no "all" in a 0-car or licence-less household) and reinstates the
+  # "some" category. OFF -> legacy free P19 IPF + all/none binarisation
+  # (byte-identical). Requires the vehicle-count / licence sampling that now runs
+  # before car_availability (output-identical re-order).
+  consistent_car_availability: true
+
+  # Income/household-type-aware household car count (number_of_cars). ON -> draw
+  # number_of_cars per household from the MiD-coupled pmf
+  # P(num_cars | hhtype, status, raumtyp) (richer / family households own more
+  # cars), then rake the per-Kreis distribution back to the MiD-H7 Kreis control
+  # so each Kreis's 0/1/2/3+ totals stay EXACTLY the H7 marginal -- only the
+  # within-Kreis allocation by income/household type/raumtyp changes. OFF ->
+  # legacy per-Kreis MiD-H7 draw (byte-identical). Feeds the F5 fleet generator.
+  cars_income_aware: true
+
+  # Distribution-based household_income_eur. ON -> draw the monthly net household
+  # income in EUR from the REAL MiD 2023 distribution P(bracket | hh_size,
+  # raumtyp) (10 brackets, Niedersachsen base + RegioStaR raumtyp tilt) instead of
+  # the coarse 5 class-midpoints x a single INKAR Kreis scalar. The draw is
+  # rank-aligned to economic_status (income monotone in the SES anchor, bracket
+  # marginal preserved exactly), the open top bracket gets a heavy-tail draw, and
+  # INKAR is applied only as a FINE within-region Kreis tilt (scale / mean-scale,
+  # no double-count of the already-regional MiD level). household_income (the EUR
+  # class label) + high_income are re-derived from the continuous value;
+  # economic_status is unchanged. OFF -> legacy class-midpoint x INKAR-scale path
+  # (byte-identical household_income_eur). Flows into the A1 MATSim attribute
+  # writer (householdIncomeEur) and any income-sensitive downstream model.
+  income_eur_from_distribution: true
+
+  # Completeness household attribute housing_tenure {rent, own, other}. ON -> per
+  # household a tenure is sampled from P(tenure | income_bracket, raumtyp) (MiD
+  # income x Wohnen, NDS base + raumtyp tilt, Bayes-inverted) and written to the
+  # MATSim population as the string attribute "housingTenure". It is NOT consumed
+  # by the simulation (a completeness attribute, like the HSN/TSN vehicle engine
+  # attributes); it is provided for downstream studies. OFF -> the attribute is
+  # absent and the population output is byte-identical.
+  synthesise_housing_tenure: true
+
+  # A6 (Tier A): condition pt_subscription on student/employment status. ON ->
+  # the combined MiD P24.1 Job-/Semesterticket category is zeroed for persons who
+  # are neither employed nor studying and the per-person ticket-type vector
+  # re-normalised before sampling (a work/study pass requires a work/study
+  # relationship). OFF -> the exact legacy 3-margin {Kreis,sex,age} P24.1 IPF
+  # (byte-identical). The optional carless<->PT car-availability margin activates
+  # only when the MiD P24.1 x Pkw-Verfuegbarkeit cross-tab CSV is present.
+  pt_subscription_conditioned: true
+
+  # --- Phase 2 IPF smoothing (TASK-011, 2026-04-26) ----------------------
+  # Symmetric-Dirichlet seed prior. Adds α pseudo-counts to every IPF
+  # cell to dampen the influence of empty source cells in sparse rural
+  # Gemeinden (Goslar/Helmstedt). α=0 reproduces legacy IPF bit-identically;
+  # α=0.5 is a moderate setting for a first comparison run.
+  braunschweig.ipf.dirichlet_prior_strength: 0.5
+
+  # --- Phase 2 IPF 4-way (TASK-010, 2026-04-26) --------------------------
+  # Adds an explicit hh_size x employment margin so 1P-HH/2P-HH employment
+  # rates match observed shares per Kreis. PARKED (issue #252, ADR-0080):
+  # that requires a real cross-tab via employment_by_hhsize_path, which no
+  # committed config has. The outer-product substitute the stage used to
+  # build did the opposite of the stated intent -- it forced the 1P-HH and
+  # 2P-HH employment rates to be EQUAL, overwriting the donor correlation.
+  braunschweig.ipf.use_employment_margin: false
+
+  # --- IPF household realism (#251) --------------------------------------
+  # ADR-0004/0005/0006 decided these three refinements and the code has been in
+  # place and unit-tested since; issue #251 found that no committed config ever
+  # enabled them, so no run had ever executed them. All three require the size
+  # margin above, and sex-aware pairing additionally requires age-aware chunking
+  # -- braunschweig.ipf.config_validation enforces both at stage entry.
+
+  # Joint age x household-size margin from Zensus 2022 1000A-3082 (ADR-0004).
+  # Raked (2D IPF) against the population and size marginals before use, so it
+  # agrees with both and cannot make the IPF infeasible. Suppresses implausible
+  # age/size combinations such as children in single-person households.
+  braunschweig.ipf.use_joint_age_size_margin: true
+
+  # Age-aware household composition (ADR-0005). Forms households within each
+  # (commune_id, hh_size) bucket from children-driven capacity plus a mother-age
+  # anchor instead of the legacy age-blind chunking of IPF weights. The anchor is
+  # a hardcoded default, not a committed table (docs/features/household-synthesis.md).
+  braunschweig.ipf.age_aware_chunking: true
+
+  # Sex-aware couple pairing inside the age-aware composition pass (ADR-0006).
+  # Opposite-sex-first allocation at the DEFAULT_SAME_SEX_COUPLE_SHARE default
+  # (0.011); that share's provenance is prose-documented, not a committed table.
+  # Byte-identical to legacy sex-blind pairing when the IPF emits no sex column.
+  braunschweig.chunking.sex_aware_couples: true
+
+  gtfs_path: gtfs
+  vrb_stations_path: vrb/stations.json
+  osm_path: osm
+
+  # --- Braunschweig region scope -----------------------------------------
+  # Zweckverband Großraum Braunschweig (ZGB) — 8 Kreise (~1.13 M EW),
+  # matches the region reported in the MiD 2023 regional tables (sample 7555).
+  # Göttingen (03159) and Northeim (03155) are EXCLUDED (outside ZGB).
+  #   03101 SK Braunschweig, 03102 SK Salzgitter, 03103 SK Wolfsburg,
+  #   03151 LK Gifhorn,      03153 LK Goslar,     03154 LK Helmstedt,
+  #   03157 LK Peine,        03158 LK Wolfenbüttel
+  braunschweig.political_prefix:
+    - "03101"
+    - "03102"
+    - "03103"
+    - "03151"
+    - "03153"
+    - "03154"
+    - "03157"
+    - "03158"
+
+  # Gemeinde population shares from the OPEN Zensus 2022 table 1000A-3082 instead
+  # of the scraped, non-redistributable urbistat table (#251). Only the spatial key
+  # WITHIN a Kreis changes -- the Kreis totals remain the official DESTATIS
+  # 12411-0018 figures. The Zensus source carries the authoritative 12-digit ARS,
+  # so it needs no fuzzy Gemeinde-name matching against VG250, and its age-band
+  # edges align with the DESTATIS classes (urbistat smears DESTATIS class 10,
+  # ages 10-14, into its 12-17 band). Affects the IPF population path only.
+  braunschweig.census.use_zensus_gemeinde_shares: true
+
+  # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
+  # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
+  braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
+  braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
+  braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
+
+  # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
+  # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
+  # (Wohnort ZGB). Genutzt von braunschweig.gravity.model zur Kalibrierung.
+  braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
+  braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
+
+  # Zensus 2022 — Haushalte nach Gemeinde × Größe × Typ (Tabelle 5000H-2001,
+  # Flatfile-Download von ergebnisse.zensus2022.de). Ersetzt die MiD-basierte
+  # Näherung sowie Bavarias GENESIS 12211-105. Registergestützte Vollerhebung,
+  # Referenz-Stichtag 2022-05-15.
+  braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
+
+  # BBSR INKAR Indikatorenexport "Haushaltseinkommen" (€/EW/Monat je Kreis,
+  # Zeitreihe 2000–2021). Liefert die fehlende Kreis-Dimension für die
+  # regionslose MiD H4 Quintil-Verteilung. Wird in enriched.py multiplikativ
+  # auf die Class-Midpoints angewandt (vgl. Wolfsburg 2197 € vs. Goslar 1905 €).
+  braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
+  braunschweig.inkar_year: latest
+
+  # TASK-003: Density-weighted home sampling (Zensus 2022 100m).
+  braunschweig.home_density_weighting: true
+
+  # Geofabrik snapshot for Niedersachsen
+  osm_network_path: osm/niedersachsen-latest.osm.pbf
+
+  # External toolchain (Windows paths)
+  osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
+  osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
+
+  # Building-level activity potentials OFF (no local-only parquet required);
+  # see the real-data run configs for the ON path.
+  work_building_potentials: false
+  secondary_building_potentials: false
+  education_building_distribution: false
+
+# --- Aliases ------------------------------------------------------------------
+# Same pattern as config_local_bavaria.yml but with three census loaders and the
+# buildings loader redirected to the forked Braunschweig implementations.
+aliases:
+  # Top-level overrides (identical to Bavaria — reuse the bavaria.* stages)
+  data.census.filtered: braunschweig.ipf.attributed
+  synthesis.population.income.selected: braunschweig.synthesis.income
+  synthesis.population.spatial.home.zones: braunschweig.synthesis.spatial.home_zones
+  synthesis.locations.home.locations: braunschweig.locations.home
+  synthesis.locations.education: eqasim_common.locations.education
+  synthesis.locations.secondary: braunschweig.locations.secondary
+  # Phase 2 (TASK-CS01, 2026-04-26): replace eqasim's RDA secondary-location
+  # solver with the chainsolvers carla solver (default distance-based
+  # scoring). Comment this alias out to revert to the legacy
+  # ``synthesis.population.spatial.secondary.locations`` stage.
+  synthesis.population.spatial.secondary.locations: braunschweig.synthesis.locations.secondary_chainsolvers
+  # Work-locations: Bavaria ALKIS/OSM pool for ZGB-8 + one synthetic
+  # workplace per external Kreis derived from BA Pendler outbound.
+  # Required so ~28% of ZGB commuters can reach workplaces outside the
+  # 8-Kreis scope (BA P2025 reports 61 160 SvB outbound). See
+  # braunschweig/locations/work.py + braunschweig/data/external_workplaces.py.
+  synthesis.locations.work: braunschweig.locations.work
+  # OD-Matrix: BA Pendleratlas 2025 auf Kreis-Ebene (empirisch beobachtet)
+  # kalibriert den Bavaria-Gravity-Output auf Gemeinde-Ebene.
+  data.od.weighted: braunschweig.gravity.model
+  data.spatial.iris: eqasim_common.data.spatial.iris
+  data.spatial.codes: eqasim_common.spatial.entd_codes
+  synthesis.population.spatial.primary.locations: eqasim_common.locations.synthesis.replacement
+  # Enriched-population stage: point directly to the Braunschweig fork so
+  # synpp's single-step alias resolution picks it up (synpp.resolve_stage
+  # substitutes once, so aliasing via the intermediate bavaria.* entry below
+  # would silently fall back to the Bavaria delegate).
+  synthesis.population.enriched: braunschweig.synthesis.population.enriched
+  matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+
+  # Region-specific loader overrides: redirect selected eqasim_common.data.* stages
+  # to their Braunschweig forks. Only stages whose input layout differs.
+  # Population fork uses urbistat.com scraped data (11-class age scheme)
+  # Employment fork uses GENESIS 13111-06-02-4 (Wohnort x Alter x Geschlecht)
+  # Employees-at-workplace fork uses GENESIS 13111-01-03-5 (SvB Arbeitsort, Gemeinde)
+  # MiD 2023 Großraum Braunschweig (infas sample 7555, 8 Teilgebiete = ZGB Kreise).
+  # Replaces the hard-coded Munich 2017 values from bavaria/data/mid/data.py.
+  # Household size and income from MiD 2023 H1/H4 — replaces Bavaria-specific
+  # GENESIS files (12211-105 / 12211-101) that are not available for NDS.
+  # Enriched-population fork: already registered directly as
+  # synthesis.population.enriched above (synpp resolves aliases only one
+  # step deep, so chaining via bavaria.synthesis.population.enriched would
+  # be ignored).
+  # Buildings fork: ALKIS Hausumringe NDS (LGLN) preprocessed to GeoParquet
+  # via scripts/preprocess_alkis_landuse.py, filtered to residential AAA-GFK
+  # codes. See braunschweig/data/buildings.py for the area / activity rules.
+  # Activity-locations fork: ALKIS GFK codes + ATKIS landuse polygons
+  # replace the OSM-tag based bavaria stage. Feeds work / education /
+  # secondary samplers directly — no OSM parsing needed anymore.
+  # Commute-distance fork: overrides the ENTD-sampled work commute
+  # distances with MiD 2023 P13 Kreis-level distributions for ZGB
+  # residents. See braunschweig/synthesis/spatial/commute_distance.py.
+  synthesis.population.spatial.commute_distance: braunschweig.synthesis.spatial.commute_distance

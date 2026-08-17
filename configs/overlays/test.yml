@@ -1,0 +1,28 @@
+## TEST overlay: 1-Kreis (Braunschweig city), 1% sample, synthesis only (no MATSim).
+## Fast wiring check of the full population-synthesis feature set.
+working_directory: eqasim-data/cache_bs_test
+
+run:
+  - synthesis.output
+
+config:
+  processes: 8
+  sampling_rate: 0.01
+  # Shrink the REGION, not the solver (memory: popsim smoke scoping) -- 1 Kreis
+  # keeps every stage real while the PopulationSim problem stays small.
+  braunschweig.political_prefix:
+    - "03101"
+  output_path: eqasim-data/output_bs_test
+  analysis_working_directory: eqasim-data/cache_bs_test
+  output_prefix: braunschweig_test_
+  # OWN popsim scratch dir: the stale-batch guard purges a shared work_dir on
+  # config change -- a 1-Kreis test must never purge the production batch store.
+  braunschweig.population.popsim.work_dir: eqasim-data/popsim_work_test
+  # 750 (was 3000): 03101 (Braunschweig city) is dense (~137k HH); at 3000 cells/batch
+  # the per-batch pipeline.h5 reached ~23 GB and overflowed HDF5's VLArray on write.
+  # 750 matches the 100% run (~9 GB h5 on 03101, smaller under the int-seed regime).
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 3
+  # Throwaway run: prime from the shared store but never seed it.
+  cache_share_export: false
+  cache_share_recompute: []

@@ -89,3 +89,38 @@ def test_select_donors_raises_when_none():
     trips = pd.DataFrame({"hts_id": [1], "following_purpose": ["home"]})
     with pytest.raises(ValueError):
         select_commuter_donors(persons, trips, "hts_id")
+
+
+def test_assign_fixed_mode_per_agent_matches_homogeneous_single_reference():
+    # A homogeneous per-agent reference list must reproduce assign_fixed_mode exactly
+    # (same seed, agent-sequential rng): this is the OFF-equivalence guarantee.
+    from braunschweig.data.cordon.plans import (
+        assign_fixed_mode, assign_fixed_mode_per_agent)
+    ref = {"<10": {"car": 0.8, "pt": 0.2}, ">=10": {"car": 0.6, "pt": 0.4}}
+    band_of = lambda d: "<10" if d < 10 else ">=10"
+    dist = [3.0, 12.0, 7.0, 40.0, 1.0, 25.0]
+
+    single = assign_fixed_mode(dist, ref, band_of, np.random.default_rng(123))
+    per_agent = assign_fixed_mode_per_agent(
+        dist, [ref] * len(dist), band_of, np.random.default_rng(123))
+    assert per_agent == single
+
+
+def test_assign_fixed_mode_per_agent_uses_each_agents_own_reference():
+    # Agent 0 has a car-only reference, agent 1 a pt-only reference: the draw is
+    # deterministic regardless of seed because each band has a single mode.
+    from braunschweig.data.cordon.plans import assign_fixed_mode_per_agent
+    car_ref = {"any": {"car": 1.0}}
+    pt_ref = {"any": {"pt": 1.0}}
+    band_of = lambda d: "any"
+    out = assign_fixed_mode_per_agent(
+        [5.0, 5.0], [car_ref, pt_ref], band_of, np.random.default_rng(0))
+    assert out == ["car", "pt"]
+
+
+def test_assign_fixed_mode_per_agent_length_mismatch_raises():
+    from braunschweig.data.cordon.plans import assign_fixed_mode_per_agent
+    ref = {"any": {"car": 1.0}}
+    band_of = lambda d: "any"
+    with pytest.raises(ValueError):
+        assign_fixed_mode_per_agent([1.0, 2.0], [ref], band_of, np.random.default_rng(0))

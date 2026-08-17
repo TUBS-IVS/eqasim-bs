@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Mapping, Sequence, Union
+from typing import Iterable, Mapping, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -56,6 +56,17 @@ def _resolve_parent_kreis(
     (each 1 km maps to exactly one parent Kreis), so each parent is assigned the
     Kreis with the largest summed ``weights`` across its cells; ties break on the
     higher Kreis id (deterministic). Reassigned (boundary) cells are logged.
+
+    Universe alignment (issue #147, sub-item 1, corrected): the batch KREIS backbone
+    built here uses this RESOLVED dominant Kreis per 1 km parent, and the per-Kreis
+    attribute-control targets in ``stage.py`` now partition households/persons by the
+    SAME resolved Kreis (via :func:`braunschweig.popsim.mid.resolved_kreis_per_cell`),
+    rather than the raw ``ARS[:5]`` of each 100 m cell. Previously the two universes
+    disagreed for the ~0.1 % of border cells reassigned above (100 % run: ~48/43598):
+    the category targets summed the raw-ARS Kreis total while the 100 m backbone summed
+    the resolved cells. Region-wide per-Kreis sums are unchanged either way (a 1 km
+    parent is atomic to one resolved Kreis); the alignment only moves those border
+    cells' target attribution onto the Kreis that actually constrains them.
     """
     work = xwalk[[GEO_1KM, GEO_KREIS]].copy()
     work["_w"] = weights
@@ -136,13 +147,31 @@ def build_geo_crosswalk(
     # per-cell Kreis is then collapsed to one dominant Kreis per 1 km parent so the
     # WELT > STAAT > KREIS > ZENSUS1km > ZENSUS100m hierarchy nests strictly.
     if ars_col is not None and ars_col in df_100m.columns:
-        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str[:5].to_numpy()
+        # zfill(12) before slicing the Kreis prefix so an ARS that lost a leading
+        # zero (e.g. read as an int) cannot silently join to the wrong Kreis --
+        # the same guard `stage.derive_geo_kreis_from_ars` applies, kept consistent
+        # here so this crosswalk and `mid.resolved_kreis_per_cell` never drift.
+        xwalk[GEO_KREIS] = df_100m[ars_col].astype(str).str.zfill(12).str[:5].to_numpy()
         if resolve_parent_kreis:
             if kreis_weight_col is not None and kreis_weight_col in df_100m.columns:
                 weights = pd.to_numeric(
                     df_100m[kreis_weight_col], errors="coerce"
                 ).fillna(0.0).to_numpy()
             else:
+                if kreis_weight_col is not None:
+                    # Fallback transparency (CLAUDE.md): the caller asked for a
+                    # population-weighted dominant-Kreis resolution but the
+                    # column is absent (e.g. silently skipped at parquet load)
+                    # -- uniform weights change which Kreis border cells
+                    # resolve to, so this must never happen silently.
+                    logger.warning(
+                        "[popsim.folders] build_geo_crosswalk: requested "
+                        "kreis_weight_col %r is absent from the cells frame -> "
+                        "falling back to UNIFORM weights for the dominant-Kreis "
+                        "resolution of 1 km parents (border-cell Kreis "
+                        "assignment may differ from the population-weighted "
+                        "intent).", kreis_weight_col,
+                    )
                 weights = np.ones(len(df_100m))
             xwalk = _resolve_parent_kreis(xwalk, weights)
     return xwalk
@@ -221,6 +250,8 @@ def build_kreis_control_totals(
     controls_map: Mapping[str, Sequence[str]],
     ars_col: str = "ARS_kreis",
     apportion_weights: Mapping[str, float] | None = None,
+    household_apportion_weights: Mapping[str, float] | None = None,
+    household_control_names: Iterable[str] | None = None,
 ) -> pd.DataFrame:
     """Build the KREIS control-totals table from an imported per-Kreis census table.
 
@@ -262,7 +293,22 @@ def build_kreis_control_totals(
         Optional ``{kreis: float share}`` to scale each Kreis's controls (the batch's
         population share of the Kreis). ``None`` (default) -> full marginal, legacy
         behaviour byte-identical (so single-batch / pre-Tier-3 callers are unchanged).
-        A Kreis missing from the map defaults to ``1.0`` (full marginal).
+        A Kreis missing from the map defaults to ``1.0`` (full marginal). Used for
+        PERSON-level controls (employment / education / trip_class), where the batch's
+        share of the Kreis population is the construct-correct apportionment basis.
+    household_apportion_weights:
+        Optional ``{kreis: float share}`` = the batch's HOUSEHOLD share of the Kreis,
+        applied instead of ``apportion_weights`` to the controls named in
+        ``household_control_names`` (issue #148). Where persons-per-household varies
+        across a Kreis's batches, a household-level target scaled by the population
+        share is inconsistent with that batch's household backbone; the household share
+        is the correct basis. ``None`` (default) -> household controls fall back to
+        ``apportion_weights`` (legacy population-share behaviour, byte-identical).
+    household_control_names:
+        Optional set/iterable of control names (keys of ``controls_map``) that are household-level
+        and must use ``household_apportion_weights``. Controls not listed here keep
+        ``apportion_weights``. ``None`` (default) -> every control uses
+        ``apportion_weights`` (legacy).
 
     Returns
     -------
@@ -290,12 +336,31 @@ def build_kreis_control_totals(
     if missing_cols:
         raise ValueError(f"kreis_table is missing source column(s): {missing_cols}")
 
+    household_names = set(household_control_names) if household_control_names else set()
+    if household_names and household_apportion_weights is None and apportion_weights is not None:
+        # Observability (CLAUDE.md no-silent-fallback): household controls were named but
+        # no household share was supplied, so they fall back to the population share. Not
+        # reachable via run_popsim_mid (which always supplies the household total when
+        # household controls are active); only a direct caller can hit this.
+        logger.debug(
+            "[popsim.folders] household controls %s apportioned by POPULATION share "
+            "(no household_apportion_weights supplied).", sorted(household_names),
+        )
     out: dict[str, object] = {GEO_KREIS: kreise}
     for name, source_cols in controls_map.items():
-        values = table.loc[kreise, list(source_cols)].sum(axis=1).to_numpy()
-        if apportion_weights is not None:
+        # skipna suppression (NaN -> 0) in the multi-source row-sum is made
+        # observable per issue #150 (fallback-transparency rule, CLAUDE.md).
+        values = cells.sum_columns_logging_nan(
+            table.loc[kreise], list(source_cols), f"KREIS control {name!r}"
+        ).to_numpy()
+        # Household-level controls are apportioned by the batch's HOUSEHOLD share when
+        # available; person-level controls (and the legacy path) use the population
+        # share (issue #148). A Kreis missing from the chosen map keeps weight 1.0.
+        use_household = name in household_names and household_apportion_weights is not None
+        weight_map = household_apportion_weights if use_household else apportion_weights
+        if weight_map is not None:
             weights = np.array(
-                [float(apportion_weights.get(k, 1.0)) for k in kreise], dtype=float
+                [float(weight_map.get(k, 1.0)) for k in kreise], dtype=float
             )
             values = values * weights
         out[name] = values

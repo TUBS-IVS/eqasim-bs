@@ -24,6 +24,50 @@ logger = logging.getLogger(__name__)
 # Cores to leave free for the OS + the main Python driver when auto-scaling.
 DEFAULT_CORE_RESERVE = 2
 
+# Single-threaded BLAS/OpenMP pins for worker processes. Every parallel
+# side-process of the pipeline must run its numerics single-threaded: with N
+# workers each opening an ncores-sized BLAS pool the box oversubscribes to
+# N x ncores threads (observed on the 64-core server: ~4000 threads, libc
+# segfaults, 12 lost PopulationSim batches -- see braunschweig/popsim/batch.py
+# and issue #122 for the chainsolvers pool). Shared here so the PopulationSim
+# batch runner and the chainsolvers pool cannot drift apart.
+SINGLE_THREAD_BLAS_ENV = {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+}
+
+
+def limit_worker_blas_threads() -> None:
+    """Pin the CURRENT process's BLAS/OpenMP pools to a single thread.
+
+    For use inside pool-worker initializers (issue #122). Two layers, both
+    needed:
+
+    1. The :data:`SINGLE_THREAD_BLAS_ENV` variables -- effective for libraries
+       loaded AFTER this call (and for ``spawn``-started children).
+    2. A ``threadpoolctl`` runtime limit -- required under the ``fork`` start
+       method (Linux server), where the parent's BLAS is already initialised
+       with its full thread count and the inherited env variables are read too
+       late to matter.
+
+    When ``threadpoolctl`` is unavailable the env layer still applies and a
+    warning is logged (no silent fallback).
+    """
+    os.environ.update(SINGLE_THREAD_BLAS_ENV)
+    try:
+        import threadpoolctl
+    except ImportError:
+        logger.warning(
+            "[parallelism] threadpoolctl is not installed; BLAS thread pin "
+            "falls back to environment variables only, which do NOT limit a "
+            "fork-inherited, already-initialised BLAS. Install threadpoolctl "
+            "for a reliable pin."
+        )
+        return
+    threadpoolctl.ThreadpoolController().limit(limits=1)
+
 
 def available_cores(reserve: int = DEFAULT_CORE_RESERVE) -> int:
     """Number of usable cores for worker processes = cpu_count - ``reserve``.

@@ -88,6 +88,15 @@ CELL_SIZE_M = 100
 # independent of every other ``random_seed``-derived stream in the pipeline.
 RANDOM_SEED_OFFSET = 91207
 
+# Households whose building_type_3class is NaN/unknown (e.g. MiD haustyp=95
+# "sonstige Angabe" donors, observed ~3.8% of placements in the 2026-07 audit)
+# default to single-family (efh_zfh) rather than being dropped -- ASSUMPTION:
+# efh_zfh is the regional modal building type, not a measured best guess for
+# these households specifically. Above this rate the defaulted share is large
+# enough to materially skew the housing-type mix, so it is escalated to a
+# warning rather than passing through the info-level summary log unnoticed.
+BTYPE_DEFAULT_WARN_RATE = 0.10
+
 # Upper area cap (m^2) applied ONLY in the legacy area-weighted draw.
 # The shared buildings stage is now uncapped so the typed path can use large
 # MFH blocks (it bounds via capacity). Legacy has no capacity mechanism, so a
@@ -420,6 +429,12 @@ class TypedHomeReport:
     n_overcapacity:
         Households the matcher had to over-occupy an existing building for (more
         households than typed dwelling slots in the cell).
+    n_btype_defaulted:
+        Households whose ``building_type_3class`` was NaN or an unmapped value
+        (not one of ``_BTYPE_MAP``'s keys) and therefore defaulted to the
+        single-family (``efh_zfh``) preference -- see :data:`BTYPE_DEFAULT_WARN_RATE`.
+    btype_default_rate:
+        ``n_btype_defaulted / n_households`` (0.0 when ``n_households`` is 0).
     """
 
     n_households: int
@@ -428,6 +443,8 @@ class TypedHomeReport:
     n_zero_building_cells: int
     n_neighbour_cell_placed: int
     n_overcapacity: int
+    n_btype_defaulted: int
+    btype_default_rate: float
 
 
 def assign_homes_typed(
@@ -629,7 +646,12 @@ def assign_homes_typed(
     sig = cbs.cell_signals(cells).set_index("ZENSUS100m")
 
     hh = households.copy()
-    hh["btype"] = hh["building_type_3class"].map(_BTYPE_MAP).fillna("efh_zfh")
+    _btype_mapped = hh["building_type_3class"].map(_BTYPE_MAP)
+    # Instrumentation only (CLAUDE.md "no silent fallbacks"): count households whose
+    # building_type_3class did NOT resolve to a known 3-class label and therefore
+    # fall back to the efh_zfh default below. The default itself is unchanged.
+    n_btype_defaulted = int(_btype_mapped.isna().sum())
+    hh["btype"] = _btype_mapped.fillna("efh_zfh")
     rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
@@ -690,6 +712,7 @@ def assign_homes_typed(
             )
 
     n = len(hh)
+    btype_default_rate = n_btype_defaulted / n if n else 0.0
     report = TypedHomeReport(
         n_households=n,
         in_cell_rate=(n_in_cell / n if n else 0.0),
@@ -697,13 +720,17 @@ def assign_homes_typed(
         n_zero_building_cells=n_zero,
         n_neighbour_cell_placed=n_neighbour,
         n_overcapacity=n_over,
+        n_btype_defaulted=n_btype_defaulted,
+        btype_default_rate=btype_default_rate,
     )
-    log = logger.warning if (n_zero or n_over) else logger.info
+    log = logger.warning if (n_zero or n_over or btype_default_rate > BTYPE_DEFAULT_WARN_RATE) else logger.info
     log(
         "[home_typed] %d HH: in-cell %.1f%%, type-match %.1f%%, %d zero-building "
         "(%d snapped to nearest neighbour-cell building, %d random in-cell point), "
-        "%d over-capacity", n, report.in_cell_rate * 100, report.type_match_rate * 100,
+        "%d over-capacity, %d btype-defaulted to efh_zfh (%.1f%%)",
+        n, report.in_cell_rate * 100, report.type_match_rate * 100,
         n_zero, n_neighbour, n_zero - n_neighbour, n_over,
+        n_btype_defaulted, btype_default_rate * 100,
     )
     result = gpd.GeoDataFrame(
         {"household_id": rec_id, "commune_id": rec_comm,

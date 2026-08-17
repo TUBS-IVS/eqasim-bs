@@ -1,0 +1,53 @@
+feature: housing_tenure
+title: Housing tenure (completeness)
+area: attributes
+description: Synthesizes owner/renter housing tenure from the MiD income x Wohnen distribution
+  (ADR-0017); independently wired into both the legacy enrichment and the PopulationSim stage.
+stages:
+- synthesis.population.enriched
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - synthesise_housing_tenure
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0017
+detail_doc: docs/features/mid-reference-tables.md
+code_paths:
+- braunschweig/synthesis/population/enriched/housing_tenure.py
+- braunschweig/popsim/stage/
+evidence:
+  tests:
+  - tests/test_housing_tenure.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      test_writer_emits_housing_tenure_only_when_present documents an additive-presence contract (the column is emitted only when the attribute was computed), not a whole- population byte-identity claim.
+  fallback_rate:
+    instrumented: true
+    log_marker: housing_tenure (completeness attribute,
+    note: |
+      Logs a primary(MiD Bayes P(tenure|bracket,raumtyp))-vs-fallback(unconditional NDS tenure marginal, raumtyp cell absent) rate (test_helper_fallback_logged_when_cell_missing confirms this is tested).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_income_by_tenure_bundesland.csv
+    note: Also draws on the committed mid2023_income_by_tenure_raumtyp.csv.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0017 is a combined ADR covering four flags at once (see household_income_distribution.yml). UNLIKE the other three flags in that ADR, this one is independently wired into braunschweig/popsim/stage/ as well (test_popsim_stage_wires_housing_tenure confirms) -- genuinely live under the active popsim_mid production method, not only under the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
+  source: ADR-0017

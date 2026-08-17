@@ -1,0 +1,33 @@
+dataset: gtfs_feed
+title: GTFS Germany (DELFI) or regional ZGB feed
+inventory_id: H1
+provider: DELFI / opendata-oepnv.de
+vintage: null
+geography: null
+crs: null
+roles:
+- supply_input
+used_by:
+- braunschweig.data.cordon_pt_gates
+- data.gtfs.cleaned
+- matsim.scenario.supply.gtfs
+acquisition:
+  method: manual_download
+  source: https://www.opendata-oepnv.de (registration)
+  script: null
+storage:
+  expected_path: eqasim-data/data/gtfs_cordon/de_full_2026-06-02.zip
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: D2
+requirements:
+  synthesis: not_needed
+  matsim: required
+  production: required
+licensing:
+  license: DELFI / CC-BY terms
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Clipped to the cordon extent; config key gtfs_path selects the directory.

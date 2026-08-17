@@ -1,0 +1,50 @@
+feature: fleet_realism_upgrade
+title: Fleet realism upgrade (EV-income tilt, Euro-6, RS7 cross-check)
+area: fleet
+description: EV-income tilt, Euro-6 substage and RegioStaR-7 cross-check for the household fleet;
+  built on branch feature/fleet-quality-and-data (ADR-0051 reserved), server verification and
+  merge still pending.
+stages:
+- braunschweig.synthesis.vehicles.cars.household
+pipelines:
+  popsim_mid: inactive
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: experimental
+production:
+  enabled: false
+  flags: []
+introduced:
+  issue: null
+  pr: null
+  adr: null
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/vehicles/cars/household.py
+evidence:
+  tests: []
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      The feature does not exist on main at all (fleet_ev_income_tilt / fleet_euro6_substage appear nowhere in this branch's source); it lives only on the unmerged origin/feature/fleet-quality-and-data branch (43 commits ahead of the merge-base).
+  fallback_rate:
+    instrumented: false
+    note: Not evaluated -- the code does not exist on main.
+  reference:
+    kind: none
+    note: |
+      Sources named in the matrix (KBA 46251-02/03, FZ 27.4, MiD A_ANTRIEB) are referenced only in unmerged branch commit messages; no committed derived table exists on main.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: Not applicable -- unmerged.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Not merged. ADR-0051 is only reserved in docs/DECISIONS.md's index (a placeholder noting it belongs to this branch) -- no ADR body exists on main. A draft ADR-0051 exists on the unmerged branch itself (tip commit "docs(fleet): ADR-0051 final-review addendum + OFF-path baseline sign-off") but is not part of the canonical DECISIONS.md log until merged.
+  source: null
+notes: Unmerged branch feature/fleet-quality-and-data; the flags (fleet_ev_income_tilt, fleet_euro6_substage)
+  do not exist on main yet.

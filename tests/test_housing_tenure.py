@@ -358,9 +358,90 @@ def test_apply_housing_tenure_on_popsim_shaped_frame():
     assert list(out["housing_tenure"]) == list(again["housing_tenure"])
 
 
+def test_writer_writes_unknown_not_literal_nan_string(capsys):
+    """add_person must never emit the literal string "nan" for housingTenure: a
+    NaN value (as produced by concat_frame's reindex for an in-commuter row that
+    has no housing_tenure) is written as "unknown" instead. A resident with a
+    real tenure value is unaffected."""
+    from matsim.scenario import population as pop
+
+    fields = pop.PERSON_FIELDS + ["housing_tenure"]
+
+    class _StubWriter:
+        def __init__(self):
+            self.attrs = {}
+        def start_person(self, *a, **k): pass
+        def start_attributes(self): pass
+        def end_attributes(self): pass
+        def end_person(self, *a, **k): pass
+        def start_plan(self, *a, **k): pass
+        def end_plan(self, *a, **k): pass
+        def add_attribute(self, key, _type, value):
+            self.attrs[key] = value
+        def yes_no(self, v):
+            return "yes" if v else "no"
+        def location(self, *a, **k):
+            return None
+        def add_activity(self, *a, **k): pass
+        def add_leg(self, *a, **k): pass
+
+    def _person_row(tenure_value):
+        row = {f: 0 for f in fields}
+        row["person_id"] = 1
+        row["household_id"] = 1
+        row["household_income"] = "2600-3000"
+        row["sex"] = "female"
+        row["employed"] = "yes"
+        row["high_income"] = False
+        row["is_urban_resident"] = False
+        row["has_pt_subscription"] = False
+        row["has_license"] = True
+        row["pt_subscription_type"] = "fahre_nie"
+        row["household_income_eur"] = 3000.0
+        row["housing_tenure"] = tenure_value
+        return tuple(row[f] for f in fields)
+
+    act = {f: 0 for f in pop.ACTIVITY_FIELDS}
+    act["person_id"] = 1
+    act["purpose"] = "home"
+    act["start_time"] = float("nan")
+    act["end_time"] = float("nan")
+    act["location_id"] = -1
+
+    class _Geom:
+        x = 0.0
+        y = 0.0
+    act["geometry"] = _Geom()
+    activity = tuple(act[f] for f in pop.ACTIVITY_FIELDS)
+
+    # Injected in-commuter row: housing_tenure is NaN after concat_frame's reindex.
+    w_nan = _StubWriter()
+    pop.add_person(w_nan, _person_row(float("nan")), [activity], [], [],
+                   person_fields=fields)
+    assert w_nan.attrs.get("housingTenure") == "unknown"
+    assert w_nan.attrs.get("housingTenure") != "nan"
+
+    # Resident row: a real tenure value is written unchanged.
+    w_real = _StubWriter()
+    pop.add_person(w_real, _person_row("own"), [activity], [], [],
+                   person_fields=fields)
+    assert w_real.attrs.get("housingTenure") == "own"
+
+
+def test_incommuter_person_defaults_include_housing_tenure_unknown():
+    """The in-commuter persons frame must set housing_tenure explicitly so
+    concat_frame's reindex to the resident columns never introduces a NaN for
+    injected in-commuter rows (which would otherwise be written as the literal
+    string "nan" by the MATSim writer)."""
+    from braunschweig.synthesis.incommuters import _INCOMMUTER_PERSON_DEFAULTS
+
+    assert _INCOMMUTER_PERSON_DEFAULTS.get("housing_tenure") == "unknown"
+
+
 def test_popsim_stage_wires_housing_tenure():
-    import pathlib
-    src = pathlib.Path("braunschweig/popsim/stage.py").read_text(encoding="utf-8")
+    from tests.conftest import popsim_stage_package_source_text
+
+    src = popsim_stage_package_source_text()
     assert 'context.config("synthesise_housing_tenure", True)' in src
     assert "_apply_housing_tenure" in src
     assert "regiostar_tenure" in src

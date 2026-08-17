@@ -13,9 +13,12 @@ See ``docs/superpowers/specs/2026-06-05-cross-cordon-external-demand-design.md``
 from __future__ import annotations
 
 import geopandas as gpd
+import logging
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
+
+LOGGER = logging.getLogger(__name__)
 
 
 def assign_fixed_mode(distance_km, reference, band_of, rng):
@@ -25,6 +28,36 @@ def assign_fixed_mode(distance_km, reference, band_of, rng):
     Returns a list of modes in input order."""
     out = []
     for d in distance_km:
+        dist = reference[band_of(float(d))]
+        modes = list(dist.keys())
+        probs = np.array([dist[m] for m in modes], dtype=float)
+        probs = probs / probs.sum()
+        probs[-1] = max(0.0, 1.0 - probs[:-1].sum())   # clamp float residue
+        out.append(modes[int(rng.choice(len(modes), p=probs))])
+    return out
+
+
+def assign_fixed_mode_per_agent(distance_km, references, band_of, rng):
+    """Fixed travel mode per agent, each drawn from that agent's OWN mode reference.
+
+    Like :func:`assign_fixed_mode`, but ``references`` is a per-agent list of
+    ``{band: {mode: prob}}`` dicts (one per agent, in the same order as
+    ``distance_km``). Used by the in-commuter synthesis to draw each agent's mode from
+    its origin Bundesland's reference. The inner draw logic is identical to
+    ``assign_fixed_mode``, so passing a homogeneous list ``[R] * n`` reproduces
+    ``assign_fixed_mode(distance_km, R, band_of, rng)`` exactly (same rng consumption,
+    agent-sequential). Returns a list of modes in input order.
+
+    Raises ValueError if ``references`` and ``distance_km`` differ in length.
+    """
+    distance_km = list(distance_km)
+    references = list(references)
+    if len(references) != len(distance_km):
+        raise ValueError(
+            f"references length {len(references)} != distance_km length "
+            f"{len(distance_km)}")
+    out = []
+    for d, reference in zip(distance_km, references):
         dist = reference[band_of(float(d))]
         modes = list(dist.keys())
         probs = np.array([dist[m] for m in modes], dtype=float)
@@ -52,11 +85,64 @@ def sample_donors(donors, n, rng):
     return donors.iloc[idx].reset_index(drop=True)
 
 
+def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
+                            middle_purpose="work"):
+    """Complete item-nonresponse in donor Home->MIDDLE->Home timings.
+
+    An HTS donor whose return trip is untimed (or whose first/last-trip fallback in
+    :func:`extract_activity_times` lands on a NaN-timed trip) leaves ``depart_mid_s``
+    (the middle-activity END) -- and rarely the other three -- NaN. The population writer
+    then omits the activity ``end_time`` and MATSim's PlanRouter aborts with "undefined
+    activity end time" (a non-final activity MUST carry an end time).
+
+    Following :mod:`braunschweig.popsim.missing`, the missing values are imputed from
+    comparable respondents -- the fully-timed donors of the SAME subpopulation -- using a
+    FIXED-seed RNG so the fill is deterministic and never consumes from the caller's RNG
+    (runs with no missing times stay byte-identical, and downstream income/fleet draws are
+    unaffected). Called once in :func:`assemble_incommuter_core_frames` so the trips and
+    activities frames share the same completed times. Returns the four completed float
+    arrays (seconds since midnight); the middle-end fill rate is logged.
+    """
+    dh = np.asarray(depart_home_s, dtype=float).copy()
+    am = np.asarray(arrive_mid_s, dtype=float).copy()
+    dm = np.asarray(depart_mid_s, dtype=float).copy()
+    ah = np.asarray(arrive_home_s, dtype=float).copy()
+    n = len(am)
+    rng = np.random.RandomState(20260723)  # local + deterministic; does NOT touch caller RNG
+
+    def _sample(pool, k, default):
+        pool = pool[np.isfinite(pool) & (pool > 0)]
+        return rng.choice(pool, int(k)) if pool.size else np.full(int(k), float(default))
+
+    default_dur = (8.0 if middle_purpose == "work" else 6.0) * 3600.0
+    m = ~np.isfinite(am)                                    # middle start (rare)
+    if m.any():
+        finite_am = am[np.isfinite(am)]
+        am[m] = rng.choice(finite_am, int(m.sum())) if finite_am.size else 8.0 * 3600.0
+    m_end = ~(np.isfinite(dm - am) & ((dm - am) > 0))       # middle end (common, router-critical)
+    if m_end.any():
+        dm[m_end] = am[m_end] + _sample(dm - am, m_end.sum(), default_dur)
+    m = ~(np.isfinite(dh) & (dh <= am))                    # first-activity (home) end
+    if m.any():
+        dh[m] = np.maximum(0.0, am[m] - _sample(am - dh, m.sum(), 3600.0))
+    m = ~np.isfinite(ah)                                   # last-activity (home) start
+    if m.any():
+        ah[m] = dm[m] + _sample(ah - dm, m.sum(), 3600.0)
+    if m_end.any():
+        LOGGER.warning("[incommuters] imputed missing %s-activity end time for %d/%d agents "
+                       "(%.1f%%): HTS donor had an untimed return trip; sampled the activity-"
+                       "duration distribution of fully-timed same-subpopulation donors.",
+                       middle_purpose, int(m_end.sum()), n, int(m_end.sum()) / max(n, 1) * 100.0)
+    return dh, am, dm, ah
+
+
 def build_incommuter_trips(person_ids, depart_home_s, arrive_work_s,
-                           depart_work_s, arrive_home_s):
-    """Trips frame for a Home->Work->Home day (2 trips/agent) in the upstream
+                           depart_work_s, arrive_home_s, middle_purpose="work"):
+    """Trips frame for a Home->MIDDLE->Home day (2 trips/agent) in the upstream
     resident trips schema. Times in seconds since midnight. ``mode`` is attached
-    by the caller. Sorted by (person_id, trip_index)."""
+    by the caller. ``middle_purpose`` is "work" for SvB commuters and "education"
+    for students (see :func:`build_incommuter_activities`). Sorted by
+    (person_id, trip_index)."""
     person_ids = np.asarray(person_ids)
     n = len(person_ids)
     depart_home_s = np.asarray(depart_home_s, dtype=float)
@@ -66,7 +152,7 @@ def build_incommuter_trips(person_ids, depart_home_s, arrive_work_s,
     outbound = pd.DataFrame({
         "person_id": person_ids, "trip_index": 0,
         "departure_time": depart_home_s, "arrival_time": arrive_work_s,
-        "preceding_purpose": "home", "following_purpose": "work",
+        "preceding_purpose": "home", "following_purpose": middle_purpose,
         "is_first_trip": True, "is_last_trip": False,
         "trip_duration": arrive_work_s - depart_home_s,
         "activity_duration": depart_work_s - arrive_work_s,
@@ -74,7 +160,7 @@ def build_incommuter_trips(person_ids, depart_home_s, arrive_work_s,
     inbound = pd.DataFrame({
         "person_id": person_ids, "trip_index": 1,
         "departure_time": depart_work_s, "arrival_time": arrive_home_s,
-        "preceding_purpose": "work", "following_purpose": "home",
+        "preceding_purpose": middle_purpose, "following_purpose": "home",
         "is_first_trip": False, "is_last_trip": True,
         "trip_duration": arrive_home_s - depart_work_s,
         "activity_duration": np.full(n, np.nan),
@@ -84,10 +170,11 @@ def build_incommuter_trips(person_ids, depart_home_s, arrive_work_s,
 
 
 def build_incommuter_activities(person_ids, depart_home_s, arrive_work_s,
-                                depart_work_s, arrive_home_s):
-    """Activities frame for a Home->Work->Home day (3 activities/agent) in the
+                                depart_work_s, arrive_home_s, middle_purpose="work"):
+    """Activities frame for a Home->MIDDLE->Home day (3 activities/agent) in the
     upstream resident activities schema. First activity start_time and last
-    end_time are NaN (day open/close). Sorted by (person_id, activity_index)."""
+    end_time are NaN (day open/close). ``middle_purpose`` is "work" for SvB
+    commuters and "education" for students. Sorted by (person_id, activity_index)."""
     person_ids = np.asarray(person_ids)
     n = len(person_ids)
     depart_home_s = np.asarray(depart_home_s, dtype=float)
@@ -101,7 +188,7 @@ def build_incommuter_activities(person_ids, depart_home_s, arrive_work_s,
     })
     work = pd.DataFrame({
         "person_id": person_ids, "activity_index": 1, "trip_index": 1,
-        "purpose": "work", "start_time": arrive_work_s, "end_time": depart_work_s,
+        "purpose": middle_purpose, "start_time": arrive_work_s, "end_time": depart_work_s,
         "is_first": False, "is_last": False, "duration": depart_work_s - arrive_work_s,
     })
     home_end = pd.DataFrame({
@@ -142,16 +229,36 @@ def build_incommuter_locations(person_ids, home_x, home_y, work_x, work_y,
     return gpd.GeoDataFrame(frame, geometry="geometry", crs=crs)
 
 
-def extract_commute_times(trips):
-    """Donor Home->Work->Home timings (seconds since midnight) from HTS ``trips``:
-    (depart_home, arrive_work, depart_work, arrive_home). Falls back to first/last
-    trip if a clean leg is absent so four ordered times are always returned."""
+def extract_activity_times(trips, purpose="work"):
+    """Donor Home->PURPOSE->Home timings (seconds since midnight) from HTS ``trips``:
+    (depart_home, arrive_mid, depart_mid, arrive_home). Generalises
+    ``extract_commute_times`` (purpose='work'); same first/last-trip fallback so
+    four ordered times are always returned."""
     t = trips.sort_values("departure_time").reset_index(drop=True)
-    outbound = t[(t["preceding_purpose"] == "home") & (t["following_purpose"] == "work")]
-    inbound = t[(t["preceding_purpose"] == "work") & (t["following_purpose"] == "home")]
+    outbound = t[(t["preceding_purpose"] == "home") & (t["following_purpose"] == purpose)]
+    inbound = t[(t["preceding_purpose"] == purpose) & (t["following_purpose"] == "home")]
     first = t.iloc[0]
     last = t.iloc[-1]
     ob = outbound.iloc[0] if len(outbound) else first
     ib = inbound.iloc[-1] if len(inbound) else last
     return (float(ob["departure_time"]), float(ob["arrival_time"]),
             float(ib["departure_time"]), float(ib["arrival_time"]))
+
+
+def select_student_donors(hts_persons, hts_trips, person_col):
+    """HTS persons usable as student in-commuter donors: studying AND with a
+    home->education trip. Mirrors :func:`select_commuter_donors`. Raises
+    ValueError if none qualify."""
+    edu_person_ids = set(
+        hts_trips.loc[hts_trips["following_purpose"] == "education", person_col])
+    qualifies = hts_persons["studies"] & hts_persons[person_col].isin(edu_person_ids)
+    donors = hts_persons[qualifies].reset_index(drop=True)
+    if donors.empty:
+        raise ValueError(
+            "no student donors: no studying HTS person has a home-to-education trip")
+    return donors
+
+
+def extract_commute_times(trips):
+    """Donor Home->Work->Home timings; see :func:`extract_activity_times`."""
+    return extract_activity_times(trips, purpose="work")

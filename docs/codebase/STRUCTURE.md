@@ -1,10 +1,18 @@
 # STRUCTURE
 
-> **Staleness note (2026-06-26):** reflects the 2026-06-08 layout. New since then:
+> **Do not hand-maintain trees here (2026-08-13, ADR-0077):** the authoritative
+> stage inventory is `docs/generated/STAGES.md` (from `docs/registry/stages/`),
+> the pipeline `docs/generated/PIPELINE.md`, active state
+> `docs/generated/STATUS.md`; open work lives in GitHub issues. This file keeps
+> package-layout conventions and entry points; dated trees below are snapshots.
+> Per-module split notes (one module/package per file: shape, import-path
+> impact, cache/`validate()` consequences, standing rules) live under
+> `docs/codebase/notes/`, not here.
+
+> **Staleness note (2026-06-26, historical):** reflects the 2026-06-08 layout. New since then:
 > `braunschweig/calibration/` (calibration corner — on `worktree-calibration-corner`),
 > `braunschweig/data/building_potentials.py`, `braunschweig/popsim/{distance_distributions,
-> shop_subtype}.py`, `braunschweig/analysis/popsim_validation/`. Current feature
-> state: see ARCHITECTURE.md banner; open work: see CONCERNS.md banner.
+> shop_subtype}.py`, `braunschweig/analysis/popsim_validation/`.
 
 Directory layout and entry points for `eqasim-bs`. Verified from the directory
 tree (`docs/codebase/.codebase-scan.txt`) and direct listings.
@@ -12,21 +20,32 @@ tree (`docs/codebase/.codebase-scan.txt`) and direct listings.
 ## Entry point
 
 ```powershell
-python -m synpp config_local_braunschweig.yml      # 1 % smoke run
+python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml      # 1 % smoke run
+
+# Composed production / all-features runs (config-composition cleanup, #230):
+# a fixed base + a per-scale overlay, deep-merged and persisted as
+# <working_directory>/.merged_config.yml (see configs/base_bs.yml header).
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 ```
 
 synpp reads a YAML config that declares the requested terminal stages under
-`run:` and a stage-alias map under `aliases:`. The five run configs differ only
-in `sampling_rate` and output paths:
+`run:` and a stage-alias map under `aliases:`. Two config families exist side by
+side:
 
-| Config | Rate | Purpose |
-|--------|------|---------|
-| `config_local_braunschweig.yml` | 0.01 | Smoke / dev |
-| `config_local_braunschweig_10pct.yml` | 0.10 | Validation harness |
-| `config_local_braunschweig_25pct.yml` | 0.25 | Pre-release / calibration |
-| `config_local_braunschweig_25pct_parking.yml` | 0.25 | 25 % with parking |
-| `config_dryrun_braunschweig.yml` | small | CI / plan-only sanity |
-| `config_gravity_only_braunschweig.yml` | n/a | Calibrating `gravity_slope` |
+- `configs/base_bs.yml` + `configs/overlays/{test,test_1pct,test_25pct,test_100pct,test_matsim}.yml`
+  — the composed, all-features popsim_mid set. Everything fixed across scales
+  lives once in the base; only `sampling_rate`, `working_directory`, output
+  paths and worker counts differ per overlay. This is the current
+  production/server path.
+- `configs/fixtures/*.yml` — standalone (pre-composition), single-file configs
+  kept as pytest fixtures and lightweight local entry points:
+
+  | Config | Rate | Purpose |
+  |--------|------|---------|
+  | `configs/fixtures/config_local_braunschweig.yml` | 0.01 | Smoke / dev |
+  | `configs/fixtures/config_local_braunschweig_10pct.yml` | 0.10 | Validation harness |
+  | `configs/fixtures/config_local_braunschweig_25pct.yml` | 0.25 | Pre-release / calibration |
+  | `configs/fixtures/config_dryrun_braunschweig.yml` | small | CI / plan-only sanity |
 
 `CLAUDE.md` is the authoritative module guide for the calibrated subsystems
 (MiD reference tables, gravity model, education gravity); read it alongside this
@@ -71,17 +90,32 @@ braunschweig/
     inspire/ zensus_grid/ vrb/ gtfs/   landuse, 100 m grid population, VRB zones, GTFS
     alkis.py buildings.py landuse.py locations.py osm.py external_workplaces.py
   ipf/             Iterative Proportional Fitting: model, prepare, attributed
-  gravity/         model.py — work/education distance-decay gravity (per-RS7 slope)
+  gravity/         model.py — synpp stage (configure/execute/validate) for work/education
+                   distance-decay gravity (per-RS7 slope); facade + 5 sibling modules
+                   (attraction_vector, balancing, od, kreis_calibration, base) plus the
+                   pre-existing siblings friction.py, production_mass.py, taz_margins.py,
+                   verbindungen_anchor.py, distance_matrix_taz.py — see
+                   docs/codebase/notes/gravity-model-split.md
   synthesis/
-    population/    enriched.py (PT-ticket/licence IPF), regiostar.py
-    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers.py
+    population/    enriched/ (stage package: submodules availability, base, economic_status,
+                   housing_tenure, income_distribution, vehicle_ownership — see
+                   docs/codebase/notes/enriched-split.md), regiostar.py
+    locations/     education_gravity.py, education_gravity_model.py, secondary_chainsolvers/
+                   (stage package: submodules distance_sampling, candidates, srv_candidates,
+                   plans, fallback, results, parallel_solving, deciders, srv_location_types,
+                   reporting, escort, activity_types, candidate_columns — see
+                   docs/codebase/notes/secondary-chainsolvers-split.md)
     spatial/       commute_distance.py (MiD P13 override), home_zones.py
     income.py
   locations/       home.py, work.py, secondary.py,
                    synthesis/replacement_education_gravity.py (flag-gated drop-in)
   matsim/          simulation/prepare.py (MATSim prepare override)
   analysis/        run_mid_validation.py, run_full_analysis.py,
-                   run_education_validation.py, dashboard/, *.ipynb
+                   run_education_validation.py, dashboard/ (build_dashboard.py:
+                   facade + 7 sibling modules — see
+                   docs/codebase/notes/dashboard-module-split.md),
+                   simwrapper/ (spatial_export.py: facade + 6 sibling modules — see
+                   docs/codebase/notes/simwrapper-spatial-export-split.md), *.ipynb
   REGION.md        ZGB_KREIS_IDS single source of truth
 ```
 
@@ -106,7 +140,8 @@ upstream terminal stages aliased/extended by the fork.
 
 ## Key files
 
-- `config_local_braunschweig.yml` — the canonical run+alias map (the others mirror it).
+- `configs/fixtures/config_local_braunschweig.yml` — the canonical run+alias map (the
+  other fixtures mirror it); `configs/base_bs.yml` is the composed-run equivalent.
 - `CLAUDE.md` — authoritative description of the MiD/gravity/education subsystems.
 - `braunschweig/REGION.md` — the eight ZGB Kreis ARS-5 codes; "always store as strings".
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` — input inventory with paths + licences.
@@ -114,7 +149,7 @@ upstream terminal stages aliased/extended by the fork.
 ## Evidence
 
 - `docs/codebase/.codebase-scan.txt` (DIRECTORY TREE)
-- `config_local_braunschweig.yml` (`run:`, `aliases:`)
+- `configs/fixtures/config_local_braunschweig.yml` (`run:`, `aliases:`)
 - `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`
 - `ls bavaria` -> absent; `git ls-files eqasim-data` -> 38 tracked files
 - `braunschweig/REGION.md`, `CLAUDE.md`, `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`
@@ -130,7 +165,7 @@ a sibling `popsimprep` checkout (`../popsimprep`).
 ### The current population stage in eqasim-bs (= the `simple_ipf_open` baseline)
 
 The existing IPF workflow is the chain (alias targets, from
-`config_local_braunschweig.yml`):
+`configs/fixtures/config_local_braunschweig.yml`):
 
 ```
 braunschweig.ipf.prepare      -> assembles census control margins (population,
@@ -204,7 +239,7 @@ table). This nesting is what `batch_run_popsim.py` uses to batch PopulationSim r
 Evidence: `popsimprep/PopSimPrep-StartHere-v2.ipynb`,
 `popsimprep/batch_run_popsim.py`, `popsimprep/popsim/configs/settings.yaml`,
 `popsimprep/inputs/*.parquet` (schema via pyarrow), `braunschweig/ipf/*.py`,
-`config_local_braunschweig.yml` (alias map).
+`configs/fixtures/config_local_braunschweig.yml` (alias map).
 
 ---
 
@@ -219,12 +254,51 @@ braunschweig/population/   Method selector + contract
   config.py                fail-fast config validation (MiD only for popsim_mid)
   schema.py                unified persons/households output contract
 braunschweig/popsim/       PopulationSim workflow (27 modules)
-  stage.py                 synpp producer stage (replaces data.census.filtered)
-  mid.py                   orchestration (cells -> controls -> seed -> batches -> merge)
+  stage/                   synpp producer stage (replaces data.census.filtered;
+                           stage package, submodules batch_cache, cell_attributes,
+                           config_keys, controls_builder, source_resolution,
+                           tilt_columns) — see docs/codebase/notes/popsim-stage-split.md
+    batch_cache.py         Work-dir batch cache invalidation: config-signature
+                           guard + stale `batch_*` folder purge on config change
+    cell_attributes.py     Per-cell attribute joining (12-digit ARS +
+                           RegioStaR7) onto the merged PopulationSim output,
+                           plus Kreis-code derivation from a cell ARS
+    config_keys.py         LEAF (no intra-package imports): every KEY_* config
+                           key constant plus the two per-attribute KREIS
+                           control toggle dicts
+    controls_builder.py    PopulationSim `controls.csv` frame assembly + the
+                           derived aggregation map, source-column list and
+                           per-Kreis person-total helpers
+    source_resolution.py   Donor-source resolution (`_resolve_source`) + the
+                           active KREIS attribute-control registry entries for
+                           a run
+    tilt_columns.py        Income spatial-tilt cell-column selection (issue
+                           #136 single-parquet-read helpers)
+  mid/                     orchestration package (helper library, NOT a synpp
+                           stage; cells -> controls -> seed -> batch_folders ->
+                           merge) — see docs/codebase/notes/popsim-mid-split.md
+    batch_folders.py       Batch FOLDER assembly + PopulationSim runner (NOT
+                           the parent `batch.py` below -- one character apart
+                           on purpose: that module bin-packs cells INTO
+                           batches; this one writes each batch's PopulationSim
+                           run-folder contents and invokes that runner)
+    control_cells.py       control-cell loading, ZGB filtering, control totals
+    csv_format.py          MiD CSV field-separator detection
+    donor.py               MiD donor attribute + Wege (trip) table loading
+    donor_stratification.py RegioStaR donor stratification (Phase 4B; renamed
+                           from stratum.py, see docs/codebase/notes/popsim-mid-split.md)
+    kreis_controls.py      Tier-3 KREIS control tables + per-batch apportionment
+    participation.py       participation-control seed derivation
+    seed_loading.py        consistent MiD seed load + completed-donor projection
   cells.py prepared_cells.py control_spec.py controls.py seed.py
-  batch.py merge.py        1-km-atomic bin-packing; cell-disjoint merge
+  batch.py merge.py        1-km-atomic bin-packing of cells INTO batches (the
+                           parent module `mid/batch_folders.py` above calls
+                           this one -- distinct module, distinct job); merge.py
+                           does the cell-disjoint merge
   expand.py assembly.py attributes.py    households -> persons; MiD attr mapping
-  sources/{base,mid,entd}.py             donor adapter Protocol + 2 sources
+  sources/       base.py (donor adapter Protocol), mid.py (MiD source), entd.py
+                 (ENTD source: facade + 7 siblings — see
+                 docs/codebase/notes/entd-source-split.md)
   trips.py trips_stage.py plan_validation.py   MiD Wege -> eqasim trips + repair
   commute_distance.py distance_distributions.py
   handoff.py               100m cell -> building round-robin assignment

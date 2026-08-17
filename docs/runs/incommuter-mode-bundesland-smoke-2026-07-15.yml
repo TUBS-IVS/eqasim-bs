@@ -1,0 +1,40 @@
+id: incommuter-mode-bundesland-smoke-2026-07-15
+date: '2026-07-15'
+repository:
+  commit: b736953
+  branch: 'integration/all-features (+PR #180 files)'
+configuration:
+  base: config_smoke_ON.yml / config_smoke_OFF.yml
+  overlays: []
+  notes: 'felix ~/wt/incommuter-integration: PR #180''s 3 feature files overlaid on integration/all-features
+    @ b736953; run: [braunschweig.synthesis.incommuters] only; single-stage cache-overlay rerun'
+sampling:
+  rate: 25% (wd cache_bs_25pct_allfeat_popsim; 17,105 in-commuters)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - braunschweig.synthesis.incommuters
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: partial
+  notes: feature path + logs OK; stopped at overlay artifact sample_fleet(population_label=...)
+environment: server
+validation:
+- metric: primary-path coverage
+  reference: null
+  result: primary path 17105/17105 (100%), fallback 0%, 16/16 source Laender; ON vs OFF PT share
+    15.28% -> 15.15% (-0.13pp)
+  notes: NO committed observed in-commuter modal-split reference exists -> coverage/consistency
+    check, NOT validation.
+features:
+  note: 'per-Bundesland in-commuter mode reference (#129, PR #180) ON vs OFF'
+artifacts:
+- ephemeral (worktree removed; no new cache-store entries)
+issues:
+- '#129'
+decisions:
+- ADR-0063
+source: RUNS.md row 2026-07-15; stopped at an overlay artifact of the old integration fleet module
+  (not reachable on main)

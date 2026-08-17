@@ -35,3 +35,112 @@ origins receive a typed slope.
 Tests: `tests/test_gravity_ring_calibration.py` (ring selection + panel
 recovery), `tests/test_regiostar_fill.py` (nearest-neighbour fill),
 `tests/test_gravity_slope_config.py` (the `None` default / flatten contract).
+
+## VerBindungen sub-Kreis OD validation (#124, MERGED)
+
+`data/verbindungen/*` + `analysis/verbindungen_validation.py` (default-ON run-list
+stage, PR #189/#190) compare the calibrated Gemeinde work OD against the
+VerBindungen 2019 QZM (open data) sub-Kreis destination shares as an
+INDEPENDENT check (not a control; `reference_role` flips to `fit` once the
+inner anchor below is enabled). 100pct baseline (felix `~/wt/verbindungen-ab`):
+check-B weighted TVD 0.137, home-margin correlation r=0.9968, intra-Kreis
+0.4694 vs 0.4687, 2019<->2025 vintage correlation r=0.9984 (ADR-0066).
+
+## svb_wohn work production mass (#132, PARKED default OFF — ADR-0066)
+
+`braunschweig.gravity.work_production_mass` (default `population`) can instead
+scale each Gemeinde's work-trip production mass by its resident
+SvB-am-Wohnort (`svb_wohn`) count rather than raw population. A/B measured
+2026-07-16 against the VerBindungen sub-Kreis OD check above: weighted TVD
+0.1136 -> 0.1137 (negligible) -- the Kreis-level IPF anchor already dominates
+the production-side fit. PARKED; entry points `gravity/production_mass.py`,
+`gravity/model.py`.
+
+## Sector-aware attraction tilt (PARKED, default OFF — ADR-0065)
+
+`braunschweig.gravity.sector_aware_enabled` (default `False`) tilts the
+per-Gemeinde work attraction by establishment density (`n_betriebe` per
+employee vs the Kreis mean; Kreis totals preserved). Measured 2026-07-15
+(issue #128, gravity-only A/B on ZGB-8): no effect on the commute distance
+distribution, but a 9x worse fit of per-Gemeinde work inflows against the
+OBSERVED SvB-am-Arbeitsort counts — the attraction vector IS that observation,
+so the tilt can only distort it. PARKED; do not enable in run configs. The
+underlying concern is covered by building work potentials (within-Gemeinde)
+and, if ever needed, WZ-sectoral friction (issue #128 phase 2, deferred).
+See ADR-0065 in docs/DECISIONS.md. Entry point:
+`build_destination_attraction` in `braunschweig/gravity/model.py`; tests in
+`tests/test_work_sector_aware.py`.
+
+## Inner VerBindungen calibration anchor (#193)
+
+Flag `braunschweig.gravity.verbindungen_anchor_enabled` (default `True` since
+ADR-0068, 2026-07-17; set `False` per config to disable -- the OFF path is
+byte-identical to the pre-anchor model; the anchor CHANGES the work OD when
+ON, and ON requires the verbindungen raw data files).
+Transfers the VerBindungen 2019 within-Kreis-pair ROW-CONDITIONAL destination
+shares (QZM, comparison-zone level: stadtteil cells collapsed to their parent
+commune, vg250 cells kept, 41 zones on ZGB-8) into the CALIBRATED Gemeinde
+work OD, between `_calibrate` and `_append_outbound_flows`. Vintage
+hierarchy: the 2025 Pendleratlas wins across Kreise; the 2019 QZM only
+refines structure WITHIN a Kreis pair -- every Kreis-pair block total is
+conserved (asserted to 1e-9 relative, violations raise; per-row observed
+mass likewise). Censoring rule A: only observed relations (>= 10 commuters
+in 2019) are re-weighted; censored relations and the observed-vs-censored
+split stay gravity-driven; every skip/fallback is counted and logged
+(coverage skips, zero-mass rows, partial-zero renormalisation, model-side
+join coverage). Coverage guard
+`braunschweig.verbindungen.anchor_min_observed_commuters` = 30, measured on
+the 2019 QZM ZGB coverage distribution (holdout run 2026-07-17): 3x the
+censoring bound; keeps 205/239 rows (85.8%) and 98.2% of the anchorable
+observed mass (row-mass p10=18.8, p25=73, p50=277, n=239).
+
+With the anchor ON, the VerBindungen validation (check B) is a FIT metric --
+the validation stage and the cache runner stamp `reference_role=fit`
+(`--reference-role` is REQUIRED on the cache runner; a silent `independent`
+against an anchor-ON cache would overstate validity). Independent validation
+moves to the MiD distance axes.
+
+Pre-registered decision rule v2 (amended 2026-07-17 BEFORE any measurement
+run; v1's held-out-CV criterion was proven structurally inert for this
+in-sample anchor -- the anchor never touches held-out flows, see
+`test_heldout_cv_is_inert_by_construction`): the default flips to ON only if
+(i') the zone-level AO-margin share srmse improves beyond its measured fold
+noise (the anchor never fits destination margins -- corroboration on a
+non-fitted axis) AND (ii) no P13-by-RS7 EMD regresses beyond its class's
+measured fold noise. P38.2 per-Kreis vs the MiD reference (via the tested
+`p38_2_band_target` loader) is directional evidence only; the held-out CV is
+retained purely as a harness-leak detector (equality is the designed
+expectation).
+
+MEASURED VERDICT (2026-07-17, 100pct cache, seeds 20260716 + 42, identical
+gates -> seed-stable): `default_flip_supported = False`. Fit axis (LABELLED
+FIT) improves 0.114 -> 0.081; P13 EMD improves in 5/6 RS7 classes and P38.2
+in 6/9 regions (03ZGB 0.229 -> 0.225), BUT (i') fails (AO srmse 0.1300 ->
+0.1316, a slight worsening beyond fold noise ~0.003) and (ii) flags class 72
+(0.1724 -> 0.1760 > noise). Per the gate alone the default would have stayed
+OFF; ADR-0068 (2026-07-17) records the HUMAN OVERRIDE to default ON: the AO
+axis is neutral-within-noise (not a worsening), and the class-72 shift was
+diagnosed (`scripts/diagnose_anchor_p13.py`) as a small systematic shortening
+toward the LOCALLY OBSERVED 2019 QZM destination structure. Checked against
+BOTH reference flavours: vs the NATIONAL MiD RS7-72 class (whose mid-band gap,
+model 0.109 vs target 0.191 at 30-50km, pre-exists the anchor and is 10x the
+shift) AND vs the REGIONAL per-Kreis P38.2 tables, where the three cities
+also worsen slightly against their own references (03101 +0.0019, 03102
++0.0045, 03103 +0.0029 -- within the thin-n directional range) while ALL
+FIVE Landkreise improve (03153 -0.0263, 03157 -0.0131, 03154 -0.0061, 03151
+-0.0044, 03158 -0.0014) and the 03ZGB aggregate improves. The accepted trade:
+a small, consistent city-side distance cost for larger Landkreis-side gains
+and a net regional improvement. KNOWN LIMITATION of the distance axes as
+absolute measures: the holdout OD is INTERNAL (ZGB-to-ZGB, before
+`_append_outbound_flows`) while the MiD references cover ALL commutes of
+residents incl. out-of-region destinations (~13% cross-cordon), which land
+mostly in the 30km+ bands -- absolute EMD levels vs MiD are therefore partly
+a study-area-truncation artifact; both variants share the truncation, so
+only the A/B deltas are interpreted. Artefacts:
+`~/wt/verbindungen-anchor/holdout_out_seed*/`
+on the run server (verdict.md, coverage, censored-bound, intra-Kreis, P38
+tables). Spec/plan: docs/superpowers/{specs,plans}/2026-07-16-verbindungen-
+calibration-anchor-*.md (local); issue #193. Entry points:
+`braunschweig/gravity/verbindungen_anchor.py` (anchor + diagnostics),
+`braunschweig/calibration/anchor_holdout.py` + `scripts/run_anchor_holdout.py`
+(CV/verdict); tests in `tests/test_verbindungen_anchor.py`.

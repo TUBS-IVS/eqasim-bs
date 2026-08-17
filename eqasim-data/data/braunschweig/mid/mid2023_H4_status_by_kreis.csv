@@ -1,0 +1,11 @@
+# Source: MiD 2023 Großraum Braunschweig (infas 7555), Tabelle H4 "Ökonomischer Status des Haushalts", PDF page index 20 (21st page of the file). Row-% (weighted).
+kreis,ars5,n_weighted,n_unweighted,very_low,low,medium,high,very_high
+Gesamt,03ZGB,3013,5924,9,12,31,36,12
+Braunschweig,03101,648,1105,10,8,30,36,16
+Wolfsburg,03103,155,508,11,13,34,34,8
+Salzgitter,03102,167,792,5,10,29,42,13
+Landkreis Gifhorn,03151,530,706,5,13,26,43,14
+Landkreis Peine,03157,316,669,5,13,36,35,11
+Landkreis Helmstedt,03154,358,644,8,11,36,35,10
+Landkreis Wolfenbüttel,03158,310,510,10,12,31,36,11
+Landkreis Goslar,03153,528,990,17,15,30,29,9

@@ -1,0 +1,32 @@
+dataset: kba_fleet_derived
+title: Committed KBA fleet reference tables (kba/derived)
+provider: derived in-repo from KBA sources
+vintage: null
+geography: null
+crs: null
+roles:
+- reference_table
+- calibration_target
+used_by:
+- braunschweig.synthesis.vehicles.cars.household
+acquisition:
+  method: committed
+  source: regenerated via scripts/extract_kba_fleet.py + scripts/build_mid_age_by_segment_status.py
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/kba/derived/*.csv
+  committed: false
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values
+  restricted: false
+  redistribution: allowed
+limitations: null
+notes: Segment/brand mix, powertrain shares, Gemeinde BEV tilt, MiD age-by-segment cross tables
+  for the household fleet.

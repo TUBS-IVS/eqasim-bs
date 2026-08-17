@@ -1,0 +1,53 @@
+feature: building_potentials_secondary
+title: Building potentials — secondary
+area: secondary
+description: Secondary (shop/leisure/other) destinations draw on building-level activity potentials
+  (TUBS-IVS potentials pipeline gpkg) as the candidate set instead of the raw OSM/ALKIS location
+  catalog (ADR-0025, REPLACE strategy).
+stages:
+- braunschweig.data.building_potentials
+- braunschweig.synthesis.locations.secondary_candidates
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: inactive
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - secondary_building_potentials
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0025
+detail_doc: docs/features/building-potentials.md
+code_paths:
+- braunschweig/synthesis/locations/secondary_candidates.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/
+evidence:
+  tests:
+  - tests/test_secondary_building_potentials.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: |
+      test_off_path_uses_raw_generic confirms the OFF path falls back to the pre-existing raw generic scorer, a functional-equivalence check rather than a literally named byte-identity test.
+  fallback_rate:
+    instrumented: false
+    note: |
+      No rate-style fallback log found in secondary_candidates.py/secondary_chainsolvers.py for this specific flag (hard RuntimeErrors exist for flag-dependency violations, which are fail-fast guards, not silent fallbacks).
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: No scalar KPI currently attributed to a recorded run.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    ADR-0025 documents the design; no owner verdict on realised secondary-potential fit has been recorded.
+  source: ADR-0025

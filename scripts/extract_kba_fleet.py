@@ -1253,9 +1253,10 @@ def extract_gemeinde_ev(path: Path = GEMEINDE_EV_PATH) -> pd.DataFrame:
     - Logs the count of rows with any missing share values (no-silent-fallback rule);
       NaN shares are kept in the output so the consuming tilt can fall back to the
       Kreis-level value.
-    - Applies ``normalize_gemeinde`` from
+    - Applies ``normalize_gemeinde_name`` from
       ``braunschweig.synthesis.vehicles.fleet_sampling_de`` to produce the
-      ``gemeinde_norm`` matching key.
+      ``gemeinde_norm`` matching key -- the SAME function the population side
+      uses, so the two vocabularies join.
 
     Args:
         path: Path to the raw KBA Gemeinde EV CSV (utf-8-sig, ``Berichtszeitpunkt``
@@ -1268,7 +1269,7 @@ def extract_gemeinde_ev(path: Path = GEMEINDE_EV_PATH) -> pd.DataFrame:
     """
     # Local import: the synthesis package is not guaranteed to be on sys.path
     # at script import time (only needed here, not by the other extractor functions).
-    from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde
+    from braunschweig.synthesis.vehicles.fleet_sampling_de import normalize_gemeinde_name
 
     df = pd.read_csv(path, encoding="utf-8-sig", dtype=str)
 
@@ -1306,7 +1307,7 @@ def extract_gemeinde_ev(path: Path = GEMEINDE_EV_PATH) -> pd.DataFrame:
         }
     )
 
-    out["gemeinde_norm"] = out["gemeinde"].map(normalize_gemeinde)
+    out["gemeinde_norm"] = out["gemeinde"].map(normalize_gemeinde_name)
 
     # Log missing-share rows (no-silent-fallback rule): if any share is NaN for a
     # ZGB row that is genuinely unexpected (not a KBA suppression), it is a signal

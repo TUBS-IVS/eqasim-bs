@@ -1,0 +1,39 @@
+id: synth-100pct-2.2.0-2026-07-23
+date: '2026-07-23'
+repository:
+  commit: unknown
+  branch: unknown
+configuration:
+  base: configs/base_bs.yml
+  overlays: []
+  notes: all features, popsim_mid; felix; eqasim-java 2.2.0 / synpp 1.6.2; secondary_chainsolvers
+    99.98% primary placement
+sampling:
+  rate: 100% (expansion ~558,284 households / ~1,130,141 persons)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+classification:
+- production_candidate
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: control fit (category shares, apples-to-apples)
+  reference: committed control tables (census cells, KREIS/SrV)
+  result: census-scale families mean ~0.25pp; KREIS/SrV families mean ~1.1pp (max <2.7pp); car/bike
+    ~3.6-4.7pp urban-concentrated (BS-Stadt -3.0pp); grades 52 excellent / 19 good / 9 moderate
+    / 2 attention
+  artifact: control-fit Artifact (2026-07-23)
+  notes: Control fit, NOT a behavioural validation.
+features:
+  note: full synthesis on the 2.2.0 stack; synthesis.output 35/35 stages, 0 errors
+artifacts:
+- cache (felix)
+issues:
+- '#240'
+decisions:
+- ADR-0071
+source: RUNS.md row 2026-07-23

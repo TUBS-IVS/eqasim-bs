@@ -1,0 +1,28 @@
+stage: braunschweig.data.census.households_size_age
+title: Zensus joint age x household-size margin
+layer: population
+description: Reads Zensus 2022 1000A-3082 (persons by age, sex and household size per Gemeinde)
+  and supplies the joint age x hh_size table that braunschweig.ipf.prepare rakes into the IPF's
+  sixth margin. Also the source of the open-data Gemeinde population shares.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: |
+    Entered the simple_ipf_open DAG with issue #251, which enabled
+    braunschweig.ipf.use_joint_age_size_margin in the IPF run configs; the stage is
+    requested only while that flag (or braunschweig.census.use_zensus_gemeinde_shares)
+    is on.
+code:
+- braunschweig/data/census/households_size_age.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- zensus2022_age_sex_size
+features:
+- joint_age_size_margin
+decisions:
+- ADR-0004
+- ADR-0078

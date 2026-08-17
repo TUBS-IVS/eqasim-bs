@@ -43,12 +43,18 @@ def execute(context):
     # no-invented-reference-values: the target is derived from the same Mikrozensus
     # reference the mode draw uses, labelled honestly as an aggregate proxy).
     mode_target = incommuters.get("mode_target", None)
+    # BA Pendler OD target (per external Kreis, direction "ein"), produced by
+    # build_incommuter_frames from the same inbound flow the agents are expanded from.
+    # Passed so commuter_validation.csv reports the realized-vs-target per-Kreis deviation
+    # (mode-agnostic: BA has no mode). This is a consistency / coverage check, not an
+    # independent validation -- see od_deviation_vs_target (issue #134).
+    od_target = incommuters.get("od_target", None)
     gate_volume = context.stage("braunschweig.synthesis.cordon_gates")
     out_dir = os.path.join(context.config("output_path"), "analysis", "cordon")
 
     paths = write_cordon_validation(
         out_dir, agents, sampling_rate=float(context.config("sampling_rate")),
-        mode_target=mode_target, crs="EPSG:25832")
+        od_target=od_target, mode_target=mode_target, crs="EPSG:25832")
 
     gate_paths = write_gate_volumes(
         out_dir, gate_volume["gates"], gate_volume["assignment"], crs="EPSG:25832")

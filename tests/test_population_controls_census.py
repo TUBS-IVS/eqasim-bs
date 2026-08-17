@@ -9,12 +9,27 @@ the census source tables both live under ``eqasim-data/data`` on this machine.
 from __future__ import annotations
 
 import logging
+import os
 
 import pandas as pd
+import pytest
 from braunschweig.analysis.population_validation import controls as C
 from braunschweig.analysis.population_validation.population_source import PopulationFrames
 
 DATA = "eqasim-data/data"
+
+# The target-loader schema tests read the REAL (local-only, gitignored) census
+# source files under eqasim-data/data. On a machine without the raw data drop
+# they must SKIP (visible, honest), not fail -- they run on the data-carrying
+# machines (server).
+_needs_destatis_12411 = pytest.mark.skipif(
+    not os.path.exists(os.path.join(DATA, "braunschweig", "12411-0018_de.csv")),
+    reason="local-only raw data absent: braunschweig/12411-0018_de.csv",
+)
+_needs_zensus_2081 = pytest.mark.skipif(
+    not os.path.exists(os.path.join(DATA, "braunschweig", "1000A-2081_de_flat.zip")),
+    reason="local-only raw data absent: braunschweig/1000A-2081_de_flat.zip",
+)
 
 
 def _frames():
@@ -54,13 +69,20 @@ def test_vehicle_control_uses_household_id_when_present():
         "bev", "distribution", "kreis", "technology", ("bev", "not_bev"),
         target=None, derive=C._bev_not_bev)
 
-    veh_de = pd.DataFrame({"vehicle_id": ["v1", "v2"], "household_id": [10, 20],
-                           "owner_id": [1, 2], "technology": ["bev", "diesel"]})
+    # Realistic fleet rows: the analysis-side fleet_filter discriminates fleet
+    # vs routing vehicles structurally (segment.notna, else the
+    # '<hh>:car:<idx>' vehicle_id shape) -- a bare "v1" id would be classified
+    # as a routing vehicle and silently filtered out of the control.
+    veh_de = pd.DataFrame({"vehicle_id": ["10:car:0", "20:car:0"],
+                           "household_id": [10, 20],
+                           "owner_id": [1, 2], "segment": ["kompakt", "suv"],
+                           "technology": ["bev", "diesel"]})
     out_de = ctrl.realized(
         PopulationFrames(persons, pd.DataFrame(), None, veh_de, "run_output", "x", "p_"), geo)
     assert dict(zip(out_de["category"], out_de["synthetic_count"])) == {"bev": 1, "not_bev": 1}
 
-    veh_legacy = pd.DataFrame({"vehicle_id": ["v1"], "owner_id": [1], "technology": ["bev"]})
+    veh_legacy = pd.DataFrame({"vehicle_id": ["1:car:0"], "owner_id": [1],
+                               "segment": ["kompakt"], "technology": ["bev"]})
     out_legacy = ctrl.realized(
         PopulationFrames(persons, pd.DataFrame(), None, veh_legacy, "run_output", "x", "p_"), geo)
     assert dict(zip(out_legacy["category"], out_legacy["synthetic_count"])) == {"bev": 1}
@@ -76,7 +98,7 @@ def test_registry_includes_census_and_distribution_controls():
     assert names == {
         "household_size", "age_group", "sex", "cars_per_hh",
         "driving_license_type", "pt_ticket_type", "bicycles_per_hh",
-        "employment", "bev_share",
+        "employment", "employment_status", "bev_share",
     }
     # economic_status / housing_tenure / income_class are exported spatially
     # (geo_export), not validated -> they must NOT be registered as controls.
@@ -87,6 +109,7 @@ def test_registry_includes_census_and_distribution_controls():
 
 # --- target loader schemas ---------------------------------------------------
 
+@_needs_zensus_2081
 def test_household_size_target_schema():
     t = C.household_size_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}
@@ -94,6 +117,7 @@ def test_household_size_target_schema():
     assert (abs(s - 1.0) < 1e-6).all()
 
 
+@_needs_destatis_12411
 def test_age_group_target_schema_and_bounds_match():
     t = C.age_group_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}
@@ -105,6 +129,7 @@ def test_age_group_target_schema_and_bounds_match():
     assert set(t["category"].unique()) == set(registered["age_group"].categories)
 
 
+@_needs_destatis_12411
 def test_sex_target_schema():
     t = C.sex_target(DATA)
     assert set(t.columns) == {"geo_id", "category", "target_share"}
@@ -354,3 +379,77 @@ def test_pt_control_age_base_excludes_children():
     assert got.get("fahre_nie", 0) == 0, (
         f"Expected fahre_nie=0 (age-8 child excluded from base), got {got}"
     )
+
+
+# --- minor-employment plausibility guard (issue #96) -------------------------
+# The written `employed` flag must be ~0 for minors (age < 15). A non-trivial
+# employed share among under-15s is not scientifically defensible and signals an
+# upstream mapping defect -- the P_TAET=9 'Schueler' nonresponse collision that
+# imputed pupils to employed=True (fixed in #101). These tests pin the guard used
+# by the population-validation stage as a regression watchdog. They call the
+# standalone helper directly (plain DataFrames, no registry/committed CSVs), so
+# they run locally without the census source data.
+
+def test_minor_employment_guard_flags_inflated():
+    """A ``bad`` population (under-15s marked employed) is flagged; raises only
+    when raise_on_exceed is set, otherwise WARNs and returns the flag."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5],
+        "household_id": [10, 10, 20, 20, 30],
+        "age": [10, 12, 14, 40, 41],
+        "employed": [True, True, True, True, False],
+    })
+    # 3 of 3 minors (age<=14) employed -> rate 1.0, far above the default bound.
+    result = C.check_minor_employment(persons, raise_on_exceed=False)
+    assert result is not None
+    assert result["n_minors"] == 3
+    assert result["n_employed"] == 3
+    assert result["rate"] == 1.0
+    assert result["exceeded"] is True
+
+    import pytest
+    with pytest.raises(ValueError, match="minor"):
+        C.check_minor_employment(persons, raise_on_exceed=True)
+
+
+def test_minor_employment_guard_passes_clean():
+    """A ``good`` population (no employed under-15s) passes with rate 0 and never
+    raises, even with raise_on_exceed=True."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "household_id": [10, 10, 20, 20],
+        "age": [8, 12, 14, 40],
+        "employed": [False, False, False, True],
+    })
+    result = C.check_minor_employment(persons, raise_on_exceed=True)
+    assert result is not None
+    assert result["n_minors"] == 3
+    assert result["n_employed"] == 0
+    assert result["rate"] == 0.0
+    assert result["exceeded"] is False
+
+
+def test_minor_employment_guard_boundary_age():
+    """The band is age < 15 (age <= 14): an employed 14-year-old is counted as a
+    minor; an employed 15-year-old is not."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [14, 15],
+        "employed": [True, True],
+    })
+    result = C.check_minor_employment(persons, raise_on_exceed=False)
+    assert result["n_minors"] == 1        # only the age-14 person
+    assert result["n_employed"] == 1
+    assert result["rate"] == 1.0
+
+
+def test_minor_employment_guard_missing_column():
+    """Absent ``employed`` (or ``age``) column -> WARN + skip (returns None), no
+    exception, mirroring the absent-column pattern of the other controls."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "household_id": [10, 20],
+        "age": [10, 40],
+    })
+    assert C.check_minor_employment(persons, raise_on_exceed=True) is None

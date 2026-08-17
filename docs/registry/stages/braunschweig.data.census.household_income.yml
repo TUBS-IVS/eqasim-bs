@@ -1,0 +1,17 @@
+stage: braunschweig.data.census.household_income
+title: INKAR household income
+layer: attributes
+description: Reads the BBSR INKAR household income per Kreis for income scaling (legacy IPF path).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/data/census/household_income.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: active
+production: false
+inputs:
+- inkar_household_income

@@ -6,9 +6,9 @@ import re
 import pathlib
 
 BASES = {
-    "config_smoke_simple_ipf.yml": "config_local_braunschweig.yml",
-    "config_smoke_popsim_mid.yml": "config_popsim_mid_braunschweig.yml",
-    "config_smoke_popsim_open.yml": "config_popsim_open_braunschweig.yml",
+    "config_smoke_simple_ipf.yml": "configs/fixtures/config_local_braunschweig.yml",
+    "config_smoke_popsim_mid.yml": "configs/fixtures/config_popsim_mid_braunschweig.yml",
+    "config_smoke_popsim_open.yml": "configs/fixtures/config_popsim_open_braunschweig.yml",
 }
 BLOCK_RE = re.compile(r"^run:\n(?:[ \t]*-[^\n]*\n)+", re.MULTILINE)
 WORKDIRS = {
