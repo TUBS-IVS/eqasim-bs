@@ -61,5 +61,5 @@ assessment:
     absent from the popsim_mid/popsim_open configs -- the IPF is not the production
     population method, so the key would be dead there.
   source: ADR-0004
-notes: 'Issue #251: enabled in the four simple_ipf_open run configs and pinned by
-  tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
+notes: 'Issue #251 / ADR-0078: enabled in the four simple_ipf_open run configs and pinned
+  by tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'

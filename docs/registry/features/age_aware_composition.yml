@@ -66,5 +66,5 @@ assessment:
     (2) the Destatis mother-age anchor is a hardcoded default (see evidence.reference),
     so the composition target itself is an assumption, not a committed table.
   source: ADR-0005
-notes: 'Issue #251: enabled in the four simple_ipf_open run configs and pinned by
-  tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
+notes: 'Issue #251 / ADR-0078: enabled in the four simple_ipf_open run configs and pinned
+  by tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
