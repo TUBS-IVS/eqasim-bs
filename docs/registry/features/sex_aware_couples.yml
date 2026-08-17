@@ -55,5 +55,5 @@ assessment:
     DEFAULT_SAME_SEX_COUPLE_SHARE with prose-only provenance (see evidence.reference), and
     no recorded run has compared the realised share to an observed reference.
   source: ADR-0006
-notes: 'Issue #251: enabled in the four simple_ipf_open run configs and pinned by
-  tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
+notes: 'Issue #251 / ADR-0078: enabled in the four simple_ipf_open run configs and pinned
+  by tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
