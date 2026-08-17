@@ -2,12 +2,15 @@ feature: consistent_car_availability
 title: Consistent car_availability
 area: attributes
 description: Derives car_availability consistently from the MiD-P17.1 licence and the household
-  vehicle count instead of sampling it independently (ADR-0017).
+  vehicle count instead of sampling it independently (ADR-0017). Legacy simple_ipf_open
+  mechanism, deliberately NOT ported -- under popsim_mid car_availability is derived per
+  household from cars vs. adults, and the licence is applied separately by the Java
+  mode availability as the inner gate (ADR-0079).
 stages:
 - synthesis.population.enriched
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: not_used
+  popsim_open: not_used
   simple_ipf_open: active
 lifecycle: active
 production:
@@ -49,9 +52,17 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0017 is a combined ADR covering four flags at once (see household_income_distribution.yml). This flag lives in synthesis/population/enriched.py and is dead under the active popsim_mid production method; it is only live via the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
-  source: ADR-0017
-notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
-  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
-  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
-  25% fixture).'
+    Wiring decided in ADR-0079: NOT ported for a substantive reason rather than because
+    a donor equivalent exists. The legacy rule is PERSON-level and sets
+    car_availability='none' for licence-less persons; in BraunschweigModeAvailability
+    'none' closes the entire car block INCLUDING car_passenger, while that same class
+    already applies the licence as the inner gate opening car on top of car_passenger.
+    Porting would filter the licence twice and suppress passenger trips for children
+    and non-driving adults. A P19 rake would additionally be simulation-neutral,
+    because BraunschweigPredictorUtils.hasCarAvailability compares only against 'none'.
+  source: ADR-0079 (mechanism decision); ADR-0017 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

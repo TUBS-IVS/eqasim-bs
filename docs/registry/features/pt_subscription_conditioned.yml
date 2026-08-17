@@ -2,12 +2,15 @@ feature: pt_subscription_conditioned
 title: PT subscription (P24.1, 3-margin IPF)
 area: attributes
 description: PT subscription type as a categorical 3-margin IPF on MiD P24.1 (Kreis x sex x age),
-  optionally conditioned on car availability (ADR-0012).
+  optionally conditioned on car availability (ADR-0012). Legacy simple_ipf_open
+  mechanism -- under popsim_mid attributes.map_pt_subscription_type derives the attribute
+  from the donor's own P_FKARTE with RegioStaR7/age-conditioned imputation, WITHOUT a
+  rake to the P24.1 margins (ADR-0079).
 stages:
 - synthesis.population.enriched
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: not_used
+  popsim_open: not_used
   simple_ipf_open: active
 lifecycle: active
 production:
@@ -47,9 +50,16 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0012 documents the design. This flag lives in synthesis/population/enriched.py and is dead under the active popsim_mid production method; it is only live via the simple_ipf_open fixture. No owner verdict on realised fit has been recorded.
-  source: ADR-0012
-notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
-  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
-  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
-  25% fixture).'
+    Wiring decided in ADR-0079: not ported. Explicitly NOT settled: the realised
+    regional subscription share is UNMEASURED, and the subscription enters
+    BraunschweigPtCostModel (holders pay zero fare on every PT trip), which makes it
+    the serious per-Kreis control candidate of this feature family. A regional target
+    would first require extracting the full SrV E_OEV_FK category set -- the committed
+    SrV aggregate covers only the Deutschlandticket, over a different universe (all
+    persons vs. MiD's 14+), and is additionally distorted by the 2023-05 launch date.
+  source: ADR-0079 (mechanism decision); ADR-0012 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

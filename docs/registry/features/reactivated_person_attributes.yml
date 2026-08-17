@@ -2,13 +2,17 @@ feature: reactivated_person_attributes
 title: Reactivated attrs (couple/studies/SPC)
 area: attributes
 description: Reactivates the upstream couple/studies/single-parent-child person attributes that
-  the Bavaria fork had dropped (ADR-0018).
+  the Bavaria fork had dropped (ADR-0018). Legacy simple_ipf_open flag -- under popsim_mid
+  studies and socioprofessional_class ARE produced, by attributes.map_studies and
+  attributes.map_socioprofessional_class (the latter calling the same
+  derive_socioprofessional_class); only couple is not produced, and it has no consumer
+  (ADR-0079).
 stages:
 - synthesis.population.enriched
 - synthesis.population.matched
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: not_used
+  popsim_open: not_used
   simple_ipf_open: active
 lifecycle: active
 production:
@@ -50,9 +54,17 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0018 documents the design. This flag lives in braunschweig/ipf/attributed.py and is dead under the active popsim_mid production method; it is only live via the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature, and the studies/SPC sub-derivations lack fallback instrumentation (see fallback_rate.note).
-  source: ADR-0018
-notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
-  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
-  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
-  25% fixture).'
+    Wiring decided in ADR-0079: the FLAG governs nothing under popsim_mid, hence
+    not_used -- but two of the three attributes (studies, socioprofessional_class) ARE
+    produced there by the popsim attribute mappers, so not_used must not be read as
+    'attributes missing'. Only couple is absent, and it has no consumer: no writer
+    field in matsim.scenario.population.PERSON_FIELDS, no entry in
+    braunschweig/population/schema.py, no eqasim-java reader; the sole reference is a
+    plausibility check. Still pending: the studies/SPC sub-derivations lack
+    fallback-rate instrumentation (see fallback_rate.note).
+  source: ADR-0079 (mechanism decision); ADR-0018 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'
