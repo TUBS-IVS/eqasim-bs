@@ -87,3 +87,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0076](../decisions/ADR-0076-oversized-synpp-stage-modules-become-stage-packages-with-a.md) | 2026-08-13 | -- | Oversized synpp stage modules become stage PACKAGES with a `validate()` source token (2026-08-13, PR #268 MERGED) |
 | [ADR-0077](../decisions/ADR-0077-model-registry-and-documentation-system.md) | 2026-08-13 | active | Model registry and documentation system (generalizing the readiness register; PROJECT_STATUS/BACKLOG/RUNS retired) |
 | [ADR-0079](../decisions/ADR-0079-donor-inherited-attributes-supersede-legacy-enrichment-draws.md) | 2026-08-17 | active | Donor-inherited attributes supersede the legacy enrichment draws under popsim_mid |
+| [ADR-0080](../decisions/ADR-0080-remove-the-outer-product-employment-margin-substitute.md) | 2026-08-17 | active | Remove the outer-product substitute for the TASK-010 employment margin and park the flag (issue #252) |

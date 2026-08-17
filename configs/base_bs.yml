@@ -222,7 +222,6 @@ config:
   # --- IPF margins ---
   braunschweig.ipf.use_household_size_margin: true
   braunschweig.ipf.use_household_type_margin: true
-  braunschweig.ipf.use_employment_margin: true
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs_cordon
